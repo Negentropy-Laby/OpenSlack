@@ -17,6 +17,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@octokit/rest": "^21.0.0"
+    "@octokit/rest": "^21.0.0",
+    "yaml": "^2.7.0"
   }
 }

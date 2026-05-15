@@ -94,6 +94,9 @@ importers:
       '@octokit/rest':
         specifier: ^21.0.0
         version: 21.1.1
+      yaml:
+        specifier: ^2.7.0
+        version: 2.9.0
 
   packages/kernel:
     dependencies:

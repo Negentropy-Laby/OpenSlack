@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/github-issue-task.schema.json",
+  "title": "OpenSlack GitHub Issue Task Manifest",
+  "type": "object",
+  "required": ["schema", "task_id", "title", "agent_type", "risk_level"],
+  "properties": {
+    "schema": { "type": "string", "const": "openslack.github_issue_task.v1" },
+    "task_id": { "type": "string", "pattern": "^TASK-\\d{4}-\\d{6}$" },
+    "title": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "enum": ["ready", "claimed", "running", "review", "done", "blocked"] },
+    "task_type": { "type": "string" },
+    "agent_type": { "type": "string" },
+    "risk_level": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+    "priority": { "type": "string", "enum": ["p0", "p1", "p2", "p3"] },
+    "required_capabilities": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "allowed_paths": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "forbidden_paths": {
+      "type": "array",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "output_contract": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["draft_pr", "issue_comment_summary", "workspace_run_record", "no_change"] },
+      "uniqueItems": true
+    },
+    "success_criteria": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "human_approval_required_for": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["red_zone_change", "merge_main", "external_message", "policy_change"] }
+    },
+    "lease": {
+      "type": "object",
+      "properties": {
+        "ttl_minutes": { "type": "integer", "minimum": 1, "maximum": 480 },
+        "heartbeat_minutes": { "type": "integer", "minimum": 1, "maximum": 120 }
+      }
+    },
+    "idempotency_key": { "type": "string" },
+    "linked_pr": { "type": "integer" }
+  }
+}
