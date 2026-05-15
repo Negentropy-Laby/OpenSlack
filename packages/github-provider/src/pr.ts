@@ -12,7 +12,7 @@ export async function createDraftPR(
   title: string,
   body: string,
 ): Promise<CreatePRResult> {
-  const client = getClient();
+  const client = await getClient();
   if (client.isDryRun) {
     const dryResult = {
       url: `https://github.com/${client.owner}/${client.repo}/pull/DRY_RUN`,
@@ -44,7 +44,7 @@ export async function commentOnPR(
   prNumber: number,
   body: string,
 ): Promise<void> {
-  const client = getClient();
+  const client = await getClient();
   if (client.isDryRun) {
     console.log(`[DRY RUN] Would comment on PR #${prNumber} in ${client.owner}/${client.repo}`);
     return;

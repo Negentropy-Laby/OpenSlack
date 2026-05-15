@@ -34,9 +34,24 @@ export function githubCommands(): Command {
       const root = findRepoRoot();
       const checks: Array<{ name: string; passed: boolean; detail: string }> = [];
 
-      // Token check
-      const token = process.env.GITHUB_TOKEN;
-      checks.push({ name: 'GITHUB_TOKEN', passed: !!token, detail: token ? 'Set (masked)' : 'Not set — dry-run mode active' });
+      // Auth tier check
+      const client = await getClient();
+      const authTier = client.authMode === 'github_app_installation' ? 'GitHub App Installation Token' :
+        client.authMode === 'token' ? 'PAT / GITHUB_TOKEN' : 'Dry-run (no credentials)';
+      checks.push({
+        name: 'Auth tier',
+        passed: client.authMode !== 'dry_run',
+        detail: `${authTier}${client.tokenExpiresAt ? ` (expires: ${client.tokenExpiresAt})` : ''}`,
+      });
+
+      const appId = process.env.OPENSLACK_GITHUB_APP_ID;
+      const installId = process.env.OPENSLACK_GITHUB_APP_INSTALLATION_ID;
+      const hasPrivateKey = !!process.env.OPENSLACK_GITHUB_APP_PRIVATE_KEY;
+      if (appId || installId || hasPrivateKey) {
+        checks.push({ name: 'GitHub App ID', passed: !!appId, detail: appId || 'Not set' });
+        checks.push({ name: 'Installation ID', passed: !!installId, detail: installId || 'Not set' });
+        checks.push({ name: 'Private key', passed: hasPrivateKey, detail: hasPrivateKey ? 'Set (masked)' : 'Not set' });
+      }
 
       // Remote check
       checks.push({ name: 'Git remote', passed: hasRemote(), detail: hasRemote() ? 'origin configured' : 'No remote' });
@@ -101,7 +116,7 @@ export function githubCommands(): Command {
     .description('List Ready items from OpenSlack Evolution Board')
     .action(async () => {
       try {
-        const client = getClient();
+        const client = await getClient();
         if (client.isDryRun) {
           console.log('[DRY RUN] Would query Ready items from Project v2');
           return;

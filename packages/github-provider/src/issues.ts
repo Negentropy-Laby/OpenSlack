@@ -12,7 +12,7 @@ export async function createIssue(
   body: string,
   labels: string[] = [],
 ): Promise<CreateIssueResult> {
-  const client = getClient();
+  const client = await getClient();
   if (client.isDryRun) {
     const dryResult = {
       url: `https://github.com/${client.owner}/${client.repo}/issues/DRY_RUN`,
@@ -46,7 +46,7 @@ export async function addIssueToProject(
   projectNodeId: string,
   issueNodeId: string,
 ): Promise<ProjectItemResult> {
-  const client = getClient();
+  const client = await getClient();
   if (client.isDryRun) {
     console.log(`[DRY RUN] Would add issue ${issueNodeId} to project ${projectNodeId}`);
     return { projectItemId: 'DRY_RUN' };
@@ -85,7 +85,7 @@ export async function queryReadyItems(
   projectNodeId: string,
   agentType?: string,
 ): Promise<ReadyTask[]> {
-  const client = getClient();
+  const client = await getClient();
   if (client.isDryRun) {
     console.log(`[DRY RUN] Would query Ready items from project ${projectNodeId}`);
     return [];
@@ -204,7 +204,7 @@ export async function updateProjectField(
   value: string,
   fieldType: 'text' | 'single_select' = 'text',
 ): Promise<void> {
-  const client = getClient();
+  const client = await getClient();
   if (client.isDryRun) {
     console.log(`[DRY RUN] Would update field ${fieldId} on item ${projectItemId} to "${value}"`);
     return;
