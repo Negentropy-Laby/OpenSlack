@@ -1,0 +1,9 @@
+# Red Zone paths — human approval required for any change
+.github/**                                     @wsman
+.openslack/policies/**                         @wsman
+.openslack/agents/registry/**                  @wsman
+.openslack/agents/prompts/**                   @wsman
+.openslack/self/constitution.md                 @wsman
+.openslack/self/invariants.yaml                 @wsman
+packages/kernel/src/**                         @wsman
+packages/self-evolution/src/core/**            @wsman

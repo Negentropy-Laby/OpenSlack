@@ -18,6 +18,7 @@
     "@openslack/self-evolution": "workspace:*",
     "@openslack/agent-runtime": "workspace:*",
     "@openslack/git-sync": "workspace:*",
+    "@openslack/github-provider": "workspace:*",
     "commander": "^13.1.0"
   },
   "devDependencies": {

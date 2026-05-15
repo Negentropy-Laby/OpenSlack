@@ -44,6 +44,9 @@ importers:
       '@openslack/git-sync':
         specifier: workspace:*
         version: link:../../packages/git-sync
+      '@openslack/github-provider':
+        specifier: workspace:*
+        version: link:../../packages/github-provider
       '@openslack/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
