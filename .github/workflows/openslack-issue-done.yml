@@ -1,0 +1,39 @@
+name: OpenSlack Issue Done
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+jobs:
+  on-pr-merged:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - run: pnpm install --frozen-lockfile
+
+      - name: Find and complete linked issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.OPENSLACK_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPO: ${{ github.event.repository.name }}
+        run: |
+          BODY="${{ github.event.pull_request.body }}"
+          ISSUE_NUM=$(echo "$BODY" | grep -oP 'Issue:\s*#?\K\d+' | head -1 || echo "")
+          if [ -n "$ISSUE_NUM" ]; then
+            echo "Found linked issue: #$ISSUE_NUM"
+            pnpm openslack github issue-done --issue-number "$ISSUE_NUM" --pr-url "${{ github.event.pull_request.html_url }}"
+          else
+            echo "No OpenSlack issue reference found in PR body."
+          fi

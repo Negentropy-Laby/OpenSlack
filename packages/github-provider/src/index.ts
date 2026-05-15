@@ -8,5 +8,6 @@ export { createTaskIssue, queryReadyIssueTasks } from './issue-tasks.js';
 export type { IssueTask } from './issue-tasks.js';
 export { claimIssueTask, releaseIssueClaim, moveIssueToReview, heartbeatIssueClaim, expireIssueClaim, releaseIssueClaimWithOwner } from './claims.js';
 export type { IssueClaimResult, HeartbeatResult, ReleaseInput } from './claims.js';
+export { markIssueRunning, markIssueBlocked, markIssueDone } from './lifecycle.js';
 export { parseIssueTaskManifest, renderIssueTaskManifest, extractTaskBlock } from './manifest.js';
 export type { IssueTaskManifest, ManifestParseResult } from './manifest.js';
