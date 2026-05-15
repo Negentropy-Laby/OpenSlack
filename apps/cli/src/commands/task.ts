@@ -62,12 +62,13 @@ export function taskCommands(): Command {
     .requiredOption('--run-id <id>', 'Run ID')
     .requiredOption('--paths <paths>', 'Comma-separated changed paths')
     .option('--description <text>', 'PR description')
-    .action((options) => {
+    .action(async (options) => {
       const paths = options.paths.split(',').map((p: string) => p.trim());
-      const result = proposeWorkspacePR({ agentId: options.agentId, taskId: options.taskId, runId: options.runId, changedPaths: paths, description: options.description });
+      const result = await proposeWorkspacePR({ agentId: options.agentId, taskId: options.taskId, runId: options.runId, changedPaths: paths, description: options.description });
       if (!result.success) { console.error('PR proposal failed:'); for (const err of result.errors) console.error(`  - ${err}`); process.exit(1); }
       console.log(`Branch: ${result.branchName}`);
       console.log(`Risk zone: ${result.riskZone.toUpperCase()}`);
+      if (result.prUrl) console.log(`PR URL: ${result.prUrl}`);
       console.log(result.prBody);
     });
 

@@ -27,7 +27,7 @@ function hasGitRemote(root: string): boolean {
   }
 }
 
-export function proposeWorkspacePR(input: PRProposalInput): PRProposalResult {
+export async function proposeWorkspacePR(input: PRProposalInput): Promise<PRProposalResult> {
   const errors: string[] = [];
 
   if (input.changedPaths.length === 0) {
@@ -78,7 +78,7 @@ ${riskZone === 'red' ? '- [ ] **Human approval required** (Red Zone files modifi
     return { success: false, prBody, branchName, riskZone, errors: ['PR cannot be proposed: Black Zone files modified'] };
   }
 
-  // Attempt git commit + push if remote is configured
+  // Attempt git commit + push + draft PR if remote is configured
   let prUrl: string | undefined;
   try {
     const root = process.cwd();
@@ -89,7 +89,16 @@ ${riskZone === 'red' ? '- [ ] **Human approval required** (Red Zone files modifi
       execSync(`git commit -m "${commitMsg}"`, { cwd: root, stdio: 'pipe' });
       try {
         execSync(`git push origin "${branchName}"`, { cwd: root, stdio: 'pipe', timeout: 30000 });
-        prUrl = `https://github.com/wsman/OpenSlack/compare/main...${branchName}`;
+
+        // Try to create a draft PR via GitHub provider if token is available
+        try {
+          const { createDraftPR } = await import('@openslack/github-provider');
+          const draftResult = await createDraftPR(branchName, 'main', commitMsg, prBody);
+          prUrl = draftResult.url;
+        } catch {
+          // Fallback: compare URL when token not available
+          prUrl = `https://github.com/wsman/OpenSlack/compare/main...${branchName}`;
+        }
       } catch {
         errors.push('Git push failed — branch may already exist or no credentials configured');
       }

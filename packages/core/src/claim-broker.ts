@@ -27,7 +27,7 @@ export interface ClaimResult {
   leaseId?: string;
   lease?: Lease;
   expiresAt?: string;
-  reason?: 'NOT_READY' | 'ALREADY_CLAIMED' | 'CAPABILITY_MISMATCH' | 'RISK_EXCEEDED' | 'BUDGET_EXCEEDED' | 'AGENT_PAUSED';
+  reason?: 'NOT_READY' | 'ALREADY_CLAIMED' | 'CAPABILITY_MISMATCH' | 'RISK_EXCEEDED' | 'BUDGET_EXCEEDED' | 'AGENT_PAUSED' | 'LOCK_TIMEOUT';
 }
 
 export class ClaimBroker {
@@ -232,7 +232,7 @@ export class FileClaimBroker extends ClaimBroker {
   }
 
   override claimTask(request: ClaimRequest): ClaimResult {
-    if (!this.acquireLock()) return { claimStatus: 'denied', taskId: request.taskId, reason: 'BUDGET_EXCEEDED' };
+    if (!this.acquireLock()) return { claimStatus: 'denied', taskId: request.taskId, reason: 'LOCK_TIMEOUT' };
     try {
       this.loadWithLock();
       const result = super.claimTask(request);

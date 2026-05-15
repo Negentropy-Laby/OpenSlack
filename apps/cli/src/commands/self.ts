@@ -107,7 +107,7 @@ export function selfCommands(): Command {
     .command('triage')
     .description('Triage pending observations')
     .option('--create-issues', 'Create GitHub issues for new EVOL tasks')
-    .action((options) => {
+    .action(async (options) => {
       const observations = observeHealth();
       if (observations.length === 0) {
         console.log('No pending observations to triage.');
@@ -119,7 +119,36 @@ export function selfCommands(): Command {
         console.log(`  - ${id}`);
       }
       if (options.createIssues) {
-        console.log('(GitHub issue creation not available in local mode)');
+        try {
+          const { createIssue, addIssueToProject } = await import('@openslack/github-provider');
+          const { readFileSync, existsSync } = await import('node:fs');
+          const { join } = await import('node:path');
+          const root = process.cwd();
+          for (const id of taskIds) {
+            const evolPath = join(root, '.openslack', 'self', 'evolution_backlog', `${id}.yaml`);
+            if (!existsSync(evolPath)) continue;
+            const yaml = readFileSync(evolPath, 'utf-8');
+            const titleMatch = yaml.match(/^title:\s*["']?(.+?)["']?\s*$/m);
+            const title = titleMatch?.[1] || id;
+            const body = `EVOL Task: ${id}\n\n${yaml}`;
+            const issueUrl = await createIssue(title, body, ['openslack-evolution']);
+            console.log(`  Issue: ${issueUrl}`);
+
+            // Add to Project if node_id configured
+            const githubYaml = join(root, '.openslack', 'integrations', 'github.yaml');
+            if (existsSync(githubYaml)) {
+              const configRaw = readFileSync(githubYaml, 'utf-8');
+              const match = configRaw.match(/node_id:\s*["']?([^"'\n]+)["']?/);
+              const projectNodeId = match?.[1]?.trim();
+              if (projectNodeId && projectNodeId !== '') {
+                await addIssueToProject(projectNodeId, id);
+                console.log(`  Added to project ${projectNodeId}`);
+              }
+            }
+          }
+        } catch (e) {
+          console.log(`(GitHub issue creation unavailable: ${(e as Error).message})`);
+        }
       }
     });
 
