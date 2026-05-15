@@ -133,29 +133,91 @@ Before any git commit:
 - `pnpm lint` — zero errors in source files (warnings in dist/ only)
 
 ### Commit message convention
-All commits follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
+
+#### Subject format
 
 ```
-<type>: <short description>
-
-<optional body>
+<module-prefix>: <action> <intent/result>
 ```
 
-Types:
-- `feat:` — new feature or capability (e.g., `feat: add workspace index command`)
-- `fix:` — bug fix (e.g., `fix: deny duplicate claims correctly`)
-- `docs:` — documentation changes (e.g., `docs: add technical debt register`)
-- `chore:` — cleanup, tooling, configuration (e.g., `chore: remove stub packages`)
-- `refactor:` — code restructuring without behavior change (e.g., `refactor: extract zone matcher`)
-- `test:` — adding or updating tests (e.g., `test: add coverage for observeHealth`)
-- `security:` — security patches or policy changes (e.g., `security: add black zone for pem files`)
+The prefix must name the real subsystem being changed — not a vague label. Use stable subsystem names from the OpenSlack architecture:
 
-Rules:
-- First line under 72 characters
-- Imperative mood ("add" not "added")
-- No period at end of first line
-- Body optional, wrapped at 72 characters
-- Reference EVOL/TASK IDs in body when applicable (e.g., `Refs: EVOL-2026-000001`)
+| Prefix | Subsystem |
+|--------|-----------|
+| `workspace-engine` | Workspace validation, indexing, migration |
+| `policy` | Zone classifier, policy engine, risk gates |
+| `self-evolution` | Observe, triage, classify, review, scorecard, monitor, rollback |
+| `evals` | Golden eval runner, eval suites |
+| `core` | Claim broker, task state machine, leases |
+| `agent-runtime` | Bootstrap, tick, onboarding |
+| `git-sync` | Worktree manager, PR orchestrator |
+| `schemas` | JSON Schema definitions |
+| `cli` | CLI command surface and entry points |
+| `scripts` | Genesis validate/rollback, tooling scripts |
+| `docs` | Documentation (describe behavioral effect, not chapter title) |
+| `repo` | Repository structure, tooling, conventions |
+| `openslack.yaml` | Workspace manifest and Self-Project Mode config |
+| `constitution` | Constitutional and invariants changes |
+| `security` | Security patches, zone changes, guardrails |
+
+Use a precise action verb: `add`, `extract`, `migrate`, `restore`, `wire`, `harden`, `align`, `document`, `remove`, `consolidate`.
+
+Subject must be lowercase sentence-style, no period at end, roughly 50–90 characters.
+
+Good examples:
+- `policy: add black zone path matcher for credential files`
+- `self-evolution: wire validatePR to auto-generate manifest yaml`
+- `workspace-engine: extract indexer from validate module`
+- `core: add file-backed claim broker with atomic save`
+- `docs: document daemon receipt baseline and sprint expansion`
+- `repo: remove stub packages per cleanliness rules`
+
+#### Body policy
+
+Leave one blank line after subject. Prefer the shortest message that explains the change — 1–2 sentences focused on **why** the change exists and **what boundary or behavior** it preserves. Expand to paragraph-plus-bullets only when the change crosses multiple boundaries:
+
+```text
+<prefix>: <action> <intent/result>
+
+<1–2 concise why-first sentences.>
+```
+
+Expanded form for high-information commits:
+
+```text
+<prefix>: <action> <intent/result>
+
+<Why this change exists and what boundary it creates.>
+
+- <verb> <major surface or invariant preserved>
+- <verb> <major surface or invariant preserved>
+```
+
+#### Hard prohibitions
+
+- Do not include `Co-Authored-By:` lines or any co-author attribution.
+- Do not mention that an AI, assistant, model, or automated agent wrote the change.
+- Do not include internal model codenames, unreleased model versions, or internal-only project/tool names.
+- Do not use document chapter names or section headings as the subject.
+- Do not enumerate files, folders, or raw ticket-like fragments in the subject.
+- Do not use generic one-word prefixes like `fix`, `update`, `cleanup`, or `misc` without a real subsystem prefix.
+
+#### Anti-patterns
+
+- `fix stuff`
+- `update files`
+- `misc cleanup`
+- `docs: complete 05-backend layer canonical contracts`
+- `server: routes, tests, docs, cleanup, more fixes`
+- A long body that is only a file inventory
+- A subject that copies documentation headings instead of describing change intent
+
+#### Reference commits
+
+The following commits set the quality standard for this repository:
+
+- `52a52d6` `repo: add initial OSEK Phase 1 monorepo scaffold`
+- `040990d` `docs: add commit message convention to AGENTS.md and CLAUDE.md`
 
 PR titles use the format from product.md: `[OpenSlack][<TASK-ID>][<agent_id>] <description>`.
 
