@@ -8,6 +8,7 @@
     { "path": "packages/agent-runtime" },
     { "path": "packages/git-sync" },
     { "path": "packages/github-provider" },
-    { "path": "apps/cli" }
+    { "path": "apps/cli" },
+    { "path": "apps/auth-callback" }
   ]
 }

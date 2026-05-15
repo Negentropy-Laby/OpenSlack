@@ -15,11 +15,13 @@ log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 
 AUTH_FLAG=false
 CUSTOM_TOKEN=""
+HEADLESS=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --auth) AUTH_FLAG=true; shift ;;
     --token) CUSTOM_TOKEN="$2"; shift 2 ;;
+    --headless) HEADLESS=true; shift ;;
     *) shift ;;
   esac
 done
@@ -99,12 +101,34 @@ if [ "$AUTH_FLAG" = true ] || [ -n "$CUSTOM_TOKEN" ]; then
     if [ -n "$CUSTOM_TOKEN" ]; then
       echo "$CUSTOM_TOKEN" | gh auth login --with-token
       log_pass "Authenticated with provided token."
+    elif [ "$HEADLESS" = true ]; then
+      echo ""
+      echo "=== Headless auth mode ==="
+      echo "Start the auth callback server in another terminal:"
+      echo "  node --import tsx apps/auth-callback/src/index.ts"
+      echo ""
+      echo "Then generate a Personal Access Token at:"
+      echo "  https://github.com/settings/tokens/new"
+      echo ""
+      echo "Scopes needed: repo, read:project, project"
+      echo ""
+      echo "Once you have the token, run:"
+      echo "  echo 'ghp_YOUR_TOKEN' | gh auth login --with-token"
     else
       echo ""
       echo "Opening browser for GitHub authentication..."
       echo "Required scopes: repo, read:project, project"
       gh auth login --hostname github.com --web --scopes repo,read:project,project
     fi
+  fi
+fi
+
+# --- Step 4: Headless token capture ---
+if [ "$HEADLESS" = true ] && [ -f "$ROOT/.openslack.local/github-token" ]; then
+  TOKEN=$(cat "$ROOT/.openslack.local/github-token" 2>/dev/null || echo "")
+  if [ -n "$TOKEN" ] && ! gh auth status &>/dev/null 2>&1; then
+    echo "$TOKEN" | gh auth login --with-token
+    log_pass "Authenticated with captured token."
   fi
 fi
 
