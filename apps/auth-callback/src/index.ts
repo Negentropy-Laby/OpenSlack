@@ -3,10 +3,11 @@ import { startAuthServer } from './server.js';
 
 console.log('=== OpenSlack Auth Callback Server ===');
 console.log('');
-console.log('This server captures GitHub OAuth tokens for headless environments.');
-console.log('Use it with:');
-console.log('  gh auth login --hostname github.com --web');
-console.log('  (manually point redirect to http://localhost:8200/callback)');
+console.log('This server captures GitHub OAuth tokens for human login.');
+console.log('It is NOT used for agent runtime authentication.');
+console.log('');
+console.log('For agent runtime, use GitHub App installation tokens.');
+console.log('See docs/developer/github-automation.md');
 console.log('');
 
 startAuthServer().then(() => {

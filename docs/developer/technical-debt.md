@@ -6,38 +6,24 @@
 
 ## Open Items
 
-### P0-0: Headless GitHub OAuth — cannot add project scope to gh token without manual browser interaction
+### P0-0: Replace OAuth device flow with GitHub App installation token for agent runtime
 
-**Source:** Phase 1.5 GitHub wiring (2026-05-16)
-**Requirement:** Fully automated, zero manual steps. No browser. No manual PAT creation. No copy-paste of tokens.
-**Impact:** Entire GitHub-backed autonomous task loop is blocked. Without `read:project` + `project` scopes, the OpenSlack runtime cannot query or update GitHub Project v2 items. This single gap blocks: `openslack github project-query-ready`, `openslack self triage --create-issues`, `agent tick --source github-project`, `task sync --createDraftPR`.
+**Source:** Phase 1.5 GitHub wiring (2026-05-16), P0-0 blocker analysis.
+**Decision:** OAuth device/web flow is not suitable for zero-manual agent automation. GitHub App installation tokens are the correct primary credential for agent runtime. OAuth is reserved for human login only.
 
-**Attempts made:**
+**Three-tier auth model (see `docs/developer/github-automation.md`):**
+1. **Runtime (Primary):** GitHub App installation token — JWT-signed, programmatic, auto-refreshes. Zero manual steps after one-time App creation.
+2. **Dev/Local Fallback:** Fine-grained PAT or `GITHUB_TOKEN` — manual, for local debugging.
+3. **Human Login:** OAuth App / gh CLI — browser required, for web console and admin operations.
 
-| Method | Result |
-|--------|--------|
-| `gh auth refresh -s project` | Opens browser — fails in headless env |
-| `gh auth refresh -s project --reset-scopes` | Resets to default scopes, removes `repo` |
-| `gh auth login -s repo,read:project,project` | Device flow code displayed (0860-44E9), user approved at github.com/login/device, but gh never received the token exchange response. After 180s polling, `gh auth status` still "not logged in." OAuth app granted on GitHub side, token not delivered to gh. |
-| `@octokit/rest` direct API call | Cannot import from repo root — workspace isolation |
-| `curl -H "Authorization: Bearer $GITHUB_TOKEN"` | `GITHUB_TOKEN` env var empty — no token injected into shell |
-| Classic PAT creation | **Rejected** — requires manual browser at github.com/settings/tokens |
-| Fine-grained PAT creation | **Rejected** — requires manual browser |
-| `apps/auth-callback/` local OAuth server | Implemented and deployed. Listens on localhost:8200/callback. Cannot self-initiate OAuth flow — GitHub requires browser redirect to `/login/oauth/authorize`. Server can capture token but cannot start the flow. |
+**Required implementation:**
+- `packages/github-provider/src/auth.ts` — `getAppInstallationToken()` using `@octokit/auth-app`
+- Update `packages/github-provider/src/client.ts` — three-tier `getClient()` with GitHub App first, PAT fallback, dry-run last
+- Update `apps/auth-callback/` — `localhost` → `127.0.0.1`, add state validation, remove gh auth login claims
+- Update `docs/developer/github-automation.md` — document three-tier model
+- Update `scripts/setup-gh.sh` — remove headless PAT creation hybrid flow
 
-**Root cause:** GitHub's OAuth device flow (`gh auth login`) successfully displays device code, user approves at github.com/login/device, but the subsequent token exchange (polling `POST /login/oauth/access_token`) never completes in the gh CLI process. The authorization grant succeeds on GitHub's side but gh never receives the response. This may be a firewall/proxy issue, a gh binary version mismatch, or a credential store conflict (Windows keyring vs in-memory).
-
-**Required solution:** A fully automated method that:
-1. Does not require browser interaction
-2. Does not require manual token creation or copy-paste
-3. Works in Windows Server 2025 headless environment
-4. Uses only: gh CLI, node.js, curl, or direct HTTP API calls
-5. Can be triggered programmatically via `openslack github auth` command
-
-**Possible approaches (to investigate):**
-- Direct OAuth device flow via raw HTTP: POST to `https://github.com/login/device/code` to get `device_code` + `user_code`, display `user_code`, poll `POST https://github.com/login/oauth/access_token` with `device_code` until token returns. Bypass gh CLI entirely.
-- GitHub App installation token: Create a GitHub App (one-time manual step), then use `POST /app/installations/{id}/access_tokens` with the App's private key to get tokens programmatically. JWT-signed, no browser needed after initial App creation.
-- Environment variable injection: Use `gh auth token` output from a successfully-authenticated session (requires one-time manual auth to establish the keyring entry, then all subsequent runs use the cached token).
+**7 OAuth attempts documented (see commit 08c61a2).** GitHub device flow token exchange never completed despite user approval. Root cause: credential store / proxy / gh binary version interaction. Not worth further debugging — architectural fix chosen instead.
 
 **P0-1: No GitHub remote — blocks end-to-end PR / task board workflow**
 

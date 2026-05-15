@@ -6,6 +6,10 @@ import { request } from 'node:https';
 const PORT = parseInt(process.env.AUTH_PORT || '8200', 10);
 const CALLBACK_PATH = '/callback';
 const TOKEN_FILE = '.openslack.local/github-token';
+const BIND_HOST = process.env.AUTH_HOST || '127.0.0.1'; // GitHub recommends 127.0.0.1 for native apps
+
+// Generate a random OAuth state to prevent CSRF
+const EXPECTED_STATE = process.env.GH_OAUTH_STATE || `openslack-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -61,6 +65,13 @@ export function startAuthServer(): Promise<void> {
       const url = new URL(req.url || '/', `http://localhost:${PORT}`);
 
       if (url.pathname === CALLBACK_PATH && !captured) {
+        // Validate OAuth state parameter to prevent CSRF
+        const state = url.searchParams.get('state');
+        if (!state || state !== EXPECTED_STATE) {
+          sendResponse(res, 400, 'Invalid OAuth state parameter.');
+          return;
+        }
+
         const code = url.searchParams.get('code');
         const token = url.searchParams.get('access_token');
 
@@ -95,10 +106,16 @@ export function startAuthServer(): Promise<void> {
       sendResponse(res, 400, 'No authorization code received.');
     });
 
-    server.listen(PORT, () => {
-      console.log(`[Auth] Listening on http://localhost:${PORT}${CALLBACK_PATH}`);
+    server.listen(PORT, BIND_HOST, () => {
+      console.log(`[Auth] Listening on http://${BIND_HOST}:${PORT}${CALLBACK_PATH}`);
+      console.log(`[Auth] OAuth state: ${EXPECTED_STATE}`);
       console.log('[Auth] Waiting for GitHub OAuth redirect...');
-      console.log(`[Auth] Redirect URI: http://localhost:${PORT}/callback`);
+      console.log(`[Auth] Redirect URI: http://${BIND_HOST}:${PORT}/callback`);
+      console.log('');
+      console.log('Use this URL to authorize your own OAuth App:');
+      console.log(`  https://github.com/login/oauth/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=http://${BIND_HOST}:${PORT}/callback&scope=repo,read:project,project&state=${EXPECTED_STATE}`);
+      console.log('');
+      console.log('NOT for capturing GitHub CLI (gh) tokens.');
     });
 
     server.on('error', (err: Error) => {

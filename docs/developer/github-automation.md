@@ -1,102 +1,98 @@
-# GitHub Automation — Complete Setup Guide
+# GitHub Auth Architecture
 
-OpenSlack can fully configure its own GitHub environment without opening the web UI. This document covers all automation paths.
+## Three-Tier Model
 
-## Quick Start
+OpenSlack uses three distinct authentication mechanisms for different purposes:
 
-```bash
-# 1. Install gh + authenticate
-bash scripts/setup-gh.sh --auth
+| Tier | Method | Purpose | Zero-Manual? |
+|------|--------|---------|-------------|
+| **Runtime (Primary)** | GitHub App installation token | Agent creates issues, updates Project fields, pushes branches, creates PRs | Yes (jwt + api exchange) |
+| **Dev/Local Fallback** | Fine-grained PAT or `GITHUB_TOKEN` | Local development, debugging, single-human testing | No (manual token creation) |
+| **Human Login** | OAuth App / gh CLI OAuth | Human identity verification, web console login, admin operations | No (browser required) |
 
-# 2. Verify setup
-openslack github doctor
+**The runtime tier is the only path that can achieve "fully automated, zero manual steps."** OAuth device flow and PAT creation both require browser interaction and cannot serve as the primary agent automation credential.
 
-# 3. Auto-create Project v2
-openslack github project-init
-```
+## Runtime Auth: GitHub App Installation Token
 
-## Automation Paths
+### One-time setup (human admin)
 
-### Path A: GitHub CLI (Recommended)
+1. Create a GitHub App named **OpenSlack Agent Operator** with these permissions:
 
-`scripts/setup-gh.sh` auto-installs `gh` on any platform:
+| Permission | Level | Used for |
+|-----------|-------|----------|
+| Contents | Read & Write | Push agent branches, read repo |
+| Issues | Read & Write | Create EVOL issues, write comments |
+| Pull requests | Read & Write | Create draft PRs, PR comments |
+| Projects | Read & Write | Query Project v2, add items, update fields |
+| Actions | Read | Read workflow status |
+| Checks | Read & Write | Future: write validation checks |
+| Metadata | Read | Required default |
 
-| Platform | Installer |
-|----------|-----------|
-| Windows | winget |
-| macOS | brew |
-| Debian/Ubuntu | apt |
-| Fedora/RHEL | dnf |
-| Alpine | apk |
-| Fallback | Direct download from releases |
+Do **not** grant: Administration, Secrets, Members, Workflows write.
 
-Required scopes: `repo`, `read:project`, `project`
+2. Install on `wsman/OpenSlack` (selected repository only).
 
-### Path B: GitHub REST/GraphQL API (Headless)
-
-All operations can be performed via REST API without `gh`:
+3. Store these values as environment variables / GitHub Actions secrets:
 
 ```bash
-# Create Project v2
-curl -X POST https://api.github.com/repos/wsman/OpenSlack/projects \
-  -H "Authorization: Bearer $GITHUB_TOKEN" \
-  -H "Accept: application/vnd.github+json" \
-  -d '{"name":"OpenSlack Evolution Board"}'
-
-# Query Project node ID
-curl -X POST https://api.github.com/graphql \
-  -H "Authorization: Bearer $GITHUB_TOKEN" \
-  -d '{"query":"query { repository(owner:\"wsman\",name:\"OpenSlack\") { projectsV2(first:1) { nodes { id } } } }"}'
-
-# Create single-select field
-curl -X POST https://api.github.com/graphql \
-  -H "Authorization: Bearer $GITHUB_TOKEN" \
-  -d '{"query":"mutation { addProjectV2Field(input:{projectId:\"PVT_...\",name:\"Status\",dataType:SINGLE_SELECT,options:[{name:\"Ready\",color:GREEN}]}) { projectV2Field { id } } }"}'
-
-# Branch protection
-curl -X POST https://api.github.com/repos/wsman/OpenSlack/rulesets \
-  -H "Authorization: Bearer $GITHUB_TOKEN" \
-  -H "Accept: application/vnd.github+json" \
-  -d '{"name":"OpenSlack Main Protection","target":"branch","enforcement":"active","conditions":{"ref_name":{"include":["refs/heads/main"]}},"rules":[{"type":"pull_request"},{"type":"deletion"},{"type":"non_fast_forward"}]}'
+OPENSLACK_GITHUB_AUTH_MODE=app
+OPENSLACK_GITHUB_APP_ID=<app-id>
+OPENSLACK_GITHUB_APP_INSTALLATION_ID=<installation-id>
+OPENSLACK_GITHUB_APP_PRIVATE_KEY=<pem-key-or-path>
+GITHUB_OWNER=wsman
+GITHUB_REPO=OpenSlack
 ```
 
-### Path C: openslack github project-init (Incomplete)
+4. The `@openslack/github-provider` `getClient()` function auto-detects `OPENSLACK_GITHUB_APP_ID` and uses the App installation token. No further manual steps required. Tokens are generated and refreshed automatically.
 
-The `openslack github project-init` command will call the GraphQL API to:
-1. Create Project v2 if it doesn't exist
-2. Create all 14 standard fields
-3. Populate single-select options
-4. Write field IDs back to `.openslack/integrations/github.yaml`
+### How it works (zero manual)
 
-This command is planned but not yet implemented. It will be added in a future phase.
+```
+OPENSLACK_GITHUB_APP_PRIVATE_KEY
+  → sign JWT (RS256)
+  → POST /app/installations/{id}/access_tokens
+  → receive short-lived installation token (1 hour)
+  → use for all API calls
+  → auto-refresh on expiry
+```
 
-## Current Capabilities
+## Dev/Local Fallback: PAT
 
-| Operation | Automated? | Command |
-|-----------|-----------|---------|
-| Install gh CLI | Yes | `bash scripts/setup-gh.sh` |
-| Authenticate gh | Yes | `gh auth login --scopes repo,read:project,project` |
-| Check readiness | Yes | `openslack github doctor` |
-| Query Project fields | Yes | `openslack github project-inspect` |
-| Query Ready items | Yes | `openslack github project-query-ready` |
-| Create Project v2 | Manual | GitHub UI or `gh project create` |
-| Create fields | Manual | GitHub UI or GraphQL mutation |
-| Branch protection | Manual | GitHub UI or REST API |
+For local development where setting up a full GitHub App is impractical:
 
-## Required Token Scopes
+```bash
+export GITHUB_TOKEN=ghp_xxxxxxxxxxxxx
+```
 
-| Scope | Needed For |
-|-------|-----------|
-| `repo` | Read/write repo contents, create PRs |
-| `read:project` | Query Project v2 fields and items |
-| `project` | Create/update Project v2 fields and items |
-| `read:org` | Read organization metadata (optional) |
+The provider falls back to this when `OPENSLACK_GITHUB_APP_ID` is not set.
+
+## Human Login: OAuth / gh CLI
+
+`apps/auth-callback/` provides a local OAuth callback server (`http://127.0.0.1:8200/callback`) for human login. This is **not** used by the agent runtime.
+
+`scripts/setup-gh.sh` installs `gh` CLI on any platform for developer convenience.
+
+## Token Priority (getClient)
+
+1. `OPENSLACK_GITHUB_APP_ID` + `OPENSLACK_GITHUB_APP_INSTALLATION_ID` + private key → **GitHub App installation token** (preferred)
+2. `GITHUB_TOKEN` → **PAT / Actions token** (fallback)
+3. Neither → **dry-run mode** (log intent, no API calls)
 
 ## Environment Variables
 
 | Variable | Required | Default |
 |----------|----------|---------|
-| `GITHUB_TOKEN` | Yes (for runtime) | — |
 | `GITHUB_OWNER` | No | `wsman` |
 | `GITHUB_REPO` | No | `OpenSlack` |
-| `OPENSLACK_PROJECT_NODE_ID` | No | Read from `github.yaml` |
+| `GITHUB_TOKEN` | No (PAT fallback) | — |
+| `OPENSLACK_GITHUB_AUTH_MODE` | No | auto-detect |
+| `OPENSLACK_GITHUB_APP_ID` | No | — |
+| `OPENSLACK_GITHUB_APP_INSTALLATION_ID` | No | — |
+| `OPENSLACK_GITHUB_APP_PRIVATE_KEY` | No | — |
+
+## Project v2 Configuration (one-time human admin)
+
+1. Create Project v2 "OpenSlack Evolution Board" on `wsman/OpenSlack`
+2. Add 14 standard fields (see `.openslack/integrations/github.yaml`)
+3. Run `openslack github project-sync-fields --write` to populate field IDs
+4. Verify: `openslack github doctor --strict`

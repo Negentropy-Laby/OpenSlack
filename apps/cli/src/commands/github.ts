@@ -89,7 +89,6 @@ export function githubCommands(): Command {
     });
 
   cmd
-  cmd
     .command('project-sync-fields')
     .description('Sync field IDs from GitHub to local config')
     .action(async () => {
@@ -97,7 +96,6 @@ export function githubCommands(): Command {
       console.log('Automated sync not yet implemented (needs GraphQL field response parser).');
     });
 
-  cmd
   cmd
     .command('project-query-ready')
     .description('List Ready items from OpenSlack Evolution Board')
