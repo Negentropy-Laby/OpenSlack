@@ -132,6 +132,33 @@ Before any git commit:
 - `ls packages/` — every package has at least one function with unit test coverage
 - `pnpm lint` — zero errors in source files (warnings in dist/ only)
 
+### Commit message convention
+All commits follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/):
+
+```
+<type>: <short description>
+
+<optional body>
+```
+
+Types:
+- `feat:` — new feature or capability (e.g., `feat: add workspace index command`)
+- `fix:` — bug fix (e.g., `fix: deny duplicate claims correctly`)
+- `docs:` — documentation changes (e.g., `docs: add technical debt register`)
+- `chore:` — cleanup, tooling, configuration (e.g., `chore: remove stub packages`)
+- `refactor:` — code restructuring without behavior change (e.g., `refactor: extract zone matcher`)
+- `test:` — adding or updating tests (e.g., `test: add coverage for observeHealth`)
+- `security:` — security patches or policy changes (e.g., `security: add black zone for pem files`)
+
+Rules:
+- First line under 72 characters
+- Imperative mood ("add" not "added")
+- No period at end of first line
+- Body optional, wrapped at 72 characters
+- Reference EVOL/TASK IDs in body when applicable (e.g., `Refs: EVOL-2026-000001`)
+
+PR titles use the format from product.md: `[OpenSlack][<TASK-ID>][<agent_id>] <description>`.
+
 ## Current State
 
 Phase 1 (OSEK Self-Evolution Kernel) and Phase 1.1 (Hardening) complete. The self-evolution core loop is implemented and tested: observe → classify → validate → review → scorecard → merge → monitor → rollback. Phase 1.2 cleanup complete — 2 stub packages removed, 2 duplicate CLI commands removed, verification artifacts purged. See `docs/product/phase-1.md` for full acceptance document and `docs/developer/self-evolution-kernel.md` for architecture overview.
