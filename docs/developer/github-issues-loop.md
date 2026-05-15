@@ -1,7 +1,7 @@
-# Module: GitHub Issues-First Autonomous Task Loop
+# Module: GitHub Issues Task Loop (GITL)
 
-> Status: ACTIVE (Phase 1.6)
-> Source: `packages/github-provider/src/issue-tasks.ts`, `claims.ts`
+> Status: ACTIVE (Phase 1.7 — Productized)
+> Sources: `packages/github-provider/src/{issue-tasks,claims,manifest,lifecycle,task-filter,repair}.ts`
 > CLI: `openslack agent tick --source github-issues`
 
 ## Overview
@@ -245,3 +245,38 @@ console.log('Claim released');
 
 # 7. Verify claim ref deleted and issue → done
 ```
+
+## Phase 1.7 Additions
+
+### Manifest Validation (`manifest.ts`)
+
+```bash
+node -e "parseIssueTaskManifest(body)"  # uses openslack-task code fence + JSON Schema
+```
+- Required fields: `task_id` (TASK-YYYY-NNNNNN), `agent_type`, `risk_level` (low/medium/high/critical)
+- Red Zone detection: `allowed_paths` hitting `.github/`, `.openslack/policies/`, etc. requires `human_approval_required_for: [red_zone_change]`
+- Path conflict detection: intersecting allowed/forbidden paths
+
+### Heartbeat + Expiry (`claims.ts`)
+
+```bash
+heartbeatIssueClaim(42, 'agent-x', 60)  # extends lease by 60 min
+expireIssueClaim(42)  # deletes ref, resets to ready
+releaseIssueClaimWithOwner({ issueNumber: 42, agentId: 'agent-x' })  # ownership check
+```
+
+### Task Filtering (`task-filter.ts`)
+
+```bash
+filterByCapability(manifest, agentCaps)  # required_capabilities ⊆ agent capabilities
+filterByRisk(manifest, 'medium')  # blocks critical, respects max_risk_level
+filterByPath(manifest, changedPaths)  # checks forbidden_paths + Black Zone
+filterRedZonePaths(changedPaths)  # identifies Red Zone crossing (.github/, kernel/src, etc.)
+```
+
+### Repair (`repair.ts`)
+
+```bash
+repairLabels()  # idempotently creates 7 openslack:state labels
+repairExpiredClaims()  # lists refs, checks expiry, deletes stale, resets labels
+`

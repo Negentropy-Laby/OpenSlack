@@ -218,14 +218,26 @@ The following commits set the quality standard for this repository:
 
 PR titles use the format from product.md: `[OpenSlack][<TASK-ID>][<agent_id>] <description>`.
 
-## Current State
+## Modules
 
-Phase 1 (OSEK Self-Evolution Kernel), Phase 1.1 (Hardening), and Phase 1.2 (Cleanup) complete. The self-evolution core loop is implemented and tested: observe → classify → validate → review → scorecard → merge → monitor → rollback.
+OpenSlack currently has two active modules:
+
+### Module 01: OSEK (OpenSlack Self-Evolution Kernel)
+
+The self-evolution core loop: observe → classify → validate → review → scorecard → merge → monitor → rollback. 60 tests, 7 golden evals. See `docs/product/phase-1.md`.
+
+### Module 02: GITL (GitHub Issues Task Loop)
+
+The issues-first autonomous task loop using GitHub Issues + labels + deterministic git ref claim locks. Agents discover, claim, execute, and complete tasks entirely through GitHub Issues — no Project v2, no OAuth, no browser required. See `docs/developer/github-issues-loop.md`.
+
+## Current State
 
 **Published:** `https://github.com/wsman/OpenSlack`
 
-**Architecture (Phase 1.3 consolidation):** 6 packages (kernel, workspace, core, self-evolution, agent-runtime, git-sync, github-provider), 4 CLI command groups (workspace, self, agent, task), 60 tests, 7 golden evals.
+**Architecture:** 7 packages + 2 apps, 5 CLI command groups, 60 tests, 7 golden evals, 28 commits.
 
-**Ready for multi-terminal collaboration (code complete, awaiting GitHub Project v2 config on wsman/OpenSlack).**
+**Authentication:** Three-tier model (GitHub App installation token primary, PAT fallback, OAuth human only). App ID 3728623 installed on wsman/OpenSlack.
 
-See `docs/status/current.md` for single source of truth and `docs/product/phase-1.md` for full acceptance document.
+**GitHub autonomous loop:** Verified E2E — create task issue → agent tick discovers → git ref atomic claim → heartbeat/expiry → worktree → PR → review → done.
+
+See `docs/status/current.md` for single source of truth.

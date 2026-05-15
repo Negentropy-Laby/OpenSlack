@@ -14,25 +14,31 @@ supersedes:
 |-------|-------|
 | Remote | `https://github.com/wsman/OpenSlack` |
 | Branch | `main` |
-| Commits | 12 |
-| Last commit | `docs: update stale file paths and CLI references for post-1.3 architecture` |
+| Commits | 28 |
+| Last commit | `github-provider: add task filtering, repair, and lifecycle exports` |
 
-## Packages (7 libraries + 1 CLI app)
+## Modules
+
+| Module | Phase | Status | Description |
+|--------|-------|--------|-------------|
+| OSEK (Self-Evolution Kernel) | 1.6 | ACTIVE | Zone classifier, merge decision, golden evals, constitution, invariants, rollback, genesis |
+| GITL (GitHub Issues Task Loop) | 1.7 | ACTIVE | Issues-first autonomous task loop: create → claim → heartbeat → worktree → PR → review → done |
+
+## Packages (7 libraries + 2 apps)
 
 | Package | Status | Tests | Key capability |
 |---------|--------|-------|---------------|
 | `@openslack/kernel` | ACTIVE | 21 | Zone classifier, merge decision, invariants |
 | `@openslack/workspace` | ACTIVE | 5 | Workspace validate, index, schemas, golden evals |
-| `@openslack/core` | ACTIVE | 0 | ClaimBroker, FileClaimBroker |
+| `@openslack/core` | ACTIVE | 0 | ClaimBroker, FileClaimBroker (file-locked) |
 | `@openslack/self-evolution` | ACTIVE | 29 | Observe, triage, review, scorecard, monitor, rollback |
-| `@openslack/agent-runtime` | ACTIVE | 0 | Agent bootstrap, tick (local task discovery) |
-| `@openslack/git-sync` | ACTIVE | 0 | Worktree manager, PR proposal |
-| `@openslack/github-provider` | ACTIVE | 0 | GitHub Issues/PR/Project v2 API (dry-run when no token) |
-| `@openslack/cli` (app) | ACTIVE | 0 | 4 command groups: workspace, self, agent, task |
+| `@openslack/agent-runtime` | ACTIVE | 0 | Agent bootstrap, tick (local + github-issues) |
+| `@openslack/git-sync` | ACTIVE | 0 | Worktree manager, PR proposal + commit/push |
+| `@openslack/github-provider` | ACTIVE | 0 | GitHub App auth, issue tasks, claims, lifecycle, repair, filters |
+| `@openslack/cli` (app) | ACTIVE | 0 | 5 command groups: workspace, self, agent, task, github |
+| `@openslack/auth-callback` (app) | ACTIVE | 0 | Headless OAuth server (human login only) |
 
-**Note:** `runtime` and `providers` consolidated packages do not yet exist. These are Phase 1.4 targets.
-
-## CLI Command Groups (4)
+## CLI Command Groups (5)
 
 | Group | Subcommands |
 |-------|------------|
@@ -40,6 +46,7 @@ supersedes:
 | `openslack self` | init, classify-pr, validate, observe, triage, eval, review, scorecard, monitor |
 | `openslack agent` | hire, bootstrap, tick |
 | `openslack task` | checkout, cleanup, status, sync |
+| `openslack github` | doctor, project-inspect, project-sync-fields, project-query-ready |
 
 ## Golden Evals
 
@@ -49,27 +56,40 @@ supersedes:
 
 60 unit tests across 7 test files. All passing.
 
+## GitHub Integration
+
+| Capability | Status |
+|-----------|--------|
+| GitHub App installation token | ACTIVE — JWT signing, auto-refresh, three-tier client |
+| Issue task creation | ACTIVE — `createTaskIssue()` with labels |
+| Issue task discovery | ACTIVE — `queryReadyIssueTasks()` with capability/filter |
+| Atomic claim via git ref | ACTIVE — `refs/heads/openslack/claims/issue-{n}` |
+| Claim heartbeat + expiry | ACTIVE — ownership check, auto-recycle |
+| Issue lifecycle state machine | ACTIVE — running/blocked/done with event audit comments |
+| Task filtering (capability/risk/path) | ACTIVE — `filterByCapability/ Risk/ Path()` |
+| Label repair | ACTIVE — `repairLabels()` idempotent |
+| Claim repair | ACTIVE — `repairExpiredClaims()` |
+| PR merged → issue done | ACTIVE — `.github/workflows/openslack-issue-done.yml` |
+| Manifest validation | ACTIVE — JSON Schema + YAML parse + Red Zone gating |
+| OAuth device flow | INACTIVE — human login only, not for agent runtime |
+| Project v2 | DEFERRED — optional projection layer |
+
+## Authentication
+
+Three-tier model (see `docs/developer/github-automation.md`):
+1. **GitHub App installation token** — primary runtime credential
+2. **PAT / GITHUB_TOKEN** — local dev fallback
+3. **OAuth / gh CLI** — human login only
+
 ## Genesis
 
 `scripts/genesis-validate.sh` — 5/5 checks passing. Zero OpenSlack runtime dependency.
-
-## Known Issues (Phase 1.4)
-
-| Issue | Impact |
-|-------|--------|
-| Worktree switches main branch before add | Multi-agent worktree isolation at risk |
-| Task sync only generates PR body (no commit/push) | PR creation not automated |
-| tickAgent() does not call ClaimBroker | Agent tick is discovery-only |
-| FileClaimBroker has no cross-process lock | Concurrent claim safety not guaranteed |
-| GitHub provider updateProjectField param mismatch | Project v2 field updates may fail |
-| GitHub Project v2 node_id empty | Project configuration not completed |
-| CI workflows use soft-fails (|| echo) | Critical validation may pass when failing |
 
 ## Deferred Items
 
 | Item | Reason |
 |------|--------|
-| GitHub Project v2 task board | Needs Project v2 configured on `wsman/OpenSlack` |
-| End-to-end agent tick via Project | Needs `GITHUB_TOKEN` + Project configured |
-| Chat gateway | Phase 2 |
+| GitHub Project v2 task board | Project v2 is optional projection; issues + labels are source of truth |
+| Chat gateway (Slack/webhook) | Phase 2 |
 | Web dashboard | Phase 2 |
+| Project v2 node_id + field IDs | Deferred per issues-first architecture decision |

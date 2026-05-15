@@ -16,12 +16,12 @@
 2. **Dev/Local Fallback:** Fine-grained PAT or `GITHUB_TOKEN` — manual, for local debugging.
 3. **Human Login:** OAuth App / gh CLI — browser required, for web console and admin operations.
 
-**Status (2026-05-16):**
-- ✅ GitHub App created (App ID 3728623, Client ID Iv23likkxk7ffF4CZrK5)
-- ✅ Private key stored at `.openslack.local/github-app.pem`
-- ✅ App installed on wsman/OpenSlack (Installation ID 132714795)
-- ✅ `getAppInstallationToken()` working — JWT signing with native crypto.sign, zero dependencies
-- ✅ `getClient()` three-tier priority working (App → PAT → dry-run)
+**Status (2026-05-16):** CLOSED. GitHub App working. Issues-first autonomous loop verified E2E. Productization complete (P1.7).
+
+### P0-1: Project v2 creation still blocked (user-level permissions)
+
+**Source:** Phase 1.5 attempt log (14 attempts, see commit 3cb452f).
+**Status:** DEFERRED. GitHub App cannot create user-level Project v2 on wsman. Issues-first architecture bypasses this entirely. Project v2 is optional projection for Phase 2.
 - ✅ `github doctor` reports correct auth tier and token expiry
 - ✅ gh CLI authenticated via `echo $TOKEN | gh auth login --with-token`
 - ❌ gh device flow token exchange never completes (same bug as Phase 1.5)
