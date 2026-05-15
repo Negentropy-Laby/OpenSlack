@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/task.schema.json",
+  "title": "OpenSlack Task",
+  "type": "object",
+  "required": ["schema", "id", "status", "created_at", "source", "title"],
+  "properties": {
+    "schema": { "type": "string", "const": "openslack.task.v1" },
+    "id": { "type": "string", "pattern": "^TASK-\\d{4}-\\d{6}$" },
+    "title": { "type": "string" },
+    "description": { "type": "string" },
+    "status": { "type": "string", "enum": ["intake", "ready", "claimed", "running", "review", "done", "blocked", "cancelled"] },
+    "created_at": { "type": "string", "format": "date-time" },
+    "created_by": { "type": "string" },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "source": { "type": "object", "required": ["type"], "properties": { "type": { "type": "string" }, "url": { "type": "string" } } },
+    "risk_level": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+    "priority": { "type": "string", "enum": ["p0", "p1", "p2", "p3"] },
+    "required_agent_type": { "type": "string" },
+    "required_capabilities": { "type": "array", "items": { "type": "string" } },
+    "allowed_paths": { "type": "array", "items": { "type": "string" } },
+    "human_approval_required": { "type": "boolean" },
+    "claimed_by": { "type": "string" },
+    "lease_id": { "type": "string" }
+  }
+}

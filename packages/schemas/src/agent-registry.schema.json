@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/agent-registry.schema.json",
+  "title": "OpenSlack Agent Registry Entry",
+  "type": "object",
+  "required": ["schema", "agent_id", "display_name", "employee_type", "vendor", "employment", "capabilities", "repositories", "workspace_permissions", "execution", "output_contract", "approval_rules"],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "openslack.agent_registry.v1"
+    },
+    "agent_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*_[a-z][a-z0-9]*_[a-z][a-z0-9-]*$"
+    },
+    "display_name": { "type": "string" },
+    "employee_type": { "type": "string", "const": "ai_agent" },
+    "vendor": {
+      "type": "object",
+      "required": ["provider", "runtime"],
+      "properties": {
+        "provider": { "type": "string" },
+        "runtime": { "type": "string" },
+        "model": { "type": "string" }
+      }
+    },
+    "employment": {
+      "type": "object",
+      "required": ["status", "hired_at", "department", "role"],
+      "properties": {
+        "status": { "type": "string", "enum": ["active", "paused", "onboarding", "retired"] },
+        "hired_at": { "type": "string" },
+        "hired_by": { "type": "string" },
+        "department": { "type": "string" },
+        "role": { "type": "string" },
+        "manager": { "type": "string" }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "required": ["primary"],
+      "properties": {
+        "primary": { "type": "array", "items": { "type": "string" } },
+        "secondary": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "repositories": {
+      "type": "object",
+      "required": ["workspace_repo"],
+      "properties": {
+        "workspace_repo": {
+          "type": "object",
+          "required": ["owner", "repo", "default_branch"],
+          "properties": {
+            "owner": { "type": "string" },
+            "repo": { "type": "string" },
+            "default_branch": { "type": "string" }
+          }
+        },
+        "allowed_product_repos": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "workspace_permissions": {
+      "type": "object",
+      "required": ["allow", "deny"],
+      "properties": {
+        "allow": { "type": "array", "items": { "type": "string" } },
+        "deny": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "properties": {
+        "max_parallel_tasks": { "type": "integer" },
+        "lease_ttl_minutes": { "type": "integer" },
+        "heartbeat_interval_minutes": { "type": "integer" },
+        "max_task_runtime_minutes": { "type": "integer" },
+        "max_daily_tasks": { "type": "integer" }
+      }
+    },
+    "output_contract": {
+      "type": "object",
+      "required": ["must_create", "may_create", "must_not_create"],
+      "properties": {
+        "must_create": { "type": "array", "items": { "type": "string" } },
+        "may_create": { "type": "array", "items": { "type": "string" } },
+        "must_not_create": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "approval_rules": {
+      "type": "object",
+      "required": ["require_human_approval_for"],
+      "properties": {
+        "require_human_approval_for": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "task_matching": {
+      "type": "object",
+      "properties": {
+        "github_owner": { "type": "string" },
+        "github_project_number": { "type": "integer" },
+        "project_node_id": { "type": "string" },
+        "allowed_statuses": { "type": "array", "items": { "type": "string" } },
+        "excluded_labels": { "type": "array", "items": { "type": "string" } },
+        "max_risk_level": { "type": "string" }
+      }
+    },
+    "scheduler": {
+      "type": "object",
+      "properties": {
+        "preferred_mode": { "type": "string" },
+        "cadence_minutes": { "type": "integer" }
+      }
+    }
+  }
+}

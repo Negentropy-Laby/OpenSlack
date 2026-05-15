@@ -1,0 +1,22 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '=== OpenSlack 项目上下文 ===' && cat \"$PROJECT_ROOT/AGENTS.md\"",
+            "description": "AGENTS.md加载",
+            "priority": 10
+          }
+        ]
+      }
+    ]
+  },
+  "metadata": {
+    "version": "1.0.0",
+    "description": "OpenSlack Aby Hooks - 自动加载 AGENTS.md",
+    "created_date": "2026-05-15"
+  }
+}

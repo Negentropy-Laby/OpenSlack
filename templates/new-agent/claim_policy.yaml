@@ -1,0 +1,23 @@
+schema: openslack.claim_policy.v1
+
+agent_id: "{{AGENT_ID}}"
+
+lease:
+  ttl_minutes: {{LEASE_TTL_MINUTES}}
+  heartbeat_interval_minutes: {{HEARTBEAT_INTERVAL}}
+
+concurrency:
+  max_parallel_tasks: {{MAX_PARALLEL_TASKS}}
+
+retry:
+  max_attempts: 3
+  backoff_ms: 1000
+
+cooldown:
+  after_expiry_minutes: 5
+  after_release_minutes: 0
+
+priorities:
+  prefer_p0: true
+  sort_by: "priority_descending"
+  max_risk_level: "{{MAX_RISK_LEVEL}}"

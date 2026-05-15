@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/workspace.schema.json",
+  "title": "OpenSlack Workspace Configuration",
+  "type": "object",
+  "required": ["schema", "workspace_id", "name", "mode", "canonical_remote", "workspace", "product"],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "openslack.workspace.v1"
+    },
+    "workspace_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+    "name": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["self_project", "normal"]
+    },
+    "canonical_remote": {
+      "type": "object",
+      "required": ["provider", "owner", "repo", "default_branch"],
+      "properties": {
+        "provider": { "type": "string", "const": "github" },
+        "owner": { "type": "string" },
+        "repo": { "type": "string" },
+        "default_branch": { "type": "string" }
+      }
+    },
+    "workspace": {
+      "type": "object",
+      "required": ["root", "state_root"],
+      "properties": {
+        "root": { "type": "string" },
+        "state_root": { "type": "string" }
+      }
+    },
+    "product": {
+      "type": "object",
+      "required": ["repo_role", "source_roots", "protected_roots"],
+      "properties": {
+        "repo_role": { "type": "string", "enum": ["self", "managed"] },
+        "source_roots": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "protected_roots": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "self_evolution": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "module": { "type": "string" },
+        "evolution_board": {
+          "type": "object",
+          "required": ["github_owner", "project_number"],
+          "properties": {
+            "github_owner": { "type": "string" },
+            "project_number": { "type": "integer" }
+          }
+        },
+        "default_risk_level": {
+          "type": "string",
+          "enum": ["low", "medium", "high", "critical"]
+        },
+        "human_required_for_constitutional_changes": { "type": "boolean" },
+        "max_evolutions_per_day": { "type": "integer" }
+      }
+    }
+  }
+}

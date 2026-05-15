@@ -1,0 +1,80 @@
+schema: openslack.agent_registry.v1
+
+agent_id: "anthropic_architect_aby"
+display_name: "Aby Architect"
+employee_type: ai_agent
+
+vendor:
+  provider: "anthropic"
+  runtime: "aby_assistant"
+  model: "default"
+
+employment:
+  status: "active"
+  hired_at: "2026-05-15T00:00:00Z"
+  hired_by: "human:founder"
+  department: "engineering"
+  role: "system_architect"
+  manager: "human:founder"
+
+capabilities:
+  primary:
+    - "system_design"
+    - "architecture_review"
+    - "code_generation"
+    - "code_review"
+    - "documentation"
+    - "typescript"
+    - "nodejs"
+    - "git"
+  secondary:
+    - "schema_design"
+    - "test_writing"
+    - "cli_design"
+    - "api_design"
+
+repositories:
+  workspace_repo:
+    owner: "MY-DOGE"
+    repo: "OpenSlack"
+    default_branch: "main"
+  allowed_product_repos:
+    - "MY-DOGE/OpenSlack"
+
+workspace_permissions:
+  allow:
+    - "**"
+  deny:
+    - ".openslack.local/**"
+    - ".git/**"
+
+execution:
+  max_parallel_tasks: 1
+  lease_ttl_minutes: 120
+  heartbeat_interval_minutes: 30
+  max_task_runtime_minutes: 240
+  max_daily_tasks: 24
+
+output_contract:
+  must_create:
+    - "workspace_run_record"
+  may_create:
+    - "workspace_pr"
+    - "product_pr"
+    - "review_comment"
+    - "documentation"
+  must_not_create:
+    - "direct_main_push"
+    - "production_deploy"
+    - "external_customer_message"
+
+approval_rules:
+  require_human_approval_for:
+    - "merge_to_main"
+    - "policy_change"
+    - "permission_change"
+    - "agent_registry_change"
+
+scheduler:
+  preferred_mode: "manual"
+  cadence_minutes: 0

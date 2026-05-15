@@ -1,0 +1,12 @@
+id: EV-GOLDEN-005
+title: "Low-risk docs change can auto-enter merge queue"
+goal: "Green Zone docs change can pass auto merge gates."
+on_failure: block_pr_critical_alert
+setup:
+  changed_paths:
+    - docs/developer/self-evolution.md
+assertions:
+  - description: "risk_zone is green"
+    check: "risk_zone == green"
+  - description: "human_approval_required is false"
+    check: "human_approval_required == false"

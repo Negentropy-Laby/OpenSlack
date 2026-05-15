@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/lease.schema.json",
+  "title": "OpenSlack Task Lease",
+  "type": "object",
+  "required": ["schema", "id", "task_id", "agent_id", "status", "created_at", "expires_at", "heartbeat_at"],
+  "properties": {
+    "schema": { "type": "string", "const": "openslack.lease.v1" },
+    "id": { "type": "string", "pattern": "^LEASE-\\d{4}-\\d{6}$" },
+    "task_id": { "type": "string", "pattern": "^TASK-\\d{4}-\\d{6}$" },
+    "agent_id": { "type": "string" },
+    "status": { "type": "string", "enum": ["active", "expired", "released"] },
+    "created_at": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": "string", "format": "date-time" },
+    "heartbeat_at": { "type": "string", "format": "date-time" },
+    "released_at": { "type": "string", "format": "date-time" },
+    "ttl_minutes": { "type": "integer" },
+    "allowed_paths": { "type": "array", "items": { "type": "string" } },
+    "run_id": { "type": "string", "pattern": "^RUN-\\d{4}-\\d{6}$" }
+  }
+}

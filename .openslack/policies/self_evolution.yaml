@@ -1,0 +1,95 @@
+schema: openslack.self_evolution_policy.v1
+
+zones:
+  green:
+    auto_merge_allowed: true
+    paths:
+      - docs/**
+      - templates/**
+      - .openslack/tasks/**
+      - .openslack/self/scorecards/**
+      - .openslack/self/experiments/**
+
+  yellow:
+    auto_merge_allowed: false
+    requires_independent_agent_review: true
+    requires_all_checks: true
+    paths:
+      - apps/**
+      - packages/core/**
+      - packages/workspace-engine/**
+      - packages/github-provider/**
+      - packages/agent-runtime/**
+      - packages/chat-gateway/**
+      - packages/git-sync/**
+      - packages/evals/**
+      - packages/self-evolution/src/ops/**
+      - .openslack/self/eval_suites/**
+
+  red:
+    auto_merge_allowed: false
+    requires_human_approval: true
+    requires_independent_agent_review: true
+    requires_security_review: true
+    paths:
+      - .github/**
+      - .openslack/policies/**
+      - .openslack/agents/registry/**
+      - .openslack/agents/prompts/**
+      - .openslack/self/constitution.md
+      - .openslack/self/invariants.yaml
+      - packages/policy/src/**
+      - packages/self-evolution/src/core/**
+
+  black:
+    push_allowed: false
+    paths:
+      - .env
+      - "**/*.pem"
+      - "**/*.key"
+      - secrets/**
+      - credentials/**
+      - private/**
+      - production-tokens/**
+      - secrets/**
+      - credentials/**
+
+agent_rules:
+  no_self_prompt_edit: true
+  no_self_registry_edit: true
+  no_self_review: true
+  no_self_merge: true
+  no_policy_bypass: true
+  no_direct_main_push: true
+
+merge_rules:
+  green:
+    required_checks:
+      - openslack/workspace-validate
+      - openslack/self-eval
+      - openslack/security-scan
+    required_agent_reviews: 1
+    human_required: false
+
+  yellow:
+    required_checks:
+      - openslack/workspace-validate
+      - openslack/typecheck
+      - openslack/unit-tests
+      - openslack/integration-tests
+      - openslack/self-eval
+      - openslack/security-scan
+    required_agent_reviews: 2
+    human_required: false
+
+  red:
+    required_checks:
+      - openslack/workspace-validate
+      - openslack/typecheck
+      - openslack/unit-tests
+      - openslack/integration-tests
+      - openslack/self-eval
+      - openslack/security-scan
+      - openslack/policy-audit
+    required_agent_reviews: 2
+    human_required: true

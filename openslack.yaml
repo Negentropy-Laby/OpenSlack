@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=./.openslack/schemas/workspace.schema.json
+schema: openslack.workspace.v1
+workspace_id: openslack-self
+name: OpenSlack Self Workspace
+description: >
+  Self-Project Mode: this repository is both the OpenSlack product source code
+  and its own OpenSlack workspace. Changes to OpenSlack itself go through the
+  same task → claim → worktree → PR → review → merge pipeline.
+mode: self_project
+
+canonical_remote:
+  provider: github
+  owner: MY-DOGE
+  repo: OpenSlack
+  default_branch: main
+
+workspace:
+  root: "."
+  state_root: ".openslack"
+
+product:
+  repo_role: self
+  source_roots:
+    - apps
+    - packages
+    - docs
+    - templates
+  protected_roots:
+    - .github
+    - .openslack/policies
+    - .openslack/agents/registry
+    - .openslack/agents/prompts
+    - .openslack/self/governance
+
+self_evolution:
+  enabled: true
+  module: self_evolution_kernel
+  evolution_board:
+    github_owner: MY-DOGE
+    project_number: 1
+  default_risk_level: medium
+  human_required_for_constitutional_changes: true
+  max_evolutions_per_day: 3

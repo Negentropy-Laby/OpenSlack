@@ -1,0 +1,43 @@
+schema: openslack.workspace_write_permissions.v1
+
+# Write boundaries for agents in the OpenSlack workspace.
+# Agents write only under allowed paths. Protected paths require human approval.
+
+write_boundary:
+  agent_writable:
+    - ".openslack/tasks/**/runs/**"
+    - ".openslack/outbox/pr_proposals/**"
+    - ".openslack/decisions/**"
+    - ".openslack/memory/**"
+    - ".openslack/inbox/**"
+    - ".openslack/outbox/**"
+    - ".openslack/sync/**"
+
+  agent_readonly:
+    - ".openslack/governance/**"
+    - ".openslack/org/**"
+    - ".openslack/agents/registry/**"
+    - ".openslack/agents/prompts/**"
+    - ".openslack/policies/**"
+    - ".openslack/integrations/**"
+    - ".openslack/self/constitution.md"
+    - ".openslack/self/invariants.yaml"
+
+  agent_forbidden:
+    - ".env"
+    - "**/*.pem"
+    - "**/*.key"
+    - ".openslack.local/**"
+    - "secrets/**"
+    - "credentials/**"
+    - "production-tokens/**"
+
+product_repo_boundary:
+  # Agents can propose PRs to product repos, but cannot push to main
+  allowed_action: "create_draft_pr"
+  forbidden_action: "direct_main_push"
+
+enforcement:
+  level: "worktree"
+  policy_engine: true
+  violation_action: "block_pr"

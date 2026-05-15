@@ -1,0 +1,39 @@
+schema: openslack.approval_policy.v1
+
+approval_matrix:
+  green_zone_merge:
+    required_approvals: 0
+    auto_merge: true
+
+  yellow_zone_merge:
+    required_agent_reviews: 2
+    required_human_approvals: 0
+    auto_merge: false
+
+  red_zone_merge:
+    required_agent_reviews: 2
+    required_human_approvals: 1
+    auto_merge: false
+    required_checks:
+      - "workspace-validate"
+      - "typecheck"
+      - "unit-tests"
+      - "integration-tests"
+      - "self-eval"
+      - "security-scan"
+      - "policy-audit"
+
+  black_zone_merge:
+    allowed: false
+    auto_reject: true
+
+events_requiring_human_approval:
+  - "merge_to_main"
+  - "production_deploy"
+  - "policy_change"
+  - "permission_change"
+  - "agent_prompt_change"
+  - "agent_registry_change"
+  - "constitution_amendment"
+  - "workflow_modification"
+  - "external_customer_message"

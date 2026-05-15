@@ -1,0 +1,14 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/workspace-engine" },
+    { "path": "packages/agent-runtime" },
+    { "path": "packages/policy" },
+    { "path": "packages/git-sync" },
+    { "path": "packages/self-evolution" },
+    { "path": "packages/evals" },
+    { "path": "packages/schemas" },
+    { "path": "apps/cli" }
+  ]
+}

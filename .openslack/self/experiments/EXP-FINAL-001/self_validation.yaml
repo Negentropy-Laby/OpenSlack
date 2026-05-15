@@ -1,0 +1,65 @@
+schema: openslack.self_validation.v1
+experiment_id: EXP-FINAL-001
+pr:
+  number: 1
+  head_sha: abc
+agent_id: codex
+summary:
+  result: pass
+  risk_level: green
+  human_approval_required: false
+  auto_merge_candidate: true
+checks:
+  workspace-validate:
+    result: pass
+    command: openslack workspace validate
+  zone-classification:
+    result: pass
+    command: openslack self classify-pr
+  protected-paths:
+    result: pass
+    command: openslack self validate
+protected_path_check:
+  result: pass
+  red_zone_touched: false
+  black_zone_touched: false
+score:
+  overall: 0.43
+  decision: block
+  dimensions:
+    correctness:
+      weight: 0.3
+      score: 0
+      evidence:
+        - unit_tests_failed
+        - integration_tests_skipped
+    reliability:
+      weight: 0.2
+      score: 0.5
+      evidence:
+        - self_eval_failed
+        - workspace_valid
+    security:
+      weight: 0.2
+      score: 0.5
+      evidence:
+        - security_scan_failed
+        - no_secret_findings
+    cost:
+      weight: 0.1
+      score: 1
+      evidence:
+        - small_diff
+        - no_new_dependency
+    simplicity:
+      weight: 0.1
+      score: 1
+      evidence:
+        - few_files_changed
+    developer_experience:
+      weight: 0.1
+      score: 0.3
+      evidence:
+        - typecheck_failed
+decision: merge_queue
+generated_at: 2026-05-15T14:59:55.880Z

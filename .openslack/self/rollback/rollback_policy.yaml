@@ -1,0 +1,34 @@
+schema: openslack.rollback_policy.v1
+
+triggers:
+  - condition: "golden_eval_score_drops"
+    action: "auto_create_rollback_task"
+  - condition: "post_merge_ci_failure"
+    action: "auto_create_rollback_task"
+  - condition: "security_scan_has_new_finding"
+    action: "auto_create_rollback_task"
+  - condition: "workspace_validation_fails"
+    action: "auto_create_rollback_task"
+  - condition: "2_consecutive_auto_rollback_failures"
+    action: "escalate_to_human"
+
+rollback_procedure:
+  step_1: "Create rollback EVOL task in .openslack/self/evolution_backlog/"
+  step_2: "Run scripts/genesis-rollback.sh to generate revert commit"
+  step_3: "Push revert branch and create revert PR"
+  step_4: "Validate revert PR with standard self-validation"
+  step_5: "Merge revert PR with human approval"
+
+last_known_good:
+  file: ".openslack/self/release_channels/last_known_good.yaml"
+  update_frequency: "after_each_successful_merge"
+  required_validations:
+    - "workspace_validate"
+    - "unit_tests"
+    - "self_eval"
+    - "genesis_validate"
+
+genesis_layer:
+  validate_script: "scripts/genesis-validate.sh"
+  rollback_script: "scripts/genesis-rollback.sh"
+  dependency: "none"  # Zero OpenSlack runtime dependency

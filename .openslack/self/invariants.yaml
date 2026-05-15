@@ -1,0 +1,56 @@
+schema: openslack.invariants.v1
+
+invariants:
+  - id: no_direct_main_push
+    severity: critical
+    description: Agents must never push directly to main.
+    enforcement:
+      github_branch_protection: true
+      openslack_policy: true
+
+  - id: no_agent_self_approval
+    severity: critical
+    description: An agent cannot review or merge its own PR.
+    enforcement:
+      policy_engine: true
+
+  - id: no_self_prompt_edit
+    severity: critical
+    description: Agents cannot modify their own prompt or registry.
+    protected_paths:
+      - ".openslack/agents/prompts/{agent_id}.md"
+      - ".openslack/agents/registry/{agent_id}.yaml"
+
+  - id: red_zone_human_approval
+    severity: critical
+    description: Red Zone files require human approval.
+    paths:
+      - ".github/**"
+      - ".openslack/policies/**"
+      - ".openslack/agents/registry/**"
+      - ".openslack/agents/prompts/**"
+      - ".openslack/self/constitution.md"
+      - ".openslack/self/invariants.yaml"
+      - "packages/policy/src/**"
+      - "packages/self-evolution/src/core/**"
+
+  - id: validation_before_merge
+    severity: high
+    description: All self-evolution PRs must pass validation before merge.
+    required_checks:
+      - openslack/workspace-validate
+      - openslack/policy-validate
+      - openslack/self-eval
+      - openslack/security-scan
+
+  - id: rollback_plan_required
+    severity: high
+    description: Every self-evolution PR must include a rollback plan.
+
+  - id: max_evolutions_per_day
+    severity: medium
+    description: Maximum self-evolution PRs merged per day.
+    limit:
+      max_evolutions_per_day: 3
+    enforcement:
+      policy_engine: true

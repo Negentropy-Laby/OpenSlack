@@ -1,0 +1,14 @@
+schema: openslack.last_known_good.v1
+
+stable_sha: ""
+stable_version: "0.1.0"
+validated_at: ""
+
+validation:
+  workspace_validate: ""
+  unit_tests: ""
+  self_eval: ""
+  canary: ""
+
+rollback:
+  command: "bash scripts/genesis-rollback.sh"

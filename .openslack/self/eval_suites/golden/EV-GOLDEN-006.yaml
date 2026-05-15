@@ -1,0 +1,12 @@
+id: EV-GOLDEN-006
+title: "Black Zone fails immediately"
+goal: "Any secret-like file causes immediate failure."
+on_failure: immediate_reject
+setup:
+  changed_paths:
+    - secrets/prod.key
+assertions:
+  - description: "risk_zone is black"
+    check: "risk_zone == black"
+  - description: "merge_decision is deny"
+    check: "merge_decision == deny"

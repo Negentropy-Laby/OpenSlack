@@ -1,0 +1,27 @@
+{
+  "name": "@openslack/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "openslack": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "scripts": {
+    "typecheck": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@openslack/workspace-engine": "workspace:*",
+    "@openslack/policy": "workspace:*",
+    "@openslack/self-evolution": "workspace:*",
+    "@openslack/evals": "workspace:*",
+    "@openslack/agent-runtime": "workspace:*",
+    "@openslack/git-sync": "workspace:*",
+    "commander": "^13.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0"
+  }
+}

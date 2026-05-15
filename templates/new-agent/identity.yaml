@@ -1,0 +1,17 @@
+schema: openslack.agent_local_identity.v1
+
+agent_id: "{{AGENT_ID}}"
+
+credentials:
+  api_key_env: "ANTHROPIC_API_KEY"
+  github_token_env: "GITHUB_TOKEN"
+  openslack_token_env: "OPENSLACK_AGENT_TOKEN"
+
+paths:
+  workspace_root: "{{WORKSPACE_ROOT}}"
+  worktree_parent: "{{WORKSPACE_ROOT}}/.worktrees"
+
+preferences:
+  default_editor: "code"
+  log_level: "info"
+  notify_on: ["task_claimed", "task_completed", "review_requested", "blocked"]
