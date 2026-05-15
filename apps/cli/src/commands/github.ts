@@ -153,5 +153,95 @@ export function githubCommands(): Command {
       }
     });
 
+  cmd
+    .command('issue-done')
+    .description('Mark an issue as done and release its claim')
+    .requiredOption('--issue-number <n>', 'Issue number')
+    .option('--pr-url <url>', 'PR URL for the completion record')
+    .action(async (options) => {
+      try {
+        const { releaseIssueClaim, releaseIssueClaimWithOwner } = await import('@openslack/github-provider');
+        await releaseIssueClaim(parseInt(options.issueNumber, 10));
+        console.log(`Issue #${options.issueNumber}: claim released, labels → done`);
+        if (options.prUrl) {
+          console.log(`  PR: ${options.prUrl}`);
+        }
+      } catch (e) {
+        console.error(`Issue done failed: ${(e as Error).message}`);
+        process.exit(1);
+      }
+    });
+
+  cmd
+    .command('repair-labels')
+    .description('Idempotently create all required OpenSlack labels')
+    .action(async () => {
+      try {
+        const { repairLabels } = await import('@openslack/github-provider');
+        const results = await repairLabels();
+        for (const r of results) {
+          console.log(`  [${r.fixed ? 'FIXED' : 'FAIL'}] ${r.detail}`);
+        }
+      } catch (e) {
+        console.error(`Repair labels failed: ${(e as Error).message}`);
+        process.exit(1);
+      }
+    });
+
+  cmd
+    .command('repair-claims')
+    .description('Expire stale claims and delete orphaned refs')
+    .action(async () => {
+      try {
+        const { repairExpiredClaims } = await import('@openslack/github-provider');
+        const results = await repairExpiredClaims();
+        if (results.length === 0) {
+          console.log('No expired claims found.');
+        } else {
+          for (const r of results) {
+            console.log(`  [${r.fixed ? 'FIXED' : 'SKIP'}] Issue #${r.issueNumber}: ${r.detail}`);
+          }
+        }
+      } catch (e) {
+        console.error(`Repair claims failed: ${(e as Error).message}`);
+        process.exit(1);
+      }
+    });
+
+  cmd
+    .command('repair-all')
+    .description('Run all repair operations')
+    .action(async () => {
+      try {
+        const { repairLabels, repairExpiredClaims } = await import('@openslack/github-provider');
+        const labelResults = await repairLabels();
+        console.log('--- Labels ---');
+        for (const r of labelResults) console.log(`  [${r.fixed ? 'OK' : 'FAIL'}] ${r.detail}`);
+        const claimResults = await repairExpiredClaims();
+        console.log('--- Claims ---');
+        if (claimResults.length === 0) console.log('  No expired claims.');
+        else for (const r of claimResults) console.log(`  [${r.fixed ? 'FIXED' : 'SKIP'}] Issue #${r.issueNumber}: ${r.detail}`);
+      } catch (e) {
+        console.error(`Repair all failed: ${(e as Error).message}`);
+        process.exit(1);
+      }
+    });
+
+  cmd
+    .command('metrics')
+    .description('Show OpenSlack task loop metrics')
+    .action(async () => {
+      try {
+        const { queryReadyIssueTasks, getClient } = await import('@openslack/github-provider');
+        const client = await getClient();
+        if (client.isDryRun) { console.log('[DRY RUN] Would compute metrics'); return; }
+        const ready = await queryReadyIssueTasks();
+        console.log(`Ready: ${ready.length}`);
+        console.log('(Full metrics: claimed/running/review/done counts require label-based search.)');
+      } catch (e) {
+        console.error(`Metrics failed: ${(e as Error).message}`);
+      }
+    });
+
   return cmd;
 }

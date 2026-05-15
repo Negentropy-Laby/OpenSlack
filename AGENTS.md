@@ -4,13 +4,18 @@ You are in the **OpenSlack implementation repository** — the codebase that bui
 
 ## What OpenSlack Is
 
-OpenSlack is a local-first, Git-backed operating system for AI agents. It lets heterogeneous agents (Claude Code, Codex, reviewer, researcher, sync, custom) function as employees: they discover tasks from a GitHub Project board, work in isolated worktrees, sync state through GitHub PRs, and communicate with humans via chat platforms only for approvals and exceptions.
+OpenSlack is a local-first, Git-backed operating system for AI agents. It lets heterogeneous agents (Claude Code, Codex, reviewer, researcher, sync, custom) function as employees: they discover tasks from GitHub Issues (labels + deterministic claim refs), work in isolated worktrees, sync state through GitHub PRs, and communicate with humans via chat platforms only for approvals and exceptions. GitHub Project v2 is an optional projection layer.
 
 **Core principle:** Chat is a frontend. Git is the source of truth. Agents are workers, not chatbots.
 
 ## First Read
 
-Before doing anything else, read `product.md`. It defines the full product architecture, task lifecycle, claim protocol, security rules, and MVP scope. Every design decision in this repo flows from that document.
+Before doing anything else, read:
+1. `docs/status/current.md` — current project state (single source of truth)
+2. `docs/developer/github-issues-loop.md` — how agents discover and claim tasks
+3. `docs/product/phase-1.md` — original acceptance criteria and architecture
+
+The original `product.md` is archived at `docs/archive/original-product-spec.md`.
 
 ## Repository Structure
 
