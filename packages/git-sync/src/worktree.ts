@@ -26,30 +26,35 @@ export function createWorktree(taskId: string, agentId: string, runId: string): 
   const root = findRepoRoot();
   const errors: string[] = [];
 
-  // Generate unique branch name
   const branchName = `agent/${agentId}/${taskId}/${runId}`;
-  // Worktree root is within the repo's .worktrees/
   const worktreeRoot = join(root, '.worktrees', runId);
   const worktreeAbs = resolve(worktreeRoot);
 
   try {
-    // Create branch starting from HEAD
-    execSync(`git checkout -b "${branchName}"`, { cwd: root, stdio: 'pipe' });
-  } catch {
-    try {
-      // Branch may already exist — use it
-      execSync(`git checkout "${branchName}"`, { cwd: root, stdio: 'pipe' });
-    } catch {
-      errors.push(`Failed to create or switch to branch: ${branchName}`);
+    // Create branch AND worktree in one operation — never switch main worktree.
+    // Uses HEAD (current commit) as the base so the branch starts from the
+    // same point without touching the main worktree's HEAD ref.
+    execSync(`git worktree add -b "${branchName}" "${worktreeAbs}" HEAD`, {
+      cwd: root,
+      stdio: 'pipe',
+    });
+  } catch (e) {
+    const stderr = (e as { stderr?: Buffer }).stderr?.toString() || '';
+    if (stderr.includes('already exists') || stderr.includes('already checked out')) {
+      // Branch already exists — reuse it without -b
+      try {
+        execSync(`git worktree add "${worktreeAbs}" "${branchName}"`, {
+          cwd: root,
+          stdio: 'pipe',
+        });
+      } catch (e2) {
+        errors.push(`Failed to add existing worktree: ${(e2 as Error).message}`);
+        return { success: false, worktreePath: '', branchName, errors };
+      }
+    } else {
+      errors.push(`Failed to create worktree: ${stderr.slice(0, 300)}`);
       return { success: false, worktreePath: '', branchName, errors };
     }
-  }
-
-  try {
-    execSync(`git worktree add "${worktreeAbs}" "${branchName}"`, { cwd: root, stdio: 'pipe' });
-  } catch {
-    errors.push(`Failed to add worktree at: ${worktreeAbs}`);
-    return { success: false, worktreePath: '', branchName, errors };
   }
 
   return { success: true, worktreePath: worktreeAbs, branchName, errors };

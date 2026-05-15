@@ -63,6 +63,9 @@ importers:
 
   packages/agent-runtime:
     dependencies:
+      '@openslack/core':
+        specifier: workspace:*
+        version: link:../core
       '@openslack/workspace':
         specifier: workspace:*
         version: link:../workspace

@@ -1,3 +1,4 @@
+import { execSync } from 'node:child_process';
 import { classifyPaths } from '@openslack/kernel';
 
 export interface PRProposalInput {
@@ -14,6 +15,16 @@ export interface PRProposalResult {
   branchName: string;
   riskZone: string;
   errors: string[];
+  prUrl?: string;
+}
+
+function hasGitRemote(root: string): boolean {
+  try {
+    const result = execSync('git remote get-url origin', { cwd: root, stdio: 'pipe' });
+    return result.toString().trim().length > 0;
+  } catch {
+    return false;
+  }
 }
 
 export function proposeWorkspacePR(input: PRProposalInput): PRProposalResult {
@@ -24,16 +35,11 @@ export function proposeWorkspacePR(input: PRProposalInput): PRProposalResult {
     return { success: false, prBody: '', branchName: '', riskZone: 'unknown', errors };
   }
 
-  // Classify risk
   const riskZone = classifyPaths(input.changedPaths);
-
-  // Detect protected path violations
   const blackViolations = input.changedPaths.filter((p) => classifyPaths([p]) === 'black');
   const redViolations = input.changedPaths.filter((p) => classifyPaths([p]) === 'red');
-
   const branchName = `agent/${input.agentId}/${input.taskId}/${input.runId}`;
 
-  // Generate PR body
   const prBody = `## OpenSlack Self-Evolution PR
 
 ### Task Information
@@ -72,5 +78,25 @@ ${riskZone === 'red' ? '- [ ] **Human approval required** (Red Zone files modifi
     return { success: false, prBody, branchName, riskZone, errors: ['PR cannot be proposed: Black Zone files modified'] };
   }
 
-  return { success: true, prBody, branchName, riskZone, errors };
+  // Attempt git commit + push if remote is configured
+  let prUrl: string | undefined;
+  try {
+    const root = process.cwd();
+    const commitMsg = `[OpenSlack][${input.taskId}][${input.agentId}] ${input.description || 'Workspace changes'}`;
+
+    if (hasGitRemote(root)) {
+      execSync(`git add ${input.changedPaths.join(' ')}`, { cwd: root, stdio: 'pipe' });
+      execSync(`git commit -m "${commitMsg}"`, { cwd: root, stdio: 'pipe' });
+      try {
+        execSync(`git push origin "${branchName}"`, { cwd: root, stdio: 'pipe', timeout: 30000 });
+        prUrl = `https://github.com/wsman/OpenSlack/compare/main...${branchName}`;
+      } catch {
+        errors.push('Git push failed — branch may already exist or no credentials configured');
+      }
+    }
+  } catch {
+    // Graceful fallback: commit/push are optional; PR body is the minimum deliverable
+  }
+
+  return { success: true, prBody, branchName, riskZone, prUrl, errors };
 }

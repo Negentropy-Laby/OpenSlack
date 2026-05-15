@@ -198,9 +198,11 @@ export async function queryReadyItems(
 }
 
 export async function updateProjectField(
+  projectId: string,
   projectItemId: string,
   fieldId: string,
   value: string,
+  fieldType: 'text' | 'single_select' = 'text',
 ): Promise<void> {
   const client = getClient();
   if (client.isDryRun) {
@@ -208,17 +210,21 @@ export async function updateProjectField(
     return;
   }
 
+  const valueInput = fieldType === 'single_select'
+    ? `singleSelectOptionId: "${value}"`
+    : `text: "${value}"`;
+
   await client.octokit.graphql(
-    `mutation($projectItemId: ID!, $fieldId: ID!, $value: String!) {
+    `mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!) {
       updateProjectV2ItemFieldValue(input: {
-        projectId: $projectItemId,
-        itemId: $projectItemId,
+        projectId: $projectId,
+        itemId: $itemId,
         fieldId: $fieldId,
-        value: { text: $value }
+        value: { ${valueInput} }
       }) {
         projectV2Item { id }
       }
     }`,
-    { projectItemId, fieldId, value },
+    { projectId, itemId: projectItemId, fieldId },
   );
 }

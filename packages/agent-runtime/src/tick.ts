@@ -1,25 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-
-interface AgentRegistry {
-  agent_id: string;
-  capabilities: { primary: string[]; secondary: string[] };
-  execution: { max_parallel_tasks: number; lease_ttl_minutes: number; heartbeat_interval_minutes: number; max_task_runtime_minutes: number };
-  workspace_permissions: { allow: string[]; deny: string[] };
-}
-
-interface OpenTask {
-  id: string;
-  filePath: string;
-}
-
-export interface TickResult {
-  agentId: string;
-  action: 'claimed' | 'idle' | 'error';
-  taskId?: string;
-  leaseId?: string;
-  message: string;
-}
+import { FileClaimBroker } from '@openslack/core';
+import type { ClaimResult } from '@openslack/core';
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -32,92 +14,83 @@ function findRepoRoot(): string {
   return process.cwd();
 }
 
-function loadRegistry(root: string, agentId: string): AgentRegistry | null {
+function loadAgentCapabilities(root: string, agentId: string): string[] {
   const regPath = join(root, '.openslack', 'agents', 'registry', `${agentId}.yaml`);
-  if (!existsSync(regPath)) return null;
+  if (!existsSync(regPath)) return [];
   try {
-    // Simple YAML extraction — avoids full parser dependency in agent-runtime
     const raw = readFileSync(regPath, 'utf-8');
     const caps: string[] = [];
-    let agent_id = agentId;
-    let lease_ttl = 60;
-    let heartbeat = 10;
-    let maxParallel = 1;
-    let maxRuntime = 120;
-    const allow: string[] = [];
-    const deny: string[] = [];
-
     for (const line of raw.split('\n')) {
       const trimmed = line.trim();
-      if (trimmed.startsWith('agent_id:')) agent_id = trimmed.split(':')[1].trim().replace(/"/g, '');
       if (trimmed.startsWith('- "') || trimmed.startsWith("- '") || trimmed.startsWith('- ')) {
-        const cap = trimmed.replace(/^-\s*["']?/, '').replace(/["']$/, '').trim();
-        caps.push(cap);
+        caps.push(trimmed.replace(/^-\s*["']?/, '').replace(/["']$/, '').trim());
       }
-      if (trimmed.startsWith('lease_ttl_minutes:')) lease_ttl = parseInt(trimmed.split(':')[1].trim(), 10);
-      if (trimmed.startsWith('heartbeat_interval_minutes:')) heartbeat = parseInt(trimmed.split(':')[1].trim(), 10);
-      if (trimmed.startsWith('max_parallel_tasks:')) maxParallel = parseInt(trimmed.split(':')[1].trim(), 10);
-      if (trimmed.startsWith('max_task_runtime_minutes:')) maxRuntime = parseInt(trimmed.split(':')[1].trim(), 10);
     }
-
-    return {
-      agent_id,
-      capabilities: { primary: caps, secondary: [] },
-      execution: { max_parallel_tasks: maxParallel, lease_ttl_minutes: lease_ttl, heartbeat_interval_minutes: heartbeat, max_task_runtime_minutes: maxRuntime },
-      workspace_permissions: { allow, deny },
-    };
+    return caps;
   } catch {
-    return null;
+    return [];
   }
 }
 
-function getOpenTasks(root: string): OpenTask[] {
+function getOpenTasks(root: string): Array<{ id: string; filePath: string }> {
   const openDir = join(root, '.openslack', 'tasks', 'open');
   if (!existsSync(openDir)) return [];
-  const tasks: OpenTask[] = [];
   try {
     const entries = readdirSync(openDir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        const taskDir = join(openDir, entry.name);
-        const files = readdirSync(taskDir);
-        const yamlFile = files.find((f) => f.endsWith('.yaml'));
-        if (yamlFile) {
-          tasks.push({ id: entry.name, filePath: join(taskDir, yamlFile) });
-        }
-      }
-    }
+    return entries
+      .filter((e) => e.isDirectory())
+      .map((e) => ({ id: e.name, filePath: join(openDir, e.name) }));
   } catch {
-    // Directory listing failed
+    return [];
   }
-  return tasks;
+}
+
+export interface TickResult {
+  agentId: string;
+  action: 'claimed' | 'idle' | 'error';
+  taskId?: string;
+  leaseId?: string;
+  claimResult?: ClaimResult;
+  message: string;
 }
 
 export function tickAgent(agentId: string): TickResult {
   const root = findRepoRoot();
 
-  // 1. Load registry
-  const registry = loadRegistry(root, agentId);
-  if (!registry) {
-    return { agentId, action: 'error', message: `Registry not found for agent ${agentId}` };
-  }
+  // Load capabilities
+  const capabilities = loadAgentCapabilities(root, agentId);
 
-  // 2. Check for open tasks
+  // Check for open tasks
   const openTasks = getOpenTasks(root);
-
   if (openTasks.length === 0) {
     return { agentId, action: 'idle', message: 'No open tasks available. Idle exit.' };
   }
 
-  // 3. Select first task (in MVP, no capability matching — just pick first)
-  const task = openTasks[0];
+  // Load persistent claim broker
+  const broker = new FileClaimBroker(root);
 
-  // 4. Attempt claim via ClaimBroker would go here when GitHub Provider is wired
-  // For MVP local mode: log that task was found
-  return {
-    agentId,
-    action: 'claimed',
-    taskId: task.id,
-    message: `Found task ${task.id} at ${task.filePath}. Claim via Claim Broker would proceed.`,
-  };
+  // Try to claim each task until one succeeds
+  for (const task of openTasks) {
+    broker.setTaskReady(task.id);
+    const result = broker.claimTask({
+      agentId,
+      taskId: task.id,
+      ttlMinutes: 60,
+      capabilities,
+    });
+
+    if (result.claimStatus === 'granted') {
+      return {
+        agentId,
+        action: 'claimed',
+        taskId: task.id,
+        leaseId: result.leaseId,
+        claimResult: result,
+        message: `Claimed task ${task.id} — lease ${result.leaseId} expires ${result.expiresAt}`,
+      };
+    }
+    // If denied, try next task
+  }
+
+  return { agentId, action: 'idle', message: 'No claimable tasks found.' };
 }

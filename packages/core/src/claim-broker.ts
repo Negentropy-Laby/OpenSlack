@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, unlinkSync, openSync, closeSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 
 export interface Lease {
@@ -163,14 +163,42 @@ export class ClaimBroker {
 /** File-backed ClaimBroker — persists leases to .openslack/leases/lease-state.json */
 export class FileClaimBroker extends ClaimBroker {
   private statePath: string;
+  private lockPath: string;
+  private lockFd: number | null = null;
 
   constructor(openslackRoot: string) {
     super();
     this.statePath = join(openslackRoot, '.openslack', 'leases', 'lease-state.json');
-    this.load();
+    this.lockPath = this.statePath + '.lock';
+    this.loadWithLock();
   }
 
-  private load(): void {
+  private acquireLock(timeoutMs = 5000): boolean {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      try {
+        // Exclusive create via 'wx' flag — fails if lock already exists
+        this.lockFd = openSync(this.lockPath, 'wx');
+        return true;
+      } catch {
+        // Lock held by another process — retry after short delay
+        const wait = Math.random() * 50 + 25;
+        Atomics.wait?.(new Int32Array(new SharedArrayBuffer(4)), 0, 0, wait) ||
+          new Promise((r) => setTimeout(r, wait));
+      }
+    }
+    return false;
+  }
+
+  private releaseLock(): void {
+    if (this.lockFd !== null) {
+      try { closeSync(this.lockFd); } catch { /* ignore */ }
+      this.lockFd = null;
+    }
+    try { unlinkSync(this.lockPath); } catch { /* ignore */ }
+  }
+
+  private loadWithLock(): void {
     if (!existsSync(this.statePath)) return;
     try {
       const raw = readFileSync(this.statePath, 'utf-8');
@@ -190,9 +218,8 @@ export class FileClaimBroker extends ClaimBroker {
     }
   }
 
-  private save(): void {
+  private saveWithLock(): void {
     mkdirSync(dirname(this.statePath), { recursive: true });
-    // Atomic write via temp file
     const tmp = this.statePath + '.tmp';
     const data = {
       leaseSeq: this.leaseSeq,
@@ -205,27 +232,51 @@ export class FileClaimBroker extends ClaimBroker {
   }
 
   override claimTask(request: ClaimRequest): ClaimResult {
-    const result = super.claimTask(request);
-    this.save();
-    return result;
+    if (!this.acquireLock()) return { claimStatus: 'denied', taskId: request.taskId, reason: 'BUDGET_EXCEEDED' };
+    try {
+      this.loadWithLock();
+      const result = super.claimTask(request);
+      if (result.claimStatus === 'granted') this.saveWithLock();
+      return result;
+    } finally {
+      this.releaseLock();
+    }
   }
 
   override heartbeat(leaseId: string): boolean {
-    const result = super.heartbeat(leaseId);
-    this.save();
-    return result;
+    if (!this.acquireLock()) return false;
+    try {
+      this.loadWithLock();
+      const result = super.heartbeat(leaseId);
+      if (result) this.saveWithLock();
+      return result;
+    } finally {
+      this.releaseLock();
+    }
   }
 
   override releaseLease(leaseId: string): boolean {
-    const result = super.releaseLease(leaseId);
-    this.save();
-    return result;
+    if (!this.acquireLock()) return false;
+    try {
+      this.loadWithLock();
+      const result = super.releaseLease(leaseId);
+      if (result) this.saveWithLock();
+      return result;
+    } finally {
+      this.releaseLock();
+    }
   }
 
   override expireLease(leaseId: string): boolean {
-    const result = super.expireLease(leaseId);
-    this.save();
-    return result;
+    if (!this.acquireLock()) return false;
+    try {
+      this.loadWithLock();
+      const result = super.expireLease(leaseId);
+      if (result) this.saveWithLock();
+      return result;
+    } finally {
+      this.releaseLock();
+    }
   }
 
   override _reset(): void {

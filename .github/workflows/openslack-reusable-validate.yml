@@ -31,19 +31,19 @@ jobs:
         run: pnpm openslack workspace validate
 
       - name: Policy validate
-        run: pnpm openslack policy validate --self-evolution 2>/dev/null || echo "Policy validate: not yet implemented"
+        run: pnpm openslack self validate
 
       - name: Typecheck
         run: pnpm typecheck
 
       - name: Lint
-        run: pnpm lint 2>/dev/null || echo "Lint: skipped (no eslint config)"
+        run: pnpm lint
 
       - name: Tests
         run: pnpm test
 
       - name: Self eval
-        run: pnpm openslack self eval --suite golden 2>/dev/null || echo "Self eval: not yet implemented"
+        run: pnpm openslack self eval --suite golden
 
-      - name: Security scan
-        run: pnpm openslack self scan-secrets 2>/dev/null || echo "Security scan: not yet implemented"
+      - name: Security scan (black zone check)
+        run: pnpm openslack self classify-pr --paths "$(git diff --name-only HEAD~1 || echo docs/test.md)" --format json
