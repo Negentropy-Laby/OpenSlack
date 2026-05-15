@@ -35,13 +35,18 @@ export function githubCommands(): Command {
       const checks: Array<{ name: string; passed: boolean; detail: string }> = [];
 
       // Auth tier check
-      const client = await getClient();
+      let client;
+      try {
+        client = await getClient();
+      } catch {
+        client = { authMode: 'dry_run' as const, isDryRun: true, tokenExpiresAt: undefined };
+      }
       const authTier = client.authMode === 'github_app_installation' ? 'GitHub App Installation Token' :
         client.authMode === 'token' ? 'PAT / GITHUB_TOKEN' : 'Dry-run (no credentials)';
       checks.push({
         name: 'Auth tier',
         passed: client.authMode !== 'dry_run',
-        detail: `${authTier}${client.tokenExpiresAt ? ` (expires: ${client.tokenExpiresAt})` : ''}`,
+        detail: `${authTier}${client?.tokenExpiresAt ? ` (expires: ${client.tokenExpiresAt})` : ''}`,
       });
 
       const appId = process.env.OPENSLACK_GITHUB_APP_ID;
