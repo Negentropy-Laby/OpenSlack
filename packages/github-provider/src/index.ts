@@ -4,3 +4,7 @@ export { createDraftPR, commentOnPR } from './pr.js';
 export type { CreatePRResult } from './pr.js';
 export { getClient, GitHubClient, AuthMode } from './client.js';
 export { getAppInstallationToken, clearTokenCache } from './auth.js';
+export { createTaskIssue, queryReadyIssueTasks, parseTaskManifest, buildTaskManifestYaml } from './issue-tasks.js';
+export type { IssueTask, IssueTaskManifest } from './issue-tasks.js';
+export { claimIssueTask, releaseIssueClaim, moveIssueToReview } from './claims.js';
+export type { IssueClaimResult } from './claims.js';

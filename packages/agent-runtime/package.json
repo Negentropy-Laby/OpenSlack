@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@openslack/workspace": "workspace:*",
-    "@openslack/core": "workspace:*"
+    "@openslack/core": "workspace:*",
+    "@openslack/github-provider": "workspace:*"
   }
 }

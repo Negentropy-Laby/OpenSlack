@@ -120,7 +120,7 @@ export function selfCommands(): Command {
       }
       if (options.createIssues) {
         try {
-          const { createIssue, addIssueToProject } = await import('@openslack/github-provider');
+          const { createTaskIssue } = await import('@openslack/github-provider');
           const { readFileSync, existsSync } = await import('node:fs');
           const { join } = await import('node:path');
           const root = process.cwd();
@@ -130,21 +130,13 @@ export function selfCommands(): Command {
             const yaml = readFileSync(evolPath, 'utf-8');
             const titleMatch = yaml.match(/^title:\s*["']?(.+?)["']?\s*$/m);
             const title = titleMatch?.[1] || id;
-            const body = `EVOL Task: ${id}\n\n${yaml}`;
-            const issueUrl = await createIssue(title, body, ['openslack-evolution']);
-            console.log(`  Issue: ${issueUrl}`);
-
-            // Add to Project if node_id configured
-            const githubYaml = join(root, '.openslack', 'integrations', 'github.yaml');
-            if (existsSync(githubYaml)) {
-              const configRaw = readFileSync(githubYaml, 'utf-8');
-              const match = configRaw.match(/node_id:\s*["']?([^"'\n]+)["']?/);
-              const projectNodeId = match?.[1]?.trim();
-              if (projectNodeId && projectNodeId !== '') {
-                await addIssueToProject(projectNodeId, id);
-                console.log(`  Added to project ${projectNodeId}`);
-              }
-            }
+            const body = `## EVOL Task: ${id}\n\n\`\`\`yaml\n${yaml}\n\`\`\``;
+            const { issueNumber, url } = await createTaskIssue(title, body, [
+              'openslack:task',
+              'openslack:ready',
+              'risk:medium',
+            ]);
+            console.log(`  Issue #${issueNumber}: ${url}`);
           }
         } catch (e) {
           console.log(`(GitHub issue creation unavailable: ${(e as Error).message})`);

@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { FileClaimBroker } from '@openslack/core';
 import type { ClaimResult } from '@openslack/core';
+import type { IssueClaimResult } from '@openslack/github-provider';
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -54,31 +55,54 @@ export interface TickResult {
   message: string;
 }
 
-export function tickAgent(agentId: string): TickResult {
+export interface TickOptions {
+  source?: 'local' | 'github-issues';
+}
+
+export async function tickAgent(agentId: string, options: TickOptions = {}): Promise<TickResult> {
   const root = findRepoRoot();
-
-  // Load capabilities
   const capabilities = loadAgentCapabilities(root, agentId);
+  const source = options.source || 'local';
 
-  // Check for open tasks
+  // --- GitHub Issues path ---
+  if (source === 'github-issues') {
+    try {
+      const { queryReadyIssueTasks, claimIssueTask } = await import('@openslack/github-provider');
+
+      const tasks = await queryReadyIssueTasks({ capabilities });
+      if (tasks.length === 0) {
+        return { agentId, action: 'idle', message: 'No ready issues on GitHub. Idle exit.' };
+      }
+
+      for (const task of tasks) {
+        const result = await claimIssueTask({ issueNumber: task.issueNumber, agentId, ttlMinutes: 60, capabilities });
+        if (result.claimStatus === 'granted') {
+          return {
+            agentId,
+            action: 'claimed',
+            taskId: `#${task.issueNumber}`,
+            leaseId: result.claimRef,
+            message: `Claimed issue #${task.issueNumber} via ref ${result.claimRef}`,
+          };
+        }
+      }
+
+      return { agentId, action: 'idle', message: 'All ready issues already claimed.' };
+    } catch (e) {
+      return { agentId, action: 'error', message: `GitHub claim failed: ${(e as Error).message}` };
+    }
+  }
+
+  // --- Local path (default) ---
   const openTasks = getOpenTasks(root);
   if (openTasks.length === 0) {
     return { agentId, action: 'idle', message: 'No open tasks available. Idle exit.' };
   }
 
-  // Load persistent claim broker
   const broker = new FileClaimBroker(root);
-
-  // Try to claim each task until one succeeds
   for (const task of openTasks) {
     broker.setTaskReady(task.id);
-    const result = broker.claimTask({
-      agentId,
-      taskId: task.id,
-      ttlMinutes: 60,
-      capabilities,
-    });
-
+    const result = broker.claimTask({ agentId, taskId: task.id, ttlMinutes: 60, capabilities });
     if (result.claimStatus === 'granted') {
       return {
         agentId,
@@ -89,7 +113,6 @@ export function tickAgent(agentId: string): TickResult {
         message: `Claimed task ${task.id} — lease ${result.leaseId} expires ${result.expiresAt}`,
       };
     }
-    // If denied, try next task
   }
 
   return { agentId, action: 'idle', message: 'No claimable tasks found.' };

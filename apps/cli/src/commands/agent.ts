@@ -178,13 +178,15 @@ approval_rules:
     .command('tick')
     .description('Run one agent work cycle')
     .requiredOption('--agent-id <id>', 'Agent ID')
-    .option('--claim-one', 'Claim at most one task')
-    .option('--source <source>', 'Source: local, github-project', 'local')
-    .action((options) => {
-      const result = tickAgent(options.agentId);
+    .option('--source <source>', 'Task source: local, github-issues', 'local')
+    .action(async (options) => {
+      const source = (options.source === 'github-issues' ? 'github-issues' : 'local') as 'local' | 'github-issues';
+      const result = await tickAgent(options.agentId, { source });
       console.log(`Agent tick: ${result.agentId}`);
+      console.log(`  Source: ${source}`);
       console.log(`  Action: ${result.action}`);
       if (result.taskId) console.log(`  Task: ${result.taskId}`);
+      if (result.leaseId) console.log(`  Claim: ${result.leaseId}`);
       console.log(`  ${result.message}`);
       if (result.action === 'error') process.exit(1);
     });
