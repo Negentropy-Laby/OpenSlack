@@ -13,14 +13,14 @@ openslack/
 │   ├── policies/               # 6 policy files
 │   └── eval_suites/golden/     # 7 golden evals
 ├── packages/
-│   ├── policy/                 # Zone classifier (green/yellow/red/black)
-│   ├── self-evolution/         # Core (classify-pr, merge-decider) + Ops (observe, triage, review, scorecard, monitor, rollback)
-│   ├── workspace-engine/       # Workspace validation
-│   ├── evals/                  # Golden eval runner
+│   ├── kernel/                 # Zone classifier, merge decision, invariants
+│   ├── workspace/              # Validation, indexing, schemas, golden evals
+│   ├── self-evolution/         # Observe, triage, review, scorecard, monitor, rollback
 │   ├── core/                   # Claim Broker (lease state machine)
 │   ├── agent-runtime/          # Agent bootstrap + tick
-│   └── git-sync/               # Workspace PR proposal
-├── apps/cli/                   # CLI (17 commands)
+│   ├── git-sync/               # Worktree manager, PR proposal
+│   └── github-provider/        # GitHub API client (dry-run when no token)
+├── apps/cli/                   # CLI — 4 command groups
 ├── scripts/                    # genesis-validate.sh, genesis-rollback.sh
 └── .github/workflows/          # 4 CI workflows
 ```
@@ -43,10 +43,10 @@ OBSERVE → CLASSIFY → VALIDATE → REVIEW → SCORECARD → MERGE → MONITOR
 | `openslack agent hire --agent-id <id>` | Create onboarding package |
 | `openslack agent bootstrap --agent-id <id>` | Verify agent readiness |
 | `openslack agent tick --agent-id <id>` | Run agent work cycle |
-| `openslack sync propose --paths "..."` | Generate workspace PR body |
-| `openslack review pr --pr <n> --implementer <a> --reviewer <b>` | Review PR |
-| `openslack review scorecard --experiment <id>` | Compute fitness score |
-| `openslack monitor check --experiment <id>` | Post-merge regression check |
+| `openslack task sync --paths "..."` | Generate workspace PR body |
+| `openslack self review --pr <n> --implementer <a> --reviewer <b>` | Review PR |
+| `openslack self scorecard --experiment <id>` | Compute fitness score |
+| `openslack self monitor --experiment <id>` | Post-merge regression check |
 
 ## Development
 

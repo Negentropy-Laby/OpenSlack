@@ -104,8 +104,8 @@ Violation of any of these = immediate task failure + audit log entry + automatic
 | Zone | Paths | Auto-Merge | Human Required |
 |------|-------|-----------|---------------|
 | **Green** | `docs/**`, `templates/**`, `.openslack/tasks/**`, `.openslack/self/scorecards/**`, `.openslack/self/experiments/**` | Yes | No |
-| **Yellow** | `apps/**`, `packages/core/**`, `packages/workspace-engine/**`, `packages/github-provider/**`, `packages/agent-runtime/**`, `packages/chat-gateway/**`, `packages/git-sync/**`, `packages/evals/**` | With agent review | No |
-| **Red** | `.github/**`, `.openslack/policies/**`, `.openslack/agents/registry/**`, `.openslack/agents/prompts/**`, `.openslack/self/constitution.md`, `.openslack/self/invariants.yaml`, `packages/policy/**`, `packages/self-evolution/src/core/**` | Never | Yes |
+| **Yellow** | `apps/**`, `packages/core/**`, `packages/workspace/**`, `packages/github-provider/**`, `packages/agent-runtime/**`, `packages/git-sync/**`, `packages/self-evolution/src/ops/**`, `.openslack/self/eval_suites/**` | With agent review | No |
+| **Red** | `.github/**`, `.openslack/policies/**`, `.openslack/agents/registry/**`, `.openslack/agents/prompts/**`, `.openslack/self/constitution.md`, `.openslack/self/invariants.yaml`, `packages/kernel/src/**`, `packages/self-evolution/src/core/**` | Never | Yes |
 | **Black** | `.env`, `*.pem`, `*.key`, `secrets/**`, `credentials/**` | Never (PR rejected) | N/A |
 
 ## Repository Cleanliness

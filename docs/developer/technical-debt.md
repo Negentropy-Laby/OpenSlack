@@ -15,14 +15,14 @@
 
 ### P0-2: EV-GOLDEN-004 and EV-GOLDEN-007 use in-process only
 
-**Source:** Phase 1.1 P0-2 implementation at `packages/evals/src/runner.ts:104-135`
+**Source:** Phase 1.1 P0-2 implementation at `packages/workspace/src/evals/runner.ts`
 **Impact:** Concurrent claim test uses synchronous ClaimBroker (not multi-process). Rollback test creates local file only (no git revert PR). Both pass golden suite but don't represent production behavior.
 **Resolution:** When Claim Broker is server-mode (Phase 2), update EV-GOLDEN-004 to use HTTP client. When git remote exists, update EV-GOLDEN-007 to verify git revert + PR creation.
 **Depends on:** P0-1 (GitHub remote), Phase 2 Claim Broker server.
 
 ### P0-3: Golden eval runner auto-generates artifacts that must be manually cleaned
 
-**Source:** `packages/evals/src/runner.ts` `generateScorecard()` writes to `.openslack/self/scorecards/`. EV-GOLDEN-007 `createRollbackTask()` writes to `.openslack/self/evolution_backlog/`.
+**Source:** `packages/workspace/src/evals/runner.ts` `generateScorecard()` writes to `.openslack/self/scorecards/`. EV-GOLDEN-007 `createRollbackTask()` writes to `.openslack/self/evolution_backlog/`.
 **Impact:** Each `self eval --suite golden` run leaves files on disk. The Repository Cleanliness rule (AGENTS.md) requires cleanup of verification artifacts. Currently manual.
 **Resolution:** Add `--clean` flag to `self eval` that removes artifacts after run. Or route artifacts to a temp directory that is gitignored.
 **Filed:** 2026-05-15 cleanup commits (0cc1e2a, 8ed99d1).
