@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { execSync } from 'node:child_process';
 import { workspaceCommands } from './commands/workspace.js';
 import { selfCommands } from './commands/self.js';
 import { agentCommands } from './commands/agent.js';
@@ -14,6 +17,36 @@ program
   .description('OpenSlack — Agent Company OS CLI')
   .version('0.1.0');
 
+// Top-level aliases (user-friendly shortcuts)
+program
+  .command('ask')
+  .description('Ask OpenSlack to do something (natural language)')
+  .argument('<query...>', 'What do you want to do?')
+  .action(async (queryParts: string[]) => {
+    const root = process.cwd();
+    const argv = ['"' + process.execPath + '"', '--import', 'tsx', '"' + join(root, 'apps', 'cli', 'src', 'index.ts') + '"', 'operator', 'ask', ...queryParts];
+    execSync(argv.join(' '), { cwd: root, stdio: 'inherit' });
+  });
+
+program
+  .command('status')
+  .description('Quick workspace status overview')
+  .action(() => {
+    const root = process.cwd();
+    const argv = ['"' + process.execPath + '"', '--import', 'tsx', '"' + join(root, 'apps', 'cli', 'src', 'index.ts') + '"', 'workspace', 'status'];
+    execSync(argv.join(' '), { cwd: root, stdio: 'inherit' });
+  });
+
+program
+  .command('doctor')
+  .description('Quick GitHub integration doctor check')
+  .action(() => {
+    const root = process.cwd();
+    const argv = ['"' + process.execPath + '"', '--import', 'tsx', '"' + join(root, 'apps', 'cli', 'src', 'index.ts') + '"', 'github', 'doctor'];
+    execSync(argv.join(' '), { cwd: root, stdio: 'inherit' });
+  });
+
+// Command groups
 program.addCommand(workspaceCommands());
 program.addCommand(selfCommands());
 program.addCommand(agentCommands());

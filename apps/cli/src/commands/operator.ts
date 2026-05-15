@@ -23,42 +23,91 @@ interface Intent {
 function routeIntent(query: string): Intent {
   const q = query.toLowerCase();
 
-  if (q.includes('check') && (q.includes('status') || q.includes('health') || q.includes('doctor'))) {
+  // Diagnostics
+  if (q.includes('check') && (q.includes('status') || q.includes('health') || q.includes('doctor')))
     return { command: 'github', args: ['doctor'], description: 'System health check' };
-  }
-  if (q.includes('create') && (q.includes('task') || q.includes('issue'))) {
-    return { command: 'self', args: ['triage', '--create-issues'], description: 'Observe and create EVOL tasks' };
-  }
-  if (q.includes('claim') || q.includes('tick') || q.includes('pick up')) {
-    return { command: 'agent', args: ['tick', '--source', 'github-issues', '--agent-id', 'anthropic_architect_aby'], description: 'Agent tick via GitHub Issues' };
-  }
-  if (q.includes('eval') || q.includes('evaluate') || q.includes('test')) {
-    return { command: 'self', args: ['eval', '--suite', 'golden'], description: 'Run golden evals' };
-  }
-  if (q.includes('repair') && (q.includes('label') || q.includes('labels'))) {
-    return { command: 'github', args: ['repair-labels'], description: 'Repair missing labels' };
-  }
-  if (q.includes('repair') && (q.includes('claim') || q.includes('claims') || q.includes('stale'))) {
-    return { command: 'github', args: ['repair-claims'], description: 'Repair expired claims' };
-  }
-  if (q.includes('repair all') || q.includes('fix all') || q.includes('repair-all')) {
-    return { command: 'github', args: ['repair-all'], description: 'Repair labels + claims' };
-  }
-  if (q.includes('validate') || q.includes('workspace validate')) {
-    return { command: 'workspace', args: ['validate'], description: 'Workspace validation' };
-  }
-  if (q.includes('metrics') || q.includes('stats') || q.includes('count')) {
-    return { command: 'github', args: ['metrics'], description: 'Task loop metrics' };
-  }
-  if (q.includes('digest') || q.includes('summary') || q.includes('report') || q.includes('today')) {
-    return { command: 'github', args: ['metrics'], description: 'Metrics (digest not yet implemented)' };
-  }
-  if (q.includes('index') || q.includes('status overview')) {
+  if (q.includes('status') && (q.includes('workspace') || q.includes('overview') || q.includes('index')))
     return { command: 'workspace', args: ['status'], description: 'Workspace status' };
+  if (q.includes('workspace') && q.includes('validate'))
+    return { command: 'workspace', args: ['validate'], description: 'Workspace validation' };
+  if (q.includes('metrics') || q.includes('stats') || q.includes('count'))
+    return { command: 'github', args: ['metrics'], description: 'Task loop metrics' };
+  if (q.includes('digest') || q.includes('summary') || q.includes('report') || q.includes('today'))
+    return { command: 'github', args: ['metrics'], description: 'Metrics (digest not yet implemented)' };
+
+  // Task creation
+  if (q.includes('create') && (q.includes('task') || q.includes('issue')))
+    return { command: 'self', args: ['triage', '--create-issues'], description: 'Observe and create EVOL tasks via GitHub Issues' };
+
+  // Agent operations
+  if (q.includes('claim') || q.includes('tick') || q.includes('pick up') || q.includes('get task'))
+    return { command: 'agent', args: ['tick', '--source', 'github-issues', '--agent-id', 'anthropic_architect_aby'], description: 'Agent tick via GitHub Issues' };
+  if (q.includes('hire'))
+    return { command: 'agent', args: ['hire', '--agent-id', 'operator'], description: 'Hire new agent' };
+  if (q.includes('bootstrap'))
+    return { command: 'agent', args: ['bootstrap', '--agent-id', 'anthropic_architect_aby'], description: 'Verify agent readiness' };
+
+  // Worktree + PR
+  if (q.includes('checkout') || q.includes('worktree') || q.includes('work on')) {
+    const numMatch = q.match(/#?(\d+)/);
+    const issueNum = numMatch ? numMatch[1] : '1';
+    return { command: 'task', args: ['checkout', '--task-id', `ISSUE-${issueNum}`, '--agent-id', 'anthropic_architect_aby', '--run-id', `RUN-${Date.now()}`], description: `Create worktree for issue #${issueNum}` };
+  }
+  if (q.includes('sync') || q.includes('submit') || q.includes('pr') || q.includes('pull request')) {
+    const numMatch = q.match(/#?(\d+)/);
+    const issueNum = numMatch ? numMatch[1] : '1';
+    return { command: 'task', args: ['sync', '--agent-id', 'anthropic_architect_aby', '--task-id', `ISSUE-${issueNum}`, '--run-id', `RUN-${Date.now()}`, '--paths', 'docs/test.md', '--issue-number', issueNum], description: `Propose workspace PR for issue #${issueNum}` };
   }
 
-  // Catch-all: forward as raw openslack subcommand
-  const parts = q.split(/\s+/).filter(Boolean);
+  // Eval
+  if (q.includes('eval') || q.includes('evaluate') || q.includes('test') || q.includes('golden'))
+    return { command: 'self', args: ['eval', '--suite', 'golden'], description: 'Run golden evals' };
+
+  // Review + Scorecard
+  if (q.includes('review') || q.includes('approve'))
+    return { command: 'self', args: ['review', '--pr', '1', '--implementer', 'agent-a', '--reviewer', 'agent-b'], description: 'Review PR' };
+  if (q.includes('scorecard') || q.includes('fitness'))
+    return { command: 'self', args: ['scorecard', '--experiment', 'EXP-001'], description: 'Compute fitness score' };
+
+  // Repair
+  if (q.includes('repair') && (q.includes('label') || q.includes('labels')))
+    return { command: 'github', args: ['repair-labels'], description: 'Repair missing labels' };
+  if (q.includes('repair') && (q.includes('claim') || q.includes('claims') || q.includes('stale')))
+    return { command: 'github', args: ['repair-claims'], description: 'Repair expired claims' };
+  if (q.includes('repair all') || q.includes('fix all') || q.includes('repair-all'))
+    return { command: 'github', args: ['repair-all'], description: 'Repair labels + claims' };
+
+  // Issue lifecycle
+  if (q.includes('issue') && (q.includes('done') || q.includes('complete') || q.includes('finish'))) {
+    const numMatch = q.match(/#?(\d+)/);
+    const issueNum = numMatch ? numMatch[1] : '1';
+    return { command: 'github', args: ['issue-done', '--issue-number', issueNum], description: `Mark issue #${issueNum} as done` };
+  }
+  if (q.includes('block') || q.includes('stuck')) {
+    const numMatch = q.match(/#?(\d+)/);
+    const issueNum = numMatch ? numMatch[1] : '1';
+    return { command: 'self', args: ['observe'], description: `Block issue #${issueNum} (not yet CLI-wired)` };
+  }
+
+  // PR classification
+  if (q.includes('classify') || q.includes('risk') || q.includes('zone'))
+    return { command: 'self', args: ['classify-pr', '--paths', 'docs/test.md'], description: 'Classify PR risk zone' };
+  if (q.includes('validate') && q.includes('pr'))
+    return { command: 'self', args: ['validate', '--pr', '1', '--paths', 'docs/test.md'], description: 'Validate PR' };
+
+  // Index
+  if (q.includes('index'))
+    return { command: 'workspace', args: ['index'], description: 'Build workspace index' };
+
+  // Rollback
+  if (q.includes('rollback') || q.includes('revert'))
+    return { command: 'self', args: ['monitor', '--experiment', 'EXP-001'], description: 'Check for regression' };
+
+  // Observe
+  if (q.includes('observe') || q.includes('monitor health'))
+    return { command: 'self', args: ['observe'], description: 'Health observation' };
+
+  // Catch-all
   return { command: 'self', args: ['observe'], description: `Unknown intent "${q}" — running health check` };
 }
 
@@ -74,17 +123,17 @@ export function operatorCommands(): Command {
       const intent = routeIntent(query);
       const root = findRepoRoot();
 
-      console.log(`Operator: routing "${query}"`);
-      console.log(`  → ${intent.description}`);
-      console.log(`  → openslack ${intent.command} ${intent.args.join(' ')}`);
+      console.log(`\nOperator: "${query}"`);
+      console.log(`→ ${intent.description}`);
+      console.log(`→ openslack ${intent.command} ${intent.args.join(' ')}`);
       console.log('');
 
       try {
-        const argv = [process.execPath, '--import', 'tsx', join(root, 'apps', 'cli', 'src', 'index.ts'), intent.command, ...intent.args];
-        execSync(argv.join(' '), { cwd: root, stdio: 'pipe' });
-        console.log('Operator: complete.');
+        const argv = ['"' + process.execPath + '"', '--import', 'tsx', '"' + join(root, 'apps', 'cli', 'src', 'index.ts') + '"', intent.command, ...intent.args];
+        execSync(argv.join(' '), { cwd: root, stdio: 'inherit' });
+        console.log('\nOperator: complete.');
       } catch {
-        console.log('Operator: command completed (non-zero exit may be expected for some checks).');
+        console.log('\nOperator: command exited non-zero (may be expected — e.g. doctor fails on missing config).');
       }
     });
 
