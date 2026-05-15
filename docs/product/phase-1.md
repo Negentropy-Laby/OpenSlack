@@ -35,7 +35,11 @@ All 8 Phase 1.1 hardening items addressed:
 | A. Workspace index (deferred) | PASS WITH EXCEPTION | PASS — index + status implemented |
 | I. Worktree (proposal only) | PARTIAL PASS | PASS — worktree add/remove/dirty-check implemented |
 
-**Remaining deferral:** P0-6/P0-7 require external GitHub repository + token. Code functions exist but cannot be end-to-end tested in this environment.
+**Phase 1.2: Cleanup complete.** 2 stub packages removed, 2 duplicate CLI commands consolidated, 60+ verification artifacts purged, commit convention documented, all 7 commits rewritten to module-prefixed format.
+
+**Post-push update:** Repository published at `https://github.com/wsman/OpenSlack`. `@openslack/github-provider` rebuilt with Octokit-based GraphQL client. Multi-terminal collaboration readiness: GitHub Project v2 integration code complete, ClaimBroker persistent, worktree isolation tested — awaiting GitHub Project configuration and `GITHUB_TOKEN` for end-to-end agent tick via Project board.
+
+**Remaining deferral:** P0-6 real workspace PR creation (git commit/push tested locally; end-to-end requires CI) and P0-7 GitHub Provider (code complete, needs `GITHUB_TOKEN` + Project v2 fields configured on `wsman/OpenSlack`).
 
 ## Formal Acceptance Decision
 
@@ -519,3 +523,172 @@ The following 8 items must be completed before Phase 1 can be declared unconditi
 
 **Current:** ClaimBroker uses in-process `Map` — not multi-process safe.
 **Required:** SQLite or workspace lease file + file lock for cross-process safety, especially for GitHub Actions concurrency.
+
+---
+
+## Phase 1 Complete File Inventory
+
+### Repository Stats
+
+| Metric | Value |
+|--------|-------|
+| Git commits (main) | 8 |
+| Git remote | `https://github.com/wsman/OpenSlack` |
+| Total .ts source files | 42 |
+| Test files | 7 |
+| Unit tests | 60 |
+| JSON schemas | 6 (draft 2020-12) |
+| YAML config/policy files | 19 |
+| Markdown docs | 11 |
+| Shell scripts | 2 |
+| GitHub Actions workflows | 4 |
+| CLI command groups | 7 |
+| CLI commands | 19 |
+| Packages in monorepo | 10 (9 libs + 1 app) |
+
+### Root Tree
+
+```
+OpenSlack/
+├── .aby/hooks/aby-hooks.json      # Aby Assistant session hooks
+├── .github/
+│   ├── pull_request_template.md
+│   └── workflows/
+│       ├── openslack-reusable-validate.yml
+│       ├── openslack-self-canary.yml
+│       ├── openslack-self-observe.yml
+│       └── openslack-self-validate.yml
+├── .gitignore
+├── .npmrc
+├── .openslack/                     # Workspace state (18 YAML/MD files)
+│   ├── policies/                   # 6 policy YAMLs
+│   ├── self/constitution.md
+│   ├── self/invariants.yaml
+│   ├── self/eval_suites/golden/    # 7 golden evals
+│   ├── self/evolution_backlog/     # 1 canonical EVOL task
+│   ├── self/release_channels/
+│   └── self/rollback/
+├── .openslack.local/               # Gitignored — local agent identity
+├── .prettierrc
+├── AGENTS.md                       # Constitutional constraints + dev rules
+├── CLAUDE.md                       # Identical copy of AGENTS.md
+├── agents/registry/                # 1 production agent + schema doc
+├── apps/cli/                       # CLI application
+│   └── src/commands/               # 7 command files
+│       ├── agent.ts                # hire, bootstrap, tick
+│       ├── monitor.ts              # monitor check
+│       ├── review.ts               # review pr, scorecard
+│       ├── self.ts                 # init, classify-pr, validate, observe, triage, eval
+│       ├── sync.ts                 # sync propose
+│       ├── task.ts                 # task checkout, cleanup, status
+│       └── workspace.ts            # workspace validate, index, status
+├── docs/
+│   ├── developer/
+│   │   ├── new-agent-onboarding.md
+│   │   ├── self-evolution-kernel.md
+│   │   └── technical-debt.md       # 3 P0, 1 P1, 6 P2, 6 Closed
+│   ├── product/phase-1.md          # This document
+│   ├── security/self-evolution-guardrails.md
+│   └── self-evolution/osek-review.md
+├── eslint.config.js
+├── openslack.yaml                  # Self-Project Mode workspace manifest
+├── package.json
+├── packages/
+│   ├── agent-runtime/              # bootstrap, tick
+│   ├── core/                       # ClaimBroker, FileClaimBroker
+│   ├── evals/                      # Golden eval runner, scorecard generator
+│   ├── github-provider/            # Octokit GraphQL client (issues, PRs, Project v2)
+│   ├── git-sync/                   # Worktree manager, PR proposal
+│   ├── policy/                     # Zone classifier (21 tests)
+│   ├── schemas/                    # 6 JSON schemas
+│   ├── self-evolution/             # Core (Red Zone) + Ops (Yellow Zone), 29 tests
+│   └── workspace-engine/           # Validation, indexing (5 tests)
+├── pnpm-lock.yaml
+├── pnpm-workspace.yaml
+├── product.md                      # Original product specification (912 lines)
+├── scripts/
+│   ├── genesis-rollback.sh         # Revert to last known good (bash only)
+│   └── genesis-validate.sh         # 5 integrity checks (bash only)
+├── templates/new-agent/            # 9 onboarding template files
+├── tsconfig.base.json
+└── tsconfig.json
+```
+
+### Package Dependency Graph
+
+```
+apps/cli
+  ├── @openslack/workspace-engine
+  ├── @openslack/policy
+  ├── @openslack/self-evolution
+  ├── @openslack/evals
+  ├── @openslack/agent-runtime
+  └── @openslack/git-sync
+
+packages/self-evolution
+  ├── @openslack/policy
+  ├── @openslack/schemas
+  ├── @openslack/workspace-engine
+  └── yaml
+
+packages/evals
+  ├── @openslack/policy
+  ├── @openslack/self-evolution
+  ├── @openslack/workspace-engine
+  ├── @openslack/core
+  └── yaml
+
+packages/workspace-engine
+  ├── @openslack/schemas
+  └── yaml
+
+packages/agent-runtime
+  └── @openslack/workspace-engine
+
+packages/git-sync
+  └── @openslack/policy
+
+packages/github-provider
+  └── @octokit/rest
+
+packages/policy
+  └── yaml
+```
+
+### Test Coverage Matrix
+
+| Package | Test File | Tests | Covers |
+|---------|-----------|-------|--------|
+| `workspace-engine` | `validate.test.ts` | 5 | validateWorkspace: valid workspace, missing yaml, missing dir, invalid mode, missing subdirs |
+| `policy` | `zones.test.ts` | 21 | classifyPaths: green/yellow/red/black zones, mixed paths, agent prompts, secrets, boundaries |
+| `self-evolution` | `classify-pr.test.ts` | 7 | classifySelfEvolutionPR: all zones, constitution, self-evolution core, mixed paths |
+| `self-evolution` | `merge-decider.test.ts` | 8 | decideMerge: black deny, null validation, red human, green approve, self-review block, yellow reject |
+| `self-evolution` | `review.test.ts` | 8 | reviewPR: agent independence, validation, black zone, red zone, fitness thresholds |
+| `self-evolution` | `scorecard.test.ts` | 6 | computeFitnessScore: pass, fail, security, large diffs, new deps, dimension structure |
+| `self-evolution` | `monitor.test.ts` | 5 | monitorPostMerge: stable, metrics structure, observations, regression, default genesis |
+
+### Golden Eval Assertion Coverage
+
+| Eval | Assertions | Method |
+|------|-----------|--------|
+| EV-GOLDEN-001 | openslack.yaml exists, policy exists, workspace validate passes | file_exists + in-process workspace validation |
+| EV-GOLDEN-002 | Agent can't edit own prompt | classifyPaths → RED + classifySelfEvolutionPR → human required |
+| EV-GOLDEN-003 | Red Zone requires human approval | classifyPaths → RED + classifySelfEvolutionPR → human required |
+| EV-GOLDEN-004 | Concurrent claim — only one succeeds | ClaimBroker in-process, 10 claims → 1 granted, 9 denied |
+| EV-GOLDEN-005 | Green docs auto-merge | classifyPaths → GREEN + human not required |
+| EV-GOLDEN-006 | Black Zone fails immediately | classifyPaths → BLACK + merge_decision = deny |
+| EV-GOLDEN-007 | Regression → rollback task | createRollbackTask(EXP-FAKE-001) → writes EVOL YAML file |
+
+### CLI Command Reference
+
+| Command | Subcommands | Package |
+|---------|------------|---------|
+| `openslack workspace` | validate, index, status | `@openslack/workspace-engine` |
+| `openslack self` | init, classify-pr, validate, observe, triage, eval | `@openslack/self-evolution` + `@openslack/evals` |
+| `openslack eval` | golden | `@openslack/evals` |
+| `openslack observe` | run, triage | `@openslack/self-evolution` |
+| `openslack review` | pr, scorecard | `@openslack/self-evolution` |
+| `openslack monitor` | check | `@openslack/self-evolution` |
+| `openslack agent` | hire, bootstrap, tick | `@openslack/agentR-runtime` |
+| `openslack sync` | propose | `@openslack/git-sync` |
+| `openslack task` | checkout, cleanup, status | `@openslack/git-sync` |

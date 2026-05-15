@@ -223,4 +223,37 @@ PR titles use the format from product.md: `[OpenSlack][<TASK-ID>][<agent_id>] <d
 
 ## Current State
 
-Phase 1 (OSEK Self-Evolution Kernel) and Phase 1.1 (Hardening) complete. The self-evolution core loop is implemented and tested: observe → classify → validate → review → scorecard → merge → monitor → rollback. Phase 1.2 cleanup complete — 2 stub packages removed, 2 duplicate CLI commands removed, verification artifacts purged. See `docs/product/phase-1.md` for full acceptance document and `docs/developer/self-evolution-kernel.md` for architecture overview.
+Phase 1 (OSEK Self-Evolution Kernel), Phase 1.1 (Hardening), and Phase 1.2 (Cleanup) complete. The self-evolution core loop is implemented and tested: observe → classify → validate → review → scorecard → merge → monitor → rollback.
+
+**Published:** `https://github.com/wsman/OpenSlack`
+
+**Implemented (60 tests, 7 golden evals):**
+- Self-Project Mode with workspace validate / index / status
+- Constitution with 6 articles, 7 invariants, 6 policy files
+- PR risk zone classifier (green/yellow/red/black, 21 tests)
+- Merge decision engine (8 tests)
+- Golden eval runner (7 evals, zero stubs)
+- Self observer + triage → EVOL task creation
+- Agent onboarding (9 templates, `agent hire` / `bootstrap`)
+- Claim broker with file persistence (claim/heartbeat/release/expire)
+- Agent tick cycle (local task discovery)
+- Worktree manager (git worktree add/remove/status)
+- Workspace PR proposal with risk classification
+- Fitness score computation (6 dimensions, weighted)
+- Auto-generated self_validation.yaml and scorecard files
+- Genesis validate/rollback scripts (zero runtime dependency)
+- 4 GitHub Actions workflows
+- 6 JSON schemas (draft 2020-12)
+- Technical debt register (`docs/developer/technical-debt.md`)
+
+**Ready for multi-terminal collaboration (code complete, awaiting GitHub Project v2 config):**
+- `@openslack/github-provider` — GraphQL issue/PR/Project v2 APIs
+- `FileClaimBroker` — persistent cross-process lease state
+- Git worktree isolation with branch-per-task
+
+**Deferred to Phase 2:**
+- Chat gateway (Slack/webhook adapters)
+- Server-mode Claim Broker (REST API)
+- Production deployment guards
+
+See `docs/product/phase-1.md` for full acceptance document.
