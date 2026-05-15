@@ -3,6 +3,7 @@
   "references": [
     { "path": "packages/core" },
     { "path": "packages/workspace-engine" },
+    { "path": "packages/github-provider" },
     { "path": "packages/agent-runtime" },
     { "path": "packages/policy" },
     { "path": "packages/git-sync" },
