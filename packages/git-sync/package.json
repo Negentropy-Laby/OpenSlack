@@ -17,6 +17,6 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@openslack/policy": "workspace:*"
+    "@openslack/kernel": "workspace:*"
   }
 }

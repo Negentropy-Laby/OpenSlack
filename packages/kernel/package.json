@@ -1,5 +1,5 @@
 {
-  "name": "@openslack/schemas",
+  "name": "@openslack/kernel",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,12 +9,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./*": "./dist/*.json"
+    }
   },
   "scripts": {
     "typecheck": "tsc",
     "test": "vitest run",
     "test:watch": "vitest"
+  },
+  "dependencies": {
+    "yaml": "^2.7.0"
   }
 }

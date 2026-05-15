@@ -1,15 +1,13 @@
 {
   "files": [],
   "references": [
+    { "path": "packages/kernel" },
+    { "path": "packages/workspace" },
     { "path": "packages/core" },
-    { "path": "packages/workspace-engine" },
-    { "path": "packages/github-provider" },
-    { "path": "packages/agent-runtime" },
-    { "path": "packages/policy" },
-    { "path": "packages/git-sync" },
     { "path": "packages/self-evolution" },
-    { "path": "packages/evals" },
-    { "path": "packages/schemas" },
+    { "path": "packages/agent-runtime" },
+    { "path": "packages/git-sync" },
+    { "path": "packages/github-provider" },
     { "path": "apps/cli" }
   ]
 }

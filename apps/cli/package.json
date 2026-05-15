@@ -13,10 +13,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@openslack/workspace-engine": "workspace:*",
-    "@openslack/policy": "workspace:*",
+    "@openslack/workspace": "workspace:*",
+    "@openslack/kernel": "workspace:*",
     "@openslack/self-evolution": "workspace:*",
-    "@openslack/evals": "workspace:*",
     "@openslack/agent-runtime": "workspace:*",
     "@openslack/git-sync": "workspace:*",
     "commander": "^13.1.0"

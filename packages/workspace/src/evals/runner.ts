@@ -1,10 +1,10 @@
 import { existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
-import { classifyPaths } from '@openslack/policy';
+import { classifyPaths } from '@openslack/kernel';
 import { classifySelfEvolutionPR, createRollbackTask, computeFitnessScore } from '@openslack/self-evolution';
 import { ClaimBroker } from '@openslack/core';
-import { validateWorkspace } from '@openslack/workspace-engine';
+import { validateWorkspace } from '@openslack/workspace';
 import { stringify } from 'yaml';
 import type { EvalSuite, EvalResult, EvalCase } from './types.js';
 import { loadGoldenSuite } from './suites/golden.js';

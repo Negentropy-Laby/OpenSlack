@@ -28,3 +28,20 @@ export interface PolicyResult {
   violations: string[];
   requiredActions: string[];
 }
+
+// Self-evolution types needed by kernel
+export interface MergeDecision {
+  decision: 'merge_queue' | 'deny' | 'require_human' | 'wait';
+  reason: string;
+  riskZone: RiskZone;
+}
+
+export interface SelfValidationResult {
+  experimentId: string;
+  prNumber: number;
+  headSha: string;
+  checks: Record<string, { result: 'pass' | 'fail' | 'skip'; command: string }>;
+  protectedPathCheck: { result: 'pass' | 'fail'; red_zone_touched: boolean; black_zone_touched: boolean };
+  score: { overall: number; decision: 'pass' | 'review' | 'block'; dimensions: Record<string, unknown> };
+  decision: 'pass' | 'fail' | 'requires_human';
+}

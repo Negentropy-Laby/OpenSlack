@@ -1,5 +1,5 @@
-import { classifyPaths } from '@openslack/kernel';
-import type { RiskZone } from '@openslack/kernel';
+import { classifyPaths } from '../zones.js';
+import type { RiskZone } from '../types.js';
 
 export interface PRClassification {
   riskZone: RiskZone;

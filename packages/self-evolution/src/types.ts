@@ -1,4 +1,4 @@
-import type { RiskZone } from '@openslack/policy';
+import type { RiskZone } from '@openslack/kernel';
 
 export type EvolutionStatus =
   | 'observed'

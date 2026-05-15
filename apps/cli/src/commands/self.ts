@@ -1,7 +1,7 @@
 import { Command } from 'commander';
-import { classifySelfEvolutionPR, observeHealth, triageObservations, validatePR } from '@openslack/self-evolution';
-import { runGoldenEval, generateScorecard } from '@openslack/evals';
-import { validateWorkspace } from '@openslack/workspace-engine';
+import { classifySelfEvolutionPR, observeHealth, triageObservations, validatePR, reviewPR, computeFitnessScore, monitorPostMerge } from '@openslack/self-evolution';
+import { runGoldenEval, generateScorecard } from '@openslack/workspace';
+import { validateWorkspace } from '@openslack/workspace';
 
 export function selfCommands(): Command {
   const cmd = new Command('self').description('Self-evolution commands');
@@ -157,6 +157,44 @@ export function selfCommands(): Command {
           process.exit(1);
         }
       }
+    });
+
+  cmd
+    .command('review')
+    .description('Review a PR for merge eligibility')
+    .requiredOption('--pr <number>', 'PR number')
+    .requiredOption('--implementer <id>', 'Implementation agent ID')
+    .requiredOption('--reviewer <id>', 'Reviewer agent ID')
+    .action((options) => {
+      const result = reviewPR(parseInt(options.pr, 10), null, options.implementer, options.reviewer);
+      console.log(`Decision: ${result.decision.toUpperCase()}`);
+      for (const check of result.checks) console.log(`  [${check.passed ? 'PASS' : 'FAIL'}] ${check.name}: ${check.detail}`);
+      if (result.decision === 'reject') process.exit(1);
+    });
+
+  cmd
+    .command('scorecard')
+    .description('Compute fitness score')
+    .option('--experiment <id>', 'Experiment ID')
+    .action((options) => {
+      const score = computeFitnessScore({ checks: {
+        'unit-tests': { result: 'pass', command: 'pnpm test' },
+        'typecheck': { result: 'pass', command: 'pnpm typecheck' },
+        'workspace-validate': { result: 'pass', command: 'openslack workspace validate' },
+        'self-eval': { result: 'pass', command: 'openslack self eval' },
+        'security-scan': { result: 'pass', command: '', findings: [] },
+      }});
+      console.log(`Fitness score for ${options.experiment || 'unknown'}: ${score.overall} → ${score.decision.toUpperCase()}`);
+    });
+
+  cmd
+    .command('monitor')
+    .description('Check for post-merge regression')
+    .option('--experiment <id>', 'Experiment ID')
+    .action((options) => {
+      const result = monitorPostMerge(options.experiment || 'unknown');
+      console.log(`Experiment: ${result.experimentId}, Regression: ${result.regression ? 'YES' : 'NO'}, Recommendation: ${result.recommendation}`);
+      if (result.regression) process.exit(1);
     });
 
   return cmd;

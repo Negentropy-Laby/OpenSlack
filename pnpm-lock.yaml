@@ -41,21 +41,18 @@ importers:
       '@openslack/agent-runtime':
         specifier: workspace:*
         version: link:../../packages/agent-runtime
-      '@openslack/evals':
-        specifier: workspace:*
-        version: link:../../packages/evals
       '@openslack/git-sync':
         specifier: workspace:*
         version: link:../../packages/git-sync
-      '@openslack/policy':
+      '@openslack/kernel':
         specifier: workspace:*
-        version: link:../../packages/policy
+        version: link:../../packages/kernel
       '@openslack/self-evolution':
         specifier: workspace:*
         version: link:../../packages/self-evolution
-      '@openslack/workspace-engine':
+      '@openslack/workspace':
         specifier: workspace:*
-        version: link:../../packages/workspace-engine
+        version: link:../../packages/workspace
       commander:
         specifier: ^13.1.0
         version: 13.1.0
@@ -66,35 +63,17 @@ importers:
 
   packages/agent-runtime:
     dependencies:
-      '@openslack/workspace-engine':
+      '@openslack/workspace':
         specifier: workspace:*
-        version: link:../workspace-engine
+        version: link:../workspace
 
   packages/core: {}
 
-  packages/evals:
-    dependencies:
-      '@openslack/core':
-        specifier: workspace:*
-        version: link:../core
-      '@openslack/policy':
-        specifier: workspace:*
-        version: link:../policy
-      '@openslack/self-evolution':
-        specifier: workspace:*
-        version: link:../self-evolution
-      '@openslack/workspace-engine':
-        specifier: workspace:*
-        version: link:../workspace-engine
-      yaml:
-        specifier: ^2.7.0
-        version: 2.9.0
-
   packages/git-sync:
     dependencies:
-      '@openslack/policy':
+      '@openslack/kernel':
         specifier: workspace:*
-        version: link:../policy
+        version: link:../kernel
 
   packages/github-provider:
     dependencies:
@@ -102,34 +81,35 @@ importers:
         specifier: ^21.0.0
         version: 21.1.1
 
-  packages/policy:
+  packages/kernel:
     dependencies:
       yaml:
         specifier: ^2.7.0
         version: 2.9.0
-
-  packages/schemas: {}
 
   packages/self-evolution:
     dependencies:
-      '@openslack/policy':
+      '@openslack/kernel':
         specifier: workspace:*
-        version: link:../policy
-      '@openslack/schemas':
+        version: link:../kernel
+      '@openslack/workspace':
         specifier: workspace:*
-        version: link:../schemas
-      '@openslack/workspace-engine':
-        specifier: workspace:*
-        version: link:../workspace-engine
+        version: link:../workspace
       yaml:
         specifier: ^2.7.0
         version: 2.9.0
 
-  packages/workspace-engine:
+  packages/workspace:
     dependencies:
-      '@openslack/schemas':
+      '@openslack/core':
         specifier: workspace:*
-        version: link:../schemas
+        version: link:../core
+      '@openslack/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@openslack/self-evolution':
+        specifier: workspace:*
+        version: link:../self-evolution
       yaml:
         specifier: ^2.7.0
         version: 2.9.0

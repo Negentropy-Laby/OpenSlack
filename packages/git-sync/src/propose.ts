@@ -1,4 +1,4 @@
-import { classifyPaths } from '@openslack/policy';
+import { classifyPaths } from '@openslack/kernel';
 
 export interface PRProposalInput {
   agentId: string;

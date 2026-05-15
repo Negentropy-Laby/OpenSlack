@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
-import { validateWorkspace } from '@openslack/workspace-engine';
+import { validateWorkspace } from '@openslack/workspace';
 
 export interface Observation {
   id: string;

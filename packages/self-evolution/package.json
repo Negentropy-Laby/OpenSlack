@@ -21,9 +21,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@openslack/policy": "workspace:*",
-    "@openslack/schemas": "workspace:*",
-    "@openslack/workspace-engine": "workspace:*",
+    "@openslack/kernel": "workspace:*",
+    "@openslack/workspace": "workspace:*",
     "yaml": "^2.7.0"
   }
 }

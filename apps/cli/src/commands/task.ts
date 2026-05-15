@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { createWorktree, cleanupWorktree, checkDirty } from '@openslack/git-sync';
+import { createWorktree, cleanupWorktree, checkDirty, proposeWorkspacePR } from '@openslack/git-sync';
 
 export function taskCommands(): Command {
   const cmd = new Command('task').description('Task management commands');
@@ -52,6 +52,23 @@ export function taskCommands(): Command {
       } else {
         console.log('CLEAN: No uncommitted changes.');
       }
+    });
+
+  cmd
+    .command('sync')
+    .description('Propose a workspace PR from local changes')
+    .requiredOption('--agent-id <id>', 'Agent ID')
+    .requiredOption('--task-id <id>', 'Task ID')
+    .requiredOption('--run-id <id>', 'Run ID')
+    .requiredOption('--paths <paths>', 'Comma-separated changed paths')
+    .option('--description <text>', 'PR description')
+    .action((options) => {
+      const paths = options.paths.split(',').map((p: string) => p.trim());
+      const result = proposeWorkspacePR({ agentId: options.agentId, taskId: options.taskId, runId: options.runId, changedPaths: paths, description: options.description });
+      if (!result.success) { console.error('PR proposal failed:'); for (const err of result.errors) console.error(`  - ${err}`); process.exit(1); }
+      console.log(`Branch: ${result.branchName}`);
+      console.log(`Risk zone: ${result.riskZone.toUpperCase()}`);
+      console.log(result.prBody);
     });
 
   return cmd;

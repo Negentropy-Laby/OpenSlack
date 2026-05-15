@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { classifyPaths } from '@openslack/policy';
-import { validateWorkspace } from '@openslack/workspace-engine';
+import { classifyPaths } from '@openslack/kernel';
+import { validateWorkspace } from '@openslack/workspace';
 import { computeFitnessScore } from './scorecard.js';
 import { stringify } from 'yaml';
 import type { SelfValidationResult, CheckResult, ProtectedPathResult } from '../types.js';

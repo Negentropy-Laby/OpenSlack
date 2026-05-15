@@ -1,0 +1,42 @@
+schema: openslack.github_integration.v1
+
+github:
+  owner: "wsman"
+  repo: "OpenSlack"
+  default_branch: "main"
+
+project:
+  number: 1
+  node_id: ""  # Fill after creating Project v2 on GitHub
+  title: "OpenSlack Evolution Board"
+
+fields:
+  status: "OpenSlack Status"
+  risk_level: "Risk Level"
+  priority: "Priority"
+  required_agent_type: "Required Agent Type"
+  required_capabilities: "Required Capabilities"
+  claimed_by: "Claimed By"
+  lease_id: "Lease ID"
+  human_approval_required: "Human Approval Required"
+  evolution_status: "Evolution Status"
+  evolution_type: "Evolution Type"
+  target_module: "Target Module"
+  implementer_agent: "Implementer Agent"
+  reviewer_agent: "Reviewer Agent"
+  experiment_id: "Experiment ID"
+  fitness_score: "Fitness Score"
+
+status_values:
+  - "Intake"
+  - "Ready"
+  - "Claimed"
+  - "Running"
+  - "Review"
+  - "Done"
+  - "Blocked"
+  - "Cancelled"
+
+authentication:
+  token_env: "GITHUB_TOKEN"
+  dry_run_mode: "Log intent when GITHUB_TOKEN is not set"

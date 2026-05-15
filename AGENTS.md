@@ -16,29 +16,26 @@ Before doing anything else, read `product.md`. It defines the full product archi
 
 ```
 openslack/                       # You are here
-├── product.md                   # Product definition — read this first
-├── AGENTS.md                    # This file
+├── openslack.yaml               # Self-Project Mode workspace manifest
+├── AGENTS.md                    # This file (canonical instructions)
+├── CLAUDE.md                    # Pointer to AGENTS.md
 │
-├── apps/                        # Runnable applications
-│   ├── api/                     # Claim Broker + ACP server
-│   ├── web/                     # Dashboard (post-MVP)
-│   └── cli/                     # openslack CLI tool
+├── apps/cli/                    # openslack CLI (5 command groups)
 │
-├── packages/                    # Shared libraries
-│   ├── core/                    # Task state machine, claim broker, risk engine
-│   ├── workspace-engine/        # Workspace validation, indexing, migration
-│   ├── github-provider/         # GitHub Projects, Issues, PRs API wrappers
-│   ├── agent-runtime/           # Bootstrap, tick, claim, heartbeat, execute
-│   ├── adapters/                # Runtime adapters (codex, claude-code, custom)
-│   ├── chat-gateway/            # Normalized chat events and action cards
-│   ├── chat-adapters/           # Platform-specific adapters (slack, webhook, ...)
-│   ├── policy/                  # Policy evaluator and path permission engine
-│   ├── git-sync/                # Worktree manager, PR orchestrator, merge agent
-│   └── schemas/                 # JSON Schema for all YAML files
+├── packages/                    # 6 libraries
+│   ├── kernel/                  # Zone classifier, merge decision, invariants
+│   ├── workspace/               # Validation, indexing, schemas, golden evals
+│   ├── core/                    # Claim broker (ClaimBroker, FileClaimBroker)
+│   ├── self-evolution/          # Observe, triage, review, scorecard, monitor, rollback
+│   ├── agent-runtime/           # Bootstrap, tick
+│   ├── git-sync/                # Worktree manager, PR proposal
+│   └── github-provider/         # GitHub Issues/PR/Project v2 API (dry-run when no token)
 │
-├── docs/                        # Additional documentation
-├── templates/                   # Onboarding file templates (new-agent/)
-└── tests/                       # Test suites (mirrors packages/)
+├── .openslack/                  # Workspace state (policies, constitution, evals, tasks)
+├── .github/                     # 4 CI workflows + PR template
+├── docs/                        # Product, developer, security, archive
+├── templates/new-agent/         # 9 onboarding template files
+└── scripts/                     # genesis-validate.sh, genesis-rollback.sh
 ```
 
 ## How to Work on This Project
@@ -227,33 +224,8 @@ Phase 1 (OSEK Self-Evolution Kernel), Phase 1.1 (Hardening), and Phase 1.2 (Clea
 
 **Published:** `https://github.com/wsman/OpenSlack`
 
-**Implemented (60 tests, 7 golden evals):**
-- Self-Project Mode with workspace validate / index / status
-- Constitution with 6 articles, 7 invariants, 6 policy files
-- PR risk zone classifier (green/yellow/red/black, 21 tests)
-- Merge decision engine (8 tests)
-- Golden eval runner (7 evals, zero stubs)
-- Self observer + triage → EVOL task creation
-- Agent onboarding (9 templates, `agent hire` / `bootstrap`)
-- Claim broker with file persistence (claim/heartbeat/release/expire)
-- Agent tick cycle (local task discovery)
-- Worktree manager (git worktree add/remove/status)
-- Workspace PR proposal with risk classification
-- Fitness score computation (6 dimensions, weighted)
-- Auto-generated self_validation.yaml and scorecard files
-- Genesis validate/rollback scripts (zero runtime dependency)
-- 4 GitHub Actions workflows
-- 6 JSON schemas (draft 2020-12)
-- Technical debt register (`docs/developer/technical-debt.md`)
+**Architecture (Phase 1.3 consolidation):** 6 packages (kernel, workspace, core, self-evolution, agent-runtime, git-sync, github-provider), 4 CLI command groups (workspace, self, agent, task), 60 tests, 7 golden evals.
 
-**Ready for multi-terminal collaboration (code complete, awaiting GitHub Project v2 config):**
-- `@openslack/github-provider` — GraphQL issue/PR/Project v2 APIs
-- `FileClaimBroker` — persistent cross-process lease state
-- Git worktree isolation with branch-per-task
+**Ready for multi-terminal collaboration (code complete, awaiting GitHub Project v2 config on wsman/OpenSlack).**
 
-**Deferred to Phase 2:**
-- Chat gateway (Slack/webhook adapters)
-- Server-mode Claim Broker (REST API)
-- Production deployment guards
-
-See `docs/product/phase-1.md` for full acceptance document.
+See `docs/status/current.md` for single source of truth and `docs/product/phase-1.md` for full acceptance document.

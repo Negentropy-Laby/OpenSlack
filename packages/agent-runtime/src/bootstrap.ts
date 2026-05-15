@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { validateWorkspace } from '@openslack/workspace-engine';
+import { validateWorkspace } from '@openslack/workspace';
 
 function findRepoRoot(): string {
   let dir = process.cwd();

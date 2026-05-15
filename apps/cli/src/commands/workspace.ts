@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { validateWorkspace, buildIndex } from '@openslack/workspace-engine';
+import { validateWorkspace, buildIndex } from '@openslack/workspace';
 
 export function workspaceCommands(): Command {
   const cmd = new Command('workspace').description('Workspace management commands');

@@ -1,5 +1,5 @@
 import type { MergeDecision, SelfValidationResult } from '../types.js';
-import type { RiskZone } from '@openslack/kernel';
+import type { RiskZone } from '../types.js';
 
 export interface MergeInput {
   riskZone: RiskZone;

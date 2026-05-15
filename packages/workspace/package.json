@@ -1,5 +1,5 @@
 {
-  "name": "@openslack/workspace-engine",
+  "name": "@openslack/workspace",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -17,7 +17,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@openslack/schemas": "workspace:*",
+    "@openslack/kernel": "workspace:*",
+    "@openslack/self-evolution": "workspace:*",
+    "@openslack/core": "workspace:*",
     "yaml": "^2.7.0"
   }
 }
