@@ -16,14 +16,53 @@
 2. **Dev/Local Fallback:** Fine-grained PAT or `GITHUB_TOKEN` — manual, for local debugging.
 3. **Human Login:** OAuth App / gh CLI — browser required, for web console and admin operations.
 
-**Required implementation:**
-- `packages/github-provider/src/auth.ts` — `getAppInstallationToken()` using `@octokit/auth-app`
-- Update `packages/github-provider/src/client.ts` — three-tier `getClient()` with GitHub App first, PAT fallback, dry-run last
-- Update `apps/auth-callback/` — `localhost` → `127.0.0.1`, add state validation, remove gh auth login claims
-- Update `docs/developer/github-automation.md` — document three-tier model
-- Update `scripts/setup-gh.sh` — remove headless PAT creation hybrid flow
+**Status (2026-05-16):**
+- ✅ GitHub App created (App ID 3728623, Client ID Iv23likkxk7ffF4CZrK5)
+- ✅ Private key stored at `.openslack.local/github-app.pem`
+- ✅ App installed on wsman/OpenSlack (Installation ID 132714795)
+- ✅ `getAppInstallationToken()` working — JWT signing with native crypto.sign, zero dependencies
+- ✅ `getClient()` three-tier priority working (App → PAT → dry-run)
+- ✅ `github doctor` reports correct auth tier and token expiry
+- ✅ gh CLI authenticated via `echo $TOKEN | gh auth login --with-token`
+- ❌ gh device flow token exchange never completes (same bug as Phase 1.5)
+- ❌ App cannot create user-level Project v2 (requires org-level Projects permission, wsman is a user account)
+- ❌ OAuth App device flow disabled (Client ID Iv23likkxk7ffF4CZrK5 returns `device_flow_disabled`)
+- ❌ User-level OAuth token (`gho_IN8bSVB4...`) lacks `project` scope
+- ⏳ Pending: Classic PAT with `repo, read:project, project` scope for one-time Project v2 bootstrap
+
+**GitHub App Installation Token: Full Attempt Log**
+
+| # | Method | Result |
+|---|--------|--------|
+| 1 | `node -e "getAppInstallationToken()"` | SUCCESS — token `ghs_jhDaGI...` expires in 1h |
+| 2 | Same with `OPENSLACK_GITHUB_APP_ID=3728623` + env vars | SUCCESS |
+| 3 | Via `getClient()` three-tier priority | SUCCESS — `authMode: github_app_installation` |
+| 4 | `github doctor` with App creds | FAIL (reported Dry-run) — root cause: stale `dist/client.js` |
+| 5 | `pnpm typecheck` rebuild + retry doctor | SUCCESS — `Auth tier: GitHub App Installation Token (expires: 2026-05-15T22:42:20.000Z)` |
+| 6 | `echo $TOKEN \| gh auth login --with-token` | SUCCESS — authenticated as `openslack-agent-operator[bot]` |
+| 7 | `gh api graphql` query repo projects | SUCCESS — `{"nodes":[]}` (no projects exist) |
+| 8 | `gh project create --owner wsman` | FAIL — `does not have permission to create projects on ownerId` |
+| 9 | `createProjectV2` mutation with `ownerId: "R_kgDOSeGWfA"` (repo node ID) | FAIL — "Could not resolve to OrganizationOrUser node" |
+| 10 | `createProjectV2` mutation with `ownerId: "MDQ6VXNlcjIxOTYyMjEy"` (user node ID) | FAIL — "does not have permission to create projects on ownerId" |
+| 11 | Updated App Organization permissions → Projects Read & Write | No effect (wsman is user, not org) |
+| 12 | Generated fresh token after permission update | FAIL — still denied |
+| 13 | `gh auth logout` + `gh auth login -s project` device flow | User code 1296-60F6 approved at github.com/login/device, token never delivered to gh (same bug as Phase 1.5) |
+| 14 | Raw HTTP device flow via `node:https` | FAIL — `device_flow_disabled` for OAuth App Client ID |
+
+**Root Cause Analysis for Project v2 Creation Block:**
+
+GitHub Projects v2 exist at two levels: user/org level (linked to repos) and repo level. The GitHub App has `Projects: Read & Write` for repos but cannot create user-level projects — that requires the App to have project creation permission at the organization level (only available for org accounts, not personal user accounts like wsman). The OAuth device flow is disabled for the OAuth App associated with the GitHub CLI. The user-level OAuth token (`gho_...`) lacks `project` scope and `gh auth refresh` requires browser interaction.
+
+**Required bootstrap:** A Classic PAT with `repo, read:project, project` scope, created once manually at `https://github.com/settings/tokens/new`. After one-time project creation, all subsequent operations use the GitHub App installation token.
 
 **7 OAuth attempts documented (see commit 08c61a2).** GitHub device flow token exchange never completed despite user approval. Root cause: credential store / proxy / gh binary version interaction. Not worth further debugging — architectural fix chosen instead.
+
+**Required implementation:**
+- `packages/github-provider/src/auth.ts` — `getAppInstallationToken()` using native `crypto.sign` (DONE)
+- Update `packages/github-provider/src/client.ts` — three-tier `getClient()` (DONE)
+- Update `apps/auth-callback/` — `localhost` → `127.0.0.1`, add state validation, remove gh auth login claims (DONE)
+- Update `docs/developer/github-automation.md` — document three-tier model (DONE)
+- Update `scripts/setup-gh.sh` — remove headless PAT creation hybrid flow (DONE)
 
 **P0-1: No GitHub remote — blocks end-to-end PR / task board workflow**
 
