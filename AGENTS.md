@@ -47,7 +47,7 @@ openslack/                       # You are here
 
 ### Before making changes
 
-1. Read `product.md` to understand the system you're contributing to.
+1. Read `docs/status/current.md` to understand the current state of the system. The original specification is archived at `docs/archive/original-product-spec.md`.
 2. Identify which package or app your change belongs to.
 3. Check if a schema exists in `packages/schemas/` for any YAML you touch — keep schemas and code in sync.
 
@@ -76,7 +76,7 @@ openslack/                       # You are here
 
 ### MVP scope
 
-The v1.0 MVP is defined in `product.md` Section 11. In short: workspace management, GitHub Project provider, Claim Broker, agent onboarding generator, agent runtime with worktree isolation, workspace PR orchestration, Slack + webhook chat gateway. Everything else is post-MVP.
+The v1.0 MVP scope is defined in `docs/archive/original-product-spec.md` and the acceptance document at `docs/product/phase-1.md`. Current active modules: OSEK (Self-Evolution Kernel) and GITL (GitHub Issues Task Loop).
 
 ## Relevant External Systems
 
@@ -221,7 +221,7 @@ The following commits set the quality standard for this repository:
 - `52a52d6` `repo: add initial OSEK Phase 1 monorepo scaffold`
 - `040990d` `docs: add commit message convention to AGENTS.md and CLAUDE.md`
 
-PR titles use the format from product.md: `[OpenSlack][<TASK-ID>][<agent_id>] <description>`.
+PR titles follow the format: `[OpenSlack][<TASK-ID>][<agent_id>] <description>`.
 
 ## Modules
 

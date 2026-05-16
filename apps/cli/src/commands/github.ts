@@ -160,7 +160,7 @@ export function githubCommands(): Command {
     .option('--pr-url <url>', 'PR URL for the completion record')
     .action(async (options) => {
       try {
-        const { releaseIssueClaim, releaseIssueClaimWithOwner } = await import('@openslack/github-provider');
+        const { releaseIssueClaim } = await import('@openslack/github-provider');
         await releaseIssueClaim(parseInt(options.issueNumber, 10));
         console.log(`Issue #${options.issueNumber}: claim released, labels → done`);
         if (options.prUrl) {

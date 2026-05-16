@@ -70,7 +70,13 @@ export function filterByPath(
 
   for (const path of changedPaths) {
     for (const fp of forbidden) {
-      const pattern = fp.replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*');
+      // Use placeholder to avoid *** replacement corrupting .*
+      const pattern = fp
+        .replace(/\*\*\//g, '__GLOBSTAR_SLASH__')
+        .replace(/\*\*/g, '__GLOBSTAR__')
+        .replace(/\*/g, '[^/]*')
+        .replace(/__GLOBSTAR_SLASH__/g, '(.*/)?')  // **/ matches zero or more directories
+        .replace(/__GLOBSTAR__/g, '.*');             // ** matches any depth
       if (new RegExp(`^${pattern}$`).test(path)) {
         return { allowed: false, reason: `Path "${path}" matches forbidden pattern "${fp}"` };
       }

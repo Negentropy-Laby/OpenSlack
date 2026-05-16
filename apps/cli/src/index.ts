@@ -25,7 +25,7 @@ program
   .action(async (queryParts: string[]) => {
     const root = process.cwd();
     const argv = ['"' + process.execPath + '"', '--import', 'tsx', '"' + join(root, 'apps', 'cli', 'src', 'index.ts') + '"', 'operator', 'ask', ...queryParts];
-    execSync(argv.join(' '), { cwd: root, stdio: 'inherit' });
+    try { execSync(argv.join(' '), { cwd: root, stdio: 'inherit' }); } catch { /* non-zero exit expected for some checks */ }
   });
 
 program
@@ -34,7 +34,7 @@ program
   .action(() => {
     const root = process.cwd();
     const argv = ['"' + process.execPath + '"', '--import', 'tsx', '"' + join(root, 'apps', 'cli', 'src', 'index.ts') + '"', 'workspace', 'status'];
-    execSync(argv.join(' '), { cwd: root, stdio: 'inherit' });
+    try { execSync(argv.join(' '), { cwd: root, stdio: 'inherit' }); } catch { /* non-zero exit expected for some checks */ }
   });
 
 program
@@ -43,7 +43,7 @@ program
   .action(() => {
     const root = process.cwd();
     const argv = ['"' + process.execPath + '"', '--import', 'tsx', '"' + join(root, 'apps', 'cli', 'src', 'index.ts') + '"', 'github', 'doctor'];
-    execSync(argv.join(' '), { cwd: root, stdio: 'inherit' });
+    try { execSync(argv.join(' '), { cwd: root, stdio: 'inherit' }); } catch { /* non-zero exit expected for some checks */ }
   });
 
 // Command groups
