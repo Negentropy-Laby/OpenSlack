@@ -14,8 +14,8 @@ supersedes:
 |-------|-------|
 | Remote | `https://github.com/wsman/OpenSlack` |
 | Branch | `main` |
-| Commits | 34 |
-| Last commit | `fix: add missing async to eval --clean action handler` |
+| Commits | 36 |
+| Last commit | `feat: complete Phase 1.10 — setup github, smoke test, package consolidation 7→5` |
 
 ## Modules
 
@@ -24,21 +24,23 @@ supersedes:
 | OSEK (Self-Evolution Kernel) | 1.6 | ACTIVE | Zone classifier, merge decision, golden evals, constitution, invariants, rollback, genesis |
 | GITL (GitHub Issues Task Loop) | 1.7 | ACTIVE | Issues-first autonomous task loop: create → claim → heartbeat → worktree → PR → review → done |
 
-## Packages (7 libraries + 2 apps)
+## Packages (5 active + 4 compat shims + 2 apps)
 
 | Package | Status | Tests | Key capability |
 |---------|--------|-------|---------------|
-| `@openslack/kernel` | ACTIVE | 21 | Zone classifier, merge decision, invariants |
-| `@openslack/workspace` | ACTIVE | 5 | Workspace validate, index, schemas, golden evals |
-| `@openslack/core` | ACTIVE | 0 | ClaimBroker, FileClaimBroker (file-locked) |
-| `@openslack/self-evolution` | ACTIVE | 29 | Observe, triage, review, scorecard, monitor, rollback |
-| `@openslack/agent-runtime` | ACTIVE | 0 | Agent bootstrap, tick (local + github-issues) |
-| `@openslack/git-sync` | ACTIVE | 0 | Worktree manager, PR proposal + commit/push |
-| `@openslack/github-provider` | ACTIVE | 0 | GitHub App auth, issue tasks, claims, lifecycle, repair, filters |
-| `@openslack/cli` (app) | ACTIVE | 0 | 6 command groups: workspace, self, agent, task, github, operator |
+| `@openslack/kernel` | ACTIVE | 21 | Zone classifier, merge decision, self-evolution ops |
+| `@openslack/workspace` | ACTIVE | 5 | Validation, indexing, schemas, golden evals |
+| `@openslack/core` | ACTIVE | 0 | ClaimBroker + FileClaimBroker (file-locked) |
+| `@openslack/runtime` | ACTIVE | 0 | Agent bootstrap/tick, worktree, PR proposal |
+| `@openslack/github` | ACTIVE | 31 | App auth, Issues, Claims, Repair, Lifecycle, Manifest |
+| `@openslack/cli` (app) | ACTIVE | 0 | 7 command groups: setup, ask, status, doctor, workspace, self, agent, task, github, operator |
 | `@openslack/auth-callback` (app) | ACTIVE | 0 | Headless OAuth server (human login only) |
+| *compat/self-evolution* | SHIM | — | → Re-exports from `@openslack/kernel` |
+| *compat/agent-runtime* | SHIM | — | → Re-exports from `@openslack/runtime` |
+| *compat/git-sync* | SHIM | — | → Re-exports from `@openslack/runtime` |
+| *compat/github-provider* | SHIM | — | → Re-exports from `@openslack/github` |
 
-## CLI Command Groups (6)
+## CLI Command Groups (7)
 
 | Group | Subcommands |
 |-------|------------|
@@ -58,7 +60,7 @@ supersedes:
 
 ## Test Suite
 
-97 unit tests across 12 test files. All passing. (Phase 1.9: +31 github-provider tests, +4 observe, +2 rollback)
+137 unit tests across 19 test files. All passing. (Phase 1.10: +shim package duplication adds test count)
 
 ## GitHub Integration
 

@@ -42,10 +42,10 @@ importers:
     dependencies:
       '@openslack/agent-runtime':
         specifier: workspace:*
-        version: link:../../packages/agent-runtime
+        version: link:../../packages/compat/agent-runtime
       '@openslack/git-sync':
         specifier: workspace:*
-        version: link:../../packages/git-sync
+        version: link:../../packages/compat/git-sync
       '@openslack/github':
         specifier: workspace:*
         version: link:../../packages/github
@@ -54,7 +54,7 @@ importers:
         version: link:../../packages/kernel
       '@openslack/self-evolution':
         specifier: workspace:*
-        version: link:../../packages/self-evolution
+        version: link:../../packages/compat/self-evolution
       '@openslack/workspace':
         specifier: workspace:*
         version: link:../../packages/workspace
@@ -66,34 +66,52 @@ importers:
         specifier: ^22.0.0
         version: 22.19.19
 
-  packages/agent-runtime:
+  packages/compat/agent-runtime:
     dependencies:
       '@openslack/core':
         specifier: workspace:*
-        version: link:../core
+        version: link:../../core
       '@openslack/github':
         specifier: workspace:*
-        version: link:../github
+        version: link:../../github
       '@openslack/runtime':
         specifier: workspace:*
-        version: link:../runtime
+        version: link:../../runtime
       '@openslack/workspace':
         specifier: workspace:*
-        version: link:../workspace
+        version: link:../../workspace
 
-  packages/core: {}
-
-  packages/git-sync:
+  packages/compat/git-sync:
     dependencies:
       '@openslack/github':
         specifier: workspace:*
-        version: link:../github
+        version: link:../../github
       '@openslack/kernel':
         specifier: workspace:*
-        version: link:../kernel
+        version: link:../../kernel
       '@openslack/runtime':
         specifier: workspace:*
-        version: link:../runtime
+        version: link:../../runtime
+
+  packages/compat/github-provider:
+    dependencies:
+      '@openslack/github':
+        specifier: workspace:*
+        version: link:../../github
+
+  packages/compat/self-evolution:
+    dependencies:
+      '@openslack/kernel':
+        specifier: workspace:*
+        version: link:../../kernel
+      '@openslack/workspace':
+        specifier: workspace:*
+        version: link:../../workspace
+      yaml:
+        specifier: ^2.7.0
+        version: 2.9.0
+
+  packages/core: {}
 
   packages/github:
     dependencies:
@@ -103,12 +121,6 @@ importers:
       yaml:
         specifier: ^2.7.0
         version: 2.9.0
-
-  packages/github-provider:
-    dependencies:
-      '@openslack/github':
-        specifier: workspace:*
-        version: link:../github
 
   packages/kernel:
     dependencies:
@@ -137,18 +149,6 @@ importers:
         specifier: workspace:*
         version: link:../workspace
 
-  packages/self-evolution:
-    dependencies:
-      '@openslack/kernel':
-        specifier: workspace:*
-        version: link:../kernel
-      '@openslack/workspace':
-        specifier: workspace:*
-        version: link:../workspace
-      yaml:
-        specifier: ^2.7.0
-        version: 2.9.0
-
   packages/workspace:
     dependencies:
       '@openslack/core':
@@ -159,7 +159,7 @@ importers:
         version: link:../kernel
       '@openslack/self-evolution':
         specifier: workspace:*
-        version: link:../self-evolution
+        version: link:../compat/self-evolution
       yaml:
         specifier: ^2.7.0
         version: 2.9.0

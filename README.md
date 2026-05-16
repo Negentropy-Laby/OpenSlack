@@ -4,8 +4,8 @@
 
 OpenSlack lets heterogeneous AI agents (Claude Code, Codex, reviewers, researchers, custom) function as employees: discover tasks from GitHub Issues, claim them with deterministic git ref locks, work in isolated worktrees, submit output through PRs, and communicate with humans only for approvals and exceptions.
 
-> **Status:** PARTIAL PRODUCT PASS. Two active modules. GitHub-backed autonomous task loop verified E2E.  
-> **Repository:** [`wsman/OpenSlack`](https://github.com/wsman/OpenSlack) · 34 commits · 7 packages · 97 tests
+> **Status:** Developer Preview. GitHub-backed autonomous task loop verified E2E.  
+> **Repository:** [`wsman/OpenSlack`](https://github.com/wsman/OpenSlack) · 36 commits · 5 packages · 137 tests
 
 ---
 
@@ -15,17 +15,13 @@ OpenSlack lets heterogeneous AI agents (Claude Code, Codex, reviewers, researche
 OpenSlack/
 ├── openslack.yaml           # Self-Project Mode workspace
 ├── .openslack/              # Workspace state (policies, constitution, evals, tasks)
-├── packages/                # 7 libraries (kernel, workspace, core, ...)
-│   ├── kernel/              # Zone classifier (21 tests) + merge decision + invariant enforcement
-│   ├── workspace/           # Validation (5 tests) + indexing + schemas + golden evals
-│   ├── core/                # ClaimBroker + FileClaimBroker (file-locked)
-│   ├── self-evolution/      # Observe, triage, review, scorecard, monitor, rollback (29 tests)
-│   ├── agent-runtime/       # Agent bootstrap + tick (local + GitHub Issues)
-│   ├── git-sync/            # Worktree manager + PR proposal/commit/push
-│   └── github-provider/     # GitHub App auth + issue tasks + claims + lifecycle + repair
-├── apps/
-│   ├── cli/                 # 7 command groups (workspace, self, agent, task, github, operator, setup)
-│   └── auth-callback/       # Headless OAuth server (human login only)
+├── packages/                # 5 active packages
+│   ├── kernel/              # Self-Evolution Kernel: zone classifier, review, scorecard, rollback
+│   ├── workspace/           # Validation, indexing, schemas, golden evals
+│   ├── core/                # ClaimBroker with file-locked persistence
+│   ├── runtime/             # Agent tick, worktree isolation, PR proposal
+│   └── github/              # App auth, Issues task loop, claims, lifecycle, repair
+├── apps/cli/                # 7 command groups (setup, ask, status, doctor + workspace/self/agent/task/github/operator)
 ├── templates/new-agent/     # 9 onboarding template files
 ├── scripts/                 # genesis-validate.sh, genesis-rollback.sh, setup-gh.sh
 └── docs/                    # Full acceptance, developer, security documentation
@@ -212,10 +208,10 @@ Every file must have a clear purpose. See [`AGENTS.md`](AGENTS.md) for:
 
 | Metric | Value |
 |--------|-------|
-| Packages | 7 libraries + 2 apps |
+| Packages | 5 active + 4 compat shims + 2 apps |
 | CLI commands | 25 |
 | CLI command groups | 7 |
-| Unit tests | 97 |
+| Unit tests | 137 (19 test files) |
 | Golden evals | 7 (7/7 passing) |
 | JSON Schemas | 8 (draft 2020-12) |
 | GitHub Actions workflows | 5 |
@@ -223,4 +219,4 @@ Every file must have a clear purpose. See [`AGENTS.md`](AGENTS.md) for:
 | Agent onboarding templates | 9 |
 | Policy files | 6 |
 | Documentation files | 11 |
-| Git commits | 34 |
+| Git commits | 36 |

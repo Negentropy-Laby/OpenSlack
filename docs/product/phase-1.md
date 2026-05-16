@@ -222,13 +222,13 @@ All 7 passing. Zero stub assertions.
 | Metric | Value |
 |--------|-------|
 | Git remote | `https://github.com/wsman/OpenSlack` |
-| Git commits | 34 |
-| Packages | 7 + 2 apps |
-| CLI command groups | 6 |
+| Git commits | 36 |
+| Packages | 5 active + 4 compat + 2 apps |
+| CLI command groups | 7 |
 | CLI commands | 25 |
 | TypeScript source files | 54 |
-| Test files | 12 |
-| Unit tests | 97 |
+| Test files | 19 |
+| Unit tests | 137 |
 | JSON Schemas | 8 (draft 2020-12) |
 | YAML policy files | 6 |
 | Golden evals | 7 (7/7 pass) |

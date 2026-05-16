@@ -40,24 +40,23 @@ function routeIntent(query: string): Intent {
     return { command: 'self', args: ['triage', '--create-issues'], description: 'Observe and create EVOL tasks via GitHub Issues' };
 
   // Agent operations
-  const defaultAgentId = 'anthropic_architect_aby'; // fallback: user should override via --agent-id or query text
   if (q.includes('claim') || q.includes('tick') || q.includes('pick up') || q.includes('get task'))
-    return { command: 'agent', args: ['tick', '--source', 'github-issues', '--agent-id', defaultAgentId], description: 'Agent tick via GitHub Issues (use your own --agent-id)' };
+    return { command: 'agent', args: ['tick', '--source', 'github-issues'], description: 'Agent tick via GitHub Issues (specify --agent-id with your agent)' };
   if (q.includes('hire'))
-    return { command: 'agent', args: ['hire', '--agent-id', 'codex_developer'], description: 'Hire new agent (default: codex_developer)' };
+    return { command: '_unknown', args: [], description: 'Please specify agent name: openslack agent hire --agent-id <id> --department <dept> --role <role>' };
   if (q.includes('bootstrap'))
-    return { command: 'agent', args: ['bootstrap', '--agent-id', defaultAgentId], description: 'Verify agent readiness (use your own --agent-id)' };
+    return { command: '_unknown', args: [], description: 'Please specify agent ID: openslack agent bootstrap --agent-id <id>' };
 
-  // Worktree + PR
+  // Worktree + PR — require explicit issue number
   if (q.includes('checkout') || q.includes('worktree') || q.includes('work on')) {
     const numMatch = q.match(/#?(\d+)/);
-    const issueNum = numMatch ? numMatch[1] : '1';
-    return { command: 'task', args: ['checkout', '--task-id', `ISSUE-${issueNum}`, '--agent-id', defaultAgentId, '--run-id', `RUN-${Date.now()}`], description: `Create worktree for issue #${issueNum} (override -a/--agent-id as needed)` };
+    if (!numMatch) return { command: '_unknown', args: [], description: 'Please specify an issue number: openslack task checkout --issue-number <n> --agent-id <id>' };
+    return { command: 'task', args: ['checkout', '--issue-number', numMatch[1], '--agent-id', 'anthropic_architect_aby'], description: `Create worktree for issue #${numMatch[1]}` };
   }
   if (q.includes('sync') || q.includes('submit') || q.includes('pr') || q.includes('pull request')) {
     const numMatch = q.match(/#?(\d+)/);
-    const issueNum = numMatch ? numMatch[1] : '1';
-    return { command: 'task', args: ['sync', '--agent-id', defaultAgentId, '--task-id', `ISSUE-${issueNum}`, '--run-id', `RUN-${Date.now()}`, '--paths', 'docs/test.md', '--issue-number', issueNum], description: `Propose workspace PR for issue #${issueNum}` };
+    if (!numMatch) return { command: '_unknown', args: [], description: 'Please specify an issue number: openslack task sync --issue-number <n>' };
+    return { command: 'task', args: ['sync', '--issue-number', numMatch[1], '--agent-id', 'anthropic_architect_aby', '--task-id', `ISSUE-${numMatch[1]}`, '--run-id', `RUN-${Date.now()}`, '--paths', 'docs/test.md'], description: `Propose workspace PR for issue #${numMatch[1]}` };
   }
 
   // Eval

@@ -241,7 +241,7 @@ The issues-first autonomous task loop using GitHub Issues + labels + determinist
 
 **Published:** `https://github.com/wsman/OpenSlack`
 
-**Architecture:** 7 packages + 2 apps, 6 CLI command groups, 97 tests (12 files), 7 golden evals, 34 commits.
+**Architecture:** 5 active packages (+4 compat shims) + 2 apps, 7 CLI command groups, 137 tests (19 files), 7 golden evals, 36 commits.
 
 **Authentication:** Three-tier model (GitHub App installation token primary, PAT fallback, OAuth human only). App ID 3728623 installed on wsman/OpenSlack.
 
