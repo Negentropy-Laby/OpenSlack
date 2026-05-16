@@ -129,11 +129,10 @@ export function operatorCommands(): Command {
       console.log(`→ openslack ${intent.command} ${intent.args.join(' ')}`);
       console.log('');
 
-      try {
-        const result = spawnSync(process.execPath, ['--import', 'tsx', join(root, 'apps', 'cli', 'src', 'index.ts'), intent.command, ...intent.args], { cwd: root, stdio: 'inherit' });
-        if (result.error) console.error('\nOperator: failed to execute:', result.error.message);
-        else if (result.status !== 0) console.log('\nOperator: command exited non-zero (may be expected — e.g. doctor fails on missing config).');
-        else console.log('\nOperator: complete.');
+      const result = spawnSync(process.execPath, ['--import', 'tsx', join(root, 'apps', 'cli', 'src', 'index.ts'), intent.command, ...intent.args], { cwd: root, stdio: 'inherit' });
+      if (result.error) console.error('\nOperator: failed to execute:', result.error.message);
+      else if (result.status !== 0) console.log('\nOperator: command exited non-zero (may be expected — e.g. doctor fails on missing config).');
+      else console.log('\nOperator: complete.');
     });
 
   return cmd;
