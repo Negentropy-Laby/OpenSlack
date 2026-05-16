@@ -127,12 +127,14 @@ Files under `.openslack/` produced by automated tests or verification runs (temp
 A CLI command file under `apps/cli/src/commands/` must serve a distinct command group with unique function calls. If two files import the same library functions and produce semantically identical output, they are duplicates. The canonical home for self-evolution operations (`eval`, `observe`, `triage`, `validate`) is `self.ts`. Separate command files exist only for independent domains (`agent`, `workspace`, `sync`, `task`, `review`, `monitor`).
 
 ### Check before commit
-Before any git commit:
-- `pnpm typecheck` — zero errors
-- `pnpm test` — all tests pass
-- `find .openslack -name "*.yaml" -newer .git/index 2>/dev/null` — no new auto-generated artifacts unless intentional
-- `ls packages/` — every package has at least one function with unit test coverage
-- `pnpm lint` — zero errors in source files (warnings in dist/ only)
+Before any git commit, ALL of these must pass:
+
+1. `pnpm typecheck` — zero errors
+2. `pnpm test` — all tests pass
+3. `find .openslack -name "*.yaml" -newer .git/index 2>/dev/null` — no new auto-generated artifacts unless intentional
+4. `ls packages/` — every package has at least one function with unit test coverage
+5. `pnpm lint` — zero errors in source files (warnings in dist/ only)
+6. **Verification agent** — after non-trivial changes (3+ files or any API/CLI/package change), spawn the verification agent (`subagent_type="verification"`) with the original task description, list of changed files, and verification commands. The verifier issues PASS/FAIL/PARTIAL verdict. Do NOT close multiple tasks or declare a phase complete without first passing verification. Fix all FAIL items before marking work as done.
 
 ### Commit message convention
 
