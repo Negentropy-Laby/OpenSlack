@@ -14,8 +14,8 @@ supersedes:
 |-------|-------|
 | Remote | `https://github.com/wsman/OpenSlack` |
 | Branch | `main` |
-| Commits | 28 |
-| Last commit | `github-provider: add task filtering, repair, and lifecycle exports` |
+| Commits | 34 |
+| Last commit | `fix: add missing async to eval --clean action handler` |
 
 ## Modules
 
@@ -35,7 +35,7 @@ supersedes:
 | `@openslack/agent-runtime` | ACTIVE | 0 | Agent bootstrap, tick (local + github-issues) |
 | `@openslack/git-sync` | ACTIVE | 0 | Worktree manager, PR proposal + commit/push |
 | `@openslack/github-provider` | ACTIVE | 0 | GitHub App auth, issue tasks, claims, lifecycle, repair, filters |
-| `@openslack/cli` (app) | ACTIVE | 0 | 5 command groups: workspace, self, agent, task, github |
+| `@openslack/cli` (app) | ACTIVE | 0 | 6 command groups: workspace, self, agent, task, github, operator |
 | `@openslack/auth-callback` (app) | ACTIVE | 0 | Headless OAuth server (human login only) |
 
 ## CLI Command Groups (5)
@@ -46,7 +46,11 @@ supersedes:
 | `openslack self` | init, classify-pr, validate, observe, triage, eval, review, scorecard, monitor |
 | `openslack agent` | hire, bootstrap, tick |
 | `openslack task` | checkout, cleanup, status, sync |
-| `openslack github` | doctor, project-inspect, project-sync-fields, project-query-ready |
+| `openslack github` | doctor, project-inspect, project-sync-fields, project-query-ready, issue-done, repair-labels, repair-claims, repair-all, metrics |
+| `openslack operator` | ask ("natural language") |
+| `openslack ask` | Top-level alias → operator ask |
+| `openslack status` | Top-level alias → workspace status |
+| `openslack doctor` | Top-level alias → github doctor |
 
 ## Golden Evals
 
@@ -54,7 +58,7 @@ supersedes:
 
 ## Test Suite
 
-60 unit tests across 7 test files. All passing.
+97 unit tests across 12 test files. All passing. (Phase 1.9: +31 github-provider tests, +4 observe, +2 rollback)
 
 ## GitHub Integration
 

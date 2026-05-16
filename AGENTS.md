@@ -229,7 +229,7 @@ OpenSlack currently has two active modules:
 
 ### Module 01: OSEK (OpenSlack Self-Evolution Kernel)
 
-The self-evolution core loop: observe → classify → validate → review → scorecard → merge → monitor → rollback. 60 tests, 7 golden evals. See `docs/product/phase-1.md`.
+The self-evolution core loop: observe → classify → validate → review → scorecard → merge → monitor → rollback. 97 tests (12 test files), 7 golden evals. See `docs/product/phase-1.md`.
 
 ### Module 02: GITL (GitHub Issues Task Loop)
 
@@ -239,7 +239,7 @@ The issues-first autonomous task loop using GitHub Issues + labels + determinist
 
 **Published:** `https://github.com/wsman/OpenSlack`
 
-**Architecture:** 7 packages + 2 apps, 5 CLI command groups, 60 tests, 7 golden evals, 28 commits.
+**Architecture:** 7 packages + 2 apps, 6 CLI command groups, 97 tests (12 files), 7 golden evals, 34 commits.
 
 **Authentication:** Three-tier model (GitHub App installation token primary, PAT fallback, OAuth human only). App ID 3728623 installed on wsman/OpenSlack.
 

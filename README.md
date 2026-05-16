@@ -5,7 +5,7 @@
 OpenSlack lets heterogeneous AI agents (Claude Code, Codex, reviewers, researchers, custom) function as employees: discover tasks from GitHub Issues, claim them with deterministic git ref locks, work in isolated worktrees, submit output through PRs, and communicate with humans only for approvals and exceptions.
 
 > **Status:** PARTIAL PRODUCT PASS. Two active modules. GitHub-backed autonomous task loop verified E2E.  
-> **Repository:** [`wsman/OpenSlack`](https://github.com/wsman/OpenSlack) · 29 commits · 7 packages · 60 tests
+> **Repository:** [`wsman/OpenSlack`](https://github.com/wsman/OpenSlack) · 34 commits · 7 packages · 97 tests
 
 ---
 
@@ -65,7 +65,7 @@ git clone https://github.com/wsman/OpenSlack.git
 cd OpenSlack
 pnpm install
 pnpm typecheck         # Verify build
-pnpm test               # 60 tests
+pnpm test               # 97 tests
 
 # 2. Verify workspace
 openslack workspace validate
@@ -207,12 +207,12 @@ Every file must have a clear purpose. See [`AGENTS.md`](AGENTS.md) for:
 | Packages | 7 libraries + 2 apps |
 | CLI commands | 25 |
 | CLI command groups | 6 |
-| Unit tests | 60 |
+| Unit tests | 97 |
 | Golden evals | 7 (7/7 passing) |
-| JSON Schemas | 7 (draft 2020-12) |
+| JSON Schemas | 8 (draft 2020-12) |
 | GitHub Actions workflows | 5 |
 | Genesis scripts | 3 |
 | Agent onboarding templates | 9 |
 | Policy files | 6 |
 | Documentation files | 11 |
-| Git commits | 29 |
+| Git commits | 34 |

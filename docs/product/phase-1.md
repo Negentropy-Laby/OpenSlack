@@ -172,7 +172,7 @@ All 7 passing. Zero stub assertions.
 | `@openslack/self-evolution` | `scorecard.test.ts` | 6 | Fitness score (pass, fail, security, large diffs, new deps, dimension weights) |
 | `@openslack/self-evolution` | `monitor.test.ts` | 5 | Post-merge monitor (stable, metrics structure, regression, default genesis) |
 
-**Total: 60 tests, 7 test files, all passing.**
+**Total: 97 tests, 12 test files, all passing.** (Phase 1.9: +31 github-provider, +4 observe, +2 rollback)
 
 ## CLI Command Reference
 

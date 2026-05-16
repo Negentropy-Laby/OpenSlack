@@ -53,7 +53,7 @@ OBSERVE → CLASSIFY → VALIDATE → REVIEW → SCORECARD → MERGE → MONITOR
 ```bash
 pnpm install
 pnpm typecheck
-pnpm test             # 60 tests, 7 test files
+pnpm test             # 97 tests, 12 test files
 node --import tsx apps/cli/src/index.ts <command>
 bash scripts/genesis-validate.sh
 ```
