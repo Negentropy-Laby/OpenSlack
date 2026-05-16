@@ -148,4 +148,4 @@ fi
 echo ""
 echo "=== Setup complete ==="
 echo "Next: openslack github doctor    # verify setup"
-echo "      openslack github project-init  # auto-create Project v2"
+echo "      openslack github project-query-ready  # list ready items (if Project v2 configured)"

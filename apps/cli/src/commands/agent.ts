@@ -27,7 +27,7 @@ export function agentCommands(): Command {
     .option('--role <role>', 'Role', 'developer')
     .option('--runtime <runtime>', 'Runtime: claude_code, codex, custom_runner', 'claude_code')
     .option('--manager <id>', 'Manager ID', 'human:founder')
-    .option('--github-owner <owner>', 'GitHub owner', 'MY-DOGE')
+    .option('--github-owner <owner>', 'GitHub owner', 'wsman')
     .option('--github-repo <repo>', 'GitHub repo', 'OpenSlack')
     .option('--project-number <n>', 'GitHub Project number', '1')
     .action((options) => {

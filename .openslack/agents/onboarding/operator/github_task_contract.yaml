@@ -1,7 +1,7 @@
 schema: openslack.github_task_contract.v1
 
 github:
-  owner: "MY-DOGE"
+  owner: "wsman"
   repo: "OpenSlack"
   project_number: 1
 

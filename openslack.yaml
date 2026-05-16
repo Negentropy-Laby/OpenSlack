@@ -10,7 +10,7 @@ mode: self_project
 
 canonical_remote:
   provider: github
-  owner: MY-DOGE
+  owner: wsman
   repo: OpenSlack
   default_branch: main
 
@@ -36,7 +36,7 @@ self_evolution:
   enabled: true
   module: self_evolution_kernel
   evolution_board:
-    github_owner: MY-DOGE
+    github_owner: wsman
     project_number: 1
   default_risk_level: medium
   human_required_for_constitutional_changes: true

@@ -26,7 +26,7 @@ capabilities:
 
 repositories:
   workspace_repo:
-    owner: "MY-DOGE"
+    owner: "wsman"
     repo: "OpenSlack"
     default_branch: "main"
 

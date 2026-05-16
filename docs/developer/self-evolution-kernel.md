@@ -20,7 +20,7 @@ openslack/
 │   ├── agent-runtime/          # Agent bootstrap + tick
 │   ├── git-sync/               # Worktree manager, PR proposal
 │   └── github-provider/        # GitHub API client (dry-run when no token)
-├── apps/cli/                   # CLI — 4 command groups
+├── apps/cli/                   # CLI — 6 command groups
 ├── scripts/                    # genesis-validate.sh, genesis-rollback.sh
 └── .github/workflows/          # 4 CI workflows
 ```

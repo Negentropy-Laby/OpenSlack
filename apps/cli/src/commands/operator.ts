@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { execSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -40,23 +40,24 @@ function routeIntent(query: string): Intent {
     return { command: 'self', args: ['triage', '--create-issues'], description: 'Observe and create EVOL tasks via GitHub Issues' };
 
   // Agent operations
+  const defaultAgentId = 'anthropic_architect_aby'; // fallback: user should override via --agent-id or query text
   if (q.includes('claim') || q.includes('tick') || q.includes('pick up') || q.includes('get task'))
-    return { command: 'agent', args: ['tick', '--source', 'github-issues', '--agent-id', 'anthropic_architect_aby'], description: 'Agent tick via GitHub Issues' };
+    return { command: 'agent', args: ['tick', '--source', 'github-issues', '--agent-id', defaultAgentId], description: 'Agent tick via GitHub Issues (use your own --agent-id)' };
   if (q.includes('hire'))
-    return { command: 'agent', args: ['hire', '--agent-id', 'operator'], description: 'Hire new agent' };
+    return { command: 'agent', args: ['hire', '--agent-id', 'codex_developer'], description: 'Hire new agent (default: codex_developer)' };
   if (q.includes('bootstrap'))
-    return { command: 'agent', args: ['bootstrap', '--agent-id', 'anthropic_architect_aby'], description: 'Verify agent readiness' };
+    return { command: 'agent', args: ['bootstrap', '--agent-id', defaultAgentId], description: 'Verify agent readiness (use your own --agent-id)' };
 
   // Worktree + PR
   if (q.includes('checkout') || q.includes('worktree') || q.includes('work on')) {
     const numMatch = q.match(/#?(\d+)/);
     const issueNum = numMatch ? numMatch[1] : '1';
-    return { command: 'task', args: ['checkout', '--task-id', `ISSUE-${issueNum}`, '--agent-id', 'anthropic_architect_aby', '--run-id', `RUN-${Date.now()}`], description: `Create worktree for issue #${issueNum}` };
+    return { command: 'task', args: ['checkout', '--task-id', `ISSUE-${issueNum}`, '--agent-id', defaultAgentId, '--run-id', `RUN-${Date.now()}`], description: `Create worktree for issue #${issueNum} (override -a/--agent-id as needed)` };
   }
   if (q.includes('sync') || q.includes('submit') || q.includes('pr') || q.includes('pull request')) {
     const numMatch = q.match(/#?(\d+)/);
     const issueNum = numMatch ? numMatch[1] : '1';
-    return { command: 'task', args: ['sync', '--agent-id', 'anthropic_architect_aby', '--task-id', `ISSUE-${issueNum}`, '--run-id', `RUN-${Date.now()}`, '--paths', 'docs/test.md', '--issue-number', issueNum], description: `Propose workspace PR for issue #${issueNum}` };
+    return { command: 'task', args: ['sync', '--agent-id', defaultAgentId, '--task-id', `ISSUE-${issueNum}`, '--run-id', `RUN-${Date.now()}`, '--paths', 'docs/test.md', '--issue-number', issueNum], description: `Propose workspace PR for issue #${issueNum}` };
   }
 
   // Eval
@@ -129,12 +130,10 @@ export function operatorCommands(): Command {
       console.log('');
 
       try {
-        const argv = ['"' + process.execPath + '"', '--import', 'tsx', '"' + join(root, 'apps', 'cli', 'src', 'index.ts') + '"', intent.command, ...intent.args];
-        execSync(argv.join(' '), { cwd: root, stdio: 'inherit' });
-        console.log('\nOperator: complete.');
-      } catch {
-        console.log('\nOperator: command exited non-zero (may be expected — e.g. doctor fails on missing config).');
-      }
+        const result = spawnSync(process.execPath, ['--import', 'tsx', join(root, 'apps', 'cli', 'src', 'index.ts'), intent.command, ...intent.args], { cwd: root, stdio: 'inherit' });
+        if (result.error) console.error('\nOperator: failed to execute:', result.error.message);
+        else if (result.status !== 0) console.log('\nOperator: command exited non-zero (may be expected — e.g. doctor fails on missing config).');
+        else console.log('\nOperator: complete.');
     });
 
   return cmd;

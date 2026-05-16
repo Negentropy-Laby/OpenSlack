@@ -28,7 +28,7 @@ retry:
   backoff_ms: 1000
 
 evolution_board:
-  github_owner: "MY-DOGE"
+  github_owner: "wsman"
   project_number: 1
   fields:
     status: "OpenSlack Status"

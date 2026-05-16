@@ -1,6 +1,6 @@
 # OSEK Design Review
 
-> Review of OpenSlack Self-Evolution Kernel (Module 01) against product.md v1.0.
+> Historical review of OpenSlack Self-Evolution Kernel (Module 01) against the original product.md v1.0 (now archived at `docs/archive/original-product-spec.md`). Some references to `packages/evals/`, `workspace.yaml`, and `product.md` reflect the Phase 1.0 architecture and have since been renamed/moved during Phase 1.3 consolidation.
 > Date: 2026-05-15 | Verdict: PASS with required fixes
 
 ## Overall

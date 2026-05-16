@@ -25,7 +25,7 @@ openslack/                       # You are here
 ├── AGENTS.md                    # This file (canonical instructions)
 ├── CLAUDE.md                    # Pointer to AGENTS.md
 │
-├── apps/cli/                    # openslack CLI (5 command groups)
+├── apps/cli/                    # openslack CLI (6 command groups)
 │
 ├── packages/                    # 6 libraries
 │   ├── kernel/                  # Zone classifier, merge decision, invariants
@@ -49,11 +49,11 @@ openslack/                       # You are here
 
 1. Read `docs/status/current.md` to understand the current state of the system. The original specification is archived at `docs/archive/original-product-spec.md`.
 2. Identify which package or app your change belongs to.
-3. Check if a schema exists in `packages/schemas/` for any YAML you touch — keep schemas and code in sync.
+3. Check if a schema exists in `packages/workspace/src/schemas/` for any YAML you touch — keep schemas and code in sync.
 
 ### While working
 
-- Schemas in `packages/schemas/` use JSON Schema (draft 2020-12). Every YAML file in an OpenSlack workspace must validate against a schema.
+- Schemas in `packages/workspace/src/schemas/` use JSON Schema (draft 2020-12). Every YAML file in an OpenSlack workspace must validate against a schema.
 - The CLI (`apps/cli/`) is the primary user interface. All core logic lives in packages and is called by the CLI, not embedded in it.
 - Each package has its own tests. Run package tests before committing.
 - GitHub API calls go through `packages/github-provider/` — never call GitHub APIs directly from other packages.

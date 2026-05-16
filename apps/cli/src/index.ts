@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { execSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { workspaceCommands } from './commands/workspace.js';
 import { selfCommands } from './commands/self.js';
 import { agentCommands } from './commands/agent.js';
@@ -24,8 +23,8 @@ program
   .argument('<query...>', 'What do you want to do?')
   .action(async (queryParts: string[]) => {
     const root = process.cwd();
-    const argv = ['"' + process.execPath + '"', '--import', 'tsx', '"' + join(root, 'apps', 'cli', 'src', 'index.ts') + '"', 'operator', 'ask', ...queryParts];
-    try { execSync(argv.join(' '), { cwd: root, stdio: 'inherit' }); } catch { /* non-zero exit expected for some checks */ }
+    const result = spawnSync(process.execPath, ['--import', 'tsx', join(root, 'apps', 'cli', 'src', 'index.ts'), 'operator', 'ask', ...queryParts], { cwd: root, stdio: 'inherit' });
+    if (result.error) console.error('ask: failed to execute:', result.error.message);
   });
 
 program
@@ -33,8 +32,7 @@ program
   .description('Quick workspace status overview')
   .action(() => {
     const root = process.cwd();
-    const argv = ['"' + process.execPath + '"', '--import', 'tsx', '"' + join(root, 'apps', 'cli', 'src', 'index.ts') + '"', 'workspace', 'status'];
-    try { execSync(argv.join(' '), { cwd: root, stdio: 'inherit' }); } catch { /* non-zero exit expected for some checks */ }
+    spawnSync(process.execPath, ['--import', 'tsx', join(root, 'apps', 'cli', 'src', 'index.ts'), 'workspace', 'status'], { cwd: root, stdio: 'inherit' });
   });
 
 program
@@ -42,8 +40,7 @@ program
   .description('Quick GitHub integration doctor check')
   .action(() => {
     const root = process.cwd();
-    const argv = ['"' + process.execPath + '"', '--import', 'tsx', '"' + join(root, 'apps', 'cli', 'src', 'index.ts') + '"', 'github', 'doctor'];
-    try { execSync(argv.join(' '), { cwd: root, stdio: 'inherit' }); } catch { /* non-zero exit expected for some checks */ }
+    spawnSync(process.execPath, ['--import', 'tsx', join(root, 'apps', 'cli', 'src', 'index.ts'), 'github', 'doctor'], { cwd: root, stdio: 'inherit' });
   });
 
 // Command groups

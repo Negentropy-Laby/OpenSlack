@@ -58,14 +58,17 @@ See: [`docs/developer/github-issues-loop.md`](docs/developer/github-issues-loop.
 ## Quick Start
 
 ```bash
-# Prerequisites: Node.js >= 22, pnpm
+# Prerequisites: Node.js >= 22, pnpm, python (for genesis scripts)
 
 # 1. Clone and install
 git clone https://github.com/wsman/OpenSlack.git
 cd OpenSlack
 pnpm install
-pnpm typecheck         # Verify build
-pnpm test               # 97 tests
+pnpm typecheck         # Builds all packages + type-checks
+
+# 1a. Make CLI available (choose one):
+alias openslack="node --import tsx $(pwd)/apps/cli/src/index.ts"   # Development
+# Or: pnpm build && export PATH="$(pwd)/apps/cli/dist:$PATH"       # Production
 
 # 2. Verify workspace
 openslack workspace validate

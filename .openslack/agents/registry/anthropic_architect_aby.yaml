@@ -35,11 +35,11 @@ capabilities:
 
 repositories:
   workspace_repo:
-    owner: "MY-DOGE"
+    owner: "wsman"
     repo: "OpenSlack"
     default_branch: "main"
   allowed_product_repos:
-    - "MY-DOGE/OpenSlack"
+    - "wsman/OpenSlack"
 
 workspace_permissions:
   allow:

@@ -38,7 +38,7 @@ supersedes:
 | `@openslack/cli` (app) | ACTIVE | 0 | 6 command groups: workspace, self, agent, task, github, operator |
 | `@openslack/auth-callback` (app) | ACTIVE | 0 | Headless OAuth server (human login only) |
 
-## CLI Command Groups (5)
+## CLI Command Groups (6)
 
 | Group | Subcommands |
 |-------|------------|
