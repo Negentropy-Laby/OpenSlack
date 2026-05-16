@@ -1,161 +1,141 @@
 # Technical Debt Register
 
-> Owner: OpenSlack OSEK
-> Updated: 2026-05-15
+> Owner: OpenSlack
+> Updated: 2026-05-16
 > Convention: P0 = blocks next phase, P1 = should fix this phase, P2 = nice to have
 
 ## Open Items
 
-### P0-0: Replace OAuth device flow with GitHub App installation token for agent runtime
+### P0-1: Branch protection ruleset not configured
 
-**Source:** Phase 1.5 GitHub wiring (2026-05-16), P0-0 blocker analysis.
-**Decision:** OAuth device/web flow is not suitable for zero-manual agent automation. GitHub App installation tokens are the correct primary credential for agent runtime. OAuth is reserved for human login only.
+**Source:** Phase 1.8 P0-3 review (2026-05-16).
+**Impact:** All commits go directly to main. No PR history exists on wsman/OpenSlack. Violates AGENTS.md constitutional rule: "No direct push to main. All changes go through PRs."
+**Resolution:** Configure via GitHub Settings → Rules → Rulesets (requires human admin — App token lacks Administration permission by design). Require PR before merging, status checks, CODEOWNERS review, block force push.
+**Filed:** 2026-05-16.
 
-**Three-tier auth model (see `docs/developer/github-automation.md`):**
-1. **Runtime (Primary):** GitHub App installation token — JWT-signed, programmatic, auto-refreshes. Zero manual steps after one-time App creation.
-2. **Dev/Local Fallback:** Fine-grained PAT or `GITHUB_TOKEN` — manual, for local debugging.
-3. **Human Login:** OAuth App / gh CLI — browser required, for web console and admin operations.
+### P0-2: github-provider has zero unit test coverage
 
-**Status (2026-05-16):** CLOSED. GitHub App working. Issues-first autonomous loop verified E2E. Productization complete (P1.7).
+**Source:** Phase 1.7 verification review (2026-05-16). All 60 existing tests are in other packages (kernel, self-evolution, workspace).
+**Impact:** New modules (manifest, claims, lifecycle, task-filter, repair) have no regression protection. Manifest parser, filter logic, and repair functions are tested only through indirect integration (golden evals, `openslack ask` smoke tests).
+**Modules with 0 tests:**
+- `packages/github-provider/src/manifest.ts`
+- `packages/github-provider/src/claims.ts`
+- `packages/github-provider/src/lifecycle.ts`
+- `packages/github-provider/src/task-filter.ts`
+- `packages/github-provider/src/repair.ts`
+**Resolution:** Add unit tests for manifest parsing (valid/invalid/edge cases), claim lifecycle (heartbeat, expiry, ownership), task filtering (capability/risk/path), and repair (label creation, expired claim detection).
+**Filed:** 2026-05-16.
 
-### P0-1: Project v2 creation still blocked (user-level permissions)
+### P1-1: Golden eval runner auto-generates artifacts that must be manually cleaned
 
-**Source:** Phase 1.5 attempt log (14 attempts, see commit 3cb452f).
-**Status:** DEFERRED. GitHub App cannot create user-level Project v2 on wsman. Issues-first architecture bypasses this entirely. Project v2 is optional projection for Phase 2.
-- ✅ `github doctor` reports correct auth tier and token expiry
-- ✅ gh CLI authenticated via `echo $TOKEN | gh auth login --with-token`
-- ❌ gh device flow token exchange never completes (same bug as Phase 1.5)
-- ❌ App cannot create user-level Project v2 (requires org-level Projects permission, wsman is a user account)
-- ❌ OAuth App device flow disabled (Client ID Iv23likkxk7ffF4CZrK5 returns `device_flow_disabled`)
-- ❌ User-level OAuth token (`gho_IN8bSVB4...`) lacks `project` scope
-- ⏳ Pending: Classic PAT with `repo, read:project, project` scope for one-time Project v2 bootstrap
-
-**GitHub App Installation Token: Full Attempt Log**
-
-| # | Method | Result |
-|---|--------|--------|
-| 1 | `node -e "getAppInstallationToken()"` | SUCCESS — token `ghs_jhDaGI...` expires in 1h |
-| 2 | Same with `OPENSLACK_GITHUB_APP_ID=3728623` + env vars | SUCCESS |
-| 3 | Via `getClient()` three-tier priority | SUCCESS — `authMode: github_app_installation` |
-| 4 | `github doctor` with App creds | FAIL (reported Dry-run) — root cause: stale `dist/client.js` |
-| 5 | `pnpm typecheck` rebuild + retry doctor | SUCCESS — `Auth tier: GitHub App Installation Token (expires: 2026-05-15T22:42:20.000Z)` |
-| 6 | `echo $TOKEN \| gh auth login --with-token` | SUCCESS — authenticated as `openslack-agent-operator[bot]` |
-| 7 | `gh api graphql` query repo projects | SUCCESS — `{"nodes":[]}` (no projects exist) |
-| 8 | `gh project create --owner wsman` | FAIL — `does not have permission to create projects on ownerId` |
-| 9 | `createProjectV2` mutation with `ownerId: "R_kgDOSeGWfA"` (repo node ID) | FAIL — "Could not resolve to OrganizationOrUser node" |
-| 10 | `createProjectV2` mutation with `ownerId: "MDQ6VXNlcjIxOTYyMjEy"` (user node ID) | FAIL — "does not have permission to create projects on ownerId" |
-| 11 | Updated App Organization permissions → Projects Read & Write | No effect (wsman is user, not org) |
-| 12 | Generated fresh token after permission update | FAIL — still denied |
-| 13 | `gh auth logout` + `gh auth login -s project` device flow | User code 1296-60F6 approved at github.com/login/device, token never delivered to gh (same bug as Phase 1.5) |
-| 14 | Raw HTTP device flow via `node:https` | FAIL — `device_flow_disabled` for OAuth App Client ID |
-
-**Root Cause Analysis for Project v2 Creation Block:**
-
-GitHub Projects v2 exist at two levels: user/org level (linked to repos) and repo level. The GitHub App has `Projects: Read & Write` for repos but cannot create user-level projects — that requires the App to have project creation permission at the organization level (only available for org accounts, not personal user accounts like wsman). The OAuth device flow is disabled for the OAuth App associated with the GitHub CLI. The user-level OAuth token (`gho_...`) lacks `project` scope and `gh auth refresh` requires browser interaction.
-
-**Required bootstrap:** A Classic PAT with `repo, read:project, project` scope, created once manually at `https://github.com/settings/tokens/new`. After one-time project creation, all subsequent operations use the GitHub App installation token.
-
-**7 OAuth attempts documented (see commit 08c61a2).** GitHub device flow token exchange never completed despite user approval. Root cause: credential store / proxy / gh binary version interaction. Not worth further debugging — architectural fix chosen instead.
-
-**Required implementation:**
-- `packages/github-provider/src/auth.ts` — `getAppInstallationToken()` using native `crypto.sign` (DONE)
-- Update `packages/github-provider/src/client.ts` — three-tier `getClient()` (DONE)
-- Update `apps/auth-callback/` — `localhost` → `127.0.0.1`, add state validation, remove gh auth login claims (DONE)
-- Update `docs/developer/github-automation.md` — document three-tier model (DONE)
-- Update `scripts/setup-gh.sh` — remove headless PAT creation hybrid flow (DONE)
-
-**P0-1: No GitHub remote — blocks end-to-end PR / task board workflow**
-
-**Source:** Phase 1 acceptance review §F
-**Impact:** Cannot run Demo 1 (clean clone bootstrap), Demo 2 (Green PR gate), Demo 6 (agent tick from Project), Demo 7 (agent claim), Demo 9 (workspace PR). Worktree tests blocked without remote. GitHub Provider package is deleted (will be recreated from spec when remote exists).
-**Resolution:** Create `MY-DOGE/OpenSlack` GitHub repository with Project v2, configure branch protection rulesets per `.github/workflows/`, push this repo.
-**Depends on:** External GitHub org access.
-
-### P0-2: EV-GOLDEN-004 and EV-GOLDEN-007 use in-process only
-
-**Source:** Phase 1.1 P0-2 implementation at `packages/workspace/src/evals/runner.ts`
-**Impact:** Concurrent claim test uses synchronous ClaimBroker (not multi-process). Rollback test creates local file only (no git revert PR). Both pass golden suite but don't represent production behavior.
-**Resolution:** When Claim Broker is server-mode (Phase 2), update EV-GOLDEN-004 to use HTTP client. When git remote exists, update EV-GOLDEN-007 to verify git revert + PR creation.
-**Depends on:** P0-1 (GitHub remote), Phase 2 Claim Broker server.
-
-### P0-3: Golden eval runner auto-generates artifacts that must be manually cleaned
-
-**Source:** `packages/workspace/src/evals/runner.ts` `generateScorecard()` writes to `.openslack/self/scorecards/`. EV-GOLDEN-007 `createRollbackTask()` writes to `.openslack/self/evolution_backlog/`.
-**Impact:** Each `self eval --suite golden` run leaves files on disk. The Repository Cleanliness rule (AGENTS.md) requires cleanup of verification artifacts. Currently manual.
-**Resolution:** Add `--clean` flag to `self eval` that removes artifacts after run. Or route artifacts to a temp directory that is gitignored.
-**Filed:** 2026-05-15 cleanup commits (0cc1e2a, 8ed99d1).
-
-### P1-1: Self-Validation Manifest writes `.yaml` extension but file extension says `.yaml`
-
-**Source:** `packages/self-evolution/src/ops/validate.ts:91` — `writeFileSync(..., 'self_validation.yaml')`
-**Impact:** The `yaml` package is a hard dependency of `@openslack/self-evolution`, so the file is always YAML. The extension is correct. No actual bug — this was flagged as observation in a verification run where the verifier misread the output.
-**Resolution:** Close as not-a-bug. Verified in Phase 1.1 final verification (PASS).
-**Filed:** 2026-05-15 verification run.
+**Source:** `packages/workspace/src/evals/runner.ts` `generateScorecard()` + EV-GOLDEN-007 `createRollbackTask()`.
+**Impact:** Each `self eval --suite golden` run leaves scorecard YAML and EVOL YAML files on disk. Must be manually deleted after each run. Caused 7 artifact commits across development.
+**Resolution:** Add `--clean` flag to `self eval` that removes artifacts after run, or route artifacts to `.openslack.local/runs/` which is gitignored.
+**Filed:** 2026-05-15.
 
 ### P2-1: `observe.ts` has no unit tests
 
-**Source:** `packages/self-evolution/src/ops/observe.ts`
-**Impact:** `observeHealth()` calls `execSync('pnpm typecheck')` and `execSync('pnpm test')` which spawn child processes. Hard to test in vitest (process explosion risk). The function works correctly in CLI but has 0 test coverage.
-**Resolution:** Refactor to accept test results as input (dependency injection pattern, same as `monitorPostMerge` already does). Then test the observation logic without spawning processes.
-**Filed:** 2026-05-15 Phase 1.1 review.
+**Source:** `packages/self-evolution/src/ops/observe.ts`. Calls `execSync('pnpm typecheck')` and `execSync('pnpm test')` — spawns child processes.
+**Resolution:** Refactor to accept test results as input (dependency injection, same as `monitorPostMerge`). Test observation logic without spawning processes.
+**Filed:** 2026-05-15.
 
 ### P2-2: `rollback.ts` has no unit tests
 
-**Source:** `packages/self-evolution/src/ops/rollback.ts`
-**Impact:** `createRollbackTask()` and `executeRollback()` are simple file-write functions. 0 test coverage.
-**Resolution:** Add unit tests that verify YAML output structure and file path correctness. Mock filesystem.
-**Filed:** 2026-05-15 Phase 1.1 review.
+**Source:** `packages/self-evolution/src/ops/rollback.ts`. Simple file-write functions with 0 test coverage.
+**Resolution:** Add unit tests for YAML output structure and file path correctness. Mock filesystem.
+**Filed:** 2026-05-15.
 
-### P2-3: Claim broker deny reason is `NOT_READY` instead of `ALREADY_CLAIMED` on duplicate claim
+### P2-3: Claim broker deny reason is `NOT_READY` not `ALREADY_CLAIMED`
 
-**Source:** `packages/core/src/claim-broker.ts:62` — task state transition from `ready` to `claimed` short-circuits before `getActiveLease()` check.
-**Impact:** Functionally correct (exactly 1 claim granted, 99 denied). But the deny reason string is imprecise — all denied claims show `NOT_READY` even when the real reason is `ALREADY_CLAIMED`. Could confuse diagnostics.
-**Resolution:** Reorder the checks in `claimTask()`: call `getActiveLease()` before checking task state, return `ALREADY_CLAIMED` when an active lease exists.
-**Filed:** 2026-05-15 Phase 1.1 final verification.
+**Source:** `packages/core/src/claim-broker.ts:62`. Task state transition short-circuits before `getActiveLease()` check.
+**Impact:** Denied claims show `NOT_READY` even when real reason is `ALREADY_CLAIMED`. Functionally correct (exactly 1 granted) but misleading diagnostics.
+**Resolution:** Reorder checks: call `getActiveLease()` first, return `ALREADY_CLAIMED` when active lease exists.
+**Filed:** 2026-05-15.
 
-### P2-4: Agent ID comparison in `decideMerge` is case-sensitive
+### P2-4: `checkDirty` returns `true` for non-existent paths
 
-**Source:** `packages/self-evolution/src/core/merge-decider.ts:33` — `r.reviewerAgent === r.implementationAgent`
-**Impact:** `Agent-X` and `agent-x` are treated as different agents, which allows self-review if IDs differ only in case. Low risk in practice (agent IDs follow lowercase convention: `codex_developer_ci-bot`).
-**Resolution:** Add case-insensitive comparison: `r.reviewerAgent.toLowerCase() === r.implementationAgent.toLowerCase()`.
-**Filed:** 2026-05-15 Phase 1.1 final verification.
+**Source:** `packages/git-sync/src/worktree.ts`. Catch block returns `true` (fail-safe).
+**Resolution:** Return discriminated type: `{ status: 'clean' | 'dirty' | 'error', reason?: string }`.
+**Filed:** 2026-05-15.
 
-### P2-5: `checkDirty` returns `true` for non-existent paths
+### P2-5: Empty state directories in `.openslack/`
 
-**Source:** `packages/git-sync/src/worktree.ts:58` — catch block returns `true`
-**Impact:** Intentional design choice (fail-safe: treat unknown as dirty). A non-existent path is semantically different from a dirty worktree. Could cause confusion in CI logs.
-**Resolution:** Return a discriminated result type: `{ status: 'clean' | 'dirty' | 'error', reason?: string }` instead of boolean.
-**Filed:** 2026-05-15 observation fix.
+**Source:** `.openslack/agents/prompts`, `.openslack/agents/runbooks`, `.openslack/audit`, `.openslack/decisions`, `.openslack/memory`, `.openslack/org`, `.openslack/sync`, `.openslack/tasks/*`.
+**Impact:** Violates "every directory must have a purpose" principle. These are structural templates for future workspace state.
+**Resolution:** Accept as workspace schema contract (defined in `openslack.yaml`, validated by `validateWorkspace()`).
+**Filed:** 2026-05-15.
 
-### P2-6: 5 empty state directories in `.openslack/`
+### P2-6: Packages not consolidated to 5-package target
 
-**Source:** `.openslack/agents/prompts`, `.openslack/agents/runbooks`, `.openslack/audit`, `.openslack/decisions`, `.openslack/memory`, `.openslack/org`, `.openslack/sync`, `.openslack/self/governance`, `.openslack/self/rollback/revert_templates`, `.openslack/tasks/{open,claimed,running,review,blocked,done}`
-**Impact:** These directories exist as structural templates for future workspace state. They contain no files. Not harmful, but violate "every directory must have a purpose" principle.
-**Resolution:** Either add `.gitkeep` files to document intended use, or accept that empty directories represent the workspace schema contract (they are defined in `openslack.yaml` and validated by `validateWorkspace()`).
-**Filed:** 2026-05-15 cleanup analysis.
+**Source:** Phase 1.3 architecture consolidation review.
+**Impact:** 7 packages + 2 apps vs. 5-package target. Core/workspace/kernel/self-evolution could be merged into `packages/core`. Agent-runtime/git-sync could be merged into `packages/runtime`. Github-provider could be renamed to `packages/github`.
+**Resolution:** Phase 1.9 consolidation — merge kernel + workspace + core + self-evolution into `packages/core`, agent-runtime + git-sync into `packages/runtime`, rename github-provider to `packages/github`. Preserve re-exports for backward compatibility.
+**Filed:** 2026-05-16.
+
+### P2-7: `task checkout` does not support `--issue-number` flag
+
+**Source:** Phase 1.8 review. README claims `--issue-number <n>` but CLI requires `--task-id`.
+**Resolution:** Add `--issue-number` flag to `task checkout`. When set, read issue manifest from GitHub to extract task_id, auto-generate run_id.
+**Filed:** 2026-05-16.
 
 ## Closed Items
 
-### CLOSED: 2 stub packages (chat-gateway, github-provider)
-**Resolution:** Deleted in Phase 1.2 cleanup (commit 52a52d6). Will be recreated from product.md when Phase 2 needs them.
+### CLOSED: P0-0 — Replace OAuth with GitHub App
+
+**Resolution:** GitHub App created (ID 3728623), installed on wsman/OpenSlack. Three-tier auth model implemented. Issues-first autonomous loop verified E2E. Productization complete.
+**Closed:** 2026-05-16.
+
+### CLOSED: P0-1 — GitHub remote
+
+**Resolution:** Repository published at `https://github.com/wsman/OpenSlack`. Remote configured. All demo scenarios unblocked.
 **Closed:** 2026-05-15.
 
-### CLOSED: 2 duplicate CLI commands (eval.ts, observe.ts)
-**Resolution:** Deleted in Phase 1.2 cleanup. Functionality consolidated into `self.ts`.
+### CLOSED: P0-2 — Golden eval stubs
+
+**Resolution:** EV-GOLDEN-004 uses real ClaimBroker (1 granted / 9 denied). EV-GOLDEN-007 uses real createRollbackTask(). 7/7 passing, zero stubs.
 **Closed:** 2026-05-15.
 
-### CLOSED: 6 `require()` calls in ESM modules
-**Resolution:** Replaced with static imports in Phase 1.1 observation fixes. Lint now 0 errors.
+### CLOSED: P0-3 — Auto self_validation.yaml
+
+**Resolution:** `self validate --pr N` writes `.openslack/self/experiments/<id>/self_validation.yaml`.
 **Closed:** 2026-05-15.
 
-### CLOSED: Golden eval stubs (EV-GOLDEN-004, EV-GOLDEN-007)
-**Resolution:** Replaced with real ClaimBroker and createRollbackTask in Phase 1.1 P0-2. 7/7 golden evals pass with zero stubs.
+### CLOSED: P0-4 — Auto scorecard files
+
+**Resolution:** `self eval --suite golden` writes `SCORE-*.yaml` to `.openslack/self/scorecards/`.
 **Closed:** 2026-05-15.
 
-### CLOSED: Auto-generated golden eval artifacts (scorecards + experiment manifests + rollback EVOLs)
-**Resolution:** Phase 1.2 cleanup commits (0cc1e2a, 8ed99d1). Deleted 5 scorecard YAML files under `.openslack/self/scorecards/`, 1 experiment manifest (`EXP-FINAL-001`), and 1 rollback EVOL task (`EVOL-2026-000002`) — all auto-generated by `generateScorecard()` and `createRollbackTask()` during golden eval verification runs. Root cause documented in P0-3 (runner auto-generates artifacts).
+### CLOSED: P0-5 — Worktree manager
+
+**Resolution:** `createWorktree/cleanupWorktree/checkDirty` in `@openslack/git-sync`. Uses `git worktree add -b HEAD` — never switches main worktree.
+**Closed:** 2026-05-16.
+
+### CLOSED: P0-6 — Workspace PR creation
+
+**Resolution:** `proposeWorkspacePR()` does git add/commit/push + createDraftPR() via GitHub provider. Graceful fallback when no remote.
+**Closed:** 2026-05-16.
+
+### CLOSED: P0-7 — GitHub Provider
+
+**Resolution:** `@openslack/github-provider` with Octokit-based GraphQL client. Issues, PRs, claims, repair, lifecycle, filtering, manifest. Three-tier auth.
+**Closed:** 2026-05-16.
+
+### CLOSED: P0-8 — Claim broker persistence
+
+**Resolution:** `FileClaimBroker` with atomic save/load + wx-based file locking. Verified reload cycle.
 **Closed:** 2026-05-15.
 
-### CLOSED: Incomplete cleanup commit (0cc1e2a)
-**Resolution:** First cleanup commit removed only `EVOL-2026-000002.yaml` but left 5 scorecard files and `EXP-FINAL-001` on disk. Second commit (8ed99d1) deleted the remaining 6 files. All golden-eval artifacts now purged from both disk and git history.
-**Closed:** 2026-05-15.
+### CLOSED: FilterByPath glob-to-regex bug
+
+**Resolution:** Fixed placeholder-based replacement ordering (commit 29fe79c). `**` patterns now correctly match arbitrary directory depth.
+**Closed:** 2026-05-16.
+
+### CLOSED: CLI alias crash
+
+**Resolution:** Top-level `ask/status/doctor` aliases wrapped in try/catch (commit 29fe79c).
+**Closed:** 2026-05-16.
+
+### CLOSED: AGENTS.md stale product.md references
+
+**Resolution:** All 4 references updated to point to current docs (commit 29fe79c, e0f26fa).
+**Closed:** 2026-05-16.
