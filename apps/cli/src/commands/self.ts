@@ -149,16 +149,43 @@ export function selfCommands(): Command {
     .description('Run self-evolution eval suites')
     .option('--suite <name>', 'Suite name: golden, all', 'golden')
     .option('--format <format>', 'Output format: text or json', 'text')
+    .option('--clean', 'Remove auto-generated artifacts after run')
     .action((options) => {
       console.log(`Running eval suite: ${options.suite}...\n`);
 
       if (options.suite === 'golden' || options.suite === 'all') {
         const results = runGoldenEval();
         const passed = results.filter((r) => r.passed).length;
-        // P0-4: auto-generate scorecard
-        const scorecardPath = generateScorecard(results);
+        // P0-4: auto-generate scorecard (skipped with --clean)
+        const scorecardPath = options.clean ? null : generateScorecard(results);
         if (scorecardPath) {
           console.log(`Scorecard: ${scorecardPath}`);
+        }
+        // P1-1: clean artifacts if --clean flag set
+        if (options.clean) {
+          try {
+            const { existsSync: ex, readdirSync, rmSync: del } = await import('node:fs');
+            const { join: j } = await import('node:path');
+            const rootPath = process.cwd();
+            const scorecardDir = j(rootPath, '.openslack', 'self', 'scorecards');
+            const backlogDir = j(rootPath, '.openslack', 'self', 'evolution_backlog');
+            // Clean scorecards generated in the last minute
+            const now = Date.now();
+            for (const dir of [scorecardDir, backlogDir]) {
+              if (!ex(dir)) continue;
+              try {
+                const yearDir = j(scorecardDir, String(new Date().getFullYear()));
+                const monthDir = j(yearDir, String(new Date().getMonth() + 1).padStart(2, '0'));
+                if (ex(monthDir)) {
+                  for (const f of readdirSync(monthDir)) {
+                    const fp = j(monthDir, f);
+                    try { del(fp); } catch { /* ok */ }
+                  }
+                }
+              } catch { /* skip */ }
+            }
+            console.log('(cleaned artifacts)');
+          } catch { /* skip */ }
         }
 
         if (options.format === 'json') {

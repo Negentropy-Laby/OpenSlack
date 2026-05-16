@@ -1,0 +1,45 @@
+schema: openslack.evolution_task.v1
+id: EVOL-2026-000537
+title: "[ROLLBACK] Revert EXP-TEST-ROLLBACK — post-merge regression detected"
+status: rollback_proposed
+created_at: 2026-05-16T00:38:30.152Z
+created_by: agent:post_merge_monitor
+depends_on: []
+source:
+  type: post_merge_monitor
+  evidence:
+    - Post-merge monitoring detected regression for experiment EXP-TEST-ROLLBACK
+    - Genesis validation or test suite failed after merge
+problem:
+  summary: Regression detected after merging EXP-TEST-ROLLBACK
+  affected_modules:
+    - all
+hypothesis:
+  statement: Reverting EXP-TEST-ROLLBACK will restore stability
+  expected_metric_change:
+    typecheck: "1"
+    tests: "1"
+    genesis: "1"
+risk:
+  level: high
+  reasons:
+    - Post-merge regression detected
+    - System stability compromised
+  protected_paths_touched: false
+  human_approval_required: true
+constraints:
+  allowed_paths:
+    - "**"
+  forbidden_paths:
+    - .env
+    - secrets/**
+    - credentials/**
+validation:
+  required:
+    - pnpm typecheck
+    - pnpm test
+    - bash scripts/genesis-validate.sh
+output_contract:
+  must_include:
+    - revert_pr
+    - verification_result

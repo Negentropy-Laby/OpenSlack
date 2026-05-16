@@ -33,12 +33,6 @@
 **Resolution:** Add `--clean` flag to `self eval` that removes artifacts after run, or route artifacts to `.openslack.local/runs/` which is gitignored.
 **Filed:** 2026-05-15.
 
-### P2-1: `observe.ts` has no unit tests
-
-**Source:** `packages/self-evolution/src/ops/observe.ts`. Calls `execSync('pnpm typecheck')` and `execSync('pnpm test')` — spawns child processes.
-**Resolution:** Refactor to accept test results as input (dependency injection, same as `monitorPostMerge`). Test observation logic without spawning processes.
-**Filed:** 2026-05-15.
-
 ### P2-2: `rollback.ts` has no unit tests
 
 **Source:** `packages/self-evolution/src/ops/rollback.ts`. Simple file-write functions with 0 test coverage.
@@ -89,6 +83,11 @@
 
 **Resolution:** Repository published at `https://github.com/wsman/OpenSlack`. Remote configured. All demo scenarios unblocked.
 **Closed:** 2026-05-15.
+
+### CLOSED: P2-1 — observe.ts unit tests (process explosion fix)
+
+**Resolution:** `observeHealth()` refactored to accept optional `InjectedChecks` parameter. CLI path unchanged — `self observe` still runs `pnpm typecheck` and `pnpm test` via default parameters. Tests inject `{ passed, output }` directly — zero `execSync`, zero child processes, zero tinypool workers. Confirmed no recursive `vitest → pnpm test → vitest` explosion.
+**Closed:** 2026-05-16.
 
 ### CLOSED: P0-2 — Golden eval stubs
 

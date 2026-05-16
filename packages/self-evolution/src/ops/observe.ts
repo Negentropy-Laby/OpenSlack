@@ -14,6 +14,11 @@ export interface Observation {
   timestamp: string;
 }
 
+export interface InjectedChecks {
+  typecheck?: { passed: boolean; output: string };
+  tests?: { passed: boolean; output: string };
+}
+
 function findRepoRoot(): string {
   let dir = process.cwd();
   for (let i = 0; i < 10; i++) {
@@ -25,12 +30,7 @@ function findRepoRoot(): string {
   return process.cwd();
 }
 
-interface RunnerResult {
-  passed: boolean;
-  output: string;
-}
-
-function runTypecheck(root: string): RunnerResult {
+function runTypecheck(root: string): { passed: boolean; output: string } {
   try {
     const output = execSync('pnpm typecheck', { cwd: root, stdio: 'pipe', timeout: 60000 }).toString();
     return { passed: true, output };
@@ -40,7 +40,7 @@ function runTypecheck(root: string): RunnerResult {
   }
 }
 
-function runTests(root: string): RunnerResult {
+function runTests(root: string): { passed: boolean; output: string } {
   try {
     const output = execSync('pnpm test --reporter=verbose', { cwd: root, stdio: 'pipe', timeout: 60000 }).toString();
     return { passed: true, output };
@@ -51,7 +51,7 @@ function runTests(root: string): RunnerResult {
   }
 }
 
-export function observeHealth(): Observation[] {
+export function observeHealth(checks?: InjectedChecks): Observation[] {
   const root = findRepoRoot();
   const observations: Observation[] = [];
   const now = new Date().toISOString();
@@ -71,8 +71,8 @@ export function observeHealth(): Observation[] {
     });
   }
 
-  // 2. Check TypeScript compilation
-  const tc = runTypecheck(root);
+  // 2. Check TypeScript compilation (injected or real)
+  const tc = checks?.typecheck ?? runTypecheck(root);
   if (!tc.passed) {
     observations.push({
       id: `OBS-${observations.length + 1}`,
@@ -86,8 +86,8 @@ export function observeHealth(): Observation[] {
     });
   }
 
-  // 3. Check tests
-  const testResult = runTests(root);
+  // 3. Check tests (injected or real)
+  const testResult = checks?.tests ?? runTests(root);
   if (!testResult.passed) {
     observations.push({
       id: `OBS-${observations.length + 1}`,

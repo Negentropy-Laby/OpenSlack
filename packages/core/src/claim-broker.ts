@@ -60,14 +60,15 @@ export class ClaimBroker {
     const { agentId, taskId, ttlMinutes = 60 } = request;
     void ttlMinutes; // used by subclasses
 
-    const state = this.taskStates.get(taskId);
-    if (state !== 'ready') {
-      return { claimStatus: 'denied', taskId, reason: 'NOT_READY' };
-    }
-
+    // Check for existing active lease first (more specific than generic NOT_READY)
     const existingLease = this.getActiveLease(taskId);
     if (existingLease) {
       return { claimStatus: 'denied', taskId, reason: 'ALREADY_CLAIMED' };
+    }
+
+    const state = this.taskStates.get(taskId);
+    if (state !== 'ready') {
+      return { claimStatus: 'denied', taskId, reason: 'NOT_READY' };
     }
 
     this.leaseSeq++;

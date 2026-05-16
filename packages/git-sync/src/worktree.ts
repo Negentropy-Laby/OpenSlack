@@ -60,13 +60,24 @@ export function createWorktree(taskId: string, agentId: string, runId: string): 
   return { success: true, worktreePath: worktreeAbs, branchName, errors };
 }
 
-export function checkDirty(worktreePath: string): boolean {
+export interface DirtyStatus {
+  status: 'clean' | 'dirty' | 'error';
+  reason?: string;
+}
+
+export function checkDirty(worktreePath: string): DirtyStatus {
   try {
     const result = execSync('git status --porcelain', { cwd: worktreePath, stdio: 'pipe' });
-    return result.toString().trim().length > 0;
-  } catch {
-    // Non-existent path or not a git directory — treat as dirty for safety
-    return true;
+    const dirty = result.toString().trim().length > 0;
+    return dirty
+      ? { status: 'dirty', reason: 'Uncommitted changes detected' }
+      : { status: 'clean' };
+  } catch (e) {
+    const err = e as { code?: string };
+    if (err.code === 'ENOENT' || (e as Error).message.includes('not a git repository')) {
+      return { status: 'error', reason: 'Path does not exist or is not a git repository' };
+    }
+    return { status: 'error', reason: (e as Error).message };
   }
 }
 

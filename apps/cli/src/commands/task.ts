@@ -7,12 +7,19 @@ export function taskCommands(): Command {
   cmd
     .command('checkout')
     .description('Create an isolated worktree for a task')
-    .requiredOption('--task-id <id>', 'Task ID')
+    .option('--task-id <id>', 'Task ID')
+    .option('--issue-number <n>', 'GitHub issue number (auto-derives task-id and run-id)')
     .requiredOption('--agent-id <id>', 'Agent ID')
-    .requiredOption('--run-id <id>', 'Run ID')
+    .option('--run-id <id>', 'Run ID')
     .action((options) => {
-      console.log(`Creating worktree for task ${options.taskId}...`);
-      const result = createWorktree(options.taskId, options.agentId, options.runId);
+      const taskId = options.taskId || (options.issueNumber ? `ISSUE-${options.issueNumber}` : undefined);
+      const runId = options.runId || `RUN-${Date.now()}`;
+      if (!taskId) {
+        console.error('Either --task-id or --issue-number is required.');
+        process.exit(1);
+      }
+      console.log(`Creating worktree for task ${taskId}...`);
+      const result = createWorktree(taskId, options.agentId, runId);
       if (result.success) {
         console.log(`Worktree created: ${result.worktreePath}`);
         console.log(`Branch: ${result.branchName}`);
@@ -47,8 +54,11 @@ export function taskCommands(): Command {
     .requiredOption('--worktree <path>', 'Path to worktree')
     .action((options) => {
       const dirty = checkDirty(options.worktree);
-      if (dirty) {
-        console.log('DIRTY: Uncommitted changes detected.');
+      if (dirty.status === 'error') {
+        console.log(`ERROR: ${dirty.reason}`);
+        process.exit(1);
+      } else if (dirty.status === 'dirty') {
+        console.log(`DIRTY: ${dirty.reason}`);
       } else {
         console.log('CLEAN: No uncommitted changes.');
       }
