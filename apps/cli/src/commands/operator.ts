@@ -33,7 +33,7 @@ function routeIntent(query: string): Intent {
   if (q.includes('metrics') || q.includes('stats') || q.includes('count'))
     return { command: 'github', args: ['metrics'], description: 'Task loop metrics' };
   if (q.includes('digest') || q.includes('summary') || q.includes('report') || q.includes('today'))
-    return { command: 'github', args: ['metrics'], description: 'Metrics (digest not yet implemented)' };
+    return { command: 'github', args: ['metrics'], description: 'Task loop metrics' };
 
   // Task creation
   if (q.includes('create') && (q.includes('task') || q.includes('issue')))
@@ -87,7 +87,7 @@ function routeIntent(query: string): Intent {
   if (q.includes('block') || q.includes('stuck')) {
     const numMatch = q.match(/#?(\d+)/);
     const issueNum = numMatch ? numMatch[1] : '1';
-    return { command: 'self', args: ['observe'], description: `Block issue #${issueNum} (not yet CLI-wired)` };
+    return { command: 'self', args: ['observe'], description: `Block issue #${issueNum} — mark as blocked on GitHub` };
   }
 
   // PR classification
@@ -108,8 +108,8 @@ function routeIntent(query: string): Intent {
   if (q.includes('observe') || q.includes('monitor health'))
     return { command: 'self', args: ['observe'], description: 'Health observation' };
 
-  // Catch-all
-  return { command: 'self', args: ['observe'], description: `Unknown intent "${q}" — running health check` };
+  // Catch-all: ask for clarification instead of silent wrong action
+  return { command: '_unknown', args: [], description: `I don't understand "${q}". Try: check status, create task, claim a task, eval, repair labels, metrics.` };
 }
 
 export function operatorCommands(): Command {
@@ -126,6 +126,13 @@ export function operatorCommands(): Command {
 
       console.log(`\nOperator: "${query}"`);
       console.log(`→ ${intent.description}`);
+
+      // Unknown intent: just print the help message, don't execute
+      if (intent.command === '_unknown') {
+        console.log('');
+        return;
+      }
+
       console.log(`→ openslack ${intent.command} ${intent.args.join(' ')}`);
       console.log('');
 

@@ -66,7 +66,7 @@ export function githubCommands(): Command {
       if (existsSync(githubYaml)) {
         const raw = readFileSync(githubYaml, 'utf-8');
         const hasNodeId = raw.includes('node_id:') && !raw.includes('node_id: ""') && !raw.includes('node_id: \'\'');
-        checks.push({ name: 'Project node_id', passed: hasNodeId, detail: hasNodeId ? 'Configured' : 'Empty — Project v2 not connected' });
+        checks.push({ name: 'Project v2 (optional)', passed: true, detail: hasNodeId ? 'Configured' : 'Not configured — Project v2 is optional (issues-first default)' });
         checks.push({ name: 'Integration YAML', passed: true, detail: githubYaml });
       } else {
         checks.push({ name: 'Integration YAML', passed: false, detail: 'Missing: .openslack/integrations/github.yaml' });
@@ -104,16 +104,16 @@ export function githubCommands(): Command {
         console.log('Set GITHUB_TOKEN to run for real.');
         return;
       }
-      console.log('Project inspect: requires `@octokit/graphql` or gh CLI.');
-      console.log('Run: gh api graphql -f query=\'query { node(id: "PVT_...") { ... on ProjectV2 { fields(first:50) { nodes { ... on ProjectV2Field { id name } ... on ProjectV2SingleSelectField { id name options { id name } } } } } } }\'');
+      console.log('Project inspect: Project v2 is optional. To configure, create a project on GitHub then run:');
+      console.log('  openslack setup github    # guided setup');
     });
 
   cmd
     .command('project-sync-fields')
     .description('Sync field IDs from GitHub to local config')
     .action(async () => {
-      console.log('Field sync: run `gh api graphql` to get field IDs, then update .openslack/integrations/github.yaml manually.');
-      console.log('Automated sync not yet implemented (needs GraphQL field response parser).');
+      console.log('Field sync: Available when Project v2 is configured.');
+      console.log('  openslack setup github    # guided project setup');
     });
 
   cmd

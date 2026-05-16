@@ -24,7 +24,7 @@ OpenSlack/
 │   ├── git-sync/            # Worktree manager + PR proposal/commit/push
 │   └── github-provider/     # GitHub App auth + issue tasks + claims + lifecycle + repair
 ├── apps/
-│   ├── cli/                 # 6 command groups (workspace, self, agent, task, github, operator)
+│   ├── cli/                 # 7 command groups (workspace, self, agent, task, github, operator, setup)
 │   └── auth-callback/       # Headless OAuth server (human login only)
 ├── templates/new-agent/     # 9 onboarding template files
 ├── scripts/                 # genesis-validate.sh, genesis-rollback.sh, setup-gh.sh
@@ -70,7 +70,10 @@ pnpm typecheck         # Builds all packages + type-checks
 alias openslack="node --import tsx $(pwd)/apps/cli/src/index.ts"   # Development
 # Or: pnpm build && export PATH="$(pwd)/apps/cli/dist:$PATH"       # Production
 
-# 2. Verify workspace
+# 2. Quick setup (runs validate + eval + doctor + all checks at once)
+openslack setup
+
+# Or run individual steps:
 openslack workspace validate
 openslack workspace index
 openslack workspace status
@@ -94,7 +97,7 @@ bash scripts/genesis-validate.sh      # 5/5 checks
 | `openslack workspace status` | Show workspace summary |
 | `openslack self classify-pr --paths "..."` | Classify PR risk zone |
 | `openslack self validate --pr <n> --paths "..."` | Full PR validation + manifest |
-| `openslack self eval --suite golden` | Run 7 golden evals |
+| `openslack self eval --suite golden` | Run golden evals (add `--clean` to remove artifacts) |
 | `openslack self observe` | Check system health |
 | `openslack self triage --create-issues` | Create EVOL task issues on GitHub |
 | `openslack self review --pr <n>` | Review PR for merge eligibility |
@@ -112,6 +115,8 @@ bash scripts/genesis-validate.sh      # 5/5 checks
 | `openslack github metrics` | Task loop metrics |
 | `openslack github issue-done --issue-number <n>` | Release claim + mark done |
 | `openslack operator ask "..."` | Natural language → CLI routing |
+| `openslack setup` | One-step full workspace validation (alt: `openslack setup run`) |
+| `openslack setup github` | Guided GitHub auth + label setup (coming soon) |
 
 ## Authentication
 
@@ -209,7 +214,7 @@ Every file must have a clear purpose. See [`AGENTS.md`](AGENTS.md) for:
 |--------|-------|
 | Packages | 7 libraries + 2 apps |
 | CLI commands | 25 |
-| CLI command groups | 6 |
+| CLI command groups | 7 |
 | Unit tests | 97 |
 | Golden evals | 7 (7/7 passing) |
 | JSON Schemas | 8 (draft 2020-12) |

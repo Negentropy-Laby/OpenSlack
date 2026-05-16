@@ -1,5 +1,13 @@
 # OpenSlack v1.0 Product Document
 
+> ⚠️ **HISTORICAL** — This document describes the original OpenSlack product
+> specification dated 2026-05-15. The current implementation has diverged
+> significantly: GitHub Issues (not Project v2) is the primary task queue,
+> GitHub App installation tokens (not OAuth) are the primary credential,
+> and the architecture has been consolidated into 7 packages across 6 CLI
+> groups. See [`docs/status/current.md`](../status/current.md) for the
+> single source of truth.
+
 ## 1. Product Definition
 
 OpenSlack is a **local-first, Git-backed, multi-agent company operating system**. It lets heterogeneous AI agents (Claude Code, Codex, reviewer, researcher, sync, custom) function as employees that discover tasks from a GitHub Project board, work in isolated local worktrees, synchronize state through GitHub PRs, and communicate with humans via any chat platform for approvals and exception handling.

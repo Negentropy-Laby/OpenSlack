@@ -8,6 +8,7 @@ import { agentCommands } from './commands/agent.js';
 import { taskCommands } from './commands/task.js';
 import { githubCommands } from './commands/github.js';
 import { operatorCommands } from './commands/operator.js';
+import { setupCommands } from './commands/setup.js';
 
 const program = new Command();
 
@@ -50,5 +51,6 @@ program.addCommand(agentCommands());
 program.addCommand(taskCommands());
 program.addCommand(githubCommands());
 program.addCommand(operatorCommands());
+program.addCommand(setupCommands());
 
 program.parse(process.argv);
