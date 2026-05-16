@@ -1,5 +1,5 @@
 {
-  "name": "@openslack/git-sync",
+  "name": "@openslack/github",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -17,8 +17,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@openslack/runtime": "workspace:*",
-    "@openslack/kernel": "workspace:*",
-    "@openslack/github": "workspace:*"
+    "@octokit/rest": "^21.0.0",
+    "yaml": "^2.7.0"
   }
 }

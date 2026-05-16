@@ -120,7 +120,7 @@ export function selfCommands(): Command {
       }
       if (options.createIssues) {
         try {
-          const { createTaskIssue } = await import('@openslack/github-provider');
+          const { createTaskIssue } = await import('@openslack/github');
           const { readFileSync, existsSync } = await import('node:fs');
           const { join } = await import('node:path');
           const root = process.cwd();

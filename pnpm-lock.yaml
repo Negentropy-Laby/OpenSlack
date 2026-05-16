@@ -46,9 +46,9 @@ importers:
       '@openslack/git-sync':
         specifier: workspace:*
         version: link:../../packages/git-sync
-      '@openslack/github-provider':
+      '@openslack/github':
         specifier: workspace:*
-        version: link:../../packages/github-provider
+        version: link:../../packages/github
       '@openslack/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
@@ -71,9 +71,12 @@ importers:
       '@openslack/core':
         specifier: workspace:*
         version: link:../core
-      '@openslack/github-provider':
+      '@openslack/github':
         specifier: workspace:*
-        version: link:../github-provider
+        version: link:../github
+      '@openslack/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@openslack/workspace':
         specifier: workspace:*
         version: link:../workspace
@@ -82,14 +85,17 @@ importers:
 
   packages/git-sync:
     dependencies:
-      '@openslack/github-provider':
+      '@openslack/github':
         specifier: workspace:*
-        version: link:../github-provider
+        version: link:../github
       '@openslack/kernel':
         specifier: workspace:*
         version: link:../kernel
+      '@openslack/runtime':
+        specifier: workspace:*
+        version: link:../runtime
 
-  packages/github-provider:
+  packages/github:
     dependencies:
       '@octokit/rest':
         specifier: ^21.0.0
@@ -98,11 +104,38 @@ importers:
         specifier: ^2.7.0
         version: 2.9.0
 
+  packages/github-provider:
+    dependencies:
+      '@openslack/github':
+        specifier: workspace:*
+        version: link:../github
+
   packages/kernel:
     dependencies:
+      '@openslack/core':
+        specifier: workspace:*
+        version: link:../core
+      '@openslack/workspace':
+        specifier: workspace:*
+        version: link:../workspace
       yaml:
         specifier: ^2.7.0
         version: 2.9.0
+
+  packages/runtime:
+    dependencies:
+      '@openslack/core':
+        specifier: workspace:*
+        version: link:../core
+      '@openslack/github':
+        specifier: workspace:*
+        version: link:../github
+      '@openslack/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@openslack/workspace':
+        specifier: workspace:*
+        version: link:../workspace
 
   packages/self-evolution:
     dependencies:

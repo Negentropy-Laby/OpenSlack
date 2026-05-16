@@ -134,7 +134,7 @@ Before any git commit, ALL of these must pass:
 3. `find .openslack -name "*.yaml" -newer .git/index 2>/dev/null` — no new auto-generated artifacts unless intentional
 4. `ls packages/` — every package has at least one function with unit test coverage
 5. `pnpm lint` — zero errors in source files (warnings in dist/ only)
-6. **Verification agent** — after non-trivial changes (3+ files or any API/CLI/package change), spawn the verification agent (`subagent_type="verification"`) with the original task description, list of changed files, and verification commands. The verifier issues PASS/FAIL/PARTIAL verdict. Do NOT close multiple tasks or declare a phase complete without first passing verification. Fix all FAIL items before marking work as done.
+6. **Verification agent** — after non-trivial changes (3+ files or any API/CLI/package change), spawn the verification agent immediately, BEFORE committing: code change complete → spawn verification agent → fix all FAIL items → all PASS → commit. Do NOT commit until the verifier returns PASS. Do NOT close multiple tasks or declare a phase complete without first passing verification. Fix all FAIL items before marking work as done.
 
 ### Commit message convention
 

@@ -84,7 +84,7 @@ export function taskCommands(): Command {
         // Move linked issue to review
         if (options.issueNumber) {
           try {
-            const { moveIssueToReview } = await import('@openslack/github-provider');
+            const { moveIssueToReview } = await import('@openslack/github');
             await moveIssueToReview(parseInt(options.issueNumber, 10), result.prUrl);
             console.log(`Issue #${options.issueNumber} → review`);
           } catch { /* best-effort */ }

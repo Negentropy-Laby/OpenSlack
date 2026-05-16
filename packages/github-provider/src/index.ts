@@ -1,17 +1,2 @@
-export { createIssue, addIssueToProject, queryReadyItems, updateProjectField } from './issues.js';
-export type { ReadyTask, ProjectItemResult } from './issues.js';
-export { createDraftPR, commentOnPR } from './pr.js';
-export type { CreatePRResult } from './pr.js';
-export { getClient, GitHubClient, AuthMode } from './client.js';
-export { getAppInstallationToken, clearTokenCache } from './auth.js';
-export { createTaskIssue, queryReadyIssueTasks } from './issue-tasks.js';
-export type { IssueTask } from './issue-tasks.js';
-export { claimIssueTask, releaseIssueClaim, moveIssueToReview, heartbeatIssueClaim, expireIssueClaim, releaseIssueClaimWithOwner } from './claims.js';
-export type { IssueClaimResult, HeartbeatResult, ReleaseInput } from './claims.js';
-export { markIssueRunning, markIssueBlocked, markIssueDone } from './lifecycle.js';
-export { filterByCapability, filterByRisk, filterByPath, filterRedZonePaths } from './task-filter.js';
-export type { FilterResult } from './task-filter.js';
-export { repairExpiredClaims, repairLabels } from './repair.js';
-export type { RepairResult } from './repair.js';
-export { parseIssueTaskManifest, renderIssueTaskManifest, extractTaskBlock } from './manifest.js';
-export type { IssueTaskManifest, ManifestParseResult } from './manifest.js';
+// Re-export shim — renamed to @openslack/github
+export * from '@openslack/github';

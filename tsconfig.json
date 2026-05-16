@@ -4,6 +4,8 @@
     { "path": "packages/kernel" },
     { "path": "packages/workspace" },
     { "path": "packages/core" },
+    { "path": "packages/runtime" },
+    { "path": "packages/github" },
     { "path": "packages/self-evolution" },
     { "path": "packages/agent-runtime" },
     { "path": "packages/git-sync" },

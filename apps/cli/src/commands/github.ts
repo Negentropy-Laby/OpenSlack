@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
-import { getClient, queryReadyItems } from '@openslack/github-provider';
+import { getClient, queryReadyItems } from '@openslack/github';
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -160,7 +160,7 @@ export function githubCommands(): Command {
     .option('--pr-url <url>', 'PR URL for the completion record')
     .action(async (options) => {
       try {
-        const { releaseIssueClaim } = await import('@openslack/github-provider');
+        const { releaseIssueClaim } = await import('@openslack/github');
         await releaseIssueClaim(parseInt(options.issueNumber, 10));
         console.log(`Issue #${options.issueNumber}: claim released, labels → done`);
         if (options.prUrl) {
@@ -177,7 +177,7 @@ export function githubCommands(): Command {
     .description('Idempotently create all required OpenSlack labels')
     .action(async () => {
       try {
-        const { repairLabels } = await import('@openslack/github-provider');
+        const { repairLabels } = await import('@openslack/github');
         const results = await repairLabels();
         for (const r of results) {
           console.log(`  [${r.fixed ? 'FIXED' : 'FAIL'}] ${r.detail}`);
@@ -193,7 +193,7 @@ export function githubCommands(): Command {
     .description('Expire stale claims and delete orphaned refs')
     .action(async () => {
       try {
-        const { repairExpiredClaims } = await import('@openslack/github-provider');
+        const { repairExpiredClaims } = await import('@openslack/github');
         const results = await repairExpiredClaims();
         if (results.length === 0) {
           console.log('No expired claims found.');
@@ -213,7 +213,7 @@ export function githubCommands(): Command {
     .description('Run all repair operations')
     .action(async () => {
       try {
-        const { repairLabels, repairExpiredClaims } = await import('@openslack/github-provider');
+        const { repairLabels, repairExpiredClaims } = await import('@openslack/github');
         const labelResults = await repairLabels();
         console.log('--- Labels ---');
         for (const r of labelResults) console.log(`  [${r.fixed ? 'OK' : 'FAIL'}] ${r.detail}`);
@@ -232,7 +232,7 @@ export function githubCommands(): Command {
     .description('Show OpenSlack task loop metrics')
     .action(async () => {
       try {
-        const { queryReadyIssueTasks, getClient } = await import('@openslack/github-provider');
+        const { queryReadyIssueTasks, getClient } = await import('@openslack/github');
         const client = await getClient();
         if (client.isDryRun) { console.log('[DRY RUN] Would compute metrics'); return; }
         const ready = await queryReadyIssueTasks();
