@@ -150,7 +150,7 @@ export function selfCommands(): Command {
     .option('--suite <name>', 'Suite name: golden, all', 'golden')
     .option('--format <format>', 'Output format: text or json', 'text')
     .option('--clean', 'Remove auto-generated artifacts after run')
-    .action((options) => {
+    .action(async (options) => {
       console.log(`Running eval suite: ${options.suite}...\n`);
 
       if (options.suite === 'golden' || options.suite === 'all') {
