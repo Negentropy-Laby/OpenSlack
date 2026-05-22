@@ -46,6 +46,9 @@ importers:
       '@openslack/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
+      '@openslack/pr':
+        specifier: workspace:*
+        version: link:../../packages/pr
       '@openslack/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
@@ -76,6 +79,21 @@ importers:
       '@openslack/core':
         specifier: workspace:*
         version: link:../core
+      yaml:
+        specifier: ^2.7.0
+        version: 2.9.0
+
+  packages/pr:
+    dependencies:
+      '@openslack/core':
+        specifier: workspace:*
+        version: link:../core
+      '@openslack/github':
+        specifier: workspace:*
+        version: link:../github
+      '@openslack/kernel':
+        specifier: workspace:*
+        version: link:../kernel
       yaml:
         specifier: ^2.7.0
         version: 2.9.0

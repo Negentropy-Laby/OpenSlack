@@ -6,6 +6,7 @@
     { "path": "packages/core" },
     { "path": "packages/runtime" },
     { "path": "packages/github" },
+    { "path": "packages/pr" },
     { "path": "apps/cli" },
     { "path": "apps/auth-callback" }
   ]

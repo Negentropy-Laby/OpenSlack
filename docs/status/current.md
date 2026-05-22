@@ -24,8 +24,9 @@ supersedes:
 | OSEK (Self-Evolution Kernel) | 1.6 | ACTIVE | Zone classifier, merge decision, policy engine, constitution, invariants, rollback, genesis |
 | GITL (GitHub Issues Task Loop) | 1.7 | ACTIVE | Issues-first autonomous task loop: create → claim → heartbeat → worktree → PR → review → done |
 | Operator Interface | 1.8 | EARLY | Natural language router: intent → plan → execute → summarize |
+| PR Review & Merge Steward | 1.13 | MVP | PR fetch, classify, readiness, report. No auto-approval. Merge after human approval. |
 
-## Packages (5 active + 2 apps)
+## Packages (6 active + 2 apps)
 
 | Package | Status | Tests | Key capability |
 |---------|--------|-------|---------------|
@@ -34,10 +35,11 @@ supersedes:
 | `@openslack/core` | ACTIVE | 0 | ClaimBroker + FileClaimBroker (file-locked) |
 | `@openslack/runtime` | ACTIVE | 25 | Self-evolution ops, golden evals, agent bootstrap, worktree, PR proposal |
 | `@openslack/github` | ACTIVE | 31 | App auth, Issues, Claims, Repair, Lifecycle, Manifest |
-| `@openslack/cli` (app) | ACTIVE | 0 | 7 command groups: setup, ask, status, doctor, workspace, self, agent, task, github, operator |
+| `@openslack/pr` | ACTIVE | 0 | PR fetch, classify, readiness, report (Phase 1.13 MVP) |
+| `@openslack/cli` (app) | ACTIVE | 0 | 8 command groups: setup, ask, status, doctor, workspace, self, agent, task, github, pr, operator |
 | `@openslack/auth-callback` (app) | ACTIVE | 0 | Headless OAuth server (human login only) |
 
-## CLI Command Groups (7)
+## CLI Command Groups (8)
 
 | Group | Subcommands |
 |-------|------------|
@@ -46,6 +48,7 @@ supersedes:
 | `openslack agent` | hire, bootstrap, tick |
 | `openslack task` | checkout, cleanup, status, sync |
 | `openslack github` | doctor, project-inspect, project-sync-fields, project-query-ready, issue-done, repair-labels, repair-claims, repair-all, metrics |
+| `openslack pr` | status, review, recommend |
 | `openslack operator` | ask ("natural language") |
 | `openslack ask` | Top-level alias → operator ask |
 | `openslack status` | Top-level alias → workspace status |

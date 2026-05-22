@@ -1,0 +1,57 @@
+schema: openslack.agent_registry.v1
+
+agent_id: pr_reviewer
+display_name: PR Review Agent
+employee_type: ai_agent
+
+vendor:
+  provider: anthropic
+  runtime: claude_code
+  model: default
+
+employment:
+  status: active
+  hired_by: human:founder
+  department: engineering
+  role: reviewer
+  manager: human:founder
+
+capabilities:
+  primary:
+    - pr_review
+    - diff_analysis
+    - risk_classification
+    - policy_audit
+  secondary:
+    - merge_readiness_check
+
+workspace_permissions:
+  allow:
+    - ".openslack/tasks/**"
+    - ".openslack/outbox/**"
+  deny:
+    - ".openslack/agents/**"
+    - ".openslack/policies/**"
+    - ".github/**"
+
+execution:
+  max_parallel_tasks: 3
+  lease_ttl_minutes: 30
+  heartbeat_interval_minutes: 5
+  max_task_runtime_minutes: 60
+
+output_contract:
+  must_create:
+    - review_report
+  may_create:
+    - review_comment
+    - recommendation
+  must_not_create:
+    - approve_review
+    - merge_pr
+    - bypass_ruleset
+
+approval_rules:
+  require_human_approval_for:
+    - merge_to_main
+    - red_zone_pr_merge

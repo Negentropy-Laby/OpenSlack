@@ -5,7 +5,7 @@
 OpenSlack lets heterogeneous AI agents (Claude Code, Codex, reviewers, researchers, custom) function as employees: discover tasks from GitHub Issues, claim them with deterministic git ref locks, work in isolated worktrees, submit output through PRs, and communicate with humans only for approvals and exceptions.
 
 > **Status:** Developer Preview. GitHub-backed autonomous task loop verified E2E.  
-> **Repository:** [`wsman/OpenSlack`](https://github.com/wsman/OpenSlack) · 55 commits · 5 packages · 97 tests
+> **Repository:** [`Negentropy-Laby/OpenSlack`](https://github.com/Negentropy-Laby/OpenSlack) · 56 commits · 6 packages · 97 tests
 
 ---
 
@@ -15,13 +15,14 @@ OpenSlack lets heterogeneous AI agents (Claude Code, Codex, reviewers, researche
 OpenSlack/
 ├── openslack.yaml           # Self-Project Mode workspace
 ├── .openslack/              # Workspace state (policies, constitution, evals, tasks)
-├── packages/                # 5 active packages
+├── packages/                # 6 active packages
 │   ├── kernel/              # Zone classifier, merge decision, policy engine
 │   ├── workspace/           # Validation, indexing, schemas
 │   ├── core/                # ClaimBroker with file-locked persistence
 │   ├── runtime/             # Self-evolution ops, golden evals, agent tick, worktree, PR proposal
-│   └── github/              # App auth, Issues task loop, claims, lifecycle, repair
-├── apps/cli/                # 7 command groups (setup, ask, status, doctor + workspace/self/agent/task/github/operator)
+│   ├── github/              # App auth, Issues task loop, claims, lifecycle, repair
+│   └── pr/                  # PR Review & Merge Steward (fetch, classify, readiness, report)
+├── apps/cli/                # 8 command groups (setup, ask, status, doctor + workspace/self/agent/task/github/pr/operator)
 ├── templates/new-agent/     # 9 onboarding template files
 ├── scripts/                 # genesis-validate.sh, genesis-rollback.sh, setup-gh.sh
 └── docs/                    # Full acceptance, developer, security documentation
@@ -60,6 +61,17 @@ The human-facing entry point. Natural language queries route to the appropriate 
 - **Router:** Maps user intent to `workspace`, `self`, `agent`, `task`, or `github` command groups
 
 See: [`AGENTS.md`](AGENTS.md) for command reference
+
+### Module 04: PR Review & Merge Steward (PRMS)
+
+The agent-assisted PR gatekeeper. Reviews PRs, classifies risk, checks merge readiness, and executes merge only after human approval.
+
+- **Review:** `openslack pr review 10` → fetches diff, classifies zone, generates report
+- **Status:** `openslack pr status 10` → merge readiness + checks + human approvals
+- **Recommend:** `openslack pr recommend 10` → next action (approve? merge? wait?)
+- **Policy:** No auto-approval. No self-review. Red Zone requires human. Black Zone blocked.
+
+See: [`docs/product/module-04-pr-review-merge-steward.md`](docs/product/module-04-pr-review-merge-steward.md)
 
 ## Quick Start
 
@@ -120,6 +132,9 @@ bash scripts/genesis-validate.sh      # 5/5 checks
 | `openslack github repair-all` | Run all repair operations |
 | `openslack github metrics` | Task loop metrics |
 | `openslack github issue-done --issue-number <n>` | Release claim + mark done |
+| `openslack pr status <n>` | Show PR status and merge readiness |
+| `openslack pr review <n>` | Generate review report for a PR |
+| `openslack pr recommend <n>` | Recommend next action for a PR |
 | `openslack operator ask "..."` | Natural language → CLI routing |
 | `openslack setup` | One-step full workspace validation (alt: `openslack setup run`) |
 | `openslack setup github` | Guided GitHub auth + label setup (coming soon) |
@@ -218,9 +233,9 @@ Every file must have a clear purpose. See [`AGENTS.md`](AGENTS.md) for:
 
 | Metric | Value |
 |--------|-------|
-| Packages | 5 active + 2 apps |
-| CLI commands | 25 |
-| CLI command groups | 7 |
+| Packages | 6 active + 2 apps |
+| CLI commands | 28 |
+| CLI command groups | 8 |
 | Unit tests | 97 (12 test files) |
 | Golden evals | 7 (7/7 passing) |
 | JSON Schemas | 8 (draft 2020-12) |

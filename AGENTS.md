@@ -25,14 +25,15 @@ openslack/                       # You are here
 ├── AGENTS.md                    # This file (canonical instructions)
 ├── CLAUDE.md                    # Pointer to AGENTS.md
 │
-├── apps/cli/                    # openslack CLI (7 command groups)
+├── apps/cli/                    # openslack CLI (8 command groups)
 │
-├── packages/                    # 5 active libraries
+├── packages/                    # 6 active libraries
 │   ├── kernel/                  # Zone classifier, merge decision, policy engine
 │   ├── workspace/               # Validation, indexing, schemas
 │   ├── core/                    # Claim broker (ClaimBroker, FileClaimBroker)
 │   ├── runtime/                 # Self-evolution ops, golden evals, agent bootstrap, worktree, PR proposal
-│   └── github/                  # GitHub Issues/PR/Project v2 API (dry-run when no token)
+│   ├── github/                  # GitHub Issues/PR/Project v2 API (dry-run when no token)
+│   └── pr/                      # PR Review & Merge Steward (fetch, classify, readiness, report)
 │
 ├── .openslack/                  # Workspace state (policies, constitution, evals, tasks)
 ├── .github/                     # 5 CI workflows + PR template
@@ -99,6 +100,8 @@ These rules come from `.openslack/self/constitution.md` and `.openslack/self/inv
 4. **No protected path modification.** `.github/**`, `.openslack/policies/**`, `.openslack/self/constitution.md`, `.openslack/self/invariants.yaml`, and `packages/self-evolution/src/core/**` require human approval.
 5. **No validation bypass.** Agents cannot disable, skip, or weaken validation checks.
 6. **No secret access.** Agents cannot read, write, or create credential files (`.env`, `*.pem`, `*.key`, `secrets/**`, `credentials/**`).
+
+7. **No auto-approval.** Agents must never submit `APPROVE` reviews on PRs. Agents may comment, recommend, request changes, and merge after human approval — but approval is a human-only action.
 
 Violation of any of these = immediate task failure + audit log entry + automatic review by the policy auditor agent.
 
@@ -225,7 +228,7 @@ PR titles follow the format: `[OpenSlack][<TASK-ID>][<agent_id>] <description>`.
 
 ## Modules
 
-OpenSlack currently has two active modules:
+OpenSlack currently has four active modules:
 
 ### Module 01: OSEK (OpenSlack Self-Evolution Kernel)
 
@@ -235,11 +238,19 @@ The self-evolution core loop: observe → classify → validate → review → s
 
 The issues-first autonomous task loop using GitHub Issues + labels + deterministic git ref claim locks. Agents discover, claim, execute, and complete tasks entirely through GitHub Issues — no Project v2, no OAuth, no browser required. See `docs/developer/github-issues-loop.md`.
 
+### Module 03: Operator Interface
+
+The human-facing entry point. Natural language queries route to the appropriate CLI commands. See `docs/product/phase-1.md`.
+
+### Module 04: PR Review & Merge Steward (PRMS)
+
+The agent-assisted PR gatekeeper. Reviews PRs, classifies risk, checks merge readiness, and executes merge only after human approval. Agent can review, recommend, comment, and merge — but never approve. See `docs/product/module-04-pr-review-merge-steward.md`.
+
 ## Current State
 
-**Published:** `https://github.com/wsman/OpenSlack`
+**Published:** `https://github.com/Negentropy-Laby/OpenSlack`
 
-**Architecture:** 5 active packages + 2 apps, 7 CLI command groups, 97 tests (12 files), 7 golden evals, 53 commits.
+**Architecture:** 6 active packages + 2 apps, 8 CLI command groups, 97+ tests, 7 golden evals, 56 commits.
 
 **Authentication:** Three-tier model (GitHub App installation token primary, PAT fallback, OAuth human only). App ID 3728623 installed on wsman/OpenSlack.
 
