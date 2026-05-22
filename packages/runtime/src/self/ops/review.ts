@@ -1,4 +1,4 @@
-import type { SelfValidationResult } from '../types.js';
+import type { SelfValidationResult } from '@openslack/kernel';
 
 export interface ReviewResult {
   reviewerAgent: string;

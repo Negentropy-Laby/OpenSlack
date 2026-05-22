@@ -4,7 +4,7 @@ import { classifyPaths } from '@openslack/kernel';
 import { validateWorkspace } from '@openslack/workspace';
 import { computeFitnessScore } from './scorecard.js';
 import { stringify } from 'yaml';
-import type { SelfValidationResult, CheckResult, ProtectedPathResult } from '../types.js';
+import type { SelfValidationResult, CheckResult, ProtectedPathResult } from '@openslack/kernel';
 
 function findRepoRoot(): string {
   let dir = process.cwd();

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { monitorPostMerge } from '../monitor.js';
-import type { CheckResult } from '../../types.js';
+import type { CheckResult } from '@openslack/kernel';
 
 function pass(name: string): { name: string; result: CheckResult; baseline: number; threshold: number } {
   return { name, result: { result: 'pass', command: name }, baseline: 1, threshold: -0.05 };

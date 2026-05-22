@@ -7,7 +7,3 @@ export type { WorkspaceConfig, ValidationResult, ValidationError } from './types
 // Schemas
 export { schemas, workspaceSchema, agentRegistrySchema, evolutionTaskSchema, taskSchema, leaseSchema, runRecordSchema } from './schemas/index.js';
 
-// Golden Evals
-export { runEvalSuite, runGoldenEval, generateScorecard } from './evals/runner.js';
-export { loadGoldenSuite } from './evals/suites/golden.js';
-export type { EvalCase, EvalSuite, EvalResult, EvalAssertion, EvalSetup, EvalScenario } from './evals/types.js';

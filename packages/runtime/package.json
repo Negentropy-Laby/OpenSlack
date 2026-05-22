@@ -20,6 +20,7 @@
     "@openslack/workspace": "workspace:*",
     "@openslack/core": "workspace:*",
     "@openslack/github": "workspace:*",
-    "@openslack/kernel": "workspace:*"
+    "@openslack/kernel": "workspace:*",
+    "yaml": "^2.7.0"
   }
 }
