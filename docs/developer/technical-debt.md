@@ -22,6 +22,7 @@
 
 **Source:** GitHub Actions runner deprecation notice. `actions/checkout@v4`, `actions/setup-node@v4`, `pnpm/action-setup@v4`, `actions/github-script@v7` all run on Node 20.
 **Impact:** Starting June 2, 2026, GitHub will force Node 24 for all actions. Node 20 support removed September 16, 2026. CI will break if action versions are not upgraded.
+<<<<<<< HEAD
 **Resolution:** Compatibility verified: `openslack-self-canary.yml` runs successfully with `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true`. Continue monitoring for v5 releases; upgrade all 5 workflow files in a single PR when available. Fallback: enable `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24` globally if v5 not released by May 30.
 **Filed:** 2026-05-22.
 
