@@ -6,10 +6,6 @@
     { "path": "packages/core" },
     { "path": "packages/runtime" },
     { "path": "packages/github" },
-    { "path": "packages/compat/self-evolution" },
-    { "path": "packages/compat/agent-runtime" },
-    { "path": "packages/compat/git-sync" },
-    { "path": "packages/compat/github-provider" },
     { "path": "apps/cli" },
     { "path": "apps/auth-callback" }
   ]

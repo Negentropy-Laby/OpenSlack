@@ -1,8 +1,8 @@
 import { Command } from 'commander';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { bootstrapAgent } from '@openslack/agent-runtime';
-import { tickAgent } from '@openslack/agent-runtime';
+import { bootstrapAgent } from '@openslack/runtime';
+import { tickAgent } from '@openslack/runtime';
 
 function findRepoRoot(): string {
   let dir = process.cwd();

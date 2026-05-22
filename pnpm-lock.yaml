@@ -40,12 +40,6 @@ importers:
 
   apps/cli:
     dependencies:
-      '@openslack/agent-runtime':
-        specifier: workspace:*
-        version: link:../../packages/compat/agent-runtime
-      '@openslack/git-sync':
-        specifier: workspace:*
-        version: link:../../packages/compat/git-sync
       '@openslack/github':
         specifier: workspace:*
         version: link:../../packages/github
@@ -55,9 +49,6 @@ importers:
       '@openslack/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
-      '@openslack/self-evolution':
-        specifier: workspace:*
-        version: link:../../packages/compat/self-evolution
       '@openslack/workspace':
         specifier: workspace:*
         version: link:../../packages/workspace
@@ -68,54 +59,6 @@ importers:
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.19
-
-  packages/compat/agent-runtime:
-    dependencies:
-      '@openslack/core':
-        specifier: workspace:*
-        version: link:../../core
-      '@openslack/github':
-        specifier: workspace:*
-        version: link:../../github
-      '@openslack/runtime':
-        specifier: workspace:*
-        version: link:../../runtime
-      '@openslack/workspace':
-        specifier: workspace:*
-        version: link:../../workspace
-
-  packages/compat/git-sync:
-    dependencies:
-      '@openslack/github':
-        specifier: workspace:*
-        version: link:../../github
-      '@openslack/kernel':
-        specifier: workspace:*
-        version: link:../../kernel
-      '@openslack/runtime':
-        specifier: workspace:*
-        version: link:../../runtime
-
-  packages/compat/github-provider:
-    dependencies:
-      '@openslack/github':
-        specifier: workspace:*
-        version: link:../../github
-
-  packages/compat/self-evolution:
-    dependencies:
-      '@openslack/kernel':
-        specifier: workspace:*
-        version: link:../../kernel
-      '@openslack/runtime':
-        specifier: workspace:*
-        version: link:../../runtime
-      '@openslack/workspace':
-        specifier: workspace:*
-        version: link:../../workspace
-      yaml:
-        specifier: ^2.7.0
-        version: 2.9.0
 
   packages/core: {}
 
