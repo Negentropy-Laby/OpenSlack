@@ -22,20 +22,27 @@ jobs:
         with:
           version: 10
       - run: pnpm install --frozen-lockfile
-
       - run: pnpm build
 
-      - name: Find and complete linked issue
+      - name: Extract linked issue from PR body
+        id: extract
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.pull_request.body || '';
+            const match = body.match(/Issue:\s*#?(\d+)/i);
+            if (match) {
+              core.setOutput('issue_number', match[1]);
+              core.info(`Found linked issue: #${match[1]}`);
+            } else {
+              core.info('No OpenSlack issue reference found in PR body.');
+            }
+
+      - name: Complete linked issue
+        if: steps.extract.outputs.issue_number != ''
         env:
           GITHUB_TOKEN: ${{ secrets.OPENSLACK_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
-          GITHUB_OWNER: ${{ github.repository_owner }}
-          GITHUB_REPO: ${{ github.event.repository.name }}
         run: |
-          BODY="${{ github.event.pull_request.body }}"
-          ISSUE_NUM=$(echo "$BODY" | grep -oP 'Issue:\s*#?\K\d+' | head -1 || echo "")
-          if [ -n "$ISSUE_NUM" ]; then
-            echo "Found linked issue: #$ISSUE_NUM"
-            pnpm openslack github issue-done --issue-number "$ISSUE_NUM" --pr-url "${{ github.event.pull_request.html_url }}"
-          else
-            echo "No OpenSlack issue reference found in PR body."
-          fi
+          pnpm openslack github issue-done \
+            --issue-number "${{ steps.extract.outputs.issue_number }}" \
+            --pr-url "${{ github.event.pull_request.html_url }}"
