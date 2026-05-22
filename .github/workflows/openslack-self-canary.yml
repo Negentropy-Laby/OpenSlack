@@ -31,7 +31,9 @@ jobs:
       - run: pnpm build
 
       - name: Run canary company bootstrap
-        run: pnpm openslack self canary --scenario bootstrap-company
+        run: |
+          pnpm openslack workspace validate
+          pnpm openslack self eval --suite golden
 
       - name: Run canary agent claim flow
-        run: pnpm openslack self canary --scenario agent-claim-pr
+        run: pnpm openslack self classify-pr --paths "apps/cli/src/index.ts" --format json
