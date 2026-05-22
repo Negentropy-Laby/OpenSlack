@@ -43,7 +43,7 @@ GITHUB_OWNER=wsman
 GITHUB_REPO=OpenSlack
 ```
 
-4. The `@openslack/github-provider` `getClient()` function auto-detects `OPENSLACK_GITHUB_APP_ID` and uses the App installation token. No further manual steps required. Tokens are generated and refreshed automatically.
+4. The `@openslack/github` `getClient()` function auto-detects `OPENSLACK_GITHUB_APP_ID` and uses the App installation token. No further manual steps required. Tokens are generated and refreshed automatically.
 
 ### How it works (zero manual)
 

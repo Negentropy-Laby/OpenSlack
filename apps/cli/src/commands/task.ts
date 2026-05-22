@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { createWorktree, cleanupWorktree, checkDirty, proposeWorkspacePR } from '@openslack/git-sync';
+import { createWorktree, cleanupWorktree, checkDirty, proposeWorkspacePR } from '@openslack/runtime';
 
 export function taskCommands(): Command {
   const cmd = new Command('task').description('Task management commands');

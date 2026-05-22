@@ -16,9 +16,6 @@
     "@openslack/workspace": "workspace:*",
     "@openslack/kernel": "workspace:*",
     "@openslack/runtime": "workspace:*",
-    "@openslack/self-evolution": "workspace:*",
-    "@openslack/agent-runtime": "workspace:*",
-    "@openslack/git-sync": "workspace:*",
     "@openslack/github": "workspace:*",
     "commander": "^13.1.0"
   },

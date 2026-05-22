@@ -1,7 +1,7 @@
 # Module: GitHub Issues Task Loop (GITL)
 
 > Status: ACTIVE (Phase 1.7 — Productized)
-> Sources: `packages/github-provider/src/{issue-tasks,claims,manifest,lifecycle,task-filter,repair}.ts`
+> Sources: `packages/github/src/{issue-tasks,claims,manifest,lifecycle,task-filter,repair}.ts`
 > CLI: `openslack agent tick --source github-issues`
 
 ## Overview
@@ -111,7 +111,7 @@ output_contract:
 Creates a new GitHub issue with task labels. Returns `{ issueNumber, url, nodeId }`.
 
 ```
-import { createTaskIssue } from '@openslack/github-provider';
+import { createTaskIssue } from '@openslack/github';
 
 const { issueNumber, url } = await createTaskIssue(
   'Fix failing workspace validation',
@@ -126,7 +126,7 @@ const { issueNumber, url } = await createTaskIssue(
 Searches for issues with `label:openslack:task` + `label:openslack:ready`. Returns `IssueTask[]`.
 
 ```
-import { queryReadyIssueTasks } from '@openslack/github-provider';
+import { queryReadyIssueTasks } from '@openslack/github';
 
 const tasks = await queryReadyIssueTasks({
   agentType: 'codex',
@@ -141,7 +141,7 @@ const tasks = await queryReadyIssueTasks({
 Creates atomic git ref claim. Returns `{ claimStatus, claimRef, lease }`.
 
 ```
-import { claimIssueTask } from '@openslack/github-provider';
+import { claimIssueTask } from '@openslack/github';
 
 const result = await claimIssueTask({
   issueNumber: 42,
@@ -219,7 +219,7 @@ openslack github doctor
 
 # 2. Create test issue
 node --import tsx -e "
-import { createTaskIssue } from './packages/github-provider/src/issue-tasks.js';
+import { createTaskIssue } from './packages/github/src/issue-tasks.js';
 const r = await createTaskIssue('E2E Smoke Test', '## Task', [
   'openslack:task', 'openslack:ready', 'risk:low', 'agent-type:codex'
 ]);
@@ -238,7 +238,7 @@ openslack agent tick --agent-id anthropic_architect_aby --source github-issues
 
 # 6. Release claim
 node --import tsx -e "
-import { releaseIssueClaim } from './packages/github-provider/src/claims.js';
+import { releaseIssueClaim } from './packages/github/src/claims.js';
 await releaseIssueClaim(<n>);
 console.log('Claim released');
 "
