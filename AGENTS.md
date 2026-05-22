@@ -25,19 +25,17 @@ openslack/                       # You are here
 ├── AGENTS.md                    # This file (canonical instructions)
 ├── CLAUDE.md                    # Pointer to AGENTS.md
 │
-├── apps/cli/                    # openslack CLI (6 command groups)
+├── apps/cli/                    # openslack CLI (7 command groups)
 │
-├── packages/                    # 6 libraries
-│   ├── kernel/                  # Zone classifier, merge decision, invariants
-│   ├── workspace/               # Validation, indexing, schemas, golden evals
+├── packages/                    # 5 active libraries
+│   ├── kernel/                  # Zone classifier, merge decision, policy engine
+│   ├── workspace/               # Validation, indexing, schemas
 │   ├── core/                    # Claim broker (ClaimBroker, FileClaimBroker)
-│   ├── self-evolution/          # Observe, triage, review, scorecard, monitor, rollback
-│   ├── agent-runtime/           # Bootstrap, tick
-│   ├── git-sync/                # Worktree manager, PR proposal
-│   └── github-provider/         # GitHub Issues/PR/Project v2 API (dry-run when no token)
+│   ├── runtime/                 # Self-evolution ops, golden evals, agent bootstrap, worktree, PR proposal
+│   └── github/                  # GitHub Issues/PR/Project v2 API (dry-run when no token)
 │
 ├── .openslack/                  # Workspace state (policies, constitution, evals, tasks)
-├── .github/                     # 4 CI workflows + PR template
+├── .github/                     # 5 CI workflows + PR template
 ├── docs/                        # Product, developer, security, archive
 ├── templates/new-agent/         # 9 onboarding template files
 └── scripts/                     # genesis-validate.sh, genesis-rollback.sh
@@ -241,7 +239,7 @@ The issues-first autonomous task loop using GitHub Issues + labels + determinist
 
 **Published:** `https://github.com/wsman/OpenSlack`
 
-**Architecture:** 5 active packages (+4 compat shims) + 2 apps, 7 CLI command groups, 137 tests (19 files), 7 golden evals, 36 commits.
+**Architecture:** 5 active packages + 2 apps, 7 CLI command groups, 97 tests (12 files), 7 golden evals, 53 commits.
 
 **Authentication:** Three-tier model (GitHub App installation token primary, PAT fallback, OAuth human only). App ID 3728623 installed on wsman/OpenSlack.
 

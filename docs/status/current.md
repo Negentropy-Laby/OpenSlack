@@ -1,6 +1,6 @@
 ---
 schema: openslack.status.v1
-status_date: 2026-05-16
+status_date: 2026-05-22
 source_of_truth: true
 supersedes:
   - phase-1-prehardening
@@ -14,8 +14,8 @@ supersedes:
 |-------|-------|
 | Remote | `https://github.com/wsman/OpenSlack` |
 | Branch | `main` |
-| Commits | 36 |
-| Last commit | `docs: close 7 resolved tech debt items — only 2 remain open` |
+| Commits | 53 |
+| Last commit | `0ac790e Merge branch 'main' of https://github.com/wsman/OpenSlack` |
 
 ## Modules
 
@@ -28,17 +28,13 @@ supersedes:
 
 | Package | Status | Tests | Key capability |
 |---------|--------|-------|---------------|
-| `@openslack/kernel` | ACTIVE | 21 | Zone classifier, merge decision, self-evolution ops |
-| `@openslack/workspace` | ACTIVE | 5 | Validation, indexing, schemas, golden evals |
+| `@openslack/kernel` | ACTIVE | 37 | Zone classifier, merge decision, policy engine |
+| `@openslack/workspace` | ACTIVE | 5 | Validation, indexing, schemas |
 | `@openslack/core` | ACTIVE | 0 | ClaimBroker + FileClaimBroker (file-locked) |
-| `@openslack/runtime` | ACTIVE | 0 | Agent bootstrap/tick, worktree, PR proposal |
+| `@openslack/runtime` | ACTIVE | 25 | Self-evolution ops, golden evals, agent bootstrap, worktree, PR proposal |
 | `@openslack/github` | ACTIVE | 31 | App auth, Issues, Claims, Repair, Lifecycle, Manifest |
 | `@openslack/cli` (app) | ACTIVE | 0 | 7 command groups: setup, ask, status, doctor, workspace, self, agent, task, github, operator |
 | `@openslack/auth-callback` (app) | ACTIVE | 0 | Headless OAuth server (human login only) |
-| *compat/self-evolution* | SHIM | — | → Re-exports from `@openslack/kernel` |
-| *compat/agent-runtime* | SHIM | — | → Re-exports from `@openslack/runtime` |
-| *compat/git-sync* | SHIM | — | → Re-exports from `@openslack/runtime` |
-| *compat/github-provider* | SHIM | — | → Re-exports from `@openslack/github` |
 
 ## CLI Command Groups (7)
 
@@ -60,7 +56,7 @@ supersedes:
 
 ## Test Suite
 
-137 unit tests across 19 test files. All passing. (Phase 1.10: +shim package duplication adds test count)
+97 unit tests across 12 test files. All passing.
 
 ## GitHub Integration
 

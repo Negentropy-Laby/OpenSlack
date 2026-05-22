@@ -1,7 +1,7 @@
 # Technical Debt Register
 
 > Owner: OpenSlack
-> Updated: 2026-05-16
+> Updated: 2026-05-22
 > Convention: P0 = blocks next phase, P1 = should fix this phase, P2 = nice to have
 
 ## Open Items
@@ -10,15 +10,27 @@
 
 **Source:** Phase 1.8 P0-3 review (2026-05-16).
 **Impact:** All commits go directly to main. No PR history exists on wsman/OpenSlack. Violates AGENTS.md constitutional rule: "No direct push to main. All changes go through PRs."
-**Resolution:** Configure via GitHub Settings → Rules → Rulesets (requires human admin — App token lacks Administration permission by design). Require PR before merging, status checks, CODEOWNERS review, block force push.
+**Resolution:** Configure via GitHub Settings → Rules → Rulesets (requires human admin — App token lacks Administration permission by design). Require PR before merging, status checks, CODEOWNERS review, block force push. Documented in `docs/developer/branch-protection.md`.
 **Filed:** 2026-05-16.
 
-### P2-5: Empty state directories in `.openslack/`
+### CLOSED: P2-5 — Empty state directories in `.openslack/`
 
-**Source:** `.openslack/agents/prompts`, `.openslack/agents/runbooks`, `.openslack/audit`, `.openslack/decisions`, `.openslack/memory`, `.openslack/org`, `.openslack/sync`, `.openslack/tasks/*`.
-**Impact:** Violates "every directory must have a purpose" principle. These are structural templates for future workspace state.
-**Resolution:** Accept as workspace schema contract (defined in `openslack.yaml`, validated by `validateWorkspace()`).
-**Filed:** 2026-05-15.
+**Resolution:** Accepted as workspace schema contract (defined in `openslack.yaml`, validated by `validateWorkspace()`). `.gitkeep` files added to required directories to ensure fresh CI checkouts pass validation.
+**Closed:** 2026-05-22.
+
+### P1-2: Node 20 Actions deprecation (time-bounded)
+
+**Source:** GitHub Actions runner deprecation notice. `actions/checkout@v4`, `actions/setup-node@v4`, `pnpm/action-setup@v4`, `actions/github-script@v7` all run on Node 20.
+**Impact:** Starting June 2, 2026, GitHub will force Node 24 for all actions. Node 20 support removed September 16, 2026. CI will break if action versions are not upgraded.
+**Resolution:** Monitor for v5 releases of affected actions. When available, upgrade all 5 workflow files in a single PR. Early test with `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` if needed.
+**Filed:** 2026-05-22.
+
+### P2-6: Compat shim package cleanup
+
+**Source:** `packages/compat/self-evolution`, `packages/compat/agent-runtime`, `packages/compat/git-sync`, `packages/compat/github-provider`.
+**Impact:** Dead weight. CLI declares dependencies on 3 compat packages; 1 is completely unused in source, 2 are imported but re-export from `@openslack/runtime`. No external consumers.
+**Resolution:** Migrate CLI imports to canonical packages (`@openslack/runtime`, `@openslack/github`), remove dead dependencies from `apps/cli/package.json`, delete `packages/compat/` directory.
+**Filed:** 2026-05-22.
 
 ## Closed Items
 
