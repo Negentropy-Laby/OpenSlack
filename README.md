@@ -230,3 +230,4 @@ Every file must have a clear purpose. See [`AGENTS.md`](AGENTS.md) for:
 | Policy files | 6 |
 | Documentation files | 12 |
 | Git commits | 55 |
+# Branch protection test
