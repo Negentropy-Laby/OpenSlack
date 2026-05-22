@@ -1,6 +1,6 @@
 ---
 schema: openslack.status.v1
-status_date: 2026-05-22
+status_date: 2026-05-23
 source_of_truth: true
 supersedes:
   - phase-1-prehardening
@@ -12,7 +12,7 @@ supersedes:
 
 | Field | Value |
 |-------|-------|
-| Remote | `https://github.com/wsman/OpenSlack` |
+| Remote | `https://github.com/Negentropy-Laby/OpenSlack` |
 | Branch | `main` |
 | Commits | 56 |
 | Last commit | `844afe9 Phase 1.12 productization closure` |
@@ -74,6 +74,7 @@ supersedes:
 | Claim repair | ACTIVE — `repairExpiredClaims()` |
 | PR merged → issue done | ACTIVE — `.github/workflows/openslack-issue-done.yml` |
 | Manifest validation | ACTIVE — JSON Schema + YAML parse + Red Zone gating |
+| Branch protection ruleset | ACTIVE — PR required, 1 approval, CODEOWNERS review, status checks, block force push |
 | OAuth device flow | INACTIVE — human login only, not for agent runtime |
 | Project v2 | DEFERRED — optional projection layer |
 
