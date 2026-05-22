@@ -14,17 +14,18 @@ supersedes:
 |-------|-------|
 | Remote | `https://github.com/wsman/OpenSlack` |
 | Branch | `main` |
-| Commits | 53 |
-| Last commit | `0ac790e Merge branch 'main' of https://github.com/wsman/OpenSlack` |
+| Commits | 56 |
+| Last commit | `844afe9 Phase 1.12 productization closure` |
 
 ## Modules
 
 | Module | Phase | Status | Description |
 |--------|-------|--------|-------------|
-| OSEK (Self-Evolution Kernel) | 1.6 | ACTIVE | Zone classifier, merge decision, golden evals, constitution, invariants, rollback, genesis |
+| OSEK (Self-Evolution Kernel) | 1.6 | ACTIVE | Zone classifier, merge decision, policy engine, constitution, invariants, rollback, genesis |
 | GITL (GitHub Issues Task Loop) | 1.7 | ACTIVE | Issues-first autonomous task loop: create → claim → heartbeat → worktree → PR → review → done |
+| Operator Interface | 1.8 | EARLY | Natural language router: intent → plan → execute → summarize |
 
-## Packages (5 active + 4 compat shims + 2 apps)
+## Packages (5 active + 2 apps)
 
 | Package | Status | Tests | Key capability |
 |---------|--------|-------|---------------|
@@ -100,4 +101,4 @@ Three-tier model (see `docs/developer/github-automation.md`):
 
 | Date | Commit | Canary | Validate | Observe | Node 24 Compat |
 |------|--------|--------|----------|---------|----------------|
-| 2026-05-22 | 320b033 | ✅ | ✅ | ✅ | ✅ (FORCE_JAVASCRIPT_ACTIONS_TO_NODE24) |
+| 2026-05-22 | 844afe9 | ✅ | ✅ | ✅ | ✅ (FORCE_JAVASCRIPT_ACTIONS_TO_NODE24) |
