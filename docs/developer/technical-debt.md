@@ -22,15 +22,14 @@
 
 **Source:** GitHub Actions runner deprecation notice. `actions/checkout@v4`, `actions/setup-node@v4`, `pnpm/action-setup@v4`, `actions/github-script@v7` all run on Node 20.
 **Impact:** Starting June 2, 2026, GitHub will force Node 24 for all actions. Node 20 support removed September 16, 2026. CI will break if action versions are not upgraded.
-**Resolution:** Monitor for v5 releases of affected actions. When available, upgrade all 5 workflow files in a single PR. Early test with `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` if needed.
+<<<<<<< HEAD
+**Resolution:** Compatibility verified: `openslack-self-canary.yml` runs successfully with `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true`. Continue monitoring for v5 releases; upgrade all 5 workflow files in a single PR when available. Fallback: enable `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24` globally if v5 not released by May 30.
 **Filed:** 2026-05-22.
 
-### P2-6: Compat shim package cleanup
+### CLOSED: P2-6 — Compat shim package cleanup
 
-**Source:** `packages/compat/self-evolution`, `packages/compat/agent-runtime`, `packages/compat/git-sync`, `packages/compat/github-provider`.
-**Impact:** Dead weight. CLI declares dependencies on 3 compat packages; 1 is completely unused in source, 2 are imported but re-export from `@openslack/runtime`. No external consumers.
-**Resolution:** Migrate CLI imports to canonical packages (`@openslack/runtime`, `@openslack/github`), remove dead dependencies from `apps/cli/package.json`, delete `packages/compat/` directory.
-**Filed:** 2026-05-22.
+**Resolution:** Deleted `packages/compat/` entirely (4 shim packages, ~2000 lines). CLI imports migrated: `agent.ts` → `@openslack/runtime`, `task.ts` → `@openslack/runtime`. Dead dependencies removed from `apps/cli/package.json`. Root `tsconfig.json` references updated. Zero consumer breakage.
+**Closed:** 2026-05-22.
 
 ## Closed Items
 
