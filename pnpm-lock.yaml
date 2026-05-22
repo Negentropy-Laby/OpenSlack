@@ -52,6 +52,9 @@ importers:
       '@openslack/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
+      '@openslack/runtime':
+        specifier: workspace:*
+        version: link:../../packages/runtime
       '@openslack/self-evolution':
         specifier: workspace:*
         version: link:../../packages/compat/self-evolution
@@ -104,6 +107,9 @@ importers:
       '@openslack/kernel':
         specifier: workspace:*
         version: link:../../kernel
+      '@openslack/runtime':
+        specifier: workspace:*
+        version: link:../../runtime
       '@openslack/workspace':
         specifier: workspace:*
         version: link:../../workspace
@@ -127,9 +133,6 @@ importers:
       '@openslack/core':
         specifier: workspace:*
         version: link:../core
-      '@openslack/workspace':
-        specifier: workspace:*
-        version: link:../workspace
       yaml:
         specifier: ^2.7.0
         version: 2.9.0
@@ -148,6 +151,9 @@ importers:
       '@openslack/workspace':
         specifier: workspace:*
         version: link:../workspace
+      yaml:
+        specifier: ^2.7.0
+        version: 2.9.0
 
   packages/workspace:
     dependencies:
@@ -157,9 +163,6 @@ importers:
       '@openslack/kernel':
         specifier: workspace:*
         version: link:../kernel
-      '@openslack/self-evolution':
-        specifier: workspace:*
-        version: link:../compat/self-evolution
       yaml:
         specifier: ^2.7.0
         version: 2.9.0

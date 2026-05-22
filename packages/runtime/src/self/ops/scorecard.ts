@@ -1,4 +1,4 @@
-import type { FitnessScore, CheckResult } from '../types.js';
+import type { FitnessScore, CheckResult } from '@openslack/kernel';
 
 interface ScoreInput {
   checks: Record<string, CheckResult>;

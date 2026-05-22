@@ -27,6 +27,8 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - run: pnpm build
+
       - name: Observe OpenSlack health
         run: pnpm openslack self observe
 

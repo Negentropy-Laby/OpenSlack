@@ -30,12 +30,14 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - run: pnpm build
+
       - name: Classify PR risk zone
         id: classify
         run: |
           CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...${{ github.sha }} | paste -sd ',' -)
           echo "Changed paths: $CHANGED"
-          RESULT=$(pnpm openslack self classify-pr --paths "$CHANGED" --format json 2>/dev/null || echo '{"riskZone":"unknown"}')
+          RESULT=$(pnpm --silent openslack self classify-pr --paths "$CHANGED" --format json 2>/dev/null || echo '{"riskZone":"unknown"}')
           echo "$RESULT"
           ZONE=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('riskZone','unknown'))")
           echo "risk_zone=$ZONE" >> $GITHUB_OUTPUT

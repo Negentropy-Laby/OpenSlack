@@ -1,8 +1,9 @@
 import { existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
-import { classifyPaths } from '@openslack/kernel';
-import { classifySelfEvolutionPR, createRollbackTask, computeFitnessScore } from '@openslack/self-evolution';
+import { classifyPaths, classifySelfEvolutionPR } from '@openslack/kernel';
+import { createRollbackTask } from '../self/ops/rollback.js';
+import { computeFitnessScore } from '../self/ops/scorecard.js';
 import { ClaimBroker } from '@openslack/core';
 import { validateWorkspace } from '@openslack/workspace';
 import { stringify } from 'yaml';

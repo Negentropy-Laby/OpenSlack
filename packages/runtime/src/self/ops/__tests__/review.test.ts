@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { reviewPR } from '../review.js';
-import type { SelfValidationResult } from '../../types.js';
+import type { SelfValidationResult } from '@openslack/kernel';
 
 function makeValidation(overrides: Partial<SelfValidationResult> = {}): SelfValidationResult {
   return {

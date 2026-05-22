@@ -1,1 +1,15 @@
-{"extends":"../../tsconfig.base.json","compilerOptions":{"outDir":"./dist","rootDir":"./src"},"include":["src"]}
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../packages/core" },
+    { "path": "../../packages/kernel" },
+    { "path": "../../packages/workspace" },
+    { "path": "../../packages/runtime" },
+    { "path": "../../packages/github" }
+  ]
+}

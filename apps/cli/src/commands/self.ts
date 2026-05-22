@@ -1,6 +1,6 @@
 import { Command } from 'commander';
-import { classifySelfEvolutionPR, observeHealth, triageObservations, validatePR, reviewPR, computeFitnessScore, monitorPostMerge } from '@openslack/self-evolution';
-import { runGoldenEval, generateScorecard } from '@openslack/workspace';
+import { classifySelfEvolutionPR } from '@openslack/kernel';
+import { observeHealth, triageObservations, validatePR, reviewPR, computeFitnessScore, monitorPostMerge, runGoldenEval, generateScorecard } from '@openslack/runtime';
 import { validateWorkspace } from '@openslack/workspace';
 
 export function selfCommands(): Command {

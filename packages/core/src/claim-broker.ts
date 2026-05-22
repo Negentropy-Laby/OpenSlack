@@ -184,8 +184,10 @@ export class FileClaimBroker extends ClaimBroker {
       } catch {
         // Lock held by another process — retry after short delay
         const wait = Math.random() * 50 + 25;
-        Atomics.wait?.(new Int32Array(new SharedArrayBuffer(4)), 0, 0, wait) ||
-          new Promise((r) => setTimeout(r, wait));
+        if (typeof Atomics.wait === 'function') {
+          const sab = new SharedArrayBuffer(4);
+          Atomics.wait(new Int32Array(sab), 0, 0, wait);
+        }
       }
     }
     return false;

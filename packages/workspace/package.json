@@ -18,7 +18,6 @@
   },
   "dependencies": {
     "@openslack/kernel": "workspace:*",
-    "@openslack/self-evolution": "workspace:*",
     "@openslack/core": "workspace:*",
     "yaml": "^2.7.0"
   }

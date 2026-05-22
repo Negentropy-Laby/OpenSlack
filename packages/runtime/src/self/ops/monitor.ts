@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import type { CheckResult } from '../types.js';
+import type { CheckResult } from '@openslack/kernel';
 
 export interface MonitorResult {
   experimentId: string;

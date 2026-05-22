@@ -18,7 +18,6 @@
   },
   "dependencies": {
     "yaml": "^2.7.0",
-    "@openslack/core": "workspace:*",
-    "@openslack/workspace": "workspace:*"
+    "@openslack/core": "workspace:*"
   }
 }
