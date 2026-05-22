@@ -5,7 +5,7 @@
 OpenSlack lets heterogeneous AI agents (Claude Code, Codex, reviewers, researchers, custom) function as employees: discover tasks from GitHub Issues, claim them with deterministic git ref locks, work in isolated worktrees, submit output through PRs, and communicate with humans only for approvals and exceptions.
 
 > **Status:** Developer Preview. GitHub-backed autonomous task loop verified E2E.  
-> **Repository:** [`wsman/OpenSlack`](https://github.com/wsman/OpenSlack) · 36 commits · 5 packages · 137 tests
+> **Repository:** [`wsman/OpenSlack`](https://github.com/wsman/OpenSlack) · 55 commits · 5 packages · 97 tests
 
 ---
 
@@ -16,10 +16,10 @@ OpenSlack/
 ├── openslack.yaml           # Self-Project Mode workspace
 ├── .openslack/              # Workspace state (policies, constitution, evals, tasks)
 ├── packages/                # 5 active packages
-│   ├── kernel/              # Self-Evolution Kernel: zone classifier, review, scorecard, rollback
-│   ├── workspace/           # Validation, indexing, schemas, golden evals
+│   ├── kernel/              # Zone classifier, merge decision, policy engine
+│   ├── workspace/           # Validation, indexing, schemas
 │   ├── core/                # ClaimBroker with file-locked persistence
-│   ├── runtime/             # Agent tick, worktree isolation, PR proposal
+│   ├── runtime/             # Self-evolution ops, golden evals, agent tick, worktree, PR proposal
 │   └── github/              # App auth, Issues task loop, claims, lifecycle, repair
 ├── apps/cli/                # 7 command groups (setup, ask, status, doctor + workspace/self/agent/task/github/operator)
 ├── templates/new-agent/     # 9 onboarding template files
@@ -50,6 +50,16 @@ The autonomous execution core. Agents discover, claim, and complete tasks throug
 - **Complete:** PR merged → claim ref deleted → issue → done
 
 See: [`docs/developer/github-issues-loop.md`](docs/developer/github-issues-loop.md)
+
+### Module 03: Operator Interface
+
+The human-facing entry point. Natural language queries route to the appropriate CLI commands.
+
+- **Ask:** `openslack operator ask "..."` — natural language → CLI intent → execute → summarize
+- **Setup:** `openslack setup` — one-step workspace validation + health check
+- **Router:** Maps user intent to `workspace`, `self`, `agent`, `task`, or `github` command groups
+
+See: [`AGENTS.md`](AGENTS.md) for command reference
 
 ## Quick Start
 
@@ -208,15 +218,15 @@ Every file must have a clear purpose. See [`AGENTS.md`](AGENTS.md) for:
 
 | Metric | Value |
 |--------|-------|
-| Packages | 5 active + 4 compat shims + 2 apps |
+| Packages | 5 active + 2 apps |
 | CLI commands | 25 |
 | CLI command groups | 7 |
-| Unit tests | 137 (19 test files) |
+| Unit tests | 97 (12 test files) |
 | Golden evals | 7 (7/7 passing) |
 | JSON Schemas | 8 (draft 2020-12) |
 | GitHub Actions workflows | 5 |
 | Genesis scripts | 3 |
 | Agent onboarding templates | 9 |
 | Policy files | 6 |
-| Documentation files | 11 |
-| Git commits | 36 |
+| Documentation files | 12 |
+| Git commits | 55 |
