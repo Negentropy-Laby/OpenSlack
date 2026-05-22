@@ -95,3 +95,9 @@ Three-tier model (see `docs/developer/github-automation.md`):
 | Chat gateway (Slack/webhook) | Phase 2 |
 | Web dashboard | Phase 2 |
 | Project v2 node_id + field IDs | Deferred per issues-first architecture decision |
+
+## CI Verification
+
+| Date | Commit | Canary | Validate | Observe | Node 24 Compat |
+|------|--------|--------|----------|---------|----------------|
+| 2026-05-22 | 320b033 | ✅ | ✅ | ✅ | ✅ (FORCE_JAVASCRIPT_ACTIONS_TO_NODE24) |

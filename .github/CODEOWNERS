@@ -6,4 +6,3 @@
 .openslack/self/constitution.md                 @wsman
 .openslack/self/invariants.yaml                 @wsman
 packages/kernel/src/**                         @wsman
-packages/self-evolution/src/core/**            @wsman
