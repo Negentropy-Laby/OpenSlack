@@ -33,7 +33,7 @@ modules:
   - id: operator
     name: Operator Interface
     status: active
-    phase: "2A/2B"
+    phase: "2A/2B/2C"
     cli:
       - openslack ask
       - openslack setup
@@ -44,9 +44,9 @@ modules:
       - "@openslack/cli"
       - "@openslack/operator"
       - "@openslack/chat-gateway"
-    tests: 60
-    test_files: 8
-    notes: Structured planner active. Webhook and Slack chat adapters active. PRMS chat cards active. LLM planner remains deferred.
+    tests: 69
+    test_files: 9
+    notes: Structured planner active. Webhook and Slack chat adapters active. PRMS chat cards and action confirmation active. LLM planner remains deferred.
 
   - id: pr_review_merge
     name: PR Review & Merge Steward
@@ -61,4 +61,4 @@ modules:
       - "@openslack/kernel"
     tests: 72
     test_files: 9
-    notes: Phase 2C-1 chat report active. Supports status/review/recommend/doctor/merge/watch, review/doctor comments, governance audit, deadlock detection, and chat-friendly PR summaries.
+    notes: Phase 2C chat report and action confirmation active. Supports status/review/recommend/doctor/merge/watch, review/doctor comments, governance audit, deadlock detection, and chat-friendly PR summaries with confirm-merge flow.
