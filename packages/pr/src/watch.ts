@@ -1,7 +1,9 @@
+import { getCODEOWNERS } from '@openslack/github';
 import { fetchPRDetails } from './fetch.js';
 import { classifyPRReport } from './classify.js';
-import { checkMergeReadiness } from './readiness.js';
 import { loadPRReviewPolicy } from './policy.js';
+import { parseCODEOWNERS, resolveCodeowners } from './codeowners.js';
+import { diagnosePR } from './doctor.js';
 import type { PRReviewState } from './types.js';
 
 export interface WatchOptions {
@@ -38,19 +40,29 @@ export async function watchPR(
     polls++;
     const report = await fetchPRDetails(prNumber);
     const classified = classifyPRReport(report);
-    const ready = checkMergeReadiness(classified, policy);
-    lastDecision = ready.decision;
-    lastReason = ready.reason;
+
+    const codeownersContent = await getCODEOWNERS(classified.baseRef);
+    const codeownersEntries = codeownersContent ? parseCODEOWNERS(codeownersContent) : [];
+    const codeowners = resolveCodeowners(classified.changedFiles, codeownersEntries);
+
+    const diagnosed = diagnosePR(classified, policy, codeowners);
+    lastDecision = diagnosed.decision;
+    lastReason = diagnosed.reason;
 
     const elapsed = Math.round((Date.now() - start) / 1000);
-    console.log(`[${elapsed}s] ${ready.decision}: ${ready.reason}`);
+    console.log(`[${elapsed}s] ${diagnosed.decision}: ${diagnosed.reason}`);
 
-    if (ready.decision === 'READY_TO_MERGE') {
-      return { finalState: ready.decision, reason: ready.reason, elapsedMs: Date.now() - start, polls };
+    if (diagnosed.decision === 'READY_TO_MERGE') {
+      return { finalState: diagnosed.decision, reason: diagnosed.reason, elapsedMs: Date.now() - start, polls };
     }
 
-    if (ready.decision === 'BLOCKED_BLACK_ZONE' || ready.decision === 'BLOCKED_DRAFT') {
-      return { finalState: ready.decision, reason: ready.reason, elapsedMs: Date.now() - start, polls };
+    if (
+      diagnosed.decision === 'BLOCKED_BLACK_ZONE' ||
+      diagnosed.decision === 'BLOCKED_DRAFT' ||
+      diagnosed.decision === 'BLOCKED_AUTHOR_IS_SOLE_CODEOWNER' ||
+      diagnosed.decision === 'BLOCKED_SINGLE_MAINTAINER'
+    ) {
+      return { finalState: diagnosed.decision, reason: diagnosed.reason, elapsedMs: Date.now() - start, polls };
     }
 
     if (Date.now() - start + interval >= timeout) {
