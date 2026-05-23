@@ -2,7 +2,7 @@
 
 You are working in the **OpenSlack product repository** and its own Self-Project workspace.
 
-OpenSlack is a local-first, Git-backed operating system for AI agents. Agents discover work from GitHub Issues, claim tasks with deterministic git refs, work in isolated worktrees, submit PRs, and use humans only for approval and exceptions.
+OpenSlack is an agent-native collaboration workspace for human-agent teams. Agents discover work from GitHub Issues, claim tasks with deterministic git refs, work in isolated worktrees, submit PRs, and use humans only for approval and exceptions.
 
 **Core principle:** chat is a frontend, Git is the source of truth, and agents are workers — not chatbots.
 
@@ -135,6 +135,34 @@ Key packages:
 @openslack/pr
 @openslack/github
 @openslack/kernel
+```
+
+### Module 05 — Collaboration Layer
+
+Purpose: make OpenSlack's collaboration process observable, traceable, and auditable.
+
+Owns:
+
+- event model with validation, redaction, and JSONL storage
+- activity feed and digest (projection-only views)
+- handoff and decision YAML objects with full CRUD
+- room summaries aggregating events, blockers, handoffs, and decisions
+- PRMS doctor / governance audit / operator plan event hooks
+
+Main commands:
+
+```bash
+openslack collaboration activity
+openslack collaboration digest
+openslack collaboration handoff ...
+openslack collaboration decision ...
+openslack collaboration room show pr:42
+```
+
+Key packages:
+
+```text
+@openslack/collaboration
 ```
 
 ---
@@ -368,12 +396,13 @@ PRs should clearly state:
 
 ## Current Status
 
-OpenSlack v0.1 RC has four product modules:
+OpenSlack v0.1 RC has five product modules:
 
 1. Self-Evolution Kernel — ACTIVE
 2. GitHub Issues Task Loop — ACTIVE
 3. Operator Interface — EARLY, safe keyword router
 4. PR Review & Merge Steward — ACTIVE
+5. Collaboration Layer — ACTIVE, projection-only observability and workspace UX
 
 For live status, run:
 
