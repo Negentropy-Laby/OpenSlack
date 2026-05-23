@@ -18,7 +18,7 @@ function readBody(req: IncomingMessage): Promise<string> {
 export class WebhookAdapter implements ChatAdapter {
   readonly name = 'webhook';
   private server?: ReturnType<typeof createServer>;
-  private handlers: Array<(msg: ChatMessage) => void> = [];
+  private handlers: Array<(msg: ChatMessage) => void | Promise<void>> = [];
   private responses: ChatResponse[] = [];
   private options: WebhookAdapterOptions;
 
@@ -57,7 +57,7 @@ export class WebhookAdapter implements ChatAdapter {
     return Promise.resolve();
   }
 
-  onMessage(handler: (msg: ChatMessage) => void): void {
+  onMessage(handler: (msg: ChatMessage) => void | Promise<void>): void {
     this.handlers.push(handler);
   }
 
@@ -115,27 +115,35 @@ export class WebhookAdapter implements ChatAdapter {
       timestamp: new Date().toISOString(),
     };
 
-    // Signature verification (if configured)
+    // Signature verification + replay protection
     const signature = req.headers['x-openslack-signature'] as string | undefined;
-    if (this.options.secret && signature) {
-      const { verifyRequestSignature } = await import('./authz.js');
-      const valid = verifyRequestSignature(body, signature, this.options.secret);
-      if (!valid) {
+    const timestamp = req.headers['x-openslack-timestamp'] as string | undefined;
+
+    if (this.options.secret) {
+      const { verifyRequestSignature, verifyRequestTimestamp } = await import('./authz.js');
+
+      if (!signature) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Missing X-OpenSlack-Signature header' }));
+        return;
+      }
+
+      if (!verifyRequestTimestamp(timestamp)) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Request too old or missing timestamp' }));
+        return;
+      }
+
+      if (!verifyRequestSignature(body, signature, this.options.secret)) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Invalid signature' }));
         return;
       }
     }
 
-    // Reset responses and notify handlers
+    // Reset responses and await all handlers
     this.responses = [];
-
-    for (const handler of this.handlers) {
-      handler(message);
-    }
-
-    // Wait a tick for async handlers
-    await new Promise((r) => setTimeout(r, 100));
+    await Promise.all(this.handlers.map((h) => h(message)));
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({

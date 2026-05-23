@@ -39,10 +39,10 @@ export function chatCommands(): Command {
           signature: undefined,
         });
 
-        // For webhook adapter, responses are collected and returned in HTTP response
         console.log(`[${message.id}] ${message.user.id}: ${message.text}`);
         if (result.text) {
           console.log(`→ ${result.text.slice(0, 200)}${result.text.length > 200 ? '...' : ''}`);
+          await adapter.send(message.channel.id, result);
         }
       });
 

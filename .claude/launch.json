@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "auth-callback",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["--import", "tsx", "src/index.ts"],
+      "port": 8200
+    }
+  ]
+}

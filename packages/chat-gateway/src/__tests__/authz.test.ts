@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { verifyRequestSignature, mapActor, canExecuteSideEffects, buildDefaultActor } from '../authz.js';
+import { verifyRequestSignature, verifyRequestTimestamp, mapActor, canExecuteSideEffects, buildDefaultActor } from '../authz.js';
+import { createHmac } from 'node:crypto';
 import type { ChatMessage } from '../types.js';
+
+function makeSignature(secret: string, payload: string): string {
+  return `sha256=${createHmac('sha256', secret).update(payload).digest('hex')}`;
+}
 
 function makeMsg(userId: string, channelType: 'dm' | 'channel' | 'webhook'): ChatMessage {
   return {
@@ -13,11 +18,16 @@ function makeMsg(userId: string, channelType: 'dm' | 'channel' | 'webhook'): Cha
 }
 
 describe('verifyRequestSignature', () => {
-  it('accepts valid signature', () => {
-    const sig = 'sha256=8f1e04d8a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e'; // fake format
-    // Our implementation uses sha256= prefix + simple hash; just verify it doesn't crash
-    const result = verifyRequestSignature('test', sig, 'secret');
-    expect(typeof result).toBe('boolean');
+  it('accepts valid HMAC signature', () => {
+    const payload = '{"text":"hello"}';
+    const secret = 'test-secret';
+    const sig = makeSignature(secret, payload);
+    expect(verifyRequestSignature(payload, sig, secret)).toBe(true);
+  });
+
+  it('rejects invalid signature', () => {
+    const payload = '{"text":"hello"}';
+    expect(verifyRequestSignature(payload, 'sha256=bad', 'secret')).toBe(false);
   });
 
   it('rejects when secret is missing', () => {
@@ -25,7 +35,31 @@ describe('verifyRequestSignature', () => {
   });
 
   it('rejects when signature is missing', () => {
+    expect(verifyRequestSignature('test', undefined, 'secret')).toBe(false);
+  });
+
+  it('rejects when signature is empty string', () => {
     expect(verifyRequestSignature('test', '', 'secret')).toBe(false);
+  });
+});
+
+describe('verifyRequestTimestamp', () => {
+  it('accepts recent timestamp', () => {
+    const now = String(Math.floor(Date.now() / 1000));
+    expect(verifyRequestTimestamp(now)).toBe(true);
+  });
+
+  it('rejects old timestamp', () => {
+    const old = String(Math.floor(Date.now() / 1000) - 400);
+    expect(verifyRequestTimestamp(old)).toBe(false);
+  });
+
+  it('rejects missing timestamp', () => {
+    expect(verifyRequestTimestamp(undefined)).toBe(false);
+  });
+
+  it('rejects non-numeric timestamp', () => {
+    expect(verifyRequestTimestamp('not-a-number')).toBe(false);
   });
 });
 
