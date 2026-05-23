@@ -3,6 +3,8 @@ import {
   readEvents, filterEvents, renderActivityFeed, buildDigest, renderDigest,
   createHandoff, listHandoffs, getHandoff, acceptHandoff, closeHandoff,
   renderHandoffList, renderHandoff,
+  recordDecision, listDecisions, getDecision, supersedeDecision,
+  renderDecisionList, renderDecision,
 } from '@openslack/collaboration';
 
 export function collaborationCommands(): Command {
@@ -143,6 +145,75 @@ export function collaborationCommands(): Command {
     });
 
   cmd.addCommand(handoff);
+
+  const decision = new Command('decision').description('Collaboration decision records');
+
+  decision
+    .command('record')
+    .description('Record a new decision')
+    .requiredOption('--topic <text>', 'Decision topic')
+    .requiredOption('--decision <text>', 'The decision made')
+    .requiredOption('--rationale <text>', 'Why this decision was made')
+    .requiredOption('--by <agent>', 'Who made the decision')
+    .option('--alternatives <items>', 'Comma-separated alternatives considered')
+    .option('--consequences <items>', 'Comma-separated consequences')
+    .option('--tags <items>', 'Comma-separated tags')
+    .action((options: {
+      topic: string;
+      decision: string;
+      rationale: string;
+      by: string;
+      alternatives?: string;
+      consequences?: string;
+      tags?: string;
+    }) => {
+      const d = recordDecision({
+        topic: options.topic,
+        decision: options.decision,
+        rationale: options.rationale,
+        decidedBy: options.by,
+        alternatives: options.alternatives ? options.alternatives.split(',').map((s) => s.trim()) : [],
+        consequences: options.consequences ? options.consequences.split(',').map((s) => s.trim()) : [],
+        tags: options.tags ? options.tags.split(',').map((s) => s.trim()) : [],
+      });
+      console.log(`Recorded decision: ${d.id}`);
+      console.log(`Topic: ${d.topic}`);
+      console.log(`Status: ${d.status}`);
+    });
+
+  decision
+    .command('list')
+    .description('List all decisions')
+    .action(() => {
+      console.log(renderDecisionList(listDecisions()));
+    });
+
+  decision
+    .command('show <id>')
+    .description('Show a specific decision')
+    .action((id: string) => {
+      const d = getDecision(id);
+      if (!d) {
+        console.log(`Decision ${id} not found.`);
+        process.exit(1);
+      }
+      console.log(renderDecision(d));
+    });
+
+  decision
+    .command('supersede <id>')
+    .description('Supersede a decision with a new one')
+    .requiredOption('--by <id>', 'New decision ID that supersedes this one')
+    .action((id: string, options: { by: string }) => {
+      const d = supersedeDecision(id, options.by);
+      if (!d) {
+        console.log(`Decision ${id} not found or not active.`);
+        process.exit(1);
+      }
+      console.log(`Decision ${id} superseded by ${options.by}.`);
+    });
+
+  cmd.addCommand(decision);
 
   return cmd;
 }
