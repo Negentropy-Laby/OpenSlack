@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { getCODEOWNERS } from '@openslack/github';
+import { getCODEOWNERS, commentOnPR } from '@openslack/github';
 import {
   fetchPRDetails,
   classifyPRReport,
@@ -91,7 +91,8 @@ export function prCommands(): Command {
   cmd
     .command('doctor <number>')
     .description('Run comprehensive governance diagnosis on a PR')
-    .action(async (number: string) => {
+    .option('--comment', 'Post the doctor report as a PR comment')
+    .action(async (number: string, options: { comment?: boolean }) => {
       const prNumber = parseInt(number, 10);
       const report = await fetchPRDetails(prNumber);
       const classified = classifyPRReport(report);
@@ -102,7 +103,14 @@ export function prCommands(): Command {
       const codeowners = resolveCodeowners(classified.changedFiles, codeownersEntries);
 
       const diagnosed = diagnosePR(classified, policy, codeowners);
-      console.log(generateDoctorReport(diagnosed, codeowners));
+      const doctorOutput = generateDoctorReport(diagnosed, codeowners);
+
+      if (options.comment) {
+        await commentOnPR(prNumber, doctorOutput);
+        console.log(`Doctor report posted on PR #${prNumber}`);
+      } else {
+        console.log(doctorOutput);
+      }
     });
 
   cmd
