@@ -34,6 +34,9 @@ jobs:
       - name: Regenerate status doc
         run: pnpm openslack status generate
 
+      - name: Check for uncommitted status changes
+        run: git diff --exit-code docs/status/current.md
+
       - name: Status consistency check
         run: pnpm openslack status verify
 

@@ -234,19 +234,6 @@ Every file must have a clear purpose. See [`AGENTS.md`](AGENTS.md) for:
 5. Self-validate before requesting review.
 6. Red Zone changes require human approval.
 
-## Metrics
+## Status
 
 Run `openslack status` for live project metrics, or see [`docs/status/current.md`](docs/status/current.md).
-
-Key architectural counts (stable):
-
-| Metric | Value |
-|--------|-------|
-| Packages | 6 active + 2 apps |
-| CLI command groups | 8 |
-| JSON Schemas | 8 (draft 2020-12) |
-| GitHub Actions workflows | 5 |
-| Genesis scripts | 3 |
-| Agent onboarding templates | 9 |
-| Policy files | 6 |
-| Documentation files | 12 |
