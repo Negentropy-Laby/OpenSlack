@@ -67,12 +67,39 @@ export function doctorCommands(): Command {
 
       // Required labels check
       try {
-        const { getClient } = await import('@openslack/github');
         const client = await getClient();
         if (client.isDryRun) {
           checks.push({ name: 'Required labels', state: 'WARN', detail: 'Dry-run: cannot verify remotely' });
         } else {
-          checks.push({ name: 'Required labels', state: 'PASS', detail: 'Labels verified' });
+          const requiredLabels = [
+            'openslack:task',
+            'openslack:ready',
+            'openslack:claimed',
+            'openslack:running',
+            'openslack:review',
+            'openslack:done',
+            'openslack:blocked',
+          ];
+          const { data: existingLabels } = await client.octokit.issues.listLabelsForRepo({
+            owner: client.owner,
+            repo: client.repo,
+            per_page: 100,
+          });
+          const existingNames = new Set(existingLabels.map((l) => l.name));
+          const missing = requiredLabels.filter((l) => !existingNames.has(l));
+          if (missing.length > 0) {
+            checks.push({
+              name: 'Required labels',
+              state: 'WARN',
+              detail: `Missing: ${missing.join(', ')}`,
+            });
+          } else {
+            checks.push({
+              name: 'Required labels',
+              state: 'PASS',
+              detail: `${requiredLabels.length}/${requiredLabels.length} present`,
+            });
+          }
         }
       } catch (e) {
         checks.push({ name: 'Required labels', state: 'FAIL', detail: `Error: ${(e as Error).message}` });
@@ -99,12 +126,49 @@ export function doctorCommands(): Command {
         checks.push({ name: 'Module registry', state: 'FAIL', detail: `Error: ${(e as Error).message}` });
       }
 
-      // Branch protection check (best-effort)
-      checks.push({
-        name: 'Branch protection',
-        state: 'WARN',
-        detail: 'Cannot verify remotely — check GitHub Settings > Rules',
-      });
+      // Branch protection check
+      try {
+        const client = await getClient();
+        if (client.isDryRun) {
+          checks.push({
+            name: 'Branch protection',
+            state: 'WARN',
+            detail: 'Dry-run: cannot verify remotely',
+          });
+        } else {
+          const { data: rules } = await client.octokit.repos.getBranchRules({
+            owner: client.owner,
+            repo: client.repo,
+            branch: 'main',
+          });
+          const hasPullRequestRule = rules.some((r: { type: string }) => r.type === 'pull_request');
+          const hasDeletionRule = rules.some((r: { type: string }) => r.type === 'deletion');
+          const hasNonFastForwardRule = rules.some((r: { type: string }) => r.type === 'non_fast_forward');
+          const details: string[] = [];
+          if (hasPullRequestRule) details.push('PR required');
+          if (hasDeletionRule) details.push('delete protected');
+          if (hasNonFastForwardRule) details.push('force-push blocked');
+          if (details.length >= 2) {
+            checks.push({
+              name: 'Branch protection',
+              state: 'PASS',
+              detail: details.join(', '),
+            });
+          } else {
+            checks.push({
+              name: 'Branch protection',
+              state: 'WARN',
+              detail: `Partial: ${details.join(', ') || 'none detected'}`,
+            });
+          }
+        }
+      } catch (e) {
+        checks.push({
+          name: 'Branch protection',
+          state: 'WARN',
+          detail: `Cannot verify: ${(e as Error).message}`,
+        });
+      }
 
       // Genesis check
       try {
