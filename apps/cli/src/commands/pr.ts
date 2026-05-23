@@ -96,5 +96,34 @@ export function prCommands(): Command {
       console.log(generateDoctorReport(diagnosed, codeowners));
     });
 
+  cmd
+    .command('merge <number>')
+    .description('Merge a PR after passing all governance gates')
+    .option('--method <method>', 'Merge method: merge, squash, or rebase', 'merge')
+    .action(async (number: string, options: { method: string }) => {
+      const prNumber = parseInt(number, 10);
+      const { mergeIfReady, loadPRReviewPolicy } = await import('@openslack/pr');
+      const policy = loadPRReviewPolicy();
+
+      const result = await mergeIfReady(prNumber, policy, {
+        method: options.method as 'merge' | 'squash' | 'rebase',
+      });
+
+      if (!result.merged) {
+        console.log('Merge blocked.');
+        console.log('');
+        console.log(`Decision: ${result.decision}`);
+        console.log(`Reason: ${result.reason}`);
+        console.log('');
+        console.log(result.message);
+        process.exit(1);
+      }
+
+      console.log('Merge Steward: PR merged successfully.');
+      console.log(`Decision: ${result.decision}`);
+      if (result.sha) console.log(`SHA: ${result.sha}`);
+      console.log(result.message);
+    });
+
   return cmd;
 }
