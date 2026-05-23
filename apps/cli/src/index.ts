@@ -13,6 +13,7 @@ import { setupCommands } from './commands/setup.js';
 import { statusCommands } from './commands/status.js';
 import { doctorCommands } from './commands/doctor.js';
 import { governanceCommands } from './commands/governance.js';
+import { chatCommands } from './commands/chat.js';
 
 const program = new Command();
 
@@ -44,5 +45,6 @@ program.addCommand(statusCommands());
 program.addCommand(doctorCommands());
 program.addCommand(governanceCommands());
 program.addCommand(setupCommands());
+program.addCommand(chatCommands());
 
 program.parse(process.argv);

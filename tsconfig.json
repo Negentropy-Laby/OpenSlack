@@ -8,6 +8,7 @@
     { "path": "packages/github" },
     { "path": "packages/pr" },
     { "path": "packages/operator" },
+    { "path": "packages/chat-gateway" },
     { "path": "apps/cli" },
     { "path": "apps/auth-callback" }
   ]
