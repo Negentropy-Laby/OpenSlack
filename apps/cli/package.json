@@ -18,6 +18,7 @@
     "@openslack/runtime": "workspace:*",
     "@openslack/github": "workspace:*",
     "@openslack/pr": "workspace:*",
+    "@openslack/operator": "workspace:*",
     "commander": "^13.1.0"
   },
   "devDependencies": {
