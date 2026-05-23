@@ -6,6 +6,7 @@
   },
   "include": ["src"],
   "references": [
-    { "path": "../operator" }
+    { "path": "../operator" },
+    { "path": "../pr" }
   ]
 }
