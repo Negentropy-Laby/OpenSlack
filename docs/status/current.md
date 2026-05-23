@@ -22,7 +22,7 @@ supersedes:
 | GitHub Issues Task Loop | 1.7 | ACTIVE |  |
 | Operator Interface | 2A/2B/2C | ACTIVE | Structured planner active. Webhook and Slack chat adapters active. PRMS chat cards and action confirmation active. LLM planner remains deferred. |
 | PR Review & Merge Steward | 1.14 | ACTIVE | Phase 2C chat report and action confirmation active. Supports status/review/recommend/doctor/merge/watch, review/doctor comments, governance audit, deadlock detection, and chat-friendly PR summaries with confirm-merge flow. |
-| Collaboration Layer | 2D/2E | ACTIVE | Event model, activity feed, digest, handoff, and decision active. PRMS doctor, governance audit, and operator plan events hooked. Handoff and decision YAML schemas with full CRUD. Projection-only; reads from .openslack.local/collaboration/events.jsonl and .openslack/collaboration/{handoffs,decisions}/. Room view planned for 2E. |
+| Collaboration Layer | 2D/2E | ACTIVE | Full 2D/2E Collaboration Layer active. Event model, activity feed, digest, handoff, decision, and room views. PRMS doctor, governance audit, and operator plan events hooked. Projection-only; reads from .openslack.local/collaboration/events.jsonl and .openslack/collaboration/{handoffs,decisions}/. Workflow templates (2F) deferred. |
 
 ## Packages (10 active)
 
@@ -55,6 +55,7 @@ supersedes:
 - openslack collaboration digest
 - openslack collaboration handoff
 - openslack collaboration decision
+- openslack collaboration room
 
 ## Golden Evals
 
@@ -62,7 +63,7 @@ supersedes:
 
 ## Test Suite
 
-321 unit tests across 37 test files. All passing.
+330 unit tests across 38 test files. All passing.
 
 ## Module Registry
 

@@ -52,6 +52,14 @@ export {
 
 export type { Decision } from './decision.js';
 
+export {
+  parseRoomId,
+  buildRoomView,
+  renderRoom,
+} from './room.js';
+
+export type { RoomView } from './room.js';
+
 export type {
   CollaborationEvent,
   CollaborationEventType,
