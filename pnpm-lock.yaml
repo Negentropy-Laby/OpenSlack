@@ -46,6 +46,9 @@ importers:
       '@openslack/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel
+      '@openslack/operator':
+        specifier: workspace:*
+        version: link:../../packages/operator
       '@openslack/pr':
         specifier: workspace:*
         version: link:../../packages/pr
@@ -82,6 +85,12 @@ importers:
       yaml:
         specifier: ^2.7.0
         version: 2.9.0
+
+  packages/operator:
+    dependencies:
+      '@openslack/pr':
+        specifier: workspace:*
+        version: link:../pr
 
   packages/pr:
     dependencies:
