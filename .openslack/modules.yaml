@@ -62,3 +62,13 @@ modules:
     tests: 72
     test_files: 9
     notes: Phase 2C chat report and action confirmation active. Supports status/review/recommend/doctor/merge/watch, review/doctor comments, governance audit, deadlock detection, and chat-friendly PR summaries with confirm-merge flow.
+
+  - id: collaboration
+    name: Collaboration Layer
+    status: planned
+    phase: "2D/2E"
+    cli: []
+    packages: []
+    tests: 0
+    test_files: 0
+    notes: Planned projection-only collaboration layer. Will provide activity, digest, handoff, decision, and room views built from GitHub/Git/.openslack source-of-truth objects.
