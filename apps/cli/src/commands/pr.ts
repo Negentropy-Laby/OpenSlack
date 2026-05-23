@@ -1,10 +1,15 @@
 import { Command } from 'commander';
+import { getCODEOWNERS } from '@openslack/github';
 import {
   fetchPRDetails,
   classifyPRReport,
   checkMergeReadiness,
   generateReviewReport,
+  generateDoctorReport,
   loadPRReviewPolicy,
+  diagnosePR,
+  parseCODEOWNERS,
+  resolveCodeowners,
 } from '@openslack/pr';
 
 export function prCommands(): Command {
@@ -72,6 +77,23 @@ export function prCommands(): Command {
         console.log(`Reason: ${ready.reason}`);
         console.log(`Recommendation: ${ready.recommendation}`);
       }
+    });
+
+  cmd
+    .command('doctor <number>')
+    .description('Run comprehensive governance diagnosis on a PR')
+    .action(async (number: string) => {
+      const prNumber = parseInt(number, 10);
+      const report = await fetchPRDetails(prNumber);
+      const classified = classifyPRReport(report);
+      const policy = loadPRReviewPolicy();
+
+      const codeownersContent = await getCODEOWNERS(classified.baseRef);
+      const codeownersEntries = codeownersContent ? parseCODEOWNERS(codeownersContent) : [];
+      const codeowners = resolveCodeowners(classified.changedFiles, codeownersEntries);
+
+      const diagnosed = diagnosePR(classified, policy, codeowners);
+      console.log(generateDoctorReport(diagnosed, codeowners));
     });
 
   return cmd;

@@ -183,3 +183,25 @@ export async function commentOnPR(
     body,
   });
 }
+
+export async function getCODEOWNERS(ref: string): Promise<string | null> {
+  const client = await getClient();
+  if (client.isDryRun) {
+    console.log(`[DRY RUN] Would fetch CODEOWNERS from ${client.owner}/${client.repo}@${ref}`);
+    return null;
+  }
+  try {
+    const { data } = await client.octokit.repos.getContent({
+      owner: client.owner,
+      repo: client.repo,
+      path: '.github/CODEOWNERS',
+      ref,
+    });
+    if ('content' in data && typeof data.content === 'string') {
+      return Buffer.from(data.content, 'base64').toString('utf-8');
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
