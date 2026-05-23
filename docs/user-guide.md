@@ -86,6 +86,8 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 
 Chat Gateway is projection-only. GitHub/Git/.openslack remain the sole source of truth. Slack confirmation is not a GitHub CODEOWNER approval.
 
+PRMS chat cards render compact PR doctor summaries in chat. Blocked PRs show the blocker, reason, and next step. Ready PRs display a Confirm merge button.
+
 ## Status & Health
 
 | Command | Purpose |

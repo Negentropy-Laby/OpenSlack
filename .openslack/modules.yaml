@@ -44,9 +44,9 @@ modules:
       - "@openslack/cli"
       - "@openslack/operator"
       - "@openslack/chat-gateway"
-    tests: 55
-    test_files: 7
-    notes: Structured planner active. Webhook and Slack chat adapters active. LLM planner remains deferred.
+    tests: 60
+    test_files: 8
+    notes: Structured planner active. Webhook and Slack chat adapters active. PRMS chat cards active. LLM planner remains deferred.
 
   - id: pr_review_merge
     name: PR Review & Merge Steward
@@ -59,6 +59,6 @@ modules:
       - "@openslack/pr"
       - "@openslack/github"
       - "@openslack/kernel"
-    tests: 64
-    test_files: 8
-    notes: Phase 1.16 UX closure complete. Supports status/review/recommend/doctor/merge/watch and review/doctor comments. Governance audit and deadlock detection active.
+    tests: 72
+    test_files: 9
+    notes: Phase 2C-1 chat report active. Supports status/review/recommend/doctor/merge/watch, review/doctor comments, governance audit, deadlock detection, and chat-friendly PR summaries.
