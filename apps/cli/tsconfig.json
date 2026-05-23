@@ -11,6 +11,7 @@
     { "path": "../../packages/workspace" },
     { "path": "../../packages/runtime" },
     { "path": "../../packages/github" },
-    { "path": "../../packages/pr" }
+    { "path": "../../packages/pr" },
+    { "path": "../../packages/collaboration" }
   ]
 }
