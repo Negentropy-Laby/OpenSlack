@@ -11,6 +11,7 @@ import { operatorCommands } from './commands/operator.js';
 import { prCommands } from './commands/pr.js';
 import { setupCommands } from './commands/setup.js';
 import { statusCommands } from './commands/status.js';
+import { doctorCommands } from './commands/doctor.js';
 
 const program = new Command();
 
@@ -30,14 +31,6 @@ program
     if (result.error) console.error('ask: failed to execute:', result.error.message);
   });
 
-program
-  .command('doctor')
-  .description('Quick GitHub integration doctor check')
-  .action(() => {
-    const root = process.cwd();
-    spawnSync(process.execPath, ['--import', 'tsx', join(root, 'apps', 'cli', 'src', 'index.ts'), 'github', 'doctor'], { cwd: root, stdio: 'inherit' });
-  });
-
 // Command groups
 program.addCommand(workspaceCommands());
 program.addCommand(selfCommands());
@@ -47,6 +40,7 @@ program.addCommand(githubCommands());
 program.addCommand(prCommands());
 program.addCommand(operatorCommands());
 program.addCommand(statusCommands());
+program.addCommand(doctorCommands());
 program.addCommand(setupCommands());
 
 program.parse(process.argv);
