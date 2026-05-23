@@ -11,7 +11,7 @@ modules:
       - "@openslack/kernel"
       - "@openslack/workspace"
       - "@openslack/runtime"
-    tests: 66
+    tests: 74
     test_files: 10
     golden_evals: 7
 
@@ -57,4 +57,4 @@ modules:
       - "@openslack/kernel"
     tests: 64
     test_files: 8
-    notes: Phase 1.14 core complete. Operator integration planned for 1.15. Watch/comment planned for 1.16.
+    notes: Phase 1.14 core complete. Basic Operator keyword routing implemented. Watch/comment planned for 1.16.

@@ -7,3 +7,7 @@ export type { WorkspaceConfig, ValidationResult, ValidationError } from './types
 // Schemas
 export { schemas, workspaceSchema, agentRegistrySchema, evolutionTaskSchema, taskSchema, leaseSchema, runRecordSchema } from './schemas/index.js';
 
+// Module Registry
+export { readModules, validateModules, getModuleById, getTotalTests, getTotalTestFiles } from './module-registry.js';
+export type { ProductModule, ModulesRegistry, RegistryValidationResult } from './module-registry.js';
+
