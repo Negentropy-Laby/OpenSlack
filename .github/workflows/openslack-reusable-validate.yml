@@ -16,6 +16,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -28,6 +30,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm build
+
+      - name: Regenerate status doc
+        run: pnpm openslack status generate
+
+      - name: Status consistency check
+        run: pnpm openslack status verify
 
       - name: Workspace validate
         run: pnpm openslack workspace validate
