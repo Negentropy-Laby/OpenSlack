@@ -14,8 +14,8 @@ supersedes:
 |-------|-------|
 | Remote | `https://github.com/Negentropy-Laby/OpenSlack` |
 | Branch | `main` |
-| Commits | 67 |
-| Last commit | `121d60b` — repo: sync docs and wire operator prms integration |
+| Commits | 69 |
+| Last commit | `1d1dcb8` — cli: harden operator safety and add plan mode |
 
 ## Modules
 
