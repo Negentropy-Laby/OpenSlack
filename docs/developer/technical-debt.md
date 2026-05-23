@@ -16,6 +16,14 @@
 **Resolution:** Accepted as workspace schema contract (defined in `openslack.yaml`, validated by `validateWorkspace()`). `.gitkeep` files added to required directories to ensure fresh CI checkouts pass validation.
 **Closed:** 2026-05-22.
 
+### P0-3: Direct commits to main without PR
+
+**Source:** Commits `aab64a9` and `f453cbd` pushed directly to main during Phase 1.16 delivery.
+**Impact:** Bypasses branch protection ruleset and CODEOWNERS review. Creates governance inconsistency with documented `no direct push to main` invariant.
+**Resolution:** Commits contain non-Red Zone changes (CI workflow, CLI commands, docs). Recorded as bootstrap exception during productization sprint. All subsequent commits must go through PR.
+**Preventive measure:** Ruleset `current_user_can_bypass: "never"` is active. Future direct pushes would be blocked at the GitHub level. The only path for these commits was admin force-push, which requires explicit override.
+**Filed:** 2026-05-23.
+
 ### P0-2: Author/CODEOWNER deadlock for Red Zone PRs
 
 **Source:** PR #11 bootstrap (2026-05-23).

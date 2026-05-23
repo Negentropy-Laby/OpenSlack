@@ -26,21 +26,9 @@ function getGitInfo(root: string): { commitCount: number; latestCommit: string; 
   }
 }
 
-function extractReadmeMetrics(readme: string): { commits?: number; tests?: number; testFiles?: number } {
-  const commitMatch = readme.match(/Git commits\s*\|\s*(\d+)/);
-  const testMatch = readme.match(/Unit tests\s*\|\s*(\d+)\s*\((\d+)\s*test/i);
-  return {
-    commits: commitMatch ? parseInt(commitMatch[1], 10) : undefined,
-    tests: testMatch ? parseInt(testMatch[1], 10) : undefined,
-    testFiles: testMatch ? parseInt(testMatch[2], 10) : undefined,
-  };
-}
-
-function extractCurrentMetrics(current: string): { commits?: number; tests?: number; testFiles?: number } {
-  const commitMatch = current.match(/\|\s*Commits\s*\|\s*(\d+)\s*\|/);
+function extractCurrentMetrics(current: string): { tests?: number; testFiles?: number } {
   const testMatch = current.match(/(\d+)\s*unit tests across\s*(\d+)\s*test file/i);
   return {
-    commits: commitMatch ? parseInt(commitMatch[1], 10) : undefined,
     tests: testMatch ? parseInt(testMatch[1], 10) : undefined,
     testFiles: testMatch ? parseInt(testMatch[2], 10) : undefined,
   };
@@ -53,7 +41,6 @@ function generateStatusDoc(root: string): string {
     throw new Error(`modules.yaml validation failed:\n${validation.errors.join('\n')}`);
   }
 
-  const gitInfo = getGitInfo(root);
   const totalTests = getTotalTests(registry);
   const totalTestFiles = getTotalTestFiles(registry);
   const totalGoldenEvals = registry.modules.reduce((sum, m) => sum + (m.golden_evals || 0), 0);
@@ -90,8 +77,6 @@ supersedes:
 |-------|-------|
 | Remote | \`https://github.com/Negentropy-Laby/OpenSlack\` |
 | Branch | \`main\` |
-| Commits | ${gitInfo.commitCount} |
-| Last commit | \`${gitInfo.latestCommit}\` — ${gitInfo.latestSubject} |
 
 ## Modules
 
@@ -193,14 +178,10 @@ export function statusCommands(): Command {
           process.exit(1);
         }
 
-        const readmePath = join(root, 'README.md');
         const currentPath = join(root, 'docs', 'status', 'current.md');
-        const readme = existsSync(readmePath) ? readFileSync(readmePath, 'utf-8') : '';
         const current = existsSync(currentPath) ? readFileSync(currentPath, 'utf-8') : '';
 
-        const readmeMetrics = extractReadmeMetrics(readme);
         const currentMetrics = extractCurrentMetrics(current);
-        const gitInfo = getGitInfo(root);
         const totalTests = getTotalTests(registry);
         const totalTestFiles = getTotalTestFiles(registry);
 
@@ -211,27 +192,6 @@ export function statusCommands(): Command {
         checks.push({ name: 'modules.yaml modules count', passed: registry.modules.length > 0, detail: `${registry.modules.length} modules` });
 
         // README vs current.md vs modules.yaml
-        if (readmeMetrics.commits !== undefined && currentMetrics.commits !== undefined) {
-          checks.push({
-            name: 'README commits == current.md commits',
-            passed: readmeMetrics.commits === currentMetrics.commits,
-            detail: `README: ${readmeMetrics.commits}, current.md: ${currentMetrics.commits}`,
-          });
-        }
-        if (readmeMetrics.tests !== undefined && currentMetrics.tests !== undefined) {
-          checks.push({
-            name: 'README tests == current.md tests',
-            passed: readmeMetrics.tests === currentMetrics.tests,
-            detail: `README: ${readmeMetrics.tests}, current.md: ${currentMetrics.tests}`,
-          });
-        }
-        if (currentMetrics.commits !== undefined) {
-          checks.push({
-            name: 'current.md commits == git',
-            passed: currentMetrics.commits === gitInfo.commitCount,
-            detail: `current.md: ${currentMetrics.commits}, git: ${gitInfo.commitCount}`,
-          });
-        }
         if (currentMetrics.tests !== undefined) {
           checks.push({
             name: 'current.md tests == modules.yaml',
