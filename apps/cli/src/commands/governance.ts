@@ -23,6 +23,7 @@ interface CommitAudit {
   isFromPR: boolean;
   prNumber?: number;
   exceptionFound: boolean;
+  hasAiAttribution: boolean;
 }
 
 function getRecentCommits(root: string, count: number): CommitAudit[] {
@@ -54,6 +55,7 @@ function getRecentCommits(root: string, count: number): CommitAudit[] {
       isMerge: parentShas.length >= 2,
       isFromPR: false,
       exceptionFound: false,
+      hasAiAttribution: false,
     };
   });
 }
@@ -75,6 +77,45 @@ function fetchMergedPRShas(root: string): Map<string, number> {
     return map;
   } catch {
     return new Map();
+  }
+}
+
+const ATTRIBUTION_PATTERNS = [
+  /co-authored-by:/i,
+  /generated with claude/i,
+  /generated with chatgpt/i,
+  /generated with copilot/i,
+  /ai-assisted/i,
+  /claude code/i,
+  /anthropic/i,
+];
+
+const ATTRIBUTION_BASELINE = '9ccdff0';
+
+function checkAttribution(root: string, sha: string): boolean {
+  try {
+    const body = execSync(`git log -1 --format="%B" ${sha}`, {
+      cwd: root,
+      encoding: 'utf-8',
+      stdio: 'pipe',
+    });
+    return ATTRIBUTION_PATTERNS.some((p) => p.test(body));
+  } catch {
+    return false;
+  }
+}
+
+function getCommitsAfterBaseline(root: string, baseline: string): Set<string> {
+  try {
+    const output = execSync(`git rev-list ${baseline}..main`, {
+      cwd: root,
+      encoding: 'utf-8',
+      stdio: 'pipe',
+    }).trim();
+    if (!output) return new Set();
+    return new Set(output.split('\n'));
+  } catch {
+    return new Set();
   }
 }
 
@@ -101,11 +142,16 @@ export function governanceCommands(): Command {
       const prShas = fetchMergedPRShas(root);
       const hasGhAccess = prShas.size > 0;
 
+      const commitsAfterBaseline = getCommitsAfterBaseline(root, ATTRIBUTION_BASELINE);
+
       for (const c of commits) {
         c.exceptionFound = exceptions.some((ex) => c.sha.startsWith(ex) || ex.startsWith(c.sha));
         if (prShas.has(c.sha)) {
           c.isFromPR = true;
           c.prNumber = prShas.get(c.sha);
+        }
+        if (commitsAfterBaseline.has(c.sha)) {
+          c.hasAiAttribution = checkAttribution(root, c.sha);
         }
       }
 
@@ -114,6 +160,7 @@ export function governanceCommands(): Command {
       const exceptedCommits = commits.filter((c) => !c.isMerge && !c.isFromPR && c.exceptionFound);
       const unverifiedCommits = commits.filter((c) => !c.isMerge && !c.isFromPR && !c.exceptionFound && !hasGhAccess);
       const directCommits = commits.filter((c) => !c.isMerge && !c.isFromPR && !c.exceptionFound && hasGhAccess);
+      const attributedCommits = commits.filter((c) => c.hasAiAttribution);
 
       console.log('Governance Audit');
       console.log('════════════════');
@@ -157,24 +204,46 @@ export function governanceCommands(): Command {
         console.log('');
       }
 
-      const auditFailed = directCommits.length > 0 || (!hasGhAccess && unverifiedCommits.length > 0);
+      const auditFailed =
+        directCommits.length > 0 ||
+        (!hasGhAccess && unverifiedCommits.length > 0) ||
+        attributedCommits.length > 0;
+
+      const attributionFailed = attributedCommits.length > 0;
+      const directCommitFailed = directCommits.length > 0 || (!hasGhAccess && unverifiedCommits.length > 0);
 
       try {
+        let summary: string;
+        if (directCommitFailed && attributionFailed) {
+          summary = `Governance audit failed: ${directCommits.length} unexplained direct commits, ${attributedCommits.length} AI attribution violations`;
+        } else if (directCommitFailed) {
+          summary = `Governance audit failed: ${directCommits.length} unexplained direct commits`;
+        } else if (attributionFailed) {
+          summary = `Governance audit failed: ${attributedCommits.length} AI attribution violations`;
+        } else {
+          summary = `Governance audit passed: ${commits.length} commits checked`;
+        }
+
+        let nextAction;
+        if (directCommitFailed && attributionFailed) {
+          nextAction = { owner: 'human', action: 'Fix direct commits and remove AI attribution from commit messages' };
+        } else if (directCommitFailed) {
+          nextAction = { owner: 'human', action: 'Add exception to docs/developer/technical-debt.md' };
+        } else if (attributionFailed) {
+          nextAction = { owner: 'human', action: 'Remove AI attribution from commit messages' };
+        }
+
         recordEvent({
           type: auditFailed ? 'governance.audit.failed' : 'governance.audit.passed',
           actor: { id: 'cli', kind: 'system', provider: 'cli' },
           object: { kind: 'workspace', id: 'governance' },
           source: { kind: 'governance', ref: `last-${count}-commits` },
-          summary: auditFailed
-            ? `Governance audit failed: ${directCommits.length} unexplained direct commits`
-            : `Governance audit passed: ${commits.length} commits checked, 0 unexplained direct commits`,
+          summary,
           visibility: 'local',
           redacted: false,
           containsSensitiveData: false,
           risk: auditFailed ? 'high' : 'none',
-          nextAction: auditFailed
-            ? { owner: 'human', action: 'Add exception to docs/developer/technical-debt.md' }
-            : undefined,
+          nextAction,
         });
       } catch {
         // Best-effort event recording
@@ -196,7 +265,19 @@ export function governanceCommands(): Command {
         process.exit(1);
       }
 
+      if (attributedCommits.length > 0) {
+        console.log(`AI attribution violations: ${attributedCommits.length}`);
+        for (const c of attributedCommits) {
+          console.log(`  ✗ ${c.shortSha} ${c.subject}`);
+          console.log(`    Contains prohibited attribution pattern`);
+        }
+        console.log('');
+        console.log('Action required: remove AI attribution from commit messages. See AGENTS.md hard prohibitions.');
+        process.exit(1);
+      }
+
       console.log('Unexplained direct commits: 0');
+      console.log('AI attribution violations: 0');
       console.log('');
       console.log('All commits accounted for. No governance drift detected.');
     });
