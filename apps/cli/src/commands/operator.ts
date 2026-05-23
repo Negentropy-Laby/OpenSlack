@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createInterface } from 'node:readline';
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -18,6 +19,25 @@ interface Intent {
   command: string;
   args: string[];
   description: string;
+}
+
+function isHighRisk(intent: Intent): boolean {
+  if (intent.command === 'pr' && intent.args[0] === 'merge') return true;
+  if (intent.command === 'task' && intent.args[0] === 'sync') return true;
+  if (intent.command === 'github' && intent.args[0] === 'issue-done') return true;
+  if (intent.command === 'github' && intent.args[0] === 'repair-all') return true;
+  if (intent.command === 'self' && intent.args[0] === 'monitor') return true;
+  return false;
+}
+
+function confirmPrompt(message: string): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(`${message} [y/N] `, (answer) => {
+      rl.close();
+      resolve(answer.trim().toLowerCase() === 'y');
+    });
+  });
 }
 
 function routeIntent(query: string): Intent {
@@ -172,6 +192,15 @@ export function operatorCommands(): Command {
         console.log('Run without --plan to execute.');
         console.log('');
         return;
+      }
+
+      if (isHighRisk(intent)) {
+        const confirmed = await confirmPrompt(`This action is high-risk: ${intent.description}. Proceed?`);
+        if (!confirmed) {
+          console.log('Cancelled by user.');
+          console.log('');
+          return;
+        }
       }
 
       console.log('');
