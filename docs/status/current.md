@@ -14,8 +14,8 @@ supersedes:
 |-------|-------|
 | Remote | `https://github.com/Negentropy-Laby/OpenSlack` |
 | Branch | `main` |
-| Commits | 69 |
-| Last commit | `1d1dcb8` — cli: harden operator safety and add plan mode |
+| Commits | 70 |
+| Last commit | `856a0fb` — docs: sync commit count after PR merges |
 
 ## Modules
 
