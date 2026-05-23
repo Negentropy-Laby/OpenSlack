@@ -74,6 +74,9 @@ importers:
       '@openslack/operator':
         specifier: workspace:*
         version: link:../operator
+      '@openslack/pr':
+        specifier: workspace:*
+        version: link:../pr
 
   packages/core: {}
 
