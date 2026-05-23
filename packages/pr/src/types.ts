@@ -7,10 +7,15 @@ export type PRReviewState =
   | 'CHECKS_PENDING'
   | 'CHECKS_FAILED'
   | 'NEEDS_HUMAN_APPROVAL'
+  | 'NEEDS_CODEOWNER_APPROVAL'
   | 'NEEDS_CHANGES'
   | 'BLOCKED_POLICY'
   | 'BLOCKED_SELF_REVIEW'
   | 'BLOCKED_BLACK_ZONE'
+  | 'BLOCKED_DRAFT'
+  | 'BLOCKED_AUTHOR_IS_SOLE_CODEOWNER'
+  | 'BLOCKED_SINGLE_MAINTAINER'
+  | 'BOT_APPROVAL_IGNORED'
   | 'HUMAN_APPROVED'
   | 'READY_TO_MERGE'
   | 'MERGED';
@@ -19,6 +24,9 @@ export interface PRReviewReport {
   prNumber: number;
   title: string;
   author: string;
+  state: string;
+  draft: boolean;
+  baseRef: string;
   riskZone: RiskZone;
   changedFiles: string[];
   checks: Array<{ name: string; status: string; conclusion: string | null }>;
