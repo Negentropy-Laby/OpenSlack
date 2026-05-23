@@ -24,7 +24,7 @@ function routeIntent(query: string): Intent {
   const q = query.toLowerCase();
 
   // Diagnostics
-  if (q.includes('check') && (q.includes('status') || q.includes('health') || q.includes('doctor')))
+  if ((q.includes('check') || q.includes('检查') || q.includes('诊断')) && (q.includes('status') || q.includes('health') || q.includes('doctor') || q.includes('状态')))
     return { command: 'github', args: ['doctor'], description: 'System health check' };
   if (q.includes('status') && (q.includes('workspace') || q.includes('overview') || q.includes('index')))
     return { command: 'workspace', args: ['status'], description: 'Workspace status' };
@@ -75,13 +75,19 @@ function routeIntent(query: string): Intent {
   // Worktree + PR — require explicit issue number
   if (q.includes('checkout') || q.includes('worktree') || q.includes('work on')) {
     const numMatch = q.match(/#?(\d+)/);
-    if (!numMatch) return { command: '_unknown', args: [], description: 'Please specify an issue number: openslack task checkout --issue-number <n> --agent-id <id>' };
-    return { command: 'task', args: ['checkout', '--issue-number', numMatch[1], '--agent-id', 'anthropic_architect_aby'], description: `Create worktree for issue #${numMatch[1]}` };
+    if (!numMatch) return { command: '_unknown', args: [], description: 'I need an issue number.\nExample: openslack ask "checkout issue #12"' };
+    const agentMatch = query.match(/--agent-id\s+(\S+)/) || query.match(/agent[:\s]+(\w+)/i) || query.match(/for\s+(\w+)$/i);
+    if (!agentMatch) return { command: '_unknown', args: [], description: 'I need an agent ID.\nExample: openslack ask "checkout issue #12 for agent anthropic_architect_aby"' };
+    return { command: 'task', args: ['checkout', '--issue-number', numMatch[1], '--agent-id', agentMatch[1]], description: `Create worktree for issue #${numMatch[1]}` };
   }
   if (q.includes('sync') || q.includes('submit')) {
     const numMatch = q.match(/#?(\d+)/);
-    if (!numMatch) return { command: '_unknown', args: [], description: 'Please specify an issue number: openslack task sync --issue-number <n>' };
-    return { command: 'task', args: ['sync', '--issue-number', numMatch[1], '--agent-id', 'anthropic_architect_aby', '--task-id', `ISSUE-${numMatch[1]}`, '--run-id', `RUN-${Date.now()}`, '--paths', 'docs/test.md'], description: `Propose workspace PR for issue #${numMatch[1]}` };
+    if (!numMatch) return { command: '_unknown', args: [], description: 'I need an issue number.\nExample: openslack ask "sync issue #12"' };
+    const agentMatch = query.match(/--agent-id\s+(\S+)/) || query.match(/agent[:\s]+(\w+)/i) || query.match(/for\s+(\w+)$/i);
+    if (!agentMatch) return { command: '_unknown', args: [], description: 'I need an agent ID.\nExample: openslack ask "sync issue #12 for agent anthropic_architect_aby"' };
+    const pathsMatch = query.match(/--paths\s+"([^"]+)"/);
+    if (!pathsMatch) return { command: '_unknown', args: [], description: 'I need paths to sync.\nExample: openslack ask "sync issue #12 --paths \\"packages/foo/src/**\\""' };
+    return { command: 'task', args: ['sync', '--issue-number', numMatch[1], '--agent-id', agentMatch[1], '--task-id', `ISSUE-${numMatch[1]}`, '--run-id', `RUN-${Date.now()}`, '--paths', pathsMatch[1]], description: `Propose workspace PR for issue #${numMatch[1]}` };
   }
 
   // Eval
@@ -105,13 +111,13 @@ function routeIntent(query: string): Intent {
   // Issue lifecycle
   if (q.includes('issue') && (q.includes('done') || q.includes('complete') || q.includes('finish'))) {
     const numMatch = q.match(/#?(\d+)/);
-    const issueNum = numMatch ? numMatch[1] : '1';
-    return { command: 'github', args: ['issue-done', '--issue-number', issueNum], description: `Mark issue #${issueNum} as done` };
+    if (!numMatch) return { command: '_unknown', args: [], description: 'I need an issue number.\nExample: openslack ask "mark issue #12 done"' };
+    return { command: 'github', args: ['issue-done', '--issue-number', numMatch[1]], description: `Mark issue #${numMatch[1]} as done` };
   }
   if (q.includes('block') || q.includes('stuck')) {
     const numMatch = q.match(/#?(\d+)/);
-    const issueNum = numMatch ? numMatch[1] : '1';
-    return { command: 'self', args: ['observe'], description: `Block issue #${issueNum} — mark as blocked on GitHub` };
+    if (!numMatch) return { command: '_unknown', args: [], description: 'I need an issue number.\nExample: openslack ask "block issue #12"' };
+    return { command: 'self', args: ['observe'], description: `Block issue #${numMatch[1]} — mark as blocked on GitHub` };
   }
 
   // PR classification
@@ -143,7 +149,8 @@ export function operatorCommands(): Command {
     .command('ask')
     .description('Ask the Operator Agent to perform a task (natural language)')
     .argument('<query...>', 'What do you want to do?')
-    .action(async (queryParts: string[]) => {
+    .option('--plan', 'Show the execution plan without running it')
+    .action(async (queryParts: string[], options: { plan?: boolean }) => {
       const query = queryParts.join(' ');
       const intent = routeIntent(query);
       const root = findRepoRoot();
@@ -157,13 +164,34 @@ export function operatorCommands(): Command {
         return;
       }
 
-      console.log(`→ openslack ${intent.command} ${intent.args.join(' ')}`);
+      const fullCommand = `openslack ${intent.command} ${intent.args.join(' ')}`;
+      console.log(`→ ${fullCommand}`);
+
+      if (options.plan) {
+        console.log('\nPlan mode: no changes will be made.');
+        console.log('Run without --plan to execute.');
+        console.log('');
+        return;
+      }
+
       console.log('');
 
       const result = spawnSync(process.execPath, ['--import', 'tsx', join(root, 'apps', 'cli', 'src', 'index.ts'), intent.command, ...intent.args], { cwd: root, stdio: 'inherit' });
-      if (result.error) console.error('\nOperator: failed to execute:', result.error.message);
-      else if (result.status !== 0) console.log('\nOperator: command exited non-zero (may be expected — e.g. doctor fails on missing config).');
-      else console.log('\nOperator: complete.');
+
+      // Execution summary
+      console.log('\nOperator Summary');
+      console.log('────────────────');
+      console.log(`Request:  "${query}"`);
+      console.log(`Command:  ${fullCommand}`);
+      if (result.error) {
+        console.log(`Status:   Failed to execute`);
+        console.error(`Error:    ${result.error.message}`);
+      } else if (result.status !== 0) {
+        console.log(`Status:   Blocked / Non-zero exit`);
+      } else {
+        console.log(`Status:   Success`);
+      }
+      console.log('');
     });
 
   return cmd;
