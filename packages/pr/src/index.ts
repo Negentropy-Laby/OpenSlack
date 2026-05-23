@@ -8,6 +8,8 @@ export { filterValidApprovals, isBotUser } from './approvals.js';
 export { detectDeadlock } from './deadlock.js';
 export { diagnosePR } from './doctor.js';
 export { generateDoctorReport } from './doctor-report.js';
+export { mergeIfReady } from './merge.js';
 export type { PRReviewReport, PRReviewState, PRReviewPolicy } from './types.js';
 export type { CodeownersEntry } from './codeowners.js';
 export type { DeadlockResult } from './deadlock.js';
+export type { MergeStewardResult } from './merge.js';

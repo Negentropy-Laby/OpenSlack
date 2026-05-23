@@ -205,3 +205,44 @@ export async function getCODEOWNERS(ref: string): Promise<string | null> {
     return null;
   }
 }
+
+export interface MergePRResult {
+  merged: boolean;
+  sha?: string;
+  message: string;
+}
+
+export async function mergePR(
+  prNumber: number,
+  options: {
+    method?: 'merge' | 'squash' | 'rebase';
+    commitTitle?: string;
+    commitMessage?: string;
+  } = {},
+): Promise<MergePRResult> {
+  const client = await getClient();
+  if (client.isDryRun) {
+    console.log(
+      `[DRY RUN] Would merge PR #${prNumber} in ${client.owner}/${client.repo} via ${options.method || 'merge'}`,
+    );
+    return { merged: true, message: '[DRY RUN] Merge simulated.' };
+  }
+  try {
+    const { data } = await client.octokit.pulls.merge({
+      owner: client.owner,
+      repo: client.repo,
+      pull_number: prNumber,
+      merge_method: options.method || 'merge',
+      commit_title: options.commitTitle,
+      commit_message: options.commitMessage,
+    });
+    return {
+      merged: data.merged,
+      sha: data.sha,
+      message: data.merged ? 'PR merged successfully.' : 'PR merge was not successful.',
+    };
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { merged: false, message: `Merge failed: ${msg}` };
+  }
+}
