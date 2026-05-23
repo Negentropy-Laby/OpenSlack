@@ -121,8 +121,46 @@ Source: \`.openslack/modules.yaml\` — validated on ${new Date().toISOString().
 `;
 }
 
+function showStatusDashboard(root: string): void {
+  try {
+    const registry = readModules(root);
+    const gitInfo = getGitInfo(root);
+    const totalTests = getTotalTests(registry);
+    const totalTestFiles = getTotalTestFiles(registry);
+
+    console.log('OpenSlack Status');
+    console.log('════════════════');
+    console.log(`Version:    v0.1 Developer Preview`);
+    console.log(`Mode:       Self-Project`);
+    console.log(`Commit:     ${gitInfo.latestCommit}`);
+    console.log('');
+    console.log('Modules:');
+    for (const m of registry.modules) {
+      const testLabel = m.tests ? ` (${m.tests} tests)` : '';
+      const status = m.status.toUpperCase();
+      console.log(`  ${m.name.padEnd(22)} ${status}${testLabel}`);
+    }
+    console.log('');
+    console.log(`Test Suite: ${totalTests} unit tests across ${totalTestFiles} test files`);
+    console.log('');
+    console.log('Next:');
+    console.log('  openslack ask "create a task"');
+    console.log('  openslack ask "检查系统状态"');
+    console.log('');
+  } catch (e) {
+    console.error(`Status dashboard failed: ${(e as Error).message}`);
+    process.exit(1);
+  }
+}
+
 export function statusCommands(): Command {
   const cmd = new Command('status').description('OpenSlack status and module registry commands');
+
+  cmd
+    .action(() => {
+      const root = findRepoRoot();
+      showStatusDashboard(root);
+    });
 
   cmd
     .command('generate')
