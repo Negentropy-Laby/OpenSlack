@@ -43,6 +43,9 @@ importers:
       '@openslack/chat-gateway':
         specifier: workspace:*
         version: link:../../packages/chat-gateway
+      '@openslack/collaboration':
+        specifier: workspace:*
+        version: link:../../packages/collaboration
       '@openslack/github':
         specifier: workspace:*
         version: link:../../packages/github
@@ -77,6 +80,8 @@ importers:
       '@openslack/pr':
         specifier: workspace:*
         version: link:../pr
+
+  packages/collaboration: {}
 
   packages/core: {}
 
