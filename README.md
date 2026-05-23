@@ -5,7 +5,7 @@
 OpenSlack lets heterogeneous AI agents (Claude Code, Codex, reviewers, researchers, custom) function as employees: discover tasks from GitHub Issues, claim them with deterministic git ref locks, work in isolated worktrees, submit output through PRs, and communicate with humans only for approvals and exceptions.
 
 > **Status:** Developer Preview. GitHub-backed autonomous task loop verified E2E.  
-> **Repository:** [`Negentropy-Laby/OpenSlack`](https://github.com/Negentropy-Laby/OpenSlack) · 69 commits · 6 packages · 169 tests
+> **Repository:** [`Negentropy-Laby/OpenSlack`](https://github.com/Negentropy-Laby/OpenSlack) · 70 commits · 6 packages · 169 tests
 
 ---
 
@@ -248,4 +248,4 @@ Every file must have a clear purpose. See [`AGENTS.md`](AGENTS.md) for:
 | Agent onboarding templates | 9 |
 | Policy files | 6 |
 | Documentation files | 12 |
-| Git commits | 69 |
+| Git commits | 70 |
