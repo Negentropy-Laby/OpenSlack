@@ -20,8 +20,8 @@ supersedes:
 |--------|-------|--------|-------|
 | Self-Evolution Kernel | 1.6 | ACTIVE |  |
 | GitHub Issues Task Loop | 1.7 | ACTIVE |  |
-| Operator Interface | 2A/2B | ACTIVE | Structured planner active. Webhook and Slack chat adapters active. LLM planner remains deferred. |
-| PR Review & Merge Steward | 1.14 | ACTIVE | Phase 1.16 UX closure complete. Supports status/review/recommend/doctor/merge/watch and review/doctor comments. Governance audit and deadlock detection active. |
+| Operator Interface | 2A/2B | ACTIVE | Structured planner active. Webhook and Slack chat adapters active. PRMS chat cards active. LLM planner remains deferred. |
+| PR Review & Merge Steward | 1.14 | ACTIVE | Phase 2C-1 chat report active. Supports status/review/recommend/doctor/merge/watch, review/doctor comments, governance audit, deadlock detection, and chat-friendly PR summaries. |
 
 ## Packages (9 active)
 
@@ -56,7 +56,7 @@ supersedes:
 
 ## Test Suite
 
-224 unit tests across 28 test files. All passing.
+237 unit tests across 30 test files. All passing.
 
 ## Module Registry
 
