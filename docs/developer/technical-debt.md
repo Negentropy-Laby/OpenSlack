@@ -1,7 +1,7 @@
 # Technical Debt Register
 
 > Owner: OpenSlack
-> Updated: 2026-05-22
+> Updated: 2026-05-23
 > Convention: P0 = blocks next phase, P1 = should fix this phase, P2 = nice to have
 
 ## Open Items
@@ -42,6 +42,17 @@
 **Impact:** Starting June 2, 2026, GitHub will force Node 24 for all actions. Node 20 support removed September 16, 2026. CI will break if action versions are not upgraded.
 **Resolution:** Compatibility verified: `openslack-self-canary.yml` runs successfully with `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true`. Continue monitoring for v5 releases; upgrade all 5 workflow files in a single PR when available. Fallback: enable `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24` globally if v5 not released by May 30.
 **Filed:** 2026-05-22.
+
+### P1-3: Historical AI attribution in commit history
+
+**Source:** `AGENTS.md` hard prohibition added 2026-05-23 (PR #34): "Do not include `Co-Authored-By:` lines. Do not mention AI/model/tool authorship in commits."
+**Impact:** Historical commits (pre-PR-34, approx. first 70 commits) contain `Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>` and `Co-Authored-By:` lines in commit messages. These are present in the permanent git history and cannot be rewritten without force-pushing main, which is prohibited by branch protection ruleset.
+**Resolution:** Accepted as historical artifact. No rewrite of published history. All new commits from PR #34 onward must comply with the AGENTS.md hard prohibition. Commit message template and any automation that appends Co-authored-by lines must be updated or disabled.
+**Preventive measure:**
+1. `AGENTS.md` § Commit Convention already prohibits Co-authored-by lines.
+2. `openslack governance audit` checks for direct-push violations but does not inspect commit message content.
+3. Future: add commit-msg hook or CI check to block Co-authored-by lines in PR branch commits.
+**Filed:** 2026-05-23.
 
 ### CLOSED: P2-6 — Compat shim package cleanup
 
