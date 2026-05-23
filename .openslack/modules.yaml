@@ -51,10 +51,11 @@ modules:
     phase: "1.14"
     cli:
       - openslack pr
+      - openslack governance
     packages:
       - "@openslack/pr"
       - "@openslack/github"
       - "@openslack/kernel"
     tests: 64
     test_files: 8
-    notes: Phase 1.14 core complete. Basic Operator keyword routing implemented. Watch/comment planned for 1.16.
+    notes: Phase 1.16 UX closure complete. Supports status/review/recommend/doctor/merge/watch and review/doctor comments. Governance audit and deadlock detection active.
