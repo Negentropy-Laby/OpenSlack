@@ -55,11 +55,12 @@ See: [`docs/developer/github-issues-loop.md`](docs/developer/github-issues-loop.
 
 ### Module 03: Operator Interface
 
-The human-facing entry point. Natural language queries route to the appropriate CLI commands.
+The human-facing entry point. Natural language queries route through a structured planner to the appropriate CLI commands.
 
-- **Ask:** `openslack operator ask "..."` — natural language → CLI intent → execute → summarize
+- **Ask:** `openslack operator ask "..."` — natural language → parse intent → plan actions → execute → summarize
+- **Chat:** `openslack chat start --adapter webhook|slack` — chat gateway for Slack/HTTP projections
 - **Setup:** `openslack setup` — one-step workspace validation + health check
-- **Router:** Maps user intent to `workspace`, `self`, `agent`, `task`, or `github` command groups
+- **Planner:** Structured pipeline (`parseIntent → planActions → executePlan`) with allowlisted intents, risk gates, and confirmation for high-risk actions
 
 See: [`AGENTS.md`](AGENTS.md) for command reference
 

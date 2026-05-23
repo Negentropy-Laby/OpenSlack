@@ -32,18 +32,21 @@ modules:
 
   - id: operator
     name: Operator Interface
-    status: early
-    phase: "1.8"
+    status: active
+    phase: "2A/2B"
     cli:
       - openslack ask
       - openslack setup
       - openslack status
       - openslack doctor
+      - openslack chat
     packages:
       - "@openslack/cli"
-    tests: 0
-    test_files: 0
-    notes: Keyword-based intent router. LLM planner deferred to Phase 2.
+      - "@openslack/operator"
+      - "@openslack/chat-gateway"
+    tests: 55
+    test_files: 7
+    notes: Structured planner active. Webhook and Slack chat adapters active. LLM planner remains deferred.
 
   - id: pr_review_merge
     name: PR Review & Merge Steward
