@@ -1,0 +1,21 @@
+schema: openslack.pr_review_policy.v1
+
+rules:
+  no_auto_approval:
+    enabled: true
+    description: Agents must never submit APPROVE reviews.
+  no_self_review:
+    enabled: true
+    description: Agent cannot review PRs it authored.
+  red_zone_human_required:
+    enabled: true
+    description: Red Zone PRs require human code owner approval.
+  black_zone_never_merge:
+    enabled: true
+    description: Black Zone PRs are auto-denied.
+  required_checks:
+    enabled: true
+    checks:
+      - classify
+      - validate
+      - canary

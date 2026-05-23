@@ -39,3 +39,4 @@ jobs:
 
       - name: Run canary agent claim flow
         run: pnpm openslack self classify-pr --paths "apps/cli/src/index.ts" --format json
+# Red zone test

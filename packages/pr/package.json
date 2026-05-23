@@ -1,26 +1,25 @@
 {
-  "name": "@openslack/cli",
+  "name": "@openslack/pr",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "bin": {
-    "openslack": "./dist/index.js"
-  },
   "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
   "scripts": {
     "typecheck": "tsc",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@openslack/workspace": "workspace:*",
+    "@openslack/core": "workspace:*",
     "@openslack/kernel": "workspace:*",
-    "@openslack/runtime": "workspace:*",
     "@openslack/github": "workspace:*",
-    "@openslack/pr": "workspace:*",
-    "commander": "^13.1.0"
-  },
-  "devDependencies": {
-    "@types/node": "^22.0.0"
+    "yaml": "^2.7.0"
   }
 }

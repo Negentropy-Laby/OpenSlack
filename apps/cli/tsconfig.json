@@ -10,6 +10,7 @@
     { "path": "../../packages/kernel" },
     { "path": "../../packages/workspace" },
     { "path": "../../packages/runtime" },
-    { "path": "../../packages/github" }
+    { "path": "../../packages/github" },
+    { "path": "../../packages/pr" }
   ]
 }

@@ -6,12 +6,10 @@
 
 ## Open Items
 
-### P0-1: Branch protection ruleset not configured
+### CLOSED: P0-1 — Branch protection ruleset configured
 
-**Source:** Phase 1.8 P0-3 review (2026-05-16).
-**Impact:** All commits go directly to main. No PR history exists on wsman/OpenSlack. Violates AGENTS.md constitutional rule: "No direct push to main. All changes go through PRs."
-**Resolution:** Configure via GitHub Settings → Rules → Rulesets (requires human admin — App token lacks Administration permission by design). Require PR before merging, status checks, CODEOWNERS review, block force push. Documented in `docs/developer/branch-protection.md`.
-**Filed:** 2026-05-16.
+**Resolution:** Ruleset "Protect main" created and active on `Negentropy-Laby/OpenSlack`. Direct push blocked (GH013). Required checks: classify, validate, canary. CODEOWNERS review enforced (`require_code_owner_review: true`). Block force push enabled. Verified via test PRs #8 and #9.
+**Closed:** 2026-05-23.
 
 ### CLOSED: P2-5 — Empty state directories in `.openslack/`
 

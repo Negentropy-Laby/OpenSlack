@@ -1,6 +1,6 @@
 ---
 schema: openslack.status.v1
-status_date: 2026-05-22
+status_date: 2026-05-23
 source_of_truth: true
 supersedes:
   - phase-1-prehardening
@@ -12,7 +12,7 @@ supersedes:
 
 | Field | Value |
 |-------|-------|
-| Remote | `https://github.com/wsman/OpenSlack` |
+| Remote | `https://github.com/Negentropy-Laby/OpenSlack` |
 | Branch | `main` |
 | Commits | 56 |
 | Last commit | `844afe9 Phase 1.12 productization closure` |
@@ -24,8 +24,9 @@ supersedes:
 | OSEK (Self-Evolution Kernel) | 1.6 | ACTIVE | Zone classifier, merge decision, policy engine, constitution, invariants, rollback, genesis |
 | GITL (GitHub Issues Task Loop) | 1.7 | ACTIVE | Issues-first autonomous task loop: create → claim → heartbeat → worktree → PR → review → done |
 | Operator Interface | 1.8 | EARLY | Natural language router: intent → plan → execute → summarize |
+| PR Review & Merge Steward | 1.13 | MVP | PR fetch, classify, readiness, report. No auto-approval. Merge after human approval. |
 
-## Packages (5 active + 2 apps)
+## Packages (6 active + 2 apps)
 
 | Package | Status | Tests | Key capability |
 |---------|--------|-------|---------------|
@@ -34,10 +35,11 @@ supersedes:
 | `@openslack/core` | ACTIVE | 0 | ClaimBroker + FileClaimBroker (file-locked) |
 | `@openslack/runtime` | ACTIVE | 25 | Self-evolution ops, golden evals, agent bootstrap, worktree, PR proposal |
 | `@openslack/github` | ACTIVE | 31 | App auth, Issues, Claims, Repair, Lifecycle, Manifest |
-| `@openslack/cli` (app) | ACTIVE | 0 | 7 command groups: setup, ask, status, doctor, workspace, self, agent, task, github, operator |
+| `@openslack/pr` | ACTIVE | 0 | PR fetch, classify, readiness, report (Phase 1.13 MVP) |
+| `@openslack/cli` (app) | ACTIVE | 0 | 8 command groups: setup, ask, status, doctor, workspace, self, agent, task, github, pr, operator |
 | `@openslack/auth-callback` (app) | ACTIVE | 0 | Headless OAuth server (human login only) |
 
-## CLI Command Groups (7)
+## CLI Command Groups (8)
 
 | Group | Subcommands |
 |-------|------------|
@@ -46,6 +48,7 @@ supersedes:
 | `openslack agent` | hire, bootstrap, tick |
 | `openslack task` | checkout, cleanup, status, sync |
 | `openslack github` | doctor, project-inspect, project-sync-fields, project-query-ready, issue-done, repair-labels, repair-claims, repair-all, metrics |
+| `openslack pr` | status, review, recommend |
 | `openslack operator` | ask ("natural language") |
 | `openslack ask` | Top-level alias → operator ask |
 | `openslack status` | Top-level alias → workspace status |
@@ -74,6 +77,7 @@ supersedes:
 | Claim repair | ACTIVE — `repairExpiredClaims()` |
 | PR merged → issue done | ACTIVE — `.github/workflows/openslack-issue-done.yml` |
 | Manifest validation | ACTIVE — JSON Schema + YAML parse + Red Zone gating |
+| Branch protection ruleset | ACTIVE — PR required, 1 approval, CODEOWNERS review, status checks, block force push |
 | OAuth device flow | INACTIVE — human login only, not for agent runtime |
 | Project v2 | DEFERRED — optional projection layer |
 
