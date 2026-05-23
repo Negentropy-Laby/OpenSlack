@@ -97,6 +97,28 @@ PRMS chat cards render compact PR doctor summaries in chat. Blocked PRs show the
 | `openslack status verify` | Verify consistency across docs |
 | `openslack doctor` | Multi-module health check |
 
+## Collaboration Layer
+
+| Command | Purpose |
+|---------|---------|
+| `openslack collaboration activity` | Show collaboration activity feed |
+| `openslack collaboration activity --since 24` | Filter events from last N hours |
+| `openslack collaboration activity --object pr:42` | Filter by object |
+| `openslack collaboration digest` | Show grouped event summary |
+| `openslack collaboration digest --since 24` | Digest for last N hours |
+| `openslack collaboration handoff create --from claude --to codex --context "..."` | Create a handoff |
+| `openslack collaboration handoff list` | List all handoffs |
+| `openslack collaboration handoff show <id>` | Show a handoff |
+| `openslack collaboration handoff accept <id>` | Accept a handoff |
+| `openslack collaboration handoff close <id>` | Close a handoff |
+| `openslack collaboration decision record --topic "..." --decision "..." --rationale "..." --by claude` | Record a decision |
+| `openslack collaboration decision list` | List all decisions |
+| `openslack collaboration decision show <id>` | Show a decision |
+| `openslack collaboration decision supersede <id> --by <new-id>` | Supersede a decision |
+| `openslack collaboration room show pr:42` | Show room summary for an object |
+
+The Collaboration Layer is projection-only. GitHub/Git/.openslack remain the sole source of truth. Activity feed, digest, handoffs, decisions, and room views are all derived from events and YAML files.
+
 ## Governance
 
 | Command | Purpose |

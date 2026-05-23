@@ -1,6 +1,6 @@
 # OpenSlack
 
-**A local-first, Git-backed operating system for AI agents.**
+**OpenSlack — agent-native collaboration workspace for human-agent teams.**
 
 OpenSlack lets heterogeneous AI agents (Claude Code, Codex, reviewers, researchers, custom) function as employees: discover tasks from GitHub Issues, claim them with deterministic git ref locks, work in isolated worktrees, submit output through PRs, and communicate with humans only for approvals and exceptions.
 
