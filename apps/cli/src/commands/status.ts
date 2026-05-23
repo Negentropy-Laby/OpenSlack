@@ -105,12 +105,55 @@ Source: \`.openslack/modules.yaml\` — auto-generated from modules.yaml.
 `;
 }
 
+interface GitHubOps {
+  ready: number;
+  claimed: number;
+  blocked: number;
+  openPRs: number;
+  blockedPRs: number;
+  readyPRs: number;
+  available: boolean;
+}
+
+function getGitHubOps(): GitHubOps {
+  try {
+    const issuesJson = execSync(
+      'gh issue list --repo Negentropy-Laby/OpenSlack --state open --limit 200 --json labels',
+      { encoding: 'utf-8', stdio: 'pipe' },
+    );
+    const issues = JSON.parse(issuesJson) as Array<{ labels: Array<{ name: string }> }>;
+    let ready = 0;
+    let claimed = 0;
+    let blocked = 0;
+    for (const issue of issues) {
+      const names = issue.labels.map((l) => l.name);
+      if (names.includes('openslack:ready')) ready++;
+      if (names.includes('openslack:claimed')) claimed++;
+      if (names.includes('openslack:blocked')) blocked++;
+    }
+
+    const prsJson = execSync(
+      'gh pr list --repo Negentropy-Laby/OpenSlack --state open --limit 200 --json mergeStateStatus',
+      { encoding: 'utf-8', stdio: 'pipe' },
+    );
+    const prs = JSON.parse(prsJson) as Array<{ mergeStateStatus: string }>;
+    const openPRs = prs.length;
+    const blockedPRs = prs.filter((p) => p.mergeStateStatus === 'BLOCKED').length;
+    const readyPRs = prs.filter((p) => p.mergeStateStatus === 'CLEAN').length;
+
+    return { ready, claimed, blocked, openPRs, blockedPRs, readyPRs, available: true };
+  } catch {
+    return { ready: 0, claimed: 0, blocked: 0, openPRs: 0, blockedPRs: 0, readyPRs: 0, available: false };
+  }
+}
+
 function showStatusDashboard(root: string): void {
   try {
     const registry = readModules(root);
     const gitInfo = getGitInfo(root);
     const totalTests = getTotalTests(registry);
     const totalTestFiles = getTotalTestFiles(registry);
+    const ops = getGitHubOps();
 
     console.log('OpenSlack Status');
     console.log('════════════════');
@@ -125,6 +168,18 @@ function showStatusDashboard(root: string): void {
       console.log(`  ${m.name.padEnd(22)} ${status}${testLabel}`);
     }
     console.log('');
+
+    if (ops.available) {
+      console.log('GitHub:');
+      console.log(`  Tasks ready:        ${ops.ready}`);
+      console.log(`  Tasks claimed:      ${ops.claimed}`);
+      console.log(`  Tasks blocked:      ${ops.blocked}`);
+      console.log(`  PRs open:           ${ops.openPRs}`);
+      console.log(`  PRs blocked:        ${ops.blockedPRs}`);
+      console.log(`  PRs ready:          ${ops.readyPRs}`);
+      console.log('');
+    }
+
     console.log(`Test Suite: ${totalTests} unit tests across ${totalTestFiles} test files`);
     console.log('');
     console.log('Next:');
