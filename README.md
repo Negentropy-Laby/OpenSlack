@@ -16,14 +16,17 @@ OpenSlack lets heterogeneous AI agents (Claude Code, Codex, reviewers, researche
 OpenSlack/
 ├── openslack.yaml           # Self-Project Mode workspace
 ├── .openslack/              # Workspace state (policies, constitution, evals, tasks)
-├── packages/                # 6 active packages
+├── packages/                # Active packages; see docs/status/current.md
 │   ├── kernel/              # Zone classifier, merge decision, policy engine
 │   ├── workspace/           # Validation, indexing, schemas
 │   ├── core/                # ClaimBroker with file-locked persistence
 │   ├── runtime/             # Self-evolution ops, golden evals, agent tick, worktree, PR proposal
 │   ├── github/              # App auth, Issues task loop, claims, lifecycle, repair
-│   └── pr/                  # PR Review & Merge Steward (fetch, classify, readiness, report)
-├── apps/cli/                # 8 command groups (setup, ask, status, doctor + workspace/self/agent/task/github/pr/operator)
+│   ├── pr/                  # PR Review & Merge Steward (fetch, classify, readiness, report)
+│   ├── operator/            # Structured planner and intent router
+│   ├── chat-gateway/        # Webhook / Slack projection frontend
+│   └── collaboration/       # Activity, digest, handoff, decision, room views
+├── apps/cli/                # User command surface; 5 module command groups
 ├── templates/new-agent/     # 9 onboarding template files
 ├── scripts/                 # genesis-validate.sh, genesis-rollback.sh, setup-gh.sh
 └── docs/                    # Full acceptance, developer, security documentation
