@@ -81,7 +81,11 @@ importers:
         specifier: workspace:*
         version: link:../pr
 
-  packages/collaboration: {}
+  packages/collaboration:
+    dependencies:
+      yaml:
+        specifier: ^2.7.0
+        version: 2.9.0
 
   packages/core: {}
 
