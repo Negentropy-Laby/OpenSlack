@@ -29,6 +29,18 @@ export {
 
 export type { DigestGroup, DigestSummary } from './digest.js';
 
+export {
+  createHandoff,
+  listHandoffs,
+  getHandoff,
+  acceptHandoff,
+  closeHandoff,
+  renderHandoffList,
+  renderHandoff,
+} from './handoff.js';
+
+export type { Handoff } from './handoff.js';
+
 export type {
   CollaborationEvent,
   CollaborationEventType,

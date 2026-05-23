@@ -32,7 +32,7 @@ function createTempWorkspace(config: Record<string, unknown>): string {
 
 function setupStateDir(dir: string, stateRoot = '.openslack'): void {
   const root = join(dir, stateRoot);
-  for (const sub of ['agents/registry', 'agents/prompts', 'policies', 'self', 'tasks', 'leases', 'audit']) {
+  for (const sub of ['agents/registry', 'agents/prompts', 'policies', 'self', 'tasks', 'leases', 'audit', 'collaboration']) {
     mkdirSync(join(root, sub), { recursive: true });
   }
   writeFileSync(join(root, 'self', 'constitution.md'), '# Test Constitution\n');

@@ -62,6 +62,7 @@ function checkStateDirectory(rootPath: string, config: WorkspaceConfig): Validat
     'tasks',
     'leases',
     'audit',
+    'collaboration',
   ];
 
   for (const dir of requiredDirs) {

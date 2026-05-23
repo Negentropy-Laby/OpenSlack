@@ -15,5 +15,8 @@
     "typecheck": "tsc",
     "test": "vitest run",
     "test:watch": "vitest"
+  },
+  "dependencies": {
+    "yaml": "^2.7.0"
   }
 }
