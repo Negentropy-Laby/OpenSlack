@@ -46,12 +46,22 @@
 ### P1-3: Historical AI attribution in commit history
 
 **Source:** `AGENTS.md` hard prohibition added 2026-05-23 (PR #34): "Do not include `Co-Authored-By:` lines. Do not mention AI/model/tool authorship in commits."
-**Impact:** Historical commits (pre-PR-34, approx. first 70 commits) contain `Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>` and `Co-Authored-By:` lines in commit messages. These are present in the permanent git history and cannot be rewritten without force-pushing main, which is prohibited by branch protection ruleset.
-**Resolution:** Accepted as historical artifact. No rewrite of published history. All new commits from PR #34 onward must comply with the AGENTS.md hard prohibition. Commit message template and any automation that appends Co-authored-by lines must be updated or disabled.
+**Impact:**
+- Pre-PR-34 commits (approx. first 70 commits) contain `Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>` and `Co-Authored-By:` lines.
+- Post-PR-34 squash-merge commits PR #35–#46 also contain Co-Authored-By lines because GitHub squash merge retained them from PR descriptions. These commits are in permanent git history:
+  - `f7041666e5dae411821fa77a5e5589f2df9cf464` (PR #35)
+  - `5202ba6f5fddaa1b3a0779c95ea2a30c0c5de379` (PR #36)
+  - `c7bcb9d637d431fcf384205493bf59a49a026e7e` (PR #42)
+  - `4456056a8c00cda2f5603a62aaf5a9982037dd05` (PR #43)
+  - `43f1073b4cf1cfb5b16207fc6098c1e17a9bc04d` (PR #44)
+  - `5f13d7edb0f30735c6c074e9ec231de0559cd88d` (PR #45)
+  - `83d4235a3fe0f9e8d054b7475762b70efb01dfaf` (PR #46)
+- These cannot be rewritten without force-pushing main, which is prohibited by branch protection ruleset.
+**Resolution:** Accepted as historical artifacts. No rewrite of published history. All new commits from PR #47 onward must comply with the AGENTS.md hard prohibition. PR #54 added automated enforcement to `openslack governance audit`.
 **Preventive measure:**
 1. `AGENTS.md` § Commit Convention already prohibits Co-authored-by lines.
-2. `openslack governance audit` checks for direct-push violations but does not inspect commit message content.
-3. Future: add commit-msg hook or CI check to block Co-authored-by lines in PR branch commits.
+2. `openslack governance audit` now checks commit message content for prohibited attribution patterns (baseline: PR #34).
+3. All future commits must not contain Co-Authored-By lines. Agent/tool automation that appends them must be disabled or amended before merge.
 **Filed:** 2026-05-23.
 
 ### CLOSED: P2-6 — Compat shim package cleanup
