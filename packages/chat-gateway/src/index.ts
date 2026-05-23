@@ -1,4 +1,5 @@
 export { WebhookAdapter } from './webhook-adapter.js';
+export { SlackAdapter } from './slack-adapter.js';
 export { routeMessage } from './router.js';
 export { verifyRequestSignature, verifyRequestTimestamp, mapActor, canExecuteSideEffects, buildDefaultActor } from './authz.js';
 export { formatPlanAsMarkdown, formatResultAsMarkdown, formatError } from './formatter.js';

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { executePlan } from '../executor.js';
 import { planActions } from '../planner.js';
 import { parseIntent } from '../intent.js';
+import type { ActionPlan } from '../types.js';
 
 describe('executePlan', () => {
   it('blocks when missing params', async () => {
@@ -23,12 +24,23 @@ describe('executePlan', () => {
   });
 
   it('cancels when confirmStep returns false', async () => {
-    const intent = parseIntent('merge PR #12');
-    const plan = planActions(intent);
+    const plan: ActionPlan = {
+      goal: 'Test cancellation',
+      intent: { kind: 'status', slots: {}, confidence: 1 },
+      steps: [
+        { id: 's1', tool: 'openslack-cli', command: 'status', args: [], description: 'Check status', confirmationRequired: true },
+      ],
+      riskLevel: 'none',
+      missingParams: [],
+      requiresConfirmation: true,
+      sideEffects: false,
+    };
     const result = await executePlan(plan, {
       confirmStep: async () => false,
     });
     expect(result.status).toBe('cancelled');
+    expect(result.steps[0].status).toBe('skipped');
+    expect(result.steps[0].output).toBe('Cancelled by user');
   });
 
   it('produces a plan ID', async () => {
