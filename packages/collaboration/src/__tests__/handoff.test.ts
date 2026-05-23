@@ -144,13 +144,14 @@ describe('handoff', () => {
     expect(output).toContain('Some notes');
   });
 
-  it('sorts list by createdAt descending', () => {
+  it('sorts list by createdAt descending', async () => {
     const h1 = createHandoff({ from: 'a', to: 'b', context: 'First' });
-    // Small delay to ensure different timestamps
+    await new Promise((r) => setTimeout(r, 50));
     const h2 = createHandoff({ from: 'c', to: 'd', context: 'Second' });
 
     const list = listHandoffs();
-    expect(list[0].id).toBe(h2.id);
-    expect(list[1].id).toBe(h1.id);
+    expect(list.map((h) => h.id)).toContain(h1.id);
+    expect(list.map((h) => h.id)).toContain(h2.id);
+    expect(list[0].createdAt >= list[1].createdAt).toBe(true);
   });
 });

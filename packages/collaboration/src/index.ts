@@ -41,6 +41,17 @@ export {
 
 export type { Handoff } from './handoff.js';
 
+export {
+  recordDecision,
+  listDecisions,
+  getDecision,
+  supersedeDecision,
+  renderDecisionList,
+  renderDecision,
+} from './decision.js';
+
+export type { Decision } from './decision.js';
+
 export type {
   CollaborationEvent,
   CollaborationEventType,

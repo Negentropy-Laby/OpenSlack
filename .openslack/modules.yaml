@@ -71,8 +71,9 @@ modules:
       - openslack collaboration activity
       - openslack collaboration digest
       - openslack collaboration handoff
+      - openslack collaboration decision
     packages:
       - "@openslack/collaboration"
-    tests: 65
-    test_files: 5
-    notes: Event model, activity feed, digest, and handoff active. PRMS doctor, governance audit, and operator plan events hooked. Handoff YAML schema with create/list/show/accept/close. Projection-only; reads from .openslack.local/collaboration/events.jsonl and .openslack/collaboration/handoffs/. Decision and room views planned for 2E.
+    tests: 75
+    test_files: 6
+    notes: Event model, activity feed, digest, handoff, and decision active. PRMS doctor, governance audit, and operator plan events hooked. Handoff and decision YAML schemas with full CRUD. Projection-only; reads from .openslack.local/collaboration/events.jsonl and .openslack/collaboration/{handoffs,decisions}/. Room view planned for 2E.
