@@ -12,6 +12,7 @@ import { prCommands } from './commands/pr.js';
 import { setupCommands } from './commands/setup.js';
 import { statusCommands } from './commands/status.js';
 import { doctorCommands } from './commands/doctor.js';
+import { governanceCommands } from './commands/governance.js';
 
 const program = new Command();
 
@@ -41,6 +42,7 @@ program.addCommand(prCommands());
 program.addCommand(operatorCommands());
 program.addCommand(statusCommands());
 program.addCommand(doctorCommands());
+program.addCommand(governanceCommands());
 program.addCommand(setupCommands());
 
 program.parse(process.argv);
