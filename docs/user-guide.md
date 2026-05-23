@@ -76,6 +76,16 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 | `openslack operator ask "..."` | Natural language → CLI routing |
 | `openslack operator ask "..." --plan` | Show execution plan without running |
 
+## Chat Gateway
+
+| Command | Purpose |
+|---------|---------|
+| `openslack chat start --adapter webhook --port 3000` | Start generic webhook chat adapter |
+| `openslack chat start --adapter webhook --port 3000 --secret <secret>` | Start webhook adapter with HMAC signature verification |
+| `openslack chat start --adapter slack --port 3000 --secret <signing-secret>` | Start Slack Events API adapter |
+
+Chat Gateway is projection-only. GitHub/Git/.openslack remain the sole source of truth. Slack confirmation is not a GitHub CODEOWNER approval.
+
 ## Status & Health
 
 | Command | Purpose |

@@ -262,7 +262,7 @@ export function statusCommands(): Command {
         }
 
         // Module consistency
-        const currentModuleNames = current.match(/\|\s*(.+?)\s*\|\s*\d+\.\d+\s*\|\s*(ACTIVE|EARLY|MVP)/g) || [];
+        const currentModuleNames = current.match(/\|\s*(.+?)\s*\|\s*[^|]+\s*\|\s*(ACTIVE|EARLY|MVP)/g) || [];
         const registryModuleNames = registry.modules.map((m) => m.name);
         checks.push({
           name: 'current.md modules match modules.yaml',

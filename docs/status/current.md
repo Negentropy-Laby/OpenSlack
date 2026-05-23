@@ -20,10 +20,10 @@ supersedes:
 |--------|-------|--------|-------|
 | Self-Evolution Kernel | 1.6 | ACTIVE |  |
 | GitHub Issues Task Loop | 1.7 | ACTIVE |  |
-| Operator Interface | 1.8 | EARLY | Keyword-based intent router. LLM planner deferred to Phase 2. |
+| Operator Interface | 2A/2B | ACTIVE | Structured planner active. Webhook and Slack chat adapters active. LLM planner remains deferred. |
 | PR Review & Merge Steward | 1.14 | ACTIVE | Phase 1.16 UX closure complete. Supports status/review/recommend/doctor/merge/watch and review/doctor comments. Governance audit and deadlock detection active. |
 
-## Packages (7 active)
+## Packages (9 active)
 
 - @openslack/kernel
 - @openslack/workspace
@@ -31,6 +31,8 @@ supersedes:
 - @openslack/github
 - @openslack/core
 - @openslack/cli
+- @openslack/operator
+- @openslack/chat-gateway
 - @openslack/pr
 
 ## CLI Commands
@@ -44,6 +46,7 @@ supersedes:
 - openslack setup
 - openslack status
 - openslack doctor
+- openslack chat
 - openslack pr
 - openslack governance
 
@@ -53,7 +56,7 @@ supersedes:
 
 ## Test Suite
 
-169 unit tests across 21 test files. All passing.
+224 unit tests across 28 test files. All passing.
 
 ## Module Registry
 
