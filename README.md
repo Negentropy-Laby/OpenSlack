@@ -85,28 +85,45 @@ See: [`docs/product/module-04-pr-review-merge-steward.md`](docs/product/module-0
 git clone https://github.com/Negentropy-Laby/OpenSlack.git
 cd OpenSlack
 pnpm install
-pnpm typecheck         # Builds all packages + type-checks
 
-# 1a. Make CLI available (choose one):
-alias openslack="node --import tsx $(pwd)/apps/cli/src/index.ts"   # Development
-# Or: pnpm build && export PATH="$(pwd)/apps/cli/dist:$PATH"       # Production
+# 2. One-step setup (validate + eval + doctor + all checks)
+pnpm openslack setup
 
-# 2. Quick setup (runs validate + eval + doctor + all checks at once)
+# 3. Check status
+pnpm openslack status
+
+# 4. Ask the Operator anything
+pnpm openslack ask "检查系统状态"
+```
+
+See [Advanced Setup](#advanced-setup) for development mode, production builds, and manual steps.
+
+## Advanced Setup
+
+### Development mode (tsx, no build)
+
+```bash
+alias openslack="node --import tsx $(pwd)/apps/cli/src/index.ts"
+```
+
+### Production build
+
+```bash
+pnpm build
+export PATH="$(pwd)/apps/cli/dist:$PATH"
 openslack setup
+```
 
-# Or run individual steps:
+### Manual verification steps
+
+If you prefer to run checks individually instead of `openslack setup`:
+
+```bash
+pnpm typecheck              # Build all packages + type-check
 openslack workspace validate
-openslack workspace index
-openslack workspace status
-
-# 3. Run self-evaluation
 openslack self eval --suite golden    # 7/7 must pass
-
-# 4. Check system health
-openslack github doctor               # Auth, config, labels
-
-# 5. Genesis validation (zero runtime dependency)
-bash scripts/genesis-validate.sh      # 5/5 checks
+openslack doctor                        # Multi-module health check
+bash scripts/genesis-validate.sh      # 5/5 checks (zero runtime dependency)
 ```
 
 ## CLI Reference
