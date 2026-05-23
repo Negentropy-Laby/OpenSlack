@@ -245,13 +245,13 @@ The human-facing entry point. Natural language queries route to the appropriate 
 
 ### Module 04: PR Review & Merge Steward (PRMS)
 
-The agent-assisted PR gatekeeper. Reviews PRs, classifies risk, checks merge readiness, and executes merge only after human approval. Agent can review, recommend, comment, and merge — but never approve. See `docs/product/module-04-pr-review-merge-steward.md`.
+The agent-assisted PR gatekeeper. Reviews PRs, classifies risk, checks merge readiness, diagnoses governance deadlocks, and executes merge only after human approval. Agent can review, recommend, diagnose, comment, and merge — but never approve. See `docs/product/module-04-pr-review-merge-steward.md`.
 
 ## Current State
 
 **Published:** `https://github.com/Negentropy-Laby/OpenSlack`
 
-**Architecture:** 6 active packages + 2 apps, 8 CLI command groups, 97+ tests, 7 golden evals, 56 commits.
+**Architecture:** 6 active packages + 2 apps, 8 CLI command groups, 161+ tests, 7 golden evals, 60 commits.
 
 **Authentication:** Three-tier model (GitHub App installation token primary, PAT fallback, OAuth human only). App ID 3728623 installed on wsman/OpenSlack.
 
