@@ -5,6 +5,9 @@ export { verifyRequestSignature, verifyRequestTimestamp, mapActor, canExecuteSid
 export { formatPlanAsMarkdown, formatResultAsMarkdown, formatError } from './formatter.js';
 export { buildPRCard, toSlackBlocks, cardToText } from './cards.js';
 export type { ChatCard, ChatAction, ChatCardField } from './cards.js';
+export { createPendingPlan, loadPendingPlan, deletePendingPlan, validatePlan, generatePlanId, isActionAllowed } from './plan-store.js';
+export type { PendingPlan } from './plan-store.js';
+export { handleAction, parseActionText } from './actions.js';
 export { isDuplicate, markProcessed, clearStore } from './interaction-store.js';
 export type {
   ChatAdapter,
