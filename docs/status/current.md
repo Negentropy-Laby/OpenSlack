@@ -21,7 +21,7 @@ supersedes:
 | Self-Evolution Kernel | 1.6 | ACTIVE |  |
 | GitHub Issues Task Loop | 1.7 | ACTIVE |  |
 | Operator Interface | 1.8 | EARLY | Keyword-based intent router. LLM planner deferred to Phase 2. |
-| PR Review & Merge Steward | 1.14 | ACTIVE | Phase 1.14 core complete. Basic Operator keyword routing implemented. Watch/comment planned for 1.16. |
+| PR Review & Merge Steward | 1.14 | ACTIVE | Phase 1.16 UX closure complete. Supports status/review/recommend/doctor/merge/watch and review/doctor comments. Governance audit and deadlock detection active. |
 
 ## Packages (7 active)
 
@@ -45,6 +45,7 @@ supersedes:
 - openslack status
 - openslack doctor
 - openslack pr
+- openslack governance
 
 ## Golden Evals
 
