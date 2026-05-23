@@ -69,6 +69,8 @@ The agent-assisted PR gatekeeper. Reviews PRs, classifies risk, checks merge rea
 - **Review:** `openslack pr review 10` → fetches diff, classifies zone, generates report
 - **Status:** `openslack pr status 10` → merge readiness + checks + human approvals
 - **Recommend:** `openslack pr recommend 10` → next action (approve? merge? wait?)
+- **Doctor:** `openslack pr doctor 10` → 11-gate governance diagnosis (deadlock, checks, approvals)
+- **Merge:** `openslack pr merge 10` → execute merge only after all gates pass
 - **Policy:** No auto-approval. No self-review. Red Zone requires human. Black Zone blocked.
 
 See: [`docs/product/module-04-pr-review-merge-steward.md`](docs/product/module-04-pr-review-merge-steward.md)
@@ -135,6 +137,8 @@ bash scripts/genesis-validate.sh      # 5/5 checks
 | `openslack pr status <n>` | Show PR status and merge readiness |
 | `openslack pr review <n>` | Generate review report for a PR |
 | `openslack pr recommend <n>` | Recommend next action for a PR |
+| `openslack pr doctor <n>` | Run governance diagnosis (11 gates) |
+| `openslack pr merge <n>` | Merge PR after all gates pass |
 | `openslack operator ask "..."` | Natural language → CLI routing |
 | `openslack setup` | One-step full workspace validation (alt: `openslack setup run`) |
 | `openslack setup github` | Guided GitHub auth + label setup (coming soon) |
@@ -234,9 +238,9 @@ Every file must have a clear purpose. See [`AGENTS.md`](AGENTS.md) for:
 | Metric | Value |
 |--------|-------|
 | Packages | 6 active + 2 apps |
-| CLI commands | 28 |
+| CLI commands | 30 |
 | CLI command groups | 8 |
-| Unit tests | 97 (12 test files) |
+| Unit tests | 161 (16 test files) |
 | Golden evals | 7 (7/7 passing) |
 | JSON Schemas | 8 (draft 2020-12) |
 | GitHub Actions workflows | 5 |

@@ -47,13 +47,38 @@ function routeIntent(query: string): Intent {
   if (q.includes('bootstrap'))
     return { command: '_unknown', args: [], description: 'Please specify agent ID: openslack agent bootstrap --agent-id <id>' };
 
+  // PRMS — natural language PR management (must come before generic 'pr' task routing)
+  const prMatch = q.match(/pr\s*#?(\d+)|pull\s*request\s*#?(\d+)/);
+  const prNumber = prMatch ? (prMatch[1] || prMatch[2]) : null;
+
+  if (prNumber) {
+    // Check if user wants to merge
+    if (q.includes('merge') || q.includes('合')) {
+      return { command: 'pr', args: ['merge', prNumber], description: `Merge PR #${prNumber} after governance gates` };
+    }
+    // Check if user wants diagnosis
+    if (q.includes('why') || q.includes('不能') || q.includes('block') || q.includes('doctor') || q.includes('诊断') || q.includes(' diagnose')) {
+      return { command: 'pr', args: ['doctor', prNumber], description: `Diagnose PR #${prNumber} governance` };
+    }
+    // Check if user wants review/report
+    if (q.includes('review') || q.includes('审查') || q.includes('report') || q.includes('报告')) {
+      return { command: 'pr', args: ['review', prNumber], description: `Review PR #${prNumber}` };
+    }
+    // Default: status
+    if (q.includes('status') || q.includes('check') || q.includes('检查') || q.includes('状态')) {
+      return { command: 'pr', args: ['status', prNumber], description: `Status of PR #${prNumber}` };
+    }
+    // Ambiguous PR query — default to doctor (most informative)
+    return { command: 'pr', args: ['doctor', prNumber], description: `Diagnose PR #${prNumber}` };
+  }
+
   // Worktree + PR — require explicit issue number
   if (q.includes('checkout') || q.includes('worktree') || q.includes('work on')) {
     const numMatch = q.match(/#?(\d+)/);
     if (!numMatch) return { command: '_unknown', args: [], description: 'Please specify an issue number: openslack task checkout --issue-number <n> --agent-id <id>' };
     return { command: 'task', args: ['checkout', '--issue-number', numMatch[1], '--agent-id', 'anthropic_architect_aby'], description: `Create worktree for issue #${numMatch[1]}` };
   }
-  if (q.includes('sync') || q.includes('submit') || q.includes('pr') || q.includes('pull request')) {
+  if (q.includes('sync') || q.includes('submit')) {
     const numMatch = q.match(/#?(\d+)/);
     if (!numMatch) return { command: '_unknown', args: [], description: 'Please specify an issue number: openslack task sync --issue-number <n>' };
     return { command: 'task', args: ['sync', '--issue-number', numMatch[1], '--agent-id', 'anthropic_architect_aby', '--task-id', `ISSUE-${numMatch[1]}`, '--run-id', `RUN-${Date.now()}`, '--paths', 'docs/test.md'], description: `Propose workspace PR for issue #${numMatch[1]}` };

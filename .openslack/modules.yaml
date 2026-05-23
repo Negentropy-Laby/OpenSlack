@@ -1,0 +1,60 @@
+schema: openslack.modules.v1
+modules:
+  - id: self_evolution
+    name: Self-Evolution Kernel
+    status: active
+    phase: "1.6"
+    cli:
+      - openslack self
+      - openslack workspace
+    packages:
+      - "@openslack/kernel"
+      - "@openslack/workspace"
+      - "@openslack/runtime"
+    tests: 66
+    test_files: 10
+    golden_evals: 7
+
+  - id: github_task_loop
+    name: GitHub Issues Task Loop
+    status: active
+    phase: "1.7"
+    cli:
+      - openslack github
+      - openslack agent
+      - openslack task
+    packages:
+      - "@openslack/github"
+      - "@openslack/runtime"
+      - "@openslack/core"
+    tests: 31
+    test_files: 3
+
+  - id: operator
+    name: Operator Interface
+    status: early
+    phase: "1.8"
+    cli:
+      - openslack ask
+      - openslack setup
+      - openslack status
+      - openslack doctor
+    packages:
+      - "@openslack/cli"
+    tests: 0
+    test_files: 0
+    notes: Keyword-based intent router. LLM planner deferred to Phase 2.
+
+  - id: pr_review_merge
+    name: PR Review & Merge Steward
+    status: active
+    phase: "1.14"
+    cli:
+      - openslack pr
+    packages:
+      - "@openslack/pr"
+      - "@openslack/github"
+      - "@openslack/kernel"
+    tests: 64
+    test_files: 8
+    notes: Phase 1.14 core complete. Operator integration planned for 1.15. Watch/comment planned for 1.16.

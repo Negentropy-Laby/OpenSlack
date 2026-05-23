@@ -25,6 +25,8 @@ The agent-assisted PR gatekeeper. PRMS fetches PR metadata, classifies risk zone
 openslack pr status <number>       # Show PR status and merge readiness
 openslack pr review <number>      # Generate review report
 openslack pr recommend <number>   # Recommend next action
+openslack pr doctor <number>      # Run 11-gate governance diagnosis
+openslack pr merge <number>       # Merge after all governance gates pass
 ```
 
 ## State Machine
@@ -38,7 +40,12 @@ Failure paths:
 - ANALYZED → BLOCKED_POLICY
 - ANALYZED → BLOCKED_SELF_REVIEW
 - ANALYZED → BLOCKED_BLACK_ZONE
+- ANALYZED → BLOCKED_DRAFT
+- ANALYZED → BLOCKED_AUTHOR_IS_SOLE_CODEOWNER
+- ANALYZED → BLOCKED_SINGLE_MAINTAINER
 - CHECKS_PENDING → CHECKS_FAILED
+- NEEDS_HUMAN_APPROVAL → BOT_APPROVAL_IGNORED
+- NEEDS_HUMAN_APPROVAL → NEEDS_CODEOWNER_APPROVAL
 
 ## Risk Zone Gating
 
@@ -69,26 +76,39 @@ See `.openslack/agents/registry/pr_reviewer.yaml`:
 ```
 packages/pr/
 ├── src/
-│   ├── index.ts       # Barrel exports
-│   ├── types.ts       # PRReviewReport, PRReviewState, PRReviewPolicy
-│   ├── fetch.ts       # fetchPRDetails (GitHub API)
-│   ├── classify.ts    # classifyPRReport (OSEK reuse)
-│   ├── readiness.ts   # checkMergeReadiness (pure function)
-│   ├── report.ts      # generateReviewReport (markdown)
-│   ├── policy.ts      # loadPRReviewPolicy (YAML + fallback)
+│   ├── index.ts          # Barrel exports
+│   ├── types.ts          # PRReviewReport, PRReviewState, PRReviewPolicy
+│   ├── fetch.ts          # fetchPRDetails (GitHub API)
+│   ├── classify.ts       # classifyPRReport (OSEK reuse)
+│   ├── readiness.ts      # checkMergeReadiness (pure function)
+│   ├── report.ts         # generateReviewReport (markdown)
+│   ├── policy.ts         # loadPRReviewPolicy (YAML + fallback)
+│   ├── codeowners.ts     # parseCODEOWNERS, resolveCodeowners
+│   ├── approvals.ts      # filterValidApprovals, isBotUser
+│   ├── deadlock.ts       # detectDeadlock
+│   ├── doctor.ts         # diagnosePR (11-gate engine)
+│   ├── doctor-report.ts  # generateDoctorReport (markdown)
+│   ├── merge.ts          # mergeIfReady (policy-gated merge)
 │   └── __tests__/
 │       ├── classify.test.ts
 │       ├── readiness.test.ts
-│       └── report.test.ts
+│       ├── report.test.ts
+│       ├── codeowners.test.ts
+│       ├── approvals.test.ts
+│       ├── deadlock.test.ts
+│       ├── doctor.test.ts
+│       └── merge.test.ts
 ```
 
 ## Phase Roadmap
 
-| Phase | Deliverables |
-|-------|-------------|
-| 1.13 (MVP) | `pr status`, `pr review`, `pr recommend` — read-only + report generation |
-| 1.14 | `pr merge`, `pr watch`, `pr comment` — merge execution + GitHub comment posting |
-| 1.15 | Operator integration — natural language PR management |
+| Phase | Deliverables | Status |
+|-------|-------------|--------|
+| 1.13 (MVP) | `pr status`, `pr review`, `pr recommend` — read-only + report generation | COMPLETE |
+| 1.14A | `pr doctor`, CODEOWNERS resolver, deadlock detector, valid approval filter | COMPLETE |
+| 1.14B | `pr merge` — policy-gated merge execution via `mergeIfReady()` | COMPLETE |
+| 1.15 | Operator integration — natural language PR management | PLANNED |
+| 1.16 | `pr watch`, `pr comment`, module registry, automated status generation | PLANNED |
 
 ## Verification
 
