@@ -128,38 +128,7 @@ bash scripts/genesis-validate.sh      # 5/5 checks (zero runtime dependency)
 
 ## CLI Reference
 
-| Command | Purpose |
-|---------|---------|
-| `openslack workspace validate` | Validate Self-Project workspace |
-| `openslack workspace index` | Build index from `.openslack/` plain text |
-| `openslack workspace status` | Show workspace summary |
-| `openslack self classify-pr --paths "..."` | Classify PR risk zone |
-| `openslack self validate --pr <n> --paths "..."` | Full PR validation + manifest |
-| `openslack self eval --suite golden` | Run golden evals (add `--clean` to remove artifacts) |
-| `openslack self observe` | Check system health |
-| `openslack self triage --create-issues` | Create EVOL task issues on GitHub |
-| `openslack self review --pr <n>` | Review PR for merge eligibility |
-| `openslack self scorecard --experiment <id>` | Compute fitness score |
-| `openslack self monitor --experiment <id>` | Post-merge regression check |
-| `openslack agent hire --agent-id <id>` | Generate onboarding package |
-| `openslack agent bootstrap --agent-id <id>` | Verify agent readiness |
-| `openslack agent tick --agent-id <id> --source github-issues` | Claim a task from GitHub |
-| `openslack task checkout --issue-number <n>` | Create isolated worktree |
-| `openslack task sync --issue-number <n> --paths "..."` | Commit + push + create draft PR |
-| `openslack github doctor` | Check GitHub setup |
-| `openslack github repair-labels` | Idempotently create required labels |
-| `openslack github repair-claims` | Expire stale claims |
-| `openslack github repair-all` | Run all repair operations |
-| `openslack github metrics` | Task loop metrics |
-| `openslack github issue-done --issue-number <n>` | Release claim + mark done |
-| `openslack pr status <n>` | Show PR status and merge readiness |
-| `openslack pr review <n>` | Generate review report for a PR |
-| `openslack pr recommend <n>` | Recommend next action for a PR |
-| `openslack pr doctor <n>` | Run governance diagnosis (11 gates) |
-| `openslack pr merge <n>` | Merge PR after all gates pass |
-| `openslack operator ask "..."` | Natural language → CLI routing |
-| `openslack setup` | One-step full workspace validation (alt: `openslack setup run`) |
-| `openslack setup github` | Guided GitHub auth + label setup (coming soon) |
+See [`docs/user-guide.md`](docs/user-guide.md) for the complete command reference.
 
 ## Authentication
 
