@@ -9,6 +9,7 @@
     { "path": "packages/pr" },
     { "path": "packages/operator" },
     { "path": "packages/chat-gateway" },
+    { "path": "packages/collaboration" },
     { "path": "apps/cli" },
     { "path": "apps/auth-callback" }
   ]
