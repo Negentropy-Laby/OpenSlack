@@ -1,260 +1,386 @@
-# OpenSlack
+# OpenSlack Agent & Developer Guide
 
-You are in the **OpenSlack implementation repository** — the codebase that builds the Agent Company OS. This is not a deployed workspace; it is the product source.
+You are working in the **OpenSlack product repository** and its own Self-Project workspace.
 
-## What OpenSlack Is
+OpenSlack is a local-first, Git-backed operating system for AI agents. Agents discover work from GitHub Issues, claim tasks with deterministic git refs, work in isolated worktrees, submit PRs, and use humans only for approval and exceptions.
 
-OpenSlack is a local-first, Git-backed operating system for AI agents. It lets heterogeneous agents (Claude Code, Codex, reviewer, researcher, sync, custom) function as employees: they discover tasks from GitHub Issues (labels + deterministic claim refs), work in isolated worktrees, sync state through GitHub PRs, and communicate with humans via chat platforms only for approvals and exceptions. GitHub Project v2 is an optional projection layer.
+**Core principle:** chat is a frontend, Git is the source of truth, and agents are workers — not chatbots.
 
-**Core principle:** Chat is a frontend. Git is the source of truth. Agents are workers, not chatbots.
+---
 
-## First Read
+## Start Here
 
-Before doing anything else, read:
-1. `docs/status/current.md` — current project state (single source of truth)
-2. `docs/developer/github-issues-loop.md` — how agents discover and claim tasks
-3. `docs/product/phase-1.md` — original acceptance criteria and architecture
+Before making or reviewing changes, read these in order:
 
-The original `product.md` is archived at `docs/archive/original-product-spec.md`.
+1. `docs/status/current.md` — generated current state and module status.
+2. `.openslack/modules.yaml` — canonical product module registry.
+3. `README.md` — user-facing product overview and quick start.
+4. `docs/user-guide.md` — complete CLI reference.
+5. This file — repository rules and agent constraints.
 
-## Repository Structure
+Historical files such as `docs/product/phase-1.md` and archived product specs are useful background, but they are **not** the current source of truth.
 
+---
+
+## Product Modules
+
+OpenSlack v0.1 RC is organized around four user-facing modules.
+
+### Module 01 — Self-Evolution Kernel
+
+Purpose: keep OpenSlack safe while it changes itself.
+
+Owns:
+
+- risk-zone classification
+- policy and merge decisions
+- workspace validation
+- golden evals
+- genesis validation / rollback
+- self-observe, self-triage, scorecards, monitor checks
+
+Main commands:
+
+```bash
+openslack self ...
+openslack workspace ...
 ```
-openslack/                       # You are here
-├── openslack.yaml               # Self-Project Mode workspace manifest
-├── AGENTS.md                    # This file (canonical instructions)
-├── CLAUDE.md                    # Pointer to AGENTS.md
-│
-├── apps/cli/                    # openslack CLI (8 command groups)
-│
-├── packages/                    # 6 active libraries
-│   ├── kernel/                  # Zone classifier, merge decision, policy engine
-│   ├── workspace/               # Validation, indexing, schemas
-│   ├── core/                    # Claim broker (ClaimBroker, FileClaimBroker)
-│   ├── runtime/                 # Self-evolution ops, golden evals, agent bootstrap, worktree, PR proposal
-│   ├── github/                  # GitHub Issues/PR/Project v2 API (dry-run when no token)
-│   └── pr/                      # PR Review & Merge Steward (fetch, classify, readiness, report)
-│
-├── .openslack/                  # Workspace state (policies, constitution, evals, tasks)
-├── .github/                     # 5 CI workflows + PR template
-├── docs/                        # Product, developer, security, archive
-├── templates/new-agent/         # 9 onboarding template files
-└── scripts/                     # genesis-validate.sh, genesis-rollback.sh
+
+Key packages:
+
+```text
+@openslack/kernel
+@openslack/workspace
+@openslack/runtime
 ```
 
-## How to Work on This Project
+### Module 02 — GitHub Issues Task Loop
 
-### Before making changes
+Purpose: let agents discover, claim, execute, and complete tasks through GitHub Issues.
 
-1. Read `docs/status/current.md` to understand the current state of the system. The original specification is archived at `docs/archive/original-product-spec.md`.
-2. Identify which package or app your change belongs to.
-3. Check if a schema exists in `packages/workspace/src/schemas/` for any YAML you touch — keep schemas and code in sync.
+Owns:
 
-### While working
+- issue task creation and discovery
+- labels and issue lifecycle
+- atomic claim refs: `refs/heads/openslack/claims/issue-{n}`
+- heartbeat / expiry / repair
+- worktree checkout and task sync
+- PR merged → issue done
 
-- Schemas in `packages/workspace/src/schemas/` use JSON Schema (draft 2020-12). Every YAML file in an OpenSlack workspace must validate against a schema.
-- The CLI (`apps/cli/`) is the primary user interface. All core logic lives in packages and is called by the CLI, not embedded in it.
-- Each package has its own tests. Run package tests before committing.
-- GitHub API calls go through `packages/github-provider/` — never call GitHub APIs directly from other packages.
+Main commands:
 
-### Key invariants
+```bash
+openslack github ...
+openslack agent ...
+openslack task ...
+```
 
-1. **Git is the source of truth.** The ACP database is a cache, rebuildable from workspace repo + GitHub Project.
-2. **Agents never write to main.** All agent changes go through PRs. The merge agent or a human merges.
-3. **Path permissions are enforced at the worktree level.** Policies in `policies/path_permissions.yaml` are not advisory.
-4. **Claims are atomic.** The Claim Broker is the only authority that can grant a lease. GitHub Project fields are not a lock.
-5. **Chat is a projection, not a source of truth.** If chat state and workspace state disagree, workspace wins.
+Key packages:
 
-### Code conventions
+```text
+@openslack/github
+@openslack/runtime
+@openslack/core
+```
 
-- TypeScript throughout. Node.js >= 22.
-- Each package is an npm workspace with its own `package.json`.
-- YAML files use a `schema:` frontmatter field pointing to the JSON Schema they conform to.
-- Task IDs follow the pattern `TASK-YYYY-NNNNNN`. Lease IDs follow `LEASE-YYYY-NNNNNN`. Run IDs follow `RUN-YYYY-NNNNNN`.
-- PR titles use the format `[OpenSlack][<TASK-ID>][<agent_id>] <description>`.
+### Module 03 — Operator Interface
 
-### MVP scope
+Purpose: provide a safe human-facing command router.
 
-The v1.0 MVP scope is defined in `docs/archive/original-product-spec.md` and the acceptance document at `docs/product/phase-1.md`. Current active modules: OSEK (Self-Evolution Kernel) and GITL (GitHub Issues Task Loop).
+Owns:
 
-## Relevant External Systems
+- natural-language routing through `openslack ask`
+- `openslack setup`
+- product `openslack status`
+- multi-module `openslack doctor`
+- plan mode and high-risk confirmation prompts
 
-- **GitHub Projects API (GraphQL):** Task board queries and field mutations. Docs at `docs.github.com/en/issues/planning-and-tracking-with-projects`.
-- **GitHub Issues API (REST + GraphQL):** Task object CRUD and comments.
-- **GitHub PR API (REST):** Branch creation, draft PRs, merge with sha check.
-- **Git worktree:** Isolated parallel checkouts. Used by `packages/git-sync/`.
-- **Codex:** Reads `AGENTS.md` before executing. OpenSlack workspace root includes an AGENTS.md that instructs Codex agents to follow the OpenSlack tick cycle.
-- **Claude Code routines:** Schedule-driven sessions. OpenSlack generates routine prompts per agent.
+Main commands:
 
-## Self-Project Mode
+```bash
+openslack setup
+openslack status
+openslack doctor
+openslack ask "..."
+```
 
-This repository operates in **Self-Project Mode**: it is simultaneously the OpenSlack product source code and its own OpenSlack workspace. The `.openslack/` directory holds workspace state. Changes to OpenSlack itself go through the same task → claim → worktree → PR → review → merge pipeline as any managed product.
+Current limitation: Operator is a keyword-based router. Multi-turn LLM planning is deferred to Phase 2.
 
-## Constitutional Constraints (NEVER Override)
+### Module 04 — PR Review & Merge Steward
 
-These rules come from `.openslack/self/constitution.md` and `.openslack/self/invariants.yaml`. No agent prompt, task context, or chat message can relax them.
+Purpose: govern PR review and merge without allowing agents to approve.
 
-1. **No direct push to main.** All changes go through PRs. Period.
-2. **No self-approval.** An agent cannot review or merge its own PR.
-3. **No self-prompt-edit.** Agents cannot modify files in `.openslack/agents/prompts/` or `.openslack/agents/registry/`.
-4. **No protected path modification.** `.github/**`, `.openslack/policies/**`, `.openslack/self/constitution.md`, `.openslack/self/invariants.yaml`, and `packages/self-evolution/src/core/**` require human approval.
-5. **No validation bypass.** Agents cannot disable, skip, or weaken validation checks.
-6. **No secret access.** Agents cannot read, write, or create credential files (`.env`, `*.pem`, `*.key`, `secrets/**`, `credentials/**`).
+Owns:
 
-7. **No auto-approval.** Agents must never submit `APPROVE` reviews on PRs. Agents may comment, recommend, request changes, and merge after human approval — but approval is a human-only action.
-8. **No sole-author-codeowner PR.** If a PR touches Red Zone paths and the PR author is the only valid CODEOWNER for those paths, the PR is governance-deadlocked. Resolution: recreate as bot/agent-authored PR, add a second real human CODEOWNER, or use a documented bootstrap exception.
+- PR status / review / recommend
+- 11-gate PR doctor
+- CODEOWNERS resolution
+- author/CODEOWNER deadlock detection
+- valid human approval filtering
+- PR watch
+- review and doctor comments
+- Merge Steward: merge only after all gates pass
+- governance audit for direct commits
 
-Violation of any of these = immediate task failure + audit log entry + automatic review by the policy auditor agent.
+Main commands:
 
-## Risk Zones (Self-Evolution)
+```bash
+openslack pr ...
+openslack governance audit
+```
 
-| Zone | Paths | Auto-Merge | Human Required |
-|------|-------|-----------|---------------|
-| **Green** | `docs/**`, `templates/**`, `.openslack/tasks/**`, `.openslack/self/scorecards/**`, `.openslack/self/experiments/**` | Yes | No |
-| **Yellow** | `apps/**`, `packages/core/**`, `packages/workspace/**`, `packages/runtime/**`, `packages/github/**`, `.openslack/self/eval_suites/**` | With agent review | No |
-| **Red** | `.github/**`, `.openslack/policies/**`, `.openslack/agents/registry/**`, `.openslack/agents/prompts/**`, `.openslack/self/constitution.md`, `.openslack/self/invariants.yaml`, `packages/kernel/src/**` | Never | Yes |
-| **Black** | `.env`, `*.pem`, `*.key`, `secrets/**`, `credentials/**` | Never (PR rejected) | N/A |
+Key packages:
+
+```text
+@openslack/pr
+@openslack/github
+@openslack/kernel
+```
+
+---
+
+## User-Facing Command Model
+
+Most users should start with four commands:
+
+```bash
+pnpm openslack setup
+pnpm openslack status
+pnpm openslack doctor
+pnpm openslack ask "检查系统状态"
+```
+
+Advanced users and agents can use module commands directly:
+
+```bash
+openslack workspace ...
+openslack self ...
+openslack github ...
+openslack agent ...
+openslack task ...
+openslack pr ...
+openslack governance ...
+```
+
+Do not add a new top-level command unless it belongs to a clearly named product module or improves one of the four user-facing entrypoints.
+
+---
+
+## Documentation System
+
+Keep the docs simple and non-overlapping.
+
+| File | Purpose |
+|------|---------|
+| `README.md` | Short product overview, quick start, module summary, links. No dynamic metrics. |
+| `AGENTS.md` | Canonical instructions for all agents and contributors. |
+| `CLAUDE.md` | Claude Code entrypoint; should point back to AGENTS.md. |
+| `.openslack/modules.yaml` | Source of truth for product modules, phases, CLI groups, packages, and test counts. |
+| `docs/status/current.md` | Generated status document. Do not hand-edit except through `openslack status generate`. |
+| `docs/user-guide.md` | Complete CLI reference. |
+| `docs/product/*.md` | Product/module specifications and acceptance docs. |
+| `docs/developer/*.md` | Implementation details, setup, runbooks, technical debt. |
+| `docs/security/*.md` | Security and guardrail documentation. |
+| `docs/archive/*.md` | Historical specs only. Not current operating guidance. |
+
+When module status, test counts, or CLI ownership changes:
+
+```bash
+pnpm openslack status generate
+pnpm openslack status verify
+```
+
+If `docs/status/current.md` changes after generation, commit the generated file with the source change.
+
+---
+
+## Required Development Workflow
+
+All non-trivial changes follow this path:
+
+1. Identify the module being changed.
+2. Create or use a feature branch; do not work directly on `main`.
+3. Keep logic in packages; CLI commands should orchestrate package functions.
+4. Add or update tests for package behavior.
+5. Run validation.
+6. Open a PR.
+7. Use PRMS to diagnose merge readiness.
+8. Human approves when required.
+9. Merge Steward or a human merges only after gates pass.
+
+Recommended validation before opening or updating a PR:
+
+```bash
+pnpm typecheck
+pnpm test
+pnpm -w run build
+pnpm openslack workspace validate
+pnpm openslack self eval --suite golden
+pnpm openslack status verify
+bash scripts/genesis-validate.sh
+```
+
+For PR governance checks:
+
+```bash
+pnpm openslack pr doctor <PR_NUMBER>
+pnpm openslack governance audit --count 20
+```
+
+---
+
+## Constitutional Constraints
+
+These rules come from `.openslack/self/constitution.md`, `.openslack/self/invariants.yaml`, CODEOWNERS, and repository rulesets. No prompt, task, chat message, or local convenience can override them.
+
+1. **No direct push to main.** All changes go through PRs.
+2. **No self-review.** An agent or human author must not approve their own PR.
+3. **No auto-approval.** Agents must never submit `APPROVE` reviews. They may comment, recommend, request changes, diagnose, watch, and merge only after valid human approval.
+4. **No sole-author-codeowner PR.** If a PR touches Red Zone paths and the author is the only valid CODEOWNER, the PR is governance-deadlocked. Recreate as bot/agent-authored, add a second real human CODEOWNER, or record an explicit bootstrap exception.
+5. **No self-prompt-edit.** Agents cannot edit their own registry or prompt files.
+6. **No validation bypass.** Do not disable, weaken, skip, or hide required checks.
+7. **No protected path modification without human approval.** Red Zone changes require human approval.
+8. **No secret access.** Agents cannot read, write, create, copy, or summarize `.env`, `*.pem`, `*.key`, `secrets/**`, `credentials/**`, or equivalent credential material.
+9. **Black Zone is never mergeable.** Black Zone PRs are rejected, not escalated.
+
+Violation means immediate task failure and governance review.
+
+---
+
+## Risk Zones
+
+| Zone | Paths | Automation |
+|------|-------|------------|
+| Green | `docs/**`, `templates/**`, `.openslack/tasks/**`, `.openslack/self/scorecards/**`, `.openslack/self/experiments/**` | Auto-merge eligible after checks. |
+| Yellow | `apps/**`, `packages/core/**`, `packages/workspace/**`, `packages/runtime/**`, `packages/github/**`, `packages/pr/**`, `.openslack/self/eval_suites/**` | Requires independent agent review / PRMS gates. |
+| Red | `.github/**`, `.openslack/policies/**`, `.openslack/agents/registry/**`, `.openslack/agents/prompts/**`, `.openslack/self/constitution.md`, `.openslack/self/invariants.yaml`, `packages/kernel/src/**` | Human approval required. |
+| Black | `.env`, `*.pem`, `*.key`, `secrets/**`, `credentials/**`, private tokens, production credentials | Never allowed. |
+
+Use:
+
+```bash
+openslack self classify-pr --paths "<paths>"
+```
+
+---
+
+## Package Boundaries
+
+| Package | Boundary |
+|---------|----------|
+| `@openslack/kernel` | Pure policy: zones, merge decision, PR classification. No workspace/runtime imports. |
+| `@openslack/workspace` | Workspace schemas, validation, indexing, module registry. |
+| `@openslack/core` | Claim broker and shared primitives. |
+| `@openslack/runtime` | Operational workflows: self ops, golden evals, agent tick, worktree, task sync. |
+| `@openslack/github` | GitHub API access: issues, labels, claims, PRs, auth, repair, lifecycle. |
+| `@openslack/pr` | PRMS: PR fetch/classify/report/doctor/comment/watch/merge stewardship. |
+| `apps/cli` | User command surface. It should call package functions, not contain business logic. |
+
+Do not reintroduce compatibility shims or old package names.
+
+---
+
+## PRMS Rules
+
+Use PRMS for all PR governance:
+
+```bash
+openslack pr status <n>
+openslack pr review <n>
+openslack pr doctor <n>
+openslack pr watch <n>
+openslack pr merge <n>
+```
+
+Allowed agent actions:
+
+- produce PR review reports
+- post comments
+- diagnose blockers
+- request changes when policy allows
+- watch checks / approvals
+- merge only when `pr doctor` returns `READY_TO_MERGE`
+
+Forbidden agent actions:
+
+- approve PRs
+- bypass rulesets
+- merge without valid human approval
+- merge Black Zone changes
+- merge author/CODEOWNER deadlocks
+
+---
 
 ## Repository Cleanliness
 
-Every file in this repository must have a clear purpose. When a file loses its purpose, it must be removed — not kept as a stub, not kept "for later," not kept because "we might need it."
+Every file must have a clear purpose.
 
-### Package rule
-A package under `packages/` or `apps/` exists only if it has an importable, tested function that a CLI command or another package calls. A package that contains only a skeleton `index.ts` and `package.json` with no callers is noise and must be deleted. When Phase 2 needs `chat-gateway` or `github-provider`, they will be recreated from the product spec — the spec is the source of truth, not empty directories.
+- Do not keep empty stubs “for later.”
+- Do not keep generated verification artifacts unless they are intentional workspace state.
+- Do not add packages without importable, tested functionality.
+- Do not duplicate command groups.
+- Do not hand-maintain dynamic metrics in README.
+- Generated status belongs in `docs/status/current.md` and is produced by `openslack status generate`.
 
-### Artifact rule
-Files under `.openslack/` produced by automated tests or verification runs (temp registries, ephemeral onboarding packages, test EVOL tasks, abandoned experiment manifests) are verification artifacts, not workspace state. They must be deleted after verification. Only human-authored or production-level state files persist. Verification agents must clean up after themselves.
+---
 
-### CLI rule
-A CLI command file under `apps/cli/src/commands/` must serve a distinct command group with unique function calls. If two files import the same library functions and produce semantically identical output, they are duplicates. The canonical home for self-evolution operations (`eval`, `observe`, `triage`, `validate`) is `self.ts`. Separate command files exist only for independent domains (`agent`, `workspace`, `sync`, `task`, `review`, `monitor`).
+## Commit and PR Rules
 
-### Check before commit
-Before any git commit, ALL of these must pass:
+Commit subjects use:
 
-1. `pnpm typecheck` — zero errors
-2. `pnpm test` — all tests pass
-3. `find .openslack -name "*.yaml" -newer .git/index 2>/dev/null` — no new auto-generated artifacts unless intentional
-4. `ls packages/` — every package has at least one function with unit test coverage
-5. `pnpm lint` — zero errors in source files (warnings in dist/ only)
-6. **Verification agent** — after non-trivial changes (3+ files or any API/CLI/package change), spawn the verification agent immediately, BEFORE committing: code change complete → spawn verification agent → fix all FAIL items → all PASS → commit. Do NOT commit until the verifier returns PASS. Do NOT close multiple tasks or declare a phase complete without first passing verification. Fix all FAIL items before marking work as done.
-
-### Commit message convention
-
-#### Subject format
-
-```
+```text
 <module-prefix>: <action> <intent/result>
 ```
 
-The prefix must name the real subsystem being changed — not a vague label. Use stable subsystem names from the OpenSlack architecture:
-
-| Prefix | Subsystem |
-|--------|-----------|
-| `workspace-engine` | Workspace validation, indexing, migration |
-| `policy` | Zone classifier, policy engine, risk gates |
-| `self-evolution` | Observe, triage, classify, review, scorecard, monitor, rollback |
-| `evals` | Golden eval runner, eval suites |
-| `core` | Claim broker, task state machine, leases |
-| `agent-runtime` | Bootstrap, tick, onboarding |
-| `git-sync` | Worktree manager, PR orchestrator |
-| `schemas` | JSON Schema definitions |
-| `cli` | CLI command surface and entry points |
-| `scripts` | Genesis validate/rollback, tooling scripts |
-| `docs` | Documentation (describe behavioral effect, not chapter title) |
-| `repo` | Repository structure, tooling, conventions |
-| `openslack.yaml` | Workspace manifest and Self-Project Mode config |
-| `constitution` | Constitutional and invariants changes |
-| `security` | Security patches, zone changes, guardrails |
-
-Use a precise action verb: `add`, `extract`, `migrate`, `restore`, `wire`, `harden`, `align`, `document`, `remove`, `consolidate`.
-
-Subject must be lowercase sentence-style, no period at end, roughly 50–90 characters.
-
-Good examples:
-- `policy: add black zone path matcher for credential files`
-- `self-evolution: wire validatePR to auto-generate manifest yaml`
-- `workspace-engine: extract indexer from validate module`
-- `core: add file-backed claim broker with atomic save`
-- `docs: document daemon receipt baseline and sprint expansion`
-- `repo: remove stub packages per cleanliness rules`
-
-#### Body policy
-
-Leave one blank line after subject. Prefer the shortest message that explains the change — 1–2 sentences focused on **why** the change exists and **what boundary or behavior** it preserves. Expand to paragraph-plus-bullets only when the change crosses multiple boundaries:
+Good prefixes:
 
 ```text
-<prefix>: <action> <intent/result>
-
-<1–2 concise why-first sentences.>
+workspace
+kernel
+runtime
+github
+prms
+operator
+cli
+status
+governance
+docs
+repo
+security
 ```
 
-Expanded form for high-information commits:
+Hard prohibitions:
 
-```text
-<prefix>: <action> <intent/result>
+- Do not include `Co-Authored-By:` lines.
+- Do not mention AI/model/tool authorship in commits.
+- Do not use vague subjects like `fix stuff`, `update files`, or `cleanup`.
+- Do not merge without PRMS / ruleset gates.
 
-<Why this change exists and what boundary it creates.>
+PRs should clearly state:
 
-- <verb> <major surface or invariant preserved>
-- <verb> <major surface or invariant preserved>
+- module changed
+- risk zone
+- validation run
+- rollback or recovery plan
+- whether human approval is required
+
+---
+
+## Current Status
+
+OpenSlack v0.1 RC has four product modules:
+
+1. Self-Evolution Kernel — ACTIVE
+2. GitHub Issues Task Loop — ACTIVE
+3. Operator Interface — EARLY, safe keyword router
+4. PR Review & Merge Steward — ACTIVE
+
+For live status, run:
+
+```bash
+pnpm openslack status
+pnpm openslack doctor
+pnpm openslack status verify
 ```
 
-#### Hard prohibitions
-
-- Do not include `Co-Authored-By:` lines or any co-author attribution.
-- Do not mention that an AI, assistant, model, or automated agent wrote the change.
-- Do not include internal model codenames, unreleased model versions, or internal-only project/tool names.
-- Do not use document chapter names or section headings as the subject.
-- Do not enumerate files, folders, or raw ticket-like fragments in the subject.
-- Do not use generic one-word prefixes like `fix`, `update`, `cleanup`, or `misc` without a real subsystem prefix.
-
-#### Anti-patterns
-
-- `fix stuff`
-- `update files`
-- `misc cleanup`
-- `docs: complete 05-backend layer canonical contracts`
-- `server: routes, tests, docs, cleanup, more fixes`
-- A long body that is only a file inventory
-- A subject that copies documentation headings instead of describing change intent
-
-#### Reference commits
-
-The following commits set the quality standard for this repository:
-
-- `52a52d6` `repo: add initial OSEK Phase 1 monorepo scaffold`
-- `040990d` `docs: add commit message convention to AGENTS.md and CLAUDE.md`
-
-PR titles follow the format: `[OpenSlack][<TASK-ID>][<agent_id>] <description>`.
-
-## Modules
-
-OpenSlack currently has four active modules:
-
-### Module 01: OSEK (OpenSlack Self-Evolution Kernel)
-
-The self-evolution core loop: observe → classify → validate → review → scorecard → merge → monitor → rollback. 97 tests (12 test files), 7 golden evals. See `docs/product/phase-1.md`.
-
-### Module 02: GITL (GitHub Issues Task Loop)
-
-The issues-first autonomous task loop using GitHub Issues + labels + deterministic git ref claim locks. Agents discover, claim, execute, and complete tasks entirely through GitHub Issues — no Project v2, no OAuth, no browser required. See `docs/developer/github-issues-loop.md`.
-
-### Module 03: Operator Interface
-
-The human-facing entry point. Natural language queries route to the appropriate CLI commands. See `docs/product/phase-1.md`.
-
-### Module 04: PR Review & Merge Steward (PRMS)
-
-The agent-assisted PR gatekeeper. Reviews PRs, classifies risk, checks merge readiness, diagnoses governance deadlocks, and executes merge only after human approval. Agent can review, recommend, diagnose, comment, and merge — but never approve. See `docs/product/module-04-pr-review-merge-steward.md`.
-
-## Current State
-
-**Published:** `https://github.com/Negentropy-Laby/OpenSlack`
-
-**Architecture:** 6 active packages + 2 apps, 8 CLI command groups, 161+ tests, 7 golden evals, 60 commits.
-
-**Authentication:** Three-tier model (GitHub App installation token primary, PAT fallback, OAuth human only). App ID 3728623 installed on wsman/OpenSlack.
-
-**GitHub autonomous loop:** Verified E2E — create task issue → agent tick discovers → git ref atomic claim → heartbeat/expiry → worktree → PR → review → done.
-
-See `docs/status/current.md` for single source of truth.
+For full current state, read `docs/status/current.md`.
