@@ -9,6 +9,7 @@ import {
   buildClarificationQuestion,
 } from '@openslack/operator';
 import type { PlanStep } from '@openslack/operator';
+import { recordEvent } from '@openslack/collaboration';
 
 function confirmPrompt(message: string): Promise<boolean> {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -46,6 +47,25 @@ export function operatorCommands(): Command {
 
       // Step 2: Plan actions
       const plan = planActions(intent);
+
+      try {
+        recordEvent({
+          type: 'operator.plan.created',
+          actor: { id: 'cli', kind: 'system', provider: 'cli' },
+          object: { kind: 'plan', id: plan.goal },
+          source: { kind: 'operator', ref: 'planActions' },
+          summary: `Plan created for intent "${intent.kind}" with ${plan.steps.length} steps, risk: ${plan.riskLevel}`,
+          visibility: 'local',
+          redacted: false,
+          containsSensitiveData: false,
+          risk: plan.riskLevel,
+          nextAction: plan.missingParams.length > 0
+            ? { owner: 'human', action: `Provide missing params: ${plan.missingParams.map((p) => p.name).join(', ')}` }
+            : { owner: 'human', action: `Confirm execution of plan: ${plan.goal}` },
+        });
+      } catch {
+        // Best-effort event recording
+      }
 
       // Step 3: Handle missing params
       if (plan.missingParams.length > 0) {

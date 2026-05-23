@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
+import { recordEvent } from '@openslack/collaboration';
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -154,6 +155,29 @@ export function governanceCommands(): Command {
           console.log(`    Cannot verify without gh CLI access`);
         }
         console.log('');
+      }
+
+      const auditFailed = directCommits.length > 0 || (!hasGhAccess && unverifiedCommits.length > 0);
+
+      try {
+        recordEvent({
+          type: auditFailed ? 'governance.audit.failed' : 'governance.audit.passed',
+          actor: { id: 'cli', kind: 'system', provider: 'cli' },
+          object: { kind: 'workspace', id: 'governance' },
+          source: { kind: 'governance', ref: `last-${count}-commits` },
+          summary: auditFailed
+            ? `Governance audit failed: ${directCommits.length} unexplained direct commits`
+            : `Governance audit passed: ${commits.length} commits checked, 0 unexplained direct commits`,
+          visibility: 'local',
+          redacted: false,
+          containsSensitiveData: false,
+          risk: auditFailed ? 'high' : 'none',
+          nextAction: auditFailed
+            ? { owner: 'human', action: 'Add exception to docs/developer/technical-debt.md' }
+            : undefined,
+        });
+      } catch {
+        // Best-effort event recording
       }
 
       if (directCommits.length > 0) {

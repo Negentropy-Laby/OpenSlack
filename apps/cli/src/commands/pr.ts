@@ -13,6 +13,7 @@ import {
   postReviewComment,
   watchPR,
 } from '@openslack/pr';
+import { recordEvent } from '@openslack/collaboration';
 
 export function prCommands(): Command {
   const cmd = new Command('pr').description('PR Review & Merge Steward');
@@ -104,6 +105,29 @@ export function prCommands(): Command {
 
       const diagnosed = diagnosePR(classified, policy, codeowners);
       const doctorOutput = generateDoctorReport(diagnosed, codeowners);
+
+      const isReady = diagnosed.decision === 'READY_TO_MERGE';
+      try {
+        recordEvent({
+          type: isReady ? 'pr.doctor.ready' : 'pr.doctor.blocked',
+          actor: { id: 'cli', kind: 'system', provider: 'cli' },
+          object: { kind: 'pr', id: String(prNumber) },
+          source: { kind: 'prms', ref: 'diagnosePR' },
+          summary: isReady
+            ? `PR #${prNumber} is ready to merge`
+            : `PR #${prNumber} blocked: ${diagnosed.reason}`,
+          visibility: 'local',
+          redacted: false,
+          containsSensitiveData: false,
+          risk: isReady ? 'none' : 'medium',
+          owner: isReady ? undefined : { id: diagnosed.recommendation?.includes('review') ? 'human' : 'agent', kind: 'human' },
+          nextAction: isReady
+            ? { owner: 'human', action: `Review and merge PR #${prNumber} on GitHub` }
+            : { owner: 'human', action: diagnosed.recommendation },
+        });
+      } catch {
+        // Event recording is best-effort; do not block the CLI flow
+      }
 
       if (options.comment) {
         await commentOnPR(prNumber, doctorOutput);
