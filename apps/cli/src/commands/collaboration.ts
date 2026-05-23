@@ -5,6 +5,7 @@ import {
   renderHandoffList, renderHandoff,
   recordDecision, listDecisions, getDecision, supersedeDecision,
   renderDecisionList, renderDecision,
+  buildRoomView, renderRoom,
 } from '@openslack/collaboration';
 
 export function collaborationCommands(): Command {
@@ -214,6 +215,23 @@ export function collaborationCommands(): Command {
     });
 
   cmd.addCommand(decision);
+
+  const room = new Command('room').description('Collaboration room views');
+
+  room
+    .command('show <roomId>')
+    .description('Show room summary (e.g., pr:42, issue:21, module:operator)')
+    .action((roomId: string) => {
+      const events = readEvents();
+      const view = buildRoomView(roomId, events);
+      if (!view) {
+        console.log(`Invalid room ID: ${roomId}. Use format: pr:42, issue:21, module:operator`);
+        process.exit(1);
+      }
+      console.log(renderRoom(view));
+    });
+
+  cmd.addCommand(room);
 
   return cmd;
 }
