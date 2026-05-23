@@ -40,6 +40,9 @@ importers:
 
   apps/cli:
     dependencies:
+      '@openslack/chat-gateway':
+        specifier: workspace:*
+        version: link:../../packages/chat-gateway
       '@openslack/github':
         specifier: workspace:*
         version: link:../../packages/github
@@ -65,6 +68,12 @@ importers:
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.19
+
+  packages/chat-gateway:
+    dependencies:
+      '@openslack/operator':
+        specifier: workspace:*
+        version: link:../operator
 
   packages/core: {}
 

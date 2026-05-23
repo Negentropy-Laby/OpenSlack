@@ -19,6 +19,7 @@
     "@openslack/github": "workspace:*",
     "@openslack/pr": "workspace:*",
     "@openslack/operator": "workspace:*",
+    "@openslack/chat-gateway": "workspace:*",
     "commander": "^13.1.0"
   },
   "devDependencies": {
