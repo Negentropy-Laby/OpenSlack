@@ -177,8 +177,21 @@ export class SlackAdapter implements ChatAdapter {
     }
 
     let payload: Record<string, unknown>;
+    const contentType = req.headers['content-type'] || '';
+
     try {
-      payload = JSON.parse(body);
+      if (contentType.startsWith('application/x-www-form-urlencoded')) {
+        const params = new URLSearchParams(body);
+        const payloadStr = params.get('payload');
+        if (!payloadStr) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: 'Missing payload field in form data' }));
+          return;
+        }
+        payload = JSON.parse(payloadStr);
+      } else {
+        payload = JSON.parse(body);
+      }
     } catch {
       res.writeHead(400);
       res.end(JSON.stringify({ error: 'Invalid JSON' }));
