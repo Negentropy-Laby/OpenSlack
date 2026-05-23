@@ -16,6 +16,18 @@
 **Resolution:** Accepted as workspace schema contract (defined in `openslack.yaml`, validated by `validateWorkspace()`). `.gitkeep` files added to required directories to ensure fresh CI checkouts pass validation.
 **Closed:** 2026-05-22.
 
+### P0-2: Author/CODEOWNER deadlock for Red Zone PRs
+
+**Source:** PR #11 bootstrap (2026-05-23).
+**Impact:** When the only CODEOWNER for Red Zone paths is also the PR author, GitHub ruleset blocks merge because authors cannot satisfy their own required approval. `current_user_can_bypass: "never"` prevents admin bypass.
+**Resolution (bootstrap exception):** PR #11 merged via temporary admin bypass after PR #10 deadlocked. Recorded as bootstrap exception — not standard process.
+**Long-term fix:**
+1. Add `No sole-author-codeowner PR` invariant to AGENTS.md (done).
+2. Implement PRMS `openslack pr doctor` deadlock detector (Phase 1.14).
+3. Red Zone PRs must be bot/agent-authored; human CODEOWNER approves; Merge Steward merges after.
+4. Consider adding second human CODEOWNER or using GitHub App identity for Red Zone PR creation.
+**Filed:** 2026-05-23.
+
 ### P1-2: Node 20 Actions deprecation (time-bounded)
 
 **Source:** GitHub Actions runner deprecation notice. `actions/checkout@v4`, `actions/setup-node@v4`, `pnpm/action-setup@v4`, `actions/github-script@v7` all run on Node 20.

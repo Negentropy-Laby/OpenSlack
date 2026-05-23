@@ -102,6 +102,7 @@ These rules come from `.openslack/self/constitution.md` and `.openslack/self/inv
 6. **No secret access.** Agents cannot read, write, or create credential files (`.env`, `*.pem`, `*.key`, `secrets/**`, `credentials/**`).
 
 7. **No auto-approval.** Agents must never submit `APPROVE` reviews on PRs. Agents may comment, recommend, request changes, and merge after human approval — but approval is a human-only action.
+8. **No sole-author-codeowner PR.** If a PR touches Red Zone paths and the PR author is the only valid CODEOWNER for those paths, the PR is governance-deadlocked. Resolution: recreate as bot/agent-authored PR, add a second real human CODEOWNER, or use a documented bootstrap exception.
 
 Violation of any of these = immediate task failure + audit log entry + automatic review by the policy auditor agent.
 
