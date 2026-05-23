@@ -1,6 +1,5 @@
 ---
 schema: openslack.status.v1
-status_date: 2026-05-23
 source_of_truth: true
 supersedes:
   - phase-1-prehardening
@@ -57,4 +56,4 @@ supersedes:
 
 ## Module Registry
 
-Source: `.openslack/modules.yaml` — validated on 2026-05-23.
+Source: `.openslack/modules.yaml` — auto-generated from modules.yaml.

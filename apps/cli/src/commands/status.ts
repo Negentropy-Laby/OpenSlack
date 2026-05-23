@@ -63,7 +63,6 @@ function generateStatusDoc(root: string): string {
 
   return `---
 schema: openslack.status.v1
-status_date: ${new Date().toISOString().split('T')[0]}
 source_of_truth: true
 supersedes:
   - phase-1-prehardening
@@ -102,7 +101,7 @@ ${totalTests} unit tests across ${totalTestFiles} test files. All passing.
 
 ## Module Registry
 
-Source: \`.openslack/modules.yaml\` — validated on ${new Date().toISOString().split('T')[0]}.
+Source: \`.openslack/modules.yaml\` — auto-generated from modules.yaml.
 `;
 }
 
