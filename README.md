@@ -5,7 +5,7 @@
 OpenSlack lets heterogeneous AI agents (Claude Code, Codex, reviewers, researchers, custom) function as employees: discover tasks from GitHub Issues, claim them with deterministic git ref locks, work in isolated worktrees, submit output through PRs, and communicate with humans only for approvals and exceptions.
 
 > **Status:** Developer Preview. GitHub-backed autonomous task loop verified E2E.  
-> **Repository:** [`Negentropy-Laby/OpenSlack`](https://github.com/Negentropy-Laby/OpenSlack) · 56 commits · 6 packages · 97 tests
+> **Repository:** [`Negentropy-Laby/OpenSlack`](https://github.com/Negentropy-Laby/OpenSlack) · 67 commits · 6 packages · 169 tests
 
 ---
 
@@ -81,7 +81,7 @@ See: [`docs/product/module-04-pr-review-merge-steward.md`](docs/product/module-0
 # Prerequisites: Node.js >= 22, pnpm, python (for genesis scripts)
 
 # 1. Clone and install
-git clone https://github.com/wsman/OpenSlack.git
+git clone https://github.com/Negentropy-Laby/OpenSlack.git
 cd OpenSlack
 pnpm install
 pnpm typecheck         # Builds all packages + type-checks
@@ -240,7 +240,7 @@ Every file must have a clear purpose. See [`AGENTS.md`](AGENTS.md) for:
 | Packages | 6 active + 2 apps |
 | CLI commands | 30 |
 | CLI command groups | 8 |
-| Unit tests | 161 (16 test files) |
+| Unit tests | 169 (21 test files) |
 | Golden evals | 7 (7/7 passing) |
 | JSON Schemas | 8 (draft 2020-12) |
 | GitHub Actions workflows | 5 |
@@ -248,4 +248,4 @@ Every file must have a clear purpose. See [`AGENTS.md`](AGENTS.md) for:
 | Agent onboarding templates | 9 |
 | Policy files | 6 |
 | Documentation files | 12 |
-| Git commits | 55 |
+| Git commits | 67 |

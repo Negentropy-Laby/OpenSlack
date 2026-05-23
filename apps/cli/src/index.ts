@@ -10,6 +10,7 @@ import { githubCommands } from './commands/github.js';
 import { operatorCommands } from './commands/operator.js';
 import { prCommands } from './commands/pr.js';
 import { setupCommands } from './commands/setup.js';
+import { statusCommands } from './commands/status.js';
 
 const program = new Command();
 
@@ -30,14 +31,6 @@ program
   });
 
 program
-  .command('status')
-  .description('Quick workspace status overview')
-  .action(() => {
-    const root = process.cwd();
-    spawnSync(process.execPath, ['--import', 'tsx', join(root, 'apps', 'cli', 'src', 'index.ts'), 'workspace', 'status'], { cwd: root, stdio: 'inherit' });
-  });
-
-program
   .command('doctor')
   .description('Quick GitHub integration doctor check')
   .action(() => {
@@ -53,6 +46,7 @@ program.addCommand(taskCommands());
 program.addCommand(githubCommands());
 program.addCommand(prCommands());
 program.addCommand(operatorCommands());
+program.addCommand(statusCommands());
 program.addCommand(setupCommands());
 
 program.parse(process.argv);
