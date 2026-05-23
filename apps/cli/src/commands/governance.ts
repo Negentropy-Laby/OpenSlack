@@ -160,7 +160,7 @@ export function governanceCommands(): Command {
       const exceptedCommits = commits.filter((c) => !c.isMerge && !c.isFromPR && c.exceptionFound);
       const unverifiedCommits = commits.filter((c) => !c.isMerge && !c.isFromPR && !c.exceptionFound && !hasGhAccess);
       const directCommits = commits.filter((c) => !c.isMerge && !c.isFromPR && !c.exceptionFound && hasGhAccess);
-      const attributedCommits = commits.filter((c) => c.hasAiAttribution);
+      const attributedCommits = commits.filter((c) => c.hasAiAttribution && !c.exceptionFound);
 
       console.log('Governance Audit');
       console.log('════════════════');
