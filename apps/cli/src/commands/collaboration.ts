@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { readEvents, filterEvents, renderActivityFeed } from '@openslack/collaboration';
+import { readEvents, filterEvents, renderActivityFeed, buildDigest, renderDigest } from '@openslack/collaboration';
 
 export function collaborationCommands(): Command {
   const cmd = new Command('collaboration').description('OpenSlack Collaboration Layer');
@@ -40,6 +40,24 @@ export function collaborationCommands(): Command {
       }
 
       console.log(renderActivityFeed(filtered));
+    });
+
+  cmd
+    .command('digest')
+    .description('Show collaboration digest (grouped summary)')
+    .option('--since <hours>', 'Period in hours', '24')
+    .action(async (options: { since: string }) => {
+      const hours = parseInt(options.since, 10);
+      const events = readEvents();
+
+      let filtered = events;
+      if (hours > 0) {
+        const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
+        filtered = filterEvents(filtered, { since: cutoff });
+      }
+
+      const digest = buildDigest(filtered, hours);
+      console.log(renderDigest(digest));
     });
 
   return cmd;

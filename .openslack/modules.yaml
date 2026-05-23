@@ -65,10 +65,13 @@ modules:
 
   - id: collaboration
     name: Collaboration Layer
-    status: planned
+    status: active
     phase: "2D/2E"
-    cli: []
-    packages: []
-    tests: 0
-    test_files: 0
-    notes: Planned projection-only collaboration layer. Will provide activity, digest, handoff, decision, and room views built from GitHub/Git/.openslack source-of-truth objects.
+    cli:
+      - openslack collaboration activity
+      - openslack collaboration digest
+    packages:
+      - "@openslack/collaboration"
+    tests: 52
+    test_files: 4
+    notes: Event model, validation, redaction, JSONL storage, activity feed, and digest active. PRMS doctor, governance audit, and operator plan events hooked. Projection-only; reads from .openslack.local/collaboration/events.jsonl. Handoff, decision, and room views planned for 2E.

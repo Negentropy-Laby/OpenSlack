@@ -20,6 +20,15 @@ export {
   filterEvents as filterActivityEvents,
 } from './activity.js';
 
+export {
+  groupEvents,
+  getRecommendedNext,
+  buildDigest,
+  renderDigest,
+} from './digest.js';
+
+export type { DigestGroup, DigestSummary } from './digest.js';
+
 export type {
   CollaborationEvent,
   CollaborationEventType,
