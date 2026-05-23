@@ -10,6 +10,8 @@ import {
   diagnosePR,
   parseCODEOWNERS,
   resolveCodeowners,
+  postReviewComment,
+  watchPR,
 } from '@openslack/pr';
 
 export function prCommands(): Command {
@@ -30,13 +32,20 @@ export function prCommands(): Command {
   cmd
     .command('review <number>')
     .description('Generate and display a review report for a PR')
-    .action(async (number: string) => {
+    .option('--comment', 'Post the review report as a PR comment')
+    .action(async (number: string, options: { comment?: boolean }) => {
       const prNumber = parseInt(number, 10);
       const report = await fetchPRDetails(prNumber);
       const classified = classifyPRReport(report);
       const policy = loadPRReviewPolicy();
       const ready = checkMergeReadiness(classified, policy);
-      console.log(generateReviewReport(ready));
+
+      if (options.comment) {
+        await postReviewComment(prNumber, ready);
+        console.log(`Review comment posted on PR #${prNumber}`);
+      } else {
+        console.log(generateReviewReport(ready));
+      }
     });
 
   cmd
@@ -94,6 +103,26 @@ export function prCommands(): Command {
 
       const diagnosed = diagnosePR(classified, policy, codeowners);
       console.log(generateDoctorReport(diagnosed, codeowners));
+    });
+
+  cmd
+    .command('watch <number>')
+    .description('Poll PR status until ready or timeout')
+    .option('--timeout <seconds>', 'Timeout in seconds', '60')
+    .option('--interval <seconds>', 'Polling interval in seconds', '10')
+    .action(async (number: string, options: { timeout: string; interval: string }) => {
+      const prNumber = parseInt(number, 10);
+      const result = await watchPR(prNumber, {
+        timeoutSeconds: parseInt(options.timeout, 10),
+        intervalSeconds: parseInt(options.interval, 10),
+      });
+      console.log('');
+      console.log(`Result: ${result.finalState}`);
+      console.log(`Reason: ${result.reason}`);
+      console.log(`Polls: ${result.polls} over ${Math.round(result.elapsedMs / 1000)}s`);
+      if (result.finalState !== 'READY_TO_MERGE') {
+        process.exit(1);
+      }
     });
 
   cmd
