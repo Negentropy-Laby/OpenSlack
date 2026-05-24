@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { getClient, queryReadyItems } from '@openslack/github';
+import { recordEvent } from '@openslack/collaboration';
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -21,6 +22,37 @@ function hasRemote(): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+function renderRepairResults(results: Array<{ fixed: boolean; planned?: boolean; detail: string; issueNumber?: number }>): void {
+  if (results.length === 0) {
+    console.log('No repair actions found.');
+    return;
+  }
+  for (const r of results) {
+    const label = r.fixed ? 'FIXED' : r.planned ? 'PLAN' : 'SKIP';
+    const issue = r.issueNumber ? `Issue #${r.issueNumber}: ` : '';
+    console.log(`  [${label}] ${issue}${r.detail}`);
+  }
+}
+
+function recordGithubRepair(scope: string, results: Array<{ fixed: boolean; planned?: boolean }>, applied: boolean): void {
+  try {
+    const failed = results.some((r) => !r.fixed && !r.planned);
+    recordEvent({
+      type: failed ? 'repair.failed' : applied ? 'repair.applied' : 'repair.previewed',
+      actor: { id: 'cli', kind: 'system', provider: 'cli' },
+      object: { kind: 'workspace', id: `github:${scope}` },
+      source: { kind: 'github', ref: `github.repair.${scope}` },
+      summary: `${applied ? 'Applied' : 'Previewed'} GitHub ${scope} repair (${results.length} item(s))`,
+      visibility: 'local',
+      redacted: false,
+      containsSensitiveData: false,
+      risk: applied ? 'medium' : 'none',
+    });
+  } catch {
+    // best-effort event recording
   }
 }
 
@@ -174,14 +206,15 @@ export function githubCommands(): Command {
 
   cmd
     .command('repair-labels')
-    .description('Idempotently create all required OpenSlack labels')
-    .action(async () => {
+    .description('Preview or apply required OpenSlack label repair')
+    .option('--apply', 'Apply label repair; default is dry-run')
+    .action(async (options: { apply?: boolean }) => {
       try {
         const { repairLabels } = await import('@openslack/github');
-        const results = await repairLabels();
-        for (const r of results) {
-          console.log(`  [${r.fixed ? 'FIXED' : 'FAIL'}] ${r.detail}`);
-        }
+        const results = await repairLabels({ dryRun: !options.apply });
+        renderRepairResults(results);
+        recordGithubRepair('labels', results, Boolean(options.apply));
+        if (!options.apply) console.log('\nDry-run only. Re-run with --apply to mutate GitHub labels.');
       } catch (e) {
         console.error(`Repair labels failed: ${(e as Error).message}`);
         process.exit(1);
@@ -190,18 +223,15 @@ export function githubCommands(): Command {
 
   cmd
     .command('repair-claims')
-    .description('Expire stale claims and delete orphaned refs')
-    .action(async () => {
+    .description('Preview or apply stale claim repair')
+    .option('--apply', 'Apply claim repair; default is dry-run')
+    .action(async (options: { apply?: boolean }) => {
       try {
         const { repairExpiredClaims } = await import('@openslack/github');
-        const results = await repairExpiredClaims();
-        if (results.length === 0) {
-          console.log('No expired claims found.');
-        } else {
-          for (const r of results) {
-            console.log(`  [${r.fixed ? 'FIXED' : 'SKIP'}] Issue #${r.issueNumber}: ${r.detail}`);
-          }
-        }
+        const results = await repairExpiredClaims({ dryRun: !options.apply });
+        renderRepairResults(results);
+        recordGithubRepair('claims', results, Boolean(options.apply));
+        if (!options.apply) console.log('\nDry-run only. Re-run with --apply to mutate claim refs and labels.');
       } catch (e) {
         console.error(`Repair claims failed: ${(e as Error).message}`);
         process.exit(1);
@@ -210,22 +240,70 @@ export function githubCommands(): Command {
 
   cmd
     .command('repair-all')
-    .description('Run all repair operations')
-    .action(async () => {
+    .description('Preview or apply all GitHub repair operations')
+    .option('--apply', 'Apply repairs; default is dry-run')
+    .action(async (options: { apply?: boolean }) => {
       try {
         const { repairLabels, repairExpiredClaims } = await import('@openslack/github');
-        const labelResults = await repairLabels();
+        const labelResults = await repairLabels({ dryRun: !options.apply });
         console.log('--- Labels ---');
-        for (const r of labelResults) console.log(`  [${r.fixed ? 'OK' : 'FAIL'}] ${r.detail}`);
-        const claimResults = await repairExpiredClaims();
+        renderRepairResults(labelResults);
+        recordGithubRepair('labels', labelResults, Boolean(options.apply));
+        const claimResults = await repairExpiredClaims({ dryRun: !options.apply });
         console.log('--- Claims ---');
-        if (claimResults.length === 0) console.log('  No expired claims.');
-        else for (const r of claimResults) console.log(`  [${r.fixed ? 'FIXED' : 'SKIP'}] Issue #${r.issueNumber}: ${r.detail}`);
+        renderRepairResults(claimResults);
+        recordGithubRepair('claims', claimResults, Boolean(options.apply));
+        if (!options.apply) console.log('\nDry-run only. Re-run with --apply to mutate GitHub state.');
       } catch (e) {
         console.error(`Repair all failed: ${(e as Error).message}`);
         process.exit(1);
       }
     });
+
+  const repair = new Command('repair').description('Preview or apply GitHub repairs');
+
+  repair
+    .command('labels')
+    .description('Preview or apply required label repair')
+    .option('--apply', 'Apply label repair; default is dry-run')
+    .action(async (options: { apply?: boolean }) => {
+      const { repairLabels } = await import('@openslack/github');
+      const results = await repairLabels({ dryRun: !options.apply });
+      renderRepairResults(results);
+      recordGithubRepair('labels', results, Boolean(options.apply));
+      if (!options.apply) console.log('\nDry-run only. Re-run with --apply to mutate GitHub labels.');
+    });
+
+  repair
+    .command('claims')
+    .description('Preview or apply stale claim repair')
+    .option('--apply', 'Apply claim repair; default is dry-run')
+    .action(async (options: { apply?: boolean }) => {
+      const { repairExpiredClaims } = await import('@openslack/github');
+      const results = await repairExpiredClaims({ dryRun: !options.apply });
+      renderRepairResults(results);
+      recordGithubRepair('claims', results, Boolean(options.apply));
+      if (!options.apply) console.log('\nDry-run only. Re-run with --apply to mutate claim refs and labels.');
+    });
+
+  repair
+    .command('all')
+    .description('Preview or apply all GitHub repairs')
+    .option('--apply', 'Apply repairs; default is dry-run')
+    .action(async (options: { apply?: boolean }) => {
+      const { repairLabels, repairExpiredClaims } = await import('@openslack/github');
+      console.log('--- Labels ---');
+      const labelResults = await repairLabels({ dryRun: !options.apply });
+      renderRepairResults(labelResults);
+      recordGithubRepair('labels', labelResults, Boolean(options.apply));
+      console.log('--- Claims ---');
+      const claimResults = await repairExpiredClaims({ dryRun: !options.apply });
+      renderRepairResults(claimResults);
+      recordGithubRepair('claims', claimResults, Boolean(options.apply));
+      if (!options.apply) console.log('\nDry-run only. Re-run with --apply to mutate GitHub state.');
+    });
+
+  cmd.addCommand(repair);
 
   cmd
     .command('metrics')

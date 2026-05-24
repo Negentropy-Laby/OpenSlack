@@ -48,7 +48,8 @@ export function buildRoomView(
       e.type === 'pr.merge.blocked' ||
       e.type === 'operator.plan.blocked' ||
       e.type === 'operator.execution.failed' ||
-      e.type === 'governance.audit.failed',
+      e.type === 'governance.audit.failed' ||
+      e.type === 'workflow.blocked',
   );
 
   let owner: string | undefined;

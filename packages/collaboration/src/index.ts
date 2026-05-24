@@ -60,6 +60,31 @@ export {
 
 export type { RoomView } from './room.js';
 
+export {
+  validateWorkflowTemplate,
+  previewWorkflowTemplate,
+  executeWorkflowTemplate,
+  renderWorkflowPreview,
+} from './workflow.js';
+
+export {
+  buildDashboardProjection,
+  renderDashboardProjection,
+} from './dashboard.js';
+
+export type { DashboardBlocker, DashboardProjection } from './dashboard.js';
+
+export type {
+  WorkflowInputType,
+  WorkflowTemplateInput,
+  WorkflowTemplateStep,
+  WorkflowTemplatePhase,
+  WorkflowTemplate,
+  WorkflowPreviewStep,
+  WorkflowPreview,
+  WorkflowRunResult,
+} from './workflow.js';
+
 export type {
   CollaborationEvent,
   CollaborationEventType,
@@ -81,4 +106,5 @@ export type {
   ChatEvent,
   GovernanceEvent,
   CollaborationObjectEvent,
+  RepairEvent,
 } from './types.js';

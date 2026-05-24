@@ -1,5 +1,8 @@
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { describe, it, expect } from 'vitest';
-import { verifyRequestSignature, verifyRequestTimestamp, mapActor, canExecuteSideEffects, buildDefaultActor } from '../authz.js';
+import { verifyRequestSignature, verifyRequestTimestamp, mapActor, canExecuteSideEffects, buildDefaultActor, loadActorMappings } from '../authz.js';
 import { createHmac } from 'node:crypto';
 import type { ChatMessage } from '../types.js';
 
@@ -75,6 +78,32 @@ describe('mapActor', () => {
   it('returns undefined for unmapped user', () => {
     const msg = makeMsg('unknown', 'webhook');
     expect(mapActor(msg, [])).toBeUndefined();
+  });
+
+  it('matches slack provider mappings for channel messages', () => {
+    const msg = makeMsg('u1', 'channel');
+    const mapped = mapActor(msg, [
+      { providerUserId: 'u1', provider: 'slack', openslackActorId: 'alice', roles: ['write'] },
+    ]);
+    expect(mapped).toEqual({ id: 'alice', roles: ['write'] });
+  });
+});
+
+describe('loadActorMappings', () => {
+  it('loads JSON actor mapping files', () => {
+    const root = join(tmpdir(), `openslack-chat-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(root, { recursive: true });
+    const path = join(root, 'actors.json');
+    writeFileSync(path, JSON.stringify({
+      mappings: [
+        { providerUserId: 'u1', provider: 'slack', openslackActorId: 'alice', roles: ['read', 'write'] },
+      ],
+    }), 'utf-8');
+    try {
+      expect(loadActorMappings(path)).toHaveLength(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 

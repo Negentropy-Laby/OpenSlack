@@ -21,11 +21,11 @@ OpenSlack/
 │   ├── workspace/           # Validation, indexing, schemas
 │   ├── core/                # ClaimBroker with file-locked persistence
 │   ├── runtime/             # Self-evolution ops, golden evals, agent tick, worktree, PR proposal
-│   ├── github/              # App auth, Issues task loop, claims, lifecycle, repair
+│   ├── github/              # App auth, Issues task loop, task creation, claims, lifecycle, repair
 │   ├── pr/                  # PR Review & Merge Steward (fetch, classify, readiness, report)
 │   ├── operator/            # Structured planner and intent router
 │   ├── chat-gateway/        # Webhook / Slack projection frontend
-│   └── collaboration/       # Activity, digest, handoff, decision, room views
+│   └── collaboration/       # Activity, digest, dashboard, handoff, decision, room views
 ├── apps/cli/                # User command surface; 5 module command groups
 ├── templates/new-agent/     # 9 onboarding template files
 ├── scripts/                 # genesis-validate.sh, genesis-rollback.sh, setup-gh.sh
@@ -49,6 +49,7 @@ See: [`docs/product/phase-1.md`](docs/product/phase-1.md)
 
 The autonomous execution core. Agents discover, claim, and complete tasks through GitHub Issues — no Project v2, no OAuth, no browser.
 
+- **Create:** `task create --title "..."` previews or creates schema-valid task Issues
 - **Discover:** `agent tick --source github-issues` queries GitHub for ready issues
 - **Claim:** Atomic `refs/heads/openslack/claims/issue-{n}` git refs prevent duplicate claims
 - **Execute:** Worktree isolation → git commit → push → draft PR
@@ -60,10 +61,12 @@ See: [`docs/developer/github-issues-loop.md`](docs/developer/github-issues-loop.
 
 The human-facing entry point. Natural language queries route through a structured planner to the appropriate CLI commands.
 
-- **Ask:** `openslack operator ask "..."` — natural language → parse intent → plan actions → execute → summarize
+- **Ask:** `openslack operator ask "..."` — natural language → parse intent → optional LLM fallback → typed registered actions → execute → summarize
 - **Chat:** `openslack chat start --adapter webhook|slack` — chat gateway for Slack/HTTP projections
 - **Setup:** `openslack setup` — one-step workspace validation + health check
-- **Planner:** Structured pipeline (`parseIntent → planActions → executePlan`) with allowlisted intents, risk gates, and confirmation for high-risk actions
+- **Setup GitHub:** `openslack setup github` — read-only setup report; `--apply` required for repairs
+- **Plan Memory:** `openslack ask plan ...` — inspect, resume, approve, or cancel 24h pending plans
+- **Planner:** Structured pipeline (`parseIntent/resolveIntent → planActions → executePlan`) with typed tool registry, allowlisted actions, risk gates, and confirmation for high-risk actions
 
 See: [`AGENTS.md`](AGENTS.md) for command reference
 
@@ -75,6 +78,7 @@ The agent-assisted PR gatekeeper. Reviews PRs, classifies risk, checks merge rea
 - **Status:** `openslack pr status 10` → merge readiness + checks + human approvals
 - **Recommend:** `openslack pr recommend 10` → next action (approve? merge? wait?)
 - **Doctor:** `openslack pr doctor 10` → 11-gate governance diagnosis (deadlock, checks, approvals)
+- **Queue:** `openslack pr queue` → open PRs sorted by readiness and blocker owner
 - **Merge:** `openslack pr merge 10` → execute merge only after all gates pass
 - **Policy:** No auto-approval. No self-review. Red Zone requires human. Black Zone blocked.
 
@@ -93,10 +97,13 @@ pnpm install
 # 2. One-step setup (validate + eval + doctor + all checks)
 pnpm openslack setup
 
-# 3. Check status
+# 3. Check GitHub setup without mutating external state
+pnpm openslack setup github
+
+# 4. Check status
 pnpm openslack status
 
-# 4. Ask the Operator anything
+# 5. Ask the Operator anything
 pnpm openslack ask "检查系统状态"
 ```
 
@@ -127,7 +134,7 @@ pnpm typecheck              # Build all packages + type-check
 openslack workspace validate
 openslack self eval --suite golden    # 7/7 must pass
 openslack doctor                        # Multi-module health check
-bash scripts/genesis-validate.sh      # 5/5 checks (zero runtime dependency)
+bash scripts/genesis-validate.sh      # use Git Bash on Windows
 ```
 
 ## CLI Reference

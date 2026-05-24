@@ -32,6 +32,13 @@ function extractPaths(q: string): string | undefined {
   return m?.[1];
 }
 
+function extractTitle(text: string): string | undefined {
+  const quoted = text.match(/["“](.+?)["”]/);
+  if (quoted) return quoted[1].trim();
+  const flag = text.match(/--title\s+"([^"]+)"/i) || text.match(/--title\s+(.+)$/i);
+  return flag?.[1]?.trim();
+}
+
 export function parseIntent(text: string): Intent {
   const q = text.toLowerCase().trim();
 
@@ -39,6 +46,10 @@ export function parseIntent(text: string): Intent {
   // Detect PR context even without a number (for clarification)
   const hasPRContext = /\bpr\b|\bpull request\b/i.test(text);
   const prNumber = extractPRNumber(text, q);
+
+  if ((q.includes('pr') || q.includes('pull request')) && (q.includes('queue') || q.includes('队列'))) {
+    return { kind: 'pr_queue', slots: {}, confidence: 0.9 };
+  }
 
   // "merge PR" without number → still recognize intent
   if ((q.includes('merge') || q.includes('合并')) && hasPRContext && !prNumber) {
@@ -133,7 +144,7 @@ export function parseIntent(text: string): Intent {
 
   // ── Task creation ────────────────────────────────────────
   if (q.includes('create') && (q.includes('task') || q.includes('issue'))) {
-    return { kind: 'create_task', slots: {}, confidence: 0.85 };
+    return { kind: 'create_task', slots: { title: extractTitle(text) }, confidence: 0.85 };
   }
 
   // ── Agent operations ─────────────────────────────────────
@@ -158,13 +169,13 @@ export function parseIntent(text: string): Intent {
 
   // ── Repair ───────────────────────────────────────────────
   if (q.includes('repair') && (q.includes('label') || q.includes('labels'))) {
-    return { kind: 'unknown', slots: { reason: 'repair_labels' }, confidence: 0.8 };
+    return { kind: 'github_repair_labels', slots: {}, confidence: 0.8 };
   }
   if (q.includes('repair') && (q.includes('claim') || q.includes('claims') || q.includes('stale'))) {
-    return { kind: 'unknown', slots: { reason: 'repair_claims' }, confidence: 0.8 };
+    return { kind: 'github_repair_claims', slots: {}, confidence: 0.8 };
   }
-  if (q.includes('repair all') || q.includes('fix all') || q.includes('repair-all')) {
-    return { kind: 'unknown', slots: { reason: 'repair_all' }, confidence: 0.8 };
+  if (q.includes('repair') && (q.includes('worktree') || q.includes('worktrees'))) {
+    return { kind: 'task_repair_worktrees', slots: {}, confidence: 0.8 };
   }
 
   // ── PR classification (no PR number) ─────────────────────

@@ -1,6 +1,8 @@
 import { Command } from 'commander';
 import { execSync } from 'node:child_process';
 import { join } from 'node:path';
+import { buildSetupReport, detectGenesisShell, renderSetupReport } from '@openslack/runtime';
+import { recordEvent } from '@openslack/collaboration';
 
 export function setupCommands(): Command {
   const cmd = new Command('setup').description('One-step OpenSlack setup wizard');
@@ -24,13 +26,14 @@ export function setupCommands(): Command {
     console.log('OpenSlack Setup\n');
     runStep('Workspace validate', ['workspace', 'validate']);
     runStep('Golden evals', ['self', 'eval', '--suite', 'golden']);
-    runStep('GitHub labels', ['github', 'repair-labels']);
     runStep('GitHub doctor', ['github', 'doctor']);
     try {
-      execSync('bash scripts/genesis-validate.sh', { cwd: root, stdio: 'pipe', timeout: 30000 });
+      const genesis = detectGenesisShell(root);
+      if (!genesis.command) throw new Error(genesis.detail);
+      execSync(genesis.command, { cwd: root, stdio: 'pipe', timeout: 30000 });
       results.push({ step: 'Genesis validate', passed: true, detail: '5/5 checks passed' });
-    } catch {
-      results.push({ step: 'Genesis validate', passed: false, detail: 'Genesis validation failed' });
+    } catch (err) {
+      results.push({ step: 'Genesis validate', passed: false, detail: `Genesis validation failed: ${(err as Error).message}`.slice(0, 200) });
     }
 
     const passed = results.filter((r) => r.passed).length;
@@ -55,61 +58,40 @@ export function setupCommands(): Command {
   cmd
     .command('github')
     .description('Guided GitHub authentication setup')
-    .action(async () => {
-      console.log('GitHub Auth Setup\n');
+    .option('--apply', 'Apply explicitly requested setup repairs')
+    .option('--repair-labels', 'Ensure required OpenSlack labels exist; requires --apply to mutate')
+    .action(async (options: { apply?: boolean; repairLabels?: boolean }) => {
+      const report = await buildSetupReport({ dryRun: !options.apply });
+      console.log(renderSetupReport(report));
 
-      const appId = process.env.OPENSLACK_GITHUB_APP_ID;
-      const installId = process.env.OPENSLACK_GITHUB_APP_INSTALLATION_ID;
-      const hasKey = !!process.env.OPENSLACK_GITHUB_APP_PRIVATE_KEY;
-      const token = process.env.GITHUB_TOKEN;
-
-      // Check GitHub App auth
-      if (appId && installId && hasKey) {
+      if (options.repairLabels) {
+        const { repairLabels } = await import('@openslack/github');
+        const results = await repairLabels({ dryRun: !options.apply });
+        console.log('');
+        console.log(options.apply ? 'Applying label repair:' : 'Label repair preview:');
+        for (const r of results) {
+          console.log(`  [${r.fixed ? 'FIXED' : r.planned ? 'PLAN' : 'SKIP'}] ${r.detail}`);
+        }
         try {
-          const { getClient } = await import('@openslack/github');
-          const client = await getClient();
-          console.log(`[PASS] GitHub App auth: ${client.authMode}`);
-          if (client.tokenExpiresAt) console.log(`      Token expires: ${client.tokenExpiresAt}`);
+          recordEvent({
+            type: options.apply ? 'repair.applied' : 'repair.previewed',
+            actor: { id: 'cli', kind: 'system', provider: 'cli' },
+            object: { kind: 'workspace', id: 'github:labels' },
+            source: { kind: 'github', ref: 'setup.github.repair_labels' },
+            summary: `${options.apply ? 'Applied' : 'Previewed'} GitHub label repair from setup (${results.length} item(s))`,
+            visibility: 'local',
+            redacted: false,
+            containsSensitiveData: false,
+            risk: options.apply ? 'medium' : 'none',
+          });
+        } catch {
+          // best-effort event recording
+        }
+        if (!options.apply) {
           console.log('');
-          console.log('Next: openslack smoke    # run the smoke test');
-          return;
-        } catch (e) {
-          console.log(`[FAIL] GitHub App token generation failed: ${(e as Error).message}`);
+          console.log('No labels were changed. Run: openslack setup github --repair-labels --apply');
         }
       }
-
-      // Check PAT fallback
-      if (token) {
-        console.log('[PASS] GITHUB_TOKEN set (PAT fallback)');
-        console.log('[WARN] For production agent runtime, GitHub App is recommended.');
-        console.log('');
-        console.log('Next: openslack smoke    # run the smoke test');
-        return;
-      }
-
-      // No credentials — print step-by-step guide
-      console.log('[WARN] No GitHub credentials configured.\n');
-      console.log('To enable GitHub integration, choose one:\n');
-      console.log('Option A: GitHub App Installation Token (recommended for agent runtime)');
-      console.log('  1. Go to https://github.com/settings/apps/new');
-      console.log('  2. App name: OpenSlack Agent Operator');
-      console.log('  3. Set homepage: https://github.com/wsman/OpenSlack');
-      console.log('  4. Callback URL: http://127.0.0.1:8200/callback');
-      console.log('  5. Permissions: Contents R/W, Issues R/W, Pull requests R/W, Projects R/W');
-      console.log('  6. Install on wsman/OpenSlack');
-      console.log('  7. Download private key to .openslack.local/github-app.pem');
-      console.log('  8. Set environment variables:');
-      console.log('     OPENSLACK_GITHUB_APP_ID=<app-id>');
-      console.log('     OPENSLACK_GITHUB_APP_INSTALLATION_ID=<install-id>');
-      console.log('     OPENSLACK_GITHUB_APP_PRIVATE_KEY=$(cat .openslack.local/github-app.pem)');
-      console.log('');
-      console.log('Option B: Personal Access Token (simple for local dev)');
-      console.log('  1. Go to https://github.com/settings/tokens/new');
-      console.log('  2. Select scopes: repo, read:project, project');
-      console.log('  3. Set environment variable:');
-      console.log('     GITHUB_TOKEN=ghp_xxxxxxxxxxxx');
-      console.log('');
-      console.log('After configuring, run: openslack setup github');
     });
 
   cmd
@@ -138,7 +120,9 @@ export function setupCommands(): Command {
       runCheck('GitHub doctor', ['github', 'doctor']);
 
       try {
-        execSync('bash scripts/genesis-validate.sh', { cwd: root, stdio: 'pipe', timeout: 30000 });
+        const genesis = detectGenesisShell(root);
+        if (!genesis.command) throw new Error(genesis.detail);
+        execSync(genesis.command, { cwd: root, stdio: 'pipe', timeout: 30000 });
         results.push({ check: 'Genesis validate', passed: true, detail: '5/5' });
       } catch {
         results.push({ check: 'Genesis validate', passed: false, detail: 'Failed' });

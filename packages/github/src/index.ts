@@ -1,8 +1,9 @@
 export { createIssue, addIssueToProject, queryReadyItems, updateProjectField } from './issues.js';
 export type { ReadyTask, ProjectItemResult } from './issues.js';
-export { createDraftPR, commentOnPR, getPR, listPRFiles, getPRChecks, getPRReviews, getCODEOWNERS, mergePR } from './pr.js';
-export type { CreatePRResult, PRDetail, PRCheckRun, PRReview, MergePRResult } from './pr.js';
-export { getClient, GitHubClient, AuthMode } from './client.js';
+export { createDraftPR, commentOnPR, getPR, listOpenPRs, listPRFiles, getPRChecks, getPRReviews, getCODEOWNERS, mergePR } from './pr.js';
+export type { CreatePRResult, PRDetail, OpenPRSummary, PRCheckRun, PRReview, MergePRResult } from './pr.js';
+export { getClient, getAuthenticatedIdentity, GitHubClient, AuthMode } from './client.js';
+export type { GitHubIdentity } from './client.js';
 export { getAppInstallationToken, clearTokenCache } from './auth.js';
 export { createTaskIssue, queryReadyIssueTasks } from './issue-tasks.js';
 export type { IssueTask } from './issue-tasks.js';
@@ -11,7 +12,9 @@ export type { IssueClaimResult, HeartbeatResult, ReleaseInput } from './claims.j
 export { markIssueRunning, markIssueBlocked, markIssueDone } from './lifecycle.js';
 export { filterByCapability, filterByRisk, filterByPath, filterRedZonePaths } from './task-filter.js';
 export type { FilterResult } from './task-filter.js';
-export { repairExpiredClaims, repairLabels } from './repair.js';
-export type { RepairResult } from './repair.js';
+export { repairExpiredClaims, repairLabels, REQUIRED_OPENSLACK_LABELS } from './repair.js';
+export type { RepairOptions, RepairResult } from './repair.js';
 export { parseIssueTaskManifest, renderIssueTaskManifest, extractTaskBlock } from './manifest.js';
 export type { IssueTaskManifest, ManifestParseResult } from './manifest.js';
+export { previewTaskCreation, createTaskFromPreview } from './task-create.js';
+export type { TaskCreationInput, TaskCreationPreview, TaskCreationResult, TaskTemplateKind } from './task-create.js';

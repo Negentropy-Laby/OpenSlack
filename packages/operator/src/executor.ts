@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { ActionPlan, PlanStep, StepResult, ExecutionResult, ExecutionOptions } from './types.js';
+import { isRegisteredStep } from './tool-registry.js';
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -81,6 +82,16 @@ export async function executePlan(
   }
 
   if (options.dryRun) {
+    const invalid = plan.steps.find((step) => !isRegisteredStep(step));
+    if (invalid) {
+      return {
+        planId,
+        status: 'failed',
+        steps: [{ stepId: invalid.id, status: 'failed', output: `Unregistered OpenSlack action: ${invalid.actionId || invalid.command}` }],
+        summary: `Rejected unregistered action "${invalid.actionId || invalid.command}"`,
+        nextActions: ['Use a registered OpenSlack action'],
+      };
+    }
     return {
       planId,
       status: 'success',
@@ -95,6 +106,23 @@ export async function executePlan(
   }
 
   for (const step of plan.steps) {
+    if (!isRegisteredStep(step)) {
+      const result = {
+        stepId: step.id,
+        status: 'failed' as const,
+        output: `Unregistered OpenSlack action: ${step.actionId || step.command}`,
+        exitCode: 1,
+      };
+      results.push(result);
+      return {
+        planId,
+        status: 'failed',
+        steps: results,
+        summary: `Rejected unregistered action "${step.actionId || step.command}"`,
+        nextActions: ['Use a registered OpenSlack action'],
+      };
+    }
+
     // Per-step confirmation hook
     if (step.confirmationRequired && options.confirmStep) {
       const confirmed = await options.confirmStep(step);

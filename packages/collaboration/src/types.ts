@@ -1,6 +1,6 @@
 export type ActorKind = 'human' | 'agent' | 'system' | 'github' | 'chat';
 export type Provider = 'cli' | 'slack' | 'webhook' | 'github';
-export type ObjectKind = 'issue' | 'pr' | 'plan' | 'module' | 'agent' | 'handoff' | 'decision' | 'workspace';
+export type ObjectKind = 'issue' | 'pr' | 'plan' | 'module' | 'agent' | 'handoff' | 'decision' | 'workspace' | 'workflow';
 export type SourceKind = 'github' | 'openslack' | 'chat' | 'prms' | 'operator' | 'governance';
 export type RiskLevel = 'none' | 'low' | 'medium' | 'high';
 export type Severity = 'info' | 'notice' | 'warning' | 'critical';
@@ -29,7 +29,11 @@ export type GovernanceEvent =
 export type CollaborationObjectEvent =
   | 'handoff.created' | 'handoff.accepted' | 'handoff.closed'
   | 'decision.recorded' | 'decision.superseded'
-  | 'room.summarized' | 'digest.generated';
+  | 'room.summarized' | 'digest.generated'
+  | 'workflow.previewed' | 'workflow.started' | 'workflow.completed' | 'workflow.blocked';
+
+export type RepairEvent =
+  | 'repair.previewed' | 'repair.applied' | 'repair.failed';
 
 export type CollaborationEventType =
   | TaskEvent
@@ -37,7 +41,8 @@ export type CollaborationEventType =
   | OperatorEvent
   | ChatEvent
   | GovernanceEvent
-  | CollaborationObjectEvent;
+  | CollaborationObjectEvent
+  | RepairEvent;
 
 export interface CollaborationActor {
   id: string;

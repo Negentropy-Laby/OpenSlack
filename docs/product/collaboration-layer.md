@@ -103,6 +103,14 @@ A Room is a collaboration space view for an issue, PR, or module. It aggregates:
 
 Rooms are derived views, not stored objects.
 
+### Workflow Template
+
+A Workflow Template is a reusable, typed collaboration workflow. Templates use
+`schema: openslack.workflow_template.v1`, typed inputs, phases, and steps.
+Action steps must reference registered OpenSlack actions such as `pr.doctor`;
+raw command strings are rejected. Workflow runs emit correlation IDs so events,
+handoffs, decisions, and room views can reconstruct the run.
+
 ## User Stories
 
 As a human team lead, I want to:
@@ -149,8 +157,8 @@ Commands:
 
 ### Phase 2F — Collaboration Templates
 
-Fixed workflows: bugfix, feature, release, incident.
+Typed workflow template preview and execution.
 
-Commands (deferred):
-- `openslack workflow start feature --title "..."`
-- `openslack workflow start incident --title "..."`
+Commands:
+- `openslack collaboration workflow preview <file>`
+- `openslack collaboration workflow execute <file> --dry-run`

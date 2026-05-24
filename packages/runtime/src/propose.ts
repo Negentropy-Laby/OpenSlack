@@ -1,5 +1,9 @@
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { classifyPaths } from '@openslack/kernel';
+import { assessPRAuthorRisk, parseCODEOWNERS, resolveCodeowners } from '@openslack/pr';
+import type { PRAuthorRiskPreflight } from '@openslack/pr';
 
 export interface PRProposalInput {
   agentId: string;
@@ -16,6 +20,7 @@ export interface PRProposalResult {
   riskZone: string;
   errors: string[];
   prUrl?: string;
+  authorRisk?: PRAuthorRiskPreflight;
 }
 
 function hasGitRemote(root: string): boolean {
@@ -25,6 +30,13 @@ function hasGitRemote(root: string): boolean {
   } catch {
     return false;
   }
+}
+
+function loadLocalCodeowners(root: string, changedPaths: string[]): string[] {
+  const codeownersPath = join(root, '.github', 'CODEOWNERS');
+  if (!existsSync(codeownersPath)) return [];
+  const entries = parseCODEOWNERS(readFileSync(codeownersPath, 'utf-8'));
+  return resolveCodeowners(changedPaths, entries);
 }
 
 export async function proposeWorkspacePR(input: PRProposalInput): Promise<PRProposalResult> {
@@ -80,15 +92,38 @@ ${riskZone === 'red' ? '- [ ] **Human approval required** (Red Zone files modifi
 
   // Attempt git commit + push + draft PR if remote is configured
   let prUrl: string | undefined;
+  let authorRisk: PRAuthorRiskPreflight | undefined;
   try {
     const root = process.cwd();
     const commitMsg = `[OpenSlack][${input.taskId}][${input.agentId}] ${input.description || 'Workspace changes'}`;
 
+    if (redViolations.length > 0) {
+      const { getAuthenticatedIdentity } = await import('@openslack/github');
+      const identity = await getAuthenticatedIdentity();
+      const author = process.env.OPENSLACK_PR_AUTHOR_LOGIN || identity.login;
+      authorRisk = assessPRAuthorRisk({
+        author,
+        authorIsBot: identity.isBot,
+        changedPaths: input.changedPaths,
+        codeowners: loadLocalCodeowners(root, input.changedPaths),
+      });
+      if (authorRisk.status !== 'safe') {
+        return {
+          success: false,
+          prBody,
+          branchName,
+          riskZone,
+          errors: [`PR cannot be proposed: ${authorRisk.reason} ${authorRisk.recommendation}`],
+          authorRisk,
+        };
+      }
+    }
+
     if (hasGitRemote(root)) {
-      execSync(`git add ${input.changedPaths.join(' ')}`, { cwd: root, stdio: 'pipe' });
-      execSync(`git commit -m "${commitMsg}"`, { cwd: root, stdio: 'pipe' });
+      execFileSync('git', ['add', ...input.changedPaths], { cwd: root, stdio: 'pipe' });
+      execFileSync('git', ['commit', '-m', commitMsg], { cwd: root, stdio: 'pipe' });
       try {
-        execSync(`git push origin "${branchName}"`, { cwd: root, stdio: 'pipe', timeout: 30000 });
+        execFileSync('git', ['push', 'origin', branchName], { cwd: root, stdio: 'pipe', timeout: 30000 });
 
         // Try to create a draft PR via GitHub provider if token is available
         try {
@@ -107,5 +142,5 @@ ${riskZone === 'red' ? '- [ ] **Human approval required** (Red Zone files modifi
     // Graceful fallback: commit/push are optional; PR body is the minimum deliverable
   }
 
-  return { success: true, prBody, branchName, riskZone, prUrl, errors };
+  return { success: true, prBody, branchName, riskZone, prUrl, errors, authorRisk };
 }

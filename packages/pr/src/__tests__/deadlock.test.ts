@@ -18,6 +18,8 @@ describe('detectDeadlock', () => {
     expect(result.deadlocked).toBe(true);
     expect(result.type).toBe('AUTHOR_IS_SOLE_CODEOWNER');
     expect(result.reason).toContain('only CODEOWNER');
+    expect(result.recommendation).toContain('bot/agent-authored PR');
+    expect(result.recommendation).toContain('Do not use bot approval');
   });
 
   it('detects SINGLE_MAINTAINER deadlock', () => {

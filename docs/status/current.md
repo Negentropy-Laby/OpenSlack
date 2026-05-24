@@ -19,10 +19,10 @@ supersedes:
 | Module | Phase | Status | Notes |
 |--------|-------|--------|-------|
 | Self-Evolution Kernel | 1.6 | ACTIVE |  |
-| GitHub Issues Task Loop | 1.7 | ACTIVE |  |
-| Operator Interface | 2A/2B/2C | ACTIVE | Structured planner active. Webhook and Slack chat adapters active. PRMS chat cards and action confirmation active. LLM planner remains deferred. |
-| PR Review & Merge Steward | 1.14 | ACTIVE | Phase 2C chat report and action confirmation active. Supports status/review/recommend/doctor/merge/watch, review/doctor comments, governance audit, deadlock detection, and chat-friendly PR summaries with confirm-merge flow. |
-| Collaboration Layer | 2D/2E | ACTIVE | Full 2D/2E Collaboration Layer active. Event model, activity feed, digest, handoff, decision, and room views. PRMS doctor, governance audit, and operator plan events hooked. Projection-only; reads from .openslack.local/collaboration/events.jsonl and .openslack/collaboration/{handoffs,decisions}/. Workflow templates (2F) deferred. |
+| GitHub Issues Task Loop | 1.7 | ACTIVE | GitHub Issues task loop active with typed task creation preview/create UX and dry-run-first repair commands. |
+| Operator Interface | 2A/2B/2C | ACTIVE | Structured planner active. Webhook and Slack chat adapters active with actor mapping. PRMS chat cards and action confirmation active. Typed tool registry, optional LLM fallback, setup report, and 24h pending plan store active. |
+| PR Review & Merge Steward | 1.14 | ACTIVE | Phase 2C chat report and action confirmation active. Supports status/review/recommend/doctor/queue/merge/watch, review/doctor comments, governance audit, operational decision summaries, deadlock detection, Red Zone author-risk preflight, and chat-friendly PR summaries with confirm-merge flow. |
+| Collaboration Layer | 2D/2E | ACTIVE | Full 2D/2E Collaboration Layer active with typed workflow template preview/execute and projection-only dashboard. Event model, activity feed, digest, handoff, decision, and room views. PRMS doctor, governance audit, operator plan, chat, repair, and workflow events hooked. Projection-only; reads from .openslack.local/collaboration/events.jsonl and .openslack/collaboration/{handoffs,decisions}/. |
 
 ## Packages (10 active)
 
@@ -56,6 +56,7 @@ supersedes:
 - openslack collaboration handoff
 - openslack collaboration decision
 - openslack collaboration room
+- openslack collaboration workflow
 
 ## Golden Evals
 
@@ -63,7 +64,7 @@ supersedes:
 
 ## Test Suite
 
-330 unit tests across 38 test files. All passing.
+375 unit tests across 48 test files. All passing.
 
 ## Module Registry
 

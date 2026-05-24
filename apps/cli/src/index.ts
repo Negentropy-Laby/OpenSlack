@@ -28,9 +28,12 @@ program
   .command('ask')
   .description('Ask OpenSlack to do something (natural language)')
   .argument('<query...>', 'What do you want to do?')
-  .action(async (queryParts: string[]) => {
+  .option('--plan', 'Show the execution plan without running it')
+  .action(async (queryParts: string[], options: { plan?: boolean }) => {
     const root = process.cwd();
-    const result = spawnSync(process.execPath, ['--import', 'tsx', join(root, 'apps', 'cli', 'src', 'index.ts'), 'operator', 'ask', ...queryParts], { cwd: root, stdio: 'inherit' });
+    const args = ['--import', 'tsx', join(root, 'apps', 'cli', 'src', 'index.ts'), 'operator', 'ask', ...queryParts];
+    if (options.plan) args.push('--plan');
+    const result = spawnSync(process.execPath, args, { cwd: root, stdio: 'inherit' });
     if (result.error) console.error('ask: failed to execute:', result.error.message);
   });
 

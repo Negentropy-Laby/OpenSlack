@@ -12,11 +12,23 @@ import {
   resolveCodeowners,
   postReviewComment,
   watchPR,
+  buildPRQueue,
+  renderPRQueue,
 } from '@openslack/pr';
 import { recordEvent } from '@openslack/collaboration';
 
 export function prCommands(): Command {
   const cmd = new Command('pr').description('PR Review & Merge Steward');
+
+  cmd
+    .command('queue')
+    .description('Show open PRs grouped by readiness and blocker owner')
+    .option('--limit <n>', 'Maximum open PRs to inspect', '20')
+    .action(async (options: { limit: string }) => {
+      const limit = parseInt(options.limit, 10);
+      const items = await buildPRQueue(Number.isFinite(limit) ? limit : 20);
+      console.log(renderPRQueue(items));
+    });
 
   cmd
     .command('status <number>')

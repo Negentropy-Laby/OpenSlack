@@ -49,4 +49,23 @@ describe('executePlan', () => {
     const result = await executePlan(plan, { dryRun: true });
     expect(result.planId).toMatch(/^PLAN-\d{8}-\d{4}$/);
   });
+
+  it('rejects unregistered raw command steps', async () => {
+    const plan: ActionPlan = {
+      goal: 'Raw shell',
+      intent: { kind: 'unknown', slots: {}, confidence: 0 },
+      steps: [
+        { id: 's1', tool: 'openslack-cli', command: 'shell', args: ['rm', '-rf', '.'], description: 'Raw shell', confirmationRequired: false },
+      ],
+      riskLevel: 'high',
+      missingParams: [],
+      requiresConfirmation: false,
+      sideEffects: true,
+    };
+
+    const result = await executePlan(plan, { dryRun: true });
+
+    expect(result.status).toBe('failed');
+    expect(result.summary).toContain('Rejected unregistered action');
+  });
 });

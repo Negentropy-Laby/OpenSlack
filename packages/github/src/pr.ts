@@ -57,6 +57,41 @@ export interface PRDetail {
   updated_at: string;
 }
 
+export interface OpenPRSummary {
+  number: number;
+  title: string;
+  author: string;
+  draft: boolean;
+  updatedAt: string;
+  url: string;
+}
+
+export async function listOpenPRs(limit = 20): Promise<OpenPRSummary[]> {
+  const client = await getClient();
+  if (client.isDryRun) {
+    console.log(`[DRY RUN] Would list open PRs from ${client.owner}/${client.repo}`);
+    return [];
+  }
+
+  const { data } = await client.octokit.pulls.list({
+    owner: client.owner,
+    repo: client.repo,
+    state: 'open',
+    per_page: limit,
+    sort: 'updated',
+    direction: 'desc',
+  });
+
+  return data.map((pr) => ({
+    number: pr.number,
+    title: pr.title,
+    author: pr.user?.login || 'unknown',
+    draft: pr.draft ?? false,
+    updatedAt: pr.updated_at,
+    url: pr.html_url,
+  }));
+}
+
 export interface PRCheckRun {
   name: string;
   status: string;
