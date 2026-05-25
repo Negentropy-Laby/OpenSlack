@@ -1,0 +1,17 @@
+schema: openslack.github_watch.v1
+repositories:
+  - owner: Negentropy-Laby
+    repo: OpenSlack
+    events:
+      - issues.opened
+      - issues.reopened
+      - issues.labeled
+    labels:
+      include:
+        - openslack:task
+      exclude:
+        - blocked
+    routes:
+      - sink: console
+    auto_claim:
+      enabled: false

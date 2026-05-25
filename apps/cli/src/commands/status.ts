@@ -75,7 +75,6 @@ supersedes:
 | Field | Value |
 |-------|-------|
 | Remote | \`https://github.com/Negentropy-Laby/OpenSlack\` |
-| Branch | \`main\` |
 
 ## Modules
 

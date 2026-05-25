@@ -78,7 +78,7 @@ Calling `releaseIssueClaim(issueNumber)` deletes the claim ref and moves the iss
 | `openslack:done` | Completed | Claim ref deleted | Set by `releaseIssueClaim()` |
 | `openslack:blocked` | Needs human | Claim ref may exist | Set manually when agent cannot proceed |
 
-Labels are best-effort — they are a projection of the claim ref state, not the authoritative source. If labels and refs disagree, the ref wins. A `github repair-claims` command (future) will reconcile label state from ref state.
+Labels are best-effort — they are a projection of the claim ref state, not the authoritative source. If labels and refs disagree, the ref wins. The `openslack github repair claims` command reconciles label state from ref state (dry-run by default, `--apply` to mutate).
 
 ## Task Manifest
 
