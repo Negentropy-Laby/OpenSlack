@@ -4,10 +4,17 @@ export type { BootstrapCheck, BootstrapResult } from './bootstrap.js';
 export { tickAgent } from './tick.js';
 export type { TickResult } from './tick.js';
 
+// Agent Identity
+export { generateRuntimeIdentity, loadRuntimeIdentity, resolveAgentPrincipal } from './identity.js';
+
 // Re-exports from git-sync (backward compat)
 export { proposeWorkspacePR } from './propose.js';
 export type { PRProposalInput, PRProposalResult } from './propose.js';
 export { createWorktree, cleanupWorktree, checkDirty } from './worktree.js';
+export { buildSetupReport, detectGenesisShell, findRepoRoot, renderSetupReport } from './setup-report.js';
+export type { SetupFinding, SetupFindingStatus, SetupReport } from './setup-report.js';
+export { repairWorktrees, renderWorktreeRepair } from './repair.js';
+export type { WorktreeRepairItem, WorktreeRepairResult } from './repair.js';
 export type { WorktreeResult } from './worktree.js';
 
 // Self-evolution ops (moved from kernel to runtime to break circular dependency)
@@ -20,7 +27,14 @@ export type { ReviewResult, ReviewCheck } from './self/ops/review.js';
 export { computeFitnessScore } from './self/ops/scorecard.js';
 export { monitorPostMerge } from './self/ops/monitor.js';
 export type { MonitorResult } from './self/ops/monitor.js';
-export { createRollbackTask, executeRollback } from './self/ops/rollback.js';
+export {
+  createRollbackTask,
+  executeRollback,
+  expireStaleRollbackTasks,
+  ROLLBACK_TTL_DAYS,
+  ROLLBACK_RATE_LIMIT_MS,
+} from './self/ops/rollback.js';
+export type { CreateRollbackTaskOptions, RollbackTaskResult, ExpireRollbackTasksResult } from './self/ops/rollback.js';
 
 // Golden Evals (moved from workspace to runtime to break circular dependency)
 export { runEvalSuite, runGoldenEval, generateScorecard } from './evals/runner.js';

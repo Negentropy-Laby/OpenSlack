@@ -32,6 +32,13 @@ function extractPaths(q: string): string | undefined {
   return m?.[1];
 }
 
+function extractTitle(text: string): string | undefined {
+  const quoted = text.match(/["“](.+?)["”]/);
+  if (quoted) return quoted[1].trim();
+  const flag = text.match(/--title\s+"([^"]+)"/i) || text.match(/--title\s+(.+)$/i);
+  return flag?.[1]?.trim();
+}
+
 export function parseIntent(text: string): Intent {
   const q = text.toLowerCase().trim();
 
@@ -39,6 +46,10 @@ export function parseIntent(text: string): Intent {
   // Detect PR context even without a number (for clarification)
   const hasPRContext = /\bpr\b|\bpull request\b/i.test(text);
   const prNumber = extractPRNumber(text, q);
+
+  if ((q.includes('pr') || q.includes('pull request')) && (q.includes('queue') || q.includes('队列'))) {
+    return { kind: 'pr_queue', slots: {}, confidence: 0.9 };
+  }
 
   // "merge PR" without number → still recognize intent
   if ((q.includes('merge') || q.includes('合并')) && hasPRContext && !prNumber) {
@@ -102,6 +113,11 @@ export function parseIntent(text: string): Intent {
     return { kind: 'doctor', slots: {}, confidence: 0.95 };
   }
 
+  // Chinese doctor keywords
+  if (q === '健康检查' || q === '系统诊断' || q === '健康檢查' || q === '系統診斷') {
+    return { kind: 'doctor', slots: {}, confidence: 0.9 };
+  }
+
   // Check + health/doctor/诊断 (but NOT "check status")
   if ((q.includes('check') || q.includes('检查') || q.includes('诊断')) &&
       (q.includes('health') || q.includes('doctor') || q.includes('诊断')) &&
@@ -115,6 +131,11 @@ export function parseIntent(text: string): Intent {
   }
 
   if (q === 'status' || q === 'check status' || q.includes('overview')) {
+    return { kind: 'status', slots: {}, confidence: 0.9 };
+  }
+
+  // Chinese status keywords
+  if (q === '检查系统状态' || q === '系统状态' || q === '当前状态' || q === '檢查系統狀態' || q === '系統狀態' || q === '當前狀態') {
     return { kind: 'status', slots: {}, confidence: 0.9 };
   }
 
@@ -133,7 +154,7 @@ export function parseIntent(text: string): Intent {
 
   // ── Task creation ────────────────────────────────────────
   if (q.includes('create') && (q.includes('task') || q.includes('issue'))) {
-    return { kind: 'create_task', slots: {}, confidence: 0.85 };
+    return { kind: 'create_task', slots: { title: extractTitle(text) }, confidence: 0.85 };
   }
 
   // ── Agent operations ─────────────────────────────────────
@@ -158,13 +179,13 @@ export function parseIntent(text: string): Intent {
 
   // ── Repair ───────────────────────────────────────────────
   if (q.includes('repair') && (q.includes('label') || q.includes('labels'))) {
-    return { kind: 'unknown', slots: { reason: 'repair_labels' }, confidence: 0.8 };
+    return { kind: 'github_repair_labels', slots: {}, confidence: 0.8 };
   }
   if (q.includes('repair') && (q.includes('claim') || q.includes('claims') || q.includes('stale'))) {
-    return { kind: 'unknown', slots: { reason: 'repair_claims' }, confidence: 0.8 };
+    return { kind: 'github_repair_claims', slots: {}, confidence: 0.8 };
   }
-  if (q.includes('repair all') || q.includes('fix all') || q.includes('repair-all')) {
-    return { kind: 'unknown', slots: { reason: 'repair_all' }, confidence: 0.8 };
+  if (q.includes('repair') && (q.includes('worktree') || q.includes('worktrees'))) {
+    return { kind: 'task_repair_worktrees', slots: {}, confidence: 0.8 };
   }
 
   // ── PR classification (no PR number) ─────────────────────

@@ -4,13 +4,28 @@ export interface RepairResult {
   action: string;
   issueNumber?: number;
   fixed: boolean;
+  planned?: boolean;
   detail: string;
 }
 
-export async function repairExpiredClaims(): Promise<RepairResult[]> {
+export interface RepairOptions {
+  dryRun?: boolean;
+}
+
+export const REQUIRED_OPENSLACK_LABELS = [
+  { name: 'openslack:task', color: '1f6feb', description: 'OpenSlack task (from EVOL or manual)' },
+  { name: 'openslack:ready', color: '2da44e', description: 'Ready for agent claim' },
+  { name: 'openslack:claimed', color: 'fbca04', description: 'Claimed by an agent' },
+  { name: 'openslack:running', color: 'd29922', description: 'Agent is actively working' },
+  { name: 'openslack:review', color: '8250df', description: 'PR submitted, awaiting review' },
+  { name: 'openslack:done', color: '6e7781', description: 'Task completed' },
+  { name: 'openslack:blocked', color: 'cf222e', description: 'Blocked, needs human attention' },
+] as const;
+
+export async function repairExpiredClaims(options: RepairOptions = {}): Promise<RepairResult[]> {
   const client = await getClient();
   const results: RepairResult[] = [];
-  if (client.isDryRun) { results.push({ action: 'repairExpiredClaims', fixed: false, detail: 'Dry-run mode' }); return results; }
+  if (client.isDryRun) { results.push({ action: 'repairExpiredClaims', fixed: false, planned: true, detail: 'Dry-run mode' }); return results; }
 
   try {
     // List all claim refs
@@ -34,6 +49,10 @@ export async function repairExpiredClaims(): Promise<RepairResult[]> {
         if (claimComment) {
           const expiresMatch = claimComment.body?.match(/"expires_at":\s*"([^"]+)"/);
           if (expiresMatch && new Date(expiresMatch[1]) < now) {
+            if (options.dryRun) {
+              results.push({ action: 'expireClaim', issueNumber, fixed: false, planned: true, detail: `Would expire claim and return issue to ready` });
+              continue;
+            }
             // Expired — delete ref, reset to ready
             try { await client.octokit.git.deleteRef({ owner: client.owner, repo: client.repo, ref: `heads/openslack/claims/issue-${issueNumber}` }); } catch { /* ok */ }
             const labelsToRemove = ['openslack:claimed', 'openslack:running'];
@@ -51,22 +70,16 @@ export async function repairExpiredClaims(): Promise<RepairResult[]> {
   return results;
 }
 
-export async function repairLabels(): Promise<RepairResult[]> {
+export async function repairLabels(options: RepairOptions = {}): Promise<RepairResult[]> {
   const client = await getClient();
   const results: RepairResult[] = [];
-  if (client.isDryRun) { results.push({ action: 'repairLabels', fixed: false, detail: 'Dry-run mode' }); return results; }
+  if (client.isDryRun) { results.push({ action: 'repairLabels', fixed: false, planned: true, detail: 'Dry-run mode' }); return results; }
 
-  const requiredLabels = [
-    { name: 'openslack:task', color: '1f6feb', description: 'OpenSlack task (from EVOL or manual)' },
-    { name: 'openslack:ready', color: '2da44e', description: 'Ready for agent claim' },
-    { name: 'openslack:claimed', color: 'fbca04', description: 'Claimed by an agent' },
-    { name: 'openslack:running', color: 'd29922', description: 'Agent is actively working' },
-    { name: 'openslack:review', color: '8250df', description: 'PR submitted, awaiting review' },
-    { name: 'openslack:done', color: '6e7781', description: 'Task completed' },
-    { name: 'openslack:blocked', color: 'cf222e', description: 'Blocked, needs human attention' },
-  ];
-
-  for (const label of requiredLabels) {
+  for (const label of REQUIRED_OPENSLACK_LABELS) {
+    if (options.dryRun) {
+      results.push({ action: 'createLabel', fixed: false, planned: true, detail: `Would ensure label exists: ${label.name}` });
+      continue;
+    }
     try {
       await client.octokit.issues.createLabel({
         owner: client.owner, repo: client.repo, name: label.name, color: label.color, description: label.description,

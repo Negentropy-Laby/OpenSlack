@@ -1,4 +1,5 @@
 import { getClient } from './client.js';
+import type { AgentPrincipal } from '@openslack/kernel';
 
 export interface IssueClaimResult {
   claimStatus: 'granted' | 'denied';
@@ -8,13 +9,89 @@ export interface IssueClaimResult {
   lease?: { expiresAt: string; ttlMinutes: number };
 }
 
+export interface ClaimMetadata {
+  schema: 'openslack.claim.v1';
+  issue_number: number;
+  agent_id: string;
+  claim_ref: string;
+  claimed_at: string;
+  expires_at: string;
+  principal: {
+    registry_id: string;
+    run_id: string;
+    provider: AgentPrincipal['provider'];
+  };
+}
+
+function principalMetadata(principal: AgentPrincipal): ClaimMetadata['principal'] {
+  return {
+    registry_id: principal.registry_id,
+    run_id: principal.run_id,
+    provider: principal.provider,
+  };
+}
+
+export function renderClaimComment(metadata: ClaimMetadata, ttlMinutes: number): string {
+  return [
+    `<!-- openslack-claim`,
+    JSON.stringify(metadata, null, 2),
+    `-->`,
+    '',
+    `**Claimed by:** \`${metadata.agent_id}\``,
+    `**Claim ref:** \`${metadata.claim_ref}\``,
+    `**Expires at:** ${metadata.expires_at}`,
+    `**TTL:** ${ttlMinutes} minutes`,
+    `**Principal:** \`${metadata.principal.registry_id}\` run=\`${metadata.principal.run_id}\` provider=\`${metadata.principal.provider}\``,
+  ].join('\n');
+}
+
+export function parseClaimMetadata(body: string | null | undefined): ClaimMetadata | null {
+  if (!body) return null;
+  const match = body.match(/<!--\s*openslack-claim\s*([\s\S]*?)-->/);
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[1].trim()) as ClaimMetadata;
+    if (parsed?.schema !== 'openslack.claim.v1' || typeof parsed.agent_id !== 'string') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function parseLegacyClaimOwner(body: string | null | undefined): string | null {
+  if (!body) return null;
+  const jsonMatch = body.match(/"agent_id":\s*"([^"]+)"/);
+  if (jsonMatch) return jsonMatch[1];
+  const markdownMatch = body.match(/\*\*Claimed by:\*\*\s*`([^`]+)`/);
+  return markdownMatch?.[1] ?? null;
+}
+
+export function resolveClaimOwnerFromComments(comments: Array<{ body?: string | null }>): { agentId: string; structured: boolean } | null {
+  for (const comment of comments) {
+    const metadata = parseClaimMetadata(comment.body);
+    if (metadata) return { agentId: metadata.agent_id, structured: true };
+  }
+
+  for (const comment of comments) {
+    const agentId = parseLegacyClaimOwner(comment.body);
+    if (agentId) return { agentId, structured: false };
+  }
+
+  return null;
+}
+
 export async function claimIssueTask(args: {
   issueNumber: number;
   agentId: string;
   ttlMinutes?: number;
   capabilities?: string[];
+  principal: AgentPrincipal;
+  owner?: string;
+  repo?: string;
 }): Promise<IssueClaimResult> {
   const client = await getClient();
+  const _owner = args.owner ?? client.owner;
+  const _repo = args.repo ?? client.repo;
   const ttlMinutes = args.ttlMinutes || 60;
   const ref = `refs/heads/openslack/claims/issue-${args.issueNumber}`;
 
@@ -25,17 +102,17 @@ export async function claimIssueTask(args: {
 
   // Step 1: Get main HEAD SHA
   const { data: refData } = await client.octokit.git.getRef({
-    owner: client.owner,
-    repo: client.repo,
-    ref: `heads/${client.owner === 'wsman' && client.repo === 'OpenSlack' ? 'main' : 'main'}`,
+    owner: _owner,
+    repo: _repo,
+    ref: `heads/main`,
   });
   const sha = refData.object.sha as string;
 
   // Step 2: Try to create claim ref (atomic)
   try {
     await client.octokit.git.createRef({
-      owner: client.owner,
-      repo: client.repo,
+      owner: _owner,
+      repo: _repo,
       ref,
       sha,
     });
@@ -55,24 +132,27 @@ export async function claimIssueTask(args: {
     for (const label of labelsToRemove) {
       try {
         await client.octokit.issues.removeLabel({
-          owner: client.owner, repo: client.repo, issue_number: args.issueNumber, name: label,
+          owner: _owner, repo: _repo, issue_number: args.issueNumber, name: label,
         });
       } catch { /* label may not exist */ }
     }
 
     const labelsToAdd = ['openslack:claimed'].filter(Boolean);
     await client.octokit.issues.addLabels({
-      owner: client.owner, repo: client.repo, issue_number: args.issueNumber, labels: labelsToAdd,
+      owner: _owner, repo: _repo, issue_number: args.issueNumber, labels: labelsToAdd,
     });
 
-    const comment = [
-      `**Claimed by:** \`${args.agentId}\``,
-      `**Claim ref:** \`${ref}\``,
-      `**Expires at:** ${expiresAt}`,
-      `**TTL:** ${ttlMinutes} minutes`,
-    ].join('\n');
+    const comment = renderClaimComment({
+      schema: 'openslack.claim.v1',
+      issue_number: args.issueNumber,
+      agent_id: args.agentId,
+      claim_ref: ref,
+      claimed_at: new Date().toISOString(),
+      expires_at: expiresAt,
+      principal: principalMetadata(args.principal),
+    }, ttlMinutes);
     await client.octokit.issues.createComment({
-      owner: client.owner, repo: client.repo, issue_number: args.issueNumber, body: comment,
+      owner: _owner, repo: _repo, issue_number: args.issueNumber, body: comment,
     });
   } catch { /* best-effort labels — claim ref is authoritative */ }
 
@@ -112,7 +192,7 @@ export interface ReleaseInput {
   force?: boolean;
 }
 
-export async function heartbeatIssueClaim(issueNumber: number, agentId: string, ttlMinutes: number = 60): Promise<HeartbeatResult> {
+export async function heartbeatIssueClaim(issueNumber: number, agentId: string, ttlMinutes: number = 60, principal?: AgentPrincipal): Promise<HeartbeatResult> {
   const client = await getClient();
   const ref = `heads/openslack/claims/issue-${issueNumber}`;
   if (client.isDryRun) {
@@ -133,12 +213,12 @@ export async function heartbeatIssueClaim(issueNumber: number, agentId: string, 
       owner: client.owner, repo: client.repo, issue_number: issueNumber,
       sort: 'created', direction: 'desc', per_page: 10,
     });
-    const claimComment = comments.data.find((c) =>
-      c.body?.includes('<!-- openslack-claim'),
-    );
-    if (claimComment) {
-      const match = claimComment.body?.match(/"agent_id":\s*"([^"]+)"/);
-      if (match && match[1] !== agentId) {
+    const owner = resolveClaimOwnerFromComments(comments.data);
+    if (owner) {
+      if (!owner.structured) {
+        console.warn('[OpenSlack] Claim metadata marker missing; using legacy ownership fallback.');
+      }
+      if (owner.agentId !== agentId) {
         return { success: false, reason: 'AGENT_MISMATCH' };
       }
     }
@@ -156,6 +236,7 @@ export async function heartbeatIssueClaim(issueNumber: number, agentId: string, 
         heartbeat_at: new Date().toISOString(),
         expires_at: expiresAt,
         claim_ref: `refs/heads/openslack/claims/issue-${issueNumber}`,
+        ...(principal ? { principal: { registry_id: principal.registry_id, run_id: principal.run_id, provider: principal.provider } } : {}),
       }, null, 2)}\n-->\n\nHeartbeat: lease extended to ${expiresAt}`,
     });
   } catch { /* best-effort */ }
@@ -202,11 +283,13 @@ export async function releaseIssueClaimWithOwner(input: ReleaseInput): Promise<{
         owner: client.owner, repo: client.repo, issue_number: input.issueNumber,
         sort: 'created', direction: 'desc', per_page: 10,
       });
-      const claimComment = comments.find((c) => c.body?.includes('<!-- openslack-claim'));
-      if (claimComment) {
-        const match = claimComment.body?.match(/"agent_id":\s*"([^"]+)"/);
-        if (match && match[1] !== input.agentId) {
-          return { success: false, reason: `Claim owned by ${match[1]}, not ${input.agentId}` };
+      const owner = resolveClaimOwnerFromComments(comments);
+      if (owner) {
+        if (!owner.structured) {
+          console.warn('[OpenSlack] Claim metadata marker missing; using legacy ownership fallback.');
+        }
+        if (owner.agentId !== input.agentId) {
+          return { success: false, reason: `Claim owned by ${owner.agentId}, not ${input.agentId}` };
         }
       }
     } catch { /* best-effort — skip ownership check if comment missing */ }

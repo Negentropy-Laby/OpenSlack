@@ -50,6 +50,16 @@ describe('events', () => {
     expect(result.valid).toBe(true);
   });
 
+  it('validates repair events', () => {
+    const event = createEvent(makeEvent({
+      type: 'repair.previewed',
+      object: { kind: 'workspace', id: 'github:labels' },
+      source: { kind: 'github', ref: 'github.repair.labels' },
+      summary: 'Previewed GitHub label repair',
+    }));
+    expect(validateEvent(event).valid).toBe(true);
+  });
+
   it('rejects event with wrong schema', () => {
     const result = validateEvent({ schema: 'wrong.schema' });
     expect(result.valid).toBe(false);

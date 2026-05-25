@@ -20,7 +20,7 @@ export function detectDeadlock(
       deadlocked: true,
       type: 'AUTHOR_IS_SOLE_CODEOWNER',
       reason: `PR author @${author} is the only CODEOWNER for changed paths. GitHub does not allow authors to satisfy their own approval requirement.`,
-      recommendation: 'Recreate as bot/agent-authored PR, or add a second human CODEOWNER.',
+      recommendation: `Recreate this Red Zone change as a bot/agent-authored PR, then request human CODEOWNER approval from @${author}. Do not use bot approval.`,
     };
   }
 
@@ -30,7 +30,7 @@ export function detectDeadlock(
       deadlocked: true,
       type: 'SINGLE_MAINTAINER',
       reason: `Single maintainer deadlock: @${author} is the only CODEOWNER in this repository.`,
-      recommendation: 'Add a second human CODEOWNER to `.github/CODEOWNERS` or configure bot-authored PRs for Red Zone.',
+      recommendation: 'Use a bot/agent-authored Red Zone PR with human CODEOWNER approval, or add a second human CODEOWNER. Do not use bot approval.',
     };
   }
 

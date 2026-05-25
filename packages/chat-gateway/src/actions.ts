@@ -4,6 +4,8 @@ import { loadPendingPlan, validatePlan, deletePendingPlan, isActionAllowed } fro
 import { formatResultAsMarkdown, formatError } from './formatter.js';
 import { buildPRCard, cardToText, toSlackBlocks } from './cards.js';
 import { summarizePRForChat, formatPRChatSummary } from '@openslack/pr';
+import { recordEvent } from '@openslack/collaboration';
+import { resolveAgentPrincipal } from '@openslack/runtime';
 
 interface ActionContext {
   message: ChatMessage;
@@ -30,7 +32,16 @@ async function runPRDoctor(prNumber: string): Promise<{ output: string; status: 
   };
 }
 
-async function runPRMerge(prNumber: string): Promise<{ output: string; status: 'success' | 'failed' }> {
+function resolveActionAgentAuth(agentId: string | undefined, provider: 'slack' | 'webhook'): Parameters<typeof executePlan>[1] {
+  if (!agentId) return {};
+  const resolved = resolveAgentPrincipal({ root: process.cwd(), agentId, provider });
+  if ('error' in resolved) {
+    throw new Error(resolved.error);
+  }
+  return { principal: resolved.principal, snapshot: resolved.snapshot };
+}
+
+async function runPRMerge(prNumber: string, agentId: string | undefined, provider: 'slack' | 'webhook'): Promise<{ output: string; status: 'success' | 'failed' }> {
   const plan = planActions({
     kind: 'pr_merge',
     slots: { prNumber: Number(prNumber) },
@@ -39,6 +50,7 @@ async function runPRMerge(prNumber: string): Promise<{ output: string; status: '
 
   const result = await executePlan(plan, {
     dryRun: false,
+    ...resolveActionAgentAuth(agentId, provider),
     confirmStep: async () => true, // Already confirmed via plan store
   });
   const stepResult = result.steps.find((s) => s.stepId === 's2');
@@ -106,11 +118,26 @@ async function handleConfirmMerge(planId: string, message: ChatMessage): Promise
   );
 
   if (!validation.valid) {
+    try {
+      recordEvent({
+        type: 'operator.plan.blocked',
+        actor: { id: message.user.id, kind: 'chat', provider: message.channel.type === 'webhook' ? 'webhook' : 'slack' },
+        object: { kind: 'plan', id: planId },
+        source: { kind: 'chat', ref: message.channel.id },
+        summary: validation.reason || 'Plan validation failed',
+        visibility: 'chat',
+        redacted: false,
+        containsSensitiveData: false,
+      });
+    } catch {
+      // best-effort event recording
+    }
     return formatError(validation.reason || 'Plan validation failed.');
   }
 
   // Step 1: Re-run PR doctor before merge
   const prNumber = plan.value;
+  const provider = message.channel.type === 'webhook' ? 'webhook' : 'slack';
   const { output: doctorOutput, status: doctorStatus } = await runPRDoctor(prNumber);
 
   if (doctorStatus !== 'success') {
@@ -120,17 +147,84 @@ async function handleConfirmMerge(planId: string, message: ChatMessage): Promise
 
   if (!isReadyToMerge(doctorOutput)) {
     deletePendingPlan(planId);
+    try {
+      recordEvent({
+        type: 'pr.merge.blocked',
+        actor: { id: message.user.id, kind: 'chat', provider: message.channel.type === 'webhook' ? 'webhook' : 'slack' },
+        object: { kind: 'pr', id: prNumber },
+        source: { kind: 'chat', ref: planId },
+        summary: `Chat-confirmed merge blocked by PR doctor for PR #${prNumber}`,
+        visibility: 'chat',
+        redacted: false,
+        containsSensitiveData: false,
+        risk: 'high',
+        nextAction: { owner: 'human', action: `Run openslack pr doctor ${prNumber}` },
+      });
+    } catch {
+      // best-effort event recording
+    }
     return {
       text: `🚫 *Merge blocked* — PR #${prNumber} is no longer ready.\n\n${doctorOutput.slice(0, 800)}\n\n_This can happen if checks failed or approval was withdrawn after the plan was created._`,
     };
   }
 
   // Step 2: Execute merge
-  const { output: mergeOutput, status: mergeStatus } = await runPRMerge(prNumber);
+  let mergeOutput: string;
+  let mergeStatus: 'success' | 'failed';
+  try {
+    const result = await runPRMerge(prNumber, plan.agentId, provider);
+    mergeOutput = result.output;
+    mergeStatus = result.status;
+  } catch (err) {
+    deletePendingPlan(planId);
+    return formatError(`Authorization failed:\n\n${(err as Error).message}`);
+  }
   deletePendingPlan(planId);
 
   if (mergeStatus !== 'success') {
+    try {
+      recordEvent({
+        type: 'pr.merge.blocked',
+        actor: { id: message.user.id, kind: 'chat', provider: message.channel.type === 'webhook' ? 'webhook' : 'slack' },
+        object: { kind: 'pr', id: prNumber },
+        source: { kind: 'chat', ref: planId },
+        summary: `Chat-confirmed merge failed for PR #${prNumber}`,
+        visibility: 'chat',
+        redacted: false,
+        containsSensitiveData: false,
+        risk: 'high',
+      });
+    } catch {
+      // best-effort event recording
+    }
     return formatError(`Merge failed:\n\n${mergeOutput.slice(0, 800)}`);
+  }
+
+  try {
+    recordEvent({
+      type: 'chat.plan.confirmed',
+      actor: { id: message.user.id, kind: 'chat', provider: message.channel.type === 'webhook' ? 'webhook' : 'slack' },
+      object: { kind: 'plan', id: planId },
+      source: { kind: 'chat', ref: message.channel.id },
+      summary: `Chat plan confirmed for PR #${prNumber}; GitHub approval was still enforced by PRMS`,
+      visibility: 'chat',
+      redacted: false,
+      containsSensitiveData: false,
+      risk: 'high',
+    });
+    recordEvent({
+      type: 'pr.merge.completed',
+      actor: { id: message.user.id, kind: 'chat', provider: message.channel.type === 'webhook' ? 'webhook' : 'slack' },
+      object: { kind: 'pr', id: prNumber },
+      source: { kind: 'chat', ref: planId },
+      summary: `PR #${prNumber} merged after PRMS re-check`,
+      visibility: 'chat',
+      redacted: false,
+      containsSensitiveData: false,
+      risk: 'high',
+    });
+  } catch {
+    // best-effort event recording
   }
 
   return {
@@ -140,6 +234,20 @@ async function handleConfirmMerge(planId: string, message: ChatMessage): Promise
 
 async function handleCancel(planId: string): Promise<ChatResponse> {
   deletePendingPlan(planId);
+  try {
+    recordEvent({
+      type: 'chat.plan.cancelled',
+      actor: { id: 'chat', kind: 'chat', provider: 'webhook' },
+      object: { kind: 'plan', id: planId },
+      source: { kind: 'chat', ref: 'action:cancel' },
+      summary: `Chat plan cancelled: ${planId}`,
+      visibility: 'chat',
+      redacted: false,
+      containsSensitiveData: false,
+    });
+  } catch {
+    // best-effort event recording
+  }
   return { text: 'Cancelled.' };
 }
 

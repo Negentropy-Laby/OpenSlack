@@ -1,4 +1,5 @@
 import type { PRReviewReport, PRReviewState } from './types.js';
+import { summarizePRDecision, type PRBlockerCategory, type PRDecisionOwner } from './decision-summary.js';
 
 export interface PRChatSummary {
   prNumber: number;
@@ -6,6 +7,8 @@ export interface PRChatSummary {
   decision: PRReviewState;
   canMerge: boolean;
   blocker?: string;
+  blockerCategory?: PRBlockerCategory;
+  owner?: PRDecisionOwner;
   why: string;
   next: string;
   zone: string;
@@ -55,7 +58,9 @@ function getNextAction(decision: PRReviewState): string {
     case 'BLOCKED_BLACK_ZONE': return 'Close the PR. Black Zone changes are prohibited.';
     case 'BLOCKED_SELF_REVIEW': return 'Remove self-approval. Another reviewer must approve.';
     case 'BLOCKED_AUTHOR_IS_SOLE_CODEOWNER':
-    case 'BLOCKED_SINGLE_MAINTAINER': return 'Add another CODEOWNER or reviewer.';
+      return 'Recreate this as a bot/agent-authored PR, then request human CODEOWNER approval on GitHub.';
+    case 'BLOCKED_SINGLE_MAINTAINER':
+      return 'Use a bot/agent-authored Red Zone PR with human CODEOWNER approval, or add a second human CODEOWNER.';
     case 'CHECKS_PENDING': return 'Wait for all checks to complete.';
     case 'CHECKS_FAILED': return 'Fix failing checks before merge.';
     case 'NEEDS_HUMAN_APPROVAL':
@@ -68,6 +73,7 @@ function getNextAction(decision: PRReviewState): string {
 
 export function summarizePRForChat(report: PRReviewReport): PRChatSummary {
   const blocked = isBlocked(report.decision);
+  const decision = summarizePRDecision(report);
 
   return {
     prNumber: report.prNumber,
@@ -75,8 +81,10 @@ export function summarizePRForChat(report: PRReviewReport): PRChatSummary {
     decision: report.decision,
     canMerge: report.decision === 'READY_TO_MERGE',
     blocker: blocked ? getBlockerLabel(report.decision) : undefined,
+    blockerCategory: decision.blockerCategory,
+    owner: decision.owner,
     why: report.reason,
-    next: blocked ? getNextAction(report.decision) : report.recommendation,
+    next: blocked ? decision.nextAction || getNextAction(report.decision) : decision.nextAction,
     zone: report.riskZone,
   };
 }
@@ -93,6 +101,9 @@ export function formatPRChatSummary(summary: PRChatSummary): string {
     if (summary.blocker) {
       lines.push(`Blocker: ${summary.blocker}`);
     }
+    if (summary.owner) {
+      lines.push(`Owner: ${summary.owner}`);
+    }
   }
 
   lines.push('');
@@ -100,7 +111,7 @@ export function formatPRChatSummary(summary: PRChatSummary): string {
   lines.push('');
   lines.push(`Next: ${summary.next}`);
 
-  if (!summary.canMerge && summary.decision === 'NEEDS_HUMAN_APPROVAL') {
+  if (!summary.canMerge && (summary.decision === 'NEEDS_HUMAN_APPROVAL' || summary.decision === 'BOT_APPROVAL_IGNORED' || summary.decision === 'NEEDS_CODEOWNER_APPROVAL')) {
     lines.push('');
     lines.push('_Slack confirmation is not a GitHub approval. GitHub CODEOWNER review remains the only valid approval source._');
   }

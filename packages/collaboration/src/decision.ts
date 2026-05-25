@@ -2,6 +2,11 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from 'node:path';
 import { stringify as stringifyYaml, parse as parseYaml } from 'yaml';
 
+export interface DecisionPrincipal {
+  registry_id: string;
+  run_id: string;
+}
+
 export interface Decision {
   schema: 'openslack.decision.v1';
   id: string;
@@ -17,6 +22,7 @@ export interface Decision {
   supersededBy?: string;
   supersededAt?: string;
   tags?: string[];
+  principal?: DecisionPrincipal;
 }
 
 function getDecisionDir(): string {
@@ -41,6 +47,7 @@ export function recordDecision(params: {
   consequences?: string[];
   decidedBy: string;
   tags?: string[];
+  principal?: DecisionPrincipal;
 }): Decision {
   const dec: Decision = {
     schema: 'openslack.decision.v1',
@@ -54,6 +61,7 @@ export function recordDecision(params: {
     createdAt: new Date().toISOString(),
     status: 'active',
     tags: params.tags || [],
+    principal: params.principal,
   };
 
   const dir = getDecisionDir();
@@ -156,6 +164,10 @@ export function renderDecision(decision: Decision): string {
 
   if (decision.tags && decision.tags.length > 0) {
     lines.push(`Tags:      ${decision.tags.join(', ')}`);
+  }
+
+  if (decision.principal) {
+    lines.push(`Principal: ${decision.principal.registry_id} run=${decision.principal.run_id}`);
   }
 
   lines.push('');

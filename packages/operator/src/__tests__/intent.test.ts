@@ -18,6 +18,31 @@ describe('parseIntent', () => {
       const i = parseIntent('run governance audit');
       expect(i.kind).toBe('governance_audit');
     });
+
+    it('parses Chinese doctor keyword 健康检查', () => {
+      const i = parseIntent('健康检查');
+      expect(i.kind).toBe('doctor');
+    });
+
+    it('parses Chinese doctor keyword 系统诊断', () => {
+      const i = parseIntent('系统诊断');
+      expect(i.kind).toBe('doctor');
+    });
+
+    it('parses Chinese status keyword 检查系统状态', () => {
+      const i = parseIntent('检查系统状态');
+      expect(i.kind).toBe('status');
+    });
+
+    it('parses Chinese status keyword 系统状态', () => {
+      const i = parseIntent('系统状态');
+      expect(i.kind).toBe('status');
+    });
+
+    it('parses Chinese status keyword 当前状态', () => {
+      const i = parseIntent('当前状态');
+      expect(i.kind).toBe('status');
+    });
   });
 
   describe('PRMS', () => {
@@ -49,6 +74,11 @@ describe('parseIntent', () => {
       const i = parseIntent('watch PR 12');
       expect(i.kind).toBe('pr_watch');
       expect(i.slots.prNumber).toBe(12);
+    });
+
+    it('parses PR queue', () => {
+      const i = parseIntent('show PR queue');
+      expect(i.kind).toBe('pr_queue');
     });
 
     it('defaults ambiguous PR query to doctor', () => {
@@ -89,6 +119,12 @@ describe('parseIntent', () => {
       const i = parseIntent('claim a task for agent claude_001');
       expect(i.kind).toBe('claim_task');
       expect(i.slots.agentId).toBe('claude_001');
+    });
+
+    it('parses task creation title from quotes', () => {
+      const i = parseIntent('create task "Investigate flaky setup"');
+      expect(i.kind).toBe('create_task');
+      expect(i.slots.title).toBe('Investigate flaky setup');
     });
   });
 

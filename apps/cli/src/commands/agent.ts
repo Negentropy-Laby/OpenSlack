@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { bootstrapAgent } from '@openslack/runtime';
+import { bootstrapAgent, resolveAgentPrincipal } from '@openslack/runtime';
 import { tickAgent } from '@openslack/runtime';
 
 function findRepoRoot(): string {
@@ -79,12 +79,17 @@ export function agentCommands(): Command {
         writeFileSync(join(destDir, tmpl), content, 'utf-8');
       }
 
-      // Create registry entry
-      const registryYaml = `schema: openslack.agent_registry.v1
+      // Create registry entry (v2 schema with explicit identity and permissions)
+      const registryYaml = `schema: openslack.agent_registry.v2
 
 agent_id: "${agentId}"
 display_name: "${displayName}"
 employee_type: ai_agent
+
+identity:
+  uid: "${agentId}"
+  principal_id: "principal:${agentId}"
+  status: "active"
 
 vendor:
   provider: "anthropic"
@@ -106,20 +111,33 @@ capabilities:
   secondary:
     - "documentation"
 
+permissions:
+  paths:
+    allow:
+      - ".openslack/tasks/**"
+      - ".openslack/outbox/**"
+    deny:
+      - ".openslack/agents/**"
+      - ".openslack/policies/**"
+      - ".github/**"
+  actions:
+    "task.claim": "allow"
+    "task.sync": "allow"
+    "pr.propose": "allow"
+    "pr.comment": "allow"
+    "github.comment": "allow"
+  github:
+    can_create_pr: true
+    can_comment: true
+    can_approve: false
+    can_merge: false
+  max_risk_zone: "red"
+
 repositories:
   workspace_repo:
     owner: "${options.githubOwner}"
     repo: "${options.githubRepo}"
     default_branch: "main"
-
-workspace_permissions:
-  allow:
-    - ".openslack/tasks/**"
-    - ".openslack/outbox/**"
-  deny:
-    - ".openslack/agents/**"
-    - ".openslack/policies/**"
-    - ".github/**"
 
 execution:
   max_parallel_tasks: 1
@@ -160,12 +178,27 @@ approval_rules:
     .command('bootstrap')
     .description('Verify agent is ready to work')
     .requiredOption('--agent-id <id>', 'Agent ID')
-    .action((options) => {
+    .action(async (options) => {
+      const root = findRepoRoot();
       const result = bootstrapAgent(options.agentId);
       console.log(`Agent bootstrap: ${result.agentId}`);
       for (const check of result.checks) {
         console.log(`  [${check.passed ? 'PASS' : 'FAIL'}] ${check.name}: ${check.detail}`);
       }
+
+      // Additional v2 identity and runtime identity checks
+      try {
+        const resolved = resolveAgentPrincipal({ root, agentId: options.agentId, provider: 'cli' });
+        if ('error' in resolved) {
+          console.log(`  [WARN] Identity resolution: ${resolved.error}`);
+        } else {
+          console.log(`  [PASS] Principal resolved: ${resolved.principal.registry_id} run=${resolved.principal.run_id}`);
+          console.log(`  [PASS] Permission snapshot source: ${resolved.snapshot.source}`);
+        }
+      } catch (err) {
+        console.log(`  [WARN] Identity resolution: ${(err as Error).message}`);
+      }
+
       if (result.passed) {
         console.log('\nBootstrap: PASSED — agent is ready to work.');
       } else {
@@ -185,6 +218,7 @@ approval_rules:
       console.log(`Agent tick: ${result.agentId}`);
       console.log(`  Source: ${source}`);
       console.log(`  Action: ${result.action}`);
+      if (result.principal) console.log(`  Principal: ${result.principal.registry_id} run=${result.principal.run_id}`);
       if (result.taskId) console.log(`  Task: ${result.taskId}`);
       if (result.leaseId) console.log(`  Claim: ${result.leaseId}`);
       console.log(`  ${result.message}`);

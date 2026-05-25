@@ -2,6 +2,10 @@ import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { ActionPlan, PlanStep, StepResult, ExecutionResult, ExecutionOptions } from './types.js';
+import { isRegisteredStep } from './tool-registry.js';
+import type { AgentPrincipal } from '@openslack/kernel';
+import { authorizeAgentAction, classifyPaths } from '@openslack/kernel';
+import type { AgentPermissionSnapshot, RiskZone } from '@openslack/kernel';
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -61,9 +65,31 @@ function runCLIStep(step: PlanStep, root: string): Promise<StepResult> {
   });
 }
 
+function splitPathList(value: unknown): string[] {
+  if (typeof value !== 'string') return [];
+  return value.split(',').map((path) => path.trim()).filter(Boolean);
+}
+
+function getStepChangedPaths(step: PlanStep): string[] {
+  const inputPaths = splitPathList(step.input?.paths);
+  if (inputPaths.length > 0) return inputPaths;
+
+  const pathsArgIndex = step.args.indexOf('--paths');
+  if (pathsArgIndex >= 0) {
+    return splitPathList(step.args[pathsArgIndex + 1]);
+  }
+
+  return [];
+}
+
+function getStepRiskZone(changedPaths: string[]): RiskZone | undefined {
+  if (changedPaths.length > 0) return classifyPaths(changedPaths);
+  return undefined;
+}
+
 export async function executePlan(
   plan: ActionPlan,
-  options: ExecutionOptions = {},
+  options: ExecutionOptions & { principal?: AgentPrincipal; snapshot?: AgentPermissionSnapshot } = {},
 ): Promise<ExecutionResult> {
   const planId = generatePlanId();
   const root = findRepoRoot();
@@ -81,6 +107,16 @@ export async function executePlan(
   }
 
   if (options.dryRun) {
+    const invalid = plan.steps.find((step) => !isRegisteredStep(step));
+    if (invalid) {
+      return {
+        planId,
+        status: 'failed',
+        steps: [{ stepId: invalid.id, status: 'failed', output: `Unregistered OpenSlack action: ${invalid.actionId || invalid.command}` }],
+        summary: `Rejected unregistered action "${invalid.actionId || invalid.command}"`,
+        nextActions: ['Use a registered OpenSlack action'],
+      };
+    }
     return {
       planId,
       status: 'success',
@@ -95,8 +131,84 @@ export async function executePlan(
   }
 
   for (const step of plan.steps) {
+    if (!isRegisteredStep(step)) {
+      const result = {
+        stepId: step.id,
+        status: 'failed' as const,
+        output: `Unregistered OpenSlack action: ${step.actionId || step.command}`,
+        exitCode: 1,
+      };
+      results.push(result);
+      return {
+        planId,
+        status: 'failed',
+        steps: results,
+        summary: `Rejected unregistered action "${step.actionId || step.command}"`,
+        nextActions: ['Use a registered OpenSlack action'],
+      };
+    }
+
+    // Per-step authorization gate
+    let authorizationConfirmed = false;
+    if (options.snapshot) {
+      const action = step.actionId || step.command;
+      const changedPaths = getStepChangedPaths(step);
+      const auth = authorizeAgentAction({
+        snapshot: options.snapshot,
+        action,
+        changedPaths,
+        riskZone: getStepRiskZone(changedPaths),
+      });
+      if (auth.decision === 'deny') {
+        const result = {
+          stepId: step.id,
+          status: 'failed' as const,
+          output: `Authorization denied: ${auth.evidence.reason}`,
+          exitCode: 1,
+        };
+        results.push(result);
+        return {
+          planId,
+          status: 'failed',
+          steps: results,
+          summary: `Authorization denied at step "${step.description}": ${auth.evidence.reason}`,
+          nextActions: ['Check agent permissions and retry'],
+        };
+      }
+      if (auth.decision === 'ask') {
+        if (!options.confirmStep) {
+          const result = {
+            stepId: step.id,
+            status: 'skipped' as const,
+            output: `Authorization requires confirmation: ${auth.evidence.reason}`,
+          };
+          results.push(result);
+          return {
+            planId,
+            status: 'blocked',
+            steps: results,
+            summary: `Authorization requires confirmation at step "${step.description}": ${auth.evidence.reason}`,
+            nextActions: ['Re-run with an explicit confirmation path'],
+          };
+        }
+
+        const confirmed = await options.confirmStep(step);
+        if (!confirmed) {
+          results.push({ stepId: step.id, status: 'skipped', output: 'Authorization cancelled by user' });
+          return {
+            planId,
+            status: 'cancelled',
+            steps: results,
+            summary: `Cancelled authorization for step "${step.description}"`,
+            nextActions: ['Re-run and confirm the step'],
+          };
+        }
+        authorizationConfirmed = true;
+      }
+    }
+
     // Per-step confirmation hook
-    if (step.confirmationRequired && options.confirmStep) {
+    if (step.confirmationRequired && options.confirmStep && !authorizationConfirmed) {
       const confirmed = await options.confirmStep(step);
       if (!confirmed) {
         results.push({ stepId: step.id, status: 'skipped', output: 'Cancelled by user' });

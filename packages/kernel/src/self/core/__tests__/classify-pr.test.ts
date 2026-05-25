@@ -39,8 +39,8 @@ describe('classifySelfEvolutionPR', () => {
     expect(result.humanApprovalRequired).toBe(true);
   });
 
-  it('returns red for self-evolution core changes', () => {
-    const result = classifySelfEvolutionPR(['packages/self-evolution/src/core/classify-pr.ts']);
+  it('returns red for kernel source changes', () => {
+    const result = classifySelfEvolutionPR(['packages/kernel/src/zones.ts']);
     expect(result.riskZone).toBe('red');
     expect(result.humanApprovalRequired).toBe(true);
   });

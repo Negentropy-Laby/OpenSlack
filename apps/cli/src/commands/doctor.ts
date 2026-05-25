@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { readModules, validateModules } from '@openslack/workspace';
 import { getClient } from '@openslack/github';
+import { detectGenesisShell } from '@openslack/runtime';
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -170,12 +171,15 @@ export function doctorCommands(): Command {
         });
       }
 
-      // Genesis check
+      // Genesis check (uses detectGenesisShell for Windows compatibility)
       try {
-        execSync('bash scripts/genesis-validate.sh', { cwd: root, stdio: 'pipe', encoding: 'utf-8' });
+        const genesis = detectGenesisShell(root);
+        if (!genesis.command) throw new Error(genesis.detail);
+        execSync(genesis.command, { cwd: root, stdio: 'pipe', timeout: 30000 });
         checks.push({ name: 'Genesis validate', state: 'PASS', detail: '5/5 checks passing' });
-      } catch {
-        checks.push({ name: 'Genesis validate', state: 'FAIL', detail: 'Genesis checks failed' });
+      } catch (err) {
+        const detail = (err as Error).message || 'Genesis checks failed';
+        checks.push({ name: 'Genesis validate', state: 'FAIL', detail: `Genesis validation failed: ${detail}` });
       }
 
       console.log('OpenSlack Doctor');

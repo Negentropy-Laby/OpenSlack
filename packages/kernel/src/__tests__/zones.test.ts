@@ -18,24 +18,24 @@ describe('classifyPaths', () => {
     expect(classifyPaths(['packages/core/src/claim-broker.ts'])).toBe('yellow');
   });
 
-  it('classifies workspace-engine changes as yellow', () => {
-    expect(classifyPaths(['packages/workspace-engine/src/validate.ts'])).toBe('yellow');
+  it('classifies workspace package changes as yellow', () => {
+    expect(classifyPaths(['packages/workspace/src/validate.ts'])).toBe('yellow');
   });
 
-  it('classifies evals changes as yellow', () => {
-    expect(classifyPaths(['packages/evals/src/runner.ts'])).toBe('yellow');
+  it('classifies runtime package changes as yellow', () => {
+    expect(classifyPaths(['packages/runtime/src/evals/runner.ts'])).toBe('yellow');
   });
 
-  it('classifies self-evolution ops changes as yellow', () => {
-    expect(classifyPaths(['packages/self-evolution/src/ops/observe.ts'])).toBe('yellow');
+  it('classifies operator package changes as yellow', () => {
+    expect(classifyPaths(['packages/operator/src/planner.ts'])).toBe('yellow');
   });
 
   it('classifies GitHub workflow changes as red', () => {
     expect(classifyPaths(['.github/workflows/test.yml'])).toBe('red');
   });
 
-  it('classifies policy source changes as red', () => {
-    expect(classifyPaths(['packages/policy/src/zones.ts'])).toBe('red');
+  it('classifies kernel source changes as red', () => {
+    expect(classifyPaths(['packages/kernel/src/zones.ts'])).toBe('red');
   });
 
   it('classifies agent prompt changes as red', () => {
@@ -52,10 +52,6 @@ describe('classifyPaths', () => {
 
   it('classifies invariants.yaml change as red', () => {
     expect(classifyPaths(['.openslack/self/invariants.yaml'])).toBe('red');
-  });
-
-  it('classifies self-evolution core changes as red', () => {
-    expect(classifyPaths(['packages/self-evolution/src/core/classify-pr.ts'])).toBe('red');
   });
 
   it('classifies .env as black', () => {

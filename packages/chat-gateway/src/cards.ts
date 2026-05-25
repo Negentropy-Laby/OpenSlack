@@ -29,6 +29,12 @@ export function buildPRCard(summary: PRChatSummary): ChatCard {
   if (summary.blocker) {
     fields.push({ label: 'Blocker', value: summary.blocker });
   }
+  if (summary.blockerCategory) {
+    fields.push({ label: 'Category', value: summary.blockerCategory });
+  }
+  if (summary.owner) {
+    fields.push({ label: 'Owner', value: summary.owner });
+  }
 
   const actions: ChatAction[] = [];
 
