@@ -9,6 +9,7 @@
     { "path": "../core" },
     { "path": "../kernel" },
     { "path": "../workspace" },
-    { "path": "../github" }
+    { "path": "../github" },
+    { "path": "../pr" }
   ]
 }

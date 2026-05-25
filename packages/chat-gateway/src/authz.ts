@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import type { ActorMapping, ChatMessage, GatewayConfig } from './types.js';
 
 export function verifyRequestSignature(
@@ -29,14 +30,42 @@ export function verifyRequestTimestamp(
 export function mapActor(
   message: ChatMessage,
   mappings: ActorMapping[],
-): { id: string; roles: string[] } | undefined {
+): { id: string; roles: string[]; agentId?: string } | undefined {
+  const provider = message.channel.type === 'webhook' ? 'webhook' : 'slack';
   const mapped = mappings.find(
-    (m) => m.providerUserId === message.user.id && m.provider === message.channel.type,
+    (m) => m.providerUserId === message.user.id && (m.provider === message.channel.type || m.provider === provider),
   );
   if (mapped) {
-    return { id: mapped.openslackActorId, roles: mapped.roles };
+    return mapped.agentId
+      ? { id: mapped.openslackActorId, roles: mapped.roles, agentId: mapped.agentId }
+      : { id: mapped.openslackActorId, roles: mapped.roles };
   }
   return undefined;
+}
+
+function isActorMapping(value: unknown): value is ActorMapping {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as Record<string, unknown>;
+  return typeof item.providerUserId === 'string' &&
+    typeof item.provider === 'string' &&
+    typeof item.openslackActorId === 'string' &&
+    Array.isArray(item.roles) &&
+    item.roles.every((role) => typeof role === 'string') &&
+    (item.agentId === undefined || typeof item.agentId === 'string');
+}
+
+export function loadActorMappings(path: string | undefined): ActorMapping[] {
+  if (!path || !existsSync(path)) return [];
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf-8')) as unknown;
+    if (Array.isArray(parsed)) return parsed.filter(isActorMapping);
+    if (parsed && typeof parsed === 'object' && Array.isArray((parsed as { mappings?: unknown }).mappings)) {
+      return (parsed as { mappings: unknown[] }).mappings.filter(isActorMapping);
+    }
+    return [];
+  } catch {
+    return [];
+  }
 }
 
 export function canExecuteSideEffects(

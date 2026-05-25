@@ -1,5 +1,7 @@
 import { mergePR } from '@openslack/github';
 import type { PRReviewReport, PRReviewPolicy, PRReviewState } from './types.js';
+import type { AgentPrincipal, AgentPermissionSnapshot } from '@openslack/kernel';
+import { authorizeAgentAction } from '@openslack/kernel';
 import { diagnosePR } from './doctor.js';
 import { parseCODEOWNERS, resolveCodeowners } from './codeowners.js';
 import { getCODEOWNERS } from '@openslack/github';
@@ -20,6 +22,8 @@ export async function mergeIfReady(
     commitTitle?: string;
     commitMessage?: string;
     skipConfirm?: boolean;
+    principal?: AgentPrincipal;
+    snapshot?: AgentPermissionSnapshot;
   } = {},
 ): Promise<MergeStewardResult> {
   // Reuse Phase 1.14A diagnostic pipeline
@@ -41,6 +45,21 @@ export async function mergeIfReady(
       reason: diagnosed.reason,
       message: `Merge blocked: ${diagnosed.decision}\n${diagnosed.reason}\nRecommendation: ${diagnosed.recommendation}`,
     };
+  }
+
+  // Authorization gate — if snapshot provided, enforce
+  if (options.snapshot) {
+    const auth = authorizeAgentAction({ snapshot: options.snapshot, action: 'github.merge' });
+    if (auth.decision !== 'allow') {
+      return {
+        merged: false,
+        decision: 'BLOCKED_AUTHORIZATION',
+        reason: auth.evidence.reason,
+        message: auth.decision === 'ask'
+          ? `Merge requires authorization confirmation: ${auth.evidence.reason}`
+          : `Merge denied: ${auth.evidence.reason}`,
+      };
+    }
   }
 
   // All gates passed — execute merge

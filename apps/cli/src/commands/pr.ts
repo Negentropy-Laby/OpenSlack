@@ -12,11 +12,23 @@ import {
   resolveCodeowners,
   postReviewComment,
   watchPR,
+  buildPRQueue,
+  renderPRQueue,
 } from '@openslack/pr';
 import { recordEvent } from '@openslack/collaboration';
 
 export function prCommands(): Command {
   const cmd = new Command('pr').description('PR Review & Merge Steward');
+
+  cmd
+    .command('queue')
+    .description('Show open PRs grouped by readiness and blocker owner')
+    .option('--limit <n>', 'Maximum open PRs to inspect', '20')
+    .action(async (options: { limit: string }) => {
+      const limit = parseInt(options.limit, 10);
+      const items = await buildPRQueue(Number.isFinite(limit) ? limit : 20);
+      console.log(renderPRQueue(items));
+    });
 
   cmd
     .command('status <number>')
@@ -158,16 +170,92 @@ export function prCommands(): Command {
     });
 
   cmd
+    .command('comment <number>')
+    .description('Post a comment on a pull request')
+    .requiredOption('--body <text>', 'Comment body (markdown)')
+    .option('--agent-id <id>', 'Agent ID for authorization')
+    .action(async (number: string, options: { body: string; agentId?: string }) => {
+      const prNumber = parseInt(number, 10);
+
+      if (options.agentId) {
+        const { resolveAgentPrincipal } = await import('@openslack/runtime');
+        const { authorizeAgentAction } = await import('@openslack/kernel');
+        const { existsSync } = await import('node:fs');
+        const { join } = await import('node:path');
+        let dir = process.cwd();
+        for (let i = 0; i < 10; i++) {
+          if (existsSync(join(dir, 'openslack.yaml'))) break;
+          const parent = join(dir, '..');
+          if (parent === dir) break;
+          dir = parent;
+        }
+        const resolved = resolveAgentPrincipal({ root: dir, agentId: options.agentId, provider: 'cli' });
+        if ('error' in resolved) {
+          console.error(`Authorization failed: ${resolved.error}`);
+          process.exit(1);
+        }
+        const auth = authorizeAgentAction({ snapshot: resolved.snapshot, action: 'pr.comment' });
+        if (auth.decision !== 'allow') {
+          console.error(`Action denied: ${auth.diagnostics.join('; ')}`);
+          process.exit(1);
+        }
+      }
+
+      await commentOnPR(prNumber, options.body);
+      console.log(`Comment posted on PR #${prNumber}`);
+
+      try {
+        recordEvent({
+          type: 'pr.review.commented',
+          actor: options.agentId
+            ? { id: options.agentId, kind: 'agent', provider: 'cli' }
+            : { id: 'cli', kind: 'system', provider: 'cli' },
+          object: { kind: 'pr', id: String(prNumber) },
+          source: { kind: 'prms', ref: 'pr.comment' },
+          summary: `Comment posted on PR #${prNumber}`,
+          visibility: 'local',
+          redacted: false,
+          containsSensitiveData: false,
+        });
+      } catch {
+        // best-effort event recording
+      }
+    });
+
+  cmd
     .command('merge <number>')
     .description('Merge a PR after passing all governance gates')
     .option('--method <method>', 'Merge method: merge, squash, or rebase', 'merge')
-    .action(async (number: string, options: { method: string }) => {
+    .option('--agent-id <id>', 'Agent ID for authorization')
+    .action(async (number: string, options: { method: string; agentId?: string }) => {
       const prNumber = parseInt(number, 10);
       const { mergeIfReady, loadPRReviewPolicy } = await import('@openslack/pr');
       const policy = loadPRReviewPolicy();
 
+      // Resolve agent principal if --agent-id provided
+      let authOptions: { principal?: import('@openslack/kernel').AgentPrincipal; snapshot?: import('@openslack/kernel').AgentPermissionSnapshot } = {};
+      if (options.agentId) {
+        const { resolveAgentPrincipal } = await import('@openslack/runtime');
+        const { existsSync } = await import('node:fs');
+        const { join } = await import('node:path');
+        let dir = process.cwd();
+        for (let i = 0; i < 10; i++) {
+          if (existsSync(join(dir, 'openslack.yaml'))) break;
+          const parent = join(dir, '..');
+          if (parent === dir) break;
+          dir = parent;
+        }
+        const resolved = resolveAgentPrincipal({ root: dir, agentId: options.agentId, provider: 'cli' });
+        if ('error' in resolved) {
+          console.error(`Authorization failed: ${resolved.error}`);
+          process.exit(1);
+        }
+        authOptions = { principal: resolved.principal, snapshot: resolved.snapshot };
+      }
+
       const result = await mergeIfReady(prNumber, policy, {
         method: options.method as 'merge' | 'squash' | 'rebase',
+        ...authOptions,
       });
 
       if (!result.merged) {

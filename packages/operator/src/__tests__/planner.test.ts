@@ -55,6 +55,20 @@ describe('planActions', () => {
     expect(plan.missingParams.some((m) => m.name === 'prNumber')).toBe(true);
   });
 
+  it('plans task creation as a preview with no side effects', () => {
+    const intent = parseIntent('create task "Investigate flaky setup"');
+    const plan = planActions(intent);
+    expect(plan.goal).toBe('Preview task "Investigate flaky setup"');
+    expect(plan.steps[0].actionId).toBe('task.create.preview');
+    expect(plan.sideEffects).toBe(false);
+  });
+
+  it('asks for task title when creating a task without one', () => {
+    const intent = parseIntent('create task');
+    const plan = planActions(intent);
+    expect(plan.missingParams.some((m) => m.name === 'title')).toBe(true);
+  });
+
   it('blocks unallowlisted intents', () => {
     const intent = parseIntent('do something random');
     const plan = planActions(intent);

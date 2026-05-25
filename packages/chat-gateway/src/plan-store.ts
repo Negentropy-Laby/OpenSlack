@@ -10,6 +10,7 @@ export interface PendingPlan {
   action: 'confirm_merge' | 'show_doctor' | 'watch_pr' | 'cancel';
   value: string;
   riskLevel: 'none' | 'low' | 'medium' | 'high';
+  agentId?: string;
   planHash: string;
   createdAt: string;
   expiresAt: string;

@@ -17,6 +17,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@openslack/kernel": "workspace:*",
+    "@openslack/operator": "workspace:*",
     "yaml": "^2.7.0"
   }
 }

@@ -17,6 +17,7 @@ const REQUIRED_PARAMS: Record<string, Array<{ name: string; type: 'string' | 'nu
   ],
   issue_done: [{ name: 'issueNumber', type: 'number', description: 'Issue number to mark done' }],
   claim_task: [{ name: 'agentId', type: 'string', description: 'Agent ID' }],
+  create_task: [{ name: 'title', type: 'string', description: 'Task title, e.g. --title "Fix failing validation"' }],
 };
 
 export function identifyMissingParams(intent: Intent): MissingParam[] {

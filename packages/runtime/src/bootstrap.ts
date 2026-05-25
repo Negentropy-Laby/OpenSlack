@@ -1,6 +1,8 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { validateWorkspace } from '@openslack/workspace';
+import { validateWorkspace, parseAgentRegistry } from '@openslack/workspace';
+import type { ParsedAgentRegistryEntry } from '@openslack/workspace';
+import { generateRuntimeIdentity, loadRuntimeIdentity } from './identity.js';
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -73,16 +75,30 @@ export function bootstrapAgent(agentId: string): BootstrapResult {
     checks.push({ name: 'workspace', passed: false, detail: `Workspace validation error: ${(e as Error).message}` });
   }
 
-  // 6. Permission globs are syntactically valid
+  // 6. Permissions section is valid (v1 or v2)
   try {
-    const registryRaw = readFileSync(registryPath, 'utf-8');
-    if (registryRaw.includes('workspace_permissions:') && registryRaw.includes('allow:')) {
-      checks.push({ name: 'permissions', passed: true, detail: 'Permission globs present in registry' });
+    const registry = parseAgentRegistry(root, agentId);
+    if (registry && registry.permissions && registry.permissions.paths) {
+      const source = (registry as ParsedAgentRegistryEntry)._source_schema;
+      checks.push({ name: 'permissions', passed: true, detail: `Permissions present (source: ${source})` });
     } else {
-      checks.push({ name: 'permissions', passed: false, detail: 'No workspace_permissions found in registry' });
+      checks.push({ name: 'permissions', passed: false, detail: 'No valid permissions section found in registry' });
     }
-  } catch {
-    // Registry read error handled above
+  } catch (e) {
+    checks.push({ name: 'permissions', passed: false, detail: `Permission check error: ${(e as Error).message}` });
+  }
+
+  // 7. Runtime identity — generate if missing
+  const existingIdentity = loadRuntimeIdentity(root, agentId);
+  if (existingIdentity) {
+    checks.push({ name: 'runtime_identity', passed: true, detail: `Runtime identity: run_id=${existingIdentity.run_id}` });
+  } else {
+    try {
+      const identity = generateRuntimeIdentity({ root, agentId, provider: 'cli' });
+      checks.push({ name: 'runtime_identity', passed: true, detail: `Runtime identity generated: run_id=${identity.run_id}` });
+    } catch (e) {
+      checks.push({ name: 'runtime_identity', passed: false, detail: `Failed to generate runtime identity: ${(e as Error).message}` });
+    }
   }
 
   return {

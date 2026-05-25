@@ -37,6 +37,7 @@ export interface ActorMapping {
   provider: string;
   openslackActorId: string;
   roles: string[];
+  agentId?: string;
 }
 
 export interface GatewayConfig {

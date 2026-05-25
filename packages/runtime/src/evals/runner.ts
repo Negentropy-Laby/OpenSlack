@@ -126,9 +126,11 @@ function evaluateAssertion(evalCase: EvalCase, assertion: { description: string;
       }
       // EV-GOLDEN-007: Regression → rollback — real assertion
       if (check === 'rollback_task_created == true' || check === 'revert_pr_proposed == true') {
-        const taskId = createRollbackTask('EXP-FAKE-001');
-        const fileExists = existsSync(join(findRepoRoot(), '.openslack', 'self', 'evolution_backlog', `${taskId}.yaml`));
-        return { passed: fileExists, detail: `rollback task ${taskId} created` };
+        const result = createRollbackTask('EXP-FAKE-001');
+        const fileExists = result.taskId
+          ? existsSync(join(findRepoRoot(), '.openslack', 'self', 'evolution_backlog', `${result.taskId}.yaml`))
+          : false;
+        return { passed: fileExists, detail: `rollback task ${result.taskId} ${result.reason}` };
       }
     }
 

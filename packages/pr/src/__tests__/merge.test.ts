@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { mergeIfReady } from '../merge.js';
 import type { PRReviewReport, PRReviewPolicy } from '../types.js';
+import type { AgentPermissionSnapshot } from '@openslack/kernel';
 
 vi.mock('@openslack/github', () => ({
   getCODEOWNERS: vi.fn(() => Promise.resolve(null)),
@@ -40,6 +41,26 @@ function makeReport(overrides: Partial<PRReviewReport> = {}): PRReviewReport {
     recommendation: '',
     mergeable: true,
     ...overrides,
+  };
+}
+
+function makeSnapshot(actionVerdict: 'allow' | 'ask' | 'deny'): AgentPermissionSnapshot {
+  return {
+    principal: {
+      registry_id: 'test_agent',
+      runtime_uid: 'uid-001',
+      run_id: 'RUN-001',
+      provider: 'cli',
+    },
+    registry_entry_agent_id: 'test_agent',
+    permissions: {
+      paths: { allow: ['**'], deny: [] },
+      actions: { 'github.merge': actionVerdict },
+      github: { can_create_pr: true, can_comment: true, can_approve: false, can_merge: true },
+      max_risk_zone: 'yellow',
+    },
+    resolved_at: new Date().toISOString(),
+    source: 'registry_v2',
   };
 }
 
@@ -125,5 +146,16 @@ describe('mergeIfReady', () => {
 
     await mergeIfReady(1, DEFAULT_POLICY, { method: 'squash' });
     expect(mergePR).toHaveBeenCalledWith(1, { method: 'squash' });
+  });
+
+  it('blocks merge when agent authorization requires confirmation', async () => {
+    const { fetchPRDetails } = await import('../fetch.js');
+    vi.mocked(fetchPRDetails).mockResolvedValue(makeReport());
+
+    const result = await mergeIfReady(1, DEFAULT_POLICY, { snapshot: makeSnapshot('ask') });
+
+    expect(result.merged).toBe(false);
+    expect(result.decision).toBe('BLOCKED_AUTHORIZATION');
+    expect(result.message).toContain('requires authorization confirmation');
   });
 });

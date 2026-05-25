@@ -10,6 +10,7 @@ export interface OperatorRequest {
     id: string;
     type: 'terminal' | 'dm' | 'channel' | 'webhook';
   };
+  principal?: import('@openslack/kernel').AgentPrincipal;
 }
 
 export type IntentKind =
@@ -23,8 +24,12 @@ export type IntentKind =
   | 'pr_status'
   | 'pr_doctor'
   | 'pr_review'
+  | 'pr_queue'
   | 'pr_watch'
   | 'pr_merge'
+  | 'github_repair_labels'
+  | 'github_repair_claims'
+  | 'task_repair_worktrees'
   | 'governance_audit'
   | 'unknown';
 
@@ -43,6 +48,8 @@ export interface MissingParam {
 
 export interface PlanStep {
   id: string;
+  actionId?: string;
+  input?: Record<string, string | number | boolean | undefined>;
   tool: 'openslack-cli' | 'package-api';
   command: string;
   args: string[];

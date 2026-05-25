@@ -19,6 +19,9 @@ const ALL_EVENT_TYPES: CollaborationEventType[] = [
   'handoff.created', 'handoff.accepted', 'handoff.closed',
   'decision.recorded', 'decision.superseded',
   'room.summarized', 'digest.generated',
+  'workflow.previewed', 'workflow.started', 'workflow.completed', 'workflow.blocked',
+  'repair.previewed', 'repair.applied', 'repair.failed',
+  'notification.sent', 'notification.failed',
 ];
 
 function getEventsDir(): string {

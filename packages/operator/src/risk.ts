@@ -16,7 +16,6 @@ const SIDE_EFFECT_INTENTS = new Set([
   'pr_merge',
   'sync_task',
   'issue_done',
-  'create_task',
   'claim_task',
   'checkout_task',
 ]);

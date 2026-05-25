@@ -12,6 +12,13 @@ export interface GitHubClient {
   tokenExpiresAt?: string;
 }
 
+export interface GitHubIdentity {
+  login: string | null;
+  type: 'github_app' | 'user' | 'dry_run' | 'unknown';
+  authMode: AuthMode;
+  isBot: boolean;
+}
+
 export async function getClient(): Promise<GitHubClient> {
   const owner = process.env.GITHUB_OWNER || 'wsman';
   const repo = process.env.GITHUB_REPO || 'OpenSlack';
@@ -54,4 +61,44 @@ export async function getClient(): Promise<GitHubClient> {
     authMode: 'dry_run',
     isDryRun: true,
   };
+}
+
+export async function getAuthenticatedIdentity(): Promise<GitHubIdentity> {
+  const client = await getClient();
+
+  if (client.authMode === 'github_app_installation') {
+    return {
+      login: process.env.OPENSLACK_GITHUB_APP_SLUG || 'openslack-github-app',
+      type: 'github_app',
+      authMode: client.authMode,
+      isBot: true,
+    };
+  }
+
+  if (client.isDryRun) {
+    return {
+      login: null,
+      type: 'dry_run',
+      authMode: client.authMode,
+      isBot: true,
+    };
+  }
+
+  try {
+    const { data } = await client.octokit.users.getAuthenticated();
+    const login = data.login || null;
+    return {
+      login,
+      type: data.type === 'Bot' ? 'github_app' : 'user',
+      authMode: client.authMode,
+      isBot: data.type === 'Bot' || Boolean(login?.endsWith('[bot]')),
+    };
+  } catch {
+    return {
+      login: null,
+      type: 'unknown',
+      authMode: client.authMode,
+      isBot: false,
+    };
+  }
 }

@@ -1,11 +1,17 @@
 import { parseIntent, planActions, executePlan } from '@openslack/operator';
 import type { ExecutionResult } from '@openslack/operator';
 import type { ChatMessage, ChatResponse, GatewayConfig } from './types.js';
-import { verifyRequestSignature, mapActor, canExecuteSideEffects, buildDefaultActor } from './authz.js';
+import { verifyRequestSignature, mapActor, canExecuteSideEffects, buildDefaultActor, loadActorMappings } from './authz.js';
 import { formatPlanAsMarkdown, formatResultAsMarkdown, formatError } from './formatter.js';
 import { isDuplicate, markProcessed } from './interaction-store.js';
 import { handleAction, parseActionText } from './actions.js';
 import { createPendingPlan } from './plan-store.js';
+import { recordEvent } from '@openslack/collaboration';
+import { resolveAgentPrincipal } from '@openslack/runtime';
+
+function providerFor(message: ChatMessage): 'slack' | 'webhook' {
+  return message.channel.type === 'webhook' ? 'webhook' : 'slack';
+}
 
 export interface RouteContext {
   signature?: string;
@@ -17,6 +23,21 @@ export async function routeMessage(
   config: GatewayConfig,
   context: RouteContext,
 ): Promise<ChatResponse> {
+  try {
+    recordEvent({
+      type: 'chat.message.received',
+      actor: { id: message.user.id, kind: 'chat', provider: providerFor(message) },
+      object: { kind: 'plan', id: message.id },
+      source: { kind: 'chat', ref: message.channel.id },
+      summary: `Chat message received from ${message.user.id}`,
+      visibility: 'chat',
+      redacted: false,
+      containsSensitiveData: false,
+    });
+  } catch {
+    // best-effort event recording
+  }
+
   // 0. Handle button actions first
   const parsedAction = parseActionText(message.text);
   if (parsedAction) {
@@ -29,6 +50,20 @@ export async function routeMessage(
 
   // 1. Idempotency check
   if (isDuplicate(message.id, message.text, message.user.id, message.channel.id)) {
+    try {
+      recordEvent({
+        type: 'chat.message.duplicate_dropped',
+        actor: { id: message.user.id, kind: 'chat', provider: providerFor(message) },
+        object: { kind: 'plan', id: message.id },
+        source: { kind: 'chat', ref: message.channel.id },
+        summary: `Duplicate chat message dropped`,
+        visibility: 'chat',
+        redacted: false,
+        containsSensitiveData: false,
+      });
+    } catch {
+      // best-effort event recording
+    }
     return { text: '' }; // Silently drop duplicates
   }
 
@@ -41,8 +76,20 @@ export async function routeMessage(
   }
 
   // 3. Actor mapping
-  const actor = mapActor(message, []); // TODO: load from actorMappingPath
+  const actor = mapActor(message, loadActorMappings(config.actorMappingPath));
   const resolvedActor = actor ?? buildDefaultActor(message);
+  let agentAuth: Parameters<typeof executePlan>[1] = {};
+  try {
+    if (actor?.agentId) {
+      const resolved = resolveAgentPrincipal({ root: process.cwd(), agentId: actor.agentId, provider: providerFor(message) });
+      if ('error' in resolved) {
+        return formatError(`Authorization failed: ${resolved.error}`);
+      }
+      agentAuth = { principal: resolved.principal, snapshot: resolved.snapshot };
+    }
+  } catch (err) {
+    return formatError(`Authorization failed: ${(err as Error).message}`);
+  }
 
   // 4. Parse intent
   const intent = parseIntent(message.text);
@@ -65,8 +112,24 @@ export async function routeMessage(
   // 7. Side-effect policy check
   if (plan.sideEffects && !canExecuteSideEffects(actor, config)) {
     markProcessed(message.id, message.text, message.user.id, message.channel.id);
+    try {
+      recordEvent({
+        type: 'operator.plan.blocked',
+        actor: { id: resolvedActor.id, kind: actor ? 'human' : 'chat', provider: providerFor(message) },
+        object: { kind: 'plan', id: plan.goal },
+        source: { kind: 'chat', ref: message.channel.id },
+        summary: `Chat plan blocked by read-only actor policy: ${plan.goal}`,
+        visibility: 'chat',
+        redacted: false,
+        containsSensitiveData: false,
+        risk: plan.riskLevel,
+        nextAction: { owner: 'human', action: 'Map this chat user to an OpenSlack role with write permission' },
+      });
+    } catch {
+      // best-effort event recording
+    }
     return {
-      text: formatPlanAsMarkdown(plan) + '\n\n⚠️ This action has side effects. Unmapped actors are read-only.',
+      text: formatPlanAsMarkdown(plan) + '\n\n⚠️ This action has side effects. Unmapped actors are read-only. Add this user to the actor mapping with a write role to continue.',
     };
   }
 
@@ -82,6 +145,7 @@ export async function routeMessage(
       action: 'confirm_merge',
       value: prNumber,
       riskLevel: plan.riskLevel,
+      agentId: actor?.agentId,
     });
 
     const lines: string[] = [];
@@ -94,11 +158,28 @@ export async function routeMessage(
     lines.push('');
     lines.push('_Slack confirmation is not a GitHub approval. This will re-run PR doctor before merging._');
 
+    try {
+      recordEvent({
+        type: 'chat.plan.confirmation_requested',
+        actor: { id: resolvedActor.id, kind: actor ? 'human' : 'chat', provider: providerFor(message) },
+        object: { kind: 'plan', id: pending.planId },
+        source: { kind: 'chat', ref: message.channel.id },
+        summary: `Chat confirmation requested for ${plan.goal}`,
+        visibility: 'chat',
+        redacted: false,
+        containsSensitiveData: false,
+        risk: plan.riskLevel,
+        nextAction: { owner: 'human', action: `Confirm or cancel plan ${pending.planId}` },
+      });
+    } catch {
+      // best-effort event recording
+    }
+
     return { text: lines.join('\n') };
   }
 
   // 9. Execute
-  const result = await executePlan(plan, { dryRun: false });
+  const result = await executePlan(plan, { dryRun: false, ...agentAuth });
   markProcessed(message.id, message.text, message.user.id, message.channel.id);
 
   return formatResultAsMarkdown(result);

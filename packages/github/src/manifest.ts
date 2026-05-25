@@ -135,26 +135,30 @@ export function parseIssueTaskManifest(body: string): ManifestParseResult {
 
 export function renderIssueTaskManifest(manifest: IssueTaskManifest): string {
   const lines: string[] = ['```openslack-task'];
-  lines.push(`schema: ${manifest.schema}`);
-  lines.push(`task_id: ${manifest.task_id}`);
-  lines.push(`title: ${manifest.title}`);
+  const scalar = (value: string): string =>
+    /^[*[\]{}&!#|>%@`"'?:-]/.test(value) || value.includes(': ')
+      ? JSON.stringify(value)
+      : value;
+  lines.push(`schema: ${scalar(manifest.schema)}`);
+  lines.push(`task_id: ${scalar(manifest.task_id)}`);
+  lines.push(`title: ${scalar(manifest.title)}`);
   if (manifest.status) lines.push(`status: ${manifest.status}`);
-  if (manifest.task_type) lines.push(`task_type: ${manifest.task_type}`);
-  lines.push(`agent_type: ${manifest.agent_type}`);
+  if (manifest.task_type) lines.push(`task_type: ${scalar(manifest.task_type)}`);
+  lines.push(`agent_type: ${scalar(manifest.agent_type)}`);
   lines.push(`risk_level: ${manifest.risk_level}`);
   if (manifest.priority) lines.push(`priority: ${manifest.priority}`);
 
   if (manifest.required_capabilities?.length) {
     lines.push('required_capabilities:');
-    for (const c of manifest.required_capabilities) lines.push(`  - ${c}`);
+    for (const c of manifest.required_capabilities) lines.push(`  - ${scalar(c)}`);
   }
   if (manifest.allowed_paths?.length) {
     lines.push('allowed_paths:');
-    for (const p of manifest.allowed_paths) lines.push(`  - ${p}`);
+    for (const p of manifest.allowed_paths) lines.push(`  - ${scalar(p)}`);
   }
   if (manifest.forbidden_paths?.length) {
     lines.push('forbidden_paths:');
-    for (const p of manifest.forbidden_paths) lines.push(`  - ${p}`);
+    for (const p of manifest.forbidden_paths) lines.push(`  - ${scalar(p)}`);
   }
   if (manifest.output_contract?.length) {
     lines.push('output_contract:');
@@ -162,7 +166,7 @@ export function renderIssueTaskManifest(manifest: IssueTaskManifest): string {
   }
   if (manifest.success_criteria?.length) {
     lines.push('success_criteria:');
-    for (const s of manifest.success_criteria) lines.push(`  - ${s}`);
+    for (const s of manifest.success_criteria) lines.push(`  - ${scalar(s)}`);
   }
   if (manifest.human_approval_required_for?.length) {
     lines.push('human_approval_required_for:');
@@ -173,7 +177,7 @@ export function renderIssueTaskManifest(manifest: IssueTaskManifest): string {
     lines.push(`  ttl_minutes: ${manifest.lease.ttl_minutes}`);
     lines.push(`  heartbeat_minutes: ${manifest.lease.heartbeat_minutes}`);
   }
-  if (manifest.idempotency_key) lines.push(`idempotency_key: ${manifest.idempotency_key}`);
+  if (manifest.idempotency_key) lines.push(`idempotency_key: ${scalar(manifest.idempotency_key)}`);
   if (manifest.linked_pr) lines.push(`linked_pr: ${manifest.linked_pr}`);
   lines.push('```');
   return lines.join('\n');

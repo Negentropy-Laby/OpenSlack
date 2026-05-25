@@ -67,6 +67,9 @@ importers:
       commander:
         specifier: ^13.1.0
         version: 13.1.0
+      yaml:
+        specifier: ^2.7.0
+        version: 2.9.0
     devDependencies:
       '@types/node':
         specifier: ^22.0.0
@@ -74,15 +77,27 @@ importers:
 
   packages/chat-gateway:
     dependencies:
+      '@openslack/collaboration':
+        specifier: workspace:*
+        version: link:../collaboration
       '@openslack/operator':
         specifier: workspace:*
         version: link:../operator
       '@openslack/pr':
         specifier: workspace:*
         version: link:../pr
+      '@openslack/runtime':
+        specifier: workspace:*
+        version: link:../runtime
 
   packages/collaboration:
     dependencies:
+      '@openslack/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@openslack/operator':
+        specifier: workspace:*
+        version: link:../operator
       yaml:
         specifier: ^2.7.0
         version: 2.9.0
@@ -94,6 +109,12 @@ importers:
       '@octokit/rest':
         specifier: ^21.0.0
         version: 21.1.1
+      '@openslack/collaboration':
+        specifier: workspace:*
+        version: link:../collaboration
+      '@openslack/kernel':
+        specifier: workspace:*
+        version: link:../kernel
       yaml:
         specifier: ^2.7.0
         version: 2.9.0
@@ -109,6 +130,9 @@ importers:
 
   packages/operator:
     dependencies:
+      '@openslack/kernel':
+        specifier: workspace:*
+        version: link:../kernel
       '@openslack/pr':
         specifier: workspace:*
         version: link:../pr
@@ -139,6 +163,9 @@ importers:
       '@openslack/kernel':
         specifier: workspace:*
         version: link:../kernel
+      '@openslack/pr':
+        specifier: workspace:*
+        version: link:../pr
       '@openslack/workspace':
         specifier: workspace:*
         version: link:../workspace

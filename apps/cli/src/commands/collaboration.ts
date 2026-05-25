@@ -1,4 +1,7 @@
 import { Command } from 'commander';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { parse as parseYaml } from 'yaml';
 import {
   readEvents, filterEvents, renderActivityFeed, buildDigest, renderDigest,
   createHandoff, listHandoffs, getHandoff, acceptHandoff, closeHandoff,
@@ -6,10 +9,69 @@ import {
   recordDecision, listDecisions, getDecision, supersedeDecision,
   renderDecisionList, renderDecision,
   buildRoomView, renderRoom,
+  previewWorkflowTemplate, executeWorkflowTemplate, renderWorkflowPreview,
+  buildDashboardProjection, renderDashboardProjection,
 } from '@openslack/collaboration';
+import type { WorkflowTemplate } from '@openslack/collaboration';
+import { resolveAgentPrincipal } from '@openslack/runtime';
+
+type AgentAuthOptions = {
+  principal?: import('@openslack/kernel').AgentPrincipal;
+  snapshot?: import('@openslack/kernel').AgentPermissionSnapshot;
+};
+
+function findRepoRoot(): string {
+  let dir = process.cwd();
+  for (let i = 0; i < 10; i++) {
+    if (existsSync(join(dir, 'openslack.yaml'))) return dir;
+    const parent = join(dir, '..');
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return process.cwd();
+}
+
+function resolveAgentAuthOptions(agentId: string | undefined): AgentAuthOptions {
+  if (!agentId) return {};
+  const root = findRepoRoot();
+  const resolved = resolveAgentPrincipal({ root, agentId, provider: 'cli' });
+  if ('error' in resolved) {
+    console.error(`Authorization failed: ${resolved.error}`);
+    process.exit(1);
+  }
+  return { principal: resolved.principal, snapshot: resolved.snapshot };
+}
+
+function parseInputs(items: string[] | undefined): Record<string, unknown> {
+  const inputs: Record<string, unknown> = {};
+  for (const item of items ?? []) {
+    const [key, ...rest] = item.split('=');
+    if (!key || rest.length === 0) continue;
+    const value = rest.join('=');
+    if (/^-?\d+$/.test(value)) inputs[key] = Number(value);
+    else if (value === 'true' || value === 'false') inputs[key] = value === 'true';
+    else inputs[key] = value;
+  }
+  return inputs;
+}
+
+function loadWorkflowTemplate(path: string): WorkflowTemplate {
+  return parseYaml(readFileSync(path, 'utf-8')) as WorkflowTemplate;
+}
 
 export function collaborationCommands(): Command {
   const cmd = new Command('collaboration').description('OpenSlack Collaboration Layer');
+
+  cmd
+    .command('dashboard')
+    .description('Show projection-only team dashboard')
+    .option('--since <hours>', 'Window in hours; use 0 for all events', '24')
+    .action((options: { since: string }) => {
+      const sinceHours = parseInt(options.since, 10);
+      console.log(renderDashboardProjection(buildDashboardProjection({
+        sinceHours: Number.isFinite(sinceHours) ? sinceHours : 24,
+      })));
+    });
 
   cmd
     .command('activity')
@@ -232,6 +294,43 @@ export function collaborationCommands(): Command {
     });
 
   cmd.addCommand(room);
+
+  const workflow = new Command('workflow').description('Collaboration workflow templates');
+
+  workflow
+    .command('preview <file>')
+    .description('Preview a workflow template without executing it')
+    .option('--input <key=value>', 'Template input value', (value, previous: string[]) => [...previous, value], [])
+    .action((file: string, options: { input: string[] }) => {
+      const template = loadWorkflowTemplate(file);
+      const preview = previewWorkflowTemplate(template, parseInputs(options.input));
+      console.log(renderWorkflowPreview(preview));
+      if (preview.errors.length > 0) process.exit(1);
+    });
+
+  workflow
+    .command('execute <file>')
+    .description('Execute a workflow template after validation')
+    .option('--input <key=value>', 'Template input value', (value, previous: string[]) => [...previous, value], [])
+    .option('--dry-run', 'Validate and execute registered actions in dry-run mode')
+    .option('--agent-id <id>', 'Agent ID for authorization')
+    .action(async (file: string, options: { input: string[]; dryRun?: boolean; agentId?: string }) => {
+      const template = loadWorkflowTemplate(file);
+      const result = await executeWorkflowTemplate(template, parseInputs(options.input), {
+        dryRun: options.dryRun,
+        ...resolveAgentAuthOptions(options.agentId),
+      });
+      console.log(renderWorkflowPreview(result.preview));
+      console.log('');
+      console.log(`Status: ${result.status}`);
+      console.log(`Correlation: ${result.correlationId}`);
+      if (result.errors.length > 0) {
+        for (const error of result.errors) console.log(`Error: ${error}`);
+        process.exit(1);
+      }
+    });
+
+  cmd.addCommand(workflow);
 
   return cmd;
 }

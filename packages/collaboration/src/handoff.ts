@@ -2,6 +2,11 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from 'node:path';
 import { stringify as stringifyYaml, parse as parseYaml } from 'yaml';
 
+export interface HandoffPrincipal {
+  registry_id: string;
+  run_id: string;
+}
+
 export interface Handoff {
   schema: 'openslack.handoff.v1';
   id: string;
@@ -16,6 +21,7 @@ export interface Handoff {
   context: string;
   nextSteps: string[];
   notes?: string;
+  principal?: HandoffPrincipal;
 }
 
 function getHandoffDir(): string {
@@ -40,6 +46,7 @@ export function createHandoff(params: {
   context: string;
   nextSteps?: string[];
   notes?: string;
+  principal?: HandoffPrincipal;
 }): Handoff {
   const handoff: Handoff = {
     schema: 'openslack.handoff.v1',
@@ -53,6 +60,7 @@ export function createHandoff(params: {
     context: params.context,
     nextSteps: params.nextSteps || [],
     notes: params.notes,
+    principal: params.principal,
   };
 
   const dir = getHandoffDir();
@@ -187,6 +195,11 @@ export function renderHandoff(handoff: Handoff): string {
     for (const step of handoff.nextSteps) {
       lines.push(`  • ${step}`);
     }
+  }
+
+  if (handoff.principal) {
+    lines.push('');
+    lines.push(`Principal: ${handoff.principal.registry_id} run=${handoff.principal.run_id}`);
   }
 
   if (handoff.notes) {

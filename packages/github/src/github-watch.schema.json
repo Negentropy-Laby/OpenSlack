@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/github-watch.schema.json",
+  "title": "GitHubWatchConfig",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "openslack.github_watch.v1"
+    },
+    "repositories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "owner": { "type": "string", "minLength": 1 },
+          "repo": { "type": "string", "minLength": 1 },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["issues.opened", "issues.reopened", "issues.labeled"]
+            },
+            "minItems": 1
+          },
+          "labels": {
+            "type": "object",
+            "properties": {
+              "include": { "type": "array", "items": { "type": "string" } },
+              "exclude": { "type": "array", "items": { "type": "string" } }
+            },
+            "additionalProperties": false
+          },
+          "routes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sink": { "type": "string", "enum": ["console", "slack", "webhook"] },
+                "channel": { "type": "string" },
+                "name": { "type": "string" }
+              },
+              "required": ["sink"],
+              "additionalProperties": false
+            }
+          },
+          "auto_claim": {
+            "type": "object",
+            "properties": {
+              "enabled": { "type": "boolean" },
+              "agent_ids": { "type": "array", "items": { "type": "string" } }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": ["owner", "repo", "events"],
+        "additionalProperties": false
+      },
+      "minItems": 1
+    }
+  },
+  "required": ["schema", "repositories"],
+  "additionalProperties": false
+}

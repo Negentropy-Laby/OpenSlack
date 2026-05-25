@@ -152,6 +152,7 @@ export function selfCommands(): Command {
     .option('--clean', 'Remove auto-generated artifacts after run')
     .action(async (options) => {
       console.log(`Running eval suite: ${options.suite}...\n`);
+      const cleanStart = Date.now();
 
       if (options.suite === 'golden' || options.suite === 'all') {
         const results = runGoldenEval();
@@ -164,25 +165,21 @@ export function selfCommands(): Command {
         // P1-1: clean artifacts if --clean flag set
         if (options.clean) {
           try {
-            const { existsSync: ex, readdirSync, rmSync: del } = await import('node:fs');
+            const { existsSync: ex, readdirSync, rmSync: del, statSync } = await import('node:fs');
             const { join: j } = await import('node:path');
             const rootPath = process.cwd();
             const scorecardDir = j(rootPath, '.openslack', 'self', 'scorecards');
             const backlogDir = j(rootPath, '.openslack', 'self', 'evolution_backlog');
-            // Clean scorecards generated in the last minute
-            const now = Date.now();
-            for (const dir of [scorecardDir, backlogDir]) {
+            const yearDir = j(scorecardDir, String(new Date().getFullYear()));
+            const monthDir = j(yearDir, String(new Date().getMonth() + 1).padStart(2, '0'));
+            for (const dir of [monthDir, backlogDir]) {
               if (!ex(dir)) continue;
-              try {
-                const yearDir = j(scorecardDir, String(new Date().getFullYear()));
-                const monthDir = j(yearDir, String(new Date().getMonth() + 1).padStart(2, '0'));
-                if (ex(monthDir)) {
-                  for (const f of readdirSync(monthDir)) {
-                    const fp = j(monthDir, f);
-                    try { del(fp); } catch { /* ok */ }
-                  }
-                }
-              } catch { /* skip */ }
+              for (const f of readdirSync(dir)) {
+                const fp = j(dir, f);
+                try {
+                  if (statSync(fp).mtimeMs >= cleanStart - 1000) del(fp);
+                } catch { /* ok */ }
+              }
             }
             console.log('(cleaned artifacts)');
           } catch { /* skip */ }

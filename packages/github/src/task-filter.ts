@@ -1,4 +1,6 @@
 import type { IssueTaskManifest } from './manifest.js';
+import { extractTaskBlock, parseIssueTaskManifest } from './manifest.js';
+import type { RiskZone } from '@openslack/kernel';
 
 interface AgentCapabilities {
   primary?: string[];
@@ -104,4 +106,64 @@ export function filterRedZonePaths(changedPaths: string[]): string[] {
     /^packages\/self-evolution\/src\/core\//,
   ];
   return changedPaths.filter((p) => redPatterns.some((rp) => rp.test(p)));
+}
+
+const RISK_LEVEL_TO_ZONE: Record<IssueTaskManifest['risk_level'], RiskZone> = {
+  low: 'green',
+  medium: 'yellow',
+  high: 'red',
+  critical: 'black',
+};
+
+export function riskLevelToZone(level: IssueTaskManifest['risk_level']): RiskZone {
+  return RISK_LEVEL_TO_ZONE[level] ?? 'green';
+}
+
+export interface AutoClaimGateResult {
+  allowed: boolean;
+  reason: string;
+  manifest: IssueTaskManifest | null;
+  riskZone: RiskZone;
+  changedPaths: string[];
+}
+
+export function runAutoClaimGates(args: {
+  body: string;
+  agentCapabilities: { primary?: string[]; secondary?: string[] };
+  agentMaxRiskLevel: string;
+}): AutoClaimGateResult {
+  const block = extractTaskBlock(args.body);
+  if (!block) {
+    return { allowed: false, reason: 'No openslack-task block found in issue body', manifest: null, riskZone: 'green', changedPaths: [] };
+  }
+
+  const parseResult = parseIssueTaskManifest(args.body);
+  if (!parseResult.valid) {
+    return { allowed: false, reason: parseResult.errors.join('; '), manifest: null, riskZone: 'green', changedPaths: [] };
+  }
+  const manifest = parseResult.manifest!;
+
+  const riskResult = filterByRisk(manifest, args.agentMaxRiskLevel);
+  if (!riskResult.allowed) {
+    return { allowed: false, reason: riskResult.reason!, manifest, riskZone: riskLevelToZone(manifest.risk_level), changedPaths: [] };
+  }
+
+  const capResult = filterByCapability(manifest, args.agentCapabilities);
+  if (!capResult.allowed) {
+    return { allowed: false, reason: capResult.reason!, manifest, riskZone: riskLevelToZone(manifest.risk_level), changedPaths: [] };
+  }
+
+  const changedPaths = manifest.allowed_paths ?? [];
+  const pathResult = filterByPath(manifest, changedPaths);
+  if (!pathResult.allowed) {
+    return { allowed: false, reason: pathResult.reason!, manifest, riskZone: riskLevelToZone(manifest.risk_level), changedPaths };
+  }
+
+  return {
+    allowed: true,
+    reason: '',
+    manifest,
+    riskZone: riskLevelToZone(manifest.risk_level),
+    changedPaths,
+  };
 }

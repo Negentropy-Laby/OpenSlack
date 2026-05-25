@@ -48,7 +48,8 @@ export function buildRoomView(
       e.type === 'pr.merge.blocked' ||
       e.type === 'operator.plan.blocked' ||
       e.type === 'operator.execution.failed' ||
-      e.type === 'governance.audit.failed',
+      e.type === 'governance.audit.failed' ||
+      e.type === 'workflow.blocked',
   );
 
   let owner: string | undefined;
@@ -130,7 +131,8 @@ export function renderRoom(view: RoomView): string {
     lines.push('─'.repeat(40));
     for (const h of view.linkedHandoffs) {
       const icon = h.status === 'open' ? '○' : h.status === 'accepted' ? '◐' : '◉';
-      lines.push(`  ${icon} ${h.id}: ${h.from} → ${h.to}`);
+      const principalTag = h.principal ? ` (${h.principal.registry_id})` : '';
+      lines.push(`  ${icon} ${h.id}: ${h.from} → ${h.to}${principalTag}`);
     }
     lines.push('');
   }
@@ -140,7 +142,8 @@ export function renderRoom(view: RoomView): string {
     lines.push('─'.repeat(40));
     for (const d of view.linkedDecisions) {
       const icon = d.status === 'active' ? '●' : '○';
-      lines.push(`  ${icon} ${d.id}: ${d.decision}`);
+      const principalTag = d.principal ? ` (${d.principal.registry_id})` : '';
+      lines.push(`  ${icon} ${d.id}: ${d.decision}${principalTag}`);
     }
     lines.push('');
   }

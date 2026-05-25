@@ -35,7 +35,7 @@ describe('summarizePRForChat', () => {
     expect(summary.canMerge).toBe(true);
     expect(summary.blocker).toBeUndefined();
     expect(summary.why).toBe('All checks passed.');
-    expect(summary.next).toBe('Safe to merge.');
+    expect(summary.next).toContain('openslack pr merge 12');
   });
 
   it('returns blocked for missing human approval', () => {
@@ -47,7 +47,8 @@ describe('summarizePRForChat', () => {
     const summary = summarizePRForChat(report);
     expect(summary.canMerge).toBe(false);
     expect(summary.blocker).toBe('Missing valid human approval');
-    expect(summary.next).toContain('Request review');
+    expect(summary.next).toContain('GitHub approval');
+    expect(summary.owner).toBe('human');
   });
 
   it('returns blocked for checks pending', () => {
@@ -71,6 +72,18 @@ describe('summarizePRForChat', () => {
     const summary = summarizePRForChat(report);
     expect(summary.canMerge).toBe(false);
     expect(summary.blocker).toBe('Black Zone — never mergeable');
+  });
+
+  it('uses bot-authored PR guidance for sole CODEOWNER deadlocks', () => {
+    const report = makeReport({
+      riskZone: 'red',
+      decision: 'BLOCKED_AUTHOR_IS_SOLE_CODEOWNER',
+      reason: 'PR author is the only CODEOWNER.',
+      recommendation: 'Old recommendation.',
+    });
+    const summary = summarizePRForChat(report);
+    expect(summary.next).toContain('bot/agent-authored PR');
+    expect(summary.next).toContain('human CODEOWNER approval');
   });
 
   it('includes correct PR number and title', () => {

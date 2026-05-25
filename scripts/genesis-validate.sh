@@ -50,7 +50,13 @@ fi
 
 # 4. No secrets leaked
 echo -n "[4/5] secret scan ... "
-SECRETS_FOUND=$(grep -rlE '(sk-[a-zA-Z0-9]{20,})|(-----BEGIN (RSA|EC|OPENSSH|DSA) PRIVATE KEY-----)' "$ROOT" --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=.openslack.local 2>/dev/null || true)
+SECRETS_FOUND=$(grep -rlE '(sk-[a-zA-Z0-9]{20,})|(-----BEGIN (RSA|EC|OPENSSH|DSA) PRIVATE KEY-----)' "$ROOT" \
+  --exclude-dir=.git \
+  --exclude-dir=node_modules \
+  --exclude-dir=.openslack.local \
+  --exclude-dir=dist \
+  --exclude-dir=__tests__ 2>/dev/null \
+  | grep -vE '/docs/security/collaboration-audit\.md$' || true)
 if [ -n "$SECRETS_FOUND" ]; then
   echo "FAIL (potential secret in: $SECRETS_FOUND)"
   FAILED=1

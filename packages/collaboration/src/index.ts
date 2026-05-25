@@ -39,7 +39,7 @@ export {
   renderHandoff,
 } from './handoff.js';
 
-export type { Handoff } from './handoff.js';
+export type { Handoff, HandoffPrincipal } from './handoff.js';
 
 export {
   recordDecision,
@@ -50,7 +50,7 @@ export {
   renderDecision,
 } from './decision.js';
 
-export type { Decision } from './decision.js';
+export type { Decision, DecisionPrincipal } from './decision.js';
 
 export {
   parseRoomId,
@@ -59,6 +59,31 @@ export {
 } from './room.js';
 
 export type { RoomView } from './room.js';
+
+export {
+  validateWorkflowTemplate,
+  previewWorkflowTemplate,
+  executeWorkflowTemplate,
+  renderWorkflowPreview,
+} from './workflow.js';
+
+export {
+  buildDashboardProjection,
+  renderDashboardProjection,
+} from './dashboard.js';
+
+export type { DashboardBlocker, DashboardProjection } from './dashboard.js';
+
+export type {
+  WorkflowInputType,
+  WorkflowTemplateInput,
+  WorkflowTemplateStep,
+  WorkflowTemplatePhase,
+  WorkflowTemplate,
+  WorkflowPreviewStep,
+  WorkflowPreview,
+  WorkflowRunResult,
+} from './workflow.js';
 
 export type {
   CollaborationEvent,
@@ -81,4 +106,5 @@ export type {
   ChatEvent,
   GovernanceEvent,
   CollaborationObjectEvent,
+  RepairEvent,
 } from './types.js';
