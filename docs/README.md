@@ -22,7 +22,7 @@ Use this page when you know what you want to do, but not which document owns it.
 | GitHub watch daemon and realtime Issue notifications | `developer/github-watch-daemon.md`, `product/user-experience-roadmap.md` |
 | Agent identity and onboarding | `developer/agent-registry-schema.md`, `developer/new-agent-onboarding.md` |
 | Self-evolution, risk zones, and rollback | `product/phase-1.md`, `developer/self-evolution-kernel.md`, `security/self-evolution-guardrails.md` |
-| PR review and merge governance | `product/module-04-pr-review-merge-steward.md`, `user-guide.md` |
+| PR review, human approval, and merge governance | `product/module-04-pr-review-merge-steward.md`, `security/human-approval.md`, `user-guide.md` |
 | Collaboration events, handoffs, decisions, rooms, and workflows | `product/collaboration-layer.md`, `developer/collaboration-events.md`, `security/collaboration-audit.md` |
 | UX roadmap and productization plan | `product/user-experience-roadmap.md` |
 | Technical debt register | `developer/technical-debt.md` |

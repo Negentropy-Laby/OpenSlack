@@ -236,7 +236,7 @@ All non-trivial changes follow this path:
 5. Run validation.
 6. Open a PR.
 7. Use PRMS to diagnose merge readiness.
-8. Human approves when required.
+8. Human approval is collected and recorded when required.
 9. Merge Steward or a human merges only after gates pass.
 
 Recommended validation before opening or updating a PR:
@@ -266,7 +266,7 @@ These rules come from `.openslack/self/constitution.md`, `.openslack/self/invari
 
 1. **No direct push to main.** All changes go through PRs.
 2. **No self-review.** An agent or human author must not approve their own PR.
-3. **No auto-approval.** Agents must never submit `APPROVE` reviews. They may comment, recommend, request changes, diagnose, watch, and merge only after valid human approval.
+3. **No auto-approval.** Agents must never originate approval decisions or submit `APPROVE` reviews under bot/app/agent identity. They may analyze, comment, recommend, request changes, diagnose, watch, and merge only after valid human approval.
 4. **No sole-author-codeowner PR.** If a PR touches Red Zone paths and the author is the only valid CODEOWNER, the PR is governance-deadlocked. Recreate as bot/agent-authored, add a second real human CODEOWNER, or record an explicit bootstrap exception.
 5. **No self-prompt-edit.** Agents cannot edit their own registry or prompt files.
 6. **No validation bypass.** Do not disable, weaken, skip, or hide required checks.
@@ -275,6 +275,24 @@ These rules come from `.openslack/self/constitution.md`, `.openslack/self/invari
 9. **Black Zone is never mergeable.** Black Zone PRs are rejected, not escalated.
 
 Violation means immediate task failure and governance review.
+
+---
+
+## Human Approval Definition
+
+Human approval is the human's explicit decision, not the requirement that the human personally open the GitHub PR page. A human may rely on PRMS output, CI status, changed-file summaries, and agent analysis before deciding.
+
+A valid approval for GitHub enforcement still requires a GitHub review from the required human identity, especially for Red Zone CODEOWNER paths. Chat confirmation or an agent message alone is not a CODEOWNER approval.
+
+Agents may prepare evidence and mechanically relay an explicit human decision only when all of these are true:
+
+- the human decision names the PR and states approve or reject;
+- the human is authorized and is not approving their own PR;
+- the GitHub review is recorded under the human's GitHub identity, not a bot/app/agent identity;
+- the review body preserves provenance that the decision came from the human after PRMS/agent analysis;
+- PRMS and branch protection still pass.
+
+Agents must treat vague consent, silence, prior approvals, or missing PR numbers as no approval. See `docs/security/human-approval.md`.
 
 ---
 
@@ -329,12 +347,14 @@ Allowed agent actions:
 - post comments
 - diagnose blockers
 - request changes when policy allows
+- relay an explicit human approval decision only through an authorized human GitHub identity
 - watch checks / approvals
 - merge only when `pr doctor` returns `READY_TO_MERGE`
 
 Forbidden agent actions:
 
-- approve PRs
+- originate approval decisions
+- approve under bot/app/agent identity
 - bypass rulesets
 - merge without valid human approval
 - merge Black Zone changes

@@ -7,17 +7,26 @@ status_date: 2026-05-23
 
 ## Overview
 
-The agent-assisted PR gatekeeper. PRMS fetches PR metadata, classifies risk zones, checks merge readiness against policies, and generates review reports. It **never approves PRs** — approval remains a human-only action.
+The agent-assisted PR gatekeeper. PRMS fetches PR metadata, classifies risk zones, checks merge readiness against policies, and generates review reports. It **never decides approval** — approval remains a human-only decision.
 
 ## Design Principles
 
 | Principle | Rule |
 |-----------|------|
 | Agent reviews | Agent can analyze, classify, report, recommend |
-| Human approves | Only humans submit `APPROVE` reviews |
+| Human approves | Only humans decide approval; GitHub enforcement requires the human GitHub identity |
+| Agent-assisted evidence | Human reviewers may rely on PRMS and agent summaries instead of personally opening the PR page |
 | Agent merges after approval | Agent can execute merge only after GitHub confirms all gates satisfied |
 | No self-review | Agent cannot review PRs it authored |
 | No bypass | Agent cannot bypass branch protection ruleset |
+
+## Human Approval Semantics
+
+Human approval means an authorized human explicitly decides approve or reject for a named PR. The human can make that decision after reading an agent-generated report, PRMS doctor output, CI status, changed files, and risk classification.
+
+For Red Zone and CODEOWNER gates, the decision must still be recorded as a GitHub review by the required human GitHub identity. A chat confirmation is evidence of human intent, but it is not by itself a GitHub CODEOWNER approval. Bot/app/agent approvals remain invalid.
+
+See `docs/security/human-approval.md` for the cross-project definition.
 
 ## CLI Commands
 
@@ -69,7 +78,7 @@ See `.openslack/policies/pr_review.yaml`:
 See `.openslack/agents/registry/pr_reviewer.yaml`:
 - Role: reviewer
 - Can: fetch PR, classify, report, recommend
-- Cannot: approve, merge, bypass ruleset
+- Cannot: decide approval, approve under bot/app/agent identity, bypass ruleset
 
 ## Package Structure
 

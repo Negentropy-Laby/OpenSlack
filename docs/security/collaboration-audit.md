@@ -71,8 +71,10 @@ All event metadata passes through `sanitizeEvent()` before write.
 Chat messages produce events, but the Collaboration Layer does not:
 - Store full message text (only message ID, hash, intent kind)
 - Store Slack token or signing secret
-- Treat Slack confirmation as GitHub approval
-- Allow agent approval of PRs
+- Treat Slack confirmation alone as GitHub approval
+- Allow agent-originated PR approval decisions
+
+For the human approval definition, see `docs/security/human-approval.md`.
 
 ## Verification
 
