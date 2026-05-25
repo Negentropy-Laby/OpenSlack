@@ -119,7 +119,7 @@ The agent-assisted PR gatekeeper. Reviews PRs, classifies risk, checks merge rea
 - **Doctor:** `openslack pr doctor 10` → 11-gate governance diagnosis (deadlock, checks, approvals)
 - **Queue:** `openslack pr queue` → open PRs sorted by readiness and blocker owner
 - **Merge:** `openslack pr merge 10` → execute merge only after all gates pass
-- **Policy:** No auto-approval. No self-review. Red Zone requires human. Black Zone blocked.
+- **Policy:** No auto-approval. No self-review. Red Zone requires an explicit human decision recorded through the required human GitHub identity. Black Zone blocked.
 
 See: [`docs/product/module-04-pr-review-merge-steward.md`](docs/product/module-04-pr-review-merge-steward.md)
 

@@ -20,8 +20,9 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 
 - Setup and repair commands are read-only or preview-first unless `--apply` is supplied.
 - Task creation previews by default; GitHub Issue creation requires `--create-issue`.
-- Chat confirmation is not GitHub approval.
-- Agents cannot approve PRs, bypass CODEOWNERS, or merge without PRMS and GitHub gates.
+- Human approval can be based on OpenSlack's PRMS/agent summary; the human does not need to manually browse the PR page.
+- Chat confirmation alone is not GitHub approval; CODEOWNER gates still require a GitHub review from the human identity.
+- Agents cannot decide PR approval, approve under bot/app/agent identity, bypass CODEOWNERS, or merge without PRMS and GitHub gates.
 - Agent-scoped mutating commands require `--agent-id` and an authorized runtime identity.
 
 ## Setup
@@ -134,7 +135,7 @@ restricted to registered OpenSlack actions; raw shell commands are rejected.
 | `openslack chat start --adapter webhook --port 3000 --secret <secret>` | Start webhook adapter with HMAC signature verification |
 | `openslack chat start --adapter slack --port 3000 --secret <signing-secret>` | Start Slack Events API adapter |
 
-Chat Gateway is projection-only. GitHub/Git/.openslack remain the sole source of truth. Slack confirmation is not a GitHub CODEOWNER approval.
+Chat Gateway is projection-only. GitHub/Git/.openslack remain the sole source of truth. Slack confirmation can carry an explicit human decision, but it is not by itself a GitHub CODEOWNER approval.
 
 Actor mappings are loaded from `GatewayConfig.actorMappingPath` when configured.
 Unmapped users are read-only by default. PRMS chat cards render compact PR
