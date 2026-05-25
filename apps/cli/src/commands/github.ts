@@ -3,7 +3,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { getClient, queryReadyItems } from '@openslack/github';
-import { recordEvent } from '@openslack/collaboration';
+import { recordEvent as _recordEvent } from '@openslack/collaboration';
+import type { RecordEventFn } from '@openslack/github';
+const recordEvent = _recordEvent as unknown as RecordEventFn;
 import { buildAutoClaimFn } from './watch-auto-claim.js';
 
 function findRepoRoot(): string {
@@ -317,6 +319,8 @@ export function githubCommands(): Command {
     .option('--poll-interval <seconds>', 'Polling interval in seconds', '300')
     .action(async (options: { config: string; poll?: boolean; pollInterval?: string }) => {
       const { loadGitHubWatchConfig, WatchDaemon } = await import('@openslack/github');
+      const { recordEvent: _rec } = await import('@openslack/collaboration');
+      const recordEvent = _rec as unknown as import('@openslack/github').RecordEventFn;
       const result = loadGitHubWatchConfig(options.config);
       if (!result.valid) {
         console.error('Invalid watch config:');
@@ -332,7 +336,7 @@ export function githubCommands(): Command {
       const autoClaimFn = hasAutoClaim ? buildAutoClaimFn(process.cwd()) : undefined;
 
       if (options.poll) {
-        const daemon = new WatchDaemon(result.config!, '', undefined, sinkOptions, autoClaimFn);
+        const daemon = new WatchDaemon(result.config!, '', undefined, sinkOptions, autoClaimFn, recordEvent);
         const intervalSeconds = parseInt(options.pollInterval ?? '300', 10);
 
         const shutdown = async () => {
@@ -351,7 +355,7 @@ export function githubCommands(): Command {
           console.error('Missing OPENSLACK_GITHUB_WEBHOOK_SECRET environment variable');
           process.exit(1);
         }
-        const daemon = new WatchDaemon(result.config!, secret, undefined, sinkOptions, autoClaimFn);
+        const daemon = new WatchDaemon(result.config!, secret, undefined, sinkOptions, autoClaimFn, recordEvent);
         const port = parseInt(process.env.OPENSLACK_GITHUB_WATCH_PORT ?? '3100', 10);
 
         const shutdown = async () => {
@@ -377,6 +381,8 @@ export function githubCommands(): Command {
     .requiredOption('--action <action>', 'Issue action (opened, reopened, labeled)')
     .action(async (options: { config: string; owner: string; repo: string; issueNumber: string; action: string }) => {
       const { loadGitHubWatchConfig, WatchDaemon } = await import('@openslack/github');
+      const { recordEvent: _rec } = await import('@openslack/collaboration');
+      const recordEvent = _rec as unknown as import('@openslack/github').RecordEventFn;
       type NormalizedIssueEvent = import('@openslack/github').NormalizedIssueEvent;
       const result = loadGitHubWatchConfig(options.config);
       if (!result.valid) {
@@ -386,7 +392,7 @@ export function githubCommands(): Command {
       }
       const hasAutoClaim = result.config!.repositories.some((r) => r.auto_claim?.enabled);
       const autoClaimFn = hasAutoClaim ? buildAutoClaimFn(process.cwd()) : undefined;
-      const daemon = new WatchDaemon(result.config!, '', undefined, undefined, autoClaimFn);
+      const daemon = new WatchDaemon(result.config!, '', undefined, undefined, autoClaimFn, recordEvent);
       const event: NormalizedIssueEvent = {
         action: options.action,
         owner: options.owner,
@@ -414,6 +420,8 @@ export function githubCommands(): Command {
     .requiredOption('--config <path>', 'Config file path')
     .action(async (options: { config: string }) => {
       const { loadGitHubWatchConfig, WatchDaemon } = await import('@openslack/github');
+      const { recordEvent: _rec } = await import('@openslack/collaboration');
+      const recordEvent = _rec as unknown as import('@openslack/github').RecordEventFn;
       const result = loadGitHubWatchConfig(options.config);
       if (!result.valid) {
         console.error('Invalid watch config:');
@@ -426,7 +434,7 @@ export function githubCommands(): Command {
       };
       const hasAutoClaim = result.config!.repositories.some((r) => r.auto_claim?.enabled);
       const autoClaimFn = hasAutoClaim ? buildAutoClaimFn(process.cwd()) : undefined;
-      const daemon = new WatchDaemon(result.config!, '', undefined, sinkOptions, autoClaimFn);
+      const daemon = new WatchDaemon(result.config!, '', undefined, sinkOptions, autoClaimFn, recordEvent);
       const pollResult = await daemon.pollAll();
       console.log(`Polled ${pollResult.reposPolled} repo(s), dispatched ${pollResult.eventsDispatched} event(s)`);
       if (pollResult.errors.length > 0) {

@@ -8,8 +8,22 @@ import { WatchCursorStore, type RepoCursor } from './watch-cursor.js';
 import { pollRepoIssues } from './watch-poller.js';
 import { normalizePollIssue } from './poll-normalizer.js';
 import { getClient } from './client.js';
-import { recordEvent } from '@openslack/collaboration';
-import type { CollaborationEvent } from '@openslack/collaboration';
+
+export interface CollaborationEventRecord {
+  id: string;
+  type: string;
+  actor: { id: string; kind: string; provider: string };
+  object: { kind: string; id: string; url?: string };
+  source: { kind: string; ref: string };
+  summary: string;
+  visibility: string;
+  redacted: boolean;
+  containsSensitiveData: boolean;
+  metadata?: Record<string, unknown>;
+  timestamp: string;
+}
+
+export type RecordEventFn = (event: unknown) => CollaborationEventRecord;
 
 export interface NotificationPayload {
   type: string;
@@ -64,13 +78,15 @@ export function formatConsoleNotification(payload: NotificationPayload): string 
 }
 
 function recordNotificationEvent(
+  recordFn: RecordEventFn | null,
   success: boolean,
   route: GitHubWatchRoute,
   payload: NotificationPayload,
   error?: string,
 ): void {
+  if (!recordFn) return;
   try {
-    recordEvent({
+    recordFn({
       type: success ? 'notification.sent' : 'notification.failed',
       actor: { id: 'github-watch', kind: 'github', provider: 'github' },
       object: { kind: 'issue', id: `${payload.repo}#${payload.issueNumber}`, url: payload.url },
@@ -95,6 +111,7 @@ export class WatchDaemon {
   private sinks: Map<string, NotificationSink>;
   private cursorStore: WatchCursorStore;
   private autoClaimFn: AutoClaimFn | null;
+  private recordEventFn: RecordEventFn | null;
   private server: Server | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -104,6 +121,7 @@ export class WatchDaemon {
     dedupe?: WatchDedupeStore,
     sinkOptions?: { slackBotToken?: string; webhookUrl?: string },
     autoClaimFn?: AutoClaimFn,
+    recordEventFn?: RecordEventFn,
   ) {
     this.config = config;
     this.secret = secret;
@@ -111,6 +129,7 @@ export class WatchDaemon {
     this.sinks = createSinks(sinkOptions ?? {});
     this.cursorStore = new WatchCursorStore();
     this.autoClaimFn = autoClaimFn ?? null;
+    this.recordEventFn = recordEventFn ?? null;
   }
 
   async start(port: number): Promise<void> {
@@ -136,7 +155,7 @@ export class WatchDaemon {
     });
   }
 
-  async once(event: NormalizedIssueEvent, sourceRef: string = 'github.watch.webhook'): Promise<CollaborationEvent | null> {
+  async once(event: NormalizedIssueEvent, sourceRef: string = 'github.watch.webhook'): Promise<CollaborationEventRecord | null> {
     const repoConfig = this.config.repositories.find(
       (r) => r.owner === event.owner && r.repo === event.repo,
     );
@@ -155,23 +174,25 @@ export class WatchDaemon {
       ? `Issue ${event.owner}/${event.repo}#${event.issueNumber} matches watch filters: ${event.title}`
       : `Issue ${event.owner}/${event.repo}#${event.issueNumber} did not match watch filters`;
 
-    let collabEvent: CollaborationEvent | null = null;
+    let collabEvent: CollaborationEventRecord | null = null;
     try {
-      collabEvent = recordEvent({
-        type: eventType,
-        actor: { id: 'github-watch', kind: 'github', provider: 'github' },
-        object: { kind: 'issue', id: `${event.owner}/${event.repo}#${event.issueNumber}`, url: event.url },
-        source: { kind: 'github', ref: sourceRef },
-        summary,
-        visibility: 'local',
-        redacted: false,
-        containsSensitiveData: false,
-        metadata: {
-          labels: event.labels,
-          action: event.action,
-          deliveryId: event.deliveryId || undefined,
-        },
-      });
+      if (this.recordEventFn) {
+        collabEvent = this.recordEventFn({
+          type: eventType,
+          actor: { id: 'github-watch', kind: 'github', provider: 'github' },
+          object: { kind: 'issue', id: `${event.owner}/${event.repo}#${event.issueNumber}`, url: event.url },
+          source: { kind: 'github', ref: sourceRef },
+          summary,
+          visibility: 'local',
+          redacted: false,
+          containsSensitiveData: false,
+          metadata: {
+            labels: event.labels,
+            action: event.action,
+            deliveryId: event.deliveryId || undefined,
+          },
+        });
+      }
     } catch {
       // best-effort event recording
     }
@@ -183,14 +204,14 @@ export class WatchDaemon {
         const sink = this.sinks.get(route.sink);
         if (!sink) {
           console.warn(`No sink configured for: ${route.sink}`);
-          recordNotificationEvent(false, route, payload, `No sink configured: ${route.sink}`);
+          recordNotificationEvent(this.recordEventFn, false, route, payload, `No sink configured: ${route.sink}`);
           continue;
         }
         try {
           const result = await sink.send(payload, route);
-          recordNotificationEvent(result.ok, route, payload, result.error);
+          recordNotificationEvent(this.recordEventFn, result.ok, route, payload, result.error);
         } catch (err) {
-          recordNotificationEvent(false, route, payload, (err as Error).message);
+          recordNotificationEvent(this.recordEventFn, false, route, payload, (err as Error).message);
         }
       }
     }

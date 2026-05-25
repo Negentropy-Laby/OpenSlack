@@ -17,7 +17,6 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@openslack/collaboration": "workspace:*",
     "@openslack/kernel": "workspace:*",
     "@octokit/rest": "^21.0.0",
     "yaml": "^2.7.0"

@@ -10,6 +10,21 @@ import type { NormalizedIssueEvent } from '../issue-normalizer.js';
 import { WatchDedupeStore } from '../watch-dedupe.js';
 import { WatchCursorStore } from '../watch-cursor.js';
 
+function mockRecordEvent(event: unknown) {
+  return {
+    id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    type: (event as Record<string, unknown>).type as string,
+    actor: (event as Record<string, unknown>).actor as { id: string; kind: string; provider: string },
+    object: (event as Record<string, unknown>).object as { kind: string; id: string; url?: string },
+    source: (event as Record<string, unknown>).source as { kind: string; ref: string },
+    summary: (event as Record<string, unknown>).summary as string,
+    visibility: 'local',
+    redacted: false,
+    containsSensitiveData: false,
+    timestamp: new Date().toISOString(),
+  };
+}
+
 let tempDir: string;
 const secret = 'test-webhook-secret';
 
@@ -83,7 +98,7 @@ function sendRequest(port: number, body: string, headers: Record<string, string>
 describe('WatchDaemon', () => {
   it('handles a valid webhook and returns event_id', async () => {
     const dedupe = new WatchDedupeStore(tempDir);
-    const daemon = new WatchDaemon(config, secret, dedupe);
+    const daemon = new WatchDaemon(config, secret, dedupe, undefined, undefined, mockRecordEvent);
     const port = 3101 + Math.floor(Math.random() * 1000);
     await daemon.start(port);
 
@@ -104,7 +119,7 @@ describe('WatchDaemon', () => {
   });
 
   it('rejects invalid signature with 401', async () => {
-    const daemon = new WatchDaemon(config, secret, new WatchDedupeStore(tempDir));
+    const daemon = new WatchDaemon(config, secret, new WatchDedupeStore(tempDir), undefined, undefined, mockRecordEvent);
     const port = 3101 + Math.floor(Math.random() * 1000);
     await daemon.start(port);
 
@@ -121,7 +136,7 @@ describe('WatchDaemon', () => {
   });
 
   it('ignores non-issues events with 202', async () => {
-    const daemon = new WatchDaemon(config, secret, new WatchDedupeStore(tempDir));
+    const daemon = new WatchDaemon(config, secret, new WatchDedupeStore(tempDir), undefined, undefined, mockRecordEvent);
     const port = 3101 + Math.floor(Math.random() * 1000);
     await daemon.start(port);
 
@@ -139,7 +154,7 @@ describe('WatchDaemon', () => {
   });
 
   it('ignores repos not in allowlist with 202', async () => {
-    const daemon = new WatchDaemon(config, secret, new WatchDedupeStore(tempDir));
+    const daemon = new WatchDaemon(config, secret, new WatchDedupeStore(tempDir), undefined, undefined, mockRecordEvent);
     const port = 3101 + Math.floor(Math.random() * 1000);
     await daemon.start(port);
 
@@ -162,7 +177,7 @@ describe('WatchDaemon', () => {
 
   it('suppresses duplicate deliveries', async () => {
     const dedupe = new WatchDedupeStore(tempDir);
-    const daemon = new WatchDaemon(config, secret, dedupe);
+    const daemon = new WatchDaemon(config, secret, dedupe, undefined, undefined, mockRecordEvent);
     const port = 3101 + Math.floor(Math.random() * 1000);
     await daemon.start(port);
 
@@ -188,7 +203,7 @@ describe('WatchDaemon', () => {
 
   it('once() processes a single event without HTTP', async () => {
     const dedupe = new WatchDedupeStore(tempDir);
-    const daemon = new WatchDaemon(config, '', dedupe);
+    const daemon = new WatchDaemon(config, '', dedupe, undefined, undefined, mockRecordEvent);
     const event: NormalizedIssueEvent = {
       action: 'opened',
       owner: 'Negentropy-Laby',
@@ -209,7 +224,7 @@ describe('WatchDaemon', () => {
 
   it('once() deduplicates by stable key when deliveryId is empty', async () => {
     const dedupe = new WatchDedupeStore(tempDir);
-    const daemon = new WatchDaemon(config, '', dedupe);
+    const daemon = new WatchDaemon(config, '', dedupe, undefined, undefined, mockRecordEvent);
     const event: NormalizedIssueEvent = {
       action: 'opened',
       owner: 'Negentropy-Laby',
@@ -247,7 +262,7 @@ describe('WatchDaemon', () => {
         },
       ],
     };
-    const daemon = new WatchDaemon(multiRepoConfig, secret, new WatchDedupeStore(tempDir));
+    const daemon = new WatchDaemon(multiRepoConfig, secret, new WatchDedupeStore(tempDir), undefined, undefined, mockRecordEvent);
     const port = 3101 + Math.floor(Math.random() * 1000);
     await daemon.start(port);
 
@@ -319,7 +334,7 @@ describe('WatchDaemon sink dispatch', () => {
     };
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const dedupe = new WatchDedupeStore(tempDir);
-    const daemon = new WatchDaemon(routeConfig, '', dedupe);
+    const daemon = new WatchDaemon(routeConfig, '', dedupe, undefined, undefined, mockRecordEvent);
     const event: NormalizedIssueEvent = {
       action: 'opened',
       owner: 'Negentropy-Laby',
@@ -353,7 +368,7 @@ describe('WatchDaemon sink dispatch', () => {
       }],
     };
     const dedupe = new WatchDedupeStore(tempDir);
-    const daemon = new WatchDaemon(routeConfig, '', dedupe);
+    const daemon = new WatchDaemon(routeConfig, '', dedupe, undefined, undefined, mockRecordEvent);
     const event: NormalizedIssueEvent = {
       action: 'opened',
       owner: 'Negentropy-Laby',
@@ -390,7 +405,7 @@ describe('WatchDaemon sink dispatch', () => {
     const dedupe = new WatchDedupeStore(tempDir);
     const daemon = new WatchDaemon(routeConfig, '', dedupe, {
       webhookUrl: 'https://broken.example.com/hook',
-    });
+    }, undefined, mockRecordEvent);
     const event: NormalizedIssueEvent = {
       action: 'opened',
       owner: 'Negentropy-Laby',
@@ -416,7 +431,7 @@ describe('WatchDaemon polling', () => {
     const getClient = await import('@openslack/github').then(m => m.getClient);
     // getClient in test env returns isDryRun when no GITHUB_TOKEN is set
     const dedupe = new WatchDedupeStore(tempDir);
-    const daemon = new WatchDaemon(config, '', dedupe);
+    const daemon = new WatchDaemon(config, '', dedupe, undefined, undefined, mockRecordEvent);
     const result = await daemon.pollAll();
     // If the environment has no token, this will be a dry-run error
     // If it has a token, reposPolled could be > 0 but the test still passes
@@ -427,7 +442,7 @@ describe('WatchDaemon polling', () => {
   it('pollAll() deduplicates polled events across calls', async () => {
     // Use once() directly to simulate two polls with the same event
     const dedupe = new WatchDedupeStore(tempDir);
-    const daemon = new WatchDaemon(config, '', dedupe);
+    const daemon = new WatchDaemon(config, '', dedupe, undefined, undefined, mockRecordEvent);
     const event: NormalizedIssueEvent = {
       action: 'opened',
       owner: 'Negentropy-Laby',
@@ -460,7 +475,7 @@ describe('WatchDaemon polling', () => {
 
   it('webhook and poll events are deduplicated via stable key', async () => {
     const dedupe = new WatchDedupeStore(tempDir);
-    const daemon = new WatchDaemon(config, '', dedupe);
+    const daemon = new WatchDaemon(config, '', dedupe, undefined, undefined, mockRecordEvent);
     const event: NormalizedIssueEvent = {
       action: 'opened',
       owner: 'Negentropy-Laby',
@@ -487,7 +502,7 @@ describe('WatchDaemon polling', () => {
 
   it('stopPolling clears the interval', async () => {
     const dedupe = new WatchDedupeStore(tempDir);
-    const daemon = new WatchDaemon(config, '', dedupe);
+    const daemon = new WatchDaemon(config, '', dedupe, undefined, undefined, mockRecordEvent);
     // Should not throw even if never started
     daemon.stopPolling();
     // Start and stop
@@ -513,7 +528,7 @@ describe('WatchDaemon polling', () => {
       }],
     };
     const dedupe = new WatchDedupeStore(tempDir);
-    const daemon = new WatchDaemon(labeledOnlyConfig, '', dedupe);
+    const daemon = new WatchDaemon(labeledOnlyConfig, '', dedupe, undefined, undefined, mockRecordEvent);
     const event: NormalizedIssueEvent = {
       action: 'opened',
       owner: 'Negentropy-Laby',
@@ -539,7 +554,7 @@ describe('WatchDaemon auto-claim', () => {
   it('does not call autoClaimFn when auto_claim is disabled (default)', async () => {
     const claimFn = vi.fn().mockResolvedValue(undefined);
     const dedupe = new WatchDedupeStore(tempDir);
-    const daemon = new WatchDaemon(config, '', dedupe, undefined, claimFn);
+    const daemon = new WatchDaemon(config, '', dedupe, undefined, claimFn, mockRecordEvent);
     const event: NormalizedIssueEvent = {
       action: 'opened',
       owner: 'Negentropy-Laby',
@@ -569,7 +584,7 @@ describe('WatchDaemon auto-claim', () => {
       }],
     };
     const dedupe = new WatchDedupeStore(tempDir);
-    const daemon = new WatchDaemon(autoClaimConfig, '', dedupe);
+    const daemon = new WatchDaemon(autoClaimConfig, '', dedupe, undefined, undefined, mockRecordEvent);
     const event: NormalizedIssueEvent = {
       action: 'opened',
       owner: 'Negentropy-Laby',
@@ -601,7 +616,7 @@ describe('WatchDaemon auto-claim', () => {
       }],
     };
     const dedupe = new WatchDedupeStore(tempDir);
-    const daemon = new WatchDaemon(autoClaimConfig, '', dedupe, undefined, claimFn);
+    const daemon = new WatchDaemon(autoClaimConfig, '', dedupe, undefined, claimFn, mockRecordEvent);
     const event: NormalizedIssueEvent = {
       action: 'opened',
       owner: 'Negentropy-Laby',
@@ -633,7 +648,7 @@ describe('WatchDaemon auto-claim', () => {
       }],
     };
     const dedupe = new WatchDedupeStore(tempDir);
-    const daemon = new WatchDaemon(autoClaimConfig, '', dedupe, undefined, claimFn);
+    const daemon = new WatchDaemon(autoClaimConfig, '', dedupe, undefined, claimFn, mockRecordEvent);
     const event: NormalizedIssueEvent = {
       action: 'opened',
       owner: 'Negentropy-Laby',
@@ -664,7 +679,7 @@ describe('WatchDaemon auto-claim', () => {
       }],
     };
     const dedupe = new WatchDedupeStore(tempDir);
-    const daemon = new WatchDaemon(autoClaimConfig, '', dedupe, undefined, claimFn);
+    const daemon = new WatchDaemon(autoClaimConfig, '', dedupe, undefined, claimFn, mockRecordEvent);
     const event: NormalizedIssueEvent = {
       action: 'opened',
       owner: 'Negentropy-Laby',

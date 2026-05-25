@@ -25,7 +25,7 @@ export { normalizeIssueEvent, matchesRepoConfig } from './issue-normalizer.js';
 export type { NormalizedIssueEvent } from './issue-normalizer.js';
 export { WatchDedupeStore } from './watch-dedupe.js';
 export { WatchDaemon, createNotificationPayload, formatConsoleNotification } from './watch-daemon.js';
-export type { NotificationPayload, AutoClaimFn } from './watch-daemon.js';
+export type { NotificationPayload, AutoClaimFn, RecordEventFn, CollaborationEventRecord } from './watch-daemon.js';
 export { createSinks, ConsoleSink, SlackSink, WebhookSink } from './notification-sinks.js';
 export type { NotificationSink, SinkResult } from './notification-sinks.js';
 export { WatchCursorStore } from './watch-cursor.js';
