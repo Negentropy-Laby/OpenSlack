@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/agent-registry-v2.schema.json",
+  "title": "OpenSlack Agent Registry Entry v2",
+  "type": "object",
+  "required": ["schema", "agent_id", "display_name", "employee_type", "identity", "vendor", "employment", "capabilities", "repositories", "permissions", "execution", "output_contract", "approval_rules"],
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "openslack.agent_registry.v2"
+    },
+    "agent_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*_[a-z][a-z0-9]*_[a-z][a-z0-9-]*$"
+    },
+    "display_name": { "type": "string" },
+    "employee_type": { "type": "string", "const": "ai_agent" },
+    "identity": {
+      "type": "object",
+      "required": ["uid", "principal_id", "status"],
+      "properties": {
+        "uid": { "type": "string" },
+        "principal_id": { "type": "string" },
+        "public_key_jwk": {},
+        "key_id": { "type": ["string", "null"] },
+        "key_rotation": {
+          "type": "object",
+          "properties": {
+            "last_rotated_at": { "type": ["string", "null"] },
+            "rotation_interval_days": { "type": "integer" }
+          }
+        },
+        "status": { "type": "string", "enum": ["active", "suspended", "retired"] }
+      }
+    },
+    "vendor": {
+      "type": "object",
+      "required": ["provider", "runtime"],
+      "properties": {
+        "provider": { "type": "string" },
+        "runtime": { "type": "string" },
+        "model": { "type": "string" }
+      }
+    },
+    "employment": {
+      "type": "object",
+      "required": ["status", "hired_at"],
+      "properties": {
+        "status": { "type": "string", "enum": ["active", "paused", "onboarding", "retired"] },
+        "hired_at": { "type": "string" },
+        "hired_by": { "type": "string" },
+        "department": { "type": "string" },
+        "role": { "type": "string" },
+        "manager": { "type": "string" }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "required": ["primary"],
+      "properties": {
+        "primary": { "type": "array", "items": { "type": "string" } },
+        "secondary": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "repositories": {
+      "type": "object",
+      "required": ["workspace_repo"],
+      "properties": {
+        "workspace_repo": {
+          "type": "object",
+          "required": ["owner", "repo", "default_branch"],
+          "properties": {
+            "owner": { "type": "string" },
+            "repo": { "type": "string" },
+            "default_branch": { "type": "string" }
+          }
+        },
+        "allowed_product_repos": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "permissions": {
+      "type": "object",
+      "required": ["paths", "actions", "github", "max_risk_zone"],
+      "properties": {
+        "paths": {
+          "type": "object",
+          "required": ["allow", "deny"],
+          "properties": {
+            "allow": { "type": "array", "items": { "type": "string" } },
+            "deny": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "actions": {
+          "type": "object",
+          "patternProperties": {
+            ".*": { "type": "string", "enum": ["allow", "ask", "deny"] }
+          }
+        },
+        "github": {
+          "type": "object",
+          "required": ["can_create_pr", "can_comment", "can_approve", "can_merge"],
+          "properties": {
+            "can_create_pr": { "type": "boolean" },
+            "can_comment": { "type": "boolean" },
+            "can_approve": { "type": "boolean" },
+            "can_merge": { "type": "boolean" }
+          }
+        },
+        "max_risk_zone": { "type": "string", "enum": ["green", "yellow", "red", "black"] }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "properties": {
+        "max_parallel_tasks": { "type": "integer" },
+        "lease_ttl_minutes": { "type": "integer" },
+        "heartbeat_interval_minutes": { "type": "integer" },
+        "max_task_runtime_minutes": { "type": "integer" },
+        "max_daily_tasks": { "type": "integer" }
+      }
+    },
+    "output_contract": {
+      "type": "object",
+      "required": ["must_create", "may_create", "must_not_create"],
+      "properties": {
+        "must_create": { "type": "array", "items": { "type": "string" } },
+        "may_create": { "type": "array", "items": { "type": "string" } },
+        "must_not_create": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "approval_rules": {
+      "type": "object",
+      "required": ["require_human_approval_for"],
+      "properties": {
+        "require_human_approval_for": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "task_matching": {
+      "type": "object",
+      "properties": {
+        "github_owner": { "type": "string" },
+        "github_project_number": { "type": "integer" },
+        "max_risk_level": { "type": "string" }
+      }
+    },
+    "scheduler": {
+      "type": "object",
+      "properties": {
+        "preferred_mode": { "type": "string" },
+        "cadence_minutes": { "type": "integer" }
+      }
+    }
+  }
+}
