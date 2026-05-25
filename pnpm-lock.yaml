@@ -109,9 +109,6 @@ importers:
       '@octokit/rest':
         specifier: ^21.0.0
         version: 21.1.1
-      '@openslack/collaboration':
-        specifier: workspace:*
-        version: link:../collaboration
       '@openslack/kernel':
         specifier: workspace:*
         version: link:../kernel
