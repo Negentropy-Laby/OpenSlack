@@ -12,7 +12,6 @@ supersedes:
 | Field | Value |
 |-------|-------|
 | Remote | `https://github.com/Negentropy-Laby/OpenSlack` |
-| Branch | `docs/user-experience-roadmap` |
 
 ## Modules
 
