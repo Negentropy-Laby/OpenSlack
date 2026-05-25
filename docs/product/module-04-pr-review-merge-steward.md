@@ -107,8 +107,8 @@ packages/pr/
 | 1.13 (MVP) | `pr status`, `pr review`, `pr recommend` — read-only + report generation | COMPLETE |
 | 1.14A | `pr doctor`, CODEOWNERS resolver, deadlock detector, valid approval filter | COMPLETE |
 | 1.14B | `pr merge` — policy-gated merge execution via `mergeIfReady()` | COMPLETE |
-| 1.15 | Operator integration — natural language PR management | PLANNED |
-| 1.16 | `pr watch`, `pr comment`, module registry, automated status generation | PLANNED |
+| 1.15 | Operator integration — natural language PR management | COMPLETE |
+| 1.16 | `pr watch`, `pr comment`, module registry, automated status generation | COMPLETE |
 
 ## Verification
 

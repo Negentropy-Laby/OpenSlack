@@ -104,7 +104,7 @@ openslack doctor
 openslack ask "..."
 ```
 
-Current limitation: Operator is a keyword-based router. Multi-turn LLM planning is deferred to Phase 2.
+Current design: Operator keeps the keyword router as the zero-cost first layer, then may use an optional LLM fallback for unknown or low-confidence requests. LLM output must resolve to typed, registered OpenSlack actions and still passes missing-param, risk, confirmation, and executor gates.
 
 ### Module 04 — PR Review & Merge Steward
 
@@ -147,6 +147,7 @@ Owns:
 - activity feed and digest (projection-only views)
 - handoff and decision YAML objects with full CRUD
 - room summaries aggregating events, blockers, handoffs, and decisions
+- typed workflow template preview/execute with correlation IDs
 - PRMS doctor / governance audit / operator plan event hooks
 
 Main commands:
@@ -157,6 +158,7 @@ openslack collaboration digest
 openslack collaboration handoff ...
 openslack collaboration decision ...
 openslack collaboration room show pr:42
+openslack collaboration workflow ...
 ```
 
 Key packages:
@@ -203,6 +205,7 @@ Keep the docs simple and non-overlapping.
 | `README.md` | Short product overview, quick start, module summary, links. No dynamic metrics. |
 | `AGENTS.md` | Canonical instructions for all agents and contributors. |
 | `CLAUDE.md` | Claude Code entrypoint; should point back to AGENTS.md. |
+| `docs/README.md` | User-oriented documentation map for the docs directory. |
 | `.openslack/modules.yaml` | Source of truth for product modules, phases, CLI groups, packages, and test counts. |
 | `docs/status/current.md` | Generated status document. Do not hand-edit except through `openslack status generate`. |
 | `docs/user-guide.md` | Complete CLI reference. |

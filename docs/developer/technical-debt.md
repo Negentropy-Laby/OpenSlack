@@ -1,7 +1,7 @@
 # Technical Debt Register
 
 > Owner: OpenSlack
-> Updated: 2026-05-23
+> Updated: 2026-05-24
 > Convention: P0 = blocks next phase, P1 = should fix this phase, P2 = nice to have
 
 ## Open Items
@@ -16,34 +16,57 @@
 **Resolution:** Accepted as workspace schema contract (defined in `openslack.yaml`, validated by `validateWorkspace()`). `.gitkeep` files added to required directories to ensure fresh CI checkouts pass validation.
 **Closed:** 2026-05-22.
 
-### P0-3: Direct commits to main without PR
+### CLOSED: P0-3 — Direct commits to main without PR
 
 **Source:** Commits `aab64a9` and `f453cbd` pushed directly to main during Phase 1.16 delivery.
 **Impact:** Bypasses branch protection ruleset and CODEOWNERS review. Creates governance inconsistency with documented `no direct push to main` invariant.
 **Resolution:** Commits contain non-Red Zone changes (CI workflow, CLI commands, docs). Recorded as bootstrap exception during productization sprint. All subsequent commits must go through PR.
 **Preventive measure:** Ruleset `current_user_can_bypass: "never"` is active. Future direct pushes would be blocked at the GitHub level. The only path for these commits was admin force-push, which requires explicit override.
+**Closed:** 2026-05-24.
 **Filed:** 2026-05-23.
 
-### P0-2: Author/CODEOWNER deadlock for Red Zone PRs
+### CLOSED: P0-2 — Author/CODEOWNER deadlock for Red Zone PRs
 
 **Source:** PR #11 bootstrap (2026-05-23).
 **Impact:** When the only CODEOWNER for Red Zone paths is also the PR author, GitHub ruleset blocks merge because authors cannot satisfy their own required approval. `current_user_can_bypass: "never"` prevents admin bypass.
 **Resolution (bootstrap exception):** PR #11 merged via temporary admin bypass after PR #10 deadlocked. Recorded as bootstrap exception — not standard process.
-**Long-term fix:**
-1. Add `No sole-author-codeowner PR` invariant to AGENTS.md (done).
-2. Implement PRMS `openslack pr doctor` deadlock detector (Phase 1.14).
-3. Red Zone PRs must be bot/agent-authored; human CODEOWNER approves; Merge Steward merges after.
-4. Consider adding second human CODEOWNER or using GitHub App identity for Red Zone PR creation.
+**Resolution:** PRMS keeps bot approvals invalid, but now gives explicit bot/agent-authored PR remediation for sole-author CODEOWNER deadlocks. Workspace PR proposal preflight blocks Red Zone PR creation when the current authenticated human is the sole matching CODEOWNER. Bot/agent-authored Red Zone PRs remain valid only when a human CODEOWNER approves on GitHub.
+**Closed:** 2026-05-24.
 **Filed:** 2026-05-23.
 
-### P1-2: Node 20 Actions deprecation (time-bounded)
+### CLOSED: P0-4 — Duplicate rollback EVOL backlog loop
+
+**Source:** Post-merge rollback task generation created 54 duplicate `rollback_proposed` EVOL files for `EXP-TEST` and `EXP-TEST-ROLLBACK`.
+**Impact:** Creates a feedback loop and hides real rollback work behind test noise. The current schema does not support proposed cleanup statuses such as `closed_stale` or `expired`.
+**Resolution:** `createRollbackTask()` now returns an idempotent result, writes a stable rollback signature, updates existing active rollback proposals, skips `EXP-TEST*` test artifacts, exports single-source TTL/rate-limit constants, and can expire stale proposals through schema-valid `rejected` status. The 54 untracked local test artifacts were removed from the workspace and not committed.
+**Closed:** 2026-05-24.
+**Filed:** 2026-05-24.
+
+### CLOSED: P1-2 — Node 20 Actions deprecation (time-bounded)
 
 **Source:** GitHub Actions runner deprecation notice. `actions/checkout@v4`, `actions/setup-node@v4`, `pnpm/action-setup@v4`, `actions/github-script@v7` all run on Node 20.
 **Impact:** Starting June 2, 2026, GitHub will force Node 24 for all actions. Node 20 support removed September 16, 2026. CI will break if action versions are not upgraded.
-**Resolution:** Compatibility verified: `openslack-self-canary.yml` runs successfully with `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true`. Continue monitoring for v5 releases; upgrade all 5 workflow files in a single PR when available. Fallback: enable `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24` globally if v5 not released by May 30.
+**Resolution:** All five workflow files now use Node-24-capable pinned SHAs: `actions/checkout` v6.0.2, `actions/setup-node` v6.4.0, `pnpm/action-setup` v6.0.8, and `actions/github-script` v8.0.0. `setup-node` package-manager cache behavior is explicit.
+**Closed:** 2026-05-24.
 **Filed:** 2026-05-22.
 
-### P1-3: Historical AI attribution in commit history
+### CLOSED: P1-4 — LLM Planner safety boundary
+
+**Source:** Operator was previously a keyword-based router for known intents.
+**Impact:** Unknown, compound, or ambiguous user requests could not be handled conversationally. A naive LLM planner could also weaken the current allowlist and confirmation gates.
+**Resolution:** Operator now keeps the keyword router as Layer 1 and adds optional LLM fallback for unknown or low-confidence requests. LLM output must normalize to typed `IntentKind`/slots or registered OpenSlack actions. Executor rejects registry-external raw commands and preserves risk, missing-param, and confirmation gates.
+**Closed:** 2026-05-24.
+**Filed:** 2026-05-24.
+
+### CLOSED: P2-8 — Workflow Templates deferred
+
+**Source:** Collaboration Layer Phase 2F was deferred.
+**Impact:** Teams could not start reusable, parameterized workflows for release review, incidents, handoffs, or PR gates.
+**Resolution:** Added `openslack.workflow_template.v1` preview/execute support under `openslack collaboration workflow`. Templates use typed inputs and registered OpenSlack action steps, plus handoff, decision-gate, record-decision, and wait steps. Raw command strings are rejected and runs emit correlation IDs.
+**Closed:** 2026-05-24.
+**Filed:** 2026-05-24.
+
+### CLOSED: P1-3 — Historical AI attribution in commit history
 
 **Source:** `AGENTS.md` hard prohibition added 2026-05-23 (PR #34): "Do not include `Co-Authored-By:` lines. Do not mention AI/model/tool authorship in commits."
 **Impact:**
@@ -62,6 +85,7 @@
 1. `AGENTS.md` § Commit Convention already prohibits Co-authored-by lines.
 2. `openslack governance audit` now checks commit message content for prohibited attribution patterns (baseline: PR #34).
 3. All future commits must not contain Co-Authored-By lines. Agent/tool automation that appends them must be disabled or amended before merge.
+**Closed:** 2026-05-24.
 **Filed:** 2026-05-23.
 
 ### CLOSED: P2-6 — Compat shim package cleanup
