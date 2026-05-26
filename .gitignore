@@ -21,3 +21,8 @@ Thumbs.db
 # IDE
 .vscode/settings.json
 .idea/
+
+# Generated artifacts
+.vitest-results.json
+.openslack/self/scorecards/
+.openslack/self/evolution_backlog/

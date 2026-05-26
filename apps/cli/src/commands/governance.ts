@@ -90,6 +90,8 @@ const ATTRIBUTION_PATTERNS = [
   /anthropic/i,
 ];
 
+const BOT_COAUTHORED_RE = /^co-authored-by:.*\[bot]\s*</im;
+
 const ATTRIBUTION_BASELINE = '9ccdff0';
 
 function checkAttribution(root: string, sha: string): boolean {
@@ -99,7 +101,8 @@ function checkAttribution(root: string, sha: string): boolean {
       encoding: 'utf-8',
       stdio: 'pipe',
     });
-    return ATTRIBUTION_PATTERNS.some((p) => p.test(body));
+    const stripped = body.replace(BOT_COAUTHORED_RE, '');
+    return ATTRIBUTION_PATTERNS.some((p) => p.test(stripped));
   } catch {
     return false;
   }
