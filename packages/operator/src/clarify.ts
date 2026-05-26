@@ -1,5 +1,7 @@
 import type { Intent, MissingParam } from './types.js';
 
+const MAX_CLARIFICATION_ROUNDS = 3;
+
 const REQUIRED_PARAMS: Record<string, Array<{ name: string; type: 'string' | 'number' | 'string[]'; description: string }>> = {
   pr_merge: [{ name: 'prNumber', type: 'number', description: 'Pull request number to merge' }],
   pr_doctor: [{ name: 'prNumber', type: 'number', description: 'Pull request number to diagnose' }],
@@ -35,11 +37,49 @@ export function identifyMissingParams(intent: Intent): MissingParam[] {
   return missing;
 }
 
-export function buildClarificationQuestion(missing: MissingParam[]): string {
+export function buildClarificationQuestion(
+  missing: MissingParam[],
+  round: number = 0,
+  intentKind?: string,
+): string {
   if (missing.length === 0) return '';
-  if (missing.length === 1) {
-    return `I need more information: ${missing[0].description}.`;
-  }
+
   const items = missing.map((m) => m.description).join(', ');
-  return `I need more information: ${items}.`;
+
+  if (round === 0) {
+    return missing.length === 1
+      ? `I need more information: ${missing[0].description}.`
+      : `I need more information: ${items}.`;
+  }
+
+  if (round === 1) {
+    const hints = missing.map((m) => {
+      if (m.type === 'number') return `${m.name}: just say the number, like "#42"`;
+      if (m.type === 'string') return `${m.name}: type the value directly`;
+      return `${m.name}: provide a list`;
+    }).join('. ');
+    return `Still need: ${items}. Tip: ${hints}`;
+  }
+
+  // Round 2+: suggest direct CLI alternative
+  const altCommand = buildDirectAlternative(intentKind, missing);
+  return `Still missing: ${items}. Max clarification rounds reached.${altCommand}`;
 }
+
+function buildDirectAlternative(intentKind?: string, missing?: MissingParam[]): string {
+  if (!intentKind || !missing) return '';
+  const commandMap: Record<string, string> = {
+    pr_merge: 'openslack pr merge <NUMBER>',
+    pr_doctor: 'openslack pr doctor <NUMBER>',
+    pr_review: 'openslack pr review <NUMBER>',
+    pr_watch: 'openslack pr watch <NUMBER>',
+    pr_status: 'openslack pr status <NUMBER>',
+    checkout_task: 'openslack task checkout <NUMBER> --agent-id <ID>',
+    create_task: 'openslack task create --title "<TITLE>"',
+    issue_done: 'openslack task done <NUMBER>',
+  };
+  const cmd = commandMap[intentKind];
+  return cmd ? ` You can run it directly: ${cmd}` : '';
+}
+
+export { MAX_CLARIFICATION_ROUNDS };

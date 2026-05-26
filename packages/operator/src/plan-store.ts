@@ -15,6 +15,7 @@ export interface PendingPlan {
   expiresAt: string;
   actorId?: string;
   updatedAt?: string;
+  clarificationRounds?: number;
 }
 
 export const OPERATOR_PLAN_TTL_MS = 24 * 60 * 60 * 1000;
