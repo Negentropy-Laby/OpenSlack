@@ -11,8 +11,8 @@ modules:
       - "@openslack/kernel"
       - "@openslack/workspace"
       - "@openslack/runtime"
-    tests: 112
-    test_files: 16
+    tests: 142
+    test_files: 18
     golden_evals: 7
 
   - id: github_task_loop
@@ -27,8 +27,8 @@ modules:
       - "@openslack/github"
       - "@openslack/runtime"
       - "@openslack/core"
-    tests: 142
-    test_files: 15
+    tests: 192
+    test_files: 25
     notes: "GitHub Issues task loop active with typed task creation, dry-run repair, and Phase 4 watch daemon (webhook receiver, dedupe, console/Slack/webhook notifications, polling fallback, optional auto-claim with agent identity and authorization gates, collaboration event recording)."
 
   - id: operator
@@ -45,9 +45,9 @@ modules:
       - "@openslack/cli"
       - "@openslack/operator"
       - "@openslack/chat-gateway"
-    tests: 98
-    test_files: 13
-    notes: Structured planner active. Webhook and Slack chat adapters active with actor mapping. PRMS chat cards and action confirmation active. Typed tool registry, optional LLM fallback, setup report, and 24h pending plan store active.
+    tests: 144
+    test_files: 16
+    notes: Structured planner active. Webhook and Slack chat adapters active with actor mapping. PRMS chat cards and action confirmation active. Typed tool registry, optional LLM fallback, setup report, and 24h pending plan store active. Session-based conversation memory with multi-turn context resolution and progressive clarification. Doctor --format plain for non-technical output.
 
   - id: pr_review_merge
     name: PR Review & Merge Steward
@@ -60,8 +60,8 @@ modules:
       - "@openslack/pr"
       - "@openslack/github"
       - "@openslack/kernel"
-    tests: 81
-    test_files: 11
+    tests: 276
+    test_files: 30
     notes: Phase 2C chat report and action confirmation active. Supports status/review/recommend/doctor/queue/merge/watch, review/doctor comments, governance audit, operational decision summaries, deadlock detection, Red Zone author-risk preflight, and chat-friendly PR summaries with confirm-merge flow.
 
   - id: collaboration
@@ -77,6 +77,6 @@ modules:
       - openslack collaboration workflow
     packages:
       - "@openslack/collaboration"
-    tests: 93
-    test_files: 9
-    notes: Full 2D/2E Collaboration Layer active with typed workflow template preview/execute and projection-only dashboard. Event model, activity feed, digest, handoff, decision, and room views. PRMS doctor, governance audit, operator plan, chat, repair, and workflow events hooked. Projection-only; reads from .openslack.local/collaboration/events.jsonl and .openslack/collaboration/{handoffs,decisions}/.
+    tests: 103
+    test_files: 10
+    notes: Full 2D/2E Collaboration Layer active with typed workflow template preview/execute and dashboard with filters (--owner, --module, --risk, --blocker, --type). Event model, activity feed, digest, handoff, decision, and room views with agent display name resolution. Authz-gated chat cards for handoffs, decisions, tasks, workflows, and plans. Agent registry v1 to v2 migration command.

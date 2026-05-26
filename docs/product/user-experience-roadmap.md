@@ -2,7 +2,7 @@
 schema: openslack.product_plan.v1
 status: draft
 created: 2026-05-24
-updated: 2026-05-25
+updated: 2026-05-26
 source_status: docs/status/current.md
 ---
 
@@ -68,14 +68,13 @@ and improve the user journey around it, not replace the substrate.
 2. Task creation is now productized for CLI users.
    Further work should focus on chat cards and dashboard entrypoints.
 
-3. Operator planning is still early for long conversations.
-   `openslack ask` now has a typed tool registry and optional LLM fallback, but
-   it does not yet support robust multi-turn memory or goal refinement.
+3. Operator planning supports multi-turn conversation.
+   `openslack ask` now has session-based conversation memory with context
+   resolution across turns and progressive clarification (3 rounds max).
 
-4. Chat is a projection, not a complete collaboration experience.
-   Slack and webhook adapters can route commands and confirmations, but actor
-   mapping, permissions, audit visibility, and error recovery need more
-   product polish.
+4. Chat cards support collaboration actions.
+   Authz-gated cards for handoffs, decisions, tasks, workflows, and plans are
+   active. Side-effecting actions require mapped write-permission actors.
 
 5. PRMS has an action-oriented CLI surface.
    It can diagnose blockers accurately, but the ideal UX should emphasize the
@@ -89,11 +88,11 @@ and improve the user journey around it, not replace the substrate.
    CODEOWNER deadlocks are diagnosable, but remediation still assumes GitHub
    and Git expertise.
 
-8. Agent identity is enforced at runtime.
+8. Agent identity is enforced at runtime with full rendering.
    `AgentPrincipal`, `AgentPermissionSnapshot`, and `authorizeAgentAction()`
-   are implemented and wired into tick, propose, merge, operator, chat, task,
-   and collaboration execution paths. Remaining work: dashboard rendering for
-   principal/evidence fields and v2 registry migration.
+   are implemented and wired into all execution paths. Dashboard and activity
+   feed now resolve agent display names from registry. v2 registry migration
+   command (`openslack agent migrate-registry`) converts v1 entries.
 
 9. Repository monitoring is complete (Phase 1/2/3/4).
    The daemon supports webhook receiving, dedupe, console/Slack/webhook
@@ -190,7 +189,8 @@ Planned work:
 - Add plan summaries that show side effects before execution.
 - Keep all mutation intents allowlisted and confirmation-gated.
 
-Status: implemented for CLI/package v1.
+Status: implemented for CLI/package v1. Session-based conversation memory
+with multi-turn context resolution and progressive clarification active.
 
 Acceptance criteria:
 
@@ -214,8 +214,9 @@ Planned work:
 - Record chat-originated plan and confirmation events in the Collaboration
   Layer.
 
-Status: implemented for actor mapping and confirmation events. Broader task
-handoff/decision chat cards remain iterative follow-up work.
+Status: implemented for actor mapping, confirmation events, and collaboration
+cards (handoffs, decisions, tasks, workflows, plans). Authz-gated action
+dispatch with side-effect blocking for unmapped actors.
 
 Acceptance criteria:
 
@@ -237,8 +238,10 @@ Planned work:
 - Keep the dashboard projection-only; GitHub, Git, and `.openslack` remain the
   source of truth.
 
-Status: implemented as `openslack collaboration dashboard`. Browser UI remains
-future work.
+Status: implemented as `openslack collaboration dashboard` with --owner,
+--module, --risk, --blocker, --type filters. Handoff and decision details
+rendered inline. Agent display names resolved from registry. Browser UI
+remains future work.
 
 Acceptance criteria:
 
@@ -354,7 +357,7 @@ Planned work:
 - Add diagnostics that explain which permission source allowed, asked for, or
   denied an action.
 
-Status: implemented for kernel types (AgentPrincipal, AgentRuntimeIdentity, AgentPermissionSnapshot), pure authorization model (authorizeAgentAction), runtime identity generation, and wired into tick/propose/merge/operator/chat/task/collaboration execution paths. Dashboard rendering for principal/evidence fields and v2 registry migration remain iterative follow-up.
+Status: implemented for kernel types (AgentPrincipal, AgentRuntimeIdentity, AgentPermissionSnapshot), pure authorization model (authorizeAgentAction), runtime identity generation, wired into all execution paths, dashboard rendering with agent display names, and v2 registry migration command.
 
 Acceptance criteria:
 
