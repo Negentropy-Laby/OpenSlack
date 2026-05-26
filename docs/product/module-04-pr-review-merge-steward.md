@@ -14,6 +14,7 @@ The agent-assisted PR gatekeeper. PRMS fetches PR metadata, classifies risk zone
 | Principle | Rule |
 |-----------|------|
 | Agent reviews | Agent can analyze, classify, report, recommend |
+| Identity split | Bot/agent identity authors OpenSlack work; human identity reviews and approves |
 | Human approves | Only humans decide approval; GitHub enforcement requires the human GitHub identity |
 | Agent-assisted evidence | Human reviewers may rely on PRMS and agent summaries instead of personally opening the PR page |
 | Agent merges after approval | Agent can execute merge only after GitHub confirms all gates satisfied |
@@ -23,6 +24,8 @@ The agent-assisted PR gatekeeper. PRMS fetches PR metadata, classifies risk zone
 ## Human Approval Semantics
 
 Human approval means an authorized human explicitly decides approve or reject for a named PR. The human can make that decision after reading an agent-generated report, PRMS doctor output, CI status, changed files, and risk classification.
+
+OpenSlack-authored and delegated agent PRs should be authored by the configured bot/agent GitHub identity. The human GitHub identity is the reviewer and approval authority, not the PR author. If a required human reviewer or sole CODEOWNER authored the PR, the PR is blocked until it is recreated as bot/agent-authored or reviewed by a different independent human.
 
 For Red Zone and CODEOWNER gates, the decision must still be recorded as a GitHub review by the required human GitHub identity. A chat confirmation is evidence of human intent, but it is not by itself a GitHub CODEOWNER approval. Bot/app/agent approvals remain invalid.
 

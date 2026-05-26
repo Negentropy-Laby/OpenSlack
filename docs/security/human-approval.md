@@ -12,6 +12,19 @@ A valid human approval has three parts:
 
 Chat, CLI, or agent conversation can carry the human decision, but those messages are not by themselves a GitHub CODEOWNER approval.
 
+## PR Author Identity
+
+OpenSlack PRs created by agents or delegated automation should be authored by the configured bot/agent GitHub identity. The human GitHub identity should be reserved for review and approval.
+
+This rule is about authorship, not approval authority:
+
+- bot/agent identity may author the PR, push commits, update the branch, comment, diagnose, and merge only after gates pass;
+- bot/app/agent identity must not submit approval or be counted as human approval;
+- the human reviewer must not be the PR author when their approval is required;
+- if the only valid human CODEOWNER authored the PR, recreate the PR as bot/agent-authored or add a different independent human CODEOWNER.
+
+This prevents author/CODEOWNER deadlocks without weakening no-auto-approval, CODEOWNERS, branch protection, PRMS, or rulesets.
+
 ## Allowed Agent Role
 
 An agent may:
