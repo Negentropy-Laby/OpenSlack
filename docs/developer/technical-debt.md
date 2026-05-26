@@ -80,11 +80,11 @@
   - `5f13d7edb0f30735c6c074e9ec231de0559cd88d` (PR #45)
   - `83d4235a3fe0f9e8d054b7475762b70efb01dfaf` (PR #46)
 - These cannot be rewritten without force-pushing main, which is prohibited by branch protection ruleset.
-**Resolution:** Accepted as historical artifacts. No rewrite of published history. All new commits from PR #47 onward must comply with the AGENTS.md hard prohibition. PR #54 added automated enforcement to `openslack governance audit`.
+**Resolution:** Accepted as historical artifacts. No rewrite of published history. All new commits from PR #47 onward must comply with the AGENTS.md hard prohibition. PR #54 added automated enforcement to `openslack governance audit`. PR #80 narrowed the bot attribution exemption to only `openslack-agent-operator[bot]` (the project's own bot) — all other bot Co-authored-by trailers (copilot[bot], dependabot[bot], etc.) remain violations.
 **Preventive measure:**
-1. `AGENTS.md` § Commit Convention already prohibits Co-authored-by lines.
-2. `openslack governance audit` now checks commit message content for prohibited attribution patterns (baseline: PR #34).
-3. All future commits must not contain Co-Authored-By lines. Agent/tool automation that appends them must be disabled or amended before merge.
+1. `AGENTS.md` § Commit Convention prohibits all Co-authored-by lines except `openslack-agent-operator[bot]`.
+2. `openslack governance audit` checks commit message content for prohibited attribution patterns (baseline: PR #34), stripping only the project bot trailer before checking.
+3. All future commits must not contain prohibited Co-Authored-By lines. Agent/tool automation that appends them must be disabled or amended before merge.
 **Closed:** 2026-05-24.
 **Filed:** 2026-05-23.
 

@@ -90,7 +90,10 @@ const ATTRIBUTION_PATTERNS = [
   /anthropic/i,
 ];
 
-const BOT_COAUTHORED_RE = /^co-authored-by:.*\[bot]\s*</im;
+// Only the project's own bot is exempted — GitHub squash merge appends this trailer
+// when the PR author is openslack-agent-operator[bot]. All other Co-authored-by lines
+// (including copilot[bot], dependabot[bot], etc.) remain violations per AGENTS.md.
+const BOT_COAUTHORED_RE = /^co-authored-by:\s*openslack-agent-operator\[bot]\s*</im;
 
 const ATTRIBUTION_BASELINE = '9ccdff0';
 

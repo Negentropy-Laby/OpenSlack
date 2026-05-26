@@ -417,7 +417,7 @@ security
 
 Hard prohibitions:
 
-- Do not include `Co-Authored-By:` lines.
+- Do not include `Co-Authored-By:` lines. Exception: `Co-authored-by: openslack-agent-operator[bot]` is allowed when GitHub squash merge appends it for bot-authored PRs. All other Co-authored-by trailers (including copilot[bot], dependabot[bot], or any human attribution) remain prohibited.
 - Do not mention AI/model/tool authorship in commits.
 - Do not use vague subjects like `fix stuff`, `update files`, or `cleanup`.
 - Do not merge without PRMS / ruleset gates.
