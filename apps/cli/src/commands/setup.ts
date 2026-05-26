@@ -1,7 +1,12 @@
 import { Command } from 'commander';
-import { execSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
+import { createInterface } from 'node:readline';
 import { join } from 'node:path';
-import { buildSetupReport, detectGenesisShell, renderSetupReport } from '@openslack/runtime';
+import {
+  buildSetupReport, detectGenesisShell, renderSetupReport,
+  recommendNextActions, renderFindingsPlain,
+} from '@openslack/runtime';
+import type { PlainFinding } from '@openslack/runtime';
 import { recordEvent } from '@openslack/collaboration';
 
 export function readStrictOption(source: unknown): boolean {
@@ -19,6 +24,16 @@ function readStrictFromCommander(args: unknown[], command: Command): boolean {
 
 export function setupCommands(): Command {
   const cmd = new Command('setup').description('One-step OpenSlack setup wizard');
+
+  function confirmPrompt(message: string): Promise<boolean> {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    return new Promise((resolve) => {
+      rl.question(`${message} `, (answer) => {
+        rl.close();
+        resolve(answer.trim().toLowerCase() === 'y');
+      });
+    });
+  }
 
   function runFullChecklist(strict = false): void {
     const root = process.cwd();
@@ -245,6 +260,206 @@ export function setupCommands(): Command {
     console.log(`\n${passed}/${total} smoke tests passed`);
     process.exit(hasFail || (strict && hasWarn) ? 1 : 0);
   });
+
+  const ALLOWED_FIX_PREFIXES = ['setup github', 'github repair'];
+
+  function runOpenSlackCommand(command: string): void {
+    // Only allow known fix commands via argv split, never raw shell strings
+    const stripped = command.replace(/^openslack\s+/, '');
+    const isAllowed = ALLOWED_FIX_PREFIXES.some((p) => stripped.startsWith(p));
+    if (!isAllowed) {
+      console.log(`  Command not in allowlist: ${command}`);
+      console.log('  Run it manually if needed.');
+      return;
+    }
+    const argv = stripped.split(/\s+/);
+    const root = process.cwd();
+    const node = process.execPath;
+    const cli = join(root, 'apps', 'cli', 'src', 'index.ts');
+    try {
+      execFileSync(node, ['--import', 'tsx', cli, ...argv], {
+        cwd: root,
+        stdio: 'inherit',
+        timeout: 60000,
+      });
+    } catch (e) {
+      console.log(`  Command failed: ${(e as Error).message}`);
+    }
+  }
+
+  function runValidationSteps(): PlainFinding[] {
+    const results: PlainFinding[] = [];
+    const root = process.cwd();
+    const node = process.execPath;
+    const cli = join(root, 'apps', 'cli', 'src', 'index.ts');
+
+    // Workspace validate
+    try {
+      execFileSync(node, ['--import', 'tsx', cli, 'workspace', 'validate'], {
+        cwd: root,
+        stdio: 'pipe',
+        timeout: 60000,
+      });
+      results.push({ status: 'PASS', title: 'Workspace validate', detail: 'Schema and structure valid' });
+    } catch (e) {
+      const stderr = (e as { stderr?: Buffer }).stderr?.toString() || (e as Error).message;
+      results.push({ status: 'FAIL', title: 'Workspace validate', detail: stderr.slice(0, 200) });
+    }
+
+    // Golden evals
+    try {
+      execFileSync(node, ['--import', 'tsx', cli, 'self', 'eval', '--suite', 'golden', '--clean'], {
+        cwd: root,
+        stdio: 'pipe',
+        timeout: 120000,
+      });
+      results.push({ status: 'PASS', title: 'Golden evals', detail: 'All golden evals passing' });
+    } catch (e) {
+      const stderr = (e as { stderr?: Buffer }).stderr?.toString() || (e as Error).message;
+      results.push({ status: 'FAIL', title: 'Golden evals', detail: stderr.slice(0, 200) });
+    }
+
+    return results;
+  }
+
+  // Interactive onboarding wizard
+  cmd
+    .command('interactive')
+    .description('Guided interactive setup with step-by-step prompts')
+    .option('--format <format>', 'Output format: standard or plain', 'standard')
+    .action(async (options: { format: string }) => {
+      const report = await buildSetupReport({ dryRun: true });
+      const isPlain = options.format === 'plain';
+
+      // Classify readiness
+      const fixable = report.findings.filter((f) => f.status === 'fixable_by_command');
+      const unfixable = report.findings.filter(
+        (f) => f.status === 'requires_github_admin' || f.status === 'requires_human_approval',
+      );
+      const ok = report.findings.filter((f) => f.status === 'ok');
+      const allOk = fixable.length === 0 && unfixable.length === 0;
+
+      const readiness = allOk ? 'ready' : fixable.length > 0 ? 'almost ready' : 'needs setup help';
+
+      if (isPlain) {
+        const plainFindings: PlainFinding[] = report.findings.map((f) => ({
+          status: f.status as PlainFinding['status'],
+          title: f.title,
+          detail: f.detail,
+          nextAction: f.nextAction,
+          command: f.command,
+        }));
+        console.log(renderFindingsPlain(plainFindings));
+        console.log('');
+        console.log(`Readiness: ${readiness}`);
+        const recs = recommendNextActions({
+          setupFindings: report.findings.map((f) => ({
+            status: f.status,
+            title: f.title,
+            nextAction: f.nextAction,
+            command: f.command,
+          })),
+        });
+        if (recs.length > 0) {
+          console.log('');
+          for (const r of recs) {
+            console.log(`${r.title}: ${r.action}`);
+            if (r.command) console.log(`  Run: ${r.command}`);
+          }
+        }
+
+        // Run validation and render in plain format
+        const validationResults = runValidationSteps();
+        if (validationResults.length > 0) {
+          console.log('');
+          console.log(renderFindingsPlain(validationResults));
+        }
+        return;
+      }
+
+      // Standard interactive flow
+      console.log('OpenSlack Interactive Setup');
+      console.log('='.repeat(30));
+      console.log(`Readiness: ${readiness}`);
+      console.log(`${ok.length}/${report.findings.length} checks passed`);
+      console.log('');
+
+      // Walk fixable items with prompts
+      for (const f of fixable) {
+        console.log(`[FIXABLE] ${f.title}`);
+        console.log(`  ${f.detail}`);
+        if (f.nextAction) console.log(`  How to fix: ${f.nextAction}`);
+        if (f.command) console.log(`  Command: ${f.command}`);
+        console.log('');
+
+        if (f.command) {
+          const confirmed = await confirmPrompt('Show the fix command? [y/N]');
+          if (confirmed) {
+            console.log(`  → ${f.command}`);
+            console.log('');
+            const shouldRun = await confirmPrompt('Run this command now? [y/N]');
+            if (shouldRun) {
+              runOpenSlackCommand(f.command);
+              console.log('');
+            }
+          }
+        }
+      }
+
+      // Explain unfixable items
+      for (const f of unfixable) {
+        console.log(`[NEEDS ACTION] ${f.title}`);
+        console.log(`  ${f.detail}`);
+        if (f.nextAction) console.log(`  Next: ${f.nextAction}`);
+        console.log('');
+      }
+
+      // Run workspace validate + golden evals
+      console.log('Validation:');
+      const validationResults = runValidationSteps();
+      for (const v of validationResults) {
+        const icon = v.status === 'PASS' ? '✓' : v.status === 'WARN' ? '⚠' : '✗';
+        console.log(`  ${icon} ${v.title}`);
+        if (v.status !== 'PASS' && v.detail) console.log(`    ${v.detail}`);
+      }
+      console.log('');
+
+      // Print next steps via recommendNextActions
+      const recs = recommendNextActions({
+        setupFindings: report.findings.map((f) => ({
+          status: f.status,
+          title: f.title,
+          nextAction: f.nextAction,
+          command: f.command,
+        })),
+      });
+
+      if (recs.length > 0) {
+        console.log('Recommended Next Steps:');
+        for (let i = 0; i < recs.length; i++) {
+          const r = recs[i];
+          console.log(`  ${i + 1}. ${r.title}`);
+          if (r.action) console.log(`     ${r.action}`);
+          if (r.command) console.log(`     Run: ${r.command}`);
+        }
+        console.log('');
+      }
+
+      try {
+        recordEvent({
+          type: 'operator.execution.completed',
+          actor: { id: 'cli', kind: 'system', provider: 'cli' },
+          object: { kind: 'workspace', id: 'setup' },
+          source: { kind: 'operator', ref: 'setup.interactive' },
+          summary: `Interactive setup completed: ${readiness}, ${ok.length}/${report.findings.length} ok`,
+          visibility: 'local',
+          redacted: false,
+          containsSensitiveData: false,
+        });
+      } catch {
+        // best-effort event recording
+      }
+    });
 
   return cmd;
 }
