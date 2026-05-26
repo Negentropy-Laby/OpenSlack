@@ -2,9 +2,9 @@ import { planActions, executePlan } from '@openslack/operator';
 import type { ChatMessage, ChatResponse } from './types.js';
 import { loadPendingPlan, validatePlan, deletePendingPlan, isActionAllowed } from './plan-store.js';
 import { formatResultAsMarkdown, formatError } from './formatter.js';
-import { buildPRCard, cardToText, toSlackBlocks } from './cards.js';
+import { buildPRCard, cardToText, toSlackBlocks, buildHandoffCard, buildDecisionCard, buildWorkflowCard } from './cards.js';
 import { summarizePRForChat, formatPRChatSummary } from '@openslack/pr';
-import { recordEvent } from '@openslack/collaboration';
+import { recordEvent, acceptHandoff, closeHandoff, getHandoff, getDecision } from '@openslack/collaboration';
 import { resolveAgentPrincipal } from '@openslack/runtime';
 
 interface ActionContext {
@@ -251,6 +251,128 @@ async function handleCancel(planId: string): Promise<ChatResponse> {
   return { text: 'Cancelled.' };
 }
 
+async function handleAcceptHandoff(handoffId: string, message: ChatMessage): Promise<ChatResponse> {
+  const handoff = getHandoff(handoffId);
+  if (!handoff) {
+    return formatError(`Handoff not found: ${handoffId}`);
+  }
+  if (handoff.status !== 'open') {
+    return formatError(`Handoff ${handoffId} is not open (status: ${handoff.status})`);
+  }
+
+  const accepted = acceptHandoff(handoffId);
+  if (!accepted) {
+    return formatError(`Failed to accept handoff: ${handoffId}`);
+  }
+  try {
+    recordEvent({
+      type: 'handoff.accepted',
+      actor: { id: message.user.id, kind: 'chat', provider: message.channel.type === 'webhook' ? 'webhook' : 'slack' },
+      object: { kind: 'handoff', id: handoffId },
+      source: { kind: 'chat', ref: message.channel.id },
+      summary: `Handoff ${handoffId} accepted by ${message.user.id}`,
+      visibility: 'chat',
+      redacted: false,
+      containsSensitiveData: false,
+    });
+  } catch { /* best-effort */ }
+
+  const card = buildHandoffCard(accepted);
+  return { text: cardToText(card) };
+}
+
+async function handleCloseHandoff(handoffId: string, message: ChatMessage): Promise<ChatResponse> {
+  const handoff = getHandoff(handoffId);
+  if (!handoff) {
+    return formatError(`Handoff not found: ${handoffId}`);
+  }
+
+  const closed = closeHandoff(handoffId);
+  if (!closed) {
+    return formatError(`Failed to close handoff: ${handoffId}`);
+  }
+  try {
+    recordEvent({
+      type: 'handoff.closed',
+      actor: { id: message.user.id, kind: 'chat', provider: message.channel.type === 'webhook' ? 'webhook' : 'slack' },
+      object: { kind: 'handoff', id: handoffId },
+      source: { kind: 'chat', ref: message.channel.id },
+      summary: `Handoff ${handoffId} closed by ${message.user.id}`,
+      visibility: 'chat',
+      redacted: false,
+      containsSensitiveData: false,
+    });
+  } catch { /* best-effort */ }
+
+  const card = buildHandoffCard(closed);
+  return { text: cardToText(card) };
+}
+
+async function handleRecordDecision(decisionId: string, _message: ChatMessage): Promise<ChatResponse> {
+  const decision = getDecision(decisionId);
+  if (!decision) {
+    return formatError(`Decision not found: ${decisionId}`);
+  }
+  const card = buildDecisionCard(decision);
+  return { text: cardToText(card) };
+}
+
+async function handleExecuteWorkflow(correlationId: string, message: ChatMessage): Promise<ChatResponse> {
+  const plan = loadPendingPlan(correlationId);
+  if (plan) {
+    const validation = validatePlan(plan, message.user.id, message.channel.id, message.threadId);
+    if (!validation.valid) {
+      deletePendingPlan(correlationId);
+      return formatError(validation.reason || 'Workflow plan validation failed.');
+    }
+  }
+
+  try {
+    recordEvent({
+      type: 'workflow.started',
+      actor: { id: message.user.id, kind: 'chat', provider: message.channel.type === 'webhook' ? 'webhook' : 'slack' },
+      object: { kind: 'workflow', id: correlationId },
+      source: { kind: 'chat', ref: message.channel.id },
+      summary: `Workflow ${correlationId} confirmed via chat`,
+      visibility: 'chat',
+      redacted: false,
+      containsSensitiveData: false,
+    });
+  } catch { /* best-effort */ }
+
+  if (plan) deletePendingPlan(correlationId);
+  return { text: `Workflow ${correlationId} confirmed. Use \`openslack workflow run ${correlationId}\` to execute.` };
+}
+
+async function handlePreviewTask(issueNumber: string): Promise<ChatResponse> {
+  return { text: `Task #${issueNumber} preview not yet available in chat. Use: \`openslack task show ${issueNumber}\`` };
+}
+
+async function handleClaimTask(issueNumber: string, message: ChatMessage): Promise<ChatResponse> {
+  return { text: `Task #${issueNumber} claim not yet available in chat. Use: \`openslack task claim ${issueNumber}\`` };
+}
+
+async function handleApprovePlan(planId: string, message: ChatMessage): Promise<ChatResponse> {
+  const plan = loadPendingPlan(planId);
+  if (!plan) {
+    return formatError(`Plan not found or expired: ${planId}`);
+  }
+  deletePendingPlan(planId);
+  try {
+    recordEvent({
+      type: 'chat.plan.confirmed',
+      actor: { id: message.user.id, kind: 'chat', provider: message.channel.type === 'webhook' ? 'webhook' : 'slack' },
+      object: { kind: 'plan', id: planId },
+      source: { kind: 'chat', ref: message.channel.id },
+      summary: `Plan ${planId} approved via chat`,
+      visibility: 'chat',
+      redacted: false,
+      containsSensitiveData: false,
+    });
+  } catch { /* best-effort */ }
+  return { text: `Plan ${planId} approved. Execution will proceed.` };
+}
+
 export async function handleAction(message: ChatMessage): Promise<ChatResponse | null> {
   const parsed = parseActionText(message.text);
   if (!parsed) return null;
@@ -266,6 +388,20 @@ export async function handleAction(message: ChatMessage): Promise<ChatResponse |
       return handleConfirmMerge(value, message);
     case 'cancel':
       return handleCancel(value);
+    case 'accept_handoff':
+      return handleAcceptHandoff(value, message);
+    case 'close_handoff':
+      return handleCloseHandoff(value, message);
+    case 'record_decision':
+      return handleRecordDecision(value, message);
+    case 'execute_workflow':
+      return handleExecuteWorkflow(value, message);
+    case 'preview_task':
+      return handlePreviewTask(value);
+    case 'claim_task':
+      return handleClaimTask(value, message);
+    case 'approve_plan':
+      return handleApprovePlan(value, message);
     default:
       return null;
   }
