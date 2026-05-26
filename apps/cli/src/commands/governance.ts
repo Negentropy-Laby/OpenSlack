@@ -90,6 +90,11 @@ const ATTRIBUTION_PATTERNS = [
   /anthropic/i,
 ];
 
+// Only the project's own bot is exempted — GitHub squash merge appends this trailer
+// when the PR author is openslack-agent-operator[bot]. All other Co-authored-by lines
+// (including copilot[bot], dependabot[bot], etc.) remain violations per AGENTS.md.
+const BOT_COAUTHORED_RE = /^co-authored-by:\s*openslack-agent-operator\[bot]\s*</im;
+
 const ATTRIBUTION_BASELINE = '9ccdff0';
 
 function checkAttribution(root: string, sha: string): boolean {
@@ -99,7 +104,8 @@ function checkAttribution(root: string, sha: string): boolean {
       encoding: 'utf-8',
       stdio: 'pipe',
     });
-    return ATTRIBUTION_PATTERNS.some((p) => p.test(body));
+    const stripped = body.replace(BOT_COAUTHORED_RE, '');
+    return ATTRIBUTION_PATTERNS.some((p) => p.test(stripped));
   } catch {
     return false;
   }
