@@ -15,6 +15,10 @@ import {
 import type { WorkflowTemplate } from '@openslack/collaboration';
 import { resolveAgentPrincipal, renderFindingsPlain } from '@openslack/runtime';
 import type { PlainFinding } from '@openslack/runtime';
+import {
+  buildDashboardCard, buildDigestCard, buildRoomCard, buildActivityCard,
+  cardToText,
+} from '@openslack/chat-gateway';
 
 type AgentAuthOptions = {
   principal?: import('@openslack/kernel').AgentPrincipal;
@@ -72,7 +76,7 @@ export function collaborationCommands(): Command {
     .option('--risk <level>', 'Filter by risk level (none, low, medium, high)')
     .option('--blocker', 'Show only blocker events')
     .option('--type <eventType>', 'Filter by event type')
-    .option('--format <format>', 'Output format: standard or plain', 'standard')
+    .option('--format <format>', 'Output format: standard, plain, json, or chat', 'standard')
     .action((options: { since: string; owner?: string; module?: string; risk?: string; blocker?: boolean; type?: string; format: string }) => {
       const sinceHours = parseInt(options.since, 10);
       const filters: Record<string, unknown> = {};
@@ -85,7 +89,18 @@ export function collaborationCommands(): Command {
         sinceHours: Number.isFinite(sinceHours) ? sinceHours : 24,
         filters: Object.keys(filters).length > 0 ? filters : undefined,
       });
-      if (options.format === 'plain') {
+      if (options.format === 'json') {
+        console.log(JSON.stringify(dashboard, null, 2));
+      } else if (options.format === 'chat') {
+        const card = buildDashboardCard({
+          sinceHours: dashboard.sinceHours,
+          blockerCount: dashboard.blockerCount,
+          openHandoffs: dashboard.openHandoffs,
+          activeDecisions: dashboard.activeDecisions,
+          blockers: dashboard.blockers.map((b) => ({ object: b.object, summary: b.summary, owner: b.owner })),
+        });
+        console.log(cardToText(card));
+      } else if (options.format === 'plain') {
         const findings: PlainFinding[] = [];
         for (const b of dashboard.blockers) {
           findings.push({ status: 'FAIL', title: `Blocker: ${b.object}`, detail: b.summary, nextAction: b.nextAction });
@@ -112,7 +127,7 @@ export function collaborationCommands(): Command {
     .option('--object <ref>', 'Filter by object (e.g., pr:42, issue:21)')
     .option('--actor <id>', 'Filter by actor ID')
     .option('--type <type>', 'Filter by event type')
-    .option('--format <format>', 'Output format: standard or plain', 'standard')
+    .option('--format <format>', 'Output format: standard, plain, json, or chat', 'standard')
     .action(async (options: { since: string; object?: string; actor?: string; type?: string; format: string }) => {
       const hours = parseInt(options.since, 10);
       const events = readEvents();
@@ -141,7 +156,16 @@ export function collaborationCommands(): Command {
         filtered = filterEvents(filtered, { type: options.type as never });
       }
 
-      if (options.format === 'plain') {
+      if (options.format === 'json') {
+        console.log(JSON.stringify(filtered, null, 2));
+      } else if (options.format === 'chat') {
+        const card = buildActivityCard({
+          eventCount: filtered.length,
+          sinceHours: hours,
+          events: filtered.map((e) => ({ type: e.type, object: `${e.object.kind}:${e.object.id}`, summary: e.summary })),
+        });
+        console.log(cardToText(card));
+      } else if (options.format === 'plain') {
         const findings: PlainFinding[] = filtered.map((event) => {
           let status: PlainFinding['status'] = 'informational';
           if (BLOCKER_TYPES.has(event.type)) status = 'FAIL';
@@ -158,7 +182,7 @@ export function collaborationCommands(): Command {
     .command('digest')
     .description('Show collaboration digest (grouped summary)')
     .option('--since <hours>', 'Period in hours', '24')
-    .option('--format <format>', 'Output format: standard or plain', 'standard')
+    .option('--format <format>', 'Output format: standard, plain, json, or chat', 'standard')
     .action(async (options: { since: string; format: string }) => {
       const hours = parseInt(options.since, 10);
       const events = readEvents();
@@ -170,7 +194,16 @@ export function collaborationCommands(): Command {
       }
 
       const digest = buildDigest(filtered, hours);
-      if (options.format === 'plain') {
+      if (options.format === 'json') {
+        console.log(JSON.stringify(digest, null, 2));
+      } else if (options.format === 'chat') {
+        const card = buildDigestCard({
+          sinceHours: digest.periodHours,
+          totalEvents: digest.totalEvents,
+          groups: digest.groups.map((g) => ({ label: g.label, count: g.events.length, items: g.events.map((e) => e.summary) })),
+        });
+        console.log(cardToText(card));
+      } else if (options.format === 'plain') {
         const groupStatusMap: Record<string, PlainFinding['status']> = {
           'Needs Human': 'requires_human_approval',
           'Blocked': 'FAIL',
@@ -348,7 +381,7 @@ export function collaborationCommands(): Command {
   room
     .command('show <roomId>')
     .description('Show room summary (e.g., pr:42, issue:21, module:operator)')
-    .option('--format <format>', 'Output format: standard or plain', 'standard')
+    .option('--format <format>', 'Output format: standard, plain, json, or chat', 'standard')
     .action((roomId: string, options: { format: string }) => {
       const events = readEvents();
       const view = buildRoomView(roomId, events);
@@ -356,7 +389,19 @@ export function collaborationCommands(): Command {
         console.log(`Invalid room ID: ${roomId}. Use format: pr:42, issue:21, module:operator`);
         process.exit(1);
       }
-      if (options.format === 'plain') {
+      if (options.format === 'json') {
+        console.log(JSON.stringify(view, null, 2));
+      } else if (options.format === 'chat') {
+        const card = buildRoomCard({
+          roomId: view.roomId,
+          eventCount: view.recentEvents.length,
+          blockerCount: view.blockers.length,
+          handoffCount: view.linkedHandoffs.length,
+          decisionCount: view.linkedDecisions.length,
+          blockers: view.blockers.map((b) => ({ object: b.type, summary: b.summary })),
+        });
+        console.log(cardToText(card));
+      } else if (options.format === 'plain') {
         const findings: PlainFinding[] = [];
         for (const blocker of view.blockers) {
           findings.push({ status: 'FAIL', title: `Blocker: ${blocker.type}`, detail: blocker.summary, nextAction: blocker.nextAction?.action });
