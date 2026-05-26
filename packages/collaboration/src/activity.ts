@@ -1,5 +1,6 @@
 import type { CollaborationEvent, EventFilter } from './types.js';
 import { filterEvents } from './events.js';
+import { resolveAgentDisplayName } from './agent-resolve.js';
 
 export interface ActivityGroup {
   label: string;
@@ -10,7 +11,8 @@ export function formatActivityEvent(event: CollaborationEvent): string {
   const parts: string[] = [];
 
   const ts = event.timestamp.slice(11, 16); // HH:MM
-  parts.push(`${ts}  ${event.type}`);
+  const actorName = resolveAgentDisplayName(event.actor);
+  parts.push(`${ts}  ${event.type}  (by ${actorName})`);
 
   if (event.object.id) {
     parts.push(`      Object: ${event.object.kind}:${event.object.id}`);
@@ -21,7 +23,10 @@ export function formatActivityEvent(event: CollaborationEvent): string {
   }
 
   if (event.owner) {
-    parts.push(`      Owner: ${event.owner.kind}:${event.owner.id}`);
+    const ownerName = event.owner.kind === 'agent' || event.owner.kind === 'human'
+      ? resolveAgentDisplayName({ id: event.owner.id, kind: event.owner.kind })
+      : `${event.owner.kind}:${event.owner.id}`;
+    parts.push(`      Owner: ${ownerName}`);
   }
 
   if (event.nextAction) {

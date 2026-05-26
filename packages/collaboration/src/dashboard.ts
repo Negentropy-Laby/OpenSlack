@@ -1,7 +1,10 @@
-import type { CollaborationEvent } from './types.js';
+import type { CollaborationEvent, EventFilter, RiskLevel } from './types.js';
 import { readEvents } from './events.js';
 import { listHandoffs } from './handoff.js';
 import { listDecisions } from './decision.js';
+import type { Handoff } from './handoff.js';
+import type { Decision } from './decision.js';
+import { resolveAgentDisplayName } from './agent-resolve.js';
 
 export interface DashboardBlocker {
   object: string;
@@ -9,6 +12,11 @@ export interface DashboardBlocker {
   owner?: string;
   nextAction?: string;
   severity?: string;
+}
+
+export interface DashboardOptions {
+  sinceHours?: number;
+  filters?: Partial<EventFilter>;
 }
 
 export interface DashboardProjection {
@@ -21,9 +29,12 @@ export interface DashboardProjection {
   openHandoffs: number;
   activeDecisions: number;
   recentEvents: CollaborationEvent[];
+  openHandoffDetails: Handoff[];
+  activeDecisionDetails: Decision[];
+  appliedFilters: Partial<EventFilter>;
 }
 
-const BLOCKER_TYPES = new Set([
+export const BLOCKER_TYPES = new Set([
   'task.blocked',
   'pr.doctor.blocked',
   'pr.merge.blocked',
@@ -42,15 +53,31 @@ function increment(counts: Record<string, number>, key: string): void {
   counts[key] = (counts[key] ?? 0) + 1;
 }
 
-export function buildDashboardProjection(options: {
-  events?: CollaborationEvent[];
-  sinceHours?: number;
-} = {}): DashboardProjection {
+export function buildDashboardProjection(
+  options: DashboardOptions & { events?: CollaborationEvent[] } = {},
+): DashboardProjection {
   const sinceHours = options.sinceHours ?? 24;
+  const filters = options.filters ?? {};
   const cutoff = new Date(Date.now() - sinceHours * 60 * 60 * 1000);
   const events = (options.events ?? readEvents())
     .filter((event) => sinceHours <= 0 || new Date(event.timestamp) >= cutoff)
+    .filter((event) => {
+      if (filters.actorId && event.actor.id !== filters.actorId) return false;
+      if (filters.actorKind && event.actor.kind !== filters.actorKind) return false;
+      if (filters.objectKind && event.object.kind !== filters.objectKind) return false;
+      if (filters.sourceKind && event.source.kind !== filters.sourceKind) return false;
+      if (filters.risk && event.risk !== filters.risk) return false;
+      if (filters.severity && event.severity !== filters.severity) return false;
+      if (filters.type) {
+        const types = Array.isArray(filters.type) ? filters.type : [filters.type];
+        if (!types.includes(event.type)) return false;
+      }
+      return true;
+    })
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+  const blockerOnly = filters.severity === 'critical' || Boolean(filters.type &&
+    (Array.isArray(filters.type) ? filters.type : [filters.type]).some((t) => BLOCKER_TYPES.has(t as string)));
 
   const taskCounts: Record<string, number> = {};
   const prCounts: Record<string, number> = {};
@@ -70,6 +97,9 @@ export function buildDashboardProjection(options: {
     }
   }
 
+  const allHandoffs = listHandoffs().filter((h) => h.status !== 'closed');
+  const allDecisions = listDecisions().filter((d) => d.status === 'active');
+
   return {
     generatedAt: new Date().toISOString(),
     sinceHours,
@@ -77,9 +107,12 @@ export function buildDashboardProjection(options: {
     prCounts,
     blockerCount: blockers.length,
     blockers: blockers.slice(0, 20),
-    openHandoffs: listHandoffs().filter((handoff) => handoff.status !== 'closed').length,
-    activeDecisions: listDecisions().filter((decision) => decision.status === 'active').length,
+    openHandoffs: allHandoffs.length,
+    activeDecisions: allDecisions.length,
     recentEvents: events.slice(0, 20),
+    openHandoffDetails: allHandoffs.slice(0, 10),
+    activeDecisionDetails: allDecisions.slice(0, 10),
+    appliedFilters: filters,
   };
 }
 
@@ -89,6 +122,11 @@ export function renderDashboardProjection(dashboard: DashboardProjection): strin
   lines.push('========================');
   lines.push(`Window: ${dashboard.sinceHours > 0 ? `${dashboard.sinceHours}h` : 'all events'}`);
   lines.push(`Generated: ${dashboard.generatedAt}`);
+
+  const filterEntries = Object.entries(dashboard.appliedFilters);
+  if (filterEntries.length > 0) {
+    lines.push('Filters: ' + filterEntries.map(([k, v]) => `${k}=${Array.isArray(v) ? v.join(',') : v}`).join(', '));
+  }
   lines.push('');
 
   lines.push('Summary');
@@ -121,6 +159,23 @@ export function renderDashboardProjection(dashboard: DashboardProjection): strin
   }
   lines.push('');
 
+  if (dashboard.openHandoffDetails.length > 0) {
+    lines.push('Open Handoffs');
+    for (const h of dashboard.openHandoffDetails) {
+      const age = Math.round((Date.now() - new Date(h.createdAt).getTime()) / (60 * 60 * 1000));
+      lines.push(`- ${h.id}: ${h.from} → ${h.to} — ${h.context} (${age}h ago)`);
+    }
+    lines.push('');
+  }
+
+  if (dashboard.activeDecisionDetails.length > 0) {
+    lines.push('Active Decisions');
+    for (const d of dashboard.activeDecisionDetails) {
+      lines.push(`- ${d.id}: ${d.topic} — ${d.decision} (by ${d.decidedBy})`);
+    }
+    lines.push('');
+  }
+
   lines.push('Recent Activity');
   if (dashboard.recentEvents.length === 0) {
     lines.push('- No recent activity.');
@@ -129,7 +184,8 @@ export function renderDashboardProjection(dashboard: DashboardProjection): strin
       const principalTag = event.metadata?.principal
         ? ` [${(event.metadata.principal as { registry_id: string }).registry_id}]`
         : '';
-      lines.push(`- ${event.timestamp.slice(0, 16)} ${event.type} ${objectRef(event)}: ${event.summary}${principalTag}`);
+      const actorName = resolveAgentDisplayName(event.actor);
+      lines.push(`- ${event.timestamp.slice(0, 16)} ${event.type} ${objectRef(event)}: ${event.summary} (by ${actorName})${principalTag}`);
     }
   }
 

@@ -20,7 +20,6 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 
 - Setup and repair commands are read-only or preview-first unless `--apply` is supplied.
 - Task creation previews by default; GitHub Issue creation requires `--create-issue`.
-- PRs for OpenSlack-authored or delegated agent work should be opened under the configured bot/agent GitHub author identity so humans remain independent reviewers.
 - Human approval can be based on OpenSlack's PRMS/agent summary; the human does not need to manually browse the PR page.
 - Chat confirmation alone is not GitHub approval; CODEOWNER gates still require a GitHub review from the human identity.
 - Agents cannot decide PR approval, approve under bot/app/agent identity, bypass CODEOWNERS, or merge without PRMS and GitHub gates.

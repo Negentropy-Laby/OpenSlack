@@ -11,6 +11,8 @@ export {
 
 export { sanitizeEvent, getSecretPatterns } from './redact.js';
 
+export { resolveAgentDisplayName, clearNameCache } from './agent-resolve.js';
+
 export { buildSourceLink } from './source-links.js';
 
 export {
@@ -70,6 +72,7 @@ export {
 export {
   buildDashboardProjection,
   renderDashboardProjection,
+  BLOCKER_TYPES,
 } from './dashboard.js';
 
 export type { DashboardBlocker, DashboardProjection } from './dashboard.js';

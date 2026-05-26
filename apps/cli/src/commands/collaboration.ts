@@ -10,7 +10,7 @@ import {
   renderDecisionList, renderDecision,
   buildRoomView, renderRoom,
   previewWorkflowTemplate, executeWorkflowTemplate, renderWorkflowPreview,
-  buildDashboardProjection, renderDashboardProjection,
+  buildDashboardProjection, renderDashboardProjection, BLOCKER_TYPES,
 } from '@openslack/collaboration';
 import type { WorkflowTemplate } from '@openslack/collaboration';
 import { resolveAgentPrincipal } from '@openslack/runtime';
@@ -66,10 +66,22 @@ export function collaborationCommands(): Command {
     .command('dashboard')
     .description('Show projection-only team dashboard')
     .option('--since <hours>', 'Window in hours; use 0 for all events', '24')
-    .action((options: { since: string }) => {
+    .option('--owner <actorId>', 'Filter by actor ID')
+    .option('--module <sourceKind>', 'Filter by source module (operator, prms, github, chat, governance)')
+    .option('--risk <level>', 'Filter by risk level (none, low, medium, high)')
+    .option('--blocker', 'Show only blocker events')
+    .option('--type <eventType>', 'Filter by event type')
+    .action((options: { since: string; owner?: string; module?: string; risk?: string; blocker?: boolean; type?: string }) => {
       const sinceHours = parseInt(options.since, 10);
+      const filters: Record<string, unknown> = {};
+      if (options.owner) filters.actorId = options.owner;
+      if (options.module) filters.sourceKind = options.module;
+      if (options.risk) filters.risk = options.risk;
+      if (options.type) filters.type = options.type;
+      if (options.blocker) filters.type = [...BLOCKER_TYPES];
       console.log(renderDashboardProjection(buildDashboardProjection({
         sinceHours: Number.isFinite(sinceHours) ? sinceHours : 24,
+        filters: Object.keys(filters).length > 0 ? filters : undefined,
       })));
     });
 
