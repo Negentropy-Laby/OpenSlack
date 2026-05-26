@@ -70,6 +70,7 @@ export {
 export {
   buildDashboardProjection,
   renderDashboardProjection,
+  BLOCKER_TYPES,
 } from './dashboard.js';
 
 export type { DashboardBlocker, DashboardProjection } from './dashboard.js';

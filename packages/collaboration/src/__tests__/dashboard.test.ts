@@ -51,5 +51,44 @@ describe('dashboard projection', () => {
     const rendered = renderDashboardProjection(dashboard);
     expect(rendered).not.toContain('Getting Started');
   });
+
+  it('filters by actor ID', () => {
+    const dashboard = buildDashboardProjection({
+      events: [
+        event({ type: 'task.created', actor: { id: 'agent_a', kind: 'agent', provider: 'cli' }, object: { kind: 'issue', id: '1' } }),
+        event({ type: 'task.created', actor: { id: 'agent_b', kind: 'agent', provider: 'cli' }, object: { kind: 'issue', id: '2' } }),
+      ],
+      filters: { actorId: 'agent_a' },
+    });
+    expect(dashboard.taskCounts['task.created']).toBe(1);
+  });
+
+  it('filters by source kind', () => {
+    const dashboard = buildDashboardProjection({
+      events: [
+        event({ type: 'task.created', source: { kind: 'operator', ref: 'test' }, object: { kind: 'issue', id: '1' } }),
+        event({ type: 'task.created', source: { kind: 'prms', ref: 'test' }, object: { kind: 'issue', id: '2' } }),
+      ],
+      filters: { sourceKind: 'prms' },
+    });
+    expect(dashboard.taskCounts['task.created']).toBe(1);
+  });
+
+  it('filters by risk level', () => {
+    const dashboard = buildDashboardProjection({
+      events: [
+        event({ type: 'pr.merge.blocked', risk: 'high' as const }),
+        event({ type: 'pr.merge.blocked', risk: 'low' as const }),
+      ],
+      filters: { risk: 'high' },
+    });
+    expect(dashboard.blockerCount).toBe(1);
+  });
+
+  it('includes handoff and decision details', () => {
+    const dashboard = buildDashboardProjection({ events: [event({ type: 'task.created', object: { kind: 'issue', id: '1' } })] });
+    expect(Array.isArray(dashboard.openHandoffDetails)).toBe(true);
+    expect(Array.isArray(dashboard.activeDecisionDetails)).toBe(true);
+  });
 });
 
