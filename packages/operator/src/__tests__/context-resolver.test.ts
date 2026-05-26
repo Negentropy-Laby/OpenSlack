@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveContext, extractSlotsFromMessage } from '../context-resolver.js';
+import { resolveContext, extractSlotsFromMessage, mergeDefinedSlots } from '../context-resolver.js';
 import type { ConversationTurn } from '../conversation-store.js';
 import type { Intent } from '../types.js';
 
@@ -128,5 +128,34 @@ describe('extractSlotsFromMessage', () => {
   it('returns empty for plain text', () => {
     const slots = extractSlotsFromMessage('hello world');
     expect(Object.keys(slots)).toHaveLength(0);
+  });
+});
+
+describe('mergeDefinedSlots', () => {
+  it('does not let undefined current slots erase resolved history', () => {
+    const slots = mergeDefinedSlots(
+      { prNumber: 42 },
+      {},
+      { prNumber: undefined },
+    );
+    expect(slots.prNumber).toBe(42);
+  });
+
+  it('lets explicit message slots override resolved history', () => {
+    const slots = mergeDefinedSlots(
+      { prNumber: 42 },
+      { prNumber: 99 },
+      { prNumber: undefined },
+    );
+    expect(slots.prNumber).toBe(99);
+  });
+
+  it('lets filled intent slots override earlier sources', () => {
+    const slots = mergeDefinedSlots(
+      { prNumber: 42 },
+      { prNumber: 99 },
+      { prNumber: 123 },
+    );
+    expect(slots.prNumber).toBe(123);
   });
 });

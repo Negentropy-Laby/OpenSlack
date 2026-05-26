@@ -21,6 +21,7 @@ import {
   getRecentTurns,
   resolveContext,
   extractSlotsFromMessage,
+  mergeDefinedSlots,
   MAX_CLARIFICATION_ROUNDS,
 } from '@openslack/operator';
 import type { PlanStep } from '@openslack/operator';
@@ -142,12 +143,12 @@ async function runAsk(
   if (context.type === 'resolve_slots') {
     intent = {
       ...intent,
-      slots: { ...context.resolved, ...messageSlots, ...intent.slots },
+      slots: mergeDefinedSlots(context.resolved, messageSlots, intent.slots),
     };
   } else {
     intent = {
       ...intent,
-      slots: { ...messageSlots, ...intent.slots },
+      slots: mergeDefinedSlots(messageSlots, intent.slots),
     };
   }
 

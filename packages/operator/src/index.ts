@@ -43,6 +43,7 @@ export {
 export {
   resolveContext,
   extractSlotsFromMessage,
+  mergeDefinedSlots,
 } from './context-resolver.js';
 export type {
   OperatorRequest,

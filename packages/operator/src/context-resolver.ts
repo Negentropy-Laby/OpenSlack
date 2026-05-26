@@ -1,6 +1,8 @@
 import type { Intent } from './types.js';
 import type { ConversationTurn } from './conversation-store.js';
 
+type SlotValue = string | number | string[] | undefined;
+
 const AFFIRMATIONS = new Set([
   'yes', 'y', 'ok', 'okay', 'do it', 'go ahead', 'proceed', 'confirm', 'sure',
   '好的', '确认', '执行', '合并', 'merge it', '继续', 'yes do it', 'go for it',
@@ -16,6 +18,23 @@ export type ContextResolution =
   | { type: 'cancel_last_plan'; planId?: string }
   | { type: 'resolve_slots'; resolved: Record<string, string | number> }
   | { type: 'none' };
+
+function hasSlotValue(value: SlotValue): value is string | number | string[] {
+  return value !== undefined && value !== null && value !== '' &&
+    !(Array.isArray(value) && value.length === 0);
+}
+
+export function mergeDefinedSlots(
+  ...sources: Array<Record<string, SlotValue>>
+): Record<string, string | number | string[]> {
+  const merged: Record<string, string | number | string[]> = {};
+  for (const source of sources) {
+    for (const [key, value] of Object.entries(source)) {
+      if (hasSlotValue(value)) merged[key] = value;
+    }
+  }
+  return merged;
+}
 
 export function resolveContext(
   currentIntent: Intent,
@@ -53,8 +72,7 @@ export function resolveContext(
   // Resolve missing slots from conversation history
   const resolved: Record<string, string | number> = {};
   const missingKeys = Object.entries(currentIntent.slots)
-    .filter(([, v]) => v === undefined || v === null || v === '' ||
-      (Array.isArray(v) && v.length === 0))
+    .filter(([, v]) => !hasSlotValue(v))
     .map(([k]) => k);
 
   if (missingKeys.length === 0) return { type: 'none' };
@@ -67,8 +85,7 @@ export function resolveContext(
     for (const key of missingKeys) {
       if (resolved[key] !== undefined) continue;
       const historicalValue = turn.intent.slots[key];
-      if (historicalValue !== undefined && historicalValue !== null && historicalValue !== '' &&
-          !(Array.isArray(historicalValue) && historicalValue.length === 0)) {
+      if (hasSlotValue(historicalValue)) {
         if (typeof historicalValue === 'string' || typeof historicalValue === 'number') {
           resolved[key] = historicalValue;
         }
