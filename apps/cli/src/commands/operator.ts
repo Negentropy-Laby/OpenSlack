@@ -14,6 +14,14 @@ import {
   loadPendingPlan,
   updatePendingPlanState,
   resumePendingPlan,
+  generateSessionId,
+  appendTurn,
+  loadConversation,
+  listConversations,
+  getRecentTurns,
+  resolveContext,
+  extractSlotsFromMessage,
+  MAX_CLARIFICATION_ROUNDS,
 } from '@openslack/operator';
 import type { PlanStep } from '@openslack/operator';
 import { recordEvent } from '@openslack/collaboration';
@@ -67,11 +75,60 @@ function resolveAgentAuthOptions(agentId: string | undefined): AgentAuthOptions 
   return { principal: resolved.principal, snapshot: resolved.snapshot };
 }
 
-async function runAsk(query: string, options: { plan?: boolean; agentId?: string }): Promise<void> {
+async function runAsk(
+  query: string,
+  options: { plan?: boolean; agentId?: string; session?: string },
+): Promise<void> {
+  const sessionId = options.session || generateSessionId();
+  const root = findRepoRoot();
+
   console.log(`\nOperator: "${query}"`);
   console.log('─'.repeat(50));
 
-  const intent = await resolveIntent(query);
+  // Load conversation history and append user turn
+  const history = getRecentTurns(sessionId, 10, root);
+  const messageSlots = extractSlotsFromMessage(query);
+
+  // Check context: affirmation/negation or slot inheritance
+  const pendingPlans = listPendingPlans(root);
+  const lastPending = pendingPlans.find((p) => p.state === 'pending');
+
+  let intent = await resolveIntent(query);
+
+  if (intent.kind === 'unknown' && history.length > 0) {
+    // Maybe the query is a short response to a previous plan
+    const context = resolveContext(intent, history, lastPending?.planId, query);
+    if (context.type === 'confirm_last_plan' && lastPending) {
+      appendTurn(sessionId, { role: 'user', content: query, timestamp: new Date().toISOString() }, root);
+      console.log(`Confirming plan: ${lastPending.planId}`);
+      updatePendingPlanState(lastPending.planId, 'approved', root);
+
+      const authOptions = resolveAgentAuthOptions(options.agentId);
+      const result = await executePlan(lastPending.plan, {
+        ...authOptions,
+        confirmStep: async () => true,
+        onStepStart: (step: PlanStep) => { console.log(`→ ${step.description}`); },
+        onStepComplete: (step, sr) => {
+          if (sr.status === 'success') console.log(`  ✓ ${step.id} complete`);
+          else if (sr.status === 'skipped') console.log(`  ⊘ ${step.id} skipped`);
+          else console.log(`  ✗ ${step.id} failed`);
+        },
+      });
+
+      if (result.status === 'success') updatePendingPlanState(lastPending.planId, 'executed', root);
+      appendTurn(sessionId, { role: 'assistant', content: summarizeResults(result), intent, timestamp: new Date().toISOString() }, root);
+      console.log(`\n${summarizeResults(result)}\n`);
+      return;
+    }
+
+    if (context.type === 'cancel_last_plan' && lastPending) {
+      appendTurn(sessionId, { role: 'user', content: query, timestamp: new Date().toISOString() }, root);
+      updatePendingPlanState(lastPending.planId, 'cancelled', root);
+      appendTurn(sessionId, { role: 'assistant', content: `Cancelled plan: ${lastPending.planId}`, intent, timestamp: new Date().toISOString() }, root);
+      console.log(`Cancelled plan: ${lastPending.planId}\n`);
+      return;
+    }
+  }
 
   if (intent.kind === 'unknown') {
     console.log(`I don't understand "${query}".`);
@@ -79,6 +136,23 @@ async function runAsk(query: string, options: { plan?: boolean; agentId?: string
     console.log('');
     return;
   }
+
+  // Merge slots from message parsing and context resolution
+  const context = resolveContext(intent, history, lastPending?.planId, query);
+  if (context.type === 'resolve_slots') {
+    intent = {
+      ...intent,
+      slots: { ...context.resolved, ...messageSlots, ...intent.slots },
+    };
+  } else {
+    intent = {
+      ...intent,
+      slots: { ...messageSlots, ...intent.slots },
+    };
+  }
+
+  // Append user turn with resolved intent
+  appendTurn(sessionId, { role: 'user', content: query, intent, timestamp: new Date().toISOString() }, root);
 
   const plan = planActions(intent);
 
@@ -102,11 +176,35 @@ async function runAsk(query: string, options: { plan?: boolean; agentId?: string
   }
 
   if (plan.missingParams.length > 0) {
-    const pending = savePendingPlan({ query, plan, actorId: 'cli' });
-    const question = buildClarificationQuestion(plan.missingParams);
+    const existingPending = lastPending?.plan;
+    const round = existingPending ? (lastPending?.clarificationRounds ?? 0) : 0;
+
+    if (round >= MAX_CLARIFICATION_ROUNDS) {
+      const question = buildClarificationQuestion(plan.missingParams, round, intent.kind);
+      console.log(question);
+      return;
+    }
+
+    const pending = savePendingPlan({
+      query, plan, actorId: 'cli', root,
+      state: 'pending',
+    });
+    // Update clarification rounds
+    const currentRounds = lastPending?.clarificationRounds ?? 0;
+    const updatedPlan = loadPendingPlan(pending.planId, root);
+    if (updatedPlan) {
+      const planData = JSON.parse(JSON.stringify(updatedPlan)) as Record<string, unknown>;
+      planData.clarificationRounds = currentRounds + 1;
+      const { writeFileSync } = await import('node:fs');
+      const planPath = join(root, '.openslack.local', 'operator', 'plans', `${pending.planId}.json`);
+      writeFileSync(planPath, JSON.stringify(planData, null, 2), 'utf-8');
+    }
+
+    const question = buildClarificationQuestion(plan.missingParams, currentRounds, intent.kind);
     console.log(`${question}`);
-    console.log(`Plan ID: ${pending.planId}`);
+    console.log(`Plan ID: ${pending.planId}  (Session: ${sessionId})`);
     console.log(`Resume with: openslack ask plan resume ${pending.planId} --set name=value`);
+    appendTurn(sessionId, { role: 'assistant', content: question, intent, timestamp: new Date().toISOString() }, root);
     console.log('');
     return;
   }
@@ -115,15 +213,16 @@ async function runAsk(query: string, options: { plan?: boolean; agentId?: string
   console.log('');
 
   if (options.plan) {
-    const pending = savePendingPlan({ query, plan, actorId: 'cli' });
+    const pending = savePendingPlan({ query, plan, actorId: 'cli', root });
     console.log(`Saved pending plan: ${pending.planId}`);
     console.log(`Approve later with: openslack ask plan approve ${pending.planId}`);
+    appendTurn(sessionId, { role: 'assistant', content: `Plan saved: ${pending.planId}`, intent, timestamp: new Date().toISOString() }, root);
     return;
   }
 
   let pendingPlanId: string | undefined;
   if (plan.requiresConfirmation) {
-    const pending = savePendingPlan({ query, plan, actorId: 'cli' });
+    const pending = savePendingPlan({ query, plan, actorId: 'cli', root });
     pendingPlanId = pending.planId;
     console.log(`Saved pending plan: ${pending.planId}`);
     console.log(`Approve later with: openslack ask plan approve ${pending.planId}`);
@@ -134,9 +233,10 @@ async function runAsk(query: string, options: { plan?: boolean; agentId?: string
     const confirmed = await confirmPrompt(message);
     if (!confirmed) {
       console.log('Cancelled by user. Pending plan remains available until expiry.\n');
+      appendTurn(sessionId, { role: 'assistant', content: 'Plan cancelled by user.', intent, timestamp: new Date().toISOString() }, root);
       return;
     }
-    updatePendingPlanState(pending.planId, 'approved');
+    updatePendingPlanState(pending.planId, 'approved', root);
     console.log('');
   }
 
@@ -160,11 +260,13 @@ async function runAsk(query: string, options: { plan?: boolean; agentId?: string
   });
 
   if (pendingPlanId && result.status === 'success') {
-    updatePendingPlanState(pendingPlanId, 'executed');
+    updatePendingPlanState(pendingPlanId, 'executed', root);
   }
 
+  const summary = summarizeResults(result);
+  appendTurn(sessionId, { role: 'assistant', content: summary, intent, timestamp: new Date().toISOString() }, root);
   console.log('');
-  console.log(summarizeResults(result));
+  console.log(summary);
   console.log('');
 }
 
@@ -174,7 +276,8 @@ export function buildAskCommand(): Command {
     .argument('<query...>', 'What do you want to do?')
     .option('--plan', 'Show the execution plan without running it')
     .option('--agent-id <id>', 'Agent ID for authorization')
-    .action(async (queryParts: string[], options: { plan?: boolean; agentId?: string }) => {
+    .option('--session <id>', 'Session ID for conversation continuity')
+    .action(async (queryParts: string[], options: { plan?: boolean; agentId?: string; session?: string }) => {
       await runAsk(queryParts.join(' '), options);
     });
 
@@ -269,6 +372,48 @@ export function buildAskCommand(): Command {
     });
 
   ask.addCommand(planCmd);
+
+  ask
+    .command('history')
+    .description('Show recent conversation turns for a session')
+    .option('--session <id>', 'Session ID')
+    .option('--limit <n>', 'Number of recent turns to show', '10')
+    .action((options: { session?: string; limit: string }) => {
+      const sessionId = options.session || process.env.OPENSLACK_SESSION_ID || generateSessionId();
+      const limit = parseInt(options.limit, 10) || 10;
+      const turns = getRecentTurns(sessionId, limit, findRepoRoot());
+      if (turns.length === 0) {
+        console.log(`No conversation history for session: ${sessionId}`);
+        return;
+      }
+      console.log(`Session: ${sessionId}`);
+      console.log('─'.repeat(50));
+      for (const turn of turns) {
+        const time = new Date(turn.timestamp).toLocaleTimeString();
+        const role = turn.role === 'user' ? 'You' : 'Operator';
+        console.log(`[${time}] ${role}: ${turn.content}`);
+        if (turn.intent && turn.intent.kind !== 'unknown') {
+          console.log(`  Intent: ${turn.intent.kind} (${(turn.intent.confidence * 100).toFixed(0)}%)`);
+        }
+      }
+      console.log('');
+    });
+
+  ask
+    .command('sessions')
+    .description('List active conversation sessions')
+    .action(() => {
+      const conversations = listConversations(findRepoRoot());
+      if (conversations.length === 0) {
+        console.log('No active sessions.');
+        return;
+      }
+      for (const conv of conversations) {
+        const age = new Date(conv.updatedAt).toLocaleString();
+        console.log(`${conv.sessionId}  ${conv.turns.length} turns  updated: ${age}`);
+      }
+    });
+
   return ask;
 }
 

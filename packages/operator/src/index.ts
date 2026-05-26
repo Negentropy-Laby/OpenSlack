@@ -10,7 +10,7 @@ export {
   LLM_PLANNER_MAX_REPLANS,
   LLM_PLANNER_MAX_RETRIES,
 } from './llm.js';
-export { identifyMissingParams, buildClarificationQuestion } from './clarify.js';
+export { identifyMissingParams, buildClarificationQuestion, MAX_CLARIFICATION_ROUNDS } from './clarify.js';
 export { planActions } from './planner.js';
 export { assessRisk, hasSideEffects } from './risk.js';
 export { executePlan } from './executor.js';
@@ -32,6 +32,18 @@ export {
   isRegisteredStep,
   buildActionPlanFromRegisteredActions,
 } from './tool-registry.js';
+export {
+  generateSessionId,
+  appendTurn,
+  loadConversation,
+  listConversations,
+  pruneExpiredConversations,
+  getRecentTurns,
+} from './conversation-store.js';
+export {
+  resolveContext,
+  extractSlotsFromMessage,
+} from './context-resolver.js';
 export type {
   OperatorRequest,
   Intent,
@@ -57,3 +69,5 @@ export type {
   ToolInputField,
 } from './tool-registry.js';
 export type { PendingPlan, PlanApprovalState } from './plan-store.js';
+export type { ConversationTurn, Conversation } from './conversation-store.js';
+export type { ContextResolution } from './context-resolver.js';
