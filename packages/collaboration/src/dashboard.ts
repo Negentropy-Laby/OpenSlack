@@ -4,6 +4,7 @@ import { listHandoffs } from './handoff.js';
 import { listDecisions } from './decision.js';
 import type { Handoff } from './handoff.js';
 import type { Decision } from './decision.js';
+import { resolveAgentDisplayName } from './agent-resolve.js';
 
 export interface DashboardBlocker {
   object: string;
@@ -183,7 +184,8 @@ export function renderDashboardProjection(dashboard: DashboardProjection): strin
       const principalTag = event.metadata?.principal
         ? ` [${(event.metadata.principal as { registry_id: string }).registry_id}]`
         : '';
-      lines.push(`- ${event.timestamp.slice(0, 16)} ${event.type} ${objectRef(event)}: ${event.summary}${principalTag}`);
+      const actorName = resolveAgentDisplayName(event.actor);
+      lines.push(`- ${event.timestamp.slice(0, 16)} ${event.type} ${objectRef(event)}: ${event.summary} (by ${actorName})${principalTag}`);
     }
   }
 
