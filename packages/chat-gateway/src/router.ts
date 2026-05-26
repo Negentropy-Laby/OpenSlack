@@ -86,7 +86,7 @@ export async function routeMessage(
   if (parsedAction) {
     // Side-effecting actions require a mapped actor with write permission
     const sideEffectActions = new Set([
-      'accept_handoff', 'close_handoff', 'confirm_merge', 'execute_workflow', 'approve_plan', 'claim_task',
+      'accept_handoff', 'close_handoff', 'confirm_merge', 'execute_workflow', 'approve_plan', 'claim_task', 'cancel',
     ]);
     if (sideEffectActions.has(parsedAction.action) && !canExecuteSideEffects(actor, config)) {
       markProcessed(message.id, message.text, message.user.id, message.channel.id);

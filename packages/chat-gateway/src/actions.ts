@@ -11,6 +11,10 @@ interface ActionContext {
   message: ChatMessage;
 }
 
+function chatProvider(message: ChatMessage): 'slack' | 'webhook' {
+  return message.channel.type === 'webhook' ? 'webhook' : 'slack';
+}
+
 function parseActionText(text: string): { action: string; value: string } | null {
   const match = text.match(/^action:([^:]+):(.+)$/);
   if (!match) return null;
@@ -232,14 +236,48 @@ async function handleConfirmMerge(planId: string, message: ChatMessage): Promise
   };
 }
 
-async function handleCancel(planId: string): Promise<ChatResponse> {
+async function validatePendingChatPlan(planId: string, message: ChatMessage): Promise<{
+  plan?: NonNullable<ReturnType<typeof loadPendingPlan>>;
+  error?: ChatResponse;
+}> {
+  const plan = loadPendingPlan(planId);
+  if (!plan) {
+    return { error: formatError(`Plan not found or expired: ${planId}`) };
+  }
+
+  const validation = validatePlan(plan, message.user.id, message.channel.id, message.threadId);
+  if (!validation.valid) {
+    try {
+      recordEvent({
+        type: 'operator.plan.blocked',
+        actor: { id: message.user.id, kind: 'chat', provider: chatProvider(message) },
+        object: { kind: 'plan', id: planId },
+        source: { kind: 'chat', ref: message.channel.id },
+        summary: validation.reason || 'Plan validation failed',
+        visibility: 'chat',
+        redacted: false,
+        containsSensitiveData: false,
+      });
+    } catch {
+      // best-effort event recording
+    }
+    return { error: formatError(validation.reason || 'Plan validation failed.') };
+  }
+
+  return { plan };
+}
+
+async function handleCancel(planId: string, message: ChatMessage): Promise<ChatResponse> {
+  const validation = await validatePendingChatPlan(planId, message);
+  if (validation.error) return validation.error;
+
   deletePendingPlan(planId);
   try {
     recordEvent({
       type: 'chat.plan.cancelled',
-      actor: { id: 'chat', kind: 'chat', provider: 'webhook' },
+      actor: { id: message.user.id, kind: 'chat', provider: chatProvider(message) },
       object: { kind: 'plan', id: planId },
-      source: { kind: 'chat', ref: 'action:cancel' },
+      source: { kind: 'chat', ref: message.channel.id },
       summary: `Chat plan cancelled: ${planId}`,
       visibility: 'chat',
       redacted: false,
@@ -267,7 +305,7 @@ async function handleAcceptHandoff(handoffId: string, message: ChatMessage): Pro
   try {
     recordEvent({
       type: 'handoff.accepted',
-      actor: { id: message.user.id, kind: 'chat', provider: message.channel.type === 'webhook' ? 'webhook' : 'slack' },
+      actor: { id: message.user.id, kind: 'chat', provider: chatProvider(message) },
       object: { kind: 'handoff', id: handoffId },
       source: { kind: 'chat', ref: message.channel.id },
       summary: `Handoff ${handoffId} accepted by ${message.user.id}`,
@@ -294,7 +332,7 @@ async function handleCloseHandoff(handoffId: string, message: ChatMessage): Prom
   try {
     recordEvent({
       type: 'handoff.closed',
-      actor: { id: message.user.id, kind: 'chat', provider: message.channel.type === 'webhook' ? 'webhook' : 'slack' },
+      actor: { id: message.user.id, kind: 'chat', provider: chatProvider(message) },
       object: { kind: 'handoff', id: handoffId },
       source: { kind: 'chat', ref: message.channel.id },
       summary: `Handoff ${handoffId} closed by ${message.user.id}`,
@@ -330,7 +368,7 @@ async function handleExecuteWorkflow(correlationId: string, message: ChatMessage
   try {
     recordEvent({
       type: 'workflow.started',
-      actor: { id: message.user.id, kind: 'chat', provider: message.channel.type === 'webhook' ? 'webhook' : 'slack' },
+      actor: { id: message.user.id, kind: 'chat', provider: chatProvider(message) },
       object: { kind: 'workflow', id: correlationId },
       source: { kind: 'chat', ref: message.channel.id },
       summary: `Workflow ${correlationId} confirmed via chat`,
@@ -353,24 +391,27 @@ async function handleClaimTask(issueNumber: string, message: ChatMessage): Promi
 }
 
 async function handleApprovePlan(planId: string, message: ChatMessage): Promise<ChatResponse> {
-  const plan = loadPendingPlan(planId);
-  if (!plan) {
-    return formatError(`Plan not found or expired: ${planId}`);
+  const validation = await validatePendingChatPlan(planId, message);
+  if (validation.error) return validation.error;
+
+  const plan = validation.plan;
+  if (plan?.action !== 'approve_plan') {
+    return formatError(`Plan ${planId} cannot be approved with this chat action. Use the specific action for ${plan?.action ?? 'this plan'} or the CLI approval command.`);
   }
-  deletePendingPlan(planId);
+
   try {
     recordEvent({
       type: 'chat.plan.confirmed',
-      actor: { id: message.user.id, kind: 'chat', provider: message.channel.type === 'webhook' ? 'webhook' : 'slack' },
+      actor: { id: message.user.id, kind: 'chat', provider: chatProvider(message) },
       object: { kind: 'plan', id: planId },
       source: { kind: 'chat', ref: message.channel.id },
-      summary: `Plan ${planId} approved via chat`,
+      summary: `Plan ${planId} confirmation requested via chat`,
       visibility: 'chat',
       redacted: false,
       containsSensitiveData: false,
     });
   } catch { /* best-effort */ }
-  return { text: `Plan ${planId} approved. Execution will proceed.` };
+  return { text: `Plan ${planId} confirmed in chat. Chat confirmation does not execute this plan; run the CLI approval command shown by the Operator to execute it.` };
 }
 
 export async function handleAction(message: ChatMessage): Promise<ChatResponse | null> {
@@ -387,7 +428,7 @@ export async function handleAction(message: ChatMessage): Promise<ChatResponse |
     case 'confirm_merge':
       return handleConfirmMerge(value, message);
     case 'cancel':
-      return handleCancel(value);
+      return handleCancel(value, message);
     case 'accept_handoff':
       return handleAcceptHandoff(value, message);
     case 'close_handoff':
