@@ -38,12 +38,44 @@ Do **not** grant: Administration, Secrets, Members, Workflows write.
 OPENSLACK_GITHUB_AUTH_MODE=app
 OPENSLACK_GITHUB_APP_ID=<app-id>
 OPENSLACK_GITHUB_APP_INSTALLATION_ID=<installation-id>
-OPENSLACK_GITHUB_APP_PRIVATE_KEY=<pem-key-or-path>
-GITHUB_OWNER=wsman
+OPENSLACK_GITHUB_APP_PRIVATE_KEY=<pem-key-content>
+GITHUB_OWNER=Negentropy-Laby
 GITHUB_REPO=OpenSlack
 ```
 
 4. The `@openslack/github` `getClient()` function auto-detects `OPENSLACK_GITHUB_APP_ID` and uses the App installation token. No further manual steps required. Tokens are generated and refreshed automatically.
+
+### Windows local bot wrapper
+
+Do not commit GitHub App private keys. Keep the PEM in the gitignored local
+state directory:
+
+```powershell
+New-Item -ItemType Directory -Force .openslack.local
+# Human action: copy the downloaded GitHub App PEM to:
+# .openslack.local\github-app.pem
+```
+
+Then run OpenSlack through the wrapper:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/openslack-bot.ps1 setup github
+powershell -ExecutionPolicy Bypass -File scripts/openslack-bot.ps1 pr doctor 71
+```
+
+The wrapper loads `.openslack.local/github-app.pem` into
+`OPENSLACK_GITHUB_APP_PRIVATE_KEY` for the child `pnpm openslack` process and
+removes `GITHUB_TOKEN` from that child process so bot-auth runs cannot silently
+fall back to a human PAT. If `OPENSLACK_GITHUB_APP_INSTALLATION_ID` is missing
+or points to a different installation, the wrapper lists the GitHub App's
+installations and uses the one matching `GITHUB_OWNER` (default:
+`Negentropy-Laby`).
+
+To inspect available installations without running OpenSlack:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/openslack-bot.ps1 -ListInstallations
+```
 
 ### How it works (zero manual)
 
@@ -88,7 +120,8 @@ The provider falls back to this when `OPENSLACK_GITHUB_APP_ID` is not set.
 | `OPENSLACK_GITHUB_AUTH_MODE` | No | auto-detect |
 | `OPENSLACK_GITHUB_APP_ID` | No | — |
 | `OPENSLACK_GITHUB_APP_INSTALLATION_ID` | No | — |
-| `OPENSLACK_GITHUB_APP_PRIVATE_KEY` | No | — |
+| `OPENSLACK_GITHUB_APP_PRIVATE_KEY` | No | PEM content |
+| `OPENSLACK_GITHUB_APP_PRIVATE_KEY_PATH` | No | Used by `scripts/openslack-bot.ps1` only |
 
 ## Project v2 Configuration (one-time human admin)
 
