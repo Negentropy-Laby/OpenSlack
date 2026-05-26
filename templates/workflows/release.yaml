@@ -1,0 +1,32 @@
+schema: openslack.workflow_template.v1
+id: release
+name: Release
+inputs:
+  - name: prNumber
+    type: integer
+    required: true
+phases:
+  - name: Queue
+    steps:
+      - type: action
+        actionId: pr.queue
+        title: Show PR queue
+  - name: Verify
+    steps:
+      - type: action
+        actionId: pr.doctor
+        title: Diagnose release PR readiness
+        input:
+          prNumber: "{{inputs.prNumber}}"
+  - name: Approve
+    steps:
+      - type: decision-gate
+        title: Approve release for merge
+        requiredRole: maintainer
+  - name: Merge
+    steps:
+      - type: action
+        actionId: pr.merge
+        title: Merge release PR
+        input:
+          prNumber: "{{inputs.prNumber}}"

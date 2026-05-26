@@ -1,0 +1,43 @@
+schema: openslack.workflow_template.v1
+id: research
+name: Research
+inputs:
+  - name: title
+    type: string
+    required: true
+  - name: issueNumber
+    type: integer
+    required: true
+  - name: agentId
+    type: string
+    required: true
+phases:
+  - name: Investigate
+    steps:
+      - type: action
+        actionId: task.create.preview
+        title: Preview research task
+        input:
+          title: "{{inputs.title}}"
+          template: investigation
+      - type: action
+        actionId: task.checkout
+        title: Create worktree for research
+        input:
+          issueNumber: "{{inputs.issueNumber}}"
+          agentId: "{{inputs.agentId}}"
+  - name: Report
+    steps:
+      - type: handoff
+        from: "{{inputs.agentId}}"
+        to: human
+        context: "Research complete: {{inputs.title}}"
+        issueRef: "{{inputs.issueNumber}}"
+      - type: record-decision
+        topic: "Research findings: {{inputs.title}}"
+        decision: Research completed
+        rationale: Agent investigation finished, findings handed off to human
+        decidedBy: "{{inputs.agentId}}"
+        tags:
+          - research
+          - handoff

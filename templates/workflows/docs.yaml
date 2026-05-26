@@ -1,0 +1,48 @@
+schema: openslack.workflow_template.v1
+id: docs
+name: Docs Update
+inputs:
+  - name: title
+    type: string
+    required: true
+  - name: issueNumber
+    type: integer
+    required: true
+  - name: prNumber
+    type: integer
+    required: true
+  - name: agentId
+    type: string
+    required: true
+  - name: paths
+    type: string
+    required: true
+phases:
+  - name: Draft
+    steps:
+      - type: action
+        actionId: task.create.preview
+        title: Preview docs task
+        input:
+          title: "{{inputs.title}}"
+          template: investigation
+      - type: action
+        actionId: task.checkout
+        title: Create worktree for docs update
+        input:
+          issueNumber: "{{inputs.issueNumber}}"
+          agentId: "{{inputs.agentId}}"
+      - type: action
+        actionId: task.sync
+        title: Propose docs PR
+        input:
+          issueNumber: "{{inputs.issueNumber}}"
+          agentId: "{{inputs.agentId}}"
+          paths: "{{inputs.paths}}"
+  - name: Review
+    steps:
+      - type: action
+        actionId: pr.doctor
+        title: Diagnose PR readiness
+        input:
+          prNumber: "{{inputs.prNumber}}"

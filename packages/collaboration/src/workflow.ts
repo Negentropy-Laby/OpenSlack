@@ -35,6 +35,7 @@ export type WorkflowTemplateStep =
       issueRef?: string;
       prRef?: string;
       nextSteps?: string[];
+      notes?: string;
     }
   | {
       type: 'record-decision';
@@ -42,6 +43,8 @@ export type WorkflowTemplateStep =
       decision: string;
       rationale: string;
       decidedBy: string;
+      alternatives?: string[];
+      consequences?: string[];
       tags?: string[];
     }
   | {
@@ -340,9 +343,25 @@ export async function executeWorkflowTemplate(
           return { templateId: template.id, correlationId, status: 'blocked', preview, handoffs, decisions, errors };
         }
       } else if (rawStep.type === 'handoff' && !options.dryRun) {
-        handoffs.push(createHandoff(rawStep));
+        handoffs.push(createHandoff({
+          from: String(resolveTemplateValue(rawStep.from, resolvedInputs)),
+          to: String(resolveTemplateValue(rawStep.to, resolvedInputs)),
+          context: String(resolveTemplateValue(rawStep.context, resolvedInputs)),
+          issueRef: rawStep.issueRef ? String(resolveTemplateValue(rawStep.issueRef, resolvedInputs)) : undefined,
+          prRef: rawStep.prRef ? String(resolveTemplateValue(rawStep.prRef, resolvedInputs)) : undefined,
+          nextSteps: rawStep.nextSteps?.map((s) => String(resolveTemplateValue(s, resolvedInputs))),
+          notes: rawStep.notes ? String(resolveTemplateValue(rawStep.notes, resolvedInputs)) : undefined,
+        }));
       } else if (rawStep.type === 'record-decision' && !options.dryRun) {
-        decisions.push(recordDecision(rawStep));
+        decisions.push(recordDecision({
+          topic: String(resolveTemplateValue(rawStep.topic, resolvedInputs)),
+          decision: String(resolveTemplateValue(rawStep.decision, resolvedInputs)),
+          rationale: String(resolveTemplateValue(rawStep.rationale, resolvedInputs)),
+          decidedBy: String(resolveTemplateValue(rawStep.decidedBy, resolvedInputs)),
+          alternatives: rawStep.alternatives?.map((a) => String(resolveTemplateValue(a, resolvedInputs))),
+          consequences: rawStep.consequences?.map((c) => String(resolveTemplateValue(c, resolvedInputs))),
+          tags: rawStep.tags?.map((t) => String(resolveTemplateValue(t, resolvedInputs))),
+        }));
       }
     }
   }

@@ -1,0 +1,58 @@
+schema: openslack.workflow_template.v1
+id: bugfix
+name: Bug Fix
+inputs:
+  - name: title
+    type: string
+    required: true
+  - name: issueNumber
+    type: integer
+    required: true
+  - name: prNumber
+    type: integer
+    required: true
+  - name: agentId
+    type: string
+    required: true
+  - name: paths
+    type: string
+    required: true
+phases:
+  - name: Diagnosis
+    steps:
+      - type: action
+        actionId: task.create.preview
+        title: Preview bug-fix task
+        input:
+          title: "{{inputs.title}}"
+          template: investigation
+      - type: action
+        actionId: task.checkout
+        title: Create worktree for bug fix
+        input:
+          issueNumber: "{{inputs.issueNumber}}"
+          agentId: "{{inputs.agentId}}"
+  - name: Implementation
+    steps:
+      - type: action
+        actionId: task.sync
+        title: Propose fix PR
+        input:
+          issueNumber: "{{inputs.issueNumber}}"
+          agentId: "{{inputs.agentId}}"
+          paths: "{{inputs.paths}}"
+  - name: Review
+    steps:
+      - type: action
+        actionId: pr.doctor
+        title: Diagnose PR readiness
+        input:
+          prNumber: "{{inputs.prNumber}}"
+      - type: decision-gate
+        title: Approve bug fix for merge
+        requiredRole: reviewer
+      - type: action
+        actionId: pr.merge
+        title: Merge bug-fix PR
+        input:
+          prNumber: "{{inputs.prNumber}}"
