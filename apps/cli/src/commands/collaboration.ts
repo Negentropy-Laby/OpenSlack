@@ -13,7 +13,8 @@ import {
   buildDashboardProjection, renderDashboardProjection, BLOCKER_TYPES,
 } from '@openslack/collaboration';
 import type { WorkflowTemplate } from '@openslack/collaboration';
-import { resolveAgentPrincipal } from '@openslack/runtime';
+import { resolveAgentPrincipal, renderFindingsPlain } from '@openslack/runtime';
+import type { PlainFinding } from '@openslack/runtime';
 
 type AgentAuthOptions = {
   principal?: import('@openslack/kernel').AgentPrincipal;
@@ -71,7 +72,8 @@ export function collaborationCommands(): Command {
     .option('--risk <level>', 'Filter by risk level (none, low, medium, high)')
     .option('--blocker', 'Show only blocker events')
     .option('--type <eventType>', 'Filter by event type')
-    .action((options: { since: string; owner?: string; module?: string; risk?: string; blocker?: boolean; type?: string }) => {
+    .option('--format <format>', 'Output format: standard or plain', 'standard')
+    .action((options: { since: string; owner?: string; module?: string; risk?: string; blocker?: boolean; type?: string; format: string }) => {
       const sinceHours = parseInt(options.since, 10);
       const filters: Record<string, unknown> = {};
       if (options.owner) filters.actorId = options.owner;
@@ -79,10 +81,28 @@ export function collaborationCommands(): Command {
       if (options.risk) filters.risk = options.risk;
       if (options.type) filters.type = options.type;
       if (options.blocker) filters.type = [...BLOCKER_TYPES];
-      console.log(renderDashboardProjection(buildDashboardProjection({
+      const dashboard = buildDashboardProjection({
         sinceHours: Number.isFinite(sinceHours) ? sinceHours : 24,
         filters: Object.keys(filters).length > 0 ? filters : undefined,
-      })));
+      });
+      if (options.format === 'plain') {
+        const findings: PlainFinding[] = [];
+        for (const b of dashboard.blockers) {
+          findings.push({ status: 'FAIL', title: `Blocker: ${b.object}`, detail: b.summary, nextAction: b.nextAction });
+        }
+        for (const [type, count] of Object.entries(dashboard.taskCounts)) {
+          findings.push({ status: 'informational', title: `Task: ${type}`, detail: `${count} event(s)` });
+        }
+        for (const [type, count] of Object.entries(dashboard.prCounts)) {
+          findings.push({ status: 'informational', title: `PR: ${type}`, detail: `${count} event(s)` });
+        }
+        if (dashboard.openHandoffs > 0) findings.push({ status: 'informational', title: 'Open handoffs', detail: `${dashboard.openHandoffs} open` });
+        if (dashboard.activeDecisions > 0) findings.push({ status: 'informational', title: 'Active decisions', detail: `${dashboard.activeDecisions} active` });
+        if (dashboard.blockerCount === 0) findings.push({ status: 'PASS', title: 'No blockers', detail: `No blockers in the last ${dashboard.sinceHours}h` });
+        console.log(renderFindingsPlain(findings));
+      } else {
+        console.log(renderDashboardProjection(dashboard));
+      }
     });
 
   cmd
@@ -92,7 +112,8 @@ export function collaborationCommands(): Command {
     .option('--object <ref>', 'Filter by object (e.g., pr:42, issue:21)')
     .option('--actor <id>', 'Filter by actor ID')
     .option('--type <type>', 'Filter by event type')
-    .action(async (options: { since: string; object?: string; actor?: string; type?: string }) => {
+    .option('--format <format>', 'Output format: standard or plain', 'standard')
+    .action(async (options: { since: string; object?: string; actor?: string; type?: string; format: string }) => {
       const hours = parseInt(options.since, 10);
       const events = readEvents();
 
@@ -120,14 +141,25 @@ export function collaborationCommands(): Command {
         filtered = filterEvents(filtered, { type: options.type as never });
       }
 
-      console.log(renderActivityFeed(filtered));
+      if (options.format === 'plain') {
+        const findings: PlainFinding[] = filtered.map((event) => {
+          let status: PlainFinding['status'] = 'informational';
+          if (BLOCKER_TYPES.has(event.type)) status = 'FAIL';
+          else if (event.nextAction?.owner === 'human') status = 'requires_human_approval';
+          return { status, title: `${event.type} (${event.object.kind}:${event.object.id})`, detail: event.summary, nextAction: event.nextAction?.action };
+        });
+        console.log(renderFindingsPlain(findings));
+      } else {
+        console.log(renderActivityFeed(filtered));
+      }
     });
 
   cmd
     .command('digest')
     .description('Show collaboration digest (grouped summary)')
     .option('--since <hours>', 'Period in hours', '24')
-    .action(async (options: { since: string }) => {
+    .option('--format <format>', 'Output format: standard or plain', 'standard')
+    .action(async (options: { since: string; format: string }) => {
       const hours = parseInt(options.since, 10);
       const events = readEvents();
 
@@ -138,7 +170,28 @@ export function collaborationCommands(): Command {
       }
 
       const digest = buildDigest(filtered, hours);
-      console.log(renderDigest(digest));
+      if (options.format === 'plain') {
+        const groupStatusMap: Record<string, PlainFinding['status']> = {
+          'Needs Human': 'requires_human_approval',
+          'Blocked': 'FAIL',
+          'Completed': 'PASS',
+          'Agent Activity': 'informational',
+          'Governance': 'informational',
+        };
+        const findings: PlainFinding[] = [];
+        for (const group of digest.groups) {
+          const status = groupStatusMap[group.label] ?? 'informational';
+          for (const event of group.events) {
+            findings.push({ status, title: `${group.label}: ${event.type}`, detail: event.summary, nextAction: event.nextAction?.action });
+          }
+        }
+        for (const event of digest.recommendedNext) {
+          findings.push({ status: 'fixable_by_command', title: `Next: ${event.object.kind}:${event.object.id}`, detail: event.summary, nextAction: event.nextAction?.action });
+        }
+        console.log(renderFindingsPlain(findings));
+      } else {
+        console.log(renderDigest(digest));
+      }
     });
 
   const handoff = new Command('handoff').description('Collaboration handoffs');
@@ -295,14 +348,32 @@ export function collaborationCommands(): Command {
   room
     .command('show <roomId>')
     .description('Show room summary (e.g., pr:42, issue:21, module:operator)')
-    .action((roomId: string) => {
+    .option('--format <format>', 'Output format: standard or plain', 'standard')
+    .action((roomId: string, options: { format: string }) => {
       const events = readEvents();
       const view = buildRoomView(roomId, events);
       if (!view) {
         console.log(`Invalid room ID: ${roomId}. Use format: pr:42, issue:21, module:operator`);
         process.exit(1);
       }
-      console.log(renderRoom(view));
+      if (options.format === 'plain') {
+        const findings: PlainFinding[] = [];
+        for (const blocker of view.blockers) {
+          findings.push({ status: 'FAIL', title: `Blocker: ${blocker.type}`, detail: blocker.summary, nextAction: blocker.nextAction?.action });
+        }
+        if (view.owner) findings.push({ status: 'informational', title: 'Owner', detail: view.owner });
+        if (view.nextAction) findings.push({ status: 'informational', title: 'Next action', detail: view.nextAction });
+        for (const h of view.linkedHandoffs) {
+          findings.push({ status: 'informational', title: `Handoff: ${h.id}`, detail: `${h.from} → ${h.to} (${h.status})` });
+        }
+        for (const d of view.linkedDecisions) {
+          findings.push({ status: 'informational', title: `Decision: ${d.id}`, detail: `${d.topic}: ${d.decision} (${d.status})` });
+        }
+        if (view.blockers.length === 0) findings.push({ status: 'PASS', title: 'No blockers', detail: `No blockers for room ${view.roomId}` });
+        console.log(renderFindingsPlain(findings));
+      } else {
+        console.log(renderRoom(view));
+      }
     });
 
   cmd.addCommand(room);

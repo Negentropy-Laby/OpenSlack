@@ -1,4 +1,6 @@
 import { Command } from 'commander';
+import { renderFindingsPlain } from '@openslack/runtime';
+import type { PlainFinding } from '@openslack/runtime';
 import { getCODEOWNERS, commentOnPR } from '@openslack/github';
 import {
   fetchPRDetails,
@@ -105,7 +107,8 @@ export function prCommands(): Command {
     .command('doctor <number>')
     .description('Run comprehensive governance diagnosis on a PR')
     .option('--comment', 'Post the doctor report as a PR comment')
-    .action(async (number: string, options: { comment?: boolean }) => {
+    .option('--format <format>', 'Output format: standard or plain', 'standard')
+    .action(async (number: string, options: { comment?: boolean; format: string }) => {
       const prNumber = parseInt(number, 10);
       const report = await fetchPRDetails(prNumber);
       const classified = classifyPRReport(report);
@@ -144,6 +147,52 @@ export function prCommands(): Command {
       if (options.comment) {
         await commentOnPR(prNumber, doctorOutput);
         console.log(`Doctor report posted on PR #${prNumber}`);
+      } else if (options.format === 'plain') {
+        const findings: PlainFinding[] = [];
+        findings.push({
+          status: diagnosed.draft ? 'FAIL' : 'PASS',
+          title: 'Draft state',
+          detail: diagnosed.draft ? 'PR is in draft state' : 'Ready for review',
+        });
+        findings.push({
+          status: diagnosed.state !== 'open' ? 'FAIL' : 'PASS',
+          title: 'PR state',
+          detail: diagnosed.state !== 'open' ? `PR is ${diagnosed.state}` : 'Open',
+        });
+        findings.push({
+          status: diagnosed.mergeable === false ? 'FAIL' : 'PASS',
+          title: 'Merge conflicts',
+          detail: diagnosed.mergeable === false ? 'Has merge conflicts' : 'No merge conflicts',
+        });
+        const failing = diagnosed.checks.filter((c) => c.conclusion && c.conclusion !== 'success' && c.conclusion !== 'neutral');
+        const pending = diagnosed.checks.filter((c) => c.status !== 'completed');
+        if (pending.length > 0) {
+          findings.push({ status: 'WARN', title: 'CI Checks', detail: `${pending.length} pending`, nextAction: 'Wait for checks' });
+        } else if (failing.length > 0) {
+          findings.push({ status: 'FAIL', title: 'CI Checks', detail: `${failing.length} failing`, nextAction: 'Fix failing checks' });
+        } else {
+          findings.push({ status: 'PASS', title: 'CI Checks', detail: `All ${diagnosed.checks.length} passed` });
+        }
+        const validApprovals = diagnosed.reviews.filter((r) => r.state === 'APPROVED' && r.user !== diagnosed.author);
+        findings.push({
+          status: validApprovals.length === 0 && diagnosed.decision !== 'READY_TO_MERGE' ? 'requires_human_approval' : 'PASS',
+          title: 'Approvals',
+          detail: `${validApprovals.length} valid approval(s)`,
+          nextAction: validApprovals.length === 0 ? diagnosed.recommendation : undefined,
+        });
+        findings.push({
+          status: diagnosed.riskZone === 'black' ? 'FAIL' : diagnosed.riskZone === 'red' ? 'WARN' : 'PASS',
+          title: 'Risk zone',
+          detail: `Zone: ${diagnosed.riskZone.toUpperCase()}`,
+        });
+        const blocked = diagnosed.decision !== 'READY_TO_MERGE';
+        findings.push({
+          status: blocked ? 'FAIL' : 'PASS',
+          title: 'Merge decision',
+          detail: `${diagnosed.decision}: ${diagnosed.reason}`,
+          nextAction: blocked ? diagnosed.recommendation : undefined,
+        });
+        console.log(renderFindingsPlain(findings));
       } else {
         console.log(doctorOutput);
       }
