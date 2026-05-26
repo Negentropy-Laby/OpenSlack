@@ -234,7 +234,7 @@ All non-trivial changes follow this path:
 3. Keep logic in packages; CLI commands should orchestrate package functions.
 4. Add or update tests for package behavior.
 5. Run validation.
-6. Open a PR.
+6. Open a PR under the configured bot/agent GitHub author identity for OpenSlack-authored or delegated agent work.
 7. Use PRMS to diagnose merge readiness.
 8. Human approval is collected and recorded when required.
 9. Merge Steward or a human merges only after gates pass.
@@ -257,6 +257,21 @@ For PR governance checks:
 pnpm openslack pr doctor <PR_NUMBER>
 pnpm openslack governance audit --count 20
 ```
+
+---
+
+## PR Author Identity
+
+OpenSlack separates PR authorship from human approval.
+
+- OpenSlack-authored work and delegated agent work must be submitted as a PR authored by the configured bot/agent GitHub identity, not by the human reviewer or CODEOWNER account.
+- The human GitHub identity is reserved for review, approval, and final accountability. The same human identity must not both author and approve the PR.
+- If local work was produced under a human account but is intended to be agent-delivered, stop before opening the PR and switch to the configured bot/agent author identity.
+- If a PR has already been opened by the human who must approve it, recreate it as bot/agent-authored or have a different independent human approve it.
+- Bot/agent authorship does not make bot/app/agent approval valid. Approval still requires an explicit human decision and, when GitHub requires it, a GitHub review from the required human identity.
+- PR descriptions should name the acting agent or automation path, the requesting human when applicable, risk zone, validation run, rollback plan, and whether human approval is required.
+
+This identity split prevents self-review and sole-author CODEOWNER deadlocks while preserving the rule that agents never decide approval.
 
 ---
 
