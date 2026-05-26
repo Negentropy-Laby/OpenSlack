@@ -77,4 +77,15 @@ describe('generateReviewReport', () => {
     const md = generateReviewReport(makeReport());
     expect(md).toContain('OpenSlack PR Review');
   });
+
+  it('renders skipped checks with skip icon', () => {
+    const md = generateReviewReport(makeReport({
+      checks: [
+        { name: 'canary', status: 'completed', conclusion: 'success' },
+        { name: 'on-pr-merged', status: 'completed', conclusion: 'skipped' },
+      ],
+    }));
+    expect(md).toContain('⏭️');
+    expect(md).toContain('on-pr-merged');
+  });
 });

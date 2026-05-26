@@ -56,7 +56,7 @@ export function diagnosePR(
 
   // 6. Checks failed
   const failingChecks = report.checks.filter(
-    (c) => c.conclusion && c.conclusion !== 'success' && c.conclusion !== 'neutral',
+    (c) => c.conclusion && c.conclusion !== 'success' && c.conclusion !== 'neutral' && c.conclusion !== 'skipped',
   );
   if (failingChecks.length > 0) {
     decision = 'CHECKS_FAILED';

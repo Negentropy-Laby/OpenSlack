@@ -25,7 +25,7 @@ export function checkMergeReadiness(
 
   // Required checks gate
   const failingChecks = report.checks.filter(
-    (c) => c.conclusion && c.conclusion !== 'success' && c.conclusion !== 'neutral',
+    (c) => c.conclusion && c.conclusion !== 'success' && c.conclusion !== 'neutral' && c.conclusion !== 'skipped',
   );
   const pendingChecks = report.checks.filter((c) => c.status !== 'completed');
 
