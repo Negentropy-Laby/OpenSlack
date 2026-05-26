@@ -36,7 +36,7 @@ describe('activity', () => {
   it('formats event with owner', () => {
     const event = makeEvent({ owner: { id: 'wsman', kind: 'human' } });
     const formatted = formatActivityEvent(event);
-    expect(formatted).toContain('Owner: human:wsman');
+    expect(formatted).toContain('Owner: wsman');
   });
 
   it('formats event with next action', () => {

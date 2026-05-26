@@ -11,6 +11,8 @@ export {
 
 export { sanitizeEvent, getSecretPatterns } from './redact.js';
 
+export { resolveAgentDisplayName, clearNameCache } from './agent-resolve.js';
+
 export { buildSourceLink } from './source-links.js';
 
 export {
