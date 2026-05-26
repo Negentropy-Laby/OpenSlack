@@ -24,10 +24,8 @@ jobs:
           node-version: "22"
           package-manager-cache: false
 
-      # pnpm/action-setup v6.0.8
-      - uses: pnpm/action-setup@d15e628ca66d93ee5f352c71671a7bc6a97af5c9
-        with:
-          version: 10
+      # Install pnpm globally (bypasses pnpm/action-setup download issues)
+      - run: npm install -g pnpm@10
 
       - run: pnpm install --frozen-lockfile
 
