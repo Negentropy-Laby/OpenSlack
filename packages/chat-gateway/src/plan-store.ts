@@ -2,12 +2,19 @@ import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 
+export type ChatPlanAction =
+  | 'confirm_merge' | 'show_doctor' | 'watch_pr' | 'cancel'
+  | 'accept_handoff' | 'close_handoff'
+  | 'record_decision'
+  | 'execute_workflow'
+  | 'approve_plan';
+
 export interface PendingPlan {
   planId: string;
   actorId: string;
   channelId: string;
   threadId?: string;
-  action: 'confirm_merge' | 'show_doctor' | 'watch_pr' | 'cancel';
+  action: ChatPlanAction;
   value: string;
   riskLevel: 'none' | 'low' | 'medium' | 'high';
   agentId?: string;
@@ -16,7 +23,7 @@ export interface PendingPlan {
   expiresAt: string;
 }
 
-const PLAN_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const PLAN_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 function getStoreDir(): string {
   const root = process.cwd();
@@ -110,5 +117,9 @@ export function validatePlan(
 }
 
 export function isActionAllowed(action: string): action is PendingPlan['action'] {
-  return ['confirm_merge', 'show_doctor', 'watch_pr', 'cancel'].includes(action);
+  return [
+    'confirm_merge', 'show_doctor', 'watch_pr', 'cancel',
+    'accept_handoff', 'close_handoff', 'record_decision',
+    'execute_workflow', 'approve_plan',
+  ].includes(action);
 }

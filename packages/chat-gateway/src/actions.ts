@@ -2,13 +2,17 @@ import { planActions, executePlan } from '@openslack/operator';
 import type { ChatMessage, ChatResponse } from './types.js';
 import { loadPendingPlan, validatePlan, deletePendingPlan, isActionAllowed } from './plan-store.js';
 import { formatResultAsMarkdown, formatError } from './formatter.js';
-import { buildPRCard, cardToText, toSlackBlocks } from './cards.js';
+import { buildPRCard, cardToText, toSlackBlocks, buildHandoffCard, buildDecisionCard, buildWorkflowCard } from './cards.js';
 import { summarizePRForChat, formatPRChatSummary } from '@openslack/pr';
-import { recordEvent } from '@openslack/collaboration';
+import { recordEvent, acceptHandoff, closeHandoff, getHandoff, getDecision } from '@openslack/collaboration';
 import { resolveAgentPrincipal } from '@openslack/runtime';
 
 interface ActionContext {
   message: ChatMessage;
+}
+
+function chatProvider(message: ChatMessage): 'slack' | 'webhook' {
+  return message.channel.type === 'webhook' ? 'webhook' : 'slack';
 }
 
 function parseActionText(text: string): { action: string; value: string } | null {
@@ -232,14 +236,48 @@ async function handleConfirmMerge(planId: string, message: ChatMessage): Promise
   };
 }
 
-async function handleCancel(planId: string): Promise<ChatResponse> {
+async function validatePendingChatPlan(planId: string, message: ChatMessage): Promise<{
+  plan?: NonNullable<ReturnType<typeof loadPendingPlan>>;
+  error?: ChatResponse;
+}> {
+  const plan = loadPendingPlan(planId);
+  if (!plan) {
+    return { error: formatError(`Plan not found or expired: ${planId}`) };
+  }
+
+  const validation = validatePlan(plan, message.user.id, message.channel.id, message.threadId);
+  if (!validation.valid) {
+    try {
+      recordEvent({
+        type: 'operator.plan.blocked',
+        actor: { id: message.user.id, kind: 'chat', provider: chatProvider(message) },
+        object: { kind: 'plan', id: planId },
+        source: { kind: 'chat', ref: message.channel.id },
+        summary: validation.reason || 'Plan validation failed',
+        visibility: 'chat',
+        redacted: false,
+        containsSensitiveData: false,
+      });
+    } catch {
+      // best-effort event recording
+    }
+    return { error: formatError(validation.reason || 'Plan validation failed.') };
+  }
+
+  return { plan };
+}
+
+async function handleCancel(planId: string, message: ChatMessage): Promise<ChatResponse> {
+  const validation = await validatePendingChatPlan(planId, message);
+  if (validation.error) return validation.error;
+
   deletePendingPlan(planId);
   try {
     recordEvent({
       type: 'chat.plan.cancelled',
-      actor: { id: 'chat', kind: 'chat', provider: 'webhook' },
+      actor: { id: message.user.id, kind: 'chat', provider: chatProvider(message) },
       object: { kind: 'plan', id: planId },
-      source: { kind: 'chat', ref: 'action:cancel' },
+      source: { kind: 'chat', ref: message.channel.id },
       summary: `Chat plan cancelled: ${planId}`,
       visibility: 'chat',
       redacted: false,
@@ -249,6 +287,131 @@ async function handleCancel(planId: string): Promise<ChatResponse> {
     // best-effort event recording
   }
   return { text: 'Cancelled.' };
+}
+
+async function handleAcceptHandoff(handoffId: string, message: ChatMessage): Promise<ChatResponse> {
+  const handoff = getHandoff(handoffId);
+  if (!handoff) {
+    return formatError(`Handoff not found: ${handoffId}`);
+  }
+  if (handoff.status !== 'open') {
+    return formatError(`Handoff ${handoffId} is not open (status: ${handoff.status})`);
+  }
+
+  const accepted = acceptHandoff(handoffId);
+  if (!accepted) {
+    return formatError(`Failed to accept handoff: ${handoffId}`);
+  }
+  try {
+    recordEvent({
+      type: 'handoff.accepted',
+      actor: { id: message.user.id, kind: 'chat', provider: chatProvider(message) },
+      object: { kind: 'handoff', id: handoffId },
+      source: { kind: 'chat', ref: message.channel.id },
+      summary: `Handoff ${handoffId} accepted by ${message.user.id}`,
+      visibility: 'chat',
+      redacted: false,
+      containsSensitiveData: false,
+    });
+  } catch { /* best-effort */ }
+
+  const card = buildHandoffCard(accepted);
+  return { text: cardToText(card) };
+}
+
+async function handleCloseHandoff(handoffId: string, message: ChatMessage): Promise<ChatResponse> {
+  const handoff = getHandoff(handoffId);
+  if (!handoff) {
+    return formatError(`Handoff not found: ${handoffId}`);
+  }
+
+  const closed = closeHandoff(handoffId);
+  if (!closed) {
+    return formatError(`Failed to close handoff: ${handoffId}`);
+  }
+  try {
+    recordEvent({
+      type: 'handoff.closed',
+      actor: { id: message.user.id, kind: 'chat', provider: chatProvider(message) },
+      object: { kind: 'handoff', id: handoffId },
+      source: { kind: 'chat', ref: message.channel.id },
+      summary: `Handoff ${handoffId} closed by ${message.user.id}`,
+      visibility: 'chat',
+      redacted: false,
+      containsSensitiveData: false,
+    });
+  } catch { /* best-effort */ }
+
+  const card = buildHandoffCard(closed);
+  return { text: cardToText(card) };
+}
+
+async function handleRecordDecision(decisionId: string, _message: ChatMessage): Promise<ChatResponse> {
+  const decision = getDecision(decisionId);
+  if (!decision) {
+    return formatError(`Decision not found: ${decisionId}`);
+  }
+  const card = buildDecisionCard(decision);
+  return { text: cardToText(card) };
+}
+
+async function handleExecuteWorkflow(correlationId: string, message: ChatMessage): Promise<ChatResponse> {
+  const plan = loadPendingPlan(correlationId);
+  if (plan) {
+    const validation = validatePlan(plan, message.user.id, message.channel.id, message.threadId);
+    if (!validation.valid) {
+      deletePendingPlan(correlationId);
+      return formatError(validation.reason || 'Workflow plan validation failed.');
+    }
+  }
+
+  try {
+    recordEvent({
+      type: 'workflow.started',
+      actor: { id: message.user.id, kind: 'chat', provider: chatProvider(message) },
+      object: { kind: 'workflow', id: correlationId },
+      source: { kind: 'chat', ref: message.channel.id },
+      summary: `Workflow ${correlationId} confirmed via chat`,
+      visibility: 'chat',
+      redacted: false,
+      containsSensitiveData: false,
+    });
+  } catch { /* best-effort */ }
+
+  if (plan) deletePendingPlan(correlationId);
+  return { text: `Workflow ${correlationId} confirmed. Use \`openslack workflow run ${correlationId}\` to execute.` };
+}
+
+async function handlePreviewTask(issueNumber: string): Promise<ChatResponse> {
+  return { text: `Task #${issueNumber} preview not yet available in chat. Use: \`openslack task show ${issueNumber}\`` };
+}
+
+async function handleClaimTask(issueNumber: string, message: ChatMessage): Promise<ChatResponse> {
+  return { text: `Task #${issueNumber} claim not yet available in chat. Use: \`openslack task claim ${issueNumber}\`` };
+}
+
+async function handleApprovePlan(planId: string, message: ChatMessage): Promise<ChatResponse> {
+  const validation = await validatePendingChatPlan(planId, message);
+  if (validation.error) return validation.error;
+
+  const plan = validation.plan;
+  if (plan?.action !== 'approve_plan') {
+    return formatError(`Plan ${planId} cannot be approved with this chat action. Use the specific action for ${plan?.action ?? 'this plan'} or the CLI approval command.`);
+  }
+
+  try {
+    recordEvent({
+      type: 'chat.plan.confirmed',
+      actor: { id: message.user.id, kind: 'chat', provider: chatProvider(message) },
+      object: { kind: 'plan', id: planId },
+      source: { kind: 'chat', ref: message.channel.id },
+      summary: `Plan ${planId} confirmation requested via chat`,
+      visibility: 'chat',
+      redacted: false,
+      containsSensitiveData: false,
+    });
+  } catch { /* best-effort */ }
+  return { text: `Plan ${planId} confirmed in chat. Chat confirmation does not execute this plan; run the CLI approval command shown by the Operator to execute it.` };
 }
 
 export async function handleAction(message: ChatMessage): Promise<ChatResponse | null> {
@@ -265,7 +428,21 @@ export async function handleAction(message: ChatMessage): Promise<ChatResponse |
     case 'confirm_merge':
       return handleConfirmMerge(value, message);
     case 'cancel':
-      return handleCancel(value);
+      return handleCancel(value, message);
+    case 'accept_handoff':
+      return handleAcceptHandoff(value, message);
+    case 'close_handoff':
+      return handleCloseHandoff(value, message);
+    case 'record_decision':
+      return handleRecordDecision(value, message);
+    case 'execute_workflow':
+      return handleExecuteWorkflow(value, message);
+    case 'preview_task':
+      return handlePreviewTask(value);
+    case 'claim_task':
+      return handleClaimTask(value, message);
+    case 'approve_plan':
+      return handleApprovePlan(value, message);
     default:
       return null;
   }

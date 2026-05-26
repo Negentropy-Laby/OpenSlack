@@ -38,16 +38,6 @@ export async function routeMessage(
     // best-effort event recording
   }
 
-  // 0. Handle button actions first
-  const parsedAction = parseActionText(message.text);
-  if (parsedAction) {
-    const actionResult = await handleAction(message);
-    if (actionResult) {
-      markProcessed(message.id, message.text, message.user.id, message.channel.id);
-      return actionResult;
-    }
-  }
-
   // 1. Idempotency check
   if (isDuplicate(message.id, message.text, message.user.id, message.channel.id)) {
     try {
@@ -89,6 +79,27 @@ export async function routeMessage(
     }
   } catch (err) {
     return formatError(`Authorization failed: ${(err as Error).message}`);
+  }
+
+  // 3.5 Handle button actions (after authz, before intent parsing)
+  const parsedAction = parseActionText(message.text);
+  if (parsedAction) {
+    // Side-effecting actions require a mapped actor with write permission
+    const sideEffectActions = new Set([
+      'accept_handoff', 'close_handoff', 'confirm_merge', 'execute_workflow', 'approve_plan', 'claim_task', 'cancel',
+    ]);
+    if (sideEffectActions.has(parsedAction.action) && !canExecuteSideEffects(actor, config)) {
+      markProcessed(message.id, message.text, message.user.id, message.channel.id);
+      return {
+        text: '⚠️ This action requires a mapped chat user with write permission. Contact your workspace admin.',
+      };
+    }
+
+    const actionResult = await handleAction(message);
+    if (actionResult) {
+      markProcessed(message.id, message.text, message.user.id, message.channel.id);
+      return actionResult;
+    }
   }
 
   // 4. Parse intent
