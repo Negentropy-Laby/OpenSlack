@@ -7,6 +7,7 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 | If you want to... | Start with | Notes |
 |-------------------|------------|-------|
 | Verify a fresh checkout | `openslack setup` | Runs workspace validation, golden evals, GitHub doctor, and genesis validation. |
+| Get guided setup with prompts | `openslack setup interactive` | Walks fixable items step by step; supports `--format plain` |
 | Run CI-style setup checks | `openslack setup --strict` | Treats warnings as failures. Use this for release or PR validation. |
 | Check GitHub readiness without changing anything | `openslack setup github` | Read-only by default. Use `--apply` only for explicit repairs. |
 | Ask OpenSlack what to do | `openslack ask "检查系统状态"` | Uses the local keyword router first; LLM fallback is optional. |
@@ -16,11 +17,140 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 | See team state across events and PRs | `openslack collaboration dashboard` | Projection-only; does not create dashboard-specific state. |
 | Record a handoff or decision | `openslack collaboration handoff ...` / `openslack collaboration decision ...` | Creates auditable collaboration objects. |
 
+## Common Workflows
+
+### 1. Start using OpenSlack on a new checkout
+
+```bash
+pnpm openslack setup interactive    # Guided onboarding with step-by-step prompts
+pnpm openslack status               # See module status and recommended next steps
+pnpm openslack collaboration dashboard  # Check team activity
+```
+
+### 2. Create a task for work
+
+```bash
+pnpm openslack task create --title "Fix login redirect" --path "packages/kernel/**" --preview
+# Review the preview, then:
+pnpm openslack task create --title "Fix login redirect" --path "packages/kernel/**" --create-issue
+```
+
+### 3. Check if a PR can merge
+
+```bash
+pnpm openslack pr doctor 42         # Full 11-gate governance diagnosis
+pnpm openslack pr recommend 42      # What to do next
+# If ready:
+pnpm openslack pr merge 42
+```
+
+### 4. See team activity and blockers
+
+```bash
+pnpm openslack collaboration dashboard          # Overview with blockers
+pnpm openslack collaboration room show pr:42     # Focus on one PR
+pnpm openslack collaboration activity --since 8  # Recent events
+```
+
+### 5. Hand off work to another agent or human
+
+```bash
+pnpm openslack collaboration handoff create \
+  --from claude --to codex \
+  --context "Refactoring auth middleware, 3 files remain" \
+  --steps "Complete auth refactor,Run tests,Open PR" \
+  --pr 42
+```
+
+### 6. Run a workflow template
+
+```bash
+pnpm openslack collaboration workflow preview bugfix.yaml --input issue_number=7
+# Review the preview, then:
+pnpm openslack collaboration workflow execute bugfix.yaml --input issue_number=7
+```
+
+## Quick Reference by Role
+
+### New Team Member
+
+First actions: understand the workspace and check status.
+
+```bash
+pnpm openslack setup interactive     # Guided onboarding
+pnpm openslack status                # What's happening
+pnpm openslack collaboration digest  # Recent summary
+```
+
+### Task Creator
+
+Create, track, and manage issues.
+
+```bash
+pnpm openslack task create --title "..." --preview   # Preview before creating
+pnpm openslack task create --title "..." --create-issue  # Create on GitHub
+pnpm openslack github metrics                         # Check task loop health
+```
+
+### PR Reviewer
+
+Diagnose and approve PRs.
+
+```bash
+pnpm openslack pr doctor <n>          # Full governance diagnosis
+pnpm openslack pr recommend <n>       # Next action
+pnpm openslack pr review <n> --comment  # Post review as PR comment
+pnpm openslack pr queue               # All open PRs by readiness
+```
+
+### Agent Operator
+
+Manage agent lifecycle and task claiming.
+
+```bash
+pnpm openslack agent hire --agent-id <id>    # Generate onboarding package
+pnpm openslack agent bootstrap --agent-id <id>  # Verify readiness
+pnpm openslack agent tick --agent-id <id> --source github-issues  # Claim work
+```
+
+### Repository Admin
+
+Governance, branch protection, and workspace health.
+
+```bash
+pnpm openslack governance audit              # Check direct-push compliance
+pnpm openslack governance audit --count 50   # Wider audit scope
+pnpm openslack setup github --repair-labels --apply  # Fix missing labels
+pnpm openslack status generate && pnpm openslack status verify  # Sync docs
+```
+
+## Understanding Output Formats
+
+Several commands support a `--format` option:
+
+| Format | When to use | Example |
+|--------|-------------|---------|
+| `standard` (default) | Human-readable terminal output | `openslack pr doctor 42` |
+| `plain` | Plain language with status/owner/next-action; good for logs and CI | `openslack pr doctor 42 --format plain` |
+| `json` | Structured data for scripting or piping | (Coming in future release) |
+
+Commands with `--format plain`:
+
+- `openslack pr doctor <n> --format plain`
+- `openslack doctor --format plain`
+- `openslack setup interactive --format plain`
+- `openslack collaboration dashboard --format plain`
+- `openslack collaboration activity --format plain`
+- `openslack collaboration digest --format plain`
+- `openslack collaboration room show <id> --format plain`
+- `openslack governance audit --format plain`
+
 ## Safety Defaults
 
 - Setup and repair commands are read-only or preview-first unless `--apply` is supplied.
 - Task creation previews by default; GitHub Issue creation requires `--create-issue`.
 - PRs for OpenSlack-authored or delegated agent work should be opened under the configured bot/agent GitHub author identity so humans remain independent reviewers.
+- PR author means the GitHub account that opened the PR, not only the commit author. A bot-authored commit inside a human-created PR is still a human-created PR.
 - Human approval can be based on OpenSlack's PRMS/agent summary; the human does not need to manually browse the PR page.
 - Chat confirmation alone is not GitHub approval; CODEOWNER gates still require a GitHub review from the human identity.
 - Agents cannot decide PR approval, approve under bot/app/agent identity, bypass CODEOWNERS, or merge without PRMS and GitHub gates.
