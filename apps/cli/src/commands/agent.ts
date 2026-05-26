@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from 
 import { join } from 'node:path';
 import { bootstrapAgent, resolveAgentPrincipal } from '@openslack/runtime';
 import { tickAgent } from '@openslack/runtime';
+import { migrateRegistry } from '@openslack/workspace';
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -223,6 +224,47 @@ approval_rules:
       if (result.leaseId) console.log(`  Claim: ${result.leaseId}`);
       console.log(`  ${result.message}`);
       if (result.action === 'error') process.exit(1);
+    });
+
+  cmd
+    .command('migrate-registry')
+    .description('Migrate v1 agent registry entries to v2 schema')
+    .option('--preview', 'Show what would change without writing', false)
+    .option('--apply', 'Write converted entries (backs up v1 files)', false)
+    .action((options) => {
+      const root = findRepoRoot();
+      const apply = options.apply === true;
+      if (!apply && !options.preview) {
+        console.error('Specify --preview to see changes or --apply to write them.');
+        process.exit(1);
+      }
+      const results = migrateRegistry(root, { apply });
+      if (results.length === 0) {
+        console.log('No agent registry entries found.');
+        return;
+      }
+      const errors = results.filter((r) => r.status === 'error').length;
+      const writeBlocked = apply && errors > 0;
+      for (const r of results) {
+        if (r.status === 'converted') {
+          const suffix = apply ? (writeBlocked ? ' (blocked; not written)' : ' (written)') : ' (preview)';
+          console.log(`[CONVERT] ${r.agentId}: v1 → v2${suffix}`);
+        } else if (r.status === 'already_v2') {
+          console.log(`[OK] ${r.agentId}: already v2`);
+        } else {
+          console.log(`[ERROR] ${r.agentId}: ${r.error}`);
+        }
+      }
+      const converted = results.filter((r) => r.status === 'converted').length;
+      console.log(`\n${converted} converted, ${results.length - converted - errors} already v2, ${errors} errors.`);
+      if (apply && converted > 0) {
+        if (errors === 0) {
+          console.log('V1 backups saved to .openslack/agents/registry.v1-backup/');
+        } else {
+          console.log('No files were written because migration errors were found.');
+        }
+      }
+      if (errors > 0) process.exit(1);
     });
 
   return cmd;

@@ -15,3 +15,7 @@ export type { ProductModule, ModulesRegistry, RegistryValidationResult } from '.
 export { parseAgentRegistry } from './agent-registry-parser.js';
 export type { ParsedAgentRegistryEntry } from './agent-registry-parser.js';
 
+// Registry Migration
+export { migrateV1ToV2, migrateRegistry } from './registry-migrate.js';
+export type { MigrationResult } from './registry-migrate.js';
+
