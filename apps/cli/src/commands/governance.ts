@@ -3,6 +3,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { recordEvent } from '@openslack/collaboration';
+import { renderFindingsPlain } from '@openslack/runtime';
+import type { PlainFinding } from '@openslack/runtime';
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -140,7 +142,8 @@ export function governanceCommands(): Command {
     .command('audit')
     .description('Audit recent main commits for governance compliance')
     .option('--count <n>', 'Number of commits to audit', '20')
-    .action((options: { count: string }) => {
+    .option('--format <format>', 'Output format: standard or plain', 'standard')
+    .action((options: { count: string; format: string }) => {
       const root = findRepoRoot();
       const count = parseInt(options.count, 10);
       const commits = getRecentCommits(root, count);
@@ -168,74 +171,30 @@ export function governanceCommands(): Command {
       const directCommits = commits.filter((c) => !c.isMerge && !c.isFromPR && !c.exceptionFound && hasGhAccess);
       const attributedCommits = commits.filter((c) => c.hasAiAttribution && !c.exceptionFound);
 
-      console.log('Governance Audit');
-      console.log('════════════════');
-      console.log(`Scope: last ${commits.length} commits on main`);
-      if (!hasGhAccess) {
-        console.log('Note: gh CLI not available — PR merge detection limited to true merge commits');
-      }
-      console.log('');
-
-      if (mergeCommits.length > 0) {
-        console.log(`Merge commits: ${mergeCommits.length}`);
-        for (const c of mergeCommits) {
-          console.log(`  ✓ ${c.shortSha} ${c.subject}`);
-        }
-        console.log('');
-      }
-
-      if (squashCommits.length > 0) {
-        console.log(`Squash-merged PR commits: ${squashCommits.length}`);
-        for (const c of squashCommits) {
-          console.log(`  ✓ ${c.shortSha} PR #${c.prNumber} — ${c.subject}`);
-        }
-        console.log('');
-      }
-
-      if (exceptedCommits.length > 0) {
-        console.log(`Excepted direct commits: ${exceptedCommits.length}`);
-        for (const c of exceptedCommits) {
-          console.log(`  ⚠ ${c.shortSha} ${c.subject}`);
-          console.log(`    Exception found in technical-debt.md`);
-        }
-        console.log('');
-      }
-
-      if (unverifiedCommits.length > 0) {
-        console.log(`Unverified commits (no gh access): ${unverifiedCommits.length}`);
-        for (const c of unverifiedCommits) {
-          console.log(`  ? ${c.shortSha} ${c.subject}`);
-          console.log(`    Cannot verify without gh CLI access`);
-        }
-        console.log('');
-      }
-
       const auditFailed =
         directCommits.length > 0 ||
         (!hasGhAccess && unverifiedCommits.length > 0) ||
         attributedCommits.length > 0;
 
-      const attributionFailed = attributedCommits.length > 0;
-      const directCommitFailed = directCommits.length > 0 || (!hasGhAccess && unverifiedCommits.length > 0);
-
       try {
         let summary: string;
-        if (directCommitFailed && attributionFailed) {
+        const directCommitFailed = directCommits.length > 0 || (!hasGhAccess && unverifiedCommits.length > 0);
+        if (directCommitFailed && attributedCommits.length > 0) {
           summary = `Governance audit failed: ${directCommits.length} unexplained direct commits, ${attributedCommits.length} AI attribution violations`;
         } else if (directCommitFailed) {
           summary = `Governance audit failed: ${directCommits.length} unexplained direct commits`;
-        } else if (attributionFailed) {
+        } else if (attributedCommits.length > 0) {
           summary = `Governance audit failed: ${attributedCommits.length} AI attribution violations`;
         } else {
           summary = `Governance audit passed: ${commits.length} commits checked`;
         }
 
         let nextAction;
-        if (directCommitFailed && attributionFailed) {
+        if (directCommitFailed && attributedCommits.length > 0) {
           nextAction = { owner: 'human', action: 'Fix direct commits and remove AI attribution from commit messages' };
         } else if (directCommitFailed) {
           nextAction = { owner: 'human', action: 'Add exception to docs/developer/technical-debt.md' };
-        } else if (attributionFailed) {
+        } else if (attributedCommits.length > 0) {
           nextAction = { owner: 'human', action: 'Remove AI attribution from commit messages' };
         }
 
@@ -255,37 +214,61 @@ export function governanceCommands(): Command {
         // Best-effort event recording
       }
 
-      if (directCommits.length > 0) {
-        console.log(`UNEXPLAINED direct commits: ${directCommits.length}`);
-        for (const c of directCommits) {
-          console.log(`  ✗ ${c.shortSha} ${c.subject}`);
-          console.log(`    No PR merge record and no technical-debt exception`);
-        }
+      if (options.format === 'plain') {
+        const findings: PlainFinding[] = [];
+        findings.push({ status: 'informational', title: 'Audit scope', detail: `Last ${commits.length} commits on main` });
+        for (const c of mergeCommits) findings.push({ status: 'PASS', title: `Merge: ${c.shortSha}`, detail: c.subject });
+        for (const c of squashCommits) findings.push({ status: 'PASS', title: `Squash PR #${c.prNumber}: ${c.shortSha}`, detail: c.subject });
+        for (const c of exceptedCommits) findings.push({ status: 'WARN', title: `Excepted: ${c.shortSha}`, detail: c.subject });
+        for (const c of unverifiedCommits) findings.push({ status: 'WARN', title: `Unverified: ${c.shortSha}`, detail: `${c.subject} — install gh CLI` });
+        for (const c of directCommits) findings.push({ status: 'FAIL', title: `Direct commit: ${c.shortSha}`, detail: c.subject, nextAction: 'Add exception to technical-debt.md' });
+        for (const c of attributedCommits) findings.push({ status: 'FAIL', title: `Attribution: ${c.shortSha}`, detail: c.subject, nextAction: 'Remove AI attribution' });
+        if (!auditFailed) findings.push({ status: 'PASS', title: 'Governance passed', detail: `All ${commits.length} commits accounted for` });
+        console.log(renderFindingsPlain(findings));
+      } else {
+        console.log('Governance Audit');
+        console.log('════════════════');
+        console.log(`Scope: last ${commits.length} commits on main`);
+        if (!hasGhAccess) console.log('Note: gh CLI not available — PR merge detection limited to true merge commits');
         console.log('');
-        console.log('Action required: add exception to docs/developer/technical-debt.md');
-        process.exit(1);
-      }
 
-      if (!hasGhAccess && unverifiedCommits.length > 0) {
-        console.log('Some commits could not be verified. Install gh CLI and authenticate for full audit.');
-        process.exit(1);
-      }
-
-      if (attributedCommits.length > 0) {
-        console.log(`AI attribution violations: ${attributedCommits.length}`);
-        for (const c of attributedCommits) {
-          console.log(`  ✗ ${c.shortSha} ${c.subject}`);
-          console.log(`    Contains prohibited attribution pattern`);
+        if (mergeCommits.length > 0) {
+          console.log(`Merge commits: ${mergeCommits.length}`);
+          for (const c of mergeCommits) console.log(`  ✓ ${c.shortSha} ${c.subject}`);
+          console.log('');
         }
-        console.log('');
-        console.log('Action required: remove AI attribution from commit messages. See AGENTS.md hard prohibitions.');
-        process.exit(1);
+        if (squashCommits.length > 0) {
+          console.log(`Squash-merged PR commits: ${squashCommits.length}`);
+          for (const c of squashCommits) console.log(`  ✓ ${c.shortSha} PR #${c.prNumber} — ${c.subject}`);
+          console.log('');
+        }
+        if (exceptedCommits.length > 0) {
+          console.log(`Excepted direct commits: ${exceptedCommits.length}`);
+          for (const c of exceptedCommits) { console.log(`  ⚠ ${c.shortSha} ${c.subject}`); console.log('    Exception found in technical-debt.md'); }
+          console.log('');
+        }
+        if (unverifiedCommits.length > 0) {
+          console.log(`Unverified commits (no gh access): ${unverifiedCommits.length}`);
+          for (const c of unverifiedCommits) { console.log(`  ? ${c.shortSha} ${c.subject}`); console.log('    Cannot verify without gh CLI access'); }
+          console.log('');
+        }
+        if (directCommits.length > 0) {
+          console.log(`UNEXPLAINED direct commits: ${directCommits.length}`);
+          for (const c of directCommits) { console.log(`  ✗ ${c.shortSha} ${c.subject}`); console.log('    No PR merge record and no technical-debt exception'); }
+          console.log(''); console.log('Action required: add exception to docs/developer/technical-debt.md');
+        }
+        if (!hasGhAccess && unverifiedCommits.length > 0) {
+          console.log('Some commits could not be verified. Install gh CLI and authenticate for full audit.');
+        }
+        if (attributedCommits.length > 0) {
+          console.log(`AI attribution violations: ${attributedCommits.length}`);
+          for (const c of attributedCommits) { console.log(`  ✗ ${c.shortSha} ${c.subject}`); console.log('    Contains prohibited attribution pattern'); }
+          console.log(''); console.log('Action required: remove AI attribution from commit messages. See AGENTS.md hard prohibitions.');
+        }
+        if (!auditFailed) { console.log('Unexplained direct commits: 0'); console.log('AI attribution violations: 0'); console.log(''); console.log('All commits accounted for. No governance drift detected.'); }
       }
 
-      console.log('Unexplained direct commits: 0');
-      console.log('AI attribution violations: 0');
-      console.log('');
-      console.log('All commits accounted for. No governance drift detected.');
+      if (auditFailed) process.exit(1);
     });
 
   return cmd;
