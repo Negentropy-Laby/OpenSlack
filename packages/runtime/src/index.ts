@@ -16,6 +16,8 @@ export type { SetupFinding, SetupFindingStatus, SetupReport } from './setup-repo
 export { repairWorktrees, renderWorktreeRepair } from './repair.js';
 export type { WorktreeRepairItem, WorktreeRepairResult } from './repair.js';
 export type { WorktreeResult } from './worktree.js';
+export { renderFindingPlain, renderFindingsPlain } from './plain-render.js';
+export type { PlainFinding } from './plain-render.js';
 
 // Self-evolution ops (moved from kernel to runtime to break circular dependency)
 export { observeHealth } from './self/ops/observe.js';
