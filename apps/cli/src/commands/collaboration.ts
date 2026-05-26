@@ -1,6 +1,7 @@
 import { Command } from 'commander';
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import {
   readEvents, filterEvents, renderActivityFeed, buildDigest, renderDigest,
@@ -10,6 +11,7 @@ import {
   renderDecisionList, renderDecision,
   buildRoomView, renderRoom,
   previewWorkflowTemplate, executeWorkflowTemplate, renderWorkflowPreview,
+  validateWorkflowTemplate,
   buildDashboardProjection, renderDashboardProjection, BLOCKER_TYPES,
 } from '@openslack/collaboration';
 import type { WorkflowTemplate } from '@openslack/collaboration';
@@ -60,8 +62,43 @@ function parseInputs(items: string[] | undefined): Record<string, unknown> {
   return inputs;
 }
 
-function loadWorkflowTemplate(path: string): WorkflowTemplate {
-  return parseYaml(readFileSync(path, 'utf-8')) as WorkflowTemplate;
+function resolveBuiltinTemplatePath(id: string): string | undefined {
+  const builtinPath = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', 'templates', 'workflows', `${id}.yaml`);
+  return existsSync(builtinPath) ? builtinPath : undefined;
+}
+
+function loadWorkflowTemplate(pathOrId: string): WorkflowTemplate {
+  const builtinPath = resolveBuiltinTemplatePath(pathOrId);
+  const resolvedPath = builtinPath ?? pathOrId;
+  return parseYaml(readFileSync(resolvedPath, 'utf-8')) as WorkflowTemplate;
+}
+
+interface BuiltinTemplateSummary {
+  id: string;
+  name: string;
+  phases: number;
+  inputs: number;
+  file: string;
+}
+
+function listBuiltinTemplates(): BuiltinTemplateSummary[] {
+  const dir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', 'templates', 'workflows');
+  if (!existsSync(dir)) return [];
+  const files = readdirSync(dir).filter((f) => f.endsWith('.yaml'));
+  const templates: BuiltinTemplateSummary[] = [];
+  for (const file of files) {
+    const template = parseYaml(readFileSync(join(dir, file), 'utf-8')) as WorkflowTemplate;
+    const errors = validateWorkflowTemplate(template);
+    if (errors.length > 0) continue;
+    templates.push({
+      id: template.id,
+      name: template.name,
+      phases: template.phases.length,
+      inputs: (template.inputs ?? []).length,
+      file,
+    });
+  }
+  return templates;
 }
 
 export function collaborationCommands(): Command {
@@ -456,6 +493,24 @@ export function collaborationCommands(): Command {
         for (const error of result.errors) console.log(`Error: ${error}`);
         process.exit(1);
       }
+    });
+
+  workflow
+    .command('list')
+    .description('List built-in workflow templates')
+    .action(() => {
+      const templates = listBuiltinTemplates();
+      if (templates.length === 0) {
+        console.log('No built-in workflow templates found.');
+        return;
+      }
+      console.log('| ID | Name | Phases | Inputs |');
+      console.log('|----|------|---------|--------|');
+      for (const t of templates) {
+        console.log(`| ${t.id} | ${t.name} | ${t.phases} | ${t.inputs} |`);
+      }
+      console.log('');
+      console.log(`Use: openslack collaboration workflow preview <id> --input key=value`);
     });
 
   cmd.addCommand(workflow);

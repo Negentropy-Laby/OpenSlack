@@ -1,0 +1,63 @@
+schema: openslack.workflow_template.v1
+id: incident
+name: Incident
+inputs:
+  - name: title
+    type: string
+    required: true
+  - name: issueNumber
+    type: integer
+    required: true
+  - name: prNumber
+    type: integer
+    required: true
+  - name: agentId
+    type: string
+    required: true
+  - name: paths
+    type: string
+    required: true
+phases:
+  - name: Triage
+    steps:
+      - type: action
+        actionId: task.create.preview
+        title: Preview incident task
+        input:
+          title: "{{inputs.title}}"
+          template: investigation
+      - type: action
+        actionId: task.checkout
+        title: Create worktree for incident
+        input:
+          issueNumber: "{{inputs.issueNumber}}"
+          agentId: "{{inputs.agentId}}"
+  - name: Fix
+    steps:
+      - type: action
+        actionId: task.sync
+        title: Propose incident fix PR
+        input:
+          issueNumber: "{{inputs.issueNumber}}"
+          agentId: "{{inputs.agentId}}"
+          paths: "{{inputs.paths}}"
+      - type: handoff
+        from: "{{inputs.agentId}}"
+        to: human
+        context: "Incident fix ready for review: {{inputs.title}}"
+        issueRef: "{{inputs.issueNumber}}"
+  - name: Approve
+    steps:
+      - type: action
+        actionId: pr.doctor
+        title: Diagnose PR readiness
+        input:
+          prNumber: "{{inputs.prNumber}}"
+      - type: decision-gate
+        title: Approve incident fix for merge
+        requiredRole: maintainer
+      - type: action
+        actionId: pr.merge
+        title: Merge incident fix PR
+        input:
+          prNumber: "{{inputs.prNumber}}"

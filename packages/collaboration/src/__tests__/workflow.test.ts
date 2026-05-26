@@ -83,4 +83,76 @@ describe('workflow templates', () => {
 
     expect(preview.errors.some((error) => error.includes('unknown action'))).toBe(true);
   });
+
+  it('resolves template variables in handoff fields during execution', async () => {
+    const template: WorkflowTemplate = {
+      schema: 'openslack.workflow_template.v1',
+      id: 'test-handoff-resolve',
+      name: 'Handoff Resolve Test',
+      inputs: [
+        { name: 'agentId', type: 'string', required: true },
+        { name: 'issueNumber', type: 'integer', required: true },
+      ],
+      phases: [
+        {
+          name: 'Handoff',
+          steps: [
+            {
+              type: 'handoff',
+              from: '{{inputs.agentId}}',
+              to: 'human',
+              context: 'Work done on issue {{inputs.issueNumber}} by {{inputs.agentId}}',
+              issueRef: '{{inputs.issueNumber}}',
+              nextSteps: ['Review changes for issue {{inputs.issueNumber}}'],
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = await executeWorkflowTemplate(template, { agentId: 'codex-dev', issueNumber: 7 }, { dryRun: false, correlationId: 'WF-handoff-test' });
+
+    expect(result.status).toBe('completed');
+    expect(result.handoffs).toHaveLength(1);
+    expect(result.handoffs[0].from).toBe('codex-dev');
+    expect(result.handoffs[0].context).toBe('Work done on issue 7 by codex-dev');
+    expect(result.handoffs[0].issueRef).toBe('7');
+    expect(result.handoffs[0].nextSteps).toEqual(['Review changes for issue 7']);
+  });
+
+  it('resolves template variables in record-decision fields during execution', async () => {
+    const template: WorkflowTemplate = {
+      schema: 'openslack.workflow_template.v1',
+      id: 'test-decision-resolve',
+      name: 'Decision Resolve Test',
+      inputs: [
+        { name: 'agentId', type: 'string', required: true },
+        { name: 'title', type: 'string', required: true },
+      ],
+      phases: [
+        {
+          name: 'Decide',
+          steps: [
+            {
+              type: 'record-decision',
+              topic: 'Research: {{inputs.title}}',
+              decision: 'Completed by {{inputs.agentId}}',
+              rationale: 'Investigation finished',
+              decidedBy: '{{inputs.agentId}}',
+              tags: ['research', '{{inputs.agentId}}'],
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = await executeWorkflowTemplate(template, { agentId: 'claude-reviewer', title: 'Auth redesign' }, { dryRun: false, correlationId: 'WF-decision-test' });
+
+    expect(result.status).toBe('completed');
+    expect(result.decisions).toHaveLength(1);
+    expect(result.decisions[0].topic).toBe('Research: Auth redesign');
+    expect(result.decisions[0].decision).toBe('Completed by claude-reviewer');
+    expect(result.decisions[0].decidedBy).toBe('claude-reviewer');
+    expect(result.decisions[0].tags).toEqual(['research', 'claude-reviewer']);
+  });
 });
