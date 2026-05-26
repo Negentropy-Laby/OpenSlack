@@ -181,11 +181,18 @@ Three-tier model (see [`docs/developer/github-automation.md`](docs/developer/git
 ```bash
 # GitHub App auth (preferred)
 export OPENSLACK_GITHUB_APP_ID=3728623
-export OPENSLACK_GITHUB_APP_INSTALLATION_ID=132714795
+export OPENSLACK_GITHUB_APP_INSTALLATION_ID=<installation-id>
 export OPENSLACK_GITHUB_APP_PRIVATE_KEY="$(cat .openslack.local/github-app.pem)"
 
 # PAT fallback
 export GITHUB_TOKEN=ghp_xxxxxxxx
+```
+
+On Windows, keep the PEM under the gitignored `.openslack.local/` directory and
+run commands through the bot-auth wrapper:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/openslack-bot.ps1 setup github
 ```
 
 ## Task Lifecycle
