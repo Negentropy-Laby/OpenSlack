@@ -3,6 +3,9 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { readModules, validateModules, getTotalTests, getTotalTestFiles } from '@openslack/workspace';
+import { recommendNextActions } from '@openslack/runtime';
+import { buildSetupReport } from '@openslack/runtime';
+import { buildDashboardProjection } from '@openslack/collaboration';
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -146,7 +149,7 @@ function getGitHubOps(): GitHubOps {
   }
 }
 
-function showStatusDashboard(root: string): void {
+async function showStatusDashboard(root: string): Promise<void> {
   try {
     const registry = readModules(root);
     const gitInfo = getGitInfo(root);
@@ -181,10 +184,35 @@ function showStatusDashboard(root: string): void {
 
     console.log(`Test Suite: ${totalTests} unit tests across ${totalTestFiles} test files`);
     console.log('');
-    console.log('Next:');
-    console.log('  openslack ask "create a task"');
-    console.log('  openslack ask "检查系统状态"');
-    console.log('');
+
+    const setupReport = await buildSetupReport({ dryRun: true });
+    const dashboard = buildDashboardProjection();
+    const recs = recommendNextActions({
+      setupFindings: setupReport.findings.map((f) => ({
+        status: f.status,
+        title: f.title,
+        nextAction: f.nextAction,
+        command: f.command,
+      })),
+      gitHubOps: ops,
+      blockers: dashboard.blockers.map((b) => ({
+        object: b.object,
+        summary: b.summary,
+        owner: b.owner,
+        nextAction: b.nextAction,
+      })),
+    });
+
+    if (recs.length > 0) {
+      console.log('Recommended Next Steps:');
+      for (let i = 0; i < recs.length; i++) {
+        const r = recs[i];
+        console.log(`  ${i + 1}. ${r.title}`);
+        if (r.action) console.log(`     ${r.action}`);
+        if (r.command) console.log(`     Run: ${r.command}`);
+      }
+      console.log('');
+    }
   } catch (e) {
     console.error(`Status dashboard failed: ${(e as Error).message}`);
     process.exit(1);
@@ -195,9 +223,9 @@ export function statusCommands(): Command {
   const cmd = new Command('status').description('OpenSlack status and module registry commands');
 
   cmd
-    .action(() => {
+    .action(async () => {
       const root = findRepoRoot();
-      showStatusDashboard(root);
+      await showStatusDashboard(root);
     });
 
   cmd
