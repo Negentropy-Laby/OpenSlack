@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { readModules, validateModules } from '@openslack/workspace';
 import { getClient } from '@openslack/github';
-import { detectGenesisShell } from '@openslack/runtime';
+import { detectGenesisShell, renderFindingsPlain } from '@openslack/runtime';
+import type { PlainFinding } from '@openslack/runtime';
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -29,7 +30,8 @@ export function doctorCommands(): Command {
   const cmd = new Command('doctor').description('OpenSlack multi-module health check');
 
   cmd
-    .action(async () => {
+    .option('--format <format>', 'Output format: standard or plain', 'standard')
+    .action(async (options: { format: string }) => {
       const root = findRepoRoot();
       const checks: CheckResult[] = [];
 
@@ -186,15 +188,33 @@ export function doctorCommands(): Command {
       console.log('════════════════');
       let hasFail = false;
       for (const c of checks) {
-        console.log(`[${c.state}] ${c.name}: ${c.detail}`);
         if (c.state === 'FAIL') hasFail = true;
       }
+
+      if (options.format === 'plain') {
+        const findings: PlainFinding[] = checks.map((c) => ({
+          status: c.state,
+          title: c.name,
+          detail: c.detail,
+          nextAction: c.state === 'FAIL' ? `Fix the "${c.name}" issue to proceed` : undefined,
+        }));
+        console.log(renderFindingsPlain(findings));
+      } else {
+        for (const c of checks) {
+          console.log(`[${c.state}] ${c.name}: ${c.detail}`);
+        }
+      }
+
       console.log('');
       if (hasFail) {
-        console.log('Some checks failed. Review output above.');
+        console.log(options.format === 'plain'
+          ? 'Some items need attention. Check the "Action needed" items above.'
+          : 'Some checks failed. Review output above.');
         process.exit(1);
       } else {
-        console.log('All critical checks passed. Review WARN items above.');
+        console.log(options.format === 'plain'
+          ? 'Everything looks good. Review "Attention" items if any.'
+          : 'All critical checks passed. Review WARN items above.');
       }
     });
 
