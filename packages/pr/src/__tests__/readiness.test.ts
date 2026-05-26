@@ -101,4 +101,17 @@ describe('checkMergeReadiness', () => {
     const result = checkMergeReadiness(report, policy);
     expect(result.decision).not.toBe('BLOCKED_BLACK_ZONE');
   });
+
+  it('treats skipped checks as passing', () => {
+    const report = makeReport({
+      riskZone: 'green',
+      checks: [
+        { name: 'canary', status: 'completed', conclusion: 'success' },
+        { name: 'validate', status: 'completed', conclusion: 'success' },
+        { name: 'on-pr-merged', status: 'completed', conclusion: 'skipped' },
+      ],
+    });
+    const result = checkMergeReadiness(report, DEFAULT_POLICY);
+    expect(result.decision).toBe('READY_TO_MERGE');
+  });
 });

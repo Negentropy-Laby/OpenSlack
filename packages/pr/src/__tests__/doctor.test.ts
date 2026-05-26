@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { diagnosePR } from '../doctor.js';
+import { generateDoctorReport } from '../doctor-report.js';
 import type { PRReviewReport, PRReviewPolicy } from '../types.js';
 
 function makeReport(overrides: Partial<PRReviewReport> = {}): PRReviewReport {
@@ -153,5 +154,20 @@ describe('diagnosePR', () => {
     const result = diagnosePR(report, policy, ['@wsman', '@alice']);
     // Without red_zone_human_required, it skips the codeowner approval gate
     expect(result.decision).toBe('READY_TO_MERGE');
+  });
+});
+
+describe('generateDoctorReport', () => {
+  it('renders skipped checks with skip icon', () => {
+    const report = makeReport({
+      checks: [
+        { name: 'canary', status: 'completed', conclusion: 'success' },
+        { name: 'on-pr-merged', status: 'completed', conclusion: 'skipped' },
+      ],
+    });
+    const md = generateDoctorReport(report, []);
+    expect(md).toContain('⏭️');
+    expect(md).toContain('on-pr-merged');
+    expect(md).not.toContain('❌');
   });
 });

@@ -18,7 +18,7 @@ export function generateDoctorReport(
       : report.checks.every((c) => c.conclusion === 'success')
         ? 'pass'
         : report.checks.some(
-            (c) => c.conclusion && c.conclusion !== 'success' && c.conclusion !== 'neutral',
+            (c) => c.conclusion && c.conclusion !== 'success' && c.conclusion !== 'neutral' && c.conclusion !== 'skipped',
           )
           ? 'fail'
           : 'pending';
@@ -50,9 +50,11 @@ export function generateDoctorReport(
           const icon =
             c.conclusion === 'success'
               ? '✅'
-              : c.conclusion === null || c.status !== 'completed'
-                ? '⏳'
-                : '❌';
+              : c.conclusion === 'skipped'
+                ? '⏭️'
+                : c.conclusion === null || c.status !== 'completed'
+                  ? '⏳'
+                  : '❌';
           return `- ${icon} ${c.name} (${c.status}${c.conclusion ? ` / ${c.conclusion}` : ''})`;
         })
       : ['No checks found.']),
