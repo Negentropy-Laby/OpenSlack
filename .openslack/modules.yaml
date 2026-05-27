@@ -45,9 +45,10 @@ modules:
       - "@openslack/cli"
       - "@openslack/operator"
       - "@openslack/chat-gateway"
+      - "@openslack/tui"
     tests: 144
     test_files: 16
-    notes: Structured planner active. Webhook and Slack chat adapters active with actor mapping. PRMS chat cards and action confirmation active. Typed tool registry, optional LLM fallback, setup report, and 24h pending plan store active. Session-based conversation memory with multi-turn context resolution and progressive clarification. Doctor --format plain for non-technical output.
+    notes: Structured planner active. Webhook and Slack chat adapters active with actor mapping. PRMS chat cards and action confirmation active. Typed tool registry, optional LLM fallback, setup report, and 24h pending plan store active. Session-based conversation memory with multi-turn context resolution and progressive clarification. Doctor --format plain for non-technical output. TUI setup report view and PR doctor view via --format tui.
 
   - id: pr_review_merge
     name: PR Review & Merge Steward
@@ -77,6 +78,7 @@ modules:
       - openslack collaboration workflow
     packages:
       - "@openslack/collaboration"
+      - "@openslack/tui"
     tests: 103
     test_files: 10
-    notes: Full 2D/2E Collaboration Layer active with typed workflow template preview/execute and dashboard with filters (--owner, --module, --risk, --blocker, --type). Event model, activity feed, digest, handoff, decision, and room views with agent display name resolution. Authz-gated chat cards for handoffs, decisions, tasks, workflows, and plans. Agent registry v1 to v2 migration command.
+    notes: Full 2D/2E Collaboration Layer active with typed workflow template preview/execute and dashboard with filters (--owner, --module, --risk, --blocker, --type). Event model, activity feed, digest, handoff, decision, and room views with agent display name resolution. Authz-gated chat cards for handoffs, decisions, tasks, workflows, and plans. Agent registry v1 to v2 migration command. TUI dashboard and room views via --format tui.

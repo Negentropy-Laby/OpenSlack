@@ -134,6 +134,7 @@ Several commands support a `--format` option:
 |--------|-------------|---------|
 | `standard` (default) | Human-readable terminal output | `openslack pr doctor 42` |
 | `plain` | Plain language with status/owner/next-action; good for logs and CI | `openslack pr doctor 42 --format plain` |
+| `tui` | Interactive terminal UI with keyboard navigation; requires TTY | `openslack collaboration dashboard --format tui` |
 | `json` | Structured data for scripting or piping | (Coming in future release) |
 
 Commands with `--format plain`:
@@ -147,16 +148,51 @@ Commands with `--format plain`:
 - `openslack collaboration room show <id> --format plain`
 - `openslack governance audit --format plain`
 
+Commands with `--format tui`:
+
+- `openslack collaboration dashboard --format tui` — Interactive team dashboard with blockers, handoffs, decisions
+- `openslack collaboration room show <id> --format tui` — Focused room view for a PR or issue
+- `openslack pr doctor <n> --format tui` — Interactive PR governance diagnosis with gates, checks, reviews
+- `openslack setup interactive --format tui` — Read-only setup report TUI with readiness classification
+
+TUI views use q or Esc to exit. They require a terminal with at least 40 columns and 12 rows, and are disabled in CI, when `NO_COLOR` is set, or when `OPENSLACK_TUI=0`.
+
 ## Safety Defaults
 
 - Setup and repair commands are read-only or preview-first unless `--apply` is supplied.
 - Task creation previews by default; GitHub Issue creation requires `--create-issue`.
-- PRs for OpenSlack-authored or delegated agent work should be opened under the configured bot/agent GitHub author identity so humans remain independent reviewers.
+- PRs for OpenSlack-authored or delegated agent work must be opened under the configured bot/agent GitHub author identity so humans remain independent reviewers.
 - PR author means the GitHub account that opened the PR, not only the commit author. A bot-authored commit inside a human-created PR is still a human-created PR.
 - Human approval can be based on OpenSlack's PRMS/agent summary; the human does not need to manually browse the PR page.
 - Chat confirmation alone is not GitHub approval; CODEOWNER gates still require a GitHub review from the human identity.
 - Agents cannot decide PR approval, approve under bot/app/agent identity, bypass CODEOWNERS, or merge without PRMS and GitHub gates.
 - Agent-scoped mutating commands require `--agent-id` and an authorized runtime identity.
+
+### PR Author Identity Quick Rule
+
+Use the configured bot/agent GitHub identity to open the PR whenever the implementation was produced by Codex, Claude, another OpenSlack agent, or delegated automation. Use a human account only for work that was genuinely human-produced and will be reviewed or approved by another independent human.
+
+Before creating an agent-delivered PR:
+
+1. Check that the active PR-creation credential is the bot/agent identity, not the human `gh` login.
+2. Create the PR with the bot/agent credential path documented in `docs/developer/github-automation.md`.
+3. Put the acting agent or automation path, risk zone, validation run, rollback plan, and human-approval requirement in the PR body.
+4. If the PR was accidentally opened by the human who must review or approve it, close and recreate it as bot/agent-authored, or have a different independent human approve it.
+
+After updating an existing PR branch, do not request re-review until the PR head
+has synchronized:
+
+```powershell
+$branchSha = (git ls-remote origin "refs/heads/<branch>").Split()[0]
+$prSha = gh pr view <pr> --json headRefOid --jq ".headRefOid"
+if ($branchSha -ne $prSha) { throw "PR head is stale" }
+gh pr checks <pr>
+```
+
+The branch SHA, PR `headRefOid`, and check runs must refer to the same commit.
+If they differ, wait and retry; if they still differ, push a new bot-authored
+repair/no-op commit to the actual PR branch or recreate the PR. Do not enter
+approval on stale PR checks.
 
 ## Setup
 
@@ -170,6 +206,7 @@ Commands with `--format plain`:
 | `openslack setup github` | Read-only setup report for GitHub auth, labels, CODEOWNERS, rulesets, and local prerequisites |
 | `openslack setup github --repair-labels` | Preview required OpenSlack label repair |
 | `openslack setup github --repair-labels --apply` | Apply required OpenSlack label repair |
+| `openslack setup interactive --format tui` | Read-only setup report TUI with readiness classification |
 
 ## Workspace
 
@@ -238,6 +275,7 @@ Commands with `--format plain`:
 | `openslack pr review <n> --comment` | Post review report as PR comment |
 | `openslack pr recommend <n>` | Recommend next action for a PR |
 | `openslack pr doctor <n>` | Run governance diagnosis (11 gates) |
+| `openslack pr doctor <n> --format tui` | Interactive PR doctor view (q/Esc to exit) |
 | `openslack pr doctor <n> --comment` | Post doctor report as PR comment |
 | `openslack pr queue` | Show open PRs sorted by readiness and blocker owner |
 | `openslack pr watch <n>` | Poll PR status until ready or timeout |
@@ -304,7 +342,9 @@ step. Ready PRs display a Confirm merge button.
 | `openslack collaboration decision supersede <id> --by <new-id>` | Supersede a decision |
 | `openslack collaboration dashboard` | Show projection-only team dashboard |
 | `openslack collaboration dashboard --since 0` | Show dashboard over all recorded events |
+| `openslack collaboration dashboard --format tui` | Interactive team dashboard (q/Esc to exit) |
 | `openslack collaboration room show pr:42` | Show room summary for an object |
+| `openslack collaboration room show pr:42 --format tui` | Interactive room view (q/Esc to exit) |
 | `openslack collaboration workflow preview <file>` | Preview a typed workflow template |
 | `openslack collaboration workflow preview <file> --input pr_number=42` | Preview with template inputs |
 | `openslack collaboration workflow execute <file> --dry-run` | Validate and dry-run a workflow template |
