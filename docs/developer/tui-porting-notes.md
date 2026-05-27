@@ -25,23 +25,22 @@ native binary wrapper. The upstream yoga-layout is MIT-licensed.
 
 | Component | Upstream license | Aby status | OpenSlack status |
 |-----------|-----------------|------------|------------------|
-| Ink engine (`src/ink/`) | MIT (vadimdemedes/ink) | Forked, heavily modified | **Pending confirmation** |
-| yoga-layout TS (`src/native-ts/yoga-layout/`) | MIT (Meta yoga-layout) | Pure TS port | **Pending confirmation** |
-| Design system components (`src/components/design-system/`) | Aby-authored | `"UNLICENSED"` | **Pending confirmation** |
-| pretext-derived code (`terminal-text-layout.ts`) | MIT (nicolo-ribaudo/pretext) | Used with attribution | **Pending confirmation** |
+| Ink engine (`src/ink/`) | MIT (vadimdemedes/ink) | Forked, heavily modified | **Confirmed (2026-05-27)** |
+| yoga-layout TS (`src/native-ts/yoga-layout/`) | MIT (Meta yoga-layout) | Pure TS port | **Confirmed (2026-05-27)** |
+| Design system components (`src/components/design-system/`) | Aby-authored | `"UNLICENSED"` | **Gated for PR 2** — not included in PR #93 |
+| pretext-derived code (`terminal-text-layout.ts`) | MIT (nicolo-ribaudo/pretext) | Used with attribution | **Confirmed (2026-05-27)** |
 
 ### Required Before Merge
 
 Before any code PR merges, the following must be confirmed:
 
-1. Whether Aby's ink engine fork can be used in OpenSlack (requires Aby author
-   permission or a compatible license grant).
-2. Whether the yoga-layout TS port has its own license terms or follows upstream
-   MIT.
-3. Whether design-system components can be extracted and relicensed.
+1. ~~Whether Aby's ink engine fork can be used in OpenSlack~~ **Confirmed 2026-05-27.**
+2. ~~Whether the yoga-layout TS port has its own license terms or follows upstream MIT.~~ **Confirmed 2026-05-27.**
+3. Whether design-system components can be extracted and relicensed. **Gated for PR 2** — not included in PR #93.
 4. All copied files must retain original license headers where they exist.
-5. A `THIRD_PARTY_NOTICES.md` or equivalent must be created if required by
-   upstream licenses.
+5. `THIRD_PARTY_NOTICES.md` at repository root must document all third-party code provenance and license status.
+
+License tracking file: `THIRD_PARTY_NOTICES.md` (repository root).
 
 This is a **merge gate**: no code PR (PR 1+) merges until license is resolved.
 
