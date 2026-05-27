@@ -426,15 +426,23 @@ export function collaborationCommands(): Command {
   room
     .command('show <roomId>')
     .description('Show room summary (e.g., pr:42, issue:21, module:operator)')
-    .option('--format <format>', 'Output format: standard, plain, json, or chat', 'standard')
-    .action((roomId: string, options: { format: string }) => {
+    .option('--format <format>', 'Output format: standard, plain, json, chat, or tui', 'standard')
+    .action(async (roomId: string, options: { format: string }) => {
       const events = readEvents();
       const view = buildRoomView(roomId, events);
       if (!view) {
         console.log(`Invalid room ID: ${roomId}. Use format: pr:42, issue:21, module:operator`);
         process.exit(1);
       }
-      if (options.format === 'json') {
+      if (options.format === 'tui') {
+        try {
+          const { renderRoomTui } = await import('@openslack/tui');
+          await renderRoomTui(view);
+        } catch (error) {
+          console.error('TUI unavailable. Falling back to standard output.');
+          console.log(renderRoom(view));
+        }
+      } else if (options.format === 'json') {
         console.log(JSON.stringify(view, null, 2));
       } else if (options.format === 'chat') {
         const card = buildRoomCard({
