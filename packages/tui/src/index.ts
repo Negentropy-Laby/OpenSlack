@@ -44,3 +44,5 @@ export type { RenderTuiOptions } from './render.js';
 // Views
 export { renderDashboardTui } from './views/render-dashboard.js';
 export type { DashboardViewModel } from './view-models/dashboard.js';
+export { renderSetupTui } from './views/render-setup.js';
+export type { SetupViewModel, SetupReadiness } from './view-models/setup.js';

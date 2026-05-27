@@ -326,9 +326,19 @@ export function setupCommands(): Command {
   cmd
     .command('interactive')
     .description('Guided interactive setup with step-by-step prompts')
-    .option('--format <format>', 'Output format: standard or plain', 'standard')
+    .option('--format <format>', 'Output format: standard, plain, or tui', 'standard')
     .action(async (options: { format: string }) => {
       const report = await buildSetupReport({ dryRun: true });
+      if (options.format === 'tui') {
+        try {
+          const { renderSetupTui } = await import('@openslack/tui');
+          await renderSetupTui(report);
+        } catch (error) {
+          console.error('TUI unavailable. Falling back to standard output.');
+          console.log(renderSetupReport(report));
+        }
+        return;
+      }
       const isPlain = options.format === 'plain';
 
       // Classify readiness
