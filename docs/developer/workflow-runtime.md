@@ -124,6 +124,24 @@ export interface RunStatus {
 
 export type ExecutionMode = 'validate' | 'preview' | 'dry-run' | 'execute'
 
+// ── PRMS ──────────────────────────────────────────────────────────────────────
+
+export interface PrmsDoctorBlocker {
+  gate: string
+  reason: string
+  zone?: 'green' | 'yellow' | 'red'
+  owner?: string
+}
+
+export interface PrmsDoctorResult {
+  status: 'READY_TO_MERGE' | 'BLOCKED' | 'ERROR'
+  blockers: PrmsDoctorBlocker[]
+  zone: 'green' | 'yellow' | 'red'
+  why: string
+  next: string
+  gates: Record<string, { passed: boolean; detail: string }>
+}
+
 export interface WorkflowRuntime {
   readonly runId: string
   readonly mode: ExecutionMode
@@ -146,8 +164,9 @@ export interface WorkflowRuntime {
     }
     prms: {
       classify(paths: string[]): Promise<{ green: string[]; yellow: string[]; red: string[] }>
-      doctor(prNumber: number): Promise<{ status: string; checks: Record<string, boolean> }>
+      doctor(prNumber: number): Promise<PrmsDoctorResult>
       queue(): Promise<Array<{ prNumber: number; title: string; status: string }>>
+      requestMerge(prNumber: number): Promise<{ merged: boolean; prmsStatus: string }>
     }
     collaboration: {
       recordEvent(event: unknown): Promise<void>
@@ -218,10 +237,34 @@ function detectFormat(module: Record<string, unknown>): WorkflowFormat {
 3. Import module
 4. Detect format
 5. Parse and validate manifest
+   - Verify meta is a pure object literal (no function calls, computed keys, or
+     external references). The loader must be able to statically analyze meta
+     without executing the workflow body. Applies to both formats.
 6. If openslack-native: use directly
 7. If anthropic-compatible: wrap with anthropicCompatRunner()
 8. Return WorkflowModule with meta, preview, run, format, hash
 ```
+
+### Nesting Depth Limit
+
+When `ctx.workflow()` is called to nest a child workflow, the runtime checks
+nesting depth:
+
+```typescript
+const MAX_NESTING_DEPTH = 1
+
+function assertNestingDepth(currentDepth: number): void {
+  if (currentDepth >= MAX_NESTING_DEPTH) {
+    throw new Error(
+      `Workflow nesting depth limit (${MAX_NESTING_DEPTH}) exceeded. ` +
+      'Child workflows cannot call ctx.workflow() again.'
+    )
+  }
+}
+```
+
+The nesting depth is tracked in the runtime context and inherited by child
+workflows. A child workflow at depth 1 cannot call `ctx.workflow()` again.
 
 ## Manifest Parser (`manifest.ts`)
 
@@ -318,7 +361,13 @@ async agent<T>(prompt: string, options: AgentOptions): Promise<T> {
   // 6. Schema validation
   if (options.schema) {
     const valid = validateSchema(result, options.schema)
-    if (!valid) throw new Error(`Agent output failed schema validation for ${options.label}`)
+    if (!valid) {
+      // Record failure but don't throw — let caller decide
+      this.log(`Schema validation failed for ${options.label}`)
+      // For standalone calls, the error propagates
+      // For fan-out items (parallel/pipeline), caller handles null
+      throw new SchemaValidationError(options.label, violations)
+    }
   }
 
   // 7. Cache result
@@ -372,29 +421,63 @@ async parallel<T>(
 ### Pipeline Runner
 
 ```typescript
+interface PipelineOptions {
+  concurrency?: number  // default: 4; set to 1 for sequential MVP fallback
+}
+
 async pipeline<T, R>(
   items: T[],
   fn: (item: T, index: number) => Promise<R>,
+  options?: PipelineOptions,
 ): Promise<R[]> {
-  const results: R[] = new Array(items.length)
+  const concurrency = options?.concurrency ?? 4
+  const results: (R | null)[] = new Array(items.length)
+  const inFlight: Promise<void>[] = []
+  let nextIndex = 0
 
+  // Phase 1: replay cached items
   for (let i = 0; i < items.length; i++) {
-    // Check for cached result (resume support)
     const cachedKey = computeItemCacheKey(this.runId, this.currentPhase, i)
     const cached = await this.runStore.loadPipelineItem(this.runId, cachedKey)
     if (cached) {
       results[i] = cached as R
-      continue
+      nextIndex = i + 1
+    } else {
+      break  // cached items must be contiguous from start
     }
-
-    // Execute item
-    results[i] = await fn(items[i], i)
-
-    // Checkpoint after each item
-    await this.runStore.savePipelineItem(this.runId, cachedKey, results[i])
   }
 
-  return results
+  // Phase 2: execute remaining items with bounded concurrency
+  const launchItem = (index: number): Promise<void> =>
+    fn(items[index], index)
+      .then(result => {
+        results[index] = result
+        const cachedKey = computeItemCacheKey(this.runId, this.currentPhase, index)
+        return this.runStore.savePipelineItem(this.runId, cachedKey, result)
+      })
+      .catch(err => {
+        // Schema failure or other error: record as null
+        results[index] = null
+        this.log(`Pipeline item ${index} failed: ${err.message}`)
+      })
+
+  while (nextIndex < items.length || inFlight.length > 0) {
+    // Fill up to concurrency limit
+    while (inFlight.length < concurrency && nextIndex < items.length) {
+      inFlight.push(launchItem(nextIndex))
+      nextIndex++
+    }
+
+    if (inFlight.length > 0) {
+      await Promise.race(inFlight)
+      // Remove settled promises
+      for (let j = inFlight.length - 1; j >= 0; j--) {
+        // Settled promises are safe to remove (result captured by .then)
+      }
+    }
+  }
+
+  return results as R[]
 }
 ```
 
@@ -651,17 +734,18 @@ All CSS and JS are inline. No external resources. No network requests.
 The Operator module provides the CLI commands that interface with the runtime:
 
 ```typescript
-// In apps/cli/src/commands/workflow.ts
-export function registerWorkflowCommands(program: Command): void {
-  program.command('workflow list').action(listWorkflows)
-  program.command('workflow show <name>').action(showWorkflow)
-  program.command('workflow validate <name>').action(validateWorkflow)
-  program.command('workflow preview <name>').action(previewWorkflow)
-  program.command('workflow dry-run <name>').action(dryRunWorkflow)
-  program.command('workflow run <name>').action(runWorkflow)
-  program.command('workflow resume <runId>').action(resumeWorkflow)
-  program.command('workflow inspect <runId>').action(inspectWorkflow)
-  program.command('workflow cache clear').action(clearCache)
+// In apps/cli/src/commands/collaboration.ts (Collaboration module owns workflow commands)
+export function registerWorkflowCommands(collab: Command): void {
+  const wf = collab.command('workflow')
+  wf.command('list').action(listWorkflows)
+  wf.command('show <name>').action(showWorkflow)
+  wf.command('validate <name>').action(validateWorkflow)
+  wf.command('preview <name>').action(previewWorkflow)
+  wf.command('dry-run <name>').action(dryRunWorkflow)
+  wf.command('run <name>').action(runWorkflow)
+  wf.command('resume <runId>').action(resumeWorkflow)
+  wf.command('inspect <runId>').action(inspectWorkflow)
+  wf.command('cache clear').action(clearCache)
 }
 ```
 

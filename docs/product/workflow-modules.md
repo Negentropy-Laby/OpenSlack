@@ -69,19 +69,24 @@ const results = await parallel(
 OpenSlack adds concurrency limits, budget tracking across parallel tasks, and
 per-task isolation options.
 
-### 2.3 `pipeline(items, fn)` — Sequential Processing with Progress
+### 2.3 `pipeline(items, fn)` — Bounded-Concurrency Item Pipeline
 
-Processes a list sequentially, emitting progress events. Used in Verify (each
-finding) and Create Issues (each issue).
+Processes a list of items with bounded concurrency (default `N`, configurable),
+emitting progress events and checkpointing after each item. Used in Verify
+(each finding gets 3 verifiers via inner `parallel()`) and Create Issues
+(each issue).
 
 ```javascript
 const results = await pipeline(findings, async (finding, idx) => {
-  // process each finding
+  // process each finding; up to N items in flight concurrently
 })
 ```
 
-OpenSlack adds progress bar integration with the TUI and checkpoint persistence
-after each item completes.
+**Target semantics:** N items in flight concurrently, per-item checkpoints
+persisted on completion. A sequential MVP (`concurrency: 1`) is the initial
+implementation fallback but is not the target — the design must support
+bounded concurrency from day one so that workflows like Verify (where each
+finding launches 3 inner `parallel()` verifiers) are not artificially serialized.
 
 ### 2.4 `phase(name)` and `log(text)` — Execution Markers
 
@@ -102,8 +107,9 @@ Three JSON schemas constrain agent output to structured data:
 | `TRIAGE_SCHEMA` | Triage | Prioritized issues with P0-P3, risk zone, labels |
 
 OpenSlack requires all `agent()` calls to declare schemas and fails closed on
-validation errors. LLM-assigned `risk_zone` is validated against the real
-`classifyPaths()` classifier, not trusted.
+validation errors (see Section 6.3 for failure semantics). LLM-assigned
+`risk_zone` is validated against the real `classifyPaths()` classifier, not
+trusted.
 
 ### 2.6 3-Vote Adversarial Verification
 
@@ -123,7 +129,7 @@ OpenSlack adopts it as a standard capability available to any workflow.
 
 | User | Use Case |
 |------|----------|
-| Operator (human) | Run predefined workflows with `openslack workflow run <name>` |
+| Operator (human) | Run predefined workflows with `openslack collaboration workflow run <name>` |
 | Operator (agent) | Trigger workflows programmatically via `ctx.openslack.workflow.run()` |
 | Developer | Write new workflows using the OpenSlack-native format |
 | Security reviewer | Audit workflow permissions, side effects, and run history |
@@ -152,27 +158,34 @@ OpenSlack adopts it as a standard capability available to any workflow.
 
 ### CLI Commands
 
+All workflow commands are owned by the Collaboration Layer module under
+`openslack collaboration workflow`. The top-level `openslack workflow` alias
+is reserved for future use and must not create a new module.
+
 ```
 # List available workflows
-openslack workflow list
+openslack collaboration workflow list
 
 # Preview a workflow (no side effects)
-openslack workflow preview full-lifecycle --input scope=packages/runtime
+openslack collaboration workflow preview full-lifecycle --input scope=packages/runtime
 
 # Dry-run (simulate side effects, no real changes)
-openslack workflow dry-run full-lifecycle --input scope=all
+openslack collaboration workflow dry-run full-lifecycle --input scope=all
 
 # Execute (real side effects with confirmation)
-openslack workflow run full-lifecycle --input scope=all --confirm
+openslack collaboration workflow run full-lifecycle --input scope=all --confirm
 
 # Resume an interrupted run
-openslack workflow resume <runId>
+openslack collaboration workflow resume <runId>
 
 # Inspect a past run
-openslack workflow inspect <runId>
+openslack collaboration workflow inspect <runId>
 
 # Show workflow details and permissions
-openslack workflow show full-lifecycle
+openslack collaboration workflow show full-lifecycle
+
+# Future alias (not yet wired):
+# openslack workflow <subcommand>  →  openslack collaboration workflow <subcommand>
 ```
 
 ### Execution Modes
@@ -180,7 +193,7 @@ openslack workflow show full-lifecycle
 | Mode | Agent Calls | GitHub API | Git Operations | File Writes | Confirmation |
 |------|------------|------------|----------------|-------------|-------------|
 | validate | No | No | No | No | No |
-| preview | Yes (read-only) | Read-only | No | No | No |
+| preview | Yes (read-only, non-mutating) | Read-only | No | No | No |
 | dry-run | Yes (read-only) | Simulated | Simulated | Simulated | No |
 | execute | Yes | Yes | Yes | Yes | Required |
 
@@ -218,6 +231,13 @@ attachment, or local file.
 
 The reference workflow uses this format. OpenSlack provides a compatibility
 shim that injects ambient globals and wraps the body in an async function:
+
+**Static meta requirement:** `export const meta` must be a pure object literal
+containing only JSON-serializable values (strings, numbers, booleans, arrays,
+objects). No function calls, no computed property names, no references to
+external variables. The loader must be able to statically analyze `meta`
+without executing the workflow body. This applies to both Anthropic-compatible
+and OpenSlack-native formats.
 
 ```javascript
 export const meta = {
@@ -328,7 +348,7 @@ ctx.phase('Verify')  // Must match a phase title in meta.phases
 ### 6.2 `ctx.log(message: string): void`
 
 Writes structured log entry with timestamp, phase, and run ID. Entries are
-persisted to the run store and visible in `openslack workflow inspect <runId>`.
+persisted to the run store and visible in `openslack collaboration workflow inspect <runId>`.
 
 ```typescript
 ctx.log(`Verified ${count} findings`)
@@ -351,6 +371,19 @@ const findings = await ctx.agent<FindingsResult>(prompt, {
 **Key difference from raw agent calls:** All side effects are routed through
 OpenSlack APIs. The agent cannot call raw `gh` or `git` commands directly.
 
+**Schema validation failure semantics:** Invalid agent output is never passed
+as valid data to the workflow. The runtime distinguishes two cases:
+
+- **Required (standalone) agent call:** Schema validation failure throws an
+  error. The workflow fails unless the author explicitly catches and handles it.
+- **Fan-out item** (inside `parallel()` or `pipeline()`): The failed item is
+  recorded as `{ status: 'schema_failed', label, violations }` and the result
+  slot is set to `null`. The workflow continues with remaining items. The
+  author can inspect `result === null` to handle failures gracefully.
+
+This ensures workflows never silently process malformed data, while allowing
+graceful degradation for fan-out operations where some items may fail.
+
 ### 6.4 `ctx.parallel<T>(tasks: Array<() => Promise<T>>): Promise<T[]>`
 
 Executes tasks concurrently with optional concurrency limit. Tracks budget
@@ -363,19 +396,31 @@ const results = await ctx.parallel(
 )
 ```
 
-### 6.5 `ctx.pipeline<T, R>(items: T[], fn: (item: T, index: number) => Promise<R>): Promise<R[]>`
+### 6.5 `ctx.pipeline<T, R>(items: T[], fn: (item: T, index: number) => Promise<R>, options?: PipelineOptions): Promise<R[]>`
 
-Processes items sequentially with automatic progress tracking and checkpointing
-after each item. If the workflow is interrupted, `resume()` replays cached
-results for completed items and re-runs only the unfinished ones.
+Processes items with bounded concurrency (default `concurrency: 4`), with
+automatic progress tracking and per-item checkpointing. Each item is
+checkpointed independently on completion. If the workflow is interrupted,
+`resume()` replays cached results for completed items and re-runs only the
+unfinished ones.
+
+The concurrency parameter controls how many items may be in flight
+simultaneously — `concurrency: 1` falls back to strict sequential processing
+(suitable as an MVP), but the target semantics support arbitrary parallelism
+so workflows like Verify are not artificially serialized.
 
 ```typescript
+interface PipelineOptions {
+  concurrency?: number  // default: 4; set to 1 for sequential fallback
+}
+
 const verified = await ctx.pipeline(
   findings,
   async (finding, idx) => {
     ctx.log(`Verifying ${idx + 1}/${findings.length}: ${finding.title}`)
     return verifyFinding(ctx, finding)
   },
+  { concurrency: 8 },  // up to 8 findings verified concurrently
 )
 ```
 
@@ -406,6 +451,11 @@ if (ctx.budget.tokensRemaining < 50_000) {
 Nests one workflow inside another. The nested workflow inherits the parent's
 execution mode (preview/dry-run/execute) and permissions are intersected.
 
+**Nesting depth limit: max 1.** A child workflow cannot call `ctx.workflow()`
+again. Attempting to nest deeper throws a runtime error. This prevents
+unbounded recursion, simplifies permission resolution, and keeps the audit
+trail legible.
+
 ```typescript
 const scanResult = await ctx.workflow('codebase-scan', { scope: 'packages/runtime' })
 ```
@@ -422,8 +472,9 @@ ctx.openslack = {
   },
   prms: {
     classify(paths),              // Run path risk classification
-    doctor(prNumber),             // Run PRMS pre-merge checks
+    doctor(prNumber),             // Run PRMS pre-merge checks (see result type below)
     queue(),                      // List PRs awaiting review
+    requestMerge(prNumber),       // Request PRMS-mediated merge (not direct merge)
   },
   collaboration: {
     recordEvent(event),           // Record collaboration event
@@ -436,6 +487,39 @@ ctx.openslack = {
 }
 ```
 
+#### PRMS Doctor Result Type
+
+```typescript
+interface PrmsDoctorResult {
+  status: 'READY_TO_MERGE' | 'BLOCKED' | 'ERROR'
+  blockers: Array<{
+    gate: string           // e.g. 'conversation-resolution', 'ci-status', 'zone-approval'
+    reason: string         // Human-readable explanation
+    zone?: 'green' | 'yellow' | 'red'  // If zone-related
+    owner?: string         // Who can resolve this (e.g. '@wsman' for red zone)
+  }>
+  zone: 'green' | 'yellow' | 'red'
+  why: string                     // Summary of current state
+  next: string                    // Recommended next action
+  gates: Record<string, {         // Per-gate details
+    passed: boolean
+    detail: string
+  }>
+}
+```
+
+Workflows gate on `result.status === 'READY_TO_MERGE'` before any merge
+consideration. The `blockers` array provides structured information for
+reporting and decision-making.
+
+#### Merge Permission Boundary
+
+Direct `github.pr.merge` is **forbidden** for all workflows. However, a
+workflow may request a PRMS-mediated merge via `ctx.openslack.prms.requestMerge()`,
+which re-runs PRMS doctor and only proceeds when all gates pass. This is not
+a bypass — it is the same path a human operator follows via
+`openslack pr merge`, enforced by the Merge Steward.
+
 ## 7. Execution Modes
 
 ### 7.1 Validate
@@ -445,18 +529,20 @@ are declared. No agent calls, no API calls, no file reads beyond the workflow
 file itself.
 
 ```
-openslack workflow validate full-lifecycle
+openslack collaboration workflow validate full-lifecycle
 ```
 
 ### 7.2 Preview
 
 Run all phases up to the first side-effect boundary. Agent calls execute in
-read-only mode (can read files and search, cannot write or call GitHub API).
-Schema validation is active. Output is the same as a real run minus the side
-effects.
+**read-only, non-mutating** mode: agents may read files, search code, and
+parse existing data, but cannot write files, execute shell commands, call
+GitHub write APIs, or cause any observable change to the repository or
+external systems. Schema validation is active. Output is the same as a real
+run minus the side effects.
 
 ```
-openslack workflow preview full-lifecycle --input scope=packages/runtime
+openslack collaboration workflow preview full-lifecycle --input scope=packages/runtime
 ```
 
 ### 7.3 Dry-Run
@@ -467,7 +553,7 @@ without executing them. Useful for verifying the workflow plan before committing
 to real changes.
 
 ```
-openslack workflow dry-run full-lifecycle --input scope=all
+openslack collaboration workflow dry-run full-lifecycle --input scope=all
 ```
 
 ### 7.4 Execute
@@ -477,7 +563,7 @@ confirmation. Each side-effect phase prompts for explicit approval unless the
 workflow was launched with `--yes`.
 
 ```
-openslack workflow run full-lifecycle --input scope=all --confirm
+openslack collaboration workflow run full-lifecycle --input scope=all --confirm
 ```
 
 ### Mode Escalation
@@ -519,7 +605,7 @@ These actions are **always forbidden** regardless of permission declarations:
 | Action | Why |
 |--------|-----|
 | `github.pr.approve` | Agents must never approve PRs |
-| `github.pr.merge` | Merging requires PRMS doctor == READY_TO_MERGE |
+| `github.pr.merge` | Direct merge forbidden; use `ctx.openslack.prms.requestMerge()` which re-runs PRMS and merges only when gates pass |
 | `ruleset.bypass` | Branch protection cannot be bypassed |
 | `secrets.read` | No workflow may read credential files |
 | `kernel.constitution.write` | Self-evolution governance rules |
@@ -593,7 +679,7 @@ changed, cached results are reused without re-running agent calls.
 ### 10.3 Resume Flow
 
 ```
-openslack workflow resume <runId>
+openslack collaboration workflow resume <runId>
 ```
 
 1. Load `status.json` to find the last completed phase
@@ -608,7 +694,7 @@ Cache entries are invalidated when:
 
 - The workflow source file changes (hash mismatch)
 - The scanned source files change (for scan-phase cache)
-- The user explicitly clears cache with `openslack workflow cache clear`
+- The user explicitly clears cache with `openslack collaboration workflow cache clear`
 
 ## 11. HTML Artifacts
 
@@ -635,10 +721,29 @@ HTML output is a self-contained file with:
 | Permissions | Declared vs. granted permissions |
 | Audit Log | Full structured log with timestamps |
 
+### 11.3 Redaction Requirements
+
+Before embedding run data into an HTML artifact, the renderer must redact:
+
+1. **File contents**: Only include file paths referenced in findings, never
+   embed full source code. Limit context snippets to 3 lines maximum.
+2. **Agent prompts**: Do not embed the full agent prompt text — include only
+   the label, phase, and result summary.
+3. **GitHub tokens/URLs**: Strip any tokens from URLs. Issue and PR URLs are
+   kept, but API URLs with query parameters are redacted.
+4. **Internal paths**: Remap absolute filesystem paths to relative paths from
+   repo root.
+5. **Schema validation errors**: Include the validation error summary, not the
+   full agent output that failed validation.
+
+The redaction layer runs before HTML generation and produces a sanitized data
+object that the HTML renderer consumes. This ensures the HTML artifact is safe
+to share externally without leaking sensitive information.
+
 ### 11.3 Generation
 
 ```bash
-openslack workflow inspect <runId> --format html > report.html
+openslack collaboration workflow inspect <runId> --format html > report.html
 ```
 
 ## 12. Module Integration
@@ -653,7 +758,9 @@ Workflows are launched through the Operator module. The Operator:
 - Injects the `WorkflowRuntime` context
 - Captures the workflow result
 
-CLI commands under `openslack workflow` are Operator commands.
+CLI commands under `openslack collaboration workflow` are Collaboration Layer
+commands. The top-level `openslack workflow` alias is a future convenience
+shortcut owned by the Collaboration module, not a new module.
 
 ### 12.2 Collaboration Layer Integration
 
@@ -686,10 +793,14 @@ Workflows that create PRs must pass through PRMS gates:
 1. `ctx.openslack.prms.classify(paths)` — Classify changed files by risk zone
 2. PR creation routed through `ctx.openslack.task.sync()` which enforces bot identity
 3. `ctx.openslack.prms.doctor(prNumber)` — Run pre-merge health checks
-4. PRMS doctor must return `READY_TO_MERGE` before any merge consideration
+4. PRMS doctor must return `status: 'READY_TO_MERGE'` before any merge consideration
+5. If merge is needed, use `ctx.openslack.prms.requestMerge(prNumber)` — this
+   re-runs PRMS and merges only when all gates pass, through the Merge Steward
 
 No workflow can bypass PRMS. The `forbidden` list explicitly blocks
-`github.pr.approve` and `github.pr.merge`.
+`github.pr.approve` (agents must never approve) and `github.pr.merge`
+(direct merge is forbidden; PRMS-mediated merge via `requestMerge()` is the
+only path).
 
 ### 12.4 TUI Integration
 
@@ -704,9 +815,9 @@ No workflow can bypass PRMS. The `forbidden` list explicitly blocks
 Workflows can be triggered and monitored via chat commands:
 
 ```
-openslack workflow preview full-lifecycle --input scope=packages/runtime
-openslack workflow status <runId>
-openslack workflow resume <runId>
+openslack collaboration workflow preview full-lifecycle --input scope=packages/runtime
+openslack collaboration workflow status <runId>
+openslack collaboration workflow resume <runId>
 ```
 
 Results are posted as structured messages with links to HTML artifacts.
@@ -717,20 +828,20 @@ Results are posted as structured messages with links to HTML artifacts.
 
 ```
 # See what's available
-$ openslack workflow list
+$ openslack collaboration workflow list
   full-lifecycle   Complete issue-to-PR lifecycle
   codebase-scan    Scan for bugs, dead code, security issues
   pr-steward       Review and manage open PRs
 
 # Preview before committing
-$ openslack workflow preview full-lifecycle --input scope=packages/runtime
+$ openslack collaboration workflow preview full-lifecycle --input scope=packages/runtime
   Phase Scan: 5 dimensions, 15 raw findings
   Phase Verify: 8/15 confirmed (7 refuted by 2+ verifiers)
   Phase Triage: 3 P1 issues, 2 P2 issues, 3 P3 issues
   No side effects (preview mode).
 
 # Dry-run to see what would happen
-$ openslack workflow dry-run full-lifecycle --input scope=packages/runtime
+$ openslack collaboration workflow dry-run full-lifecycle --input scope=packages/runtime
   Would create 3 GitHub issues:
     [P1] [runtime] Unhandled null in task lifecycle
     [P1] [runtime] Race condition in concurrent claim
@@ -739,7 +850,7 @@ $ openslack workflow dry-run full-lifecycle --input scope=packages/runtime
   Would create PR targeting main
 
 # Execute for real
-$ openslack workflow run full-lifecycle --input scope=packages/runtime --confirm
+$ openslack collaboration workflow run full-lifecycle --input scope=packages/runtime --confirm
   Creating issue #42: [P1] [runtime] Unhandled null in task lifecycle ... done
   Creating issue #43: [P1] [runtime] Race condition in concurrent claim ... done
   Creating issue #44: [P2] [runtime] Missing pagination in issue sync ... done
@@ -751,11 +862,11 @@ $ openslack workflow run full-lifecycle --input scope=packages/runtime --confirm
 ### 13.2 Operator: Resume Interrupted Workflow
 
 ```
-$ openslack workflow list --runs
+$ openslack collaboration workflow list --runs
   run-abc123  full-lifecycle  paused  Phase 4/7 (Create Issues)  2h ago
   run-def456  codebase-scan   failed  Phase 2/2 (Verify)         1d ago
 
-$ openslack workflow resume run-abc123
+$ openslack collaboration workflow resume run-abc123
   Resuming from phase "Create Issues" (3/3 issues remaining)
   Creating issue #46 ... done
   Creating issue #47 ... done
@@ -768,25 +879,25 @@ $ openslack workflow resume run-abc123
 
 ```
 # Create workflow scaffold
-$ openslack workflow init my-custom-scan
+$ openslack collaboration workflow init my-custom-scan
   Created .openslack/workflows/my-custom-scan.ts
 
 # Edit the workflow
 $ vim .openslack/workflows/my-custom-scan.ts
 
 # Validate syntax and permissions
-$ openslack workflow validate my-custom-scan
+$ openslack collaboration workflow validate my-custom-scan
   OK: meta declared, 2 phases, 3 permissions, 0 forbidden overrides
 
 # Preview to test
-$ openslack workflow preview my-custom-scan
+$ openslack collaboration workflow preview my-custom-scan
 ```
 
 ### 13.4 Security Reviewer: Audit a Workflow
 
 ```
 # Inspect manifest and permissions
-$ openslack workflow show full-lifecycle
+$ openslack collaboration workflow show full-lifecycle
   Name: full-lifecycle
   Risk: high
   Permissions: github (issues:create, prs:create), git (branch:create, push), filesystem (workspace:write)
@@ -794,7 +905,7 @@ $ openslack workflow show full-lifecycle
   Side Effects: github.issue.create, git.branch.create, git.push, github.pr.create
 
 # Inspect a past run
-$ openslack workflow inspect run-abc123
+$ openslack collaboration workflow inspect run-abc123
   Status: completed
   Phases: Scan (15 findings) → Verify (8 confirmed) → Triage (8 triaged)
           → Create Issues (3 created) → Implement (done) → Validate (pass)
@@ -804,7 +915,7 @@ $ openslack workflow inspect run-abc123
   Duration: 12m 34s
 
 # Export HTML report
-$ openslack workflow inspect run-abc123 --format html > audit-report.html
+$ openslack collaboration workflow inspect run-abc123 --format html > audit-report.html
 ```
 
 ## 14. Implementation Plan
@@ -835,7 +946,7 @@ $ openslack workflow inspect run-abc123 --format html > audit-report.html
 - Checkpoint serialization/deserialization
 - Cache key computation and lookup
 - Resume logic with cached result replay
-- `openslack workflow cache clear` command
+- `openslack collaboration workflow cache clear` command
 - Unit tests for cache invalidation and resume
 
 ### Phase 2: Preview and Validation
@@ -843,7 +954,7 @@ $ openslack workflow inspect run-abc123 --format html > audit-report.html
 **PR 4:** Preview mode
 
 - `preview()` function implementation
-- Read-only agent calls (filesystem sandbox, no writes)
+- Read-only agent calls (filesystem sandbox, no writes, no mutations)
 - Schema validation for agent output
 - Risk zone validation against `classifyPaths()`
 - Output formatting (terminal, JSON)
@@ -851,10 +962,10 @@ $ openslack workflow inspect run-abc123 --format html > audit-report.html
 
 **PR 5:** Validate and show commands
 
-- `openslack workflow validate` — Parse and validate manifest
-- `openslack workflow show` — Display permissions, phases, risk
-- `openslack workflow list` — List available workflows
-- `openslack workflow list --runs` — List past and active runs
+- `openslack collaboration workflow validate` — Parse and validate manifest
+- `openslack collaboration workflow show` — Display permissions, phases, risk
+- `openslack collaboration workflow list` — List available workflows
+- `openslack collaboration workflow list --runs` — List past and active runs
 
 ### Phase 3: Execution and Side Effects
 
@@ -871,7 +982,7 @@ $ openslack workflow inspect run-abc123 --format html > audit-report.html
 - Trust level resolution (untrusted/trusted/core)
 - Permission intersection for nested workflows
 - Forbidden action enforcement (hardcoded blocklist)
-- `openslack workflow trust <name> --level trusted` command
+- `openslack collaboration workflow trust <name> --level trusted` command
 - Security-focused tests
 
 ### Phase 4: Integration and Output
@@ -888,7 +999,7 @@ $ openslack workflow inspect run-abc123 --format html > audit-report.html
 
 - Self-contained HTML output generation
 - CSP headers, inline CSS/JS, embedded data
-- `openslack workflow inspect <runId> --format html`
+- `openslack collaboration workflow inspect <runId> --format html`
 - Register `@openslack/workflows` in `.openslack/modules.yaml`
 - Update `docs/status/current.md` and `docs/user-guide.md`
 
@@ -904,13 +1015,51 @@ Based on gaps identified in the reference workflow (see
 | Never use raw `gh` or `git` commands in agent calls | Route through `ctx.openslack.task.*` and `ctx.openslack.prms.*` |
 | Never use ambient globals | Use explicit `ctx: WorkflowRuntime` parameter |
 | Never bypass PRMS for PR creation | All PRs must pass through `prms.doctor()` |
-| Never allow `pr.approve` or `pr.merge` in workflows | Hardcoded forbidden, regardless of permission declarations |
+| Never allow `pr.approve` or direct `pr.merge` in workflows | Hardcoded forbidden; use `ctx.openslack.prms.requestMerge()` which re-runs PRMS gates |
 | Never use `Co-Authored-By` in workflow commits | Bot identity enforced by `ctx.openslack.task.sync()` |
 | Never create issues without preview | Preview mode must show the issue body before creation |
 | Never use `--no-verify` or `--force` in git operations | All git operations must follow normal hooks |
 | Never read secrets or credential files | Hardcoded forbidden, even in execute mode |
 
-## 16. Related Documentation
+## 16. Current Workflow Templates vs. Future JS Workflow Modules
+
+### Current State: Typed Workflow Templates
+
+OpenSlack's Collaboration Layer currently provides workflow templates defined
+as typed TypeScript structures in `packages/collaboration/`. These templates
+are declared in the collaboration event schema and executed by the collaboration
+engine. They are:
+
+- **Typed data structures** (not executable code)
+- **Interpreted by the collaboration engine**, not a standalone runtime
+- **Part of the existing Collaboration module** (see `module-05` in modules.yaml)
+- **Registered in `.openslack/modules.yaml`** under the collaboration module
+
+These templates continue to work unchanged. The JS workflow module system
+designed in this document does not replace them.
+
+### Future: JS/ESM Workflow Modules
+
+The `@openslack/workflows` package and the JS/ESM format described in this
+document represent a **new, separate execution layer**:
+
+| Aspect | Current Templates | Future JS Modules |
+|--------|-------------------|-------------------|
+| Format | Typed TS data structures | Executable JS/ESM modules |
+| Execution | Collaboration engine interprets | Dedicated workflow runtime |
+| Location | `packages/collaboration/` | `.openslack/workflows/`, `packages/workflows/` |
+| Schemas | Implicit in TS types | Explicit JSON Schema declarations |
+| Permissions | Inherited from collaboration | Declared in `meta.permissions` |
+| Side effects | Routed through collaboration APIs | Routed through `ctx.openslack.*` |
+| Module ownership | Collaboration (`module-05`) | New `workflows` module |
+
+### Migration Path
+
+When JS modules ship, existing templates remain functional. The collaboration
+engine gains the ability to invoke JS modules via `ctx.openslack.workflow.run()`,
+bridging the two systems. No template rewrite is required — they coexist.
+
+## 17. Related Documentation
 
 | Document | Purpose |
 |----------|---------|

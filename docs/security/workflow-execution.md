@@ -26,6 +26,7 @@ compromised or malicious.
 | Data exfiltration via agent output | Network sandboxing in preview mode |
 | Credential access via workflow | Hardcoded forbidden: secrets.read |
 | Privilege escalation via mode confusion | Strict mode isolation, no escalation path |
+| Unbounded workflow nesting leading to recursion | Max nesting depth 1; child workflows cannot call `ctx.workflow()` |
 
 ## Trust Levels
 
@@ -90,7 +91,7 @@ declaration, trust upgrade, or configuration change can override them.
 | Action | Block Reason |
 |--------|-------------|
 | `github.pr.approve` | Agents must never approve PRs — human approval required |
-| `github.pr.merge` | Merging requires PRMS doctor == READY_TO_MERGE + human confirmation |
+| `github.pr.merge` | Direct merge forbidden; workflows must use `ctx.openslack.prms.requestMerge()` which re-runs PRMS and merges only when all gates pass |
 | `ruleset.bypass` | Branch protection rules cannot be bypassed programmatically |
 | `secrets.read` | No workflow may read PEM keys, tokens, or credential files |
 | `kernel.constitution.write` | Self-evolution governance rules are immutable by workflows |
@@ -103,7 +104,7 @@ declaration, trust upgrade, or configuration change can override them.
 // In permission-checker.ts — checked BEFORE every operation
 const ALWAYS_FORBIDDEN: ReadonlySet<string> = Object.freeze(new Set([
   'github.pr.approve',
-  'github.pr.merge',
+  'github.pr.merge',    // Direct merge forbidden; use ctx.openslack.prms.requestMerge()
   'ruleset.bypass',
   'secrets.read',
   'kernel.constitution.write',
@@ -220,7 +221,7 @@ path.normalize(writePath).startsWith(path.normalize(worktreePath))
 | Mode | Read API | Write API | External Network |
 |------|----------|-----------|------------------|
 | validate | None | None | None |
-| preview | GitHub read-only | None | None |
+| preview | GitHub read-only (non-mutating agents) | None | None |
 | dry-run | GitHub read-only | Simulated | None |
 | execute | GitHub read/write (via proxy) | GitHub write (via proxy) | Blocked |
 
@@ -240,6 +241,23 @@ Each agent subtask runs in an isolated context:
 2. **Network**: Proxied through OpenSlack's GitHub adapter
 3. **Process**: No direct shell command execution — all side effects routed through runtime APIs
 4. **State**: No access to parent workflow's runtime context or run store
+
+## HTML Artifact Redaction
+
+Before run data is embedded in an HTML artifact, a redaction layer sanitizes:
+
+1. **File contents**: Only file paths from findings are included. No source code
+   is embedded. Context snippets are limited to 3 lines.
+2. **Agent prompts**: Full prompt text is stripped; only label, phase, and result
+   summary are retained.
+3. **Tokens and credentials**: Any tokens in URLs are stripped. API URLs with
+   query parameters are redacted to origin + pathname only.
+4. **Absolute paths**: Remapped to repo-root-relative paths before embedding.
+5. **Failed schema output**: Agent output that failed schema validation is not
+   embedded; only the validation error summary is retained.
+
+The redaction layer is enforced at the HTML renderer boundary. Raw run data
+never reaches the HTML template without passing through redaction first.
 
 ## Input Sanitization
 
@@ -363,13 +381,21 @@ this is a reaction-based confirmation.
 
 ### Schema Validation Failure
 
-When agent output fails schema validation:
+When agent output fails schema validation, the runtime follows a unified rule:
+**invalid output is never passed as valid data.** The handling depends on the
+call context:
 
-1. Result is discarded (not passed to workflow logic)
-2. Error logged with label, phase, and schema violations
-3. Workflow continues if the agent call is in a `parallel()` or `pipeline()`
-   (item returns null)
-4. Workflow fails if the agent call is a required single call
+1. **Standalone (required) agent call**: The `SchemaValidationError` propagates
+   to the workflow author's error handling. If uncaught, the workflow fails.
+   The invalid result is discarded — it never reaches workflow logic.
+2. **Fan-out item** (inside `parallel()` or `pipeline()`): The failed item
+   is recorded as `{ status: 'schema_failed', label, violations }` and the
+   result slot is set to `null`. The workflow continues with remaining items.
+3. In both cases: the failure is logged with label, phase, schema violations,
+   and the raw output is discarded (not cached, not embedded in HTML artifacts).
+
+This ensures workflows never silently process malformed data, while allowing
+graceful degradation for fan-out operations where individual items may fail.
 
 ### Permission Denied
 
