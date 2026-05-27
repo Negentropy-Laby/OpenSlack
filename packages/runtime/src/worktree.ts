@@ -1,4 +1,5 @@
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
+import { rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 function findRepoRoot(): string {
@@ -22,9 +23,30 @@ export interface WorktreeResult {
   errors: string[];
 }
 
+/**
+ * Validate that a string is safe to use as a git ref or path segment.
+ * Rejects empty strings, path traversal, and shell metacharacters.
+ */
+function assertSafeSegment(value: string, label: string): void {
+  if (!value || value.length === 0) {
+    throw new Error(`Invalid ${label}: must be non-empty`);
+  }
+  if (/[;&|`$(){}!#\\<>"'\n\r\t\0]/.test(value)) {
+    throw new Error(`Invalid ${label}: contains disallowed characters`);
+  }
+  if (value.includes('..')) {
+    throw new Error(`Invalid ${label}: path traversal detected`);
+  }
+}
+
 export function createWorktree(taskId: string, agentId: string, runId: string): WorktreeResult {
   const root = findRepoRoot();
   const errors: string[] = [];
+
+  // Validate all user-controlled inputs before any shell execution.
+  assertSafeSegment(agentId, 'agentId');
+  assertSafeSegment(taskId, 'taskId');
+  assertSafeSegment(runId, 'runId');
 
   const branchName = `agent/${agentId}/${taskId}/${runId}`;
   const worktreeRoot = join(root, '.worktrees', runId);
@@ -32,9 +54,8 @@ export function createWorktree(taskId: string, agentId: string, runId: string): 
 
   try {
     // Create branch AND worktree in one operation — never switch main worktree.
-    // Uses HEAD (current commit) as the base so the branch starts from the
-    // same point without touching the main worktree's HEAD ref.
-    execSync(`git worktree add -b "${branchName}" "${worktreeAbs}" HEAD`, {
+    // Uses execFileSync with argument array to prevent shell injection.
+    execFileSync('git', ['worktree', 'add', '-b', branchName, worktreeAbs, 'HEAD'], {
       cwd: root,
       stdio: 'pipe',
     });
@@ -43,7 +64,7 @@ export function createWorktree(taskId: string, agentId: string, runId: string): 
     if (stderr.includes('already exists') || stderr.includes('already checked out')) {
       // Branch already exists — reuse it without -b
       try {
-        execSync(`git worktree add "${worktreeAbs}" "${branchName}"`, {
+        execFileSync('git', ['worktree', 'add', worktreeAbs, branchName], {
           cwd: root,
           stdio: 'pipe',
         });
@@ -67,7 +88,7 @@ export interface DirtyStatus {
 
 export function checkDirty(worktreePath: string): DirtyStatus {
   try {
-    const result = execSync('git status --porcelain', { cwd: worktreePath, stdio: 'pipe' });
+    const result = execFileSync('git', ['status', '--porcelain'], { cwd: worktreePath, stdio: 'pipe' });
     const dirty = result.toString().trim().length > 0;
     return dirty
       ? { status: 'dirty', reason: 'Uncommitted changes detected' }
@@ -83,14 +104,18 @@ export function checkDirty(worktreePath: string): DirtyStatus {
 
 export function cleanupWorktree(runId: string): boolean {
   const root = findRepoRoot();
+
+  // Validate user-controlled input.
+  assertSafeSegment(runId, 'runId');
+
   const worktreePath = join(root, '.worktrees', runId);
   try {
-    execSync(`git worktree remove "${worktreePath}" --force`, { cwd: root, stdio: 'pipe' });
+    execFileSync('git', ['worktree', 'remove', worktreePath, '--force'], { cwd: root, stdio: 'pipe' });
     return true;
   } catch {
     try {
-      execSync(`rm -rf "${worktreePath}"`, { cwd: root, stdio: 'pipe' });
-      execSync(`git worktree prune`, { cwd: root, stdio: 'pipe' });
+      rmSync(worktreePath, { recursive: true, force: true });
+      execFileSync('git', ['worktree', 'prune'], { cwd: root, stdio: 'pipe' });
     } catch {
       // Last resort cleanup
     }

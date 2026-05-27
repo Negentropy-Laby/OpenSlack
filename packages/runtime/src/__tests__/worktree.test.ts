@@ -1,0 +1,79 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.mock('node:child_process', () => ({
+  execFileSync: vi.fn(() => Buffer.from('')),
+  execSync: vi.fn(() => ''),
+}));
+
+vi.mock('node:fs', () => ({
+  rmSync: vi.fn(),
+}));
+
+import { createWorktree, cleanupWorktree } from '../worktree.js';
+import { execFileSync } from 'node:child_process';
+
+const mockedExecFileSync = vi.mocked(execFileSync);
+
+describe('assertSafeSegment (via createWorktree)', () => {
+  beforeEach(() => { mockedExecFileSync.mockClear(); });
+
+  it('rejects agentId with shell metacharacters', () => {
+    expect(() => createWorktree('task-1', 'agent;rm -rf /', 'run-1')).toThrow(/Invalid agentId/);
+    expect(mockedExecFileSync).not.toHaveBeenCalled();
+  });
+
+  it('rejects taskId with shell metacharacters', () => {
+    expect(() => createWorktree('task$(whoami)', 'agent-1', 'run-1')).toThrow(/Invalid taskId/);
+    expect(mockedExecFileSync).not.toHaveBeenCalled();
+  });
+
+  it('rejects runId with shell metacharacters', () => {
+    expect(() => createWorktree('task-1', 'agent-1', 'run`cmd`')).toThrow(/Invalid runId/);
+    expect(mockedExecFileSync).not.toHaveBeenCalled();
+  });
+
+  it('rejects path traversal in agentId', () => {
+    expect(() => createWorktree('task-1', '../etc/passwd', 'run-1')).toThrow(/Invalid agentId.*path traversal/);
+    expect(mockedExecFileSync).not.toHaveBeenCalled();
+  });
+
+  it('rejects path traversal in taskId', () => {
+    expect(() => createWorktree('../../etc', 'agent-1', 'run-1')).toThrow(/Invalid taskId.*path traversal/);
+    expect(mockedExecFileSync).not.toHaveBeenCalled();
+  });
+
+  it('rejects empty agentId', () => {
+    expect(() => createWorktree('task-1', '', 'run-1')).toThrow(/Invalid agentId.*non-empty/);
+    expect(mockedExecFileSync).not.toHaveBeenCalled();
+  });
+
+  it('rejects newline in runId', () => {
+    expect(() => createWorktree('task-1', 'agent-1', 'run\n1')).toThrow(/Invalid runId/);
+    expect(mockedExecFileSync).not.toHaveBeenCalled();
+  });
+
+  it('passes valid IDs through to git worktree add with argument array', () => {
+    const result = createWorktree('task-123', 'my_agent', 'run-456');
+    expect(result.branchName).toBe('agent/my_agent/task-123/run-456');
+    expect(result.success).toBe(true);
+    expect(mockedExecFileSync).toHaveBeenCalledWith(
+      'git',
+      expect.arrayContaining(['worktree', 'add', '-b', 'agent/my_agent/task-123/run-456', expect.any(String), 'HEAD']),
+      expect.any(Object),
+    );
+  });
+});
+
+describe('assertSafeSegment (via cleanupWorktree)', () => {
+  beforeEach(() => { mockedExecFileSync.mockClear(); });
+
+  it('rejects runId with shell metacharacters', () => {
+    expect(() => cleanupWorktree('run;rm -rf /')).toThrow(/Invalid runId/);
+    expect(mockedExecFileSync).not.toHaveBeenCalled();
+  });
+
+  it('rejects path traversal in runId', () => {
+    expect(() => cleanupWorktree('../etc')).toThrow(/Invalid runId/);
+    expect(mockedExecFileSync).not.toHaveBeenCalled();
+  });
+});
