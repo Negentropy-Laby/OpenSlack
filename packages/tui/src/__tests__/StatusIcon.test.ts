@@ -96,7 +96,7 @@ describe('categorizeStatus', () => {
   })
 
   it('maps CHECKS_PENDING -> info', () => {
-    expect(categorizeStatus('CHECKS_PENDING')).toBe('info')
+    expect(categorizeStatus('CHECKS_PENDING')).toBe('warn')
   })
 
   it('maps unknown_status -> info (default)', () => {

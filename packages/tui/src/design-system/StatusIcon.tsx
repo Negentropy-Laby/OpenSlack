@@ -42,7 +42,7 @@ const STATUS_MAP: Record<string, StatusCategory> = {
   DISCOVERED: 'info',
   CLASSIFIED: 'info',
   PENDING: 'info',
-  CHECKS_PENDING: 'info',
+  CHECKS_PENDING: 'warn',
   open: 'info',
 }
 
