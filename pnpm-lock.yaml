@@ -181,6 +181,9 @@ importers:
       '@openslack/collaboration':
         specifier: workspace:*
         version: link:../collaboration
+      '@openslack/pr':
+        specifier: workspace:*
+        version: link:../pr
       auto-bind:
         specifier: ^5.0.1
         version: 5.0.1
