@@ -181,6 +181,9 @@ importers:
       '@openslack/collaboration':
         specifier: workspace:*
         version: link:../collaboration
+      '@openslack/pr':
+        specifier: workspace:*
+        version: link:../pr
       '@openslack/runtime':
         specifier: workspace:*
         version: link:../runtime
