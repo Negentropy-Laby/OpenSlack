@@ -1,4 +1,4 @@
-import { execFileSync, execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
@@ -7,7 +7,7 @@ function findRepoRoot(): string {
     const cwd = process.cwd();
     let dir = cwd;
     for (let i = 0; i < 10; i++) {
-      try { execSync('git rev-parse --git-dir', { cwd: dir, stdio: 'pipe' }); return dir; } catch { /* not here */ }
+      try { execFileSync('git', ['rev-parse', '--git-dir'], { cwd: dir, stdio: 'pipe' }); return dir; } catch { /* not here */ }
       const parent = join(dir, '..');
       if (parent === dir) break;
       dir = parent;
@@ -55,6 +55,8 @@ export function createWorktree(taskId: string, agentId: string, runId: string): 
   try {
     // Create branch AND worktree in one operation — never switch main worktree.
     // Uses execFileSync with argument array to prevent shell injection.
+    // Uses HEAD (current commit) as the base so the branch starts from the
+    // same point without touching the main worktree's HEAD ref.
     execFileSync('git', ['worktree', 'add', '-b', branchName, worktreeAbs, 'HEAD'], {
       cwd: root,
       stdio: 'pipe',
