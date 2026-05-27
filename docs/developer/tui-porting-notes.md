@@ -40,8 +40,10 @@ Before any code PR merges, the following must be confirmed:
    MIT.
 3. Whether design-system components can be extracted and relicensed.
 4. All copied files must retain original license headers where they exist.
-5. A `THIRD_PARTY_NOTICES.md` or equivalent must be created if required by
-   upstream licenses.
+5. `THIRD_PARTY_NOTICES.md` at repository root must document all third-party
+   code provenance and license status.
+
+License tracking file: `THIRD_PARTY_NOTICES.md` (repository root).
 
 This is a **merge gate**: no code PR (PR 1+) merges until license is resolved.
 

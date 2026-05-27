@@ -2,7 +2,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', '**/*.d.ts', '**/*.d.ts.map', 'node_modules/**', '.aby/**', '.openslack.local/**', '.worktrees/**'],
+    ignores: ['dist/**', '**/dist/**', '**/*.d.ts', '**/*.d.ts.map', 'node_modules/**', '.aby/**', '.openslack.local/**', '.worktrees/**'],
   },
   {
     files: ['**/*.ts'],

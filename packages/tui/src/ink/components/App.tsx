@@ -37,6 +37,11 @@ import StdinContext from './StdinContext.js'
 import { TerminalFocusProvider } from './TerminalFocusContext.js'
 import { TerminalSizeContext } from './TerminalSizeContext.js'
 
+// v1 scope flag: disables mouse tracking, alt-screen, selection, focus
+// reporting, and kitty keyboard protocol writes. The code paths remain
+// compilable but produce no terminal output for these capabilities.
+const TUI_V1_MINIMAL = true
+
 // Platforms that support Unix-style process suspension (SIGSTOP/SIGCONT)
 const SUPPORTS_SUSPEND = process.platform !== 'win32'
 
@@ -271,16 +276,20 @@ export default class App extends PureComponent<Props, State> {
         stdin.ref()
         stdin.setRawMode(true)
         stdin.addListener('readable', this.handleReadable)
-        // Enable bracketed paste mode
-        this.props.stdout.write(EBP)
-        // Enable terminal focus reporting (DECSET 1004)
-        this.props.stdout.write(EFE)
+        // Enable bracketed paste mode — disabled in v1 (minimal TUI)
+        if (!TUI_V1_MINIMAL) {
+          this.props.stdout.write(EBP)
+        }
+        // Enable terminal focus reporting (DECSET 1004) — disabled in v1
+        if (!TUI_V1_MINIMAL) {
+          this.props.stdout.write(EFE)
+        }
         // Enable extended key reporting so ctrl+shift+<letter> is
         // distinguishable from ctrl+<letter>. We write both the kitty stack
         // push (CSI >1u) and xterm modifyOtherKeys level 2 (CSI >4;2m) —
         // terminals honor whichever they implement (tmux only accepts the
         // latter).
-        if (supportsExtendedKeys()) {
+        if (supportsExtendedKeys() && !TUI_V1_MINIMAL) {
           this.props.stdout.write(ENABLE_KITTY_KEYBOARD)
           this.props.stdout.write(ENABLE_MODIFY_OTHER_KEYS)
         }
@@ -292,16 +301,19 @@ export default class App extends PureComponent<Props, State> {
         // Deferred to next tick so it fires AFTER the current synchronous
         // init sequence completes — avoids interleaving with alt-screen/mouse
         // tracking enable writes that may happen in the same render cycle.
-        setImmediate(() => {
-          void Promise.all([this.querier.send(xtversion()), this.querier.flush()]).then(([r]) => {
-            if (r) {
-              setXtversionName(r.name)
-              logForDebugging(`XTVERSION: terminal identified as "${r.name}"`)
-            } else {
-              logForDebugging('XTVERSION: no reply (terminal ignored query)')
-            }
+        // Disabled in v1: terminal capability probing not needed in minimal mode.
+        if (!TUI_V1_MINIMAL) {
+          setImmediate(() => {
+            void Promise.all([this.querier.send(xtversion()), this.querier.flush()]).then(([r]) => {
+              if (r) {
+                setXtversionName(r.name)
+                logForDebugging(`XTVERSION: terminal identified as "${r.name}"`)
+              } else {
+                logForDebugging('XTVERSION: no reply (terminal ignored query)')
+              }
+            })
           })
-        })
+        }
       }
       this.rawModeEnabledCount++
       return
@@ -309,12 +321,15 @@ export default class App extends PureComponent<Props, State> {
 
     // Disable raw mode only when no components left that are using it
     if (--this.rawModeEnabledCount === 0) {
-      this.props.stdout.write(DISABLE_MODIFY_OTHER_KEYS)
-      this.props.stdout.write(DISABLE_KITTY_KEYBOARD)
-      // Disable terminal focus reporting (DECSET 1004)
-      this.props.stdout.write(DFE)
-      // Disable bracketed paste mode
-      this.props.stdout.write(DBP)
+      // Disabled in v1: kitty keyboard, modifyOtherKeys, focus reporting, bracketed paste
+      if (!TUI_V1_MINIMAL) {
+        this.props.stdout.write(DISABLE_MODIFY_OTHER_KEYS)
+        this.props.stdout.write(DISABLE_KITTY_KEYBOARD)
+        // Disable terminal focus reporting (DECSET 1004)
+        this.props.stdout.write(DFE)
+        // Disable bracketed paste mode
+        this.props.stdout.write(DBP)
+      }
       stdin.setRawMode(false)
       stdin.removeListener('readable', this.handleReadable)
       stdin.unref()
@@ -547,8 +562,12 @@ export default class App extends PureComponent<Props, State> {
     // wasn't enabled, so it's safe to emit unconditionally — without
     // it, SGR mouse sequences would appear as garbled text at the
     // shell prompt while suspended.
-    if (this.props.stdout.isTTY) {
+    // Guarded in v1: these modes are never enabled so no need to disable.
+    if (this.props.stdout.isTTY && !TUI_V1_MINIMAL) {
       this.props.stdout.write(SHOW_CURSOR + DFE + DISABLE_MOUSE_TRACKING)
+    } else if (this.props.stdout.isTTY) {
+      // Always show cursor on suspend even in minimal mode
+      this.props.stdout.write(SHOW_CURSOR)
     }
 
     // Emit suspend event for Aby Assistant to handle. Mostly just has a notification
@@ -568,8 +587,10 @@ export default class App extends PureComponent<Props, State> {
         if (!isEnvTruthy(process.env.CLAUDE_CODE_ACCESSIBILITY)) {
           this.props.stdout.write(HIDE_CURSOR)
         }
-        // Re-enable focus reporting to restore terminal state
-        this.props.stdout.write(EFE)
+        // Re-enable focus reporting to restore terminal state — disabled in v1
+        if (!TUI_V1_MINIMAL) {
+          this.props.stdout.write(EFE)
+        }
       }
 
       // Emit resume event for Aby Assistant to handle

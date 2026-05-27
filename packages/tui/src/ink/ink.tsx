@@ -39,6 +39,11 @@ import { DBP, DFE, DISABLE_MOUSE_TRACKING, ENABLE_MOUSE_TRACKING, ENTER_ALT_SCRE
 import { CLEAR_ITERM2_PROGRESS, CLEAR_TAB_STATUS, setClipboard, supportsTabStatus, wrapForMultiplexer } from './termio/osc.js';
 import { TerminalWriteProvider } from './useTerminalNotification.js';
 
+// v1 scope flag: disables mouse tracking, alt-screen, selection, focus
+// reporting, and kitty keyboard protocol writes. The code paths remain
+// compilable but produce no terminal output for these capabilities.
+const TUI_V1_MINIMAL = true
+
 // Alt-screen: renderer.ts sets cursor.visible = !isTTY || screen.height===0,
 // which is always false in alt-screen (TTY + content fills screen).
 // Reusing a frozen object saves 1 allocation per frame.
@@ -333,7 +338,8 @@ export default class Ink {
     // doesn't exit alt-screen. Do NOT write ERASE_SCREEN: render() below
     // can take ~80ms; erasing first leaves the screen blank that whole time.
     if (this.altScreenActive && !this.isPaused && this.options.stdout.isTTY) {
-      if (this.altScreenMouseTracking) {
+      // Mouse tracking re-assert on resize — disabled in v1
+      if (this.altScreenMouseTracking && !TUI_V1_MINIMAL) {
         this.options.stdout.write(ENABLE_MOUSE_TRACKING);
       }
       this.resetFramesForAltScreen();
@@ -362,24 +368,35 @@ export default class Ink {
   enterAlternateScreen(): void {
     this.pause();
     this.suspendStdin();
-    this.options.stdout.write(
-    // Disable extended key reporting first — editors that don't speak
-    // CSI-u (e.g. nano) show "Unknown sequence" for every Ctrl-<key> if
-    // kitty/modifyOtherKeys stays active. exitAlternateScreen re-enables.
-    DISABLE_KITTY_KEYBOARD + DISABLE_MODIFY_OTHER_KEYS + (this.altScreenMouseTracking ? DISABLE_MOUSE_TRACKING : '') + (
-    // disable mouse (no-op if off)
-    this.altScreenActive ? '' : '\x1b[?1049h') +
-    // enter alt (already in alt if fullscreen)
-    '\x1b[?1004l' +
-    // disable focus reporting
-    '\x1b[0m' +
-    // reset attributes
-    '\x1b[?25h' +
-    // show cursor
-    '\x1b[2J' +
-    // clear screen
-    '\x1b[H' // cursor home
-    );
+    // v1 minimal: skip kitty/mouse/alt-screen/focus disable writes since
+    // they were never enabled. Only send safe terminal reset sequences.
+    if (TUI_V1_MINIMAL) {
+      this.options.stdout.write(
+        '\x1b[0m' +    // reset attributes
+        '\x1b[?25h' +  // show cursor
+        '\x1b[2J' +    // clear screen
+        '\x1b[H'       // cursor home
+      );
+    } else {
+      this.options.stdout.write(
+      // Disable extended key reporting first — editors that don't speak
+      // CSI-u (e.g. nano) show "Unknown sequence" for every Ctrl-<key> if
+      // kitty/modifyOtherKeys stays active. exitAlternateScreen re-enables.
+      DISABLE_KITTY_KEYBOARD + DISABLE_MODIFY_OTHER_KEYS + (this.altScreenMouseTracking ? DISABLE_MOUSE_TRACKING : '') + (
+      // disable mouse (no-op if off)
+      this.altScreenActive ? '' : '\x1b[?1049h') +
+      // enter alt (already in alt if fullscreen)
+      '\x1b[?1004l' +
+      // disable focus reporting
+      '\x1b[0m' +
+      // reset attributes
+      '\x1b[?25h' +
+      // show cursor
+      '\x1b[2J' +
+      // clear screen
+      '\x1b[H' // cursor home
+      );
+    }
   }
 
   /**
@@ -395,18 +412,27 @@ export default class Ink {
    * returns, fullscreen scroll is dead.
    */
   exitAlternateScreen(): void {
-    this.options.stdout.write((this.altScreenActive ? ENTER_ALT_SCREEN : '') +
-    // re-enter alt — vim's rmcup dropped us to main
-    '\x1b[2J' +
-    // clear screen (now alt if fullscreen)
-    '\x1b[H' + (
-    // cursor home
-    this.altScreenMouseTracking ? ENABLE_MOUSE_TRACKING : '') + (
-    // re-enable mouse (skip if CLAUDE_CODE_DISABLE_MOUSE)
-    this.altScreenActive ? '' : '\x1b[?1049l') +
-    // exit alt (non-fullscreen only)
-    '\x1b[?25l' // hide cursor (Ink manages)
-    );
+    // v1 minimal: skip alt-screen/mouse/kitty/focus re-enable writes
+    if (TUI_V1_MINIMAL) {
+      this.options.stdout.write(
+        '\x1b[2J' +    // clear screen
+        '\x1b[H' +     // cursor home
+        '\x1b[?25l'    // hide cursor (Ink manages)
+      );
+    } else {
+      this.options.stdout.write((this.altScreenActive ? ENTER_ALT_SCREEN : '') +
+      // re-enter alt — vim's rmcup dropped us to main
+      '\x1b[2J' +
+      // clear screen (now alt if fullscreen)
+      '\x1b[H' + (
+      // cursor home
+      this.altScreenMouseTracking ? ENABLE_MOUSE_TRACKING : '') + (
+      // re-enable mouse (skip if CLAUDE_CODE_DISABLE_MOUSE)
+      this.altScreenActive ? '' : '\x1b[?1049l') +
+      // exit alt (non-fullscreen only)
+      '\x1b[?25l' // hide cursor (Ink manages)
+      );
+    }
     this.resumeStdin();
     if (this.altScreenActive) {
       this.resetFramesForAltScreen();
@@ -420,7 +446,10 @@ export default class Ink {
     // ctrl+shift+<letter> from ctrl+<letter>. Pop-before-push keeps the
     // Kitty stack balanced (a well-behaved editor restores our entry, so
     // without the pop we'd accumulate depth on each editor round-trip).
-    this.options.stdout.write('\x1b[?1004h' + (supportsExtendedKeys() ? DISABLE_KITTY_KEYBOARD + ENABLE_KITTY_KEYBOARD + ENABLE_MODIFY_OTHER_KEYS : ''));
+    // Disabled in v1: these modes are never enabled in minimal mode.
+    if (!TUI_V1_MINIMAL) {
+      this.options.stdout.write('\x1b[?1004h' + (supportsExtendedKeys() ? DISABLE_KITTY_KEYBOARD + ENABLE_KITTY_KEYBOARD + ENABLE_MODIFY_OTHER_KEYS : ''));
+    }
   }
   onRender() {
     if (this.isUnmounted || this.isPaused) {
@@ -903,6 +932,8 @@ export default class Ink {
     // keyboard here would undo enterAlternateScreen's disable and nano would
     // start seeing CSI-u sequences again.
     if (this.isPaused) return;
+    // v1 minimal: skip all terminal mode re-assertion
+    if (TUI_V1_MINIMAL) return;
     // Extended keys — re-assert if enabled (App.tsx enables these on
     // allowlisted terminals at raw-mode entry; a terminal reset clears them).
     // Pop-before-push keeps Kitty stack depth at 1 instead of accumulating
@@ -966,7 +997,12 @@ export default class Ink {
    * stays true. ENTER_ALT_SCREEN is a terminal-side no-op if already in alt.
    */
   private reenterAltScreen(): void {
-    this.options.stdout.write(ENTER_ALT_SCREEN + ERASE_SCREEN + CURSOR_HOME + (this.altScreenMouseTracking ? ENABLE_MOUSE_TRACKING : ''));
+    // v1 minimal: skip alt-screen enter and mouse tracking writes
+    if (!TUI_V1_MINIMAL) {
+      this.options.stdout.write(ENTER_ALT_SCREEN + ERASE_SCREEN + CURSOR_HOME + (this.altScreenMouseTracking ? ENABLE_MOUSE_TRACKING : ''));
+    } else {
+      this.options.stdout.write(ERASE_SCREEN + CURSOR_HOME);
+    }
     this.resetFramesForAltScreen();
   }
 
@@ -1479,25 +1515,29 @@ export default class Ink {
     // terminals that don't support them.
     /* eslint-disable custom-rules/no-sync-fs -- process exiting; async writes would be dropped */
     if (this.options.stdout.isTTY) {
-      if (this.altScreenActive) {
-        // <AlternateScreen>'s unmount effect won't run during signal-exit.
-        // Exit alt screen FIRST so other cleanup sequences go to the main screen.
-        writeSync(1, EXIT_ALT_SCREEN);
+      // v1 minimal: skip cleanup for modes that were never enabled.
+      // Only show cursor and clear iTerm2 progress/tab status.
+      if (!TUI_V1_MINIMAL) {
+        if (this.altScreenActive) {
+          // <AlternateScreen>'s unmount effect won't run during signal-exit.
+          // Exit alt screen FIRST so other cleanup sequences go to the main screen.
+          writeSync(1, EXIT_ALT_SCREEN);
+        }
+        // Disable mouse tracking — unconditional because altScreenActive can be
+        // stale if AlternateScreen's unmount (which flips the flag) raced a
+        // blocked event loop + SIGINT. No-op if tracking was never enabled.
+        writeSync(1, DISABLE_MOUSE_TRACKING);
+        // Drain stdin so in-flight mouse events don't leak to the shell
+        this.drainStdin();
+        // Disable extended key reporting (both kitty and modifyOtherKeys)
+        writeSync(1, DISABLE_MODIFY_OTHER_KEYS);
+        writeSync(1, DISABLE_KITTY_KEYBOARD);
+        // Disable focus events (DECSET 1004)
+        writeSync(1, DFE);
+        // Disable bracketed paste mode
+        writeSync(1, DBP);
       }
-      // Disable mouse tracking — unconditional because altScreenActive can be
-      // stale if AlternateScreen's unmount (which flips the flag) raced a
-      // blocked event loop + SIGINT. No-op if tracking was never enabled.
-      writeSync(1, DISABLE_MOUSE_TRACKING);
-      // Drain stdin so in-flight mouse events don't leak to the shell
-      this.drainStdin();
-      // Disable extended key reporting (both kitty and modifyOtherKeys)
-      writeSync(1, DISABLE_MODIFY_OTHER_KEYS);
-      writeSync(1, DISABLE_KITTY_KEYBOARD);
-      // Disable focus events (DECSET 1004)
-      writeSync(1, DFE);
-      // Disable bracketed paste mode
-      writeSync(1, DBP);
-      // Show cursor
+      // Show cursor — always needed even in minimal mode
       writeSync(1, SHOW_CURSOR);
       // Clear iTerm2 progress bar
       writeSync(1, CLEAR_ITERM2_PROGRESS);
