@@ -113,8 +113,8 @@ export function collaborationCommands(): Command {
     .option('--risk <level>', 'Filter by risk level (none, low, medium, high)')
     .option('--blocker', 'Show only blocker events')
     .option('--type <eventType>', 'Filter by event type')
-    .option('--format <format>', 'Output format: standard, plain, json, or chat', 'standard')
-    .action((options: { since: string; owner?: string; module?: string; risk?: string; blocker?: boolean; type?: string; format: string }) => {
+    .option('--format <format>', 'Output format: standard, plain, json, chat, or tui', 'standard')
+    .action(async (options: { since: string; owner?: string; module?: string; risk?: string; blocker?: boolean; type?: string; format: string }) => {
       const sinceHours = parseInt(options.since, 10);
       const filters: Record<string, unknown> = {};
       if (options.owner) filters.actorId = options.owner;
@@ -126,7 +126,15 @@ export function collaborationCommands(): Command {
         sinceHours: Number.isFinite(sinceHours) ? sinceHours : 24,
         filters: Object.keys(filters).length > 0 ? filters : undefined,
       });
-      if (options.format === 'json') {
+      if (options.format === 'tui') {
+        try {
+          const { renderDashboardTui } = await import('@openslack/tui');
+          await renderDashboardTui(dashboard);
+        } catch (error) {
+          console.error('TUI unavailable. Falling back to standard output.');
+          console.log(renderDashboardProjection(dashboard));
+        }
+      } else if (options.format === 'json') {
         console.log(JSON.stringify(dashboard, null, 2));
       } else if (options.format === 'chat') {
         const card = buildDashboardCard({
