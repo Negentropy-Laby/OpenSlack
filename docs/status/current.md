@@ -64,7 +64,9 @@ supersedes:
 
 ## Test Suite
 
-857 unit tests across 99 test files. All passing.
+808 Vitest tests across 101 files. All passing.
+
+Module-attributed coverage: 1112 tests across 144 module test files (packages shared across modules are counted per module).
 
 ## Module Registry
 

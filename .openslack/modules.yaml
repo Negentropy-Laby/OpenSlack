@@ -1,4 +1,6 @@
 schema: openslack.modules.v1
+vitest_tests: 808
+vitest_files: 101
 modules:
   - id: self_evolution
     name: Self-Evolution Kernel
@@ -11,8 +13,8 @@ modules:
       - "@openslack/kernel"
       - "@openslack/workspace"
       - "@openslack/runtime"
-    tests: 142
-    test_files: 18
+    tests: 107
+    test_files: 12
     golden_evals: 7
 
   - id: github_task_loop
@@ -27,8 +29,8 @@ modules:
       - "@openslack/github"
       - "@openslack/runtime"
       - "@openslack/core"
-    tests: 192
-    test_files: 25
+    tests: 172
+    test_files: 21
     notes: "GitHub Issues task loop active with typed task creation, dry-run repair, and Phase 4 watch daemon (webhook receiver, dedupe, console/Slack/webhook notifications, polling fallback, optional auto-claim with agent identity and authorization gates, collaboration event recording)."
 
   - id: operator
@@ -46,8 +48,8 @@ modules:
       - "@openslack/operator"
       - "@openslack/chat-gateway"
       - "@openslack/tui"
-    tests: 144
-    test_files: 16
+    tests: 300
+    test_files: 45
     notes: Structured planner active. Webhook and Slack chat adapters active with actor mapping. PRMS chat cards and action confirmation active. Typed tool registry, optional LLM fallback, setup report, and 24h pending plan store active. Session-based conversation memory with multi-turn context resolution and progressive clarification. Doctor --format plain for non-technical output. TUI setup report view and PR doctor view via --format tui.
 
   - id: pr_review_merge
@@ -61,8 +63,8 @@ modules:
       - "@openslack/pr"
       - "@openslack/github"
       - "@openslack/kernel"
-    tests: 276
-    test_files: 30
+    tests: 264
+    test_files: 28
     notes: Phase 2C chat report and action confirmation active. Supports status/review/recommend/doctor/queue/merge/watch, review/doctor comments, governance audit, operational decision summaries, deadlock detection, Red Zone author-risk preflight, and chat-friendly PR summaries with confirm-merge flow.
 
   - id: collaboration
@@ -79,6 +81,6 @@ modules:
     packages:
       - "@openslack/collaboration"
       - "@openslack/tui"
-    tests: 103
-    test_files: 10
+    tests: 269
+    test_files: 38
     notes: Full 2D/2E Collaboration Layer active with typed workflow template preview/execute and dashboard with filters (--owner, --module, --risk, --blocker, --type). Event model, activity feed, digest, handoff, decision, and room views with agent display name resolution. Authz-gated chat cards for handoffs, decisions, tasks, workflows, and plans. Agent registry v1 to v2 migration command. TUI dashboard and room views via --format tui.

@@ -1,8 +1,9 @@
 ---
 schema: openslack.product_spec.v1
 module: operator/collaboration
-status: planned
+status: active
 created: 2026-05-27
+updated: 2026-05-28
 ---
 
 # TUI: Optional Terminal UI Views
@@ -45,11 +46,10 @@ default.
 
 | Command | TUI view | PR |
 |---------|----------|----|
-| `openslack collaboration dashboard --format tui` | DashboardView | PR 4 |
-| `openslack collaboration room show <ref> --format tui` | RoomView | PR 5 |
-| `openslack pr doctor <n> --format tui` | PRDoctorView | PR 6 |
-| `openslack doctor --format tui` | HealthPanel | PR 6 |
-| `openslack setup interactive --format tui` | SetupWizardView | PR 7 |
+| `openslack collaboration dashboard --format tui` | DashboardView | #96 |
+| `openslack collaboration room show <ref> --format tui` | RoomView | #97 |
+| `openslack pr doctor <n> --format tui` | DoctorView | #98 |
+| `openslack setup interactive --format tui` | SetupView | #99 |
 
 ## Module Registration
 
@@ -58,8 +58,8 @@ not as a new Module 06. It is a presentation-layer package, not a product module
 
 ## v1 Scope
 
-- Render-and-exit or bounded interactive views
-- Keyboard: `q`/`Esc` to exit, arrow keys to scroll within views
+- Render-and-exit views; `q`/`Esc` to exit
+- Scrolling and item selection are future enhancements
 - No mouse interaction, no alternate screen mode, no OSC clipboard, no live
   refresh
 
