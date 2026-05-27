@@ -94,6 +94,21 @@ This is a **merge gate**: no code PR (PR 1+) merges until license is resolved.
 ### Ink Termio (from `src/ink/termio/`)
 
 - `ansi`, `csi`, `dec`, `parser`, `sgr`, `tokenize`, `types`
+- `osc.ts` — **inert/trimmed shim** (see below)
+
+### OSC Handling: Inert Shim
+
+`terminal.ts` and `ink.tsx` import OSC helpers from `src/ink/termio/osc.ts`.
+Rather than excluding `osc.ts` entirely, a **trimmed shim** is ported that:
+
+- Provides the exported function signatures so `terminal.ts` / `ink.tsx` compile.
+- Disables all side-effecting OSC operations:
+  - `setClipboard` — no-op (OSC 52 clipboard injection prevented)
+  - Tab status / progress reporting — no-op
+  - OSC 8 hyperlink generation — no-op
+- Retains only read-only OSC parsing needed for terminal capability queries.
+
+Tests must prove the shim never outputs OSC sequences to stdout/stderr.
 
 ### Ink Layout (from `src/ink/layout/`)
 
@@ -143,7 +158,7 @@ Tier 2 (adapted):
 | Terminal viewport (use-terminal-viewport) | Not needed for bounded views |
 | Tab status (use-tab-status) | Not needed; no tab navigation |
 | Animation frames (use-animation-frame) | Not needed; no animations |
-| `osc.ts` (termio) | Clipboard/OSC52 disabled for security |
+| `osc.ts` (termio) | Replaced with inert/trimmed shim; see OSC Handling section above |
 
 ## Coupling Resolution: Stubs
 
