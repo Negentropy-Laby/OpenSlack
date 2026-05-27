@@ -153,7 +153,7 @@ Commands with `--format tui`:
 - `openslack collaboration dashboard --format tui` — Interactive team dashboard with blockers, handoffs, decisions
 - `openslack collaboration room show <id> --format tui` — Focused room view for a PR or issue
 - `openslack pr doctor <n> --format tui` — Interactive PR governance diagnosis with gates, checks, reviews
-- `openslack setup interactive --format tui` — Guided setup wizard with readiness classification
+- `openslack setup interactive --format tui` — Read-only setup report TUI with readiness classification
 
 TUI views use q or Esc to exit. They require a terminal with at least 40 columns and 12 rows, and are disabled in CI, when `NO_COLOR` is set, or when `OPENSLACK_TUI=0`.
 
