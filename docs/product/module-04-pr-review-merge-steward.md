@@ -17,7 +17,7 @@ The agent-assisted PR gatekeeper. PRMS fetches PR metadata, classifies risk zone
 | Identity split | Bot/agent identity authors OpenSlack work; human identity reviews and approves |
 | Human approves | Only humans decide approval; GitHub enforcement requires the human GitHub identity |
 | Agent-assisted evidence | Human reviewers may rely on PRMS and agent summaries instead of personally opening the PR page |
-| Agent merges after approval | Agent can execute merge only after GitHub confirms all gates satisfied |
+| Agent merges after approval | Agent can execute merge only after approval, checks, mergeability, and required conversation resolution pass |
 | No self-review | Agent cannot review PRs it authored |
 | No bypass | Agent cannot bypass branch protection ruleset |
 
@@ -25,9 +25,14 @@ The agent-assisted PR gatekeeper. PRMS fetches PR metadata, classifies risk zone
 
 Human approval means an authorized human explicitly decides approve or reject for a named PR. The human can make that decision after reading an agent-generated report, PRMS doctor output, CI status, changed files, and risk classification.
 
-OpenSlack-authored and delegated agent PRs should be authored by the configured bot/agent GitHub identity. The human GitHub identity is the reviewer and approval authority, not the PR author. If a required human reviewer or sole CODEOWNER authored the PR, the PR is blocked until it is recreated as bot/agent-authored or reviewed by a different independent human.
+OpenSlack-authored and delegated agent PRs must be authored by the configured bot/agent GitHub identity. The human GitHub identity is the reviewer and approval authority, not the PR author. If a required human reviewer or sole CODEOWNER authored the PR, the PR is blocked until it is recreated as bot/agent-authored or reviewed by a different independent human.
 
 For Red Zone and CODEOWNER gates, the decision must still be recorded as a GitHub review by the required human GitHub identity. A chat confirmation is evidence of human intent, but it is not by itself a GitHub CODEOWNER approval. Bot/app/agent approvals remain invalid.
+
+Human approval does not resolve GitHub review conversations. If repository
+rules require conversation resolution, PRMS must treat unresolved required
+review threads as merge blockers until the blocker is fixed or explicitly
+waived and the thread is resolved.
 
 See `docs/security/human-approval.md` for the cross-project definition.
 
@@ -58,14 +63,15 @@ Failure paths:
 - CHECKS_PENDING → CHECKS_FAILED
 - NEEDS_HUMAN_APPROVAL → BOT_APPROVAL_IGNORED
 - NEEDS_HUMAN_APPROVAL → NEEDS_CODEOWNER_APPROVAL
+- READY_TO_MERGE → BLOCKED_UNRESOLVED_REVIEW_THREADS
 
 ## Risk Zone Gating
 
 | Zone | Decision | Human Required | Auto-Merge |
 |------|----------|---------------|------------|
-| Green | READY_TO_MERGE (if checks pass) | No | Yes |
-| Yellow | READY_TO_MERGE (if checks pass) | No | With review |
-| Red | NEEDS_HUMAN_APPROVAL → READY_TO_MERGE | Yes | After approval |
+| Green | READY_TO_MERGE (if checks and required conversations pass) | No | Yes |
+| Yellow | READY_TO_MERGE (if checks and required conversations pass) | No | With review |
+| Red | NEEDS_HUMAN_APPROVAL → READY_TO_MERGE after checks and required conversations pass | Yes | After approval |
 | Black | BLOCKED_BLACK_ZONE | N/A | Never |
 
 ## Policy

@@ -71,6 +71,129 @@ or points to a different installation, the wrapper lists the GitHub App's
 installations and uses the one matching `GITHUB_OWNER` (default:
 `Negentropy-Laby`).
 
+Use this runtime bot credential path for PR creation whenever the work is
+OpenSlack-authored or delegated to an agent or automation. Do not create those
+PRs with a human `gh` login or human PAT, even when the commits themselves are
+bot-authored. GitHub PR authorship is the account that opens the PR.
+
+Before creating an agent-delivered PR, confirm the child process that runs
+`gh pr create` or the GitHub API request is authenticated as the configured
+bot/agent identity. If a PR is accidentally opened by the human reviewer or
+CODEOWNER, close or abandon it and recreate it through the bot credential path,
+or require a different independent human approval.
+
+### Updating an existing PR branch
+
+After a repair commit, force-push, or any bot-authored update to an existing PR,
+GitHub must emit a PR synchronize event before the PR can be reviewed again. Do
+not assume a successful `git push` means the PR has moved.
+
+Use this check before posting "ready for re-review":
+
+```powershell
+$pr = 96
+$branch = "feat/tui-dashboard-view"
+$branchSha = (git ls-remote origin "refs/heads/$branch").Split()[0]
+$prSha = gh pr view $pr --json headRefOid --jq ".headRefOid"
+
+if ($branchSha -ne $prSha) {
+  throw "PR #$pr is stale: branch=$branchSha pr=$prSha"
+}
+
+gh pr checks $pr
+```
+
+For a deeper check, compare the pull-request ref and the actual branch ref:
+
+```powershell
+git ls-remote origin "refs/heads/$branch" "refs/pull/$pr/head" "refs/pull/$pr/merge"
+gh pr view $pr --json headRepository,headRefName,headRefOid,statusCheckRollup,mergeStateStatus,reviewDecision
+```
+
+The PR is not ready for review when:
+
+- `refs/heads/<branch>` points at the repair commit, but `headRefOid` or
+  `refs/pull/<pr>/head` still points at an older commit;
+- `gh pr checks <pr>` reports checks from the older head SHA;
+- `reviewDecision`, `mergeStateStatus`, or check state is based on stale runs.
+
+When this happens, wait briefly and retry the checks. If GitHub still does not
+synchronize the PR, push a new bot-authored repair/no-op commit through the PR's
+actual head repo/ref or recreate the PR from the current branch head. Never ask
+for human approval against a stale PR head.
+
+### Re-review and conversation resolution
+
+After a review blocker is fixed, do not rely on the repair commit or a
+re-review comment alone. GitHub review conversations remain unresolved until
+they are explicitly resolved, and branch protection may block merge while those
+threads are open even when CI is green and a human approval exists.
+
+Use this pre-merge gate check:
+
+```powershell
+$pr = 98
+$branch = "feat/example"
+
+$branchSha = (git ls-remote origin "refs/heads/$branch").Split()[0]
+$prSha = gh pr view $pr --json headRefOid --jq ".headRefOid"
+if ($branchSha -ne $prSha) { throw "PR head is stale: branch=$branchSha pr=$prSha" }
+
+gh pr checks $pr
+gh pr view $pr --json mergeable,mergeStateStatus,reviewDecision,statusCheckRollup,latestReviews
+```
+
+Inspect unresolved review threads before requesting final approval or merge:
+
+```powershell
+gh api graphql `
+  -f owner="Negentropy-Laby" `
+  -f name="OpenSlack" `
+  -F number=$pr `
+  -f query='query($owner:String!,$name:String!,$number:Int!){
+    repository(owner:$owner,name:$name){
+      pullRequest(number:$number){
+        reviewThreads(first:100){
+          nodes{
+            id
+            isResolved
+            isOutdated
+            comments(first:1){
+              nodes{ author{login} path body }
+            }
+          }
+        }
+      }
+    }
+  }'
+```
+
+Resolve only threads whose blocker is fixed or explicitly waived by an
+authorized human/reviewer:
+
+```powershell
+gh api graphql `
+  -f threadId="<review-thread-id>" `
+  -f query='mutation($threadId:ID!){
+    resolveReviewThread(input:{threadId:$threadId}){
+      thread{ id isResolved }
+    }
+  }'
+```
+
+If `gh pr merge` reports `base branch policy prohibits the merge`, inspect
+these in order:
+
+1. Unresolved review conversations.
+2. Whether the latest human approval was dismissed by a repair commit, merge
+   conflict fix, or force-push.
+3. Required checks and whether they ran on the current `headRefOid`.
+4. Merge conflicts or stale branch state.
+
+Do not use `--admin` to bypass this policy during normal OpenSlack governance.
+Use `--auto` only after all gates above are confirmed and the repository
+requires auto-merge or a merge queue to finish the merge.
+
 To inspect available installations without running OpenSlack:
 
 ```powershell

@@ -44,6 +44,10 @@ pnpm openslack pr recommend 42      # What to do next
 pnpm openslack pr merge 42
 ```
 
+If GitHub reports that base branch policy blocks the merge, check unresolved
+review conversations first, then confirm that the latest human approval was not
+dismissed by a newer commit.
+
 ### 4. See team activity and blockers
 
 ```bash
