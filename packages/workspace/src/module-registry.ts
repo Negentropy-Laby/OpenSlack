@@ -17,6 +17,8 @@ export interface ProductModule {
 
 export interface ModulesRegistry {
   schema: string;
+  vitest_tests?: number;
+  vitest_files?: number;
   modules: ProductModule[];
 }
 

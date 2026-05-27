@@ -1,8 +1,9 @@
 ---
 schema: openslack.product_spec.v1
 module: operator/collaboration
-status: planned
+status: active
 created: 2026-05-27
+updated: 2026-05-28
 ---
 
 # TUI: Optional Terminal UI Views
@@ -45,11 +46,10 @@ default.
 
 | Command | TUI view | PR |
 |---------|----------|----|
-| `openslack collaboration dashboard --format tui` | DashboardView | PR 4 |
-| `openslack collaboration room show <ref> --format tui` | RoomView | PR 5 |
-| `openslack pr doctor <n> --format tui` | PRDoctorView | PR 6 |
-| `openslack doctor --format tui` | HealthPanel | PR 6 |
-| `openslack setup interactive --format tui` | SetupWizardView | PR 7 |
+| `openslack collaboration dashboard --format tui` | DashboardView | #94 |
+| `openslack collaboration room show <ref> --format tui` | RoomView | #95 |
+| `openslack pr doctor <n> --format tui` | DoctorView | #96 |
+| `openslack setup interactive --format tui` | SetupView | #97 |
 
 ## Module Registration
 

@@ -1,7 +1,7 @@
 ---
 schema: openslack.product_index.v1
 status: index
-updated: 2026-05-25
+updated: 2026-05-28
 ---
 
 # OpenSlack Product Current
@@ -43,6 +43,12 @@ current-state document.
 | Operator Interface | `docs/user-guide.md`, `docs/product/user-experience-roadmap.md` |
 | PR Review & Merge Steward | `docs/product/module-04-pr-review-merge-steward.md` |
 | Collaboration Layer | `docs/product/collaboration-layer.md`, `docs/developer/collaboration-events.md` |
+
+## Product Reviews
+
+| Date | Document | Purpose |
+|------|----------|---------|
+| 2026-05-28 | `docs/product/progress-review-2026-05-28.md` | Full progress and productization review after TUI integration and governance hardening |
 
 ## Maintenance Rules
 

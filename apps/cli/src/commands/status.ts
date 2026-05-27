@@ -29,11 +29,14 @@ function getGitInfo(root: string): { commitCount: number; latestCommit: string; 
   }
 }
 
-function extractCurrentMetrics(current: string): { tests?: number; testFiles?: number } {
-  const testMatch = current.match(/(\d+)\s*unit tests across\s*(\d+)\s*test file/i);
+function extractCurrentMetrics(current: string): { tests?: number; testFiles?: number; vitestTests?: number; vitestFiles?: number } {
+  const testMatch = current.match(/(\d+)\s*tests across\s*(\d+)\s*module test file/i);
+  const vitestMatch = current.match(/(\d+)\s*Vitest tests across\s*(\d+)\s*files/i);
   return {
     tests: testMatch ? parseInt(testMatch[1], 10) : undefined,
     testFiles: testMatch ? parseInt(testMatch[2], 10) : undefined,
+    vitestTests: vitestMatch ? parseInt(vitestMatch[1], 10) : undefined,
+    vitestFiles: vitestMatch ? parseInt(vitestMatch[2], 10) : undefined,
   };
 }
 
@@ -46,6 +49,8 @@ function generateStatusDoc(root: string): string {
 
   const totalTests = getTotalTests(registry);
   const totalTestFiles = getTotalTestFiles(registry);
+  const vitestTests = registry.vitest_tests ?? totalTests;
+  const vitestFiles = registry.vitest_files ?? totalTestFiles;
   const totalGoldenEvals = registry.modules.reduce((sum, m) => sum + (m.golden_evals || 0), 0);
 
   const moduleRows = registry.modules
@@ -99,7 +104,9 @@ ${totalGoldenEvals}/${totalGoldenEvals} passing. Zero stub assertions.
 
 ## Test Suite
 
-${totalTests} unit tests across ${totalTestFiles} test files. All passing.
+${vitestTests} Vitest tests across ${vitestFiles} files. All passing.
+
+Module-attributed coverage: ${totalTests} tests across ${totalTestFiles} module test files (packages shared across modules are counted per module).
 
 ## Module Registry
 
@@ -265,6 +272,8 @@ export function statusCommands(): Command {
         const currentMetrics = extractCurrentMetrics(current);
         const totalTests = getTotalTests(registry);
         const totalTestFiles = getTotalTestFiles(registry);
+        const vitestTests = registry.vitest_tests ?? totalTests;
+        const vitestFiles = registry.vitest_files ?? totalTestFiles;
 
         const checks: Array<{ name: string; passed: boolean; detail: string }> = [];
 
@@ -272,17 +281,33 @@ export function statusCommands(): Command {
         checks.push({ name: 'modules.yaml schema', passed: true, detail: registry.schema });
         checks.push({ name: 'modules.yaml modules count', passed: registry.modules.length > 0, detail: `${registry.modules.length} modules` });
 
-        // README vs current.md vs modules.yaml
+        // Vitest actual counts
+        if (currentMetrics.vitestTests !== undefined) {
+          checks.push({
+            name: 'current.md Vitest tests == modules.yaml',
+            passed: currentMetrics.vitestTests === vitestTests,
+            detail: `current.md: ${currentMetrics.vitestTests}, modules.yaml: ${vitestTests}`,
+          });
+        }
+        if (currentMetrics.vitestFiles !== undefined) {
+          checks.push({
+            name: 'current.md Vitest files == modules.yaml',
+            passed: currentMetrics.vitestFiles === vitestFiles,
+            detail: `current.md: ${currentMetrics.vitestFiles}, modules.yaml: ${vitestFiles}`,
+          });
+        }
+
+        // Module-attributed counts
         if (currentMetrics.tests !== undefined) {
           checks.push({
-            name: 'current.md tests == modules.yaml',
+            name: 'current.md module tests == modules.yaml',
             passed: currentMetrics.tests === totalTests,
             detail: `current.md: ${currentMetrics.tests}, modules.yaml: ${totalTests}`,
           });
         }
         if (currentMetrics.testFiles !== undefined) {
           checks.push({
-            name: 'current.md test files == modules.yaml',
+            name: 'current.md module test files == modules.yaml',
             passed: currentMetrics.testFiles === totalTestFiles,
             detail: `current.md: ${currentMetrics.testFiles}, modules.yaml: ${totalTestFiles}`,
           });
