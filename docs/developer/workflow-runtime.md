@@ -1,0 +1,737 @@
+---
+schema: openslack.developer_spec.v1
+status: design
+created: 2026-05-28
+parent_spec: docs/product/workflow-modules.md
+---
+
+# Workflow Runtime — Technical Design
+
+## Overview
+
+This document specifies the internal architecture of the `@openslack/workflows`
+package: the runtime engine that loads, validates, executes, checkpoints, and
+resumes OpenSlack workflow modules.
+
+## Package Structure
+
+```
+packages/workflows/
+  src/
+    index.ts                  # Public API exports
+    types.ts                  # TypeScript interfaces and type aliases
+    loader.ts                 # Workflow file loading and format detection
+    manifest.ts               # Manifest parsing, validation, hashing
+    runtime.ts                # WorkflowRuntime implementation
+    agent-shim.ts             # Agent subtask wrapper with schema validation
+    parallel-runner.ts        # Concurrent execution with budget tracking
+    pipeline-runner.ts        # Sequential execution with checkpointing
+    cache.ts                  # Cache key computation and lookup
+    run-store.ts              # Run directory management and persistence
+    resume.ts                 # Resume logic with cached result replay
+    anthropic-compat.ts       # Compatibility shim for Anthropic-format workflows
+    permission-checker.ts     # Permission validation and gating
+    html-renderer.ts          # Self-contained HTML artifact generation
+    __tests__/
+      loader.test.ts
+      manifest.test.ts
+      runtime.test.ts
+      cache.test.ts
+      run-store.test.ts
+      resume.test.ts
+      permission-checker.test.ts
+      anthropic-compat.test.ts
+```
+
+## Type Definitions (`types.ts`)
+
+```typescript
+import type { JSONSchema7 } from 'json-schema'
+
+// ── Manifest ──────────────────────────────────────────────────────────────────
+
+export interface WorkflowPhase {
+  title: string
+  detail: string
+}
+
+export interface WorkflowInput {
+  type: 'string' | 'number' | 'boolean'
+  default?: unknown
+  description: string
+}
+
+export interface WorkflowPermissions {
+  github?: string[]
+  git?: string[]
+  filesystem?: string[]
+  openslack?: string[]
+}
+
+export interface WorkflowMeta {
+  name: string
+  version?: string
+  description: string
+  whenToUse?: string
+  phases: WorkflowPhase[]
+  inputs?: Record<string, WorkflowInput>
+  permissions?: WorkflowPermissions
+  sideEffects?: string[]
+  forbidden?: string[]
+  risk?: 'low' | 'medium' | 'high'
+}
+
+// ── Runtime ───────────────────────────────────────────────────────────────────
+
+export interface BudgetState {
+  tokensUsed: number
+  tokensRemaining: number | null   // null = unlimited
+  costUsd: number
+  agentCalls: number
+}
+
+export interface AgentOptions {
+  label: string
+  phase: string
+  schema?: JSONSchema7
+  isolation?: 'none' | 'worktree'
+  budget?: { tokens: number }
+}
+
+export interface ParallelOptions {
+  concurrency?: number
+}
+
+export interface PhaseCheckpoint {
+  phase: string
+  timestamp: string
+  status: 'completed' | 'failed' | 'skipped'
+  result?: unknown
+  cacheKey?: string
+}
+
+export interface RunStatus {
+  runId: string
+  workflowName: string
+  mode: ExecutionMode
+  status: 'running' | 'paused' | 'completed' | 'failed'
+  startedAt: string
+  updatedAt: string
+  currentPhase?: string
+  phases: PhaseCheckpoint[]
+  args: Record<string, unknown>
+}
+
+export type ExecutionMode = 'validate' | 'preview' | 'dry-run' | 'execute'
+
+export interface WorkflowRuntime {
+  readonly runId: string
+  readonly mode: ExecutionMode
+  readonly budget: BudgetState
+  readonly args: Record<string, unknown>
+
+  phase(name: string): void
+  log(message: string): void
+  agent<T>(prompt: string, options: AgentOptions): Promise<T>
+  parallel<T>(tasks: Array<() => Promise<T>>, options?: ParallelOptions): Promise<T[]>
+  pipeline<T, R>(items: T[], fn: (item: T, index: number) => Promise<R>): Promise<R[]>
+  workflow(name: string, args?: Record<string, unknown>): Promise<unknown>
+
+  openslack: {
+    task: {
+      createPreview(issueData: unknown): Promise<unknown>
+      createIssue(issueData: unknown): Promise<{ issueUrl: string; issueNumber: number }>
+      checkout(issueNumber: number, agentId: string): Promise<{ worktreePath: string; branchName: string }>
+      sync(issueNumber: number): Promise<{ pushed: boolean; prUrl?: string }>
+    }
+    prms: {
+      classify(paths: string[]): Promise<{ green: string[]; yellow: string[]; red: string[] }>
+      doctor(prNumber: number): Promise<{ status: string; checks: Record<string, boolean> }>
+      queue(): Promise<Array<{ prNumber: number; title: string; status: string }>>
+    }
+    collaboration: {
+      recordEvent(event: unknown): Promise<void>
+      createHandoff(details: unknown): Promise<unknown>
+      recordDecision(details: unknown): Promise<unknown>
+    }
+    governance: {
+      audit(action: string, details?: unknown): Promise<void>
+    }
+  }
+}
+
+// ── Results ───────────────────────────────────────────────────────────────────
+
+export interface PreviewResult {
+  preview: true
+  findings?: unknown[]
+  triaged?: unknown[]
+  [key: string]: unknown
+}
+
+export interface RunResult {
+  status: string
+  [key: string]: unknown
+}
+
+// ── Workflow Module ───────────────────────────────────────────────────────────
+
+export interface OpenSlackWorkflow {
+  meta: WorkflowMeta
+  preview?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<PreviewResult>
+  run?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<RunResult>
+}
+```
+
+## Loader (`loader.ts`)
+
+The loader discovers workflow files and detects their format.
+
+### Discovery Paths
+
+1. `.openslack/workflows/*.ts` — project-local workflows
+2. `.openslack/workflows/*.js` — project-local workflows (JS)
+3. `.claude/workflows/*.js` — Anthropic-compatible workflows (legacy path)
+4. `packages/workflows/src/builtins/` — core workflows shipped with OpenSlack
+
+### Format Detection
+
+```typescript
+type WorkflowFormat = 'openslack-native' | 'anthropic-compatible' | 'invalid'
+
+function detectFormat(module: Record<string, unknown>): WorkflowFormat {
+  const hasMeta = typeof module.meta === 'object' && module.meta !== null
+  const hasPreview = typeof module.preview === 'function'
+  const hasRun = typeof module.run === 'function'
+
+  if (hasMeta && (hasPreview || hasRun)) return 'openslack-native'
+  if (hasMeta) return 'anthropic-compatible'
+  return 'invalid'
+}
+```
+
+### Loading Flow
+
+```
+1. Resolve workflow name to file path
+2. Compute file hash (SHA-256 of file contents)
+3. Import module
+4. Detect format
+5. Parse and validate manifest
+6. If openslack-native: use directly
+7. If anthropic-compatible: wrap with anthropicCompatRunner()
+8. Return WorkflowModule with meta, preview, run, format, hash
+```
+
+## Manifest Parser (`manifest.ts`)
+
+### Validation Rules
+
+| Field | Required | Validation |
+|-------|----------|------------|
+| `name` | Yes | Non-empty string, matches `/^[a-z][a-z0-9-]*$/` |
+| `version` | No | Semver string if present |
+| `description` | Yes | Non-empty string |
+| `phases` | Yes | Array of `{ title, detail }`, at least 1 phase |
+| `permissions` | No (but required for execute mode) | Object with string array values |
+| `sideEffects` | No | Array of strings matching `*.scope.action` pattern |
+| `forbidden` | No | Array of strings, validated against hardcoded blocklist |
+| `risk` | No | One of `low`, `medium`, `high` |
+
+### Hash Computation
+
+```typescript
+function computeManifestHash(meta: WorkflowMeta): string {
+  const canonical = JSON.stringify(meta, Object.keys(meta).sort())
+  return createHash('sha256').update(canonical).digest('hex').slice(0, 16)
+}
+```
+
+Used for cache key generation and integrity checks during resume.
+
+## Runtime Engine (`runtime.ts`)
+
+### Constructor
+
+```typescript
+function createRuntime(options: {
+  runId: string
+  mode: ExecutionMode
+  manifest: WorkflowMeta
+  runStore: RunStore
+  budget?: { tokens: number; costUsd: number }
+  permissions?: WorkflowPermissions
+}): WorkflowRuntime
+```
+
+### Phase Tracking
+
+```typescript
+phase(name: string): void {
+  // 1. Validate name exists in manifest.phases
+  const phaseDef = this.manifest.phases.find(p => p.title === name)
+  if (!phaseDef) throw new Error(`Unknown phase: ${name}`)
+
+  // 2. Check sequential ordering (phases must execute in declared order)
+  const phaseIndex = this.manifest.phases.indexOf(phaseDef)
+  if (phaseIndex < this.currentPhaseIndex) {
+    throw new Error(`Phase "${name}" already completed`)
+  }
+
+  // 3. Update state
+  this.currentPhase = name
+  this.currentPhaseIndex = phaseIndex
+
+  // 4. Emit progress event
+  this.emit('phase', { phase: name, index: phaseIndex, total: this.manifest.phases.length })
+
+  // 5. Checkpoint
+  this.runStore.savePhaseStatus(this.runId, name, 'running')
+}
+```
+
+### Agent Shim
+
+```typescript
+async agent<T>(prompt: string, options: AgentOptions): Promise<T> {
+  // 1. Permission check
+  this.permissionChecker.assertAllowed('agent', options)
+
+  // 2. Budget check
+  if (this.budget.tokensRemaining !== null && this.budget.tokensRemaining <= 0) {
+    throw new Error('Budget exhausted')
+  }
+
+  // 3. Mode-specific behavior
+  if (this.mode === 'validate') {
+    throw new Error('Agent calls not allowed in validate mode')
+  }
+
+  // 4. Check cache
+  const cacheKey = computeCacheKey(this.manifestHash, options.phase, options.label, prompt, options)
+  const cached = await this.runStore.loadAgentResult(this.runId, cacheKey)
+  if (cached) return cached as T
+
+  // 5. Launch agent subtask
+  const result = await this.launchAgentSubtask<T>(prompt, options)
+
+  // 6. Schema validation
+  if (options.schema) {
+    const valid = validateSchema(result, options.schema)
+    if (!valid) throw new Error(`Agent output failed schema validation for ${options.label}`)
+  }
+
+  // 7. Cache result
+  await this.runStore.saveAgentResult(this.runId, cacheKey, result)
+
+  // 8. Update budget
+  this.budget.tokensUsed += result.tokenUsage || 0
+  this.budget.agentCalls += 1
+
+  return result
+}
+```
+
+### Parallel Runner
+
+```typescript
+async parallel<T>(
+  tasks: Array<() => Promise<T>>,
+  options?: ParallelOptions,
+): Promise<T[]> {
+  const concurrency = options?.concurrency || Infinity
+
+  // Budget partition: divide remaining budget across tasks
+  const perTaskBudget = this.budget.tokensRemaining !== null
+    ? Math.floor(this.budget.tokensRemaining / tasks.length)
+    : null
+
+  // Execute with concurrency limit
+  const results: T[] = []
+  const executing: Promise<void>[] = []
+
+  for (const [index, task] of tasks.entries()) {
+    const promise = task().then(result => {
+      results[index] = result
+    })
+
+    executing.push(promise)
+
+    if (executing.length >= concurrency) {
+      await Promise.race(executing)
+      // Remove completed promises
+      executing.splice(0, executing.length, ...executing.filter(p => p !== /* settled */))
+    }
+  }
+
+  await Promise.all(executing)
+  return results
+}
+```
+
+### Pipeline Runner
+
+```typescript
+async pipeline<T, R>(
+  items: T[],
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length)
+
+  for (let i = 0; i < items.length; i++) {
+    // Check for cached result (resume support)
+    const cachedKey = computeItemCacheKey(this.runId, this.currentPhase, i)
+    const cached = await this.runStore.loadPipelineItem(this.runId, cachedKey)
+    if (cached) {
+      results[i] = cached as R
+      continue
+    }
+
+    // Execute item
+    results[i] = await fn(items[i], i)
+
+    // Checkpoint after each item
+    await this.runStore.savePipelineItem(this.runId, cachedKey, results[i])
+  }
+
+  return results
+}
+```
+
+## Cache System (`cache.ts`)
+
+### Cache Key Computation
+
+```typescript
+function computeCacheKey(
+  manifestHash: string,
+  phase: string,
+  label: string,
+  prompt: string,
+  opts: AgentOptions,
+): string {
+  const parts = [
+    manifestHash,
+    phase,
+    label,
+    hashString(prompt),
+    hashString(JSON.stringify(opts)),
+  ]
+  return parts.join(':')
+}
+```
+
+### Cache Storage
+
+Cache entries are stored as JSON files in the run directory:
+
+```
+runs/<runId>/agents/<cacheKey>.json
+```
+
+Each entry contains:
+
+```typescript
+interface CacheEntry {
+  key: string
+  timestamp: string
+  result: unknown
+  tokenUsage?: number
+  schemaVersion: string  // For migration support
+}
+```
+
+## Run Store (`run-store.ts`)
+
+### Directory Structure
+
+```
+.openslack.local/workflows/
+  runs/
+    <runId>/
+      meta.json            # Run metadata
+      status.json          # Current status, phase index
+      phases/
+        <phaseName>.json   # Phase result and checkpoint
+      agents/
+        <cacheKey>.json    # Agent call result cache
+      pipeline/
+        <phaseName>/
+          <index>.json     # Pipeline item checkpoint
+      log.jsonl            # Structured log entries
+      output.json          # Final workflow output (on completion)
+```
+
+### Status Transitions
+
+```
+running → paused    (interrupted, resumable)
+running → completed (successful finish)
+running → failed    (unrecoverable error)
+paused  → running   (resumed)
+```
+
+### Log Format
+
+Each log entry is a JSONL line:
+
+```json
+{"ts":"2026-05-28T12:34:56.789Z","phase":"Scan","message":"Raw findings: 15","runId":"run-abc123"}
+```
+
+## Resume Logic (`resume.ts`)
+
+### Resume Flow
+
+```
+1. Load status.json from run directory
+2. Verify status is "paused" (not "completed" or "failed")
+3. Verify manifest hash matches (workflow source unchanged)
+4. Load cached phase results up to current phase
+5. Create new runtime with same runId
+6. Inject cached results into runtime
+7. Resume from next phase
+8. For pipeline items: skip completed items via cache lookup
+```
+
+### Manifest Hash Mismatch
+
+If the workflow source file has changed since the run was paused:
+
+```
+1. Warn the user: "Workflow source has changed since run was paused"
+2. Offer options:
+   a. Re-validate the new manifest
+   b. Start a fresh run
+   c. Force resume with old manifest (not recommended)
+```
+
+## Anthropic Compatibility Shim (`anthropic-compat.ts`)
+
+### Ambient Global Injection
+
+```typescript
+function anthropicCompatRunner(
+  moduleBody: string,
+  runtime: WorkflowRuntime,
+): Promise<unknown> {
+  // Create sandboxed scope with ambient globals
+  const sandbox = {
+    args: runtime.args,
+    phase: (name: string) => runtime.phase(name),
+    log: (msg: string) => runtime.log(msg),
+    parallel: <T>(tasks: Array<() => Promise<T>>) => runtime.parallel(tasks),
+    pipeline: <T, R>(items: T[], fn: (item: T, idx: number) => Promise<R>) => runtime.pipeline(items, fn),
+    agent: <T>(prompt: string, opts: unknown) => runtime.agent<T>(prompt, opts as AgentOptions),
+    budget: runtime.budget,
+    workflow: (name: string, args?: Record<string, unknown>) => runtime.workflow(name, args),
+  }
+
+  // Wrap body in async function with injected globals
+  const wrapped = new AsyncFunction(
+    ...Object.keys(sandbox),
+    moduleBody,
+  )
+
+  return wrapped(...Object.values(sandbox))
+}
+```
+
+### Limitations
+
+The compatibility shim does NOT provide:
+
+- Permission enforcement (Anthropic format has no permission declarations)
+- Preview/dry-run separation (Anthropic format has no mode separation)
+- Schema validation for `risk_zone` (must be added by the runtime)
+
+For these reasons, Anthropic-compatible workflows run at `untrusted` trust level
+by default. The operator must explicitly upgrade trust.
+
+## Permission Checker (`permission-checker.ts`)
+
+### Hardcoded Forbidden Actions
+
+```typescript
+const ALWAYS_FORBIDDEN = new Set([
+  'github.pr.approve',
+  'github.pr.merge',
+  'ruleset.bypass',
+  'secrets.read',
+  'kernel.constitution.write',
+])
+```
+
+### Permission Resolution
+
+```typescript
+function resolvePermissions(
+  declared: WorkflowPermissions,
+  granted: WorkflowPermissions,
+  trustLevel: 'untrusted' | 'trusted' | 'core',
+): Set<string> {
+  if (trustLevel === 'untrusted') {
+    // Untrusted workflows get read-only access only
+    return new Set(['github.issues.read', 'github.prs.read'])
+  }
+
+  // Intersect declared with granted
+  const allowed = new Set<string>()
+  for (const category of Object.keys(declared)) {
+    const declaredActions = declared[category] || []
+    const grantedActions = granted[category] || []
+    for (const action of declaredActions) {
+      const key = `${category}.${action}`
+      if (!ALWAYS_FORBIDDEN.has(key) && grantedActions.includes(action)) {
+        allowed.add(key)
+      }
+    }
+  }
+  return allowed
+}
+```
+
+### Nested Workflow Permission Intersection
+
+```typescript
+function intersectPermissions(
+  parent: Set<string>,
+  child: Set<string>,
+): Set<string> {
+  const result = new Set<string>()
+  for (const perm of child) {
+    if (parent.has(perm) && !ALWAYS_FORBIDDEN.has(perm)) {
+      result.add(perm)
+    }
+  }
+  return result
+}
+```
+
+## HTML Renderer (`html-renderer.ts`)
+
+### Generation
+
+```typescript
+function renderHtmlArtifact(run: RunStatus, options: {
+  findings?: unknown[]
+  triaged?: unknown[]
+  issues?: Array<{ url: string; title: string }>
+  validation?: Record<string, 'pass' | 'fail'>
+  prUrl?: string
+  auditLog?: Array<{ ts: string; phase: string; message: string }>
+}): string
+```
+
+### CSP Policy
+
+```html
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+```
+
+### Structure
+
+- Summary header with workflow name, run ID, status, duration
+- Phase timeline with expand/collapse
+- Findings table with sort by severity
+- Triage section with priority badges
+- Issues section with links
+- Validation results table
+- PR section with link and metadata
+- Audit log with timestamps
+- Permissions summary
+
+All CSS and JS are inline. No external resources. No network requests.
+
+## Integration Points
+
+### Operator Module
+
+The Operator module provides the CLI commands that interface with the runtime:
+
+```typescript
+// In apps/cli/src/commands/workflow.ts
+export function registerWorkflowCommands(program: Command): void {
+  program.command('workflow list').action(listWorkflows)
+  program.command('workflow show <name>').action(showWorkflow)
+  program.command('workflow validate <name>').action(validateWorkflow)
+  program.command('workflow preview <name>').action(previewWorkflow)
+  program.command('workflow dry-run <name>').action(dryRunWorkflow)
+  program.command('workflow run <name>').action(runWorkflow)
+  program.command('workflow resume <runId>').action(resumeWorkflow)
+  program.command('workflow inspect <runId>').action(inspectWorkflow)
+  program.command('workflow cache clear').action(clearCache)
+}
+```
+
+### Runtime Package
+
+The `@openslack/runtime` package provides worktree isolation:
+
+```typescript
+import { createWorktree, checkDirty, cleanupWorktree } from '@openslack/runtime'
+```
+
+### Workspace Package
+
+The `@openslack/workspace` package provides module registry for scope validation:
+
+```typescript
+import { readModules, getModuleById } from '@openslack/workspace'
+```
+
+## Testing Strategy
+
+### Unit Tests
+
+- Loader: format detection, path resolution, hash computation
+- Manifest: validation rules, required fields, invalid inputs
+- Runtime: phase tracking, budget enforcement, mode restrictions
+- Cache: key computation, invalidation, hit/miss
+- Run store: directory creation, status transitions, log persistence
+- Resume: cached replay, manifest mismatch, interrupted pipeline
+- Permission checker: forbidden actions, intersection, trust levels
+- Anthropic compat: global injection, mode mapping
+
+### Integration Tests
+
+- End-to-end preview with a test workflow (no side effects)
+- End-to-end dry-run with simulated side effects
+- Resume after simulated interruption
+- Nested workflow permission intersection
+- HTML artifact generation and CSP validation
+
+### Test Workflow
+
+A minimal test workflow at `packages/workflows/src/__fixtures__/test-scan.ts`:
+
+```typescript
+export const meta: WorkflowMeta = {
+  name: 'test-scan',
+  description: 'Minimal test workflow for integration tests',
+  phases: [
+    { title: 'Scan', detail: 'Single dimension scan' },
+    { title: 'Verify', detail: 'Single verifier' },
+  ],
+  permissions: { github: ['issues:read'] },
+  risk: 'low',
+}
+
+export async function preview(ctx: WorkflowRuntime, args: Record<string, unknown>) {
+  ctx.phase('Scan')
+  ctx.log('Test scan starting')
+  const result = await ctx.agent('Scan for test findings', {
+    label: 'scan:test',
+    phase: 'Scan',
+    schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
+  })
+  return { preview: true, result }
+}
+
+export async function run(ctx: WorkflowRuntime, args: Record<string, unknown>) {
+  const previewResult = await preview(ctx, args)
+  ctx.phase('Verify')
+  return { status: 'complete', ...previewResult }
+}
+```
