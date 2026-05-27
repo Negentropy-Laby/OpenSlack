@@ -48,3 +48,5 @@ export { renderRoomTui } from './views/render-room.js';
 export type { RoomViewModel } from './view-models/room.js';
 export { renderDoctorTui } from './views/render-doctor.js';
 export type { DoctorViewModel } from './view-models/doctor.js';
+export { renderSetupTui } from './views/render-setup.js';
+export type { SetupViewModel, SetupReadiness } from './view-models/setup.js';
