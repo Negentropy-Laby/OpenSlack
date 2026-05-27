@@ -60,7 +60,7 @@ export function mapSetupToViewModel(report: SetupReport): SetupViewModel {
     .map(mapFinding)
 
   const allOk = fixable.length === 0 && needsAction.length === 0
-  const readiness: SetupReadiness = allOk ? 'ready' : fixable.length > 0 ? 'almost ready' : 'needs setup help'
+  const readiness: SetupReadiness = allOk ? 'ready' : needsAction.length > 0 ? 'needs setup help' : 'almost ready'
 
   return {
     readiness,

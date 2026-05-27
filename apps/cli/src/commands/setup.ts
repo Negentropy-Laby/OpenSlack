@@ -348,6 +348,17 @@ export function setupCommands(): Command {
       );
       const ok = report.findings.filter((f) => f.status === 'ok');
       const allOk = fixable.length === 0 && unfixable.length === 0;
+        return;
+      }
+      const isPlain = options.format === 'plain';
+
+      // Classify readiness
+      const fixable = report.findings.filter((f) => f.status === 'fixable_by_command');
+      const unfixable = report.findings.filter(
+        (f) => f.status === 'requires_github_admin' || f.status === 'requires_human_approval',
+      );
+      const ok = report.findings.filter((f) => f.status === 'ok');
+      const allOk = fixable.length === 0 && unfixable.length === 0;
 
       const readiness = allOk ? 'ready' : fixable.length > 0 ? 'almost ready' : 'needs setup help';
 

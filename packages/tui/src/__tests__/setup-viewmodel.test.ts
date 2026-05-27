@@ -54,6 +54,16 @@ describe('mapSetupToViewModel', () => {
     expect(model.needsAction[0].status).toBe('FAIL')
   })
 
+  it('classifies mixed fixable+unfixable as needs setup help', () => {
+    const model = mapSetupToViewModel(makeReport([
+      makeFinding({ id: 'github-labels', status: 'fixable_by_command', title: 'Labels', detail: 'Can repair' }),
+      makeFinding({ id: 'branch-protection', status: 'requires_github_admin', title: 'Branch protection', detail: 'Manual check' }),
+    ]))
+    expect(model.readiness).toBe('needs setup help')
+    expect(model.fixable).toHaveLength(1)
+    expect(model.needsAction).toHaveLength(1)
+  })
+
   it('maps requires_human_approval to FAIL', () => {
     const model = mapSetupToViewModel(makeReport([
       makeFinding({ id: 'codeowners', status: 'requires_human_approval', title: 'CODEOWNERS', detail: 'Missing' }),

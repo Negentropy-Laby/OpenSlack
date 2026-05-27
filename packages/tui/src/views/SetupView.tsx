@@ -34,7 +34,7 @@ export default function SetupView({ model }: SetupViewProps): React.JSX.Element 
     Box,
     { flexDirection: 'column', paddingX: 1 },
     // Header
-    React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, 'OpenSlack Interactive Setup'),
+    React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, 'OpenSlack Setup Report'),
     React.createElement(Divider, { length: 40 }),
 
     // Readiness

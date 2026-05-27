@@ -52,7 +52,7 @@ describe('SetupView', () => {
 
   it('renders header with title', async () => {
     const output = await renderView(makeModel())
-    expect(output).toContain('OpenSlack Interactive Setup')
+    expect(output).toContain('OpenSlack Setup Report')
   })
 
   it('renders readiness status', async () => {
