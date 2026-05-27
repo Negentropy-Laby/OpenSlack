@@ -23,7 +23,7 @@ supersedes:
 | PR Review & Merge Steward | 1.14 | ACTIVE | Phase 2C chat report and action confirmation active. Supports status/review/recommend/doctor/queue/merge/watch, review/doctor comments, governance audit, operational decision summaries, deadlock detection, Red Zone author-risk preflight, and chat-friendly PR summaries with confirm-merge flow. |
 | Collaboration Layer | 2D/2E | ACTIVE | Full 2D/2E Collaboration Layer active with typed workflow template preview/execute and dashboard with filters (--owner, --module, --risk, --blocker, --type). Event model, activity feed, digest, handoff, decision, and room views with agent display name resolution. Authz-gated chat cards for handoffs, decisions, tasks, workflows, and plans. Agent registry v1 to v2 migration command. |
 
-## Packages (10 active)
+## Packages (11 active)
 
 - @openslack/kernel
 - @openslack/workspace
@@ -35,6 +35,7 @@ supersedes:
 - @openslack/chat-gateway
 - @openslack/pr
 - @openslack/collaboration
+- @openslack/tui
 
 ## CLI Commands
 
@@ -63,7 +64,7 @@ supersedes:
 
 ## Test Suite
 
-857 unit tests across 99 test files. All passing.
+775 unit tests across 95 test files. All passing.
 
 ## Module Registry
 

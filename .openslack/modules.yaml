@@ -80,3 +80,18 @@ modules:
     tests: 103
     test_files: 10
     notes: Full 2D/2E Collaboration Layer active with typed workflow template preview/execute and dashboard with filters (--owner, --module, --risk, --blocker, --type). Event model, activity feed, digest, handoff, decision, and room views with agent display name resolution. Authz-gated chat cards for handoffs, decisions, tasks, workflows, and plans. Agent registry v1 to v2 migration command.
+
+  - id: tui
+    name: Terminal UI
+    status: active
+    phase: "TUI"
+    cli:
+      - openslack collaboration dashboard --format tui
+      - openslack collaboration room show <id> --format tui
+      - openslack pr doctor <n> --format tui
+      - openslack setup interactive --format tui
+    packages:
+      - "@openslack/tui"
+    tests: 106
+    test_files: 18
+    notes: Ink-based TUI engine with 10 design-system components, terminal capability detection, escape sequence sanitization, and four interactive views (dashboard, room, doctor, setup). Lazy-imported by CLI with try/catch fallback.
