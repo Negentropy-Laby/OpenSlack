@@ -66,6 +66,22 @@ describe('categorizeStatus', () => {
     expect(categorizeStatus('blocker')).toBe('blocked')
   })
 
+  it('maps NEEDS_HUMAN_APPROVAL -> blocked', () => {
+    expect(categorizeStatus('NEEDS_HUMAN_APPROVAL')).toBe('blocked')
+  })
+
+  it('maps NEEDS_CODEOWNER_APPROVAL -> blocked', () => {
+    expect(categorizeStatus('NEEDS_CODEOWNER_APPROVAL')).toBe('blocked')
+  })
+
+  it('maps NEEDS_CHANGES -> blocked', () => {
+    expect(categorizeStatus('NEEDS_CHANGES')).toBe('blocked')
+  })
+
+  it('maps BOT_APPROVAL_IGNORED -> blocked', () => {
+    expect(categorizeStatus('BOT_APPROVAL_IGNORED')).toBe('blocked')
+  })
+
   // info category
   it('maps informational -> info', () => {
     expect(categorizeStatus('informational')).toBe('info')
@@ -77,6 +93,10 @@ describe('categorizeStatus', () => {
 
   it('maps CLASSIFIED -> info', () => {
     expect(categorizeStatus('CLASSIFIED')).toBe('info')
+  })
+
+  it('maps CHECKS_PENDING -> info', () => {
+    expect(categorizeStatus('CHECKS_PENDING')).toBe('info')
   })
 
   it('maps unknown_status -> info (default)', () => {

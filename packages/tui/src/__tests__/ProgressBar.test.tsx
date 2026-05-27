@@ -50,4 +50,10 @@ describe('ProgressBar render', () => {
     const output = await renderBar(React.createElement(ProgressBar, { value: 150, max: 100, width: 10 }))
     expect(output).toContain('100%')
   })
+
+  it('handles max=0 without NaN', async () => {
+    const output = await renderBar(React.createElement(ProgressBar, { value: 0, max: 0, width: 10 }))
+    expect(output).toContain('0%')
+    expect(output).not.toContain('NaN')
+  })
 })

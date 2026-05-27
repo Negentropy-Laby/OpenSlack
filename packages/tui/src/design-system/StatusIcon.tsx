@@ -32,12 +32,17 @@ const STATUS_MAP: Record<string, StatusCategory> = {
   BLOCKED_BY_CONFLICTS: 'blocked',
   BLOCKED_BY_REVIEWS: 'blocked',
   BLOCKED_BY_CHECKS: 'blocked',
+  NEEDS_HUMAN_APPROVAL: 'blocked',
+  NEEDS_CODEOWNER_APPROVAL: 'blocked',
+  NEEDS_CHANGES: 'blocked',
+  BOT_APPROVAL_IGNORED: 'blocked',
 
   informational: 'info',
   superseded: 'info',
   DISCOVERED: 'info',
   CLASSIFIED: 'info',
   PENDING: 'info',
+  CHECKS_PENDING: 'info',
   open: 'info',
 }
 

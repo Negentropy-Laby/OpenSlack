@@ -15,9 +15,10 @@ export default function ProgressBar({
   width = 20,
   label,
 }: ProgressBarProps): React.JSX.Element {
-  const clamped = Math.max(0, Math.min(value, max))
-  const pct = Math.round((clamped / max) * 100)
-  const filled = Math.round((clamped / max) * width)
+  const safeMax = max || 100
+  const clamped = Math.max(0, Math.min(value, safeMax))
+  const pct = Math.round((clamped / safeMax) * 100)
+  const filled = Math.round((clamped / safeMax) * width)
   const empty = width - filled
 
   const fill = '█'.repeat(filled)
