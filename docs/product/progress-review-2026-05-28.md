@@ -120,10 +120,10 @@ Four views shipped:
 
 | Command | View | PR |
 |---------|------|----|
-| `openslack collaboration dashboard --format tui` | DashboardView | #94 |
-| `openslack collaboration room show <ref> --format tui` | RoomView | #95 |
-| `openslack pr doctor <n> --format tui` | DoctorView | #96 |
-| `openslack setup interactive --format tui` | SetupView | #97 |
+| `openslack collaboration dashboard --format tui` | DashboardView | #96 |
+| `openslack collaboration room show <ref> --format tui` | RoomView | #97 |
+| `openslack pr doctor <n> --format tui` | DoctorView | #98 |
+| `openslack setup interactive --format tui` | SetupView | #99 |
 
 Design system components: ThemeProvider, ThemedBox, ThemedText, StatusIcon,
 ProgressBar, Divider, ListItem, Pane, KeyboardShortcutHint.
@@ -217,7 +217,10 @@ All external text entering TUI is sanitized via `sanitizeTerminalText()` in
 
 ## TUI User Workflows
 
-### Current User Main Path
+### Target Workflow (future navigation closure)
+
+The current TUI views are independent render-and-exit views. The target
+workflow is to connect them into a navigable terminal workspace:
 
 ```
 Launch
@@ -229,12 +232,16 @@ Launch
   → Activity / Digest update
 ```
 
+This navigation flow does not exist yet. Each view is currently invoked
+separately via its own `--format tui` command.
+
 ### Dashboard View
 
 Commands: `openslack collaboration dashboard --format tui`
 
-Data sources: collaboration dashboard projection, activity feed, digest, PRMS
-queue, GitHub task loop metrics.
+Data sources: collaboration dashboard projection derived from events, handoffs,
+and decisions. Task/PR counts are derived from collaboration events, not from
+direct PRMS queue or GitHub metrics queries.
 
 Sections rendered:
 

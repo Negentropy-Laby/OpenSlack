@@ -46,10 +46,10 @@ default.
 
 | Command | TUI view | PR |
 |---------|----------|----|
-| `openslack collaboration dashboard --format tui` | DashboardView | #94 |
-| `openslack collaboration room show <ref> --format tui` | RoomView | #95 |
-| `openslack pr doctor <n> --format tui` | DoctorView | #96 |
-| `openslack setup interactive --format tui` | SetupView | #97 |
+| `openslack collaboration dashboard --format tui` | DashboardView | #96 |
+| `openslack collaboration room show <ref> --format tui` | RoomView | #97 |
+| `openslack pr doctor <n> --format tui` | DoctorView | #98 |
+| `openslack setup interactive --format tui` | SetupView | #99 |
 
 ## Module Registration
 
@@ -58,8 +58,8 @@ not as a new Module 06. It is a presentation-layer package, not a product module
 
 ## v1 Scope
 
-- Render-and-exit or bounded interactive views
-- Keyboard: `q`/`Esc` to exit, arrow keys to scroll within views
+- Render-and-exit views; `q`/`Esc` to exit
+- Scrolling and item selection are future enhancements
 - No mouse interaction, no alternate screen mode, no OSC clipboard, no live
   refresh
 
