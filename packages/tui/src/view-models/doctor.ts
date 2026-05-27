@@ -27,9 +27,7 @@ export function mapDoctorToViewModel(
   )
   const pending = report.checks.filter(c => c.status !== 'completed')
 
-  const validApprovals = report.reviews.filter(
-    r => r.state === 'APPROVED' && r.user !== report.author,
-  )
+  const validApprovalCount = report.humanApprovals.length
 
   const gates: DoctorViewModel['gates'] = [
     {
@@ -58,8 +56,8 @@ export function mapDoctorToViewModel(
     },
     {
       name: 'Approvals',
-      status: validApprovals.length === 0 && report.decision !== 'READY_TO_MERGE' ? 'FAIL' : 'PASS',
-      detail: `${validApprovals.length} valid approval(s)`,
+      status: validApprovalCount === 0 && report.decision !== 'READY_TO_MERGE' ? 'FAIL' : 'PASS',
+      detail: `${validApprovalCount} valid approval(s)`,
     },
     {
       name: 'Risk',
@@ -82,13 +80,17 @@ export function mapDoctorToViewModel(
     gates,
     checks: report.checks.map(c => ({
       name: sanitizeTerminalText(c.name),
-      status: c.conclusion === 'success' ? 'PASS' : c.conclusion === null || c.status !== 'completed' ? 'WARN' : 'FAIL',
+      status: c.conclusion === 'success' || c.conclusion === 'neutral' || c.conclusion === 'skipped'
+        ? 'PASS'
+        : c.conclusion === null || c.status !== 'completed'
+          ? 'WARN'
+          : 'FAIL',
       conclusion: c.conclusion ?? sanitizeTerminalText(c.status),
     })),
     reviews: report.reviews.map(r => ({
       user: sanitizeTerminalText(r.user),
       state: sanitizeTerminalText(r.state),
-      valid: r.state === 'APPROVED' && r.user !== report.author,
+      valid: report.humanApprovals.some(h => h.user === r.user),
     })),
     evidence: evidence.map(sanitizeTerminalText),
   }

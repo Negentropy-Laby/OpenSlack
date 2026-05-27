@@ -52,6 +52,7 @@ describe('mapDoctorToViewModel', () => {
         { name: 'Lint', status: 'in_progress', conclusion: null },
       ],
       reviews: [],
+      humanApprovals: [],
       decision: 'BLOCKED_DRAFT',
     }))
     const gateNames = model.gates.map(g => g.name)
@@ -85,17 +86,33 @@ describe('mapDoctorToViewModel', () => {
     expect(model.checks[2].status).toBe('WARN')
   })
 
-  it('maps reviews with valid flag', () => {
+  it('treats neutral and skipped checks as PASS', () => {
+    const model = mapDoctorToViewModel(makeReport({
+      checks: [
+        { name: 'CI', status: 'completed', conclusion: 'success' },
+        { name: 'Optional', status: 'completed', conclusion: 'neutral' },
+        { name: 'Skipped', status: 'completed', conclusion: 'skipped' },
+      ],
+    }))
+    expect(model.checks[0].status).toBe('PASS')
+    expect(model.checks[1].status).toBe('PASS')
+    expect(model.checks[2].status).toBe('PASS')
+  })
+
+  it('maps reviews using PRMS-filtered humanApprovals', () => {
     const model = mapDoctorToViewModel(makeReport({
       reviews: [
         { user: 'bob', state: 'APPROVED' },
         { user: 'alice', state: 'APPROVED' },
+        { user: 'bot-app', state: 'APPROVED' },
         { user: 'charlie', state: 'CHANGES_REQUESTED' },
       ],
+      humanApprovals: [{ user: 'bob' }],
     }))
-    expect(model.reviews[0].valid).toBe(true)  // bob, not author
-    expect(model.reviews[1].valid).toBe(false) // alice, is author
-    expect(model.reviews[2].valid).toBe(false) // CHANGES_REQUESTED
+    expect(model.reviews[0].valid).toBe(true)   // bob in humanApprovals
+    expect(model.reviews[1].valid).toBe(false)  // alice not in humanApprovals (is author)
+    expect(model.reviews[2].valid).toBe(false)  // bot-app not in humanApprovals
+    expect(model.reviews[3].valid).toBe(false)  // charlie not in humanApprovals
   })
 
   it('passes evidence through sanitization', () => {
