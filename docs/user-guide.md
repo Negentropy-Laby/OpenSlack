@@ -206,7 +206,7 @@ approval on stale PR checks.
 | `openslack setup github` | Read-only setup report for GitHub auth, labels, CODEOWNERS, rulesets, and local prerequisites |
 | `openslack setup github --repair-labels` | Preview required OpenSlack label repair |
 | `openslack setup github --repair-labels --apply` | Apply required OpenSlack label repair |
-| `openslack setup interactive --format tui` | Interactive setup wizard with readiness classification |
+| `openslack setup interactive --format tui` | Read-only setup report TUI with readiness classification |
 
 ## Workspace
 
