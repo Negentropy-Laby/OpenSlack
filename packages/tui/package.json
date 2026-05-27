@@ -34,7 +34,9 @@
     "type-fest": "^5.6.0",
     "usehooks-ts": "^3.1.0",
     "wrap-ansi": "^10.0.0",
-    "@openslack/collaboration": "workspace:*"
+    "@openslack/collaboration": "workspace:*",
+    "@openslack/pr": "workspace:*",
+    "@openslack/runtime": "workspace:*"
   },
   "devDependencies": {
     "@types/lodash-es": "^4.17.12",
