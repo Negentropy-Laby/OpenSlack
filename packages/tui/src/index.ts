@@ -34,3 +34,9 @@ export { default as Pane } from './design-system/Pane.js';
 export type { PaneProps } from './design-system/Pane.js';
 export { default as KeyboardShortcutHint } from './design-system/KeyboardShortcutHint.js';
 export type { KeyboardShortcutHintProps } from './design-system/KeyboardShortcutHint.js';
+
+// Infrastructure
+export { isTuiSupported } from './capabilities.js';
+export { sanitizeTerminalText } from './sanitize.js';
+export { renderTui } from './render.js';
+export type { RenderTuiOptions } from './render.js';
