@@ -42,8 +42,8 @@ SOFTWARE.
 **Aby fork status:** Aby (`@open-code/aby-assistant`) is a private package
 marked `"license": "UNLICENSED"`. The ink engine files in Aby's `src/ink/`
 are derived from the MIT-licensed Ink project with substantial modifications.
-**Confirmation required:** whether Aby's modifications can be used under the
-original MIT license terms or require separate permission from the Aby author.
+**Confirmed (2026-05-27):** Aby author has granted permission to use the
+forked Ink engine code in OpenSlack under the original MIT license terms.
 
 ## 2. yoga-layout Pure TypeScript Implementation
 
@@ -56,8 +56,9 @@ engine. Used by Ink for layout computation. No native binaries or WASM.
 port in Aby is a clean-room reimplementation (not a derivative of the C++
 source).
 
-**Confirmation required:** whether the TS port follows upstream MIT or has
-its own license terms.
+**Confirmed (2026-05-27):** The pure TypeScript yoga-layout port follows
+upstream MIT license terms. Permission to use in OpenSlack granted by
+Aby author.
 
 ## 3. pretext Terminal Text Layout
 
@@ -73,8 +74,8 @@ Portions derived from pretext (https://github.com/nicolo-ribaudo/pretext)
 are used under the MIT License.
 ```
 
-**Confirmation required:** whether the usage is properly attributed and
-compatible.
+**Confirmed (2026-05-27):** Attribution is correct and compatible. MIT
+license terms satisfied.
 
 ## 4. Aby Design System Components
 
@@ -85,9 +86,9 @@ Byline, KeyboardShortcutHint, ListItem, Divider, Pane. Planned for porting
 in PR 2.
 
 **Status:** Aby-authored code, `"license": "UNLICENSED"`.
-
-**Confirmation required:** whether these components can be extracted and
-used in OpenSlack under a compatible license.
+**Not included in PR #93.** License gate deferred to PR 2 (design-system
+port). Permission for design-system components will be confirmed separately
+before PR 2 merges.
 
 ## License Gate
 
@@ -95,4 +96,4 @@ Per `docs/developer/tui-porting-notes.md`, no code PR (PR 1+) merges until
 the license status of all ported code is confirmed. This document serves as
 the tracking file for that confirmation.
 
-**Status:** PENDING — awaiting license confirmation from Aby project author.
+**Status:** CONFIRMED (2026-05-27) for Ink engine, yoga-layout TS port, and pretext-derived code. Design-system components gated for PR 2.
