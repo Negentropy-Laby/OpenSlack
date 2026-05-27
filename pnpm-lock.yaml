@@ -184,6 +184,9 @@ importers:
       '@openslack/pr':
         specifier: workspace:*
         version: link:../pr
+      '@openslack/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       auto-bind:
         specifier: ^5.0.1
         version: 5.0.1
