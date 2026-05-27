@@ -49,7 +49,7 @@ See [Advanced Setup](#advanced-setup) for development mode, production builds, a
 
 Mutation-oriented commands default to preview or require explicit confirmation flags where possible. Chat confirmations are never GitHub approvals, and PR merges still require PRMS and GitHub governance gates.
 
-OpenSlack-authored and delegated agent work should be submitted as bot/agent-authored PRs. Human GitHub identities are reserved for review and approval, which prevents self-review and sole-author CODEOWNER deadlocks without allowing bot approval.
+OpenSlack-authored and delegated agent work must be submitted as PRs opened by the configured bot/agent GitHub identity. Human GitHub identities are reserved for review and approval; a bot-authored commit inside a human-opened PR is still a human-authored PR for governance. See [`AGENTS.md`](AGENTS.md#bot-authored-pr-requirement) and [`docs/security/human-approval.md`](docs/security/human-approval.md#pr-author-identity).
 
 ## Architecture
 

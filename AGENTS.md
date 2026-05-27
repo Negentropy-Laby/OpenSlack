@@ -237,7 +237,8 @@ All non-trivial changes follow this path:
 6. Open a PR under the configured bot/agent GitHub author identity for OpenSlack-authored or delegated agent work.
 7. Use PRMS to diagnose merge readiness.
 8. Human approval is collected and recorded when required.
-9. Merge Steward or a human merges only after gates pass.
+9. Required review conversations are resolved after the blocking findings are fixed.
+10. Merge Steward or a human merges only after all GitHub and PRMS gates pass.
 
 Recommended validation before opening or updating a PR:
 
@@ -258,6 +259,58 @@ pnpm openslack pr doctor <PR_NUMBER>
 pnpm openslack governance audit --count 20
 ```
 
+### PR Update Synchronization
+
+After every push, force-push, or bot-authored repair commit to an open PR, verify
+that GitHub has synchronized the PR head before asking for re-review or approval.
+A branch update is not enough by itself.
+
+Required checks:
+
+```bash
+git ls-remote origin refs/heads/<branch>
+gh pr view <PR_NUMBER> --json headRefOid,statusCheckRollup,reviewDecision,mergeStateStatus
+gh pr checks <PR_NUMBER>
+```
+
+The SHA from `refs/heads/<branch>` must match the PR `headRefOid`, and the
+check runs must be for that same head SHA. Do not say "ready for re-review",
+"CI passed", or "enter approval" while GitHub still shows an older PR head or
+old check runs.
+
+If the branch SHA and PR head SHA differ after a short retry window:
+
+1. Confirm the PR head repo/ref with `gh pr view <PR_NUMBER> --json headRepository,headRefName,headRefOid`.
+2. Confirm `refs/pull/<PR_NUMBER>/head` is the same commit you expect.
+3. Push a new repair/no-op commit through the correct bot-authenticated PR branch, or close and recreate the PR from the current branch head.
+4. Re-run the synchronization checks before requesting review again.
+
+### Review Thread Resolution Gate
+
+Fixing a review blocker does not automatically resolve the corresponding
+GitHub review conversation. A re-review comment that says "resolved" is useful
+evidence, but it is not the same as resolving the review thread in GitHub.
+
+Before entering final approval or merge:
+
+1. Confirm the branch SHA, PR `headRefOid`, and check runs refer to the same commit.
+2. Confirm all required checks are green on that head.
+3. Inspect unresolved review conversations.
+4. Resolve only conversations whose blocking issue is fixed or explicitly waived.
+5. Confirm the latest human approval is still valid for the current head.
+6. Confirm GitHub reports the PR as mergeable.
+7. Merge with an expected-head guard such as `gh pr merge <n> --merge --match-head-commit <sha>`.
+
+Unresolved review conversations are a merge gate, not an approval gate. Human
+approval can be valid while GitHub still blocks merge because review
+conversations remain unresolved.
+
+Agents may mechanically resolve a fixed review thread only when the original
+reviewer resolved it, an authorized human explicitly instructs the agent to
+resolve it, or repository policy grants that agent the specific resolution
+authority. Agents must not resolve an active blocker merely to make a PR
+mergeable.
+
 ---
 
 ## PR Author Identity
@@ -272,6 +325,27 @@ OpenSlack separates PR authorship from human approval.
 - PR descriptions should name the acting agent or automation path, the requesting human when applicable, risk zone, validation run, rollback plan, and whether human approval is required.
 
 This identity split prevents self-review and sole-author CODEOWNER deadlocks while preserving the rule that agents never decide approval.
+
+### Bot-authored PR Requirement
+
+Use the configured bot/agent GitHub identity to open the PR when any of these are true:
+
+- the work was produced by Codex, Claude, another OpenSlack agent, or an automation workflow;
+- the work was requested by a human but implemented by an agent or automation;
+- the PR is part of an OpenSlack self-improvement or delegated agent workflow;
+- the human who would otherwise open the PR is expected to review, approve, or act as CODEOWNER for it;
+- the PR touches Red Zone paths and a human author would create a sole-author CODEOWNER deadlock.
+
+Human-authored PRs are allowed only for genuinely human-produced work where the PR author will not be the required reviewer or sole approval authority. When in doubt, open the PR with the configured bot/agent identity and reserve the human account for review.
+
+Before opening an agent-delivered PR:
+
+1. Confirm the active GitHub author identity is the configured bot/agent account, not a human `gh` login or PAT.
+2. If using local automation, use the documented bot wrapper or an equivalent configured bot token path.
+3. Confirm the PR author will be the GitHub account that opens the PR. A bot-authored commit inside a human-opened PR is still a human-authored PR for governance.
+4. Include the acting agent or automation path, risk zone, validation, rollback plan, and human-approval requirement in the PR body.
+
+If a PR is opened under the wrong human identity, do not merge it as-is when that human is the required reviewer or approval authority. Close or abandon the PR and recreate it under the configured bot/agent identity, or obtain approval from a different independent human who is valid for the affected paths.
 
 ---
 
@@ -362,6 +436,7 @@ Allowed agent actions:
 - post comments
 - diagnose blockers
 - request changes when policy allows
+- resolve fixed review threads only with explicit reviewer/human authorization
 - relay an explicit human approval decision only through an authorized human GitHub identity
 - watch checks / approvals
 - merge only when `pr doctor` returns `READY_TO_MERGE`
@@ -371,6 +446,7 @@ Forbidden agent actions:
 - originate approval decisions
 - approve under bot/app/agent identity
 - bypass rulesets
+- resolve active review blockers without evidence and authorization
 - merge without valid human approval
 - merge Black Zone changes
 - merge author/CODEOWNER deadlocks
