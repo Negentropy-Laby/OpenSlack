@@ -1,4 +1,5 @@
 import { execFileSync, execSync } from 'node:child_process';
+import { rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 function findRepoRoot(): string {
@@ -113,7 +114,7 @@ export function cleanupWorktree(runId: string): boolean {
     return true;
   } catch {
     try {
-      execFileSync('rm', ['-rf', worktreePath], { cwd: root, stdio: 'pipe' });
+      rmSync(worktreePath, { recursive: true, force: true });
       execFileSync('git', ['worktree', 'prune'], { cwd: root, stdio: 'pipe' });
     } catch {
       // Last resort cleanup
