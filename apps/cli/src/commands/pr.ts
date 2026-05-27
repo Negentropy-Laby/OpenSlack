@@ -107,7 +107,7 @@ export function prCommands(): Command {
     .command('doctor <number>')
     .description('Run comprehensive governance diagnosis on a PR')
     .option('--comment', 'Post the doctor report as a PR comment')
-    .option('--format <format>', 'Output format: standard or plain', 'standard')
+    .option('--format <format>', 'Output format: standard, plain, or tui', 'standard')
     .action(async (number: string, options: { comment?: boolean; format: string }) => {
       const prNumber = parseInt(number, 10);
       const report = await fetchPRDetails(prNumber);
@@ -147,6 +147,16 @@ export function prCommands(): Command {
       if (options.comment) {
         await commentOnPR(prNumber, doctorOutput);
         console.log(`Doctor report posted on PR #${prNumber}`);
+      } else if (options.format === 'tui') {
+        try {
+          const { summarizePRDecision } = await import('@openslack/pr');
+          const summary = summarizePRDecision(diagnosed, codeowners);
+          const { renderDoctorTui } = await import('@openslack/tui');
+          await renderDoctorTui(diagnosed, { evidence: summary.evidence });
+        } catch (error) {
+          console.error('TUI unavailable. Falling back to standard output.');
+          console.log(doctorOutput);
+        }
       } else if (options.format === 'plain') {
         const findings: PlainFinding[] = [];
         findings.push({
