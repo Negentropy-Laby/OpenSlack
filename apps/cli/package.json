@@ -21,6 +21,7 @@
     "@openslack/operator": "workspace:*",
     "@openslack/chat-gateway": "workspace:*",
     "@openslack/collaboration": "workspace:*",
+    "@openslack/tui": "workspace:*",
     "commander": "^13.1.0",
     "yaml": "^2.7.0"
   },

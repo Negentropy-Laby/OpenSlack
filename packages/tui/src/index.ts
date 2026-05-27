@@ -40,3 +40,7 @@ export { isTuiSupported } from './capabilities.js';
 export { sanitizeTerminalText } from './sanitize.js';
 export { renderTui } from './render.js';
 export type { RenderTuiOptions } from './render.js';
+
+// Views
+export { renderDashboardTui } from './views/render-dashboard.js';
+export type { DashboardViewModel } from './view-models/dashboard.js';
