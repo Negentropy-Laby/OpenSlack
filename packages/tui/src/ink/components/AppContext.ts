@@ -15,7 +15,6 @@ const AppContext = createContext<Props>({
   exit() {},
 })
 
-// eslint-disable-next-line custom-rules/no-top-level-side-effects
 ;(AppContext as Context<Props> & { displayName?: string }).displayName =
   'InternalAppContext'
 

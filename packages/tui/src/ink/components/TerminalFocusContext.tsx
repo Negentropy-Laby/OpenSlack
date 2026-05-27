@@ -10,7 +10,6 @@ const TerminalFocusContext = createContext<TerminalFocusContextProps>({
   terminalFocusState: 'unknown'
 });
 
-// eslint-disable-next-line custom-rules/no-top-level-side-effects
 ;(TerminalFocusContext as Context<TerminalFocusContextProps> & {
   displayName?: string;
 }).displayName = 'TerminalFocusContext';

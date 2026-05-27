@@ -23,9 +23,9 @@ export function osc(..._parts: (string | number)[]): string {
   return ''
 }
 
-/** Inert: returns sequence unchanged (no multiplexer wrapping) */
-export function wrapForMultiplexer(sequence: string): string {
-  return sequence
+/** Inert: strips OSC sequences from input for safety */
+export function wrapForMultiplexer(_sequence: string): string {
+  return ''
 }
 
 // ---------------------------------------------------------------------------

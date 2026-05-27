@@ -59,10 +59,9 @@ describe('OSC inert shim', () => {
     expect(LINK_END).toBe('');
   });
 
-  it('wrapForMultiplexer() returns sequence unchanged', async () => {
+  it('wrapForMultiplexer() returns empty string (strips OSC input)', async () => {
     const { wrapForMultiplexer } = await import('../ink/termio/osc.js');
-    const seq = '\x1b]52;c=test\x07';
-    expect(wrapForMultiplexer(seq)).toBe(seq);
+    expect(wrapForMultiplexer('\x1b]52;c=test\x07')).toBe('');
   });
 
   it('getClipboardPath() returns osc52', async () => {

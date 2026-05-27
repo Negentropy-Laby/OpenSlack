@@ -1513,7 +1513,6 @@ export default class Ink {
     // We unconditionally send all disable sequences because terminal detection
     // may not work correctly (e.g., in tmux, screen) and these are no-ops on
     // terminals that don't support them.
-    /* eslint-disable custom-rules/no-sync-fs -- process exiting; async writes would be dropped */
     if (this.options.stdout.isTTY) {
       // v1 minimal: skip cleanup for modes that were never enabled.
       // Only show cursor and clear iTerm2 progress/tab status.
@@ -1544,7 +1543,6 @@ export default class Ink {
       // Clear tab status (OSC 21337) so a stale dot doesn't linger
       if (supportsTabStatus()) writeSync(1, wrapForMultiplexer(CLEAR_TAB_STATUS));
     }
-    /* eslint-enable custom-rules/no-sync-fs */
 
     this.isUnmounted = true;
 
@@ -1698,7 +1696,6 @@ export default class Ink {
  * DISABLE_MOUSE_TRACKING has terminal round-trip latency, so events can
  * arrive for a few ms after it's written.
  */
-/* eslint-disable custom-rules/no-sync-fs -- must be sync; called from signal handler / unmount */
 export function drainStdin(stdin: NodeJS.ReadStream = process.stdin): void {
   if (!stdin.isTTY) return;
   // Drain Node's stream buffer (bytes libuv already pulled in). read()
@@ -1754,7 +1751,6 @@ export function drainStdin(stdin: NodeJS.ReadStream = process.stdin): void {
     }
   }
 }
-/* eslint-enable custom-rules/no-sync-fs */
 
 const CONSOLE_STDOUT_METHODS = ['log', 'info', 'debug', 'dir', 'dirxml', 'count', 'countReset', 'group', 'groupCollapsed', 'groupEnd', 'table', 'time', 'timeEnd', 'timeLog'] as const;
 const CONSOLE_STDERR_METHODS = ['warn', 'error', 'trace'] as const;

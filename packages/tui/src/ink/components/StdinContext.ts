@@ -43,7 +43,6 @@ const StdinContext = createContext<Props>({
   internal_querier: null,
 })
 
-// eslint-disable-next-line custom-rules/no-top-level-side-effects
 ;(StdinContext as Context<Props> & { displayName?: string }).displayName =
   'InternalStdinContext'
 
