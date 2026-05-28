@@ -1,6 +1,6 @@
 ---
 schema: openslack.developer_spec.v1
-status: design
+status: implemented
 created: 2026-05-28
 parent_spec: docs/product/workflow-modules.md
 ---

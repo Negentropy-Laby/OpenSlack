@@ -67,6 +67,7 @@ OpenSlack/
 │   ├── operator/            # Structured planner and intent router
 │   ├── chat-gateway/        # Webhook / Slack projection frontend
 │   └── collaboration/       # Activity, digest, dashboard, handoff, decision, room views
+│   └── workflows/           # Workflow engine: load, validate, execute, checkpoint, resume
 ├── apps/cli/                # User command surface and module command groups
 ├── templates/new-agent/     # 9 onboarding template files
 ├── scripts/                 # genesis-validate.sh, genesis-rollback.sh, setup-gh.sh
@@ -134,7 +135,8 @@ The projection and coordination layer. It makes tasks, PRs, handoffs, decisions,
 - **Handoff:** `openslack collaboration handoff create ...` → transfer context between humans and agents
 - **Decision:** `openslack collaboration decision record ...` → record auditable decisions
 - **Room:** `openslack collaboration room show pr:42` → reconstruct object-centered collaboration context
-- **Workflow:** `openslack collaboration workflow preview <file>` → validate typed workflow templates before execution
+- **Workflow Engine:** `openslack collaboration workflow preview <file>` → validate typed workflow templates before execution
+- **Workflow Execution:** `openslack collaboration workflow run <name>` → execute workflows with preview, dry-run, and execute modes, checkpointing, resume, trust levels, and inspect (HTML/JSON/Markdown)
 
 See: [`docs/product/collaboration-layer.md`](docs/product/collaboration-layer.md)
 
@@ -249,6 +251,8 @@ output_contract:
 | GitHub watch daemon and realtime Issue notifications | [`docs/developer/github-watch-daemon.md`](docs/developer/github-watch-daemon.md) |
 | PR review and merge governance | [`docs/product/module-04-pr-review-merge-steward.md`](docs/product/module-04-pr-review-merge-steward.md) |
 | Collaboration, handoff, decision, room, workflow views | [`docs/product/collaboration-layer.md`](docs/product/collaboration-layer.md), [`docs/developer/collaboration-events.md`](docs/developer/collaboration-events.md) |
+| Workflow engine runtime and execution model | [`docs/developer/workflow-runtime.md`](docs/developer/workflow-runtime.md) |
+| Workflow security model and trust levels | [`docs/security/workflow-execution.md`](docs/security/workflow-execution.md) |
 | Agent identity and onboarding | [`docs/developer/agent-registry-schema.md`](docs/developer/agent-registry-schema.md), [`docs/developer/new-agent-onboarding.md`](docs/developer/new-agent-onboarding.md) |
 | GitHub authentication and setup | [`docs/developer/github-automation.md`](docs/developer/github-automation.md) |
 | Guardrails and security boundaries | [`docs/security/self-evolution-guardrails.md`](docs/security/self-evolution-guardrails.md), [`docs/security/collaboration-audit.md`](docs/security/collaboration-audit.md) |
