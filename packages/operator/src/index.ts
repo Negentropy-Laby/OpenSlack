@@ -72,3 +72,5 @@ export type {
 export type { PendingPlan, PlanApprovalState } from './plan-store.js';
 export type { ConversationTurn, Conversation } from './conversation-store.js';
 export type { ContextResolution } from './context-resolver.js';
+export { getRoleGuide, listRoles, renderGuide } from './guides.js';
+export type { RoleGuide, RoleGuideSection } from './guides.js';

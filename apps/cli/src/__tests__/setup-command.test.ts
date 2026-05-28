@@ -26,6 +26,13 @@ const mockRecommendNextActions = vi.fn<(ctx?: unknown) => Array<{ priority: numb
 ]);
 const mockRenderFindingsPlain = vi.fn<(findings?: unknown) => string>(() => 'OK: Workspace root\n  /repo');
 const mockBuildSetupReport = vi.fn<(opts?: unknown) => Promise<unknown>>();
+const mockGetNextSteps = vi.fn<() => Array<{ label: string; command: string; description: string }>>(() => [
+  { label: 'Check your workspace status', command: 'pnpm openslack status', description: 'Show current workspace state, modules, and health' },
+  { label: 'Review your PRs', command: 'pnpm openslack pr list', description: 'List open pull requests and their status' },
+  { label: 'See the team dashboard', command: 'pnpm openslack collaboration dashboard', description: 'View team activity, events, and collaboration metrics' },
+  { label: 'Get a role-specific guide', command: 'pnpm openslack guide operator', description: 'Show the operator role guide with common workflows' },
+  { label: 'Run diagnostics', command: 'pnpm openslack doctor', description: 'Run a full diagnostic check on your workspace' },
+]);
 
 vi.mock('@openslack/runtime', () => ({
   detectGenesisShell: vi.fn(() => ({
@@ -39,6 +46,7 @@ vi.mock('@openslack/runtime', () => ({
   renderSetupReport: vi.fn(() => 'setup report'),
   recommendNextActions: (ctx: unknown) => mockRecommendNextActions(ctx),
   renderFindingsPlain: (findings: unknown) => mockRenderFindingsPlain(findings),
+  getNextSteps: () => mockGetNextSteps(),
 }));
 
 vi.mock('@openslack/collaboration', () => ({
@@ -129,5 +137,32 @@ describe('setup interactive', () => {
     });
     const logs = await runInteractive([]);
     expect(logs.join('\n')).toContain('ready');
+  });
+
+  it('renders "What would you like to do next?" after interactive setup', async () => {
+    const logs = await runInteractive([]);
+    expect(logs.join('\n')).toContain('What would you like to do next?');
+  });
+
+  it('renders numbered options with commands in next steps guide', async () => {
+    const logs = await runInteractive([]);
+    const output = logs.join('\n');
+    expect(output).toContain('1. Check your workspace status');
+    expect(output).toContain('pnpm openslack status');
+    expect(output).toContain('2. Review your PRs');
+    expect(output).toContain('pnpm openslack pr list');
+  });
+
+  it('calls getNextSteps during interactive setup', async () => {
+    await runInteractive([]);
+    expect(mockGetNextSteps).toHaveBeenCalled();
+  });
+
+  it('renders all 5 discovery options with descriptions', async () => {
+    const logs = await runInteractive([]);
+    const output = logs.join('\n');
+    expect(output).toContain('See the team dashboard');
+    expect(output).toContain('Get a role-specific guide');
+    expect(output).toContain('Run diagnostics');
   });
 });
