@@ -150,6 +150,7 @@ export function mapHomeToViewModel(data?: {
     { label: 'Workflows', key: 'workflows', shortcut: '3' },
     { label: 'Approvals', key: 'approvals', shortcut: '4' },
     { label: 'Status', key: 'status', shortcut: '5' },
+    { label: 'Activity', key: 'activity', shortcut: '6' },
   ]
 
   return {

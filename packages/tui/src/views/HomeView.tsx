@@ -180,7 +180,7 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
       React.createElement(Text, null, '  '),
       React.createElement(KeyboardShortcutHint, { keys: ['Enter'], description: 'Select' }),
       React.createElement(Text, null, '  '),
-      React.createElement(KeyboardShortcutHint, { keys: ['1-5'], description: 'Jump' }),
+      React.createElement(KeyboardShortcutHint, { keys: ['1-6'], description: 'Jump' }),
     ),
   )
 }

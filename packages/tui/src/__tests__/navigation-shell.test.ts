@@ -51,6 +51,7 @@ describe('mapHomeToViewModel', () => {
     expect(keys).toContain('dashboard')
     expect(keys).toContain('pr-queue')
     expect(keys).toContain('status')
+    expect(keys).toContain('activity')
   })
 
   it('returns default systemStatus when no data provided', async () => {
