@@ -203,3 +203,118 @@ export function renderDashboardProjection(dashboard: DashboardProjection): strin
 
   return lines.join('\n');
 }
+
+export function renderDashboardMarkdown(dashboard: DashboardProjection): string {
+  const lines: string[] = [];
+
+  lines.push('# OpenSlack Team Dashboard');
+  lines.push('');
+  lines.push(`> **Window:** ${dashboard.sinceHours > 0 ? `${dashboard.sinceHours}h` : 'all events'} | **Generated:** ${dashboard.generatedAt}`);
+
+  const filterEntries = Object.entries(dashboard.appliedFilters);
+  if (filterEntries.length > 0) {
+    lines.push(`> **Filters:** ${filterEntries.map(([k, v]) => `\`${k}=${Array.isArray(v) ? v.join(',') : v}\``).join(', ')}`);
+  }
+  lines.push('');
+
+  lines.push('## Summary');
+  lines.push('');
+  lines.push(`| Metric | Count |`);
+  lines.push(`|--------|-------|`);
+  lines.push(`| Blockers | ${dashboard.blockerCount} |`);
+  lines.push(`| Open handoffs | ${dashboard.openHandoffs} |`);
+  lines.push(`| Active decisions | ${dashboard.activeDecisions} |`);
+  lines.push('');
+
+  const taskEntries = Object.entries(dashboard.taskCounts);
+  if (taskEntries.length > 0) {
+    lines.push('## Tasks');
+    lines.push('');
+    lines.push('| Type | Count |');
+    lines.push('|------|-------|');
+    for (const [type, count] of taskEntries) {
+      lines.push(`| ${type} | ${count} |`);
+    }
+    lines.push('');
+  }
+
+  const prEntries = Object.entries(dashboard.prCounts);
+  if (prEntries.length > 0) {
+    lines.push('## PRs');
+    lines.push('');
+    lines.push('| Type | Count |');
+    lines.push('|-----|-------|');
+    for (const [type, count] of prEntries) {
+      lines.push(`| ${type} | ${count} |`);
+    }
+    lines.push('');
+  }
+
+  lines.push('## Blockers');
+  lines.push('');
+  if (dashboard.blockers.length === 0) {
+    lines.push('*No blockers found.*');
+  } else {
+    for (const blocker of dashboard.blockers) {
+      const severity = blocker.severity ? ` **[${blocker.severity}]**` : '';
+      lines.push(`- **${blocker.object}**${severity}: ${blocker.summary}`);
+      if (blocker.owner) lines.push(`  - Owner: \`${blocker.owner}\``);
+      if (blocker.nextAction) lines.push(`  - Next: ${blocker.nextAction}`);
+    }
+  }
+  lines.push('');
+
+  if (dashboard.openHandoffDetails.length > 0) {
+    lines.push('## Open Handoffs');
+    lines.push('');
+    lines.push('| ID | From | To | Context | Age |');
+    lines.push('|----|------|----|---------|-----|');
+    for (const h of dashboard.openHandoffDetails) {
+      const age = Math.round((Date.now() - new Date(h.createdAt).getTime()) / (60 * 60 * 1000));
+      lines.push(`| ${h.id} | ${h.from} | ${h.to} | ${h.context} | ${age}h |`);
+    }
+    lines.push('');
+  }
+
+  if (dashboard.activeDecisionDetails.length > 0) {
+    lines.push('## Active Decisions');
+    lines.push('');
+    lines.push('| ID | Topic | Decision | By |');
+    lines.push('|----|-------|----------|----|');
+    for (const d of dashboard.activeDecisionDetails) {
+      lines.push(`| ${d.id} | ${d.topic} | ${d.decision} | ${d.decidedBy} |`);
+    }
+    lines.push('');
+  }
+
+  lines.push('## Recent Activity');
+  lines.push('');
+  if (dashboard.recentEvents.length === 0) {
+    lines.push('*No recent activity.*');
+  } else {
+    lines.push('| Time | Type | Object | Summary | Actor |');
+    lines.push('|------|------|--------|---------|-------|');
+    for (const event of dashboard.recentEvents.slice(0, 10)) {
+      const actorName = resolveAgentDisplayName(event.actor);
+      lines.push(`| ${event.timestamp.slice(0, 16)} | ${event.type} | ${objectRef(event)} | ${event.summary} | ${actorName} |`);
+    }
+  }
+
+  const isEmpty = taskEntries.length === 0 && prEntries.length === 0
+    && dashboard.blockers.length === 0 && dashboard.recentEvents.length === 0;
+  if (isEmpty) {
+    lines.push('');
+    lines.push('## Getting Started');
+    lines.push('');
+    lines.push('No events recorded yet. Try these commands:');
+    lines.push('');
+    lines.push('```bash');
+    lines.push('openslack pr doctor <n>          # Check a PR');
+    lines.push('openslack collaboration handoff create --from <you> --to <them> --context "..."  # Create a handoff');
+    lines.push('openslack status                 # See system overview');
+    lines.push('```');
+  }
+
+  lines.push('');
+  return lines.join('\n');
+}

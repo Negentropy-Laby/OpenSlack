@@ -26,10 +26,22 @@ export function prCommands(): Command {
     .command('queue')
     .description('Show open PRs grouped by readiness and blocker owner')
     .option('--limit <n>', 'Maximum open PRs to inspect', '20')
-    .action(async (options: { limit: string }) => {
+    .option('--format <format>', 'Output format: standard or tui', 'standard')
+    .action(async (options: { limit: string; format: string }) => {
       const limit = parseInt(options.limit, 10);
       const items = await buildPRQueue(Number.isFinite(limit) ? limit : 20);
-      console.log(renderPRQueue(items));
+
+      if (options.format === 'tui') {
+        try {
+          const { renderPrQueueTui } = await import('@openslack/tui');
+          await renderPrQueueTui(items);
+        } catch (error) {
+          console.error('TUI unavailable. Falling back to standard output.');
+          console.log(renderPRQueue(items));
+        }
+      } else {
+        console.log(renderPRQueue(items));
+      }
     });
 
   cmd
