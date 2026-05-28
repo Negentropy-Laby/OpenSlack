@@ -52,7 +52,7 @@ Applies to workflows loaded from legacy Anthropic paths
 ### Level 1: Trusted
 
 Applies to workflows authored by project contributors and explicitly trusted
-via `openslack workflow trust <name> --level trusted`.
+via `openslack collaboration workflow trust <name> --level trusted`.
 
 **Allowed:**
 
@@ -228,7 +228,7 @@ path.normalize(writePath).startsWith(path.normalize(worktreePath))
 All GitHub API calls in execute mode are proxied through OpenSlack's GitHub
 adapter, which:
 
-- Enforces bot identity (`GH_TOKEN` from `scripts/bot-gh-token.js`)
+- Enforces bot identity (`GH_TOKEN` from the bot token utility)
 - Rate-limits API calls (max 100 per workflow run)
 - Logs all API calls to the audit log
 - Blocks calls to endpoints not in the declared permissions
@@ -413,7 +413,7 @@ When token budget is exhausted:
 1. All pending and future agent calls are blocked
 2. Currently running agents are allowed to complete
 3. Workflow is paused (not failed) with status "budget-exhausted"
-4. User can resume with additional budget: `openslack workflow resume <runId> --budget 100000`
+4. User can resume with additional budget: `openslack collaboration workflow resume <runId> --budget 100000`
 
 ### Cache Corruption
 

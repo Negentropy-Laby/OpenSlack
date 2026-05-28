@@ -29,7 +29,7 @@ current-state document.
 | Create and run tasks | `docs/developer/github-issues-loop.md`, `docs/user-guide.md` | `openslack task create`, `openslack agent tick`, `openslack task checkout`, `openslack task sync` |
 | Monitor selected repos for new Issues | `docs/developer/github-watch-daemon.md`, `docs/product/user-experience-roadmap.md` | Phase 1/2/3/4 active: `openslack github watch ...` (auto-claim optional) |
 | Review and merge PRs | `docs/product/module-04-pr-review-merge-steward.md`, `docs/user-guide.md` | `openslack pr doctor`, `openslack pr queue`, `openslack pr merge` |
-| Run agent workflows | `docs/product/workflow-modules.md`, `docs/developer/workflow-runtime.md`, `docs/security/workflow-execution.md` | `openslack workflow preview`, `openslack workflow run`, `openslack workflow resume` |
+| Run agent workflows | `docs/product/workflow-modules.md`, `docs/developer/workflow-runtime.md`, `docs/security/workflow-execution.md` | `openslack collaboration workflow preview`, `openslack collaboration workflow run`, `openslack collaboration workflow resume` |
 | Coordinate humans and agents | `docs/product/collaboration-layer.md`, `docs/developer/collaboration-events.md` | `openslack collaboration dashboard`, `handoff`, `decision`, `room`, `workflow` |
 | Onboard or authorize agents | `docs/developer/agent-registry-schema.md`, `docs/developer/new-agent-onboarding.md` | `openslack agent hire`, `openslack agent bootstrap` |
 | Understand guardrails | `AGENTS.md`, `docs/security/self-evolution-guardrails.md`, `docs/security/collaboration-audit.md` | `openslack self classify-pr`, `openslack governance audit` |

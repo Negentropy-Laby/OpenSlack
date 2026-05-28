@@ -2,7 +2,7 @@
 schema: openslack.product_spec.v1
 status: design
 created: 2026-05-28
-source: .claude/workflows/full-lifecycle.js
+source: analyzed external sample (Anthropic full-lifecycle.js workflow)
 canonical_status: docs/status/current.md
 ---
 
@@ -17,7 +17,8 @@ side effects, then executes through a controlled runtime that gates every
 dangerous operation.
 
 Workflows absorb the Anthropic-style DSL patterns found in
-`.claude/workflows/full-lifecycle.js` (parallel agents, schema-constrained
+`.claude/workflows/full-lifecycle.js` (an external Anthropic-style workflow
+analyzed as a design reference; not shipped with OpenSlack) (parallel agents, schema-constrained
 output, adversarial verification, pipeline processing) while adding OpenSlack's
 own trust model, permission enforcement, preview/dry-run/execute modes, PRMS
 gates, collaboration events, and API integration.
@@ -35,7 +36,7 @@ gates, collaboration events, and API integration.
 
 ## 2. Anthropic Workflow Core Mechanisms
 
-The reference implementation `.claude/workflows/full-lifecycle.js` demonstrates
+The analyzed external sample `.claude/workflows/full-lifecycle.js` demonstrates
 six core mechanisms that OpenSlack must absorb:
 
 ### 2.1 `agent(prompt, opts)` — Subtask Delegation
@@ -1069,4 +1070,4 @@ bridging the two systems. No template rewrite is required — they coexist.
 | [collaboration-layer.md](collaboration-layer.md) | Collaboration events and handoff integration |
 | `docs/developer/workflow-runtime.md` | Technical runtime design (separate document) |
 | `docs/security/workflow-execution.md` | Security model and sandboxing (separate document) |
-| `.claude/workflows/full-lifecycle.js` | Reference Anthropic-style workflow |
+| `.claude/workflows/full-lifecycle.js` | Analyzed external Anthropic-style workflow (not shipped with OpenSlack) |

@@ -25,7 +25,7 @@ packages/workflows/
     runtime.ts                # WorkflowRuntime implementation
     agent-shim.ts             # Agent subtask wrapper with schema validation
     parallel-runner.ts        # Concurrent execution with budget tracking
-    pipeline-runner.ts        # Sequential execution with checkpointing
+    pipeline-runner.ts        # Bounded-concurrency item pipeline with per-item checkpoints
     cache.ts                  # Cache key computation and lookup
     run-store.ts              # Run directory management and persistence
     resume.ts                 # Resume logic with cached result replay
@@ -234,16 +234,26 @@ function detectFormat(module: Record<string, unknown>): WorkflowFormat {
 ```
 1. Resolve workflow name to file path
 2. Compute file hash (SHA-256 of file contents)
-3. Import module
-4. Detect format
-5. Parse and validate manifest
-   - Verify meta is a pure object literal (no function calls, computed keys, or
-     external references). The loader must be able to statically analyze meta
-     without executing the workflow body. Applies to both formats.
-6. If openslack-native: use directly
-7. If anthropic-compatible: wrap with anthropicCompatRunner()
-8. Return WorkflowModule with meta, preview, run, format, hash
+3. Static analysis pass (no execution):
+   a. Parse the file as source text (AST or regex extraction)
+   b. Extract the `export const meta = { ... }` literal
+   c. Verify meta is a pure object literal: no function calls, no computed
+      property names, no references to external variables, only JSON-serializable
+      values. Applies to both Anthropic-compatible and OpenSlack-native formats.
+   d. Parse and validate the extracted manifest against schema rules
+4. If static analysis fails (meta is not a pure literal, uses computed keys,
+   references external scope, etc.): reject with clear error. Do NOT fall back
+   to executing the module to extract meta.
+5. Import module (only after static analysis passes)
+6. Detect format (openslack-native vs anthropic-compatible)
+7. If openslack-native: use directly
+8. If anthropic-compatible: wrap with anthropicCompatRunner()
+9. Return WorkflowModule with meta, preview, run, format, hash
 ```
+
+The key invariant: **meta is extracted and validated before any module code
+executes.** This prevents a malicious workflow body from running during the
+meta extraction phase.
 
 ### Nesting Depth Limit
 
@@ -593,12 +603,27 @@ If the workflow source file has changed since the run was paused:
 
 ### Ambient Global Injection
 
+> **Security note:** The `new AsyncFunction()` approach shown below is a
+> **design placeholder** illustrating the desired API surface. A production
+> implementation must NOT use `AsyncFunction` or `eval` to execute arbitrary
+> JS from workflow files. The real implementation must:
+> 1. Complete static analysis of the file before any execution (see Loading Flow)
+> 2. Run the workflow body inside a sandboxed execution context (e.g., a
+>    dedicated worker thread with restricted globals, or a VM module with
+>    a frozen sandbox object)
+> 3. Never pass unsanitized file contents to code evaluation primitives
+>
+> The placeholder below shows only the API shape, not the execution mechanism.
+
 ```typescript
+// PLACEHOLDER: API shape only. Real implementation uses sandboxed execution.
 function anthropicCompatRunner(
   moduleBody: string,
   runtime: WorkflowRuntime,
 ): Promise<unknown> {
-  // Create sandboxed scope with ambient globals
+  // The sandbox object defines the ambient globals available to the workflow.
+  // In production, this is passed to a sandboxed execution context, not to
+  // new AsyncFunction().
   const sandbox = {
     args: runtime.args,
     phase: (name: string) => runtime.phase(name),
@@ -610,13 +635,9 @@ function anthropicCompatRunner(
     workflow: (name: string, args?: Record<string, unknown>) => runtime.workflow(name, args),
   }
 
-  // Wrap body in async function with injected globals
-  const wrapped = new AsyncFunction(
-    ...Object.keys(sandbox),
-    moduleBody,
-  )
-
-  return wrapped(...Object.values(sandbox))
+  // Production: execute in sandboxed context with restricted globals
+  // Placeholder: wrap body in async function (NOT production-safe)
+  throw new Error('anthropicCompatRunner: must use sandboxed execution, not AsyncFunction')
 }
 ```
 

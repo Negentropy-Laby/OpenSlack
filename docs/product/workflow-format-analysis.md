@@ -2,14 +2,14 @@
 schema: openslack.product_spec.v1
 status: analysis
 created: 2026-05-28
-source: .claude/workflows/full-lifecycle.js
+source: analyzed external sample (Anthropic full-lifecycle.js workflow)
 ---
 
 # Anthropic Workflow Format Analysis
 
 ## Purpose
 
-This document analyzes `.claude/workflows/full-lifecycle.js` — an Anthropic-style
+This document analyzes `.claude/workflows/full-lifecycle.js` — an external Anthropic-style
 agent workflow file — and evaluates how OpenSlack should absorb its patterns.
 
 ## File Format
@@ -82,7 +82,7 @@ openslack collaboration workflow preview full-lifecycle \
 | `phase(name)` | Mark execution stage for logging/UI/progress |
 | `log(text)` | Write workflow log |
 | `parallel(tasks)` | Execute multiple async tasks concurrently |
-| `pipeline(items, fn)` | Process list items sequentially with progress |
+| `pipeline(items, fn)` | Process list items with bounded concurrency and per-item checkpoints |
 | `agent(prompt, opts)` | Launch agent subtask with label/phase/schema |
 | `args` | External input parameters |
 
