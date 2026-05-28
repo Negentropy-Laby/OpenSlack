@@ -21,9 +21,9 @@ supersedes:
 | GitHub Issues Task Loop | 1.7 | ACTIVE | GitHub Issues task loop active with typed task creation, dry-run repair, and Phase 4 watch daemon (webhook receiver, dedupe, console/Slack/webhook notifications, polling fallback, optional auto-claim with agent identity and authorization gates, collaboration event recording). |
 | Operator Interface | 2A/2B/2C | ACTIVE | Structured planner active. Webhook and Slack chat adapters active with actor mapping. PRMS chat cards and action confirmation active. Typed tool registry, optional LLM fallback, setup report, and 24h pending plan store active. Session-based conversation memory with multi-turn context resolution and progressive clarification. Doctor --format plain for non-technical output. TUI setup report view and PR doctor view via --format tui. |
 | PR Review & Merge Steward | 1.14 | ACTIVE | Phase 2C chat report and action confirmation active. Supports status/review/recommend/doctor/queue/merge/watch, review/doctor comments, governance audit, operational decision summaries, deadlock detection, Red Zone author-risk preflight, and chat-friendly PR summaries with confirm-merge flow. |
-| Collaboration Layer | 2D/2E | ACTIVE | Full 2D/2E Collaboration Layer active with typed workflow template preview/execute and dashboard with filters (--owner, --module, --risk, --blocker, --type). Event model, activity feed, digest, handoff, decision, and room views with agent display name resolution. Authz-gated chat cards for handoffs, decisions, tasks, workflows, and plans. Agent registry v1 to v2 migration command. TUI dashboard and room views via --format tui. |
+| Collaboration Layer | 2D/2E | ACTIVE | Full 2D/2E Collaboration Layer active with typed workflow template preview/execute and dashboard with filters (--owner, --module, --risk, --blocker, --type). Workflow engine with JS module discovery, preview, dry-run, execute, resume, trust levels, and inspect (HTML/JSON/Markdown). Event model, activity feed, digest, handoff, decision, and room views with agent display name resolution. Authz-gated chat cards for handoffs, decisions, tasks, workflows, and plans. Agent registry v1 to v2 migration command. TUI dashboard and room views via --format tui. |
 
-## Packages (11 active)
+## Packages (12 active)
 
 - @openslack/kernel
 - @openslack/workspace
@@ -36,6 +36,7 @@ supersedes:
 - @openslack/tui
 - @openslack/pr
 - @openslack/collaboration
+- @openslack/workflows
 
 ## CLI Commands
 
@@ -56,7 +57,16 @@ supersedes:
 - openslack collaboration handoff
 - openslack collaboration decision
 - openslack collaboration room
-- openslack collaboration workflow
+- openslack collaboration workflow list
+- openslack collaboration workflow show
+- openslack collaboration workflow validate
+- openslack collaboration workflow preview
+- openslack collaboration workflow preview-js
+- openslack collaboration workflow dry-run
+- openslack collaboration workflow run
+- openslack collaboration workflow resume
+- openslack collaboration workflow trust
+- openslack collaboration inspect
 
 ## Golden Evals
 
@@ -64,9 +74,9 @@ supersedes:
 
 ## Test Suite
 
-808 Vitest tests across 101 files. All passing.
+1627 Vitest tests across 135 files. All passing.
 
-Module-attributed coverage: 1112 tests across 144 module test files (packages shared across modules are counted per module).
+Module-attributed coverage: 2124 tests across 202 module test files (packages shared across modules are counted per module).
 
 ## Module Registry
 
