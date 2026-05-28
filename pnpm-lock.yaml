@@ -64,6 +64,9 @@ importers:
       '@openslack/tui':
         specifier: workspace:*
         version: link:../../packages/tui
+      '@openslack/workflows':
+        specifier: workspace:*
+        version: link:../../packages/workflows
       '@openslack/workspace':
         specifier: workspace:*
         version: link:../../packages/workspace
@@ -242,6 +245,24 @@ importers:
       '@types/react':
         specifier: ^19.0.0
         version: 19.2.15
+
+  packages/workflows:
+    dependencies:
+      '@openslack/collaboration':
+        specifier: workspace:*
+        version: link:../collaboration
+      '@openslack/github':
+        specifier: workspace:*
+        version: link:../github
+      '@openslack/kernel':
+        specifier: workspace:*
+        version: link:../kernel
+      '@openslack/pr':
+        specifier: workspace:*
+        version: link:../pr
+      '@openslack/runtime':
+        specifier: workspace:*
+        version: link:../runtime
 
   packages/workspace:
     dependencies:

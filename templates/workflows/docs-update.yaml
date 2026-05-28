@@ -1,0 +1,77 @@
+schema: openslack.workflow_template.v1
+id: docs-update
+name: Docs Update (Structured)
+description: Audit existing documentation, apply targeted updates, and verify consistency through the PR pipeline.
+riskLevel: low
+tags:
+  - documentation
+  - content
+  - audit
+inputs:
+  - name: title
+    type: string
+    required: true
+    description: Short summary of the documentation update
+  - name: issueNumber
+    type: integer
+    required: true
+    description: GitHub issue number tracking the docs update
+  - name: prNumber
+    type: integer
+    required: true
+    description: Pull request number for the docs update
+  - name: agentId
+    type: string
+    required: true
+    description: Agent principal assigned to the update
+  - name: paths
+    type: string
+    required: true
+    description: Comma-separated file paths of documentation being updated
+phases:
+  - name: Audit
+    steps:
+      - type: action
+        actionId: task.create.preview
+        title: Preview docs-update task
+        input:
+          title: "{{inputs.title}}"
+          template: investigation
+      - type: action
+        actionId: task.checkout
+        title: Create worktree for docs update
+        input:
+          issueNumber: "{{inputs.issueNumber}}"
+          agentId: "{{inputs.agentId}}"
+      - type: record-decision
+        topic: "Docs audit: {{inputs.title}}"
+        decision: Audit complete
+        rationale: Reviewed existing documentation and identified update scope
+        decidedBy: "{{inputs.agentId}}"
+        tags:
+          - documentation
+          - audit
+  - name: Update
+    steps:
+      - type: action
+        actionId: task.sync
+        title: Propose docs-update PR
+        input:
+          issueNumber: "{{inputs.issueNumber}}"
+          agentId: "{{inputs.agentId}}"
+          paths: "{{inputs.paths}}"
+  - name: Verify
+    steps:
+      - type: action
+        actionId: pr.doctor
+        title: Diagnose PR readiness
+        input:
+          prNumber: "{{inputs.prNumber}}"
+      - type: record-decision
+        topic: "Docs verify: {{inputs.title}}"
+        decision: Verification passed
+        rationale: Documentation changes verified for accuracy and consistency
+        decidedBy: "{{inputs.agentId}}"
+        tags:
+          - documentation
+          - verification

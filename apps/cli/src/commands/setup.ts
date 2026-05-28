@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import {
   buildSetupReport, detectGenesisShell, renderSetupReport,
   recommendNextActions, renderFindingsPlain,
+  getNextSteps,
 } from '@openslack/runtime';
 import type { PlainFinding } from '@openslack/runtime';
 import { recordEvent } from '@openslack/collaboration';
@@ -287,6 +288,20 @@ export function setupCommands(): Command {
     }
   }
 
+  function renderNextStepsGuide(): void {
+    const steps = getNextSteps();
+    console.log('');
+    console.log('What would you like to do next?');
+    console.log('-'.repeat(30));
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
+      console.log(`  ${i + 1}. ${step.label}`);
+      console.log(`     ${step.description}`);
+      console.log(`     ${step.command}`);
+    }
+    console.log('');
+  }
+
   function runValidationSteps(): PlainFinding[] {
     const results: PlainFinding[] = [];
     const root = process.cwd();
@@ -454,6 +469,8 @@ export function setupCommands(): Command {
         }
         console.log('');
       }
+
+      renderNextStepsGuide();
 
       try {
         recordEvent({

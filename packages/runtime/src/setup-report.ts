@@ -224,6 +224,42 @@ export async function buildSetupReport(options: { root?: string; dryRun?: boolea
   };
 }
 
+export interface SetupNextStep {
+  label: string;
+  command: string;
+  description: string;
+}
+
+export function getNextSteps(): SetupNextStep[] {
+  return [
+    {
+      label: 'Check your workspace status',
+      command: 'pnpm openslack status',
+      description: 'Show current workspace state, modules, and health',
+    },
+    {
+      label: 'Review your PRs',
+      command: 'pnpm openslack pr list',
+      description: 'List open pull requests and their status',
+    },
+    {
+      label: 'See the team dashboard',
+      command: 'pnpm openslack collaboration dashboard',
+      description: 'View team activity, events, and collaboration metrics',
+    },
+    {
+      label: 'Get a role-specific guide',
+      command: 'pnpm openslack guide operator',
+      description: 'Show the operator role guide with common workflows',
+    },
+    {
+      label: 'Run diagnostics',
+      command: 'pnpm openslack doctor',
+      description: 'Run a full diagnostic check on your workspace',
+    },
+  ];
+}
+
 export function renderSetupReport(report: SetupReport): string {
   const lines: string[] = [];
   lines.push('OpenSlack Setup Report');

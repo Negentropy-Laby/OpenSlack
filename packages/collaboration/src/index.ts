@@ -58,6 +58,8 @@ export {
   parseRoomId,
   buildRoomView,
   renderRoom,
+  renderRoomPlain,
+  renderRoomChat,
 } from './room.js';
 
 export type { RoomView } from './room.js';
@@ -72,6 +74,7 @@ export {
 export {
   buildDashboardProjection,
   renderDashboardProjection,
+  renderDashboardMarkdown,
   BLOCKER_TYPES,
 } from './dashboard.js';
 

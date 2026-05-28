@@ -11,15 +11,15 @@ export { generateRuntimeIdentity, loadRuntimeIdentity, resolveAgentPrincipal } f
 export { proposeWorkspacePR } from './propose.js';
 export type { PRProposalInput, PRProposalResult } from './propose.js';
 export { createWorktree, cleanupWorktree, checkDirty } from './worktree.js';
-export { buildSetupReport, detectGenesisShell, findRepoRoot, renderSetupReport } from './setup-report.js';
-export type { SetupFinding, SetupFindingStatus, SetupReport } from './setup-report.js';
+export { buildSetupReport, detectGenesisShell, findRepoRoot, renderSetupReport, getNextSteps } from './setup-report.js';
+export type { SetupFinding, SetupFindingStatus, SetupReport, SetupNextStep } from './setup-report.js';
 export { repairWorktrees, renderWorktreeRepair } from './repair.js';
 export type { WorktreeRepairItem, WorktreeRepairResult } from './repair.js';
 export type { WorktreeResult } from './worktree.js';
 export { renderFindingPlain, renderFindingsPlain } from './plain-render.js';
 export type { PlainFinding } from './plain-render.js';
-export { recommendNextActions } from './next-action.js';
-export type { NextActionRecommendation, NextActionContext } from './next-action.js';
+export { recommendNextActions, getAttentionItems, getNextAction } from './next-action.js';
+export type { NextActionRecommendation, NextActionContext, AttentionItem } from './next-action.js';
 
 // Self-evolution ops (moved from kernel to runtime to break circular dependency)
 export { observeHealth } from './self/ops/observe.js';

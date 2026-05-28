@@ -1,0 +1,79 @@
+schema: openslack.workflow_template.v1
+id: refactor
+name: Refactor
+description: Analyze a code area, plan the refactoring approach, implement changes, and review the result with a decision gate.
+riskLevel: medium
+tags:
+  - refactor
+  - code-review
+  - approval-gate
+inputs:
+  - name: title
+    type: string
+    required: true
+    description: Short summary of the refactoring goal
+  - name: issueNumber
+    type: integer
+    required: true
+    description: GitHub issue number tracking the refactor
+  - name: prNumber
+    type: integer
+    required: true
+    description: Pull request number for the refactor
+  - name: agentId
+    type: string
+    required: true
+    description: Agent principal assigned to the refactor
+  - name: paths
+    type: string
+    required: true
+    description: Comma-separated file paths affected by the refactor
+phases:
+  - name: Analysis
+    steps:
+      - type: action
+        actionId: task.create.preview
+        title: Preview refactor task
+        input:
+          title: "{{inputs.title}}"
+          template: investigation
+      - type: action
+        actionId: task.checkout
+        title: Create worktree for refactor
+        input:
+          issueNumber: "{{inputs.issueNumber}}"
+          agentId: "{{inputs.agentId}}"
+  - name: Planning
+    steps:
+      - type: record-decision
+        topic: "Refactoring plan: {{inputs.title}}"
+        decision: Plan approved
+        rationale: Analysis complete, refactoring approach defined for scope in paths
+        decidedBy: "{{inputs.agentId}}"
+        tags:
+          - refactor
+          - planning
+  - name: Implementation
+    steps:
+      - type: action
+        actionId: task.sync
+        title: Propose refactor PR
+        input:
+          issueNumber: "{{inputs.issueNumber}}"
+          agentId: "{{inputs.agentId}}"
+          paths: "{{inputs.paths}}"
+  - name: Review
+    steps:
+      - type: action
+        actionId: pr.doctor
+        title: Diagnose PR readiness
+        input:
+          prNumber: "{{inputs.prNumber}}"
+      - type: decision-gate
+        title: Approve refactor for merge
+        requiredRole: reviewer
+      - type: action
+        actionId: pr.merge
+        title: Merge refactor PR
+        input:
+          prNumber: "{{inputs.prNumber}}"

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { readModules, validateModules, getTotalTests, getTotalTestFiles } from '@openslack/workspace';
 import { recommendNextActions } from '@openslack/runtime';
+import { getAttentionItems, getNextAction } from '@openslack/runtime';
 import { buildSetupReport } from '@openslack/runtime';
 import { buildDashboardProjection } from '@openslack/collaboration';
 
@@ -162,6 +163,8 @@ async function showStatusDashboard(root: string): Promise<void> {
     const gitInfo = getGitInfo(root);
     const totalTests = getTotalTests(registry);
     const totalTestFiles = getTotalTestFiles(registry);
+    const vitestTests = registry.vitest_tests ?? totalTests;
+    const vitestFiles = registry.vitest_files ?? totalTestFiles;
     const ops = getGitHubOps();
 
     console.log('OpenSlack Status');
@@ -189,7 +192,7 @@ async function showStatusDashboard(root: string): Promise<void> {
       console.log('');
     }
 
-    console.log(`Test Suite: ${totalTests} unit tests across ${totalTestFiles} test files`);
+    console.log(`Test Suite: ${vitestTests} Vitest tests across ${vitestFiles} files`);
     console.log('');
 
     const setupReport = await buildSetupReport({ dryRun: true });
@@ -220,6 +223,39 @@ async function showStatusDashboard(root: string): Promise<void> {
       }
       console.log('');
     }
+
+    // Needs Attention section
+    const attentionCtx = {
+      setupFindings: setupReport.findings.map((f) => ({
+        status: f.status,
+        title: f.title,
+        nextAction: f.nextAction,
+        command: f.command,
+      })),
+      gitHubOps: ops,
+      blockers: dashboard.blockers.map((b) => ({
+        object: b.object,
+        summary: b.summary,
+        owner: b.owner,
+        nextAction: b.nextAction,
+      })),
+    };
+    const attentionItems = await getAttentionItems(attentionCtx);
+
+    console.log('Needs Attention:');
+    if (attentionItems.length === 0) {
+      console.log('  All clear');
+    } else {
+      for (const item of attentionItems) {
+        const label = item.priority.toUpperCase();
+        console.log(`  [${label}] ${item.type}: ${item.description}`);
+        console.log(`         ${item.action}`);
+      }
+    }
+    console.log('');
+
+    const nextAction = getNextAction(attentionItems);
+    console.log(`Recommended Next Action: ${nextAction}`);
   } catch (e) {
     console.error(`Status dashboard failed: ${(e as Error).message}`);
     process.exit(1);
@@ -230,9 +266,90 @@ export function statusCommands(): Command {
   const cmd = new Command('status').description('OpenSlack status and module registry commands');
 
   cmd
-    .action(async () => {
+    .option('--format <format>', 'Output format: standard or tui', 'standard')
+    .action(async (options: { format: string }) => {
       const root = findRepoRoot();
-      await showStatusDashboard(root);
+
+      if (options.format === 'tui') {
+        try {
+          const registry = readModules(root);
+          const gitInfo = getGitInfo(root);
+          const totalTests = getTotalTests(registry);
+          const totalTestFiles = getTotalTestFiles(registry);
+          const vitestTests = registry.vitest_tests ?? totalTests;
+          const vitestFiles = registry.vitest_files ?? totalTestFiles;
+          const ops = getGitHubOps();
+
+          const setupReport = await buildSetupReport({ dryRun: true });
+          const dashboard = buildDashboardProjection();
+          const recs = recommendNextActions({
+            setupFindings: setupReport.findings.map((f) => ({
+              status: f.status,
+              title: f.title,
+              nextAction: f.nextAction,
+              command: f.command,
+            })),
+            gitHubOps: ops,
+            blockers: dashboard.blockers.map((b) => ({
+              object: b.object,
+              summary: b.summary,
+              owner: b.owner,
+              nextAction: b.nextAction,
+            })),
+          });
+
+          const attentionCtx = {
+            setupFindings: setupReport.findings.map((f) => ({
+              status: f.status,
+              title: f.title,
+              nextAction: f.nextAction,
+              command: f.command,
+            })),
+            gitHubOps: ops,
+            blockers: dashboard.blockers.map((b) => ({
+              object: b.object,
+              summary: b.summary,
+              owner: b.owner,
+              nextAction: b.nextAction,
+            })),
+          };
+          const attentionItems = await getAttentionItems(attentionCtx);
+          const nextAction = getNextAction(attentionItems);
+
+          const { renderStatusTui } = await import('@openslack/tui');
+          await renderStatusTui({
+            commit: gitInfo.latestCommit,
+            commitSubject: gitInfo.latestSubject,
+            modules: registry.modules.map((m) => ({
+              name: m.name,
+              status: m.status.toUpperCase(),
+              tests: m.tests,
+            })),
+            gitHub: {
+              available: ops.available,
+              tasksReady: ops.ready,
+              tasksClaimed: ops.claimed,
+              tasksBlocked: ops.blocked,
+              prsOpen: ops.openPRs,
+              prsBlocked: ops.blockedPRs,
+              prsReady: ops.readyPRs,
+            },
+            testSuite: { totalTests: vitestTests, totalFiles: vitestFiles },
+            recommendations: recs.map((r) => ({
+              title: r.title,
+              action: r.action,
+              command: r.command,
+            })),
+            attentionItems,
+            nextAction,
+          });
+        } catch (error) {
+          console.error('TUI unavailable. Falling back to standard output.');
+          await showStatusDashboard(root);
+        }
+      } else {
+        await showStatusDashboard(root);
+      }
     });
 
   cmd

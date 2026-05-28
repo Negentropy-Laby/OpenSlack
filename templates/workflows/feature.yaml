@@ -1,22 +1,33 @@
 schema: openslack.workflow_template.v1
 id: feature
 name: Feature
+description: Plan, implement, and merge a new feature with reviewer approval gate.
+riskLevel: medium
+tags:
+  - feature
+  - code-review
+  - approval-gate
 inputs:
   - name: title
     type: string
     required: true
+    description: Short summary of the feature being implemented
   - name: issueNumber
     type: integer
     required: true
+    description: GitHub issue number tracking the feature
   - name: prNumber
     type: integer
     required: true
+    description: Pull request number for the feature
   - name: agentId
     type: string
     required: true
+    description: Agent principal assigned to the feature
   - name: paths
     type: string
     required: true
+    description: Comma-separated file paths affected by the feature
 phases:
   - name: Plan
     steps:

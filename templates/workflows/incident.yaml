@@ -1,22 +1,34 @@
 schema: openslack.workflow_template.v1
 id: incident
 name: Incident
+description: Triage, fix, and resolve a production incident with maintainer approval and handoff to human.
+riskLevel: high
+tags:
+  - incident
+  - production
+  - approval-gate
+  - handoff
 inputs:
   - name: title
     type: string
     required: true
+    description: Short summary of the incident
   - name: issueNumber
     type: integer
     required: true
+    description: GitHub issue number tracking the incident
   - name: prNumber
     type: integer
     required: true
+    description: Pull request number for the incident fix
   - name: agentId
     type: string
     required: true
+    description: Agent principal assigned to the incident
   - name: paths
     type: string
     required: true
+    description: Comma-separated file paths affected by the fix
 phases:
   - name: Triage
     steps:

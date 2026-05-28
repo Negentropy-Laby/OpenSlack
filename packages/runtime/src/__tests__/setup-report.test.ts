@@ -2,7 +2,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
-import { buildSetupReport, detectGenesisShell, renderSetupReport } from '../setup-report.js';
+import { buildSetupReport, detectGenesisShell, renderSetupReport, getNextSteps } from '../setup-report.js';
 
 function makeRoot(): string {
   const root = join(tmpdir(), `openslack-setup-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -37,6 +37,51 @@ describe('setup report', () => {
       expect(finding.status).toMatch(/ok|fixable_by_command/);
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('getNextSteps', () => {
+  it('returns at least 5 next steps', () => {
+    const steps = getNextSteps();
+    expect(steps.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it('returns steps with label, command, and description', () => {
+    const steps = getNextSteps();
+    for (const step of steps) {
+      expect(typeof step.label).toBe('string');
+      expect(step.label.length).toBeGreaterThan(0);
+      expect(typeof step.command).toBe('string');
+      expect(step.command.length).toBeGreaterThan(0);
+      expect(typeof step.description).toBe('string');
+      expect(step.description.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('includes a status check step', () => {
+    const steps = getNextSteps();
+    const statusStep = steps.find((s) => s.command.includes('status'));
+    expect(statusStep).toBeDefined();
+    expect(statusStep!.label).toMatch(/status/i);
+  });
+
+  it('includes a PR list step', () => {
+    const steps = getNextSteps();
+    const prStep = steps.find((s) => s.command.includes('pr list'));
+    expect(prStep).toBeDefined();
+  });
+
+  it('includes a doctor step', () => {
+    const steps = getNextSteps();
+    const doctorStep = steps.find((s) => s.command.includes('doctor'));
+    expect(doctorStep).toBeDefined();
+  });
+
+  it('all commands start with pnpm openslack', () => {
+    const steps = getNextSteps();
+    for (const step of steps) {
+      expect(step.command).toMatch(/^pnpm openslack /);
     }
   });
 });

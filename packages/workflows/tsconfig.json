@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../kernel" },
+    { "path": "../runtime" },
+    { "path": "../github" },
+    { "path": "../pr" },
+    { "path": "../collaboration" }
+  ]
+}

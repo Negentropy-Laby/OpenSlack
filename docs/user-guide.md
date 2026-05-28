@@ -285,6 +285,18 @@ approval on stale PR checks.
 | `openslack pr watch <n>` | Poll PR status until ready or timeout |
 | `openslack pr merge <n>` | Merge PR after all gates pass |
 
+For local bot-authenticated PRMS diagnosis or Merge Steward execution, use the
+fixed GitHub App wrapper pipeline instead of reading credentials manually:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/openslack-pr-gate.ps1 -PrNumber <n>
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/openslack-pr-gate.ps1 -PrNumber <n> -Merge -Method merge
+```
+
+The pipeline reads `.openslack.local\github-app.pem` only inside the wrapper
+process. Add `-Merge` only after required human approval is recorded; Merge
+Steward still re-runs PRMS and blocks unless all gates pass.
+
 ## Operator
 
 | Command | Purpose |
@@ -355,6 +367,96 @@ step. Ready PRs display a Confirm merge button.
 | `openslack collaboration workflow execute <file> --agent-id <id>` | Execute with agent principal authorization |
 
 The Collaboration Layer is projection-only. GitHub/Git/.openslack remain the sole source of truth. Activity feed, digest, handoffs, decisions, and room views are all derived from events and YAML files.
+
+## Workflow Engine
+
+The workflow engine loads, validates, executes, checkpoints, and resumes OpenSlack workflow modules. Workflows are TypeScript/JavaScript files that declare metadata, permissions, and phases, and can run in preview, dry-run, or execute mode.
+
+| Command | Purpose |
+|---------|---------|
+| `openslack collaboration workflow list` | List all available workflows (YAML templates and JS modules) |
+| `openslack collaboration workflow show <name>` | Show detailed information about a workflow (phases, inputs, permissions, side effects) |
+| `openslack collaboration workflow validate <name>` | Validate a workflow template or JS module by name |
+| `openslack collaboration workflow preview <file>` | Preview a YAML workflow template without executing it |
+| `openslack collaboration workflow preview <file> --input key=value` | Preview with template input values |
+| `openslack collaboration workflow preview-js <name>` | Preview a JS workflow module in read-only mode |
+| `openslack collaboration workflow preview-js <name> --input key=value` | Preview JS module with input values |
+| `openslack collaboration workflow preview-js <name> --budget-tokens 10000` | Preview with custom token budget |
+| `openslack collaboration workflow dry-run <name>` | Simulate workflow execution without real side effects |
+| `openslack collaboration workflow dry-run <name> --input key=value` | Dry-run with input values |
+| `openslack collaboration workflow dry-run <name> --budget-tokens 50000` | Dry-run with custom token budget |
+| `openslack collaboration workflow run <name>` | Execute a workflow with real side effects |
+| `openslack collaboration workflow run <name> --input key=value` | Execute with input values |
+| `openslack collaboration workflow run <name> --confirm` | Require confirmation before each side effect |
+| `openslack collaboration workflow run <name> --agent-id <id>` | Execute with agent principal authorization |
+| `openslack collaboration workflow run <name> --budget-tokens 100000` | Execute with custom token budget |
+| `openslack collaboration workflow resume <runId>` | Resume a paused workflow run from its last checkpoint |
+| `openslack collaboration workflow resume <runId> --confirm` | Resume with confirmation before each side effect |
+| `openslack collaboration workflow resume <runId> --agent-id <id>` | Resume with agent principal authorization |
+| `openslack collaboration workflow trust <name>` | View the current trust level for a workflow |
+| `openslack collaboration workflow trust <name> --level <level>` | Set trust level (untrusted, trusted) |
+| `openslack collaboration inspect <runId>` | Inspect a workflow run (HTML, JSON, or Markdown) |
+| `openslack collaboration inspect <runId> --format html` | Inspect with self-contained HTML artifact |
+| `openslack collaboration inspect <runId> --format json` | Inspect as structured JSON |
+| `openslack collaboration inspect <runId> --format markdown` | Inspect as Markdown (default) |
+| `openslack collaboration inspect <runId> --out <file>` | Write output to file instead of stdout |
+| `openslack collaboration inspect <runId> --no-run-output` | Exclude run output section from report |
+| `openslack collaboration inspect <runId> --no-log` | Exclude log entries from report |
+
+### Workflow Discovery
+
+Workflows are discovered from:
+
+1. `.openslack/workflows/*.ts` -- project-local TypeScript workflows
+2. `.openslack/workflows/*.js` -- project-local JavaScript workflows
+3. `.claude/workflows/*.js` -- Anthropic-compatible workflows (legacy path)
+4. `packages/workflows/src/builtins/` -- core workflows shipped with OpenSlack
+5. `templates/workflows/*.yaml` -- YAML workflow templates
+
+### Workflow Execution Modes
+
+| Mode | Description | Side Effects |
+|------|-------------|-------------|
+| `validate` | Static validation only; no execution | None |
+| `preview` | Read-only execution with agent calls | Read-only API calls only |
+| `dry-run` | Simulated execution; side effects logged but not executed | Simulated |
+| `execute` | Full execution with real side effects | Real (requires confirmation) |
+
+### Workflow Trust Levels
+
+| Level | Applies To | Capabilities |
+|-------|-----------|-------------|
+| `untrusted` | Legacy Anthropic paths, unknown workflows | Read-only agent and GitHub calls |
+| `trusted` | Project workflows explicitly trusted by operator | Declared permissions, side effects gated |
+| `core` | Built-in workflows from `@openslack/workflows` | Full API access (except hardcoded forbidden actions) |
+
+### Workflow Examples
+
+```bash
+# List all available workflows
+openslack collaboration workflow list
+
+# Validate a workflow before running
+openslack collaboration workflow validate test-scan
+
+# Preview a JS workflow in read-only mode
+openslack collaboration workflow preview-js test-scan --input scope=packages/kernel
+
+# Dry-run to see what would happen
+openslack collaboration workflow dry-run test-scan --budget-tokens 50000
+
+# Execute with confirmation and agent identity
+openslack collaboration workflow run test-scan --confirm --agent-id claude
+
+# Resume a paused run
+openslack collaboration workflow resume run-abc123
+
+# Inspect a completed or paused run as HTML
+openslack collaboration inspect run-abc123 --format html --out report.html
+
+# Set a workflow to trusted level
+openslack collaboration workflow trust my-workflow --level trusted
+```
 
 ## Governance
 

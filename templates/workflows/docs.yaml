@@ -1,22 +1,32 @@
 schema: openslack.workflow_template.v1
 id: docs
 name: Docs Update
+description: Draft, review, and publish documentation changes through the standard PR pipeline.
+riskLevel: low
+tags:
+  - documentation
+  - content
 inputs:
   - name: title
     type: string
     required: true
+    description: Short summary of the documentation change
   - name: issueNumber
     type: integer
     required: true
+    description: GitHub issue number tracking the docs update
   - name: prNumber
     type: integer
     required: true
+    description: Pull request number for the docs change
   - name: agentId
     type: string
     required: true
+    description: Agent principal assigned to the update
   - name: paths
     type: string
     required: true
+    description: Comma-separated file paths of docs being changed
 phases:
   - name: Draft
     steps:

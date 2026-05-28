@@ -10,6 +10,7 @@
     { "path": "packages/operator" },
     { "path": "packages/chat-gateway" },
     { "path": "packages/collaboration" },
+    { "path": "packages/workflows" },
     { "path": "packages/tui" },
     { "path": "apps/cli" },
     { "path": "apps/auth-callback" }
