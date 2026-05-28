@@ -7,6 +7,7 @@ Use this page when you know what you want to do, but not which document owns it.
 | Goal | Read |
 |------|------|
 | Install, run setup, and understand the product quickly | `../README.md` |
+| Follow step-by-step workflows (first run, workflows, blocked PRs, governed actions, activity, handoffs) | `guides/core-workflows.md` |
 | Find the exact CLI command and flags | `user-guide.md` |
 | Check current modules, packages, commands, and test counts | `status/current.md` |
 | Understand repository rules for contributors and agents | `../AGENTS.md` |

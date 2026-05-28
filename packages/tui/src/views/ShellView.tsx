@@ -104,7 +104,7 @@ function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
 
   switch (current.view) {
     case 'home': {
-      const model = mapHomeToViewModel()
+      const model = mapHomeToViewModel({ shellData: data })
       return React.createElement(HomeView, { model })
     }
     case 'dashboard': {

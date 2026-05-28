@@ -38,6 +38,18 @@ export type { KeyboardShortcutHintProps } from './design-system/KeyboardShortcut
 export { default as SelectableList } from './design-system/SelectableList.js';
 export type { SelectableListItem, SelectableListProps } from './design-system/SelectableList.js';
 
+// Action dispatch
+export { TuiActionCategory, TuiRiskLevel, TuiActionStatus, REQUIRES_CONFIRMATION } from './actions/types.js';
+export type { TuiAction, TuiActionResult, TuiActionState } from './actions/types.js';
+export { useActionDispatch } from './actions/use-action-dispatch.js';
+export type { UseActionDispatchReturn } from './actions/use-action-dispatch.js';
+
+// Design system — action UI
+export { default as ConfirmationDialog } from './design-system/ConfirmationDialog.js';
+export type { ConfirmationDialogProps } from './design-system/ConfirmationDialog.js';
+export { default as ActionStatus } from './design-system/ActionStatus.js';
+export type { ActionStatusProps } from './design-system/ActionStatus.js';
+
 // Infrastructure
 export { isTuiSupported } from './capabilities.js';
 export { sanitizeTerminalText } from './sanitize.js';
