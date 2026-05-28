@@ -13,14 +13,16 @@ import type { DashboardViewModel } from '../view-models/dashboard.js'
 
 export type DashboardViewProps = {
   model: DashboardViewModel
+  onBack?: () => void
 }
 
-export default function DashboardView({ model }: DashboardViewProps): React.JSX.Element {
+export default function DashboardView({ model, onBack }: DashboardViewProps): React.JSX.Element {
   const { exit } = useApp()
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
-      exit()
+      if (onBack) onBack()
+      else exit()
     }
   })
 

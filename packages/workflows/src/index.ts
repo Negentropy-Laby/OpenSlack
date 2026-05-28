@@ -62,6 +62,10 @@ export {
 } from './permission-checker.js'
 export type { PermissionCheckResult } from './permission-checker.js'
 
+// ── Trust Store ────────────────────────────────────────────────────────────────
+export { TrustStore } from './trust-store.js'
+export type { TrustStoreOptions, TrustStoreData, TrustRecord, WorkflowTrustLevel } from './trust-store.js'
+
 // ── Nesting Guard ─────────────────────────────────────────────────────────────
 export {
   MAX_NESTING_DEPTH,

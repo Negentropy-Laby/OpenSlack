@@ -26,3 +26,6 @@ export type { PaneProps } from './Pane.js'
 
 export { default as KeyboardShortcutHint } from './KeyboardShortcutHint.js'
 export type { KeyboardShortcutHintProps } from './KeyboardShortcutHint.js'
+
+export { default as SelectableList } from './SelectableList.js'
+export type { SelectableListItem, SelectableListProps } from './SelectableList.js'

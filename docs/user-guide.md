@@ -387,11 +387,11 @@ The workflow engine loads, validates, executes, checkpoints, and resumes OpenSla
 | `openslack collaboration workflow dry-run <name> --budget-tokens 50000` | Dry-run with custom token budget |
 | `openslack collaboration workflow run <name>` | Execute a workflow with real side effects |
 | `openslack collaboration workflow run <name> --input key=value` | Execute with input values |
-| `openslack collaboration workflow run <name> --confirm` | Require confirmation before each side effect |
+| `openslack collaboration workflow run <name> --yes` | Auto-approve all side effects without interactive confirmation |
 | `openslack collaboration workflow run <name> --agent-id <id>` | Execute with agent principal authorization |
 | `openslack collaboration workflow run <name> --budget-tokens 100000` | Execute with custom token budget |
 | `openslack collaboration workflow resume <runId>` | Resume a paused workflow run from its last checkpoint |
-| `openslack collaboration workflow resume <runId> --confirm` | Resume with confirmation before each side effect |
+| `openslack collaboration workflow resume <runId> --yes` | Resume with auto-approved side effects |
 | `openslack collaboration workflow resume <runId> --agent-id <id>` | Resume with agent principal authorization |
 | `openslack collaboration workflow trust <name>` | View the current trust level for a workflow |
 | `openslack collaboration workflow trust <name> --level <level>` | Set trust level (untrusted, trusted) |
@@ -446,7 +446,7 @@ openslack collaboration workflow preview-js test-scan --input scope=packages/ker
 openslack collaboration workflow dry-run test-scan --budget-tokens 50000
 
 # Execute with confirmation and agent identity
-openslack collaboration workflow run test-scan --confirm --agent-id claude
+openslack collaboration workflow run test-scan --yes --agent-id claude
 
 # Resume a paused run
 openslack collaboration workflow resume run-abc123

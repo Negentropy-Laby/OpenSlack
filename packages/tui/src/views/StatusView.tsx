@@ -13,6 +13,7 @@ import type { StatusViewModel } from '../view-models/status.js'
 
 export type StatusViewProps = {
   model: StatusViewModel
+  onBack?: () => void
 }
 
 function attentionStatus(priority: StatusViewModel['attentionItems'][number]['priority']): 'FAIL' | 'WARN' | 'info' {
@@ -21,12 +22,13 @@ function attentionStatus(priority: StatusViewModel['attentionItems'][number]['pr
   return 'info'
 }
 
-export default function StatusView({ model }: StatusViewProps): React.JSX.Element {
+export default function StatusView({ model, onBack }: StatusViewProps): React.JSX.Element {
   const { exit } = useApp()
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
-      exit()
+      if (onBack) onBack()
+      else exit()
     }
   })
 

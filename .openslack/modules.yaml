@@ -1,6 +1,6 @@
 schema: openslack.modules.v1
-vitest_tests: 1627
-vitest_files: 135
+vitest_tests: 1651
+vitest_files: 137
 modules:
   - id: self_evolution
     name: Self-Evolution Kernel
@@ -48,8 +48,8 @@ modules:
       - "@openslack/operator"
       - "@openslack/chat-gateway"
       - "@openslack/tui"
-    tests: 448
-    test_files: 58
+    tests: 472
+    test_files: 60
     notes: Structured planner active. Webhook and Slack chat adapters active with actor mapping. PRMS chat cards and action confirmation active. Typed tool registry, optional LLM fallback, setup report, and 24h pending plan store active. Session-based conversation memory with multi-turn context resolution and progressive clarification. Doctor --format plain for non-technical output. TUI setup report view and PR doctor view via --format tui.
 
   - id: pr_review_merge
@@ -91,6 +91,6 @@ modules:
       - "@openslack/collaboration"
       - "@openslack/workflows"
       - "@openslack/tui"
-    tests: 985
-    test_files: 67
+    tests: 1009
+    test_files: 69
     notes: Full 2D/2E Collaboration Layer active with typed workflow template preview/execute and dashboard with filters (--owner, --module, --risk, --blocker, --type). Workflow engine with JS module discovery, preview, dry-run, execute, resume, trust levels, and inspect (HTML/JSON/Markdown). Event model, activity feed, digest, handoff, decision, and room views with agent display name resolution. Authz-gated chat cards for handoffs, decisions, tasks, workflows, and plans. Agent registry v1 to v2 migration command. TUI dashboard and room views via --format tui.

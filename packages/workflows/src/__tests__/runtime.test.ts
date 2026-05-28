@@ -15,11 +15,14 @@ const testManifest: WorkflowMeta = {
   ],
 }
 
+const autoConfirm = async () => true
+
 function makeRuntime(overrides: Partial<RuntimeOptions> = {}): ReturnType<typeof createRuntime> {
   return createRuntime({
     runId: 'test-run-001',
     mode: 'execute',
     manifest: testManifest,
+    onConfirm: autoConfirm,
     ...overrides,
   })
 }
@@ -446,7 +449,7 @@ describe('createRuntime', () => {
       await expect(rt.openslack.governance.audit('test')).rejects.toThrow('not allowed in preview mode')
     })
 
-    it('allows write operations in execute mode', async () => {
+    it('allows write operations in execute mode with confirmation', async () => {
       const rt = makeRuntime({ mode: 'execute' })
       await expect(rt.openslack.task.createIssue({ title: 'Bug' })).resolves.toBeDefined()
       await expect(rt.openslack.task.checkout(42, 'agent-1')).resolves.toBeDefined()
@@ -577,11 +580,9 @@ describe('createRuntime', () => {
       await expect(rt.openslack.task.createIssue({ title: 'Bug' })).rejects.toThrow('Execute denied')
     })
 
-    it('proceeds without confirmation gate when onConfirm is not set', async () => {
-      const rt = makeRuntime({ mode: 'execute' })
-      const result = await rt.openslack.task.createIssue({ title: 'Bug' })
-      expect(result.issueUrl).toBeDefined()
-      expect(result.issueNumber).toBe(1)
+    it('denies operations when onConfirm is not set in execute mode', async () => {
+      const rt = makeRuntime({ mode: 'execute', onConfirm: undefined })
+      await expect(rt.openslack.task.createIssue({ title: 'Bug' })).rejects.toThrow('Execute denied')
     })
 
     it('read operations do not require confirmation', async () => {

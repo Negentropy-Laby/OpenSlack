@@ -13,6 +13,7 @@ import type { PrQueueViewModel } from '../view-models/pr-queue.js'
 
 export type PrQueueViewProps = {
   model: PrQueueViewModel
+  onBack?: () => void
 }
 
 function statusForItem(item: PrQueueViewModel['items'][number]): 'PASS' | 'FAIL' | 'WARN' | 'info' {
@@ -22,12 +23,13 @@ function statusForItem(item: PrQueueViewModel['items'][number]): 'PASS' | 'FAIL'
   return 'info'
 }
 
-export default function PrQueueView({ model }: PrQueueViewProps): React.JSX.Element {
+export default function PrQueueView({ model, onBack }: PrQueueViewProps): React.JSX.Element {
   const { exit } = useApp()
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
-      exit()
+      if (onBack) onBack()
+      else exit()
     }
   })
 

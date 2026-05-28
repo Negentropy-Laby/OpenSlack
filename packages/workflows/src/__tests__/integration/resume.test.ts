@@ -97,6 +97,7 @@ describe('executeResume integration', () => {
     const result = await executeResume(workflow, {
       runId: 'run-resume-001',
       manifest: TEST_MANIFEST,
+      onConfirm: async () => true,
     })
     expect(result.status).toBe('complete')
     expect(runFn).toHaveBeenCalledTimes(1)
@@ -105,7 +106,7 @@ describe('executeResume integration', () => {
   it('throws when workflow has no run function', async () => {
     const workflow = { meta: TEST_MANIFEST }
     await expect(
-      executeResume(workflow, { runId: 'run-001', manifest: TEST_MANIFEST }),
+      executeResume(workflow, { runId: 'run-001', manifest: TEST_MANIFEST, onConfirm: async () => true }),
     ).rejects.toThrow('no run function')
   })
 
@@ -119,6 +120,7 @@ describe('executeResume integration', () => {
       runId: 'run-resume-001',
       manifest: TEST_MANIFEST,
       args: { key: 'value' },
+      onConfirm: async () => true,
     })
     expect(result.receivedArgs).toEqual({ key: 'value' })
   })
@@ -139,6 +141,7 @@ describe('executeResume integration', () => {
       runId: 'run-resume-001',
       manifest: TEST_MANIFEST,
       agentLauncher: launcher,
+      onConfirm: async () => true,
     })
     const agentResult = result.agentResult as { resumed: boolean }
     expect(agentResult).toEqual({ resumed: true })
