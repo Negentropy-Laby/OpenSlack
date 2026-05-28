@@ -1,30 +1,162 @@
 import { sanitizeTerminalText } from '../sanitize.js'
 
+export interface AttentionItem {
+  /** Display label like "3 Pending Approvals" */
+  label: string
+  /** One-line preview detail */
+  detail: string
+  /** Route to push when selected */
+  route: string
+  /** Theme color hint: 'warning' for items needing action */
+  colorTheme: 'warning' | 'info'
+}
+
+export interface NavItem {
+  label: string
+  key: string
+  shortcut: string
+}
+
 export interface HomeViewModel {
-  menuItems: Array<{
-    label: string
-    key: string
-    badge?: string
-  }>
+  /** Items that need attention, ordered by urgency */
+  attentionItems: AttentionItem[]
+  /** True when no attention items exist */
+  allClear: boolean
+  /** Quick navigation items with number shortcuts */
+  navItems: NavItem[]
   systemStatus: string
 }
 
 export function mapHomeToViewModel(data?: {
   systemStatus?: string
+  /** Optional shell data to extract attention items from */
+  shellData?: {
+    dashboard?: {
+      summary: { blockers: number; handoffs: number; decisions: number }
+      blockers: Array<{ object: string; summary: string }>
+      handoffs: Array<{ id: string; from: string; to: string; status: string; context: string }>
+    }
+    prQueue?: {
+      totalPRs: number
+      blockedCount: number
+      readyCount: number
+      items: Array<{ prNumber: number; title: string; blockerCategory: string; canMerge: boolean }>
+    }
+    approvals?: {
+      pendingApprovals: Array<{ id: string; category: string; title: string; risk: string }>
+      summary: { plans: number; mergeRequests: number; workflowEffects: number; githubReviews: number }
+    }
+    workflowGallery?: {
+      workflows: Array<{ name: string; lastRunStatus?: string }>
+      summary: { total: number }
+    }
+    status?: {
+      gitHub: {
+        tasksBlocked: number
+        prsOpen: number
+        prsBlocked: number
+      }
+    }
+  }
 }): HomeViewModel {
   const s = sanitizeTerminalText
+  const attentionItems: AttentionItem[] = []
 
-  const menuItems: HomeViewModel['menuItems'] = [
-    { label: 'Dashboard', key: 'dashboard', badge: 'collaboration overview' },
-    { label: 'PRs', key: 'pr-queue' },
-    { label: 'Workflows', key: 'workflows' },
-    { label: 'Approvals', key: 'approvals' },
-    { label: 'Status', key: 'status' },
-    { label: 'Activity', key: 'activity' },
+  if (data?.shellData) {
+    const sd = data.shellData
+
+    // Pending approvals
+    const approvalCount = sd.approvals
+      ? sd.approvals.summary.plans +
+        sd.approvals.summary.mergeRequests +
+        sd.approvals.summary.workflowEffects +
+        sd.approvals.summary.githubReviews
+      : 0
+    if (approvalCount > 0 && sd.approvals) {
+      const first = sd.approvals.pendingApprovals[0]
+      attentionItems.push({
+        label: `${approvalCount} Pending Approval${approvalCount !== 1 ? 's' : ''}`,
+        detail: first ? s(first.title) : '',
+        route: 'approvals',
+        colorTheme: 'warning',
+      })
+    }
+
+    // Open PRs with blockers
+    if (sd.prQueue && sd.prQueue.totalPRs > 0) {
+      const blockedPrs = sd.prQueue.items.filter(
+        i => i.blockerCategory !== 'none' && !i.canMerge,
+      )
+      const blockedPr = blockedPrs[0]
+      const detailParts: string[] = []
+      if (sd.prQueue.blockedCount > 0) {
+        detailParts.push(`${sd.prQueue.blockedCount} blocked`)
+      }
+      if (sd.prQueue.readyCount > 0) {
+        detailParts.push(`${sd.prQueue.readyCount} ready`)
+      }
+      attentionItems.push({
+        label: `${sd.prQueue.totalPRs} Open PR${sd.prQueue.totalPRs !== 1 ? 's' : ''}`,
+        detail: blockedPr
+          ? `#${blockedPr.prNumber} ${s(blockedPr.title)}`
+          : detailParts.join(', '),
+        route: 'pr-queue',
+        colorTheme: sd.prQueue.blockedCount > 0 ? 'warning' : 'info',
+      })
+    }
+
+    // Blocked tasks
+    if (sd.status && sd.status.gitHub.tasksBlocked > 0) {
+      attentionItems.push({
+        label: `${sd.status.gitHub.tasksBlocked} Blocked Task${sd.status.gitHub.tasksBlocked !== 1 ? 's' : ''}`,
+        detail: 'Tasks unable to proceed',
+        route: 'status',
+        colorTheme: 'warning',
+      })
+    }
+
+    // Workflow runs awaiting confirmation
+    if (sd.workflowGallery) {
+      const awaiting = sd.workflowGallery.workflows.filter(
+        w => w.lastRunStatus === 'awaiting-confirmation',
+      )
+      if (awaiting.length > 0) {
+        attentionItems.push({
+          label: `${awaiting.length} Workflow${awaiting.length !== 1 ? 's' : ''} Awaiting Confirmation`,
+          detail: s(awaiting[0].name),
+          route: 'workflows',
+          colorTheme: 'warning',
+        })
+      }
+    }
+
+    // Open handoffs
+    if (sd.dashboard && sd.dashboard.summary.handoffs > 0) {
+      const firstHandoff = sd.dashboard.handoffs[0]
+      attentionItems.push({
+        label: `${sd.dashboard.summary.handoffs} Open Handoff${sd.dashboard.summary.handoffs !== 1 ? 's' : ''}`,
+        detail: firstHandoff
+          ? `${s(firstHandoff.from)} -> ${s(firstHandoff.to)}`
+          : '',
+        route: 'dashboard',
+        colorTheme: 'warning',
+      })
+    }
+  }
+
+  const navItems: NavItem[] = [
+    { label: 'Dashboard', key: 'dashboard', shortcut: '1' },
+    { label: 'PR Queue', key: 'pr-queue', shortcut: '2' },
+    { label: 'Workflows', key: 'workflows', shortcut: '3' },
+    { label: 'Approvals', key: 'approvals', shortcut: '4' },
+    { label: 'Status', key: 'status', shortcut: '5' },
+    { label: 'Activity', key: 'activity', shortcut: '6' },
   ]
 
   return {
-    menuItems,
+    attentionItems,
+    allClear: attentionItems.length === 0,
+    navItems,
     systemStatus: s(data?.systemStatus ?? 'ready'),
   }
 }

@@ -4,9 +4,29 @@
 
 OpenSlack lets heterogeneous AI agents (Claude Code, Codex, reviewers, researchers, custom) function as employees: discover tasks from GitHub Issues, claim them with deterministic git ref locks, work in isolated worktrees, submit output through PRs, and communicate with humans only for approvals and exceptions.
 
-> **Status:** Developer Preview. GitHub-backed autonomous task loop verified E2E.  
-> **Repository:** [`Negentropy-Laby/OpenSlack`](https://github.com/Negentropy-Laby/OpenSlack)  
-> **Live status:** [`docs/status/current.md`](docs/status/current.md) — run `openslack status` for current metrics
+> **Status:** Developer Preview. GitHub-backed autonomous task loop verified E2E.
+> **Repository:** [`Negentropy-Laby/OpenSlack`](https://github.com/Negentropy-Laby/OpenSlack)
+> **Live status:** [`docs/status/current.md`](docs/status/current.md) -- run `openslack status` for current metrics
+
+---
+
+## The Short Version
+
+Three commands to get going:
+
+```bash
+pnpm openslack setup          # Validate workspace, GitHub auth, golden evals
+pnpm openslack collaboration dashboard --format tui   # Interactive team dashboard
+pnpm openslack status         # Module health, test counts, GitHub ops
+```
+
+```
+Workflow --> Agent Work --> PRMS Review --> Human Approval --> Merge --> Collaboration Memory
+```
+
+Preview the work, let agents execute it, review the PR, confirm governed actions, and keep the collaboration record.
+
+See the step-by-step guides: [`docs/guides/core-workflows.md`](docs/guides/core-workflows.md)
 
 ---
 

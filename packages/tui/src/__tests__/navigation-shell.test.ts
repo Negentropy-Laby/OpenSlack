@@ -41,16 +41,17 @@ describe('navigation and shell source exports', () => {
 })
 
 describe('mapHomeToViewModel', () => {
-  it('returns menu items with correct keys', async () => {
+  it('returns nav items with correct keys', async () => {
     const { mapHomeToViewModel } = await import('../view-models/home.js')
     const model = mapHomeToViewModel()
-    expect(model.menuItems).toBeInstanceOf(Array)
-    expect(model.menuItems.length).toBeGreaterThan(0)
+    expect(model.navItems).toBeInstanceOf(Array)
+    expect(model.navItems.length).toBeGreaterThan(0)
 
-    const keys = model.menuItems.map(i => i.key)
+    const keys = model.navItems.map(i => i.key)
     expect(keys).toContain('dashboard')
     expect(keys).toContain('pr-queue')
     expect(keys).toContain('status')
+    expect(keys).toContain('activity')
   })
 
   it('returns default systemStatus when no data provided', async () => {
