@@ -1,22 +1,33 @@
 schema: openslack.workflow_template.v1
 id: bugfix
 name: Bug Fix
+description: Diagnose, implement, and merge a targeted bug fix with reviewer approval gate.
+riskLevel: medium
+tags:
+  - bugfix
+  - code-review
+  - approval-gate
 inputs:
   - name: title
     type: string
     required: true
+    description: Short summary of the bug being fixed
   - name: issueNumber
     type: integer
     required: true
+    description: GitHub issue number tracking the bug
   - name: prNumber
     type: integer
     required: true
+    description: Pull request number for the fix
   - name: agentId
     type: string
     required: true
+    description: Agent principal assigned to the fix
   - name: paths
     type: string
     required: true
+    description: Comma-separated file paths affected by the fix
 phases:
   - name: Diagnosis
     steps:
