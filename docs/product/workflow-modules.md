@@ -173,8 +173,8 @@ openslack collaboration workflow preview full-lifecycle --input scope=packages/r
 # Dry-run (simulate side effects, no real changes)
 openslack collaboration workflow dry-run full-lifecycle --input scope=all
 
-# Execute (real side effects with confirmation)
-openslack collaboration workflow run full-lifecycle --input scope=all --confirm
+# Execute (real side effects with auto-approval)
+openslack collaboration workflow run full-lifecycle --input scope=all --yes
 
 # Resume an interrupted run
 openslack collaboration workflow resume <runId>
@@ -559,12 +559,12 @@ openslack collaboration workflow dry-run full-lifecycle --input scope=all
 
 ### 7.4 Execute
 
-Run the workflow with real side effects. Requires `--confirm` flag or TUI
-confirmation. Each side-effect phase prompts for explicit approval unless the
-workflow was launched with `--yes`.
+Run the workflow with real side effects. Use `--yes` to auto-approve all
+side effects without interactive confirmation. Each side-effect phase prompts
+for explicit approval unless the workflow was launched with `--yes`.
 
 ```
-openslack collaboration workflow run full-lifecycle --input scope=all --confirm
+openslack collaboration workflow run full-lifecycle --input scope=all --yes
 ```
 
 ### Mode Escalation
@@ -851,7 +851,7 @@ $ openslack collaboration workflow dry-run full-lifecycle --input scope=packages
   Would create PR targeting main
 
 # Execute for real
-$ openslack collaboration workflow run full-lifecycle --input scope=packages/runtime --confirm
+$ openslack collaboration workflow run full-lifecycle --input scope=packages/runtime --yes
   Creating issue #42: [P1] [runtime] Unhandled null in task lifecycle ... done
   Creating issue #43: [P1] [runtime] Race condition in concurrent claim ... done
   Creating issue #44: [P2] [runtime] Missing pagination in issue sync ... done

@@ -222,7 +222,7 @@ openslack collaboration workflow preview full-lifecycle --input scope=all
 ### Phase B: Issue creation via OpenSlack task API
 
 Replace raw `gh issue create` with `ctx.openslack.task.createIssue(...)`.
-Requires `--mode execute --confirm`.
+Requires `--mode execute --yes`.
 
 ### Phase C: Implementation via OpenSlack task loop
 

@@ -35,6 +35,9 @@ export type { PaneProps } from './design-system/Pane.js';
 export { default as KeyboardShortcutHint } from './design-system/KeyboardShortcutHint.js';
 export type { KeyboardShortcutHintProps } from './design-system/KeyboardShortcutHint.js';
 
+export { default as SelectableList } from './design-system/SelectableList.js';
+export type { SelectableListItem, SelectableListProps } from './design-system/SelectableList.js';
+
 // Infrastructure
 export { isTuiSupported } from './capabilities.js';
 export { sanitizeTerminalText } from './sanitize.js';
@@ -44,6 +47,7 @@ export type { RenderTuiOptions } from './render.js';
 // Views
 export { renderDashboardTui } from './views/render-dashboard.js';
 export type { DashboardViewModel } from './view-models/dashboard.js';
+export { mapDashboardToViewModel } from './view-models/dashboard.js';
 export { renderRoomTui } from './views/render-room.js';
 export type { RoomViewModel } from './view-models/room.js';
 export { renderDoctorTui } from './views/render-doctor.js';
@@ -54,5 +58,21 @@ export { renderWorkflowPreviewTui } from './views/render-workflow-preview.js';
 export type { WorkflowPreviewViewModel, WorkflowPreviewStepViewModel } from './view-models/workflow-preview.js';
 export { renderPrQueueTui } from './views/render-pr-queue.js';
 export type { PrQueueViewModel } from './view-models/pr-queue.js';
+export { mapPrQueueToViewModel } from './view-models/pr-queue.js';
 export { renderStatusTui } from './views/render-status.js';
 export type { StatusViewModel } from './view-models/status.js';
+export { mapStatusToViewModel } from './view-models/status.js';
+
+// Navigation shell
+export { renderShellTui } from './views/render-shell.js';
+export type { ShellViewData } from './views/render-shell.js';
+export { NavigationProvider, useNavigation, HOME_ROUTE } from './navigation/context.js';
+export type { Route, RouterState, RouterActions } from './navigation/router.js';
+export type { HomeViewModel } from './view-models/home.js';
+export { mapHomeToViewModel } from './view-models/home.js';
+export type { ApprovalCenterViewModel, ApprovalItem, ApprovalCategory } from './view-models/approval-center.js';
+export { mapApprovalCenterToViewModel, getCategoryLabel } from './view-models/approval-center.js';
+export type { WorkflowGalleryViewModel, WorkflowGalleryItem, WorkflowDetailViewModel } from './view-models/workflow-gallery.js';
+export { mapWorkflowGalleryToViewModel, mapWorkflowDetailToViewModel } from './view-models/workflow-gallery.js';
+export type { IssuesPrViewModel, IssueItem, PrItem } from './view-models/issues-pr.js';
+export { mapIssuesPrToViewModel } from './view-models/issues-pr.js';

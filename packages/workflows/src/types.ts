@@ -88,6 +88,17 @@ export interface RunStatus {
   args: Record<string, unknown>
 }
 
+/**
+ * Execution mode for a workflow run.
+ *
+ * - 'validate': Schema and manifest validation only. No side effects.
+ * - 'preview': Read-only exploration. No side effects.
+ * - 'dry-run': Simulated side effects. Nothing is written externally.
+ * - 'execute': Real side effects. REQUIRES human confirmation via onConfirm
+ *   callback or explicit allowUnattended flag. Never proceeds without one.
+ *
+ * @see docs/product/approval-vocabulary.md for the full approval/confirmation vocabulary
+ */
 export type ExecutionMode = 'validate' | 'preview' | 'dry-run' | 'execute'
 
 // ── PRMS ──────────────────────────────────────────────────────────────────────

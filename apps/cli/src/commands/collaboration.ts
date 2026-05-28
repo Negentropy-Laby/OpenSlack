@@ -865,9 +865,9 @@ export function collaborationCommands(): Command {
     .description('Execute a workflow with real side effects')
     .option('--input <key=value>', 'Workflow input value', (value, previous: string[]) => [...previous, value], [])
     .option('--budget-tokens <number>', 'Token budget for execution', '100000')
-    .option('--confirm', 'Require confirmation before each side effect')
+    .option('--yes', 'Auto-approve all side effects without interactive confirmation')
     .option('--agent-id <id>', 'Agent ID for authorization')
-    .action(async (name: string, options: { input: string[]; budgetTokens: string; confirm?: boolean; agentId?: string }) => {
+    .action(async (name: string, options: { input: string[]; budgetTokens: string; yes?: boolean; agentId?: string }) => {
       const found = await findJsWorkflow(name);
       if (!found) {
         console.log(`JS workflow module "${name}" not found.`);
@@ -885,19 +885,35 @@ export function collaborationCommands(): Command {
           process.exit(1);
         }
 
-        // Confirmation gate
-        const onConfirm = options.confirm
+        // Confirmation gate: --yes auto-approves, otherwise interactive prompt required
+        const onConfirm = options.yes
           ? async (operation: string, detail: string): Promise<boolean> => {
-              // In a real CLI, this would prompt the user interactively.
-              // For now, we log the operation and auto-approve.
-              console.log(`[CONFIRM] ${operation}: ${detail}`);
-              return true
+              console.log(`[AUTO-APPROVE] ${operation}: ${detail}`);
+              return true;
             }
-          : undefined;
+          : async (operation: string, detail: string): Promise<boolean> => {
+              // Refuse to execute interactively if not in a TTY
+              if (!process.stdin.isTTY) {
+                console.error(`[ERROR] Cannot prompt for confirmation: not a TTY.`);
+                console.error(`  Use --yes to auto-approve, or run in an interactive terminal.`);
+                return false;
+              }
+              console.log(`[CONFIRM] ${operation}: ${detail}`);
+              const { createInterface } = await import('readline');
+              const rl = createInterface({ input: process.stdin, output: process.stdout });
+              const answer = await new Promise<string>(resolve => {
+                rl.question('Proceed? [y/N] ', resolve);
+              });
+              rl.close();
+              return answer.toLowerCase() === 'y';
+            };
 
         console.log(`Executing: ${mod.meta.name}`);
         console.log(`  Mode: execute`);
         console.log(`  Budget: ${budgetTokens} tokens`);
+        if (options.yes) {
+          console.log(`  Confirmation: auto-approve (--yes)`);
+        }
         if (mod.meta.sideEffects && mod.meta.sideEffects.length > 0) {
           console.log(`  Declared side effects:`);
           for (const se of mod.meta.sideEffects) console.log(`    - ${se}`);
@@ -910,6 +926,7 @@ export function collaborationCommands(): Command {
           args,
           budget: { tokens: Number.isFinite(budgetTokens) ? budgetTokens : 100000, costUsd: 1.0 },
           onConfirm,
+          allowUnattended: options.yes,
           ...resolveAgentAuthOptions(options.agentId),
         });
 
@@ -925,9 +942,9 @@ export function collaborationCommands(): Command {
   workflow
     .command('resume <runId>')
     .description('Resume a paused workflow run from its last checkpoint')
-    .option('--confirm', 'Require confirmation before each side effect')
+    .option('--yes', 'Auto-approve all side effects without interactive confirmation')
     .option('--agent-id <id>', 'Agent ID for authorization')
-    .action(async (runId: string, options: { confirm?: boolean; agentId?: string }) => {
+    .action(async (runId: string, options: { yes?: boolean; agentId?: string }) => {
       const root = findRepoRoot();
       const store = new RunStore({
         baseDir: join(root, '.openslack.local', 'workflows'),
@@ -979,18 +996,33 @@ export function collaborationCommands(): Command {
         // Transition back to running
         await store.transitionStatus(runId, 'running');
 
-        const onConfirm = options.confirm
+        const onConfirm = options.yes
           ? async (operation: string, detail: string): Promise<boolean> => {
-              console.log(`[CONFIRM] ${operation}: ${detail}`);
-              return true
+              console.log(`[AUTO-APPROVE] ${operation}: ${detail}`);
+              return true;
             }
-          : undefined;
+          : async (operation: string, detail: string): Promise<boolean> => {
+              if (!process.stdin.isTTY) {
+                console.error(`[ERROR] Cannot prompt for confirmation: not a TTY.`);
+                console.error(`  Use --yes to auto-approve, or run in an interactive terminal.`);
+                return false;
+              }
+              console.log(`[CONFIRM] ${operation}: ${detail}`);
+              const { createInterface } = await import('readline');
+              const rl = createInterface({ input: process.stdin, output: process.stdout });
+              const answer = await new Promise<string>(resolve => {
+                rl.question('Proceed? [y/N] ', resolve);
+              });
+              rl.close();
+              return answer.toLowerCase() === 'y';
+            };
 
         const result = await executeResume(mod, {
           runId,
           manifest: mod.meta,
           args: meta.args,
           onConfirm,
+          allowUnattended: options.yes,
         });
 
         // Mark run as completed
@@ -1020,6 +1052,10 @@ export function collaborationCommands(): Command {
       const validLevels = ['untrusted', 'trusted', 'core'] as const
       type TrustLevel = typeof validLevels[number]
 
+      const { TrustStore, resolveTrustLevel, getPermissionsForTrustLevel } = await import('@openslack/workflows')
+      const root = findRepoRoot()
+      const trustStore = new TrustStore({ rootDir: root })
+
       // If no level specified, show current trust level
       if (!options.level) {
         const found = await findJsWorkflow(name)
@@ -1028,14 +1064,23 @@ export function collaborationCommands(): Command {
           console.log('Use "openslack collaboration workflow list" to see available workflows.')
           process.exit(1)
         }
-        // Determine current trust level
-        const { resolveTrustLevel } = await import('@openslack/workflows')
+        // Check TrustStore first, then fall back to default
         const isBuiltin = found.path.includes('/builtins/') || found.path.includes('\\builtins\\')
-        const currentLevel = resolveTrustLevel({ isBuiltin })
+        const persistedLevel = trustStore.get(name)
+        const currentLevel = persistedLevel !== 'untrusted'
+          ? persistedLevel
+          : resolveTrustLevel({ isBuiltin })
         console.log(`Workflow: ${name}`)
         console.log(`Current trust level: ${currentLevel}`)
         if (isBuiltin) {
           console.log('  (Core workflows are always at core trust level)')
+        }
+        if (persistedLevel !== 'untrusted') {
+          const record = trustStore.list()[name]
+          if (record) {
+            console.log(`  Set at: ${record.setAt}`)
+            console.log(`  Set by: ${record.setBy}`)
+          }
         }
         console.log('')
         console.log('To set a trust level: openslack collaboration workflow trust <name> --level <level>')
@@ -1074,9 +1119,8 @@ export function collaborationCommands(): Command {
         process.exit(1)
       }
 
-      // For now, we record the trust level assignment.
-      // In a full implementation, this would persist to .openslack/workflow-trust.yaml
-      const { getPermissionsForTrustLevel } = await import('@openslack/workflows')
+      // Persist the trust level assignment via TrustStore
+      trustStore.set(name, requestedLevel as TrustLevel)
       const perms = getPermissionsForTrustLevel(requestedLevel as TrustLevel)
       console.log(`Trust level for workflow "${name}" set to: ${requestedLevel}`)
       console.log(`Available permissions (${perms.size}):`)

@@ -15,6 +15,7 @@ import { governanceCommands } from './commands/governance.js';
 import { chatCommands } from './commands/chat.js';
 import { collaborationCommands } from './commands/collaboration.js';
 import { guideCommands } from './commands/guide.js';
+import { tuiCommands } from './commands/tui.js';
 
 const program = new Command();
 
@@ -41,5 +42,6 @@ program.addCommand(setupCommands());
 program.addCommand(chatCommands());
 program.addCommand(collaborationCommands());
 program.addCommand(guideCommands());
+program.addCommand(tuiCommands());
 
 program.parse(process.argv);

@@ -294,8 +294,11 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
               issueNumber: -1,
             }
           }
-          // execute mode: confirmation gate
-          if (onConfirm) {
+          // execute mode: confirmation gate (required)
+          if (!onConfirm) {
+            throw new ExecuteDeniedError('openslack.task.createIssue', 'Execute mode requires confirmation callback')
+          }
+          {
             const detail = typeof issueData === 'object' && issueData !== null
               ? JSON.stringify(issueData)
               : String(issueData)
@@ -321,7 +324,11 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
               branchName: `agent/${agentId}/dry-run-${issueNumber}`,
             }
           }
-          if (onConfirm) {
+          // execute mode: confirmation gate (required)
+          if (!onConfirm) {
+            throw new ExecuteDeniedError('openslack.task.checkout', 'Execute mode requires confirmation callback')
+          }
+          {
             const approved = await onConfirm(
               'openslack.task.checkout',
               `Checkout issue #${issueNumber} for agent ${agentId}`,
@@ -344,7 +351,11 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
             runtime.log(`[DRY-RUN] openslack.task.sync: would sync #${issueNumber}`)
             return { pushed: false }
           }
-          if (onConfirm) {
+          // execute mode: confirmation gate (required)
+          if (!onConfirm) {
+            throw new ExecuteDeniedError('openslack.task.sync', 'Execute mode requires confirmation callback')
+          }
+          {
             const approved = await onConfirm(
               'openslack.task.sync',
               `Sync issue #${issueNumber}`,
@@ -385,7 +396,11 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
             runtime.log(`[DRY-RUN] openslack.prms.requestMerge: would request merge for PR #${prNumber}`)
             return { merged: false, prmsStatus: 'dry-run' }
           }
-          if (onConfirm) {
+          // execute mode: confirmation gate (required)
+          if (!onConfirm) {
+            throw new ExecuteDeniedError('openslack.prms.requestMerge', 'Execute mode requires confirmation callback')
+          }
+          {
             const approved = await onConfirm(
               'openslack.prms.requestMerge',
               `Request merge for PR #${prNumber}`,
@@ -407,7 +422,11 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
             runtime.log(`[DRY-RUN] openslack.collaboration.recordEvent: would record event`)
             return
           }
-          if (onConfirm) {
+          // execute mode: confirmation gate (required)
+          if (!onConfirm) {
+            throw new ExecuteDeniedError('openslack.collaboration.recordEvent', 'Execute mode requires confirmation callback')
+          }
+          {
             const detail = typeof event === 'object' && event !== null
               ? JSON.stringify(event)
               : String(event)
@@ -426,7 +445,11 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
             runtime.log(`[DRY-RUN] openslack.collaboration.createHandoff: would create handoff`)
             return details
           }
-          if (onConfirm) {
+          // execute mode: confirmation gate (required)
+          if (!onConfirm) {
+            throw new ExecuteDeniedError('openslack.collaboration.createHandoff', 'Execute mode requires confirmation callback')
+          }
+          {
             const detail = typeof details === 'object' && details !== null
               ? JSON.stringify(details)
               : String(details)
@@ -446,7 +469,11 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
             runtime.log(`[DRY-RUN] openslack.collaboration.recordDecision: would record decision`)
             return details
           }
-          if (onConfirm) {
+          // execute mode: confirmation gate (required)
+          if (!onConfirm) {
+            throw new ExecuteDeniedError('openslack.collaboration.recordDecision', 'Execute mode requires confirmation callback')
+          }
+          {
             const detail = typeof details === 'object' && details !== null
               ? JSON.stringify(details)
               : String(details)
@@ -468,7 +495,11 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
             runtime.log(`[DRY-RUN] openslack.governance.audit: ${action}`)
             return
           }
-          if (onConfirm) {
+          // execute mode: confirmation gate (required)
+          if (!onConfirm) {
+            throw new ExecuteDeniedError('openslack.governance.audit', 'Execute mode requires confirmation callback')
+          }
+          {
             const detail = details !== undefined ? String(details) : action
             const approved = await onConfirm('openslack.governance.audit', detail)
             if (!approved) {

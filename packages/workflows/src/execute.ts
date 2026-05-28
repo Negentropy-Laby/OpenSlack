@@ -84,8 +84,18 @@ export interface ExecuteRunOptions {
   agentCache?: AgentCacheStore
   /** Pipeline cache store */
   pipelineCache?: PipelineCacheStore
-  /** Confirmation callback for execute mode. */
+  /**
+   * Confirmation callback for execute mode. Required unless allowUnattended is set.
+   * Called before each side-effect operation; returning false aborts with ExecuteDeniedError.
+   */
   onConfirm?: ConfirmCallback
+  /**
+   * Allow non-interactive execution without a confirmation callback.
+   * This is the programmatic equivalent of --yes. Only use in trusted
+   * automation contexts (CI, tests) where human confirmation is not feasible.
+   * When set, operations proceed without prompting but are still logged.
+   */
+  allowUnattended?: boolean
 }
 
 /**
@@ -197,9 +207,13 @@ export async function executeDryRun(
 /**
  * Execute a workflow in execute mode with real side effects.
  *
- * If no confirmation callback is provided, all operations proceed without
- * prompting. If a callback is provided, it is called before each side-effect
- * operation; returning false aborts the operation with ExecuteDeniedError.
+ * SAFETY: Execute mode requires either a confirmation callback (onConfirm)
+ * or an explicit allowUnattended flag. Without either, the function throws
+ * immediately to prevent unattended execution with real side effects.
+ *
+ * When a callback is provided, it is called before each side-effect operation;
+ * returning false aborts the operation with ExecuteDeniedError. When
+ * allowUnattended is set, operations proceed without prompting (for CI/test use).
  */
 export async function executeRun(
   workflow: {
@@ -213,6 +227,20 @@ export async function executeRun(
     args = {},
     budget,
   } = options
+
+  // Synthesize auto-approve callback when allowUnattended is set without explicit onConfirm
+  const effectiveOnConfirm = options.onConfirm ?? (options.allowUnattended
+    ? async () => true
+    : undefined)
+
+  // Safety gate: execute mode MUST have either a confirmation callback
+  // or an explicit allowUnattended flag to prevent silent side effects.
+  if (!effectiveOnConfirm) {
+    throw new Error(
+      'Execute mode requires a confirmation callback (onConfirm) or explicit --yes flag (allowUnattended). ' +
+      'Without human confirmation, workflows with real side effects will not execute.',
+    )
+  }
 
   const runId = `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 
@@ -229,7 +257,7 @@ export async function executeRun(
     agentLauncher: options.agentLauncher,
     agentCache: options.agentCache,
     pipelineCache: options.pipelineCache,
-    onConfirm: options.onConfirm,
+    onConfirm: effectiveOnConfirm,
   })
 
   if (!workflow.run) {
@@ -245,6 +273,9 @@ export async function executeRun(
  * Loads checkpoint state from the run store and re-executes from the
  * next uncompleted phase. The workflow's run function is called with
  * a runtime configured to resume from the checkpoint.
+ *
+ * SAFETY: Like executeRun, resume mode in execute requires either onConfirm
+ * or allowUnattended to prevent unattended side effects.
  */
 export async function executeResume(
   workflow: {
@@ -260,6 +291,8 @@ export async function executeResume(
     agentCache?: AgentCacheStore
     pipelineCache?: PipelineCacheStore
     onConfirm?: ConfirmCallback
+    /** Allow non-interactive execution without confirmation (CI/test use). */
+    allowUnattended?: boolean
   },
 ): Promise<RunResult> {
   const {
@@ -268,6 +301,19 @@ export async function executeResume(
     args = {},
     budget,
   } = options
+
+  // Synthesize auto-approve callback when allowUnattended is set without explicit onConfirm
+  const effectiveOnConfirm = options.onConfirm ?? (options.allowUnattended
+    ? async () => true
+    : undefined)
+
+  // Safety gate: same as executeRun
+  if (!effectiveOnConfirm) {
+    throw new Error(
+      'Execute mode requires a confirmation callback (onConfirm) or explicit --yes flag (allowUnattended). ' +
+      'Without human confirmation, workflows with real side effects will not execute.',
+    )
+  }
 
   const runtime = createRuntime({
     runId,
@@ -282,7 +328,7 @@ export async function executeResume(
     agentLauncher: options.agentLauncher,
     agentCache: options.agentCache,
     pipelineCache: options.pipelineCache,
-    onConfirm: options.onConfirm,
+    onConfirm: effectiveOnConfirm,
   })
 
   if (!workflow.run) {

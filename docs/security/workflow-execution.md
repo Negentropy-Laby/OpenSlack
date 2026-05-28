@@ -374,7 +374,7 @@ if (this.mode === 'execute' && !this.confirmed) {
 }
 ```
 
-In CLI, this is `--confirm` flag. In TUI, this is a modal dialog. In chat,
+In CLI, this is `--yes` flag. In TUI, this is a modal dialog. In chat,
 this is a reaction-based confirmation.
 
 ## Failure Modes
