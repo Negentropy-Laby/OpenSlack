@@ -285,6 +285,18 @@ approval on stale PR checks.
 | `openslack pr watch <n>` | Poll PR status until ready or timeout |
 | `openslack pr merge <n>` | Merge PR after all gates pass |
 
+For local bot-authenticated PRMS diagnosis or Merge Steward execution, use the
+fixed GitHub App wrapper pipeline instead of reading credentials manually:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/openslack-pr-gate.ps1 -PrNumber <n>
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/openslack-pr-gate.ps1 -PrNumber <n> -Merge -Method merge
+```
+
+The pipeline reads `.openslack.local\github-app.pem` only inside the wrapper
+process. Add `-Merge` only after required human approval is recorded; Merge
+Steward still re-runs PRMS and blocks unless all gates pass.
+
 ## Operator
 
 | Command | Purpose |

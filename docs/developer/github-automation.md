@@ -82,6 +82,40 @@ bot/agent identity. If a PR is accidentally opened by the human reviewer or
 CODEOWNER, close or abandon it and recreate it through the bot credential path,
 or require a different independent human approval.
 
+### PRMS bot merge pipeline
+
+Use `scripts/openslack-pr-gate.ps1` for local bot-authenticated PR diagnosis
+and PRMS-gated merge. The script is a narrow orchestration layer: it checks that
+the local GitHub App PEM file exists, delegates credential loading to
+`scripts/openslack-bot.ps1`, and delegates all readiness decisions to
+`openslack pr doctor` and `openslack pr merge`.
+
+```powershell
+# Diagnose with GitHub App bot auth.
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/openslack-pr-gate.ps1 -PrNumber 110
+
+# Diagnose, then ask Merge Steward to merge if PRMS returns READY_TO_MERGE.
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/openslack-pr-gate.ps1 -PrNumber 110 -Merge -Method merge
+```
+
+The default key path is `.openslack.local\github-app.pem`. Agents and LLMs must
+not read, print, copy, summarize, or pass PEM contents. They may only reference
+the fixed wrapper command or ask a human/operator to run it. The PEM is read by
+the PowerShell wrapper, placed only in the child process environment variable
+expected by `@openslack/github`, and removed when that process exits. The PEM
+must never be passed as a command-line argument, log line, PR body, review body,
+or chat message.
+
+The merge command is intentionally not a direct GitHub merge shortcut.
+`openslack pr merge` calls Merge Steward, which re-runs the PRMS diagnostic path
+and blocks unless the decision is `READY_TO_MERGE`. If the GitHub App
+installation cannot be auto-discovered, list installations without exposing the
+key:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/openslack-bot.ps1 -ListInstallations
+```
+
 ### Updating an existing PR branch
 
 After a repair commit, force-push, or any bot-authored update to an existing PR,
