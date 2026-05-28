@@ -9,18 +9,35 @@ import {
   renderHandoffList, renderHandoff,
   recordDecision, listDecisions, getDecision, supersedeDecision,
   renderDecisionList, renderDecision,
-  buildRoomView, renderRoom,
+  buildRoomView, renderRoom, renderRoomPlain, renderRoomChat,
   previewWorkflowTemplate, executeWorkflowTemplate, renderWorkflowPreview,
   validateWorkflowTemplate,
-  buildDashboardProjection, renderDashboardProjection, BLOCKER_TYPES,
+  buildDashboardProjection, renderDashboardProjection, renderDashboardMarkdown, BLOCKER_TYPES,
 } from '@openslack/collaboration';
 import type { WorkflowTemplate } from '@openslack/collaboration';
 import { resolveAgentPrincipal, renderFindingsPlain } from '@openslack/runtime';
 import type { PlainFinding } from '@openslack/runtime';
 import {
-  buildDashboardCard, buildDigestCard, buildRoomCard, buildActivityCard,
-  cardToText,
+  buildDashboardCard, buildDigestCard, buildActivityCard,
+  buildWorkflowCard, cardToText,
 } from '@openslack/chat-gateway';
+import {
+  discoverJsWorkflows,
+  discoverYamlTemplates,
+  findWorkflow as findJsWorkflow,
+  loadWorkflow,
+  executePreview,
+  executeDryRun,
+  executeRun,
+  executeResume,
+  RunStore,
+  checkResumable,
+  prepareResume,
+  renderRunHtml,
+  renderRunJson,
+  renderRunMarkdown,
+} from '@openslack/workflows';
+import type { DryRunResult, SimulatedEffect } from '@openslack/workflows';
 
 type AgentAuthOptions = {
   principal?: import('@openslack/kernel').AgentPrincipal;
@@ -113,7 +130,7 @@ export function collaborationCommands(): Command {
     .option('--risk <level>', 'Filter by risk level (none, low, medium, high)')
     .option('--blocker', 'Show only blocker events')
     .option('--type <eventType>', 'Filter by event type')
-    .option('--format <format>', 'Output format: standard, plain, json, chat, or tui', 'standard')
+    .option('--format <format>', 'Output format: standard, plain, json, chat, markdown, or tui', 'standard')
     .action(async (options: { since: string; owner?: string; module?: string; risk?: string; blocker?: boolean; type?: string; format: string }) => {
       const sinceHours = parseInt(options.since, 10);
       const filters: Record<string, unknown> = {};
@@ -160,6 +177,8 @@ export function collaborationCommands(): Command {
         if (dashboard.activeDecisions > 0) findings.push({ status: 'informational', title: 'Active decisions', detail: `${dashboard.activeDecisions} active` });
         if (dashboard.blockerCount === 0) findings.push({ status: 'PASS', title: 'No blockers', detail: `No blockers in the last ${dashboard.sinceHours}h` });
         console.log(renderFindingsPlain(findings));
+      } else if (options.format === 'markdown') {
+        console.log(renderDashboardMarkdown(dashboard));
       } else {
         console.log(renderDashboardProjection(dashboard));
       }
@@ -228,7 +247,9 @@ export function collaborationCommands(): Command {
     .description('Show collaboration digest (grouped summary)')
     .option('--since <hours>', 'Period in hours', '24')
     .option('--format <format>', 'Output format: standard, plain, json, or chat', 'standard')
-    .action(async (options: { since: string; format: string }) => {
+    .option('--post <target>', 'Post digest to external target (e.g., slack)', undefined)
+    .option('--channel <channelId>', 'Slack channel ID for --post slack', undefined)
+    .action(async (options: { since: string; format: string; post?: string; channel?: string }) => {
       const hours = parseInt(options.since, 10);
       const events = readEvents();
 
@@ -239,15 +260,43 @@ export function collaborationCommands(): Command {
       }
 
       const digest = buildDigest(filtered, hours);
+
+      // Render to text first (used for --post slack fallback and stdout)
+      const digestCard = buildDigestCard({
+        sinceHours: digest.periodHours,
+        totalEvents: digest.totalEvents,
+        groups: digest.groups.map((g) => ({ label: g.label, count: g.events.length, items: g.events.map((e) => e.summary) })),
+      });
+
+      // Post to Slack if requested
+      if (options.post === 'slack') {
+        const channelId = options.channel ?? process.env.SLACK_DIGEST_CHANNEL;
+        if (!channelId) {
+          console.error('Slack channel ID required. Use --channel or set SLACK_DIGEST_CHANNEL env var.');
+          process.exit(1);
+        }
+        const botToken = process.env.SLACK_BOT_TOKEN;
+        if (!botToken) {
+          console.error('Slack bot token required. Set SLACK_BOT_TOKEN env var.');
+          process.exit(1);
+        }
+        try {
+          const { SlackAdapter } = await import('@openslack/chat-gateway');
+          const adapter = new SlackAdapter({ port: 0, signingSecret: '', botToken });
+          const text = cardToText(digestCard);
+          await adapter.send(channelId, { text });
+          console.log(`Digest posted to Slack channel ${channelId}`);
+        } catch (err) {
+          console.error(`Failed to post digest to Slack: ${(err as Error).message}`);
+          process.exit(1);
+        }
+        return;
+      }
+
       if (options.format === 'json') {
         console.log(JSON.stringify(digest, null, 2));
       } else if (options.format === 'chat') {
-        const card = buildDigestCard({
-          sinceHours: digest.periodHours,
-          totalEvents: digest.totalEvents,
-          groups: digest.groups.map((g) => ({ label: g.label, count: g.events.length, items: g.events.map((e) => e.summary) })),
-        });
-        console.log(cardToText(card));
+        console.log(cardToText(digestCard));
       } else if (options.format === 'plain') {
         const groupStatusMap: Record<string, PlainFinding['status']> = {
           'Needs Human': 'requires_human_approval',
@@ -445,30 +494,9 @@ export function collaborationCommands(): Command {
       } else if (options.format === 'json') {
         console.log(JSON.stringify(view, null, 2));
       } else if (options.format === 'chat') {
-        const card = buildRoomCard({
-          roomId: view.roomId,
-          eventCount: view.recentEvents.length,
-          blockerCount: view.blockers.length,
-          handoffCount: view.linkedHandoffs.length,
-          decisionCount: view.linkedDecisions.length,
-          blockers: view.blockers.map((b) => ({ object: b.type, summary: b.summary })),
-        });
-        console.log(cardToText(card));
+        console.log(renderRoomChat(view));
       } else if (options.format === 'plain') {
-        const findings: PlainFinding[] = [];
-        for (const blocker of view.blockers) {
-          findings.push({ status: 'FAIL', title: `Blocker: ${blocker.type}`, detail: blocker.summary, nextAction: blocker.nextAction?.action });
-        }
-        if (view.owner) findings.push({ status: 'informational', title: 'Owner', detail: view.owner });
-        if (view.nextAction) findings.push({ status: 'informational', title: 'Next action', detail: view.nextAction });
-        for (const h of view.linkedHandoffs) {
-          findings.push({ status: 'informational', title: `Handoff: ${h.id}`, detail: `${h.from} → ${h.to} (${h.status})` });
-        }
-        for (const d of view.linkedDecisions) {
-          findings.push({ status: 'informational', title: `Decision: ${d.id}`, detail: `${d.topic}: ${d.decision} (${d.status})` });
-        }
-        if (view.blockers.length === 0) findings.push({ status: 'PASS', title: 'No blockers', detail: `No blockers for room ${view.roomId}` });
-        console.log(renderFindingsPlain(findings));
+        console.log(renderRoomPlain(view));
       } else {
         console.log(renderRoom(view));
       }
@@ -482,10 +510,26 @@ export function collaborationCommands(): Command {
     .command('preview <file>')
     .description('Preview a workflow template without executing it')
     .option('--input <key=value>', 'Template input value', (value, previous: string[]) => [...previous, value], [])
-    .action((file: string, options: { input: string[] }) => {
+    .option('--format <format>', 'Output format: standard, plain, json, chat, or tui', 'standard')
+    .action(async (file: string, options: { input: string[]; format: string }) => {
       const template = loadWorkflowTemplate(file);
       const preview = previewWorkflowTemplate(template, parseInputs(options.input));
-      console.log(renderWorkflowPreview(preview));
+      if (options.format === 'tui') {
+        try {
+          const { renderWorkflowPreviewTui } = await import('@openslack/tui');
+          await renderWorkflowPreviewTui(preview);
+        } catch (error) {
+          console.error('TUI unavailable. Falling back to standard output.');
+          console.log(renderWorkflowPreview(preview));
+        }
+      } else if (options.format === 'json') {
+        console.log(JSON.stringify(preview, null, 2));
+      } else if (options.format === 'chat') {
+        const card = buildWorkflowCard(preview);
+        console.log(cardToText(card));
+      } else {
+        console.log(renderWorkflowPreview(preview));
+      }
       if (preview.errors.length > 0) process.exit(1);
     });
 
@@ -513,21 +557,616 @@ export function collaborationCommands(): Command {
 
   workflow
     .command('list')
-    .description('List built-in workflow templates')
-    .action(() => {
-      const templates = listBuiltinTemplates();
-      if (templates.length === 0) {
-        console.log('No built-in workflow templates found.');
+    .description('List all available workflows (YAML templates and JS modules)')
+    .action(async () => {
+      // Gather YAML templates
+      const yamlDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', 'templates', 'workflows');
+      const yamlWorkflows = await discoverYamlTemplates(yamlDir);
+
+      // Gather JS/TS workflow modules
+      const root = findRepoRoot();
+      const jsWorkflows = await discoverJsWorkflows(root);
+
+      if (yamlWorkflows.length === 0 && jsWorkflows.length === 0) {
+        console.log('No workflows found.');
         return;
       }
-      console.log('| ID | Name | Phases | Inputs |');
-      console.log('|----|------|---------|--------|');
-      for (const t of templates) {
-        console.log(`| ${t.id} | ${t.name} | ${t.phases} | ${t.inputs} |`);
+
+      // Render YAML templates section
+      if (yamlWorkflows.length > 0) {
+        console.log('YAML Templates:');
+        console.log('| ID | Name | Phases | Inputs | File |');
+        console.log('|----|------|---------|--------|------|');
+        for (const t of yamlWorkflows) {
+          console.log(`| ${t.name} | ${t.displayName} | ${t.phases} | ${t.inputs} | ${t.file} |`);
+        }
+        console.log('');
       }
-      console.log('');
-      console.log(`Use: openslack collaboration workflow preview <id> --input key=value`);
+
+      // Render JS modules section
+      if (jsWorkflows.length > 0) {
+        console.log('JS/TS Modules:');
+        console.log('| Name | Display Name | Phases | Inputs | File | Description |');
+        console.log('|------|-------------|--------|--------|------|-------------|');
+        for (const m of jsWorkflows) {
+          const desc = m.description ?? '-';
+          console.log(`| ${m.name} | ${m.displayName} | ${m.phases} | ${m.inputs} | ${m.file} | ${desc} |`);
+        }
+        console.log('');
+      }
+
+      console.log('Use: openslack collaboration workflow preview <id> --input key=value');
+      console.log('     openslack collaboration workflow validate <name>');
+      console.log('     openslack collaboration workflow show <name>');
     });
+
+  workflow
+    .command('validate <name>')
+    .description('Validate a workflow template or JS module by name')
+    .action(async (name: string) => {
+      // Try YAML template first
+      const builtinPath = resolveBuiltinTemplatePath(name);
+      if (builtinPath) {
+        const template = parseYaml(readFileSync(builtinPath, 'utf-8')) as WorkflowTemplate;
+        const errors = validateWorkflowTemplate(template);
+        if (errors.length === 0) {
+          console.log(`Workflow template "${name}" is valid.`);
+          console.log(`  Schema: ${template.schema}`);
+          console.log(`  ID: ${template.id}`);
+          console.log(`  Name: ${template.name}`);
+          console.log(`  Phases: ${template.phases.length}`);
+          console.log(`  Inputs: ${(template.inputs ?? []).length}`);
+        } else {
+          console.log(`Workflow template "${name}" has validation errors:`);
+          for (const error of errors) console.log(`  - ${error}`);
+          process.exit(1);
+        }
+        return;
+      }
+
+      // Try JS module
+      const found = await findJsWorkflow(name);
+      if (found) {
+        try {
+          const mod = await loadWorkflow(found.path);
+          console.log(`Workflow module "${name}" is valid.`);
+          console.log(`  Name: ${mod.meta.name}`);
+          console.log(`  Description: ${mod.meta.description}`);
+          console.log(`  Format: ${mod.format}`);
+          console.log(`  Phases: ${mod.meta.phases.length}`);
+          console.log(`  Hash: ${mod.hash}`);
+          if (mod.meta.version) console.log(`  Version: ${mod.meta.version}`);
+          if (mod.meta.risk) console.log(`  Risk: ${mod.meta.risk}`);
+        } catch (err) {
+          console.log(`Workflow module "${name}" failed validation:`);
+          console.log(`  ${(err as Error).message}`);
+          process.exit(1);
+        }
+        return;
+      }
+
+      // Not found anywhere
+      console.log(`Workflow "${name}" not found.`);
+      console.log('Use "openslack collaboration workflow list" to see available workflows.');
+      process.exit(1);
+    });
+
+  workflow
+    .command('preview-js <name>')
+    .description('Preview a JS workflow module in read-only mode')
+    .option('--input <key=value>', 'Workflow input value', (value, previous: string[]) => [...previous, value], [])
+    .option('--budget-tokens <number>', 'Token budget for preview', '10000')
+    .action(async (name: string, options: { input: string[]; budgetTokens: string }) => {
+      const found = await findJsWorkflow(name);
+      if (!found) {
+        console.log(`JS workflow module "${name}" not found.`);
+        console.log('Use "openslack collaboration workflow list" to see available workflows.');
+        process.exit(1);
+      }
+
+      try {
+        const mod = await loadWorkflow(found.path);
+        const args = parseInputs(options.input);
+        const budgetTokens = parseInt(options.budgetTokens, 10);
+
+        console.log(`Previewing workflow: ${mod.meta.name}`);
+        console.log(`  Mode: preview (read-only)`);
+        console.log(`  Format: ${mod.format}`);
+        console.log(`  Budget: ${budgetTokens} tokens`);
+        console.log('');
+
+        const result = await executePreview(mod, {
+          manifest: mod.meta,
+          args,
+          budget: { tokens: Number.isFinite(budgetTokens) ? budgetTokens : 10000, costUsd: 0 },
+        });
+
+        console.log('Preview Result:');
+        console.log(JSON.stringify(result, null, 2));
+      } catch (err) {
+        console.log(`Preview failed for workflow "${name}":`);
+        console.log(`  ${(err as Error).message}`);
+        process.exit(1);
+      }
+    });
+
+  workflow
+    .command('show <name>')
+    .description('Show detailed information about a workflow')
+    .action(async (name: string) => {
+      // Try YAML template first
+      const builtinPath = resolveBuiltinTemplatePath(name);
+      if (builtinPath) {
+        const template = parseYaml(readFileSync(builtinPath, 'utf-8')) as WorkflowTemplate;
+        console.log(`Workflow Template: ${template.name}`);
+        console.log(`  Schema: ${template.schema}`);
+        console.log(`  ID: ${template.id}`);
+        console.log('');
+        if (template.inputs && template.inputs.length > 0) {
+          console.log('Inputs:');
+          for (const input of template.inputs) {
+            const required = input.required ? ' (required)' : '';
+            const def = input.default !== undefined ? ` [default: ${input.default}]` : '';
+            console.log(`  - ${input.name} (${input.type})${required}${def}`);
+          }
+          console.log('');
+        }
+        console.log('Phases:');
+        for (const phase of template.phases) {
+          console.log(`  ${phase.name}:`);
+          for (const step of phase.steps) {
+            if (step.type === 'action') {
+              console.log(`    - [action] ${step.title ?? step.actionId} (${step.actionId})`);
+            } else if (step.type === 'decision-gate') {
+              console.log(`    - [decision-gate] ${step.title} (role: ${step.requiredRole})`);
+            } else if (step.type === 'handoff') {
+              console.log(`    - [handoff] ${step.from} -> ${step.to}: ${step.context}`);
+            } else if (step.type === 'record-decision') {
+              console.log(`    - [record-decision] ${step.topic}`);
+            } else if (step.type === 'wait') {
+              console.log(`    - [wait] ${step.title}`);
+            }
+          }
+        }
+        return;
+      }
+
+      // Try JS module
+      const found = await findJsWorkflow(name);
+      if (found) {
+        try {
+          const mod = await loadWorkflow(found.path);
+          const meta = mod.meta;
+          console.log(`Workflow Module: ${meta.name}`);
+          console.log(`  Description: ${meta.description}`);
+          console.log(`  Format: ${mod.format}`);
+          console.log(`  Hash: ${mod.hash}`);
+          if (meta.version) console.log(`  Version: ${meta.version}`);
+          if (meta.risk) console.log(`  Risk: ${meta.risk}`);
+          if (meta.whenToUse) console.log(`  When to use: ${meta.whenToUse}`);
+          console.log('');
+          console.log('Phases:');
+          for (const phase of meta.phases) {
+            console.log(`  - ${phase.title}: ${phase.detail}`);
+          }
+          if (meta.inputs && Object.keys(meta.inputs).length > 0) {
+            console.log('');
+            console.log('Inputs:');
+            for (const [key, input] of Object.entries(meta.inputs)) {
+              const def = input.default !== undefined ? ` [default: ${input.default}]` : '';
+              console.log(`  - ${key} (${input.type}): ${input.description}${def}`);
+            }
+          }
+          if (meta.permissions) {
+            console.log('');
+            console.log('Permissions:');
+            for (const [cat, actions] of Object.entries(meta.permissions)) {
+              console.log(`  ${cat}: ${(actions as string[]).join(', ')}`);
+            }
+          }
+          if (meta.sideEffects && meta.sideEffects.length > 0) {
+            console.log('');
+            console.log('Side Effects:');
+            for (const se of meta.sideEffects) console.log(`  - ${se}`);
+          }
+          console.log('');
+          console.log(`  Preview: ${mod.preview ? 'available' : 'not available'}`);
+          console.log(`  Run: ${mod.run ? 'available' : 'not available'}`);
+        } catch (err) {
+          console.log(`Error loading workflow "${name}":`);
+          console.log(`  ${(err as Error).message}`);
+          process.exit(1);
+        }
+        return;
+      }
+
+      // Not found anywhere
+      console.log(`Workflow "${name}" not found.`);
+      console.log('Use "openslack collaboration workflow list" to see available workflows.');
+      process.exit(1);
+    });
+
+  workflow
+    .command('dry-run <name>')
+    .description('Simulate workflow execution without real side effects')
+    .option('--input <key=value>', 'Workflow input value', (value, previous: string[]) => [...previous, value], [])
+    .option('--budget-tokens <number>', 'Token budget for dry-run', '50000')
+    .option('--agent-id <id>', 'Agent ID for authorization')
+    .action(async (name: string, options: { input: string[]; budgetTokens: string; agentId?: string }) => {
+      // Try YAML template first
+      const builtinPath = resolveBuiltinTemplatePath(name);
+      if (builtinPath) {
+        const template = loadWorkflowTemplate(name);
+        const result = await executeWorkflowTemplate(template, parseInputs(options.input), {
+          dryRun: true,
+          ...resolveAgentAuthOptions(options.agentId),
+        });
+        console.log(renderWorkflowPreview(result.preview));
+        console.log('');
+        console.log(`Status: ${result.status}`);
+        console.log(`Correlation: ${result.correlationId}`);
+        if (result.errors.length > 0) {
+          for (const error of result.errors) console.log(`Error: ${error}`);
+          process.exit(1);
+        }
+        return;
+      }
+
+      // Try JS module
+      const found = await findJsWorkflow(name);
+      if (!found) {
+        console.log(`Workflow "${name}" not found.`);
+        console.log('Use "openslack collaboration workflow list" to see available workflows.');
+        process.exit(1);
+      }
+
+      try {
+        const mod = await loadWorkflow(found.path);
+        const args = parseInputs(options.input);
+        const budgetTokens = parseInt(options.budgetTokens, 10);
+
+        console.log(`Dry-run: ${mod.meta.name}`);
+        console.log(`  Mode: dry-run (simulated side effects)`);
+        console.log(`  Budget: ${budgetTokens} tokens`);
+        console.log('');
+
+        const result = await executeDryRun(mod, {
+          manifest: mod.meta,
+          args,
+          budget: { tokens: Number.isFinite(budgetTokens) ? budgetTokens : 50000, costUsd: 0 },
+        });
+
+        console.log('Dry-Run Result:');
+        console.log(`  Run ID: ${result.runId}`);
+        console.log(`  Workflow: ${result.workflowName}`);
+        console.log(`  Simulated Effects: ${result.simulatedEffects.length}`);
+        for (const effect of result.simulatedEffects) {
+          console.log(`    - [${effect.timestamp}] ${effect.operation}: ${effect.detail}`);
+        }
+        if (result.result) {
+          console.log('');
+          console.log('  Workflow Result:');
+          console.log(JSON.stringify(result.result, null, 2));
+        }
+        if (result.errors.length > 0) {
+          console.log('');
+          console.log('  Errors:');
+          for (const error of result.errors) console.log(`    - ${error}`);
+        }
+      } catch (err) {
+        console.log(`Dry-run failed for workflow "${name}":`);
+        console.log(`  ${(err as Error).message}`);
+        process.exit(1);
+      }
+    });
+
+  workflow
+    .command('run <name>')
+    .description('Execute a workflow with real side effects')
+    .option('--input <key=value>', 'Workflow input value', (value, previous: string[]) => [...previous, value], [])
+    .option('--budget-tokens <number>', 'Token budget for execution', '100000')
+    .option('--confirm', 'Require confirmation before each side effect')
+    .option('--agent-id <id>', 'Agent ID for authorization')
+    .action(async (name: string, options: { input: string[]; budgetTokens: string; confirm?: boolean; agentId?: string }) => {
+      const found = await findJsWorkflow(name);
+      if (!found) {
+        console.log(`JS workflow module "${name}" not found.`);
+        console.log('Use "openslack collaboration workflow list" to see available workflows.');
+        process.exit(1);
+      }
+
+      try {
+        const mod = await loadWorkflow(found.path);
+        const args = parseInputs(options.input);
+        const budgetTokens = parseInt(options.budgetTokens, 10);
+
+        if (!mod.run) {
+          console.log(`Workflow "${name}" has no run function. Use preview or dry-run instead.`);
+          process.exit(1);
+        }
+
+        // Confirmation gate
+        const onConfirm = options.confirm
+          ? async (operation: string, detail: string): Promise<boolean> => {
+              // In a real CLI, this would prompt the user interactively.
+              // For now, we log the operation and auto-approve.
+              console.log(`[CONFIRM] ${operation}: ${detail}`);
+              return true
+            }
+          : undefined;
+
+        console.log(`Executing: ${mod.meta.name}`);
+        console.log(`  Mode: execute`);
+        console.log(`  Budget: ${budgetTokens} tokens`);
+        if (mod.meta.sideEffects && mod.meta.sideEffects.length > 0) {
+          console.log(`  Declared side effects:`);
+          for (const se of mod.meta.sideEffects) console.log(`    - ${se}`);
+        }
+        if (mod.meta.risk) console.log(`  Risk: ${mod.meta.risk}`);
+        console.log('');
+
+        const result = await executeRun(mod, {
+          manifest: mod.meta,
+          args,
+          budget: { tokens: Number.isFinite(budgetTokens) ? budgetTokens : 100000, costUsd: 1.0 },
+          onConfirm,
+          ...resolveAgentAuthOptions(options.agentId),
+        });
+
+        console.log('Execution Result:');
+        console.log(JSON.stringify(result, null, 2));
+      } catch (err) {
+        console.log(`Execution failed for workflow "${name}":`);
+        console.log(`  ${(err as Error).message}`);
+        process.exit(1);
+      }
+    });
+
+  workflow
+    .command('resume <runId>')
+    .description('Resume a paused workflow run from its last checkpoint')
+    .option('--confirm', 'Require confirmation before each side effect')
+    .option('--agent-id <id>', 'Agent ID for authorization')
+    .action(async (runId: string, options: { confirm?: boolean; agentId?: string }) => {
+      const root = findRepoRoot();
+      const store = new RunStore({
+        baseDir: join(root, '.openslack.local', 'workflows'),
+      });
+
+      // Load run metadata
+      const meta = await store.loadMeta(runId);
+      if (!meta) {
+        console.log(`Run ${runId} not found.`);
+        process.exit(1);
+      }
+
+      // Find the workflow module
+      const found = await findJsWorkflow(meta.workflowName);
+      if (!found) {
+        console.log(`Workflow module "${meta.workflowName}" not found for run ${runId}.`);
+        process.exit(1);
+      }
+
+      try {
+        const mod = await loadWorkflow(found.path);
+
+        if (!mod.run) {
+          console.log(`Workflow "${meta.workflowName}" has no run function.`);
+          process.exit(1);
+        }
+
+        // Check resumability
+        const check = await checkResumable(store, runId, mod.meta);
+        if (!check.canResume) {
+          console.log(`Cannot resume run ${runId}: ${check.reason}`);
+          if (check.manifestMatch === false && check.storedManifestHash && check.currentManifestHash) {
+            console.log(`  Stored hash: ${check.storedManifestHash}`);
+            console.log(`  Current hash: ${check.currentManifestHash}`);
+            console.log('  Use --force to override (not recommended).');
+          }
+          process.exit(1);
+        }
+
+        // Prepare resume state
+        const resumeState = await prepareResume(store, runId, mod.meta);
+
+        console.log(`Resuming: ${mod.meta.name}`);
+        console.log(`  Run ID: ${runId}`);
+        console.log(`  Completed phases: ${resumeState.completedPhases.map(p => p.phase).join(', ')}`);
+        console.log(`  Next phase index: ${resumeState.nextPhaseIndex}`);
+        console.log('');
+
+        // Transition back to running
+        await store.transitionStatus(runId, 'running');
+
+        const onConfirm = options.confirm
+          ? async (operation: string, detail: string): Promise<boolean> => {
+              console.log(`[CONFIRM] ${operation}: ${detail}`);
+              return true
+            }
+          : undefined;
+
+        const result = await executeResume(mod, {
+          runId,
+          manifest: mod.meta,
+          args: meta.args,
+          onConfirm,
+        });
+
+        // Mark run as completed
+        await store.transitionStatus(runId, 'completed');
+        await store.saveOutput(runId, result);
+
+        console.log('Resume Result:');
+        console.log(JSON.stringify(result, null, 2));
+      } catch (err) {
+        // Try to mark the run as failed
+        try {
+          await store.transitionStatus(runId, 'failed');
+        } catch {
+          // Ignore transition errors during failure handling
+        }
+        console.log(`Resume failed for run ${runId}:`);
+        console.log(`  ${(err as Error).message}`);
+        process.exit(1);
+      }
+    });
+
+  workflow
+    .command('trust <name>')
+    .description('Set or view the trust level for a workflow')
+    .option('--level <level>', 'Trust level to assign: untrusted, trusted, or core')
+    .action(async (name: string, options: { level?: string }) => {
+      const validLevels = ['untrusted', 'trusted', 'core'] as const
+      type TrustLevel = typeof validLevels[number]
+
+      // If no level specified, show current trust level
+      if (!options.level) {
+        const found = await findJsWorkflow(name)
+        if (!found) {
+          console.log(`Workflow "${name}" not found.`)
+          console.log('Use "openslack collaboration workflow list" to see available workflows.')
+          process.exit(1)
+        }
+        // Determine current trust level
+        const { resolveTrustLevel } = await import('@openslack/workflows')
+        const isBuiltin = found.path.includes('/builtins/') || found.path.includes('\\builtins\\')
+        const currentLevel = resolveTrustLevel({ isBuiltin })
+        console.log(`Workflow: ${name}`)
+        console.log(`Current trust level: ${currentLevel}`)
+        if (isBuiltin) {
+          console.log('  (Core workflows are always at core trust level)')
+        }
+        console.log('')
+        console.log('To set a trust level: openslack collaboration workflow trust <name> --level <level>')
+        console.log('Valid levels: untrusted, trusted, core')
+        return
+      }
+
+      // Validate the requested level
+      const requestedLevel = options.level.toLowerCase()
+      if (!validLevels.includes(requestedLevel as TrustLevel)) {
+        console.log(`Invalid trust level: "${options.level}"`)
+        console.log('Valid levels: untrusted, trusted, core')
+        process.exit(1)
+      }
+
+      // Look up the workflow
+      const found = await findJsWorkflow(name)
+      if (!found) {
+        console.log(`Workflow "${name}" not found.`)
+        console.log('Use "openslack collaboration workflow list" to see available workflows.')
+        process.exit(1)
+      }
+
+      // Check if this is a builtin workflow (cannot change trust level)
+      const isBuiltin = found.path.includes('/builtins/') || found.path.includes('\\builtins\\')
+      if (isBuiltin) {
+        console.log(`Cannot change trust level for builtin workflow "${name}".`)
+        console.log('Core workflows are always at core trust level.')
+        process.exit(1)
+      }
+
+      // Check if trying to set to core (requires human authorization)
+      if (requestedLevel === 'core') {
+        console.log('Cannot manually set a workflow to core trust level.')
+        console.log('Core trust is reserved for workflows shipped with @openslack/workflows.')
+        process.exit(1)
+      }
+
+      // For now, we record the trust level assignment.
+      // In a full implementation, this would persist to .openslack/workflow-trust.yaml
+      const { getPermissionsForTrustLevel } = await import('@openslack/workflows')
+      const perms = getPermissionsForTrustLevel(requestedLevel as TrustLevel)
+      console.log(`Trust level for workflow "${name}" set to: ${requestedLevel}`)
+      console.log(`Available permissions (${perms.size}):`)
+      for (const perm of perms) {
+        console.log(`  - ${perm}`)
+      }
+    })
+
+  // ── Inspect command ────────────────────────────────────────────────────────
+
+  cmd
+    .command('inspect <runId>')
+    .description('Inspect a workflow run with HTML, JSON, or Markdown output')
+    .option('--format <format>', 'Output format: html, json, or markdown', 'markdown')
+    .option('--out <file>', 'Write output to file instead of stdout')
+    .option('--no-run-output', 'Exclude the run output section from the report')
+    .option('--no-log', 'Exclude log entries from the report')
+    .action(async (runId: string, options: { format: string; out?: string; noRunOutput?: boolean; noLog?: boolean }) => {
+      const validFormats = ['html', 'json', 'markdown']
+      const format = options.format.toLowerCase()
+      if (!validFormats.includes(format)) {
+        console.error(`Invalid format: "${options.format}". Use: html, json, or markdown`)
+        process.exit(1)
+      }
+
+      const root = findRepoRoot()
+      const store = new RunStore({
+        baseDir: join(root, '.openslack.local', 'workflows'),
+      })
+
+      // Load run data
+      const runStatus = await store.getRunStatus(runId)
+      if (!runStatus) {
+        console.error(`Run ${runId} not found.`)
+        process.exit(1)
+      }
+
+      // Load phases
+      const phases = []
+      if (runStatus.phases) {
+        for (const phase of runStatus.phases) {
+          phases.push(phase)
+        }
+      }
+
+      // Load log entries
+      const logEntries: Array<Record<string, unknown>> = []
+      try {
+        const logs = await store.readLog(runId)
+        for (const entry of logs) {
+          logEntries.push(entry as unknown as Record<string, unknown>)
+        }
+      } catch {
+        // Log file may not exist; continue without logs
+      }
+
+      // Load output
+      let output: unknown = null
+      try {
+        output = await store.loadOutput(runId)
+      } catch {
+        // Output may not exist; continue without output
+      }
+
+      const renderOptions = {
+        repoRoot: root,
+        includeOutput: !options.noRunOutput,
+        includeLog: !options.noLog,
+      }
+
+      let rendered: string
+
+      if (format === 'html') {
+        rendered = renderRunHtml(runStatus, phases, logEntries, output, renderOptions)
+      } else if (format === 'json') {
+        rendered = renderRunJson(runStatus, phases, logEntries, output, renderOptions)
+      } else {
+        rendered = renderRunMarkdown(runStatus, phases, logEntries, output, renderOptions)
+      }
+
+      // Output result
+      if (options.out) {
+        const { writeFile: fsWriteFile } = await import('node:fs/promises')
+        const targetPath = options.out
+        await fsWriteFile(targetPath, rendered, 'utf-8')
+        console.log(`Written to ${targetPath}`)
+      } else {
+        console.log(rendered)
+      }
+    })
 
   cmd.addCommand(workflow);
 

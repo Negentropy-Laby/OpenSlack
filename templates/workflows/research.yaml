@@ -1,16 +1,25 @@
 schema: openslack.workflow_template.v1
 id: research
 name: Research
+description: Investigate a topic in an isolated worktree, then hand findings off to a human reviewer with a recorded decision.
+riskLevel: low
+tags:
+  - research
+  - handoff
+  - decision-record
 inputs:
   - name: title
     type: string
     required: true
+    description: Short summary of the research topic
   - name: issueNumber
     type: integer
     required: true
+    description: GitHub issue number tracking the research task
   - name: agentId
     type: string
     required: true
+    description: Agent principal assigned to the research
 phases:
   - name: Investigate
     steps:

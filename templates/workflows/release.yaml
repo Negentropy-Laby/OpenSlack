@@ -1,10 +1,17 @@
 schema: openslack.workflow_template.v1
 id: release
 name: Release
+description: Queue, verify, approve, and merge a release PR with maintainer approval gate.
+riskLevel: high
+tags:
+  - release
+  - approval-gate
+  - maintainer
 inputs:
   - name: prNumber
     type: integer
     required: true
+    description: Pull request number for the release
 phases:
   - name: Queue
     steps:

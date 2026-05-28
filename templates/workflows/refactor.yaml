@@ -1,64 +1,68 @@
 schema: openslack.workflow_template.v1
-id: incident
-name: Incident
-description: Triage, fix, and resolve a production incident with maintainer approval and handoff to human.
-riskLevel: high
+id: refactor
+name: Refactor
+description: Analyze a code area, plan the refactoring approach, implement changes, and review the result with a decision gate.
+riskLevel: medium
 tags:
-  - incident
-  - production
+  - refactor
+  - code-review
   - approval-gate
-  - handoff
 inputs:
   - name: title
     type: string
     required: true
-    description: Short summary of the incident
+    description: Short summary of the refactoring goal
   - name: issueNumber
     type: integer
     required: true
-    description: GitHub issue number tracking the incident
+    description: GitHub issue number tracking the refactor
   - name: prNumber
     type: integer
     required: true
-    description: Pull request number for the incident fix
+    description: Pull request number for the refactor
   - name: agentId
     type: string
     required: true
-    description: Agent principal assigned to the incident
+    description: Agent principal assigned to the refactor
   - name: paths
     type: string
     required: true
-    description: Comma-separated file paths affected by the fix
+    description: Comma-separated file paths affected by the refactor
 phases:
-  - name: Triage
+  - name: Analysis
     steps:
       - type: action
         actionId: task.create.preview
-        title: Preview incident task
+        title: Preview refactor task
         input:
           title: "{{inputs.title}}"
           template: investigation
       - type: action
         actionId: task.checkout
-        title: Create worktree for incident
+        title: Create worktree for refactor
         input:
           issueNumber: "{{inputs.issueNumber}}"
           agentId: "{{inputs.agentId}}"
-  - name: Fix
+  - name: Planning
+    steps:
+      - type: record-decision
+        topic: "Refactoring plan: {{inputs.title}}"
+        decision: Plan approved
+        rationale: Analysis complete, refactoring approach defined for scope in paths
+        decidedBy: "{{inputs.agentId}}"
+        tags:
+          - refactor
+          - planning
+  - name: Implementation
     steps:
       - type: action
         actionId: task.sync
-        title: Propose incident fix PR
+        title: Propose refactor PR
         input:
           issueNumber: "{{inputs.issueNumber}}"
           agentId: "{{inputs.agentId}}"
           paths: "{{inputs.paths}}"
-      - type: handoff
-        from: "{{inputs.agentId}}"
-        to: human
-        context: "Incident fix ready for review: {{inputs.title}}"
-        issueRef: "{{inputs.issueNumber}}"
-  - name: Approve
+  - name: Review
     steps:
       - type: action
         actionId: pr.doctor
@@ -66,10 +70,10 @@ phases:
         input:
           prNumber: "{{inputs.prNumber}}"
       - type: decision-gate
-        title: Approve incident fix for merge
-        requiredRole: maintainer
+        title: Approve refactor for merge
+        requiredRole: reviewer
       - type: action
         actionId: pr.merge
-        title: Merge incident fix PR
+        title: Merge refactor PR
         input:
           prNumber: "{{inputs.prNumber}}"
