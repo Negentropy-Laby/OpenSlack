@@ -4,9 +4,12 @@ import type {
   RunResult,
   AgentOptions,
   ExecutionMode,
+  WorkflowFormat,
+  ConfirmationPolicy,
 } from './types.js'
-import { createRuntime, ExecuteDeniedError } from './runtime.js'
+import { createRuntime, ExecuteDeniedError, WorkflowPausedError } from './runtime.js'
 import type { ConfirmCallback } from './runtime.js'
+import { validateEffectAgainstManifest } from './manifest-validator.js'
 import type { AgentLauncher, AgentCacheStore } from './agent-shim.js'
 import type { PipelineCacheStore } from './pipeline-runner.js'
 
@@ -96,6 +99,12 @@ export interface ExecuteRunOptions {
    * When set, operations proceed without prompting but are still logged.
    */
   allowUnattended?: boolean
+  /**
+   * Manifest-based confirmation policy. Preferred over legacy onConfirm/allowUnattended.
+   * When provided, the runtime validates each side effect against the approved manifest
+   * and either auto-confirms known effects or pauses on unexpected ones.
+   */
+  confirmationPolicy?: ConfirmationPolicy
 }
 
 /**
@@ -131,6 +140,8 @@ export async function executeDryRun(
   workflow: {
     meta: WorkflowMeta
     run?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<RunResult>
+    format?: WorkflowFormat
+    sourceBody?: string
   },
   options: DryRunOptions,
 ): Promise<DryRunResult> {
@@ -179,7 +190,25 @@ export async function executeDryRun(
 
   let result: RunResult | undefined
 
-  if (workflow.run) {
+  // Handle claude-ambient workflows
+  if (workflow.format === 'claude-ambient' && workflow.sourceBody) {
+    try {
+      const { executeAmbientWorkflow } = await import('./ambient-runner.js')
+      const ambientResult = await executeAmbientWorkflow(workflow.sourceBody, runtime, args)
+      result = {
+        status: 'completed',
+        ...(typeof ambientResult === 'object' && ambientResult !== null
+          ? ambientResult as Record<string, unknown>
+          : { result: ambientResult }),
+      } as RunResult
+    } catch (err) {
+      if (err instanceof ExecuteDeniedError) {
+        errors.push(`Execute denied: ${err.operation} — ${err.detail}`)
+      } else {
+        errors.push((err as Error).message)
+      }
+    }
+  } else if (workflow.run) {
     try {
       result = await workflow.run(runtime, args)
     } catch (err) {
@@ -205,6 +234,32 @@ export async function executeDryRun(
 }
 
 /**
+ * Create a confirmation callback from a confirmation policy.
+ *
+ * Auto-confirms effects that are in the approved manifest.
+ * Throws WorkflowPausedError when an unexpected effect is encountered
+ * and onUnexpectedEffect is set to 'pause'.
+ * Returns false (deny) for always-forbidden effects.
+ */
+export function createOnConfirmFromPolicy(
+  policy: ConfirmationPolicy,
+): ConfirmCallback {
+  return async (operation: string, detail: string): Promise<boolean> => {
+    const validation = validateEffectAgainstManifest(operation, detail, policy)
+
+    if (validation.allowed) {
+      return true
+    }
+
+    if (policy.onUnexpectedEffect === 'pause') {
+      throw new WorkflowPausedError(operation, detail, policy.runId)
+    }
+
+    return false
+  }
+}
+
+/**
  * Execute a workflow in execute mode with real side effects.
  *
  * SAFETY: Execute mode requires either a confirmation callback (onConfirm)
@@ -219,6 +274,8 @@ export async function executeRun(
   workflow: {
     meta: WorkflowMeta
     run?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<RunResult>
+    format?: WorkflowFormat
+    sourceBody?: string
   },
   options: ExecuteRunOptions,
 ): Promise<RunResult> {
@@ -228,10 +285,18 @@ export async function executeRun(
     budget,
   } = options
 
-  // Synthesize auto-approve callback when allowUnattended is set without explicit onConfirm
-  const effectiveOnConfirm = options.onConfirm ?? (options.allowUnattended
-    ? async () => true
-    : undefined)
+  const runId = options.confirmationPolicy?.runId
+    ?? `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+
+  // Resolve confirmation callback: confirmationPolicy takes precedence over legacy options
+  let effectiveOnConfirm: ConfirmCallback | undefined
+  if (options.confirmationPolicy) {
+    effectiveOnConfirm = createOnConfirmFromPolicy(options.confirmationPolicy)
+  } else {
+    effectiveOnConfirm = options.onConfirm ?? (options.allowUnattended
+      ? async () => true
+      : undefined)
+  }
 
   // Safety gate: execute mode MUST have either a confirmation callback
   // or an explicit allowUnattended flag to prevent silent side effects.
@@ -241,8 +306,6 @@ export async function executeRun(
       'Without human confirmation, workflows with real side effects will not execute.',
     )
   }
-
-  const runId = `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 
   const runtime = createRuntime({
     runId,
@@ -259,6 +322,18 @@ export async function executeRun(
     pipelineCache: options.pipelineCache,
     onConfirm: effectiveOnConfirm,
   })
+
+  // Handle claude-ambient workflows
+  if (workflow.format === 'claude-ambient' && workflow.sourceBody) {
+    const { executeAmbientWorkflow } = await import('./ambient-runner.js')
+    const ambientResult = await executeAmbientWorkflow(workflow.sourceBody, runtime, args)
+    return {
+      status: 'completed',
+      ...(typeof ambientResult === 'object' && ambientResult !== null
+        ? ambientResult as Record<string, unknown>
+        : { result: ambientResult }),
+    } as RunResult
+  }
 
   if (!workflow.run) {
     throw new Error(`Workflow "${manifest.name}" has no run function`)
@@ -281,6 +356,8 @@ export async function executeResume(
   workflow: {
     meta: WorkflowMeta
     run?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<RunResult>
+    format?: WorkflowFormat
+    sourceBody?: string
   },
   options: {
     runId: string
@@ -293,6 +370,7 @@ export async function executeResume(
     onConfirm?: ConfirmCallback
     /** Allow non-interactive execution without confirmation (CI/test use). */
     allowUnattended?: boolean
+    confirmationPolicy?: ConfirmationPolicy
   },
 ): Promise<RunResult> {
   const {
@@ -302,10 +380,15 @@ export async function executeResume(
     budget,
   } = options
 
-  // Synthesize auto-approve callback when allowUnattended is set without explicit onConfirm
-  const effectiveOnConfirm = options.onConfirm ?? (options.allowUnattended
-    ? async () => true
-    : undefined)
+  // Resolve confirmation callback: confirmationPolicy takes precedence over legacy options
+  let effectiveOnConfirm: ConfirmCallback | undefined
+  if (options.confirmationPolicy) {
+    effectiveOnConfirm = createOnConfirmFromPolicy(options.confirmationPolicy)
+  } else {
+    effectiveOnConfirm = options.onConfirm ?? (options.allowUnattended
+      ? async () => true
+      : undefined)
+  }
 
   // Safety gate: same as executeRun
   if (!effectiveOnConfirm) {
@@ -330,6 +413,18 @@ export async function executeResume(
     pipelineCache: options.pipelineCache,
     onConfirm: effectiveOnConfirm,
   })
+
+  // Handle claude-ambient workflows
+  if (workflow.format === 'claude-ambient' && workflow.sourceBody) {
+    const { executeAmbientWorkflow } = await import('./ambient-runner.js')
+    const ambientResult = await executeAmbientWorkflow(workflow.sourceBody, runtime, args)
+    return {
+      status: 'completed',
+      ...(typeof ambientResult === 'object' && ambientResult !== null
+        ? ambientResult as Record<string, unknown>
+        : { result: ambientResult }),
+    } as RunResult
+  }
 
   if (!workflow.run) {
     throw new Error(`Workflow "${manifest.name}" has no run function`)

@@ -85,13 +85,12 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
     description: `Read-only preview of workflow "${wf.name}". No changes will be made.`,
     requiresConfirmation: false,
     handler: async (): Promise<TuiActionResult> => {
-      return {
-        success: true,
-        message: `Preview loaded for "${wf.name}" (${wf.format.toUpperCase()}, ${wf.phases} phases). No changes made.`,
-        data: { workflow: wf.name, format: wf.format, phases: wf.phases },
+      if (actionHandlers) {
+        return actionHandlers.executeWorkflowRun(wf.name, 'preview')
       }
+      return { success: false, message: 'Preview handler not available' }
     },
-  }), [])
+  }), [actionHandlers])
 
   const makeDryRunAction = useCallback((wf: WorkflowGalleryItem): TuiAction => ({
     id: `dry-run-${wf.name}`,
@@ -101,17 +100,12 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
     description: `Simulated execution of workflow "${wf.name}". No real changes will be applied.`,
     requiresConfirmation: false,
     handler: async (): Promise<TuiActionResult> => {
-      const simulatedPhases = []
-      for (let i = 1; i <= wf.phases; i++) {
-        simulatedPhases.push(`phase ${i}: simulated`)
+      if (actionHandlers) {
+        return actionHandlers.executeWorkflowRun(wf.name, 'dry-run')
       }
-      return {
-        success: true,
-        message: `Dry-run complete for "${wf.name}". ${wf.phases} phase(s) simulated. No real changes applied.`,
-        data: { workflow: wf.name, phasesSimulated: wf.phases, results: simulatedPhases },
-      }
+      return { success: false, message: 'Dry-run handler not available' }
     },
-  }), [])
+  }), [actionHandlers])
 
   const makeRunAction = useCallback((wf: WorkflowGalleryItem): TuiAction => ({
     id: `run-${wf.name}`,
@@ -122,7 +116,7 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
     requiresConfirmation: true,
     handler: async (): Promise<TuiActionResult> => {
       if (actionHandlers) {
-        return actionHandlers.executeWorkflowRun(wf.name)
+        return actionHandlers.executeWorkflowRun(wf.name, 'run')
       }
       return {
         success: false,

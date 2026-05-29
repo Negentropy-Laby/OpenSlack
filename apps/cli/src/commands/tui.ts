@@ -101,7 +101,7 @@ export function tuiCommands(): Command {
             ...jsWorkflows.map(w => ({
               name: w.name,
               description: w.description ?? w.displayName,
-              format: 'js' as const,
+              format: w.format ?? 'openslack-native',
               trustLevel: trustStore.get(w.name),
               risk: 'unknown',
               phases: w.phases,

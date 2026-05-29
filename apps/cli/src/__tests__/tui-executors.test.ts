@@ -35,6 +35,11 @@ vi.mock('@openslack/workflows', () => ({
     set: mockTrustStoreSet,
     save: mockTrustStoreSave,
   })),
+  findWorkflow: vi.fn(),
+  loadWorkflow: vi.fn(),
+  executePreview: vi.fn(),
+  executeDryRun: vi.fn(),
+  executeRun: vi.fn(),
 }))
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -348,11 +353,24 @@ describe('executeTrustChange', () => {
 // ── executeWorkflowRun ───────────────────────────────────────────────────────────
 
 describe('executeWorkflowRun', () => {
-  it('returns CLI fallback for P0', async () => {
-    const result = await executeWorkflowRun('deploy-production')
+  it('returns not found for missing workflow', async () => {
+    const result = await executeWorkflowRun('deploy-production', 'preview', process.cwd())
 
     expect(result.success).toBe(false)
-    expect(result.message).toContain('Workflow run requires full CLI execution context')
-    expect(result.data?.cliCommand).toContain('openslack collaboration workflow run deploy-production')
+    expect(result.message).toContain('not found')
+  })
+
+  it('returns not found for missing workflow in dry-run mode', async () => {
+    const result = await executeWorkflowRun('deploy-production', 'dry-run', process.cwd())
+
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('not found')
+  })
+
+  it('returns not found for missing workflow in run mode', async () => {
+    const result = await executeWorkflowRun('deploy-production', 'run', process.cwd())
+
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('not found')
   })
 })

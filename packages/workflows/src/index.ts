@@ -26,6 +26,10 @@ export type {
   PipelineOptions,
   WorkflowRunInfo,
   AgentResult,
+  ConfirmationMode,
+  ApprovedEffect,
+  WorkflowApprovalManifest,
+  ConfirmationPolicy,
 } from './types.js'
 
 // ── Manifest ──────────────────────────────────────────────────────────────────
@@ -50,12 +54,11 @@ export {
 export type { WorkflowSummary } from './loader.js'
 
 // ── Runtime ───────────────────────────────────────────────────────────────────
-export { createRuntime, ExecuteDeniedError } from './runtime.js'
+export { createRuntime, ExecuteDeniedError, WorkflowPausedError } from './runtime.js'
 export type { RuntimeOptions, RuntimeInternals, ConfirmCallback } from './runtime.js'
 
 // ── Permission Checker ────────────────────────────────────────────────────────
 export {
-  ALWAYS_FORBIDDEN,
   resolvePermissions,
   checkPermission,
   intersectPermissions,
@@ -142,12 +145,21 @@ export {
 } from './preview.js'
 export type { PreviewOptions } from './preview.js'
 
+// ── Manifest Validator ────────────────────────────────────────────────────────
+export {
+  validateEffectAgainstManifest,
+  buildApprovalManifest,
+  ALWAYS_FORBIDDEN,
+} from './manifest-validator.js'
+export type { } from './manifest-validator.js'
+
 // ── Execute ───────────────────────────────────────────────────────────────────
 export {
   executeDryRun,
   executeRun,
   executeResume,
   DryRunError,
+  createOnConfirmFromPolicy,
 } from './execute.js'
 export type { DryRunOptions, DryRunResult, ExecuteRunOptions, SimulatedEffect } from './execute.js'
 

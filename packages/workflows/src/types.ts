@@ -84,16 +84,37 @@ export interface PhaseCheckpoint {
   cacheKey?: string
 }
 
+export type RunStatusState =
+  | 'created'
+  | 'previewed'
+  | 'confirmed'
+  | 'running'
+  | 'paused'
+  | 'paused_waiting_approval'
+  | 'resuming'
+  | 'completed'
+  | 'failed'
+  | 'cancelled'
+
+export interface PendingApproval {
+  id: string
+  operation: string
+  detail: string
+  timestamp: string
+  status: 'pending' | 'approved' | 'rejected'
+}
+
 export interface RunStatus {
   runId: string
   workflowName: string
   mode: ExecutionMode
-  status: 'running' | 'paused' | 'completed' | 'failed'
+  status: RunStatusState
   startedAt: string
   updatedAt: string
   currentPhase?: string
   phases: PhaseCheckpoint[]
   args: Record<string, unknown>
+  pendingApprovals?: PendingApproval[]
 }
 
 /**
@@ -108,6 +129,38 @@ export interface RunStatus {
  * @see docs/product/approval-vocabulary.md for the full approval/confirmation vocabulary
  */
 export type ExecutionMode = 'validate' | 'preview' | 'dry-run' | 'execute'
+
+// ── Confirmation Policy ───────────────────────────────────────────────────────
+
+export type ConfirmationMode = 'interactive' | 'preapproved-manifest' | 'unattended-explicit' | 'dry-run'
+
+export interface ApprovedEffect {
+  kind: string
+  objectHint?: string
+  risk: 'low' | 'medium' | 'high'
+  summary: string
+}
+
+export interface WorkflowApprovalManifest {
+  workflowName: string
+  runId: string
+  actorId: string
+  workflowHash: string
+  inputHash: string
+  risk: 'low' | 'medium' | 'high'
+  approvedAt: string
+  expiresAt: string
+  approvedEffects: ApprovedEffect[]
+}
+
+export interface ConfirmationPolicy {
+  mode: ConfirmationMode
+  actorId: string
+  runId: string
+  approvalManifest?: WorkflowApprovalManifest
+  allowUnattended?: boolean
+  onUnexpectedEffect?: 'pause' | 'fail'
+}
 
 // ── PRMS ──────────────────────────────────────────────────────────────────────
 

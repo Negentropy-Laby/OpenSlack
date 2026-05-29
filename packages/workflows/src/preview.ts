@@ -4,6 +4,7 @@ import type {
   PreviewResult,
   RunResult,
   AgentOptions,
+  WorkflowFormat,
 } from './types.js'
 import { createRuntime } from './runtime.js'
 import type { RuntimeOptions } from './runtime.js'
@@ -78,6 +79,8 @@ export async function executePreview(
     meta: WorkflowMeta
     preview?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<PreviewResult>
     run?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<RunResult>
+    format?: WorkflowFormat
+    sourceBody?: string
   },
   options: PreviewOptions,
 ): Promise<PreviewResult> {
@@ -109,7 +112,24 @@ export async function executePreview(
   // Execute the preview function if available, otherwise run
   let result: PreviewResult
 
-  if (workflow.preview) {
+  // Handle claude-ambient workflows: execute sourceBody in sandbox
+  if (workflow.format === 'claude-ambient' && workflow.sourceBody) {
+    const { executeAmbientWorkflow } = await import('./ambient-runner.js')
+    const ambientResult = await executeAmbientWorkflow(workflow.sourceBody, runtime, args)
+    result = {
+      preview: true,
+      runId,
+      workflowName: manifest.name,
+      ...(typeof ambientResult === 'object' && ambientResult !== null
+        ? ambientResult as Record<string, unknown>
+        : { result: ambientResult }),
+      budget: {
+        tokensUsed: runtime.budget.tokensUsed,
+        tokensRemaining: runtime.budget.tokensRemaining,
+        agentCalls: runtime.budget.agentCalls,
+      },
+    }
+  } else if (workflow.preview) {
     result = await workflow.preview(runtime, args)
   } else if (workflow.run) {
     // Running a workflow's `run` in preview mode — the runtime's preview

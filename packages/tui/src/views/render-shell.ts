@@ -20,7 +20,7 @@ export interface ApprovalExecutionParams {
 export interface TuiActionHandlers {
   executeApproval: (params: ApprovalExecutionParams, isApprove: boolean) => Promise<TuiActionResult>
   executeTrustChange: (workflowName: string, fromLevel: string, toLevel: string) => Promise<TuiActionResult>
-  executeWorkflowRun: (workflowName: string) => Promise<TuiActionResult>
+  executeWorkflowRun: (workflowName: string, mode: 'preview' | 'dry-run' | 'run') => Promise<TuiActionResult>
 }
 
 export interface ShellViewData {
