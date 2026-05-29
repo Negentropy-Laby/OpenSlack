@@ -1328,16 +1328,35 @@ export function collaborationCommands(): Command {
         process.exit(1)
       }
 
+      // Load workflow module to get the current hash for correlation
+      let workflowHash = ''
+      try {
+        const found = await findJsWorkflow(meta.workflowName)
+        if (found) {
+          const mod = await loadWorkflow(found.path)
+          workflowHash = mod.hash
+        }
+      } catch {
+        // Ignore workflow lookup failure; workflowHash stays empty
+      }
+
       try {
         const issueNum = options.issue ? parseInt(options.issue, 10) : undefined
         if (options.issue !== undefined && !Number.isFinite(issueNum)) {
           console.log(`Invalid issue number: "${options.issue}". Must be a positive integer.`)
           process.exit(1)
         }
-        const result = await publishWorkflowRunAudit(runStatus, {
-          issueNumber: issueNum,
-          createIssue: options.createIssue,
-        })
+        const result = await publishWorkflowRunAudit(
+          {
+            ...runStatus,
+            workflowHash,
+            actor: 'openslack-agent-operator',
+          },
+          {
+            issueNumber: issueNum,
+            createIssue: options.createIssue,
+          },
+        )
         if (result.isComment) {
           console.log(`Run audit appended to issue #${result.issueNumber}`)
         } else {

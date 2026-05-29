@@ -195,7 +195,7 @@ export function renderWorkflowRunPhaseComment(
   const lines: string[] = []
   lines.push(`**${emoji} Phase ${phase}** — ${status}`)
   if (details) lines.push(details)
-  lines.push(`<sub>Logged at ${timestamp ?? new Date().toISOString()}</sub>`)
+  lines.push(`<sub>Logged at ${timestamp || new Date().toISOString()}</sub>`)
   return lines.join('\n')
 }
 

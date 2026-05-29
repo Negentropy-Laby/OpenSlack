@@ -222,7 +222,7 @@ describe('workflow issue publishers', () => {
     it('skips existing labels', async () => {
       const mockOctokit = {
         issues: {
-          createLabel: vi.fn().mockRejectedValue(new Error('already_exists')),
+          createLabel: vi.fn().mockRejectedValue(Object.assign(new Error('Validation Failed'), { status: 422 })),
         },
       }
       mockGetClient.mockResolvedValue({

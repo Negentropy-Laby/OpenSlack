@@ -333,8 +333,7 @@ export async function executeRun(
         ? ambientResult as Record<string, unknown>
         : { result: ambientResult }),
     } as RunResult
-    result.runId = runId
-    return result
+    return { ...result, runId }
   }
 
   if (!workflow.run) {
@@ -342,8 +341,7 @@ export async function executeRun(
   }
 
   const result = await workflow.run(runtime, args)
-  result.runId = runId
-  return result
+  return { ...result, runId }
 }
 
 /**
@@ -428,8 +426,7 @@ export async function executeResume(
         ? ambientResult as Record<string, unknown>
         : { result: ambientResult }),
     } as RunResult
-    result.runId = runId
-    return result
+    return { ...result, runId }
   }
 
   if (!workflow.run) {
@@ -437,6 +434,5 @@ export async function executeResume(
   }
 
   const result = await workflow.run(runtime, args)
-  result.runId = runId
-  return result
+  return { ...result, runId }
 }

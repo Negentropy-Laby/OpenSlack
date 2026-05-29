@@ -136,13 +136,13 @@ function stripCommentsAndStrings(source: string): string {
 function checkForbiddenApis(source: string): boolean {
   const cleaned = stripCommentsAndStrings(source)
   const forbiddenPatterns = [
-    /process\.env/,
-    /require\s*\(/,
-    /eval\s*\(/,
-    /Function\s*\(/,
-    /child_process/,
-    /fs\./,
-    /fetch\s*\(/,
+    /\bprocess\.env/,
+    /\brequire\s*\(/,
+    /\beval\s*\(/,
+    /\bFunction\s*\(/,
+    /\bchild_process/,
+    /\bfs\./,
+    /\bfetch\s*\(/,
   ]
   return forbiddenPatterns.some((p) => p.test(cleaned))
 }
@@ -325,11 +325,11 @@ export async function bootstrapWorkflowLabels(): Promise<{
       })
       created.push(def.name)
     } catch (err) {
-      const message = (err as Error).message
-      if (message.includes('already_exists')) {
+      const status = (err as { status?: number }).status
+      if (status === 422) {
         existing.push(def.name)
       } else {
-        failed.push({ name: def.name, reason: message })
+        failed.push({ name: def.name, reason: (err as Error).message })
       }
     }
   }
