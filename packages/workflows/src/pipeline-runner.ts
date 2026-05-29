@@ -1,4 +1,4 @@
-import type { BudgetState, PipelineOptions } from './types.js'
+import type { BudgetState, ClaudeBudgetAPI, PipelineOptions } from './types.js'
 
 /**
  * Cache store interface for pipeline item checkpointing.
@@ -99,6 +99,66 @@ export async function runPipeline<T, R>(
       await Promise.race(inFlight.map((entry) => entry.promise))
 
       // Remove settled entries
+      for (let j = inFlight.length - 1; j >= 0; j--) {
+        if (settled.has(inFlight[j].index)) {
+          inFlight.splice(j, 1)
+        }
+      }
+    }
+  }
+
+  return results
+}
+
+/**
+ * Execute a multi-stage pipeline: each item independently passes through ALL
+ * stages sequentially, while items run concurrently up to the concurrency limit.
+ *
+ * Failed items are recorded as null in the results array (not thrown).
+ *
+ * @param items  - Array of input items
+ * @param stages - Array of stage functions; each receives (prevResult, originalItem, index)
+ * @param options - Concurrency limit (default: 4)
+ * @returns Array of final stage results (null for failed items)
+ */
+export async function runMultiStagePipeline<T, R>(
+  items: T[],
+  stages: Array<(prev: unknown, item: T, index: number) => Promise<unknown>>,
+  options?: PipelineOptions,
+): Promise<(R | null)[]> {
+  if (items.length === 0) return []
+  if (stages.length === 0) return items.map(() => null as R | null)
+
+  const concurrency = options?.concurrency ?? 4
+  const results: (R | null)[] = new Array(items.length).fill(null)
+
+  const settled = new Set<number>()
+  const inFlight: Array<{ index: number; promise: Promise<void> }> = []
+  let nextIndex = 0
+
+  async function processItem(index: number): Promise<void> {
+    try {
+      let prev: unknown = undefined
+      for (const stage of stages) {
+        prev = await stage(prev, items[index], index)
+      }
+      results[index] = prev as R
+    } catch (err) {
+      results[index] = null
+    }
+    settled.add(index)
+  }
+
+  while (nextIndex < items.length || inFlight.length > 0) {
+    while (inFlight.length < concurrency && nextIndex < items.length) {
+      const index = nextIndex++
+      const promise = processItem(index)
+      inFlight.push({ index, promise })
+    }
+
+    if (inFlight.length > 0) {
+      await Promise.race(inFlight.map((entry) => entry.promise))
+
       for (let j = inFlight.length - 1; j >= 0; j--) {
         if (settled.has(inFlight[j].index)) {
           inFlight.splice(j, 1)

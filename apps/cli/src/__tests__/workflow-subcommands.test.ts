@@ -278,7 +278,7 @@ export async function run() { return { status: 'ok' } }
     const jsWorkflows = await discoverJsWorkflows(tmpDir);
     expect(jsWorkflows.length).toBe(1);
     expect(jsWorkflows[0].name).toBe('my-flow');
-    expect(jsWorkflows[0].source).toBe('js-module');
+    expect(jsWorkflows[0].source).toBe('openslack-project');
   });
 
   it('combined list includes both YAML and JS sources', async () => {
@@ -297,7 +297,7 @@ export const meta = { name: 'custom', description: 'Custom', phases: [{ title: '
     expect(yamlWorkflows.length).toBeGreaterThan(0);
     expect(jsWorkflows.length).toBeGreaterThan(0);
     expect(yamlWorkflows[0].source).toBe('yaml-template');
-    expect(jsWorkflows[0].source).toBe('js-module');
+    expect(jsWorkflows[0].source).toBe('openslack-project');
   });
 
   it('YAML workflow summaries include correct phase and input counts', async () => {

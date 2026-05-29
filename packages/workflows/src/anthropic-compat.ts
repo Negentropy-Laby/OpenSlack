@@ -21,6 +21,12 @@ export interface AnthropicCompatSandbox {
     readonly tokensRemaining: number | null
     readonly costUsd: number
     readonly agentCalls: number
+    /** Total budget (tokensUsed + tokensRemaining), or null if unlimited */
+    readonly total: number | null
+    /** Tokens spent so far */
+    spent(): number
+    /** Tokens remaining, or Infinity if unlimited */
+    remaining(): number
   }
   /** Agent subtask call — read-only in preview mode */
   agent<T>(prompt: string, options: AgentOptions): Promise<T>
@@ -68,6 +74,12 @@ export function createAnthropicCompatSandbox(
     get tokensRemaining() { return runtime.budget.tokensRemaining },
     get costUsd() { return runtime.budget.costUsd },
     get agentCalls() { return runtime.budget.agentCalls },
+    get total(): number | null {
+      if (runtime.budget.tokensRemaining === null) return null
+      return runtime.budget.tokensUsed + runtime.budget.tokensRemaining
+    },
+    spent(): number { return runtime.budget.tokensUsed },
+    remaining(): number { return runtime.budget.tokensRemaining ?? Infinity },
   }
 
   const sandbox: AnthropicCompatSandbox = {
