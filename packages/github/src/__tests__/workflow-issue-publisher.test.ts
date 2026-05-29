@@ -129,7 +129,7 @@ describe('workflow issue publishers', () => {
       expect(result.isComment).toBe(false)
       expect(mockCreateTaskIssue).toHaveBeenCalledWith(
         '[Workflow Run] test-workflow / run_001',
-        expect.stringContaining('run_id: run_001'),
+        expect.stringContaining('run_id: "run_001"'),
         expect.arrayContaining(['workflow:run', 'mode:execute', 'result:completed']),
       )
     })

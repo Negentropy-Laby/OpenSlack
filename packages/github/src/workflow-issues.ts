@@ -29,6 +29,7 @@ export interface WorkflowRunStatusShape {
   startedAt: string
   updatedAt?: string
   actor?: string
+  workflowHash?: string
   currentPhase?: string
   phases?: Array<{ phase: string; timestamp: string; status: string; result?: unknown }>
   pendingApprovals?: Array<{ id: string; operation: string; detail: string; status: string }>
@@ -51,12 +52,12 @@ export function renderWorkflowProposalBody(proposal: WorkflowProposalIssue): str
   lines.push(`## Workflow Proposal: ${proposal.workflowId}`)
   lines.push('')
   lines.push('```openslack-workflow-proposal')
-  lines.push(`schema: ${proposal.schema}`)
-  lines.push(`workflow_id: ${proposal.workflowId}`)
-  lines.push(`format: ${proposal.format}`)
-  lines.push(`source_path: ${proposal.sourcePath}`)
-  lines.push(`risk: ${proposal.risk}`)
-  lines.push(`requested_by: ${proposal.requestedBy}`)
+  lines.push(`schema: ${JSON.stringify(proposal.schema)}`)
+  lines.push(`workflow_id: ${JSON.stringify(proposal.workflowId)}`)
+  lines.push(`format: ${JSON.stringify(proposal.format)}`)
+  lines.push(`source_path: ${JSON.stringify(proposal.sourcePath)}`)
+  lines.push(`risk: ${JSON.stringify(proposal.risk)}`)
+  lines.push(`requested_by: ${JSON.stringify(proposal.requestedBy)}`)
   lines.push('permissions:')
   lines.push('  read:')
   for (const r of proposal.permissions.read) lines.push(`    - ${r}`)
@@ -115,10 +116,10 @@ export function renderWorkflowReviewBody(review: WorkflowReviewIssue): string {
   lines.push(`## Workflow Review: ${review.workflowId}`)
   lines.push('')
   lines.push('```openslack-workflow-review')
-  lines.push(`schema: ${review.schema}`)
-  lines.push(`workflow_id: ${review.workflowId}`)
-  lines.push(`workflow_hash: ${review.workflowHash}`)
-  lines.push(`trust_level: ${review.trustLevel}`)
+  lines.push(`schema: ${JSON.stringify(review.schema)}`)
+  lines.push(`workflow_id: ${JSON.stringify(review.workflowId)}`)
+  lines.push(`workflow_hash: ${JSON.stringify(review.workflowHash)}`)
+  lines.push(`trust_level: ${JSON.stringify(review.trustLevel)}`)
   lines.push('static_analysis:')
   lines.push(`  pure_meta: ${review.staticAnalysis.pureMeta}`)
   lines.push(`  has_forbidden_apis: ${review.staticAnalysis.hasForbiddenApis}`)
@@ -167,14 +168,14 @@ export function renderWorkflowRunBody(run: WorkflowRunIssue): string {
   lines.push(`## Workflow Run: ${run.workflowId}`)
   lines.push('')
   lines.push('```openslack-workflow-run')
-  lines.push(`schema: ${run.schema}`)
-  lines.push(`run_id: ${run.runId}`)
-  lines.push(`workflow_id: ${run.workflowId}`)
-  lines.push(`workflow_hash: ${run.workflowHash}`)
-  lines.push(`mode: ${run.mode}`)
-  lines.push(`actor: ${run.actor}`)
-  lines.push(`started_at: ${run.startedAt}`)
-  lines.push(`status: ${run.status}`)
+  lines.push(`schema: ${JSON.stringify(run.schema)}`)
+  lines.push(`run_id: ${JSON.stringify(run.runId)}`)
+  lines.push(`workflow_id: ${JSON.stringify(run.workflowId)}`)
+  lines.push(`workflow_hash: ${JSON.stringify(run.workflowHash)}`)
+  lines.push(`mode: ${JSON.stringify(run.mode)}`)
+  lines.push(`actor: ${JSON.stringify(run.actor)}`)
+  lines.push(`started_at: ${JSON.stringify(run.startedAt)}`)
+  lines.push(`status: ${JSON.stringify(run.status)}`)
   lines.push('```')
   lines.push('')
   lines.push('---')
@@ -188,12 +189,13 @@ export function renderWorkflowRunPhaseComment(
   phase: string,
   status: string,
   details?: string,
+  timestamp?: string,
 ): string {
   const emoji = status === 'completed' ? '✅' : status === 'failed' ? '❌' : status === 'paused' ? '⏸️' : '🔄'
   const lines: string[] = []
   lines.push(`**${emoji} Phase ${phase}** — ${status}`)
   if (details) lines.push(details)
-  lines.push(`<sub>Logged at ${new Date().toISOString()}</sub>`)
+  lines.push(`<sub>Logged at ${timestamp ?? new Date().toISOString()}</sub>`)
   return lines.join('\n')
 }
 
@@ -220,9 +222,9 @@ export function renderWorkflowImprovementBody(improvement: WorkflowImprovementIs
   lines.push(`## Workflow Improvement: ${improvement.workflowId}`)
   lines.push('')
   lines.push('```openslack-workflow-improvement')
-  lines.push(`schema: ${improvement.schema}`)
-  lines.push(`workflow_id: ${improvement.workflowId}`)
-  lines.push(`backward_compatible: ${improvement.backwardCompatible}`)
+  lines.push(`schema: ${JSON.stringify(improvement.schema)}`)
+  lines.push(`workflow_id: ${JSON.stringify(improvement.workflowId)}`)
+  lines.push(`backward_compatible: ${JSON.stringify(improvement.backwardCompatible)}`)
   if (improvement.affectedPhases.length > 0) {
     lines.push('affected_phases:')
     for (const p of improvement.affectedPhases) lines.push(`  - ${p}`)
@@ -260,9 +262,9 @@ export function renderWorkflowSplitBody(split: WorkflowSplitIssue): string {
   lines.push(`## Workflow Split: ${split.workflowId}`)
   lines.push('')
   lines.push('```openslack-workflow-split')
-  lines.push(`schema: ${split.schema}`)
-  lines.push(`workflow_id: ${split.workflowId}`)
-  if (split.parentIssue) lines.push(`parent_issue: ${split.parentIssue}`)
+  lines.push(`schema: ${JSON.stringify(split.schema)}`)
+  lines.push(`workflow_id: ${JSON.stringify(split.workflowId)}`)
+  if (split.parentIssue) lines.push(`parent_issue: ${JSON.stringify(split.parentIssue)}`)
   lines.push('phases:')
   for (const p of split.phaseNames) lines.push(`  - ${p}`)
   lines.push('```')

@@ -272,7 +272,7 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
           category: TuiActionCategory.WorkflowPreview,
           risk: TuiRiskLevel.Low,
           label: `Split ${currentWf.name} into phase issues`,
-          description: `Create sub-issues for each phase of workflow "${currentWf.name}".`,
+          description: `Create a new parent issue and sub-issues for each phase of workflow "${currentWf.name}".`,
           requiresConfirmation: true,
           handler: () => actionHandlers.splitWorkflowIntoIssues!(currentWf.name, 0),
         })

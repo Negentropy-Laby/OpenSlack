@@ -929,28 +929,6 @@ export function collaborationCommands(): Command {
         if (mod.meta.risk) console.log(`  Risk: ${mod.meta.risk}`);
         console.log('');
 
-        let auditIssueNumber: number | undefined
-        if (options.auditIssue) {
-          try {
-            const { publishWorkflowRunAudit } = await import('@openslack/github')
-            const auditResult = await publishWorkflowRunAudit(
-              {
-                runId: `run-${Date.now().toString(36)}`,
-                workflowName: mod.meta.name,
-                mode: 'execute',
-                status: 'running',
-                startedAt: new Date().toISOString(),
-                actor: 'openslack-agent-operator',
-              },
-              { createIssue: true },
-            )
-            auditIssueNumber = auditResult.issueNumber
-            console.log(`  Audit issue created: #${auditIssueNumber} (${auditResult.url})`)
-          } catch (auditErr) {
-            console.log(`  [WARNING] Failed to create audit issue: ${(auditErr as Error).message}`)
-          }
-        }
-
         const result = await executeRun(mod, {
           manifest: mod.meta,
           args,
@@ -963,18 +941,24 @@ export function collaborationCommands(): Command {
         console.log('Execution Result:');
         console.log(JSON.stringify(result, null, 2));
 
-        if (auditIssueNumber && result) {
+        if (options.auditIssue) {
           try {
-            const { appendWorkflowRunPhaseComment } = await import('@openslack/github')
-            const commentResult = await appendWorkflowRunPhaseComment(
-              auditIssueNumber,
-              'execution',
-              result.status === 'completed' ? 'completed' : 'failed',
-              `\`\`\`json\n${JSON.stringify(result, null, 2)}\n\`\`\``,
+            const { publishWorkflowRunAudit } = await import('@openslack/github')
+            const auditResult = await publishWorkflowRunAudit(
+              {
+                runId: (result as Record<string, unknown>).runId as string ?? 'unknown',
+                workflowName: mod.meta.name,
+                workflowHash: mod.hash,
+                mode: 'execute',
+                status: result.status,
+                startedAt: new Date().toISOString(),
+                actor: options.agentId ?? 'openslack-agent-operator',
+              },
+              { createIssue: true },
             )
-            console.log(`  Audit comment added: ${commentResult.url}`)
+            console.log(`  Audit issue created: #${auditResult.issueNumber} (${auditResult.url})`)
           } catch (auditErr) {
-            console.log(`  [WARNING] Failed to append audit comment: ${(auditErr as Error).message}`)
+            console.log(`  [WARNING] Failed to create audit issue: ${(auditErr as Error).message}`)
           }
         }
       } catch (err) {
@@ -1346,6 +1330,10 @@ export function collaborationCommands(): Command {
 
       try {
         const issueNum = options.issue ? parseInt(options.issue, 10) : undefined
+        if (options.issue !== undefined && !Number.isFinite(issueNum)) {
+          console.log(`Invalid issue number: "${options.issue}". Must be a positive integer.`)
+          process.exit(1)
+        }
         const result = await publishWorkflowRunAudit(runStatus, {
           issueNumber: issueNum,
           createIssue: options.createIssue,
@@ -1378,6 +1366,10 @@ export function collaborationCommands(): Command {
       try {
         const mod = await loadWorkflow(found.path)
         const parentIssue = parseInt(options.issue, 10)
+        if (!Number.isFinite(parentIssue) || parentIssue <= 0) {
+          console.log(`Invalid issue number: "${options.issue}". Must be a positive integer.`)
+          process.exit(1)
+        }
         const result = await publishWorkflowSplit(mod, {
           parentIssue,
         })

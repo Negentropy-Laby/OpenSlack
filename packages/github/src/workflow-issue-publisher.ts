@@ -126,7 +126,15 @@ export async function publishWorkflowReviewRequest(
   return { issueNumber: result.issueNumber, url: result.url }
 }
 
+function stripCommentsAndStrings(source: string): string {
+  let cleaned = source.replace(/\/\/.*$/gm, '')
+  cleaned = cleaned.replace(/\/\*[\s\S]*?\*\//g, '')
+  cleaned = cleaned.replace(/`[^`]*`/g, '').replace(/'[^']*'/g, '').replace(/"[^"]*"/g, '')
+  return cleaned
+}
+
 function checkForbiddenApis(source: string): boolean {
+  const cleaned = stripCommentsAndStrings(source)
   const forbiddenPatterns = [
     /process\.env/,
     /require\s*\(/,
@@ -136,7 +144,7 @@ function checkForbiddenApis(source: string): boolean {
     /fs\./,
     /fetch\s*\(/,
   ]
-  return forbiddenPatterns.some((p) => p.test(source))
+  return forbiddenPatterns.some((p) => p.test(cleaned))
 }
 
 function checkMinPermissions(meta: WorkflowModuleShape['meta']): boolean {
@@ -155,9 +163,9 @@ export async function publishWorkflowRunAudit(
     schema: 'openslack.workflow_run.v1',
     runId: runStatus.runId,
     workflowId: runStatus.workflowName,
-    workflowHash: '', // caller may fill if available
+    workflowHash: runStatus.workflowHash ?? '',
     mode: runStatus.mode,
-    actor: 'openslack-agent-operator',
+    actor: runStatus.actor ?? 'openslack-agent-operator',
     startedAt: runStatus.startedAt,
     status: runStatus.status,
   }
@@ -182,6 +190,10 @@ export async function publishWorkflowRunAudit(
     return { issueNumber: opts.issueNumber, url: data.html_url, isComment: true }
   }
 
+  if (opts.createIssue === false) {
+    throw new Error('No issue number provided and createIssue is false. Cannot create audit record.')
+  }
+
   // Create new issue
   const title = `[Workflow Run] ${runStatus.workflowName} / ${runStatus.runId}`
   const body = renderWorkflowRunBody(runIssue)
@@ -196,9 +208,10 @@ export async function appendWorkflowRunPhaseComment(
   phase: string,
   status: string,
   details?: string,
+  timestamp?: string,
 ): Promise<{ url: string }> {
   const client = await getClient()
-  const body = renderWorkflowRunPhaseComment(phase, status, details)
+  const body = renderWorkflowRunPhaseComment(phase, status, details, timestamp)
 
   if (client.isDryRun) {
     console.log(`[DRY RUN] Would append phase comment to issue #${issueNumber}: ${phase} = ${status}`)
@@ -220,7 +233,11 @@ export async function appendWorkflowRunPhaseComment(
 export async function publishWorkflowImprovement(
   improvement: WorkflowImprovementIssue,
 ): Promise<{ issueNumber: number; url: string }> {
-  const title = `[Workflow Improvement] ${improvement.workflowId}: ${improvement.proposedChange.slice(0, 60)}`
+  let title = `[Workflow Improvement] ${improvement.workflowId}: ${improvement.proposedChange.slice(0, 60)}`
+  const MAX_TITLE = 256
+  if (title.length > MAX_TITLE) {
+    title = title.slice(0, MAX_TITLE - 3) + '...'
+  }
   const body = renderWorkflowImprovementBody(improvement)
   const labels = workflowImprovementLabels()
 
@@ -309,7 +326,7 @@ export async function bootstrapWorkflowLabels(): Promise<{
       created.push(def.name)
     } catch (err) {
       const message = (err as Error).message
-      if (message.includes('already_exists') || message.includes('422')) {
+      if (message.includes('already_exists')) {
         existing.push(def.name)
       } else {
         failed.push({ name: def.name, reason: message })

@@ -162,17 +162,6 @@ export interface ConfirmationPolicy {
   onUnexpectedEffect?: 'pause' | 'fail'
 }
 
-// ── Audit ─────────────────────────────────────────────────────────────────────
-
-export interface AuditConfig {
-  /** Enable GitHub issue-based run auditing */
-  enabled: boolean
-  /** Existing issue number to append comments to */
-  issueNumber?: number
-  /** Create a new audit issue at the start of the run */
-  createIssueOnStart?: boolean
-}
-
 // ── PRMS ──────────────────────────────────────────────────────────────────────
 
 export interface PrmsDoctorBlocker {
