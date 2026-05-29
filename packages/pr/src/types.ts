@@ -16,10 +16,23 @@ export type PRReviewState =
   | 'BLOCKED_AUTHORIZATION'
   | 'BLOCKED_AUTHOR_IS_SOLE_CODEOWNER'
   | 'BLOCKED_SINGLE_MAINTAINER'
+  | 'BLOCKED_WORKFLOW_GATE'
   | 'BOT_APPROVAL_IGNORED'
   | 'HUMAN_APPROVED'
   | 'READY_TO_MERGE'
   | 'MERGED';
+
+export interface WorkflowGateCriterion {
+  name: string;
+  status: 'PASS' | 'FAIL' | 'N/A';
+  detail?: string;
+}
+
+export interface WorkflowGateResult {
+  touchedWorkflowFiles: boolean;
+  overall: 'PASS' | 'FAIL' | 'N/A';
+  criteria: WorkflowGateCriterion[];
+}
 
 export interface PRReviewReport {
   prNumber: number;
@@ -37,6 +50,8 @@ export interface PRReviewReport {
   reason: string;
   recommendation: string;
   mergeable: boolean;
+  body?: string;
+  workflowGate?: WorkflowGateResult;
 }
 
 export interface PRReviewPolicy {

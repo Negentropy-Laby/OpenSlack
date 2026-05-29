@@ -1,6 +1,7 @@
 import type { PRReviewReport, PRReviewState, PRReviewPolicy } from './types.js';
 import { filterValidApprovals, isBotUser } from './approvals.js';
 import { detectDeadlock } from './deadlock.js';
+import { evaluateWorkflowGate } from './workflow-gate.js';
 
 export function diagnosePR(
   report: PRReviewReport,
@@ -11,6 +12,9 @@ export function diagnosePR(
   let reason = report.reason;
   let recommendation = report.recommendation;
 
+  // Initialize workflow gate as N/A; will be re-evaluated after basic checks
+  const workflowGate = evaluateWorkflowGate(report.changedFiles, report.body ?? '');
+
   const validApprovers = filterValidApprovals(report.reviews, report.author);
 
   // 1. Draft PR
@@ -18,7 +22,7 @@ export function diagnosePR(
     decision = 'BLOCKED_DRAFT';
     reason = 'This PR is in draft state.';
     recommendation = 'Mark the PR as ready for review before merge evaluation.';
-    return { ...report, decision, reason, recommendation };
+    return { ...report, decision, reason, recommendation, workflowGate };
   }
 
   // 2. Not open
@@ -26,7 +30,7 @@ export function diagnosePR(
     decision = 'BLOCKED_POLICY';
     reason = `PR is ${report.state}, not open.`;
     recommendation = 'Only open PRs can be merged.';
-    return { ...report, decision, reason, recommendation };
+    return { ...report, decision, reason, recommendation, workflowGate };
   }
 
   // 3. Merge conflicts
@@ -34,24 +38,36 @@ export function diagnosePR(
     decision = 'BLOCKED_POLICY';
     reason = 'PR has merge conflicts and cannot be merged.';
     recommendation = 'Resolve merge conflicts before proceeding.';
-    return { ...report, decision, reason, recommendation };
+    return { ...report, decision, reason, recommendation, workflowGate };
   }
 
-  // 4. Black zone
+  // 4. Workflow gate (for PRs that modify workflow files)
+  if (workflowGate.overall === 'FAIL') {
+    const failedCriteria = workflowGate.criteria
+      .filter((c) => c.status === 'FAIL')
+      .map((c) => c.name)
+      .join(', ');
+    decision = 'BLOCKED_WORKFLOW_GATE';
+    reason = `Workflow gate failed. Missing: ${failedCriteria}`;
+    recommendation = 'Link workflow proposal/review issues, include workflow hash, and record trust decision in the PR body.';
+    return { ...report, decision, reason, recommendation, workflowGate };
+  }
+
+  // 5. Black zone
   if (policy.black_zone_never_merge && report.riskZone === 'black') {
     decision = 'BLOCKED_BLACK_ZONE';
     reason = 'Policy: Black Zone PRs are never mergeable.';
     recommendation = 'Close PR. Black Zone changes are prohibited.';
-    return { ...report, decision, reason, recommendation };
+    return { ...report, decision, reason, recommendation, workflowGate };
   }
 
-  // 5. Checks pending
+  // 6. Checks pending
   const pendingChecks = report.checks.filter((c) => c.status !== 'completed');
   if (pendingChecks.length > 0) {
     decision = 'CHECKS_PENDING';
     reason = `Checks still running: ${pendingChecks.map((c) => c.name).join(', ')}`;
     recommendation = 'Wait for all checks to complete before evaluating merge readiness.';
-    return { ...report, decision, reason, recommendation };
+    return { ...report, decision, reason, recommendation, workflowGate };
   }
 
   // 6. Checks failed
@@ -62,7 +78,7 @@ export function diagnosePR(
     decision = 'CHECKS_FAILED';
     reason = `Failing checks: ${failingChecks.map((c) => c.name).join(', ')}`;
     recommendation = 'Fix failing checks before merge.';
-    return { ...report, decision, reason, recommendation };
+    return { ...report, decision, reason, recommendation, workflowGate };
   }
 
   // 7. Deadlock detection (author is sole CODEOWNER / single maintainer)
@@ -75,7 +91,7 @@ export function diagnosePR(
     }
     reason = deadlock.reason;
     recommendation = deadlock.recommendation;
-    return { ...report, decision, reason, recommendation };
+    return { ...report, decision, reason, recommendation, workflowGate };
   }
 
   // 8. Self-review detection
@@ -87,7 +103,7 @@ export function diagnosePR(
       decision = 'BLOCKED_SELF_REVIEW';
       reason = `Self-review detected: @${report.author} approved their own PR.`;
       recommendation = 'Remove self-approval. Another reviewer must approve.';
-      return { ...report, decision, reason, recommendation };
+      return { ...report, decision, reason, recommendation, workflowGate };
     }
   }
 
@@ -105,7 +121,7 @@ export function diagnosePR(
       reason = 'No valid human approval found. Author and bot approvals are excluded.';
       recommendation = 'Request review from an independent human reviewer.';
     }
-    return { ...report, decision, reason, recommendation };
+    return { ...report, decision, reason, recommendation, workflowGate };
   }
 
   // 10. Missing CODEOWNER approval for Red Zone
@@ -117,7 +133,7 @@ export function diagnosePR(
       decision = 'NEEDS_CODEOWNER_APPROVAL';
       reason = 'Red Zone requires CODEOWNER approval. No CODEOWNER has approved this PR.';
       recommendation = `Request review from CODEOWNERS (${codeowners.join(', ')}).`;
-      return { ...report, decision, reason, recommendation };
+      return { ...report, decision, reason, recommendation, workflowGate };
     }
   }
 
@@ -132,5 +148,5 @@ export function diagnosePR(
     recommendation = 'Ready to merge.';
   }
 
-  return { ...report, decision, reason, recommendation };
+  return { ...report, decision, reason, recommendation, workflowGate };
 }

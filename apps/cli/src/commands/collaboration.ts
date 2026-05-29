@@ -42,8 +42,10 @@ import {
   publishWorkflowProposal,
   publishWorkflowReviewRequest,
   publishWorkflowRunAudit,
+  publishWorkflowImprovement,
   publishWorkflowSplit,
   bootstrapWorkflowLabels,
+  finalizeWorkflowPR,
 } from '@openslack/github';
 
 type AgentAuthOptions = {
@@ -1375,7 +1377,9 @@ export function collaborationCommands(): Command {
     .command('split <name>')
     .description('Split a workflow into phase sub-issues')
     .requiredOption('--issue <parentIssue>', 'Parent issue number to link sub-issues to')
-    .action(async (name: string, options: { issue: string }) => {
+    .option('--native-subissues', 'Attempt native GitHub sub-issue linking', false)
+    .option('--dependencies <mode>', 'Link phase dependencies: linear (each phase blocked by previous)', undefined)
+    .action(async (name: string, options: { issue: string; nativeSubissues: boolean; dependencies?: string }) => {
       const found = await findJsWorkflow(name)
       if (!found) {
         console.log(`Workflow "${name}" not found.`)
@@ -1392,6 +1396,8 @@ export function collaborationCommands(): Command {
         }
         const result = await publishWorkflowSplit(mod, {
           parentIssue,
+          nativeSubIssues: options.nativeSubissues,
+          linearDependencies: options.dependencies === 'linear',
         })
         console.log(`Workflow split parent issue: #${result.parentIssueNumber}`)
         console.log('Phase sub-issues:')
@@ -1400,6 +1406,88 @@ export function collaborationCommands(): Command {
         }
       } catch (err) {
         console.log(`Failed to split workflow:`)
+        console.log(`  ${(err as Error).message}`)
+        process.exit(1)
+      }
+    })
+
+  workflow
+    .command('improvement <name>')
+    .description('Create a workflow improvement issue')
+    .requiredOption('--problem <text>', 'Description of the problem or limitation')
+    .requiredOption('--change <text>', 'Proposed change or improvement')
+    .option('--phase <phaseName>', 'Affected phase name (can be used multiple times)', (value: string, previous: string[]) => [...previous, value], [])
+    .option('--breaking', 'Mark as a breaking change', false)
+    .action(async (name: string, options: { problem: string; change: string; phase: string[]; breaking: boolean }) => {
+      const found = await findJsWorkflow(name)
+      if (!found) {
+        console.log(`Workflow "${name}" not found.`)
+        console.log('Use "openslack collaboration workflow list" to see available workflows.')
+        process.exit(1)
+      }
+
+      try {
+        const result = await publishWorkflowImprovement({
+          schema: 'openslack.workflow_improvement.v1',
+          workflowId: name,
+          problem: options.problem,
+          proposedChange: options.change,
+          affectedPhases: options.phase,
+          backwardCompatible: !options.breaking,
+        })
+        console.log(`Workflow improvement issue created: #${result.issueNumber}`)
+        console.log(`URL: ${result.url}`)
+      } catch (err) {
+        console.log(`Failed to create workflow improvement:`)
+        console.log(`  ${(err as Error).message}`)
+        process.exit(1)
+      }
+    })
+
+  workflow
+    .command('finalize-pr <prNumber>')
+    .description('Finalize workflow lifecycle after a PR is merged')
+    .option('--proposal-issue <number>', 'Workflow proposal issue to close')
+    .option('--review-issue <number>', 'Workflow review issue to comment on')
+    .option('--phase-issues <numbers>', 'Comma-separated phase issue numbers to close')
+    .option('--hash <hash>', 'Workflow hash to record')
+    .option('--trust <level>', 'Trust decision: trusted, untrusted, or core')
+    .action(async (prNumber: string, options: { proposalIssue?: string; reviewIssue?: string; phaseIssues?: string; hash?: string; trust?: string }) => {
+      const pr = parseInt(prNumber, 10)
+      if (!Number.isFinite(pr) || pr <= 0) {
+        console.log(`Invalid PR number: "${prNumber}". Must be a positive integer.`)
+        process.exit(1)
+      }
+
+      const proposalIssue = options.proposalIssue ? parseInt(options.proposalIssue, 10) : undefined
+      const reviewIssue = options.reviewIssue ? parseInt(options.reviewIssue, 10) : undefined
+      const phaseIssues = options.phaseIssues
+        ? options.phaseIssues.split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => Number.isFinite(n))
+        : undefined
+
+      const validTrust = options.trust === 'trusted' || options.trust === 'untrusted' || options.trust === 'core'
+        ? options.trust
+        : undefined
+
+      try {
+        const result = await finalizeWorkflowPR(pr, {
+          proposalIssue,
+          reviewIssue,
+          phaseIssues,
+          workflowHash: options.hash,
+          trustDecision: validTrust as 'trusted' | 'untrusted' | 'core' | undefined,
+        })
+
+        console.log(`Workflow PR finalize complete for #${pr}:`)
+        console.log(`  Closed issues: ${result.closedIssues.length > 0 ? result.closedIssues.join(', ') : 'none'}`)
+        console.log(`  Commented issues: ${result.commentedIssues.length > 0 ? result.commentedIssues.join(', ') : 'none'}`)
+        console.log(`  Updated labels: ${result.updatedLabels.length > 0 ? result.updatedLabels.join(', ') : 'none'}`)
+        if (result.errors.length > 0) {
+          console.log('  Errors:')
+          for (const err of result.errors) console.log(`    - ${err}`)
+        }
+      } catch (err) {
+        console.log(`Failed to finalize workflow PR:`)
         console.log(`  ${(err as Error).message}`)
         process.exit(1)
       }

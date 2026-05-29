@@ -44,6 +44,11 @@ export {
 } from './workflow-issue-publisher.js';
 export type { PhaseSubIssue } from './workflow-issue-publisher.js';
 export {
+  finalizeWorkflowPR,
+  transitionWorkflowIssue,
+} from './workflow-lifecycle.js';
+export type { FinalizeWorkflowPROpts } from './workflow-lifecycle.js';
+export {
   renderWorkflowProposalBody,
   renderWorkflowReviewBody,
   renderWorkflowRunBody,
