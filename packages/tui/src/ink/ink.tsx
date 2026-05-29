@@ -42,7 +42,7 @@ import { TerminalWriteProvider } from './useTerminalNotification.js';
 // v1 scope flag: disables mouse tracking, alt-screen, selection, focus
 // reporting, and kitty keyboard protocol writes. The code paths remain
 // compilable but produce no terminal output for these capabilities.
-const TUI_V1_MINIMAL = true
+const TUI_V1_MINIMAL = false
 
 // Alt-screen: renderer.ts sets cursor.visible = !isTTY || screen.height===0,
 // which is always false in alt-screen (TTY + content fills screen).
@@ -1298,12 +1298,14 @@ export default class Ink {
    * nodeCache rects map 1:1 to terminal cells (no scrollback offset).
    */
   dispatchClick(col: number, row: number): boolean {
-    if (!this.altScreenActive) return false;
+    // Mouse clicks work in both alt-screen and main-screen modes.
+    // In main-screen mode the screen buffer and terminal are kept in sync
+    // by log-update's incremental diff; nodeCache rects map 1:1 to terminal
+    // cells as long as content fills the viewport (TUI is full-screen).
     const blank = isEmptyCellAt(this.frontFrame.screen, col, row);
     return dispatchClick(this.rootNode, col, row, blank);
   }
   dispatchHover(col: number, row: number): void {
-    if (!this.altScreenActive) return;
     dispatchHover(this.rootNode, col, row, this.hoveredNodes);
   }
   dispatchKeyboardEvent(parsedKey: ParsedKey): void {
