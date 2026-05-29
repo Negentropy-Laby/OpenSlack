@@ -154,6 +154,23 @@ export interface AmbientExecutionOptions {
 }
 
 /**
+ * Execute a claude-ambient workflow by creating an AnthropicCompatSandbox
+ * from a WorkflowRuntime and running the ambient source body in a secure VM.
+ *
+ * This is the bridge between the ambient runner and the main execution path.
+ */
+export async function executeAmbientWorkflow(
+  sourceBody: string,
+  runtime: import('./types.js').WorkflowRuntime,
+  args: Record<string, unknown>,
+): Promise<unknown> {
+  const { createAnthropicCompatSandbox } = await import('./anthropic-compat.js')
+  const sandbox = createAnthropicCompatSandbox(runtime)
+  const dslGlobals = { ...sandbox, args: Object.freeze({ ...args }) }
+  return executeAmbientScript(sourceBody, dslGlobals, { timeout: 120_000 })
+}
+
+/**
  * Execute a Claude ambient DSL workflow script in a sandboxed VM context.
  *
  * 1. Strips the `export const meta = { ... }` from sourceBody.

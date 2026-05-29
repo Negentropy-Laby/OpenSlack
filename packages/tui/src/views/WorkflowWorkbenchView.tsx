@@ -54,6 +54,13 @@ function riskIconCategory(risk: string): 'pass' | 'warn' | 'fail' {
   return 'warn'
 }
 
+/** Determine the color theme key for a format badge. */
+function formatColorTheme(format: string): 'accent' | 'info' | 'muted' {
+  if (format === 'claude-ambient') return 'accent'
+  if (format === 'openslack-native') return 'info'
+  return 'muted'
+}
+
 /** Determine the color theme key for a last run status. */
 function lastRunColorTheme(status: string | undefined): 'success' | 'error' | 'warning' | 'muted' {
   if (!status) return 'muted'
@@ -85,13 +92,12 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
     description: `Read-only preview of workflow "${wf.name}". No changes will be made.`,
     requiresConfirmation: false,
     handler: async (): Promise<TuiActionResult> => {
-      return {
-        success: true,
-        message: `Preview loaded for "${wf.name}" (${wf.format.toUpperCase()}, ${wf.phases} phases). No changes made.`,
-        data: { workflow: wf.name, format: wf.format, phases: wf.phases },
+      if (actionHandlers) {
+        return actionHandlers.executeWorkflowRun(wf.name, 'preview')
       }
+      return { success: false, message: 'Preview handler not available' }
     },
-  }), [])
+  }), [actionHandlers])
 
   const makeDryRunAction = useCallback((wf: WorkflowGalleryItem): TuiAction => ({
     id: `dry-run-${wf.name}`,
@@ -101,17 +107,12 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
     description: `Simulated execution of workflow "${wf.name}". No real changes will be applied.`,
     requiresConfirmation: false,
     handler: async (): Promise<TuiActionResult> => {
-      const simulatedPhases = []
-      for (let i = 1; i <= wf.phases; i++) {
-        simulatedPhases.push(`phase ${i}: simulated`)
+      if (actionHandlers) {
+        return actionHandlers.executeWorkflowRun(wf.name, 'dry-run')
       }
-      return {
-        success: true,
-        message: `Dry-run complete for "${wf.name}". ${wf.phases} phase(s) simulated. No real changes applied.`,
-        data: { workflow: wf.name, phasesSimulated: wf.phases, results: simulatedPhases },
-      }
+      return { success: false, message: 'Dry-run handler not available' }
     },
-  }), [])
+  }), [actionHandlers])
 
   const makeRunAction = useCallback((wf: WorkflowGalleryItem): TuiAction => ({
     id: `run-${wf.name}`,
@@ -122,7 +123,7 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
     requiresConfirmation: true,
     handler: async (): Promise<TuiActionResult> => {
       if (actionHandlers) {
-        return actionHandlers.executeWorkflowRun(wf.name)
+        return actionHandlers.executeWorkflowRun(wf.name, 'run')
       }
       return {
         success: false,
@@ -383,7 +384,7 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
           ),
           React.createElement(Box, { flexDirection: 'row' },
             React.createElement(ThemedText, { colorTheme: 'muted' }, 'Format: '),
-            React.createElement(ThemedText, { colorTheme: 'foreground' }, wf.format.toUpperCase()),
+            React.createElement(ThemedText, { colorTheme: formatColorTheme(wf.format) }, wf.format.toUpperCase()),
           ),
           renderTrustInfo(wf),
           React.createElement(Box, { flexDirection: 'row' },
@@ -436,7 +437,7 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
           ? React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, wf.name)
           : React.createElement(ThemedText, { colorTheme: 'foreground' }, wf.name),
         React.createElement(Text, null, ' '),
-        React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, wf.format.toUpperCase()),
+        React.createElement(ThemedText, { colorTheme: formatColorTheme(wf.format), dim: true }, wf.format.toUpperCase()),
       ),
       React.createElement(
         Box,

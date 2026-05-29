@@ -82,6 +82,24 @@ export class ExecuteDeniedError extends Error {
   }
 }
 
+/**
+ * Error thrown when a workflow is paused because an unexpected side effect
+ * requires human approval.
+ */
+export class WorkflowPausedError extends Error {
+  readonly operation: string
+  readonly detail: string
+  readonly runId: string
+
+  constructor(operation: string, detail: string, runId: string) {
+    super(`Workflow paused: unexpected effect "${operation}" requires approval`)
+    this.name = 'WorkflowPausedError'
+    this.operation = operation
+    this.detail = detail
+    this.runId = runId
+  }
+}
+
 export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
   const {
     runId,

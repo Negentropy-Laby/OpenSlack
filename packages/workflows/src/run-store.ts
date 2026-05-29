@@ -2,7 +2,11 @@ import type {
   ExecutionMode,
   PhaseCheckpoint,
   RunStatus,
+  RunStatusState,
+  PendingApproval,
+  WorkflowRunInfo,
 } from './types.js'
+import { randomUUID } from 'node:crypto'
 import { mkdir, readFile as fsReadFile, writeFile as fsWriteFile, appendFile as fsAppendFile, access } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
@@ -32,10 +36,16 @@ import { resolve } from 'node:path'
  *   paused  -> running   (resumed)
  */
 const VALID_TRANSITIONS: Record<string, Set<string>> = {
-  running: new Set(['paused', 'completed', 'failed']),
+  created: new Set(['previewed', 'confirmed', 'running']),
+  previewed: new Set(['confirmed', 'running']),
+  confirmed: new Set(['running']),
+  running: new Set(['paused', 'paused_waiting_approval', 'resuming', 'completed', 'failed', 'cancelled']),
   paused: new Set(['running']),
+  paused_waiting_approval: new Set(['resuming', 'cancelled']),
+  resuming: new Set(['running', 'failed', 'cancelled']),
   completed: new Set(),
   failed: new Set(),
+  cancelled: new Set(),
 }
 
 /**
@@ -167,6 +177,11 @@ export class RunStore {
   /** Path to output.json. */
   outputPath(runId: string): string {
     return `${this.runDir(runId)}/output.json`
+  }
+
+  /** Path to pending-approvals.json. */
+  pendingApprovalsPath(runId: string): string {
+    return `${this.runDir(runId)}/pending-approvals.json`
   }
 
   // ── Initialization ────────────────────────────────────────────────────────
@@ -431,6 +446,96 @@ export class RunStore {
       phases: status.phases,
       args: meta.args,
     }
+  }
+
+  // ── Pending Approvals ─────────────────────────────────────────────────────
+
+  /**
+   * Save a pending approval to the run's pending-approvals.json.
+   */
+  async savePendingApproval(
+    runId: string,
+    approval: Omit<PendingApproval, 'id' | 'status'>,
+  ): Promise<void> {
+    const approvals = await this.loadPendingApprovals(runId)
+    approvals.push({
+      id: randomUUID(),
+      status: 'pending',
+      ...approval,
+    })
+    await this.fs.writeFile(
+      this.pendingApprovalsPath(runId),
+      JSON.stringify(approvals, null, 2),
+    )
+  }
+
+  /**
+   * Load all pending approvals for a run.
+   */
+  async loadPendingApprovals(runId: string): Promise<PendingApproval[]> {
+    const raw = await this.fs.readFile(this.pendingApprovalsPath(runId))
+    if (raw === null) return []
+    return JSON.parse(raw) as PendingApproval[]
+  }
+
+  /**
+   * Resolve a pending approval by id.
+   */
+  async resolvePendingApproval(
+    runId: string,
+    approvalId: string,
+    decision: 'approved' | 'rejected',
+  ): Promise<void> {
+    const approvals = await this.loadPendingApprovals(runId)
+    const idx = approvals.findIndex(a => a.id === approvalId)
+    if (idx < 0) {
+      throw new Error(`Approval ${approvalId} not found for run ${runId}`)
+    }
+    approvals[idx].status = decision
+    await this.fs.writeFile(
+      this.pendingApprovalsPath(runId),
+      JSON.stringify(approvals, null, 2),
+    )
+  }
+
+  // ── Listing ───────────────────────────────────────────────────────────────
+
+  /**
+   * List all runs with a specific status.
+   */
+  async listRunsByStatus(status: RunStatusState): Promise<WorkflowRunInfo[]> {
+    const runsDir = `${this.baseDir}/runs`
+    let runIds: string[]
+    try {
+      // List run directories
+      const entries = await this.fs.readFile(`${runsDir}/.index`)
+      if (entries) {
+        runIds = entries.trim().split('\n').filter(Boolean)
+      } else {
+        // Fallback: scan directories if no index file
+        const { readdir } = await import('node:fs/promises')
+        runIds = await readdir(runsDir).catch(() => [])
+      }
+    } catch {
+      return []
+    }
+
+    const results: WorkflowRunInfo[] = []
+    for (const runId of runIds) {
+      const meta = await this.loadMeta(runId)
+      const st = await this.loadStatus(runId)
+      if (meta && st && st.status === status) {
+        results.push({
+          runId: meta.runId,
+          workflowName: meta.workflowName,
+          mode: meta.mode,
+          status: st.status as RunStatusState,
+          startedAt: meta.startedAt,
+          updatedAt: st.updatedAt,
+        })
+      }
+    }
+    return results
   }
 }
 

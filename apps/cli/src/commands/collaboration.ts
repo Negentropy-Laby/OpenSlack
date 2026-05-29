@@ -880,7 +880,7 @@ export function collaborationCommands(): Command {
         const args = parseInputs(options.input);
         const budgetTokens = parseInt(options.budgetTokens, 10);
 
-        if (!mod.run) {
+        if (!mod.run && mod.format !== 'claude-ambient') {
           console.log(`Workflow "${name}" has no run function. Use preview or dry-run instead.`);
           process.exit(1);
         }
@@ -967,7 +967,7 @@ export function collaborationCommands(): Command {
       try {
         const mod = await loadWorkflow(found.path);
 
-        if (!mod.run) {
+        if (!mod.run && mod.format !== 'claude-ambient') {
           console.log(`Workflow "${meta.workflowName}" has no run function.`);
           process.exit(1);
         }

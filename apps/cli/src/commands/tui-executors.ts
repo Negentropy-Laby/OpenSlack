@@ -1,4 +1,5 @@
 import type { TuiActionResult } from '@openslack/tui'
+import { join } from 'node:path'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -9,12 +10,13 @@ export interface ApprovalExecutionParams {
   planId?: string
   prNumber?: number
   workflowName?: string
+  runId?: string
 }
 
 export interface TuiActionHandlers {
   executeApproval: (params: ApprovalExecutionParams, isApprove: boolean) => Promise<TuiActionResult>
   executeTrustChange: (workflowName: string, fromLevel: string, toLevel: string) => Promise<TuiActionResult>
-  executeWorkflowRun: (workflowName: string) => Promise<TuiActionResult>
+  executeWorkflowRun: (workflowName: string, mode: 'preview' | 'dry-run' | 'run') => Promise<TuiActionResult>
 }
 
 // ── executeApproval ────────────────────────────────────────────────────────────
@@ -118,6 +120,68 @@ export async function executeApproval(
       case 'workflow-effect': {
         const { recordDecision } = await import('@openslack/collaboration')
 
+        // If a runId is present, this is a paused workflow run awaiting approval
+        if (params.runId) {
+          const { RunStore, executeResume, findWorkflow, loadWorkflow } = await import('@openslack/workflows')
+          const store = new RunStore({ baseDir: join(root, '.openslack.local', 'workflows') })
+
+          const pending = await store.loadPendingApprovals(params.runId)
+          const unresolved = pending.filter(p => p.status === 'pending')
+
+          if (isApprove) {
+            // Approve all pending effects for this run
+            for (const approval of unresolved) {
+              await store.resolvePendingApproval(params.runId, approval.id, 'approved')
+            }
+
+            // Resume the workflow
+            const meta = await store.loadMeta(params.runId)
+            if (meta) {
+              const found = await findWorkflow(meta.workflowName, root)
+              if (found) {
+                const mod = await loadWorkflow(found.path)
+                await executeResume(mod, {
+                  runId: params.runId,
+                  manifest: mod.meta,
+                  confirmationPolicy: {
+                    mode: 'preapproved-manifest',
+                    actorId: 'tui-user',
+                    runId: params.runId,
+                    onUnexpectedEffect: 'pause',
+                  },
+                })
+              }
+            }
+
+            recordDecision({
+              topic: title,
+              decision: 'approved',
+              rationale: `Workflow effect approved via TUI, run ${params.runId} resumed`,
+              decidedBy: 'tui-user',
+              tags: ['workflow-effect', 'tui', `run-${params.runId}`],
+            })
+
+            return { success: true, message: `Workflow resumed`, data: { runId: params.runId } }
+          }
+
+          // Reject: cancel the run
+          for (const approval of unresolved) {
+            await store.resolvePendingApproval(params.runId, approval.id, 'rejected')
+          }
+          await store.transitionStatus(params.runId, 'cancelled')
+
+          recordDecision({
+            topic: title,
+            decision: 'cancelled',
+            rationale: `Workflow effect rejected, run ${params.runId} cancelled`,
+            decidedBy: 'tui-user',
+            tags: ['workflow-effect', 'tui', `run-${params.runId}`],
+          })
+
+          return { success: true, message: `Workflow run cancelled`, data: { runId: params.runId } }
+        }
+
+        // Fallback: no runId, just record decision (legacy handoff behavior)
         recordDecision({
           topic: title,
           decision: isApprove ? 'confirmed' : 'cancelled',
@@ -182,13 +246,102 @@ export async function executeTrustChange(
 
 // ── executeWorkflowRun ─────────────────────────────────────────────────────────
 
-export async function executeWorkflowRun(workflowName: string): Promise<TuiActionResult> {
-  return {
-    success: false,
-    message: 'Workflow run requires full CLI execution context. Use CLI to run workflows.',
-    data: {
-      cliCommand: `openslack collaboration workflow run ${workflowName}`,
-    },
+export async function executeWorkflowRun(
+  workflowName: string,
+  mode: 'preview' | 'dry-run' | 'run',
+  root: string,
+): Promise<TuiActionResult> {
+  const {
+    findWorkflow,
+    loadWorkflow,
+    executePreview,
+    executeDryRun,
+    executeRun,
+    TrustStore,
+    buildApprovalManifest,
+    WorkflowPausedError,
+    hashString,
+  } = await import('@openslack/workflows')
+
+  const found = await findWorkflow(workflowName, root)
+  if (!found) {
+    return { success: false, message: `Workflow "${workflowName}" not found.` }
+  }
+
+  const mod = await loadWorkflow(found.path)
+
+  try {
+    if (mode === 'preview') {
+      const result = await executePreview(mod, { manifest: mod.meta, args: {} })
+      return {
+        success: true,
+        message: `Preview complete for "${workflowName}".`,
+        data: { mode: 'preview', phases: mod.meta.phases.map(p => p.title), budget: result.budget },
+      }
+    }
+
+    if (mode === 'dry-run') {
+      const result = await executeDryRun(mod, { manifest: mod.meta, args: {} })
+      return {
+        success: true,
+        message: `Dry-run complete for "${workflowName}". ${result.simulatedEffects.length} effect(s) simulated.`,
+        data: { mode: 'dry-run', simulatedEffects: result.simulatedEffects, errors: result.errors },
+      }
+    }
+
+    // mode === 'run'
+    const trustStore = new TrustStore({ rootDir: root })
+    const trustLevel = trustStore.get(workflowName) ?? 'untrusted'
+    if (trustLevel === 'untrusted' && mod.meta.risk !== 'low') {
+      return {
+        success: false,
+        message: `Workflow "${workflowName}" is untrusted. Elevate trust before running.`,
+      }
+    }
+
+    // Step 1: Dry-run to discover side effects
+    const dryResult = await executeDryRun(mod, { manifest: mod.meta, args: {} })
+
+    // Step 2: Build approval manifest from dry-run simulated effects
+    const inputHash = hashString(JSON.stringify({}))
+    const approvalManifest = buildApprovalManifest(
+      mod.meta.name,
+      dryResult.runId,
+      'tui-user',
+      mod.hash,
+      inputHash,
+      mod.meta.risk ?? 'medium',
+      dryResult.simulatedEffects,
+    )
+
+    // Step 3: Execute with manifest-based confirmation policy
+    const result = await executeRun(mod, {
+      manifest: mod.meta,
+      args: {},
+      confirmationPolicy: {
+        mode: 'preapproved-manifest',
+        actorId: 'tui-user',
+        runId: dryResult.runId,
+        approvalManifest,
+        onUnexpectedEffect: 'pause',
+      },
+    })
+
+    return {
+      success: true,
+      message: `Workflow "${workflowName}" executed successfully.`,
+      data: { status: result.status, dryRunEffects: dryResult.simulatedEffects },
+    }
+  } catch (error: unknown) {
+    if (error instanceof WorkflowPausedError) {
+      return {
+        success: false,
+        message: `Workflow paused: unexpected effect "${error.operation}" requires approval in Approval Center.`,
+        data: { runId: error.runId, operation: error.operation },
+      }
+    }
+    const message = error instanceof Error ? error.message : String(error)
+    return { success: false, message: `Execution failed: ${message}` }
   }
 }
 
@@ -197,6 +350,6 @@ export function createActionHandlers(root: string): TuiActionHandlers {
   return {
     executeApproval: (params, isApprove) => executeApproval(params, isApprove, root),
     executeTrustChange: (name, from, to) => executeTrustChange(name, from, to, root),
-    executeWorkflowRun,
+    executeWorkflowRun: (name, mode) => executeWorkflowRun(name, mode, root),
   }
 }

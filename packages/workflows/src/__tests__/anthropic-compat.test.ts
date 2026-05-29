@@ -99,7 +99,7 @@ describe('createAnthropicCompatSandbox', () => {
     it('delegates pipeline calls to runtime', async () => {
       const rt = makeRuntime()
       const sandbox = createAnthropicCompatSandbox(rt)
-      const result = await sandbox.pipeline([1, 2], async (x) => x * 2)
+      const result = await sandbox.pipeline([1, 2], async (x: number, _idx: number) => x * 2)
       expect(result).toEqual([2, 4])
     })
   })

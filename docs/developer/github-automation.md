@@ -82,6 +82,46 @@ bot/agent identity. If a PR is accidentally opened by the human reviewer or
 CODEOWNER, close or abandon it and recreate it through the bot credential path,
 or require a different independent human approval.
 
+### Agent PR Creation
+
+Agents and automation must **never** call `gh pr create` directly. The `gh` CLI defaults to the human OAuth identity, which creates a self-review deadlock.
+
+Instead, use the bot-authenticated wrapper scripts:
+
+```bash
+# Bash / Git Bash / WSL — create PR as bot
+./scripts/bot-gh-pr-create.sh --title "feat: ..." --body "..." --base main --head feature-branch
+
+# PowerShell — create PR as bot
+powershell -ExecutionPolicy Bypass -File scripts\bot-gh-pr-create.ps1 --title "feat: ..." --body "..." --base main --head feature-branch
+```
+
+For other `gh` commands that need bot auth (e.g., `gh pr edit`, `gh pr comment`):
+
+```bash
+# Bash
+./scripts/bot-gh.sh pr edit 117 --body "..."
+
+# PowerShell
+powershell -ExecutionPolicy Bypass -File scripts\bot-gh.ps1 pr edit 117 --body "..."
+```
+
+#### How the wrappers work
+
+1. **Generate token**: Call `scripts/bot-gh-token.js` to sign a JWT and exchange it for a short-lived GitHub App installation token.
+2. **Prevent fallback**: Remove `GITHUB_TOKEN` from the environment so the `gh` CLI cannot silently fall back to a human PAT.
+3. **Set bot auth**: Inject the installation token into `GH_TOKEN` so `gh` authenticates as the bot.
+4. **Forward arguments**: Pass all remaining arguments to `gh`.
+5. **Verify identity** (PR creation only): After `gh pr create` succeeds, check that the PR author matches the bot. If not, exit with an error.
+
+#### Troubleshooting
+
+| Problem | Cause | Fix |
+|---------|-------|-----|
+| "No GitHub App private key found" | PEM missing | Place `.openslack.local/github-app.pem` or set `OPENSLACK_GITHUB_APP_PRIVATE_KEY` |
+| "Failed to generate installation token" | PEM invalid or App ID wrong | Verify PEM content and `OPENSLACK_GITHUB_APP_ID` / `OPENSLACK_GITHUB_APP_INSTALLATION_ID` |
+| PR created under human identity | `GITHUB_TOKEN` was set and not removed | Use the wrapper — it removes `GITHUB_TOKEN` automatically |
+
 ### PRMS bot merge pipeline
 
 Use `scripts/openslack-pr-gate.ps1` for local bot-authenticated PR diagnosis

@@ -461,4 +461,123 @@ describe('RunStore', () => {
       expect(status!.currentPhase).toBe('Verify')
     })
   })
+
+  // ── Pending Approvals ──────────────────────────────────────────────────
+
+  describe('savePendingApproval / loadPendingApprovals / resolvePendingApproval', () => {
+    it('saves and loads pending approvals', async () => {
+      const { store } = makeStore()
+      await store.initRun('run-001', makeMeta())
+
+      await store.savePendingApproval('run-001', {
+        operation: 'openslack.task.createIssue',
+        detail: 'Create issue',
+        timestamp: '2026-05-28T12:00:00.000Z',
+      })
+
+      const approvals = await store.loadPendingApprovals('run-001')
+      expect(approvals).toHaveLength(1)
+      expect(approvals[0].operation).toBe('openslack.task.createIssue')
+      expect(approvals[0].status).toBe('pending')
+      expect(approvals[0].id).toBeDefined()
+    })
+
+    it('resolves a pending approval', async () => {
+      const { store } = makeStore()
+      await store.initRun('run-001', makeMeta())
+
+      await store.savePendingApproval('run-001', {
+        operation: 'openslack.task.createIssue',
+        detail: 'Create issue',
+        timestamp: '2026-05-28T12:00:00.000Z',
+      })
+
+      const approvals = await store.loadPendingApprovals('run-001')
+      await store.resolvePendingApproval('run-001', approvals[0].id, 'approved')
+
+      const resolved = await store.loadPendingApprovals('run-001')
+      expect(resolved[0].status).toBe('approved')
+    })
+
+    it('throws when resolving non-existent approval', async () => {
+      const { store } = makeStore()
+      await store.initRun('run-001', makeMeta())
+
+      await expect(store.resolvePendingApproval('run-001', 'nonexistent', 'approved')).rejects.toThrow(
+        'Approval nonexistent not found',
+      )
+    })
+  })
+
+  // ── Pause/Resume State Machine ─────────────────────────────────────────
+
+  describe('pause/resume state machine', () => {
+    it('transitions running → paused_waiting_approval → resuming → running', async () => {
+      const { store } = makeStore()
+      await store.initRun('run-001', makeMeta())
+
+      await store.transitionStatus('run-001', 'paused_waiting_approval')
+      let status = await store.loadStatus('run-001')
+      expect(status!.status).toBe('paused_waiting_approval')
+
+      await store.transitionStatus('run-001', 'resuming')
+      status = await store.loadStatus('run-001')
+      expect(status!.status).toBe('resuming')
+
+      await store.transitionStatus('run-001', 'running')
+      status = await store.loadStatus('run-001')
+      expect(status!.status).toBe('running')
+    })
+
+    it('transitions paused_waiting_approval → cancelled', async () => {
+      const { store } = makeStore()
+      await store.initRun('run-001', makeMeta())
+      await store.transitionStatus('run-001', 'paused_waiting_approval')
+
+      await store.transitionStatus('run-001', 'cancelled')
+      const status = await store.loadStatus('run-001')
+      expect(status!.status).toBe('cancelled')
+    })
+
+    it('rejects invalid transition from paused_waiting_approval to completed', async () => {
+      const { store } = makeStore()
+      await store.initRun('run-001', makeMeta())
+      await store.transitionStatus('run-001', 'paused_waiting_approval')
+
+      await expect(store.transitionStatus('run-001', 'completed')).rejects.toThrow(
+        'Invalid status transition',
+      )
+    })
+  })
+
+  // ── listRunsByStatus ───────────────────────────────────────────────────
+
+  describe('listRunsByStatus', () => {
+    it('lists runs with a specific status', async () => {
+      const { store, fs } = makeStore()
+      await store.initRun('run-001', makeMeta({ runId: 'run-001', workflowName: 'wf-a' }))
+      await store.initRun('run-002', makeMeta({ runId: 'run-002', workflowName: 'wf-b' }))
+      await store.transitionStatus('run-001', 'paused_waiting_approval')
+
+      // Create index file for listing
+      fs.writeFile('/test/workflows/runs/.index', 'run-001\nrun-002\n')
+
+      const paused = await store.listRunsByStatus('paused_waiting_approval')
+      expect(paused).toHaveLength(1)
+      expect(paused[0].runId).toBe('run-001')
+      expect(paused[0].workflowName).toBe('wf-a')
+
+      const running = await store.listRunsByStatus('running')
+      expect(running).toHaveLength(1)
+      expect(running[0].runId).toBe('run-002')
+    })
+
+    it('returns empty array when no runs match', async () => {
+      const { store, fs } = makeStore()
+      fs.writeFile('/test/workflows/runs/.index', '')
+
+      const result = await store.listRunsByStatus('paused_waiting_approval')
+      expect(result).toEqual([])
+    })
+  })
 })

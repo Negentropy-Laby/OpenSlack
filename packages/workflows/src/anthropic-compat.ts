@@ -1,4 +1,4 @@
-import type { WorkflowRuntime, AgentOptions, PreviewResult, RunResult } from './types.js'
+import type { WorkflowRuntime, AgentOptions, PreviewResult, RunResult, PipelineOptions } from './types.js'
 
 /**
  * Sandboxed ambient globals exposed to anthropic-compatible workflows.
@@ -33,9 +33,14 @@ export interface AnthropicCompatSandbox {
   /** Parallel execution */
   parallel<T>(tasks: Array<() => Promise<T>>): Promise<T[]>
   /** Pipeline execution */
-  pipeline<T, R>(items: T[], fn: (item: T, idx: number) => Promise<R>): Promise<R[]>
+  pipeline<T, R>(
+    items: T[],
+    ...args: unknown[]
+  ): Promise<R[]>
   /** Nested workflow call — blocked in preview mode */
   workflow(name: string, args?: Record<string, unknown>): Promise<unknown>
+  /** OpenSlack API access — runtime enforces mode restrictions */
+  readonly openslack: WorkflowRuntime['openslack']
 }
 
 /**
@@ -105,9 +110,22 @@ export function createAnthropicCompatSandbox(
 
     async pipeline<T, R>(
       items: T[],
-      fn: (item: T, idx: number) => Promise<R>,
+      ...args: unknown[]
     ): Promise<R[]> {
-      return runtime.pipeline(items, fn)
+      const last = args[args.length - 1]
+      const hasOptions = typeof last === 'object' && last !== null && 'concurrency' in last
+      const stages = hasOptions ? args.slice(0, -1) : args
+      const options = hasOptions ? (last as PipelineOptions) : undefined
+
+      if (stages.length === 0) {
+        throw new AnthropicCompatError('pipeline', 'Pipeline requires at least one stage function')
+      }
+
+      if (stages.length === 1) {
+        return runtime.pipeline(items, stages[0] as (item: T, index: number) => Promise<R>, options)
+      }
+
+      return runtime.pipeline(items, stages as Array<(prev: unknown, item: T, index: number) => Promise<unknown>>, options)
     },
 
     async workflow(
@@ -121,6 +139,10 @@ export function createAnthropicCompatSandbox(
         )
       }
       return runtime.workflow(name, args)
+    },
+
+    get openslack(): WorkflowRuntime['openslack'] {
+      return runtime.openslack
     },
   }
 

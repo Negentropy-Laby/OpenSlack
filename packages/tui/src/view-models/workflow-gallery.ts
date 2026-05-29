@@ -1,9 +1,11 @@
 import { sanitizeTerminalText } from '../sanitize.js'
 
+import type { WorkflowFormat } from '@openslack/workflows'
+
 export interface WorkflowGalleryItem {
   name: string
   description: string
-  format: 'yaml' | 'js'
+  format: 'yaml' | WorkflowFormat
   trustLevel: string
   risk: string
   phases: number
@@ -23,7 +25,7 @@ export function mapWorkflowGalleryToViewModel(data?: {
   workflows?: Array<{
     name: string
     description?: string
-    format?: 'yaml' | 'js'
+    format?: 'yaml' | WorkflowFormat
     trustLevel?: string
     risk?: string
     phases?: number
@@ -47,7 +49,7 @@ export function mapWorkflowGalleryToViewModel(data?: {
     summary: {
       total: workflows.length,
       yaml: workflows.filter(w => w.format === 'yaml').length,
-      js: workflows.filter(w => w.format === 'js').length,
+      js: workflows.filter(w => w.format !== 'yaml').length,
     },
   }
 }

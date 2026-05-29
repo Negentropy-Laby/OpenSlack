@@ -30,5 +30,58 @@ pnpm openslack pr doctor <PR_NUMBER>
 - Do not bypass rulesets.
 - Do not edit secrets or credential files.
 - Do not hand-edit generated status without running `pnpm openslack status generate` and `pnpm openslack status verify`.
+- Do not use `gh pr create` directly. The `gh` CLI defaults to the human OAuth identity. Always use the bot-auth wrapper:
+  - Bash: `./scripts/bot-gh-pr-create.sh --title "..." --body "..." --base main --head <branch>`
+  - PowerShell: `scripts\bot-gh-pr-create.ps1 --title "..." --body "..." --base main --head <branch>`
+  - For other `gh` commands (edit, comment, etc.): `./scripts/bot-gh.sh ...` or `scripts\bot-gh.ps1 ...`
+  - Pre-requisite: `.openslack.local/github-app.pem` must exist (gitignored).
 
 For everything else, follow `AGENTS.md`.
+
+## Bot-Authenticated PR Creation
+
+<!--
+MIRRORED: The body of this section must remain byte-identical to the
+"### Bot-Authenticated PR Creation" section in AGENTS.md.
+If you edit one, you must edit the other with the exact same text.
+The sync test in apps/cli/src/__tests__/agent-docs-sync.test.ts enforces this.
+-->
+
+All PRs created by agents or automation must use the bot-authenticated wrapper scripts. Never use `gh pr create` directly — the `gh` CLI defaults to the human OAuth identity.
+
+**Bash / Git Bash / WSL:**
+
+```bash
+./scripts/bot-gh-pr-create.sh --title "..." --body "..." --base main --head <branch>
+```
+
+**PowerShell:**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\bot-gh-pr-create.ps1 --title "..." --body "..." --base main --head <branch>
+```
+
+**For other `gh` commands (e.g., `gh pr edit`, `gh pr comment`):**
+
+```bash
+./scripts/bot-gh.sh pr edit 117 --body "..."
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\bot-gh.ps1 pr edit 117 --body "..."
+```
+
+**Pre-requisites:**
+
+- `.openslack.local/github-app.pem` must exist (repo root, gitignored), or
+- `OPENSLACK_GITHUB_APP_PRIVATE_KEY` environment variable must be set.
+
+The wrapper:
+1. Generates a GitHub App installation token via `scripts/bot-gh-token.js`
+2. Removes `GITHUB_TOKEN` from the environment to prevent silent fallback to a human PAT
+3. Sets `GH_TOKEN` so the `gh` CLI authenticates as the bot
+4. Forwards all arguments to `gh`
+
+If the PEM is missing, the wrapper fails with a clear error. Do not fall back to `GITHUB_TOKEN` or human `gh auth`.
+
+---

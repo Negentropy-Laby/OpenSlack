@@ -200,6 +200,84 @@ describe('claude-dsl-parity', () => {
     })
   })
 
+  // ── AnthropicCompatSandbox variadic pipeline ────────────────────────────────
+
+  describe('AnthropicCompatSandbox variadic pipeline', () => {
+    it('supports variadic pipeline through sandbox', async () => {
+      const rt = makeRuntime()
+      const sandbox = createAnthropicCompatSandbox(rt)
+      rt.phase('Scan')
+
+      const results = await sandbox.pipeline(
+        [1, 2, 3],
+        async (_prev: unknown, item: number) => item * 2,
+        async (prev: unknown, _item: number) => (prev as number) + 10,
+      )
+
+      expect(results).toEqual([12, 14, 16])
+    })
+
+    it('supports 3+ stages through sandbox', async () => {
+      const rt = makeRuntime()
+      const sandbox = createAnthropicCompatSandbox(rt)
+      rt.phase('Scan')
+
+      const results = await sandbox.pipeline(
+        ['x'],
+        async (_p: unknown, item: string) => item + '1',
+        async (p: unknown, _item: string) => (p as string) + '2',
+        async (p: unknown, _item: string) => (p as string) + '3',
+      )
+
+      expect(results).toEqual(['x123'])
+    })
+
+    it('supports trailing options object', async () => {
+      const rt = makeRuntime()
+      const sandbox = createAnthropicCompatSandbox(rt)
+      rt.phase('Scan')
+
+      const results = await sandbox.pipeline(
+        [1, 2, 3],
+        async (_prev: unknown, item: number) => item * 2,
+        async (prev: unknown, _item: number) => (prev as number) + 1,
+        { concurrency: 2 },
+      )
+
+      expect(results).toEqual([3, 5, 7])
+    })
+
+    it('returns nulls for items that fail in multi-stage sandbox pipeline', async () => {
+      const rt = makeRuntime()
+      const sandbox = createAnthropicCompatSandbox(rt)
+      rt.phase('Scan')
+
+      const results = await sandbox.pipeline(
+        [1, 2, 3],
+        async (_prev: unknown, item: number) => {
+          if (item === 2) throw new Error('stage1 fail')
+          return item * 10
+        },
+        async (prev: unknown, _item: number) => (prev as number) + 1,
+      )
+
+      expect(results).toEqual([11, null, 31])
+    })
+
+    it('still supports single-function backward compat through sandbox', async () => {
+      const rt = makeRuntime()
+      const sandbox = createAnthropicCompatSandbox(rt)
+      rt.phase('Scan')
+
+      const results = await sandbox.pipeline(
+        [1, 2, 3],
+        async (item: number, _idx: number) => item * 10,
+      )
+
+      expect(results).toEqual([10, 20, 30])
+    })
+  })
+
   // ── agent model/agentType pass-through ──────────────────────────────────────
 
   describe('agent model/agentType pass-through', () => {

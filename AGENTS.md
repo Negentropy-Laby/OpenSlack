@@ -347,6 +347,52 @@ Before opening an agent-delivered PR:
 
 If a PR is opened under the wrong human identity, do not merge it as-is when that human is the required reviewer or approval authority. Close or abandon the PR and recreate it under the configured bot/agent identity, or obtain approval from a different independent human who is valid for the affected paths.
 
+### Bot-Authenticated PR Creation
+
+<!--
+MIRRORED: The body of this section must remain byte-identical to the
+"## Bot-Authenticated PR Creation" section in CLAUDE.md.
+If you edit one, you must edit the other with the exact same text.
+The sync test in apps/cli/src/__tests__/agent-docs-sync.test.ts enforces this.
+-->
+
+All PRs created by agents or automation must use the bot-authenticated wrapper scripts. Never use `gh pr create` directly — the `gh` CLI defaults to the human OAuth identity.
+
+**Bash / Git Bash / WSL:**
+
+```bash
+./scripts/bot-gh-pr-create.sh --title "..." --body "..." --base main --head <branch>
+```
+
+**PowerShell:**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\bot-gh-pr-create.ps1 --title "..." --body "..." --base main --head <branch>
+```
+
+**For other `gh` commands (e.g., `gh pr edit`, `gh pr comment`):**
+
+```bash
+./scripts/bot-gh.sh pr edit 117 --body "..."
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\bot-gh.ps1 pr edit 117 --body "..."
+```
+
+**Pre-requisites:**
+
+- `.openslack.local/github-app.pem` must exist (repo root, gitignored), or
+- `OPENSLACK_GITHUB_APP_PRIVATE_KEY` environment variable must be set.
+
+The wrapper:
+1. Generates a GitHub App installation token via `scripts/bot-gh-token.js`
+2. Removes `GITHUB_TOKEN` from the environment to prevent silent fallback to a human PAT
+3. Sets `GH_TOKEN` so the `gh` CLI authenticates as the bot
+4. Forwards all arguments to `gh`
+
+If the PEM is missing, the wrapper fails with a clear error. Do not fall back to `GITHUB_TOKEN` or human `gh auth`.
+
 ---
 
 ## Constitutional Constraints
