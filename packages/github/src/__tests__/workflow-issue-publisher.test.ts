@@ -108,6 +108,30 @@ describe('workflow issue publishers', () => {
       const body = mockCreateTaskIssue.mock.calls[0]?.[1] as string
       expect(body).toContain('has_forbidden_apis: true')
     })
+
+    it('does not flag forbidden APIs inside template literals with escaped backticks', async () => {
+      mockCreateTaskIssue.mockResolvedValue({ issueNumber: 1, url: '', nodeId: '' })
+
+      await publishWorkflowReviewRequest(
+        mockModule({ sourceBody: 'const x = `abc \\\` process.env \\\` ghi`' }),
+        { requestedBy: 'test', trustLevel: 'untrusted' },
+      )
+
+      const body = mockCreateTaskIssue.mock.calls[0]?.[1] as string
+      expect(body).toContain('has_forbidden_apis: false')
+    })
+
+    it('still detects forbidden APIs outside template literals with escaped backticks', async () => {
+      mockCreateTaskIssue.mockResolvedValue({ issueNumber: 1, url: '', nodeId: '' })
+
+      await publishWorkflowReviewRequest(
+        mockModule({ sourceBody: 'const x = `abc \\\` def \\\` ghi` + process.env.SECRET' }),
+        { requestedBy: 'test', trustLevel: 'untrusted' },
+      )
+
+      const body = mockCreateTaskIssue.mock.calls[0]?.[1] as string
+      expect(body).toContain('has_forbidden_apis: true')
+    })
   })
 
   describe('publishWorkflowRunAudit', () => {

@@ -1311,7 +1311,8 @@ export function collaborationCommands(): Command {
     .description('Publish or append a workflow run audit to a GitHub issue')
     .option('--issue <number>', 'Append as comment to existing issue')
     .option('--create-issue', 'Create a new run audit issue', false)
-    .action(async (runId: string, options: { issue?: string; createIssue: boolean }) => {
+    .option('--agent-id <id>', 'Agent ID that performed the run')
+    .action(async (runId: string, options: { issue?: string; createIssue: boolean; agentId?: string }) => {
       const root = findRepoRoot()
       const { RunStore } = await import('@openslack/workflows')
       const store = new RunStore({ baseDir: join(root, '.openslack.local', 'workflows') })
@@ -1350,7 +1351,7 @@ export function collaborationCommands(): Command {
           {
             ...runStatus,
             workflowHash,
-            actor: 'openslack-agent-operator',
+            actor: options.agentId ?? 'openslack-agent-operator',
           },
           {
             issueNumber: issueNum,

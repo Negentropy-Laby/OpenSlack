@@ -129,7 +129,7 @@ export async function publishWorkflowReviewRequest(
 function stripCommentsAndStrings(source: string): string {
   let cleaned = source.replace(/\/\/.*$/gm, '')
   cleaned = cleaned.replace(/\/\*[\s\S]*?\*\//g, '')
-  cleaned = cleaned.replace(/`[^`]*`/g, '').replace(/'[^']*'/g, '').replace(/"[^"]*"/g, '')
+  cleaned = cleaned.replace(/\`(?:[^\`\\]|\\.)*\`/g, '').replace(/'(?:[^'\\]|\\.)*'/g, '').replace(/"(?:[^"\\]|\\.)*"/g, '')
   return cleaned
 }
 
