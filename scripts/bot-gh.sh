@@ -67,7 +67,7 @@ if [[ $gh_exit -eq 0 ]] && [[ "${1:-}" == "pr" ]] && [[ "${2:-}" == "create" ]];
   pr_number=$(GH_TOKEN="$token" gh pr view --json number --jq '.number' 2>/dev/null || true)
   if [[ -n "$pr_number" ]]; then
     author=$(GH_TOKEN="$token" gh pr view "$pr_number" --json author --jq '.author.login' 2>/dev/null || true)
-    if [[ -n "$author" ]] && [[ "$author" != "openslack-agent-operator" ]] && [[ "$author" != "openslack-agent-operator[bot]" ]]; then
+    if [[ -n "$author" ]] && [[ "$author" != "openslack-agent-operator" ]] && [[ "$author" != "openslack-agent-operator[bot]" ]] && [[ "$author" != "app/openslack-agent-operator" ]]; then
       echo "" >&2
       echo "WARNING: PR #$pr_number was created under identity '$author' instead of the bot." >&2
       echo "  Close this PR and recreate it using the bot-auth wrapper." >&2

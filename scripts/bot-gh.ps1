@@ -84,7 +84,7 @@ if ($ghExit -eq 0 -and $GhArgs.Count -ge 2 -and $GhArgs[0] -eq 'pr' -and $GhArgs
         $prNumber = (& gh pr view --json number --jq '.number') 2>$null
         if ($prNumber) {
             $author = (& gh pr view $prNumber --json author --jq '.author.login') 2>$null
-            if ($author -and $author -ne 'openslack-agent-operator' -and $author -ne 'openslack-agent-operator[bot]') {
+            if ($author -and $author -ne 'openslack-agent-operator' -and $author -ne 'openslack-agent-operator[bot]' -and $author -ne 'app/openslack-agent-operator') {
                 Write-Error @"
 PR #$prNumber was created under identity '$author' instead of the bot.
   Close this PR and recreate it using the bot-auth wrapper.
