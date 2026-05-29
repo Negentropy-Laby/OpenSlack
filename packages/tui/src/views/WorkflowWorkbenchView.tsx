@@ -20,6 +20,7 @@ import {
 import type { TuiAction, TuiActionResult } from '../actions/types.js'
 import { sanitizeTerminalText } from '../sanitize.js'
 import type { WorkflowGalleryViewModel, WorkflowGalleryItem } from '../view-models/workflow-gallery.js'
+import type { TuiActionHandlers } from './render-shell.js'
 
 type ViewMode = 'gallery' | 'detail' | 'action-result'
 
@@ -29,6 +30,7 @@ const PROTECTED_TRUST_LEVELS = new Set(['core', 'builtin'])
 
 type WorkflowWorkbenchProps = {
   galleryModel: WorkflowGalleryViewModel
+  actionHandlers?: TuiActionHandlers
 }
 
 /** Determine the color theme key for a trust level badge. */
@@ -62,7 +64,7 @@ function lastRunColorTheme(status: string | undefined): 'success' | 'error' | 'w
   return 'muted'
 }
 
-export default function WorkflowWorkbenchView({ galleryModel }: WorkflowWorkbenchProps): React.JSX.Element {
+export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: WorkflowWorkbenchProps): React.JSX.Element {
   const { pop } = useNavigation()
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [mode, setMode] = useState<ViewMode>('gallery')
@@ -119,13 +121,16 @@ export default function WorkflowWorkbenchView({ galleryModel }: WorkflowWorkbenc
     description: `Execute workflow "${wf.name}". This will run all ${wf.phases} phase(s) and apply changes.`,
     requiresConfirmation: true,
     handler: async (): Promise<TuiActionResult> => {
+      if (actionHandlers) {
+        return actionHandlers.executeWorkflowRun(wf.name)
+      }
       return {
         success: false,
         message: `Run is not available in TUI. Use: openslack collaboration workflow run ${wf.name}`,
         data: { cliCommand: `openslack collaboration workflow run ${wf.name}`, workflow: wf.name },
       }
     },
-  }), [])
+  }), [actionHandlers])
 
   const makeTrustAction = useCallback((wf: WorkflowGalleryItem): TuiAction => {
     const currentTrust = wf.trustLevel
@@ -145,11 +150,8 @@ export default function WorkflowWorkbenchView({ galleryModel }: WorkflowWorkbenc
         : `Change trust level of "${wf.name}" from "${currentTrust}" to "${nextLevel}".`,
       requiresConfirmation: true,
       handler: async (): Promise<TuiActionResult> => {
-        if (isProtected) {
-          return {
-            success: false,
-            message: `Trust change rejected: "${wf.name}" is a "${currentTrust}" workflow. Protected workflows cannot have their trust level changed.`,
-          }
+        if (actionHandlers) {
+          return actionHandlers.executeTrustChange(wf.name, currentTrust, nextLevel)
         }
         return {
           success: false,
@@ -158,7 +160,7 @@ export default function WorkflowWorkbenchView({ galleryModel }: WorkflowWorkbenc
         }
       },
     }
-  }, [])
+  }, [actionHandlers])
 
   // --- Transition helpers ---
 

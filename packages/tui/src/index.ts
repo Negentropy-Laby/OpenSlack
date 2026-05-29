@@ -43,6 +43,7 @@ export { TuiActionCategory, TuiRiskLevel, TuiActionStatus, REQUIRES_CONFIRMATION
 export type { TuiAction, TuiActionResult, TuiActionState } from './actions/types.js';
 export { useActionDispatch } from './actions/use-action-dispatch.js';
 export type { UseActionDispatchReturn } from './actions/use-action-dispatch.js';
+export type { TuiActionHandlers, ApprovalExecutionParams } from './views/render-shell.js';
 
 // Design system — action UI
 export { default as ConfirmationDialog } from './design-system/ConfirmationDialog.js';

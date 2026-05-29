@@ -6,6 +6,22 @@ import type { PrQueueViewModel } from '../view-models/pr-queue.js'
 import type { StatusViewModel } from '../view-models/status.js'
 import type { WorkflowGalleryViewModel } from '../view-models/workflow-gallery.js'
 import type { ApprovalCenterViewModel } from '../view-models/approval-center.js'
+import type { TuiActionResult } from '../actions/types.js'
+
+export interface ApprovalExecutionParams {
+  id: string
+  category: 'plan' | 'merge-request' | 'workflow-effect' | 'github-review'
+  title: string
+  planId?: string
+  prNumber?: number
+  workflowName?: string
+}
+
+export interface TuiActionHandlers {
+  executeApproval: (params: ApprovalExecutionParams, isApprove: boolean) => Promise<TuiActionResult>
+  executeTrustChange: (workflowName: string, fromLevel: string, toLevel: string) => Promise<TuiActionResult>
+  executeWorkflowRun: (workflowName: string) => Promise<TuiActionResult>
+}
 
 export interface ShellViewData {
   dashboard?: DashboardViewModel
@@ -13,6 +29,7 @@ export interface ShellViewData {
   status?: StatusViewModel
   workflowGallery?: WorkflowGalleryViewModel
   approvals?: ApprovalCenterViewModel
+  actionHandlers?: TuiActionHandlers
 }
 
 export async function renderShellTui(data?: ShellViewData): Promise<void> {

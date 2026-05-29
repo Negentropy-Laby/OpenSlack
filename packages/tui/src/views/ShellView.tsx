@@ -14,7 +14,7 @@ import { mapHomeToViewModel } from '../view-models/home.js'
 import { mapApprovalCenterToViewModel } from '../view-models/approval-center.js'
 import { mapWorkflowGalleryToViewModel } from '../view-models/workflow-gallery.js'
 import { mapIssuesPrToViewModel } from '../view-models/issues-pr.js'
-import type { ShellViewData } from './render-shell.js'
+import type { ShellViewData, TuiActionHandlers } from './render-shell.js'
 
 import HomeView from './HomeView.js'
 import ApprovalCenterView from './ApprovalCenterView.js'
@@ -123,12 +123,12 @@ function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
     }
     case 'approvals': {
       const model = data?.approvals ?? mapApprovalCenterToViewModel()
-      return React.createElement(ApprovalCenterView, { model })
+      return React.createElement(ApprovalCenterView, { model, actionHandlers: data?.actionHandlers })
     }
     case 'workflow-preview':
     case 'workflows': {
       const galleryModel = data?.workflowGallery ?? mapWorkflowGalleryToViewModel()
-      return React.createElement(WorkflowWorkbenchView, { galleryModel })
+      return React.createElement(WorkflowWorkbenchView, { galleryModel, actionHandlers: data?.actionHandlers })
     }
     case 'status': {
       if (data?.status) {

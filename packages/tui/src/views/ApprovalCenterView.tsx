@@ -17,9 +17,11 @@ import { useActionDispatch } from '../actions/use-action-dispatch.js'
 import { TuiActionCategory, TuiRiskLevel, TuiActionStatus } from '../actions/types.js'
 import type { TuiAction, TuiActionResult } from '../actions/types.js'
 import type { ApprovalCenterViewModel, ApprovalItem, ApprovalCategory } from '../view-models/approval-center.js'
+import type { TuiActionHandlers } from './render-shell.js'
 
 export type ApprovalCenterViewProps = {
   model: ApprovalCenterViewModel
+  actionHandlers?: TuiActionHandlers
 }
 
 type ViewMode = 'list' | 'detail' | 'action-result'
@@ -91,7 +93,7 @@ function getCliSuggestion(category: ApprovalCategory, isApprove: boolean): strin
   return 'openslack collaboration decision record --topic "..." --decision "..."'
 }
 
-export default function ApprovalCenterView({ model }: ApprovalCenterViewProps): React.JSX.Element {
+export default function ApprovalCenterView({ model, actionHandlers }: ApprovalCenterViewProps): React.JSX.Element {
   const { pop } = useNavigation()
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [mode, setMode] = useState<ViewMode>('list')
@@ -122,6 +124,16 @@ export default function ApprovalCenterView({ model }: ApprovalCenterViewProps): 
       description: `${verb}: ${selected.title}`,
       requiresConfirmation: true,
       handler: async (): Promise<TuiActionResult> => {
+        if (actionHandlers) {
+          return actionHandlers.executeApproval({
+            id: selected.id,
+            category: selected.category,
+            title: selected.title,
+            planId: selected.planId,
+            prNumber: selected.prNumber,
+            workflowName: selected.workflowName,
+          }, isApprove)
+        }
         return {
           success: false,
           message: `${verb} is not available in TUI. Use: ${suggestion}`,
@@ -129,7 +141,7 @@ export default function ApprovalCenterView({ model }: ApprovalCenterViewProps): 
         }
       },
     }
-  }, [selected])
+  }, [selected, actionHandlers])
 
   /** Transition to action-result once execution finishes. */
   React.useEffect(() => {
