@@ -30,6 +30,7 @@ export type {
   ApprovedEffect,
   WorkflowApprovalManifest,
   ConfirmationPolicy,
+  AuditConfig,
 } from './types.js'
 
 // ── Manifest ──────────────────────────────────────────────────────────────────

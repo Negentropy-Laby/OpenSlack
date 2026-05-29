@@ -38,6 +38,13 @@ import {
   renderRunMarkdown,
 } from '@openslack/workflows';
 import type { DryRunResult, SimulatedEffect } from '@openslack/workflows';
+import {
+  publishWorkflowProposal,
+  publishWorkflowReviewRequest,
+  publishWorkflowRunAudit,
+  publishWorkflowSplit,
+  bootstrapWorkflowLabels,
+} from '@openslack/github';
 
 type AgentAuthOptions = {
   principal?: import('@openslack/kernel').AgentPrincipal;
@@ -867,7 +874,8 @@ export function collaborationCommands(): Command {
     .option('--budget-tokens <number>', 'Token budget for execution', '100000')
     .option('--yes', 'Auto-approve all side effects without interactive confirmation')
     .option('--agent-id <id>', 'Agent ID for authorization')
-    .action(async (name: string, options: { input: string[]; budgetTokens: string; yes?: boolean; agentId?: string }) => {
+    .option('--audit-issue', 'Create a GitHub issue to audit this workflow run', false)
+    .action(async (name: string, options: { input: string[]; budgetTokens: string; yes?: boolean; agentId?: string; auditIssue?: boolean }) => {
       const found = await findJsWorkflow(name);
       if (!found) {
         console.log(`JS workflow module "${name}" not found.`);
@@ -921,6 +929,28 @@ export function collaborationCommands(): Command {
         if (mod.meta.risk) console.log(`  Risk: ${mod.meta.risk}`);
         console.log('');
 
+        let auditIssueNumber: number | undefined
+        if (options.auditIssue) {
+          try {
+            const { publishWorkflowRunAudit } = await import('@openslack/github')
+            const auditResult = await publishWorkflowRunAudit(
+              {
+                runId: `run-${Date.now().toString(36)}`,
+                workflowName: mod.meta.name,
+                mode: 'execute',
+                status: 'running',
+                startedAt: new Date().toISOString(),
+                actor: 'openslack-agent-operator',
+              },
+              { createIssue: true },
+            )
+            auditIssueNumber = auditResult.issueNumber
+            console.log(`  Audit issue created: #${auditIssueNumber} (${auditResult.url})`)
+          } catch (auditErr) {
+            console.log(`  [WARNING] Failed to create audit issue: ${(auditErr as Error).message}`)
+          }
+        }
+
         const result = await executeRun(mod, {
           manifest: mod.meta,
           args,
@@ -932,6 +962,21 @@ export function collaborationCommands(): Command {
 
         console.log('Execution Result:');
         console.log(JSON.stringify(result, null, 2));
+
+        if (auditIssueNumber && result) {
+          try {
+            const { appendWorkflowRunPhaseComment } = await import('@openslack/github')
+            const commentResult = await appendWorkflowRunPhaseComment(
+              auditIssueNumber,
+              'execution',
+              result.status === 'completed' ? 'completed' : 'failed',
+              `\`\`\`json\n${JSON.stringify(result, null, 2)}\n\`\`\``,
+            )
+            console.log(`  Audit comment added: ${commentResult.url}`)
+          } catch (auditErr) {
+            console.log(`  [WARNING] Failed to append audit comment: ${(auditErr as Error).message}`)
+          }
+        }
       } catch (err) {
         console.log(`Execution failed for workflow "${name}":`);
         console.log(`  ${(err as Error).message}`);
@@ -1209,6 +1254,172 @@ export function collaborationCommands(): Command {
         console.log(`Written to ${targetPath}`)
       } else {
         console.log(rendered)
+      }
+    })
+
+  // ── Workflow Issue Commands ────────────────────────────────────────────────
+
+  workflow
+    .command('publish <name>')
+    .description('Publish a workflow as a GitHub proposal issue')
+    .option('--as-issue', 'Create a GitHub issue for the workflow proposal', true)
+    .option('--label <label>', 'Additional labels (can be used multiple times)', (value: string, previous: string[]) => [...previous, value], [])
+    .action(async (name: string, options: { asIssue: boolean; label: string[] }) => {
+      const found = await findJsWorkflow(name)
+      if (!found) {
+        console.log(`Workflow "${name}" not found.`)
+        console.log('Use "openslack collaboration workflow list" to see available workflows.')
+        process.exit(1)
+      }
+
+      try {
+        const mod = await loadWorkflow(found.path)
+        const result = await publishWorkflowProposal(mod, {
+          requestedBy: 'openslack-agent-operator',
+          extraLabels: options.label,
+        })
+        console.log(`Workflow proposal issue created: #${result.issueNumber}`)
+        console.log(`URL: ${result.url}`)
+      } catch (err) {
+        console.log(`Failed to publish workflow proposal:`)
+        console.log(`  ${(err as Error).message}`)
+        process.exit(1)
+      }
+    })
+
+  workflow
+    .command('review-request <name>')
+    .description('Create a security review issue for a workflow')
+    .action(async (name: string) => {
+      const found = await findJsWorkflow(name)
+      if (!found) {
+        console.log(`Workflow "${name}" not found.`)
+        console.log('Use "openslack collaboration workflow list" to see available workflows.')
+        process.exit(1)
+      }
+
+      try {
+        const mod = await loadWorkflow(found.path)
+        const { TrustStore, resolveTrustLevel } = await import('@openslack/workflows')
+        const root = findRepoRoot()
+        const trustStore = new TrustStore({ rootDir: root })
+        const isBuiltin = found.path.includes('/builtins/') || found.path.includes('\\builtins\\')
+        const persistedLevel = trustStore.get(name)
+        const trustLevel = persistedLevel !== 'untrusted'
+          ? persistedLevel
+          : resolveTrustLevel({ isBuiltin })
+
+        const result = await publishWorkflowReviewRequest(mod, {
+          requestedBy: 'openslack-agent-operator',
+          trustLevel,
+        })
+        console.log(`Workflow review issue created: #${result.issueNumber}`)
+        console.log(`URL: ${result.url}`)
+      } catch (err) {
+        console.log(`Failed to create workflow review:`)
+        console.log(`  ${(err as Error).message}`)
+        process.exit(1)
+      }
+    })
+
+  workflow
+    .command('audit-run <runId>')
+    .description('Publish or append a workflow run audit to a GitHub issue')
+    .option('--issue <number>', 'Append as comment to existing issue')
+    .option('--create-issue', 'Create a new run audit issue', false)
+    .action(async (runId: string, options: { issue?: string; createIssue: boolean }) => {
+      const root = findRepoRoot()
+      const { RunStore } = await import('@openslack/workflows')
+      const store = new RunStore({ baseDir: join(root, '.openslack.local', 'workflows') })
+
+      const meta = await store.loadMeta(runId)
+      if (!meta) {
+        console.log(`Run ${runId} not found.`)
+        process.exit(1)
+      }
+
+      const runStatus = await store.getRunStatus(runId)
+      if (!runStatus) {
+        console.log(`Run status for ${runId} not found.`)
+        process.exit(1)
+      }
+
+      try {
+        const issueNum = options.issue ? parseInt(options.issue, 10) : undefined
+        const result = await publishWorkflowRunAudit(runStatus, {
+          issueNumber: issueNum,
+          createIssue: options.createIssue,
+        })
+        if (result.isComment) {
+          console.log(`Run audit appended to issue #${result.issueNumber}`)
+        } else {
+          console.log(`Run audit issue created: #${result.issueNumber}`)
+        }
+        console.log(`URL: ${result.url}`)
+      } catch (err) {
+        console.log(`Failed to publish run audit:`)
+        console.log(`  ${(err as Error).message}`)
+        process.exit(1)
+      }
+    })
+
+  workflow
+    .command('split <name>')
+    .description('Split a workflow into phase sub-issues')
+    .requiredOption('--issue <parentIssue>', 'Parent issue number to link sub-issues to')
+    .action(async (name: string, options: { issue: string }) => {
+      const found = await findJsWorkflow(name)
+      if (!found) {
+        console.log(`Workflow "${name}" not found.`)
+        console.log('Use "openslack collaboration workflow list" to see available workflows.')
+        process.exit(1)
+      }
+
+      try {
+        const mod = await loadWorkflow(found.path)
+        const parentIssue = parseInt(options.issue, 10)
+        const result = await publishWorkflowSplit(mod, {
+          parentIssue,
+        })
+        console.log(`Workflow split parent issue: #${result.parentIssueNumber}`)
+        console.log('Phase sub-issues:')
+        for (const sub of result.subIssues) {
+          console.log(`  - ${sub.phase}: #${sub.issueNumber} (${sub.url})`)
+        }
+      } catch (err) {
+        console.log(`Failed to split workflow:`)
+        console.log(`  ${(err as Error).message}`)
+        process.exit(1)
+      }
+    })
+
+  workflow
+    .command('labels')
+    .description('Manage workflow labels in the repository')
+    .option('--bootstrap', 'Create all required workflow labels if they do not exist', false)
+    .action(async (options: { bootstrap: boolean }) => {
+      if (!options.bootstrap) {
+        console.log('Usage: openslack collaboration workflow labels --bootstrap')
+        console.log('Creates all required workflow labels in the repository.')
+        return
+      }
+
+      try {
+        const result = await bootstrapWorkflowLabels()
+        console.log(`Label bootstrap complete:`)
+        console.log(`  Created: ${result.created.length}`)
+        if (result.created.length > 0) {
+          for (const name of result.created) console.log(`    - ${name}`)
+        }
+        console.log(`  Existing: ${result.existing.length}`)
+        if (result.failed.length > 0) {
+          console.log(`  Failed: ${result.failed.length}`)
+          for (const f of result.failed) console.log(`    - ${f.name}: ${f.reason}`)
+        }
+      } catch (err) {
+        console.log(`Failed to bootstrap labels:`)
+        console.log(`  ${(err as Error).message}`)
+        process.exit(1)
       }
     })
 
