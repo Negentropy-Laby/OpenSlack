@@ -1,5 +1,6 @@
 import type {
   BudgetState,
+  ClaudeBudgetAPI,
   ExecutionMode,
   WorkflowMeta,
   WorkflowRuntime,
@@ -13,7 +14,7 @@ import { resolvePermissions } from './permission-checker.js'
 import { executeAgentCall, computeAgentCacheKey, SchemaValidationError } from './agent-shim.js'
 import type { AgentCacheStore, AgentLauncher } from './agent-shim.js'
 import { runParallel } from './parallel-runner.js'
-import { runPipeline } from './pipeline-runner.js'
+import { runPipeline, runMultiStagePipeline } from './pipeline-runner.js'
 import type { PipelineCacheStore } from './pipeline-runner.js'
 
 /**
@@ -145,11 +146,18 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
   }
 
   // --- Readonly budget proxy (external consumers see a snapshot) ---
-  const readonlyBudget: BudgetState = {
+  // Satisfies both BudgetState and ClaudeBudgetAPI
+  const readonlyBudget: BudgetState & ClaudeBudgetAPI = {
     get tokensUsed() { return budget.tokensUsed },
     get tokensRemaining() { return budget.tokensRemaining },
     get costUsd() { return budget.costUsd },
     get agentCalls() { return budget.agentCalls },
+    get total() {
+      if (budget.tokensRemaining === null) return null
+      return budget.tokensUsed + budget.tokensRemaining
+    },
+    spent() { return budget.tokensUsed },
+    remaining() { return budget.tokensRemaining ?? Infinity },
   }
 
   // --- Runtime interface ---
@@ -236,17 +244,24 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
 
     async pipeline<T, R>(
       items: T[],
-      fn: (item: T, index: number) => Promise<R>,
+      fnOrStages: ((item: T, index: number) => Promise<R>) | Array<(prev: unknown, item: T, index: number) => Promise<unknown>>,
       pipelineOptions?: PipelineOptions,
     ): Promise<R[]> {
       if (mode === 'validate') {
         throw new Error('Pipeline execution not allowed in validate mode')
       }
+
+      // Multi-stage form: array of stage functions
+      if (Array.isArray(fnOrStages)) {
+        return runMultiStagePipeline<T, R>(items, fnOrStages, pipelineOptions) as Promise<R[]>
+      }
+
+      // Single-fn form
       return runPipeline(
         runId,
         currentPhase ?? 'unknown',
         items,
-        fn,
+        fnOrStages as (item: T, index: number) => Promise<R>,
         pipelineOptions,
         pipelineCache,
         budget,

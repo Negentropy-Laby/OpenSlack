@@ -40,7 +40,7 @@ import { TerminalSizeContext } from './TerminalSizeContext.js'
 // v1 scope flag: disables mouse tracking, alt-screen, selection, focus
 // reporting, and kitty keyboard protocol writes. The code paths remain
 // compilable but produce no terminal output for these capabilities.
-const TUI_V1_MINIMAL = true
+const TUI_V1_MINIMAL = false
 
 // Platforms that support Unix-style process suspension (SIGSTOP/SIGCONT)
 const SUPPORTS_SUSPEND = process.platform !== 'win32'

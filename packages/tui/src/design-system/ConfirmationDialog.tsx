@@ -1,6 +1,7 @@
 // @openslack/tui — Confirmation dialog component
 
 import React from 'react'
+import Box from '../ink/components/Box.js'
 import ThemedBox from './ThemedBox.js'
 import ThemedText from './ThemedText.js'
 import useInput from '../ink/hooks/use-input.js'
@@ -91,15 +92,15 @@ export default function ConfirmationDialog({
       { flexDirection: 'row' },
       React.createElement(ThemedText, { colorTheme: 'foreground' }, 'Confirm? '),
       React.createElement(
-        ThemedText,
-        { colorTheme: 'accent', bold: true },
-        '[y]',
+        Box,
+        { onClick: () => onConfirm() },
+        React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, '[y]'),
       ),
       React.createElement(ThemedText, null, '/'),
       React.createElement(
-        ThemedText,
-        { colorTheme: 'muted' },
-        '[N]',
+        Box,
+        { onClick: () => onCancel() },
+        React.createElement(ThemedText, { colorTheme: 'muted' }, '[N]'),
       ),
     ),
   )

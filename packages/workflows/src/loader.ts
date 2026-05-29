@@ -1,4 +1,5 @@
 import { readdir, readFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
@@ -7,6 +8,7 @@ import type {
   WorkflowMeta,
   WorkflowFormat,
   WorkflowModule,
+  WorkflowSource,
 } from './types.js'
 
 /**
@@ -24,15 +26,40 @@ export const DISCOVERY_PATHS = [
 const BUILTINS_DIR = join(import.meta.dirname, 'builtins')
 
 /**
+ * Map a discovery directory to its WorkflowSource label.
+ */
+function sourceForDir(dir: string, cwd: string): WorkflowSource {
+  if (dir === resolve(cwd, '.openslack/workflows')) return 'openslack-project'
+  if (dir === resolve(cwd, '.claude/workflows')) return 'claude-project'
+  if (dir === join(homedir(), '.claude', 'workflows')) return 'claude-user'
+  if (dir === BUILTINS_DIR) return 'builtin'
+  return 'builtin' // fallback
+}
+
+/**
+ * Check whether a filename has a supported workflow extension (.ts, .js, .mjs).
+ */
+function hasWorkflowExtension(entry: string): boolean {
+  return entry.endsWith('.ts') || entry.endsWith('.js') || entry.endsWith('.mjs')
+}
+
+/**
+ * Strip the workflow extension from a filename.
+ */
+function stripWorkflowExtension(entry: string): string {
+  return entry.replace(/\.(ts|js|mjs)$/, '')
+}
+
+/**
  * Discover all available workflow names across discovery paths.
- * Returns an array of { name, path } objects, deduplicated by name
+ * Returns an array of { name, path, source } objects, deduplicated by name
  * (first discovery path wins).
  */
 export async function discoverWorkflows(
   cwd: string = process.cwd(),
-): Promise<Array<{ name: string; path: string }>> {
+): Promise<Array<{ name: string; path: string; source: WorkflowSource }>> {
   const seen = new Set<string>()
-  const results: Array<{ name: string; path: string }> = []
+  const results: Array<{ name: string; path: string; source: WorkflowSource }> = []
 
   for (const relPath of DISCOVERY_PATHS) {
     const dir = resolve(cwd, relPath)
@@ -44,26 +71,42 @@ export async function discoverWorkflows(
     }
 
     for (const entry of entries) {
-      const ext = entry.endsWith('.ts') || entry.endsWith('.js')
-      if (!ext) continue
+      if (!hasWorkflowExtension(entry)) continue
 
-      const name = entry.replace(/\.(ts|js)$/, '')
+      const name = stripWorkflowExtension(entry)
       if (seen.has(name)) continue
       seen.add(name)
 
-      results.push({ name, path: join(dir, entry) })
+      results.push({ name, path: join(dir, entry), source: sourceForDir(dir, cwd) })
     }
+  }
+
+  // Discover user-home workflows (~/.claude/workflows)
+  const homeClaudeDir = join(homedir(), '.claude', 'workflows')
+  try {
+    const entries = await readdir(homeClaudeDir)
+    for (const entry of entries) {
+      if (!hasWorkflowExtension(entry)) continue
+
+      const name = stripWorkflowExtension(entry)
+      if (seen.has(name)) continue
+      seen.add(name)
+
+      results.push({ name, path: join(homeClaudeDir, entry), source: 'claude-user' })
+    }
+  } catch {
+    // home workflows dir doesn't exist, that's fine
   }
 
   // Also discover built-in workflows
   try {
     const entries = await readdir(BUILTINS_DIR)
     for (const entry of entries) {
-      if (!entry.endsWith('.ts') && !entry.endsWith('.js')) continue
-      const name = entry.replace(/\.(ts|js)$/, '')
+      if (!hasWorkflowExtension(entry)) continue
+      const name = stripWorkflowExtension(entry)
       if (seen.has(name)) continue
       seen.add(name)
-      results.push({ name, path: join(BUILTINS_DIR, entry) })
+      results.push({ name, path: join(BUILTINS_DIR, entry), source: 'builtin' })
     }
   } catch {
     // builtins dir doesn't exist yet, that's fine
@@ -75,6 +118,7 @@ export async function discoverWorkflows(
 /**
  * Load a workflow module from a file path.
  * Performs static analysis before module import, then detects format.
+ * For claude-ambient workflows, returns source without importing.
  */
 export async function loadWorkflow(filePath: string): Promise<WorkflowModule> {
   // Step 1: Read file and compute hash
@@ -90,12 +134,19 @@ export async function loadWorkflow(filePath: string): Promise<WorkflowModule> {
     throw new Error(`Invalid workflow manifest in ${filePath}:\n${errors.join('\n')}`)
   }
 
-  // Step 4: Dynamic import (only after static analysis passes)
+  // Step 4: Detect format from source text BEFORE importing
+  const sourceFormat = detectFormatFromSource(source)
+
+  if (sourceFormat === 'claude-ambient') {
+    return { meta, format: 'claude-ambient', hash, sourceBody: source }
+  }
+
+  // Step 5: Dynamic import (only after static analysis passes, and not claude-ambient)
   const resolvedPath = resolve(filePath)
   const moduleUrl = pathToFileURL(resolvedPath).href
   const mod = await import(moduleUrl) as Record<string, unknown>
 
-  // Step 5: Detect format
+  // Step 6: Detect format from module exports
   const format = detectFormat(mod)
 
   if (format === 'invalid') {
@@ -130,6 +181,156 @@ export function detectFormat(
   if (hasMeta && (hasPreview || hasRun)) return 'openslack-native'
   if (hasMeta) return 'anthropic-compatible'
   return 'invalid'
+}
+
+/**
+ * Detect workflow format from source text (no import needed).
+ *
+ * Logic:
+ * - No meta export -> "invalid"
+ * - meta + "export function preview" or "export function run" -> "openslack-native"
+ * - meta + top-level usage of DSL globals after meta object -> "claude-ambient"
+ * - meta only -> "anthropic-compatible"
+ */
+export function detectFormatFromSource(source: string): WorkflowFormat {
+  // Check for meta export
+  const metaExportPattern = /export\s+const\s+meta\s*(?::\s*\w+)?\s*=/m
+  if (!metaExportPattern.test(source)) return 'invalid'
+
+  // Check for export function preview or run
+  if (/export\s+(?:async\s+)?function\s+preview\b/m.test(source)) return 'openslack-native'
+  if (/export\s+(?:async\s+)?function\s+run\b/m.test(source)) return 'openslack-native'
+
+  // Find where the meta object ends, then check remaining source for ambient usage
+  const metaMatch = source.match(metaExportPattern)!
+  const metaStartIdx = metaMatch.index! + metaMatch[0].length
+
+  // Find the end of the meta object literal (balanced braces)
+  const metaEnd = findBalancedEnd(source, metaStartIdx, '{', '}')
+  if (metaEnd === null) {
+    // Can't determine meta boundaries; treat as anthropic-compatible
+    return 'anthropic-compatible'
+  }
+
+  const afterMeta = source.slice(metaEnd + 1)
+  if (hasAmbientDslUsage(afterMeta)) return 'claude-ambient'
+
+  return 'anthropic-compatible'
+}
+
+/**
+ * Find the closing index of a balanced delimiter pair starting at startIdx.
+ */
+function findBalancedEnd(
+  source: string,
+  startIdx: number,
+  open: string,
+  close: string,
+): number | null {
+  let depth = 0
+  let i = startIdx
+  let inString: string | null = null
+  let escaped = false
+
+  while (i < source.length) {
+    const ch = source[i]
+
+    if (escaped) {
+      escaped = false
+      i++
+      continue
+    }
+
+    if (ch === '\\') {
+      escaped = true
+      i++
+      continue
+    }
+
+    if (inString) {
+      if (ch === inString) inString = null
+      i++
+      continue
+    }
+
+    if (ch === '"' || ch === "'" || ch === '`') {
+      inString = ch
+      i++
+      continue
+    }
+
+    if (ch === open) depth++
+    if (ch === close) {
+      depth--
+      if (depth === 0) return i
+    }
+    i++
+  }
+
+  return null
+}
+
+/**
+ * Check whether source text after the meta export contains top-level usage of
+ * Claude Code DSL globals (phase/log/agent/parallel/pipeline/await) that are
+ * NOT inside an export function body.
+ *
+ * Heuristic: strip out all "export function ..." and "export async function ..."
+ * blocks, then look for bare await / DSL global calls at the top level.
+ */
+function hasAmbientDslUsage(afterMeta: string): boolean {
+  // Remove all export function bodies (balanced braces after export function ... {)
+  const stripped = stripExportFunctions(afterMeta)
+
+  // DSL globals that indicate ambient usage
+  const dslGlobals = /\b(?:phase|log|agent|parallel|pipeline)\s*\(/
+
+  // Top-level await statements
+  const topLevelAwait = /(?:^|\n)\s*await\s+/m
+
+  // Top-level const/let/var with DSL globals
+  const topLevelDslAssign = /(?:^|\n)\s*(?:const|let|var)\s+.*\b(?:phase|log|agent|parallel|pipeline)\s*\(/m
+
+  if (dslGlobals.test(stripped) || topLevelAwait.test(stripped) || topLevelDslAssign.test(stripped)) {
+    return true
+  }
+
+  return false
+}
+
+/**
+ * Strip export function bodies from source text so we can detect top-level
+ * statements only. Removes content inside balanced braces following
+ * "export function ..." declarations.
+ */
+function stripExportFunctions(source: string): string {
+  // Match "export [async] function <name>(...) {" and remove the body
+  const pattern = /export\s+(?:async\s+)?function\s+\w+\s*\([^)]*\)\s*(?::\s*[^{]+)?\s*\{/g
+  let match: RegExpExecArray | null
+
+  // We need to iteratively find and strip function bodies
+  const segments: Array<{ start: number; end: number }> = []
+  pattern.lastIndex = 0
+
+  while ((match = pattern.exec(source)) !== null) {
+    const braceStart = match.index + match[0].length - 1
+    const braceEnd = findBalancedEnd(source, braceStart, '{', '}')
+    if (braceEnd !== null) {
+      segments.push({ start: match.index, end: braceEnd + 1 })
+    }
+  }
+
+  // Build result excluding function bodies (replace with spaces to preserve offsets)
+  if (segments.length === 0) return source
+  let rebuilt = ''
+  let lastEnd = 0
+  for (const seg of segments) {
+    rebuilt += source.slice(lastEnd, seg.start)
+    rebuilt += ' ' // placeholder
+    lastEnd = seg.end
+  }
+  rebuilt += source.slice(lastEnd)
+  return rebuilt
 }
 
 /**
@@ -424,12 +625,12 @@ function tokenizeJs(js: string): Token[] | null {
 
 /**
  * Find a single workflow by name across discovery paths and builtins.
- * Returns the { name, path } entry or undefined if not found.
+ * Returns the { name, path, source } entry or undefined if not found.
  */
 export async function findWorkflow(
   name: string,
   cwd: string = process.cwd(),
-): Promise<{ name: string; path: string } | undefined> {
+): Promise<{ name: string; path: string; source: WorkflowSource } | undefined> {
   const all = await discoverWorkflows(cwd)
   return all.find((w) => w.name === name)
 }
@@ -442,8 +643,8 @@ export interface WorkflowSummary {
   name: string
   /** Display name from manifest (JS modules) or template name (YAML) */
   displayName: string
-  /** Source type */
-  source: 'yaml-template' | 'js-module'
+  /** Source type / where the workflow was discovered */
+  source: 'yaml-template' | 'js-module' | import('./types.js').WorkflowSource
   /** Number of phases */
   phases: number
   /** Number of inputs (YAML templates) or 0 (JS modules) */
@@ -509,25 +710,28 @@ export async function discoverJsWorkflows(
   const discovered = await discoverWorkflows(cwd)
   const results: WorkflowSummary[] = []
 
-  for (const { name, path: filePath } of discovered) {
+  for (const { name, path: filePath, source: wfSource } of discovered) {
     let meta: WorkflowMeta
+    let sourceText: string
     try {
-      const source = await readFile(filePath, 'utf-8')
-      meta = analyzeStaticMeta(source)
+      sourceText = await readFile(filePath, 'utf-8')
+      meta = analyzeStaticMeta(sourceText)
     } catch {
       // Skip modules that fail static analysis
       continue
     }
 
-    const ext = filePath.endsWith('.ts') ? '.ts' : '.js'
+    const format = detectFormatFromSource(sourceText)
+    const ext = filePath.endsWith('.ts') ? '.ts' : filePath.endsWith('.mjs') ? '.mjs' : '.js'
     results.push({
       name,
       displayName: meta.name,
-      source: 'js-module',
+      source: wfSource,
       phases: meta.phases.length,
       inputs: Object.keys(meta.inputs ?? {}).length,
       file: `${name}${ext}`,
       description: meta.description,
+      format,
     })
   }
 

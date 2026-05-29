@@ -20,6 +20,8 @@ export type {
   TrustLevel,
   PermissionDeclaration,
   WorkflowFormat,
+  WorkflowSource,
+  ClaudeBudgetAPI,
   WorkflowModule,
   PipelineOptions,
   WorkflowRunInfo,
@@ -40,6 +42,7 @@ export {
   findWorkflow,
   loadWorkflow,
   detectFormat,
+  detectFormatFromSource,
   analyzeStaticMeta,
   discoverYamlTemplates,
   discoverJsWorkflows,
@@ -87,7 +90,7 @@ export type { AgentCacheStore, AgentLauncher } from './agent-shim.js'
 export { runParallel } from './parallel-runner.js'
 
 // ── Pipeline Runner ───────────────────────────────────────────────────────────
-export { runPipeline } from './pipeline-runner.js'
+export { runPipeline, runMultiStagePipeline } from './pipeline-runner.js'
 export type { PipelineCacheStore } from './pipeline-runner.js'
 
 // ── Run Store ─────────────────────────────────────────────────────────────────
@@ -123,6 +126,14 @@ export {
   AnthropicCompatError,
 } from './anthropic-compat.js'
 export type { AnthropicCompatSandbox } from './anthropic-compat.js'
+
+// ── Ambient Runner ────────────────────────────────────────────────────────────
+export {
+  stripMetaExport,
+  createSecureSandbox,
+  executeAmbientScript,
+} from './ambient-runner.js'
+export type { AmbientExecutionOptions } from './ambient-runner.js'
 
 // ── Preview ───────────────────────────────────────────────────────────────────
 export {

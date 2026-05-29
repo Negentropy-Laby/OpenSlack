@@ -1,0 +1,220 @@
+schema: openslack.workflow_template.v1
+id: tui-mouse-click
+name: TUI Mouse Click Navigation
+description: >
+  Enable mouse click and hover navigation in the TUI package.
+  Unlocks the existing Ink click/hit-test infrastructure by removing
+  the TUI_V1_MINIMAL lock, then adds onClick/onMouseEnter handlers to
+  SelectableList, HomeView, WorkflowWorkbenchView, DashboardView,
+  RoomView, and ConfirmationDialog.
+riskLevel: medium
+tags:
+  - tui
+  - mouse
+  - ink
+  - interaction
+inputs:
+  - name: title
+    type: string
+    required: true
+    default: "Enable TUI mouse click navigation"
+    description: Short summary of the change
+  - name: issueNumber
+    type: integer
+    required: true
+    description: GitHub issue tracking this enhancement
+  - name: prNumber
+    type: integer
+    required: true
+    description: Pull request number
+  - name: agentId
+    type: string
+    required: true
+    description: Agent principal assigned to the work
+  - name: paths
+    type: string
+    required: true
+    default: "packages/tui/src/ink/components/App.tsx,packages/tui/src/design-system/SelectableList.tsx,packages/tui/src/views/HomeView.tsx,packages/tui/src/views/WorkflowWorkbenchView.tsx,packages/tui/src/views/DashboardView.tsx,packages/tui/src/views/RoomView.tsx,packages/tui/src/design-system/ConfirmationDialog.tsx"
+    description: Comma-separated file paths affected by the change
+  - name: skipViews
+    type: boolean
+    required: false
+    default: false
+    description: If true, only unlock the engine and skip per-view onClick wiring
+forbidden:
+  - packages/kernel/**
+  - .openslack/self/constitution.md
+  - .openslack/self/invariants.yaml
+phases:
+  - name: Analysis
+    steps:
+      - type: action
+        actionId: task.create.preview
+        title: Preview mouse-click task
+        input:
+          title: "{{inputs.title}}"
+          template: investigation
+      - type: action
+        actionId: task.checkout
+        title: Create worktree for mouse-click feature
+        input:
+          issueNumber: "{{inputs.issueNumber}}"
+          agentId: "{{inputs.agentId}}"
+      - type: record-decision
+        topic: TUI_V1_MINIMAL impact assessment
+        decision: Unlock mouse tracking by setting TUI_V1_MINIMAL to false
+        rationale: |
+          Ink engine already has ClickEvent, hitTest, dispatchClick, dispatchHover,
+          and Box.onClick. The TUI_V1_MINIMAL flag at App.tsx:43 disables all of it.
+          Removing the lock enables DEC mode 1003 (mouse tracking) and alternate
+          screen without adding new dependencies.
+        decidedBy: "{{inputs.agentId}}"
+        tags:
+          - tui
+          - mouse
+          - engine-unlock
+      - type: record-decision
+        topic: Target views for onClick wiring
+        decision: Wire onClick to SelectableList, HomeView, WorkflowWorkbenchView, DashboardView, RoomView, ConfirmationDialog
+        rationale: |
+          These are the primary interactive surfaces. Each needs:
+          - SelectableList: click row = select + onSelect; mouseenter = highlight
+          - HomeView: click nav/attention items = push route or execute
+          - WorkflowWorkbenchView: gallery click → detail; detail actions clickable
+          - DashboardView: click cards to drill down
+          - RoomView: click events/decisions
+          - ConfirmationDialog: click Confirm/Cancel buttons
+        decidedBy: "{{inputs.agentId}}"
+        tags:
+          - tui
+          - views
+          - onclick
+
+  - name: Engine Unlock
+    steps:
+      - type: action
+        actionId: workspace.validate
+        title: Validate workspace before engine changes
+      - type: handoff
+        from: "{{inputs.agentId}}"
+        to: implementation-agent
+        context: |
+          Remove TUI_V1_MINIMAL lock in packages/tui/src/ink/components/App.tsx.
+          Change `const TUI_V1_MINIMAL = true` to `false` or remove entirely.
+          Verify componentDidMount sends ENABLE_MOUSE_TRACKING and
+          ENTER_ALTERNATE_SCREEN; unmount sends the inverse.
+          Run pnpm lint to confirm no new errors from the change.
+        issueRef: "{{inputs.issueNumber}}"
+        nextSteps:
+          - Verify terminal mode assertions in App.tsx
+          - Confirm no regression in existing keyboard navigation
+
+  - name: Component Wiring
+    steps:
+      - type: handoff
+        from: "{{inputs.agentId}}"
+        to: implementation-agent
+        context: |
+          Add mouse support to TUI components. Skip if inputs.skipViews is true.
+
+          1. SelectableList: Wrap each visible row in <Box onClick={...} onMouseEnter={...}>.
+             onClick: setSelectedIndex(i) + onSelect(items[i], i)
+             onMouseEnter: setSelectedIndex(i)
+             Keep existing keyboard (↑↓/Enter) intact.
+
+          2. HomeView: Make attention items and nav items clickable.
+             Click = push route or execute action. onMouseEnter = highlight.
+
+          3. WorkflowWorkbenchView:
+             - Gallery: click row → setMode('detail')
+             - Detail: click action hint area triggers p/d/r/t
+             - Confirm overlay: click Confirm/Cancel
+             - Result: click to return to detail
+
+          4. DashboardView: click cards to drill down, click filters.
+          5. RoomView: click event items to expand, click decision buttons.
+          6. ConfirmationDialog: wrap Confirm/Cancel in Box onClick.
+
+          All changes must preserve existing keyboard shortcuts.
+        issueRef: "{{inputs.issueNumber}}"
+        nextSteps:
+          - Add unit tests for onClick behavior in each component
+          - Verify keyboard shortcuts still work after mouse wiring
+      - type: record-decision
+        topic: Terminal compatibility strategy
+        decision: Mouse is additive; keyboard remains primary fallback
+        rationale: |
+          Mouse tracking requires xterm-compatible terminals (iTerm2, Windows Terminal,
+          VS Code). Standard cmd.exe ignores mouse events gracefully. All existing
+          keyboard shortcuts remain functional. App.tsx unmount handler restores
+          terminal state (DISABLE_MOUSE_TRACKING + SHOW_CURSOR).
+        decidedBy: "{{inputs.agentId}}"
+        tags:
+          - compatibility
+          - terminal
+          - fallback
+
+  - name: Testing
+    steps:
+      - type: action
+        actionId: doctor.run
+        title: Run multi-module health check
+      - type: record-decision
+        topic: Test coverage for mouse interactions
+        decision: Add unit tests for onClick/onMouseEnter in SelectableList and views
+        rationale: |
+          Required tests:
+          - SelectableList: onClick selects correct index and calls onSelect
+          - SelectableList: onMouseEnter updates selectedIndex
+          - HomeView: click nav item pushes route
+          - WorkflowWorkbenchView: click gallery row enters detail mode
+          - ConfirmationDialog: click confirm fires onConfirm, cancel fires onCancel
+          - All existing keyboard tests continue to pass (regression guard)
+        decidedBy: "{{inputs.agentId}}"
+        tags:
+          - testing
+          - coverage
+          - regression
+      - type: action
+        actionId: self.eval.golden
+        title: Run golden evals
+
+  - name: Validation
+    steps:
+      - type: action
+        actionId: workspace.validate
+        title: Validate workspace after changes
+      - type: action
+        actionId: governance.audit
+        title: Audit governance compliance
+      - type: record-decision
+        topic: Manual terminal compatibility verification
+        decision: Verify on 5 terminal types before merge
+        rationale: |
+          Checklist:
+          - [ ] iTerm2 (macOS) — full mouse tracking
+          - [ ] Windows Terminal — full mouse tracking
+          - [ ] VS Code integrated terminal — full mouse tracking
+          - [ ] Standard cmd.exe — mouse ignored, keyboard fallback works
+          - [ ] SSH/tmux — survives reconnect via STDIN_RESUME_GAP_MS
+        decidedBy: "{{inputs.agentId}}"
+        tags:
+          - manual-test
+          - terminal
+          - compatibility
+
+  - name: Review
+    steps:
+      - type: action
+        actionId: pr.doctor
+        title: Diagnose PR readiness
+        input:
+          prNumber: "{{inputs.prNumber}}"
+      - type: decision-gate
+        title: Approve TUI mouse-click PR for merge
+        requiredRole: reviewer
+      - type: action
+        actionId: pr.merge
+        title: Merge mouse-click feature PR
+        input:
+          prNumber: "{{inputs.prNumber}}"

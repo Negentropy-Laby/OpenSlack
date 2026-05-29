@@ -438,7 +438,7 @@ export async function run() { return { status: 'ok' } }
     expect(result).toHaveLength(1)
     expect(result[0].name).toBe('my-task')
     expect(result[0].displayName).toBe('my-task')
-    expect(result[0].source).toBe('js-module')
+    expect(result[0].source).toBe('openslack-project')
     expect(result[0].description).toBe('A custom task')
     expect(result[0].phases).toBe(1)
   })

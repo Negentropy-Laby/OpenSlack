@@ -56,12 +56,20 @@ export interface BudgetState {
   agentCalls: number
 }
 
+export interface ClaudeBudgetAPI {
+  readonly total: number | null
+  spent(): number
+  remaining(): number
+}
+
 export interface AgentOptions {
   label: string
   phase: string
   schema?: JSONSchemaDefinition
   isolation?: 'none' | 'worktree'
   budget?: { tokens: number }
+  model?: string
+  agentType?: string
 }
 
 export interface ParallelOptions {
@@ -122,14 +130,18 @@ export interface PrmsDoctorResult {
 export interface WorkflowRuntime {
   readonly runId: string
   readonly mode: ExecutionMode
-  readonly budget: BudgetState
+  readonly budget: BudgetState & ClaudeBudgetAPI
   readonly args: Record<string, unknown>
 
   phase(name: string): void
   log(message: string): void
   agent<T>(prompt: string, options: AgentOptions): Promise<T>
   parallel<T>(tasks: Array<() => Promise<T>>, options?: ParallelOptions): Promise<T[]>
-  pipeline<T, R>(items: T[], fn: (item: T, index: number) => Promise<R>): Promise<R[]>
+  pipeline<T, R>(
+    items: T[],
+    fnOrStages: ((item: T, index: number) => Promise<R>) | Array<(prev: unknown, item: T, index: number) => Promise<unknown>>,
+    options?: PipelineOptions,
+  ): Promise<R[]>
   workflow(name: string, args?: Record<string, unknown>): Promise<unknown>
 
   openslack: {
@@ -182,6 +194,8 @@ export interface OpenSlackWorkflow {
 
 export type TrustLevel = 'untrusted' | 'trusted' | 'core'
 
+export type WorkflowSource = 'openslack-project' | 'claude-project' | 'claude-user' | 'builtin'
+
 export interface PermissionDeclaration {
   declared: WorkflowPermissions
   granted: WorkflowPermissions
@@ -190,7 +204,7 @@ export interface PermissionDeclaration {
 
 // ── Loader types ──────────────────────────────────────────────────────────────
 
-export type WorkflowFormat = 'openslack-native' | 'anthropic-compatible' | 'invalid'
+export type WorkflowFormat = 'openslack-native' | 'anthropic-compatible' | 'claude-ambient' | 'invalid'
 
 export interface WorkflowModule {
   meta: WorkflowMeta
@@ -198,6 +212,8 @@ export interface WorkflowModule {
   run?: OpenSlackWorkflow['run']
   format: WorkflowFormat
   hash: string
+  sourceBody?: string     // Raw source for claude-ambient workflows (no import needed)
+  source?: WorkflowSource // Where the workflow was discovered
 }
 
 // ── Pipeline ──────────────────────────────────────────────────────────────────
