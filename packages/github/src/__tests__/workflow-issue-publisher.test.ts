@@ -224,6 +224,22 @@ describe('workflow issue publishers', () => {
       expect(result.parentIssueNumber).toBe(99)
       expect(mockCreateTaskIssue).toHaveBeenCalledTimes(2)
     })
+
+    it('accepts nativeSubIssues and linearDependencies options', async () => {
+      mockCreateTaskIssue
+        .mockResolvedValueOnce({ issueNumber: 300, url: 'https://github.com/test/300', nodeId: 'node_300' })
+        .mockResolvedValueOnce({ issueNumber: 301, url: 'https://github.com/test/301', nodeId: 'node_301' })
+        .mockResolvedValueOnce({ issueNumber: 302, url: 'https://github.com/test/302', nodeId: 'node_302' })
+
+      const result = await publishWorkflowSplit(mockModule(), {
+        parentIssue: 300,
+        nativeSubIssues: true,
+        linearDependencies: true,
+      })
+
+      expect(result.parentIssueNumber).toBe(300)
+      expect(result.subIssues).toHaveLength(2)
+    })
   })
 
   describe('bootstrapWorkflowLabels', () => {
@@ -240,7 +256,7 @@ describe('workflow issue publishers', () => {
       const result = await bootstrapWorkflowLabels()
 
       expect(result.created.length).toBeGreaterThan(0)
-      expect(mockOctokit.issues.createLabel).toHaveBeenCalledTimes(24)
+      expect(mockOctokit.issues.createLabel).toHaveBeenCalledTimes(31)
     })
 
     it('skips existing labels', async () => {
@@ -260,7 +276,7 @@ describe('workflow issue publishers', () => {
       const result = await bootstrapWorkflowLabels()
 
       expect(result.created).toHaveLength(0)
-      expect(result.existing.length).toBe(24)
+      expect(result.existing.length).toBe(31)
     })
 
     it('works in dry-run mode', async () => {
@@ -274,7 +290,7 @@ describe('workflow issue publishers', () => {
 
       const result = await bootstrapWorkflowLabels()
 
-      expect(result.created.length).toBe(24)
+      expect(result.created.length).toBe(31)
       expect(result.existing).toHaveLength(0)
     })
   })

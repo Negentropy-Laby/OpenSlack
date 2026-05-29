@@ -342,4 +342,11 @@ export const WORKFLOW_LABEL_DEFINITIONS: Array<{ name: string; color: string; de
   { name: 'result:failed', color: 'd73a4a', description: 'Run failed' },
   { name: 'result:paused', color: 'ffd54f', description: 'Run paused' },
   { name: 'result:cancelled', color: '959da5', description: 'Run cancelled' },
+  { name: 'workflow:blocked', color: 'd73a4a', description: 'Phase is blocked by another issue' },
+  { name: 'workflow:dependency', color: '6f42c1', description: 'Has dependency relationships' },
+  { name: 'lifecycle:proposed', color: '0366d6', description: 'Workflow is in proposed state' },
+  { name: 'lifecycle:under-review', color: 'ffd54f', description: 'Workflow is under review' },
+  { name: 'lifecycle:implementing', color: '6f42c1', description: 'Workflow is being implemented' },
+  { name: 'lifecycle:accepted', color: '28a745', description: 'Workflow has been accepted' },
+  { name: 'lifecycle:completed', color: '28a745', description: 'Workflow lifecycle completed' },
 ]

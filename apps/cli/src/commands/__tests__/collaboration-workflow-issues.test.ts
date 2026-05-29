@@ -6,8 +6,10 @@ vi.mock('@openslack/github', () => ({
   publishWorkflowProposal: vi.fn(),
   publishWorkflowReviewRequest: vi.fn(),
   publishWorkflowRunAudit: vi.fn(),
+  publishWorkflowImprovement: vi.fn(),
   publishWorkflowSplit: vi.fn(),
   bootstrapWorkflowLabels: vi.fn(),
+  finalizeWorkflowPR: vi.fn(),
 }))
 
 vi.mock('@openslack/workflows', () => ({
@@ -89,5 +91,23 @@ describe('collaboration workflow issue commands', () => {
       ?.commands.find((c) => c.name() === 'labels')
     expect(labels).toBeDefined()
     expect(labels?.description()).toContain('labels')
+  })
+
+  it('workflow improvement command exists', () => {
+    const program = createTestProgram()
+    const improvement = program.commands.find((c) => c.name() === 'collaboration')
+      ?.commands.find((c) => c.name() === 'workflow')
+      ?.commands.find((c) => c.name() === 'improvement')
+    expect(improvement).toBeDefined()
+    expect(improvement?.description()).toContain('improvement')
+  })
+
+  it('workflow finalize-pr command exists', () => {
+    const program = createTestProgram()
+    const finalize = program.commands.find((c) => c.name() === 'collaboration')
+      ?.commands.find((c) => c.name() === 'workflow')
+      ?.commands.find((c) => c.name() === 'finalize-pr')
+    expect(finalize).toBeDefined()
+    expect(finalize?.description()).toContain('Finalize')
   })
 })

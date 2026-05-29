@@ -255,7 +255,7 @@ export interface PhaseSubIssue {
 
 export async function publishWorkflowSplit(
   workflow: WorkflowModuleShape,
-  opts: { parentIssue?: number; phaseNames?: string[] },
+  opts: { parentIssue?: number; phaseNames?: string[]; nativeSubIssues?: boolean; linearDependencies?: boolean },
 ): Promise<{ parentIssueNumber: number; subIssues: PhaseSubIssue[] }> {
   const phaseNames = opts.phaseNames ?? workflow.meta.phases.map((p) => p.title)
   const parentIssueNum = opts.parentIssue ?? 0
@@ -288,7 +288,133 @@ export async function publishWorkflowSplit(
     subIssues.push({ phase, issueNumber: result.issueNumber, url: result.url })
   }
 
+  // Try native sub-issue linking if requested
+  if (opts.nativeSubIssues && actualParentIssue > 0) {
+    await linkNativeSubIssues(actualParentIssue, subIssues)
+  }
+
+  // Try linear dependency linking if requested
+  if (opts.linearDependencies && subIssues.length > 1) {
+    await linkLinearDependencies(subIssues)
+  }
+
+  // Always add a fallback comment to the parent issue summarizing sub-issues
+  await addSubIssueFallbackComment(actualParentIssue, subIssues)
+
   return { parentIssueNumber: actualParentIssue, subIssues }
+}
+
+// ── Sub-Issue Linking ─────────────────────────────────────────────────────────
+
+async function linkNativeSubIssues(parentIssue: number, subIssues: PhaseSubIssue[]): Promise<void> {
+  const client = await getClient()
+  if (client.isDryRun) {
+    console.log(`[DRY RUN] Would link ${subIssues.length} sub-issues to parent #${parentIssue}`)
+    return
+  }
+
+  let linkedCount = 0
+  for (const sub of subIssues) {
+    try {
+      // Attempt GitHub REST API sub-issue linking (available on repos with the feature enabled)
+      await (client.octokit as unknown as { request: (route: string, params: Record<string, unknown>) => Promise<unknown> }).request(
+        'POST /repos/{owner}/{repo}/issues/{issue_number}/sub_issues',
+        {
+          owner: client.owner,
+          repo: client.repo,
+          issue_number: parentIssue,
+          sub_issue_id: sub.issueNumber,
+        },
+      )
+      linkedCount++
+    } catch (err) {
+      const status = (err as { status?: number }).status
+      if (status === 404 || status === 403 || status === 422) {
+        // Sub-issues feature not enabled or API unavailable; fallback handled by caller
+        break
+      }
+      // Other errors: log and continue
+      console.log(`[WARNING] Failed to link sub-issue #${sub.issueNumber}: ${(err as Error).message}`)
+    }
+  }
+
+  if (linkedCount === 0) {
+    console.log(`[INFO] Native sub-issue linking not available. Used structured fallback.`)
+  } else {
+    console.log(`[INFO] Linked ${linkedCount}/${subIssues.length} sub-issues natively.`)
+  }
+}
+
+async function linkLinearDependencies(subIssues: PhaseSubIssue[]): Promise<void> {
+  const client = await getClient()
+  if (client.isDryRun) {
+    console.log(`[DRY RUN] Would create ${subIssues.length - 1} linear dependencies between phase issues`)
+    return
+  }
+
+  let linkedCount = 0
+  for (let i = 1; i < subIssues.length; i++) {
+    const blocked = subIssues[i]
+    const blocker = subIssues[i - 1]
+    try {
+      // Attempt to create a dependency comment with structured marker
+      await client.octokit.issues.createComment({
+        owner: client.owner,
+        repo: client.repo,
+        issue_number: blocked.issueNumber,
+        body: `<!-- workflow-dependency -->
+This phase is blocked by #${blocker.issueNumber} (${blocker.phase}).
+Complete ${blocker.phase} before starting this phase.`,
+      })
+
+      // Add blocked label to the dependent issue
+      await client.octokit.issues.addLabels({
+        owner: client.owner,
+        repo: client.repo,
+        issue_number: blocked.issueNumber,
+        labels: ['workflow:blocked'],
+      })
+
+      linkedCount++
+    } catch (err) {
+      console.log(`[WARNING] Failed to link dependency ${blocker.issueNumber} → ${blocked.issueNumber}: ${(err as Error).message}`)
+    }
+  }
+
+  if (linkedCount > 0) {
+    console.log(`[INFO] Created ${linkedCount} linear dependency links.`)
+  }
+}
+
+async function addSubIssueFallbackComment(parentIssue: number, subIssues: PhaseSubIssue[]): Promise<void> {
+  const client = await getClient()
+  if (client.isDryRun) {
+    console.log(`[DRY RUN] Would add fallback comment to parent issue #${parentIssue}`)
+    return
+  }
+
+  try {
+    const lines: string[] = []
+    lines.push('## Phase Sub-Issues')
+    lines.push('')
+    for (const sub of subIssues) {
+      lines.push(`- **${sub.phase}**: #${sub.issueNumber}`)
+    }
+    if (subIssues.length > 1) {
+      lines.push('')
+      lines.push('### Execution Order')
+      lines.push('Phases should be completed in the order listed above.')
+    }
+
+    await client.octokit.issues.createComment({
+      owner: client.owner,
+      repo: client.repo,
+      issue_number: parentIssue,
+      body: lines.join('\n'),
+    })
+  } catch (err) {
+    console.log(`[WARNING] Failed to add fallback comment to parent issue #${parentIssue}: ${(err as Error).message}`)
+  }
 }
 
 // ── Label Bootstrap ───────────────────────────────────────────────────────────

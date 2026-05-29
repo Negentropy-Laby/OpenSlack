@@ -71,6 +71,18 @@ export function generateDoctorReport(
       ? ['', `*Note: ${botApprovals.length} bot approval(s) ignored per policy.*`]
       : []),
     '',
+    '### Workflow Gate',
+    '',
+    ...(report.workflowGate
+      ? [
+          `| Criterion | Status |`,
+          `|-----------|--------|`,
+          ...report.workflowGate.criteria.map((c) => `| ${c.name} | ${c.status}${c.detail ? ` — ${c.detail}` : ''} |`),
+          '',
+          `**Overall: ${report.workflowGate.overall}**`,
+        ]
+      : ['No workflow gate evaluated.']),
+    '',
     '### Decision',
     '',
     `**${report.decision}**`,

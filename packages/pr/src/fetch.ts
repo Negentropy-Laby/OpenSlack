@@ -29,5 +29,6 @@ export async function fetchPRDetails(prNumber: number): Promise<PRReviewReport> 
     reason: 'Initial fetch complete. Awaiting classification.',
     recommendation: 'Run classification to determine risk zone and next steps.',
     mergeable: pr?.mergeable ?? false,
+    body: pr?.body ?? '',
   };
 }

@@ -186,6 +186,20 @@ export function prCommands(): Command {
           title: 'Merge conflicts',
           detail: diagnosed.mergeable === false ? 'Has merge conflicts' : 'No merge conflicts',
         });
+        // Workflow Gate
+        if (diagnosed.workflowGate && diagnosed.workflowGate.overall !== 'N/A') {
+          findings.push({
+            status: diagnosed.workflowGate.overall === 'PASS' ? 'PASS' : 'FAIL',
+            title: 'Workflow Gate',
+            detail: diagnosed.workflowGate.criteria
+              .filter((c) => c.status !== 'N/A')
+              .map((c) => `${c.name}: ${c.status}`)
+              .join('; '),
+            nextAction: diagnosed.workflowGate.overall === 'FAIL'
+              ? 'Link proposal/review issues, add hash and trust decision to PR body'
+              : undefined,
+          });
+        }
         const failing = diagnosed.checks.filter((c) => c.conclusion && c.conclusion !== 'success' && c.conclusion !== 'neutral');
         const pending = diagnosed.checks.filter((c) => c.status !== 'completed');
         if (pending.length > 0) {

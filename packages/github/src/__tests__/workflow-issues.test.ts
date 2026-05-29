@@ -252,7 +252,7 @@ describe('workflow issue renderers', () => {
       expect(names).toContain('risk:high')
       expect(names).toContain('mode:execute')
       expect(names).toContain('result:completed')
-      expect(names).toHaveLength(24)
+      expect(names).toHaveLength(31)
     })
 
     it('every label has a 6-character hex color', () => {
