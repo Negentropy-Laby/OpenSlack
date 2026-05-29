@@ -84,7 +84,7 @@ export const renderSync = (
     stderr: process.stderr,
     exitOnCtrlC: true,
     patchConsole: true,
-    ...opts,
+    ...(opts.stdout === undefined ? { ...opts, stdout: process.stdout } : opts),
   }
 
   const instance: Ink = getInstance(

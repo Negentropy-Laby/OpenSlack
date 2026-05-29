@@ -10,6 +10,9 @@ export interface ApprovalItem {
   risk: string
   requestedBy: string
   requestedAt: string
+  planId?: string
+  prNumber?: number
+  workflowName?: string
 }
 
 export interface ApprovalCenterViewModel {
@@ -42,6 +45,9 @@ export function mapApprovalCenterToViewModel(data?: {
     risk?: string
     requestedBy?: string
     requestedAt?: string
+    planId?: string
+    prNumber?: number
+    workflowName?: string
   }>
 }): ApprovalCenterViewModel {
   const s = sanitizeTerminalText
@@ -54,6 +60,9 @@ export function mapApprovalCenterToViewModel(data?: {
     risk: s(item.risk ?? 'unknown'),
     requestedBy: s(item.requestedBy ?? 'system'),
     requestedAt: s(item.requestedAt ?? ''),
+    planId: item.planId,
+    prNumber: item.prNumber,
+    workflowName: item.workflowName,
   }))
 
   const summary = {
