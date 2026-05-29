@@ -17,6 +17,9 @@ export interface TuiActionHandlers {
   executeApproval: (params: ApprovalExecutionParams, isApprove: boolean) => Promise<TuiActionResult>
   executeTrustChange: (workflowName: string, fromLevel: string, toLevel: string) => Promise<TuiActionResult>
   executeWorkflowRun: (workflowName: string, mode: 'preview' | 'dry-run' | 'run') => Promise<TuiActionResult>
+  publishWorkflowAsIssue?: (workflowName: string) => Promise<TuiActionResult>
+  requestWorkflowReview?: (workflowName: string) => Promise<TuiActionResult>
+  splitWorkflowIntoIssues?: (workflowName: string, parentIssue: number) => Promise<TuiActionResult>
 }
 
 // ── executeApproval ────────────────────────────────────────────────────────────
@@ -345,11 +348,106 @@ export async function executeWorkflowRun(
   }
 }
 
+// ── publishWorkflowAsIssue ────────────────────────────────────────────────────
+
+export async function publishWorkflowAsIssue(
+  workflowName: string,
+  _root: string,
+): Promise<TuiActionResult> {
+  try {
+    const { findWorkflow, loadWorkflow } = await import('@openslack/workflows')
+    const found = await findWorkflow(workflowName)
+    if (!found) {
+      return { success: false, message: `Workflow "${workflowName}" not found.` }
+    }
+    const mod = await loadWorkflow(found.path)
+    const { publishWorkflowProposal } = await import('@openslack/github')
+    const result = await publishWorkflowProposal(mod, { requestedBy: 'tui-user' })
+    return {
+      success: true,
+      message: `Workflow proposal issue created: #${result.issueNumber}`,
+      data: { issueNumber: result.issueNumber, url: result.url },
+    }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    return { success: false, message }
+  }
+}
+
+// ── requestWorkflowReview ───────────────────────────────────────────────────────
+
+export async function requestWorkflowReview(
+  workflowName: string,
+  root: string,
+): Promise<TuiActionResult> {
+  try {
+    const { findWorkflow, loadWorkflow, TrustStore, resolveTrustLevel } = await import('@openslack/workflows')
+    const found = await findWorkflow(workflowName)
+    if (!found) {
+      return { success: false, message: `Workflow "${workflowName}" not found.` }
+    }
+    const mod = await loadWorkflow(found.path)
+    const trustStore = new TrustStore({ rootDir: root })
+    const isBuiltin = found.path.includes('/builtins/') || found.path.includes('\\builtins\\')
+    const persistedLevel = trustStore.get(workflowName)
+    const trustLevel = persistedLevel !== 'untrusted'
+      ? persistedLevel
+      : resolveTrustLevel({ isBuiltin })
+
+    const { publishWorkflowReviewRequest } = await import('@openslack/github')
+    const result = await publishWorkflowReviewRequest(mod, {
+      requestedBy: 'tui-user',
+      trustLevel,
+    })
+    return {
+      success: true,
+      message: `Workflow review issue created: #${result.issueNumber}`,
+      data: { issueNumber: result.issueNumber, url: result.url },
+    }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    return { success: false, message }
+  }
+}
+
+// ── splitWorkflowIntoIssues ─────────────────────────────────────────────────────
+
+export async function splitWorkflowIntoIssues(
+  workflowName: string,
+  parentIssue: number,
+  _root: string,
+): Promise<TuiActionResult> {
+  try {
+    const { findWorkflow, loadWorkflow } = await import('@openslack/workflows')
+    const found = await findWorkflow(workflowName)
+    if (!found) {
+      return { success: false, message: `Workflow "${workflowName}" not found.` }
+    }
+    const mod = await loadWorkflow(found.path)
+    const { publishWorkflowSplit } = await import('@openslack/github')
+    const result = await publishWorkflowSplit(mod, { parentIssue })
+    return {
+      success: true,
+      message: `Workflow split into ${result.subIssues.length} phase issues.`,
+      data: {
+        parentIssueNumber: result.parentIssueNumber,
+        subIssues: result.subIssues.map((s) => ({ phase: s.phase, issueNumber: s.issueNumber, url: s.url })),
+      },
+    }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    return { success: false, message }
+  }
+}
+
 /** Build the full action handler set for injection into the TUI shell. */
 export function createActionHandlers(root: string): TuiActionHandlers {
   return {
     executeApproval: (params, isApprove) => executeApproval(params, isApprove, root),
     executeTrustChange: (name, from, to) => executeTrustChange(name, from, to, root),
     executeWorkflowRun: (name, mode) => executeWorkflowRun(name, mode, root),
+    publishWorkflowAsIssue: (name) => publishWorkflowAsIssue(name, root),
+    requestWorkflowReview: (name) => requestWorkflowReview(name, root),
+    splitWorkflowIntoIssues: (name, parentIssue) => splitWorkflowIntoIssues(name, parentIssue, root),
   }
 }

@@ -327,19 +327,21 @@ export async function executeRun(
   if (workflow.format === 'claude-ambient' && workflow.sourceBody) {
     const { executeAmbientWorkflow } = await import('./ambient-runner.js')
     const ambientResult = await executeAmbientWorkflow(workflow.sourceBody, runtime, args)
-    return {
+    const result = {
       status: 'completed',
       ...(typeof ambientResult === 'object' && ambientResult !== null
         ? ambientResult as Record<string, unknown>
         : { result: ambientResult }),
     } as RunResult
+    return { ...result, runId }
   }
 
   if (!workflow.run) {
     throw new Error(`Workflow "${manifest.name}" has no run function`)
   }
 
-  return workflow.run(runtime, args)
+  const result = await workflow.run(runtime, args)
+  return { ...result, runId }
 }
 
 /**
@@ -418,17 +420,19 @@ export async function executeResume(
   if (workflow.format === 'claude-ambient' && workflow.sourceBody) {
     const { executeAmbientWorkflow } = await import('./ambient-runner.js')
     const ambientResult = await executeAmbientWorkflow(workflow.sourceBody, runtime, args)
-    return {
+    const result = {
       status: 'completed',
       ...(typeof ambientResult === 'object' && ambientResult !== null
         ? ambientResult as Record<string, unknown>
         : { result: ambientResult }),
     } as RunResult
+    return { ...result, runId }
   }
 
   if (!workflow.run) {
     throw new Error(`Workflow "${manifest.name}" has no run function`)
   }
 
-  return workflow.run(runtime, args)
+  const result = await workflow.run(runtime, args)
+  return { ...result, runId }
 }

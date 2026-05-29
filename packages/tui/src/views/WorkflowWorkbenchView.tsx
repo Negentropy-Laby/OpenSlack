@@ -22,7 +22,7 @@ import { sanitizeTerminalText } from '../sanitize.js'
 import type { WorkflowGalleryViewModel, WorkflowGalleryItem } from '../view-models/workflow-gallery.js'
 import type { TuiActionHandlers } from './render-shell.js'
 
-type ViewMode = 'gallery' | 'detail' | 'action-result'
+type ViewMode = 'gallery' | 'detail' | 'issues-menu' | 'action-result'
 
 /** Trust levels ordered from least to most privileged. */
 const TRUST_LEVELS = ['untrusted', 'trusted'] as const
@@ -187,6 +187,10 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
         goToDetail()
         return
       }
+      if (mode === 'issues-menu') {
+        setMode('detail')
+        return
+      }
       if (mode === 'detail') {
         setMode('gallery')
         actionDispatch.reset()
@@ -228,6 +232,56 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
         actionDispatch.dispatch(makeTrustAction(currentWf))
         return
       }
+      if (input === 'i') {
+        setMode('issues-menu')
+        return
+      }
+    }
+
+    // Issues-menu mode actions
+    if (mode === 'issues-menu' && currentWf && !inputBlocked) {
+      if (input === 'p' && actionHandlers?.publishWorkflowAsIssue) {
+        actionDispatch.dispatch({
+          id: `publish-issue-${currentWf.name}`,
+          category: TuiActionCategory.WorkflowPreview,
+          risk: TuiRiskLevel.Low,
+          label: `Publish ${currentWf.name} as proposal issue`,
+          description: `Create a GitHub proposal issue for workflow "${currentWf.name}".`,
+          requiresConfirmation: false,
+          handler: () => actionHandlers.publishWorkflowAsIssue!(currentWf.name),
+        })
+        goToActionResult()
+        return
+      }
+      if (input === 'r' && actionHandlers?.requestWorkflowReview) {
+        actionDispatch.dispatch({
+          id: `review-issue-${currentWf.name}`,
+          category: TuiActionCategory.WorkflowPreview,
+          risk: TuiRiskLevel.Low,
+          label: `Request review for ${currentWf.name}`,
+          description: `Create a security review issue for workflow "${currentWf.name}".`,
+          requiresConfirmation: false,
+          handler: () => actionHandlers.requestWorkflowReview!(currentWf.name),
+        })
+        goToActionResult()
+        return
+      }
+      if (input === 's' && actionHandlers?.splitWorkflowIntoIssues) {
+        actionDispatch.dispatch({
+          id: `split-issue-${currentWf.name}`,
+          category: TuiActionCategory.WorkflowPreview,
+          risk: TuiRiskLevel.Low,
+          label: `Split ${currentWf.name} into phase issues`,
+          description: `Create a new parent issue and sub-issues for each phase of workflow "${currentWf.name}".`,
+          requiresConfirmation: true,
+          handler: () => actionHandlers.splitWorkflowIntoIssues!(currentWf.name, 0),
+        })
+        return
+      }
+      if (input === 'b') {
+        setMode('detail')
+        return
+      }
     }
 
     // Action-result mode: enter to return to detail
@@ -262,7 +316,22 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
       React.createElement(Text, null, '  '),
       React.createElement(KeyboardShortcutHint, { keys: ['t'], description: 'Trust' }),
       React.createElement(Text, null, '  '),
+      React.createElement(KeyboardShortcutHint, { keys: ['i'], description: 'Issues' }),
+      React.createElement(Text, null, '  '),
       React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'Back' }),
+    )
+
+  const renderIssuesMenuHintBar = () =>
+    React.createElement(
+      Box,
+      { flexDirection: 'row' },
+      React.createElement(KeyboardShortcutHint, { keys: ['p'], description: 'Publish' }),
+      React.createElement(Text, null, '  '),
+      React.createElement(KeyboardShortcutHint, { keys: ['r'], description: 'Review' }),
+      React.createElement(Text, null, '  '),
+      React.createElement(KeyboardShortcutHint, { keys: ['s'], description: 'Split' }),
+      React.createElement(Text, null, '  '),
+      React.createElement(KeyboardShortcutHint, { keys: ['b'], description: 'Back' }),
     )
 
   const renderTrustInfo = (wf: WorkflowGalleryItem) => {
@@ -322,6 +391,53 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
       ),
       React.createElement(Divider, { length: 40 }),
       renderDetailHintBar(),
+    )
+  }
+
+  // --- Issues menu mode ---
+  if (mode === 'issues-menu' && currentWf) {
+    const wf = currentWf
+    const hasPublish = !!actionHandlers?.publishWorkflowAsIssue
+    const hasReview = !!actionHandlers?.requestWorkflowReview
+    const hasSplit = !!actionHandlers?.splitWorkflowIntoIssues
+
+    return React.createElement(
+      Box,
+      { flexDirection: 'column', paddingX: 1 },
+      renderBreadcrumbs(` / ${wf.name} / Issues`),
+      React.createElement(Divider, { length: 40 }),
+      React.createElement(
+        Pane,
+        { title: 'Workflow Issues', marginY: 0 },
+        React.createElement(Box, { flexDirection: 'column' },
+          hasPublish
+            ? React.createElement(Box, { flexDirection: 'row' },
+                React.createElement(ThemedText, { colorTheme: 'accent' }, '[p] '),
+                React.createElement(ThemedText, { colorTheme: 'foreground' }, 'Publish as proposal issue'),
+              )
+            : React.createElement(Box, { flexDirection: 'row' },
+                React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, '[p] Publish (unavailable)'),
+              ),
+          hasReview
+            ? React.createElement(Box, { flexDirection: 'row' },
+                React.createElement(ThemedText, { colorTheme: 'accent' }, '[r] '),
+                React.createElement(ThemedText, { colorTheme: 'foreground' }, 'Request security review'),
+              )
+            : React.createElement(Box, { flexDirection: 'row' },
+                React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, '[r] Review request (unavailable)'),
+              ),
+          hasSplit
+            ? React.createElement(Box, { flexDirection: 'row' },
+                React.createElement(ThemedText, { colorTheme: 'accent' }, '[s] '),
+                React.createElement(ThemedText, { colorTheme: 'foreground' }, 'Split into phase issues'),
+              )
+            : React.createElement(Box, { flexDirection: 'row' },
+                React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, '[s] Split (unavailable)'),
+              ),
+        ),
+      ),
+      React.createElement(Divider, { length: 40 }),
+      renderIssuesMenuHintBar(),
     )
   }
 

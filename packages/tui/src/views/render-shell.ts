@@ -21,6 +21,9 @@ export interface TuiActionHandlers {
   executeApproval: (params: ApprovalExecutionParams, isApprove: boolean) => Promise<TuiActionResult>
   executeTrustChange: (workflowName: string, fromLevel: string, toLevel: string) => Promise<TuiActionResult>
   executeWorkflowRun: (workflowName: string, mode: 'preview' | 'dry-run' | 'run') => Promise<TuiActionResult>
+  publishWorkflowAsIssue?: (workflowName: string) => Promise<TuiActionResult>
+  requestWorkflowReview?: (workflowName: string) => Promise<TuiActionResult>
+  splitWorkflowIntoIssues?: (workflowName: string, parentIssue: number) => Promise<TuiActionResult>
 }
 
 export interface ShellViewData {

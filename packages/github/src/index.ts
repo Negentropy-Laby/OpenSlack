@@ -33,3 +33,39 @@ export type { RepoCursor, DaemonState } from './watch-cursor.js';
 export { pollRepoIssues } from './watch-poller.js';
 export type { PollResult, GitHubApiIssue } from './watch-poller.js';
 export { normalizePollIssue } from './poll-normalizer.js';
+export {
+  publishWorkflowProposal,
+  publishWorkflowReviewRequest,
+  publishWorkflowRunAudit,
+  appendWorkflowRunPhaseComment,
+  publishWorkflowImprovement,
+  publishWorkflowSplit,
+  bootstrapWorkflowLabels,
+} from './workflow-issue-publisher.js';
+export type { PhaseSubIssue } from './workflow-issue-publisher.js';
+export {
+  renderWorkflowProposalBody,
+  renderWorkflowReviewBody,
+  renderWorkflowRunBody,
+  renderWorkflowRunPhaseComment,
+  renderWorkflowImprovementBody,
+  renderWorkflowSplitBody,
+  renderWorkflowPhaseSubIssueBody,
+  workflowProposalLabels,
+  workflowReviewLabels,
+  workflowRunLabels,
+  workflowImprovementLabels,
+  workflowSplitLabels,
+  workflowPhaseLabels,
+  WORKFLOW_LABEL_DEFINITIONS,
+} from './workflow-issues.js';
+export type {
+  WorkflowMetaShape,
+  WorkflowModuleShape,
+  WorkflowRunStatusShape,
+  WorkflowProposalIssue,
+  WorkflowReviewIssue,
+  WorkflowRunIssue,
+  WorkflowImprovementIssue,
+  WorkflowSplitIssue,
+} from './workflow-issues.js';
