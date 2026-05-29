@@ -715,6 +715,19 @@ export function handleMouseEvent(app: App, m: ParsedMouse): void {
     if ((m.button & 0x20) !== 0) {
       // Drag motion: mode-aware extension (char/word/line). onSelectionDrag
       // calls notifySelectionChange internally — no extra onSelectionChange.
+      // Ignore tiny drags (≤1 cell) to avoid accidental text-selection
+      // during normal clicks. Trackpad jitter and hand tremor often move
+      // the cursor 1 cell between press and release; treating that as a
+      // drag orphans the click (hasSelection becomes true, dispatchClick
+      // is skipped) and leaves a selection overlay that looks like text
+      // disappearing.
+      if (sel.anchor) {
+        const dragDx = Math.abs(col - sel.anchor.col)
+        const dragDy = Math.abs(row - sel.anchor.row)
+        if (dragDx <= 1 && dragDy <= 1) {
+          return
+        }
+      }
       app.props.onSelectionDrag(col, row)
       return
     }
@@ -769,12 +782,21 @@ export function handleMouseEvent(app: App, m: ParsedMouse): void {
   // isDragging=true and leave drag-to-scroll's timer running until the
   // scroll boundary. Only act on non-left releases when we ARE dragging
   // (so an unrelated middle/right click-release doesn't touch selection).
-  if (baseButton !== 0) {
+  //
+  // SGR release events use button=3 ("no button"). We allow these to fall
+  // through to click dispatch below — otherwise normal clicks encoded as
+  // button=3 on release are silently dropped and the user sees text
+  // disappear (selection overlay) without any navigation.
+  if (baseButton !== 0 && baseButton !== 3) {
+    // Right/middle button release — finish selection only, no click dispatch
     if (!sel.isDragging) return
     finishSelection(sel)
     app.props.onSelectionChange()
     return
   }
+
+  // For left button (0) or SGR release/no-button (3): finish selection
+  // and check click dispatch.
   finishSelection(sel)
   // NOTE: unlike the old release-based detection we do NOT reset clickCount
   // on release-after-drag. This aligns with NSEvent.clickCount semantics:

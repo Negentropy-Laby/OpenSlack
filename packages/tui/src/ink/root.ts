@@ -57,6 +57,10 @@ export type Instance = {
    */
   waitUntilExit: Ink['waitUntilExit']
   cleanup: () => void
+  /**
+   * Enable or disable alternate screen and mouse tracking.
+   */
+  setAltScreenActive: Ink['setAltScreenActive']
 }
 
 /**
@@ -101,6 +105,7 @@ export const renderSync = (
     },
     waitUntilExit: instance.waitUntilExit,
     cleanup: () => instances.delete(inkOptions.stdout),
+    setAltScreenActive: instance.setAltScreenActive.bind(instance),
   }
 }
 
