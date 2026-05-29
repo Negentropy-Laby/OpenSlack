@@ -155,5 +155,29 @@ describe('ALWAYS_FORBIDDEN', () => {
     expect(ALWAYS_FORBIDDEN.has('ruleset.bypass')).toBe(true)
     expect(ALWAYS_FORBIDDEN.has('secrets.read')).toBe(true)
     expect(ALWAYS_FORBIDDEN.has('github.pr.merge')).toBe(true)
+    expect(ALWAYS_FORBIDDEN.has('kernel.constitution.write')).toBe(true)
+    expect(ALWAYS_FORBIDDEN.has('agent.registry.write')).toBe(true)
+    expect(ALWAYS_FORBIDDEN.has('workflow.trust.upgrade')).toBe(true)
+  })
+
+  it('rejects all 7 forbidden effects regardless of manifest', () => {
+    const manifest = makeManifest([])
+    const policy = makePolicy(manifest)
+
+    const forbiddenEffects = [
+      'github.pr.approve',
+      'github.pr.merge',
+      'ruleset.bypass',
+      'secrets.read',
+      'kernel.constitution.write',
+      'agent.registry.write',
+      'workflow.trust.upgrade',
+    ]
+
+    for (const effect of forbiddenEffects) {
+      const result = validateEffectAgainstManifest(effect, 'detail', policy)
+      expect(result.allowed).toBe(false)
+      expect(result.reason).toBe('Effect is permanently forbidden')
+    }
   })
 })

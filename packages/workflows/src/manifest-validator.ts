@@ -2,12 +2,21 @@ import type { ConfirmationPolicy, WorkflowApprovalManifest } from './types.js'
 
 /**
  * Effects that are permanently forbidden regardless of manifest.
+ *
+ * These are forward-looking operation identifiers, not actual
+ * `ctx.openslack.*` method names. They represent operations that
+ * no workflow may perform under any trust level or configuration.
+ *
+ * @see permission-checker.ts for the canonical definition
  */
 export const ALWAYS_FORBIDDEN = new Set([
-  'github.pr.approve',
-  'ruleset.bypass',
-  'secrets.read',
-  'github.pr.merge',
+  'github.pr.approve',           // Agents must never approve PRs — human approval required
+  'github.pr.merge',             // Direct merge forbidden; use ctx.openslack.prms.requestMerge()
+  'ruleset.bypass',              // Branch protection rules cannot be bypassed programmatically
+  'secrets.read',                // No workflow may read PEM keys, tokens, or credential files
+  'kernel.constitution.write',   // Self-evolution governance rules are immutable by workflows
+  'agent.registry.write',        // Agent registry modifications require human authorization
+  'workflow.trust.upgrade',      // Trust level upgrades require human action, not workflow self-promotion
 ])
 
 /**

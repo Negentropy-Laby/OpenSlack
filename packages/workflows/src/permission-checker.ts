@@ -5,6 +5,12 @@ import type { WorkflowPermissions, TrustLevel, ExecutionMode } from './types.js'
  * regardless of trust level or declared/granted permissions.
  * No permission declaration, trust upgrade, or configuration change
  * can override these.
+ *
+ * These are forward-looking operation identifiers, not actual
+ * `ctx.openslack.*` method names. They represent operations that
+ * no workflow may perform under any trust level or configuration.
+ *
+ * @see manifest-validator.ts for the manifest validation copy
  */
 export const ALWAYS_FORBIDDEN = new Set([
   'github.pr.approve',       // Agents must never approve PRs -- human approval required

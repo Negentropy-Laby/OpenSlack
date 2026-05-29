@@ -117,9 +117,19 @@ export function tuiCommands(): Command {
         try {
           const { listPendingPlans } = await import('@openslack/operator');
           const { listHandoffs } = await import('@openslack/collaboration');
+          const { RunStore } = await import('@openslack/workflows');
 
           const pendingPlans = listPendingPlans(root);
           const openHandoffs = listHandoffs().filter(h => h.status === 'open');
+
+          // Pre-fetch paused workflow runs
+          let pausedRuns: Array<{ runId: string; workflowName: string; startedAt: string }> = [];
+          try {
+            const store = new RunStore({ baseDir: join(root, '.openslack.local', 'workflows') });
+            pausedRuns = await store.listRunsByStatus('paused_waiting_approval');
+          } catch {
+            // Run store may not be initialized
+          }
 
           const pendingApprovals = [
             ...pendingPlans
@@ -134,12 +144,23 @@ export function tuiCommands(): Command {
                 requestedAt: p.createdAt,
                 planId: p.planId,
               })),
+            ...pausedRuns.map(run => ({
+              id: run.runId,
+              category: 'workflow-effect' as const,
+              title: `Workflow "${run.workflowName}" paused — unexpected side effect`,
+              detail: `Run ${run.runId} paused waiting for approval`,
+              risk: 'medium' as const,
+              requestedBy: 'workflow-runtime',
+              requestedAt: run.startedAt,
+              workflowName: run.workflowName,
+              runId: run.runId,
+            })),
             ...openHandoffs.map(h => ({
               id: h.id,
               category: 'workflow-effect' as const,
               title: `Handoff: ${h.context}`,
               detail: `From ${h.from} to ${h.to}${h.nextSteps.length ? ', next: ' + h.nextSteps.join(', ') : ''}`,
-              risk: 'low',
+              risk: 'low' as const,
               requestedBy: h.from,
               requestedAt: h.createdAt,
             })),

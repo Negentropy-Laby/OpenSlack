@@ -54,6 +54,13 @@ function riskIconCategory(risk: string): 'pass' | 'warn' | 'fail' {
   return 'warn'
 }
 
+/** Determine the color theme key for a format badge. */
+function formatColorTheme(format: string): 'accent' | 'info' | 'muted' {
+  if (format === 'claude-ambient') return 'accent'
+  if (format === 'openslack-native') return 'info'
+  return 'muted'
+}
+
 /** Determine the color theme key for a last run status. */
 function lastRunColorTheme(status: string | undefined): 'success' | 'error' | 'warning' | 'muted' {
   if (!status) return 'muted'
@@ -377,7 +384,7 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
           ),
           React.createElement(Box, { flexDirection: 'row' },
             React.createElement(ThemedText, { colorTheme: 'muted' }, 'Format: '),
-            React.createElement(ThemedText, { colorTheme: 'foreground' }, wf.format.toUpperCase()),
+            React.createElement(ThemedText, { colorTheme: formatColorTheme(wf.format) }, wf.format.toUpperCase()),
           ),
           renderTrustInfo(wf),
           React.createElement(Box, { flexDirection: 'row' },
@@ -430,7 +437,7 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
           ? React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, wf.name)
           : React.createElement(ThemedText, { colorTheme: 'foreground' }, wf.name),
         React.createElement(Text, null, ' '),
-        React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, wf.format.toUpperCase()),
+        React.createElement(ThemedText, { colorTheme: formatColorTheme(wf.format), dim: true }, wf.format.toUpperCase()),
       ),
       React.createElement(
         Box,
