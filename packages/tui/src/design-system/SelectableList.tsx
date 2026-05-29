@@ -1,6 +1,5 @@
 import React, { useState } from 'react'
 import Box from '../ink/components/Box.js'
-import Text from '../ink/components/Text.js'
 import useInput from '../ink/hooks/use-input.js'
 import ThemedText from './ThemedText.js'
 
@@ -73,12 +72,20 @@ export default function SelectableList({
 
     return React.createElement(
       Box,
-      { key: item.key, flexDirection: 'column' },
+      {
+        key: item.key,
+        flexDirection: 'column',
+        onClick: () => {
+          setSelectedIndex(scrollOffset + i)
+          onSelect(items[scrollOffset + i], scrollOffset + i)
+        },
+        onMouseEnter: () => setSelectedIndex(scrollOffset + i),
+      },
       React.createElement(
         Box,
         { flexDirection: 'row' },
         React.createElement(ThemedText, { colorTheme: isSelected ? 'accent' : 'muted' }, pointer),
-        React.createElement(Text, null, ' '),
+        React.createElement(ThemedText, { colorTheme: 'foreground' }, ' '),
         labelElement,
       ),
       detailElement,

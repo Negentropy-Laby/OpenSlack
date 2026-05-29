@@ -415,7 +415,16 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
 
     return React.createElement(
       Box,
-      { key: wf.name, flexDirection: 'column' },
+      {
+        key: wf.name,
+        flexDirection: 'column',
+        onClick: () => {
+          setSelectedIndex(i)
+          setMode('detail')
+          actionDispatch.reset()
+        },
+        onMouseEnter: () => setSelectedIndex(i),
+      },
       React.createElement(
         Box,
         { flexDirection: 'row' },

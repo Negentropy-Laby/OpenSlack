@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useCallback, useState } from 'react'
 import Box from '../ink/components/Box.js'
 import Text from '../ink/components/Text.js'
 import useApp from '../ink/hooks/use-app.js'
@@ -62,6 +62,14 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
 
   const [selectedIndex, setSelectedIndex] = useState(0)
 
+  const handleItemClick = useCallback((index: number) => {
+    push({ view: combined[index].route })
+  }, [combined, push])
+
+  const handleItemHover = useCallback((index: number) => {
+    setSelectedIndex(index)
+  }, [])
+
   // Number shortcut lookup
   const shortcutMap = new Map<string, number>()
   for (let i = attentionCount; i < totalCount; i++) {
@@ -100,7 +108,7 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
   for (let i = 0; i < attentionCount; i++) {
     const item = combined[i]
     const isSelected = selectedIndex === i
-    attentionElements.push(renderItemRow(item, isSelected))
+    attentionElements.push(renderItemRow(item, isSelected, i, handleItemClick, handleItemHover))
   }
 
   // Render nav section items
@@ -108,7 +116,7 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
   for (let i = attentionCount; i < totalCount; i++) {
     const item = combined[i]
     const isSelected = selectedIndex === i
-    navElements.push(renderItemRow(item, isSelected))
+    navElements.push(renderItemRow(item, isSelected, i, handleItemClick, handleItemHover))
   }
 
   return React.createElement(
@@ -188,7 +196,13 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
 /**
  * Renders a single selectable row.
  */
-function renderItemRow(item: CombinedItem, isSelected: boolean): React.ReactNode {
+function renderItemRow(
+  item: CombinedItem,
+  isSelected: boolean,
+  index: number,
+  onItemClick: (index: number) => void,
+  onItemHover: (index: number) => void,
+): React.ReactNode {
   const pointer = isSelected ? '>' : ' '
   const colorTheme = isSelected ? item.colorTheme : 'muted'
 
@@ -221,7 +235,12 @@ function renderItemRow(item: CombinedItem, isSelected: boolean): React.ReactNode
 
   return React.createElement(
     Box,
-    { key: `${item.kind}-${item.route}-${item.label}`, flexDirection: 'column' },
+    {
+      key: `${item.kind}-${item.route}-${item.label}`,
+      flexDirection: 'column',
+      onClick: () => onItemClick(index),
+      onMouseEnter: () => onItemHover(index),
+    },
     React.createElement(
       Box,
       { flexDirection: 'row' },
