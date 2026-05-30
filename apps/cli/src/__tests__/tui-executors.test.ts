@@ -130,7 +130,7 @@ describe('executeApproval', () => {
     it('plan approve - updates state and records decision', async () => {
       vi.mocked(operator.updatePendingPlanState).mockReturnValue({ planId: 'PLAN-1', state: 'approved' } as unknown as ReturnType<typeof operator.updatePendingPlanState>)
 
-      const result = await executeApproval(planParams(), true, ROOT)
+      const result = await executeApproval(planParams(), true, ROOT, 'tui-user')
 
       expect(result.success).toBe(true)
       expect(result.message).toContain('PLAN-1')
@@ -149,7 +149,7 @@ describe('executeApproval', () => {
     it('plan reject - cancels plan and records decision', async () => {
       vi.mocked(operator.updatePendingPlanState).mockReturnValue({ planId: 'PLAN-1', state: 'cancelled' } as unknown as ReturnType<typeof operator.updatePendingPlanState>)
 
-      const result = await executeApproval(planParams(), false, ROOT)
+      const result = await executeApproval(planParams(), false, ROOT, 'tui-user')
 
       expect(result.success).toBe(true)
       expect(result.message).toContain('rejected')
@@ -165,7 +165,7 @@ describe('executeApproval', () => {
     it('plan not found - returns failure', async () => {
       vi.mocked(operator.updatePendingPlanState).mockReturnValue(null)
 
-      const result = await executeApproval(planParams(), true, ROOT)
+      const result = await executeApproval(planParams(), true, ROOT, 'tui-user')
 
       expect(result.success).toBe(false)
       expect(result.message).toContain('not found')
@@ -173,7 +173,7 @@ describe('executeApproval', () => {
     })
 
     it('plan without planId - returns failure', async () => {
-      const result = await executeApproval(planParams({ planId: undefined }), true, ROOT)
+      const result = await executeApproval(planParams({ planId: undefined }), true, ROOT, 'tui-user')
 
       expect(result.success).toBe(false)
       expect(result.message).toContain('Plan ID not available')
@@ -185,7 +185,7 @@ describe('executeApproval', () => {
         throw new Error('disk full')
       })
 
-      const result = await executeApproval(planParams(), true, ROOT)
+      const result = await executeApproval(planParams(), true, ROOT, 'tui-user')
 
       expect(result.success).toBe(false)
       expect(result.message).toContain('disk full')
@@ -204,7 +204,7 @@ describe('executeApproval', () => {
         sha: 'abc123',
       })
 
-      const result = await executeApproval(mergeParams(), true, ROOT)
+      const result = await executeApproval(mergeParams(), true, ROOT, 'tui-user')
 
       expect(result.success).toBe(true)
       expect(result.data?.sha).toBe('abc123')
@@ -231,7 +231,7 @@ describe('executeApproval', () => {
         message: 'Blocked',
       } as unknown as Awaited<ReturnType<typeof pr.mergeIfReady>>)
 
-      const result = await executeApproval(mergeParams(), true, ROOT)
+      const result = await executeApproval(mergeParams(), true, ROOT, 'tui-user')
 
       expect(result.success).toBe(false)
       expect(result.message).toContain('Merge blocked')
@@ -245,7 +245,7 @@ describe('executeApproval', () => {
     })
 
     it('merge-request reject - records cancelled decision', async () => {
-      const result = await executeApproval(mergeParams(), false, ROOT)
+      const result = await executeApproval(mergeParams(), false, ROOT, 'tui-user')
 
       expect(result.success).toBe(true)
       expect(result.message).toContain('rejected')
@@ -259,7 +259,7 @@ describe('executeApproval', () => {
     })
 
     it('merge-request without prNumber - returns failure', async () => {
-      const result = await executeApproval(mergeParams({ prNumber: undefined }), true, ROOT)
+      const result = await executeApproval(mergeParams({ prNumber: undefined }), true, ROOT, 'tui-user')
 
       expect(result.success).toBe(false)
       expect(result.message).toContain('PR number not available')
@@ -271,7 +271,7 @@ describe('executeApproval', () => {
 
   describe('workflow-effect category', () => {
     it('workflow-effect confirm - records decision', async () => {
-      const result = await executeApproval(workflowEffectParams(), true, ROOT)
+      const result = await executeApproval(workflowEffectParams(), true, ROOT, 'tui-user')
 
       expect(result.success).toBe(true)
       expect(result.message).toContain('confirmed')
@@ -286,7 +286,7 @@ describe('executeApproval', () => {
     })
 
     it('workflow-effect cancel - records decision', async () => {
-      const result = await executeApproval(workflowEffectParams(), false, ROOT)
+      const result = await executeApproval(workflowEffectParams(), false, ROOT, 'tui-user')
 
       expect(result.success).toBe(true)
       expect(result.message).toContain('cancelled')
@@ -299,7 +299,7 @@ describe('executeApproval', () => {
     })
 
     it('workflow-effect includes workflowName in rationale when present', async () => {
-      await executeApproval(workflowEffectParams(), true, ROOT)
+      await executeApproval(workflowEffectParams(), true, ROOT, 'tui-user')
 
       expect(collaboration.recordDecision).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -309,7 +309,7 @@ describe('executeApproval', () => {
     })
 
     it('workflow-effect omits workflow name from rationale when absent', async () => {
-      await executeApproval(workflowEffectParams({ workflowName: undefined }), true, ROOT)
+      await executeApproval(workflowEffectParams({ workflowName: undefined }), true, ROOT, 'tui-user')
 
       const call = vi.mocked(collaboration.recordDecision).mock.calls[0][0] as { rationale: string }
       expect(call.rationale).not.toContain('for undefined')
@@ -320,7 +320,7 @@ describe('executeApproval', () => {
 
   describe('github-review category', () => {
     it('github-review always returns CLI fallback', async () => {
-      const result = await executeApproval(githubReviewParams(), true, ROOT)
+      const result = await executeApproval(githubReviewParams(), true, ROOT, 'tui-user')
 
       expect(result.success).toBe(false)
       expect(result.message).toContain('GitHub PR approval requires human GitHub identity')
@@ -460,7 +460,7 @@ describe('executeWorkflowRun', () => {
       save: vi.fn(),
     }) as unknown as InstanceType<typeof TrustStore>)
 
-    const result = await executeWorkflowRun('risky-wf', 'run', ROOT)
+    const result = await executeWorkflowRun('risky-wf', 'run', ROOT, 'tui-user')
 
     expect(result.success).toBe(false)
     expect(result.message).toContain('untrusted')
@@ -524,6 +524,7 @@ describe('executeApproval workflow-effect with runId', () => {
       { id: 'run-001', category: 'workflow-effect', title: 'Paused workflow', runId: 'run-001', workflowName: 'test-wf' },
       true,
       ROOT,
+      'tui-user',
     )
 
     expect(result.success).toBe(true)
@@ -552,6 +553,7 @@ describe('executeApproval workflow-effect with runId', () => {
       { id: 'run-001', category: 'workflow-effect', title: 'Paused workflow', runId: 'run-001', workflowName: 'test-wf' },
       false,
       ROOT,
+      'tui-user',
     )
 
     expect(result.success).toBe(true)

@@ -203,10 +203,20 @@ export function tuiCommands(): Command {
           // Approval data unavailable
         }
 
+        // Resolve actor identity for TUI actions
+        let actorId = 'tui-user';
+        try {
+          const { execSync } = await import('node:child_process');
+          // Try git user name first, then OS user
+          actorId = execSync('git config user.name', { encoding: 'utf-8', stdio: 'pipe' }).trim() || process.env.USER || process.env.USERNAME || 'tui-user';
+        } catch {
+          actorId = process.env.USER || process.env.USERNAME || 'tui-user';
+        }
+
         // Inject action handlers (side-effect execution stays in CLI layer)
         try {
           const { createActionHandlers } = await import('./tui-executors.js');
-          data.actionHandlers = createActionHandlers(root);
+          data.actionHandlers = createActionHandlers(root, actorId);
         } catch {
           // Action handlers unavailable — TUI will show CLI fallbacks
         }
