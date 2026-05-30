@@ -401,13 +401,14 @@ These rules come from `.openslack/self/constitution.md`, `.openslack/self/invari
 
 1. **No direct push to main.** All changes go through PRs.
 2. **No self-review.** An agent or human author must not approve their own PR.
-3. **No auto-approval.** Agents must never originate approval decisions or submit `APPROVE` reviews under bot/app/agent identity. They may analyze, comment, recommend, request changes, diagnose, watch, and merge only after valid human approval.
-4. **No sole-author-codeowner PR.** If a PR touches Red Zone paths and the author is the only valid CODEOWNER, the PR is governance-deadlocked. Recreate as bot/agent-authored, add a second real human CODEOWNER, or record an explicit bootstrap exception.
-5. **No self-prompt-edit.** Agents cannot edit their own registry or prompt files.
-6. **No validation bypass.** Do not disable, weaken, skip, or hide required checks.
-7. **No protected path modification without human approval.** Red Zone changes require human approval.
-8. **No secret access.** Agents cannot read, write, create, copy, or summarize `.env`, `*.pem`, `*.key`, `secrets/**`, `credentials/**`, or equivalent credential material.
-9. **Black Zone is never mergeable.** Black Zone PRs are rejected, not escalated.
+3. **No auto-approval.** Agents must never originate approval decisions or submit `APPROVE` reviews under bot/app/agent identity.
+4. **Merge after human approval.** Agents may merge PRs, but only after a valid human approval has been recorded. Agents may also analyze, comment, recommend, request changes, and diagnose.
+5. **No sole-author-codeowner PR.** If a PR touches Red Zone paths and the author is the only valid CODEOWNER, the PR is governance-deadlocked. Recreate as bot/agent-authored, add a second real human CODEOWNER, or record an explicit bootstrap exception.
+6. **No self-prompt-edit.** Agents cannot edit their own registry or prompt files.
+7. **No validation bypass.** Do not disable, weaken, skip, or hide required checks.
+8. **No protected path modification without human approval.** Red Zone changes require human approval.
+9. **No secret access.** Agents cannot read, write, create, copy, or summarize `.env`, `*.pem`, `*.key`, `secrets/**`, `credentials/**`, or equivalent credential material.
+10. **Black Zone is never mergeable.** Black Zone PRs are rejected, not escalated.
 
 Violation means immediate task failure and governance review.
 
