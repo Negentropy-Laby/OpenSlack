@@ -14,6 +14,9 @@ import { mapHomeToViewModel } from '../view-models/home.js'
 import { mapApprovalCenterToViewModel } from '../view-models/approval-center.js'
 import { mapWorkflowGalleryToViewModel } from '../view-models/workflow-gallery.js'
 import { mapIssuesPrToViewModel } from '../view-models/issues-pr.js'
+import { mapDigestToViewModel } from '../view-models/digest.js'
+import { mapHandoffListToViewModel } from '../view-models/handoff.js'
+import { mapDecisionListToViewModel } from '../view-models/decision.js'
 import type { ShellViewData, TuiActionHandlers } from './render-shell.js'
 
 import HomeView from './HomeView.js'
@@ -24,6 +27,10 @@ import DashboardView from './DashboardView.js'
 import PrQueueView from './PrQueueView.js'
 import StatusView from './StatusView.js'
 import ActivityView from './ActivityView.js'
+import DigestView from './DigestView.js'
+import HandoffListView from './HandoffListView.js'
+import DecisionListView from './DecisionListView.js'
+import RoomView from './RoomView.js'
 
 /**
  * A view that hasn't been wired to live data yet.
@@ -63,8 +70,6 @@ function PlaceholderView({ route }: { route: Route }): React.JSX.Element {
 function ActivityViewWrapper({ data }: { data?: ShellViewData }): React.JSX.Element {
   const { pop } = useNavigation()
 
-  // If we have full activity data from ShellViewData, use the proper ActivityView
-  // Otherwise fall back to showing dashboard recentActivity
   const activityItems = data?.dashboard?.recentActivity ?? []
 
   if (activityItems.length === 0) {
@@ -83,7 +88,6 @@ function ActivityViewWrapper({ data }: { data?: ShellViewData }): React.JSX.Elem
     )
   }
 
-  // Convert dashboard recentActivity to ActivityView model format
   return React.createElement(ActivityView, {
     model: {
       title: 'Activity Feed',
@@ -115,7 +119,7 @@ function ActivityViewWrapper({ data }: { data?: ShellViewData }): React.JSX.Elem
 /**
  * Maps a route to a rendered view component.
  */
-function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
+async function ViewRouter({ data }: { data?: ShellViewData }): Promise<React.JSX.Element> {
   const { current, pop } = useNavigation()
 
   switch (current.view) {
@@ -133,7 +137,6 @@ function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
       if (data?.prQueue) {
         return React.createElement(PrQueueView, { model: data.prQueue, onBack: pop })
       }
-      // Fall back to IssuesPrView with PR tab
       const issuesPrModel = mapIssuesPrToViewModel({ tab: 'prs' })
       return React.createElement(IssuesPrView, { model: issuesPrModel })
     }
@@ -154,6 +157,42 @@ function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
     }
     case 'activity': {
       return React.createElement(ActivityViewWrapper, { data })
+    }
+    case 'digest': {
+      if (data?.digest) {
+        return React.createElement(DigestView, { model: data.digest, onBack: pop })
+      }
+      return React.createElement(PlaceholderView, { route: current })
+    }
+    case 'handoffs': {
+      if (data?.handoffs) {
+        return React.createElement(HandoffListView, { model: data.handoffs, onBack: pop })
+      }
+      return React.createElement(PlaceholderView, { route: current })
+    }
+    case 'decisions': {
+      if (data?.decisions) {
+        return React.createElement(DecisionListView, { model: data.decisions, onBack: pop })
+      }
+      return React.createElement(PlaceholderView, { route: current })
+    }
+    case 'room': {
+      const roomId = current.params?.roomId as string | undefined
+      if (roomId) {
+        try {
+          const { buildRoomView } = await import('@openslack/collaboration')
+          const { readEvents } = await import('@openslack/collaboration')
+          const events = readEvents()
+          const room = buildRoomView(roomId, events)
+          if (room) {
+            const { mapRoomToViewModel } = await import('../view-models/room.js')
+            return React.createElement(RoomView, { model: mapRoomToViewModel(room) })
+          }
+        } catch {
+          // Room data unavailable
+        }
+      }
+      return React.createElement(PlaceholderView, { route: current })
     }
     case 'prs':
     case 'issues': {
