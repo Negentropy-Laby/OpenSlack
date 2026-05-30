@@ -75,3 +75,25 @@ export type {
   WorkflowImprovementIssue,
   WorkflowSplitIssue,
 } from './workflow-issues.js';
+export {
+  readRepoDirectory,
+  readRepoFile,
+  patchMarkerSection,
+  MarkerNotFoundError,
+  createBranch,
+  commitFileToBranch,
+  createProfileSyncPR,
+  parseFrontmatter,
+  extractBody,
+  validatePost,
+  sortPostsByDate,
+  renderLatestInsightsSection,
+} from './profile-sync.js';
+export type {
+  RepoFileEntry,
+  RepoFileContent,
+  ProfileSyncPRResult,
+  ParsedPost,
+  PostValidationError,
+  PostValidationResult,
+} from './profile-sync.js';

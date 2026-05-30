@@ -19,6 +19,11 @@ describe('claude-discovery', () => {
     rmSync(tmpDir, { recursive: true, force: true })
   })
 
+  /** Filter out builtin workflows so temp-dir tests are isolated. */
+  function withoutBuiltins<T extends { source: string }>(results: T[]): T[] {
+    return results.filter((r) => r.source !== 'builtin')
+  }
+
   // Helper to write a valid workflow to a directory
   function writeWorkflow(dir: string, filename: string, name: string) {
     mkdirSync(dir, { recursive: true })
@@ -51,7 +56,7 @@ const result = await agent("do work", { label: "scan", phase: "Scan" })
   describe('.mjs extension discovery', () => {
     it('discovers .mjs files from .openslack/workflows', async () => {
       writeWorkflow(join(tmpDir, '.openslack', 'workflows'), 'my-module.mjs', 'my-module')
-      const result = await discoverWorkflows(tmpDir)
+      const result = withoutBuiltins(await discoverWorkflows(tmpDir))
       expect(result).toHaveLength(1)
       expect(result[0].name).toBe('my-module')
       expect(result[0].path).toContain('my-module.mjs')
@@ -59,7 +64,7 @@ const result = await agent("do work", { label: "scan", phase: "Scan" })
 
     it('discovers .mjs files from .claude/workflows', async () => {
       writeWorkflow(join(tmpDir, '.claude', 'workflows'), 'claude-mod.mjs', 'claude-mod')
-      const result = await discoverWorkflows(tmpDir)
+      const result = withoutBuiltins(await discoverWorkflows(tmpDir))
       expect(result).toHaveLength(1)
       expect(result[0].name).toBe('claude-mod')
       expect(result[0].path).toContain('claude-mod.mjs')
@@ -74,7 +79,7 @@ const result = await agent("do work", { label: "scan", phase: "Scan" })
       writeFileSync(join(dir, 'c.ts'), `
 export const meta = { name: 'c', description: 'C', phases: [{ title: 'Scan', detail: 'Scan' }] }
 `)
-      const result = await discoverWorkflows(tmpDir)
+      const result = withoutBuiltins(await discoverWorkflows(tmpDir))
       expect(result).toHaveLength(3)
       const names = result.map(r => r.name).sort()
       expect(names).toEqual(['a', 'b', 'c'])
@@ -86,13 +91,13 @@ export const meta = { name: 'c', description: 'C', phases: [{ title: 'Scan', det
   describe('WorkflowSource labeling', () => {
     it('labels .openslack/workflows as "openslack-project"', async () => {
       writeWorkflow(join(tmpDir, '.openslack', 'workflows'), 'native.js', 'native')
-      const result = await discoverWorkflows(tmpDir)
+      const result = withoutBuiltins(await discoverWorkflows(tmpDir))
       expect(result[0].source).toBe('openslack-project')
     })
 
     it('labels .claude/workflows as "claude-project"', async () => {
       writeWorkflow(join(tmpDir, '.claude', 'workflows'), 'legacy.js', 'legacy')
-      const result = await discoverWorkflows(tmpDir)
+      const result = withoutBuiltins(await discoverWorkflows(tmpDir))
       expect(result[0].source).toBe('claude-project')
     })
 
@@ -101,7 +106,7 @@ export const meta = { name: 'c', description: 'C', phases: [{ title: 'Scan', det
       // which uses the same source mapping. Instead, we verify the source mapping logic
       // by checking that a project-local .claude/workflows gets "claude-project".
       writeWorkflow(join(tmpDir, '.claude', 'workflows'), 'home.js', 'home')
-      const result = await discoverWorkflows(tmpDir)
+      const result = withoutBuiltins(await discoverWorkflows(tmpDir))
       expect(result[0].source).toBe('claude-project')
     })
   })
@@ -121,7 +126,7 @@ export const meta = { name: 'dup', description: 'v1', phases: [{ title: 'A', det
       writeFileSync(join(dir2, 'dup.js'), `
 export const meta = { name: 'dup', description: 'v2', phases: [{ title: 'C', detail: 'D' }] }
 `)
-      const result = await discoverWorkflows(tmpDir)
+      const result = withoutBuiltins(await discoverWorkflows(tmpDir))
       expect(result).toHaveLength(1)
       expect(result[0].path).toContain('.openslack')
       expect(result[0].source).toBe('openslack-project')
@@ -135,7 +140,7 @@ export const meta = { name: 'dup', description: 'v2', phases: [{ title: 'C', det
       // then home dir. First match by name wins.
       writeWorkflow(join(tmpDir, '.claude', 'workflows'), 'shared.js', 'shared')
 
-      const result = await discoverWorkflows(tmpDir)
+      const result = withoutBuiltins(await discoverWorkflows(tmpDir))
       const shared = result.find(r => r.name === 'shared')
       expect(shared).toBeDefined()
       expect(shared!.source).toBe('claude-project')
@@ -155,7 +160,7 @@ export const meta = {
   phases: [{ title: 'Scan', detail: 'Scan' }]
 }
 `)
-      const result = await discoverJsWorkflows(tmpDir)
+      const result = withoutBuiltins(await discoverJsWorkflows(tmpDir))
       expect(result).toHaveLength(1)
       expect(result[0].format).toBe('anthropic-compatible')
     })
@@ -171,7 +176,7 @@ export const meta = {
 }
 export async function run() { return { status: 'ok' } }
 `)
-      const result = await discoverJsWorkflows(tmpDir)
+      const result = withoutBuiltins(await discoverJsWorkflows(tmpDir))
       expect(result).toHaveLength(1)
       expect(result[0].format).toBe('openslack-native')
     })
@@ -190,7 +195,7 @@ phase("Scan")
 log("Running ambient workflow")
 const result = await agent("do work", { label: "scan", phase: "Scan" })
 `)
-      const result = await discoverJsWorkflows(tmpDir)
+      const result = withoutBuiltins(await discoverJsWorkflows(tmpDir))
       expect(result).toHaveLength(1)
       expect(result[0].format).toBe('claude-ambient')
     })
@@ -205,7 +210,7 @@ export const meta = {
   phases: [{ title: 'Scan', detail: 'Scan' }]
 }
 `)
-      const result = await discoverJsWorkflows(tmpDir)
+      const result = withoutBuiltins(await discoverJsWorkflows(tmpDir))
       expect(result).toHaveLength(1)
       expect(result[0].source).toBe('claude-project')
     })
@@ -220,7 +225,7 @@ export const meta = {
   phases: [{ title: 'Scan', detail: 'Scan' }]
 }
 `)
-      const result = await discoverJsWorkflows(tmpDir)
+      const result = withoutBuiltins(await discoverJsWorkflows(tmpDir))
       expect(result).toHaveLength(1)
       expect(result[0].file).toBe('module.mjs')
     })
@@ -232,7 +237,7 @@ export const meta = {
       writeFileSync(join(dir, 'good.mjs'), `
 export const meta = { name: 'good', description: 'Good', phases: [{ title: 'A', detail: 'B' }] }
 `)
-      const result = await discoverJsWorkflows(tmpDir)
+      const result = withoutBuiltins(await discoverJsWorkflows(tmpDir))
       expect(result).toHaveLength(1)
       expect(result[0].name).toBe('good')
     })
@@ -251,7 +256,7 @@ export const meta = {
   ]
 }
 `)
-      const result = await discoverJsWorkflows(tmpDir)
+      const result = withoutBuiltins(await discoverJsWorkflows(tmpDir))
       expect(result).toHaveLength(1)
       expect(result[0].phases).toBe(3)
       expect(result[0].description).toBe('A detailed workflow')
