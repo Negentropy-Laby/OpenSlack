@@ -98,7 +98,7 @@ and `rolled_back`, but not those proposed cleanup states.
 - Running rollback creation repeatedly for the same experiment produces one
   active rollback proposal.
 - The 54 existing test rollback artifacts are closed with schema-valid state.
-- `pnpm test` includes regression coverage for duplicate rollback prevention.
+- `bun run test` includes regression coverage for duplicate rollback prevention.
 - `openslack workspace validate` accepts the resulting EVOL backlog.
 
 ## P0-B: Author/CODEOWNER Deadlock
@@ -170,7 +170,7 @@ The repository has five workflow files and currently uses:
 
 - `actions/checkout@v4`
 - `actions/setup-node@v4`
-- `pnpm/action-setup@v4`
+- `oven-sh/setup-bun@v2`
 - `actions/github-script@v7`
 
 One canary workflow uses `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true`, but the
@@ -180,7 +180,7 @@ force flag.
 ### Plan
 
 1. Audit all workflow action versions.
-   - Include `actions/github-script`, not only checkout/setup-node/pnpm setup.
+   - Include `actions/github-script`, not only checkout/setup-node/bun run setup.
    - Verify whether any local or composite actions exist before migration.
 
 2. Upgrade all JavaScript actions in one PR.
@@ -189,7 +189,7 @@ force flag.
    - Keep comments mapping each SHA to the source tag for maintainability.
 
 3. Make package-manager caching explicit.
-   - Decide between no setup-node cache and explicit pnpm cache.
+   - Decide between no setup-node cache and explicit bun run cache.
    - Do not rely on implicit cache behavior from `packageManager`.
    - If disabling implicit cache, set that explicitly in the workflow.
 
@@ -206,7 +206,7 @@ force flag.
 
 - All five workflows use Node-24-capable action versions.
 - All external actions are pinned to full-length SHAs.
-- `pnpm typecheck`, `pnpm test`, `pnpm -w run build`, and OpenSlack validation
+- `bun run typecheck`, `bun run test`, `bun run -w run build`, and OpenSlack validation
   workflows pass in CI.
 - The migration PR documents any setup-node cache behavior changes.
 
@@ -310,10 +310,10 @@ Completed order:
 
 Before closing this plan:
 
-- `pnpm typecheck`
-- `pnpm test`
-- `pnpm -w run build`
-- `pnpm openslack workspace validate`
-- `pnpm openslack self eval --suite golden --clean`
-- `pnpm openslack status verify`
+- `bun run typecheck`
+- `bun run test`
+- `bun run -w run build`
+- `bun run openslack workspace validate`
+- `bun run openslack self eval --suite golden --clean`
+- `bun run openslack status verify`
 - `bash scripts/genesis-validate.sh`

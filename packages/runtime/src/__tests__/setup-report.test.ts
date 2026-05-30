@@ -78,10 +78,10 @@ describe('getNextSteps', () => {
     expect(doctorStep).toBeDefined();
   });
 
-  it('all commands start with pnpm openslack', () => {
+  it('all commands start with bun run openslack', () => {
     const steps = getNextSteps();
     for (const step of steps) {
-      expect(step.command).toMatch(/^pnpm openslack /);
+      expect(step.command).toMatch(/^bun run openslack /);
     }
   });
 });

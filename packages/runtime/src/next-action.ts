@@ -27,7 +27,7 @@ export interface AttentionItem {
   priority: 'high' | 'medium' | 'low';
 }
 
-const RUNNABLE_PREFIXES = ['openslack ', 'pnpm openslack ', 'pnpm ', 'gh ', 'git ', 'bash ', 'wsl '];
+const RUNNABLE_PREFIXES = ['openslack ', 'bun run openslack ', 'bun run ', 'gh ', 'git ', 'bash ', 'wsl '];
 
 function isRunnableCommand(text: string | undefined): text is string {
   if (!text) return false;

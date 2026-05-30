@@ -44,9 +44,9 @@
 
 ### CLOSED: P1-2 — Node 20 Actions deprecation (time-bounded)
 
-**Source:** GitHub Actions runner deprecation notice. `actions/checkout@v4`, `actions/setup-node@v4`, `pnpm/action-setup@v4`, `actions/github-script@v7` all run on Node 20.
+**Source:** GitHub Actions runner deprecation notice. `actions/checkout@v4`, `actions/setup-node@v4`, `oven-sh/setup-bun@v2`, `actions/github-script@v7` all run on Node 20.
 **Impact:** Starting June 2, 2026, GitHub will force Node 24 for all actions. Node 20 support removed September 16, 2026. CI will break if action versions are not upgraded.
-**Resolution:** All five workflow files now use Node-24-capable pinned SHAs: `actions/checkout` v6.0.2, `actions/setup-node` v6.4.0, `pnpm/action-setup` v6.0.8, and `actions/github-script` v8.0.0. `setup-node` package-manager cache behavior is explicit.
+**Resolution:** All five workflow files now use Node-24-capable pinned SHAs: `actions/checkout` v6.0.2, `actions/setup-node` v6.4.0, `oven-sh/setup-bun` v2, and `actions/github-script` v8.0.0. `setup-node` package-manager cache behavior is explicit.
 **Closed:** 2026-05-24.
 **Filed:** 2026-05-22.
 
@@ -107,7 +107,7 @@
 
 ### CLOSED: P2-1 — observe.ts unit tests (process explosion fix)
 
-**Resolution:** `observeHealth()` refactored to accept optional `InjectedChecks` parameter. CLI path unchanged — `self observe` still runs `pnpm typecheck` and `pnpm test` via default parameters. Tests inject `{ passed, output }` directly — zero `execSync`, zero child processes, zero tinypool workers. Confirmed no recursive `vitest → pnpm test → vitest` explosion.
+**Resolution:** `observeHealth()` refactored to accept optional `InjectedChecks` parameter. CLI path unchanged — `self observe` still runs `bun run typecheck` and `bun run test` via default parameters. Tests inject `{ passed, output }` directly — zero `execSync`, zero child processes, zero tinypool workers. Confirmed no recursive `vitest → bun run test → vitest` explosion.
 **Closed:** 2026-05-16.
 
 ### CLOSED: P0-2 — Golden eval stubs

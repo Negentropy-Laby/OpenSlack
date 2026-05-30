@@ -6,6 +6,8 @@ OpenSlack is an agent-native collaboration workspace for human-agent teams. Agen
 
 **Core principle:** chat is a frontend, Git is the source of truth, and agents are workers — not chatbots.
 
+`AGENTS.md` and `CLAUDE.md` are byte-identical copies of the same canonical instructions. Any edit to one must be mirrored in the other. The test `apps/cli/src/__tests__/agent-docs-sync.test.ts` enforces this invariant.
+
 ---
 
 ## Start Here
@@ -19,6 +21,33 @@ Before making or reviewing changes, read these in order:
 5. This file — repository rules and agent constraints.
 
 Historical files such as `docs/product/phase-1.md` and archived product specs are useful background, but they are **not** the current source of truth.
+
+---
+
+## Immediate Startup Checklist
+
+1. Read `docs/status/current.md` for generated current state.
+2. Read `.openslack/modules.yaml` for the product module registry.
+3. Read `README.md` for the user-facing product overview.
+4. Read `docs/user-guide.md` only when you need the full CLI reference.
+5. Follow every constraint in this file before making changes.
+
+---
+
+## Working Rule
+
+Do not infer current status from old phase documents. Treat archived specs and old acceptance documents as historical context only.
+
+---
+
+## Safe Default Commands
+
+```bash
+bun run openslack status
+bun run openslack doctor
+bun run openslack status verify
+bun run openslack pr doctor <PR_NUMBER>
+```
 
 ---
 
@@ -174,10 +203,10 @@ Key packages:
 Most users should start with four commands:
 
 ```bash
-pnpm openslack setup
-pnpm openslack status
-pnpm openslack doctor
-pnpm openslack ask "检查系统状态"
+bun run openslack setup
+bun run openslack status
+bun run openslack doctor
+bun run openslack ask "检查系统状态"
 ```
 
 Advanced users and agents can use module commands directly:
@@ -203,8 +232,7 @@ Keep the docs simple and non-overlapping.
 | File | Purpose |
 |------|---------|
 | `README.md` | Short product overview, quick start, module summary, links. No dynamic metrics. |
-| `AGENTS.md` | Canonical instructions for all agents and contributors. |
-| `CLAUDE.md` | Claude Code entrypoint; should point back to AGENTS.md. |
+| `AGENTS.md` / `CLAUDE.md` | Identical canonical instructions for all agents and contributors. Either file may be read; they contain the same content. |
 | `docs/README.md` | User-oriented documentation map for the docs directory. |
 | `.openslack/modules.yaml` | Source of truth for product modules, phases, CLI groups, packages, and test counts. |
 | `docs/status/current.md` | Generated status document. Do not hand-edit except through `openslack status generate`. |
@@ -217,8 +245,8 @@ Keep the docs simple and non-overlapping.
 When module status, test counts, or CLI ownership changes:
 
 ```bash
-pnpm openslack status generate
-pnpm openslack status verify
+bun run openslack status generate
+bun run openslack status verify
 ```
 
 If `docs/status/current.md` changes after generation, commit the generated file with the source change.
@@ -243,20 +271,20 @@ All non-trivial changes follow this path:
 Recommended validation before opening or updating a PR:
 
 ```bash
-pnpm typecheck
-pnpm test
-pnpm -w run build
-pnpm openslack workspace validate
-pnpm openslack self eval --suite golden
-pnpm openslack status verify
+bun run typecheck
+bun run test
+bun run -w run build
+bun run openslack workspace validate
+bun run openslack self eval --suite golden
+bun run openslack status verify
 bash scripts/genesis-validate.sh
 ```
 
 For PR governance checks:
 
 ```bash
-pnpm openslack pr doctor <PR_NUMBER>
-pnpm openslack governance audit --count 20
+bun run openslack pr doctor <PR_NUMBER>
+bun run openslack governance audit --count 20
 ```
 
 ### PR Update Synchronization
@@ -348,13 +376,6 @@ Before opening an agent-delivered PR:
 If a PR is opened under the wrong human identity, do not merge it as-is when that human is the required reviewer or approval authority. Close or abandon the PR and recreate it under the configured bot/agent identity, or obtain approval from a different independent human who is valid for the affected paths.
 
 ### Bot-Authenticated PR Creation
-
-<!--
-MIRRORED: The body of this section must remain byte-identical to the
-"## Bot-Authenticated PR Creation" section in CLAUDE.md.
-If you edit one, you must edit the other with the exact same text.
-The sync test in apps/cli/src/__tests__/agent-docs-sync.test.ts enforces this.
--->
 
 All PRs created by agents or automation must use the bot-authenticated wrapper scripts. Never use `gh pr create` directly — the `gh` CLI defaults to the human OAuth identity.
 
@@ -541,7 +562,7 @@ Forbidden agent actions:
 
 Every file must have a clear purpose.
 
-- Do not keep empty stubs “for later.”
+- Do not keep empty stubs "for later."
 - Do not keep generated verification artifacts unless they are intentional workspace state.
 - Do not add packages without importable, tested functionality.
 - Do not duplicate command groups.
@@ -605,9 +626,9 @@ OpenSlack v0.1 RC has five product modules:
 For live status, run:
 
 ```bash
-pnpm openslack status
-pnpm openslack doctor
-pnpm openslack status verify
+bun run openslack status
+bun run openslack doctor
+bun run openslack status verify
 ```
 
 For full current state, read `docs/status/current.md`.

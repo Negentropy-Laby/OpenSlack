@@ -103,7 +103,7 @@ phases:
           Change `const TUI_V1_MINIMAL = true` to `false` or remove entirely.
           Verify componentDidMount sends ENABLE_MOUSE_TRACKING and
           ENTER_ALTERNATE_SCREEN; unmount sends the inverse.
-          Run pnpm lint to confirm no new errors from the change.
+          Run bun run lint to confirm no new errors from the change.
         issueRef: "{{inputs.issueNumber}}"
         nextSteps:
           - Verify terminal mode assertions in App.tsx

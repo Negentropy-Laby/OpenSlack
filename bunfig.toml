@@ -1,0 +1,5 @@
+[install]
+text-lockfile = true
+
+[install.trustedDependencies]
+esbuild = true

@@ -50,7 +50,7 @@ export function doctorCommands(): Command {
 
       // Golden evals check
       try {
-        execSync('pnpm openslack self eval --suite golden', { cwd: root, stdio: 'pipe', encoding: 'utf-8' });
+        execSync('bun run openslack self eval --suite golden', { cwd: root, stdio: 'pipe', encoding: 'utf-8' });
         checks.push({ name: 'Golden evals', state: 'PASS', detail: '7/7 passing' });
       } catch {
         checks.push({ name: 'Golden evals', state: 'FAIL', detail: 'Some evals failed' });

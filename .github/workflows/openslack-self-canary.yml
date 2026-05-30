@@ -27,18 +27,20 @@ jobs:
           node-version: "22"
           package-manager-cache: false
 
-      # Install pnpm globally (bypasses pnpm/action-setup download issues)
-      - run: npm install -g pnpm@10
+      # Setup bun
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
 
-      - run: pnpm install --frozen-lockfile
+      - run: bun install --frozen-lockfile
 
-      - run: pnpm build
+      - run: bun run build
 
       - name: Run canary company bootstrap
         run: |
-          pnpm openslack workspace validate
-          pnpm openslack self eval --suite golden
+          bun run openslack workspace validate
+          bun run openslack self eval --suite golden
 
       - name: Run canary agent claim flow
-        run: pnpm openslack self classify-pr --paths "apps/cli/src/index.ts" --format json
+        run: bun run openslack self classify-pr --paths "apps/cli/src/index.ts" --format json
 # Red zone test

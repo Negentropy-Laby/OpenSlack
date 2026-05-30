@@ -27,19 +27,21 @@ jobs:
           node-version: "22"
           package-manager-cache: false
 
-      # Install pnpm globally (bypasses pnpm/action-setup download issues)
-      - run: npm install -g pnpm@10
+      # Setup bun
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
 
-      - run: pnpm install --frozen-lockfile
+      - run: bun install --frozen-lockfile
 
-      - run: pnpm build
+      - run: bun run build
 
       - name: Classify PR risk zone
         id: classify
         run: |
           CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...${{ github.sha }} | paste -sd ',' -)
           echo "Changed paths: $CHANGED"
-          RESULT=$(pnpm --silent openslack self classify-pr --paths "$CHANGED" --format json 2>/dev/null || echo '{"riskZone":"unknown"}')
+          RESULT=$(bun run --silent openslack self classify-pr --paths "$CHANGED" --format json 2>/dev/null || echo '{"riskZone":"unknown"}')
           echo "$RESULT"
           ZONE=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('riskZone','unknown'))")
           echo "risk_zone=$ZONE" >> $GITHUB_OUTPUT

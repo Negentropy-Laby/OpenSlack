@@ -22,26 +22,26 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 ### 1. Start using OpenSlack on a new checkout
 
 ```bash
-pnpm openslack setup interactive    # Guided onboarding with step-by-step prompts
-pnpm openslack status               # See module status and recommended next steps
-pnpm openslack collaboration dashboard  # Check team activity
+bun run openslack setup interactive    # Guided onboarding with step-by-step prompts
+bun run openslack status               # See module status and recommended next steps
+bun run openslack collaboration dashboard  # Check team activity
 ```
 
 ### 2. Create a task for work
 
 ```bash
-pnpm openslack task create --title "Fix login redirect" --path "packages/kernel/**" --preview
+bun run openslack task create --title "Fix login redirect" --path "packages/kernel/**" --preview
 # Review the preview, then:
-pnpm openslack task create --title "Fix login redirect" --path "packages/kernel/**" --create-issue
+bun run openslack task create --title "Fix login redirect" --path "packages/kernel/**" --create-issue
 ```
 
 ### 3. Check if a PR can merge
 
 ```bash
-pnpm openslack pr doctor 42         # Full 11-gate governance diagnosis
-pnpm openslack pr recommend 42      # What to do next
+bun run openslack pr doctor 42         # Full 11-gate governance diagnosis
+bun run openslack pr recommend 42      # What to do next
 # If ready:
-pnpm openslack pr merge 42
+bun run openslack pr merge 42
 ```
 
 If GitHub reports that base branch policy blocks the merge, check unresolved
@@ -51,15 +51,15 @@ dismissed by a newer commit.
 ### 4. See team activity and blockers
 
 ```bash
-pnpm openslack collaboration dashboard          # Overview with blockers
-pnpm openslack collaboration room show pr:42     # Focus on one PR
-pnpm openslack collaboration activity --since 8  # Recent events
+bun run openslack collaboration dashboard          # Overview with blockers
+bun run openslack collaboration room show pr:42     # Focus on one PR
+bun run openslack collaboration activity --since 8  # Recent events
 ```
 
 ### 5. Hand off work to another agent or human
 
 ```bash
-pnpm openslack collaboration handoff create \
+bun run openslack collaboration handoff create \
   --from claude --to codex \
   --context "Refactoring auth middleware, 3 files remain" \
   --steps "Complete auth refactor,Run tests,Open PR" \
@@ -69,9 +69,9 @@ pnpm openslack collaboration handoff create \
 ### 6. Run a workflow template
 
 ```bash
-pnpm openslack collaboration workflow preview <file> --input issue_number=7
+bun run openslack collaboration workflow preview <file> --input issue_number=7
 # Review the preview, then:
-pnpm openslack collaboration workflow execute <file> --input issue_number=7
+bun run openslack collaboration workflow execute <file> --input issue_number=7
 ```
 
 Use an existing workflow YAML file path for `<file>`.
@@ -83,9 +83,9 @@ Use an existing workflow YAML file path for `<file>`.
 First actions: understand the workspace and check status.
 
 ```bash
-pnpm openslack setup interactive     # Guided onboarding
-pnpm openslack status                # What's happening
-pnpm openslack collaboration digest  # Recent summary
+bun run openslack setup interactive     # Guided onboarding
+bun run openslack status                # What's happening
+bun run openslack collaboration digest  # Recent summary
 ```
 
 ### Task Creator
@@ -93,9 +93,9 @@ pnpm openslack collaboration digest  # Recent summary
 Create, track, and manage issues.
 
 ```bash
-pnpm openslack task create --title "..." --preview   # Preview before creating
-pnpm openslack task create --title "..." --create-issue  # Create on GitHub
-pnpm openslack github metrics                         # Check task loop health
+bun run openslack task create --title "..." --preview   # Preview before creating
+bun run openslack task create --title "..." --create-issue  # Create on GitHub
+bun run openslack github metrics                         # Check task loop health
 ```
 
 ### PR Reviewer
@@ -103,10 +103,10 @@ pnpm openslack github metrics                         # Check task loop health
 Diagnose and approve PRs.
 
 ```bash
-pnpm openslack pr doctor <n>          # Full governance diagnosis
-pnpm openslack pr recommend <n>       # Next action
-pnpm openslack pr review <n> --comment  # Post review as PR comment
-pnpm openslack pr queue               # All open PRs by readiness
+bun run openslack pr doctor <n>          # Full governance diagnosis
+bun run openslack pr recommend <n>       # Next action
+bun run openslack pr review <n> --comment  # Post review as PR comment
+bun run openslack pr queue               # All open PRs by readiness
 ```
 
 ### Agent Operator
@@ -114,9 +114,9 @@ pnpm openslack pr queue               # All open PRs by readiness
 Manage agent lifecycle and task claiming.
 
 ```bash
-pnpm openslack agent hire --agent-id <id>    # Generate onboarding package
-pnpm openslack agent bootstrap --agent-id <id>  # Verify readiness
-pnpm openslack agent tick --agent-id <id> --source github-issues  # Claim work
+bun run openslack agent hire --agent-id <id>    # Generate onboarding package
+bun run openslack agent bootstrap --agent-id <id>  # Verify readiness
+bun run openslack agent tick --agent-id <id> --source github-issues  # Claim work
 ```
 
 ### Repository Admin
@@ -124,10 +124,10 @@ pnpm openslack agent tick --agent-id <id> --source github-issues  # Claim work
 Governance, branch protection, and workspace health.
 
 ```bash
-pnpm openslack governance audit              # Check direct-push compliance
-pnpm openslack governance audit --count 50   # Wider audit scope
-pnpm openslack setup github --repair-labels --apply  # Fix missing labels
-pnpm openslack status generate && pnpm openslack status verify  # Sync docs
+bun run openslack governance audit              # Check direct-push compliance
+bun run openslack governance audit --count 50   # Wider audit scope
+bun run openslack setup github --repair-labels --apply  # Fix missing labels
+bun run openslack status generate && bun run openslack status verify  # Sync docs
 ```
 
 ## Understanding Output Formats

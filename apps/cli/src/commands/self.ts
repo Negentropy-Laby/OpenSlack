@@ -223,8 +223,8 @@ export function selfCommands(): Command {
     .option('--experiment <id>', 'Experiment ID')
     .action((options) => {
       const score = computeFitnessScore({ checks: {
-        'unit-tests': { result: 'pass', command: 'pnpm test' },
-        'typecheck': { result: 'pass', command: 'pnpm typecheck' },
+        'unit-tests': { result: 'pass', command: 'bun run test' },
+        'typecheck': { result: 'pass', command: 'bun run typecheck' },
         'workspace-validate': { result: 'pass', command: 'openslack workspace validate' },
         'self-eval': { result: 'pass', command: 'openslack self eval' },
         'security-scan': { result: 'pass', command: '', findings: [] },
