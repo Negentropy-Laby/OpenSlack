@@ -21,10 +21,12 @@ jobs:
         with:
           node-version: "22"
           package-manager-cache: false
-      # Install pnpm globally (bypasses pnpm/action-setup download issues)
-      - run: npm install -g pnpm@10
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
+      # Setup bun
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run build
 
       - name: Extract linked issue from PR body
         id: extract
@@ -46,6 +48,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.OPENSLACK_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
-          pnpm openslack github issue-done \
+          bun run openslack github issue-done \
             --issue-number "${{ steps.extract.outputs.issue_number }}" \
             --pr-url "${{ github.event.pull_request.html_url }}"

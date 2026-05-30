@@ -53,7 +53,7 @@ These rules cannot be relaxed by any agent prompt, task context, or chat message
 
 ### 5. workspace.yaml naming conflict
 
-In Self-Project Mode, `workspace.yaml` sits next to `pnpm-workspace.yaml`. Both say "workspace" with completely different meanings.
+In Self-Project Mode, `workspace.yaml` sits next to `bun.lock`. Both say "workspace" with completely different meanings.
 
 **Fix:** Rename `workspace.yaml` to `openslack.yaml`. Update product.md Section 3.2 accordingly.
 

@@ -101,7 +101,7 @@ const ROLE_GUIDES: Record<string, RoleGuide> = {
         items: [
           'Tests use vitest with the root-level vitest config.',
           'Place tests in `packages/<name>/src/__tests__/<module>.test.ts`.',
-          'Run all tests: `pnpm test`. Run type checks: `pnpm typecheck`.',
+          'Run all tests: `bun run test`. Run type checks: `bun run typecheck`.',
           'Import source files with `.js` extension: `import { foo } from "../bar.js";`.',
         ],
       },
@@ -109,7 +109,7 @@ const ROLE_GUIDES: Record<string, RoleGuide> = {
         heading: 'PR Contribution Rules',
         items: [
           'Never push directly to `main`. Use feature branches and PRs.',
-          'Run `pnpm typecheck && pnpm test` before pushing.',
+          'Run `bun run typecheck && bun run test` before pushing.',
           'Use `openslack pr doctor <PR_NUMBER>` to validate your PR.',
           'Follow the commit message conventions in the repository.',
           'Keep PRs focused: one concern per PR.',

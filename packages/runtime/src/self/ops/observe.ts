@@ -32,7 +32,7 @@ function findRepoRoot(): string {
 
 function runTypecheck(root: string): { passed: boolean; output: string } {
   try {
-    const output = execSync('pnpm typecheck', { cwd: root, stdio: 'pipe', timeout: 60000 }).toString();
+    const output = execSync('bun run typecheck', { cwd: root, stdio: 'pipe', timeout: 60000 }).toString();
     return { passed: true, output };
   } catch (e) {
     const stderr = (e as { stderr?: Buffer }).stderr?.toString() || (e as Error).message;
@@ -42,7 +42,7 @@ function runTypecheck(root: string): { passed: boolean; output: string } {
 
 function runTests(root: string): { passed: boolean; output: string } {
   try {
-    const output = execSync('pnpm test --reporter=verbose', { cwd: root, stdio: 'pipe', timeout: 60000 }).toString();
+    const output = execSync('npx vitest run --reporter=verbose', { cwd: root, stdio: 'pipe', timeout: 60000 }).toString();
     return { passed: true, output };
   } catch (e) {
     const execErr = e as { stdout?: Buffer; stderr?: Buffer };

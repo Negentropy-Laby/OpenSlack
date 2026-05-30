@@ -5,9 +5,9 @@ describe('computeFitnessScore', () => {
   it('returns pass for all-passing checks', () => {
     const score = computeFitnessScore({
       checks: {
-        'unit-tests': { result: 'pass', command: 'pnpm test' },
-        'integration-tests': { result: 'pass', command: 'pnpm test:integration' },
-        'typecheck': { result: 'pass', command: 'pnpm typecheck' },
+        'unit-tests': { result: 'pass', command: 'bun run test' },
+        'integration-tests': { result: 'pass', command: 'bun run test:integration' },
+        'typecheck': { result: 'pass', command: 'bun run typecheck' },
         'workspace-validate': { result: 'pass', command: 'openslack workspace validate' },
         'self-eval': { result: 'pass', command: 'openslack self eval' },
         'security-scan': { result: 'pass', command: 'openslack self scan-secrets', findings: [] },
@@ -20,8 +20,8 @@ describe('computeFitnessScore', () => {
   it('returns block when tests fail', () => {
     const score = computeFitnessScore({
       checks: {
-        'unit-tests': { result: 'fail', command: 'pnpm test' },
-        'typecheck': { result: 'pass', command: 'pnpm typecheck' },
+        'unit-tests': { result: 'fail', command: 'bun run test' },
+        'typecheck': { result: 'pass', command: 'bun run typecheck' },
         'workspace-validate': { result: 'pass', command: 'openslack workspace validate' },
         'self-eval': { result: 'pass', command: 'openslack self eval' },
         'security-scan': { result: 'pass', command: 'openslack self scan-secrets', findings: [] },
@@ -34,9 +34,9 @@ describe('computeFitnessScore', () => {
   it('drops security dimension when secrets found', () => {
     const score = computeFitnessScore({
       checks: {
-        'unit-tests': { result: 'pass', command: 'pnpm test' },
-        'integration-tests': { result: 'pass', command: 'pnpm test:integration' },
-        'typecheck': { result: 'pass', command: 'pnpm typecheck' },
+        'unit-tests': { result: 'pass', command: 'bun run test' },
+        'integration-tests': { result: 'pass', command: 'bun run test:integration' },
+        'typecheck': { result: 'pass', command: 'bun run typecheck' },
         'workspace-validate': { result: 'pass', command: 'openslack workspace validate' },
         'self-eval': { result: 'pass', command: 'openslack self eval' },
         'security-scan': { result: 'fail', command: 'openslack self scan-secrets', findings: ['API_KEY_LEAK'] },
@@ -49,8 +49,8 @@ describe('computeFitnessScore', () => {
   it('penalizes large diffs', () => {
     const score = computeFitnessScore({
       checks: {
-        'unit-tests': { result: 'pass', command: 'pnpm test' },
-        'typecheck': { result: 'pass', command: 'pnpm typecheck' },
+        'unit-tests': { result: 'pass', command: 'bun run test' },
+        'typecheck': { result: 'pass', command: 'bun run typecheck' },
         'workspace-validate': { result: 'pass', command: 'openslack workspace validate' },
         'self-eval': { result: 'pass', command: 'openslack self eval' },
         'security-scan': { result: 'pass', command: 'openslack self scan-secrets', findings: [] },
@@ -64,8 +64,8 @@ describe('computeFitnessScore', () => {
   it('penalizes new dependencies', () => {
     const score = computeFitnessScore({
       checks: {
-        'unit-tests': { result: 'pass', command: 'pnpm test' },
-        'typecheck': { result: 'pass', command: 'pnpm typecheck' },
+        'unit-tests': { result: 'pass', command: 'bun run test' },
+        'typecheck': { result: 'pass', command: 'bun run typecheck' },
         'workspace-validate': { result: 'pass', command: 'openslack workspace validate' },
         'self-eval': { result: 'pass', command: 'openslack self eval' },
         'security-scan': { result: 'pass', command: 'openslack self scan-secrets', findings: [] },
@@ -78,8 +78,8 @@ describe('computeFitnessScore', () => {
   it('returns all six dimensions with weights', () => {
     const score = computeFitnessScore({
       checks: {
-        'unit-tests': { result: 'pass', command: 'pnpm test' },
-        'typecheck': { result: 'pass', command: 'pnpm typecheck' },
+        'unit-tests': { result: 'pass', command: 'bun run test' },
+        'typecheck': { result: 'pass', command: 'bun run typecheck' },
         'workspace-validate': { result: 'pass', command: 'openslack workspace validate' },
         'self-eval': { result: 'pass', command: 'openslack self eval' },
         'security-scan': { result: 'pass', command: 'openslack self scan-secrets', findings: [] },

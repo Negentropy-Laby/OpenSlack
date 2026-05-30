@@ -26,39 +26,41 @@ jobs:
           node-version: "22"
           package-manager-cache: false
 
-      # Install pnpm globally (bypasses pnpm/action-setup download issues)
-      - run: npm install -g pnpm@10
+      # Setup bun
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
 
-      - run: pnpm install --frozen-lockfile
+      - run: bun install --frozen-lockfile
 
-      - run: pnpm build
+      - run: bun run build
 
       - name: Regenerate status doc
-        run: pnpm openslack status generate
+        run: bun run openslack status generate
 
       - name: Check for uncommitted status changes
         run: git diff --exit-code docs/status/current.md
 
       - name: Status consistency check
-        run: pnpm openslack status verify
+        run: bun run openslack status verify
 
       - name: Workspace validate
-        run: pnpm openslack workspace validate
+        run: bun run openslack workspace validate
 
       - name: Policy validate
-        run: pnpm openslack self validate
+        run: bun run openslack self validate
 
       - name: Typecheck
-        run: pnpm typecheck
+        run: bun run typecheck
 
       - name: Lint
-        run: pnpm lint
+        run: bun run lint
 
       - name: Tests
-        run: pnpm test
+        run: npx vitest run
 
       - name: Self eval
-        run: pnpm openslack self eval --suite golden
+        run: bun run openslack self eval --suite golden
 
       - name: Security scan (black zone check)
-        run: pnpm openslack self classify-pr --paths "$(git diff --name-only HEAD~1 || echo docs/test.md)" --format json
+        run: bun run openslack self classify-pr --paths "$(git diff --name-only HEAD~1 || echo docs/test.md)" --format json

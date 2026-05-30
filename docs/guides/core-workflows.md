@@ -13,14 +13,14 @@ For the full CLI reference, see [`user-guide.md`](../user-guide.md).
 **Start here:**
 
 ```bash
-pnpm openslack setup
+bun run openslack setup
 ```
 
 **What you will see:** A pass/fail report for workspace validation, golden evals, GitHub authentication, label inventory, and genesis integrity. Each section shows a status and recommended fix if something failed.
 
 **Safe default:** `setup` is read-only. It diagnoses problems but does not change external state. Use `setup github --apply` only when you are ready to repair labels or configuration.
 
-**Next action:** If all checks pass, run `pnpm openslack status` to see the current module dashboard, or proceed to Workflow 2 to run a workflow. If something failed, follow the recommended fix in the report, then re-run `setup`.
+**Next action:** If all checks pass, run `bun run openslack status` to see the current module dashboard, or proceed to Workflow 2 to run a workflow. If something failed, follow the recommended fix in the report, then re-run `setup`.
 
 ---
 
@@ -31,8 +31,8 @@ pnpm openslack setup
 **Start here:**
 
 ```bash
-pnpm openslack collaboration workflow list
-pnpm openslack collaboration workflow preview <file> --input key=value
+bun run openslack collaboration workflow list
+bun run openslack collaboration workflow preview <file> --input key=value
 ```
 
 **What you will see:** The `list` command shows all available workflows from project-local, builtin, and template paths. The `preview` command displays phases, declared inputs, permissions, side effects, and estimated scope without executing anything.
@@ -42,8 +42,8 @@ pnpm openslack collaboration workflow preview <file> --input key=value
 **Next action:**
 
 ```bash
-pnpm openslack collaboration workflow dry-run <name> --input key=value
-pnpm openslack collaboration workflow run <name> --input key=value
+bun run openslack collaboration workflow dry-run <name> --input key=value
+bun run openslack collaboration workflow run <name> --input key=value
 ```
 
 For interactive execution with a TUI, add `--format tui` where supported. To inspect a completed run, use `openslack collaboration inspect <runId>`.
@@ -57,7 +57,7 @@ For interactive execution with a TUI, add `--format tui` where supported. To ins
 **Start here:**
 
 ```bash
-pnpm openslack pr queue
+bun run openslack pr queue
 ```
 
 **What you will see:** All open PRs sorted by merge readiness and blocker owner. Blocked PRs show the blocker, the person or agent who owns the blocker, and a reason summary.
@@ -67,7 +67,7 @@ pnpm openslack pr queue
 **Next action:**
 
 ```bash
-pnpm openslack pr doctor <PR_NUMBER>
+bun run openslack pr doctor <PR_NUMBER>
 ```
 
 The doctor report runs 11 governance gates and tells you exactly which gate failed, who owns the fix, what evidence is needed, and the recommended next action. Follow the recommendation, then re-run `pr doctor` to confirm the blocker is resolved. For an interactive view, use `pr doctor <n> --format tui`.
@@ -81,7 +81,7 @@ The doctor report runs 11 governance gates and tells you exactly which gate fail
 **Start here:**
 
 ```bash
-pnpm openslack collaboration dashboard
+bun run openslack collaboration dashboard
 ```
 
 **What you will see:** The dashboard shows pending handoffs, open decisions, active PRs, and any actions awaiting human confirmation. Items are grouped by type and flagged with the person or agent responsible for the next step.
@@ -91,8 +91,8 @@ pnpm openslack collaboration dashboard
 **Next action:** For a PR that is ready, review the PRMS report:
 
 ```bash
-pnpm openslack pr doctor <PR_NUMBER>
-pnpm openslack pr merge <PR_NUMBER>
+bun run openslack pr doctor <PR_NUMBER>
+bun run openslack pr merge <PR_NUMBER>
 ```
 
 For a workflow awaiting approval, confirm through the chat gateway card or run the merge with `--yes` only after verifying the preview. For a handoff or decision, use `collaboration handoff accept <id>` or `collaboration decision record ...` to record your response.
@@ -106,8 +106,8 @@ For a workflow awaiting approval, confirm through the chat gateway card or run t
 **Start here:**
 
 ```bash
-pnpm openslack collaboration activity --since 24
-pnpm openslack collaboration digest --since 24
+bun run openslack collaboration activity --since 24
+bun run openslack collaboration digest --since 24
 ```
 
 **What you will see:** The activity feed shows a chronological event stream from the last 24 hours: task claims, PR reviews, handoffs, decisions, and workflow executions. The digest groups events by category with counts and highlights.
@@ -117,8 +117,8 @@ pnpm openslack collaboration digest --since 24
 **Next action:** Drill into a specific item:
 
 ```bash
-pnpm openslack collaboration room show pr:42
-pnpm openslack collaboration handoff show <id>
+bun run openslack collaboration room show pr:42
+bun run openslack collaboration handoff show <id>
 ```
 
 For an interactive view, use `--format tui` on the dashboard or room commands.
@@ -132,7 +132,7 @@ For an interactive view, use `--format tui` on the dashboard or room commands.
 **Start here:**
 
 ```bash
-pnpm openslack collaboration handoff create \
+bun run openslack collaboration handoff create \
   --from claude --to codex \
   --context "Refactoring auth middleware, 3 files remain" \
   --steps "Complete auth refactor,Run tests,Open PR" \
@@ -146,7 +146,7 @@ pnpm openslack collaboration handoff create \
 **Next action:** To record a decision:
 
 ```bash
-pnpm openslack collaboration decision record \
+bun run openslack collaboration decision record \
   --topic "Use SQLite for local cache" \
   --decision "Adopt SQLite with WAL mode" \
   --rationale "Simpler than rolling file-based cache, proven concurrency" \

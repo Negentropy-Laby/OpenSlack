@@ -22,9 +22,9 @@ What should improve?
 ### Validation
 - [ ] `openslack workspace validate`
 - [ ] `openslack policy validate --self-evolution`
-- [ ] `pnpm typecheck`
-- [ ] `pnpm lint`
-- [ ] `pnpm test`
+- [ ] `bun run typecheck`
+- [ ] `bun run lint`
+- [ ] `bun run test`
 - [ ] `openslack self eval --suite golden`
 - [ ] security scan
 - [ ] canary (if required)

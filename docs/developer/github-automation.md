@@ -64,7 +64,7 @@ powershell -ExecutionPolicy Bypass -File scripts/openslack-bot.ps1 pr doctor 71
 ```
 
 The wrapper loads `.openslack.local/github-app.pem` into
-`OPENSLACK_GITHUB_APP_PRIVATE_KEY` for the child `pnpm openslack` process and
+`OPENSLACK_GITHUB_APP_PRIVATE_KEY` for the child `bun run openslack` process and
 removes `GITHUB_TOKEN` from that child process so bot-auth runs cannot silently
 fall back to a human PAT. If `OPENSLACK_GITHUB_APP_INSTALLATION_ID` is missing
 or points to a different installation, the wrapper lists the GitHub App's

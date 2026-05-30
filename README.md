@@ -15,9 +15,9 @@ OpenSlack lets heterogeneous AI agents (Claude Code, Codex, reviewers, researche
 Three commands to get going:
 
 ```bash
-pnpm openslack setup          # Validate workspace, GitHub auth, golden evals
-pnpm openslack collaboration dashboard --format tui   # Interactive team dashboard
-pnpm openslack status         # Module health, test counts, GitHub ops
+bun run openslack setup          # Validate workspace, GitHub auth, golden evals
+bun run openslack collaboration dashboard --format tui   # Interactive team dashboard
+bun run openslack status         # Module health, test counts, GitHub ops
 ```
 
 ```
@@ -33,24 +33,24 @@ See the step-by-step guides: [`docs/guides/core-workflows.md`](docs/guides/core-
 ## Quick Start
 
 ```bash
-# Prerequisites: Node.js >= 22, pnpm, python (for genesis scripts)
+# Prerequisites: Node.js >= 22, bun, python (for genesis scripts)
 
 # 1. Clone and install
 git clone https://github.com/Negentropy-Laby/OpenSlack.git
 cd OpenSlack
-pnpm install
+bun install
 
 # 2. One-step setup (validate + eval + doctor + all checks)
-pnpm openslack setup
+bun run openslack setup
 
 # 3. Check GitHub setup without mutating external state
-pnpm openslack setup github
+bun run openslack setup github
 
 # 4. Check status
-pnpm openslack status
+bun run openslack status
 
 # 5. Ask the Operator anything
-pnpm openslack ask "检查系统状态"
+bun run openslack ask "检查系统状态"
 ```
 
 See [Advanced Setup](#advanced-setup) for development mode, production builds, and manual steps.
@@ -59,12 +59,12 @@ See [Advanced Setup](#advanced-setup) for development mode, production builds, a
 
 | Goal | Command |
 |------|---------|
-| First local health check | `pnpm openslack setup` |
-| Check status without guessing modules | `pnpm openslack status` |
-| Ask in natural language | `pnpm openslack ask "检查系统状态"` |
-| Create a task preview | `pnpm openslack task create --title "Fix docs" --path "docs/**" --preview` |
-| Diagnose a PR | `pnpm openslack pr doctor <PR_NUMBER>` |
-| See team activity | `pnpm openslack collaboration dashboard` |
+| First local health check | `bun run openslack setup` |
+| Check status without guessing modules | `bun run openslack status` |
+| Ask in natural language | `bun run openslack ask "检查系统状态"` |
+| Create a task preview | `bun run openslack task create --title "Fix docs" --path "docs/**" --preview` |
+| Diagnose a PR | `bun run openslack pr doctor <PR_NUMBER>` |
+| See team activity | `bun run openslack collaboration dashboard` |
 | Find the full CLI reference | [`docs/user-guide.md`](docs/user-guide.md) |
 
 Mutation-oriented commands default to preview or require explicit confirmation flags where possible. Chat confirmations are never GitHub approvals, and PR merges still require PRMS and GitHub governance gates.
@@ -171,7 +171,7 @@ alias openslack="node --import tsx $(pwd)/apps/cli/src/index.ts"
 ### Production build
 
 ```bash
-pnpm build
+bun run build
 export PATH="$(pwd)/apps/cli/dist:$PATH"
 openslack setup
 ```
@@ -181,7 +181,7 @@ openslack setup
 If you prefer to run checks individually instead of `openslack setup`:
 
 ```bash
-pnpm typecheck              # Build all packages + type-check
+bun run typecheck              # Build all packages + type-check
 openslack workspace validate
 openslack self eval --suite golden    # 7/7 must pass
 openslack doctor                        # Multi-module health check

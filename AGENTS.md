@@ -43,10 +43,10 @@ Do not infer current status from old phase documents. Treat archived specs and o
 ## Safe Default Commands
 
 ```bash
-pnpm openslack status
-pnpm openslack doctor
-pnpm openslack status verify
-pnpm openslack pr doctor <PR_NUMBER>
+bun run openslack status
+bun run openslack doctor
+bun run openslack status verify
+bun run openslack pr doctor <PR_NUMBER>
 ```
 
 ---
@@ -203,10 +203,10 @@ Key packages:
 Most users should start with four commands:
 
 ```bash
-pnpm openslack setup
-pnpm openslack status
-pnpm openslack doctor
-pnpm openslack ask "检查系统状态"
+bun run openslack setup
+bun run openslack status
+bun run openslack doctor
+bun run openslack ask "检查系统状态"
 ```
 
 Advanced users and agents can use module commands directly:
@@ -245,8 +245,8 @@ Keep the docs simple and non-overlapping.
 When module status, test counts, or CLI ownership changes:
 
 ```bash
-pnpm openslack status generate
-pnpm openslack status verify
+bun run openslack status generate
+bun run openslack status verify
 ```
 
 If `docs/status/current.md` changes after generation, commit the generated file with the source change.
@@ -271,20 +271,20 @@ All non-trivial changes follow this path:
 Recommended validation before opening or updating a PR:
 
 ```bash
-pnpm typecheck
-pnpm test
-pnpm -w run build
-pnpm openslack workspace validate
-pnpm openslack self eval --suite golden
-pnpm openslack status verify
+bun run typecheck
+bun run test
+bun run -w run build
+bun run openslack workspace validate
+bun run openslack self eval --suite golden
+bun run openslack status verify
 bash scripts/genesis-validate.sh
 ```
 
 For PR governance checks:
 
 ```bash
-pnpm openslack pr doctor <PR_NUMBER>
-pnpm openslack governance audit --count 20
+bun run openslack pr doctor <PR_NUMBER>
+bun run openslack governance audit --count 20
 ```
 
 ### PR Update Synchronization
@@ -626,9 +626,9 @@ OpenSlack v0.1 RC has five product modules:
 For live status, run:
 
 ```bash
-pnpm openslack status
-pnpm openslack doctor
-pnpm openslack status verify
+bun run openslack status
+bun run openslack doctor
+bun run openslack status verify
 ```
 
 For full current state, read `docs/status/current.md`.
