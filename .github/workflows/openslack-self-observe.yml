@@ -24,15 +24,17 @@ jobs:
           node-version: "22"
           package-manager-cache: false
 
-      # Install pnpm globally (bypasses pnpm/action-setup download issues)
-      - run: npm install -g pnpm@10
+      # Setup bun
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
 
-      - run: pnpm install --frozen-lockfile
+      - run: bun install --frozen-lockfile
 
-      - run: pnpm build
+      - run: bun run build
 
       - name: Observe OpenSlack health
-        run: pnpm openslack self observe
+        run: bun run openslack self observe
 
       - name: Create evolution tasks
-        run: pnpm openslack self triage --create-issues
+        run: bun run openslack self triage --create-issues

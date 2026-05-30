@@ -101,7 +101,7 @@ export function triageObservations(observations: Observation[]): string[] {
         forbidden_paths: ['.env', 'secrets/**', 'credentials/**'],
       },
       validation: {
-        required: ['pnpm typecheck', 'pnpm test'],
+        required: ['bun run typecheck', 'bun run test'],
       },
       output_contract: {
         must_include: ['implementation_pr', 'rollback_plan'],

@@ -89,8 +89,8 @@ ${input.principal ? `### Principal
 ` : ''}
 ### Validation
 - [ ] \`openslack workspace validate\`
-- [ ] \`pnpm typecheck\`
-- [ ] \`pnpm test\`
+- [ ] \`bun run typecheck\`
+- [ ] \`bun run test\`
 - [ ] \`openslack self eval --suite golden\`
 
 ### Rollback

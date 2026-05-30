@@ -45,7 +45,7 @@ function evaluateAssertion(evalCase: EvalCase, assertion: { description: string;
         const result = validateWorkspace(root);
         return { passed: result.valid, detail: `workspace validate: ${result.valid ? 'PASS' : result.errors.map((e) => e.message).join('; ')}` };
       }
-      if (cmd === 'pnpm openslack workspace validate') {
+      if (cmd === 'bun run openslack workspace validate') {
         const result = validateWorkspace(root);
         return { passed: result.valid, detail: `workspace validate: ${result.valid ? 'PASS' : result.errors.map((e) => e.message).join('; ')}` };
       }

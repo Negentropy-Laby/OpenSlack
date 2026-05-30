@@ -131,7 +131,7 @@ packages/pr/
 ## Verification
 
 ```bash
-pnpm test -- packages/pr/src/__tests__
+bun run test -- packages/pr/src/__tests__
 ```
 
 All tests must pass before PR merge.

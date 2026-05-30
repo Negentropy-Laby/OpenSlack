@@ -234,27 +234,27 @@ export function getNextSteps(): SetupNextStep[] {
   return [
     {
       label: 'Check your workspace status',
-      command: 'pnpm openslack status',
+      command: 'bun run openslack status',
       description: 'Show current workspace state, modules, and health',
     },
     {
       label: 'Review your PRs',
-      command: 'pnpm openslack pr list',
+      command: 'bun run openslack pr list',
       description: 'List open pull requests and their status',
     },
     {
       label: 'See the team dashboard',
-      command: 'pnpm openslack collaboration dashboard',
+      command: 'bun run openslack collaboration dashboard',
       description: 'View team activity, events, and collaboration metrics',
     },
     {
       label: 'Get a role-specific guide',
-      command: 'pnpm openslack guide operator',
+      command: 'bun run openslack guide operator',
       description: 'Show the operator role guide with common workflows',
     },
     {
       label: 'Run diagnostics',
-      command: 'pnpm openslack doctor',
+      command: 'bun run openslack doctor',
       description: 'Run a full diagnostic check on your workspace',
     },
   ];

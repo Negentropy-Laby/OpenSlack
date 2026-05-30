@@ -226,7 +226,7 @@ export function createRollbackTask(
       forbidden_paths: ['.env', 'secrets/**', 'credentials/**'],
     },
     validation: {
-      required: ['pnpm typecheck', 'pnpm test', 'bash scripts/genesis-validate.sh'],
+      required: ['bun run typecheck', 'bun run test', 'bash scripts/genesis-validate.sh'],
     },
     output_contract: {
       must_include: ['revert_pr', 'verification_result'],
