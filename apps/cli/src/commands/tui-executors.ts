@@ -20,6 +20,7 @@ export interface TuiActionHandlers {
   publishWorkflowAsIssue?: (workflowName: string) => Promise<TuiActionResult>
   requestWorkflowReview?: (workflowName: string) => Promise<TuiActionResult>
   splitWorkflowIntoIssues?: (workflowName: string, parentIssue: number) => Promise<TuiActionResult>
+  finalizeWorkflowPr?: (workflowName: string, prNumber: number) => Promise<TuiActionResult>
 }
 
 // ── executeApproval ────────────────────────────────────────────────────────────
@@ -414,6 +415,53 @@ export async function requestWorkflowReview(
   }
 }
 
+// ── finalizeWorkflowPr ─────────────────────────────────────────────────────────
+
+export async function finalizeWorkflowPr(
+  workflowName: string,
+  prNumber: number,
+  root: string,
+): Promise<TuiActionResult> {
+  try {
+    const { findWorkflow, loadWorkflow, TrustStore } = await import('@openslack/workflows')
+    const found = await findWorkflow(workflowName)
+    if (!found) {
+      return { success: false, message: `Workflow "${workflowName}" not found.` }
+    }
+    const mod = await loadWorkflow(found.path)
+    const trustStore = new TrustStore({ rootDir: root })
+    const trustDecision = trustStore.get(workflowName) ?? 'untrusted'
+
+    const { finalizeWorkflowPR, fetchWorkflowLifecycleIssues } = await import('@openslack/github')
+    const lifecycle = await fetchWorkflowLifecycleIssues(workflowName)
+
+    const result = await finalizeWorkflowPR(prNumber, {
+      proposalIssue: lifecycle.proposalIssue?.number,
+      reviewIssue: lifecycle.reviewIssue?.number,
+      phaseIssues: lifecycle.phaseIssues.map((p) => p.number),
+      workflowHash: mod.hash,
+      trustDecision: trustDecision as 'trusted' | 'untrusted' | 'core',
+    })
+
+    if (result.errors.length > 0) {
+      return {
+        success: false,
+        message: `Finalize completed with ${result.errors.length} error(s): ${result.errors.join('; ')}`,
+        data: { closed: result.closedIssues, commented: result.commentedIssues, errors: result.errors },
+      }
+    }
+
+    return {
+      success: true,
+      message: `Workflow PR #${prNumber} finalized. Closed ${result.closedIssues.length} issue(s), updated ${result.commentedIssues.length}.`,
+      data: { closed: result.closedIssues, commented: result.commentedIssues },
+    }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    return { success: false, message }
+  }
+}
+
 // ── splitWorkflowIntoIssues ─────────────────────────────────────────────────────
 
 export async function splitWorkflowIntoIssues(
@@ -453,5 +501,6 @@ export function createActionHandlers(root: string, actorId: string = 'tui-user')
     publishWorkflowAsIssue: (name) => publishWorkflowAsIssue(name, root, actorId),
     requestWorkflowReview: (name) => requestWorkflowReview(name, root, actorId),
     splitWorkflowIntoIssues: (name, parentIssue) => splitWorkflowIntoIssues(name, parentIssue, root),
+    finalizeWorkflowPr: (name, prNumber) => finalizeWorkflowPr(name, prNumber, root),
   }
 }

@@ -23,6 +23,13 @@ export interface GoalItem {
   description: string
 }
 
+export interface WorkflowQuickActionItem {
+  label: string
+  route: string
+  description: string
+  shortcut: string
+}
+
 export interface HomeViewModel {
   /** Items that need attention, ordered by urgency */
   attentionItems: AttentionItem[]
@@ -32,6 +39,8 @@ export interface HomeViewModel {
   navItems: NavItem[]
   /** Goal-oriented items for the "What do you want to do?" section */
   goalItems: GoalItem[]
+  /** Workflow lifecycle quick actions */
+  workflowQuickActions: WorkflowQuickActionItem[]
   systemStatus: string
 }
 
@@ -201,11 +210,19 @@ export function mapHomeToViewModel(data?: {
     { label: 'View recent activity', route: 'activity', description: 'See what happened across the system' },
   ]
 
+  const workflowQuickActions: WorkflowQuickActionItem[] = [
+    { label: 'Start a workflow', route: 'workflows', description: 'Browse and execute a workflow', shortcut: 'w' },
+    { label: 'Publish workflow to GitHub Issues', route: 'workflows', description: 'Open the issues menu from workflows', shortcut: 'p' },
+    { label: 'Review workflow lifecycle', route: 'workflows', description: 'Inspect workflow runs and status', shortcut: 'r' },
+    { label: 'Resolve paused workflow', route: 'approvals', description: 'Resume workflows awaiting approval', shortcut: 'a' },
+  ]
+
   return {
     attentionItems,
     allClear: attentionItems.length === 0,
     navItems,
     goalItems,
+    workflowQuickActions,
     systemStatus: s(data?.systemStatus ?? 'ready'),
   }
 }

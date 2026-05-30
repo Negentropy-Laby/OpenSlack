@@ -414,6 +414,43 @@ Violation means immediate task failure and governance review.
 
 ---
 
+## Agent Communication: Approval Gate
+
+Constitutional Constraints #3 (No auto-approval) and #4 (Merge after human approval) require that **agents explicitly communicate the approval gate to users**. A technically correct review is not sufficient if the user does not know they must perform the approval step.
+
+### Explicit communication requirement
+
+After completing review and confirming the PR is ready, the agent must:
+
+1. State that human approval is required.
+2. Explain why the agent cannot approve (bot identity is not valid for approval decisions).
+3. Provide the exact command the user should run.
+4. Confirm the PR status shows `REVIEW_REQUIRED` before asking.
+
+### Template
+
+> "This PR is ready for merge but requires your approval. I cannot approve PRs (bot identity is not valid for approval). Please run:
+> `gh pr review <N> --approve`
+> After you approve, I will merge it."
+
+### Forbidden patterns
+
+Agents must never:
+- Post a review comment saying "proceed to merge" without also stating that human approval is required.
+- Assume the user knows approval is needed.
+- Wait for the user to ask "what's next?" instead of proactively stating the gate.
+- Say "ready to merge" while checks are failing or while the PR head is not synchronized.
+
+### PR status check before requesting approval
+
+```bash
+gh pr view <N> --json reviewDecision,mergeStateStatus
+```
+
+Only request approval when `reviewDecision` is `REVIEW_REQUIRED` and `mergeStateStatus` is `BLOCKED` due to missing approval (not due to failing checks or unresolved review conversations).
+
+---
+
 ## Human Approval Definition
 
 Human approval is the human's explicit decision, not the requirement that the human personally open the GitHub PR page. A human may rely on PRMS output, CI status, changed-file summaries, and agent analysis before deciding.

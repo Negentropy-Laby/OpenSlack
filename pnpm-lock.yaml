@@ -184,6 +184,9 @@ importers:
       '@openslack/collaboration':
         specifier: workspace:*
         version: link:../collaboration
+      '@openslack/github':
+        specifier: workspace:*
+        version: link:../github
       '@openslack/pr':
         specifier: workspace:*
         version: link:../pr

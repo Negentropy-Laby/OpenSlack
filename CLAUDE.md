@@ -36,6 +36,35 @@ pnpm openslack pr doctor <PR_NUMBER>
   - For other `gh` commands (edit, comment, etc.): `./scripts/bot-gh.sh ...` or `scripts\bot-gh.ps1 ...`
   - Pre-requisite: `.openslack.local/github-app.pem` must exist (gitignored).
 
+## Approval Gate — Explicit Communication Required
+
+When an agent completes code review and the PR is technically ready, the agent **must explicitly communicate** that human approval is required. Do not assume the user knows this gate exists, and do not wait for the user to infer it from review status.
+
+### Required statement
+
+After review completion, say something like:
+
+> "PR #N is ready for merge but requires **your human approval** before I can merge it. Please run:
+> ```bash
+> gh pr review N --approve --body 'Approved after agent review'
+> ```
+> After you approve, I will merge it with the bot identity."
+
+### Why the agent cannot approve
+
+- `gh pr review` uses your personal GitHub OAuth identity.
+- `./scripts/bot-gh.sh` uses the bot identity (`openslack-agent-operator[bot]`).
+- `AGENTS.md` Constitutional Constraint #3: **No auto-approval** — agents must never submit `APPROVE` reviews under bot identity.
+- `AGENTS.md` Constitutional Constraint #4: **Merge after human approval** — agents may merge only after valid human approval is recorded.
+
+### PR status check before requesting approval
+
+```bash
+gh pr view N --json reviewDecision,mergeStateStatus
+```
+
+Only request approval when `reviewDecision` is `REVIEW_REQUIRED` and `mergeStateStatus` is `BLOCKED` due to missing approval (not due to failing checks). Do not say "ready to merge" while checks are failing or while the PR head is not synchronized.
+
 For everything else, follow `AGENTS.md`.
 
 ## Bot-Authenticated PR Creation

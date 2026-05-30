@@ -69,6 +69,21 @@ function prStatusColorTheme(status: string | undefined): 'success' | 'error' | '
   return 'muted'
 }
 
+/** Determine the color theme key for sub-issue mode badge. */
+function subIssueModeColorTheme(mode: string | undefined): 'pass' | 'info' | 'warning' | 'muted' {
+  if (mode === 'native') return 'pass'
+  if (mode === 'mixed') return 'warning'
+  if (mode === 'fallback') return 'info'
+  return 'muted'
+}
+
+/** Determine the color theme key for dependency mode badge. */
+function dependencyModeColorTheme(mode: string | undefined): 'pass' | 'info' | 'muted' {
+  if (mode === 'native') return 'pass'
+  if (mode === 'fallback') return 'info'
+  return 'muted'
+}
+
 export default function WorkflowLifecycleView({ model, actionHandlers, onBack }: WorkflowLifecycleViewProps): React.JSX.Element {
   const { pop } = useNavigation()
   const [mode, setMode] = useState<ViewMode>('stages')
@@ -189,6 +204,21 @@ export default function WorkflowLifecycleView({ model, actionHandlers, onBack }:
           dispatchAction(action)
           setMode('action-result')
         }
+      } else if (input === 'f' || input === 'F') {
+        if (model.prNumber && actionHandlers?.finalizeWorkflowPr) {
+          const action: TuiAction = {
+            id: `finalize-pr-${model.workflowName}`,
+            category: TuiActionCategory.WorkflowExecute,
+            risk: TuiRiskLevel.Low,
+            label: `Finalize PR #${model.prNumber}`,
+            description: `Finalize PR #${model.prNumber} for workflow "${model.workflowName}".`,
+            requiresConfirmation: true,
+            handler: async (): Promise<TuiActionResult> => {
+              return actionHandlers.finalizeWorkflowPr!(model.workflowName, model.prNumber!)
+            },
+          }
+          dispatchAction(action)
+        }
       }
       return
     }
@@ -204,6 +234,21 @@ export default function WorkflowLifecycleView({ model, actionHandlers, onBack }:
         if (action) {
           dispatchAction(action)
           setMode('action-result')
+        }
+      } else if (input === 'f' || input === 'F') {
+        if (model.prNumber && actionHandlers?.finalizeWorkflowPr) {
+          const action: TuiAction = {
+            id: `finalize-pr-${model.workflowName}`,
+            category: TuiActionCategory.WorkflowExecute,
+            risk: TuiRiskLevel.Low,
+            label: `Finalize PR #${model.prNumber}`,
+            description: `Finalize PR #${model.prNumber} for workflow "${model.workflowName}".`,
+            requiresConfirmation: true,
+            handler: async (): Promise<TuiActionResult> => {
+              return actionHandlers.finalizeWorkflowPr!(model.workflowName, model.prNumber!)
+            },
+          }
+          dispatchAction(action)
         }
       }
     }
@@ -432,13 +477,42 @@ export default function WorkflowLifecycleView({ model, actionHandlers, onBack }:
       React.createElement(Text, null, '  '),
       React.createElement(ThemedText, { colorTheme: 'muted' }, 'Risk: '),
       React.createElement(ThemedText, { colorTheme: riskColorTheme(model.risk) }, model.risk),
+      model.subIssueMode
+        ? React.createElement(
+            Box,
+            { flexDirection: 'row' },
+            React.createElement(Text, null, '  '),
+            React.createElement(ThemedText, { colorTheme: 'muted' }, 'Sub-issues: '),
+            React.createElement(ThemedText, { colorTheme: subIssueModeColorTheme(model.subIssueMode) }, model.subIssueMode),
+          )
+        : null,
+      model.dependencyMode
+        ? React.createElement(
+            Box,
+            { flexDirection: 'row' },
+            React.createElement(Text, null, '  '),
+            React.createElement(ThemedText, { colorTheme: 'muted' }, 'Deps: '),
+            React.createElement(ThemedText, { colorTheme: dependencyModeColorTheme(model.dependencyMode) }, model.dependencyMode),
+          )
+        : null,
     ),
     // Stages list
     stages.length > 0
       ? React.createElement(Pane, { title: 'Lifecycle Stages', marginY: 0 },
           React.createElement(Box, { flexDirection: 'column' }, ...stageRows),
         )
-      : React.createElement(ThemedText, { colorTheme: 'muted' }, 'No lifecycle stages defined.'),
+      : React.createElement(
+          Box,
+          { flexDirection: 'column', marginY: 1 },
+          React.createElement(ThemedText, { colorTheme: 'muted' }, 'No GitHub issues found for this workflow.'),
+          React.createElement(
+            Box,
+            { flexDirection: 'row', marginTop: 1 },
+            React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, 'Use the Issues menu ('),
+            React.createElement(ThemedText, { colorTheme: 'accent' }, 'i'),
+            React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, ') to publish.'),
+          ),
+        ),
     // Phase issues summary
     model.phaseIssues.length > 0
       ? React.createElement(
@@ -516,6 +590,14 @@ export default function WorkflowLifecycleView({ model, actionHandlers, onBack }:
       React.createElement(KeyboardShortcutHint, { keys: ['r'], description: 'run' }),
       React.createElement(Text, null, '  '),
       React.createElement(KeyboardShortcutHint, { keys: ['d'], description: 'dry-run' }),
+      model.prNumber && actionHandlers?.finalizeWorkflowPr
+        ? React.createElement(
+            Box,
+            { flexDirection: 'row' },
+            React.createElement(Text, null, '  '),
+            React.createElement(KeyboardShortcutHint, { keys: ['f'], description: 'finalize PR' }),
+          )
+        : null,
     ),
   )
 }
