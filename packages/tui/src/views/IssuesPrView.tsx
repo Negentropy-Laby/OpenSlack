@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useCallback } from 'react'
 import Box from '../ink/components/Box.js'
 import Text from '../ink/components/Text.js'
 import useInput from '../ink/hooks/use-input.js'
@@ -14,6 +14,8 @@ type Tab = 'issues' | 'prs'
 
 type IssuesPrViewProps = {
   model: IssuesPrViewModel
+  onSelectIssue?: (issueNumber: number) => void
+  onSelectPr?: (prNumber: number) => void
 }
 
 const STATUS_ICONS: Record<string, 'pass' | 'warn' | 'fail' | 'info' | 'blocked'> = {
@@ -40,8 +42,8 @@ function formatPrDetail(status: string, author: string, riskZone: string, blocke
   return result
 }
 
-export default function IssuesPrView({ model }: IssuesPrViewProps): React.JSX.Element {
-  const { pop } = useNavigation()
+export default function IssuesPrView({ model, onSelectIssue, onSelectPr }: IssuesPrViewProps): React.JSX.Element {
+  const { pop, push } = useNavigation()
   const [tab, setTab] = useState<Tab>(model.tab)
   const [selectedIndex, setSelectedIndex] = useState(0)
 
@@ -49,6 +51,28 @@ export default function IssuesPrView({ model }: IssuesPrViewProps): React.JSX.El
   const prs = model.prs
   const currentItems = tab === 'issues' ? issues : prs
   const itemCount = currentItems.length
+
+  const handleSelect = useCallback(() => {
+    if (tab === 'issues') {
+      const issue = issues[selectedIndex]
+      if (issue) {
+        if (onSelectIssue) {
+          onSelectIssue(issue.number)
+        } else {
+          push({ view: 'room', params: { roomId: `issue:${issue.number}` } })
+        }
+      }
+    } else {
+      const pr = prs[selectedIndex]
+      if (pr) {
+        if (onSelectPr) {
+          onSelectPr(pr.number)
+        } else {
+          push({ view: 'room', params: { roomId: `pr:${pr.number}` } })
+        }
+      }
+    }
+  }, [tab, selectedIndex, issues, prs, onSelectIssue, onSelectPr, push])
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
@@ -69,6 +93,8 @@ export default function IssuesPrView({ model }: IssuesPrViewProps): React.JSX.El
       setSelectedIndex(prev => (prev > 0 ? prev - 1 : itemCount - 1))
     } else if (key.downArrow) {
       setSelectedIndex(prev => (prev < itemCount - 1 ? prev + 1 : 0))
+    } else if (key.return) {
+      handleSelect()
     }
   })
 
@@ -195,6 +221,8 @@ export default function IssuesPrView({ model }: IssuesPrViewProps): React.JSX.El
       React.createElement(KeyboardShortcutHint, { keys: ['2'], description: 'PRs' }),
       React.createElement(Text, null, '  '),
       React.createElement(KeyboardShortcutHint, { keys: ['Up/Down'], description: 'navigate' }),
+      React.createElement(Text, null, '  '),
+      React.createElement(KeyboardShortcutHint, { keys: ['Enter'], description: 'open room' }),
       React.createElement(Text, null, '  '),
       React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'back' }),
     ),

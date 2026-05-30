@@ -28,6 +28,7 @@ export async function executeApproval(
   params: ApprovalExecutionParams,
   isApprove: boolean,
   root: string,
+  actorId: string,
 ): Promise<TuiActionResult> {
   const { category, title, planId, prNumber, workflowName } = params
 
@@ -54,7 +55,7 @@ export async function executeApproval(
           topic: title,
           decision: isApprove ? 'approved' : 'rejected',
           rationale: `${isApprove ? 'Approved' : 'Rejected'} via TUI for plan ${planId}`,
-          decidedBy: 'tui-user',
+          decidedBy: actorId,
           tags: ['plan-approval', 'tui'],
         })
 
@@ -87,7 +88,7 @@ export async function executeApproval(
             topic: title,
             decision: result.merged ? 'approved' : 'blocked',
             rationale: result.reason,
-            decidedBy: 'tui-user',
+            decidedBy: actorId,
             tags: ['merge-request', 'tui', `pr-${prNumber}`],
           })
 
@@ -110,7 +111,7 @@ export async function executeApproval(
           topic: title,
           decision: 'cancelled',
           rationale: `Merge request rejected via TUI for PR #${prNumber}`,
-          decidedBy: 'tui-user',
+          decidedBy: actorId,
           tags: ['merge-request', 'tui', `pr-${prNumber}`],
         })
 
@@ -148,7 +149,7 @@ export async function executeApproval(
                   manifest: mod.meta,
                   confirmationPolicy: {
                     mode: 'preapproved-manifest',
-                    actorId: 'tui-user',
+                    actorId,
                     runId: params.runId,
                     onUnexpectedEffect: 'pause',
                   },
@@ -160,7 +161,7 @@ export async function executeApproval(
               topic: title,
               decision: 'approved',
               rationale: `Workflow effect approved via TUI, run ${params.runId} resumed`,
-              decidedBy: 'tui-user',
+              decidedBy: actorId,
               tags: ['workflow-effect', 'tui', `run-${params.runId}`],
             })
 
@@ -177,7 +178,7 @@ export async function executeApproval(
             topic: title,
             decision: 'cancelled',
             rationale: `Workflow effect rejected, run ${params.runId} cancelled`,
-            decidedBy: 'tui-user',
+            decidedBy: actorId,
             tags: ['workflow-effect', 'tui', `run-${params.runId}`],
           })
 
@@ -189,7 +190,7 @@ export async function executeApproval(
           topic: title,
           decision: isApprove ? 'confirmed' : 'cancelled',
           rationale: `Workflow effect ${isApprove ? 'confirmed' : 'cancelled'} via TUI${workflowName ? ` for ${workflowName}` : ''}`,
-          decidedBy: 'tui-user',
+          decidedBy: actorId,
           tags: ['workflow-effect', 'tui'],
         })
 
@@ -253,6 +254,7 @@ export async function executeWorkflowRun(
   workflowName: string,
   mode: 'preview' | 'dry-run' | 'run',
   root: string,
+  actorId: string = 'tui-user',
 ): Promise<TuiActionResult> {
   const {
     findWorkflow,
@@ -310,7 +312,7 @@ export async function executeWorkflowRun(
     const approvalManifest = buildApprovalManifest(
       mod.meta.name,
       dryResult.runId,
-      'tui-user',
+      actorId,
       mod.hash,
       inputHash,
       mod.meta.risk ?? 'medium',
@@ -323,7 +325,7 @@ export async function executeWorkflowRun(
       args: {},
       confirmationPolicy: {
         mode: 'preapproved-manifest',
-        actorId: 'tui-user',
+        actorId,
         runId: dryResult.runId,
         approvalManifest,
         onUnexpectedEffect: 'pause',
@@ -353,6 +355,7 @@ export async function executeWorkflowRun(
 export async function publishWorkflowAsIssue(
   workflowName: string,
   _root: string,
+  actorId: string = 'tui-user',
 ): Promise<TuiActionResult> {
   try {
     const { findWorkflow, loadWorkflow } = await import('@openslack/workflows')
@@ -362,7 +365,7 @@ export async function publishWorkflowAsIssue(
     }
     const mod = await loadWorkflow(found.path)
     const { publishWorkflowProposal } = await import('@openslack/github')
-    const result = await publishWorkflowProposal(mod, { requestedBy: 'tui-user' })
+    const result = await publishWorkflowProposal(mod, { requestedBy: actorId })
     return {
       success: true,
       message: `Workflow proposal issue created: #${result.issueNumber}`,
@@ -379,6 +382,7 @@ export async function publishWorkflowAsIssue(
 export async function requestWorkflowReview(
   workflowName: string,
   root: string,
+  actorId: string = 'tui-user',
 ): Promise<TuiActionResult> {
   try {
     const { findWorkflow, loadWorkflow, TrustStore, resolveTrustLevel } = await import('@openslack/workflows')
@@ -396,7 +400,7 @@ export async function requestWorkflowReview(
 
     const { publishWorkflowReviewRequest } = await import('@openslack/github')
     const result = await publishWorkflowReviewRequest(mod, {
-      requestedBy: 'tui-user',
+      requestedBy: actorId,
       trustLevel,
     })
     return {
@@ -441,13 +445,13 @@ export async function splitWorkflowIntoIssues(
 }
 
 /** Build the full action handler set for injection into the TUI shell. */
-export function createActionHandlers(root: string): TuiActionHandlers {
+export function createActionHandlers(root: string, actorId: string = 'tui-user'): TuiActionHandlers {
   return {
-    executeApproval: (params, isApprove) => executeApproval(params, isApprove, root),
+    executeApproval: (params, isApprove) => executeApproval(params, isApprove, root, actorId),
     executeTrustChange: (name, from, to) => executeTrustChange(name, from, to, root),
-    executeWorkflowRun: (name, mode) => executeWorkflowRun(name, mode, root),
-    publishWorkflowAsIssue: (name) => publishWorkflowAsIssue(name, root),
-    requestWorkflowReview: (name) => requestWorkflowReview(name, root),
+    executeWorkflowRun: (name, mode) => executeWorkflowRun(name, mode, root, actorId),
+    publishWorkflowAsIssue: (name) => publishWorkflowAsIssue(name, root, actorId),
+    requestWorkflowReview: (name) => requestWorkflowReview(name, root, actorId),
     splitWorkflowIntoIssues: (name, parentIssue) => splitWorkflowIntoIssues(name, parentIssue, root),
   }
 }

@@ -113,6 +113,38 @@ export function tuiCommands(): Command {
           // Workflow gallery data unavailable
         }
 
+        // Pre-fetch digest data
+        try {
+          const { readEvents, filterEvents, buildDigest } = await import('@openslack/collaboration');
+          const { mapDigestToViewModel } = await import('@openslack/tui');
+          const events = readEvents();
+          const filtered = filterEvents(events, { since: new Date(Date.now() - 24 * 60 * 60 * 1000) });
+          const digest = buildDigest(filtered, 24);
+          data.digest = mapDigestToViewModel(digest);
+        } catch {
+          // Digest data unavailable
+        }
+
+        // Pre-fetch handoff list data
+        try {
+          const { listHandoffs } = await import('@openslack/collaboration');
+          const { mapHandoffListToViewModel } = await import('@openslack/tui');
+          const handoffs = listHandoffs();
+          data.handoffs = mapHandoffListToViewModel(handoffs);
+        } catch {
+          // Handoff data unavailable
+        }
+
+        // Pre-fetch decision list data
+        try {
+          const { listDecisions } = await import('@openslack/collaboration');
+          const { mapDecisionListToViewModel } = await import('@openslack/tui');
+          const decisions = listDecisions();
+          data.decisions = mapDecisionListToViewModel(decisions);
+        } catch {
+          // Decision data unavailable
+        }
+
         // Pre-fetch approval data
         try {
           const { listPendingPlans } = await import('@openslack/operator');
@@ -171,10 +203,20 @@ export function tuiCommands(): Command {
           // Approval data unavailable
         }
 
+        // Resolve actor identity for TUI actions
+        let actorId = 'tui-user';
+        try {
+          const { execSync } = await import('node:child_process');
+          // Try git user name first, then OS user
+          actorId = execSync('git config user.name', { encoding: 'utf-8', stdio: 'pipe' }).trim() || process.env.USER || process.env.USERNAME || 'tui-user';
+        } catch {
+          actorId = process.env.USER || process.env.USERNAME || 'tui-user';
+        }
+
         // Inject action handlers (side-effect execution stays in CLI layer)
         try {
           const { createActionHandlers } = await import('./tui-executors.js');
-          data.actionHandlers = createActionHandlers(root);
+          data.actionHandlers = createActionHandlers(root, actorId);
         } catch {
           // Action handlers unavailable — TUI will show CLI fallbacks
         }

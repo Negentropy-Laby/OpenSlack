@@ -246,6 +246,14 @@ export function collaborationCommands(): Command {
           return { status, title: `${event.type} (${event.object.kind}:${event.object.id})`, detail: event.summary, nextAction: event.nextAction?.action };
         });
         console.log(renderFindingsPlain(findings));
+      } else if (options.format === 'tui') {
+        try {
+          const { renderActivityTui } = await import('@openslack/tui');
+          await renderActivityTui(filtered, { periodHours: hours });
+        } catch (error) {
+          console.error('TUI unavailable. Falling back to standard output.');
+          console.log(renderActivityFeed(filtered));
+        }
       } else {
         console.log(renderActivityFeed(filtered));
       }
@@ -325,6 +333,14 @@ export function collaborationCommands(): Command {
           findings.push({ status: 'fixable_by_command', title: `Next: ${event.object.kind}:${event.object.id}`, detail: event.summary, nextAction: event.nextAction?.action });
         }
         console.log(renderFindingsPlain(findings));
+      } else if (options.format === 'tui') {
+        try {
+          const { renderDigestTui } = await import('@openslack/tui');
+          await renderDigestTui(digest);
+        } catch (error) {
+          console.error('TUI unavailable. Falling back to standard output.');
+          console.log(renderDigest(digest));
+        }
       } else {
         console.log(renderDigest(digest));
       }
@@ -368,20 +384,47 @@ export function collaborationCommands(): Command {
   handoff
     .command('list')
     .description('List all handoffs')
-    .action(() => {
-      console.log(renderHandoffList(listHandoffs()));
+    .option('--format <format>', 'Output format: standard, plain, json, or tui', 'standard')
+    .action(async (options: { format: string }) => {
+      const handoffs = listHandoffs();
+      if (options.format === 'json') {
+        console.log(JSON.stringify(handoffs, null, 2));
+      } else if (options.format === 'tui') {
+        try {
+          const { renderHandoffListTui } = await import('@openslack/tui');
+          await renderHandoffListTui(handoffs);
+        } catch (error) {
+          console.error('TUI unavailable. Falling back to standard output.');
+          console.log(renderHandoffList(handoffs));
+        }
+      } else {
+        console.log(renderHandoffList(handoffs));
+      }
     });
 
   handoff
     .command('show <id>')
     .description('Show a specific handoff')
-    .action((id: string) => {
+    .option('--format <format>', 'Output format: standard, plain, json, or tui', 'standard')
+    .action(async (id: string, options: { format: string }) => {
       const h = getHandoff(id);
       if (!h) {
         console.log(`Handoff ${id} not found.`);
         process.exit(1);
       }
-      console.log(renderHandoff(h));
+      if (options.format === 'json') {
+        console.log(JSON.stringify(h, null, 2));
+      } else if (options.format === 'tui') {
+        try {
+          const { renderHandoffDetailTui } = await import('@openslack/tui');
+          await renderHandoffDetailTui(h);
+        } catch (error) {
+          console.error('TUI unavailable. Falling back to standard output.');
+          console.log(renderHandoff(h));
+        }
+      } else {
+        console.log(renderHandoff(h));
+      }
     });
 
   handoff
@@ -448,20 +491,47 @@ export function collaborationCommands(): Command {
   decision
     .command('list')
     .description('List all decisions')
-    .action(() => {
-      console.log(renderDecisionList(listDecisions()));
+    .option('--format <format>', 'Output format: standard, plain, json, or tui', 'standard')
+    .action(async (options: { format: string }) => {
+      const decisions = listDecisions();
+      if (options.format === 'json') {
+        console.log(JSON.stringify(decisions, null, 2));
+      } else if (options.format === 'tui') {
+        try {
+          const { renderDecisionListTui } = await import('@openslack/tui');
+          await renderDecisionListTui(decisions);
+        } catch (error) {
+          console.error('TUI unavailable. Falling back to standard output.');
+          console.log(renderDecisionList(decisions));
+        }
+      } else {
+        console.log(renderDecisionList(decisions));
+      }
     });
 
   decision
     .command('show <id>')
     .description('Show a specific decision')
-    .action((id: string) => {
+    .option('--format <format>', 'Output format: standard, plain, json, or tui', 'standard')
+    .action(async (id: string, options: { format: string }) => {
       const d = getDecision(id);
       if (!d) {
         console.log(`Decision ${id} not found.`);
         process.exit(1);
       }
-      console.log(renderDecision(d));
+      if (options.format === 'json') {
+        console.log(JSON.stringify(d, null, 2));
+      } else if (options.format === 'tui') {
+        try {
+          const { renderDecisionDetailTui } = await import('@openslack/tui');
+          await renderDecisionDetailTui(d);
+        } catch (error) {
+          console.error('TUI unavailable. Falling back to standard output.');
+          console.log(renderDecision(d));
+        }
+      } else {
+        console.log(renderDecision(d));
+      }
     });
 
   decision

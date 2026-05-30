@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import Box from '../ink/components/Box.js'
 import Text from '../ink/components/Text.js'
 import useApp from '../ink/hooks/use-app.js'
@@ -14,6 +14,11 @@ import { mapHomeToViewModel } from '../view-models/home.js'
 import { mapApprovalCenterToViewModel } from '../view-models/approval-center.js'
 import { mapWorkflowGalleryToViewModel } from '../view-models/workflow-gallery.js'
 import { mapIssuesPrToViewModel } from '../view-models/issues-pr.js'
+import { mapDigestToViewModel } from '../view-models/digest.js'
+import { mapHandoffListToViewModel } from '../view-models/handoff.js'
+import { mapDecisionListToViewModel } from '../view-models/decision.js'
+import { mapRoomToViewModel } from '../view-models/room.js'
+import type { RoomViewModel } from '../view-models/room.js'
 import type { ShellViewData, TuiActionHandlers } from './render-shell.js'
 
 import HomeView from './HomeView.js'
@@ -23,6 +28,11 @@ import IssuesPrView from './IssuesPrView.js'
 import DashboardView from './DashboardView.js'
 import PrQueueView from './PrQueueView.js'
 import StatusView from './StatusView.js'
+import ActivityView from './ActivityView.js'
+import DigestView from './DigestView.js'
+import HandoffListView from './HandoffListView.js'
+import DecisionListView from './DecisionListView.js'
+import RoomView from './RoomView.js'
 
 /**
  * A view that hasn't been wired to live data yet.
@@ -56,44 +66,114 @@ function PlaceholderView({ route }: { route: Route }): React.JSX.Element {
 }
 
 /**
- * Activity view — shows recent events from the dashboard data.
+ * Activity view wrapper — uses the full ActivityView component with proper data.
+ * Falls back to dashboard recentActivity when no full activity data is available.
  */
-function ActivityView({ data }: { data?: ShellViewData }): React.JSX.Element {
+function ActivityViewWrapper({ data }: { data?: ShellViewData }): React.JSX.Element {
   const { pop } = useNavigation()
-  const activity = data?.dashboard?.recentActivity ?? []
 
-  useInput((input, key) => {
-    if (input === 'q' || key.escape) {
-      pop()
-    }
-  })
+  const activityItems = data?.dashboard?.recentActivity ?? []
 
-  return React.createElement(
-    Box,
-    { flexDirection: 'column', paddingX: 1 },
-    React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, 'OpenSlack / Activity'),
-    React.createElement(Divider, { length: 40 }),
-    activity.length > 0
-      ? React.createElement(
-          Pane,
-          { title: 'Recent Activity', marginY: 0 },
-          ...activity.slice(0, 20).map((a, i) =>
-            React.createElement(ListItem, {
-              key: `${a.type}-${i}`,
-              label: a.summary,
-              detail: `${a.time} · ${a.actor}`,
-              status: 'info',
-            }),
-          ),
-        )
-      : React.createElement(ThemedText, { colorTheme: 'muted' }, 'No recent activity.'),
-    React.createElement(Divider, { length: 40 }),
-    React.createElement(
+  if (activityItems.length === 0) {
+    return React.createElement(
       Box,
-      { flexDirection: 'row' },
-      React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'back' }),
-    ),
-  )
+      { flexDirection: 'column', paddingX: 1 },
+      React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, 'OpenSlack / Activity'),
+      React.createElement(Divider, { length: 40 }),
+      React.createElement(ThemedText, { colorTheme: 'muted' }, 'No recent activity.'),
+      React.createElement(Divider, { length: 40 }),
+      React.createElement(
+        Box,
+        { flexDirection: 'row' },
+        React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'back' }),
+      ),
+    )
+  }
+
+  return React.createElement(ActivityView, {
+    model: {
+      title: 'Activity Feed',
+      periodHours: 24,
+      totalEvents: activityItems.length,
+      events: activityItems.map(a => ({
+        time: a.time,
+        type: a.type,
+        summary: a.summary,
+        actor: a.actor,
+        objectKind: '',
+        objectId: '',
+      })),
+      today: activityItems.map(a => ({
+        time: a.time,
+        type: a.type,
+        summary: a.summary,
+        actor: a.actor,
+        objectKind: '',
+        objectId: '',
+      })),
+      yesterday: [],
+      older: [],
+    },
+    onBack: pop,
+  })
+}
+
+/**
+ * Room view wrapper — handles async room data loading with useEffect + useState.
+ */
+function RoomViewWrapper({ roomId, onBack }: { roomId: string; onBack?: () => void }): React.JSX.Element {
+  const [model, setModel] = useState<RoomViewModel | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        const { buildRoomView, readEvents } = await import('@openslack/collaboration')
+        const events = readEvents()
+        const room = buildRoomView(roomId, events)
+        if (!cancelled) {
+          if (room) {
+            setModel(mapRoomToViewModel(room))
+          }
+          setLoading(false)
+        }
+      } catch {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [roomId])
+
+  if (loading) {
+    return React.createElement(
+      Box,
+      { flexDirection: 'column', paddingX: 1 },
+      React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, `Room: ${roomId}`),
+      React.createElement(Divider, { length: 40 }),
+      React.createElement(ThemedText, { colorTheme: 'muted' }, 'Loading room data...'),
+    )
+  }
+
+  if (!model) {
+    return React.createElement(
+      Box,
+      { flexDirection: 'column', paddingX: 1 },
+      React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, `Room: ${roomId}`),
+      React.createElement(Divider, { length: 40 }),
+      React.createElement(ThemedText, { colorTheme: 'muted' }, 'Room data unavailable.'),
+      React.createElement(
+        Box,
+        { flexDirection: 'row' },
+        React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'back' }),
+      ),
+    )
+  }
+
+  return React.createElement(RoomView, { model, onBack })
 }
 
 /**
@@ -117,7 +197,6 @@ function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
       if (data?.prQueue) {
         return React.createElement(PrQueueView, { model: data.prQueue, onBack: pop })
       }
-      // Fall back to IssuesPrView with PR tab
       const issuesPrModel = mapIssuesPrToViewModel({ tab: 'prs' })
       return React.createElement(IssuesPrView, { model: issuesPrModel })
     }
@@ -137,7 +216,32 @@ function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
       return React.createElement(PlaceholderView, { route: current })
     }
     case 'activity': {
-      return React.createElement(ActivityView, { data })
+      return React.createElement(ActivityViewWrapper, { data })
+    }
+    case 'digest': {
+      if (data?.digest) {
+        return React.createElement(DigestView, { model: data.digest, onBack: pop })
+      }
+      return React.createElement(PlaceholderView, { route: current })
+    }
+    case 'handoffs': {
+      if (data?.handoffs) {
+        return React.createElement(HandoffListView, { model: data.handoffs, onBack: pop })
+      }
+      return React.createElement(PlaceholderView, { route: current })
+    }
+    case 'decisions': {
+      if (data?.decisions) {
+        return React.createElement(DecisionListView, { model: data.decisions, onBack: pop })
+      }
+      return React.createElement(PlaceholderView, { route: current })
+    }
+    case 'room': {
+      const roomId = current.params?.roomId as string | undefined
+      if (roomId) {
+        return React.createElement(RoomViewWrapper, { roomId, onBack: pop })
+      }
+      return React.createElement(PlaceholderView, { route: current })
     }
     case 'prs':
     case 'issues': {
