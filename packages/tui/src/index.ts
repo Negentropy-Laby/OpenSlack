@@ -89,3 +89,23 @@ export type { WorkflowGalleryViewModel, WorkflowGalleryItem, WorkflowDetailViewM
 export { mapWorkflowGalleryToViewModel, mapWorkflowDetailToViewModel } from './view-models/workflow-gallery.js';
 export type { IssuesPrViewModel, IssueItem, PrItem } from './view-models/issues-pr.js';
 export { mapIssuesPrToViewModel } from './view-models/issues-pr.js';
+
+// Activity
+export { renderActivityTui } from './views/render-activity.js';
+export type { ActivityViewModel, ActivityEventViewModel } from './view-models/activity.js';
+export { mapActivityToViewModel } from './view-models/activity.js';
+
+// Digest
+export { renderDigestTui } from './views/render-digest.js';
+export type { DigestViewModel, DigestGroupViewModel, DigestEventViewModel } from './view-models/digest.js';
+export { mapDigestToViewModel } from './view-models/digest.js';
+
+// Handoff
+export { renderHandoffListTui, renderHandoffDetailTui } from './views/render-handoff.js';
+export type { HandoffListViewModel, HandoffListItemViewModel, HandoffDetailViewModel } from './view-models/handoff.js';
+export { mapHandoffListToViewModel, mapHandoffToViewModel } from './view-models/handoff.js';
+
+// Decision
+export { renderDecisionListTui, renderDecisionDetailTui } from './views/render-decision.js';
+export type { DecisionListViewModel, DecisionListItemViewModel, DecisionDetailViewModel } from './view-models/decision.js';
+export { mapDecisionListToViewModel, mapDecisionToViewModel } from './view-models/decision.js';
