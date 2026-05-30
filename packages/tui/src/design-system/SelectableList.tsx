@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
+import React from 'react'
 import Box from '../ink/components/Box.js'
 import useInput from '../ink/hooks/use-input.js'
+import { useClampedIndex } from '../hooks/use-clamped-index.js'
 import ThemedText from './ThemedText.js'
 
 export interface SelectableListItem {
@@ -20,7 +21,7 @@ export default function SelectableList({
   onSelect,
   visibleRows = 10,
 }: SelectableListProps): React.JSX.Element | null {
-  const [selectedIndex, setSelectedIndex] = useState(0)
+  const [selectedIndex, setSelectedIndex] = useClampedIndex(items.length)
 
   if (items.length === 0) return null
 

@@ -10,10 +10,10 @@ import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
 import ConfirmationDialog from '../design-system/ConfirmationDialog.js'
 import ActionStatus from '../design-system/ActionStatus.js'
 import { useNavigation } from '../navigation/context.js'
+import { useClampedIndex } from '../hooks/use-clamped-index.js'
 import { useActionDispatch } from '../actions/use-action-dispatch.js'
 import { TuiActionCategory, TuiRiskLevel, TuiActionStatus } from '../actions/types.js'
 import type { TuiAction, TuiActionResult } from '../actions/types.js'
-import { sanitizeTerminalText } from '../sanitize.js'
 import type { WorkflowLifecycleViewModel, LifecycleStage, PhaseIssueItem } from '../view-models/workflow-lifecycle.js'
 import type { TuiActionHandlers } from './render-shell.js'
 
@@ -71,7 +71,6 @@ function prStatusColorTheme(status: string | undefined): 'success' | 'error' | '
 
 export default function WorkflowLifecycleView({ model, actionHandlers, onBack }: WorkflowLifecycleViewProps): React.JSX.Element {
   const { pop } = useNavigation()
-  const [selectedIndex, setSelectedIndex] = useState(0)
   const [mode, setMode] = useState<ViewMode>('stages')
 
   const {
@@ -84,6 +83,7 @@ export default function WorkflowLifecycleView({ model, actionHandlers, onBack }:
   } = useActionDispatch()
 
   const stages = model.stages
+  const [selectedIndex, setSelectedIndex] = useClampedIndex(stages.length)
   const selectedStage: LifecycleStage | undefined = stages[selectedIndex]
 
   const handleBack = useCallback(() => {
@@ -176,9 +176,12 @@ export default function WorkflowLifecycleView({ model, actionHandlers, onBack }:
       } else if (key.return && stages.length > 0) {
         setMode('detail')
       } else if (input === 'r' || input === 'R') {
-        const action = buildRunAction()
-        if (action) {
-          dispatchAction(action)
+        if (selectedStage) {
+          setMode('detail')
+          const action = buildRunAction()
+          if (action) {
+            dispatchAction(action)
+          }
         }
       } else if (input === 'd' || input === 'D') {
         const action = buildDryRunAction()
@@ -450,10 +453,10 @@ export default function WorkflowLifecycleView({ model, actionHandlers, onBack }:
           model.phaseIssues.map((pi: PhaseIssueItem) =>
             React.createElement(
               Box,
-              { key: pi.issueNumber, flexDirection: 'row', marginLeft: 2 },
+              { key: pi.phase, flexDirection: 'row', marginLeft: 2 },
               React.createElement(StatusIcon, { status: pi.status }),
               React.createElement(Text, null, ' '),
-              React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, `#${pi.issueNumber} ${pi.phase}`),
+              React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, pi.issueNumber ? `#${pi.issueNumber} ${pi.phase}` : pi.phase),
             ),
           ),
         )

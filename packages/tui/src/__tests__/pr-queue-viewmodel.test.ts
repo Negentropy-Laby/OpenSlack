@@ -78,6 +78,27 @@ describe('mapPrQueueToViewModel', () => {
     expect(item.owner).toBe('human')
     expect(item.riskZone).toBe('green')
     expect(item.rerunCommand).toBe('openslack pr doctor 42')
+    expect(item.workflowGate).toEqual({ touched: false, criteria: [], overall: 'N/A' })
+  })
+
+  it('maps workflow gate fields when present', () => {
+    const item = makeItem({
+      prNumber: 99,
+      workflowGate: {
+        touched: true,
+        criteria: [
+          { name: 'Proposal linked', passed: true },
+          { name: 'Review linked', passed: false },
+        ],
+      },
+    } as any)
+    const model = mapPrQueueToViewModel([item])
+    const gate = model.items[0].workflowGate
+    expect(gate.touched).toBe(true)
+    expect(gate.criteria).toHaveLength(2)
+    expect(gate.criteria[0]).toEqual({ name: 'Proposal linked', passed: true })
+    expect(gate.criteria[1]).toEqual({ name: 'Review linked', passed: false })
+    expect(gate.overall).toBe('FAIL')
   })
 
   it('handles multiple items preserving order', () => {

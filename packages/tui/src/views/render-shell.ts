@@ -10,6 +10,14 @@ import type { DigestViewModel } from '../view-models/digest.js'
 import type { HandoffListViewModel } from '../view-models/handoff.js'
 import type { DecisionListViewModel } from '../view-models/decision.js'
 import type { WorkflowLifecycleViewModel } from '../view-models/workflow-lifecycle.js'
+
+export interface WorkflowLifecycleBaseData {
+  workflowHash: string
+  trustLevel: string
+  risk: string
+  sourcePath: string
+  currentRun?: { runId: string; status: string; startedAt: string }
+}
 import type { TuiActionResult } from '../actions/types.js'
 
 export interface ApprovalExecutionParams {
@@ -41,6 +49,7 @@ export interface ShellViewData {
   handoffs?: HandoffListViewModel
   decisions?: DecisionListViewModel
   workflowLifecycle?: WorkflowLifecycleViewModel
+  workflowLifecycleBase?: Record<string, WorkflowLifecycleBaseData>
   actionHandlers?: TuiActionHandlers
 }
 

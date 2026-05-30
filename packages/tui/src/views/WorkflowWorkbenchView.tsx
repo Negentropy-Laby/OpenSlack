@@ -11,6 +11,7 @@ import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
 import ConfirmationDialog from '../design-system/ConfirmationDialog.js'
 import ActionStatus from '../design-system/ActionStatus.js'
 import { useNavigation } from '../navigation/context.js'
+import { useClampedIndex } from '../hooks/use-clamped-index.js'
 import { useActionDispatch } from '../actions/use-action-dispatch.js'
 import {
   TuiActionCategory,
@@ -92,13 +93,13 @@ function lastRunColorTheme(status: string | undefined): 'success' | 'error' | 'w
 
 export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: WorkflowWorkbenchProps): React.JSX.Element {
   const { pop, push } = useNavigation()
-  const [selectedIndex, setSelectedIndex] = useState(0)
   const [mode, setMode] = useState<ViewMode>('gallery')
   const [lastRunStatus, setLastRunStatus] = useState<string | undefined>(undefined)  // kept for future run-store integration
 
   const actionDispatch = useActionDispatch()
 
   const items = galleryModel.workflows
+  const [selectedIndex, setSelectedIndex] = useClampedIndex(items.length)
   const currentWf = items[selectedIndex] as WorkflowGalleryItem | undefined
 
   // --- Action factories ---

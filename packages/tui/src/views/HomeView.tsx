@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react'
+import React, { useCallback } from 'react'
 import Box from '../ink/components/Box.js'
 import Text from '../ink/components/Text.js'
 import useApp from '../ink/hooks/use-app.js'
@@ -7,6 +7,7 @@ import ThemedText from '../design-system/ThemedText.js'
 import Divider from '../design-system/Divider.js'
 import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
 import { useNavigation } from '../navigation/context.js'
+import { useClampedIndex } from '../hooks/use-clamped-index.js'
 import type { HomeViewModel } from '../view-models/home.js'
 
 export type HomeViewProps = {
@@ -71,7 +72,7 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
   const goalCount = model.goalItems.length
   const totalCount = combined.length
 
-  const [selectedIndex, setSelectedIndex] = useState(0)
+  const [selectedIndex, setSelectedIndex] = useClampedIndex(totalCount)
 
   const handleItemClick = useCallback((index: number) => {
     push({ view: combined[index].route })

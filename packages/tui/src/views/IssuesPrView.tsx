@@ -8,6 +8,7 @@ import Divider from '../design-system/Divider.js'
 import StatusIcon from '../design-system/StatusIcon.js'
 import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
 import { useNavigation } from '../navigation/context.js'
+import { useClampedIndex } from '../hooks/use-clamped-index.js'
 import type { IssuesPrViewModel } from '../view-models/issues-pr.js'
 
 type Tab = 'issues' | 'prs'
@@ -45,12 +46,12 @@ function formatPrDetail(status: string, author: string, riskZone: string, blocke
 export default function IssuesPrView({ model, onSelectIssue, onSelectPr }: IssuesPrViewProps): React.JSX.Element {
   const { pop, push } = useNavigation()
   const [tab, setTab] = useState<Tab>(model.tab)
-  const [selectedIndex, setSelectedIndex] = useState(0)
 
   const issues = model.issues
   const prs = model.prs
   const currentItems = tab === 'issues' ? issues : prs
   const itemCount = currentItems.length
+  const [selectedIndex, setSelectedIndex] = useClampedIndex(itemCount)
 
   const handleSelect = useCallback(() => {
     if (tab === 'issues') {

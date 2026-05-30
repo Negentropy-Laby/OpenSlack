@@ -12,7 +12,7 @@ export interface LifecycleStage {
 
 export interface PhaseIssueItem {
   phase: string
-  issueNumber: number
+  issueNumber?: number
   status: string
   blockedBy?: string[]
 }
@@ -81,7 +81,7 @@ export function mapWorkflowLifecycleToViewModel(data?: {
 
   const phaseIssues: PhaseIssueItem[] = (data?.phaseIssues ?? []).map(pi => ({
     phase: s(pi.phase ?? ''),
-    issueNumber: pi.issueNumber ?? 0,
+    issueNumber: pi.issueNumber,
     status: s(pi.status ?? 'open'),
     blockedBy: (pi.blockedBy ?? []).map(s),
   }))

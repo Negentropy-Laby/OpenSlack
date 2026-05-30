@@ -13,6 +13,7 @@ import ConfirmationDialog from '../design-system/ConfirmationDialog.js'
 import ActionStatus from '../design-system/ActionStatus.js'
 import { useNavigation } from '../navigation/context.js'
 import { getCategoryLabel } from '../view-models/approval-center.js'
+import { useClampedIndex } from '../hooks/use-clamped-index.js'
 import { useActionDispatch } from '../actions/use-action-dispatch.js'
 import { TuiActionCategory, TuiRiskLevel, TuiActionStatus } from '../actions/types.js'
 import type { TuiAction, TuiActionResult } from '../actions/types.js'
@@ -95,7 +96,6 @@ function getCliSuggestion(category: ApprovalCategory, isApprove: boolean): strin
 
 export default function ApprovalCenterView({ model, actionHandlers }: ApprovalCenterViewProps): React.JSX.Element {
   const { pop } = useNavigation()
-  const [selectedIndex, setSelectedIndex] = useState(0)
   const [mode, setMode] = useState<ViewMode>('list')
   const [confirmingAction, setConfirmingAction] = useState<'approve' | 'reject' | null>(null)
 
@@ -117,6 +117,7 @@ export default function ApprovalCenterView({ model, actionHandlers }: ApprovalCe
   }
 
   const items = flatItems
+  const [selectedIndex, setSelectedIndex] = useClampedIndex(items.length)
   const selected: ApprovalItem | undefined = items[selectedIndex]
 
   /** Build a TuiAction for the selected item. */
