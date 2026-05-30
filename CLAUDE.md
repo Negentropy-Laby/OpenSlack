@@ -26,7 +26,7 @@ pnpm openslack pr doctor <PR_NUMBER>
 ## Never Do These
 
 - Do not push directly to `main`.
-- Do not approve PRs.
+- Do not approve PRs. (Agents may merge PRs that already have valid human approval.)
 - Do not bypass rulesets.
 - Do not edit secrets or credential files.
 - Do not hand-edit generated status without running `pnpm openslack status generate` and `pnpm openslack status verify`.
