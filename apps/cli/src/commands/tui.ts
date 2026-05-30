@@ -113,6 +113,38 @@ export function tuiCommands(): Command {
           // Workflow gallery data unavailable
         }
 
+        // Pre-fetch digest data
+        try {
+          const { readEvents, filterEvents, buildDigest } = await import('@openslack/collaboration');
+          const { mapDigestToViewModel } = await import('@openslack/tui');
+          const events = readEvents();
+          const filtered = filterEvents(events, { since: new Date(Date.now() - 24 * 60 * 60 * 1000) });
+          const digest = buildDigest(filtered, 24);
+          data.digest = mapDigestToViewModel(digest);
+        } catch {
+          // Digest data unavailable
+        }
+
+        // Pre-fetch handoff list data
+        try {
+          const { listHandoffs } = await import('@openslack/collaboration');
+          const { mapHandoffListToViewModel } = await import('@openslack/tui');
+          const handoffs = listHandoffs();
+          data.handoffs = mapHandoffListToViewModel(handoffs);
+        } catch {
+          // Handoff data unavailable
+        }
+
+        // Pre-fetch decision list data
+        try {
+          const { listDecisions } = await import('@openslack/collaboration');
+          const { mapDecisionListToViewModel } = await import('@openslack/tui');
+          const decisions = listDecisions();
+          data.decisions = mapDecisionListToViewModel(decisions);
+        } catch {
+          // Decision data unavailable
+        }
+
         // Pre-fetch approval data
         try {
           const { listPendingPlans } = await import('@openslack/operator');

@@ -57,6 +57,13 @@ export function mapHomeToViewModel(data?: {
         prsBlocked: number
       }
     }
+    digest?: {
+      recommendedNext: Array<{ objectKind: string; objectId: string; action: string }>
+    }
+    decisions?: {
+      activeCount: number
+      items: Array<{ id: string; topic: string }>
+    }
   }
 }): HomeViewModel {
   const s = sanitizeTerminalText
@@ -138,8 +145,30 @@ export function mapHomeToViewModel(data?: {
         detail: firstHandoff
           ? `${s(firstHandoff.from)} -> ${s(firstHandoff.to)}`
           : '',
-        route: 'dashboard',
+        route: 'handoffs',
         colorTheme: 'warning',
+      })
+    }
+
+    // Digest recommended next actions
+    if (sd.digest && sd.digest.recommendedNext.length > 0) {
+      const first = sd.digest.recommendedNext[0]
+      attentionItems.push({
+        label: `${sd.digest.recommendedNext.length} Recommended Action${sd.digest.recommendedNext.length !== 1 ? 's' : ''}`,
+        detail: `${s(first.objectKind)}:${s(first.objectId)} — ${s(first.action)}`,
+        route: 'digest',
+        colorTheme: 'warning',
+      })
+    }
+
+    // Active decisions
+    if (sd.decisions && sd.decisions.activeCount > 0) {
+      const first = sd.decisions.items[0]
+      attentionItems.push({
+        label: `${sd.decisions.activeCount} Active Decision${sd.decisions.activeCount !== 1 ? 's' : ''}`,
+        detail: first ? s(first.topic) : '',
+        route: 'decisions',
+        colorTheme: 'info',
       })
     }
   }
@@ -151,6 +180,9 @@ export function mapHomeToViewModel(data?: {
     { label: 'Approvals', key: 'approvals', shortcut: '4' },
     { label: 'Status', key: 'status', shortcut: '5' },
     { label: 'Activity', key: 'activity', shortcut: '6' },
+    { label: 'Digest', key: 'digest', shortcut: '7' },
+    { label: 'Handoffs', key: 'handoffs', shortcut: '8' },
+    { label: 'Decisions', key: 'decisions', shortcut: '9' },
   ]
 
   return {

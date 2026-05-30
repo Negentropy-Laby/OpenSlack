@@ -6,6 +6,9 @@ import type { PrQueueViewModel } from '../view-models/pr-queue.js'
 import type { StatusViewModel } from '../view-models/status.js'
 import type { WorkflowGalleryViewModel } from '../view-models/workflow-gallery.js'
 import type { ApprovalCenterViewModel } from '../view-models/approval-center.js'
+import type { DigestViewModel } from '../view-models/digest.js'
+import type { HandoffListViewModel } from '../view-models/handoff.js'
+import type { DecisionListViewModel } from '../view-models/decision.js'
 import type { TuiActionResult } from '../actions/types.js'
 
 export interface ApprovalExecutionParams {
@@ -32,6 +35,9 @@ export interface ShellViewData {
   status?: StatusViewModel
   workflowGallery?: WorkflowGalleryViewModel
   approvals?: ApprovalCenterViewModel
+  digest?: DigestViewModel
+  handoffs?: HandoffListViewModel
+  decisions?: DecisionListViewModel
   actionHandlers?: TuiActionHandlers
 }
 
