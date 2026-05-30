@@ -37,6 +37,7 @@ export interface TuiActionHandlers {
   requestWorkflowReview?: (workflowName: string) => Promise<TuiActionResult>
   splitWorkflowIntoIssues?: (workflowName: string, parentIssue: number) => Promise<TuiActionResult>
   openWorkflowLifecycle?: (workflowName: string) => Promise<TuiActionResult>
+  finalizeWorkflowPr?: (workflowName: string, prNumber: number) => Promise<TuiActionResult>
 }
 
 export interface ShellViewData {

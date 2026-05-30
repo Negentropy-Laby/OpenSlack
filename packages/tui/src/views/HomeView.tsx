@@ -22,7 +22,7 @@ interface CombinedItem {
   label: string
   detail?: string
   route: string
-  kind: 'attention' | 'nav' | 'goal'
+  kind: 'attention' | 'nav' | 'goal' | 'workflow'
   colorTheme: 'warning' | 'info' | 'accent'
   shortcut?: string
 }
@@ -50,6 +50,17 @@ function buildCombinedItems(model: HomeViewModel): CombinedItem[] {
     })
   }
 
+  for (const w of model.workflowQuickActions) {
+    items.push({
+      label: w.label,
+      route: w.route,
+      kind: 'workflow',
+      colorTheme: 'accent',
+      shortcut: w.shortcut,
+      detail: w.description,
+    })
+  }
+
   for (const n of model.navItems) {
     items.push({
       label: n.label,
@@ -70,6 +81,7 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
   const combined = buildCombinedItems(model)
   const attentionCount = model.attentionItems.length
   const goalCount = model.goalItems.length
+  const workflowCount = model.workflowQuickActions.length
   const totalCount = combined.length
 
   const [selectedIndex, setSelectedIndex] = useClampedIndex(totalCount)
@@ -82,10 +94,11 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
     setSelectedIndex(index)
   }, [])
 
-  // Number shortcut lookup (nav items only, after attention + goal sections)
+  // Shortcut lookup (nav + workflow items, after attention + goal sections)
   const shortcutMap = new Map<string, number>()
-  const navStartIndex = attentionCount + goalCount
-  for (let i = navStartIndex; i < totalCount; i++) {
+  const workflowStartIndex = attentionCount + goalCount
+  const navStartIndex = workflowStartIndex + workflowCount
+  for (let i = workflowStartIndex; i < totalCount; i++) {
     const shortcut = combined[i].shortcut
     if (shortcut) {
       shortcutMap.set(shortcut, i)
@@ -130,6 +143,14 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
     const item = combined[i]
     const isSelected = selectedIndex === i
     goalElements.push(renderItemRow(item, isSelected, i, handleItemClick, handleItemHover))
+  }
+
+  // Render workflow quick actions section items
+  const workflowElements: React.ReactNode[] = []
+  for (let i = attentionCount + goalCount; i < navStartIndex; i++) {
+    const item = combined[i]
+    const isSelected = selectedIndex === i
+    workflowElements.push(renderItemRow(item, isSelected, i, handleItemClick, handleItemHover))
   }
 
   // Render nav section items
@@ -200,7 +221,25 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
 
     React.createElement(Divider, { length: 40 }),
 
-    // Section 3: Quick Navigation
+    // Section 3: Workflow Quick Actions
+    React.createElement(
+      Box,
+      { flexDirection: 'column', marginTop: 0, marginBottom: 0 },
+      React.createElement(
+        ThemedText,
+        { colorTheme: 'accent', bold: true },
+        'Workflow Quick Actions',
+      ),
+      React.createElement(
+        Box,
+        { flexDirection: 'column' },
+        ...workflowElements,
+      ),
+    ),
+
+    React.createElement(Divider, { length: 40 }),
+
+    // Section 4: Quick Navigation
     React.createElement(
       Box,
       { flexDirection: 'column', marginTop: 0, marginBottom: 0 },
@@ -227,7 +266,7 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
       React.createElement(Text, null, '  '),
       React.createElement(KeyboardShortcutHint, { keys: ['Enter'], description: 'Select' }),
       React.createElement(Text, null, '  '),
-      React.createElement(KeyboardShortcutHint, { keys: ['1-9'], description: 'Jump' }),
+      React.createElement(KeyboardShortcutHint, { keys: ['1-9', 'w/p/r/a'], description: 'Jump' }),
     ),
   )
 }
