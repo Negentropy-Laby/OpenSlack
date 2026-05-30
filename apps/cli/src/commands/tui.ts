@@ -109,6 +109,42 @@ export function tuiCommands(): Command {
           ];
 
           data.workflowGallery = mapWorkflowGalleryToViewModel({ workflows });
+
+          // Pre-fetch workflow lifecycle base data (cheap local data only)
+          try {
+            const { findWorkflow, loadWorkflow, RunStore } = await import('@openslack/workflows');
+            const lifecycleBase: Record<string, { workflowHash: string; trustLevel: string; risk: string; sourcePath: string; currentRun?: { runId: string; status: string; startedAt: string } }> = {};
+
+            for (const wf of workflows) {
+              const found = await findWorkflow(wf.name, root);
+              if (!found) continue;
+              const mod = await loadWorkflow(found.path);
+              const runStore = new RunStore({ baseDir: join(root, '.openslack.local', 'workflows') });
+
+              // Find most recent run for this workflow across all statuses
+              let currentRun: { runId: string; status: string; startedAt: string } | undefined;
+              for (const status of ['running', 'paused_waiting_approval', 'paused', 'completed', 'failed', 'cancelled']) {
+                const runs = await runStore.listRunsByStatus(status as 'running' | 'paused_waiting_approval' | 'paused' | 'completed' | 'failed' | 'cancelled');
+                const match = runs.find(r => r.workflowName === wf.name);
+                if (match) {
+                  currentRun = { runId: match.runId, status: match.status, startedAt: match.startedAt };
+                  break;
+                }
+              }
+
+              lifecycleBase[wf.name] = {
+                workflowHash: mod.hash.slice(0, 16),
+                trustLevel: wf.trustLevel,
+                risk: mod.meta.risk ?? 'unknown',
+                sourcePath: mod.source ?? found.path,
+                currentRun,
+              };
+            }
+
+            data.workflowLifecycleBase = lifecycleBase;
+          } catch {
+            // Lifecycle base data unavailable
+          }
         } catch {
           // Workflow gallery data unavailable
         }

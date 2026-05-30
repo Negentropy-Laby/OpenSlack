@@ -25,6 +25,7 @@ function makeModel(overrides?: Partial<PrQueueViewModel>): PrQueueViewModel {
         riskZone: 'green',
         nextAction: 'Run openslack pr merge 42',
         rerunCommand: 'openslack pr doctor 42',
+        workflowGate: { touched: false, criteria: [], overall: 'N/A' },
       },
       {
         prNumber: 43,
@@ -37,6 +38,7 @@ function makeModel(overrides?: Partial<PrQueueViewModel>): PrQueueViewModel {
         riskZone: 'green',
         nextAction: 'Wait for checks to complete',
         rerunCommand: 'openslack pr doctor 43',
+        workflowGate: { touched: true, criteria: [{ name: 'tests', passed: true }, { name: 'lint', passed: false }], overall: 'FAIL' },
       },
       {
         prNumber: 44,
@@ -49,6 +51,7 @@ function makeModel(overrides?: Partial<PrQueueViewModel>): PrQueueViewModel {
         riskZone: 'red',
         nextAction: 'Request human approval',
         rerunCommand: 'openslack pr doctor 44',
+        workflowGate: { touched: true, criteria: [{ name: 'approval', passed: false }], overall: 'FAIL' },
       },
     ],
     ...overrides,

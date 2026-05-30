@@ -23,6 +23,50 @@ function statusForItem(item: PrQueueViewModel['items'][number]): 'PASS' | 'FAIL'
   return 'info'
 }
 
+function renderWorkflowGate(
+  gate: PrQueueViewModel['items'][number]['workflowGate'],
+): React.ReactNode {
+  if (!gate.touched) return null
+
+  return React.createElement(
+    Box,
+    { flexDirection: 'column', marginLeft: 3, marginTop: 0 },
+    React.createElement(
+      ThemedText,
+      { colorTheme: 'accent', bold: true },
+      'Workflow Gate:',
+    ),
+    ...gate.criteria.map(criterion =>
+      React.createElement(
+        Box,
+        { flexDirection: 'row', key: criterion.name, marginLeft: 2 },
+        React.createElement(StatusIcon, {
+          status: criterion.passed ? 'PASS' : 'FAIL',
+        }),
+        React.createElement(Text, null, ' '),
+        React.createElement(
+          ThemedText,
+          {
+            colorTheme: criterion.passed ? 'foreground' : 'error',
+          },
+          criterion.name,
+        ),
+      ),
+    ),
+    gate.criteria.length === 0
+      ? React.createElement(
+          Box,
+          { marginLeft: 2 },
+          React.createElement(
+            ThemedText,
+            { colorTheme: 'warning' },
+            '(no criteria defined)',
+          ),
+        )
+      : null,
+  )
+}
+
 export default function PrQueueView({ model, onBack }: PrQueueViewProps): React.JSX.Element {
   const { exit } = useApp()
 
@@ -64,12 +108,16 @@ export default function PrQueueView({ model, onBack }: PrQueueViewProps): React.
           Pane,
           { title: 'Pull Requests', marginY: 0 },
           ...model.items.map(item =>
-            React.createElement(ListItem, {
-              key: item.prNumber,
-              label: `#${item.prNumber} ${item.title}`,
-              detail: `Owner: ${item.owner} | Blocker: ${item.blockerCategory} | Next: ${item.nextAction}`,
-              status: statusForItem(item),
-            }),
+            React.createElement(
+              Box,
+              { key: item.prNumber, flexDirection: 'column', marginY: 0 },
+              React.createElement(ListItem, {
+                label: `#${item.prNumber} ${item.title}`,
+                detail: `Owner: ${item.owner} | Blocker: ${item.blockerCategory} | Next: ${item.nextAction}`,
+                status: statusForItem(item),
+              }),
+              renderWorkflowGate(item.workflowGate),
+            ),
           ),
         )
       : React.createElement(ThemedText, { colorTheme: 'muted' }, 'No open PRs found.'),
