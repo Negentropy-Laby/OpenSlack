@@ -94,7 +94,12 @@ export default function createRenderer(
     // overflow writes land at y >= screen.height and setCellAt drops
     // them. The sibling is invisible (obvious, easy to find) instead of
     // corrupting the whole terminal.
-    const height = options.altScreen ? terminalRows : yogaHeight
+    // Main screen: cap screen buffer to terminal rows. Content taller than the
+    // viewport cannot be reached by cursor-relative diff (cursorDown stops at
+    // the viewport bottom, so VirtualScreen drifts from the real cursor).
+    // Capping here prevents scrollback bleed and keeps the diff cursor model
+    // in sync with the physical terminal. Overflow is clipped by setCellAt.
+    const height = options.altScreen ? terminalRows : Math.min(yogaHeight, terminalRows)
     if (options.altScreen && yogaHeight > terminalRows) {
       logForDebugging(
         `alt-screen: yoga height ${yogaHeight} > terminalRows ${terminalRows} — ` +
@@ -161,15 +166,14 @@ export default function createRenderer(
       },
       cursor: {
         x: 0,
-        // In the alt screen, keep the cursor inside the viewport. When
-        // screen.height === terminalRows exactly (content fills the alt
-        // screen), cursor.y = screen.height would trigger log-update's
-        // cursor-restore LF at the last row, scrolling one row off the top
-        // of the alt buffer and desyncing the diff's cursor model. The
-        // cursor is hidden so its position only matters for diff coords.
-        y: options.altScreen
-          ? Math.max(0, Math.min(screen.height, terminalRows) - 1)
-          : screen.height,
+        // Keep the cursor inside the viewport for both alt-screen and main-screen.
+        // When screen.height === terminalRows exactly (content fills the viewport),
+        // cursor.y = screen.height would trigger log-update's cursor-restore LF at
+        // the last row, scrolling one row off and desyncing the diff cursor model.
+        // On the main screen this also prevents drift when the physical terminal
+        // clamps the cursor to the viewport bottom while VirtualScreen thinks it
+        // is at screen.height (past the bottom).
+        y: Math.max(0, Math.min(screen.height, terminalRows) - 1),
         // Hide cursor when there's dynamic output to render (only in TTY mode)
         visible: !isTTY || screen.height === 0,
       },

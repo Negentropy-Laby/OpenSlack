@@ -254,7 +254,7 @@ export class LogUpdate {
     // This early full-reset check only applies in "steady state" (not growing).
     // For growing, the viewportY calculation below (with cursorRestoreScroll)
     // catches unreachable scrollback rows in the diff loop instead.
-    const cursorAtBottom = prev.cursor.y >= prev.screen.height
+    const cursorAtBottom = prev.cursor.y >= prev.screen.height - 1
     const isGrowing = next.screen.height > prev.screen.height
     // When content fills the viewport exactly (height == viewport) and the
     // cursor is at the bottom, the cursor-restore LF at the end of the
