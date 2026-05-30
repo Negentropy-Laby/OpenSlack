@@ -10,10 +10,10 @@ export async function renderHandoffListTui(
   options?: { onSelect?: (item: { id: string }) => void; onBack?: () => void },
 ): Promise<void> {
   const model = mapHandoffListToViewModel(handoffs)
-  const { unmount } = await renderTui(
+  await renderTui(
     React.createElement(HandoffListView, {
       model,
-      onSelect: options?.onSelect ? item => options.onSelect!(item) : undefined,
+      onSelect: options?.onSelect ? item => options.onSelect(item) : undefined,
       onBack: options?.onBack,
     }),
   )
@@ -24,7 +24,7 @@ export async function renderHandoffDetailTui(
   options?: { onBack?: () => void },
 ): Promise<void> {
   const model = mapHandoffToViewModel(handoff)
-  const { unmount } = await renderTui(
+  await renderTui(
     React.createElement(HandoffDetailView, { model, onBack: options?.onBack }),
   )
 }

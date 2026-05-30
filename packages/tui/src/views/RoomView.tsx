@@ -13,14 +13,19 @@ import type { RoomViewModel } from '../view-models/room.js'
 
 export type RoomViewProps = {
   model: RoomViewModel
+  onBack?: () => void
 }
 
-export default function RoomView({ model }: RoomViewProps): React.JSX.Element {
+export default function RoomView({ model, onBack }: RoomViewProps): React.JSX.Element {
   const { exit } = useApp()
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
-      exit()
+      if (onBack) {
+        onBack()
+      } else {
+        exit()
+      }
     }
   })
 

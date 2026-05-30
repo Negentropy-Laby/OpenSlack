@@ -9,7 +9,7 @@ export async function renderActivityTui(
   options?: { periodHours?: number; onBack?: () => void },
 ): Promise<void> {
   const model = mapActivityToViewModel(events, options?.periodHours ?? 24)
-  const { unmount } = await renderTui(
+  await renderTui(
     React.createElement(ActivityView, { model, onBack: options?.onBack }),
   )
 }

@@ -9,7 +9,7 @@ export async function renderDigestTui(
   options?: { onBack?: () => void },
 ): Promise<void> {
   const model = mapDigestToViewModel(digest)
-  const { unmount } = await renderTui(
+  await renderTui(
     React.createElement(DigestView, { model, onBack: options?.onBack }),
   )
 }

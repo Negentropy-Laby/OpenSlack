@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import Box from '../ink/components/Box.js'
 import Text from '../ink/components/Text.js'
 import useApp from '../ink/hooks/use-app.js'
@@ -17,6 +17,8 @@ import { mapIssuesPrToViewModel } from '../view-models/issues-pr.js'
 import { mapDigestToViewModel } from '../view-models/digest.js'
 import { mapHandoffListToViewModel } from '../view-models/handoff.js'
 import { mapDecisionListToViewModel } from '../view-models/decision.js'
+import { mapRoomToViewModel } from '../view-models/room.js'
+import type { RoomViewModel } from '../view-models/room.js'
 import type { ShellViewData, TuiActionHandlers } from './render-shell.js'
 
 import HomeView from './HomeView.js'
@@ -117,9 +119,67 @@ function ActivityViewWrapper({ data }: { data?: ShellViewData }): React.JSX.Elem
 }
 
 /**
+ * Room view wrapper — handles async room data loading with useEffect + useState.
+ */
+function RoomViewWrapper({ roomId, onBack }: { roomId: string; onBack?: () => void }): React.JSX.Element {
+  const [model, setModel] = useState<RoomViewModel | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        const { buildRoomView, readEvents } = await import('@openslack/collaboration')
+        const events = readEvents()
+        const room = buildRoomView(roomId, events)
+        if (!cancelled) {
+          if (room) {
+            setModel(mapRoomToViewModel(room))
+          }
+          setLoading(false)
+        }
+      } catch {
+        if (!cancelled) {
+          setLoading(false)
+        }
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [roomId])
+
+  if (loading) {
+    return React.createElement(
+      Box,
+      { flexDirection: 'column', paddingX: 1 },
+      React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, `Room: ${roomId}`),
+      React.createElement(Divider, { length: 40 }),
+      React.createElement(ThemedText, { colorTheme: 'muted' }, 'Loading room data...'),
+    )
+  }
+
+  if (!model) {
+    return React.createElement(
+      Box,
+      { flexDirection: 'column', paddingX: 1 },
+      React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, `Room: ${roomId}`),
+      React.createElement(Divider, { length: 40 }),
+      React.createElement(ThemedText, { colorTheme: 'muted' }, 'Room data unavailable.'),
+      React.createElement(
+        Box,
+        { flexDirection: 'row' },
+        React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'back' }),
+      ),
+    )
+  }
+
+  return React.createElement(RoomView, { model, onBack })
+}
+
+/**
  * Maps a route to a rendered view component.
  */
-async function ViewRouter({ data }: { data?: ShellViewData }): Promise<React.JSX.Element> {
+function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
   const { current, pop } = useNavigation()
 
   switch (current.view) {
@@ -179,18 +239,7 @@ async function ViewRouter({ data }: { data?: ShellViewData }): Promise<React.JSX
     case 'room': {
       const roomId = current.params?.roomId as string | undefined
       if (roomId) {
-        try {
-          const { buildRoomView } = await import('@openslack/collaboration')
-          const { readEvents } = await import('@openslack/collaboration')
-          const events = readEvents()
-          const room = buildRoomView(roomId, events)
-          if (room) {
-            const { mapRoomToViewModel } = await import('../view-models/room.js')
-            return React.createElement(RoomView, { model: mapRoomToViewModel(room) })
-          }
-        } catch {
-          // Room data unavailable
-        }
+        return React.createElement(RoomViewWrapper, { roomId, onBack: pop })
       }
       return React.createElement(PlaceholderView, { route: current })
     }

@@ -10,10 +10,10 @@ export async function renderDecisionListTui(
   options?: { onSelect?: (item: { id: string }) => void; onBack?: () => void },
 ): Promise<void> {
   const model = mapDecisionListToViewModel(decisions)
-  const { unmount } = await renderTui(
+  await renderTui(
     React.createElement(DecisionListView, {
       model,
-      onSelect: options?.onSelect ? item => options.onSelect!(item) : undefined,
+      onSelect: options?.onSelect ? item => options.onSelect(item) : undefined,
       onBack: options?.onBack,
     }),
   )
@@ -24,7 +24,7 @@ export async function renderDecisionDetailTui(
   options?: { onBack?: () => void },
 ): Promise<void> {
   const model = mapDecisionToViewModel(decision)
-  const { unmount } = await renderTui(
+  await renderTui(
     React.createElement(DecisionDetailView, { model, onBack: options?.onBack }),
   )
 }
