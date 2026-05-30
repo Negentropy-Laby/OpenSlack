@@ -61,6 +61,25 @@ function formatColorTheme(format: string): 'accent' | 'info' | 'muted' {
   return 'muted'
 }
 
+/** Build contextual recommendations for a workflow. */
+function getRecommendations(wf: WorkflowGalleryItem): string[] {
+  const recs: string[] = []
+  if (wf.trustLevel === 'untrusted') {
+    recs.push('Trust this workflow or request a security review before running.')
+  }
+  const status = wf.lastRunStatus?.toLowerCase() ?? ''
+  if (status.includes('paused') || status.includes('awaiting')) {
+    recs.push('Visit the Approval Center to resolve pending confirmations.')
+  }
+  if (wf.risk === 'high') {
+    recs.push('Consider a dry-run before executing this high-risk workflow.')
+  }
+  if (recs.length === 0) {
+    recs.push('Preview the workflow or create an issue to track changes.')
+  }
+  return recs
+}
+
 /** Determine the color theme key for a last run status. */
 function lastRunColorTheme(status: string | undefined): 'success' | 'error' | 'warning' | 'muted' {
   if (!status) return 'muted'
@@ -72,7 +91,7 @@ function lastRunColorTheme(status: string | undefined): 'success' | 'error' | 'w
 }
 
 export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: WorkflowWorkbenchProps): React.JSX.Element {
-  const { pop } = useNavigation()
+  const { pop, push } = useNavigation()
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [mode, setMode] = useState<ViewMode>('gallery')
   const [lastRunStatus, setLastRunStatus] = useState<string | undefined>(undefined)  // kept for future run-store integration
@@ -236,6 +255,10 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
         setMode('issues-menu')
         return
       }
+      if (input === 'l') {
+        push({ view: 'workflow-lifecycle', params: { workflowName: currentWf.name } })
+        return
+      }
     }
 
     // Issues-menu mode actions
@@ -317,6 +340,8 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
       React.createElement(KeyboardShortcutHint, { keys: ['t'], description: 'Trust' }),
       React.createElement(Text, null, '  '),
       React.createElement(KeyboardShortcutHint, { keys: ['i'], description: 'Issues' }),
+      React.createElement(Text, null, '  '),
+      React.createElement(KeyboardShortcutHint, { keys: ['l'], description: 'Lifecycle' }),
       React.createElement(Text, null, '  '),
       React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'Back' }),
     )
@@ -516,6 +541,19 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
           React.createElement(Box, { flexDirection: 'row' },
             React.createElement(ThemedText, { colorTheme: 'muted' }, 'Operations: '),
             React.createElement(ThemedText, { colorTheme: 'info', dim: true }, opsLine),
+          ),
+        ),
+      ),
+      React.createElement(Divider, { length: 40 }),
+      React.createElement(
+        Pane,
+        { title: 'Recommended Next', marginY: 0 },
+        React.createElement(Box, { flexDirection: 'column' },
+          ...getRecommendations(wf).map((rec, idx) =>
+            React.createElement(Box, { key: `rec-${idx}`, flexDirection: 'row' },
+              React.createElement(ThemedText, { colorTheme: 'accent' }, '  '),
+              React.createElement(ThemedText, { colorTheme: 'foreground' }, rec),
+            ),
           ),
         ),
       ),

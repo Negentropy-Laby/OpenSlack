@@ -1,6 +1,17 @@
 import type { PRQueueItem } from '@openslack/pr'
 import { sanitizeTerminalText } from '../sanitize.js'
 
+export interface WorkflowGateCriterion {
+  name: string
+  passed: boolean
+}
+
+export interface WorkflowGateViewModel {
+  touched: boolean
+  criteria: WorkflowGateCriterion[]
+  overall: 'PASS' | 'FAIL' | 'N/A'
+}
+
 export interface PrQueueViewModel {
   title: string
   totalPRs: number
@@ -18,6 +29,7 @@ export interface PrQueueViewModel {
     riskZone: string
     nextAction: string
     rerunCommand: string
+    workflowGate: WorkflowGateViewModel
   }>
 }
 
@@ -34,17 +46,36 @@ export function mapPrQueueToViewModel(items: PRQueueItem[]): PrQueueViewModel {
     readyCount,
     blockedCount,
     pendingCount,
-    items: items.map(item => ({
-      prNumber: item.prNumber,
-      title: s(item.title),
-      author: s(item.author),
-      decision: s(item.decision),
-      blockerCategory: s(item.blockerCategory),
-      owner: s(item.owner),
-      canMerge: item.canMerge,
-      riskZone: s(item.riskZone),
-      nextAction: s(item.nextAction),
-      rerunCommand: s(item.rerunCommand),
-    })),
+    items: items.map(item => {
+      const gate = (item as any).workflowGate
+      const touched = !!gate?.touched
+      const criteria: WorkflowGateCriterion[] = touched
+        ? (gate.criteria ?? []).map((c: any) => ({
+            name: s(String(c.name ?? '')),
+            passed: Boolean(c.passed),
+          }))
+        : []
+      const overall: 'PASS' | 'FAIL' | 'N/A' = touched
+        ? (criteria.every(c => c.passed) ? 'PASS' : 'FAIL')
+        : 'N/A'
+
+      return {
+        prNumber: item.prNumber,
+        title: s(item.title),
+        author: s(item.author),
+        decision: s(item.decision),
+        blockerCategory: s(item.blockerCategory),
+        owner: s(item.owner),
+        canMerge: item.canMerge,
+        riskZone: s(item.riskZone),
+        nextAction: s(item.nextAction),
+        rerunCommand: s(item.rerunCommand),
+        workflowGate: {
+          touched,
+          criteria,
+          overall,
+        },
+      }
+    }),
   }
 }

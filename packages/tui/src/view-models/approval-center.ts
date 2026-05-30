@@ -2,6 +2,13 @@ import { sanitizeTerminalText } from '../sanitize.js'
 
 export type ApprovalCategory = 'plan' | 'merge-request' | 'workflow-effect' | 'github-review'
 
+export interface ApprovalExplanation {
+  why: string
+  ifApproved: string
+  ifRejected: string
+  source: string
+}
+
 export interface ApprovalItem {
   id: string
   category: ApprovalCategory
@@ -13,10 +20,18 @@ export interface ApprovalItem {
   planId?: string
   prNumber?: number
   workflowName?: string
+  explanation?: ApprovalExplanation
+}
+
+export interface ApprovalGroup {
+  category: ApprovalCategory
+  label: string
+  items: ApprovalItem[]
 }
 
 export interface ApprovalCenterViewModel {
   pendingApprovals: ApprovalItem[]
+  groups: ApprovalGroup[]
   summary: {
     plans: number
     mergeRequests: number
@@ -48,6 +63,12 @@ export function mapApprovalCenterToViewModel(data?: {
     planId?: string
     prNumber?: number
     workflowName?: string
+    explanation?: {
+      why?: string
+      ifApproved?: string
+      ifRejected?: string
+      source?: string
+    }
   }>
 }): ApprovalCenterViewModel {
   const s = sanitizeTerminalText
@@ -63,6 +84,14 @@ export function mapApprovalCenterToViewModel(data?: {
     planId: item.planId,
     prNumber: item.prNumber,
     workflowName: item.workflowName,
+    explanation: item.explanation
+      ? {
+          why: s(item.explanation.why ?? ''),
+          ifApproved: s(item.explanation.ifApproved ?? ''),
+          ifRejected: s(item.explanation.ifRejected ?? ''),
+          source: s(item.explanation.source ?? ''),
+        }
+      : undefined,
   }))
 
   const summary = {
@@ -72,5 +101,14 @@ export function mapApprovalCenterToViewModel(data?: {
     githubReviews: pendingApprovals.filter(a => a.category === 'github-review').length,
   }
 
-  return { pendingApprovals, summary }
+  const categories: ApprovalCategory[] = ['plan', 'merge-request', 'workflow-effect', 'github-review']
+  const groups: ApprovalGroup[] = categories
+    .map(cat => ({
+      category: cat,
+      label: CATEGORY_LABELS[cat],
+      items: pendingApprovals.filter(a => a.category === cat),
+    }))
+    .filter(g => g.items.length > 0)
+
+  return { pendingApprovals, groups, summary }
 }

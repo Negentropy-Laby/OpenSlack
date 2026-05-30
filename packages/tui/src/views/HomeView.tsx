@@ -21,7 +21,7 @@ interface CombinedItem {
   label: string
   detail?: string
   route: string
-  kind: 'attention' | 'nav'
+  kind: 'attention' | 'nav' | 'goal'
   colorTheme: 'warning' | 'info' | 'accent'
   shortcut?: string
 }
@@ -36,6 +36,16 @@ function buildCombinedItems(model: HomeViewModel): CombinedItem[] {
       route: a.route,
       kind: 'attention',
       colorTheme: a.colorTheme,
+    })
+  }
+
+  for (const g of model.goalItems) {
+    items.push({
+      label: g.label,
+      detail: g.description,
+      route: g.route,
+      kind: 'goal',
+      colorTheme: 'accent',
     })
   }
 
@@ -58,6 +68,7 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
 
   const combined = buildCombinedItems(model)
   const attentionCount = model.attentionItems.length
+  const goalCount = model.goalItems.length
   const totalCount = combined.length
 
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -70,9 +81,10 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
     setSelectedIndex(index)
   }, [])
 
-  // Number shortcut lookup
+  // Number shortcut lookup (nav items only, after attention + goal sections)
   const shortcutMap = new Map<string, number>()
-  for (let i = attentionCount; i < totalCount; i++) {
+  const navStartIndex = attentionCount + goalCount
+  for (let i = navStartIndex; i < totalCount; i++) {
     const shortcut = combined[i].shortcut
     if (shortcut) {
       shortcutMap.set(shortcut, i)
@@ -111,9 +123,17 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
     attentionElements.push(renderItemRow(item, isSelected, i, handleItemClick, handleItemHover))
   }
 
+  // Render goal section items
+  const goalElements: React.ReactNode[] = []
+  for (let i = attentionCount; i < attentionCount + goalCount; i++) {
+    const item = combined[i]
+    const isSelected = selectedIndex === i
+    goalElements.push(renderItemRow(item, isSelected, i, handleItemClick, handleItemHover))
+  }
+
   // Render nav section items
   const navElements: React.ReactNode[] = []
-  for (let i = attentionCount; i < totalCount; i++) {
+  for (let i = navStartIndex; i < totalCount; i++) {
     const item = combined[i]
     const isSelected = selectedIndex === i
     navElements.push(renderItemRow(item, isSelected, i, handleItemClick, handleItemHover))
@@ -161,7 +181,25 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
 
     React.createElement(Divider, { length: 40 }),
 
-    // Section 2: Quick Navigation
+    // Section 2: What do you want to do?
+    React.createElement(
+      Box,
+      { flexDirection: 'column', marginTop: 0, marginBottom: 0 },
+      React.createElement(
+        ThemedText,
+        { colorTheme: 'accent', bold: true },
+        'What do you want to do?',
+      ),
+      React.createElement(
+        Box,
+        { flexDirection: 'column' },
+        ...goalElements,
+      ),
+    ),
+
+    React.createElement(Divider, { length: 40 }),
+
+    // Section 3: Quick Navigation
     React.createElement(
       Box,
       { flexDirection: 'column', marginTop: 0, marginBottom: 0 },
@@ -188,7 +226,7 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
       React.createElement(Text, null, '  '),
       React.createElement(KeyboardShortcutHint, { keys: ['Enter'], description: 'Select' }),
       React.createElement(Text, null, '  '),
-      React.createElement(KeyboardShortcutHint, { keys: ['1-6'], description: 'Jump' }),
+      React.createElement(KeyboardShortcutHint, { keys: ['1-9'], description: 'Jump' }),
     ),
   )
 }

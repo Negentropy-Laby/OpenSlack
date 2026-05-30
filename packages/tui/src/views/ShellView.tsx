@@ -33,6 +33,7 @@ import DigestView from './DigestView.js'
 import HandoffListView from './HandoffListView.js'
 import DecisionListView from './DecisionListView.js'
 import RoomView from './RoomView.js'
+import WorkflowLifecycleView from './WorkflowLifecycleView.js'
 
 /**
  * A view that hasn't been wired to live data yet.
@@ -233,6 +234,12 @@ function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
     case 'decisions': {
       if (data?.decisions) {
         return React.createElement(DecisionListView, { model: data.decisions, onBack: pop })
+      }
+      return React.createElement(PlaceholderView, { route: current })
+    }
+    case 'workflow-lifecycle': {
+      if (data?.workflowLifecycle) {
+        return React.createElement(WorkflowLifecycleView, { model: data.workflowLifecycle, actionHandlers: data?.actionHandlers, onBack: pop })
       }
       return React.createElement(PlaceholderView, { route: current })
     }

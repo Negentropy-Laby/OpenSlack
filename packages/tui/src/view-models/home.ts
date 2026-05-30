@@ -17,6 +17,12 @@ export interface NavItem {
   shortcut: string
 }
 
+export interface GoalItem {
+  label: string
+  route: string
+  description: string
+}
+
 export interface HomeViewModel {
   /** Items that need attention, ordered by urgency */
   attentionItems: AttentionItem[]
@@ -24,6 +30,8 @@ export interface HomeViewModel {
   allClear: boolean
   /** Quick navigation items with number shortcuts */
   navItems: NavItem[]
+  /** Goal-oriented items for the "What do you want to do?" section */
+  goalItems: GoalItem[]
   systemStatus: string
 }
 
@@ -185,10 +193,19 @@ export function mapHomeToViewModel(data?: {
     { label: 'Decisions', key: 'decisions', shortcut: '9' },
   ]
 
+  const goalItems: GoalItem[] = [
+    { label: 'Run a workflow', route: 'workflows', description: 'Browse, preview, and execute workflows' },
+    { label: 'Review pull requests', route: 'pr-queue', description: 'Check open PRs and merge readiness' },
+    { label: 'Approve pending items', route: 'approvals', description: 'Resolve plans, merge requests, and effects' },
+    { label: 'Manage workflows', route: 'workflows', description: 'Trust, dry-run, and lifecycle controls' },
+    { label: 'View recent activity', route: 'activity', description: 'See what happened across the system' },
+  ]
+
   return {
     attentionItems,
     allClear: attentionItems.length === 0,
     navItems,
+    goalItems,
     systemStatus: s(data?.systemStatus ?? 'ready'),
   }
 }

@@ -108,7 +108,15 @@ export default function ApprovalCenterView({ model, actionHandlers }: ApprovalCe
     reset: resetAction,
   } = useActionDispatch()
 
-  const items = model.pendingApprovals
+  // Flatten groups into a single navigable list while preserving group order
+  const flatItems: ApprovalItem[] = []
+  const groupBoundaries: number[] = [] // indices in flatItems where a new group starts
+  for (const group of model.groups) {
+    groupBoundaries.push(flatItems.length)
+    flatItems.push(...group.items)
+  }
+
+  const items = flatItems
   const selected: ApprovalItem | undefined = items[selectedIndex]
 
   /** Build a TuiAction for the selected item. */
@@ -331,6 +339,59 @@ export default function ApprovalCenterView({ model, actionHandlers }: ApprovalCe
                 React.createElement(ThemedText, { colorTheme: 'foreground' }, selected.detail),
               )
             : null,
+          selected.explanation
+            ? React.createElement(
+                Box,
+                { flexDirection: 'column', marginTop: 1 },
+                selected.explanation.why
+                  ? React.createElement(
+                      Box,
+                      { flexDirection: 'column' },
+                      React.createElement(ThemedText, { colorTheme: 'muted' }, 'Why:'),
+                      React.createElement(ThemedText, { colorTheme: 'foreground' }, selected.explanation.why),
+                    )
+                  : null,
+                selected.explanation.ifApproved
+                  ? React.createElement(
+                      Box,
+                      { flexDirection: 'column', marginTop: 1 },
+                      React.createElement(ThemedText, { colorTheme: 'muted' }, 'If approved:'),
+                      React.createElement(ThemedText, { colorTheme: 'foreground' }, selected.explanation.ifApproved),
+                    )
+                  : null,
+                selected.explanation.ifRejected
+                  ? React.createElement(
+                      Box,
+                      { flexDirection: 'column', marginTop: 1 },
+                      React.createElement(ThemedText, { colorTheme: 'muted' }, 'If rejected:'),
+                      React.createElement(ThemedText, { colorTheme: 'foreground' }, selected.explanation.ifRejected),
+                    )
+                  : null,
+                selected.explanation.source
+                  ? React.createElement(
+                      Box,
+                      { flexDirection: 'column', marginTop: 1 },
+                      React.createElement(ThemedText, { colorTheme: 'muted' }, 'Source:'),
+                      React.createElement(ThemedText, { colorTheme: 'foreground' }, selected.explanation.source),
+                    )
+                  : null,
+              )
+            : null,
+          selected.category === 'github-review'
+            ? React.createElement(
+                Box,
+                { flexDirection: 'column', marginTop: 1 },
+                React.createElement(
+                  Box,
+                  { flexDirection: 'row' },
+                  React.createElement(StatusIcon, { status: 'warn' }),
+                  React.createElement(Text, null, ' '),
+                  React.createElement(ThemedText, { colorTheme: 'warning' },
+                    'This requires a human GitHub identity. The TUI cannot approve GitHub PRs directly.',
+                  ),
+                ),
+              )
+            : null,
           React.createElement(
             Box,
             { flexDirection: 'row', marginTop: 1 },
@@ -354,35 +415,53 @@ export default function ApprovalCenterView({ model, actionHandlers }: ApprovalCe
   }
 
   // --- LIST MODE ---
-  const listRows = items.map((item, i) => {
-    const isSelected = i === selectedIndex
-    const pointer = isSelected ? '>' : ' '
-    const categoryIcon = item.category === 'plan' ? 'pass'
-      : item.category === 'merge-request' ? 'warn'
-      : item.category === 'workflow-effect' ? 'info'
-      : 'blocked'
-
-    return React.createElement(
-      Box,
-      { key: item.id, flexDirection: 'column' },
+  const listRows: React.ReactNode[] = []
+  let globalIndex = 0
+  for (const group of model.groups) {
+    // Group header
+    listRows.push(
       React.createElement(
         Box,
-        { flexDirection: 'row' },
-        React.createElement(ThemedText, { colorTheme: isSelected ? 'accent' : 'muted' }, pointer),
-        React.createElement(Text, null, ' '),
-        React.createElement(StatusIcon, { status: categoryIcon }),
-        React.createElement(Text, null, ' '),
-        isSelected
-          ? React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, item.title)
-          : React.createElement(ThemedText, { colorTheme: 'foreground' }, item.title),
-      ),
-      React.createElement(
-        Box,
-        { marginLeft: 3 },
-        React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, `${getCategoryLabel(item.category)} — ${item.requestedBy}`),
+        { key: `group-${group.category}`, flexDirection: 'row', marginTop: 1 },
+        React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, group.label),
+        React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, ` (${group.items.length})`),
       ),
     )
-  })
+    // Group items
+    for (const item of group.items) {
+      const i = globalIndex
+      const isSelected = i === selectedIndex
+      const pointer = isSelected ? '>' : ' '
+      const categoryIcon = item.category === 'plan' ? 'pass'
+        : item.category === 'merge-request' ? 'warn'
+        : item.category === 'workflow-effect' ? 'info'
+        : 'blocked'
+
+      listRows.push(
+        React.createElement(
+          Box,
+          { key: item.id, flexDirection: 'column' },
+          React.createElement(
+            Box,
+            { flexDirection: 'row' },
+            React.createElement(ThemedText, { colorTheme: isSelected ? 'accent' : 'muted' }, pointer),
+            React.createElement(Text, null, ' '),
+            React.createElement(StatusIcon, { status: categoryIcon }),
+            React.createElement(Text, null, ' '),
+            isSelected
+              ? React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, item.title)
+              : React.createElement(ThemedText, { colorTheme: 'foreground' }, item.title),
+          ),
+          React.createElement(
+            Box,
+            { marginLeft: 3 },
+            React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, `${getCategoryLabel(item.category)} — ${item.requestedBy}`),
+          ),
+        ),
+      )
+      globalIndex++
+    }
+  }
 
   return React.createElement(
     Box,
