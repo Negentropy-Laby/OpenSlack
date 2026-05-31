@@ -56,6 +56,7 @@ export interface PRReviewReport {
   baseRef: string;
   riskZone: RiskZone;
   changedFiles: string[];
+  filePatches?: Array<{ filename: string; patch: string }>;
   checks: Array<{ name: string; status: string; conclusion: string | null }>;
   reviews: Array<{ user: string; state: string }>;
   humanApprovals: Array<{ user: string }>;

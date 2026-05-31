@@ -39,10 +39,59 @@ function extractPostsIncluded(body: string): number | null {
   return match ? parseInt(match[1], 10) : null;
 }
 
+function isPatchWithinMarkerRange(patch: string, marker: string): { valid: boolean; detail: string } {
+  const startMarker = `<!-- openslack:${marker}:start -->`;
+  const endMarker = `<!-- openslack:${marker}:end -->`;
+
+  const lines = patch.split('\n');
+  const hunkLines: string[] = [];
+
+  for (const line of lines) {
+    if (line.startsWith('@@')) continue;
+    hunkLines.push(line);
+  }
+
+  // Find marker positions by comparing content (stripping +/- / space prefix)
+  let startIdx = -1;
+  let endIdx = -1;
+  for (let i = 0; i < hunkLines.length; i++) {
+    const content = hunkLines[i].replace(/^[+\- ]/, '').trim();
+    if (content === startMarker) startIdx = i;
+    if (content === endMarker) endIdx = i;
+  }
+
+  if (startIdx === -1 || endIdx === -1) {
+    return { valid: false, detail: `Marker block not found in patch (marker: ${marker})` };
+  }
+
+  for (let i = 0; i < hunkLines.length; i++) {
+    const line = hunkLines[i];
+    if ((line.startsWith('+') || line.startsWith('-')) && !line.startsWith('+++') && !line.startsWith('---')) {
+      const content = line.slice(1).trim();
+
+      // Marker itself must not be modified
+      if (content === startMarker || content === endMarker) {
+        return { valid: false, detail: 'Marker comment itself was modified' };
+      }
+
+      // Change must be between start and end markers
+      if (i < startIdx) {
+        return { valid: false, detail: 'Change detected before marker start block' };
+      }
+      if (i > endIdx) {
+        return { valid: false, detail: 'Change detected after marker end block' };
+      }
+    }
+  }
+
+  return { valid: true, detail: `All changes within openslack:${marker} marker block` };
+}
+
 export function evaluateProfileSyncGate(
   changedFiles: string[],
   body: string,
   branchName: string,
+  filePatches?: Array<{ filename: string; patch: string }>,
 ): ProfileSyncGateResult {
   const isProfileSync = isProfileSyncPR(changedFiles, branchName, body);
 
@@ -56,6 +105,7 @@ export function evaluateProfileSyncGate(
         { name: 'Marker block present', status: 'N/A' },
         { name: 'Required metadata present', status: 'N/A' },
         { name: 'Not direct-main write', status: 'N/A' },
+        { name: 'Marker-only patch', status: 'N/A' },
       ],
     };
   }
@@ -66,7 +116,7 @@ export function evaluateProfileSyncGate(
   criteria.push({
     name: 'Profile-sync PR',
     status: 'PASS',
-    detail: `Branch: ${branchName}`,
+    detail: `Branch: ${branchName || '(unknown)'}`,
   });
 
   // Criterion 2: Only modifies profile/README.md
@@ -107,12 +157,51 @@ export function evaluateProfileSyncGate(
   });
 
   // Criterion 5: Not direct-main write
-  const isDirectMain = branchName === 'main' || branchName === 'master';
-  criteria.push({
-    name: 'Not direct-main write',
-    status: isDirectMain ? 'FAIL' : 'PASS',
-    detail: isDirectMain ? 'PR is from main/master branch' : `Branch: ${branchName}`,
-  });
+  if (!branchName) {
+    criteria.push({
+      name: 'Not direct-main write',
+      status: 'FAIL',
+      detail: 'Missing branch information (headRef not available)',
+    });
+  } else {
+    const isDirectMain = branchName === 'main' || branchName === 'master';
+    criteria.push({
+      name: 'Not direct-main write',
+      status: isDirectMain ? 'FAIL' : 'PASS',
+      detail: isDirectMain ? 'PR is from main/master branch' : `Branch: ${branchName}`,
+    });
+  }
+
+  // Criterion 6: Marker-only patch
+  if (!marker) {
+    criteria.push({
+      name: 'Marker-only patch',
+      status: 'FAIL',
+      detail: 'Cannot verify marker-only patch without marker metadata',
+    });
+  } else if (!filePatches || filePatches.length === 0) {
+    criteria.push({
+      name: 'Marker-only patch',
+      status: 'FAIL',
+      detail: 'Patch data unavailable; marker range not verified',
+    });
+  } else {
+    const targetPatch = filePatches.find((f) => f.filename === PROFILE_SYNC_TARGET_PATH);
+    if (targetPatch) {
+      const patchResult = isPatchWithinMarkerRange(targetPatch.patch, marker);
+      criteria.push({
+        name: 'Marker-only patch',
+        status: patchResult.valid ? 'PASS' : 'FAIL',
+        detail: patchResult.detail,
+      });
+    } else {
+      criteria.push({
+        name: 'Marker-only patch',
+        status: 'FAIL',
+        detail: 'Expected patch for profile/README.md not found',
+      });
+    }
+  }
 
   const allPass = criteria.every((c) => c.status === 'PASS' || c.status === 'N/A');
 

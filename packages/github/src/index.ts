@@ -1,7 +1,7 @@
 export { createIssue, addIssueToProject, queryReadyItems, updateProjectField } from './issues.js';
 export type { ReadyTask, ProjectItemResult } from './issues.js';
-export { createDraftPR, commentOnPR, getPR, listOpenPRs, listPRFiles, getPRChecks, getPRReviews, getCODEOWNERS, mergePR } from './pr.js';
-export type { CreatePRResult, PRDetail, OpenPRSummary, PRCheckRun, PRReview, MergePRResult } from './pr.js';
+export { createDraftPR, commentOnPR, getPR, listOpenPRs, listPRFiles, getPRChecks, getPRReviews, getPRFilePatches, getCODEOWNERS, mergePR } from './pr.js';
+export type { CreatePRResult, PRDetail, OpenPRSummary, PRFilePatch, PRCheckRun, PRReview, MergePRResult } from './pr.js';
 export { getClient, getAuthenticatedIdentity, GitHubClient, AuthMode } from './client.js';
 export type { GitHubIdentity } from './client.js';
 export { getAppInstallationToken, clearTokenCache } from './auth.js';

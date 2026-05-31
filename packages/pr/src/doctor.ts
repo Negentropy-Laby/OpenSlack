@@ -55,7 +55,12 @@ export function diagnosePR(
   }
 
   // 5. Profile-sync gate (for PRs that are profile-sync PRs)
-  const profileSyncGate = evaluateProfileSyncGate(report.changedFiles, report.body ?? '', report.headRef ?? '');
+  const profileSyncGate = evaluateProfileSyncGate(
+    report.changedFiles,
+    report.body ?? '',
+    report.headRef ?? '',
+    report.filePatches,
+  );
   if (profileSyncGate.overall === 'FAIL') {
     const failedCriteria = profileSyncGate.criteria
       .filter((c) => c.status === 'FAIL')

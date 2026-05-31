@@ -64,6 +64,7 @@ export interface OpenPRSummary {
   draft: boolean;
   updatedAt: string;
   url: string;
+  branch: string;
 }
 
 export async function listOpenPRs(
@@ -95,6 +96,7 @@ export async function listOpenPRs(
     draft: pr.draft ?? false,
     updatedAt: pr.updated_at,
     url: pr.html_url,
+    branch: pr.head.ref,
   }));
 }
 
@@ -156,6 +158,31 @@ export async function listPRFiles(prNumber: number): Promise<string[]> {
       pull_number: prNumber,
     });
     return data.map((f) => f.filename);
+  } catch {
+    return [];
+  }
+}
+
+export interface PRFilePatch {
+  filename: string;
+  patch: string;
+}
+
+export async function getPRFilePatches(prNumber: number): Promise<PRFilePatch[]> {
+  const client = await getClient();
+  if (client.isDryRun) {
+    console.log(`[DRY RUN] Would list file patches for PR #${prNumber}`);
+    return [];
+  }
+  try {
+    const { data } = await client.octokit.pulls.listFiles({
+      owner: client.owner,
+      repo: client.repo,
+      pull_number: prNumber,
+    });
+    return data
+      .filter((f): f is typeof f & { patch: string } => typeof f.patch === 'string')
+      .map((f) => ({ filename: f.filename, patch: f.patch }));
   } catch {
     return [];
   }

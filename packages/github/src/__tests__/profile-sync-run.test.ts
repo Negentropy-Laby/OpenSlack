@@ -168,7 +168,7 @@ describe('runProfileSync', () => {
     mockValidatePost.mockReturnValue({ valid: true, errors: [] })
     mockPatchMarkerSection.mockReturnValue('<!-- openslack:latest-insights:start -->\nNew\n<!-- openslack:latest-insights:end -->')
     mockListOpenPRs.mockResolvedValue([
-      { number: 10, title: 'profile: sync latest latest-insights', author: 'bot', draft: true, updatedAt: '2026-05-30', url: 'https://github.com/owner/.github/pull/10' },
+      { number: 10, title: 'profile: sync latest latest-insights', author: 'bot', draft: true, updatedAt: '2026-05-30', url: 'https://github.com/owner/.github/pull/10', branch: 'openslack/profile-sync/latest-insights-20260530-deadbee-abc123' },
     ])
 
     const result = await runProfileSync({ config: mockConfig, runId: 'run-123' })
@@ -260,7 +260,7 @@ describe('runProfileSync', () => {
     mockCommitFileToBranch.mockResolvedValue({ commitSha: 'commit-sha' })
     mockCreateProfileSyncPR.mockResolvedValue({ url: 'https://github.com/owner/.github/pull/42', number: 42 })
     mockListOpenPRs.mockResolvedValue([
-      { number: 10, title: 'profile: sync latest latest-insights', author: 'bot', draft: true, updatedAt: '2026-05-30', url: 'https://github.com/owner/.github/pull/10' },
+      { number: 10, title: 'profile: sync latest latest-insights', author: 'bot', draft: true, updatedAt: '2026-05-30', url: 'https://github.com/owner/.github/pull/10', branch: 'openslack/profile-sync/latest-insights-20260530-deadbee-abc123' },
     ])
 
     const result = await runProfileSync({ config: updateConfig, runId: 'run-123' })
@@ -268,7 +268,12 @@ describe('runProfileSync', () => {
     expect(result.status).toBe('completed')
     // update mode reuses existing branch — createBranch should NOT be called
     expect(mockCreateBranch).not.toHaveBeenCalled()
+    // update mode should NOT create a new PR
+    expect(mockCreateProfileSyncPR).not.toHaveBeenCalled()
     expect(mockCommitFileToBranch).toHaveBeenCalled()
+    expect(result.prUrl).toBe('https://github.com/owner/.github/pull/10')
+    expect(result.prNumber).toBe(10)
+    expect(result.reason).toContain('Updated existing PR')
   })
 
   it('returns failed and creates failure issue on PR creation failure', async () => {
