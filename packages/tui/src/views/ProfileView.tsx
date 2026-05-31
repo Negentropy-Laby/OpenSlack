@@ -13,7 +13,16 @@ import type { ProfileViewModel } from '../view-models/profile.js'
 export type ProfileViewProps = {
   model: ProfileViewModel
   onBack?: () => void
-  onAction?: (actionId: string) => Promise<{ success: boolean; message: string } | void>
+  onAction?: (actionId: string) => Promise<{ success: boolean; message: string; data?: Record<string, unknown> } | void>
+}
+
+const DIFF_MAX_LINES = 30
+
+function diffLineTheme(line: string): 'success' | 'error' | 'info' {
+  if (line.startsWith('+')) return 'success'
+  if (line.startsWith('-')) return 'error'
+  if (line.startsWith('@@')) return 'info'
+  return 'info'
 }
 
 function syncStatusIcon(status: ProfileViewModel['syncStatus']): import('../design-system/StatusIcon.js').StatusCategory {
@@ -29,10 +38,17 @@ function markerStatusIcon(status: ProfileViewModel['markerStatus']): import('../
   return 'info'
 }
 
+function modeColor(mode: string): 'muted' | 'info' | 'warning' {
+  if (mode === 'auto-pr') return 'warning'
+  if (mode === 'watch') return 'info'
+  return 'muted'
+}
+
 export default function ProfileView({ model, onBack, onAction }: ProfileViewProps): React.JSX.Element {
   const { exit } = useApp()
   const [actionResult, setActionResult] = useState(model.actionResult)
   const [isRunning, setIsRunning] = useState(false)
+  const [diffOutput, setDiffOutput] = useState<string | undefined>(model.diffOutput)
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
@@ -49,6 +65,11 @@ export default function ProfileView({ model, onBack, onAction }: ProfileViewProp
         .then((result) => {
           if (result) {
             setActionResult({ actionId: action.id, success: result.success, message: result.message })
+            if (action.id === 'preview' && result.success && result.data?.diff && typeof result.data.diff === 'string') {
+              setDiffOutput(result.data.diff)
+            } else if (action.id !== 'preview') {
+              setDiffOutput(undefined)
+            }
           } else {
             setActionResult(undefined)
           }
@@ -67,7 +88,16 @@ export default function ProfileView({ model, onBack, onAction }: ProfileViewProp
     Box,
     { flexDirection: 'column', paddingX: 1 },
     // Header
-    React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, model.title),
+    React.createElement(
+      Box,
+      { flexDirection: 'row' },
+      React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, `${model.title} - Mode: `),
+      React.createElement(
+        ThemedText,
+        { colorTheme: modeColor(model.mode), bold: true },
+        model.mode,
+      ),
+    ),
     React.createElement(
       Box,
       { flexDirection: 'row' },
@@ -79,6 +109,29 @@ export default function ProfileView({ model, onBack, onAction }: ProfileViewProp
       React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, `Marker: <!-- openslack:${model.marker}:start/end -->`),
     ),
     React.createElement(Divider, { length: 50 }),
+
+    // Failure panel (shown when sync failed)
+    model.syncStatus === 'failed' && model.failureDetails
+      ? React.createElement(
+          Pane,
+          { title: 'Sync Failed', borderTheme: 'error', marginY: 0 },
+          React.createElement(ListItem, {
+            label: 'Reason',
+            detail: model.failureDetails.reason,
+            status: 'fail',
+          }),
+          React.createElement(ListItem, {
+            label: 'Next Action',
+            detail: model.failureDetails.nextAction,
+            status: 'warn',
+          }),
+          React.createElement(
+            Box,
+            { marginTop: 1 },
+            React.createElement(KeyboardShortcutHint, { keys: ['i'], description: 'Create failure issue' }),
+          ),
+        )
+      : null,
 
     // Sync status
     React.createElement(
@@ -108,6 +161,47 @@ export default function ProfileView({ model, onBack, onAction }: ProfileViewProp
           })
         : null,
     ),
+
+    // Sync Details pane (between Sync Status and Validation)
+    model.syncDetails
+      ? React.createElement(
+          Pane,
+          { title: 'Sync Details', marginY: 0 },
+          model.syncDetails.sourceCommit
+            ? React.createElement(ListItem, {
+                label: 'Source',
+                detail: `${model.syncDetails.sourceCommit}${model.syncDetails.sourceDate ? ` (${model.syncDetails.sourceDate})` : ''}`,
+                status: 'info',
+              })
+            : null,
+          model.syncDetails.targetHash
+            ? React.createElement(ListItem, {
+                label: 'Target hash',
+                detail: model.syncDetails.targetHash,
+                status: 'info',
+              })
+            : null,
+          model.syncDetails.pendingPR
+            ? React.createElement(ListItem, {
+                label: 'Pending PR',
+                detail: `#${model.syncDetails.pendingPR.number} (${model.syncDetails.pendingPR.status})`,
+                status: 'warn',
+              })
+            : null,
+          model.syncDetails.lastSync
+            ? React.createElement(ListItem, {
+                label: 'Last sync',
+                detail: `${model.syncDetails.lastSync.timestamp} (${model.syncDetails.lastSync.result})`,
+                status: model.syncDetails.lastSync.result === 'success' ? 'pass' : 'fail',
+              })
+            : null,
+          React.createElement(ListItem, {
+            label: 'Mode',
+            detail: model.syncDetails.mode,
+            status: model.syncDetails.mode === 'auto-pr' ? 'warn' : model.syncDetails.mode === 'watch' ? 'info' : 'info',
+          }),
+        )
+      : null,
 
     // Validation summary
     React.createElement(
@@ -159,6 +253,33 @@ export default function ProfileView({ model, onBack, onAction }: ProfileViewProp
           }),
         )
       : null,
+
+    // Diff Preview pane (shown after successful preview action)
+    diffOutput && actionResult?.actionId === 'preview' && actionResult?.success
+      ? React.createElement(
+          Pane,
+          { title: 'Diff Preview', marginY: 0 },
+          ...diffOutput.split('\n').slice(0, DIFF_MAX_LINES).map((line, i) =>
+            React.createElement(
+              Box,
+              { key: `diff-${i}`, flexDirection: 'row' },
+              React.createElement(ThemedText, { colorTheme: diffLineTheme(line) }, line),
+            )
+          ),
+          diffOutput.split('\n').length > DIFF_MAX_LINES
+            ? React.createElement(
+                Box,
+                { marginTop: 1 },
+                React.createElement(
+                  ThemedText,
+                  { colorTheme: 'muted', dim: true },
+                  `... ${diffOutput.split('\n').length - DIFF_MAX_LINES} more lines truncated`,
+                ),
+              )
+            : null,
+        )
+      : null,
+
     isRunning
       ? React.createElement(
           Box,

@@ -38,7 +38,7 @@ export async function renderTui(
 ): Promise<{ unmount: () => void }> {
   if (!isTuiSupported() && !options?.stdout) {
     throw new Error(
-      'TUI is not supported in this terminal. Use --format standard for text output.',
+      'TUI is not supported in this terminal. Use --format standard for text output, or the plain renderer will be used automatically.',
     )
   }
 

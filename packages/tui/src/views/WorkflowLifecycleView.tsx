@@ -15,6 +15,8 @@ import { useActionDispatch } from '../actions/use-action-dispatch.js'
 import { TuiActionCategory, TuiRiskLevel, TuiActionStatus } from '../actions/types.js'
 import type { TuiAction, TuiActionResult } from '../actions/types.js'
 import type { WorkflowLifecycleViewModel, LifecycleStage, PhaseIssueItem } from '../view-models/workflow-lifecycle.js'
+import { mapCanonicalStages } from '../view-models/workflow-lifecycle.js'
+import type { CanonicalStageSlot, CanonicalStageStatus } from '../view-models/workflow-lifecycle.js'
 import type { TuiActionHandlers } from './render-shell.js'
 
 export type WorkflowLifecycleViewProps = {
@@ -399,54 +401,73 @@ export default function WorkflowLifecycleView({ model, actionHandlers, onBack }:
   }
 
   // --- STAGES MODE (default) ---
-  const stageRows = stages.map((stage, i) => {
-    const isSelected = i === selectedIndex
-    const pointer = isSelected ? '>' : ' '
-    const stageCat = stageStatusCategory(stage.status)
+  const canonicalSlots: CanonicalStageSlot[] = mapCanonicalStages(stages)
 
-    return React.createElement(
+  // Map canonical status to a StatusIcon-compatible status string
+  function canonicalStatusIcon(status: CanonicalStageStatus): string {
+    if (status === 'complete') return 'complete'
+    if (status === 'current') return 'in-progress'
+    if (status === 'failed') return 'failed'
+    return 'pending'
+  }
+
+  // Build the horizontal progress bar nodes and connectors
+  const progressBarNodes: React.ReactNode[] = []
+  for (let i = 0; i < canonicalSlots.length; i++) {
+    const slot = canonicalSlots[i]!
+    const isCurrent = slot.status === 'current'
+    const iconStatus = canonicalStatusIcon(slot.status)
+
+    // Stage node: icon + label
+    const node = React.createElement(
       Box,
-      { key: stage.name, flexDirection: 'column' },
+      { key: `stage-${slot.key}`, flexDirection: 'column' },
       React.createElement(
         Box,
         { flexDirection: 'row' },
-        React.createElement(ThemedText, { colorTheme: isSelected ? 'accent' : 'muted' }, pointer),
+        React.createElement(StatusIcon, { status: iconStatus }),
         React.createElement(Text, null, ' '),
-        React.createElement(StatusIcon, { status: stage.status }),
-        React.createElement(Text, null, ' '),
-        isSelected
-          ? React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, stage.label)
-          : React.createElement(ThemedText, { colorTheme: 'foreground' }, stage.label),
-        stage.issueNumber
+        isCurrent
+          ? React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, slot.label)
+          : slot.status === 'complete'
+            ? React.createElement(ThemedText, { colorTheme: 'pass' }, slot.label)
+            : slot.status === 'failed'
+              ? React.createElement(ThemedText, { colorTheme: 'error' }, slot.label)
+              : React.createElement(ThemedText, { colorTheme: 'muted' }, slot.label),
+        slot.issueNumber
           ? React.createElement(
               Box,
               { flexDirection: 'row' },
               React.createElement(Text, null, ' '),
-              React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, `(#${stage.issueNumber})`),
+              React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, `#${slot.issueNumber}`),
             )
           : null,
       ),
-      stage.detail
-        ? React.createElement(
-            Box,
-            { marginLeft: 3 },
-            React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, stage.detail),
-          )
-        : null,
     )
-  })
+    progressBarNodes.push(node)
 
-  // Build summary text
-  const summaryParts: string[] = []
-  summaryParts.push(`Trust: ${model.trustLevel}`)
-  summaryParts.push(`Risk: ${model.risk}`)
-  if (model.prNumber) {
-    summaryParts.push(`PR #${model.prNumber}${model.prStatus ? ` (${model.prStatus})` : ''}`)
+    // Connector between stages (not after last)
+    if (i < canonicalSlots.length - 1) {
+      const nextSlot = canonicalSlots[i + 1]!
+      const allUpToHereComplete = slot.status === 'complete'
+      const connectorText = allUpToHereComplete ? '───' : '- -'
+
+      progressBarNodes.push(
+        React.createElement(
+          Box,
+          { key: `conn-${slot.key}-${nextSlot.key}`, flexDirection: 'row' },
+          React.createElement(Text, null, ' '),
+          allUpToHereComplete
+            ? React.createElement(ThemedText, { colorTheme: 'pass' }, connectorText)
+            : React.createElement(ThemedText, { colorTheme: 'muted' }, connectorText),
+          React.createElement(Text, null, ' '),
+        ),
+      )
+    }
   }
-  if (model.currentRun) {
-    summaryParts.push(`Run: ${model.currentRun.status}`)
-  }
-  const summaryText = summaryParts.join(' | ')
+
+  // Find current stage name for the bold label below progress bar
+  const currentCanonical = canonicalSlots.find(s => s.status === 'current')
 
   return React.createElement(
     Box,
@@ -497,10 +518,25 @@ export default function WorkflowLifecycleView({ model, actionHandlers, onBack }:
           )
         : null,
     ),
-    // Stages list
+    // Horizontal progress bar
     stages.length > 0
-      ? React.createElement(Pane, { title: 'Lifecycle Stages', marginY: 0 },
-          React.createElement(Box, { flexDirection: 'column' }, ...stageRows),
+      ? React.createElement(
+          Pane,
+          { title: 'Lifecycle Stages', marginY: 0 },
+          React.createElement(
+            Box,
+            { flexDirection: 'row', flexWrap: 'wrap' },
+            ...progressBarNodes,
+          ),
+          // Current stage label below the progress bar
+          currentCanonical
+            ? React.createElement(
+                Box,
+                { flexDirection: 'row', marginTop: 1 },
+                React.createElement(ThemedText, { colorTheme: 'muted' }, 'Current: '),
+                React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, currentCanonical.label),
+              )
+            : null,
         )
       : React.createElement(
           Box,

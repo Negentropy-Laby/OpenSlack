@@ -8,7 +8,7 @@ import Divider from '../design-system/Divider.js'
 import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
 import { useNavigation } from '../navigation/context.js'
 import { useClampedIndex } from '../hooks/use-clamped-index.js'
-import type { HomeViewModel } from '../view-models/home.js'
+import type { HomeViewModel, TaskItem } from '../view-models/home.js'
 
 export type HomeViewProps = {
   model: HomeViewModel
@@ -16,48 +16,30 @@ export type HomeViewProps = {
 
 /**
  * Combined selectable item for the unified keyboard handler.
- * Attention items come first (index 0..n-1), nav items follow (index n..m).
+ * Tasks come first (index 0..n-1), nav items follow (index n..m).
  */
 interface CombinedItem {
   label: string
   detail?: string
   route: string
-  kind: 'attention' | 'nav' | 'goal' | 'workflow'
-  colorTheme: 'warning' | 'info' | 'accent'
-  shortcut?: string
+  kind: 'task' | 'nav'
+  colorTheme: 'accent' | 'muted'
+  shortcut: string
+  attentionBadge?: string
 }
 
 function buildCombinedItems(model: HomeViewModel): CombinedItem[] {
   const items: CombinedItem[] = []
 
-  for (const a of model.attentionItems) {
+  for (const t of model.tasks) {
     items.push({
-      label: a.label,
-      detail: a.detail,
-      route: a.route,
-      kind: 'attention',
-      colorTheme: a.colorTheme,
-    })
-  }
-
-  for (const g of model.goalItems) {
-    items.push({
-      label: g.label,
-      detail: g.description,
-      route: g.route,
-      kind: 'goal',
+      label: t.label,
+      detail: t.description,
+      route: t.route,
+      kind: 'task',
       colorTheme: 'accent',
-    })
-  }
-
-  for (const w of model.workflowQuickActions) {
-    items.push({
-      label: w.label,
-      route: w.route,
-      kind: 'workflow',
-      colorTheme: 'accent',
-      shortcut: w.shortcut,
-      detail: w.description,
+      shortcut: t.shortcut,
+      attentionBadge: t.attentionBadge,
     })
   }
 
@@ -79,9 +61,7 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
   const { push } = useNavigation()
 
   const combined = buildCombinedItems(model)
-  const attentionCount = model.attentionItems.length
-  const goalCount = model.goalItems.length
-  const workflowCount = model.workflowQuickActions.length
+  const taskCount = model.tasks.length
   const totalCount = combined.length
 
   const [selectedIndex, setSelectedIndex] = useClampedIndex(totalCount)
@@ -94,11 +74,9 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
     setSelectedIndex(index)
   }, [])
 
-  // Shortcut lookup (nav + workflow items, after attention + goal sections)
+  // Shortcut lookup — all items have shortcuts
   const shortcutMap = new Map<string, number>()
-  const workflowStartIndex = attentionCount + goalCount
-  const navStartIndex = workflowStartIndex + workflowCount
-  for (let i = workflowStartIndex; i < totalCount; i++) {
+  for (let i = 0; i < totalCount; i++) {
     const shortcut = combined[i].shortcut
     if (shortcut) {
       shortcutMap.set(shortcut, i)
@@ -111,7 +89,6 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
       return
     }
 
-    // Number shortcuts 1-5 for quick navigation
     const shortcutIndex = shortcutMap.get(input)
     if (shortcutIndex !== undefined) {
       push({ view: combined[shortcutIndex].route })
@@ -129,36 +106,20 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
     }
   })
 
-  // Render attention section items
-  const attentionElements: React.ReactNode[] = []
-  for (let i = 0; i < attentionCount; i++) {
+  // Render task section items
+  const taskElements: React.ReactNode[] = []
+  for (let i = 0; i < taskCount; i++) {
     const item = combined[i]
     const isSelected = selectedIndex === i
-    attentionElements.push(renderItemRow(item, isSelected, i, handleItemClick, handleItemHover))
-  }
-
-  // Render goal section items
-  const goalElements: React.ReactNode[] = []
-  for (let i = attentionCount; i < attentionCount + goalCount; i++) {
-    const item = combined[i]
-    const isSelected = selectedIndex === i
-    goalElements.push(renderItemRow(item, isSelected, i, handleItemClick, handleItemHover))
-  }
-
-  // Render workflow quick actions section items
-  const workflowElements: React.ReactNode[] = []
-  for (let i = attentionCount + goalCount; i < navStartIndex; i++) {
-    const item = combined[i]
-    const isSelected = selectedIndex === i
-    workflowElements.push(renderItemRow(item, isSelected, i, handleItemClick, handleItemHover))
+    taskElements.push(renderTaskRow(item, isSelected, i, handleItemClick, handleItemHover))
   }
 
   // Render nav section items
   const navElements: React.ReactNode[] = []
-  for (let i = navStartIndex; i < totalCount; i++) {
+  for (let i = taskCount; i < totalCount; i++) {
     const item = combined[i]
     const isSelected = selectedIndex === i
-    navElements.push(renderItemRow(item, isSelected, i, handleItemClick, handleItemHover))
+    navElements.push(renderNavRow(item, isSelected, i, handleItemClick, handleItemHover))
   }
 
   return React.createElement(
@@ -175,35 +136,7 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
     ),
     React.createElement(Divider, { length: 40 }),
 
-    // Section 1: Needs Attention
-    React.createElement(
-      Box,
-      { flexDirection: 'column', marginTop: 0, marginBottom: 0 },
-      React.createElement(
-        ThemedText,
-        { colorTheme: 'warning', bold: true },
-        'Needs Attention',
-      ),
-      attentionCount > 0
-        ? React.createElement(
-            Box,
-            { flexDirection: 'column' },
-            ...attentionElements,
-          )
-        : React.createElement(
-            Box,
-            { marginLeft: 2, marginTop: 0, marginBottom: 0 },
-            React.createElement(
-              ThemedText,
-              { colorTheme: 'success' },
-              'Nothing needs attention right now',
-            ),
-          ),
-    ),
-
-    React.createElement(Divider, { length: 40 }),
-
-    // Section 2: What do you want to do?
+    // Section 1: What do you want to do?
     React.createElement(
       Box,
       { flexDirection: 'column', marginTop: 0, marginBottom: 0 },
@@ -215,31 +148,13 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
       React.createElement(
         Box,
         { flexDirection: 'column' },
-        ...goalElements,
+        ...taskElements,
       ),
     ),
 
     React.createElement(Divider, { length: 40 }),
 
-    // Section 3: Workflow Quick Actions
-    React.createElement(
-      Box,
-      { flexDirection: 'column', marginTop: 0, marginBottom: 0 },
-      React.createElement(
-        ThemedText,
-        { colorTheme: 'accent', bold: true },
-        'Workflow Quick Actions',
-      ),
-      React.createElement(
-        Box,
-        { flexDirection: 'column' },
-        ...workflowElements,
-      ),
-    ),
-
-    React.createElement(Divider, { length: 40 }),
-
-    // Section 4: Quick Navigation
+    // Section 2: Quick Navigation
     React.createElement(
       Box,
       { flexDirection: 'column', marginTop: 0, marginBottom: 0 },
@@ -266,15 +181,15 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
       React.createElement(Text, null, '  '),
       React.createElement(KeyboardShortcutHint, { keys: ['Enter'], description: 'Select' }),
       React.createElement(Text, null, '  '),
-      React.createElement(KeyboardShortcutHint, { keys: ['1-9', 'w/p/r/a'], description: 'Jump' }),
+      React.createElement(KeyboardShortcutHint, { keys: ['1-9/0', 'p/r'], description: 'Jump' }),
     ),
   )
 }
 
 /**
- * Renders a single selectable row.
+ * Renders a single task row with shortcut, label, description, and optional attention badge.
  */
-function renderItemRow(
+function renderTaskRow(
   item: CombinedItem,
   isSelected: boolean,
   index: number,
@@ -286,20 +201,17 @@ function renderItemRow(
 
   const labelColorTheme = isSelected ? item.colorTheme : 'foreground'
 
-  let labelContent: string = item.label
-  if (item.kind === 'nav' && item.shortcut) {
-    labelContent = item.label
-  }
+  const labelContent = item.label
 
   const labelElement = isSelected
     ? React.createElement(ThemedText, { colorTheme: labelColorTheme, bold: true }, labelContent)
     : React.createElement(ThemedText, { colorTheme: 'foreground' }, labelContent)
 
-  const shortcutElement = item.shortcut
+  const badgeElement = item.attentionBadge
     ? React.createElement(
         Box,
-        { marginRight: 1 },
-        React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, `[${item.shortcut}]`),
+        { marginLeft: 1 },
+        React.createElement(ThemedText, { colorTheme: 'warning', bold: true }, `(${item.attentionBadge})`),
       )
     : null
 
@@ -314,7 +226,7 @@ function renderItemRow(
   return React.createElement(
     Box,
     {
-      key: `${item.kind}-${item.route}-${item.label}`,
+      key: `task-${item.route}-${item.label}`,
       flexDirection: 'column',
       onClick: () => onItemClick(index),
       onMouseEnter: () => onItemHover(index),
@@ -324,9 +236,50 @@ function renderItemRow(
       { flexDirection: 'row' },
       React.createElement(ThemedText, { colorTheme: isSelected ? colorTheme : 'muted' }, pointer),
       React.createElement(Text, null, ' '),
-      shortcutElement,
+      React.createElement(
+        Box,
+        { marginRight: 1 },
+        React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, `[${item.shortcut}]`),
+      ),
       labelElement,
+      badgeElement,
     ),
     detailElement,
+  )
+}
+
+/**
+ * Renders a single nav row with shortcut and label.
+ */
+function renderNavRow(
+  item: CombinedItem,
+  isSelected: boolean,
+  index: number,
+  onItemClick: (index: number) => void,
+  onItemHover: (index: number) => void,
+): React.ReactNode {
+  const pointer = isSelected ? '>' : ' '
+  const colorTheme = isSelected ? item.colorTheme : 'muted'
+
+  const labelElement = isSelected
+    ? React.createElement(ThemedText, { colorTheme: 'foreground', bold: true }, item.label)
+    : React.createElement(ThemedText, { colorTheme: 'foreground' }, item.label)
+
+  return React.createElement(
+    Box,
+    {
+      key: `nav-${item.route}-${item.label}`,
+      flexDirection: 'row',
+      onClick: () => onItemClick(index),
+      onMouseEnter: () => onItemHover(index),
+    },
+    React.createElement(ThemedText, { colorTheme: isSelected ? colorTheme : 'muted' }, pointer),
+    React.createElement(Text, null, ' '),
+    React.createElement(
+      Box,
+      { marginRight: 1 },
+      React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, `[${item.shortcut}]`),
+    ),
+    labelElement,
   )
 }

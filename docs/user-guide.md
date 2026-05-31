@@ -368,6 +368,59 @@ step. Ready PRs display a Confirm merge button.
 
 The Collaboration Layer is projection-only. GitHub/Git/.openslack remain the sole source of truth. Activity feed, digest, handoffs, decisions, and room views are all derived from events and YAML files.
 
+## Profile Sync Robot
+
+The Profile Sync Robot keeps an organization's public profile (README, blog posts, featured content) in sync with an upstream whitepapers repository. It is read-only by default: `check` and `preview` have no side effects, and `run` requires explicit confirmation or `--yes`.
+
+| Command | Purpose |
+|---------|---------|
+| `openslack collaboration workflow profile-sync check` | Check profile sync readiness without side effects |
+| `openslack collaboration workflow profile-sync preview` | Preview what a sync would change (no side effects) |
+| `openslack collaboration workflow profile-sync preview --format diff` | Preview changes as a diff |
+| `openslack collaboration workflow profile-sync preview --format markdown` | Preview changes as Markdown |
+| `openslack collaboration workflow profile-sync run` | Run profile sync with real side effects (prompts for confirmation) |
+| `openslack collaboration workflow profile-sync run --yes` | Run sync and skip interactive confirmation |
+| `openslack collaboration workflow profile-sync run --agent-id <id>` | Run sync with agent principal authorization |
+| `openslack collaboration workflow profile-sync status` | Show current profile sync status, last sync date, and pending PR |
+
+### Options
+
+All profile-sync subcommands accept these configuration override flags. When not provided, values are loaded from `.openslack/profile-sync.yaml`.
+
+| Option | Description |
+|--------|-------------|
+| `--source <repo>` | Source whitepapers repository (e.g. `org/whitepapers`) |
+| `--target <repo>` | Target profile repository (e.g. `org/org.github.io`) |
+| `--path <path>` | Target README path within the target repo |
+| `--posts <dir>` | Posts directory in the source repo |
+| `--marker <name>` | HTML comment marker name used to identify the injection point |
+| `--max <n>` | Maximum number of posts to include |
+| `--on-existing-pr <action>` | Action when an open profile-sync PR already exists: `skip`, `update`, or `create_new` (default: `skip`) |
+
+The `preview` command also accepts `--format <format>` (`diff`, `json`, or `markdown`; default: `diff`).
+
+### Quick Workflow
+
+1. **Check readiness** — confirm source and target are accessible:
+   ```bash
+   openslack collaboration workflow profile-sync check
+   ```
+
+2. **Preview changes** — review what a sync would produce before committing:
+   ```bash
+   openslack collaboration workflow profile-sync preview --format diff
+   ```
+
+3. **Create the sync PR** — run the sync and let it open a pull request:
+   ```bash
+   openslack collaboration workflow profile-sync run
+   ```
+
+4. **View status** — check last sync date, pending PR, and any failures:
+   ```bash
+   openslack collaboration workflow profile-sync status
+   ```
+
 ## Workflow Engine
 
 The workflow engine loads, validates, executes, checkpoints, and resumes OpenSlack workflow modules. Workflows are TypeScript/JavaScript files that declare metadata, permissions, and phases, and can run in preview, dry-run, or execute mode.

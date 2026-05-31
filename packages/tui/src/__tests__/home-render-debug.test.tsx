@@ -24,7 +24,7 @@ function createMockStdout(columns = 80, rows = 24) {
 }
 
 describe('HomeView render debug', () => {
-  it('renders home view and captures output', async () => {
+  it('renders home view with 2-section layout', async () => {
     const { stdout, chunks } = createMockStdout(80, 24)
     const model = mapHomeToViewModel()
     const instance = await render(
@@ -36,8 +36,50 @@ describe('HomeView render debug', () => {
     await new Promise<void>((r) => setTimeout(r, 200))
     const output = chunks.join('')
     expect(output).toContain('OpenSlack')
-    expect(output).toContain('Needs Attention')
+    expect(output).toContain('What do you want to do?')
     expect(output).toContain('Quick Navigation')
+    // Verify no old sections remain
+    expect(output).not.toContain('Needs Attention')
+    expect(output).not.toContain('Workflow Quick Actions')
+    instance.unmount()
+  })
+
+  it('renders all 6 tasks in the tasks section', async () => {
+    const { stdout, chunks } = createMockStdout(80, 50)
+    const model = mapHomeToViewModel()
+    const instance = await render(
+      React.createElement(NavigationProvider, null,
+        React.createElement(HomeView, { model })
+      ),
+      { stdout, patchConsole: false }
+    )
+    await new Promise<void>((r) => setTimeout(r, 200))
+    const output = chunks.join('')
+    expect(output).toContain('See what needs attention')
+    expect(output).toContain('Start or continue work')
+    expect(output).toContain('Run or check a workflow')
+    expect(output).toContain('Review and merge PRs')
+    expect(output).toContain('Approve pending items')
+    expect(output).toContain('Maintain organization profile')
+    instance.unmount()
+  })
+
+  it('renders nav items in quick navigation section', async () => {
+    const { stdout, chunks } = createMockStdout(80, 50)
+    const model = mapHomeToViewModel()
+    const instance = await render(
+      React.createElement(NavigationProvider, null,
+        React.createElement(HomeView, { model })
+      ),
+      { stdout, patchConsole: false }
+    )
+    await new Promise<void>((r) => setTimeout(r, 200))
+    const output = chunks.join('')
+    expect(output).toContain('Dashboard')
+    expect(output).toContain('Status')
+    expect(output).toContain('Activity')
+    expect(output).toContain('Digest')
+    expect(output).toContain('Profile')
     instance.unmount()
   })
 

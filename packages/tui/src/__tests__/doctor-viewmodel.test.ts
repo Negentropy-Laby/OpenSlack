@@ -118,4 +118,34 @@ describe('mapDoctorToViewModel', () => {
     expect(model.evidence).toHaveLength(2)
     expect(model.evidence[1]).toBe('Evil evidence')
   })
+
+  it('defaults compressed to false and profileSyncGate to undefined', () => {
+    const model = mapDoctorToViewModel(makeReport())
+    expect(model.compressed).toBe(false)
+    expect(model.profileSyncGate).toBeUndefined()
+  })
+
+  it('accepts DoctorMapperOptions with profileSyncGate', () => {
+    const model = mapDoctorToViewModel(makeReport(), {
+      evidence: ['Profile sync check'],
+      profileSyncGate: { passed: true, detail: 'All criteria passed' },
+    })
+    expect(model.evidence).toEqual(['Profile sync check'])
+    expect(model.profileSyncGate).toEqual({ passed: true, detail: 'All criteria passed' })
+    expect(model.compressed).toBe(false)
+  })
+
+  it('accepts profileSyncGate with failed status', () => {
+    const model = mapDoctorToViewModel(makeReport(), {
+      profileSyncGate: { passed: false, detail: 'Invalid marker: marker mismatch' },
+    })
+    expect(model.profileSyncGate?.passed).toBe(false)
+    expect(model.profileSyncGate?.detail).toBe('Invalid marker: marker mismatch')
+  })
+
+  it('accepts plain evidence array (backward compatible)', () => {
+    const model = mapDoctorToViewModel(makeReport(), ['evidence item'])
+    expect(model.evidence).toEqual(['evidence item'])
+    expect(model.profileSyncGate).toBeUndefined()
+  })
 })

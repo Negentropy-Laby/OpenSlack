@@ -5,6 +5,7 @@ export enum TuiActionCategory {
   WorkflowConfirmation = 'workflow-confirmation',
   MergeConfirmation = 'merge-confirmation',
   GithubApproval = 'github-approval',
+  ProfileSyncConfirmation = 'profile-sync-confirmation',
   WorkflowExecute = 'workflow-execute',
   WorkflowPreview = 'workflow-preview',
   WorkflowDryRun = 'workflow-dry-run',
@@ -53,5 +54,6 @@ export const REQUIRES_CONFIRMATION: ReadonlySet<TuiActionCategory> = new Set<Tui
   TuiActionCategory.MergeConfirmation,
   TuiActionCategory.WorkflowConfirmation,
   TuiActionCategory.GithubApproval,
+  TuiActionCategory.ProfileSyncConfirmation,
   TuiActionCategory.TrustChange,
 ])

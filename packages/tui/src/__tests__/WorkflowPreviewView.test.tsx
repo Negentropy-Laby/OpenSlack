@@ -3,8 +3,12 @@ import { Writable } from 'stream'
 import React from 'react'
 import { render } from '@openslack/tui'
 import { ThemeProvider } from '../design-system/ThemeProvider.js'
+import { NavigationProvider } from '../navigation/context.js'
 import WorkflowPreviewView from '../views/WorkflowPreviewView.js'
 import type { WorkflowPreviewViewModel } from '../view-models/workflow-preview.js'
+import WorkflowLifecycleView from '../views/WorkflowLifecycleView.js'
+import type { WorkflowLifecycleViewModel, LifecycleStage } from '../view-models/workflow-lifecycle.js'
+import { mapCanonicalStages } from '../view-models/workflow-lifecycle.js'
 
 function makeModel(overrides?: Partial<WorkflowPreviewViewModel>): WorkflowPreviewViewModel {
   return {
@@ -208,5 +212,190 @@ describe('WorkflowPreviewView', () => {
       requiresConfirmation: false,
     }))
     expect(output).toContain('Wait for CI')
+  })
+})
+
+// --- mapCanonicalStages helper tests ---
+describe('mapCanonicalStages', () => {
+  function makeStage(overrides: Partial<LifecycleStage>): LifecycleStage {
+    return {
+      name: '',
+      label: '',
+      status: 'pending',
+      icon: '●',
+      detail: '',
+      ...overrides,
+    }
+  }
+
+  it('returns 5 canonical slots for empty stages', () => {
+    const slots = mapCanonicalStages([])
+    expect(slots).toHaveLength(5)
+    expect(slots[0]!.key).toBe('proposal')
+    expect(slots[0]!.status).toBe('current')
+    expect(slots[1]!.status).toBe('pending')
+    expect(slots[4]!.key).toBe('merged')
+  })
+
+  it('maps proposal stage to first slot as complete', () => {
+    const stages = [
+      makeStage({ name: 'proposal', label: 'Proposal', status: 'complete', issueNumber: 100 }),
+    ]
+    const slots = mapCanonicalStages(stages)
+    expect(slots[0]!.status).toBe('complete')
+    expect(slots[0]!.issueNumber).toBe(100)
+    expect(slots[1]!.status).toBe('current')
+    expect(slots[2]!.status).toBe('pending')
+  })
+
+  it('maps multiple stages and marks progress correctly', () => {
+    const stages = [
+      makeStage({ name: 'proposal', label: 'Proposal', status: 'complete', issueNumber: 100 }),
+      makeStage({ name: 'review', label: 'Review', status: 'complete', issueNumber: 101 }),
+      makeStage({ name: 'run', label: 'Run', status: 'in-progress', issueNumber: 102 }),
+    ]
+    const slots = mapCanonicalStages(stages)
+    expect(slots[0]!.status).toBe('complete')
+    expect(slots[1]!.status).toBe('complete')
+    expect(slots[2]!.status).toBe('current')
+    expect(slots[3]!.status).toBe('pending')
+    expect(slots[4]!.status).toBe('pending')
+  })
+
+  it('marks a failed stage correctly', () => {
+    const stages = [
+      makeStage({ name: 'proposal', label: 'Proposal', status: 'complete' }),
+      makeStage({ name: 'review', label: 'Review', status: 'failed' }),
+    ]
+    const slots = mapCanonicalStages(stages)
+    expect(slots[0]!.status).toBe('complete')
+    expect(slots[1]!.status).toBe('failed')
+  })
+
+  it('uses fallback sequential mapping for unclassifiable stage names', () => {
+    const stages = [
+      makeStage({ name: 'alpha', label: 'Alpha', status: 'complete' }),
+      makeStage({ name: 'beta', label: 'Beta', status: 'in-progress' }),
+    ]
+    const slots = mapCanonicalStages(stages)
+    expect(slots).toHaveLength(5)
+    expect(slots[0]!.key).toBe('proposal')
+    expect(slots[0]!.status).toBe('complete')
+    expect(slots[1]!.key).toBe('review')
+    // classifyStageStatus maps 'in-progress' to canonical 'current'
+    expect(slots[1]!.status).toBe('current')
+  })
+})
+
+// --- WorkflowLifecycleView horizontal progress bar tests ---
+describe('WorkflowLifecycleView horizontal progress bar', () => {
+  let instance: { unmount: () => void } | null = null
+
+  afterEach(() => {
+    instance?.unmount()
+    instance = null
+  })
+
+  function makeLifecycleModel(overrides?: Partial<WorkflowLifecycleViewModel>): WorkflowLifecycleViewModel {
+    return {
+      workflowName: 'test-lifecycle',
+      workflowHash: 'abc123',
+      trustLevel: 'trusted',
+      risk: 'medium',
+      sourcePath: '.openslack/workflows/test-lifecycle',
+      stages: [
+        { name: 'proposal', label: 'Proposal', status: 'complete', icon: '✓', issueNumber: 125, detail: 'Proposal accepted' },
+        { name: 'review', label: 'Review', status: 'complete', icon: '✓', issueNumber: 126, detail: 'Review passed' },
+        { name: 'run', label: 'Run', status: 'in-progress', icon: '●', detail: 'Running' },
+        { name: 'pr', label: 'PR', status: 'pending', icon: '○', detail: '' },
+        { name: 'merged', label: 'Merged', status: 'pending', icon: '○', detail: '' },
+      ],
+      phaseIssues: [],
+      ...overrides,
+    }
+  }
+
+  async function renderLifecycleView(model: WorkflowLifecycleViewModel): Promise<string> {
+    const chunks: string[] = []
+    const stdout = new Writable({ write(chunk, _, cb) { chunks.push(String(chunk)); cb() } }) as NodeJS.WriteStream
+    Object.defineProperties(stdout, {
+      columns: { value: 100, configurable: true },
+      rows: { value: 30, configurable: true },
+      isTTY: { value: false, configurable: true },
+    })
+
+    instance = await render(
+      React.createElement(
+        NavigationProvider,
+        null,
+        React.createElement(WorkflowLifecycleView, { model }),
+      ),
+      { stdout, patchConsole: false },
+    )
+
+    await new Promise(r => setTimeout(r, 150))
+    return chunks.join('')
+  }
+
+  it('renders all 5 canonical stage labels in horizontal progress bar', async () => {
+    const output = await renderLifecycleView(makeLifecycleModel())
+    expect(output).toContain('Proposal')
+    expect(output).toContain('Review')
+    expect(output).toContain('Run')
+    expect(output).toContain('PR')
+    expect(output).toContain('Merged')
+  })
+
+  it('shows Current label below progress bar for active stage', async () => {
+    const output = await renderLifecycleView(makeLifecycleModel())
+    expect(output).toContain('Current:')
+    // Run is the in-progress stage so canonical mapper should mark it as current
+    expect(output).toContain('Current: Run')
+  })
+
+  it('renders issue numbers next to stages', async () => {
+    const output = await renderLifecycleView(makeLifecycleModel())
+    expect(output).toContain('#125')
+    expect(output).toContain('#126')
+  })
+
+  it('renders solid connectors for complete stages', async () => {
+    const output = await renderLifecycleView(makeLifecycleModel())
+    // Complete stages connected by ─── (solid line)
+    expect(output).toContain('───')
+  })
+
+  it('renders header with workflow name', async () => {
+    const output = await renderLifecycleView(makeLifecycleModel())
+    expect(output).toContain('OpenSlack / Lifecycle / test-lifecycle')
+  })
+
+  it('renders metadata bar with trust and risk', async () => {
+    const output = await renderLifecycleView(makeLifecycleModel())
+    expect(output).toContain('Hash: abc123')
+    expect(output).toContain('Source: .openslack/workflows/test-lifecycle')
+    expect(output).toContain('trusted')
+    expect(output).toContain('medium')
+  })
+
+  it('shows next action hint when present', async () => {
+    const output = await renderLifecycleView(makeLifecycleModel({
+      nextAction: 'Awaiting PR creation',
+    }))
+    expect(output).toContain('Next: Awaiting PR creation')
+  })
+
+  it('shows PR info when prNumber is set', async () => {
+    const output = await renderLifecycleView(makeLifecycleModel({
+      prNumber: 42,
+      prStatus: 'open',
+    }))
+    expect(output).toContain('PR: #42')
+    expect(output).toContain('open')
+  })
+
+  it('renders empty state when no stages', async () => {
+    const output = await renderLifecycleView(makeLifecycleModel({ stages: [] }))
+    expect(output).toContain('No GitHub issues found for this workflow')
   })
 })

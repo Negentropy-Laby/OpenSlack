@@ -1702,7 +1702,7 @@ export function collaborationCommands(): Command {
     .option('--posts <dir>', 'Posts directory in source repo')
     .option('--marker <name>', 'HTML comment marker name')
     .option('--max <n>', 'Maximum posts to include')
-    .option('--format <format>', 'Output format: json, markdown, diff', 'json')
+    .option('--format <format>', 'Output format: diff, json, markdown', 'diff')
     .action(async (options: {
       source?: string
       target?: string
@@ -1721,7 +1721,7 @@ export function collaborationCommands(): Command {
         }
 
         const result = await previewProfileSync(config)
-        const format = options.format || 'json'
+        const format = options.format || 'diff'
 
         if (format === 'diff') {
           console.log(result.diff || '// No diff available')
