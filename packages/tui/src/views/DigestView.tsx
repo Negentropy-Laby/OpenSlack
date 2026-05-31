@@ -15,14 +15,14 @@ export type DigestViewProps = {
   onBack?: () => void
 }
 
-function renderGroup(group: DigestGroupViewModel): React.ReactNode {
+function renderGroup(group: DigestGroupViewModel, index: number): React.ReactNode {
   if (group.events.length === 0) return null
 
   const iconCategory = group.status === 'fail' ? 'fail' : group.status === 'warn' ? 'warn' : group.status === 'pass' ? 'pass' : 'info'
 
   return React.createElement(
     Pane,
-    { title: `${group.label} (${group.count})`, marginY: 0 },
+    { key: `group-${group.label}-${index}`, title: `${group.label} (${group.count})`, marginY: 0 },
     ...group.events.map((e, i) =>
       React.createElement(
         Box,
@@ -79,7 +79,7 @@ export default function DigestView({ model, onBack }: DigestViewProps): React.JS
 
     // Groups
     model.groups.length > 0
-      ? model.groups.map(g => renderGroup(g))
+      ? model.groups.map((g, i) => renderGroup(g, i))
       : React.createElement(ThemedText, { colorTheme: 'muted' }, 'No activity in this period.'),
 
     // Recommended Next Actions

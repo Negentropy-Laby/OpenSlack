@@ -5,6 +5,7 @@ import stripAnsi from 'strip-ansi'
 import { render } from '@openslack/tui'
 import { NavigationProvider } from '../navigation/context.js'
 import WorkflowLifecycleViewWrapper from '../views/WorkflowLifecycleViewWrapper.js'
+import DigestView from '../views/DigestView.js'
 import { mapWorkflowLifecycleToViewModel } from '../view-models/workflow-lifecycle.js'
 import sliceAnsi from '../utils/slice-ansi.js'
 import { stringWidth } from '../ink/stringWidth.js'
@@ -103,6 +104,76 @@ describe('terminal layout regressions', () => {
     expect(content).toContain('Header')
     expect(content).toContain('\x1b[K')
     expect(stripAnsi(content)).not.toContain('Stale row')
+  })
+
+  it('clears stale same-line suffix when append-only output shrinks within a row', () => {
+    const { frame: longFrame, stylePool } = makeFrame(['Review pull requests', 'Check open PRs and merge readiness'])
+    const { frame: shortFrame } = makeFrame(['Review pull requests', 'Check open PRs'])
+    const logUpdate = new LogUpdate({ isTTY: false, stylePool })
+
+    logUpdate.render(longFrame, longFrame)
+    const diff = logUpdate.render(longFrame, shortFrame)
+    const content = diff.map(op => ('content' in op ? op.content : '')).join('')
+
+    expect(content).toContain('Check open PRs')
+    expect(content).toContain('\x1b[K')
+    expect(stripAnsi(content)).not.toContain('merge readiness')
+  })
+
+  it('renders digest groups without React key warnings', async () => {
+    const { stdout } = createMockStdout(100, 30)
+    const errors: string[] = []
+    const originalError = console.error
+    console.error = (...args: unknown[]) => {
+      errors.push(args.map(String).join(' '))
+    }
+    try {
+      const instance = await render(
+        React.createElement(DigestView, {
+          model: {
+            title: 'OpenSlack Digest',
+            periodHours: 24,
+            totalEvents: 2,
+            groups: [
+              {
+                label: 'Needs Human',
+                count: 1,
+                status: 'warn',
+                events: [
+                  {
+                    time: '12:00',
+                    type: 'pr.merge.requested',
+                    summary: 'Request review from an independent human reviewer.',
+                    objectKind: 'pr',
+                    objectId: '127',
+                  },
+                ],
+              },
+              {
+                label: 'Blocked',
+                count: 1,
+                status: 'fail',
+                events: [
+                  {
+                    time: '12:01',
+                    type: 'task.blocked',
+                    summary: 'Needs attention',
+                    objectKind: 'issue',
+                    objectId: '12',
+                  },
+                ],
+              },
+            ],
+            recommendedNext: [],
+          },
+        }),
+        { stdout, patchConsole: false },
+      )
+      instance.unmount()
+    } finally {
+      console.error = originalError
+    }
+    expect(errors.join('\n')).not.toContain('unique "key" prop')
   })
 
   it('redraws workflow lifecycle after async loader data arrives', async () => {
