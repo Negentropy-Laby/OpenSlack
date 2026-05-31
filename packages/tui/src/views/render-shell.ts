@@ -21,6 +21,11 @@ export interface WorkflowLifecycleBaseData {
 }
 import type { TuiActionResult } from '../actions/types.js'
 
+export type WorkflowLifecycleLoader = (
+  workflowName: string,
+  baseData?: WorkflowLifecycleBaseData,
+) => Promise<WorkflowLifecycleViewModel | null>
+
 export interface ApprovalExecutionParams {
   id: string
   category: 'plan' | 'merge-request' | 'workflow-effect' | 'github-review'
@@ -52,6 +57,7 @@ export interface ShellViewData {
   decisions?: DecisionListViewModel
   workflowLifecycle?: WorkflowLifecycleViewModel
   workflowLifecycleBase?: Record<string, WorkflowLifecycleBaseData>
+  workflowLifecycleLoader?: WorkflowLifecycleLoader
   profile?: ProfileViewModel
   actionHandlers?: TuiActionHandlers
 }

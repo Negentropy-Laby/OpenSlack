@@ -55,6 +55,9 @@ export default function sliceAnsi(
     if (end !== undefined && position >= end) {
       if (token.type === 'ansi' || width > 0 || !include) break
     }
+    if (end !== undefined && position + width > end && width > 0) {
+      break
+    }
 
     if (!isCharToken(token)) {
       if (token.type === 'ansi') {

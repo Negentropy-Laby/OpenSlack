@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { mapPrQueueToViewModel } from '../view-models/pr-queue.js'
-import type { PRQueueItem } from '@openslack/pr'
+import type { PrQueueInputItem } from '../view-models/pr-queue.js'
 
-function makeItem(overrides?: Partial<PRQueueItem>): PRQueueItem {
+function makeItem(overrides?: Partial<PrQueueInputItem>): PrQueueInputItem {
   return {
     prNumber: 42,
     title: 'Add new feature',
@@ -12,7 +12,6 @@ function makeItem(overrides?: Partial<PRQueueItem>): PRQueueItem {
     blockerCategory: 'none',
     owner: 'human',
     nextAction: 'Run openslack pr merge 42',
-    evidence: ['Risk zone: green', 'Author: @alice'],
     rerunCommand: 'openslack pr doctor 42',
     riskZone: 'green',
     ...overrides,
@@ -42,7 +41,7 @@ describe('mapPrQueueToViewModel', () => {
   })
 
   it('counts blocked and pending PRs correctly', () => {
-    const items: PRQueueItem[] = [
+    const items: PrQueueInputItem[] = [
       makeItem({ prNumber: 1, canMerge: true, blockerCategory: 'none', decision: 'READY_TO_MERGE' }),
       makeItem({ prNumber: 2, canMerge: false, blockerCategory: 'approvals', decision: 'NEEDS_HUMAN_APPROVAL' }),
       makeItem({ prNumber: 3, canMerge: false, blockerCategory: 'checks', decision: 'CHECKS_PENDING' }),
@@ -91,7 +90,7 @@ describe('mapPrQueueToViewModel', () => {
           { name: 'Review linked', passed: false },
         ],
       },
-    } as any)
+    })
     const model = mapPrQueueToViewModel([item])
     const gate = model.items[0].workflowGate
     expect(gate.touched).toBe(true)

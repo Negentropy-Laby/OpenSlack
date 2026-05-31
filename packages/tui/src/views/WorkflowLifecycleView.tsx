@@ -78,8 +78,9 @@ function subIssueModeColorTheme(mode: string | undefined): 'pass' | 'info' | 'wa
 }
 
 /** Determine the color theme key for dependency mode badge. */
-function dependencyModeColorTheme(mode: string | undefined): 'pass' | 'info' | 'muted' {
+function dependencyModeColorTheme(mode: string | undefined): 'pass' | 'info' | 'warning' | 'muted' {
   if (mode === 'native') return 'pass'
+  if (mode === 'mixed') return 'warning'
   if (mode === 'fallback') return 'info'
   return 'muted'
 }
@@ -531,6 +532,21 @@ export default function WorkflowLifecycleView({ model, actionHandlers, onBack }:
               React.createElement(StatusIcon, { status: pi.status }),
               React.createElement(Text, null, ' '),
               React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, pi.issueNumber ? `#${pi.issueNumber} ${pi.phase}` : pi.phase),
+            ),
+          ),
+        )
+      : null,
+    model.fallbackReasons && model.fallbackReasons.length > 0
+      ? React.createElement(
+          Box,
+          { flexDirection: 'column', marginTop: 1 },
+          React.createElement(ThemedText, { colorTheme: 'muted' }, 'Fallback Reasons:'),
+          model.fallbackReasons.slice(0, 3).map((reason, idx) =>
+            React.createElement(
+              Box,
+              { key: `fallback-${idx}`, flexDirection: 'row', marginLeft: 2 },
+              React.createElement(ThemedText, { colorTheme: 'info' }, '- '),
+              React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, reason),
             ),
           ),
         )

@@ -88,6 +88,15 @@ export class LogUpdate {
     }
 
     if (previousOutput.startsWith(output)) {
+      // Output is a prefix of previous output. Emit the new output and
+      // clear any old trailing content that is no longer present.
+      const prevLines = previousOutput.split('\n')
+      const nextLines = output.split('\n')
+      const linesToClear = prevLines.length - nextLines.length
+      if (linesToClear > 0) {
+        const clearOld = '\n\x1b[K'.repeat(linesToClear)
+        return [{ type: 'stdout', content: output + clearOld }]
+      }
       return []
     }
 

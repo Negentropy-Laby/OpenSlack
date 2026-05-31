@@ -35,7 +35,8 @@ export interface WorkflowLifecycleViewModel {
   prStatus?: string
   nextAction?: string
   subIssueMode?: 'native' | 'fallback' | 'mixed' | 'unknown'
-  dependencyMode?: 'native' | 'fallback' | 'none'
+  dependencyMode?: 'native' | 'fallback' | 'mixed' | 'none'
+  fallbackReasons?: string[]
 }
 
 export function mapWorkflowLifecycleToViewModel(data?: {
@@ -69,7 +70,8 @@ export function mapWorkflowLifecycleToViewModel(data?: {
   prStatus?: string
   nextAction?: string
   subIssueMode?: 'native' | 'fallback' | 'mixed' | 'unknown'
-  dependencyMode?: 'native' | 'fallback' | 'none'
+  dependencyMode?: 'native' | 'fallback' | 'mixed' | 'none'
+  fallbackReasons?: string[]
 }): WorkflowLifecycleViewModel {
   const s = sanitizeTerminalText
 
@@ -111,5 +113,6 @@ export function mapWorkflowLifecycleToViewModel(data?: {
     nextAction: data?.nextAction ? s(data.nextAction) : undefined,
     subIssueMode: data?.subIssueMode,
     dependencyMode: data?.dependencyMode,
+    fallbackReasons: (data?.fallbackReasons ?? []).map(s),
   }
 }

@@ -24,7 +24,7 @@ export async function createTaskIssue(
   title: string,
   body: string,
   labels: string[],
-): Promise<{ issueNumber: number; url: string; nodeId: string }> {
+): Promise<{ issueNumber: number; url: string; nodeId: string; id?: number }> {
   const client = await getClient();
   if (client.isDryRun) {
     console.log(`[DRY RUN] Would create task issue: "${title}" with labels: ${labels.join(',')}`);
@@ -43,6 +43,7 @@ export async function createTaskIssue(
     issueNumber: data.number,
     url: data.html_url,
     nodeId: data.node_id,
+    id: data.id,
   };
 }
 

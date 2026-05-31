@@ -37,16 +37,6 @@ describe('HomeView coordinate diagnostic', () => {
     const output = chunks.join('')
     const lines = output.split('\n')
 
-    // Print line numbers for diagnosis
-    console.log('=== HOMEVIEW LINE MAP ===')
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i]!.trim()
-      if (line.length > 0) {
-        console.log(`Row ${i}: "${line.substring(0, 60)}${line.length > 60 ? '...' : ''}"`)
-      }
-    }
-    console.log('=========================')
-
     // Verify basic structure
     expect(lines[0]).toContain('OpenSlack')
     expect(lines[1]).toContain('─')
@@ -116,15 +106,6 @@ describe('HomeView coordinate diagnostic', () => {
 
     const output = chunks.join('')
     const lines = output.split('\n')
-
-    console.log('=== HOMEVIEW WITH ATTENTION LINE MAP ===')
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i]!.trim()
-      if (line.length > 0) {
-        console.log(`Row ${i}: "${line.substring(0, 60)}${line.length > 60 ? '...' : ''}"`)
-      }
-    }
-    console.log('=========================================')
 
     // Verify attention section structure
     expect(lines[0]).toContain('OpenSlack')

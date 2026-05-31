@@ -250,13 +250,28 @@ export async function publishWorkflowImprovement(
 export interface PhaseSubIssue {
   phase: string
   issueNumber: number
+  issueId?: number
   url: string
+}
+
+export interface WorkflowLinkFallback {
+  kind: 'sub-issue' | 'dependency'
+  reason: string
+  issueNumber?: number
+}
+
+export interface WorkflowSplitLinkSummary {
+  nativeSubIssues: number
+  fallbackSubIssues: number
+  nativeDependencies: number
+  fallbackDependencies: number
+  fallbackReasons: WorkflowLinkFallback[]
 }
 
 export async function publishWorkflowSplit(
   workflow: WorkflowModuleShape,
   opts: { parentIssue?: number; phaseNames?: string[]; nativeSubIssues?: boolean; linearDependencies?: boolean },
-): Promise<{ parentIssueNumber: number; subIssues: PhaseSubIssue[] }> {
+): Promise<{ parentIssueNumber: number; subIssues: PhaseSubIssue[]; links: WorkflowSplitLinkSummary }> {
   const phaseNames = opts.phaseNames ?? workflow.meta.phases.map((p) => p.title)
   const parentIssueNum = opts.parentIssue ?? 0
 
@@ -285,36 +300,59 @@ export async function publishWorkflowSplit(
     const labels = workflowPhaseLabels()
 
     const result = await createTaskIssue(title, body, labels)
-    subIssues.push({ phase, issueNumber: result.issueNumber, url: result.url })
+    subIssues.push({ phase, issueNumber: result.issueNumber, issueId: result.id, url: result.url })
+  }
+
+  const links: WorkflowSplitLinkSummary = {
+    nativeSubIssues: 0,
+    fallbackSubIssues: 0,
+    nativeDependencies: 0,
+    fallbackDependencies: 0,
+    fallbackReasons: [],
   }
 
   // Try native sub-issue linking if requested
   if (opts.nativeSubIssues && actualParentIssue > 0) {
-    await linkNativeSubIssues(actualParentIssue, subIssues)
+    const result = await linkNativeSubIssues(actualParentIssue, subIssues)
+    links.nativeSubIssues = result.linked
+    links.fallbackReasons.push(...result.fallbackReasons)
   }
 
   // Try linear dependency linking if requested
   if (opts.linearDependencies && subIssues.length > 1) {
-    await linkLinearDependencies(subIssues)
+    const result = await linkLinearDependencies(subIssues)
+    links.nativeDependencies = result.nativeLinked
+    links.fallbackDependencies = result.fallbackLinked
+    links.fallbackReasons.push(...result.fallbackReasons)
   }
 
-  // Always add a fallback comment to the parent issue summarizing sub-issues
-  await addSubIssueFallbackComment(actualParentIssue, subIssues)
+  links.fallbackSubIssues = Math.max(0, subIssues.length - links.nativeSubIssues)
+  if (links.fallbackSubIssues > 0 || links.fallbackReasons.length > 0) {
+    await addSubIssueFallbackComment(actualParentIssue, subIssues, links.fallbackReasons)
+  }
 
-  return { parentIssueNumber: actualParentIssue, subIssues }
+  return { parentIssueNumber: actualParentIssue, subIssues, links }
 }
 
 // ── Sub-Issue Linking ─────────────────────────────────────────────────────────
 
-async function linkNativeSubIssues(parentIssue: number, subIssues: PhaseSubIssue[]): Promise<void> {
+async function linkNativeSubIssues(
+  parentIssue: number,
+  subIssues: PhaseSubIssue[],
+): Promise<{ linked: number; fallbackReasons: WorkflowLinkFallback[] }> {
   const client = await getClient()
+  const fallbackReasons: WorkflowLinkFallback[] = []
   if (client.isDryRun) {
     console.log(`[DRY RUN] Would link ${subIssues.length} sub-issues to parent #${parentIssue}`)
-    return
+    return { linked: 0, fallbackReasons }
   }
 
   let linkedCount = 0
   for (const sub of subIssues) {
+    if (!sub.issueId) {
+      fallbackReasons.push({ kind: 'sub-issue', reason: 'missing_issue_id', issueNumber: sub.issueNumber })
+      continue
+    }
     try {
       // Attempt GitHub REST API sub-issue linking (available on repos with the feature enabled)
       await (client.octokit as unknown as { request: (route: string, params: Record<string, unknown>) => Promise<unknown> }).request(
@@ -323,18 +361,24 @@ async function linkNativeSubIssues(parentIssue: number, subIssues: PhaseSubIssue
           owner: client.owner,
           repo: client.repo,
           issue_number: parentIssue,
-          sub_issue_id: sub.issueNumber,
+          sub_issue_id: sub.issueId,
         },
       )
       linkedCount++
     } catch (err) {
       const status = (err as { status?: number }).status
-      if (status === 404 || status === 403 || status === 422) {
+      if (status === 404 || status === 403 || status === 410 || status === 422) {
         // Sub-issues feature not enabled or API unavailable; fallback handled by caller
+        fallbackReasons.push({
+          kind: 'sub-issue',
+          reason: `native_sub_issues_unavailable_${status}`,
+          issueNumber: sub.issueNumber,
+        })
         break
       }
       // Other errors: log and continue
       console.log(`[WARNING] Failed to link sub-issue #${sub.issueNumber}: ${(err as Error).message}`)
+      fallbackReasons.push({ kind: 'sub-issue', reason: 'native_sub_issue_error', issueNumber: sub.issueNumber })
     }
   }
 
@@ -343,26 +387,72 @@ async function linkNativeSubIssues(parentIssue: number, subIssues: PhaseSubIssue
   } else {
     console.log(`[INFO] Linked ${linkedCount}/${subIssues.length} sub-issues natively.`)
   }
+  return { linked: linkedCount, fallbackReasons }
 }
 
-async function linkLinearDependencies(subIssues: PhaseSubIssue[]): Promise<void> {
+async function linkLinearDependencies(
+  subIssues: PhaseSubIssue[],
+): Promise<{ nativeLinked: number; fallbackLinked: number; fallbackReasons: WorkflowLinkFallback[] }> {
   const client = await getClient()
+  const fallbackReasons: WorkflowLinkFallback[] = []
   if (client.isDryRun) {
     console.log(`[DRY RUN] Would create ${subIssues.length - 1} linear dependencies between phase issues`)
-    return
+    return { nativeLinked: 0, fallbackLinked: 0, fallbackReasons }
   }
 
-  let linkedCount = 0
+  let nativeLinked = 0
+  let fallbackLinked = 0
+  let nativeDependencyUnavailable = false
   for (let i = 1; i < subIssues.length; i++) {
     const blocked = subIssues[i]
     const blocker = subIssues[i - 1]
+    if (!blocked || !blocker) continue
+
+    if (!nativeDependencyUnavailable && blocker.issueId) {
+      try {
+        await (client.octokit as unknown as { request: (route: string, params: Record<string, unknown>) => Promise<unknown> }).request(
+          'POST /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocked_by',
+          {
+            owner: client.owner,
+            repo: client.repo,
+            issue_number: blocked.issueNumber,
+            issue_id: blocker.issueId,
+          },
+        )
+        nativeLinked++
+        continue
+      } catch (err) {
+        const status = (err as { status?: number }).status
+        if (status === 404 || status === 403 || status === 410 || status === 422) {
+          nativeDependencyUnavailable = true
+          fallbackReasons.push({
+            kind: 'dependency',
+            reason: `native_dependencies_unavailable_${status}`,
+            issueNumber: blocked.issueNumber,
+          })
+        } else {
+          fallbackReasons.push({
+            kind: 'dependency',
+            reason: 'native_dependency_error',
+            issueNumber: blocked.issueNumber,
+          })
+        }
+      }
+    } else if (!blocker.issueId) {
+      fallbackReasons.push({
+        kind: 'dependency',
+        reason: 'missing_blocking_issue_id',
+        issueNumber: blocked.issueNumber,
+      })
+    }
+
     try {
       // Attempt to create a dependency comment with structured marker
       await client.octokit.issues.createComment({
         owner: client.owner,
         repo: client.repo,
         issue_number: blocked.issueNumber,
-        body: `<!-- workflow-dependency -->
+        body: `<!-- workflow-dependency mode="fallback" reason="native-unavailable" -->
 This phase is blocked by #${blocker.issueNumber} (${blocker.phase}).
 Complete ${blocker.phase} before starting this phase.`,
       })
@@ -375,18 +465,26 @@ Complete ${blocker.phase} before starting this phase.`,
         labels: ['workflow:blocked'],
       })
 
-      linkedCount++
+      fallbackLinked++
     } catch (err) {
       console.log(`[WARNING] Failed to link dependency ${blocker.issueNumber} → ${blocked.issueNumber}: ${(err as Error).message}`)
     }
   }
 
-  if (linkedCount > 0) {
-    console.log(`[INFO] Created ${linkedCount} linear dependency links.`)
+  if (nativeLinked > 0) {
+    console.log(`[INFO] Created ${nativeLinked} native linear dependency links.`)
   }
+  if (fallbackLinked > 0) {
+    console.log(`[INFO] Created ${fallbackLinked} fallback linear dependency links.`)
+  }
+  return { nativeLinked, fallbackLinked, fallbackReasons }
 }
 
-async function addSubIssueFallbackComment(parentIssue: number, subIssues: PhaseSubIssue[]): Promise<void> {
+async function addSubIssueFallbackComment(
+  parentIssue: number,
+  subIssues: PhaseSubIssue[],
+  fallbackReasons: WorkflowLinkFallback[],
+): Promise<void> {
   const client = await getClient()
   if (client.isDryRun) {
     console.log(`[DRY RUN] Would add fallback comment to parent issue #${parentIssue}`)
@@ -395,6 +493,7 @@ async function addSubIssueFallbackComment(parentIssue: number, subIssues: PhaseS
 
   try {
     const lines: string[] = []
+    lines.push('<!-- workflow-link-fallback -->')
     lines.push('## Phase Sub-Issues')
     lines.push('')
     for (const sub of subIssues) {
@@ -404,6 +503,13 @@ async function addSubIssueFallbackComment(parentIssue: number, subIssues: PhaseS
       lines.push('')
       lines.push('### Execution Order')
       lines.push('Phases should be completed in the order listed above.')
+    }
+    if (fallbackReasons.length > 0) {
+      lines.push('')
+      lines.push('### Native Link Fallback Reasons')
+      for (const reason of fallbackReasons) {
+        lines.push(`- ${reason.kind}${reason.issueNumber ? ` #${reason.issueNumber}` : ''}: ${reason.reason}`)
+      }
     }
 
     await client.octokit.issues.createComment({

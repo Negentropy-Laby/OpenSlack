@@ -1,11 +1,16 @@
 import { sanitizeTerminalText } from '../sanitize.js'
 
-import type { WorkflowFormat } from '@openslack/workflows'
+export type WorkflowGalleryFormat =
+  | 'openslack-native'
+  | 'claude-ambient'
+  | 'anthropic-compatible'
+  | 'yaml'
+  | string
 
 export interface WorkflowGalleryItem {
   name: string
   description: string
-  format: 'yaml' | WorkflowFormat
+  format: WorkflowGalleryFormat
   trustLevel: string
   risk: string
   phases: number
@@ -25,7 +30,7 @@ export function mapWorkflowGalleryToViewModel(data?: {
   workflows?: Array<{
     name: string
     description?: string
-    format?: 'yaml' | WorkflowFormat
+    format?: WorkflowGalleryFormat
     trustLevel?: string
     risk?: string
     phases?: number

@@ -1,17 +1,15 @@
 import { describe, it, expect } from 'vitest'
 import { mapDoctorToViewModel } from '../view-models/doctor.js'
-import type { PRReviewReport } from '@openslack/pr'
+import type { DoctorReportInput } from '../view-models/doctor.js'
 
-function makeReport(overrides?: Partial<PRReviewReport>): PRReviewReport {
+function makeReport(overrides?: Partial<DoctorReportInput>): DoctorReportInput {
   return {
     prNumber: 42,
     title: 'Add TUI package',
     author: 'alice',
     state: 'open',
     draft: false,
-    baseRef: 'main',
     riskZone: 'green',
-    changedFiles: ['packages/tui/src/index.ts'],
     checks: [
       { name: 'CI', status: 'completed', conclusion: 'success' },
       { name: 'Lint', status: 'completed', conclusion: 'success' },

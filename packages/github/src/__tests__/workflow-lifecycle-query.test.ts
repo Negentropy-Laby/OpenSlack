@@ -321,6 +321,110 @@ describe('fetchWorkflowLifecycleIssues', () => {
     expect(result.subIssueMode).toBe('fallback')
   })
 
+  it('detects native sub-issues and native issue dependencies from REST endpoints', async () => {
+    const octokit = {
+      issues: {
+        listForRepo: vi.fn().mockImplementation(({ labels }: { labels: string }) => {
+          const key = labels.split(':')[1] as string
+          const data = {
+            split: [
+              mockIssue({ number: 30, title: '[Workflow Split] test-workflow', body: '' }),
+            ],
+            phase: [
+              mockIssue({ number: 40, title: '[Workflow Phase] test-workflow / Scan', body: '' }),
+              mockIssue({ number: 41, title: '[Workflow Phase] test-workflow / Fix', body: '' }),
+            ],
+          }[key] ?? []
+          return Promise.resolve({ data })
+        }),
+        listComments: vi.fn().mockResolvedValue({ data: [] }),
+      },
+      pulls: {
+        list: vi.fn().mockResolvedValue({ data: [] }),
+      },
+      request: vi.fn().mockImplementation((route: string, params: { issue_number: number }) => {
+        if (route.includes('/sub_issues')) {
+          return Promise.resolve({ data: [{ number: 40 }, { number: 41 }] })
+        }
+        if (route.includes('/dependencies/blocked_by') && params.issue_number === 41) {
+          return Promise.resolve({ data: [{ number: 40 }] })
+        }
+        return Promise.resolve({ data: [] })
+      }),
+    }
+
+    mockGetClient.mockResolvedValue({
+      owner: 'test',
+      repo: 'repo',
+      octokit: octokit as unknown as import('../client.js').GitHubClient['octokit'],
+      authMode: 'token',
+      isDryRun: false,
+    })
+
+    const result = await fetchWorkflowLifecycleIssues('test-workflow')
+
+    expect(result.subIssueMode).toBe('native')
+    expect(result.dependencyMode).toBe('native')
+    expect(result.phaseIssues.find(p => p.number === 41)?.blockedBy).toEqual([40])
+  })
+
+  it('detects fallback sub-issue mode and reasons from parent fallback comments', async () => {
+    const octokit = {
+      issues: {
+        listForRepo: vi.fn().mockImplementation(({ labels }: { labels: string }) => {
+          const key = labels.split(':')[1] as string
+          const data = {
+            split: [
+              mockIssue({ number: 30, title: '[Workflow Split] test-workflow', body: '' }),
+            ],
+            phase: [
+              mockIssue({ number: 40, title: '[Workflow Phase] test-workflow / Scan', body: '' }),
+              mockIssue({ number: 41, title: '[Workflow Phase] test-workflow / Fix', body: '' }),
+            ],
+          }[key] ?? []
+          return Promise.resolve({ data })
+        }),
+        listComments: vi.fn().mockImplementation(({ issue_number }: { issue_number: number }) => {
+          if (issue_number === 30) {
+            return Promise.resolve({
+              data: [
+                {
+                  body: [
+                    '<!-- workflow-link-fallback -->',
+                    '## Phase Sub-Issues',
+                    '- **Scan**: #40',
+                    '- **Fix**: #41',
+                    '',
+                    '### Native Link Fallback Reasons',
+                    '- sub-issue #40: native_sub_issues_unavailable_422',
+                  ].join('\n'),
+                },
+              ],
+            })
+          }
+          return Promise.resolve({ data: [] })
+        }),
+      },
+      pulls: {
+        list: vi.fn().mockResolvedValue({ data: [] }),
+      },
+      request: vi.fn().mockResolvedValue({ data: [] }),
+    }
+
+    mockGetClient.mockResolvedValue({
+      owner: 'test',
+      repo: 'repo',
+      octokit: octokit as unknown as import('../client.js').GitHubClient['octokit'],
+      authMode: 'token',
+      isDryRun: false,
+    })
+
+    const result = await fetchWorkflowLifecycleIssues('test-workflow')
+
+    expect(result.subIssueMode).toBe('fallback')
+    expect(result.fallbackReasons).toContain('sub-issue #40: native_sub_issues_unavailable_422')
+  })
+
   it('finds linked PRs with workflow name in title', async () => {
     const octokit = mockOctokit(
       {

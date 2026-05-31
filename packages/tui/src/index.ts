@@ -64,13 +64,13 @@ export { mapDashboardToViewModel } from './view-models/dashboard.js';
 export { renderRoomTui } from './views/render-room.js';
 export type { RoomViewModel } from './view-models/room.js';
 export { renderDoctorTui } from './views/render-doctor.js';
-export type { DoctorViewModel } from './view-models/doctor.js';
+export type { DoctorReportInput, DoctorViewModel } from './view-models/doctor.js';
 export { renderSetupTui } from './views/render-setup.js';
 export type { SetupViewModel, SetupReadiness } from './view-models/setup.js';
 export { renderWorkflowPreviewTui } from './views/render-workflow-preview.js';
 export type { WorkflowPreviewViewModel, WorkflowPreviewStepViewModel } from './view-models/workflow-preview.js';
 export { renderPrQueueTui } from './views/render-pr-queue.js';
-export type { PrQueueViewModel } from './view-models/pr-queue.js';
+export type { PrQueueInputItem, PrQueueViewModel } from './view-models/pr-queue.js';
 export { mapPrQueueToViewModel } from './view-models/pr-queue.js';
 export { renderStatusTui } from './views/render-status.js';
 export type { StatusViewModel } from './view-models/status.js';
@@ -78,7 +78,7 @@ export { mapStatusToViewModel } from './view-models/status.js';
 
 // Navigation shell
 export { renderShellTui } from './views/render-shell.js';
-export type { ShellViewData } from './views/render-shell.js';
+export type { ShellViewData, WorkflowLifecycleBaseData, WorkflowLifecycleLoader } from './views/render-shell.js';
 export { NavigationProvider, useNavigation, HOME_ROUTE } from './navigation/context.js';
 export type { Route, RouterState, RouterActions } from './navigation/router.js';
 export type { HomeViewModel } from './view-models/home.js';
@@ -87,6 +87,8 @@ export type { ApprovalCenterViewModel, ApprovalItem, ApprovalCategory } from './
 export { mapApprovalCenterToViewModel, getCategoryLabel } from './view-models/approval-center.js';
 export type { WorkflowGalleryViewModel, WorkflowGalleryItem, WorkflowDetailViewModel } from './view-models/workflow-gallery.js';
 export { mapWorkflowGalleryToViewModel, mapWorkflowDetailToViewModel } from './view-models/workflow-gallery.js';
+export type { WorkflowLifecycleViewModel, LifecycleStage, PhaseIssueItem } from './view-models/workflow-lifecycle.js';
+export { mapWorkflowLifecycleToViewModel } from './view-models/workflow-lifecycle.js';
 export type { IssuesPrViewModel, IssueItem, PrItem } from './view-models/issues-pr.js';
 export { mapIssuesPrToViewModel } from './view-models/issues-pr.js';
 

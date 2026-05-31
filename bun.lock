@@ -120,10 +120,7 @@
       "dependencies": {
         "@alcalzone/ansi-tokenize": "^0.3.0",
         "@openslack/collaboration": "workspace:*",
-        "@openslack/github": "workspace:*",
-        "@openslack/pr": "workspace:*",
         "@openslack/runtime": "workspace:*",
-        "@openslack/workflows": "workspace:*",
         "auto-bind": "^5.0.1",
         "bidi-js": "^1.0.3",
         "chalk": "^5.6.2",

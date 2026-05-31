@@ -1447,7 +1447,7 @@ export function collaborationCommands(): Command {
     .command('split <name>')
     .description('Split a workflow into phase sub-issues')
     .requiredOption('--issue <parentIssue>', 'Parent issue number to link sub-issues to')
-    .option('--native-subissues', 'Attempt native GitHub sub-issue linking', false)
+    .option('--no-native-subissues', 'Skip native GitHub sub-issue linking and use fallback comments')
     .option('--dependencies <mode>', 'Link phase dependencies: linear (each phase blocked by previous)', undefined)
     .action(async (name: string, options: { issue: string; nativeSubissues: boolean; dependencies?: string }) => {
       const found = await findJsWorkflow(name)
@@ -1473,6 +1473,14 @@ export function collaborationCommands(): Command {
         console.log('Phase sub-issues:')
         for (const sub of result.subIssues) {
           console.log(`  - ${sub.phase}: #${sub.issueNumber} (${sub.url})`)
+        }
+        console.log(`Native sub-issues linked: ${result.links.nativeSubIssues}`)
+        console.log(`Fallback dependency links: ${result.links.fallbackDependencies}`)
+        if (result.links.fallbackReasons.length > 0) {
+          console.log('Fallback reasons:')
+          for (const reason of result.links.fallbackReasons) {
+            console.log(`  - ${reason.kind}${reason.issueNumber ? ` #${reason.issueNumber}` : ''}: ${reason.reason}`)
+          }
         }
       } catch (err) {
         console.log(`Failed to split workflow:`)
