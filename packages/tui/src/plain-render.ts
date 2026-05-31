@@ -122,6 +122,14 @@ export function renderPlainHome(vm: HomeViewModel): string {
     lines.push('')
   }
 
+  // Next recommended action
+  if (vm.nextRecommendedAction) {
+    lines.push('Next Recommended Action:')
+    lines.push('  > ' + vm.nextRecommendedAction.label)
+    lines.push(wrapIndent('    ' + vm.nextRecommendedAction.reason, 4))
+    lines.push('')
+  }
+
   // Navigation
   if (vm.navItems.length > 0) {
     lines.push('Quick Navigation:')

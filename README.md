@@ -65,6 +65,7 @@ See [Advanced Setup](#advanced-setup) for development mode, production builds, a
 | Create a task preview | `bun run openslack task create --title "Fix docs" --path "docs/**" --preview` |
 | Diagnose a PR | `bun run openslack pr doctor <PR_NUMBER>` |
 | See team activity | `bun run openslack collaboration dashboard` |
+| Launch the interactive TUI | `bun run openslack tui` |
 | Maintain organization profile | `bun run openslack collaboration workflow profile-sync status` |
 | Find the full CLI reference | [`docs/user-guide.md`](docs/user-guide.md) |
 
@@ -273,6 +274,7 @@ output_contract:
 | GitHub watch daemon and realtime Issue notifications | [`docs/developer/github-watch-daemon.md`](docs/developer/github-watch-daemon.md) |
 | PR review and merge governance | [`docs/product/module-04-pr-review-merge-steward.md`](docs/product/module-04-pr-review-merge-steward.md) |
 | Collaboration, handoff, decision, room, workflow views | [`docs/product/collaboration-layer.md`](docs/product/collaboration-layer.md), [`docs/developer/collaboration-events.md`](docs/developer/collaboration-events.md) |
+| TUI workbench guide | [`docs/guides/tui-workbench.md`](docs/guides/tui-workbench.md) |
 | Workflow engine runtime and execution model | [`docs/developer/workflow-runtime.md`](docs/developer/workflow-runtime.md) |
 | Workflow security model and trust levels | [`docs/security/workflow-execution.md`](docs/security/workflow-execution.md) |
 | Agent identity and onboarding | [`docs/developer/agent-registry-schema.md`](docs/developer/agent-registry-schema.md), [`docs/developer/new-agent-onboarding.md`](docs/developer/new-agent-onboarding.md) |

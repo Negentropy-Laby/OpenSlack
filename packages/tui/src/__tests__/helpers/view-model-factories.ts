@@ -34,6 +34,20 @@ export function createHomeViewModel(): HomeViewModel {
       { key: 'maintain-profile', label: 'Maintain organization profile', route: 'profile', description: 'Check, preview, and sync your organization profile', shortcut: '6' },
     ],
     systemStatus: 'ready',
+    nextRecommendedAction: undefined,
+  }
+}
+
+export function createHomeViewModelWithAction(): HomeViewModel {
+  return {
+    ...createHomeViewModel(),
+    nextRecommendedAction: {
+      label: 'Approve pending plan: deploy to production',
+      reason: '1 plan awaiting approval, risk: medium',
+      route: 'approvals',
+      urgency: 'governance' as const,
+      priority: 1,
+    },
   }
 }
 

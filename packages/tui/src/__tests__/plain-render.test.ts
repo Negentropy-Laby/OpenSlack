@@ -24,6 +24,7 @@ import {
 
 import {
   createHomeViewModel,
+  createHomeViewModelWithAction,
   createDoctorViewModel,
   createPrQueueViewModel,
   createProfileViewModel,
@@ -138,6 +139,15 @@ describe('renderPlainHome', () => {
     const out = renderPlainHome(vm)
     expect(out).toContain('3 Pending Approvals')
     expect(out).toContain('Plan: deploy to production')
+  })
+
+  it('renders next recommended action when present', () => {
+    const vm = createHomeViewModelWithAction()
+    const out = renderPlainHome(vm)
+    expect(out).toContain('Next Recommended Action:')
+    expect(out).toContain('Approve pending plan: deploy to production')
+    expect(out).toContain('1 plan awaiting approval, risk: medium')
+    assertNoLineExceeds80(out)
   })
 })
 
