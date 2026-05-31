@@ -15,44 +15,18 @@ import type { WorkflowLifecycleViewModel, CanonicalStageSlot } from './view-mode
 import type { WorkflowGalleryViewModel } from './view-models/workflow-gallery.js'
 import type { DashboardViewModel } from './view-models/dashboard.js'
 import { stringWidth } from './ink/stringWidth.js'
+import { wrapVisible, wrapIndentVisible } from './layout/index.js'
 
 const MAX_WIDTH = 80
 
 /** Word-wrap a line to MAX_WIDTH, preserving existing newlines. */
 function wrap(text: string, width: number = MAX_WIDTH): string {
-  return text
-    .split('\n')
-    .map(line => {
-      if (line.length === 0) return ''
-      const words = line.split(/\s+/)
-      const result: string[] = []
-      let current = ''
-      for (const word of words) {
-        if (word.length === 0) continue
-        if (current.length === 0) {
-          current = word
-        } else if (stringWidth(current) + 1 + stringWidth(word) <= width) {
-          current += ' ' + word
-        } else {
-          result.push(current)
-          current = word
-        }
-      }
-      if (current.length > 0) result.push(current)
-      return result.join('\n')
-    })
-    .join('\n')
+  return wrapVisible(text, width)
 }
 
 /** Wrap but indent subsequent lines by `indent` spaces. */
 function wrapIndent(text: string, indent: number, width: number = MAX_WIDTH): string {
-  const inner = width - indent
-  if (inner <= 0) return text
-  const pad = ' '.repeat(indent)
-  return wrap(text, inner)
-    .split('\n')
-    .map((line, i) => (i === 0 ? line : pad + line))
-    .join('\n')
+  return wrapIndentVisible(text, indent, width)
 }
 
 function separator(char = '-', width: number = MAX_WIDTH): string {
