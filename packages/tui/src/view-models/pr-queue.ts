@@ -1,4 +1,3 @@
-import type { PRQueueItem } from '@openslack/pr'
 import { sanitizeTerminalText } from '../sanitize.js'
 
 export interface WorkflowGateCriterion {
@@ -33,7 +32,24 @@ export interface PrQueueViewModel {
   }>
 }
 
-export function mapPrQueueToViewModel(items: PRQueueItem[]): PrQueueViewModel {
+export interface PrQueueInputItem {
+  prNumber: number
+  title: string
+  author: string
+  decision: string
+  canMerge: boolean
+  blockerCategory: string
+  owner: string
+  nextAction: string
+  rerunCommand: string
+  riskZone: string
+  workflowGate?: {
+    touched?: boolean
+    criteria?: Array<{ name?: unknown; passed?: unknown }>
+  }
+}
+
+export function mapPrQueueToViewModel(items: PrQueueInputItem[]): PrQueueViewModel {
   const s = sanitizeTerminalText
 
   const readyCount = items.filter(i => i.canMerge).length
@@ -47,10 +63,10 @@ export function mapPrQueueToViewModel(items: PRQueueItem[]): PrQueueViewModel {
     blockedCount,
     pendingCount,
     items: items.map(item => {
-      const gate = (item as any).workflowGate
+      const gate = item.workflowGate
       const touched = !!gate?.touched
       const criteria: WorkflowGateCriterion[] = touched
-        ? (gate.criteria ?? []).map((c: any) => ({
+        ? (gate.criteria ?? []).map((c) => ({
             name: s(String(c.name ?? '')),
             passed: Boolean(c.passed),
           }))

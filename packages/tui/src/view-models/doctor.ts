@@ -1,5 +1,20 @@
-import type { PRReviewReport } from '@openslack/pr'
 import { sanitizeTerminalText } from '../sanitize.js'
+
+export interface DoctorReportInput {
+  prNumber: number
+  title: string
+  author: string
+  state: string
+  draft: boolean
+  riskZone: string
+  mergeable: boolean
+  decision: string
+  reason: string
+  recommendation: string
+  checks: Array<{ name: string; status: string; conclusion: string | null }>
+  reviews: Array<{ user: string; state: string }>
+  humanApprovals: Array<{ user: string }>
+}
 
 export interface DoctorViewModel {
   prNumber: number
@@ -19,7 +34,7 @@ export interface DoctorViewModel {
 }
 
 export function mapDoctorToViewModel(
-  report: PRReviewReport,
+  report: DoctorReportInput,
   evidence: string[] = [],
 ): DoctorViewModel {
   const failing = report.checks.filter(

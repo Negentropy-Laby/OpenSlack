@@ -172,7 +172,8 @@ export interface WorkflowLifecycleQueryResult {
   improvementIssues: Array<{ number: number; state: string; url: string }>
   linkedPRs: Array<{ number: number; state: string; url: string }>
   subIssueMode: 'native' | 'fallback' | 'mixed' | 'unknown'
-  dependencyMode: 'native' | 'fallback' | 'none'
+  dependencyMode: 'native' | 'fallback' | 'mixed' | 'none'
+  fallbackReasons: string[]
 }
 
 interface RawIssue {
@@ -220,11 +221,21 @@ function extractBlockedByFromBody(body: string | null): number[] | undefined {
 }
 
 function hasFallbackDependencyMarker(body: string | null): boolean {
-  return body?.includes('<!-- workflow-dependency -->') ?? false
+  return body?.includes('workflow-dependency') ?? false
 }
 
 function hasFallbackSubIssueMarker(body: string | null): boolean {
-  return body?.includes('## Phase Sub-Issues') ?? false
+  return body?.includes('workflow-link-fallback') || body?.includes('## Phase Sub-Issues') || false
+}
+
+function extractFallbackReasons(text: string | null | undefined): string[] {
+  if (!text) return []
+  const reasons: string[] = []
+  for (const line of text.split('\n')) {
+    const match = line.match(/^-\s+([^:]+):\s*(.+)$/)
+    if (match) reasons.push(`${match[1]!.trim()}: ${match[2]!.trim()}`)
+  }
+  return reasons
 }
 
 /** Fetch all issues with a given label, paginating up to maxPages. */
@@ -263,6 +274,7 @@ export async function fetchWorkflowLifecycleIssues(
     linkedPRs: [],
     subIssueMode: 'unknown',
     dependencyMode: 'none',
+    fallbackReasons: [],
   }
 
   if (client.isDryRun) {
@@ -336,6 +348,7 @@ export async function fetchWorkflowLifecycleIssues(
   // Phase issues
   const phases = rawResults.get('phase') ?? []
   let hasFallbackDependency = false
+  let hasNativeDependency = false
   for (const issue of phases) {
     const phase = extractPhaseFromTitle(issue.title, workflowName)
     if (!phase) continue
@@ -352,14 +365,91 @@ export async function fetchWorkflowLifecycleIssues(
     })
   }
 
+  await Promise.all(result.phaseIssues.map(async (phaseIssue) => {
+    try {
+      const { data: comments } = await octokit.issues.listComments({
+        owner,
+        repo,
+        issue_number: phaseIssue.number,
+        per_page: 100,
+      })
+      const commentBodies = comments.map(c => c.body ?? '').join('\n')
+      const fallbackBlockedBy = extractBlockedByFromBody(commentBodies)
+      if (fallbackBlockedBy && fallbackBlockedBy.length > 0) {
+        phaseIssue.blockedBy = Array.from(new Set([...(phaseIssue.blockedBy ?? []), ...fallbackBlockedBy]))
+        hasFallbackDependency = true
+      }
+      if (commentBodies.includes('workflow-dependency')) {
+        result.fallbackReasons.push(...extractFallbackReasons(commentBodies))
+      }
+    } catch {
+      // Comment enrichment is best-effort.
+    }
+
+    try {
+      const { data } = await (octokit as unknown as { request: (route: string, params: Record<string, unknown>) => Promise<{ data: Array<{ number?: number }> }> }).request(
+        'GET /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocked_by',
+        {
+          owner,
+          repo,
+          issue_number: phaseIssue.number,
+        },
+      )
+      const nativeBlockedBy = data
+        .map(item => item.number)
+        .filter((number): number is number => typeof number === 'number')
+      if (nativeBlockedBy.length > 0) {
+        phaseIssue.blockedBy = Array.from(new Set([...(phaseIssue.blockedBy ?? []), ...nativeBlockedBy]))
+        hasNativeDependency = true
+      }
+    } catch {
+      // Native dependency API may be unavailable; fallback comments remain authoritative.
+    }
+  }))
+
   // Detect sub-issue mode after both split and phase issues are known
   if (result.splitIssue) {
     const splitBody = splits[0]!.body ?? ''
-    const fallbackMarker = hasFallbackSubIssueMarker(splitBody)
+    let fallbackMarker = hasFallbackSubIssueMarker(splitBody)
+    let nativeSubIssueNumbers = new Set<number>()
+
+    try {
+      const { data } = await (octokit as unknown as { request: (route: string, params: Record<string, unknown>) => Promise<{ data: Array<{ number?: number }> }> }).request(
+        'GET /repos/{owner}/{repo}/issues/{issue_number}/sub_issues',
+        {
+          owner,
+          repo,
+          issue_number: result.splitIssue.number,
+        },
+      )
+      nativeSubIssueNumbers = new Set(
+        data
+          .map(item => item.number)
+          .filter((number): number is number => typeof number === 'number'),
+      )
+    } catch {
+      // Native sub-issues may be unavailable; fallback markers below still apply.
+    }
+
+    try {
+      const { data: comments } = await octokit.issues.listComments({
+        owner,
+        repo,
+        issue_number: result.splitIssue.number,
+        per_page: 100,
+      })
+      const commentBodies = comments.map(c => c.body ?? '').join('\n')
+      if (commentBodies.includes('workflow-link-fallback')) {
+        fallbackMarker = true
+        result.fallbackReasons.push(...extractFallbackReasons(commentBodies))
+      }
+    } catch {
+      // Fallback reasons are best-effort audit metadata.
+    }
 
     if (result.phaseIssues.length > 0) {
       const nativeRefs = result.phaseIssues.filter(
-        (pi) => splitBody.includes(`#${pi.number}`),
+        (pi) => nativeSubIssueNumbers.has(pi.number) || splitBody.includes(`#${pi.number}`),
       ).length
 
       if (nativeRefs === result.phaseIssues.length && !fallbackMarker) {
@@ -401,9 +491,11 @@ export async function fetchWorkflowLifecycleIssues(
   }
 
   // Determine dependency mode
-  if (hasFallbackDependency) {
+  if (hasNativeDependency && hasFallbackDependency) {
+    result.dependencyMode = 'mixed'
+  } else if (hasFallbackDependency) {
     result.dependencyMode = 'fallback'
-  } else if (result.phaseIssues.some((p) => p.blockedBy && p.blockedBy.length > 0)) {
+  } else if (hasNativeDependency || result.phaseIssues.some((p) => p.blockedBy && p.blockedBy.length > 0)) {
     // If any phase has blocked_by but no fallback marker, it could be native
     result.dependencyMode = 'native'
   }

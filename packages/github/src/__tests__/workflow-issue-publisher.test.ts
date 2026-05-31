@@ -227,9 +227,23 @@ describe('workflow issue publishers', () => {
 
     it('accepts nativeSubIssues and linearDependencies options', async () => {
       mockCreateTaskIssue
-        .mockResolvedValueOnce({ issueNumber: 300, url: 'https://github.com/test/300', nodeId: 'node_300' })
-        .mockResolvedValueOnce({ issueNumber: 301, url: 'https://github.com/test/301', nodeId: 'node_301' })
-        .mockResolvedValueOnce({ issueNumber: 302, url: 'https://github.com/test/302', nodeId: 'node_302' })
+        .mockResolvedValueOnce({ issueNumber: 301, url: 'https://github.com/test/301', nodeId: 'node_301', id: 3010 })
+        .mockResolvedValueOnce({ issueNumber: 302, url: 'https://github.com/test/302', nodeId: 'node_302', id: 3020 })
+      const request = vi.fn().mockResolvedValue({ data: {} })
+      const mockOctokit = {
+        request,
+        issues: {
+          createComment: vi.fn().mockResolvedValue({ data: { html_url: 'https://github.com/test/comment' } }),
+          addLabels: vi.fn().mockResolvedValue({}),
+        },
+      }
+      mockGetClient.mockResolvedValue({
+        owner: 'test',
+        repo: 'repo',
+        octokit: mockOctokit as unknown as import('../client.js').GitHubClient['octokit'],
+        authMode: 'token',
+        isDryRun: false,
+      })
 
       const result = await publishWorkflowSplit(mockModule(), {
         parentIssue: 300,
@@ -239,6 +253,55 @@ describe('workflow issue publishers', () => {
 
       expect(result.parentIssueNumber).toBe(300)
       expect(result.subIssues).toHaveLength(2)
+      expect(result.links.nativeSubIssues).toBe(2)
+      expect(result.links.nativeDependencies).toBe(1)
+      expect(request).toHaveBeenCalledWith(
+        'POST /repos/{owner}/{repo}/issues/{issue_number}/sub_issues',
+        expect.objectContaining({ issue_number: 300, sub_issue_id: 3010 }),
+      )
+      expect(request).toHaveBeenCalledWith(
+        'POST /repos/{owner}/{repo}/issues/{issue_number}/dependencies/blocked_by',
+        expect.objectContaining({ issue_number: 302, issue_id: 3010 }),
+      )
+    })
+
+    it('falls back to structured dependency comments when native API is unavailable', async () => {
+      mockCreateTaskIssue
+        .mockResolvedValueOnce({ issueNumber: 301, url: 'https://github.com/test/301', nodeId: 'node_301', id: 3010 })
+        .mockResolvedValueOnce({ issueNumber: 302, url: 'https://github.com/test/302', nodeId: 'node_302', id: 3020 })
+      const request = vi.fn().mockRejectedValue(Object.assign(new Error('not enabled'), { status: 422 }))
+      const createComment = vi.fn().mockResolvedValue({ data: { html_url: 'https://github.com/test/comment' } })
+      const mockOctokit = {
+        request,
+        issues: {
+          createComment,
+          addLabels: vi.fn().mockResolvedValue({}),
+        },
+      }
+      mockGetClient.mockResolvedValue({
+        owner: 'test',
+        repo: 'repo',
+        octokit: mockOctokit as unknown as import('../client.js').GitHubClient['octokit'],
+        authMode: 'token',
+        isDryRun: false,
+      })
+
+      const result = await publishWorkflowSplit(mockModule(), {
+        parentIssue: 300,
+        nativeSubIssues: true,
+        linearDependencies: true,
+      })
+
+      expect(result.links.nativeSubIssues).toBe(0)
+      expect(result.links.fallbackDependencies).toBe(1)
+      expect(result.links.fallbackReasons.map(r => r.reason)).toContain('native_sub_issues_unavailable_422')
+      expect(result.links.fallbackReasons.map(r => r.reason)).toContain('native_dependencies_unavailable_422')
+      expect(createComment).toHaveBeenCalledWith(
+        expect.objectContaining({
+          issue_number: 302,
+          body: expect.stringContaining('workflow-dependency mode="fallback"'),
+        }),
+      )
     })
   })
 

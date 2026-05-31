@@ -88,7 +88,13 @@ export class LogUpdate {
     }
 
     if (previousOutput.startsWith(output)) {
-      return []
+      // Output is a prefix of previous output. Emit the new output and
+      // clear any old trailing content that is no longer present.
+      const prevLines = previousOutput.split('\n')
+      const nextLines = output.split('\n')
+      const linesToClear = prevLines.length - nextLines.length
+      const clearOld = linesToClear > 0 ? '\n\x1b[K'.repeat(linesToClear) : ''
+      return [{ type: 'stdout', content: output + '\x1b[K' + clearOld }]
     }
 
     const commonPrefixLength = getCommonPrefixLength(previousOutput, output)
@@ -96,7 +102,10 @@ export class LogUpdate {
       commonPrefixLength <= 0
         ? 0
         : output.lastIndexOf('\n', commonPrefixLength - 1) + 1
-    const changedTail = output.slice(lineStart)
+    const changedTail = withLineClears(
+      output.slice(lineStart),
+      previousOutput.slice(lineStart),
+    )
     if (changedTail.length === 0) {
       return []
     }
@@ -554,6 +563,14 @@ function getCommonPrefixLength(a: string, b: string): number {
     index += 1
   }
   return index
+}
+
+function withLineClears(nextTail: string, previousTail: string): string {
+  const nextLines = nextTail.split('\n')
+  const previousLines = previousTail.split('\n')
+  const clearedNext = nextLines.map(line => line + '\x1b[K').join('\n')
+  const extraPreviousLines = Math.max(0, previousLines.length - nextLines.length)
+  return clearedNext + (extraPreviousLines > 0 ? '\n\x1b[K'.repeat(extraPreviousLines) : '')
 }
 
 function frameToPlainLines(screen: Screen): string[] {

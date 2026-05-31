@@ -72,7 +72,7 @@ export async function renderTui(
 
   const instance = await render(wrapped, {
     stdout: options?.stdout,
-    patchConsole: false,
+    patchConsole: true,
   })
 
   // Set internal flags AFTER rendering so the first frame already used

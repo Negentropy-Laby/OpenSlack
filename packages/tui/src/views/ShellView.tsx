@@ -247,6 +247,7 @@ function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
         return React.createElement(WorkflowLifecycleViewWrapper, {
           workflowName,
           baseData,
+          loadLifecycle: data?.workflowLifecycleLoader,
           actionHandlers: data?.actionHandlers,
           onBack: pop,
         })
