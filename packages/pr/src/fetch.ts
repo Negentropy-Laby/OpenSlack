@@ -1,12 +1,13 @@
-import { getPR, listPRFiles, getPRChecks, getPRReviews } from '@openslack/github';
+import { getPR, listPRFiles, getPRChecks, getPRReviews, getPRFilePatches } from '@openslack/github';
 import type { PRReviewReport } from './types.js';
 
 export async function fetchPRDetails(prNumber: number): Promise<PRReviewReport> {
-  const [pr, files, checks, reviews] = await Promise.all([
+  const [pr, files, checks, reviews, filePatches] = await Promise.all([
     getPR(prNumber),
     listPRFiles(prNumber),
     getPRChecks(prNumber),
     getPRReviews(prNumber),
+    getPRFilePatches(prNumber),
   ]);
 
   const humanApprovals = reviews
@@ -20,8 +21,10 @@ export async function fetchPRDetails(prNumber: number): Promise<PRReviewReport> 
     state: pr?.state || 'unknown',
     draft: pr?.draft ?? false,
     baseRef: pr?.base.ref || 'main',
+    headRef: pr?.head.ref || '',
     riskZone: 'green',
     changedFiles: files,
+    filePatches,
     checks: checks.map((c) => ({ name: c.name, status: c.status, conclusion: c.conclusion })),
     reviews: reviews.map((r) => ({ user: r.user.login, state: r.state })),
     humanApprovals,

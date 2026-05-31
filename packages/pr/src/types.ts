@@ -17,6 +17,7 @@ export type PRReviewState =
   | 'BLOCKED_AUTHOR_IS_SOLE_CODEOWNER'
   | 'BLOCKED_SINGLE_MAINTAINER'
   | 'BLOCKED_WORKFLOW_GATE'
+  | 'BLOCKED_PROFILE_SYNC_GATE'
   | 'BOT_APPROVAL_IGNORED'
   | 'HUMAN_APPROVED'
   | 'READY_TO_MERGE'
@@ -34,6 +35,18 @@ export interface WorkflowGateResult {
   criteria: WorkflowGateCriterion[];
 }
 
+export interface ProfileSyncGateCriterion {
+  name: string;
+  status: 'PASS' | 'FAIL' | 'N/A';
+  detail?: string;
+}
+
+export interface ProfileSyncGateResult {
+  touchedProfileSyncFiles: boolean;
+  overall: 'PASS' | 'FAIL' | 'N/A';
+  criteria: ProfileSyncGateCriterion[];
+}
+
 export interface PRReviewReport {
   prNumber: number;
   title: string;
@@ -43,6 +56,7 @@ export interface PRReviewReport {
   baseRef: string;
   riskZone: RiskZone;
   changedFiles: string[];
+  filePatches?: Array<{ filename: string; patch: string }>;
   checks: Array<{ name: string; status: string; conclusion: string | null }>;
   reviews: Array<{ user: string; state: string }>;
   humanApprovals: Array<{ user: string }>;
@@ -51,7 +65,9 @@ export interface PRReviewReport {
   recommendation: string;
   mergeable: boolean;
   body?: string;
+  headRef?: string;
   workflowGate?: WorkflowGateResult;
+  profileSyncGate?: ProfileSyncGateResult;
 }
 
 export interface PRReviewPolicy {

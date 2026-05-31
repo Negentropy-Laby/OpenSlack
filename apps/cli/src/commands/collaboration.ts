@@ -1606,46 +1606,134 @@ export function collaborationCommands(): Command {
   const profileSync = new Command('profile-sync')
     .description('Organization profile synchronization shortcuts')
 
+  // Helper to build config from file + CLI overrides
+  async function resolveProfileSyncConfig(options: Record<string, unknown>): Promise<{
+    config: import('@openslack/github').ProfileSyncConfig
+    overrides: string[]
+  }> {
+    const { loadProfileSyncConfig } = await import('@openslack/github')
+    const root = findRepoRoot()
+    const config = loadProfileSyncConfig(root)
+    const overrides: string[] = []
+
+    const source = typeof options.source === 'string' ? options.source : undefined
+    const target = typeof options.target === 'string' ? options.target : undefined
+    const path = typeof options.path === 'string' ? options.path : undefined
+    const posts = typeof options.posts === 'string' ? options.posts : undefined
+    const marker = typeof options.marker === 'string' ? options.marker : undefined
+    const max = typeof options.max === 'string' ? options.max : undefined
+    const onExistingPr = typeof options.onExistingPr === 'string' ? options.onExistingPr : undefined
+
+    if (source && source !== config.source.repo) {
+      config.source.repo = source
+      overrides.push(`source.repo = ${source}`)
+    }
+    if (target && target !== config.target.repo) {
+      config.target.repo = target
+      overrides.push(`target.repo = ${target}`)
+    }
+    if (path && path !== config.target.path) {
+      config.target.path = path
+      overrides.push(`target.path = ${path}`)
+    }
+    if (posts && posts !== config.source.path) {
+      config.source.path = posts
+      overrides.push(`source.path = ${posts}`)
+    }
+    if (marker && marker !== config.target.marker) {
+      config.target.marker = marker
+      overrides.push(`target.marker = ${marker}`)
+    }
+    if (max) {
+      const n = parseInt(max, 10)
+      if (!isNaN(n) && n !== config.max_posts) {
+        config.max_posts = n
+        overrides.push(`max_posts = ${n}`)
+      }
+    }
+    if (onExistingPr && ['skip', 'update', 'create_new'].includes(onExistingPr)) {
+      config.on_existing_pr = onExistingPr as 'skip' | 'update' | 'create_new'
+      overrides.push(`on_existing_pr = ${onExistingPr}`)
+    }
+
+    return { config, overrides }
+  }
+
+  profileSync
+    .command('check')
+    .description('Check profile sync readiness without side effects')
+    .option('--source <repo>', 'Source whitepapers repo')
+    .option('--target <repo>', 'Target profile repo')
+    .option('--path <path>', 'Target README path')
+    .option('--posts <dir>', 'Posts directory in source repo')
+    .option('--marker <name>', 'HTML comment marker name')
+    .option('--max <n>', 'Maximum posts to include')
+    .action(async (options: {
+      source?: string
+      target?: string
+      path?: string
+      posts?: string
+      marker?: string
+      max?: string
+    }) => {
+      try {
+        const { checkProfileSync } = await import('@openslack/github')
+        const { config, overrides } = await resolveProfileSyncConfig(options)
+
+        if (overrides.length > 0) {
+          console.log(`Config overrides: ${overrides.join(', ')}`)
+        }
+
+        const result = await checkProfileSync(config)
+        console.log(JSON.stringify(result, null, 2))
+        process.exit(result.ok ? 0 : 1)
+      } catch (err) {
+        console.error(`Check failed: ${(err as Error).message}`)
+        process.exit(1)
+      }
+    })
+
   profileSync
     .command('preview')
     .description('Preview profile sync without side effects')
-    .option('--source <repo>', 'Source whitepapers repo', 'Negentropy-Laby/whitepapers')
-    .option('--target <repo>', 'Target profile repo', 'Negentropy-Laby/.github')
-    .option('--path <path>', 'Target README path', 'profile/README.md')
-    .option('--posts <dir>', 'Posts directory in source repo', 'posts')
-    .option('--marker <name>', 'HTML comment marker name', 'latest-insights')
-    .option('--max <n>', 'Maximum posts to include', '5')
+    .option('--source <repo>', 'Source whitepapers repo')
+    .option('--target <repo>', 'Target profile repo')
+    .option('--path <path>', 'Target README path')
+    .option('--posts <dir>', 'Posts directory in source repo')
+    .option('--marker <name>', 'HTML comment marker name')
+    .option('--max <n>', 'Maximum posts to include')
+    .option('--format <format>', 'Output format: json, markdown, diff', 'json')
     .action(async (options: {
-      source: string
-      target: string
-      path: string
-      posts: string
-      marker: string
-      max: string
+      source?: string
+      target?: string
+      path?: string
+      posts?: string
+      marker?: string
+      max?: string
+      format?: string
     }) => {
-      const found = await findJsWorkflow('profile-sync')
-      if (!found) {
-        console.log('Profile-sync workflow not found.')
-        process.exit(1)
-      }
-
       try {
-        const mod = await loadWorkflow(found.path)
-        const result = await executePreview(mod, {
-          manifest: mod.meta,
-          args: {
-            sourceRepo: options.source,
-            targetRepo: options.target,
-            targetPath: options.path,
-            sourcePostsPath: options.posts,
-            marker: options.marker,
-            maxPosts: parseInt(options.max, 10),
-          },
-          budget: { tokens: 10000, costUsd: 0 },
-        })
-        console.log(JSON.stringify(result, null, 2))
+        const { previewProfileSync } = await import('@openslack/github')
+        const { config, overrides } = await resolveProfileSyncConfig(options)
+
+        if (overrides.length > 0) {
+          console.log(`Config overrides: ${overrides.join(', ')}`)
+        }
+
+        const result = await previewProfileSync(config)
+        const format = options.format || 'json'
+
+        if (format === 'diff') {
+          console.log(result.diff || '// No diff available')
+        } else if (format === 'markdown') {
+          console.log(renderProfileSyncPreviewMarkdown(result))
+        } else {
+          console.log(JSON.stringify(result, null, 2))
+        }
+
+        process.exit(result.ok ? 0 : 1)
       } catch (err) {
-        console.log(`Preview failed: ${(err as Error).message}`)
+        console.error(`Preview failed: ${(err as Error).message}`)
         process.exit(1)
       }
     })
@@ -1653,21 +1741,23 @@ export function collaborationCommands(): Command {
   profileSync
     .command('run')
     .description('Run profile sync with real side effects')
-    .option('--source <repo>', 'Source whitepapers repo', 'Negentropy-Laby/whitepapers')
-    .option('--target <repo>', 'Target profile repo', 'Negentropy-Laby/.github')
-    .option('--path <path>', 'Target README path', 'profile/README.md')
-    .option('--posts <dir>', 'Posts directory in source repo', 'posts')
-    .option('--marker <name>', 'HTML comment marker name', 'latest-insights')
-    .option('--max <n>', 'Maximum posts to include', '5')
+    .option('--source <repo>', 'Source whitepapers repo')
+    .option('--target <repo>', 'Target profile repo')
+    .option('--path <path>', 'Target README path')
+    .option('--posts <dir>', 'Posts directory in source repo')
+    .option('--marker <name>', 'HTML comment marker name')
+    .option('--max <n>', 'Maximum posts to include')
+    .option('--on-existing-pr <action>', 'Action when open profile-sync PR exists: skip, update, create_new')
     .option('--yes', 'Auto-approve side effects')
     .option('--agent-id <id>', 'Agent ID for authorization')
     .action(async (options: {
-      source: string
-      target: string
-      path: string
-      posts: string
-      marker: string
-      max: string
+      source?: string
+      target?: string
+      path?: string
+      posts?: string
+      marker?: string
+      max?: string
+      onExistingPr?: string
       yes?: boolean
       agentId?: string
     }) => {
@@ -1678,6 +1768,12 @@ export function collaborationCommands(): Command {
       }
 
       try {
+        const { config, overrides } = await resolveProfileSyncConfig(options)
+
+        if (overrides.length > 0) {
+          console.log(`Config overrides: ${overrides.join(', ')}`)
+        }
+
         const mod = await loadWorkflow(found.path)
         const onConfirm = options.yes
           ? async (_operation: string, _detail: string): Promise<boolean> => true
@@ -1699,12 +1795,12 @@ export function collaborationCommands(): Command {
         const result = await executeRun(mod, {
           manifest: mod.meta,
           args: {
-            sourceRepo: options.source,
-            targetRepo: options.target,
-            targetPath: options.path,
-            sourcePostsPath: options.posts,
-            marker: options.marker,
-            maxPosts: parseInt(options.max, 10),
+            sourceRepo: config.source.repo,
+            targetRepo: config.target.repo,
+            targetPath: config.target.path,
+            sourcePostsPath: config.source.path,
+            marker: config.target.marker,
+            maxPosts: config.max_posts,
           },
           budget: { tokens: 100000, costUsd: 1.0 },
           onConfirm,
@@ -1724,24 +1820,44 @@ export function collaborationCommands(): Command {
     .description('Show profile sync status')
     .action(async () => {
       try {
-        const { readEvents, filterEvents } = await import('@openslack/collaboration')
-        const events = readEvents()
-        const profileEvents = filterEvents(events, { type: 'profile_sync.completed' as never })
+        const { buildProfileSyncStatus } = await import('@openslack/collaboration')
+        const { loadProfileSyncConfig } = await import('@openslack/github')
+        const config = loadProfileSyncConfig()
 
-        if (profileEvents.length === 0) {
-          console.log('No profile sync events recorded.')
-          console.log('Run `openslack collaboration workflow profile-sync run` to perform a sync.')
-          return
-        }
+        const status = buildProfileSyncStatus({
+          targetRepo: config.target.repo,
+          targetPath: config.target.path,
+          marker: config.target.marker,
+        })
 
-        const lastEvent = profileEvents[profileEvents.length - 1]
         console.log('Profile Sync Status')
         console.log('-------------------')
-        console.log(`Last sync: ${new Date(lastEvent.timestamp).toISOString()}`)
-        console.log(`Posts synced: ${(lastEvent.metadata?.postsIncluded as Array<unknown>)?.length ?? 'unknown'}`)
-        console.log(`PR: ${lastEvent.metadata?.prUrl ?? 'unknown'}`)
-        console.log(`PR number: #${lastEvent.metadata?.prNumber ?? 'unknown'}`)
-        console.log(`Total events: ${profileEvents.length}`)
+        console.log(`State: ${status.state}`)
+        if (status.lastSyncDate) {
+          console.log(`Last sync: ${new Date(status.lastSyncDate).toISOString()}`)
+        }
+        if (status.lastPrUrl) {
+          console.log(`PR: ${status.lastPrUrl}`)
+        }
+        if (status.lastSourceSha) {
+          console.log(`Source commit: ${status.lastSourceSha}`)
+        }
+        console.log(`Posts synced: ${status.postsSynced}`)
+        console.log(`Out of date: ${status.isOutOfDate ? 'yes' : 'no'}`)
+
+        if (status.failures.length > 0) {
+          console.log('')
+          console.log('Recent failures:')
+          for (const f of status.failures.slice(-3)) {
+            console.log(`  - ${f.date}: ${f.error.slice(0, 80)}`)
+            if (f.issueUrl) console.log(`    Issue: ${f.issueUrl}`)
+          }
+        }
+
+        if (status.state === 'never') {
+          console.log('')
+          console.log('Run `openslack collaboration workflow profile-sync run` to perform a sync.')
+        }
       } catch (err) {
         console.log(`Status check failed: ${(err as Error).message}`)
         process.exit(1)
@@ -1753,4 +1869,68 @@ export function collaborationCommands(): Command {
   cmd.addCommand(workflow);
 
   return cmd;
+}
+
+// ── Profile Sync helpers ──────────────────────────────────────────────────────
+
+function renderProfileSyncPreviewMarkdown(
+  result: import('@openslack/github').ProfileSyncPreviewResult,
+): string {
+  const lines: string[] = []
+  lines.push('# Profile Sync Preview')
+  lines.push('')
+
+  if (!result.ok) {
+    lines.push('## Status: FAILED')
+    lines.push('')
+    for (const err of result.checkResult.errors) {
+      lines.push(`- ❌ ${err}`)
+    }
+    lines.push('')
+  } else {
+    lines.push('## Status: OK')
+    lines.push('')
+  }
+
+  lines.push('## Source')
+  lines.push(`- Repo: ${result.checkResult.source.repo}`)
+  lines.push(`- Branch: ${result.checkResult.source.branch}`)
+  lines.push(`- Path: ${result.checkResult.source.path}`)
+  lines.push(`- Accessible: ${result.checkResult.source.accessible ? '✅' : '❌'}`)
+  lines.push(`- Posts found: ${result.checkResult.source.postCount}`)
+  lines.push('')
+
+  lines.push('## Target')
+  lines.push(`- Repo: ${result.checkResult.target.repo}`)
+  lines.push(`- Branch: ${result.checkResult.target.branch}`)
+  lines.push(`- Path: ${result.checkResult.target.path}`)
+  lines.push(`- Accessible: ${result.checkResult.target.accessible ? '✅' : '❌'}`)
+  lines.push(`- Marker exists: ${result.checkResult.target.markerExists ? '✅' : '❌'}`)
+  lines.push('')
+
+  lines.push('## Posts')
+  lines.push(`- Total valid: ${result.checkResult.posts.total}`)
+  lines.push(`- Published: ${result.checkResult.posts.published}`)
+  lines.push(`- Failed: ${result.checkResult.posts.failed}`)
+  if (result.checkResult.posts.failures.length > 0) {
+    lines.push('')
+    lines.push('### Failures')
+    for (const f of result.checkResult.posts.failures) {
+      lines.push(`- **${f.file}**:`)
+      for (const e of f.errors) {
+        lines.push(`  - ${e.field}: ${e.message}`)
+      }
+    }
+  }
+  lines.push('')
+
+  lines.push('## Diff')
+  lines.push('```diff')
+  lines.push(result.diff || '// No diff available')
+  lines.push('```')
+  lines.push('')
+
+  lines.push(`## Would create branch: \`${result.wouldCreateBranch}\``)
+
+  return lines.join('\n')
 }

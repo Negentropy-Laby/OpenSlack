@@ -1,7 +1,7 @@
 export { createIssue, addIssueToProject, queryReadyItems, updateProjectField } from './issues.js';
 export type { ReadyTask, ProjectItemResult } from './issues.js';
-export { createDraftPR, commentOnPR, getPR, listOpenPRs, listPRFiles, getPRChecks, getPRReviews, getCODEOWNERS, mergePR } from './pr.js';
-export type { CreatePRResult, PRDetail, OpenPRSummary, PRCheckRun, PRReview, MergePRResult } from './pr.js';
+export { createDraftPR, commentOnPR, getPR, listOpenPRs, listPRFiles, getPRChecks, getPRReviews, getPRFilePatches, getCODEOWNERS, mergePR } from './pr.js';
+export type { CreatePRResult, PRDetail, OpenPRSummary, PRFilePatch, PRCheckRun, PRReview, MergePRResult } from './pr.js';
 export { getClient, getAuthenticatedIdentity, GitHubClient, AuthMode } from './client.js';
 export type { GitHubIdentity } from './client.js';
 export { getAppInstallationToken, clearTokenCache } from './auth.js';
@@ -99,6 +99,60 @@ export type {
   PostValidationError,
   PostValidationResult,
 } from './profile-sync.js';
+export {
+  loadProfileSyncConfig,
+  validateProfileSyncConfig,
+  parseProfileSyncConfig,
+  DEFAULT_PROFILE_SYNC_CONFIG,
+} from './profile-sync-config.js';
+export type {
+  ProfileSyncConfig,
+  ProfileSyncConfigParseResult,
+} from './profile-sync-config.js';
+export {
+  checkProfileSync,
+} from './profile-sync-check.js';
+export type {
+  ProfileSyncCheckResult,
+  ProfileSyncPostFailure,
+} from './profile-sync-check.js';
+export {
+  previewProfileSync,
+} from './profile-sync-preview.js';
+export type {
+  ProfileSyncPreviewResult,
+} from './profile-sync-preview.js';
+export {
+  runProfileSync,
+} from './profile-sync-run.js';
+export type {
+  ProfileSyncRunOptions,
+  ProfileSyncRunResult,
+} from './profile-sync-run.js';
+export {
+  enqueueProfileSyncJob,
+  dequeueProfileSyncJob,
+  listPendingJobs,
+  markJobComplete,
+  markJobFailed,
+  isDuplicate,
+  recordDedupe,
+} from './profile-sync-queue.js';
+export type {
+  ProfileSyncJob,
+} from './profile-sync-queue.js';
+export {
+  ProfileSyncWorker,
+} from './profile-sync-worker.js';
+export type {
+  ProfileSyncWorkerOptions,
+} from './profile-sync-worker.js';
+export {
+  buildMarkers,
+} from './profile-sync-markers.js';
+export type {
+  MarkerPair,
+} from './profile-sync-markers.js';
 export {
   renderProfileSyncProposalBody,
   renderProfileSyncFailureBody,

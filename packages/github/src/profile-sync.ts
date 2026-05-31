@@ -117,17 +117,10 @@ export async function readRepoFile(
   }
 }
 
-// ── Marker Patching ───────────────────────────────────────────────────────────
+import { buildMarkers, MarkerNotFoundError } from './profile-sync-markers.js'
+export { MarkerNotFoundError } from './profile-sync-markers.js'
 
-/**
- * Build the marker comment strings used to delimit replaceable sections.
- */
-function buildMarkers(markerName: string): { start: string; end: string } {
-  return {
-    start: `<!-- openslack:${markerName}:start -->`,
-    end: `<!-- openslack:${markerName}:end -->`,
-  }
-}
+// ── Marker Patching ───────────────────────────────────────────────────────────
 
 /**
  * Replace the content between HTML comment markers.
@@ -165,13 +158,6 @@ export function patchMarkerSection(
   const after = content.slice(endIdx)
 
   return `${before}\n${newSection}\n${after}`
-}
-
-export class MarkerNotFoundError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'MarkerNotFoundError'
-  }
 }
 
 // ── Branch Creation ───────────────────────────────────────────────────────────

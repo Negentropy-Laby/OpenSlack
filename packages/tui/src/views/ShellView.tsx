@@ -262,11 +262,32 @@ function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
       return React.createElement(PlaceholderView, { route: current })
     }
     case 'profile': {
-      if (data?.profile) {
-        return React.createElement(ProfileView, { model: data.profile, onBack: pop })
-      }
-      const profileModel = mapProfileToViewModel()
-      return React.createElement(ProfileView, { model: profileModel, onBack: pop })
+      const profileModel = data?.profile ?? mapProfileToViewModel()
+      return React.createElement(ProfileView, {
+        model: profileModel,
+        onBack: pop,
+        onAction: async (actionId: string) => {
+          const handlers = data?.actionHandlers?.profileSync
+          if (!handlers) return
+          switch (actionId) {
+            case 'check':
+              return handlers.checkProfileSync()
+            case 'preview':
+              return handlers.previewProfileSync()
+            case 'dryrun':
+              return handlers.dryRunProfileSync()
+            case 'create-pr':
+              return handlers.createProfileSyncPR()
+            case 'open-pr':
+              if (profileModel.pendingPR?.url) {
+                return handlers.openProfileSyncPR(profileModel.pendingPR.url)
+              }
+              return
+            case 'failure-issue':
+              return handlers.createProfileSyncFailureIssue('Manual failure report from TUI')
+          }
+        },
+      })
     }
     case 'prs':
     case 'issues': {

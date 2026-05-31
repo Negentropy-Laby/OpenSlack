@@ -1,0 +1,18 @@
+schema: openslack.profile_sync.v1
+source:
+  repo: Negentropy-Laby/whitepapers
+  branch: main
+  path: posts
+target:
+  repo: Negentropy-Laby/.github
+  branch: main
+  path: profile/README.md
+  marker: latest-insights
+mode: manual
+max_posts: 5
+pr:
+  draft: true
+  labels: [profile:sync]
+failure_issue:
+  enabled: true
+on_existing_pr: skip
