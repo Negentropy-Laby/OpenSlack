@@ -5,14 +5,16 @@ export function tuiCommands(): Command {
     .description('Launch the interactive TUI workbench')
     .action(async () => {
       try {
-        const { isTuiSupported } = await import('@openslack/tui');
+        const { isTuiSupported, renderPlain, renderPlainHome, mapDashboardToViewModel } = await import('@openslack/tui');
         if (!isTuiSupported()) {
-          console.error('TUI requires an interactive terminal with at least 40 columns and 12 rows.');
-          console.error('Use --format standard for text output.');
-          process.exit(1);
+          // Fall back to plain-text renderer for unsupported terminals
+          const { mapHomeToViewModel } = await import('@openslack/tui');
+          const homeVm = mapHomeToViewModel();
+          console.log(renderPlainHome(homeVm));
+          process.exit(0);
         }
 
-        const { renderShellTui, mapDashboardToViewModel, mapStatusToViewModel, mapPrQueueToViewModel, mapWorkflowGalleryToViewModel, mapApprovalCenterToViewModel, mapWorkflowLifecycleToViewModel } = await import('@openslack/tui');
+        const { renderShellTui, mapStatusToViewModel, mapPrQueueToViewModel, mapWorkflowGalleryToViewModel, mapApprovalCenterToViewModel, mapWorkflowLifecycleToViewModel } = await import('@openslack/tui');
         const data: import('@openslack/tui').ShellViewData = {};
 
         // Resolve repo root
@@ -399,6 +401,10 @@ export function tuiCommands(): Command {
           let markerStatus: 'present' | 'missing' | 'unknown' = 'unknown';
           let validationSummary = { total: 0, published: 0, failed: 0 };
           let pendingPR: { number: number; url: string; branch: string } | undefined;
+          let syncDetails: import('@openslack/tui').ProfileSyncDetails | undefined;
+          let failureDetails: import('@openslack/tui').ProfileFailureDetails | undefined;
+          let psMode: import('@openslack/tui').ProfileSyncMode = 'manual'; // conservative default if config load fails below
+          let syncStatus: 'synced' | 'pending' | 'failed' | 'never' = 'never';
 
           try {
             const { loadProfileSyncConfig, checkProfileSync, listOpenPRs } = await import('@openslack/github');
@@ -406,6 +412,28 @@ export function tuiCommands(): Command {
             const checkResult = await checkProfileSync(psConfig);
             markerStatus = checkResult.target.markerExists ? 'present' : 'missing';
             validationSummary = checkResult.posts;
+            psMode = psConfig.mode;
+
+            // Derive sync status from check result
+            if (!checkResult.ok && checkResult.errors.length > 0) {
+              syncStatus = 'failed';
+              failureDetails = {
+                reason: checkResult.errors[0],
+                nextAction: 'Run `openslack collaboration workflow profile-sync check` for details',
+              };
+            } else if (checkResult.ok) {
+              syncStatus = lastEvent ? 'synced' : 'pending';
+            } else {
+              syncStatus = 'never';
+            }
+
+            // Build sync details from check result
+            syncDetails = {
+              sourceCommit: checkResult.source.sourceCommit,
+              sourceDate: checkResult.source.sourceDate,
+              targetHash: checkResult.target.markerExists ? 'present' : undefined,
+              mode: psConfig.mode,
+            };
 
             const openPRs = await listOpenPRs(20);
             const profileSyncPR = openPRs.find((p) =>
@@ -415,18 +443,31 @@ export function tuiCommands(): Command {
               pendingPR = {
                 number: profileSyncPR.number,
                 url: profileSyncPR.url,
-                branch: `openslack/profile-sync/${psConfig.target.marker}`,
+                branch: profileSyncPR.branch,
+              };
+              syncDetails.pendingPR = {
+                number: profileSyncPR.number,
+                status: 'open',
+              };
+            }
+
+            // Last sync from event history
+            if (lastEvent) {
+              syncDetails.lastSync = {
+                timestamp: new Date(lastEvent.timestamp).toISOString().slice(0, 10),
+                result: (lastEvent.metadata?.result as string) === 'failed' ? 'failed' : 'success',
               };
             }
           } catch {
             // Check unavailable — use defaults
+            syncStatus = lastEvent ? 'synced' : 'never';
           }
 
           data.profile = mapProfileToViewModel({
             targetRepo: lastEvent?.metadata?.targetRepo as string | undefined ?? 'Negentropy-Laby/.github',
             targetPath: lastEvent?.metadata?.targetPath as string | undefined ?? 'profile/README.md',
             marker: lastEvent?.metadata?.marker as string | undefined ?? 'latest-insights',
-            syncStatus: lastEvent ? 'synced' : 'never',
+            syncStatus,
             lastSyncDate: lastEvent ? new Date(lastEvent.timestamp).toISOString().slice(0, 10) : undefined,
             lastPrUrl: lastEvent?.metadata?.prUrl as string | undefined,
             markerStatus,
@@ -439,6 +480,9 @@ export function tuiCommands(): Command {
               url: '',
             })) ?? [],
             validationSummary,
+            syncDetails,
+            failureDetails,
+            mode: psMode,
           });
         } catch {
           // Profile data unavailable

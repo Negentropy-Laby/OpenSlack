@@ -16,6 +16,11 @@ export interface DoctorReportInput {
   humanApprovals: Array<{ user: string }>
 }
 
+export interface ProfileSyncGate {
+  passed: boolean
+  detail: string
+}
+
 export interface DoctorViewModel {
   prNumber: number
   title: string
@@ -31,11 +36,18 @@ export interface DoctorViewModel {
   checks: Array<{ name: string; status: 'PASS' | 'FAIL' | 'WARN'; conclusion: string }>
   reviews: Array<{ user: string; state: string; valid: boolean }>
   evidence: string[]
+  compressed: boolean
+  profileSyncGate?: ProfileSyncGate
+}
+
+export interface DoctorMapperOptions {
+  evidence?: string[]
+  profileSyncGate?: ProfileSyncGate
 }
 
 export function mapDoctorToViewModel(
   report: DoctorReportInput,
-  evidence: string[] = [],
+  evidenceOrOptions?: string[] | DoctorMapperOptions,
 ): DoctorViewModel {
   const failing = report.checks.filter(
     c => c.conclusion && c.conclusion !== 'success' && c.conclusion !== 'neutral' && c.conclusion !== 'skipped',
@@ -43,6 +55,15 @@ export function mapDoctorToViewModel(
   const pending = report.checks.filter(c => c.status !== 'completed')
 
   const validApprovalCount = report.humanApprovals.length
+
+  let evidence: string[]
+  let profileSyncGate: ProfileSyncGate | undefined
+  if (Array.isArray(evidenceOrOptions)) {
+    evidence = evidenceOrOptions
+  } else {
+    evidence = evidenceOrOptions?.evidence ?? []
+    profileSyncGate = evidenceOrOptions?.profileSyncGate
+  }
 
   const gates: DoctorViewModel['gates'] = [
     {
@@ -108,5 +129,7 @@ export function mapDoctorToViewModel(
       valid: report.humanApprovals.some(h => h.user === r.user),
     })),
     evidence: evidence.map(sanitizeTerminalText),
+    compressed: false,
+    profileSyncGate,
   }
 }

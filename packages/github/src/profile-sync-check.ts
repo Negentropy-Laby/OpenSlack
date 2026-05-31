@@ -15,6 +15,8 @@ export interface ProfileSyncCheckResult {
     path: string;
     accessible: boolean;
     postCount: number;
+    sourceCommit?: string;
+    sourceDate?: string;
   };
   target: {
     repo: string;
@@ -47,6 +49,8 @@ export async function checkProfileSync(
 
   const errors: string[] = [];
 
+  const { getClient } = await import('./client.js');
+
   // Parse repo strings
   const source = parseRepoString(config.source.repo);
   const target = parseRepoString(config.target.repo);
@@ -55,6 +59,27 @@ export async function checkProfileSync(
   let sourceAccessible = false;
   let sourcePostCount = 0;
   let mdFiles: Array<{ name: string; path: string; type: string }> = [];
+  let sourceCommit: string | undefined;
+  let sourceDate: string | undefined;
+
+  // Fetch latest commit on source branch
+  try {
+    const client = await getClient();
+    if (!client.isDryRun) {
+      const { data: commitData } = await client.octokit.repos.listCommits({
+        owner: source.owner,
+        repo: source.repo,
+        sha: config.source.branch,
+        per_page: 1,
+      });
+      if (commitData.length > 0) {
+        sourceCommit = commitData[0].sha.slice(0, 7);
+        sourceDate = commitData[0].commit?.author?.date;
+      }
+    }
+  } catch {
+    // Commit info unavailable — not a blocker
+  }
 
   try {
     const entries = await readRepoDirectory(source.owner, source.repo, config.source.path, config.source.branch);
@@ -150,6 +175,8 @@ export async function checkProfileSync(
       path: config.source.path,
       accessible: sourceAccessible,
       postCount: sourcePostCount,
+      sourceCommit,
+      sourceDate,
     },
     target: {
       repo: config.target.repo,

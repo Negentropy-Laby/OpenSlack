@@ -65,6 +65,7 @@ See [Advanced Setup](#advanced-setup) for development mode, production builds, a
 | Create a task preview | `bun run openslack task create --title "Fix docs" --path "docs/**" --preview` |
 | Diagnose a PR | `bun run openslack pr doctor <PR_NUMBER>` |
 | See team activity | `bun run openslack collaboration dashboard` |
+| Maintain organization profile | `bun run openslack collaboration workflow profile-sync status` |
 | Find the full CLI reference | [`docs/user-guide.md`](docs/user-guide.md) |
 
 Mutation-oriented commands default to preview or require explicit confirmation flags where possible. Chat confirmations are never GitHub approvals, and PR merges still require PRMS and GitHub governance gates.
@@ -157,6 +158,7 @@ The projection and coordination layer. It makes tasks, PRs, handoffs, decisions,
 - **Room:** `openslack collaboration room show pr:42` → reconstruct object-centered collaboration context
 - **Workflow Engine:** `openslack collaboration workflow preview <file>` → validate typed workflow templates before execution
 - **Workflow Execution:** `openslack collaboration workflow run <name>` → execute workflows with preview, dry-run, and execute modes, checkpointing, resume, trust levels, and inspect (HTML/JSON/Markdown)
+- **Profile Sync Robot:** `openslack collaboration workflow profile-sync check` → keep an organization's public profile in sync with an upstream whitepapers repository (check, preview, run, status)
 
 See: [`docs/product/collaboration-layer.md`](docs/product/collaboration-layer.md)
 

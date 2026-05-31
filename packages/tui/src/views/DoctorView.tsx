@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import Box from '../ink/components/Box.js'
 import Text from '../ink/components/Text.js'
 import useApp from '../ink/hooks/use-app.js'
@@ -15,15 +15,47 @@ export type DoctorViewProps = {
   model: DoctorViewModel
 }
 
-export default function DoctorView({ model }: DoctorViewProps): React.JSX.Element {
-  const { exit } = useApp()
+function CompressedView({ model }: DoctorViewProps): React.JSX.Element {
+  const canMerge = model.decision === 'READY_TO_MERGE'
+  const failedGate = model.gates.find(g => g.status === 'FAIL')
 
-  useInput((input, key) => {
-    if (input === 'q' || key.escape) {
-      exit()
-    }
-  })
+  return React.createElement(
+    Box,
+    { flexDirection: 'column', paddingX: 1 },
+    React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, `PR #${model.prNumber} Summary`),
+    React.createElement(Divider, { length: 50 }),
+    React.createElement(
+      Box,
+      { flexDirection: 'row' },
+      React.createElement(ThemedText, { colorTheme: 'foreground', bold: true }, 'Can merge: '),
+      React.createElement(ThemedText, { colorTheme: canMerge ? 'success' : 'error', bold: true }, canMerge ? 'YES' : 'NO'),
+    ),
+    React.createElement(
+      Box,
+      { flexDirection: 'row' },
+      React.createElement(ThemedText, { colorTheme: 'foreground', bold: true }, 'Blocker: '),
+      failedGate
+        ? React.createElement(ThemedText, { colorTheme: 'error' }, `${failedGate.name} - ${failedGate.detail}`)
+        : React.createElement(ThemedText, { colorTheme: 'success' }, 'No blockers'),
+    ),
+    React.createElement(
+      Box,
+      { flexDirection: 'row' },
+      React.createElement(ThemedText, { colorTheme: 'foreground', bold: true }, 'Why: '),
+      React.createElement(ThemedText, { colorTheme: 'muted' }, model.reason),
+    ),
+    React.createElement(
+      Box,
+      { flexDirection: 'row' },
+      React.createElement(ThemedText, { colorTheme: 'foreground', bold: true }, 'Next: '),
+      React.createElement(ThemedText, { colorTheme: 'accent' }, `openslack pr doctor ${model.prNumber}`),
+    ),
+    React.createElement(Divider, { length: 40 }),
+    React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, 'Press c for full view'),
+  )
+}
 
+function FullView({ model }: DoctorViewProps): React.JSX.Element {
   const decisionCategory = model.decision === 'READY_TO_MERGE' ? 'pass' as const
     : model.gates.some(g => g.status === 'FAIL') ? 'fail' as const
     : 'warn' as const
@@ -61,6 +93,19 @@ export default function DoctorView({ model }: DoctorViewProps): React.JSX.Elemen
         }),
       ),
     ),
+
+    // Profile Sync Gate pane (conditional)
+    model.profileSyncGate
+      ? React.createElement(
+          Pane,
+          { title: 'Profile Sync Gate', marginY: 0 },
+          React.createElement(ListItem, {
+            label: 'Profile Sync',
+            detail: model.profileSyncGate.detail,
+            status: model.profileSyncGate.passed ? 'PASS' : 'FAIL',
+          }),
+        )
+      : null,
 
     // Decision
     React.createElement(
@@ -128,7 +173,28 @@ export default function DoctorView({ model }: DoctorViewProps): React.JSX.Elemen
     React.createElement(
       Box,
       { flexDirection: 'row' },
+      React.createElement(KeyboardShortcutHint, { keys: ['c'], description: 'summary' }),
+      React.createElement(Text, null, '  '),
       React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'exit' }),
     ),
   )
+}
+
+export default function DoctorView({ model }: DoctorViewProps): React.JSX.Element {
+  const { exit } = useApp()
+  const [compressed, setCompressed] = useState(model.compressed)
+
+  useInput((input, key) => {
+    if (input === 'q' || key.escape) {
+      exit()
+    } else if (input === 'c') {
+      setCompressed(prev => !prev)
+    }
+  })
+
+  if (compressed) {
+    return React.createElement(CompressedView, { model })
+  }
+
+  return React.createElement(FullView, { model })
 }

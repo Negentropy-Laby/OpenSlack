@@ -17,17 +17,19 @@ export interface NavItem {
   shortcut: string
 }
 
-export interface GoalItem {
+export interface TaskItem {
+  /** Unique key for React rendering */
+  key: string
+  /** Display label */
   label: string
+  /** Route to push when selected */
   route: string
+  /** One-line description shown below the label */
   description: string
-}
-
-export interface WorkflowQuickActionItem {
-  label: string
-  route: string
-  description: string
+  /** Keyboard shortcut character */
   shortcut: string
+  /** Optional dynamic badge, e.g. "3" to show count overlay */
+  attentionBadge?: string
 }
 
 export interface HomeViewModel {
@@ -37,10 +39,8 @@ export interface HomeViewModel {
   allClear: boolean
   /** Quick navigation items with number shortcuts */
   navItems: NavItem[]
-  /** Goal-oriented items for the "What do you want to do?" section */
-  goalItems: GoalItem[]
-  /** Workflow lifecycle quick actions */
-  workflowQuickActions: WorkflowQuickActionItem[]
+  /** Task-oriented items for the "What do you want to do?" section */
+  tasks: TaskItem[]
   systemStatus: string
 }
 
@@ -190,40 +190,96 @@ export function mapHomeToViewModel(data?: {
     }
   }
 
+  // Build attention badge counts from shell data
+  const attentionBadgeCounts: Record<string, string> = {}
+  if (data?.shellData) {
+    const sd = data.shellData
+
+    // Badge for "See what needs attention" — total attention items
+    const totalAttention = attentionItems.length
+    if (totalAttention > 0) {
+      attentionBadgeCounts['see-attention'] = String(totalAttention)
+    }
+
+    // Badge for "Review and merge PRs" — open PR count
+    if (sd.prQueue && sd.prQueue.totalPRs > 0) {
+      attentionBadgeCounts['review-prs'] = String(sd.prQueue.totalPRs)
+    }
+
+    // Badge for "Approve pending items" — pending approval count
+    const approvalCount = sd.approvals
+      ? sd.approvals.summary.plans +
+        sd.approvals.summary.mergeRequests +
+        sd.approvals.summary.workflowEffects +
+        sd.approvals.summary.githubReviews
+      : 0
+    if (approvalCount > 0) {
+      attentionBadgeCounts['approve-pending'] = String(approvalCount)
+    }
+  }
+
+  const tasks: TaskItem[] = [
+    {
+      key: 'see-attention',
+      label: 'See what needs attention',
+      route: 'dashboard',
+      description: 'View items needing immediate action',
+      shortcut: '1',
+      attentionBadge: attentionBadgeCounts['see-attention'],
+    },
+    {
+      key: 'start-work',
+      label: 'Start or continue work',
+      route: 'workflows',
+      description: 'Create tasks, claim issues, and work in isolated branches',
+      shortcut: '2',
+    },
+    {
+      key: 'run-workflow',
+      label: 'Run or check a workflow',
+      route: 'workflows',
+      description: 'Browse, execute, and inspect workflow runs',
+      shortcut: '3',
+    },
+    {
+      key: 'review-prs',
+      label: 'Review and merge PRs',
+      route: 'pr-queue',
+      description: 'Check open PRs, run doctor, and merge when ready',
+      shortcut: '4',
+      attentionBadge: attentionBadgeCounts['review-prs'],
+    },
+    {
+      key: 'approve-pending',
+      label: 'Approve pending items',
+      route: 'approvals',
+      description: 'Approve plans, merge requests, and workflow effects',
+      shortcut: '5',
+      attentionBadge: attentionBadgeCounts['approve-pending'],
+    },
+    {
+      key: 'maintain-profile',
+      label: 'Maintain organization profile',
+      route: 'profile',
+      description: 'Check, preview, and sync your organization profile',
+      shortcut: '6',
+    },
+  ]
+
   const navItems: NavItem[] = [
-    { label: 'Dashboard', key: 'dashboard', shortcut: '1' },
-    { label: 'PR Queue', key: 'pr-queue', shortcut: '2' },
-    { label: 'Workflows', key: 'workflows', shortcut: '3' },
-    { label: 'Approvals', key: 'approvals', shortcut: '4' },
-    { label: 'Status', key: 'status', shortcut: '5' },
-    { label: 'Activity', key: 'activity', shortcut: '6' },
-    { label: 'Digest', key: 'digest', shortcut: '7' },
-    { label: 'Handoffs', key: 'handoffs', shortcut: '8' },
-    { label: 'Decisions', key: 'decisions', shortcut: '9' },
-    { label: 'Profile', key: 'profile', shortcut: 'p' },
-  ]
-
-  const goalItems: GoalItem[] = [
-    { label: 'Run a workflow', route: 'workflows', description: 'Browse, preview, and execute workflows' },
-    { label: 'Review pull requests', route: 'pr-queue', description: 'Check open PRs and merge readiness' },
-    { label: 'Approve pending items', route: 'approvals', description: 'Resolve plans, merge requests, and effects' },
-    { label: 'Manage workflows', route: 'workflows', description: 'Trust, dry-run, and lifecycle controls' },
-    { label: 'View recent activity', route: 'activity', description: 'See what happened across the system' },
-  ]
-
-  const workflowQuickActions: WorkflowQuickActionItem[] = [
-    { label: 'Start a workflow', route: 'workflows', description: 'Browse and execute a workflow', shortcut: 'w' },
-    { label: 'Publish workflow to GitHub Issues', route: 'workflows', description: 'Open the issues menu from workflows', shortcut: 'p' },
-    { label: 'Review workflow lifecycle', route: 'workflows', description: 'Inspect workflow runs and status', shortcut: 'r' },
-    { label: 'Resolve paused workflow', route: 'approvals', description: 'Resume workflows awaiting approval', shortcut: 'a' },
+    { label: 'Dashboard', key: 'dashboard', shortcut: '7' },
+    { label: 'Status', key: 'status', shortcut: '8' },
+    { label: 'Activity', key: 'activity', shortcut: '9' },
+    { label: 'Digest', key: 'digest', shortcut: '0' },
+    { label: 'Workflows', key: 'workflows', shortcut: 'p' },
+    { label: 'Profile', key: 'profile', shortcut: 'r' },
   ]
 
   return {
     attentionItems,
     allClear: attentionItems.length === 0,
     navItems,
-    goalItems,
-    workflowQuickActions,
+    tasks,
     systemStatus: s(data?.systemStatus ?? 'ready'),
   }
 }

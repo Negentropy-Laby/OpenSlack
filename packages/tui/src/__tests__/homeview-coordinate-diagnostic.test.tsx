@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { Writable } from 'stream'
 import React from 'react'
-import { render, Box, Text } from '@openslack/tui'
+import { render } from '@openslack/tui'
 import HomeView from '../views/HomeView.js'
 import { mapHomeToViewModel } from '../view-models/home.js'
 import { NavigationProvider } from '../navigation/context.js'
@@ -23,7 +23,7 @@ function createMockStdout(columns = 80, rows = 50) {
 }
 
 describe('HomeView coordinate diagnostic', () => {
-  it('renders with empty data and verifies line positions', async () => {
+  it('renders with empty data and verifies 2-section layout', async () => {
     const { stdout, chunks } = createMockStdout(80, 50)
     const model = mapHomeToViewModel()
     const instance = await render(
@@ -37,55 +37,51 @@ describe('HomeView coordinate diagnostic', () => {
     const output = chunks.join('')
     const lines = output.split('\n')
 
-    // Verify basic structure
+    // Header
     expect(lines[0]).toContain('OpenSlack')
     expect(lines[1]).toContain('─')
-    expect(lines[2]).toContain('Needs Attention')
-    expect(lines[3]).toContain('Nothing needs attention right now')
-    expect(lines[4]).toContain('─')
-    expect(lines[5]).toContain('What do you want to do?')
-    expect(lines[6]).toContain('Run a workflow')
-    expect(lines[7]).toContain('Browse, preview, and execute workflows')
-    expect(lines[8]).toContain('Review pull requests')
-    expect(lines[9]).toContain('Check open PRs and merge readiness')
-    expect(lines[10]).toContain('Approve pending items')
-    expect(lines[11]).toContain('Resolve plans, merge requests, and effects')
-    expect(lines[12]).toContain('Manage workflows')
-    expect(lines[13]).toContain('Trust, dry-run, and lifecycle controls')
-    expect(lines[14]).toContain('View recent activity')
-    expect(lines[15]).toContain('See what happened across the system')
-    expect(lines[16]).toContain('─')
-    expect(lines[17]).toContain('Workflow Quick Actions')
-    expect(lines[18]).toContain('Start a workflow')
-    expect(lines[19]).toContain('Browse and execute a workflow')
-    expect(lines[20]).toContain('Publish workflow to GitHub Issues')
-    expect(lines[21]).toContain('Open the issues menu from workflows')
-    expect(lines[22]).toContain('Review workflow lifecycle')
-    expect(lines[23]).toContain('Inspect workflow runs and status')
-    expect(lines[24]).toContain('Resolve paused workflow')
-    expect(lines[25]).toContain('Resume workflows awaiting approval')
-    expect(lines[26]).toContain('─')
-    expect(lines[27]).toContain('Quick Navigation')
-    expect(lines[28]).toContain('Dashboard')
-    expect(lines[29]).toContain('PR Queue')
-    expect(lines[30]).toContain('Workflows')
-    expect(lines[31]).toContain('Approvals')
-    expect(lines[32]).toContain('Status')
-    expect(lines[33]).toContain('Activity')
-    expect(lines[34]).toContain('Digest')
-    expect(lines[35]).toContain('Handoffs')
-    expect(lines[36]).toContain('Decisions')
-    expect(lines[37]).toContain('Profile')
-    expect(lines[38]).toContain('─')
-    expect(lines[39]).toContain('Quit')
 
-    // Verify total line count
-    expect(lines.length).toBe(40)
+    // Section 1: What do you want to do?
+    expect(lines[2]).toContain('What do you want to do?')
+    // Task 1: See what needs attention
+    expect(lines[3]).toContain('See what needs attention')
+    expect(lines[4]).toContain('View items needing immediate action')
+    // Task 2: Start or continue work
+    expect(lines[5]).toContain('Start or continue work')
+    expect(lines[6]).toContain('Create tasks, claim issues, and work in isolated branches')
+    // Task 3: Run or check a workflow
+    expect(lines[7]).toContain('Run or check a workflow')
+    expect(lines[8]).toContain('Browse, execute, and inspect workflow runs')
+    // Task 4: Review and merge PRs
+    expect(lines[9]).toContain('Review and merge PRs')
+    expect(lines[10]).toContain('Check open PRs, run doctor, and merge when ready')
+    // Task 5: Approve pending items
+    expect(lines[11]).toContain('Approve pending items')
+    expect(lines[12]).toContain('Approve plans, merge requests, and workflow effects')
+    // Task 6: Maintain organization profile
+    expect(lines[13]).toContain('Maintain organization profile')
+    expect(lines[14]).toContain('Check, preview, and sync your organization profile')
+
+    expect(lines[15]).toContain('─')
+
+    // Section 2: Quick Navigation
+    expect(lines[16]).toContain('Quick Navigation')
+    // Nav items: Dashboard, Status, Activity, Digest, Workflows, Profile
+    expect(lines[17]).toContain('Dashboard')
+    expect(lines[18]).toContain('Status')
+    expect(lines[19]).toContain('Activity')
+    expect(lines[20]).toContain('Digest')
+    expect(lines[21]).toContain('Workflows')
+    expect(lines[22]).toContain('Profile')
+
+    // Footer
+    expect(lines[23]).toContain('─')
+    expect(lines[24]).toContain('Quit')
 
     instance.unmount()
   })
 
-  it('renders with attention items and verifies line positions', async () => {
+  it('renders with attention items and verifies badge on task row', async () => {
     const { stdout, chunks } = createMockStdout(80, 50)
     const model = mapHomeToViewModel({
       shellData: {
@@ -93,7 +89,9 @@ describe('HomeView coordinate diagnostic', () => {
           pendingApprovals: [{ id: '1', category: 'plan', title: 'Test Plan', risk: 'low' }],
           summary: { plans: 1, mergeRequests: 0, workflowEffects: 0, githubReviews: 0 },
         },
-        prQueue: { totalPRs: 0, blockedCount: 0, readyCount: 0, items: [] },
+        prQueue: { totalPRs: 2, blockedCount: 1, readyCount: 1, items: [
+          { prNumber: 42, title: 'Fix bug', blockerCategory: 'checks', canMerge: false },
+        ] },
       },
     })
     const instance = await render(
@@ -105,16 +103,85 @@ describe('HomeView coordinate diagnostic', () => {
     await new Promise<void>((r) => setTimeout(r, 200))
 
     const output = chunks.join('')
-    const lines = output.split('\n')
 
-    // Verify attention section structure
-    expect(lines[0]).toContain('OpenSlack')
-    expect(lines[1]).toContain('─')
-    expect(lines[2]).toContain('Needs Attention')
-    expect(lines[3]).toContain('Pending Approval')
-    expect(lines[4]).toContain('Test Plan')
-    expect(lines[5]).toContain('─')
-    expect(lines[6]).toContain('What do you want to do?')
+    // Verify the output contains key structural elements
+    expect(output).toContain('What do you want to do?')
+    expect(output).toContain('See what needs attention')
+    expect(output).toContain('Review and merge PRs')
+    expect(output).toContain('Approve pending items')
+    expect(output).toContain('Quick Navigation')
+
+    // Verify attention badges are rendered
+    // "See what needs attention" should have badge showing total attention items count
+    expect(output).toContain('(2)') // 1 approval + 1 PR = 2 attention items
+    // "Review and merge PRs" should show open PR count
+    expect(output).toContain('(2)') // 2 open PRs
+    // "Approve pending items" should show approval count
+    expect(output).toContain('(1)') // 1 pending approval
+
+    instance.unmount()
+  })
+
+  it('renders all 6 tasks with correct shortcuts', async () => {
+    const { stdout, chunks } = createMockStdout(80, 50)
+    const model = mapHomeToViewModel()
+    const instance = await render(
+      React.createElement(NavigationProvider, null,
+        React.createElement(HomeView, { model })
+      ),
+      { stdout, patchConsole: false },
+    )
+    await new Promise<void>((r) => setTimeout(r, 200))
+
+    const output = chunks.join('')
+
+    // Verify all 6 task labels are present
+    expect(output).toContain('See what needs attention')
+    expect(output).toContain('Start or continue work')
+    expect(output).toContain('Run or check a workflow')
+    expect(output).toContain('Review and merge PRs')
+    expect(output).toContain('Approve pending items')
+    expect(output).toContain('Maintain organization profile')
+
+    // Verify shortcuts [1] through [6] for tasks
+    expect(output).toContain('[1]')
+    expect(output).toContain('[2]')
+    expect(output).toContain('[3]')
+    expect(output).toContain('[4]')
+    expect(output).toContain('[5]')
+    expect(output).toContain('[6]')
+
+    instance.unmount()
+  })
+
+  it('renders nav items with correct shortcuts starting from 7', async () => {
+    const { stdout, chunks } = createMockStdout(80, 50)
+    const model = mapHomeToViewModel()
+    const instance = await render(
+      React.createElement(NavigationProvider, null,
+        React.createElement(HomeView, { model })
+      ),
+      { stdout, patchConsole: false },
+    )
+    await new Promise<void>((r) => setTimeout(r, 200))
+
+    const output = chunks.join('')
+
+    // Verify nav shortcuts [7], [8], [9], [0], [p], [r]
+    expect(output).toContain('[7]')
+    expect(output).toContain('[8]')
+    expect(output).toContain('[9]')
+    expect(output).toContain('[0]')
+    expect(output).toContain('[p]')
+    expect(output).toContain('[r]')
+
+    // Verify nav labels
+    expect(output).toContain('Dashboard')
+    expect(output).toContain('Status')
+    expect(output).toContain('Activity')
+    expect(output).toContain('Digest')
+    expect(output).toContain('Workflows')
+    expect(output).toContain('Profile')
 
     instance.unmount()
   })

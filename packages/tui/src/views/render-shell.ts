@@ -28,11 +28,12 @@ export type WorkflowLifecycleLoader = (
 
 export interface ApprovalExecutionParams {
   id: string
-  category: 'plan' | 'merge-request' | 'workflow-effect' | 'github-review'
+  category: 'plan' | 'merge-request' | 'workflow-effect' | 'profile-sync' | 'github-review'
   title: string
   planId?: string
   prNumber?: number
   workflowName?: string
+  profileSyncAction?: string
 }
 
 export interface ProfileActionHandlers {

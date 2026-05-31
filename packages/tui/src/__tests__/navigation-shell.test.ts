@@ -47,11 +47,15 @@ describe('mapHomeToViewModel', () => {
     expect(model.navItems).toBeInstanceOf(Array)
     expect(model.navItems.length).toBeGreaterThan(0)
 
-    const keys = model.navItems.map(i => i.key)
-    expect(keys).toContain('dashboard')
-    expect(keys).toContain('pr-queue')
-    expect(keys).toContain('status')
-    expect(keys).toContain('activity')
+    const navKeys = model.navItems.map(i => i.key)
+    expect(navKeys).toContain('dashboard')
+    expect(navKeys).toContain('status')
+    expect(navKeys).toContain('activity')
+
+    // Task-oriented items are in tasks, not navItems
+    const taskRoutes = model.tasks.map(t => t.route)
+    expect(taskRoutes).toContain('pr-queue')
+    expect(taskRoutes).toContain('profile')
   })
 
   it('returns default systemStatus when no data provided', async () => {

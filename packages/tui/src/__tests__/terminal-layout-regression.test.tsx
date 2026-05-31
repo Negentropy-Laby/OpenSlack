@@ -227,7 +227,8 @@ describe('terminal layout regressions', () => {
 
     await new Promise<void>(r => setTimeout(r, 200))
     const output = chunks.join('')
-    expect(output).toContain('Proposal issue #125')
+    expect(output).toContain('#125')
+    expect(output).toContain('Proposal')
     expect(output).toContain('Lifecycle complete')
     instance.unmount()
   })

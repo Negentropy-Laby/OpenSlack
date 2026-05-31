@@ -57,6 +57,18 @@ export { sanitizeTerminalText } from './sanitize.js';
 export { renderTui } from './render.js';
 export type { RenderTuiOptions } from './render.js';
 
+// Plain-text fallback renderer
+export {
+  renderPlain,
+  renderPlainHome,
+  renderPlainDoctor,
+  renderPlainPrQueue,
+  renderPlainProfile,
+  renderPlainWorkflowLifecycle,
+  renderPlainWorkflowWorkbench,
+  renderPlainDashboard,
+} from './plain-render.js';
+
 // Views
 export { renderDashboardTui } from './views/render-dashboard.js';
 export type { DashboardViewModel } from './view-models/dashboard.js';
@@ -64,7 +76,7 @@ export { mapDashboardToViewModel } from './view-models/dashboard.js';
 export { renderRoomTui } from './views/render-room.js';
 export type { RoomViewModel } from './view-models/room.js';
 export { renderDoctorTui } from './views/render-doctor.js';
-export type { DoctorReportInput, DoctorViewModel } from './view-models/doctor.js';
+export type { DoctorReportInput, DoctorViewModel, ProfileSyncGate } from './view-models/doctor.js';
 export { renderSetupTui } from './views/render-setup.js';
 export type { SetupViewModel, SetupReadiness } from './view-models/setup.js';
 export { renderWorkflowPreviewTui } from './views/render-workflow-preview.js';
@@ -87,8 +99,8 @@ export type { ApprovalCenterViewModel, ApprovalItem, ApprovalCategory } from './
 export { mapApprovalCenterToViewModel, getCategoryLabel } from './view-models/approval-center.js';
 export type { WorkflowGalleryViewModel, WorkflowGalleryItem, WorkflowDetailViewModel } from './view-models/workflow-gallery.js';
 export { mapWorkflowGalleryToViewModel, mapWorkflowDetailToViewModel } from './view-models/workflow-gallery.js';
-export type { WorkflowLifecycleViewModel, LifecycleStage, PhaseIssueItem } from './view-models/workflow-lifecycle.js';
-export { mapWorkflowLifecycleToViewModel } from './view-models/workflow-lifecycle.js';
+export type { WorkflowLifecycleViewModel, LifecycleStage, PhaseIssueItem, CanonicalStageSlot, CanonicalStageKey, CanonicalStageStatus } from './view-models/workflow-lifecycle.js';
+export { mapWorkflowLifecycleToViewModel, mapCanonicalStages } from './view-models/workflow-lifecycle.js';
 export type { IssuesPrViewModel, IssueItem, PrItem } from './view-models/issues-pr.js';
 export { mapIssuesPrToViewModel } from './view-models/issues-pr.js';
 
@@ -113,5 +125,5 @@ export type { DecisionListViewModel, DecisionListItemViewModel, DecisionDetailVi
 export { mapDecisionListToViewModel, mapDecisionToViewModel } from './view-models/decision.js';
 
 // Profile
-export type { ProfileViewModel } from './view-models/profile.js';
+export type { ProfileViewModel, ProfileSyncDetails, ProfileFailureDetails, ProfileSyncMode } from './view-models/profile.js';
 export { mapProfileToViewModel } from './view-models/profile.js';

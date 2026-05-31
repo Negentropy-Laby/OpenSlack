@@ -64,6 +64,79 @@ Each new view or layout primitive should include:
 - Sanitization tests for external strings with ANSI/OSC/control characters.
 - No direct console output from tests unless explicitly debug-gated.
 
+## Column Width Matrix
+
+Every TUI view must be tested at 80, 100, and 120 columns using shared
+render helpers. These three widths cover the minimum practical terminal, the
+common default, and a generous wide layout.
+
+- Shared helpers must accept a `columns` parameter (default 100) and pass it
+  to the Ink test renderer.
+- Test suites for each view should include a `describe.each([80, 100, 120])`
+  (or equivalent loop) that renders the view and asserts:
+  - no line exceeds the column width,
+  - no content is silently clipped without an ellipsis or truncation indicator,
+  - bordered panes and progress bars remain structurally intact.
+- Views that use a two-column layout must verify that the split point does not
+  cause text overflow at 80 columns.
+- If a view degrades to a single-column stack at narrow widths, the test must
+  assert the stacked layout explicitly.
+
+## CJK, Emoji, and ANSI Coverage
+
+Test inputs must exercise the full range of content that reaches TUI views:
+
+- **CJK text**: Chinese (`你好世界`), Japanese (`こんにちは`), Korean (`안녕하세요`),
+  and mixed CJK/Latin strings. CJK characters occupy 2 terminal cells each.
+- **Emoji**: single codepoint emoji (`✅`, `⚠️`), multi-codepoint sequences
+  (`👨‍💻`), flag sequences (`🇯🇵`), and skin-tone modifiers.
+- **ANSI escapes**: colored text (`\x1b[31mred\x1b[0m`), hyperlinks
+  (`\x1b]8;;url\x1b\\text\x1b]8;;\x1b\\`), cursor moves, and OSC sequences.
+- **Long URLs**: unbroken strings of 200+ characters that must wrap or truncate.
+- **Mixed content**: lines that combine ASCII labels, CJK values, emoji status
+  glyphs, and ANSI-colored segments in a single row.
+
+Each view's test suite should include at least one test case per category
+above, asserting that layout remains stable and that `stringWidth()` reports
+the correct cell count.
+
+## Async Redraw Regression
+
+Loading states and async data fetches are a common source of visual glitches:
+
+- **Loading state must fit terminal**: the loading frame (spinner, skeleton,
+  placeholder) must not exceed the terminal column width. Test by rendering the
+  loading state at 80 columns and asserting no overflow.
+- **No ghost rows after redraw**: when the loaded frame has fewer visual rows
+  than the loading frame, the renderer must clear stale rows. Test by rendering
+  the loading state, then the loaded state, and asserting that the final output
+  has no trailing blank lines or leftover skeleton fragments.
+- **Frame-size transitions**: test that transitioning from a long list (many
+  items) to a short list (few items) does not leave orphaned rows from the
+  previous frame.
+- Every view with an async loading path must include a dedicated redraw
+  regression test.
+
+## Plain-Safe Fallback
+
+When `isTuiSupported()` returns `false`, the CLI must produce usable plain-text
+output instead of a broken interactive view:
+
+- **Trigger conditions**: non-TTY stdout, CI environment (`CI=true`),
+  explicitly disabled TUI (`OPENSLACK_NO_TUI=1`), terminal too small (fewer
+  than 40 columns or 10 rows), or missing terminal capabilities.
+- **Fallback behavior**: the command must print a human-readable plain-text
+  summary to stdout and exit cleanly with code 0. No Ink rendering, no mouse
+  tracking, no alternate screen buffer.
+- **Test requirement**: each TUI view must have a corresponding plain-text
+  fallback test that runs with `isTuiSupported()` mocked to `false` and asserts
+  that stdout contains the expected text summary with no ANSI escape sequences
+  (other than optional basic color if the output stream is a TTY).
+- **Feature parity**: the plain-text fallback must convey the same critical
+  information as the TUI view. It may omit interactive elements (navigation,
+  keyboard shortcuts, selection) but must not silently drop status, error, or
+  result data.
+
 ## Common Failure Modes
 
 | Symptom | Cause | Fix |
@@ -73,4 +146,6 @@ Each new view or layout primitive should include:
 | Old rows remain after async refresh | shorter frame did not clear tail rows | Add redraw regression test |
 | CI snapshot differs from terminal | ANSI/control output leaked | Sanitize external text and render through Ink |
 | Monochrome view loses meaning | status was color-only | Add explicit text labels |
+| View overflows at 80 columns | layout assumes 100+ columns | Add Column Width Matrix test |
+| Plain output is empty | TUI-only path with no fallback | Add plain-safe fallback path |
 

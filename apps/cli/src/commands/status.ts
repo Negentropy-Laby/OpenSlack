@@ -109,6 +109,8 @@ ${vitestTests} Vitest tests across ${vitestFiles} files. All passing.
 
 Module-attributed coverage: ${totalTests} tests across ${totalTestFiles} module test files (packages shared across modules are counted per module).
 
+Note: The test counts shown above are module-attributed counts from .openslack/modules.yaml, where each test file is counted once per module that claims it. The raw Vitest total (bun run test) may differ because it deduplicates across module boundaries. Use module counts for coverage tracking; use raw Vitest output for CI verification.
+
 ## Module Registry
 
 Source: \`.openslack/modules.yaml\` — auto-generated from modules.yaml.
@@ -193,6 +195,7 @@ async function showStatusDashboard(root: string): Promise<void> {
     }
 
     console.log(`Test Suite: ${vitestTests} Vitest tests across ${vitestFiles} files`);
+    console.log(`  Note: Module-attributed counts from .openslack/modules.yaml (${totalTests} tests, ${totalTestFiles} files) count each test file once per module that claims it. The raw Vitest total (bun run test) may differ because it deduplicates across module boundaries. Use module counts for coverage tracking; use raw Vitest output for CI verification.`);
     console.log('');
 
     const setupReport = await buildSetupReport({ dryRun: true });

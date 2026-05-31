@@ -13,4 +13,20 @@ export default tseslint.config(
       '@typescript-eslint/consistent-type-imports': ['warn', { prefer: 'type-imports' }],
     },
   },
+  {
+    files: ['packages/tui/src/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        {
+          property: 'padEnd',
+          message: 'Use stringWidth-aware padding from packages/tui/src/ink/stringWidth.ts instead of padEnd(). padEnd counts UTF-16 code units, not terminal cells.',
+        },
+        {
+          property: 'padStart',
+          message: 'Use stringWidth-aware padding from packages/tui/src/ink/stringWidth.ts instead of padStart(). padStart counts UTF-16 code units, not terminal cells.',
+        },
+      ],
+    },
+  },
 );

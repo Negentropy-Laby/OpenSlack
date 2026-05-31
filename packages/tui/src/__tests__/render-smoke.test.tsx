@@ -83,4 +83,194 @@ describe('Real render smoke test', () => {
     expect(output).toContain('Line One');
     expect(output).toContain('Line Two');
   });
+
+  it('maps profile-sync approval category in view model', async () => {
+    const { mapApprovalCenterToViewModel, getCategoryLabel } = await import('../view-models/approval-center.js');
+
+    const model = mapApprovalCenterToViewModel({
+      pendingApprovals: [
+        {
+          id: 'ps-1',
+          category: 'profile-sync',
+          title: 'Sync org profile to remote',
+          detail: 'Proposed profile sync for .github templates',
+          risk: 'medium',
+          requestedBy: 'profile-sync-robot',
+          requestedAt: '2026-05-31T10:00:00Z',
+          profileSyncAction: 'create-pr',
+        },
+        {
+          id: 'mr-1',
+          category: 'merge-request',
+          title: 'Merge PR #42',
+          risk: 'low',
+          requestedBy: 'agent',
+          requestedAt: '2026-05-31T09:00:00Z',
+        },
+      ],
+    });
+
+    // profile-sync item is present
+    expect(model.pendingApprovals).toHaveLength(2);
+    expect(model.pendingApprovals[0].category).toBe('profile-sync');
+    expect(model.pendingApprovals[0].profileSyncAction).toBe('create-pr');
+
+    // summary includes profileSyncs count
+    expect(model.summary.profileSyncs).toBe(1);
+    expect(model.summary.mergeRequests).toBe(1);
+
+    // group ordering: merge-request, workflow-effect, profile-sync, plan, github-review
+    expect(model.groups.map(g => g.category)).toEqual(['merge-request', 'profile-sync']);
+
+    // category label
+    expect(getCategoryLabel('profile-sync')).toBe('Sync Profile');
+  });
+
+  it('maps profile view model with syncDetails and mode', async () => {
+    const { mapProfileToViewModel } = await import('../view-models/profile.js');
+
+    const model = mapProfileToViewModel({
+      syncStatus: 'synced',
+      mode: 'watch',
+      syncDetails: {
+        sourceCommit: 'def5678',
+        sourceDate: '2026-05-29T08:00:00Z',
+        targetHash: 'present',
+        pendingPR: { number: 99, status: 'open' },
+        lastSync: { timestamp: '2026-05-29', result: 'success' },
+        mode: 'watch',
+      },
+    });
+
+    expect(model.syncStatus).toBe('synced');
+    expect(model.mode).toBe('watch');
+    expect(model.syncDetails).toBeDefined();
+    expect(model.syncDetails!.sourceCommit).toBe('def5678');
+    expect(model.syncDetails!.sourceDate).toBe('2026-05-29T08:00:00Z');
+    expect(model.syncDetails!.targetHash).toBe('present');
+    expect(model.syncDetails!.pendingPR).toEqual({ number: 99, status: 'open' });
+    expect(model.syncDetails!.lastSync).toEqual({ timestamp: '2026-05-29', result: 'success' });
+    expect(model.syncDetails!.mode).toBe('watch');
+    expect(model.failureDetails).toBeUndefined();
+  });
+
+  it('maps profile view model with failureDetails when sync failed', async () => {
+    const { mapProfileToViewModel } = await import('../view-models/profile.js');
+
+    const model = mapProfileToViewModel({
+      syncStatus: 'failed',
+      mode: 'auto-pr',
+      failureDetails: {
+        reason: 'Source repository inaccessible',
+        nextAction: 'Run `openslack collaboration workflow profile-sync check` for details',
+      },
+    });
+
+    expect(model.syncStatus).toBe('failed');
+    expect(model.mode).toBe('auto-pr');
+    expect(model.failureDetails).toBeDefined();
+    expect(model.failureDetails!.reason).toBe('Source repository inaccessible');
+    expect(model.failureDetails!.nextAction).toBe('Run `openslack collaboration workflow profile-sync check` for details');
+  });
+
+  it('renders ProfileView with failure panel when sync failed', async () => {
+    const tui = await import('@openslack/tui');
+
+    const chunks: string[] = [];
+    const stdout = new Writable({
+      write(chunk: Buffer | string, _encoding: string, cb: () => void) {
+        chunks.push(chunk.toString());
+        cb();
+      },
+    }) as NodeJS.WriteStream;
+
+    Object.defineProperties(stdout, {
+      columns: { value: 100, writable: true, configurable: true },
+      rows: { value: 40, writable: true, configurable: true },
+      isTTY: { value: false, configurable: true },
+    });
+
+    const model = tui.mapProfileToViewModel({
+      syncStatus: 'failed',
+      mode: 'manual',
+      failureDetails: {
+        reason: 'Marker not found in target',
+        nextAction: 'Run openslack collaboration workflow profile-sync check',
+      },
+    });
+
+    const ProfileView = (await import('../views/ProfileView.js')).default;
+
+    instance = await tui.render(
+      React.createElement(ProfileView, { model }),
+      { stdout, patchConsole: false },
+    );
+
+    await new Promise((r) => setTimeout(r, 150));
+
+    const output = chunks.join('');
+    expect(output).toContain('Sync Failed');
+    expect(output).toContain('Marker not found in target');
+    expect(output).toContain('Run openslack collaboration workflow profile-sync check');
+    expect(output).toContain('Create failure issue');
+  });
+
+  it('renders ProfileView with sync details pane and mode header', async () => {
+    const tui = await import('@openslack/tui');
+
+    const chunks: string[] = [];
+    const stdout = new Writable({
+      write(chunk: Buffer | string, _encoding: string, cb: () => void) {
+        chunks.push(chunk.toString());
+        cb();
+      },
+    }) as NodeJS.WriteStream;
+
+    Object.defineProperties(stdout, {
+      columns: { value: 100, writable: true, configurable: true },
+      rows: { value: 40, writable: true, configurable: true },
+      isTTY: { value: false, configurable: true },
+    });
+
+    const model = tui.mapProfileToViewModel({
+      syncStatus: 'synced',
+      mode: 'watch',
+      syncDetails: {
+        sourceCommit: 'abc1234',
+        sourceDate: '2026-05-28T14:00:00Z',
+        targetHash: 'sha-target',
+        pendingPR: { number: 55, status: 'open' },
+        lastSync: { timestamp: '2026-05-28', result: 'success' },
+        mode: 'watch',
+      },
+    });
+
+    const ProfileView = (await import('../views/ProfileView.js')).default;
+
+    instance = await tui.render(
+      React.createElement(ProfileView, { model }),
+      { stdout, patchConsole: false },
+    );
+
+    await new Promise((r) => setTimeout(r, 150));
+
+    const output = chunks.join('');
+    // Mode in header
+    expect(output).toContain('Mode: watch');
+    // Sync Details pane
+    expect(output).toContain('Sync Details');
+    expect(output).toContain('abc1234');
+    expect(output).toContain('sha-target');
+    expect(output).toContain('#55');
+    expect(output).toContain('2026-05-28');
+  });
+
+  it('defaults profile mode to manual when not specified', async () => {
+    const { mapProfileToViewModel } = await import('../view-models/profile.js');
+
+    const model = mapProfileToViewModel({});
+    expect(model.mode).toBe('manual');
+    expect(model.syncDetails).toBeUndefined();
+    expect(model.failureDetails).toBeUndefined();
+  });
 });

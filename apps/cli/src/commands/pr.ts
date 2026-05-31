@@ -164,7 +164,12 @@ export function prCommands(): Command {
           const { summarizePRDecision } = await import('@openslack/pr');
           const summary = summarizePRDecision(diagnosed, codeowners);
           const { renderDoctorTui } = await import('@openslack/tui');
-          await renderDoctorTui(diagnosed, { evidence: summary.evidence });
+          await renderDoctorTui(diagnosed, {
+            evidence: summary.evidence,
+            profileSyncGate: diagnosed.profileSyncGate && diagnosed.profileSyncGate.overall !== 'N/A'
+              ? { passed: diagnosed.profileSyncGate.overall === 'PASS', detail: diagnosed.profileSyncGate.criteria.map(c => `${c.name}: ${c.status}${c.detail ? ' - ' + c.detail : ''}`).join('; ') }
+              : undefined,
+          });
         } catch (error) {
           console.error('TUI unavailable. Falling back to standard output.');
           console.log(doctorOutput);

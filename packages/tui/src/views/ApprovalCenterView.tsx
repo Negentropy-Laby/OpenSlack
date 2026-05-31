@@ -36,6 +36,8 @@ function toActionCategory(category: ApprovalCategory): TuiActionCategory {
       return TuiActionCategory.MergeConfirmation
     case 'workflow-effect':
       return TuiActionCategory.WorkflowConfirmation
+    case 'profile-sync':
+      return TuiActionCategory.ProfileSyncConfirmation
     case 'github-review':
       return TuiActionCategory.GithubApproval
   }
@@ -65,6 +67,8 @@ function getActionVerb(category: ApprovalCategory, isApprove: boolean): string {
         return 'Confirm merge'
       case 'workflow-effect':
         return 'Confirm effect'
+      case 'profile-sync':
+        return 'Sync profile'
       case 'github-review':
         return 'Approve review'
     }
@@ -76,6 +80,8 @@ function getActionVerb(category: ApprovalCategory, isApprove: boolean): string {
       return 'Cancel merge'
     case 'workflow-effect':
       return 'Cancel effect'
+    case 'profile-sync':
+      return 'Cancel sync'
     case 'github-review':
       return 'Dismiss review'
   }
@@ -90,6 +96,9 @@ function getCliSuggestion(category: ApprovalCategory, isApprove: boolean): strin
   }
   if (category === 'merge-request') {
     return 'openslack pr merge <PR>'
+  }
+  if (category === 'profile-sync') {
+    return 'openslack collaboration workflow profile-sync status'
   }
   return 'openslack collaboration decision record --topic "..." --decision "..."'
 }
@@ -141,6 +150,7 @@ export default function ApprovalCenterView({ model, actionHandlers }: ApprovalCe
             planId: selected.planId,
             prNumber: selected.prNumber,
             workflowName: selected.workflowName,
+            profileSyncAction: selected.profileSyncAction,
           }, isApprove)
         }
         return {
@@ -231,6 +241,7 @@ export default function ApprovalCenterView({ model, actionHandlers }: ApprovalCe
   if (model.summary.plans > 0) summaryParts.push(`Plans: ${model.summary.plans}`)
   if (model.summary.mergeRequests > 0) summaryParts.push(`Merge: ${model.summary.mergeRequests}`)
   if (model.summary.workflowEffects > 0) summaryParts.push(`Effects: ${model.summary.workflowEffects}`)
+  if (model.summary.profileSyncs > 0) summaryParts.push(`Sync: ${model.summary.profileSyncs}`)
   if (model.summary.githubReviews > 0) summaryParts.push(`Reviews: ${model.summary.githubReviews}`)
 
   const summaryText = summaryParts.length > 0 ? summaryParts.join(' | ') : 'No pending approvals'
@@ -436,6 +447,7 @@ export default function ApprovalCenterView({ model, actionHandlers }: ApprovalCe
       const categoryIcon = item.category === 'plan' ? 'pass'
         : item.category === 'merge-request' ? 'warn'
         : item.category === 'workflow-effect' ? 'info'
+        : item.category === 'profile-sync' ? 'info'
         : 'blocked'
 
       listRows.push(

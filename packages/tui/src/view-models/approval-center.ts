@@ -1,6 +1,6 @@
 import { sanitizeTerminalText } from '../sanitize.js'
 
-export type ApprovalCategory = 'plan' | 'merge-request' | 'workflow-effect' | 'github-review'
+export type ApprovalCategory = 'plan' | 'merge-request' | 'workflow-effect' | 'profile-sync' | 'github-review'
 
 export interface ApprovalExplanation {
   why: string
@@ -20,6 +20,7 @@ export interface ApprovalItem {
   planId?: string
   prNumber?: number
   workflowName?: string
+  profileSyncAction?: string
   explanation?: ApprovalExplanation
 }
 
@@ -36,6 +37,7 @@ export interface ApprovalCenterViewModel {
     plans: number
     mergeRequests: number
     workflowEffects: number
+    profileSyncs: number
     githubReviews: number
   }
 }
@@ -44,6 +46,7 @@ const CATEGORY_LABELS: Record<ApprovalCategory, string> = {
   plan: 'Approve Plan',
   'merge-request': 'Confirm Merge',
   'workflow-effect': 'Confirm Effect',
+  'profile-sync': 'Sync Profile',
   'github-review': 'GitHub Review',
 }
 
@@ -63,6 +66,7 @@ export function mapApprovalCenterToViewModel(data?: {
     planId?: string
     prNumber?: number
     workflowName?: string
+    profileSyncAction?: string
     explanation?: {
       why?: string
       ifApproved?: string
@@ -84,6 +88,7 @@ export function mapApprovalCenterToViewModel(data?: {
     planId: item.planId,
     prNumber: item.prNumber,
     workflowName: item.workflowName,
+    profileSyncAction: item.profileSyncAction,
     explanation: item.explanation
       ? {
           why: s(item.explanation.why ?? ''),
@@ -98,10 +103,11 @@ export function mapApprovalCenterToViewModel(data?: {
     plans: pendingApprovals.filter(a => a.category === 'plan').length,
     mergeRequests: pendingApprovals.filter(a => a.category === 'merge-request').length,
     workflowEffects: pendingApprovals.filter(a => a.category === 'workflow-effect').length,
+    profileSyncs: pendingApprovals.filter(a => a.category === 'profile-sync').length,
     githubReviews: pendingApprovals.filter(a => a.category === 'github-review').length,
   }
 
-  const categories: ApprovalCategory[] = ['plan', 'merge-request', 'workflow-effect', 'github-review']
+  const categories: ApprovalCategory[] = ['merge-request', 'workflow-effect', 'profile-sync', 'plan', 'github-review']
   const groups: ApprovalGroup[] = categories
     .map(cat => ({
       category: cat,
