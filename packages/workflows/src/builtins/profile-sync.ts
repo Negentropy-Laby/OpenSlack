@@ -253,13 +253,16 @@ export async function run(
   const result = await runProfileSync({
     config,
     runId: ctx.runId,
+    recordEvent: async (event) => {
+      await ctx.openslack.collaboration.recordEvent(event)
+    },
   })
 
   ctx.phase('Audit')
 
   if (result.status === 'completed') {
     ctx.log(`Created PR: ${result.prUrl}`)
-    ctx.log('Recorded collaboration event')
+    ctx.log(`Recorded profile_sync.completed event for run ${ctx.runId}`)
     return {
       status: 'completed',
       postsSynced: 0, // populated by caller from metadata

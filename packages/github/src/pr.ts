@@ -66,16 +66,22 @@ export interface OpenPRSummary {
   url: string;
 }
 
-export async function listOpenPRs(limit = 20): Promise<OpenPRSummary[]> {
+export async function listOpenPRs(
+  limit = 20,
+  owner?: string,
+  repo?: string,
+): Promise<OpenPRSummary[]> {
   const client = await getClient();
+  const targetOwner = owner ?? client.owner;
+  const targetRepo = repo ?? client.repo;
   if (client.isDryRun) {
-    console.log(`[DRY RUN] Would list open PRs from ${client.owner}/${client.repo}`);
+    console.log(`[DRY RUN] Would list open PRs from ${targetOwner}/${targetRepo}`);
     return [];
   }
 
   const { data } = await client.octokit.pulls.list({
-    owner: client.owner,
-    repo: client.repo,
+    owner: targetOwner,
+    repo: targetRepo,
     state: 'open',
     per_page: limit,
     sort: 'updated',

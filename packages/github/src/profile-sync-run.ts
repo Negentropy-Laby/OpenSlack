@@ -65,7 +65,7 @@ export async function runProfileSync(
     entries = await readRepoDirectory(source.owner, source.repo, config.source.path, config.source.branch)
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
-    return handleFailure(config, 'collect', `Failed to read source directory: ${msg}`, runId, options.recordEvent)
+    return handleFailure(config, 'collect', `Failed to read source directory: ${msg}`, runId, options.recordEvent, options.dryRun)
   }
 
   const mdFiles = entries.filter((e) => e.type === 'file' && e.name.endsWith('.md'))
@@ -109,7 +109,7 @@ export async function runProfileSync(
   // ── Phase 2: Validate ───────────────────────────────────────────────────────
   const published = posts.filter((p) => p.status === 'published')
   if (published.length === 0) {
-    return handleFailure(config, 'validate', 'No published posts found. Nothing to sync.', runId, options.recordEvent)
+    return handleFailure(config, 'validate', 'No published posts found. Nothing to sync.', runId, options.recordEvent, options.dryRun)
   }
 
   // ── Phase 3: Render ─────────────────────────────────────────────────────────
@@ -118,7 +118,7 @@ export async function runProfileSync(
   const rendered = renderLatestInsightsSection(selected, config.source.repo)
 
   if (rendered.length > 10240) {
-    return handleFailure(config, 'render', `Rendered section exceeds 10KB limit (${rendered.length} bytes)`, runId, options.recordEvent)
+    return handleFailure(config, 'render', `Rendered section exceeds 10KB limit (${rendered.length} bytes)`, runId, options.recordEvent, options.dryRun)
   }
 
   // ── Phase 4: Patch ──────────────────────────────────────────────────────────
@@ -127,11 +127,11 @@ export async function runProfileSync(
     targetFile = await readRepoFile(target.owner, target.repo, config.target.path, config.target.branch)
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
-    return handleFailure(config, 'patch', `Failed to read target file: ${msg}`, runId, options.recordEvent)
+    return handleFailure(config, 'patch', `Failed to read target file: ${msg}`, runId, options.recordEvent, options.dryRun)
   }
 
   if (!targetFile) {
-    return handleFailure(config, 'patch', `Target file ${config.target.path} not found in ${config.target.repo}`, runId, options.recordEvent)
+    return handleFailure(config, 'patch', `Target file ${config.target.path} not found in ${config.target.repo}`, runId, options.recordEvent, options.dryRun)
   }
 
   let patchedContent: string
@@ -146,14 +146,25 @@ export async function runProfileSync(
           'Refusing to overwrite. Add the marker comments and retry.',
         runId,
         options.recordEvent,
+        options.dryRun,
       )
     }
     const msg = err instanceof Error ? err.message : String(err)
-    return handleFailure(config, 'patch', `Patch failed: ${msg}`, runId, options.recordEvent)
+    return handleFailure(config, 'patch', `Patch failed: ${msg}`, runId, options.recordEvent, options.dryRun)
   }
 
   // ── Phase 5: PR ─────────────────────────────────────────────────────────────
   const branchName = buildBranchName(config, sourceSha, runId)
+
+  // Dry-run: simulate PR creation without side effects
+  if (options.dryRun) {
+    return {
+      status: 'completed',
+      prUrl: `[DRY-RUN] would create PR from branch ${branchName}`,
+      branchName,
+      reason: `Dry-run: ${selected.length} posts ready to sync. Would create branch ${branchName} and open PR.`,
+    }
+  }
 
   // Check for existing open profile-sync PRs
   const existingPR = await findExistingProfileSyncPR(target.owner, target.repo, config.target.marker)
@@ -177,11 +188,14 @@ export async function runProfileSync(
       ? existingPR.branch
       : branchName
 
-  try {
-    await createBranch(target.owner, target.repo, actualBranchName, config.target.branch)
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return handleFailure(config, 'pr', `Failed to create branch: ${msg}`, runId, options.recordEvent)
+  // Skip createBranch when reusing existing branch in update mode
+  if (!(existingPR && config.on_existing_pr === 'update')) {
+    try {
+      await createBranch(target.owner, target.repo, actualBranchName, config.target.branch)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return handleFailure(config, 'pr', `Failed to create branch: ${msg}`, runId, options.recordEvent, options.dryRun)
+    }
   }
 
   try {
@@ -196,7 +210,7 @@ export async function runProfileSync(
     )
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
-    return handleFailure(config, 'pr', `Failed to commit file: ${msg}`, runId, options.recordEvent)
+    return handleFailure(config, 'pr', `Failed to commit file: ${msg}`, runId, options.recordEvent, options.dryRun)
   }
 
   const validationSummary = `${posts.length} valid, ${published.length} published, ${selected.length} selected`
@@ -242,7 +256,7 @@ export async function runProfileSync(
     )
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err)
-    return handleFailure(config, 'pr', `Failed to create PR: ${msg}`, runId, options.recordEvent)
+    return handleFailure(config, 'pr', `Failed to create PR: ${msg}`, runId, options.recordEvent, options.dryRun)
   }
 
   // ── Phase 6: Audit ──────────────────────────────────────────────────────────
@@ -306,7 +320,7 @@ async function findExistingProfileSyncPR(
   marker: string,
 ): Promise<{ number: number; url: string; branch: string } | null> {
   try {
-    const openPRs = await listOpenPRs(50)
+    const openPRs = await listOpenPRs(50, owner, repo)
     const prefix = `openslack/profile-sync/${marker}`
     const existing = openPRs.find(
       (pr) =>
@@ -329,11 +343,12 @@ async function handleFailure(
   error: string,
   runId: string,
   recordEvent?: ProfileSyncRunOptions['recordEvent'],
+  dryRun?: boolean,
 ): Promise<ProfileSyncRunResult> {
   let issueUrl: string | undefined
   let issueNumber: number | undefined
 
-  if (config.failure_issue.enabled) {
+  if (config.failure_issue.enabled && !dryRun) {
     try {
       const failure: ProfileSyncFailureIssue = {
         schema: 'openslack.profile_sync_failure.v1',

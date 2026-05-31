@@ -266,30 +266,25 @@ function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
       return React.createElement(ProfileView, {
         model: profileModel,
         onBack: pop,
-        onAction: (actionId: string) => {
+        onAction: async (actionId: string) => {
           const handlers = data?.actionHandlers?.profileSync
           if (!handlers) return
           switch (actionId) {
             case 'check':
-              void handlers.checkProfileSync()
-              break
+              return handlers.checkProfileSync()
             case 'preview':
-              void handlers.previewProfileSync()
-              break
+              return handlers.previewProfileSync()
             case 'dryrun':
-              void handlers.dryRunProfileSync()
-              break
+              return handlers.dryRunProfileSync()
             case 'create-pr':
-              void handlers.createProfileSyncPR()
-              break
+              return handlers.createProfileSyncPR()
             case 'open-pr':
               if (profileModel.pendingPR?.url) {
-                void handlers.openProfileSyncPR(profileModel.pendingPR.url)
+                return handlers.openProfileSyncPR(profileModel.pendingPR.url)
               }
-              break
+              return
             case 'failure-issue':
-              void handlers.createProfileSyncFailureIssue('Manual failure report from TUI')
-              break
+              return handlers.createProfileSyncFailureIssue('Manual failure report from TUI')
           }
         },
       })

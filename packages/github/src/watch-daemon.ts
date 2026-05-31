@@ -114,6 +114,7 @@ export class WatchDaemon {
   private recordEventFn: RecordEventFn | null;
   private server: Server | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private profileSyncWorker: import('./profile-sync-worker.js').ProfileSyncWorker | null = null;
 
   constructor(
     config: GitHubWatchConfig,
@@ -133,6 +134,22 @@ export class WatchDaemon {
   }
 
   async start(port: number): Promise<void> {
+    // Start profile-sync worker if auto-pr mode may be used
+    try {
+      const { ProfileSyncWorker } = await import('./profile-sync-worker.js');
+      this.profileSyncWorker = new ProfileSyncWorker({
+        intervalMs: 5000,
+        recordEvent: this.recordEventFn
+          ? async (event) => {
+              this.recordEventFn!(event);
+            }
+          : undefined,
+      });
+      this.profileSyncWorker.start();
+    } catch {
+      // Worker start is best-effort
+    }
+
     return new Promise((resolve) => {
       this.server = createServer(async (req, res) => {
         await this.handleRequest(req, res);
@@ -146,6 +163,10 @@ export class WatchDaemon {
 
   async stop(): Promise<void> {
     this.stopPolling();
+    if (this.profileSyncWorker) {
+      this.profileSyncWorker.stop();
+      this.profileSyncWorker = null;
+    }
     return new Promise((resolve) => {
       if (this.server) {
         this.server.close(() => resolve());
@@ -458,16 +479,7 @@ export class WatchDaemon {
     // Mode: auto-pr — enqueue job for worker
     if (psConfig.mode === 'auto-pr') {
       try {
-        const { enqueueProfileSyncJob, isDuplicate: isJobDuplicate, recordDedupe } = await import('./profile-sync-queue.js');
-
-        const dedupeKey = `${event.deliveryId}:${psConfig.source.repo}:${event.after}:${psConfig.target.repo}:${psConfig.target.marker}`;
-
-        if (isJobDuplicate(dedupeKey)) {
-          console.log(`[Profile Sync Auto-PR] Duplicate delivery ${event.deliveryId}, skipping.`);
-          return collabEvent;
-        }
-
-        recordDedupe(dedupeKey);
+        const { enqueueProfileSyncJob } = await import('./profile-sync-queue.js');
 
         const job = enqueueProfileSyncJob({
           deliveryId: event.deliveryId || `${event.owner}/${event.repo}@${event.after}`,
@@ -478,7 +490,12 @@ export class WatchDaemon {
           config: psConfig,
         });
 
-        if (job && this.recordEventFn) {
+        if (!job) {
+          console.log(`[Profile Sync Auto-PR] Duplicate delivery ${event.deliveryId}, skipping.`);
+          return collabEvent;
+        }
+
+        if (this.recordEventFn) {
           try {
             this.recordEventFn({
               type: 'profile_sync.queued',

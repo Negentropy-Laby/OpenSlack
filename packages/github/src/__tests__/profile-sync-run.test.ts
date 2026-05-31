@@ -179,6 +179,66 @@ describe('runProfileSync', () => {
     expect(mockCreateProfileSyncPR).not.toHaveBeenCalled()
   })
 
+  it('dry-run does not create branch, commit, or PR', async () => {
+    mockReadRepoDirectory.mockResolvedValue([
+      { name: 'post-1.md', path: 'posts/post-1.md', type: 'file', sha: 'a' },
+    ])
+    mockReadRepoFile.mockImplementation(async (_owner: string, _repo: string, path: string) => {
+      if (path === 'posts/post-1.md') {
+        return { content: '---\ntitle: Hello\ndate: 2026-05-30\nsummary: Summary\ntags: [tech]\nstatus: published\n---', sha: 'a' }
+      }
+      if (path === 'profile/README.md') {
+        return { content: '<!-- openslack:latest-insights:start -->\nOld\n<!-- openslack:latest-insights:end -->', sha: 'c' }
+      }
+      return null
+    })
+    mockParseFrontmatter.mockReturnValue({ title: 'Hello', date: '2026-05-30', summary: 'Summary', tags: ['tech'], status: 'published' })
+    mockValidatePost.mockReturnValue({ valid: true, errors: [] })
+    mockPatchMarkerSection.mockReturnValue('<!-- openslack:latest-insights:start -->\nNew\n<!-- openslack:latest-insights:end -->')
+    mockListOpenPRs.mockResolvedValue([])
+
+    const result = await runProfileSync({ config: mockConfig, runId: 'run-123', dryRun: true })
+
+    expect(result.status).toBe('completed')
+    expect(result.prUrl).toContain('[DRY-RUN]')
+    expect(mockCreateBranch).not.toHaveBeenCalled()
+    expect(mockCommitFileToBranch).not.toHaveBeenCalled()
+    expect(mockCreateProfileSyncPR).not.toHaveBeenCalled()
+    expect(mockPublishProfileSyncFailure).not.toHaveBeenCalled()
+  })
+
+  it('dry-run with marker missing does not create failure issue', async () => {
+    mockReadRepoDirectory.mockResolvedValue([
+      { name: 'post-1.md', path: 'posts/post-1.md', type: 'file', sha: 'a' },
+    ])
+    mockReadRepoFile.mockImplementation(async (_owner: string, _repo: string, path: string) => {
+      if (path === 'posts/post-1.md') {
+        return { content: '---\ntitle: Hello\ndate: 2026-05-30\nsummary: Summary\ntags: [tech]\nstatus: published\n---', sha: 'a' }
+      }
+      if (path === 'profile/README.md') {
+        return { content: 'No markers', sha: 'c' }
+      }
+      return null
+    })
+    mockParseFrontmatter.mockReturnValue({ title: 'Hello', date: '2026-05-30', summary: 'Summary', tags: ['tech'], status: 'published' })
+    mockValidatePost.mockReturnValue({ valid: true, errors: [] })
+    mockPatchMarkerSection.mockImplementation(() => {
+      throw new (class MarkerNotFoundError extends Error {
+        constructor(message: string) {
+          super(message)
+          this.name = 'MarkerNotFoundError'
+        }
+      })('Marker not found')
+    })
+    mockListOpenPRs.mockResolvedValue([])
+
+    const result = await runProfileSync({ config: mockConfig, runId: 'run-123', dryRun: true })
+
+    expect(result.status).toBe('failed')
+    expect(mockPublishProfileSyncFailure).not.toHaveBeenCalled()
+    expect(mockCreateBranch).not.toHaveBeenCalled()
+  })
+
   it('reuses branch when existing PR found and on_existing_pr=update', async () => {
     const updateConfig = { ...mockConfig, on_existing_pr: 'update' as const }
     mockReadRepoDirectory.mockResolvedValue([
@@ -206,7 +266,9 @@ describe('runProfileSync', () => {
     const result = await runProfileSync({ config: updateConfig, runId: 'run-123' })
 
     expect(result.status).toBe('completed')
-    expect(mockCreateBranch).toHaveBeenCalled()
+    // update mode reuses existing branch — createBranch should NOT be called
+    expect(mockCreateBranch).not.toHaveBeenCalled()
+    expect(mockCommitFileToBranch).toHaveBeenCalled()
   })
 
   it('returns failed and creates failure issue on PR creation failure', async () => {

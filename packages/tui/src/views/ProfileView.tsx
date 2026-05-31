@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import Box from '../ink/components/Box.js'
 import useApp from '../ink/hooks/use-app.js'
 import useInput from '../ink/hooks/use-input.js'
@@ -13,7 +13,7 @@ import type { ProfileViewModel } from '../view-models/profile.js'
 export type ProfileViewProps = {
   model: ProfileViewModel
   onBack?: () => void
-  onAction?: (actionId: string) => void
+  onAction?: (actionId: string) => Promise<{ success: boolean; message: string } | void>
 }
 
 function syncStatusIcon(status: ProfileViewModel['syncStatus']): import('../design-system/StatusIcon.js').StatusCategory {
@@ -31,6 +31,8 @@ function markerStatusIcon(status: ProfileViewModel['markerStatus']): import('../
 
 export default function ProfileView({ model, onBack, onAction }: ProfileViewProps): React.JSX.Element {
   const { exit } = useApp()
+  const [actionResult, setActionResult] = useState(model.actionResult)
+  const [isRunning, setIsRunning] = useState(false)
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
@@ -40,8 +42,24 @@ export default function ProfileView({ model, onBack, onAction }: ProfileViewProp
     }
 
     const action = model.actions.find((a) => a.key === input)
-    if (action && onAction) {
+    if (action && onAction && !isRunning) {
+      setIsRunning(true)
+      setActionResult({ actionId: action.id, success: true, message: 'Running...' })
       onAction(action.id)
+        .then((result) => {
+          if (result) {
+            setActionResult({ actionId: action.id, success: result.success, message: result.message })
+          } else {
+            setActionResult(undefined)
+          }
+        })
+        .catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err)
+          setActionResult({ actionId: action.id, success: false, message: msg })
+        })
+        .finally(() => {
+          setIsRunning(false)
+        })
     }
   })
 
@@ -130,15 +148,22 @@ export default function ProfileView({ model, onBack, onAction }: ProfileViewProp
         ),
 
     // Action result
-    model.actionResult
+    actionResult
       ? React.createElement(
           Pane,
           { title: 'Action Result', marginY: 0 },
           React.createElement(ListItem, {
-            label: model.actionResult.actionId,
-            detail: model.actionResult.message,
-            status: model.actionResult.success ? 'pass' : 'fail',
+            label: actionResult.actionId,
+            detail: actionResult.message,
+            status: actionResult.success ? 'pass' : 'fail',
           }),
+        )
+      : null,
+    isRunning
+      ? React.createElement(
+          Box,
+          { marginY: 0 },
+          React.createElement(ThemedText, { colorTheme: 'muted' }, 'Processing...'),
         )
       : null,
 
