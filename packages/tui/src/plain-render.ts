@@ -261,6 +261,27 @@ export function renderPlainProfile(vm: ProfileViewModel): string {
   if (vm.lastPrUrl) lines.push(wrap(`Last PR: ${vm.lastPrUrl}`))
   lines.push('')
 
+  // Guided flow step
+  if (vm.guidedStep) {
+    const stepLabels: Record<string, string> = { check: '1.Check', preview: '2.Preview', 'create-pr': '3.Create PR', complete: 'Done' }
+    const steps = ['check', 'preview', 'create-pr']
+    const current = steps.indexOf(vm.guidedStep === 'complete' ? 'create-pr' : vm.guidedStep)
+    const bar = steps.map((s, i) => i < current ? `[x]${stepLabels[s]}` : i === current ? `[>]${stepLabels[s]}` : `[ ]${stepLabels[s]}`).join(' -> ')
+    const suffix = vm.guidedStep === 'complete' ? ' -> [Done]' : ''
+    lines.push(`Guided Flow: ${bar}${suffix}`)
+    lines.push('')
+  }
+
+  // Check result groups
+  if (vm.checkGroups && vm.checkGroups.length > 0) {
+    lines.push('Check Results:')
+    for (const g of vm.checkGroups) {
+      const label = g.status === 'pass' ? '[PASS]' : g.status === 'fail' ? '[FAIL]' : g.status === 'warn' ? '[WARN]' : '[INFO]'
+      lines.push(`  ${label} ${g.label}: ${g.detail}`)
+    }
+    lines.push('')
+  }
+
   // Failure details
   if (vm.failureDetails) {
     lines.push('FAILURE DETAILS:')

@@ -142,6 +142,13 @@ export function createProfileViewModel(): ProfileViewModel {
       mode: 'manual',
     },
     mode: 'manual',
+    guidedStep: 'complete',
+    checkGroups: [
+      { key: 'source', label: 'Source repository', status: 'pass', detail: 'Commit abc1234 (2026-05-30)' },
+      { key: 'posts', label: 'Posts', status: 'pass', detail: '1/1 published, 0 failed' },
+      { key: 'target-marker', label: 'Target marker', status: 'pass', detail: 'Marker present in target' },
+      { key: 'permissions', label: 'Permissions', status: 'pass', detail: 'All checks passed' },
+    ],
     actions: [
       { id: 'check', key: 'c', label: 'Check', description: 'Check sync readiness', risk: 'low' },
       { id: 'preview', key: 'p', label: 'Preview', description: 'Preview diff patch', risk: 'low' },

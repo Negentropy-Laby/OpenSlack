@@ -520,12 +520,41 @@ export function createProfileSyncHandlers(root: string) {
         const { loadProfileSyncConfig, checkProfileSync } = await import('@openslack/github')
         const config = loadProfileSyncConfig(root)
         const result = await checkProfileSync(config)
+        // Build structured check groups for the guided flow
+        const checkGroups = [
+          {
+            key: 'source',
+            label: 'Source repository',
+            status: result.source.sourceCommit ? 'pass' as const : 'warn' as const,
+            detail: result.source.sourceCommit
+              ? `Commit ${result.source.sourceCommit} (${result.source.sourceDate ?? 'unknown date'})`
+              : 'No source commit found',
+          },
+          {
+            key: 'posts',
+            label: 'Posts',
+            status: result.posts.failed > 0 ? 'fail' as const : result.posts.total > 0 ? 'pass' as const : 'warn' as const,
+            detail: `${result.posts.published}/${result.posts.total} published, ${result.posts.failed} failed`,
+          },
+          {
+            key: 'target-marker',
+            label: 'Target marker',
+            status: result.target.markerExists ? 'pass' as const : 'fail' as const,
+            detail: result.target.markerExists ? 'Marker present in target' : 'Marker not found in target',
+          },
+          {
+            key: 'permissions',
+            label: 'Permissions',
+            status: result.ok ? 'pass' as const : 'warn' as const,
+            detail: result.ok ? 'All checks passed' : result.errors.slice(0, 2).join('; '),
+          },
+        ]
         return {
           success: result.ok,
           message: result.ok
             ? 'Profile sync check passed'
             : `Check failed: ${result.errors.join('; ')}`,
-          data: { posts: result.posts.published, marker: result.target.markerExists },
+          data: { posts: result.posts.published, marker: result.target.markerExists, checkGroups },
         }
       } catch (err: unknown) {
         return { success: false, message: `Check error: ${(err as Error).message}` }

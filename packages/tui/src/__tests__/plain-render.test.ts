@@ -258,6 +258,25 @@ describe('renderPlainProfile', () => {
     expect(out).toContain('Sync Details:')
     expect(out).toContain('Validation:')
     expect(out).toContain('Actions:')
+    expect(out).toContain('Guided Flow:')
+    expect(out).toContain('Check Results:')
+    expect(out).toContain('[PASS] Source repository')
+  })
+
+  it('renders guided flow at check step', () => {
+    const vm: ProfileViewModel = {
+      ...createProfileViewModel(),
+      syncStatus: 'never',
+      guidedStep: 'check',
+      checkGroups: [
+        { key: 'source', label: 'Source', status: 'warn', detail: 'No commits yet' },
+      ],
+    }
+    const out = renderPlainProfile(vm)
+    expect(out).toContain('[>]1.Check')
+    expect(out).toContain('[ ]2.Preview')
+    expect(out).toContain('[WARN] Source: No commits yet')
+    assertNoLineExceeds80(out)
   })
 
   it('has no box-drawing characters', () => {

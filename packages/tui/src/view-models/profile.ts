@@ -16,6 +16,21 @@ export interface ProfileActionViewModel {
   risk: 'low' | 'medium' | 'high'
 }
 
+/** A single check result group for the guided flow. */
+export interface ProfileCheckGroup {
+  /** Group key: source, posts, target-marker, permissions */
+  key: string
+  /** Display label */
+  label: string
+  /** Check status */
+  status: 'pass' | 'fail' | 'warn' | 'unknown'
+  /** Human-readable detail */
+  detail: string
+}
+
+/** Which step of the guided flow the user is on. */
+export type ProfileGuidedStep = 'check' | 'preview' | 'create-pr' | 'complete'
+
 export type ProfileSyncMode = 'manual' | 'watch' | 'auto-pr'
 
 export interface ProfileSyncDetails {
@@ -58,6 +73,10 @@ export interface ProfileViewModel {
   failureDetails?: ProfileFailureDetails
   mode: ProfileSyncMode
   diffOutput?: string
+  /** Structured check result groups for the guided flow */
+  checkGroups?: ProfileCheckGroup[]
+  /** Which step of the guided 3-step flow */
+  guidedStep?: ProfileGuidedStep
   actions: ProfileActionViewModel[]
   actionResult?: {
     actionId: string
@@ -96,6 +115,8 @@ export function mapProfileToViewModel(data?: {
     success: boolean
     message: string
   }
+  checkGroups?: ProfileCheckGroup[]
+  guidedStep?: ProfileGuidedStep
 }): ProfileViewModel {
   const s = sanitizeTerminalText
 
@@ -160,6 +181,18 @@ export function mapProfileToViewModel(data?: {
       : undefined,
     mode: data?.mode ?? 'manual',
     diffOutput: data?.diffOutput ? s(data.diffOutput) : undefined,
+    checkGroups: data?.checkGroups?.map(g => ({
+      key: s(g.key),
+      label: s(g.label),
+      status: g.status,
+      detail: s(g.detail),
+    })),
+    guidedStep: data?.guidedStep ?? (
+      data?.syncStatus === 'synced' ? 'complete' as ProfileGuidedStep
+      : data?.syncStatus === 'failed' ? 'check' as ProfileGuidedStep
+      : data?.pendingPR ? 'create-pr' as ProfileGuidedStep
+      : 'check' as ProfileGuidedStep
+    ),
     actions,
     actionResult: data?.actionResult,
   }
