@@ -19,6 +19,8 @@ import { mapHandoffListToViewModel } from '../view-models/handoff.js'
 import { mapDecisionListToViewModel } from '../view-models/decision.js'
 import { mapRoomToViewModel } from '../view-models/room.js'
 import type { RoomViewModel } from '../view-models/room.js'
+import { mapProfileToViewModel } from '../view-models/profile.js'
+import type { ProfileViewModel } from '../view-models/profile.js'
 import type { ShellViewData, TuiActionHandlers } from './render-shell.js'
 
 import HomeView from './HomeView.js'
@@ -34,6 +36,7 @@ import HandoffListView from './HandoffListView.js'
 import DecisionListView from './DecisionListView.js'
 import RoomView from './RoomView.js'
 import WorkflowLifecycleViewWrapper from './WorkflowLifecycleViewWrapper.js'
+import ProfileView from './ProfileView.js'
 
 /**
  * A view that hasn't been wired to live data yet.
@@ -256,6 +259,13 @@ function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
         return React.createElement(RoomViewWrapper, { roomId, onBack: pop })
       }
       return React.createElement(PlaceholderView, { route: current })
+    }
+    case 'profile': {
+      if (data?.profile) {
+        return React.createElement(ProfileView, { model: data.profile, onBack: pop })
+      }
+      const profileModel = mapProfileToViewModel()
+      return React.createElement(ProfileView, { model: profileModel, onBack: pop })
     }
     case 'prs':
     case 'issues': {

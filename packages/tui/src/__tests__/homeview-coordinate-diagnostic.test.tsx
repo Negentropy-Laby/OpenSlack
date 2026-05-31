@@ -85,11 +85,12 @@ describe('HomeView coordinate diagnostic', () => {
     expect(lines[34]).toContain('Digest')
     expect(lines[35]).toContain('Handoffs')
     expect(lines[36]).toContain('Decisions')
-    expect(lines[37]).toContain('─')
-    expect(lines[38]).toContain('Quit')
+    expect(lines[37]).toContain('Profile')
+    expect(lines[38]).toContain('─')
+    expect(lines[39]).toContain('Quit')
 
     // Verify total line count
-    expect(lines.length).toBe(39)
+    expect(lines.length).toBe(40)
 
     instance.unmount()
   })

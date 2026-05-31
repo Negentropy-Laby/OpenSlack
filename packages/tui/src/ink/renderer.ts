@@ -99,7 +99,11 @@ export default function createRenderer(
     // the viewport bottom, so VirtualScreen drifts from the real cursor).
     // Capping here prevents scrollback bleed and keeps the diff cursor model
     // in sync with the physical terminal. Overflow is clipped by setCellAt.
-    const height = options.altScreen ? terminalRows : Math.min(yogaHeight, terminalRows)
+    const height = options.altScreen
+      ? terminalRows
+      : isTTY
+        ? Math.min(yogaHeight, terminalRows)
+        : yogaHeight
     if (options.altScreen && yogaHeight > terminalRows) {
       logForDebugging(
         `alt-screen: yoga height ${yogaHeight} > terminalRows ${terminalRows} — ` +

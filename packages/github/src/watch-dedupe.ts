@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { NormalizedIssueEvent } from './issue-normalizer.js';
+import type { NormalizedPushEvent } from './push-normalizer.js';
 
 interface DedupeEntry {
   deliveryId: string;
@@ -63,6 +64,10 @@ export class WatchDedupeStore {
 
   buildStableKey(event: NormalizedIssueEvent): string {
     return `github:issue:${event.owner}/${event.repo}#${event.issueNumber}:${event.action}:${event.updatedAt}`;
+  }
+
+  buildPushStableKey(event: NormalizedPushEvent): string {
+    return `github:push:${event.owner}/${event.repo}:${event.ref}:${event.after}`;
   }
 
   getStats(): { count: number; lastTimestamp?: string } {

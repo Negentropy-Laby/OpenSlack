@@ -1386,6 +1386,36 @@ function _renderNodeToOutput(
 
       if (needsClip) {
         output.unclip()
+
+        // After clipping children, mark the strips just outside the box bounds
+        // as damage. This ensures diff clears any stale overflow content from
+        // previous frames. Clear all four sides and extend right/bottom to the
+        // screen edge since historical overflow may span multiple cells.
+        // The backFrame is already zeroed by resetScreen; these clears only
+        // expand damage bounds for diff.
+        const fx = Math.floor(x)
+        const fy = Math.floor(y)
+        const fw = Math.floor(width)
+        const fh = Math.floor(height)
+        const sw = output.width
+        const sh = output.height
+
+        // Right edge: clear from box right edge to screen right edge
+        if (fx + fw < sw) {
+          output.clear({ x: fx + fw, y: fy, width: sw - (fx + fw), height: fh })
+        }
+        // Bottom edge: clear from box bottom edge to screen bottom edge
+        if (fy + fh < sh) {
+          output.clear({ x: fx, y: fy + fh, width: fw, height: sh - (fy + fh) })
+        }
+        // Left edge: clear one column left of the box
+        if (fx > 0) {
+          output.clear({ x: fx - 1, y: fy, width: 1, height: fh })
+        }
+        // Top edge: clear one row above the box
+        if (fy > 0) {
+          output.clear({ x: fx, y: fy - 1, width: fw, height: 1 })
+        }
       }
 
       // Render border AFTER children to ensure it's not overwritten by child
