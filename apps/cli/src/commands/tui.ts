@@ -239,6 +239,28 @@ export function tuiCommands(): Command {
           // Approval data unavailable
         }
 
+        // Pre-fetch profile data
+        try {
+          const { mapProfileToViewModel } = await import('@openslack/tui');
+          const { readEvents, filterEvents } = await import('@openslack/collaboration');
+          const events = readEvents();
+          const profileEvents = filterEvents(events, { type: 'profile_sync.completed' as never });
+          const lastEvent = profileEvents.length > 0 ? profileEvents[profileEvents.length - 1] : null;
+
+          data.profile = mapProfileToViewModel({
+            targetRepo: 'Negentropy-Laby/.github',
+            targetPath: 'profile/README.md',
+            marker: 'latest-insights',
+            syncStatus: lastEvent ? 'synced' : 'never',
+            lastSyncDate: lastEvent ? new Date(lastEvent.timestamp).toISOString().slice(0, 10) : undefined,
+            lastPrUrl: lastEvent?.metadata?.prUrl as string | undefined,
+            posts: [],
+            validationSummary: { total: 0, published: 0, failed: 0 },
+          });
+        } catch {
+          // Profile data unavailable
+        }
+
         // Resolve actor identity for TUI actions
         let actorId = 'tui-user';
         try {

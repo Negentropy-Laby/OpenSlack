@@ -42,37 +42,32 @@ function extractSectionBody(content: string, headingText: string): string {
   return bodyLines.join('\n').trim()
 }
 
-/**
- * Strip HTML comments from markdown text.
- */
-function stripHtmlComments(text: string): string {
-  return text.replace(/<!--[\s\S]*?-->/g, '').trim()
-}
-
 describe('cross-document sync', () => {
   const agentsMd = readFile('AGENTS.md')
   const claudeMd = readFile('CLAUDE.md')
 
-  it('Bot-Authenticated PR Creation section body is byte-identical in AGENTS.md and CLAUDE.md', () => {
-    const agentsBody = extractSectionBody(agentsMd, 'Bot-Authenticated PR Creation')
-    const claudeBody = extractSectionBody(claudeMd, 'Bot-Authenticated PR Creation')
-
-    // Remove mirror annotations before comparing
-    const agentsClean = stripHtmlComments(agentsBody)
-    const claudeClean = stripHtmlComments(claudeBody)
-
-    expect(agentsClean).toBe(claudeClean)
+  it('AGENTS.md and CLAUDE.md are byte-identical', () => {
+    // Normalize CRLF to LF for cross-platform comparison
+    const agentsNormalized = agentsMd.replace(/\r\n/g, '\n')
+    const claudeNormalized = claudeMd.replace(/\r\n/g, '\n')
+    expect(agentsNormalized).toBe(claudeNormalized)
   })
 
-  it('AGENTS.md contains the Bot-Authenticated PR Creation section', () => {
+  it('merged document contains Bot-Authenticated PR Creation section', () => {
     const body = extractSectionBody(agentsMd, 'Bot-Authenticated PR Creation')
     expect(body.length).toBeGreaterThan(0)
     expect(body).toContain('bot-gh-pr-create.sh')
   })
 
-  it('CLAUDE.md contains the Bot-Authenticated PR Creation section', () => {
-    const body = extractSectionBody(claudeMd, 'Bot-Authenticated PR Creation')
+  it('merged document contains Constitutional Constraints section', () => {
+    const body = extractSectionBody(agentsMd, 'Constitutional Constraints')
     expect(body.length).toBeGreaterThan(0)
-    expect(body).toContain('bot-gh-pr-create.sh')
+    expect(body).toContain('No direct push to main')
+  })
+
+  it('merged document contains Agent Communication: Approval Gate section', () => {
+    const body = extractSectionBody(agentsMd, 'Agent Communication: Approval Gate')
+    expect(body.length).toBeGreaterThan(0)
+    expect(body).toContain('REVIEW_REQUIRED')
   })
 })

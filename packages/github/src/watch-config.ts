@@ -27,7 +27,7 @@ export interface WatchConfigParseResult {
   errors: string[];
 }
 
-const VALID_EVENTS = new Set(['issues.opened', 'issues.reopened', 'issues.labeled']);
+const VALID_EVENTS = new Set(['issues.opened', 'issues.reopened', 'issues.labeled', 'push']);
 const VALID_SINKS = new Set(['console', 'slack', 'webhook']);
 
 export function parseGitHubWatchConfig(yaml: string): WatchConfigParseResult {

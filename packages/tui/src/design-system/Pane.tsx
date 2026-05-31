@@ -30,6 +30,7 @@ export default function Pane({
       borderTheme: 'border',
       padding,
       flexDirection: 'column',
+      overflow: 'hidden',
     },
     ...inner,
   )

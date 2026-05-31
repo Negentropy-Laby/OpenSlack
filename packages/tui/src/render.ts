@@ -6,7 +6,7 @@ import {
   ENTER_ALT_SCREEN,
   ENABLE_MOUSE_TRACKING,
 } from './ink/termio/dec.js'
-import { CURSOR_HOME, ERASE_SCREEN } from './ink/termio/csi.js'
+import { getClearTerminalSequence } from './ink/clearTerminal.js'
 import type { ThemeMode } from './design-system/theme.js'
 
 export interface RenderTuiOptions {
@@ -59,13 +59,14 @@ export async function renderTui(
   // non-zero terminal row, causing hit-test to mismatch by that offset.
   if (stdout.isTTY) {
     if (supportsAltScreen(stdout)) {
-      // Alt-screen terminals: enter alt buffer + clear + home cursor.
+      // Alt-screen terminals: enter alt buffer + clear (including scrollback) + home cursor.
       // Content renders into the blank alt-screen starting at (0,0).
-      stdout.write(ENTER_ALT_SCREEN + ERASE_SCREEN + CURSOR_HOME)
+      stdout.write(ENTER_ALT_SCREEN + getClearTerminalSequence())
     } else {
-      // Windows conhost: clear viewport + home cursor (stay in main screen).
-      // ERASE_SCREEN wipes the visible area; Ink overwrites it from top.
-      stdout.write(ERASE_SCREEN + CURSOR_HOME)
+      // Main-screen terminals: clear viewport + scrollback + home cursor.
+      // Without scrollback clear, stale content can bleed through when
+      // the TUI scrolls the viewport (see log-update.ts main-screen path).
+      stdout.write(getClearTerminalSequence())
     }
   }
 

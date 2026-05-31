@@ -22,6 +22,11 @@ import {
   findWorkflow,
   loadWorkflow,
 } from '@openslack/workflows';
+// ─── Helper: filter builtins from discovery results ───────────────────────────
+
+function withoutBuiltins<T extends { source: string }>(results: T[]): T[] {
+  return results.filter((r) => r.source !== 'builtin')
+}
 
 // ─── Helper: load a builtin template ──────────────────────────────────────────
 
@@ -275,7 +280,7 @@ describe('enhanced workflow list - combined YAML and JS', () => {
 export const meta = { name: 'my-flow', description: 'Test', phases: [{ title: 'A', detail: 'B' }] }
 export async function run() { return { status: 'ok' } }
 `);
-    const jsWorkflows = await discoverJsWorkflows(tmpDir);
+    const jsWorkflows = withoutBuiltins(await discoverJsWorkflows(tmpDir));
     expect(jsWorkflows.length).toBe(1);
     expect(jsWorkflows[0].name).toBe('my-flow');
     expect(jsWorkflows[0].source).toBe('openslack-project');
@@ -292,7 +297,7 @@ export async function run() { return { status: 'ok' } }
 export const meta = { name: 'custom', description: 'Custom', phases: [{ title: 'Run', detail: 'Run' }] }
 `);
 
-    const jsWorkflows = await discoverJsWorkflows(tmpDir);
+    const jsWorkflows = withoutBuiltins(await discoverJsWorkflows(tmpDir));
 
     expect(yamlWorkflows.length).toBeGreaterThan(0);
     expect(jsWorkflows.length).toBeGreaterThan(0);
@@ -314,13 +319,13 @@ export const meta = { name: 'custom', description: 'Custom', phases: [{ title: '
     writeFileSync(join(workflowsDir, 'desc-flow.js'), `
 export const meta = { name: 'desc-flow', description: 'A described flow', phases: [{ title: 'A', detail: 'B' }] }
 `);
-    const jsWorkflows = await discoverJsWorkflows(tmpDir);
+    const jsWorkflows = withoutBuiltins(await discoverJsWorkflows(tmpDir));
     expect(jsWorkflows[0].description).toBe('A described flow');
   });
 
   it('returns empty lists when neither YAML nor JS workflows exist', async () => {
     const yamlWorkflows = await discoverYamlTemplates(join(tmpDir, 'empty'));
-    const jsWorkflows = await discoverJsWorkflows(tmpDir);
+    const jsWorkflows = withoutBuiltins(await discoverJsWorkflows(tmpDir));
     expect(yamlWorkflows).toEqual([]);
     expect(jsWorkflows).toEqual([]);
   });
@@ -383,7 +388,7 @@ export const meta = { }
 export async function run() { return { status: 'ok' } }
 `);
     // discoverJsWorkflows skips modules that fail static analysis
-    const jsWorkflows = await discoverJsWorkflows(tmpDir);
+    const jsWorkflows = withoutBuiltins(await discoverJsWorkflows(tmpDir));
     expect(jsWorkflows).toEqual([]);
   });
 });

@@ -1593,6 +1593,155 @@ export function collaborationCommands(): Command {
       }
     })
 
+  // ── Profile Sync subcommand ─────────────────────────────────────────────────
+
+  const profileSync = new Command('profile-sync')
+    .description('Organization profile synchronization shortcuts')
+
+  profileSync
+    .command('preview')
+    .description('Preview profile sync without side effects')
+    .option('--source <repo>', 'Source whitepapers repo', 'Negentropy-Laby/whitepapers')
+    .option('--target <repo>', 'Target profile repo', 'Negentropy-Laby/.github')
+    .option('--path <path>', 'Target README path', 'profile/README.md')
+    .option('--posts <dir>', 'Posts directory in source repo', 'posts')
+    .option('--marker <name>', 'HTML comment marker name', 'latest-insights')
+    .option('--max <n>', 'Maximum posts to include', '5')
+    .action(async (options: {
+      source: string
+      target: string
+      path: string
+      posts: string
+      marker: string
+      max: string
+    }) => {
+      const found = await findJsWorkflow('profile-sync')
+      if (!found) {
+        console.log('Profile-sync workflow not found.')
+        process.exit(1)
+      }
+
+      try {
+        const mod = await loadWorkflow(found.path)
+        const result = await executePreview(mod, {
+          manifest: mod.meta,
+          args: {
+            sourceRepo: options.source,
+            targetRepo: options.target,
+            targetPath: options.path,
+            sourcePostsPath: options.posts,
+            marker: options.marker,
+            maxPosts: parseInt(options.max, 10),
+          },
+          budget: { tokens: 10000, costUsd: 0 },
+        })
+        console.log(JSON.stringify(result, null, 2))
+      } catch (err) {
+        console.log(`Preview failed: ${(err as Error).message}`)
+        process.exit(1)
+      }
+    })
+
+  profileSync
+    .command('run')
+    .description('Run profile sync with real side effects')
+    .option('--source <repo>', 'Source whitepapers repo', 'Negentropy-Laby/whitepapers')
+    .option('--target <repo>', 'Target profile repo', 'Negentropy-Laby/.github')
+    .option('--path <path>', 'Target README path', 'profile/README.md')
+    .option('--posts <dir>', 'Posts directory in source repo', 'posts')
+    .option('--marker <name>', 'HTML comment marker name', 'latest-insights')
+    .option('--max <n>', 'Maximum posts to include', '5')
+    .option('--yes', 'Auto-approve side effects')
+    .option('--agent-id <id>', 'Agent ID for authorization')
+    .action(async (options: {
+      source: string
+      target: string
+      path: string
+      posts: string
+      marker: string
+      max: string
+      yes?: boolean
+      agentId?: string
+    }) => {
+      const found = await findJsWorkflow('profile-sync')
+      if (!found) {
+        console.log('Profile-sync workflow not found.')
+        process.exit(1)
+      }
+
+      try {
+        const mod = await loadWorkflow(found.path)
+        const onConfirm = options.yes
+          ? async (_operation: string, _detail: string): Promise<boolean> => true
+          : async (operation: string, detail: string): Promise<boolean> => {
+              if (!process.stdin.isTTY) {
+                console.error(`[ERROR] Not a TTY. Use --yes to auto-approve.`)
+                return false
+              }
+              console.log(`[CONFIRM] ${operation}: ${detail}`)
+              const { createInterface } = await import('readline')
+              const rl = createInterface({ input: process.stdin, output: process.stdout })
+              const answer = await new Promise<string>((resolve) => {
+                rl.question('Proceed? [y/N] ', resolve)
+              })
+              rl.close()
+              return answer.toLowerCase() === 'y'
+            }
+
+        const result = await executeRun(mod, {
+          manifest: mod.meta,
+          args: {
+            sourceRepo: options.source,
+            targetRepo: options.target,
+            targetPath: options.path,
+            sourcePostsPath: options.posts,
+            marker: options.marker,
+            maxPosts: parseInt(options.max, 10),
+          },
+          budget: { tokens: 100000, costUsd: 1.0 },
+          onConfirm,
+          allowUnattended: options.yes,
+          ...resolveAgentAuthOptions(options.agentId),
+        })
+
+        console.log(JSON.stringify(result, null, 2))
+      } catch (err) {
+        console.log(`Run failed: ${(err as Error).message}`)
+        process.exit(1)
+      }
+    })
+
+  profileSync
+    .command('status')
+    .description('Show profile sync status')
+    .action(async () => {
+      try {
+        const { readEvents, filterEvents } = await import('@openslack/collaboration')
+        const events = readEvents()
+        const profileEvents = filterEvents(events, { type: 'profile_sync.completed' as never })
+
+        if (profileEvents.length === 0) {
+          console.log('No profile sync events recorded.')
+          console.log('Run `openslack collaboration workflow profile-sync run` to perform a sync.')
+          return
+        }
+
+        const lastEvent = profileEvents[profileEvents.length - 1]
+        console.log('Profile Sync Status')
+        console.log('-------------------')
+        console.log(`Last sync: ${new Date(lastEvent.timestamp).toISOString()}`)
+        console.log(`Posts synced: ${(lastEvent.metadata?.postsIncluded as Array<unknown>)?.length ?? 'unknown'}`)
+        console.log(`PR: ${lastEvent.metadata?.prUrl ?? 'unknown'}`)
+        console.log(`PR number: #${lastEvent.metadata?.prNumber ?? 'unknown'}`)
+        console.log(`Total events: ${profileEvents.length}`)
+      } catch (err) {
+        console.log(`Status check failed: ${(err as Error).message}`)
+        process.exit(1)
+      }
+    })
+
+  workflow.addCommand(profileSync)
+
   cmd.addCommand(workflow);
 
   return cmd;

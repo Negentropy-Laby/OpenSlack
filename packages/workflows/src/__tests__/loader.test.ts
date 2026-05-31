@@ -419,7 +419,7 @@ describe('discoverJsWorkflows', () => {
   })
 
   it('returns empty array when no workflows directories exist', async () => {
-    const result = await discoverJsWorkflows(tmpDir)
+    const result = (await discoverJsWorkflows(tmpDir)).filter((w) => w.source !== 'builtin')
     expect(result).toEqual([])
   })
 
@@ -434,7 +434,7 @@ export const meta = {
 }
 export async function run() { return { status: 'ok' } }
 `)
-    const result = await discoverJsWorkflows(tmpDir)
+    const result = (await discoverJsWorkflows(tmpDir)).filter((w) => w.source !== 'builtin')
     expect(result).toHaveLength(1)
     expect(result[0].name).toBe('my-task')
     expect(result[0].displayName).toBe('my-task')
@@ -450,7 +450,7 @@ export async function run() { return { status: 'ok' } }
     writeFileSync(join(workflowsDir, 'good.js'), `
 export const meta = { name: 'good', description: 'Good', phases: [{ title: 'A', detail: 'B' }] }
 `)
-    const result = await discoverJsWorkflows(tmpDir)
+    const result = (await discoverJsWorkflows(tmpDir)).filter((w) => w.source !== 'builtin')
     expect(result).toHaveLength(1)
     expect(result[0].name).toBe('good')
   })

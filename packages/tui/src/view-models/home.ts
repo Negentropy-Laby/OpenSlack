@@ -200,6 +200,7 @@ export function mapHomeToViewModel(data?: {
     { label: 'Digest', key: 'digest', shortcut: '7' },
     { label: 'Handoffs', key: 'handoffs', shortcut: '8' },
     { label: 'Decisions', key: 'decisions', shortcut: '9' },
+    { label: 'Profile', key: 'profile', shortcut: 'p' },
   ]
 
   const goalItems: GoalItem[] = [

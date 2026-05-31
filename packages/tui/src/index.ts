@@ -109,3 +109,7 @@ export { mapHandoffListToViewModel, mapHandoffToViewModel } from './view-models/
 export { renderDecisionListTui, renderDecisionDetailTui } from './views/render-decision.js';
 export type { DecisionListViewModel, DecisionListItemViewModel, DecisionDetailViewModel } from './view-models/decision.js';
 export { mapDecisionListToViewModel, mapDecisionToViewModel } from './view-models/decision.js';
+
+// Profile
+export type { ProfileViewModel } from './view-models/profile.js';
+export { mapProfileToViewModel } from './view-models/profile.js';

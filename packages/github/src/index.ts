@@ -23,6 +23,8 @@ export type { GitHubWatchConfig, GitHubWatchRepo, GitHubWatchRoute, WatchConfigP
 export { verifyGitHubWebhookSignature } from './webhook-verify.js';
 export { normalizeIssueEvent, matchesRepoConfig } from './issue-normalizer.js';
 export type { NormalizedIssueEvent } from './issue-normalizer.js';
+export { normalizePushEvent, matchesPushRepoConfig } from './push-normalizer.js';
+export type { NormalizedPushEvent } from './push-normalizer.js';
 export { WatchDedupeStore } from './watch-dedupe.js';
 export { WatchDaemon, createNotificationPayload, formatConsoleNotification } from './watch-daemon.js';
 export type { NotificationPayload, AutoClaimFn, RecordEventFn, CollaborationEventRecord } from './watch-daemon.js';
@@ -75,3 +77,45 @@ export type {
   WorkflowImprovementIssue,
   WorkflowSplitIssue,
 } from './workflow-issues.js';
+export {
+  readRepoDirectory,
+  readRepoFile,
+  patchMarkerSection,
+  MarkerNotFoundError,
+  createBranch,
+  commitFileToBranch,
+  createProfileSyncPR,
+  parseFrontmatter,
+  extractBody,
+  validatePost,
+  sortPostsByDate,
+  renderLatestInsightsSection,
+} from './profile-sync.js';
+export type {
+  RepoFileEntry,
+  RepoFileContent,
+  ProfileSyncPRResult,
+  ParsedPost,
+  PostValidationError,
+  PostValidationResult,
+} from './profile-sync.js';
+export {
+  renderProfileSyncProposalBody,
+  renderProfileSyncFailureBody,
+  renderProfileSyncImprovementBody,
+  profileSyncProposalLabels,
+  profileSyncFailureLabels,
+  profileSyncImprovementLabels,
+  PROFILE_SYNC_LABEL_DEFINITIONS,
+} from './profile-sync-issues.js';
+export type {
+  ProfileSyncProposalIssue,
+  ProfileSyncFailureIssue,
+  ProfileSyncImprovementIssue,
+} from './profile-sync-issues.js';
+export {
+  publishProfileSyncProposal,
+  publishProfileSyncFailure,
+  publishProfileSyncImprovement,
+  bootstrapProfileSyncLabels,
+} from './profile-sync-issue-publisher.js';

@@ -10,6 +10,7 @@ import type { DigestViewModel } from '../view-models/digest.js'
 import type { HandoffListViewModel } from '../view-models/handoff.js'
 import type { DecisionListViewModel } from '../view-models/decision.js'
 import type { WorkflowLifecycleViewModel } from '../view-models/workflow-lifecycle.js'
+import type { ProfileViewModel } from '../view-models/profile.js'
 
 export interface WorkflowLifecycleBaseData {
   workflowHash: string
@@ -51,6 +52,7 @@ export interface ShellViewData {
   decisions?: DecisionListViewModel
   workflowLifecycle?: WorkflowLifecycleViewModel
   workflowLifecycleBase?: Record<string, WorkflowLifecycleBaseData>
+  profile?: ProfileViewModel
   actionHandlers?: TuiActionHandlers
 }
 

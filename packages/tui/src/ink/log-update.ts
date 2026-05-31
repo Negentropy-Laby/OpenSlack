@@ -135,7 +135,9 @@ export class LogUpdate {
       next.screen,
       this.options.stylePool,
     ).slice(firstChangedLine)
-    const output = changedLines.join('\n')
+    // Clear to end of line after each row to prevent stale content from
+    // previous frames bleeding through when the new line is shorter.
+    const output = changedLines.map(line => line + '\x1b[K').join('\n')
     if (output.length === 0) {
       return []
     }
@@ -159,7 +161,8 @@ export class LogUpdate {
     if (
       reason === 'offscreen' &&
       this.options.appendOnlyOffscreenReset &&
-      !altScreen
+      !altScreen &&
+      next.screen.height >= prev.screen.height
     ) {
       return this.renderAppendOnlyOffscreenReset(prev, next)
     }
@@ -251,7 +254,7 @@ export class LogUpdate {
     // This early full-reset check only applies in "steady state" (not growing).
     // For growing, the viewportY calculation below (with cursorRestoreScroll)
     // catches unreachable scrollback rows in the diff loop instead.
-    const cursorAtBottom = prev.cursor.y >= prev.screen.height
+    const cursorAtBottom = prev.cursor.y >= prev.screen.height - 1
     const isGrowing = next.screen.height > prev.screen.height
     // When content fills the viewport exactly (height == viewport) and the
     // cursor is at the bottom, the cursor-restore LF at the end of the

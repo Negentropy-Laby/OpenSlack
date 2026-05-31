@@ -315,7 +315,7 @@ export class WatchDaemon {
     }
 
     const gitHubEvent = headers['x-github-event'];
-    if (gitHubEvent !== 'issues') {
+    if (gitHubEvent !== 'issues' && gitHubEvent !== 'push') {
       jsonResponse(res, 202, { ok: true, ignored: `event type: ${gitHubEvent}` });
       return;
     }
@@ -328,31 +328,102 @@ export class WatchDaemon {
       return;
     }
 
-    const normalized = normalizeIssueEvent(payload, headers);
-    if (!normalized) {
-      jsonResponse(res, 400, { error: 'Could not normalize issue event' });
+    if (gitHubEvent === 'issues') {
+      const normalized = normalizeIssueEvent(payload, headers);
+      if (!normalized) {
+        jsonResponse(res, 400, { error: 'Could not normalize issue event' });
+        return;
+      }
+
+      const repoConfig = this.config.repositories.find(
+        (r) => r.owner === normalized.owner && r.repo === normalized.repo,
+      );
+      if (!repoConfig) {
+        jsonResponse(res, 202, { ok: true, ignored: `repo not in allowlist: ${normalized.owner}/${normalized.repo}` });
+        return;
+      }
+
+      const eventKey = `issues.${normalized.action}`;
+      if (!repoConfig.events.includes(eventKey)) {
+        jsonResponse(res, 202, { ok: true, ignored: `action ${normalized.action} not watched for ${normalized.owner}/${normalized.repo}` });
+        return;
+      }
+
+      const result = await this.once(normalized);
+      if (result) {
+        jsonResponse(res, 200, { ok: true, event_id: result.id });
+      } else {
+        jsonResponse(res, 200, { ok: true, ignored: 'duplicate or filtered' });
+      }
       return;
     }
 
-    const repoConfig = this.config.repositories.find(
-      (r) => r.owner === normalized.owner && r.repo === normalized.repo,
-    );
-    if (!repoConfig) {
-      jsonResponse(res, 202, { ok: true, ignored: `repo not in allowlist: ${normalized.owner}/${normalized.repo}` });
+    if (gitHubEvent === 'push') {
+      const { normalizePushEvent, matchesPushRepoConfig } = await import('./push-normalizer.js');
+      const normalized = normalizePushEvent(payload, headers);
+      if (!normalized) {
+        jsonResponse(res, 202, { ok: true, ignored: 'no relevant commits' });
+        return;
+      }
+
+      const repoConfig = this.config.repositories.find(
+        (r) => r.owner === normalized.owner && r.repo === normalized.repo,
+      );
+      if (!repoConfig) {
+        jsonResponse(res, 202, { ok: true, ignored: `repo not in allowlist: ${normalized.owner}/${normalized.repo}` });
+        return;
+      }
+
+      if (!repoConfig.events.includes('push')) {
+        jsonResponse(res, 202, { ok: true, ignored: `push not watched for ${normalized.owner}/${normalized.repo}` });
+        return;
+      }
+
+      const result = await this.handlePushEvent(normalized);
+      if (result) {
+        jsonResponse(res, 200, { ok: true, event_id: result.id });
+      } else {
+        jsonResponse(res, 200, { ok: true, ignored: 'duplicate or filtered' });
+      }
       return;
     }
+  }
 
-    const eventKey = `issues.${normalized.action}`;
-    if (!repoConfig.events.includes(eventKey)) {
-      jsonResponse(res, 202, { ok: true, ignored: `action ${normalized.action} not watched for ${normalized.owner}/${normalized.repo}` });
-      return;
+  async handlePushEvent(event: import('./push-normalizer.js').NormalizedPushEvent): Promise<CollaborationEventRecord | null> {
+    const stableKey = this.dedupe.buildPushStableKey(event);
+
+    if (event.deliveryId && this.dedupe.isDuplicate(event.deliveryId)) return null;
+    if (this.dedupe.isDuplicateByStableKey(stableKey)) return null;
+
+    this.dedupe.record(event.deliveryId || undefined, stableKey);
+
+    const hasPostChanges = event.commits.length > 0;
+
+    let collabEvent: CollaborationEventRecord | null = null;
+    try {
+      if (this.recordEventFn) {
+        collabEvent = this.recordEventFn({
+          type: hasPostChanges ? 'profile_sync.triggered' : 'push.detected',
+          actor: { id: 'github-watch', kind: 'github', provider: 'github' },
+          object: { kind: 'push', id: `${event.owner}/${event.repo}@${event.after.substring(0, 7)}` },
+          source: { kind: 'github', ref: 'github.watch.webhook' },
+          summary: hasPostChanges
+            ? `Push to ${event.owner}/${event.repo} contains whitepaper changes (${event.commits.length} commit(s))`
+            : `Push to ${event.owner}/${event.repo} (no whitepaper changes)`,
+          visibility: 'local',
+          redacted: false,
+          containsSensitiveData: false,
+          metadata: {
+            ref: event.ref,
+            commits: event.commits.length,
+            hasPostChanges,
+          },
+        });
+      }
+    } catch {
+      // best-effort event recording
     }
 
-    const result = await this.once(normalized);
-    if (result) {
-      jsonResponse(res, 200, { ok: true, event_id: result.id });
-    } else {
-      jsonResponse(res, 200, { ok: true, ignored: 'duplicate or filtered' });
-    }
+    return collabEvent;
   }
 }
