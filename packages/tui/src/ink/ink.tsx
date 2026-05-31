@@ -886,15 +886,21 @@ export default class Ink {
 
   /**
    * Called by the <AlternateScreen> component on mount/unmount.
-   * Controls cursor.y clamping in the renderer and gates alt-screen-aware
-   * behavior in SIGCONT/resize/unmount handlers. Repaints on change so
-   * the first alt-screen frame (and first main-screen frame on exit) is
-   * a full redraw with no stale diff state.
+   * Controls cursor.y clamping in the renderer, gates alt-screen-aware
+   * behavior in SIGCONT/resize/unmount handlers, and synchronizes terminal
+   * mouse tracking with the requested active state.
    */
   setAltScreenActive(active: boolean, mouseTracking = false): void {
-    if (this.altScreenActive === active) return;
+    const nextMouseTracking = active && mouseTracking;
+    const activeChanged = this.altScreenActive !== active;
+    const mouseTrackingChanged = this.altScreenMouseTracking !== nextMouseTracking;
+    if (!activeChanged && !mouseTrackingChanged) return;
+
     this.altScreenActive = active;
-    this.altScreenMouseTracking = active && mouseTracking;
+    this.altScreenMouseTracking = nextMouseTracking;
+    if (this.options.stdout.isTTY && !TUI_V1_MINIMAL && mouseTrackingChanged) {
+      this.options.stdout.write(nextMouseTracking ? ENABLE_MOUSE_TRACKING : DISABLE_MOUSE_TRACKING);
+    }
     if (active) {
       this.resetFramesForAltScreen();
     } else {
