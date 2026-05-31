@@ -341,6 +341,32 @@ describe('renderPlainWorkflowLifecycle', () => {
     expect(out).toContain('Workflow Lifecycle')
     assertNoLineExceeds80(out)
   })
+
+  it('renders status summary', () => {
+    const vm: WorkflowLifecycleViewModel = {
+      ...createWorkflowLifecycleViewModel(),
+      statusSummary: 'Blocked at review stage, owner: team-lead',
+    }
+    const out = renderPlainWorkflowLifecycle(vm)
+    expect(out).toContain('Status: Blocked at review stage, owner: team-lead')
+    assertNoLineExceeds80(out)
+  })
+
+  it('renders blocked gate items', () => {
+    const vm: WorkflowLifecycleViewModel = {
+      ...createWorkflowLifecycleViewModel(),
+      blockedGateItems: [
+        { gate: 'Coverage', detail: 'Below 80% threshold', action: 'Add tests for new modules' },
+        { gate: 'Review', detail: 'No CODEOWNER approval', action: 'Request review from team-lead' },
+      ],
+    }
+    const out = renderPlainWorkflowLifecycle(vm)
+    expect(out).toContain('Blocked Gates:')
+    expect(out).toContain('[FAIL] Coverage: Below 80% threshold')
+    expect(out).toContain('Fix: Add tests for new modules')
+    expect(out).toContain('[FAIL] Review: No CODEOWNER approval')
+    assertNoLineExceeds80(out)
+  })
 })
 
 // --- Workflow Workbench ---

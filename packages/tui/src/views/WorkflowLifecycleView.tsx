@@ -238,6 +238,14 @@ export default function WorkflowLifecycleView({ model, actionHandlers, onBack }:
           dispatchAction(action)
           setMode('action-result')
         }
+      } else if (input === 'o' || input === 'O') {
+        // Open issue URL in browser
+        if (selectedStage.issueUrl) {
+          const { execFile } = require('node:child_process')
+          const platform = process.platform
+          const command = platform === 'darwin' ? 'open' : platform === 'win32' ? 'start' : 'xdg-open'
+          execFile(command, [selectedStage.issueUrl])
+        }
       } else if (input === 'f' || input === 'F') {
         if (model.prNumber && actionHandlers?.finalizeWorkflowPr) {
           const action: TuiAction = {
@@ -396,6 +404,14 @@ export default function WorkflowLifecycleView({ model, actionHandlers, onBack }:
         React.createElement(KeyboardShortcutHint, { keys: ['d'], description: 'Dry-run' }),
         React.createElement(Text, null, '  '),
         React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'Back' }),
+      selectedStage.issueUrl
+        ? React.createElement(
+            Box,
+            { flexDirection: 'row' },
+            React.createElement(Text, null, '  '),
+            React.createElement(KeyboardShortcutHint, { keys: ['o'], description: 'Open issue URL' }),
+          )
+        : null,
       ),
     )
   }
@@ -535,6 +551,18 @@ export default function WorkflowLifecycleView({ model, actionHandlers, onBack }:
                 { flexDirection: 'row', marginTop: 1 },
                 React.createElement(ThemedText, { colorTheme: 'muted' }, 'Current: '),
                 React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, currentCanonical.label),
+                (() => {
+                  const cs = stages.find(s => s.name.toLowerCase().replace(/[_-]/g, '').includes(currentCanonical.key))
+                  return cs?.owner
+                    ? React.createElement(
+                        Box,
+                        { flexDirection: 'row' },
+                        React.createElement(Text, null, '  '),
+                        React.createElement(ThemedText, { colorTheme: 'muted' }, 'Owner: '),
+                        React.createElement(ThemedText, { colorTheme: 'foreground' }, cs.owner),
+                      )
+                    : null
+                })(),
               )
             : null,
         )
@@ -627,6 +655,46 @@ export default function WorkflowLifecycleView({ model, actionHandlers, onBack }:
           { flexDirection: 'row', marginTop: 1 },
           React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, 'Next: '),
           React.createElement(ThemedText, { colorTheme: 'foreground' }, model.nextAction),
+        )
+      : null,
+    // Status summary (where/who/what)
+    model.statusSummary
+      ? React.createElement(
+          Box,
+          { flexDirection: 'row', marginTop: 1 },
+          React.createElement(ThemedText, { colorTheme: 'info', bold: true }, 'Status: '),
+          React.createElement(ThemedText, { colorTheme: 'foreground' }, model.statusSummary),
+        )
+      : null,
+    // Blocked gate items (actionable blockers)
+    model.blockedGateItems && model.blockedGateItems.length > 0
+      ? React.createElement(
+          Box,
+          { flexDirection: 'column', marginTop: 1 },
+          React.createElement(ThemedText, { colorTheme: 'error', bold: true }, 'Blocked Gates:'),
+          ...model.blockedGateItems.map((g, idx) =>
+            React.createElement(
+              Box,
+              { key: `gate-${idx}`, flexDirection: 'column', marginLeft: 2 },
+              React.createElement(
+                Box,
+                { flexDirection: 'row' },
+                React.createElement(StatusIcon, { status: 'failed' }),
+                React.createElement(Text, null, ' '),
+                React.createElement(ThemedText, { colorTheme: 'error' }, g.gate),
+                React.createElement(Text, null, ': '),
+                React.createElement(ThemedText, { colorTheme: 'foreground' }, g.detail),
+              ),
+              g.action
+                ? React.createElement(
+                    Box,
+                    { flexDirection: 'row', marginLeft: 2 },
+                    React.createElement(ThemedText, { colorTheme: 'muted' }, 'Fix: '),
+                    React.createElement(ThemedText, { colorTheme: 'accent' }, g.action),
+                  )
+                : null,
+            ),
+          ),
         )
       : null,
     React.createElement(Divider, { length: 40 }),
