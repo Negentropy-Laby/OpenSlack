@@ -14,6 +14,7 @@ import { mapCanonicalStages } from './view-models/workflow-lifecycle.js'
 import type { WorkflowLifecycleViewModel, CanonicalStageSlot } from './view-models/workflow-lifecycle.js'
 import type { WorkflowGalleryViewModel } from './view-models/workflow-gallery.js'
 import type { DashboardViewModel } from './view-models/dashboard.js'
+import { stringWidth } from './ink/stringWidth.js'
 
 const MAX_WIDTH = 80
 
@@ -30,7 +31,7 @@ function wrap(text: string, width: number = MAX_WIDTH): string {
         if (word.length === 0) continue
         if (current.length === 0) {
           current = word
-        } else if (current.length + 1 + word.length <= width) {
+        } else if (stringWidth(current) + 1 + stringWidth(word) <= width) {
           current += ' ' + word
         } else {
           result.push(current)
@@ -48,7 +49,7 @@ function wrapIndent(text: string, indent: number, width: number = MAX_WIDTH): st
   const inner = width - indent
   if (inner <= 0) return text
   const pad = ' '.repeat(indent)
-  return wrap(text, width)
+  return wrap(text, inner)
     .split('\n')
     .map((line, i) => (i === 0 ? line : pad + line))
     .join('\n')

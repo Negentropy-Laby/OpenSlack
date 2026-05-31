@@ -72,8 +72,8 @@ function classifyStageName(name: string): CanonicalStageKey | null {
   if (lower.includes('proposal') || lower.includes('propose') || lower.includes('draft')) return 'proposal'
   if (lower.includes('review') || lower.includes('approve') || lower.includes('approval')) return 'review'
   if (lower.includes('run') || lower.includes('exec') || lower.includes('execute') || lower.includes('build') || lower.includes('impl')) return 'run'
-  if (lower.includes('pr') || lower.includes('pullrequest') || lower.includes('merge')) return 'pr'
-  if (lower.includes('done') || lower.includes('complet') || lower.includes('finish') || lower.includes('success')) return 'merged'
+  if (lower.includes('pr') || lower.includes('pullrequest')) return 'pr'
+  if (lower.includes('done') || lower.includes('complet') || lower.includes('finish') || lower.includes('success') || lower.includes('merge')) return 'merged'
   return null
 }
 

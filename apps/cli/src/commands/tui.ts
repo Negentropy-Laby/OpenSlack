@@ -403,7 +403,7 @@ export function tuiCommands(): Command {
           let pendingPR: { number: number; url: string; branch: string } | undefined;
           let syncDetails: import('@openslack/tui').ProfileSyncDetails | undefined;
           let failureDetails: import('@openslack/tui').ProfileFailureDetails | undefined;
-          let psMode: import('@openslack/tui').ProfileSyncMode = 'manual';
+          let psMode: import('@openslack/tui').ProfileSyncMode = 'manual'; // conservative default if config load fails below
           let syncStatus: 'synced' | 'pending' | 'failed' | 'never' = 'never';
 
           try {

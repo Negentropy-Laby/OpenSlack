@@ -588,10 +588,10 @@ export function createProfileSyncHandlers(root: string) {
 
     openProfileSyncPR: async function profileSyncOpenPR(prUrl: string): Promise<TuiActionResult> {
       try {
-        const { exec } = await import('node:child_process')
+        const { execFile } = await import('node:child_process')
         const platform = process.platform
         const command = platform === 'darwin' ? 'open' : platform === 'win32' ? 'start' : 'xdg-open'
-        exec(`${command} ${prUrl}`)
+        execFile(command, [prUrl])
         return { success: true, message: `Opened ${prUrl}` }
       } catch (err: unknown) {
         return { success: false, message: `Open failed: ${(err as Error).message}` }

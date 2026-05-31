@@ -10,6 +10,7 @@
  * - CJK characters are preserved
  */
 import { describe, it, expect } from 'vitest'
+import { stringWidth } from '../ink/stringWidth.js'
 import {
   renderPlainHome,
   renderPlainDoctor,
@@ -59,7 +60,8 @@ function assertNoAnsi(output: string) {
 function assertNoLineExceeds80(output: string) {
   const lines = output.split('\n')
   for (const line of lines) {
-    expect(line.length, `Line exceeds 80 chars (${line.length}): "${line}"`).toBeLessThanOrEqual(80)
+    const visualWidth = stringWidth(line)
+    expect(visualWidth, `Line exceeds 80 columns (${visualWidth}): "${line}"`).toBeLessThanOrEqual(80)
   }
 }
 
