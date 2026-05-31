@@ -91,6 +91,14 @@ export type {
   WorkflowRunResult,
 } from './workflow.js';
 
+export {
+  buildProfileSyncStatus,
+} from './profile-sync-status.js';
+export type {
+  ProfileSyncStatus,
+  ProfileSyncStatusOptions,
+} from './profile-sync-status.js';
+
 export type {
   CollaborationEvent,
   CollaborationEventType,

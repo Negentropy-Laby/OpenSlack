@@ -13,6 +13,7 @@ import type { ProfileViewModel } from '../view-models/profile.js'
 export type ProfileViewProps = {
   model: ProfileViewModel
   onBack?: () => void
+  onAction?: (actionId: string) => void
 }
 
 function syncStatusIcon(status: ProfileViewModel['syncStatus']): import('../design-system/StatusIcon.js').StatusCategory {
@@ -22,13 +23,25 @@ function syncStatusIcon(status: ProfileViewModel['syncStatus']): import('../desi
   return 'info'
 }
 
-export default function ProfileView({ model, onBack }: ProfileViewProps): React.JSX.Element {
+function markerStatusIcon(status: ProfileViewModel['markerStatus']): import('../design-system/StatusIcon.js').StatusCategory {
+  if (status === 'present') return 'pass'
+  if (status === 'missing') return 'fail'
+  return 'info'
+}
+
+export default function ProfileView({ model, onBack, onAction }: ProfileViewProps): React.JSX.Element {
   const { exit } = useApp()
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
       if (onBack) onBack()
       else exit()
+      return
+    }
+
+    const action = model.actions.find((a) => a.key === input)
+    if (action && onAction) {
+      onAction(action.id)
     }
   })
 
@@ -58,10 +71,21 @@ export default function ProfileView({ model, onBack }: ProfileViewProps): React.
         status: syncStatusIcon(model.syncStatus),
         detail: model.lastSyncDate ? `Last sync: ${model.lastSyncDate}` : undefined,
       }),
+      React.createElement(ListItem, {
+        label: `Marker: ${model.markerStatus}`,
+        status: markerStatusIcon(model.markerStatus),
+      }),
       model.lastPrUrl
         ? React.createElement(ListItem, {
-            label: 'Pending PR',
+            label: 'Last PR',
             detail: model.lastPrUrl,
+            status: 'warn',
+          })
+        : null,
+      model.pendingPR
+        ? React.createElement(ListItem, {
+            label: 'Pending PR',
+            detail: `#${model.pendingPR.number} ${model.pendingPR.branch}`,
             status: 'warn',
           })
         : null,
@@ -105,11 +129,41 @@ export default function ProfileView({ model, onBack }: ProfileViewProps): React.
           React.createElement(ThemedText, { colorTheme: 'muted' }, 'No posts synced yet.'),
         ),
 
+    // Action result
+    model.actionResult
+      ? React.createElement(
+          Pane,
+          { title: 'Action Result', marginY: 0 },
+          React.createElement(ListItem, {
+            label: model.actionResult.actionId,
+            detail: model.actionResult.message,
+            status: model.actionResult.success ? 'pass' : 'fail',
+          }),
+        )
+      : null,
+
+    // Actions
+    React.createElement(
+      Pane,
+      { title: 'Actions', marginY: 0 },
+      ...model.actions.map((a) =>
+        React.createElement(ListItem, {
+          key: `action-${a.id}`,
+          label: `${a.key} — ${a.label}`,
+          detail: a.description,
+          status: a.risk === 'high' ? 'fail' : a.risk === 'medium' ? 'warn' : 'info',
+        }),
+      ),
+    ),
+
     // Footer
     React.createElement(Divider, { length: 40 }),
     React.createElement(
       Box,
-      { flexDirection: 'row' },
+      { flexDirection: 'row', flexWrap: 'wrap' },
+      ...model.actions.map((a) =>
+        React.createElement(KeyboardShortcutHint, { key: `hint-${a.id}`, keys: [a.key], description: a.label }),
+      ),
       React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'back' }),
     ),
   )

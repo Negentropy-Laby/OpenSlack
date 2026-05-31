@@ -30,7 +30,8 @@ export type CollaborationObjectEvent =
   | 'handoff.created' | 'handoff.accepted' | 'handoff.closed'
   | 'decision.recorded' | 'decision.superseded'
   | 'room.summarized' | 'digest.generated'
-  | 'workflow.previewed' | 'workflow.started' | 'workflow.completed' | 'workflow.blocked';
+  | 'workflow.previewed' | 'workflow.started' | 'workflow.completed' | 'workflow.blocked'
+  | 'profile_sync.triggered' | 'profile_sync.queued' | 'profile_sync.started' | 'profile_sync.completed' | 'profile_sync.failed';
 
 export type RepairEvent =
   | 'repair.previewed' | 'repair.applied' | 'repair.failed';

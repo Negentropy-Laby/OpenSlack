@@ -13,6 +13,15 @@ export interface ApprovalExecutionParams {
   runId?: string
 }
 
+export interface ProfileActionHandlers {
+  checkProfileSync: () => Promise<TuiActionResult>
+  previewProfileSync: () => Promise<TuiActionResult>
+  dryRunProfileSync: () => Promise<TuiActionResult>
+  createProfileSyncPR: () => Promise<TuiActionResult>
+  openProfileSyncPR: (prUrl: string) => Promise<TuiActionResult>
+  createProfileSyncFailureIssue: (error: string) => Promise<TuiActionResult>
+}
+
 export interface TuiActionHandlers {
   executeApproval: (params: ApprovalExecutionParams, isApprove: boolean) => Promise<TuiActionResult>
   executeTrustChange: (workflowName: string, fromLevel: string, toLevel: string) => Promise<TuiActionResult>
@@ -21,6 +30,7 @@ export interface TuiActionHandlers {
   requestWorkflowReview?: (workflowName: string) => Promise<TuiActionResult>
   splitWorkflowIntoIssues?: (workflowName: string, parentIssue: number) => Promise<TuiActionResult>
   finalizeWorkflowPr?: (workflowName: string, prNumber: number) => Promise<TuiActionResult>
+  profileSync?: ProfileActionHandlers
 }
 
 // ── executeApproval ────────────────────────────────────────────────────────────
@@ -493,6 +503,108 @@ export async function splitWorkflowIntoIssues(
 }
 
 /** Build the full action handler set for injection into the TUI shell. */
+// ── Profile Sync Action Handlers ──────────────────────────────────────────────
+
+async function profileSyncCheck(): Promise<TuiActionResult> {
+  try {
+    const { loadProfileSyncConfig, checkProfileSync } = await import('@openslack/github')
+    const config = loadProfileSyncConfig()
+    const result = await checkProfileSync(config)
+    return {
+      success: result.ok,
+      message: result.ok
+        ? 'Profile sync check passed'
+        : `Check failed: ${result.errors.join('; ')}`,
+      data: { posts: result.posts.published, marker: result.target.markerExists },
+    }
+  } catch (err: unknown) {
+    return { success: false, message: `Check error: ${(err as Error).message}` }
+  }
+}
+
+async function profileSyncPreview(): Promise<TuiActionResult> {
+  try {
+    const { loadProfileSyncConfig, previewProfileSync } = await import('@openslack/github')
+    const config = loadProfileSyncConfig()
+    const result = await previewProfileSync(config)
+    return {
+      success: result.ok,
+      message: result.ok
+        ? `Preview ready: ${result.renderedSection.length} chars, branch ${result.wouldCreateBranch}`
+        : `Preview failed: ${result.checkResult.errors.join('; ')}`,
+      data: { diffLength: result.diff.length },
+    }
+  } catch (err: unknown) {
+    return { success: false, message: `Preview error: ${(err as Error).message}` }
+  }
+}
+
+async function profileSyncDryRun(): Promise<TuiActionResult> {
+  try {
+    const { loadProfileSyncConfig, runProfileSync } = await import('@openslack/github')
+    const config = loadProfileSyncConfig()
+    const result = await runProfileSync({ config, dryRun: true })
+    return {
+      success: result.status === 'completed' || result.status === 'skipped',
+      message: result.status === 'completed'
+        ? `Dry-run would create PR: ${result.prUrl}`
+        : result.status === 'skipped'
+          ? `Skipped: ${result.reason}`
+          : `Dry-run failed: ${result.error}`,
+    }
+  } catch (err: unknown) {
+    return { success: false, message: `Dry-run error: ${(err as Error).message}` }
+  }
+}
+
+async function profileSyncCreatePR(): Promise<TuiActionResult> {
+  try {
+    const { loadProfileSyncConfig, runProfileSync } = await import('@openslack/github')
+    const config = loadProfileSyncConfig()
+    const result = await runProfileSync({ config })
+    return {
+      success: result.status === 'completed',
+      message: result.status === 'completed'
+        ? `Created PR: ${result.prUrl}`
+        : result.status === 'skipped'
+          ? `Skipped: ${result.reason}`
+          : `Failed: ${result.error}`,
+      data: { prUrl: result.prUrl, prNumber: result.prNumber },
+    }
+  } catch (err: unknown) {
+    return { success: false, message: `Run error: ${(err as Error).message}` }
+  }
+}
+
+async function profileSyncOpenPR(prUrl: string): Promise<TuiActionResult> {
+  try {
+    const { exec } = await import('node:child_process')
+    const platform = process.platform
+    const command = platform === 'darwin' ? 'open' : platform === 'win32' ? 'start' : 'xdg-open'
+    exec(`${command} ${prUrl}`)
+    return { success: true, message: `Opened ${prUrl}` }
+  } catch (err: unknown) {
+    return { success: false, message: `Open failed: ${(err as Error).message}` }
+  }
+}
+
+async function profileSyncFailureIssue(error: string): Promise<TuiActionResult> {
+  try {
+    const { loadProfileSyncConfig, publishProfileSyncFailure } = await import('@openslack/github')
+    const config = loadProfileSyncConfig()
+    const result = await publishProfileSyncFailure({
+      schema: 'openslack.profile_sync_failure.v1',
+      sourceRepo: config.source.repo,
+      targetRepo: config.target.repo,
+      error,
+      phase: 'manual',
+    })
+    return { success: true, message: `Created issue: ${result.url}`, data: { issueUrl: result.url } }
+  } catch (err: unknown) {
+    return { success: false, message: `Issue creation failed: ${(err as Error).message}` }
+  }
+}
+
 export function createActionHandlers(root: string, actorId: string = 'tui-user'): TuiActionHandlers {
   return {
     executeApproval: (params, isApprove) => executeApproval(params, isApprove, root, actorId),
@@ -502,5 +614,13 @@ export function createActionHandlers(root: string, actorId: string = 'tui-user')
     requestWorkflowReview: (name) => requestWorkflowReview(name, root, actorId),
     splitWorkflowIntoIssues: (name, parentIssue) => splitWorkflowIntoIssues(name, parentIssue, root),
     finalizeWorkflowPr: (name, prNumber) => finalizeWorkflowPr(name, prNumber, root),
+    profileSync: {
+      checkProfileSync: profileSyncCheck,
+      previewProfileSync: profileSyncPreview,
+      dryRunProfileSync: profileSyncDryRun,
+      createProfileSyncPR: profileSyncCreatePR,
+      openProfileSyncPR: profileSyncOpenPR,
+      createProfileSyncFailureIssue: profileSyncFailureIssue,
+    },
   }
 }

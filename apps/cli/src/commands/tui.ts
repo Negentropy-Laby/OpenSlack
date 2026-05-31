@@ -395,15 +395,50 @@ export function tuiCommands(): Command {
           const profileEvents = filterEvents(events, { type: 'profile_sync.completed' as never });
           const lastEvent = profileEvents.length > 0 ? profileEvents[profileEvents.length - 1] : null;
 
+          // Try to load config and run a quick check
+          let markerStatus: 'present' | 'missing' | 'unknown' = 'unknown';
+          let validationSummary = { total: 0, published: 0, failed: 0 };
+          let pendingPR: { number: number; url: string; branch: string } | undefined;
+
+          try {
+            const { loadProfileSyncConfig, checkProfileSync, listOpenPRs } = await import('@openslack/github');
+            const psConfig = loadProfileSyncConfig(root);
+            const checkResult = await checkProfileSync(psConfig);
+            markerStatus = checkResult.target.markerExists ? 'present' : 'missing';
+            validationSummary = checkResult.posts;
+
+            const openPRs = await listOpenPRs(20);
+            const profileSyncPR = openPRs.find((p) =>
+              p.title.includes('profile: sync latest') || p.title.includes('Profile Sync'),
+            );
+            if (profileSyncPR) {
+              pendingPR = {
+                number: profileSyncPR.number,
+                url: profileSyncPR.url,
+                branch: `openslack/profile-sync/${psConfig.target.marker}`,
+              };
+            }
+          } catch {
+            // Check unavailable — use defaults
+          }
+
           data.profile = mapProfileToViewModel({
-            targetRepo: 'Negentropy-Laby/.github',
-            targetPath: 'profile/README.md',
-            marker: 'latest-insights',
+            targetRepo: lastEvent?.metadata?.targetRepo as string | undefined ?? 'Negentropy-Laby/.github',
+            targetPath: lastEvent?.metadata?.targetPath as string | undefined ?? 'profile/README.md',
+            marker: lastEvent?.metadata?.marker as string | undefined ?? 'latest-insights',
             syncStatus: lastEvent ? 'synced' : 'never',
             lastSyncDate: lastEvent ? new Date(lastEvent.timestamp).toISOString().slice(0, 10) : undefined,
             lastPrUrl: lastEvent?.metadata?.prUrl as string | undefined,
-            posts: [],
-            validationSummary: { total: 0, published: 0, failed: 0 },
+            markerStatus,
+            pendingPR,
+            posts: (lastEvent?.metadata?.postsIncluded as Array<{ title: string; slug: string; date: string }> | undefined)?.map((p) => ({
+              title: p.title,
+              date: p.date,
+              summary: '',
+              sourcePath: p.slug + '.md',
+              url: '',
+            })) ?? [],
+            validationSummary,
           });
         } catch {
           // Profile data unavailable

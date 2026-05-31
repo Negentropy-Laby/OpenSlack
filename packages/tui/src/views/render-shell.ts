@@ -35,6 +35,15 @@ export interface ApprovalExecutionParams {
   workflowName?: string
 }
 
+export interface ProfileActionHandlers {
+  checkProfileSync: () => Promise<TuiActionResult>
+  previewProfileSync: () => Promise<TuiActionResult>
+  dryRunProfileSync: () => Promise<TuiActionResult>
+  createProfileSyncPR: () => Promise<TuiActionResult>
+  openProfileSyncPR: (prUrl: string) => Promise<TuiActionResult>
+  createProfileSyncFailureIssue: (error: string) => Promise<TuiActionResult>
+}
+
 export interface TuiActionHandlers {
   executeApproval: (params: ApprovalExecutionParams, isApprove: boolean) => Promise<TuiActionResult>
   executeTrustChange: (workflowName: string, fromLevel: string, toLevel: string) => Promise<TuiActionResult>
@@ -44,6 +53,7 @@ export interface TuiActionHandlers {
   splitWorkflowIntoIssues?: (workflowName: string, parentIssue: number) => Promise<TuiActionResult>
   openWorkflowLifecycle?: (workflowName: string) => Promise<TuiActionResult>
   finalizeWorkflowPr?: (workflowName: string, prNumber: number) => Promise<TuiActionResult>
+  profileSync?: ProfileActionHandlers
 }
 
 export interface ShellViewData {

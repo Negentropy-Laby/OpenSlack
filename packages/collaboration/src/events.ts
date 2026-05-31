@@ -20,6 +20,7 @@ const ALL_EVENT_TYPES: CollaborationEventType[] = [
   'decision.recorded', 'decision.superseded',
   'room.summarized', 'digest.generated',
   'workflow.previewed', 'workflow.started', 'workflow.completed', 'workflow.blocked',
+  'profile_sync.triggered', 'profile_sync.queued', 'profile_sync.started', 'profile_sync.completed', 'profile_sync.failed',
   'repair.previewed', 'repair.applied', 'repair.failed',
   'notification.sent', 'notification.failed',
 ];

@@ -399,11 +399,24 @@ export class WatchDaemon {
 
     const hasPostChanges = event.commits.length > 0;
 
+    // Load profile-sync config to determine mode
+    let psConfig: import('./profile-sync-config.js').ProfileSyncConfig | null = null;
+    try {
+      const { loadProfileSyncConfig } = await import('./profile-sync-config.js');
+      psConfig = loadProfileSyncConfig();
+    } catch {
+      // config missing or invalid — fall through to default behavior
+    }
+
+    // Determine if this push matches the configured source repo
+    const pushRepo = `${event.owner}/${event.repo}`;
+    const configMatches = psConfig && psConfig.source.repo === pushRepo;
+
     let collabEvent: CollaborationEventRecord | null = null;
     try {
       if (this.recordEventFn) {
         collabEvent = this.recordEventFn({
-          type: hasPostChanges ? 'profile_sync.triggered' : 'push.detected',
+          type: hasPostChanges && configMatches ? 'profile_sync.triggered' : 'push.detected',
           actor: { id: 'github-watch', kind: 'github', provider: 'github' },
           object: { kind: 'push', id: `${event.owner}/${event.repo}@${event.after.substring(0, 7)}` },
           source: { kind: 'github', ref: 'github.watch.webhook' },
@@ -417,11 +430,81 @@ export class WatchDaemon {
             ref: event.ref,
             commits: event.commits.length,
             hasPostChanges,
+            configMatches: configMatches ?? false,
+            mode: psConfig?.mode ?? 'none',
           },
         });
       }
     } catch {
       // best-effort event recording
+    }
+
+    // If no profile-sync config or repo doesn't match, stop here
+    if (!configMatches || !psConfig) {
+      return collabEvent;
+    }
+
+    // Mode: manual — record triggered event only (already done above)
+    if (psConfig.mode === 'manual') {
+      return collabEvent;
+    }
+
+    // Mode: watch — record triggered + console notification
+    if (psConfig.mode === 'watch') {
+      console.log(`[Profile Sync Watch] Push to ${pushRepo} detected ${event.commits.length} post change(s). Run 'openslack collaboration workflow profile-sync run' to create PR.`);
+      return collabEvent;
+    }
+
+    // Mode: auto-pr — enqueue job for worker
+    if (psConfig.mode === 'auto-pr') {
+      try {
+        const { enqueueProfileSyncJob, isDuplicate: isJobDuplicate, recordDedupe } = await import('./profile-sync-queue.js');
+
+        const dedupeKey = `${event.deliveryId}:${psConfig.source.repo}:${event.after}:${psConfig.target.repo}:${psConfig.target.marker}`;
+
+        if (isJobDuplicate(dedupeKey)) {
+          console.log(`[Profile Sync Auto-PR] Duplicate delivery ${event.deliveryId}, skipping.`);
+          return collabEvent;
+        }
+
+        recordDedupe(dedupeKey);
+
+        const job = enqueueProfileSyncJob({
+          deliveryId: event.deliveryId || `${event.owner}/${event.repo}@${event.after}`,
+          sourceRepo: psConfig.source.repo,
+          sourceSha: event.after,
+          targetRepo: psConfig.target.repo,
+          marker: psConfig.target.marker,
+          config: psConfig,
+        });
+
+        if (job && this.recordEventFn) {
+          try {
+            this.recordEventFn({
+              type: 'profile_sync.queued',
+              actor: { id: 'github-watch', kind: 'github', provider: 'github' },
+              object: { kind: 'job', id: job.id },
+              source: { kind: 'github', ref: 'profile-sync.queue' },
+              summary: `Enqueued profile-sync job ${job.id} for ${pushRepo}`,
+              visibility: 'local',
+              redacted: false,
+              containsSensitiveData: false,
+              metadata: {
+                jobId: job.id,
+                sourceRepo: psConfig.source.repo,
+                sourceSha: event.after,
+                deliveryId: event.deliveryId,
+                correlationId: job.id,
+              },
+            });
+          } catch {
+            // best-effort
+          }
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[Profile Sync Auto-PR] Failed to enqueue: ${msg}`);
+      }
     }
 
     return collabEvent;

@@ -100,6 +100,60 @@ export type {
   PostValidationResult,
 } from './profile-sync.js';
 export {
+  loadProfileSyncConfig,
+  validateProfileSyncConfig,
+  parseProfileSyncConfig,
+  DEFAULT_PROFILE_SYNC_CONFIG,
+} from './profile-sync-config.js';
+export type {
+  ProfileSyncConfig,
+  ProfileSyncConfigParseResult,
+} from './profile-sync-config.js';
+export {
+  checkProfileSync,
+} from './profile-sync-check.js';
+export type {
+  ProfileSyncCheckResult,
+  ProfileSyncPostFailure,
+} from './profile-sync-check.js';
+export {
+  previewProfileSync,
+} from './profile-sync-preview.js';
+export type {
+  ProfileSyncPreviewResult,
+} from './profile-sync-preview.js';
+export {
+  runProfileSync,
+} from './profile-sync-run.js';
+export type {
+  ProfileSyncRunOptions,
+  ProfileSyncRunResult,
+} from './profile-sync-run.js';
+export {
+  enqueueProfileSyncJob,
+  dequeueProfileSyncJob,
+  listPendingJobs,
+  markJobComplete,
+  markJobFailed,
+  isDuplicate,
+  recordDedupe,
+} from './profile-sync-queue.js';
+export type {
+  ProfileSyncJob,
+} from './profile-sync-queue.js';
+export {
+  ProfileSyncWorker,
+} from './profile-sync-worker.js';
+export type {
+  ProfileSyncWorkerOptions,
+} from './profile-sync-worker.js';
+export {
+  buildMarkers,
+} from './profile-sync-markers.js';
+export type {
+  MarkerPair,
+} from './profile-sync-markers.js';
+export {
   renderProfileSyncProposalBody,
   renderProfileSyncFailureBody,
   renderProfileSyncImprovementBody,
