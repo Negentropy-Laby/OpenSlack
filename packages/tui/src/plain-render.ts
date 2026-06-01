@@ -371,35 +371,18 @@ export function renderPlainWorkflowLifecycle(vm: WorkflowLifecycleViewModel, wid
   }
 
   // Status summary
-  if ((vm as any).statusSummary) {
-    lines.push(wrap(`Status: ${(vm as any).statusSummary}`, width))
-    lines.push('')
-  }
-
-  // Blocked gate items
-  if ((vm as any).blockedGateItems && (vm as any).blockedGateItems.length > 0) {
-    lines.push('Blocked Gates:')
-    const gateIndent = '  [FAIL] '.length
-    for (const g of (vm as any).blockedGateItems) {
-      lines.push(`  [FAIL] ${g.gate}: ${g.detail}`)
-      if (g.action) lines.push(wrapIndent(`${' '.repeat(gateIndent)}Fix: ${g.action}`, gateIndent, width))
-    }
-    lines.push('')
-  }
-
-  // Status summary
   if (vm.statusSummary) {
-    lines.push(wrap(`Status: ${vm.statusSummary}`))
+    lines.push(wrap(`Status: ${vm.statusSummary}`, width))
     lines.push('')
   }
 
   // Blocked gate items
   if (vm.blockedGateItems && vm.blockedGateItems.length > 0) {
     lines.push('Blocked Gates:')
-    const gateIndent = '  [FAIL] '.length // 9 chars — aligns "Fix:" under gate detail
+    const gateIndent = '  [FAIL] '.length
     for (const g of vm.blockedGateItems) {
       lines.push(`  [FAIL] ${g.gate}: ${g.detail}`)
-      if (g.action) lines.push(wrapIndent(`${' '.repeat(gateIndent)}Fix: ${g.action}`, gateIndent))
+      if (g.action) lines.push(wrapIndent(`${' '.repeat(gateIndent)}Fix: ${g.action}`, gateIndent, width))
     }
     lines.push('')
   }
