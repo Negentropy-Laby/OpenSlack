@@ -243,7 +243,7 @@ export function renderPlainPrQueue(vm: PrQueueViewModel, width: number = MAX_WID
 export function renderPlainProfile(vm: ProfileViewModel, width: number = MAX_WIDTH): string {
   const lines: string[] = []
   lines.push(separator('=', width))
-  lines.push(vm.title)
+  lines.push(wrap(vm.title, width))
   lines.push(separator('=', width))
 
   lines.push(wrap(`Target: ${vm.targetRepo}/${vm.targetPath}`, width))
@@ -468,7 +468,7 @@ export function renderPlainWorkflowWorkbench(vm: WorkflowGalleryViewModel, width
 export function renderPlainDashboard(vm: DashboardViewModel, width: number = MAX_WIDTH): string {
   const lines: string[] = []
   lines.push(separator('=', width))
-  lines.push(vm.title)
+  lines.push(wrap(vm.title, width))
   lines.push(separator('=', width))
   lines.push(wrap(`Generated: ${vm.generatedAt}`, width))
   lines.push(wrap(`Blockers: ${vm.summary.blockers}  Handoffs: ${vm.summary.handoffs}  Decisions: ${vm.summary.decisions}`, width))
@@ -520,7 +520,7 @@ export function renderPlainDashboard(vm: DashboardViewModel, width: number = MAX
 export function renderPlainActivity(vm: ActivityViewModel, width: number = MAX_WIDTH): string {
   const lines: string[] = []
   lines.push(separator('=', width))
-  lines.push(vm.title)
+  lines.push(wrap(vm.title, width))
   lines.push(separator('=', width))
   lines.push(wrap(`Period: ${vm.periodHours}h  Total events: ${vm.totalEvents}`, width))
   lines.push('')
@@ -552,7 +552,7 @@ export function renderPlainActivity(vm: ActivityViewModel, width: number = MAX_W
 export function renderPlainDecisionList(vm: DecisionListViewModel, width: number = MAX_WIDTH): string {
   const lines: string[] = []
   lines.push(separator('=', width))
-  lines.push(vm.title)
+  lines.push(wrap(vm.title, width))
   lines.push(separator('=', width))
   lines.push(wrap(`Total: ${vm.totalCount}  Active: ${vm.activeCount}`, width))
   lines.push('')
@@ -626,7 +626,7 @@ export function renderPlainDecisionDetail(vm: DecisionDetailViewModel, width: nu
 export function renderPlainDigest(vm: DigestViewModel, width: number = MAX_WIDTH): string {
   const lines: string[] = []
   lines.push(separator('=', width))
-  lines.push(vm.title)
+  lines.push(wrap(vm.title, width))
   lines.push(separator('=', width))
   lines.push(wrap(`Period: ${vm.periodHours}h  Total events: ${vm.totalEvents}`, width))
   lines.push('')
@@ -660,7 +660,7 @@ export function renderPlainDigest(vm: DigestViewModel, width: number = MAX_WIDTH
 export function renderPlainHandoffList(vm: HandoffListViewModel, width: number = MAX_WIDTH): string {
   const lines: string[] = []
   lines.push(separator('=', width))
-  lines.push(vm.title)
+  lines.push(wrap(vm.title, width))
   lines.push(separator('=', width))
   lines.push(wrap(`Total: ${vm.totalCount}  Open: ${vm.openCount}`, width))
   lines.push('')
@@ -814,7 +814,7 @@ export function renderPlainSetup(vm: SetupViewModel, width: number = MAX_WIDTH):
 export function renderPlainStatus(vm: StatusViewModel, width: number = MAX_WIDTH): string {
   const lines: string[] = []
   lines.push(separator('=', width))
-  lines.push(vm.title)
+  lines.push(wrap(vm.title, width))
   lines.push(separator('=', width))
   lines.push(wrap(`Version: ${vm.version}`, width))
   lines.push(wrap(`Commit: ${vm.commit}`, width))

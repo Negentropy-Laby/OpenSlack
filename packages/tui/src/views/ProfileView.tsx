@@ -128,10 +128,12 @@ export default function ProfileView({ model, onBack, onAction }: ProfileViewProp
     if (input === 'b' && !isRunning) {
       if (guidedStep === 'create-pr') {
         setGuidedStep('preview')
+        setDiffScrollOffset(0)
         return
       }
       if (guidedStep === 'preview') {
         setGuidedStep('check')
+        setDiffScrollOffset(0)
         return
       }
     }
@@ -163,6 +165,7 @@ export default function ProfileView({ model, onBack, onAction }: ProfileViewProp
               if (Array.isArray(groups)) setCheckGroups(sanitizeProfileCheckGroups(groups as ProfileCheckGroup[]))
               if (result.success) setGuidedStep('preview')
             } else if (action.id === 'preview' && result.success && result.data?.diff && typeof result.data.diff === 'string') {
+              setDiffScrollOffset(0)
               setDiffOutput(sanitizeTerminalText(result.data.diff))
               setGuidedStep('create-pr')
             } else if (action.id === 'create-pr' && result.success) {
