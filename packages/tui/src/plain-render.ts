@@ -370,6 +370,23 @@ export function renderPlainWorkflowLifecycle(vm: WorkflowLifecycleViewModel, wid
     lines.push('')
   }
 
+  // Status summary
+  if ((vm as any).statusSummary) {
+    lines.push(wrap(`Status: ${(vm as any).statusSummary}`, width))
+    lines.push('')
+  }
+
+  // Blocked gate items
+  if ((vm as any).blockedGateItems && (vm as any).blockedGateItems.length > 0) {
+    lines.push('Blocked Gates:')
+    const gateIndent = '  [FAIL] '.length
+    for (const g of (vm as any).blockedGateItems) {
+      lines.push(`  [FAIL] ${g.gate}: ${g.detail}`)
+      if (g.action) lines.push(wrapIndent(`${' '.repeat(gateIndent)}Fix: ${g.action}`, gateIndent, width))
+    }
+    lines.push('')
+  }
+
   // Modes
   if (vm.subIssueMode) lines.push(wrap(`Sub-issue mode: ${vm.subIssueMode}`, width))
   if (vm.dependencyMode) lines.push(wrap(`Dependency mode: ${vm.dependencyMode}`, width))
