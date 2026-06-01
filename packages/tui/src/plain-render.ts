@@ -239,12 +239,12 @@ export function renderPlainProfile(vm: ProfileViewModel, width: number = MAX_WID
 
   // Guided flow step
   if (vm.guidedStep) {
-    const stepLabels: Record<string, string> = { check: '1.Check', preview: '2.Preview', 'create-pr': '3.Create PR', complete: 'Done' }
+    const stepLabels: Record<string, string> = { check: '1.Check', preview: '2.Preview', 'create-pr': '3.PR', complete: 'Done' }
     const steps = ['check', 'preview', 'create-pr']
     const current = steps.indexOf(vm.guidedStep === 'complete' ? 'create-pr' : vm.guidedStep)
-    const bar = steps.map((s, i) => i < current ? `[x]${stepLabels[s]}` : i === current ? `[>]${stepLabels[s]}` : `[ ]${stepLabels[s]}`).join(' -> ')
-    const suffix = vm.guidedStep === 'complete' ? ' -> [Done]' : ''
-    lines.push(`Guided Flow: ${bar}${suffix}`)
+    const bar = steps.map((s, i) => i < current ? `[x]${stepLabels[s]}` : i === current ? `[>]${stepLabels[s]}` : `[ ]${stepLabels[s]}`).join(' > ')
+    const suffix = vm.guidedStep === 'complete' ? ' > Done' : ''
+    lines.push(wrap(`Guided Flow: ${bar}${suffix}`, width))
     lines.push('')
   }
 
@@ -253,7 +253,7 @@ export function renderPlainProfile(vm: ProfileViewModel, width: number = MAX_WID
     lines.push('Check Results:')
     for (const g of vm.checkGroups) {
       const label = g.status === 'pass' ? '[PASS]' : g.status === 'fail' ? '[FAIL]' : g.status === 'warn' ? '[WARN]' : '[INFO]'
-      lines.push(`  ${label} ${g.label}: ${g.detail}`)
+      lines.push(wrap(`  ${label} ${g.label}: ${g.detail}`, width))
     }
     lines.push('')
   }
