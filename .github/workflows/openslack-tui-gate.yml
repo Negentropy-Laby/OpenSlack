@@ -36,7 +36,7 @@ jobs:
         run: bun run typecheck
 
       - name: TUI tests (all)
-        run: bun test packages/tui/ --reporter=verbose
+        run: bun vitest run packages/tui/ --reporter=verbose
 
       - name: Column snapshot matrix
         run: bun vitest run packages/tui/src/__tests__/column-snapshot-matrix.test.tsx

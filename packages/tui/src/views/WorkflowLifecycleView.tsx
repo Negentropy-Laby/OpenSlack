@@ -541,7 +541,8 @@ export default function WorkflowLifecycleView({ model, actionHandlers, onBack }:
           ...model.phaseIssues.map((pi: PhaseIssueItem, idx: number) => {
             const isLast = idx === model.phaseIssues.length - 1
             const connector = isLast ? '└── ' : '├── '
-            const isNative = pi.trackingMode === 'native' || (pi.trackingMode === undefined && pi.issueNumber !== undefined && model.subIssueMode !== 'fallback')
+            const isNative = pi.trackingMode === 'native'
+            const isFallback = pi.trackingMode === 'fallback'
 
             return React.createElement(
               Box,
@@ -557,14 +558,23 @@ export default function WorkflowLifecycleView({ model, actionHandlers, onBack }:
                     React.createElement(Text, null, ' '),
                     React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, '(sub-issue)'),
                   )
-                : React.createElement(
-                    React.Fragment,
-                    null,
-                    React.createElement(ThemedText, { colorTheme: 'muted' }, '\u{1F4DD} '),
-                    React.createElement(ThemedText, { colorTheme: 'foreground' }, `${pi.phase} tracked via comment`),
-                    React.createElement(Text, null, ' '),
-                    React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, `(#${model.parentIssueNumber})`),
-                  ),
+                : isFallback
+                  ? React.createElement(
+                      React.Fragment,
+                      null,
+                      React.createElement(ThemedText, { colorTheme: 'muted' }, '\u{1F4DD} '),
+                      React.createElement(ThemedText, { colorTheme: 'foreground' }, `${pi.phase} tracked via comment`),
+                      React.createElement(Text, null, ' '),
+                      React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, `(#${model.parentIssueNumber})`),
+                    )
+                  : React.createElement(
+                      React.Fragment,
+                      null,
+                      React.createElement(ThemedText, { colorTheme: 'muted' }, '? '),
+                      React.createElement(ThemedText, { colorTheme: 'foreground' }, `${pi.phase}`),
+                      React.createElement(Text, null, ' '),
+                      React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, '(tracking unknown)'),
+                    ),
             )
           }),
         )

@@ -258,9 +258,7 @@ export function tuiCommands(): Command {
             issueNumber: pi.number,
             status: pi.state,
             blockedBy: pi.blockedBy?.map(String),
-            trackingMode: gh.subIssueMode === 'native' ? 'native' as const
-              : gh.subIssueMode === 'fallback' ? 'fallback' as const
-              : undefined,
+            trackingMode: pi.trackingMode,
           }));
 
           let nextAction: string | undefined;
