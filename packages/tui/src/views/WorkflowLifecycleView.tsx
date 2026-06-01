@@ -15,7 +15,7 @@ import { useActionDispatch } from '../actions/use-action-dispatch.js'
 import { TuiActionCategory, TuiRiskLevel, TuiActionStatus } from '../actions/types.js'
 import type { TuiAction, TuiActionResult } from '../actions/types.js'
 import type { WorkflowLifecycleViewModel, LifecycleStage, PhaseIssueItem } from '../view-models/workflow-lifecycle.js'
-import { mapCanonicalStages } from '../view-models/workflow-lifecycle.js'
+import { mapCanonicalStages, classifyStageName } from '../view-models/workflow-lifecycle.js'
 import type { CanonicalStageSlot, CanonicalStageStatus } from '../view-models/workflow-lifecycle.js'
 import type { TuiActionHandlers } from './render-shell.js'
 
@@ -535,6 +535,18 @@ export default function WorkflowLifecycleView({ model, actionHandlers, onBack }:
                 { flexDirection: 'row', marginTop: 1 },
                 React.createElement(ThemedText, { colorTheme: 'muted' }, 'Current: '),
                 React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, currentCanonical.label),
+                (() => {
+                  const cs = stages.find(s => classifyStageName(s.name) === currentCanonical.key)
+                  return cs?.owner
+                    ? React.createElement(
+                        Box,
+                        { flexDirection: 'row' },
+                        React.createElement(Text, null, '  '),
+                        React.createElement(ThemedText, { colorTheme: 'muted' }, 'Owner: '),
+                        React.createElement(ThemedText, { colorTheme: 'foreground' }, cs.owner),
+                      )
+                    : null
+                })(),
               )
             : null,
         )
@@ -627,6 +639,46 @@ export default function WorkflowLifecycleView({ model, actionHandlers, onBack }:
           { flexDirection: 'row', marginTop: 1 },
           React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, 'Next: '),
           React.createElement(ThemedText, { colorTheme: 'foreground' }, model.nextAction),
+        )
+      : null,
+    // Status summary (where/who/what)
+    model.statusSummary
+      ? React.createElement(
+          Box,
+          { flexDirection: 'row', marginTop: 1 },
+          React.createElement(ThemedText, { colorTheme: 'info', bold: true }, 'Status: '),
+          React.createElement(ThemedText, { colorTheme: 'foreground' }, model.statusSummary),
+        )
+      : null,
+    // Blocked gate items (actionable blockers)
+    model.blockedGateItems && model.blockedGateItems.length > 0
+      ? React.createElement(
+          Box,
+          { flexDirection: 'column', marginTop: 1 },
+          React.createElement(ThemedText, { colorTheme: 'error', bold: true }, 'Blocked Gates:'),
+          ...model.blockedGateItems.map((g, idx) =>
+            React.createElement(
+              Box,
+              { key: `gate-${g.gate}-${idx}`, flexDirection: 'column', marginLeft: 2 },
+              React.createElement(
+                Box,
+                { flexDirection: 'row' },
+                React.createElement(StatusIcon, { status: 'failed' }),
+                React.createElement(Text, null, ' '),
+                React.createElement(ThemedText, { colorTheme: 'error' }, g.gate),
+                React.createElement(Text, null, ': '),
+                React.createElement(ThemedText, { colorTheme: 'foreground' }, g.detail),
+              ),
+              g.action
+                ? React.createElement(
+                    Box,
+                    { flexDirection: 'row', marginLeft: 2 },
+                    React.createElement(ThemedText, { colorTheme: 'muted' }, 'Fix: '),
+                    React.createElement(ThemedText, { colorTheme: 'accent' }, g.action),
+                  )
+                : null,
+            ),
+          ),
         )
       : null,
     React.createElement(Divider, { length: 40 }),
