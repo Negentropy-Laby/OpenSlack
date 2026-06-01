@@ -238,14 +238,6 @@ export default function WorkflowLifecycleView({ model, actionHandlers, onBack }:
           dispatchAction(action)
           setMode('action-result')
         }
-      } else if (input === 'o' || input === 'O') {
-        // Open issue URL in browser
-        if (selectedStage.issueUrl) {
-          const { execFile } = require('node:child_process')
-          const platform = process.platform
-          const command = platform === 'darwin' ? 'open' : platform === 'win32' ? 'start' : 'xdg-open'
-          execFile(command, [selectedStage.issueUrl])
-        }
       } else if (input === 'f' || input === 'F') {
         if (model.prNumber && actionHandlers?.finalizeWorkflowPr) {
           const action: TuiAction = {
@@ -404,14 +396,6 @@ export default function WorkflowLifecycleView({ model, actionHandlers, onBack }:
         React.createElement(KeyboardShortcutHint, { keys: ['d'], description: 'Dry-run' }),
         React.createElement(Text, null, '  '),
         React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'Back' }),
-      selectedStage.issueUrl
-        ? React.createElement(
-            Box,
-            { flexDirection: 'row' },
-            React.createElement(Text, null, '  '),
-            React.createElement(KeyboardShortcutHint, { keys: ['o'], description: 'Open issue URL' }),
-          )
-        : null,
       ),
     )
   }
