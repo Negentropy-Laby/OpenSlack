@@ -23,7 +23,7 @@ function createMockStdout(columns = 80, rows = 50) {
 }
 
 describe('HomeView coordinate diagnostic', () => {
-  it('renders with empty data and verifies 2-section layout', async () => {
+  it('renders with empty data and verifies grouped task layout', async () => {
     const { stdout, chunks } = createMockStdout(80, 50)
     const model = mapHomeToViewModel()
     const instance = await render(
@@ -43,40 +43,60 @@ describe('HomeView coordinate diagnostic', () => {
 
     // Section 1: What do you want to do?
     expect(lines[2]).toContain('What do you want to do?')
-    // Task 1: See what needs attention
-    expect(lines[3]).toContain('See what needs attention')
-    expect(lines[4]).toContain('View items needing immediate action')
-    // Task 2: Start or continue work
+
+    // Group header: Start Work (marginTop:1 adds blank line)
+    // line 3: blank (marginTop)
+    // line 4: ── Start Work ──
+    expect(lines[4]).toContain('Start Work')
+    // Task [2]: Start or continue work
     expect(lines[5]).toContain('Start or continue work')
     expect(lines[6]).toContain('Create tasks, claim issues, and work in isolated branches')
-    // Task 3: Run or check a workflow
+    // Task [3]: Run or check a workflow
     expect(lines[7]).toContain('Run or check a workflow')
     expect(lines[8]).toContain('Browse, execute, and inspect workflow runs')
-    // Task 4: Review and merge PRs
-    expect(lines[9]).toContain('Review and merge PRs')
-    expect(lines[10]).toContain('Check open PRs, run doctor, and merge when ready')
-    // Task 5: Approve pending items
-    expect(lines[11]).toContain('Approve pending items')
-    expect(lines[12]).toContain('Approve plans, merge requests, and workflow effects')
-    // Task 6: Maintain organization profile
-    expect(lines[13]).toContain('Maintain organization profile')
-    expect(lines[14]).toContain('Check, preview, and sync your organization profile')
 
-    expect(lines[15]).toContain('─')
+    // Group header: Review Work
+    // line 9: blank (marginTop)
+    // line 10: ── Review Work ──
+    expect(lines[10]).toContain('Review Work')
+    // Task [1]: See what needs attention
+    expect(lines[11]).toContain('See what needs attention')
+    expect(lines[12]).toContain('View items needing immediate action')
+    // Task [4]: Review and merge PRs
+    expect(lines[13]).toContain('Review and merge PRs')
+    expect(lines[14]).toContain('Check open PRs, run doctor, and merge when ready')
+
+    // Group header: Govern Actions
+    // line 15: blank (marginTop)
+    // line 16: ── Govern Actions ──
+    expect(lines[16]).toContain('Govern Actions')
+    // Task [5]: Approve pending items
+    expect(lines[17]).toContain('Approve pending items')
+    expect(lines[18]).toContain('Approve plans, merge requests, and workflow effects')
+
+    // Group header: Maintain Profile
+    // line 19: blank (marginTop)
+    // line 20: ── Maintain Profile ──
+    expect(lines[20]).toContain('Maintain Profile')
+    // Task [6]: Maintain organization profile
+    expect(lines[21]).toContain('Maintain organization profile')
+    expect(lines[22]).toContain('Check, preview, and sync your organization profile')
+
+    expect(lines[23]).toContain('─')
 
     // Section 2: Quick Navigation
-    expect(lines[16]).toContain('Quick Navigation')
+    expect(lines[24]).toContain('Quick Navigation')
     // Nav items: Dashboard, Status, Activity, Digest, Workflows, Profile
-    expect(lines[17]).toContain('Dashboard')
-    expect(lines[18]).toContain('Status')
-    expect(lines[19]).toContain('Activity')
-    expect(lines[20]).toContain('Digest')
-    expect(lines[21]).toContain('Workflows')
-    expect(lines[22]).toContain('Profile')
+    expect(lines[25]).toContain('Dashboard')
+    expect(lines[26]).toContain('Status')
+    expect(lines[27]).toContain('Activity')
+    expect(lines[28]).toContain('Digest')
+    expect(lines[29]).toContain('Workflows')
+    expect(lines[30]).toContain('Profile')
 
     // Footer
-    expect(lines[23]).toContain('─')
-    expect(lines[24]).toContain('Quit')
+    expect(lines[31]).toContain('─')
+    expect(lines[32]).toContain('Quit')
 
     instance.unmount()
   })

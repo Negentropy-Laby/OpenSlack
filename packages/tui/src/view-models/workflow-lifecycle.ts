@@ -27,6 +27,8 @@ export interface PhaseIssueItem {
   issueNumber?: number
   status: string
   blockedBy?: string[]
+  /** How this phase is tracked: native sub-issue or fallback comment-based */
+  trackingMode?: 'native' | 'fallback'
 }
 
 export interface WorkflowLifecycleViewModel {
@@ -53,6 +55,8 @@ export interface WorkflowLifecycleViewModel {
   blockedGateItems?: BlockedGateItem[]
   /** One-line status summary answering where/who/what */
   statusSummary?: string
+  /** The parent GitHub issue number for the relationship map tree */
+  parentIssueNumber?: number
 }
 
 /** Canonical stage keys for the 5-slot horizontal progress bar. */
@@ -259,6 +263,7 @@ export function mapWorkflowLifecycleToViewModel(data?: {
     issueNumber?: number
     status?: string
     blockedBy?: string[]
+    trackingMode?: 'native' | 'fallback'
   }>
   currentRun?: {
     runId?: string
@@ -274,6 +279,7 @@ export function mapWorkflowLifecycleToViewModel(data?: {
   fallbackReasons?: string[]
   blockedGateItems?: Array<{ gate: string; detail: string; action?: string }>
   statusSummary?: string
+  parentIssueNumber?: number
 }): WorkflowLifecycleViewModel {
   const s = sanitizeTerminalText
 
@@ -293,6 +299,7 @@ export function mapWorkflowLifecycleToViewModel(data?: {
     issueNumber: pi.issueNumber,
     status: s(pi.status ?? 'open'),
     blockedBy: (pi.blockedBy ?? []).map(s),
+    trackingMode: pi.trackingMode,
   }))
 
   return {
@@ -323,5 +330,6 @@ export function mapWorkflowLifecycleToViewModel(data?: {
       action: g.action ? s(g.action) : undefined,
     })),
     statusSummary: data?.statusSummary ? s(data.statusSummary) : undefined,
+    parentIssueNumber: data?.parentIssueNumber,
   }
 }

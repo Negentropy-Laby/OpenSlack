@@ -258,6 +258,7 @@ export function tuiCommands(): Command {
             issueNumber: pi.number,
             status: pi.state,
             blockedBy: pi.blockedBy?.map(String),
+            trackingMode: pi.trackingMode,
           }));
 
           let nextAction: string | undefined;
@@ -305,6 +306,7 @@ export function tuiCommands(): Command {
             subIssueMode: gh.subIssueMode,
             dependencyMode: gh.dependencyMode,
             fallbackReasons: gh.fallbackReasons,
+            parentIssueNumber: gh.splitIssue?.number ?? gh.proposalIssue?.number,
           });
         };
 

@@ -14,6 +14,15 @@ import { mapCanonicalStages } from './view-models/workflow-lifecycle.js'
 import type { WorkflowLifecycleViewModel } from './view-models/workflow-lifecycle.js'
 import type { WorkflowGalleryViewModel } from './view-models/workflow-gallery.js'
 import type { DashboardViewModel } from './view-models/dashboard.js'
+import type { ActivityViewModel } from './view-models/activity.js'
+import type { DecisionListViewModel, DecisionDetailViewModel } from './view-models/decision.js'
+import type { DigestViewModel } from './view-models/digest.js'
+import type { HandoffListViewModel, HandoffDetailViewModel } from './view-models/handoff.js'
+import type { IssuesPrViewModel } from './view-models/issues-pr.js'
+import type { SetupViewModel } from './view-models/setup.js'
+import type { StatusViewModel } from './view-models/status.js'
+import type { WorkflowPreviewViewModel } from './view-models/workflow-preview.js'
+import type { ShellViewData } from './views/render-shell.js'
 import { visibleWidth, wrapVisible, wrapIndentVisible } from './layout/index.js'
 
 const MAX_WIDTH = 80
@@ -234,7 +243,7 @@ export function renderPlainPrQueue(vm: PrQueueViewModel, width: number = MAX_WID
 export function renderPlainProfile(vm: ProfileViewModel, width: number = MAX_WIDTH): string {
   const lines: string[] = []
   lines.push(separator('=', width))
-  lines.push(vm.title)
+  lines.push(wrap(vm.title, width))
   lines.push(separator('=', width))
 
   lines.push(wrap(`Target: ${vm.targetRepo}/${vm.targetPath}`, width))
@@ -459,7 +468,7 @@ export function renderPlainWorkflowWorkbench(vm: WorkflowGalleryViewModel, width
 export function renderPlainDashboard(vm: DashboardViewModel, width: number = MAX_WIDTH): string {
   const lines: string[] = []
   lines.push(separator('=', width))
-  lines.push(vm.title)
+  lines.push(wrap(vm.title, width))
   lines.push(separator('=', width))
   lines.push(wrap(`Generated: ${vm.generatedAt}`, width))
   lines.push(wrap(`Blockers: ${vm.summary.blockers}  Handoffs: ${vm.summary.handoffs}  Decisions: ${vm.summary.decisions}`, width))
@@ -508,6 +517,455 @@ export function renderPlainDashboard(vm: DashboardViewModel, width: number = MAX
   return lines.join('\n')
 }
 
+export function renderPlainActivity(vm: ActivityViewModel, width: number = MAX_WIDTH): string {
+  const lines: string[] = []
+  lines.push(separator('=', width))
+  lines.push(wrap(vm.title, width))
+  lines.push(separator('=', width))
+  lines.push(wrap(`Period: ${vm.periodHours}h  Total events: ${vm.totalEvents}`, width))
+  lines.push('')
+
+  const renderBucket = (label: string, events: ActivityViewModel['events']) => {
+    if (events.length === 0) return
+    lines.push(`${label}:`)
+    for (const e of events) {
+      const owner = e.owner ? ` (owner: ${e.owner})` : ''
+      lines.push(wrapIndent(`  [${e.time}] ${e.type} -- ${e.summary} (${e.actor})${owner}`, 4, width))
+      if (e.nextAction) lines.push(wrapIndent(`    Next: ${e.nextAction}`, 6, width))
+    }
+    lines.push('')
+  }
+
+  renderBucket('Today', vm.today)
+  renderBucket('Yesterday', vm.yesterday)
+  renderBucket('Older', vm.older)
+
+  if (vm.totalEvents === 0) {
+    lines.push('No events in this period.')
+    lines.push('')
+  }
+
+  lines.push(separator('-', width))
+  return lines.join('\n')
+}
+
+export function renderPlainDecisionList(vm: DecisionListViewModel, width: number = MAX_WIDTH): string {
+  const lines: string[] = []
+  lines.push(separator('=', width))
+  lines.push(wrap(vm.title, width))
+  lines.push(separator('=', width))
+  lines.push(wrap(`Total: ${vm.totalCount}  Active: ${vm.activeCount}`, width))
+  lines.push('')
+
+  if (vm.items.length === 0) {
+    lines.push('No decisions recorded.')
+  }
+
+  for (const item of vm.items) {
+    const statusLabel = item.status === 'active' ? '[ACTIVE]' : item.status === 'superseded' ? '[OLD]' : '[INFO]'
+    lines.push(wrap(`${statusLabel} ${item.topic}`, width))
+    lines.push(wrap(`  Decision: ${item.decision}`, width))
+    lines.push(wrap(`  By: ${item.decidedBy}  Age: ${item.age}  Status: ${item.status}`, width))
+    lines.push('')
+  }
+
+  lines.push(separator('-', width))
+  return lines.join('\n')
+}
+
+export function renderPlainDecisionDetail(vm: DecisionDetailViewModel, width: number = MAX_WIDTH): string {
+  const lines: string[] = []
+  lines.push(separator('=', width))
+  lines.push(wrap(`Decision: ${vm.topic}`, width))
+  lines.push(separator('=', width))
+
+  lines.push(wrap(`ID: ${vm.id}`, width))
+  lines.push(wrap(`Decision: ${vm.decision}`, width))
+  lines.push(wrap(`Status: ${vm.status}`, width))
+  lines.push(wrap(`Decided by: ${vm.decidedBy}`, width))
+  lines.push(wrap(`Created: ${vm.createdAt}`, width))
+  lines.push('')
+
+  if (vm.rationale) {
+    lines.push('Rationale:')
+    lines.push(wrapIndent(vm.rationale, 2, width))
+    lines.push('')
+  }
+
+  if (vm.alternatives.length > 0) {
+    lines.push('Alternatives:')
+    for (const alt of vm.alternatives) {
+      lines.push(wrapIndent(`  - ${alt}`, 4, width))
+    }
+    lines.push('')
+  }
+
+  if (vm.consequences.length > 0) {
+    lines.push('Consequences:')
+    for (const c of vm.consequences) {
+      lines.push(wrapIndent(`  - ${c}`, 4, width))
+    }
+    lines.push('')
+  }
+
+  if (vm.supersededBy) {
+    lines.push(wrap(`Superseded by: ${vm.supersededBy}`, width))
+    if (vm.supersededAt) lines.push(wrap(`Superseded at: ${vm.supersededAt}`, width))
+    lines.push('')
+  }
+
+  if (vm.tags.length > 0) {
+    lines.push(wrap(`Tags: ${vm.tags.join(', ')}`, width))
+    lines.push('')
+  }
+
+  lines.push(separator('-', width))
+  return lines.join('\n')
+}
+
+export function renderPlainDigest(vm: DigestViewModel, width: number = MAX_WIDTH): string {
+  const lines: string[] = []
+  lines.push(separator('=', width))
+  lines.push(wrap(vm.title, width))
+  lines.push(separator('=', width))
+  lines.push(wrap(`Period: ${vm.periodHours}h  Total events: ${vm.totalEvents}`, width))
+  lines.push('')
+
+  if (vm.groups.length === 0) {
+    lines.push('No events in this period.')
+    lines.push('')
+  }
+
+  for (const group of vm.groups) {
+    const label = group.status === 'pass' ? '[PASS]' : group.status === 'fail' ? '[FAIL]' : group.status === 'warn' ? '[WARN]' : '[INFO]'
+    lines.push(wrap(`${label} ${group.label} (${group.count} events)`, width))
+    for (const e of group.events) {
+      lines.push(wrapIndent(`  [${e.time}] ${e.type} -- ${e.summary} (${e.objectKind}:${e.objectId})`, 4, width))
+    }
+    lines.push('')
+  }
+
+  if (vm.recommendedNext.length > 0) {
+    lines.push('Recommended Next:')
+    for (const r of vm.recommendedNext) {
+      lines.push(wrapIndent(`  - ${r.objectKind}:${r.objectId} -- ${r.action}`, 4, width))
+    }
+    lines.push('')
+  }
+
+  lines.push(separator('-', width))
+  return lines.join('\n')
+}
+
+export function renderPlainHandoffList(vm: HandoffListViewModel, width: number = MAX_WIDTH): string {
+  const lines: string[] = []
+  lines.push(separator('=', width))
+  lines.push(wrap(vm.title, width))
+  lines.push(separator('=', width))
+  lines.push(wrap(`Total: ${vm.totalCount}  Open: ${vm.openCount}`, width))
+  lines.push('')
+
+  if (vm.items.length === 0) {
+    lines.push('No handoffs.')
+  }
+
+  for (const item of vm.items) {
+    const statusLabel = item.status === 'open' ? '[OPEN]' : item.status === 'accepted' ? '[ACCEPTED]' : '[CLOSED]'
+    lines.push(wrap(`${statusLabel} ${item.from} -> ${item.to} (${item.status}, ${item.age})`, width))
+    lines.push(wrapIndent(`  ${item.context}`, 2, width))
+    lines.push(wrap(`  Ref: ${item.ref}`, width))
+    lines.push('')
+  }
+
+  lines.push(separator('-', width))
+  return lines.join('\n')
+}
+
+export function renderPlainHandoffDetail(vm: HandoffDetailViewModel, width: number = MAX_WIDTH): string {
+  const lines: string[] = []
+  lines.push(separator('=', width))
+  lines.push(wrap(`Handoff: ${vm.id}`, width))
+  lines.push(separator('=', width))
+
+  lines.push(wrap(`Status: ${vm.status}`, width))
+  lines.push(wrap(`From: ${vm.from}  To: ${vm.to}`, width))
+  lines.push(wrap(`Created: ${vm.createdAt}`, width))
+  if (vm.acceptedAt) lines.push(wrap(`Accepted: ${vm.acceptedAt}`, width))
+  if (vm.closedAt) lines.push(wrap(`Closed: ${vm.closedAt}`, width))
+  lines.push('')
+
+  if (vm.issueRef) lines.push(wrap(`Issue: ${vm.issueRef}`, width))
+  if (vm.prRef) lines.push(wrap(`PR: ${vm.prRef}`, width))
+  lines.push('')
+
+  lines.push('Context:')
+  lines.push(wrapIndent(vm.context, 2, width))
+  lines.push('')
+
+  if (vm.nextSteps.length > 0) {
+    lines.push('Next Steps:')
+    for (const step of vm.nextSteps) {
+      lines.push(wrapIndent(`  - ${step}`, 4, width))
+    }
+    lines.push('')
+  }
+
+  if (vm.notes) {
+    lines.push('Notes:')
+    lines.push(wrapIndent(vm.notes, 2, width))
+    lines.push('')
+  }
+
+  lines.push(wrap(`Can accept: ${vm.canAccept ? 'yes' : 'no'}  Can close: ${vm.canClose ? 'yes' : 'no'}`, width))
+  lines.push('')
+  lines.push(separator('-', width))
+  return lines.join('\n')
+}
+
+export function renderPlainIssuesPr(vm: IssuesPrViewModel, width: number = MAX_WIDTH): string {
+  const lines: string[] = []
+  lines.push(separator('=', width))
+  lines.push(vm.tab === 'issues' ? 'Issues' : 'Pull Requests')
+  lines.push(separator('=', width))
+
+  const si = vm.summary.issues
+  const sp = vm.summary.prs
+  lines.push(wrap(`Issues: ${si.total} total, ${si.ready} ready, ${si.claimed} claimed, ${si.blocked} blocked`, width))
+  lines.push(wrap(`PRs: ${sp.total} total, ${sp.ready} ready, ${sp.blocked} blocked, ${sp.pending} pending`, width))
+  lines.push('')
+
+  // Always show issues section
+  lines.push('Issues:')
+  if (vm.issues.length === 0) {
+    lines.push('  No issues.')
+  }
+  for (const issue of vm.issues) {
+    const statusLabel = issue.status === 'ready' ? '[READY]' : issue.status === 'claimed' ? '[CLAIMED]' : issue.status === 'running' ? '[RUNNING]' : issue.status === 'blocked' ? '[BLOCKED]' : issue.status === 'review' ? '[REVIEW]' : '[STALE]'
+    const assignee = issue.assignee ? ` (assigned: ${issue.assignee})` : ''
+    const labels = issue.labels.length > 0 ? ` [${issue.labels.join(', ')}]` : ''
+    lines.push(wrap(`  ${statusLabel} #${issue.number} ${issue.title}${assignee}${labels}`, width))
+  }
+  lines.push('')
+
+  // Always show PRs section
+  lines.push('Pull Requests:')
+  if (vm.prs.length === 0) {
+    lines.push('  No pull requests.')
+  }
+  for (const pr of vm.prs) {
+    const statusLabel = pr.status === 'ready' ? '[READY]' : pr.status === 'blocked' ? '[BLOCKED]' : pr.status === 'pending' ? '[PENDING]' : '[CHECKING]'
+    lines.push(wrap(`  ${statusLabel} #${pr.number} ${pr.title} (${pr.author}, zone: ${pr.riskZone})`, width))
+    if (pr.blocker) lines.push(wrapIndent(`    Blocker: ${pr.blocker}`, 6, width))
+    if (pr.nextAction) lines.push(wrapIndent(`    Next: ${pr.nextAction}`, 6, width))
+  }
+  lines.push('')
+
+  lines.push(separator('-', width))
+  return lines.join('\n')
+}
+
+export function renderPlainSetup(vm: SetupViewModel, width: number = MAX_WIDTH): string {
+  const lines: string[] = []
+  lines.push(separator('=', width))
+  lines.push('OpenSlack Setup Report')
+  lines.push(separator('=', width))
+
+  const readinessLabel = vm.readiness === 'ready' ? '[PASS]' : vm.readiness === 'almost ready' ? '[WARN]' : '[FAIL]'
+  lines.push(wrap(`Readiness: ${readinessLabel} ${vm.readiness}`, width))
+  lines.push(wrap(`Checks: ${vm.passedChecks}/${vm.totalChecks} passed  Root: ${vm.root}`, width))
+  lines.push('')
+
+  if (vm.fixable.length > 0) {
+    lines.push(`Fixable (${vm.fixable.length}):`)
+    for (const f of vm.fixable) {
+      lines.push(wrap(`  [WARN] ${f.title}`, width))
+      lines.push(wrapIndent(`    ${f.command || f.nextAction || f.detail}`, 4, width))
+    }
+    lines.push('')
+  }
+
+  if (vm.needsAction.length > 0) {
+    lines.push(`Needs Action (${vm.needsAction.length}):`)
+    for (const f of vm.needsAction) {
+      lines.push(wrap(`  [FAIL] ${f.title}`, width))
+      lines.push(wrapIndent(`    ${f.nextAction || f.detail}`, 4, width))
+    }
+    lines.push('')
+  }
+
+  if (vm.ok.length > 0) {
+    lines.push(`Passed (${vm.ok.length}):`)
+    for (const f of vm.ok) {
+      const label = f.status === 'PASS' ? '[PASS]' : f.status === 'info' ? '[INFO]' : statusLabel(f.status)
+      lines.push(wrap(`  ${label} ${f.title}: ${f.detail}`, width))
+    }
+    lines.push('')
+  }
+
+  if (vm.fixable.length === 0 && vm.needsAction.length === 0) {
+    lines.push('OpenSlack is fully set up.')
+    lines.push('')
+  }
+
+  lines.push(separator('-', width))
+  return lines.join('\n')
+}
+
+export function renderPlainStatus(vm: StatusViewModel, width: number = MAX_WIDTH): string {
+  const lines: string[] = []
+  lines.push(separator('=', width))
+  lines.push(wrap(vm.title, width))
+  lines.push(separator('=', width))
+  lines.push(wrap(`Version: ${vm.version}`, width))
+  lines.push(wrap(`Commit: ${vm.commit}`, width))
+  lines.push(wrap(vm.commitSubject, width))
+  lines.push('')
+
+  // Modules
+  if (vm.modules.length > 0) {
+    lines.push(`Modules (${vm.modules.length}):`)
+    for (const m of vm.modules) {
+      const testInfo = m.tests !== null ? ` (${m.tests} tests)` : ''
+      const label = m.status === 'ACTIVE' ? '[PASS]' : '[INFO]'
+      lines.push(wrap(`  ${label} ${m.name}${testInfo}: ${m.status}`, width))
+    }
+    lines.push('')
+  }
+
+  // GitHub
+  lines.push('GitHub:')
+  if (vm.gitHub.available) {
+    lines.push(wrap(`  Tasks ready: ${vm.gitHub.tasksReady}  claimed: ${vm.gitHub.tasksClaimed}  blocked: ${vm.gitHub.tasksBlocked}`, width))
+    lines.push(wrap(`  PRs open: ${vm.gitHub.prsOpen}  blocked: ${vm.gitHub.prsBlocked}  ready: ${vm.gitHub.prsReady}`, width))
+  } else {
+    lines.push('  unavailable')
+  }
+  lines.push('')
+
+  // Test Suite
+  lines.push(wrap(`Test Suite: ${vm.testSuite.totalTests} tests across ${vm.testSuite.totalFiles} files`, width))
+  lines.push('')
+
+  // Recommendations
+  if (vm.recommendations.length > 0) {
+    lines.push('Recommended Next Steps:')
+    vm.recommendations.forEach((r, i) => {
+      const detail = r.command ? `Run: ${r.command}` : r.action
+      lines.push(wrap(`  ${i + 1}. ${r.title}`, width))
+      lines.push(wrapIndent(`     ${detail}`, 5, width))
+    })
+    lines.push('')
+  }
+
+  // Attention Items
+  if (vm.attentionItems.length > 0) {
+    lines.push('Needs Attention:')
+    for (const a of vm.attentionItems) {
+      const prioLabel = a.priority === 'high' ? '[FAIL]' : a.priority === 'medium' ? '[WARN]' : '[INFO]'
+      lines.push(wrap(`  ${prioLabel} [${a.priority.toUpperCase()}] ${a.type}: ${a.description}`, width))
+      lines.push(wrapIndent(`    ${a.action}`, 4, width))
+    }
+    lines.push('')
+  } else {
+    lines.push('All clear')
+    lines.push('')
+  }
+
+  lines.push(wrap(`Next: ${vm.nextAction}`, width))
+  lines.push('')
+  lines.push(separator('-', width))
+  return lines.join('\n')
+}
+
+export function renderPlainShell(data: ShellViewData, width: number = MAX_WIDTH): string {
+  const sections: string[] = []
+
+  if (data.dashboard) {
+    sections.push(renderPlainDashboard(data.dashboard, width))
+  }
+  if (data.prQueue) {
+    sections.push(renderPlainPrQueue(data.prQueue, width))
+  }
+  if (data.status) {
+    sections.push(renderPlainStatus(data.status, width))
+  }
+  if (data.digest) {
+    sections.push(renderPlainDigest(data.digest, width))
+  }
+  if (data.handoffs) {
+    sections.push(renderPlainHandoffList(data.handoffs, width))
+  }
+  if (data.decisions) {
+    sections.push(renderPlainDecisionList(data.decisions, width))
+  }
+  if (data.workflowGallery) {
+    sections.push(renderPlainWorkflowWorkbench(data.workflowGallery, width))
+  }
+  if (data.profile) {
+    sections.push(renderPlainProfile(data.profile, width))
+  }
+
+  if (sections.length === 0) {
+    const lines: string[] = []
+    lines.push(separator('=', width))
+    lines.push('OpenSlack Shell')
+    lines.push(separator('=', width))
+    lines.push('No views loaded.')
+    lines.push('')
+    lines.push(separator('-', width))
+    return lines.join('\n')
+  }
+
+  return sections.join('\n\n')
+}
+
+export function renderPlainWorkflowPreview(vm: WorkflowPreviewViewModel, width: number = MAX_WIDTH): string {
+  const lines: string[] = []
+  lines.push(separator('=', width))
+  lines.push(wrap(`Workflow: ${vm.name}`, width))
+  lines.push(separator('=', width))
+  lines.push(wrap(`Template: ${vm.templateId}  Correlation: ${vm.correlationId}`, width))
+  lines.push(wrap(`Steps: ${vm.stepCount}  Phases: ${vm.phaseCount}  Side effects: ${vm.hasSideEffects ? 'yes' : 'no'}`, width))
+  if (vm.requiresConfirmation) {
+    lines.push(wrap('Requires confirmation: yes', width))
+  }
+  lines.push('')
+
+  // Errors
+  if (vm.hasErrors && vm.errors.length > 0) {
+    lines.push('Errors:')
+    for (const error of vm.errors) {
+      lines.push(wrap(`  [FAIL] ${error}`, width))
+    }
+    lines.push('')
+  }
+
+  // Steps grouped by phase
+  for (const phase of vm.phases) {
+    const phaseSteps = vm.steps.filter(s => s.phase === phase)
+    lines.push(wrap(`Phase: ${phase}`, width))
+    for (const step of phaseSteps) {
+      const flags: string[] = []
+      if (step.sideEffects) flags.push('side-effect')
+      if (step.requiresConfirmation) flags.push('confirmation')
+      if (step.requiredRole) flags.push(`role:${step.requiredRole}`)
+      const detail = flags.length > 0 ? flags.join(', ') : 'read-only'
+      const label = step.requiresConfirmation ? '[WARN]' : step.sideEffects ? '[INFO]' : '[PASS]'
+      lines.push(wrap(`  ${label} ${step.title} (${step.type})`, width))
+      lines.push(wrapIndent(`    ${detail}`, 4, width))
+    }
+    lines.push('')
+  }
+
+  if (vm.steps.length === 0 && !vm.hasErrors) {
+    lines.push('No steps in this workflow.')
+    lines.push('')
+  }
+
+  lines.push(separator('-', width))
+  return lines.join('\n')
+}
+
 /**
  * Render plain output for a given view name and view model.
  * Used by the CLI fallback path.
@@ -521,6 +979,17 @@ export function renderPlain(viewName: string, vm: unknown, width: number = MAX_W
     case 'workflow-lifecycle': return renderPlainWorkflowLifecycle(vm as WorkflowLifecycleViewModel, width)
     case 'workflow-workbench': return renderPlainWorkflowWorkbench(vm as WorkflowGalleryViewModel, width)
     case 'dashboard': return renderPlainDashboard(vm as DashboardViewModel, width)
+    case 'activity': return renderPlainActivity(vm as ActivityViewModel, width)
+    case 'decision-list': return renderPlainDecisionList(vm as DecisionListViewModel, width)
+    case 'decision-detail': return renderPlainDecisionDetail(vm as DecisionDetailViewModel, width)
+    case 'digest': return renderPlainDigest(vm as DigestViewModel, width)
+    case 'handoff-list': return renderPlainHandoffList(vm as HandoffListViewModel, width)
+    case 'handoff-detail': return renderPlainHandoffDetail(vm as HandoffDetailViewModel, width)
+    case 'issues-pr': return renderPlainIssuesPr(vm as IssuesPrViewModel, width)
+    case 'setup': return renderPlainSetup(vm as SetupViewModel, width)
+    case 'status': return renderPlainStatus(vm as StatusViewModel, width)
+    case 'shell': return renderPlainShell(vm as ShellViewData, width)
+    case 'workflow-preview': return renderPlainWorkflowPreview(vm as WorkflowPreviewViewModel, width)
     default: return `Plain rendering not available for view: ${viewName}`
   }
 }

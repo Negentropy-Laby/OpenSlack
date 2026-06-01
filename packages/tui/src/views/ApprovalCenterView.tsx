@@ -4,6 +4,7 @@ import Text from '../ink/components/Text.js'
 import useInput from '../ink/hooks/use-input.js'
 import Pane from '../design-system/Pane.js'
 import ThemedText from '../design-system/ThemedText.js'
+import type { ThemeColorKey } from '../design-system/theme.js'
 import Divider from '../design-system/Divider.js'
 import StatusIcon from '../design-system/StatusIcon.js'
 import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
@@ -241,15 +242,16 @@ export default function ApprovalCenterView({ model, actionHandlers }: ApprovalCe
     setConfirmingAction(null)
   }, [cancelAction])
 
-  // Summary bar
-  const summaryParts: string[] = []
-  if (model.summary.plans > 0) summaryParts.push(`Plans: ${model.summary.plans}`)
-  if (model.summary.mergeRequests > 0) summaryParts.push(`Merge: ${model.summary.mergeRequests}`)
-  if (model.summary.workflowEffects > 0) summaryParts.push(`Effects: ${model.summary.workflowEffects}`)
-  if (model.summary.profileSyncs > 0) summaryParts.push(`Sync: ${model.summary.profileSyncs}`)
-  if (model.summary.githubReviews > 0) summaryParts.push(`Reviews: ${model.summary.githubReviews}`)
+  // Summary bar badges
+  const summaryBadges: Array<{ label: string; count: number; colorTheme: ThemeColorKey }> = [
+    { label: 'Plans', count: model.summary.plans, colorTheme: 'success' },
+    { label: 'Merge', count: model.summary.mergeRequests, colorTheme: 'warning' },
+    { label: 'Workflow', count: model.summary.workflowEffects, colorTheme: 'info' },
+    { label: 'Profile', count: model.summary.profileSyncs, colorTheme: 'accent' },
+    { label: 'Reviews', count: model.summary.githubReviews, colorTheme: 'error' },
+  ]
 
-  const summaryText = summaryParts.length > 0 ? summaryParts.join(' | ') : 'No pending approvals'
+  const hasAnyItems = summaryBadges.some(b => b.count > 0)
 
   // --- ACTION-RESULT MODE ---
   if (mode === 'action-result' && selected) {
@@ -547,7 +549,21 @@ export default function ApprovalCenterView({ model, actionHandlers }: ApprovalCe
       { flexDirection: 'row' },
       React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, 'OpenSlack / Approvals'),
       React.createElement(Text, null, '  '),
-      React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, summaryText),
+      ...hasAnyItems
+        ? summaryBadges.map(badge =>
+            React.createElement(
+              Text,
+              { key: badge.label },
+              '  ',
+              React.createElement(ThemedText,
+                badge.count > 0
+                  ? { colorTheme: badge.colorTheme, bold: true }
+                  : { colorTheme: 'muted', dim: true },
+                `●${badge.label}: ${badge.count}`,
+              ),
+            ),
+          )
+        : [React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, 'No pending approvals')],
     ),
     React.createElement(Divider, { length: 40 }),
     items.length > 0

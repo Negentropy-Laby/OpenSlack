@@ -109,12 +109,46 @@ export default function ProfileView({ model, onBack, onAction }: ProfileViewProp
     sanitizeProfileCheckGroups(model.checkGroups),
   )
   const [guidedStep, setGuidedStep] = useState<ProfileGuidedStep | undefined>(model.guidedStep)
+  const [diffScrollOffset, setDiffScrollOffset] = useState(0)
+
+  // Whether the diff pane is visible (used to gate arrow-key scrolling)
+  const diffVisible = diffOutput != null && actionResult?.actionId === 'preview' && actionResult?.success
+  const diffLines = diffOutput ? diffOutput.split('\n') : []
+  const diffLineCount = diffLines.length
+  const diffIsLong = diffLineCount > DIFF_MAX_LINES
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
       if (onBack) onBack()
       else exit()
       return
+    }
+
+    // 'b' key: go back one guided step
+    if (input === 'b' && !isRunning) {
+      if (guidedStep === 'create-pr') {
+        setGuidedStep('preview')
+        setDiffScrollOffset(0)
+        return
+      }
+      if (guidedStep === 'preview') {
+        setGuidedStep('check')
+        setDiffScrollOffset(0)
+        return
+      }
+    }
+
+    // Arrow keys: scroll diff when diff pane is visible
+    if (diffVisible && diffIsLong) {
+      if (key.upArrow) {
+        setDiffScrollOffset((prev) => Math.max(0, prev - DIFF_MAX_LINES))
+        return
+      }
+      if (key.downArrow) {
+        const maxOffset = Math.max(0, diffLineCount - DIFF_MAX_LINES)
+        setDiffScrollOffset((prev) => Math.min(maxOffset, prev + DIFF_MAX_LINES))
+        return
+      }
     }
 
     const action = model.actions.find((a) => a.key === input)
@@ -131,6 +165,7 @@ export default function ProfileView({ model, onBack, onAction }: ProfileViewProp
               if (Array.isArray(groups)) setCheckGroups(sanitizeProfileCheckGroups(groups as ProfileCheckGroup[]))
               if (result.success) setGuidedStep('preview')
             } else if (action.id === 'preview' && result.success && result.data?.diff && typeof result.data.diff === 'string') {
+              setDiffScrollOffset(0)
               setDiffOutput(sanitizeTerminalText(result.data.diff))
               setGuidedStep('create-pr')
             } else if (action.id === 'create-pr' && result.success) {
@@ -343,25 +378,25 @@ export default function ProfileView({ model, onBack, onAction }: ProfileViewProp
       : null,
 
     // Diff Preview pane (shown after successful preview action)
-    diffOutput && actionResult?.actionId === 'preview' && actionResult?.success
+    diffVisible
       ? React.createElement(
           Pane,
           { title: 'Diff Preview', marginY: 0 },
-          ...diffOutput.split('\n').slice(0, DIFF_MAX_LINES).map((line, i) =>
+          ...diffLines.slice(diffScrollOffset, diffScrollOffset + DIFF_MAX_LINES).map((line, i) =>
             React.createElement(
               Box,
-              { key: `diff-${i}`, flexDirection: 'row' },
+              { key: `diff-${diffScrollOffset + i}`, flexDirection: 'row' },
               React.createElement(ThemedText, { colorTheme: diffLineTheme(line) }, line),
             )
           ),
-          diffOutput.split('\n').length > DIFF_MAX_LINES
+          diffIsLong
             ? React.createElement(
                 Box,
-                { marginTop: 1 },
+                { marginTop: 1, flexDirection: 'row' },
                 React.createElement(
                   ThemedText,
                   { colorTheme: 'muted', dim: true },
-                  `... ${diffOutput.split('\n').length - DIFF_MAX_LINES} more lines truncated`,
+                  `Lines ${diffScrollOffset + 1}-${Math.min(diffScrollOffset + DIFF_MAX_LINES, diffLineCount)} of ${diffLineCount}`,
                 ),
               )
             : null,
@@ -417,7 +452,17 @@ export default function ProfileView({ model, onBack, onAction }: ProfileViewProp
       ...model.actions.map((a) =>
         React.createElement(KeyboardShortcutHint, { key: `hint-${a.id}`, keys: [a.key], description: a.label }),
       ),
+      guidedStep != null && guidedStep !== 'check' && guidedStep !== 'complete'
+        ? React.createElement(KeyboardShortcutHint, { key: 'hint-back', keys: ['b'], description: 'back' })
+        : null,
       React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'back' }),
     ),
+    diffVisible && diffIsLong
+      ? React.createElement(
+          Box,
+          { flexDirection: 'row' },
+          React.createElement(KeyboardShortcutHint, { keys: ['↑', '↓'], description: 'scroll diff' }),
+        )
+      : null,
   )
 }

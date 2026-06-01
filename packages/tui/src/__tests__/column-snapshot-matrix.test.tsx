@@ -1,7 +1,7 @@
 /**
  * column-snapshot-matrix.test.tsx -- Column snapshot matrix tests.
  *
- * Renders all 7 key TUI views at 80, 100, and 120 columns, then asserts:
+ * Renders all 18 key TUI views at 80, 100, and 120 columns, then asserts:
  * 1. Output contains expected key markers (view-specific content).
  * 2. No rendered line exceeds the column width (using stringWidth for accurate CJK/emoji).
  *
@@ -19,6 +19,17 @@ import ProfileView from '../views/ProfileView.js'
 import WorkflowLifecycleView from '../views/WorkflowLifecycleView.js'
 import WorkflowWorkbenchView from '../views/WorkflowWorkbenchView.js'
 import DashboardView from '../views/DashboardView.js'
+import ActivityView from '../views/ActivityView.js'
+import DecisionListView from '../views/DecisionListView.js'
+import DecisionDetailView from '../views/DecisionDetailView.js'
+import DigestView from '../views/DigestView.js'
+import HandoffListView from '../views/HandoffListView.js'
+import HandoffDetailView from '../views/HandoffDetailView.js'
+import IssuesPrView from '../views/IssuesPrView.js'
+import SetupView from '../views/SetupView.js'
+import StatusView from '../views/StatusView.js'
+import ShellView from '../views/ShellView.js'
+import WorkflowPreviewView from '../views/WorkflowPreviewView.js'
 
 import {
   createHomeViewModel,
@@ -28,6 +39,16 @@ import {
   createWorkflowLifecycleViewModel,
   createWorkflowWorkbenchViewModel,
   createDashboardViewModel,
+  createActivityViewModel,
+  createDecisionListViewModel,
+  createDecisionDetailViewModel,
+  createDigestViewModel,
+  createHandoffListViewModel,
+  createHandoffDetailViewModel,
+  createIssuesPrViewModel,
+  createSetupViewModel,
+  createStatusViewModel,
+  createWorkflowPreviewViewModel,
 } from './helpers/view-model-factories.js'
 import { assertNoLineExceedsWidth } from './helpers/render-at-columns.js'
 
@@ -189,6 +210,182 @@ describe.each(COLUMN_WIDTHS)('at %d columns', (cols) => {
     expect(output).toContain('Decisions: 1')
     expect(output).toContain('PR #130')
     expect(output).toContain('Recent Activity')
+    assertNoLineExceedsWidth(output, cols)
+  })
+
+  it('ActivityView renders within width and contains key markers', async () => {
+    const model = createActivityViewModel()
+    const output = await renderAt(
+      React.createElement(ActivityView, { model }),
+      cols,
+    )
+
+    expect(output).toContain('Activity Feed')
+    expect(output).toContain('24h')
+    expect(output).toContain('4 events')
+    expect(output).toContain('Today')
+    expect(output).toContain('pr.merged')
+    expect(output).toContain('check.failed')
+    assertNoLineExceedsWidth(output, cols)
+  })
+
+  it('DecisionListView renders within width and contains key markers', async () => {
+    const model = createDecisionListViewModel()
+    const output = await renderAt(
+      React.createElement(DecisionListView, { model }),
+      cols,
+    )
+
+    expect(output).toContain('Decisions')
+    expect(output).toContain('2 total')
+    expect(output).toContain('1 active')
+    expect(output).toContain('Adopt new branching strategy')
+    assertNoLineExceedsWidth(output, cols)
+  })
+
+  it('DecisionDetailView renders within width and contains key markers', async () => {
+    const model = createDecisionDetailViewModel()
+    const output = await renderAt(
+      React.createElement(DecisionDetailView, { model }),
+      cols,
+    )
+
+    expect(output).toContain('Decision: d-001')
+    expect(output).toContain('active')
+    expect(output).toContain('Adopt new branching strategy')
+    expect(output).toContain('Rationale')
+    expect(output).toContain('Alternatives Considered')
+    expect(output).toContain('Consequences')
+    expect(output).toContain('branching')
+    assertNoLineExceedsWidth(output, cols)
+  })
+
+  it('DigestView renders within width and contains key markers', async () => {
+    const model = createDigestViewModel()
+    const output = await renderAt(
+      React.createElement(DigestView, { model }),
+      cols,
+    )
+
+    expect(output).toContain('OpenSlack Digest')
+    expect(output).toContain('24h')
+    expect(output).toContain('5 events')
+    expect(output).toContain('Completed')
+    expect(output).toContain('Blocked')
+    expect(output).toContain('Agent Activity')
+    expect(output).toContain('Recommended Next Actions')
+    assertNoLineExceedsWidth(output, cols)
+  })
+
+  it('HandoffListView renders within width and contains key markers', async () => {
+    const model = createHandoffListViewModel()
+    const output = await renderAt(
+      React.createElement(HandoffListView, { model }),
+      cols,
+    )
+
+    expect(output).toContain('Handoffs')
+    expect(output).toContain('2 total')
+    expect(output).toContain('1 open')
+    expect(output).toContain('agent-a')
+    expect(output).toContain('agent-b')
+    assertNoLineExceedsWidth(output, cols)
+  })
+
+  it('HandoffDetailView renders within width and contains key markers', async () => {
+    const model = createHandoffDetailViewModel()
+    const output = await renderAt(
+      React.createElement(HandoffDetailView, { model }),
+      cols,
+    )
+
+    expect(output).toContain('Handoff: h-001')
+    expect(output).toContain('open')
+    expect(output).toContain('From: agent-a')
+    expect(output).toContain('To: agent-b')
+    expect(output).toContain('Context')
+    expect(output).toContain('Next Steps')
+    expect(output).toContain('Notes')
+    assertNoLineExceedsWidth(output, cols)
+  })
+
+  it('IssuesPrView renders within width and contains key markers', async () => {
+    const model = createIssuesPrViewModel()
+    const output = await renderAt(
+      withNav(React.createElement(IssuesPrView, { model })),
+      cols,
+    )
+
+    expect(output).toContain('Tasks & PRs')
+    expect(output).toContain('Issues')
+    expect(output).toContain('PRs')
+    expect(output).toContain('#127')
+    expect(output).toContain('Fix auth flow edge case')
+    assertNoLineExceedsWidth(output, cols)
+  })
+
+  it('SetupView renders within width and contains key markers', async () => {
+    const model = createSetupViewModel()
+    const output = await renderAt(
+      React.createElement(SetupView, { model }),
+      cols,
+    )
+
+    expect(output).toContain('OpenSlack Setup Report')
+    expect(output).toContain('almost ready')
+    expect(output).toContain('2/4 checks passed')
+    expect(output).toContain('Fixable')
+    expect(output).toContain('Needs Action')
+    expect(output).toContain('Passed')
+    assertNoLineExceedsWidth(output, cols)
+  })
+
+  it('StatusView renders within width and contains key markers', async () => {
+    const model = createStatusViewModel()
+    const output = await renderAt(
+      React.createElement(StatusView, { model }),
+      cols,
+    )
+
+    expect(output).toContain('OpenSlack Status')
+    expect(output).toContain('v0.1 Developer Preview')
+    expect(output).toContain('abc1234')
+    expect(output).toContain('Self-Evolution Kernel')
+    expect(output).toContain('Collaboration Layer')
+    expect(output).toContain('Test Suite')
+    expect(output).toContain('526 tests')
+    expect(output).toContain('Next:')
+    assertNoLineExceedsWidth(output, cols)
+  })
+
+  it('ShellView renders within width and contains key markers', async () => {
+    const output = await renderAt(
+      React.createElement(ShellView, { data: undefined }),
+      cols,
+    )
+
+    expect(output).toContain('OpenSlack')
+    expect(output).toContain('ready')
+    expect(output).toContain('What do you want to do?')
+    assertNoLineExceedsWidth(output, cols)
+  })
+
+  it('WorkflowPreviewView renders within width and contains key markers', async () => {
+    const model = createWorkflowPreviewViewModel()
+    const output = await renderAt(
+      React.createElement(WorkflowPreviewView, { model }),
+      cols,
+    )
+
+    expect(output).toContain('Workflow: Test Workflow')
+    expect(output).toContain('test-workflow')
+    expect(output).toContain('2 steps')
+    expect(output).toContain('2 phases')
+    expect(output).toContain('Setup')
+    expect(output).toContain('Execute')
+    expect(output).toContain('Run setup')
+    expect(output).toContain('Execute task')
+    expect(output).toContain('side-effect')
     assertNoLineExceedsWidth(output, cols)
   })
 })

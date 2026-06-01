@@ -365,6 +365,7 @@ describe('fetchWorkflowLifecycleIssues', () => {
 
     expect(result.subIssueMode).toBe('native')
     expect(result.dependencyMode).toBe('native')
+    expect(result.phaseIssues.map(p => p.trackingMode)).toEqual(['native', 'native'])
     expect(result.phaseIssues.find(p => p.number === 41)?.blockedBy).toEqual([40])
   })
 
@@ -422,7 +423,70 @@ describe('fetchWorkflowLifecycleIssues', () => {
     const result = await fetchWorkflowLifecycleIssues('test-workflow')
 
     expect(result.subIssueMode).toBe('fallback')
+    expect(result.phaseIssues.map(p => p.trackingMode)).toEqual(['fallback', 'fallback'])
     expect(result.fallbackReasons).toContain('sub-issue #40: native_sub_issues_unavailable_422')
+  })
+
+  it('marks mixed sub-issue mode per phase issue', async () => {
+    const octokit = {
+      issues: {
+        listForRepo: vi.fn().mockImplementation(({ labels }: { labels: string }) => {
+          const key = labels.split(':')[1] as string
+          const data = {
+            split: [
+              mockIssue({ number: 30, title: '[Workflow Split] test-workflow', body: '' }),
+            ],
+            phase: [
+              mockIssue({ number: 40, title: '[Workflow Phase] test-workflow / Scan', body: '' }),
+              mockIssue({ number: 41, title: '[Workflow Phase] test-workflow / Fix', body: '' }),
+            ],
+          }[key] ?? []
+          return Promise.resolve({ data })
+        }),
+        listComments: vi.fn().mockImplementation(({ issue_number }: { issue_number: number }) => {
+          if (issue_number === 30) {
+            return Promise.resolve({
+              data: [
+                {
+                  body: [
+                    '<!-- workflow-link-fallback -->',
+                    '## Phase Sub-Issues',
+                    '- **Fix**: #41',
+                    '',
+                    '### Native Link Fallback Reasons',
+                    '- sub-issue #41: native_sub_issues_unavailable_422',
+                  ].join('\n'),
+                },
+              ],
+            })
+          }
+          return Promise.resolve({ data: [] })
+        }),
+      },
+      pulls: {
+        list: vi.fn().mockResolvedValue({ data: [] }),
+      },
+      request: vi.fn().mockImplementation((route: string) => {
+        if (route.includes('/sub_issues')) {
+          return Promise.resolve({ data: [{ number: 40 }] })
+        }
+        return Promise.resolve({ data: [] })
+      }),
+    }
+
+    mockGetClient.mockResolvedValue({
+      owner: 'test',
+      repo: 'repo',
+      octokit: octokit as unknown as import('../client.js').GitHubClient['octokit'],
+      authMode: 'token',
+      isDryRun: false,
+    })
+
+    const result = await fetchWorkflowLifecycleIssues('test-workflow')
+
+    expect(result.subIssueMode).toBe('mixed')
+    expect(result.phaseIssues.find(p => p.number === 40)?.trackingMode).toBe('native')
+    expect(result.phaseIssues.find(p => p.number === 41)?.trackingMode).toBe('fallback')
   })
 
   it('finds linked PRs with workflow name in title', async () => {

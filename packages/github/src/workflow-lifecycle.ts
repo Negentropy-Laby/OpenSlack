@@ -167,7 +167,14 @@ export interface WorkflowLifecycleQueryResult {
   proposalIssue?: { number: number; state: string; url: string }
   reviewIssue?: { number: number; state: string; url: string }
   splitIssue?: { number: number; state: string; url: string }
-  phaseIssues: Array<{ number: number; phase: string; state: string; url: string; blockedBy?: number[] }>
+  phaseIssues: Array<{
+    number: number
+    phase: string
+    state: string
+    url: string
+    blockedBy?: number[]
+    trackingMode?: 'native' | 'fallback'
+  }>
   runIssues: Array<{ number: number; runId: string; state: string; url: string; status: string }>
   improvementIssues: Array<{ number: number; state: string; url: string }>
   linkedPRs: Array<{ number: number; state: string; url: string }>
@@ -448,9 +455,16 @@ export async function fetchWorkflowLifecycleIssues(
     }
 
     if (result.phaseIssues.length > 0) {
-      const nativeRefs = result.phaseIssues.filter(
-        (pi) => nativeSubIssueNumbers.has(pi.number) || splitBody.includes(`#${pi.number}`),
-      ).length
+      for (const phaseIssue of result.phaseIssues) {
+        const hasNativeRef = nativeSubIssueNumbers.has(phaseIssue.number) || splitBody.includes(`#${phaseIssue.number}`)
+        if (hasNativeRef) {
+          phaseIssue.trackingMode = 'native'
+        } else if (fallbackMarker) {
+          phaseIssue.trackingMode = 'fallback'
+        }
+      }
+
+      const nativeRefs = result.phaseIssues.filter((pi) => pi.trackingMode === 'native').length
 
       if (nativeRefs === result.phaseIssues.length && !fallbackMarker) {
         result.subIssueMode = 'native'
