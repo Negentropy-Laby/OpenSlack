@@ -101,8 +101,8 @@ export function renderPlainHome(vm: HomeViewModel, width: number = MAX_WIDTH): s
   // Next recommended action
   if (vm.nextRecommendedAction) {
     lines.push('Next Recommended Action:')
-    lines.push('  > ' + vm.nextRecommendedAction.label)
-    lines.push(wrapIndent('    ' + vm.nextRecommendedAction.reason, 4))
+    lines.push(wrap(`  > ${vm.nextRecommendedAction.label}`, width))
+    lines.push(wrapIndent(`    ${vm.nextRecommendedAction.reason}`, 4, width))
     lines.push('')
   }
 

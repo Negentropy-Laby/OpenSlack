@@ -572,6 +572,21 @@ describe('custom width rendering', () => {
 
     assertNoLineExceeds(renderPlainHome(vm, 40), 40)
   })
+
+  it('wraps next recommended action within the requested width', () => {
+    const vm: HomeViewModel = {
+      ...createHomeViewModel(),
+      nextRecommendedAction: {
+        label: 'Approve profile sync PR https://github.com/Negentropy-Laby/OpenSlack/pull/130/files#diff-abc123def456',
+        reason: 'Validation is waiting at https://github.com/Negentropy-Laby/OpenSlack/actions/runs/26736208952/job/78789924481',
+        route: 'approvals',
+        urgency: 'governance',
+        priority: 0,
+      },
+    }
+
+    assertNoLineExceeds(renderPlainHome(vm, 40), 40)
+  })
 })
 
 // --- CJK preservation across all renderers ---
