@@ -37,6 +37,7 @@ import type { DoctorViewModel } from '../view-models/doctor.js'
 import type { PrQueueViewModel } from '../view-models/pr-queue.js'
 import type { ProfileViewModel } from '../view-models/profile.js'
 import type { WorkflowLifecycleViewModel } from '../view-models/workflow-lifecycle.js'
+import { mapWorkflowLifecycleToViewModel } from '../view-models/workflow-lifecycle.js'
 import type { WorkflowGalleryViewModel } from '../view-models/workflow-gallery.js'
 import type { DashboardViewModel } from '../view-models/dashboard.js'
 
@@ -340,6 +341,70 @@ describe('renderPlainWorkflowLifecycle', () => {
     const out = renderPlainWorkflowLifecycle(vm)
     expect(out).toContain('Workflow Lifecycle')
     assertNoLineExceeds80(out)
+  })
+
+  it('renders status summary', () => {
+    const vm: WorkflowLifecycleViewModel = {
+      ...createWorkflowLifecycleViewModel(),
+      statusSummary: 'Blocked at review stage, owner: team-lead',
+    }
+    const out = renderPlainWorkflowLifecycle(vm)
+    expect(out).toContain('Status: Blocked at review stage, owner: team-lead')
+    assertNoLineExceeds80(out)
+  })
+
+  it('renders blocked gate items', () => {
+    const vm: WorkflowLifecycleViewModel = {
+      ...createWorkflowLifecycleViewModel(),
+      blockedGateItems: [
+        { gate: 'Coverage', detail: 'Below 80% threshold', action: 'Add tests for new modules' },
+        { gate: 'Review', detail: 'No CODEOWNER approval', action: 'Request review from team-lead' },
+      ],
+    }
+    const out = renderPlainWorkflowLifecycle(vm)
+    expect(out).toContain('Blocked Gates:')
+    expect(out).toContain('[FAIL] Coverage: Below 80% threshold')
+    expect(out).toContain('Fix: Add tests for new modules')
+    expect(out).toContain('[FAIL] Review: No CODEOWNER approval')
+    assertNoLineExceeds80(out)
+  })
+
+  it('renders stage owner in model without crashing plain-render', () => {
+    const vm: WorkflowLifecycleViewModel = {
+      ...createWorkflowLifecycleViewModel(),
+      stages: [
+        { name: 'review', label: 'Review', status: 'in-progress', icon: 'running', detail: 'Awaiting approval', owner: 'team-lead' },
+        { name: 'run', label: 'Run', status: 'pending', icon: 'clock', detail: 'Not started' },
+      ],
+    }
+    const out = renderPlainWorkflowLifecycle(vm)
+    // plain-render does not show owner, but must not crash
+    expect(out).toContain('Workflow Lifecycle')
+    assertNoLineExceeds80(out)
+  })
+})
+
+// --- Workflow Lifecycle Mapper ---
+
+describe('mapWorkflowLifecycleToViewModel', () => {
+  it('maps stage owner through sanitize', () => {
+    const vm = mapWorkflowLifecycleToViewModel({
+      stages: [
+        { name: 'review', label: 'Review', status: 'in-progress', icon: 'running', detail: 'Awaiting approval', owner: 'team-lead\x1B[31m' },
+      ],
+      phaseIssues: [],
+    })
+    expect(vm.stages[0].owner).toBe('team-lead')
+  })
+
+  it('omits owner when not provided', () => {
+    const vm = mapWorkflowLifecycleToViewModel({
+      stages: [
+        { name: 'run', label: 'Run', status: 'pending', icon: 'clock', detail: 'Not started' },
+      ],
+      phaseIssues: [],
+    })
+    expect(vm.stages[0].owner).toBeUndefined()
   })
 })
 
