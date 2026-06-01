@@ -1,4 +1,5 @@
 import type { GitHubAuthPreference, GitHubClient, GitHubClientOptions } from '@openslack/github';
+import type { GitHubEvidenceUnavailableError } from '@openslack/github';
 
 const AUTH_CHOICES: GitHubAuthPreference[] = ['auto', 'app', 'token', 'dry-run'];
 
@@ -23,6 +24,7 @@ export function buildPRDoctorClientOptions(options: PRDoctorEvidenceOptions): Gi
     repoFullName: options.repo,
     auth,
     requireLive: auth !== 'dry-run',
+    strictEvidence: auth !== 'dry-run',
   };
 }
 
@@ -61,4 +63,21 @@ export function renderAuthRequiredMessage(prNumber: number, error: Error): strin
     `  powershell -ExecutionPolicy Bypass -File scripts\\openslack-bot.ps1 pr doctor ${prNumber}`,
     `  bun run openslack pr doctor ${prNumber} --dry-run`,
   ].join('\n');
+}
+
+export function renderEvidenceUnavailableMessage(
+  client: GitHubClient,
+  error: GitHubEvidenceUnavailableError,
+): string {
+  return [
+    error.message,
+    '',
+    renderDoctorEvidenceBanner(client),
+    `Operation: ${error.operation}`,
+    error.prNumber === undefined ? undefined : `PR: #${error.prNumber}`,
+    error.status === undefined ? undefined : `Status: ${error.status}`,
+    '',
+    'No merge readiness, policy blocker, approval, check, CODEOWNERS, workflow, or profile-sync gate result is available.',
+    'Retry after GitHub API recovery or use --dry-run for an explicit simulation.',
+  ].filter((line): line is string => typeof line === 'string').join('\n');
 }

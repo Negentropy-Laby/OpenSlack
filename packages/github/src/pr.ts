@@ -1,6 +1,200 @@
 import { getClient } from './client.js';
 import type { GitHubClientOptions } from './client.js';
 
+const RETRY_ATTEMPTS = 2;
+const RETRY_DELAY_MS = 75;
+const EVIDENCE_TIMEOUT_MS = 8_000;
+
+export class GitHubEvidenceUnavailableError extends Error {
+  readonly code = 'GITHUB_EVIDENCE_UNAVAILABLE';
+  readonly operation: string;
+  readonly owner: string;
+  readonly repo: string;
+  readonly prNumber?: number;
+  readonly status?: number;
+  readonly causeMessage: string;
+
+  constructor(input: {
+    operation: string;
+    owner: string;
+    repo: string;
+    prNumber?: number;
+    status?: number;
+    causeMessage: string;
+  }) {
+    const target = input.prNumber === undefined
+      ? `${input.owner}/${input.repo}`
+      : `${input.owner}/${input.repo} PR #${input.prNumber}`;
+    super(
+      `GITHUB_EVIDENCE_UNAVAILABLE: ${input.operation} failed for ${target}. ${input.causeMessage}`,
+    );
+    this.name = 'GitHubEvidenceUnavailableError';
+    this.operation = input.operation;
+    this.owner = input.owner;
+    this.repo = input.repo;
+    this.prNumber = input.prNumber;
+    this.status = input.status;
+    this.causeMessage = input.causeMessage;
+  }
+}
+
+function errorStatus(error: unknown): number | undefined {
+  if (typeof error === 'object' && error !== null && 'status' in error) {
+    const status = (error as { status?: unknown }).status;
+    return typeof status === 'number' ? status : undefined;
+  }
+  return undefined;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isNotFound(error: unknown): boolean {
+  return errorStatus(error) === 404;
+}
+
+function isRetryableEvidenceError(error: unknown): boolean {
+  const status = errorStatus(error);
+  if (status !== undefined) return status >= 500 || status === 429;
+  const message = errorMessage(error);
+  return /ECONNRESET|ETIMEDOUT|timeout|network|socket hang up/i.test(message);
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withTimeout<T>(operationName: string, operation: () => Promise<T>): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(`${operationName} timed out after ${EVIDENCE_TIMEOUT_MS}ms`));
+    }, EVIDENCE_TIMEOUT_MS);
+    timeoutId.unref?.();
+  });
+
+  try {
+    return await Promise.race([operation(), timeout]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
+async function withRetry<T>(operationName: string, operation: () => Promise<T>): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < RETRY_ATTEMPTS; attempt++) {
+    try {
+      return await withTimeout(operationName, operation);
+    } catch (error) {
+      lastError = error;
+      if (attempt === RETRY_ATTEMPTS - 1 || !isRetryableEvidenceError(error)) break;
+      await sleep(RETRY_DELAY_MS);
+    }
+  }
+  throw lastError;
+}
+
+function strictEvidenceUnavailable(
+  operation: string,
+  client: Awaited<ReturnType<typeof getClient>>,
+  prNumber: number | undefined,
+  error: unknown,
+): never {
+  throw new GitHubEvidenceUnavailableError({
+    operation,
+    owner: client.owner,
+    repo: client.repo,
+    prNumber,
+    status: errorStatus(error),
+    causeMessage: errorMessage(error),
+  });
+}
+
+async function graphqlRequest<T>(
+  client: Awaited<ReturnType<typeof getClient>>,
+  query: string,
+  variables: Record<string, unknown>,
+): Promise<T> {
+  const graphql = client.octokit.graphql as unknown as (
+    query: string,
+    variables: Record<string, unknown>,
+  ) => Promise<T>;
+  return withTimeout('GitHub GraphQL request', () => graphql(query, variables));
+}
+
+function normalizeGraphQLState(value: string | null | undefined): string {
+  return (value ?? '').toLowerCase();
+}
+
+async function listPRFilesRest(
+  client: Awaited<ReturnType<typeof getClient>>,
+  prNumber: number,
+): Promise<Array<{ filename: string; patch?: string }>> {
+  const files: Array<{ filename: string; patch?: string }> = [];
+  for (let page = 1; ; page += 1) {
+    const { data } = await client.octokit.pulls.listFiles({
+      owner: client.owner,
+      repo: client.repo,
+      pull_number: prNumber,
+      per_page: 100,
+      page,
+    });
+    files.push(...data);
+    if (data.length < 100) break;
+  }
+  return files;
+}
+
+async function listPRReviewsRest(
+  client: Awaited<ReturnType<typeof getClient>>,
+  prNumber: number,
+): Promise<Array<{
+  user?: { login?: string | null } | null;
+  state: string;
+  body?: string | null;
+  submitted_at?: string | null;
+}>> {
+  const reviews: Array<{
+    user?: { login?: string | null } | null;
+    state: string;
+    body?: string | null;
+    submitted_at?: string | null;
+  }> = [];
+  for (let page = 1; ; page += 1) {
+    const { data } = await client.octokit.pulls.listReviews({
+      owner: client.owner,
+      repo: client.repo,
+      pull_number: prNumber,
+      per_page: 100,
+      page,
+    });
+    reviews.push(...data);
+    if (data.length < 100) break;
+  }
+  return reviews;
+}
+
+async function listPRChecksRest(
+  client: Awaited<ReturnType<typeof getClient>>,
+  ref: string,
+): Promise<Array<{ name: string; status: string; conclusion: string | null }>> {
+  const runs: Array<{ name: string; status: string; conclusion: string | null }> = [];
+  for (let page = 1; ; page += 1) {
+    const { data } = await client.octokit.checks.listForRef({
+      owner: client.owner,
+      repo: client.repo,
+      ref,
+      per_page: 100,
+      page,
+    });
+    const checkRuns = data.check_runs || [];
+    runs.push(...checkRuns);
+    if (checkRuns.length < 100) break;
+  }
+  return runs;
+}
+
 export interface CreatePRResult {
   url: string;
   number: number;
@@ -113,6 +307,299 @@ export interface PRReview {
   user: { login: string };
   state: string;
   body: string;
+  submittedAt?: string;
+}
+
+interface GraphQLPullRequestResponse {
+  repository?: {
+    pullRequest?: {
+      number: number;
+      title: string;
+      body?: string | null;
+      state: string;
+      isDraft: boolean;
+      headRefName: string;
+      headRefOid: string;
+      baseRefName: string;
+      baseRefOid: string;
+      author?: { login?: string | null } | null;
+      mergeable?: string | null;
+      merged: boolean;
+      url: string;
+      createdAt: string;
+      updatedAt: string;
+    } | null;
+  } | null;
+}
+
+interface GraphQLFilesResponse {
+  repository?: {
+    pullRequest?: {
+      files?: {
+        nodes?: Array<{ path: string } | null> | null;
+        pageInfo: { hasNextPage: boolean; endCursor?: string | null };
+      } | null;
+    } | null;
+  } | null;
+}
+
+interface GraphQLReviewsResponse {
+  repository?: {
+    pullRequest?: {
+      reviews?: {
+        nodes?: Array<{
+          author?: { login?: string | null } | null;
+          state: string;
+          body?: string | null;
+          submittedAt?: string | null;
+        } | null> | null;
+        pageInfo: { hasNextPage: boolean; endCursor?: string | null };
+      } | null;
+    } | null;
+  } | null;
+}
+
+interface GraphQLChecksResponse {
+  repository?: {
+    pullRequest?: {
+      commits?: {
+        nodes?: Array<{
+          commit?: {
+            statusCheckRollup?: {
+              contexts?: {
+                nodes?: Array<{
+                  __typename: string;
+                  name?: string | null;
+                  status?: string | null;
+                  conclusion?: string | null;
+                  context?: string | null;
+                  state?: string | null;
+                } | null> | null;
+              } | null;
+            } | null;
+          } | null;
+        } | null> | null;
+      } | null;
+    } | null;
+  } | null;
+}
+
+interface GraphQLBlobResponse {
+  repository?: {
+    object?: {
+      text?: string | null;
+    } | null;
+  } | null;
+}
+
+function graphqlMergeableToBoolean(value: string | null | undefined): boolean | null {
+  if (value === 'MERGEABLE') return true;
+  if (value === 'CONFLICTING') return false;
+  return null;
+}
+
+async function getPRGraphQL(
+  client: Awaited<ReturnType<typeof getClient>>,
+  prNumber: number,
+): Promise<PRDetail | null> {
+  const response = await graphqlRequest<GraphQLPullRequestResponse>(
+    client,
+    `
+      query OpenSlackPrDetail($owner: String!, $repo: String!, $number: Int!) {
+        repository(owner: $owner, name: $repo) {
+          pullRequest(number: $number) {
+            number
+            title
+            body
+            state
+            isDraft
+            headRefName
+            headRefOid
+            baseRefName
+            baseRefOid
+            author { login }
+            mergeable
+            merged
+            url
+            createdAt
+            updatedAt
+          }
+        }
+      }
+    `,
+    { owner: client.owner, repo: client.repo, number: prNumber },
+  );
+  const pr = response.repository?.pullRequest;
+  if (!pr) return null;
+  return {
+    number: pr.number,
+    title: pr.title,
+    body: pr.body || '',
+    state: normalizeGraphQLState(pr.state),
+    draft: pr.isDraft,
+    head: { ref: pr.headRefName, sha: pr.headRefOid },
+    base: { ref: pr.baseRefName, sha: pr.baseRefOid },
+    user: { login: pr.author?.login || 'unknown' },
+    mergeable: graphqlMergeableToBoolean(pr.mergeable),
+    mergeable_state: normalizeGraphQLState(pr.mergeable),
+    merged: pr.merged,
+    url: pr.url,
+    created_at: pr.createdAt,
+    updated_at: pr.updatedAt,
+  };
+}
+
+async function listPRFilesGraphQL(
+  client: Awaited<ReturnType<typeof getClient>>,
+  prNumber: number,
+): Promise<string[]> {
+  const files: string[] = [];
+  let after: string | null = null;
+  do {
+    const response: GraphQLFilesResponse = await graphqlRequest<GraphQLFilesResponse>(
+      client,
+      `
+        query OpenSlackPrFiles($owner: String!, $repo: String!, $number: Int!, $after: String) {
+          repository(owner: $owner, name: $repo) {
+            pullRequest(number: $number) {
+              files(first: 100, after: $after) {
+                nodes { path }
+                pageInfo { hasNextPage endCursor }
+              }
+            }
+          }
+        }
+      `,
+      { owner: client.owner, repo: client.repo, number: prNumber, after },
+    );
+    const connection: NonNullable<NonNullable<NonNullable<GraphQLFilesResponse['repository']>['pullRequest']>['files']> | null | undefined = response.repository?.pullRequest?.files;
+    for (const node of connection?.nodes ?? []) {
+      if (node?.path) files.push(node.path);
+    }
+    after = connection?.pageInfo.hasNextPage ? connection.pageInfo.endCursor ?? null : null;
+  } while (after);
+  return files;
+}
+
+async function getPRReviewsGraphQL(
+  client: Awaited<ReturnType<typeof getClient>>,
+  prNumber: number,
+): Promise<PRReview[]> {
+  const reviews: PRReview[] = [];
+  let after: string | null = null;
+  do {
+    const response: GraphQLReviewsResponse = await graphqlRequest<GraphQLReviewsResponse>(
+      client,
+      `
+        query OpenSlackPrReviews($owner: String!, $repo: String!, $number: Int!, $after: String) {
+          repository(owner: $owner, name: $repo) {
+            pullRequest(number: $number) {
+              reviews(first: 100, after: $after) {
+                nodes {
+                  author { login }
+                  state
+                  body
+                  submittedAt
+                }
+                pageInfo { hasNextPage endCursor }
+              }
+            }
+          }
+        }
+      `,
+      { owner: client.owner, repo: client.repo, number: prNumber, after },
+    );
+    const connection: NonNullable<NonNullable<NonNullable<GraphQLReviewsResponse['repository']>['pullRequest']>['reviews']> | null | undefined = response.repository?.pullRequest?.reviews;
+    for (const node of connection?.nodes ?? []) {
+      reviews.push({
+        user: { login: node?.author?.login || 'unknown' },
+        state: node?.state ?? 'UNKNOWN',
+        body: node?.body || '',
+        submittedAt: node?.submittedAt ?? undefined,
+      });
+    }
+    after = connection?.pageInfo.hasNextPage ? connection.pageInfo.endCursor ?? null : null;
+  } while (after);
+  return reviews;
+}
+
+async function getPRChecksGraphQL(
+  client: Awaited<ReturnType<typeof getClient>>,
+  prNumber: number,
+): Promise<PRCheckRun[]> {
+  const response = await graphqlRequest<GraphQLChecksResponse>(
+    client,
+    `
+      query OpenSlackPrChecks($owner: String!, $repo: String!, $number: Int!) {
+        repository(owner: $owner, name: $repo) {
+          pullRequest(number: $number) {
+            commits(last: 1) {
+              nodes {
+                commit {
+                  statusCheckRollup {
+                    contexts(first: 100) {
+                      nodes {
+                        __typename
+                        ... on CheckRun {
+                          name
+                          status
+                          conclusion
+                        }
+                        ... on StatusContext {
+                          context
+                          state
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `,
+    { owner: client.owner, repo: client.repo, number: prNumber },
+  );
+  const contexts = response.repository?.pullRequest?.commits?.nodes?.[0]?.commit
+    ?.statusCheckRollup?.contexts?.nodes ?? [];
+  return contexts
+    .filter((node): node is NonNullable<typeof node> => Boolean(node))
+    .map((node) => {
+      if (node.__typename === 'StatusContext') {
+        const state = normalizeGraphQLState(node.state);
+        return {
+          name: node.context || 'status',
+          status: state === 'pending' ? 'in_progress' : 'completed',
+          conclusion: state === 'pending' ? null : state,
+        };
+      }
+      return {
+        name: node.name || 'check',
+        status: normalizeGraphQLState(node.status),
+        conclusion: node.conclusion ? normalizeGraphQLState(node.conclusion) : null,
+      };
+    });
+}
+
+async function getCODEOWNERSGraphQL(
+  client: Awaited<ReturnType<typeof getClient>>,
+  ref: string,
+): Promise<string | null> {
+  const response = await graphqlRequest<GraphQLBlobResponse>(
+    client,
+    `
+      query OpenSlackCodeowners($owner: String!, $repo: String!, $expression: String!) {
+        repository(owner: $owner, name: $repo) {
+          object(expression: $expression) {
+            ... on Blob { text }
+          }
+        }
+      }
+    `,
+    { owner: client.owner, repo: client.repo, expression: `${ref}:.github/CODEOWNERS` },
+  );
+  return response.repository?.object?.text ?? null;
 }
 
 export async function getPR(prNumber: number, options?: GitHubClientOptions): Promise<PRDetail | null> {
@@ -122,11 +609,11 @@ export async function getPR(prNumber: number, options?: GitHubClientOptions): Pr
     return null;
   }
   try {
-    const { data } = await client.octokit.pulls.get({
+    const { data } = await withRetry('fetch pull request', () => client.octokit.pulls.get({
       owner: client.owner,
       repo: client.repo,
       pull_number: prNumber,
-    });
+    }));
     return {
       number: data.number,
       title: data.title,
@@ -143,7 +630,17 @@ export async function getPR(prNumber: number, options?: GitHubClientOptions): Pr
       created_at: data.created_at,
       updated_at: data.updated_at,
     };
-  } catch {
+  } catch (error) {
+    try {
+      return await getPRGraphQL(client, prNumber);
+    } catch (fallbackError) {
+      if (options?.strictEvidence) {
+        strictEvidenceUnavailable('fetch pull request', client, prNumber, fallbackError);
+      }
+    }
+    if (options?.strictEvidence) {
+      strictEvidenceUnavailable('fetch pull request', client, prNumber, error);
+    }
     return null;
   }
 }
@@ -155,13 +652,19 @@ export async function listPRFiles(prNumber: number, options?: GitHubClientOption
     return [];
   }
   try {
-    const { data } = await client.octokit.pulls.listFiles({
-      owner: client.owner,
-      repo: client.repo,
-      pull_number: prNumber,
-    });
+    const data = await withRetry('list pull request files', () => listPRFilesRest(client, prNumber));
     return data.map((f) => f.filename);
-  } catch {
+  } catch (error) {
+    try {
+      return await listPRFilesGraphQL(client, prNumber);
+    } catch (fallbackError) {
+      if (options?.strictEvidence) {
+        strictEvidenceUnavailable('list pull request files', client, prNumber, fallbackError);
+      }
+    }
+    if (options?.strictEvidence) {
+      strictEvidenceUnavailable('list pull request files', client, prNumber, error);
+    }
     return [];
   }
 }
@@ -178,15 +681,14 @@ export async function getPRFilePatches(prNumber: number, options?: GitHubClientO
     return [];
   }
   try {
-    const { data } = await client.octokit.pulls.listFiles({
-      owner: client.owner,
-      repo: client.repo,
-      pull_number: prNumber,
-    });
+    const data = await withRetry('list pull request file patches', () => listPRFilesRest(client, prNumber));
     return data
       .filter((f): f is typeof f & { patch: string } => typeof f.patch === 'string')
       .map((f) => ({ filename: f.filename, patch: f.patch }));
-  } catch {
+  } catch (error) {
+    if (options?.strictEvidence) {
+      strictEvidenceUnavailable('list pull request file patches', client, prNumber, error);
+    }
     return [];
   }
 }
@@ -200,17 +702,23 @@ export async function getPRChecks(prNumber: number, options?: GitHubClientOption
   try {
     const pr = await getPR(prNumber, options);
     if (!pr) return [];
-    const { data } = await client.octokit.checks.listForRef({
-      owner: client.owner,
-      repo: client.repo,
-      ref: pr.head.sha,
-    });
-    return (data.check_runs || []).map((run) => ({
+    const data = await withRetry('fetch pull request checks', () => listPRChecksRest(client, pr.head.sha));
+    return data.map((run) => ({
       name: run.name,
       status: run.status,
       conclusion: run.conclusion,
     }));
-  } catch {
+  } catch (error) {
+    try {
+      return await getPRChecksGraphQL(client, prNumber);
+    } catch (fallbackError) {
+      if (options?.strictEvidence) {
+        strictEvidenceUnavailable('fetch pull request checks', client, prNumber, fallbackError);
+      }
+    }
+    if (options?.strictEvidence) {
+      strictEvidenceUnavailable('fetch pull request checks', client, prNumber, error);
+    }
     return [];
   }
 }
@@ -222,17 +730,24 @@ export async function getPRReviews(prNumber: number, options?: GitHubClientOptio
     return [];
   }
   try {
-    const { data } = await client.octokit.pulls.listReviews({
-      owner: client.owner,
-      repo: client.repo,
-      pull_number: prNumber,
-    });
+    const data = await withRetry('fetch pull request reviews', () => listPRReviewsRest(client, prNumber));
     return data.map((r) => ({
       user: { login: r.user?.login || 'unknown' },
       state: r.state,
       body: r.body || '',
+      submittedAt: r.submitted_at ?? undefined,
     }));
-  } catch {
+  } catch (error) {
+    try {
+      return await getPRReviewsGraphQL(client, prNumber);
+    } catch (fallbackError) {
+      if (options?.strictEvidence) {
+        strictEvidenceUnavailable('fetch pull request reviews', client, prNumber, fallbackError);
+      }
+    }
+    if (options?.strictEvidence) {
+      strictEvidenceUnavailable('fetch pull request reviews', client, prNumber, error);
+    }
     return [];
   }
 }
@@ -263,17 +778,29 @@ export async function getCODEOWNERS(ref: string, options?: GitHubClientOptions):
     return null;
   }
   try {
-    const { data } = await client.octokit.repos.getContent({
+    const { data } = await withRetry('fetch CODEOWNERS', () => client.octokit.repos.getContent({
       owner: client.owner,
       repo: client.repo,
       path: '.github/CODEOWNERS',
       ref,
-    });
+    }));
     if ('content' in data && typeof data.content === 'string') {
       return Buffer.from(data.content, 'base64').toString('utf-8');
     }
     return null;
-  } catch {
+  } catch (error) {
+    if (isNotFound(error)) return null;
+    try {
+      return await getCODEOWNERSGraphQL(client, ref);
+    } catch (fallbackError) {
+      if (isNotFound(fallbackError)) return null;
+      if (options?.strictEvidence) {
+        strictEvidenceUnavailable('fetch CODEOWNERS', client, undefined, fallbackError);
+      }
+    }
+    if (options?.strictEvidence) {
+      strictEvidenceUnavailable('fetch CODEOWNERS', client, undefined, error);
+    }
     return null;
   }
 }

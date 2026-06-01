@@ -12,6 +12,7 @@ describe('pr doctor live evidence helpers', () => {
       repoFullName: 'Negentropy-Laby/OpenSlack',
       auth: 'auto',
       requireLive: true,
+      strictEvidence: true,
     });
   });
 
@@ -20,6 +21,7 @@ describe('pr doctor live evidence helpers', () => {
     expect(buildPRDoctorClientOptions({ dryRun: true })).toMatchObject({
       auth: 'dry-run',
       requireLive: false,
+      strictEvidence: false,
     });
   });
 

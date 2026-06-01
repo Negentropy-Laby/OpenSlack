@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { renderFindingsPlain } from '@openslack/runtime';
 import type { PlainFinding } from '@openslack/runtime';
-import { getCODEOWNERS, commentOnPR, getClient, GitHubAuthRequiredError } from '@openslack/github';
+import { getCODEOWNERS, commentOnPR, getClient, GitHubAuthRequiredError, GitHubEvidenceUnavailableError } from '@openslack/github';
 import {
   fetchPRDetails,
   classifyPRReport,
@@ -17,12 +17,14 @@ import {
   buildPRQueue,
   renderPRQueue,
 } from '@openslack/pr';
+import type { PRReviewReport } from '@openslack/pr';
 import { recordEvent } from '@openslack/collaboration';
 import {
   buildPRDoctorClientOptions,
   renderAuthRequiredMessage,
   renderDoctorDryRunReport,
   renderDoctorEvidenceBanner,
+  renderEvidenceUnavailableMessage,
 } from './pr-doctor-evidence.js';
 
 export function prCommands(): Command {
@@ -161,20 +163,31 @@ export function prCommands(): Command {
       }
 
       const evidenceBanner = renderDoctorEvidenceBanner(client);
-      const report = await fetchPRDetails(prNumber, clientOptions);
-      if (report.state === 'unknown') {
-        console.error(`PR_FETCH_FAILED: Could not fetch PR #${prNumber} from ${client.owner}/${client.repo}.`);
-        process.exitCode = 1;
-        return;
+      let report: PRReviewReport;
+      let codeowners: string[];
+      try {
+        report = await fetchPRDetails(prNumber, clientOptions);
+        if (report.state === 'unknown') {
+          console.error(`PR_FETCH_FAILED: Could not fetch PR #${prNumber} from ${client.owner}/${client.repo}.`);
+          process.exitCode = 1;
+          return;
+        }
+        const classified = classifyPRReport(report);
+        const codeownersContent = await getCODEOWNERS(classified.baseRef, clientOptions);
+        const codeownersEntries = codeownersContent ? parseCODEOWNERS(codeownersContent) : [];
+        codeowners = resolveCodeowners(classified.changedFiles, codeownersEntries);
+        report = classified;
+      } catch (error) {
+        if (error instanceof GitHubEvidenceUnavailableError) {
+          console.error(renderEvidenceUnavailableMessage(client, error));
+          process.exitCode = 1;
+          return;
+        }
+        throw error;
       }
-      const classified = classifyPRReport(report);
       const policy = loadPRReviewPolicy();
 
-      const codeownersContent = await getCODEOWNERS(classified.baseRef, clientOptions);
-      const codeownersEntries = codeownersContent ? parseCODEOWNERS(codeownersContent) : [];
-      const codeowners = resolveCodeowners(classified.changedFiles, codeownersEntries);
-
-      const diagnosed = diagnosePR(classified, policy, codeowners);
+      const diagnosed = diagnosePR(report, policy, codeowners);
       const doctorOutput = `${evidenceBanner}\n\n${generateDoctorReport(diagnosed, codeowners)}`;
 
       const isReady = diagnosed.decision === 'READY_TO_MERGE';

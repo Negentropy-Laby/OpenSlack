@@ -9,6 +9,33 @@ const hoisted = vi.hoisted(() => {
       this.name = 'GitHubAuthRequiredError';
     }
   }
+  class MockGitHubEvidenceUnavailableError extends Error {
+    readonly code = 'GITHUB_EVIDENCE_UNAVAILABLE';
+    readonly operation: string;
+    readonly owner: string;
+    readonly repo: string;
+    readonly prNumber?: number;
+    readonly status?: number;
+    readonly causeMessage: string;
+
+    constructor(input: {
+      operation: string;
+      owner: string;
+      repo: string;
+      prNumber?: number;
+      status?: number;
+      causeMessage: string;
+    }) {
+      super(`GITHUB_EVIDENCE_UNAVAILABLE: ${input.operation} failed for ${input.owner}/${input.repo}. ${input.causeMessage}`);
+      this.name = 'GitHubEvidenceUnavailableError';
+      this.operation = input.operation;
+      this.owner = input.owner;
+      this.repo = input.repo;
+      this.prNumber = input.prNumber;
+      this.status = input.status;
+      this.causeMessage = input.causeMessage;
+    }
+  }
 
   return {
     mockGetClient: vi.fn(),
@@ -16,6 +43,7 @@ const hoisted = vi.hoisted(() => {
     mockGetCODEOWNERS: vi.fn(),
     mockCommentOnPR: vi.fn(),
     MockGitHubAuthRequiredError,
+    MockGitHubEvidenceUnavailableError,
   };
 });
 
@@ -24,6 +52,7 @@ vi.mock('@openslack/github', () => ({
   getCODEOWNERS: (...args: unknown[]) => hoisted.mockGetCODEOWNERS(...args),
   commentOnPR: (...args: unknown[]) => hoisted.mockCommentOnPR(...args),
   GitHubAuthRequiredError: hoisted.MockGitHubAuthRequiredError,
+  GitHubEvidenceUnavailableError: hoisted.MockGitHubEvidenceUnavailableError,
 }));
 
 vi.mock('@openslack/pr', () => ({
@@ -140,11 +169,13 @@ describe('pr doctor command live evidence gate', () => {
       repoFullName: 'Negentropy-Laby/OpenSlack',
       auth: 'token',
       requireLive: true,
+      strictEvidence: true,
     });
     expect(hoisted.mockFetchPRDetails).toHaveBeenCalledWith(42, {
       repoFullName: 'Negentropy-Laby/OpenSlack',
       auth: 'token',
       requireLive: true,
+      strictEvidence: true,
     });
     expect(logSpy.mock.calls.flat().join('\n')).toContain('GitHub evidence: LIVE');
     logSpy.mockRestore();
@@ -166,6 +197,36 @@ describe('pr doctor command live evidence gate', () => {
     expect(errorSpy.mock.calls.flat().join('\n')).toContain('BOT_AUTH_REQUIRED');
     expect(hoisted.mockCommentOnPR).not.toHaveBeenCalled();
     expect(hoisted.mockFetchPRDetails).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it('fails closed when live GitHub evidence is unavailable', async () => {
+    hoisted.mockGetClient.mockResolvedValue({
+      owner: 'Negentropy-Laby',
+      repo: 'OpenSlack',
+      authMode: 'github_app_installation',
+      isDryRun: false,
+      octokit: {},
+    });
+    hoisted.mockFetchPRDetails.mockRejectedValue(new hoisted.MockGitHubEvidenceUnavailableError({
+      operation: 'fetch pull request reviews',
+      owner: 'Negentropy-Laby',
+      repo: 'OpenSlack',
+      prNumber: 42,
+      status: 500,
+      causeMessage: 'server error',
+    }));
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await runPrCommand(['doctor', '42', '--auth', 'app']);
+
+    const out = errorSpy.mock.calls.flat().join('\n');
+    expect(process.exitCode).toBe(1);
+    expect(out).toContain('GITHUB_EVIDENCE_UNAVAILABLE');
+    expect(out).toContain('GitHub evidence: LIVE');
+    expect(out).toContain('Operation: fetch pull request reviews');
+    expect(out).not.toContain('NEEDS_HUMAN_APPROVAL');
+    expect(hoisted.mockGetCODEOWNERS).not.toHaveBeenCalled();
     errorSpy.mockRestore();
   });
 });

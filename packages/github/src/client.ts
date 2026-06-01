@@ -19,6 +19,7 @@ export interface GitHubClientOptions {
   repoFullName?: string;
   auth?: GitHubAuthPreference;
   requireLive?: boolean;
+  strictEvidence?: boolean;
   cwd?: string;
 }
 
@@ -54,6 +55,18 @@ export class GitHubRepoRequiredError extends Error {
     super(message);
     this.name = 'GitHubRepoRequiredError';
   }
+}
+
+function createOctokit(auth: string): Octokit {
+  return new Octokit({
+    auth,
+    log: {
+      debug: () => {},
+      info: () => {},
+      warn: () => {},
+      error: () => {},
+    },
+  });
 }
 
 export function parseGitHubRepoSpec(input: string | undefined): { owner: string; repo: string } | null {
@@ -167,7 +180,7 @@ export async function getClient(options: GitHubClientOptions = {}): Promise<GitH
       return {
         owner,
         repo,
-        octokit: new Octokit({ auth: appToken.token }),
+        octokit: createOctokit(appToken.token),
         authMode: 'github_app_installation',
         isDryRun: false,
         tokenExpiresAt: appToken.expiresAt,
@@ -188,7 +201,7 @@ export async function getClient(options: GitHubClientOptions = {}): Promise<GitH
       return {
         owner,
         repo,
-        octokit: new Octokit({ auth: token }),
+        octokit: createOctokit(token),
         authMode: 'token',
         isDryRun: false,
       };
