@@ -85,16 +85,23 @@ PR health report with 11 governance gates. Toggle compressed mode with `c` key.
 
 ## Keyboard Shortcuts
 
+### Global
+
 | Key | Action |
 |-----|--------|
 | q / Esc | Back / Quit |
 | Up / Down | Navigate |
 | Enter | Select |
-| c | Toggle compressed (Doctor view) |
-| r | Run workflow (Lifecycle view) |
-| d | Dry-run workflow (Lifecycle view) |
-| a | Approve (Approval Center) |
-| r | Reject (Approval Center) |
+
+### View-specific
+
+| Key | View | Action |
+|-----|------|--------|
+| c | Doctor | Toggle compressed summary |
+| r | Lifecycle | Run workflow |
+| d | Lifecycle | Dry-run workflow |
+| a | Approval Center | Approve selected |
+| x | Approval Center | Reject selected |
 
 ## Fallback
 
