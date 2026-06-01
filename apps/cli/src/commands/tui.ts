@@ -3,6 +3,15 @@ import { Command } from 'commander';
 export function tuiCommands(): Command {
   return new Command('tui')
     .description('Launch the interactive TUI workbench')
+    .addCommand(
+      new Command('doctor')
+        .description('Diagnose terminal capabilities for TUI support')
+        .action(async () => {
+          const { diagnoseTui, renderDiagnosticsPlain } = await import('@openslack/tui');
+          const report = diagnoseTui();
+          console.log(renderDiagnosticsPlain(report));
+        }),
+    )
     .action(async () => {
       try {
         const { isTuiSupported, renderPlain, renderPlainHome, mapDashboardToViewModel } = await import('@openslack/tui');
