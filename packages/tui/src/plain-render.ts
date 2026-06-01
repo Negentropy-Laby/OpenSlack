@@ -98,6 +98,14 @@ export function renderPlainHome(vm: HomeViewModel, width: number = MAX_WIDTH): s
     lines.push('')
   }
 
+  // Next recommended action
+  if (vm.nextRecommendedAction) {
+    lines.push('Next Recommended Action:')
+    lines.push(wrap(`  > ${vm.nextRecommendedAction.label}`, width))
+    lines.push(wrapIndent(`    ${vm.nextRecommendedAction.reason}`, 4, width))
+    lines.push('')
+  }
+
   // Navigation
   if (vm.navItems.length > 0) {
     lines.push('Quick Navigation:')

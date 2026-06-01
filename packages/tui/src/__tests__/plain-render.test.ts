@@ -24,6 +24,7 @@ import {
 
 import {
   createHomeViewModel,
+  createHomeViewModelWithAction,
   createDoctorViewModel,
   createPrQueueViewModel,
   createProfileViewModel,
@@ -143,6 +144,15 @@ describe('renderPlainHome', () => {
     const out = renderPlainHome(vm)
     expect(out).toContain('3 Pending Approvals')
     expect(out).toContain('Plan: deploy to production')
+  })
+
+  it('renders next recommended action when present', () => {
+    const vm = createHomeViewModelWithAction()
+    const out = renderPlainHome(vm)
+    expect(out).toContain('Next Recommended Action:')
+    expect(out).toContain('Approve pending plan: deploy to production')
+    expect(out).toContain('1 plan awaiting approval, risk: medium')
+    assertNoLineExceeds80(out)
   })
 })
 
@@ -577,6 +587,21 @@ describe('custom width rendering', () => {
         },
       ],
       allClear: false,
+    }
+
+    assertNoLineExceeds(renderPlainHome(vm, 40), 40)
+  })
+
+  it('wraps next recommended action within the requested width', () => {
+    const vm: HomeViewModel = {
+      ...createHomeViewModel(),
+      nextRecommendedAction: {
+        label: 'Approve profile sync PR https://github.com/Negentropy-Laby/OpenSlack/pull/130/files#diff-abc123def456',
+        reason: 'Validation is waiting at https://github.com/Negentropy-Laby/OpenSlack/actions/runs/26736208952/job/78789924481',
+        route: 'approvals',
+        urgency: 'governance',
+        priority: 0,
+      },
     }
 
     assertNoLineExceeds(renderPlainHome(vm, 40), 40)
