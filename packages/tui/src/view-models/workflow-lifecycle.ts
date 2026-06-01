@@ -8,6 +8,18 @@ export interface LifecycleStage {
   issueNumber?: number
   issueUrl?: string
   detail: string
+  /** Who is responsible for this stage (e.g. "team-lead", "agent-a") */
+  owner?: string
+}
+
+/** A specific missing workflow gate item. */
+export interface BlockedGateItem {
+  /** Gate name, e.g. "Coverage", "Review" */
+  gate: string
+  /** What is missing */
+  detail: string
+  /** How to resolve */
+  action?: string
 }
 
 export interface PhaseIssueItem {
@@ -37,6 +49,10 @@ export interface WorkflowLifecycleViewModel {
   subIssueMode?: 'native' | 'fallback' | 'mixed' | 'unknown'
   dependencyMode?: 'native' | 'fallback' | 'mixed' | 'none'
   fallbackReasons?: string[]
+  /** Specific blocked gate items for actionable display */
+  blockedGateItems?: BlockedGateItem[]
+  /** One-line status summary answering where/who/what */
+  statusSummary?: string
 }
 
 /** Canonical stage keys for the 5-slot horizontal progress bar. */
@@ -67,7 +83,7 @@ const CANONICAL_LABELS: Record<CanonicalStageKey, string> = {
  * Map a stage name from LifecycleStage to a canonical key.
  * Uses prefix matching and common aliases.
  */
-function classifyStageName(name: string): CanonicalStageKey | null {
+export function classifyStageName(name: string): CanonicalStageKey | null {
   const lower = name.toLowerCase().replace(/[_-]/g, '')
   if (lower.includes('proposal') || lower.includes('propose') || lower.includes('draft')) return 'proposal'
   if (lower.includes('review') || lower.includes('approve') || lower.includes('approval')) return 'review'
@@ -236,6 +252,7 @@ export function mapWorkflowLifecycleToViewModel(data?: {
     issueNumber?: number
     issueUrl?: string
     detail?: string
+    owner?: string
   }>
   phaseIssues?: Array<{
     phase?: string
@@ -255,6 +272,8 @@ export function mapWorkflowLifecycleToViewModel(data?: {
   subIssueMode?: 'native' | 'fallback' | 'mixed' | 'unknown'
   dependencyMode?: 'native' | 'fallback' | 'mixed' | 'none'
   fallbackReasons?: string[]
+  blockedGateItems?: Array<{ gate: string; detail: string; action?: string }>
+  statusSummary?: string
 }): WorkflowLifecycleViewModel {
   const s = sanitizeTerminalText
 
@@ -266,6 +285,7 @@ export function mapWorkflowLifecycleToViewModel(data?: {
     issueNumber: stage.issueNumber,
     issueUrl: stage.issueUrl ? s(stage.issueUrl) : undefined,
     detail: s(stage.detail ?? ''),
+    owner: stage.owner ? s(stage.owner) : undefined,
   }))
 
   const phaseIssues: PhaseIssueItem[] = (data?.phaseIssues ?? []).map(pi => ({
@@ -297,5 +317,11 @@ export function mapWorkflowLifecycleToViewModel(data?: {
     subIssueMode: data?.subIssueMode,
     dependencyMode: data?.dependencyMode,
     fallbackReasons: (data?.fallbackReasons ?? []).map(s),
+    blockedGateItems: data?.blockedGateItems?.map(g => ({
+      gate: s(g.gate),
+      detail: s(g.detail),
+      action: g.action ? s(g.action) : undefined,
+    })),
+    statusSummary: data?.statusSummary ? s(data.statusSummary) : undefined,
   }
 }
