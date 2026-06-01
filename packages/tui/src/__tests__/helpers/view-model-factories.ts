@@ -197,6 +197,8 @@ export function createWorkflowLifecycleViewModel(): WorkflowLifecycleViewModel {
     subIssueMode: 'native',
     dependencyMode: 'native',
     fallbackReasons: [],
+    blockedGateItems: [],
+    statusSummary: 'At run stage, waiting for execution to complete',
   }
 }
 
