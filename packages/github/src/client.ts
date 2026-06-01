@@ -203,7 +203,7 @@ export async function getClient(options: GitHubClientOptions = {}): Promise<GitH
 
   if (options.requireLive) {
     throw new GitHubAuthRequiredError(
-      `AUTH_REQUIRED: pr doctor needs live GitHub evidence for ${owner}/${repo}. Use scripts/openslack-bot.ps1, set GITHUB_TOKEN, or pass --dry-run.`,
+      `AUTH_REQUIRED: live GitHub credentials are required for ${owner}/${repo}. Use scripts/openslack-bot.ps1, set GITHUB_TOKEN, or pass --dry-run.`,
     );
   }
 
