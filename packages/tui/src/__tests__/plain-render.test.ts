@@ -58,10 +58,14 @@ function assertNoAnsi(output: string) {
 }
 
 function assertNoLineExceeds80(output: string) {
+  assertNoLineExceeds(output, 80)
+}
+
+function assertNoLineExceeds(output: string, maxWidth: number) {
   const lines = output.split('\n')
   for (const line of lines) {
     const visualWidth = stringWidth(line)
-    expect(visualWidth, `Line exceeds 80 columns (${visualWidth}): "${line}"`).toBeLessThanOrEqual(80)
+    expect(visualWidth, `Line exceeds ${maxWidth} columns (${visualWidth}): "${line}"`).toBeLessThanOrEqual(maxWidth)
   }
 }
 
@@ -452,6 +456,46 @@ describe('renderPlain dispatch', () => {
 
   it('returns fallback for unknown view', () => {
     expect(renderPlain('unknown', {})).toContain('Plain rendering not available')
+  })
+
+  it('passes custom width through to renderers', () => {
+    const out = renderPlain('home', createHomeViewModel(), 40)
+    assertNoLineExceeds(out, 40)
+  })
+})
+
+describe('custom width rendering', () => {
+  it('keeps core renderers within 40 columns', () => {
+    const outputs = [
+      renderPlainHome(createHomeViewModel(), 40),
+      renderPlainDoctor(createDoctorViewModel(), 40),
+      renderPlainPrQueue(createPrQueueViewModel(), 40),
+      renderPlainProfile(createProfileViewModel(), 40),
+      renderPlainWorkflowLifecycle(createWorkflowLifecycleViewModel(), 40),
+      renderPlainWorkflowWorkbench(createWorkflowWorkbenchViewModel(), 40),
+      renderPlainDashboard(createDashboardViewModel(), 40),
+    ]
+
+    for (const out of outputs) {
+      assertNoLineExceeds(out, 40)
+    }
+  })
+
+  it('wraps long URLs within the requested width', () => {
+    const vm: HomeViewModel = {
+      ...createHomeViewModel(),
+      attentionItems: [
+        {
+          label: 'PR Review Required',
+          detail: 'https://github.com/Negentropy-Laby/OpenSlack/pull/130/files#diff-abc123def456ghi789jkl012',
+          route: 'approvals',
+          colorTheme: 'warning',
+        },
+      ],
+      allClear: false,
+    }
+
+    assertNoLineExceeds(renderPlainHome(vm, 40), 40)
   })
 })
 

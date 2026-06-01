@@ -87,6 +87,15 @@ describe('wrapVisible', () => {
   it('handles empty string', () => {
     expect(wrapVisible('', 80)).toBe('')
   })
+
+  it('hard-wraps long tokens such as URLs', () => {
+    const result = wrapVisible('https://github.com/Negentropy-Laby/OpenSlack/pull/130/files#diff-abc123def456', 24)
+    const lines = result.split('\n')
+    expect(lines.length).toBeGreaterThan(1)
+    for (const line of lines) {
+      expect(visibleWidth(line)).toBeLessThanOrEqual(24)
+    }
+  })
 })
 
 describe('wrapIndentVisible', () => {
