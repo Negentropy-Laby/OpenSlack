@@ -279,11 +279,32 @@ approval on stale PR checks.
 | `openslack pr review <n> --comment` | Post review report as PR comment |
 | `openslack pr recommend <n>` | Recommend next action for a PR |
 | `openslack pr doctor <n>` | Run governance diagnosis (11 gates) |
+| `openslack pr doctor <n> --repo owner/name` | Diagnose a PR in an explicit repository |
+| `openslack pr doctor <n> --auth auto\|app\|token\|dry-run` | Select the GitHub evidence mode |
+| `openslack pr doctor <n> --dry-run` | Show the simulated diagnosis plan only; no governance decision is produced |
 | `openslack pr doctor <n> --format tui` | Interactive PR doctor view (q/Esc to exit) |
 | `openslack pr doctor <n> --comment` | Post doctor report as PR comment |
 | `openslack pr queue` | Show open PRs sorted by readiness and blocker owner |
 | `openslack pr watch <n>` | Poll PR status until ready or timeout |
 | `openslack pr merge <n>` | Merge PR after all gates pass |
+
+`pr doctor` requires live GitHub evidence by default. If no supported credential
+is configured, it exits with `AUTH_REQUIRED` instead of producing a dry-run
+governance report. Use `--dry-run` only when you want simulation output; dry-run
+reports are marked `Decision: NOT_EVALUATED` and must not be used for merge
+readiness.
+
+Direct `bun run openslack pr doctor <n>` reads explicit environment credentials
+only. It does not read `.openslack.local\github-app.pem` and does not reuse the
+human `gh` keyring login. For GitHub App bot-authenticated diagnosis, use:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\openslack-bot.ps1 pr doctor <n>
+```
+
+Posting doctor reports with `--comment` is a PR mutation and requires GitHub App
+bot authentication. Token or human-authenticated diagnosis may be used for
+read-only evidence only.
 
 For local bot-authenticated PRMS diagnosis or Merge Steward execution, use the
 fixed GitHub App wrapper pipeline instead of reading credentials manually:

@@ -71,6 +71,13 @@ or points to a different installation, the wrapper lists the GitHub App's
 installations and uses the one matching `GITHUB_OWNER` (default:
 `Negentropy-Laby`).
 
+Direct `bun run openslack ...` commands do not read
+`.openslack.local/github-app.pem` and do not reuse the human `gh` CLI keyring.
+The PEM is intentionally loaded only by wrapper scripts or by an explicit
+environment variable. For `pr doctor`, missing live credentials produce
+`AUTH_REQUIRED`; use the wrapper for live bot evidence or pass `--dry-run` for
+an explicit `NOT_EVALUATED` simulation report.
+
 Use this runtime bot credential path for PR creation whenever the work is
 OpenSlack-authored or delegated to an agent or automation. Do not create those
 PRs with a human `gh` login or human PAT, even when the commits themselves are
@@ -303,9 +310,17 @@ The provider falls back to this when `OPENSLACK_GITHUB_APP_ID` is not set.
 
 ## Token Priority (getClient)
 
+Repository target resolution uses: explicit command option, then
+`GITHUB_OWNER`/`GITHUB_REPO`, then `git remote origin`, then
+`openslack.yaml` canonical remote.
+
 1. `OPENSLACK_GITHUB_APP_ID` + `OPENSLACK_GITHUB_APP_INSTALLATION_ID` + private key → **GitHub App installation token** (preferred)
-2. `GITHUB_TOKEN` → **PAT / Actions token** (fallback)
-3. Neither → **dry-run mode** (log intent, no API calls)
+2. `GITHUB_TOKEN` or `GH_TOKEN` → **PAT / Actions token** (fallback)
+3. Neither → **dry-run mode** only for commands that explicitly allow dry-run
+
+Governance commands that need real PR evidence, such as `pr doctor`, request
+live credentials and fail closed instead of silently using dry-run placeholder
+data.
 
 ## Environment Variables
 

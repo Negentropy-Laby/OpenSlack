@@ -1,4 +1,5 @@
 import { getClient } from './client.js';
+import type { GitHubClientOptions } from './client.js';
 
 export interface CreatePRResult {
   url: string;
@@ -11,8 +12,9 @@ export async function createDraftPR(
   base: string = 'main',
   title: string,
   body: string,
+  options?: GitHubClientOptions,
 ): Promise<CreatePRResult> {
-  const client = await getClient();
+  const client = await getClient(options);
   if (client.isDryRun) {
     const dryResult = {
       url: `https://github.com/${client.owner}/${client.repo}/pull/DRY_RUN`,
@@ -71,8 +73,9 @@ export async function listOpenPRs(
   limit = 20,
   owner?: string,
   repo?: string,
+  options?: GitHubClientOptions,
 ): Promise<OpenPRSummary[]> {
-  const client = await getClient();
+  const client = await getClient(options);
   const targetOwner = owner ?? client.owner;
   const targetRepo = repo ?? client.repo;
   if (client.isDryRun) {
@@ -112,8 +115,8 @@ export interface PRReview {
   body: string;
 }
 
-export async function getPR(prNumber: number): Promise<PRDetail | null> {
-  const client = await getClient();
+export async function getPR(prNumber: number, options?: GitHubClientOptions): Promise<PRDetail | null> {
+  const client = await getClient(options);
   if (client.isDryRun) {
     console.log(`[DRY RUN] Would fetch PR #${prNumber} from ${client.owner}/${client.repo}`);
     return null;
@@ -145,8 +148,8 @@ export async function getPR(prNumber: number): Promise<PRDetail | null> {
   }
 }
 
-export async function listPRFiles(prNumber: number): Promise<string[]> {
-  const client = await getClient();
+export async function listPRFiles(prNumber: number, options?: GitHubClientOptions): Promise<string[]> {
+  const client = await getClient(options);
   if (client.isDryRun) {
     console.log(`[DRY RUN] Would list files for PR #${prNumber}`);
     return [];
@@ -168,8 +171,8 @@ export interface PRFilePatch {
   patch: string;
 }
 
-export async function getPRFilePatches(prNumber: number): Promise<PRFilePatch[]> {
-  const client = await getClient();
+export async function getPRFilePatches(prNumber: number, options?: GitHubClientOptions): Promise<PRFilePatch[]> {
+  const client = await getClient(options);
   if (client.isDryRun) {
     console.log(`[DRY RUN] Would list file patches for PR #${prNumber}`);
     return [];
@@ -188,14 +191,14 @@ export async function getPRFilePatches(prNumber: number): Promise<PRFilePatch[]>
   }
 }
 
-export async function getPRChecks(prNumber: number): Promise<PRCheckRun[]> {
-  const client = await getClient();
+export async function getPRChecks(prNumber: number, options?: GitHubClientOptions): Promise<PRCheckRun[]> {
+  const client = await getClient(options);
   if (client.isDryRun) {
     console.log(`[DRY RUN] Would fetch checks for PR #${prNumber}`);
     return [];
   }
   try {
-    const pr = await getPR(prNumber);
+    const pr = await getPR(prNumber, options);
     if (!pr) return [];
     const { data } = await client.octokit.checks.listForRef({
       owner: client.owner,
@@ -212,8 +215,8 @@ export async function getPRChecks(prNumber: number): Promise<PRCheckRun[]> {
   }
 }
 
-export async function getPRReviews(prNumber: number): Promise<PRReview[]> {
-  const client = await getClient();
+export async function getPRReviews(prNumber: number, options?: GitHubClientOptions): Promise<PRReview[]> {
+  const client = await getClient(options);
   if (client.isDryRun) {
     console.log(`[DRY RUN] Would fetch reviews for PR #${prNumber}`);
     return [];
@@ -237,8 +240,9 @@ export async function getPRReviews(prNumber: number): Promise<PRReview[]> {
 export async function commentOnPR(
   prNumber: number,
   body: string,
+  options?: GitHubClientOptions,
 ): Promise<void> {
-  const client = await getClient();
+  const client = await getClient(options);
   if (client.isDryRun) {
     console.log(`[DRY RUN] Would comment on PR #${prNumber} in ${client.owner}/${client.repo}`);
     return;
@@ -252,8 +256,8 @@ export async function commentOnPR(
   });
 }
 
-export async function getCODEOWNERS(ref: string): Promise<string | null> {
-  const client = await getClient();
+export async function getCODEOWNERS(ref: string, options?: GitHubClientOptions): Promise<string | null> {
+  const client = await getClient(options);
   if (client.isDryRun) {
     console.log(`[DRY RUN] Would fetch CODEOWNERS from ${client.owner}/${client.repo}@${ref}`);
     return null;
@@ -287,8 +291,9 @@ export async function mergePR(
     commitTitle?: string;
     commitMessage?: string;
   } = {},
+  clientOptions?: GitHubClientOptions,
 ): Promise<MergePRResult> {
-  const client = await getClient();
+  const client = await getClient(clientOptions);
   if (client.isDryRun) {
     console.log(
       `[DRY RUN] Would merge PR #${prNumber} in ${client.owner}/${client.repo} via ${options.method || 'merge'}`,

@@ -1,13 +1,17 @@
 import { getPR, listPRFiles, getPRChecks, getPRReviews, getPRFilePatches } from '@openslack/github';
+import type { GitHubClientOptions } from '@openslack/github';
 import type { PRReviewReport } from './types.js';
 
-export async function fetchPRDetails(prNumber: number): Promise<PRReviewReport> {
+export async function fetchPRDetails(
+  prNumber: number,
+  options?: GitHubClientOptions,
+): Promise<PRReviewReport> {
   const [pr, files, checks, reviews, filePatches] = await Promise.all([
-    getPR(prNumber),
-    listPRFiles(prNumber),
-    getPRChecks(prNumber),
-    getPRReviews(prNumber),
-    getPRFilePatches(prNumber),
+    getPR(prNumber, options),
+    listPRFiles(prNumber, options),
+    getPRChecks(prNumber, options),
+    getPRReviews(prNumber, options),
+    getPRFilePatches(prNumber, options),
   ]);
 
   const humanApprovals = reviews
