@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import Box from '../ink/components/Box.js'
+import Text from '../ink/components/Text.js'
 import useApp from '../ink/hooks/use-app.js'
 import useInput from '../ink/hooks/use-input.js'
 import Pane from '../design-system/Pane.js'
@@ -8,7 +9,15 @@ import ListItem from '../design-system/ListItem.js'
 import Divider from '../design-system/Divider.js'
 import StatusIcon from '../design-system/StatusIcon.js'
 import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
-import type { ProfileViewModel } from '../view-models/profile.js'
+import { sanitizeTerminalText } from '../sanitize.js'
+import {
+  sanitizeProfileActionResult,
+  sanitizeProfileCheckGroups,
+  type ProfileActionResult,
+  type ProfileViewModel,
+  type ProfileGuidedStep,
+  type ProfileCheckGroup,
+} from '../view-models/profile.js'
 
 export type ProfileViewProps = {
   model: ProfileViewModel
@@ -44,11 +53,62 @@ function modeColor(mode: string): 'muted' | 'info' | 'warning' {
   return 'muted'
 }
 
+type StepDef = { key: ProfileGuidedStep; label: string; shortcut: string }
+
+const GUIDED_STEPS: StepDef[] = [
+  { key: 'check', label: 'Check', shortcut: 'c' },
+  { key: 'preview', label: 'Preview', shortcut: 'p' },
+  { key: 'create-pr', label: 'Create PR', shortcut: 'r' },
+]
+
+function stepIndex(step: ProfileGuidedStep | undefined): number {
+  if (step === 'preview') return 1
+  if (step === 'create-pr') return 2
+  if (step === 'complete') return 3
+  return 0
+}
+
+function renderGuidedStepBar(currentStep: ProfileGuidedStep | undefined): React.ReactNode {
+  const current = stepIndex(currentStep)
+  return React.createElement(
+    Box,
+    { flexDirection: 'column', marginY: 0 },
+    React.createElement(
+      Box,
+      { flexDirection: 'row' },
+      ...GUIDED_STEPS.map((st, i) => {
+        const isComplete = current > i
+        const isCurrent = current === i
+        const icon = isComplete ? '>' : isCurrent ? '*' : ' '
+        const color: 'success' | 'accent' | 'muted' = isComplete ? 'success' : isCurrent ? 'accent' : 'muted'
+        const suffix = i < GUIDED_STEPS.length - 1 ? ' -> ' : ''
+        return React.createElement(
+          Box,
+          { key: `step-${st.key}`, flexDirection: 'row' },
+          React.createElement(ThemedText, { colorTheme: color, bold: isCurrent }, `${icon} ${i + 1}. ${st.label}`),
+          React.createElement(Text, null, suffix),
+        )
+      }),
+      current >= 3
+        ? React.createElement(ThemedText, { colorTheme: 'success', bold: true }, ' Done')
+        : null,
+    ),
+  )
+}
+
 export default function ProfileView({ model, onBack, onAction }: ProfileViewProps): React.JSX.Element {
   const { exit } = useApp()
-  const [actionResult, setActionResult] = useState(model.actionResult)
+  const [actionResult, setActionResult] = useState<ProfileActionResult | undefined>(() =>
+    model.actionResult ? sanitizeProfileActionResult(model.actionResult) : undefined,
+  )
   const [isRunning, setIsRunning] = useState(false)
-  const [diffOutput, setDiffOutput] = useState<string | undefined>(model.diffOutput)
+  const [diffOutput, setDiffOutput] = useState<string | undefined>(() =>
+    model.diffOutput ? sanitizeTerminalText(model.diffOutput) : undefined,
+  )
+  const [checkGroups, setCheckGroups] = useState<ProfileCheckGroup[] | undefined>(() =>
+    sanitizeProfileCheckGroups(model.checkGroups),
+  )
+  const [guidedStep, setGuidedStep] = useState<ProfileGuidedStep | undefined>(model.guidedStep)
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
@@ -64,9 +124,17 @@ export default function ProfileView({ model, onBack, onAction }: ProfileViewProp
       onAction(action.id)
         .then((result) => {
           if (result) {
-            setActionResult({ actionId: action.id, success: result.success, message: result.message })
-            if (action.id === 'preview' && result.success && result.data?.diff && typeof result.data.diff === 'string') {
-              setDiffOutput(result.data.diff)
+            setActionResult(sanitizeProfileActionResult({ actionId: action.id, success: result.success, message: result.message }))
+            if (action.id === 'check') {
+              // Store check groups and advance step
+              const groups = result.data?.checkGroups
+              if (Array.isArray(groups)) setCheckGroups(sanitizeProfileCheckGroups(groups as ProfileCheckGroup[]))
+              if (result.success) setGuidedStep('preview')
+            } else if (action.id === 'preview' && result.success && result.data?.diff && typeof result.data.diff === 'string') {
+              setDiffOutput(sanitizeTerminalText(result.data.diff))
+              setGuidedStep('create-pr')
+            } else if (action.id === 'create-pr' && result.success) {
+              setGuidedStep('complete')
             } else if (action.id !== 'preview') {
               setDiffOutput(undefined)
             }
@@ -76,7 +144,7 @@ export default function ProfileView({ model, onBack, onAction }: ProfileViewProp
         })
         .catch((err: unknown) => {
           const msg = err instanceof Error ? err.message : String(err)
-          setActionResult({ actionId: action.id, success: false, message: msg })
+          setActionResult(sanitizeProfileActionResult({ actionId: action.id, success: false, message: msg }))
         })
         .finally(() => {
           setIsRunning(false)
@@ -109,6 +177,26 @@ export default function ProfileView({ model, onBack, onAction }: ProfileViewProp
       React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, `Marker: <!-- openslack:${model.marker}:start/end -->`),
     ),
     React.createElement(Divider, { length: 50 }),
+
+    // Guided 3-step flow indicator
+    renderGuidedStepBar(guidedStep),
+    React.createElement(Divider, { length: 50 }),
+
+    // Check result groups (shown after check action)
+    checkGroups && checkGroups.length > 0
+      ? React.createElement(
+          Pane,
+          { title: 'Check Results', marginY: 0 },
+          ...checkGroups.map((g, i) =>
+            React.createElement(ListItem, {
+              key: `check-${i}`,
+              label: g.label,
+              detail: g.detail,
+              status: g.status === 'pass' ? 'pass' : g.status === 'fail' ? 'fail' : g.status === 'warn' ? 'warn' : 'info',
+            }),
+          ),
+        )
+      : null,
 
     // Failure panel (shown when sync failed)
     model.syncStatus === 'failed' && model.failureDetails
@@ -288,11 +376,30 @@ export default function ProfileView({ model, onBack, onAction }: ProfileViewProp
         )
       : null,
 
-    // Actions
+    // Actions: primary guided steps + secondary
     React.createElement(
       Pane,
       { title: 'Actions', marginY: 0 },
-      ...model.actions.map((a) =>
+      // Primary actions (guided flow)
+      ...model.actions.filter(a => ['check', 'preview', 'create-pr'].includes(a.id)).map((a) => {
+        const isRecommended = (
+          (guidedStep === 'check' && a.id === 'check') ||
+          (guidedStep === 'preview' && (a.id === 'preview' || a.id === 'check')) ||
+          (guidedStep === 'create-pr' && a.id === 'create-pr')
+        )
+        return React.createElement(ListItem, {
+          key: `action-${a.id}`,
+          label: `${a.key} — ${a.label}${isRecommended ? ' *' : ''}`,
+          detail: a.description,
+          status: a.risk === 'high' ? 'fail' : a.risk === 'medium' ? 'warn' : isRecommended ? 'pass' : 'info',
+        })
+      }),
+      // Divider between primary and secondary
+      React.createElement(Box, { key: 'action-divider', marginTop: 0, marginBottom: 0 },
+        React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, '── secondary ──'),
+      ),
+      // Secondary actions
+      ...model.actions.filter(a => !['check', 'preview', 'create-pr'].includes(a.id)).map((a) =>
         React.createElement(ListItem, {
           key: `action-${a.id}`,
           label: `${a.key} — ${a.label}`,
