@@ -15,7 +15,7 @@ import { useActionDispatch } from '../actions/use-action-dispatch.js'
 import { TuiActionCategory, TuiRiskLevel, TuiActionStatus } from '../actions/types.js'
 import type { TuiAction, TuiActionResult } from '../actions/types.js'
 import type { WorkflowLifecycleViewModel, LifecycleStage, PhaseIssueItem } from '../view-models/workflow-lifecycle.js'
-import { mapCanonicalStages } from '../view-models/workflow-lifecycle.js'
+import { mapCanonicalStages, classifyStageName } from '../view-models/workflow-lifecycle.js'
 import type { CanonicalStageSlot, CanonicalStageStatus } from '../view-models/workflow-lifecycle.js'
 import type { TuiActionHandlers } from './render-shell.js'
 
@@ -536,7 +536,7 @@ export default function WorkflowLifecycleView({ model, actionHandlers, onBack }:
                 React.createElement(ThemedText, { colorTheme: 'muted' }, 'Current: '),
                 React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, currentCanonical.label),
                 (() => {
-                  const cs = stages.find(s => s.name.toLowerCase().replace(/[_-]/g, '').includes(currentCanonical.key))
+                  const cs = stages.find(s => classifyStageName(s.name) === currentCanonical.key)
                   return cs?.owner
                     ? React.createElement(
                         Box,
@@ -659,7 +659,7 @@ export default function WorkflowLifecycleView({ model, actionHandlers, onBack }:
           ...model.blockedGateItems.map((g, idx) =>
             React.createElement(
               Box,
-              { key: `gate-${idx}`, flexDirection: 'column', marginLeft: 2 },
+              { key: `gate-${g.gate}-${idx}`, flexDirection: 'column', marginLeft: 2 },
               React.createElement(
                 Box,
                 { flexDirection: 'row' },

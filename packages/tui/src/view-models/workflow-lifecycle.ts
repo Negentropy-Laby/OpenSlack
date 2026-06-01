@@ -83,7 +83,7 @@ const CANONICAL_LABELS: Record<CanonicalStageKey, string> = {
  * Map a stage name from LifecycleStage to a canonical key.
  * Uses prefix matching and common aliases.
  */
-function classifyStageName(name: string): CanonicalStageKey | null {
+export function classifyStageName(name: string): CanonicalStageKey | null {
   const lower = name.toLowerCase().replace(/[_-]/g, '')
   if (lower.includes('proposal') || lower.includes('propose') || lower.includes('draft')) return 'proposal'
   if (lower.includes('review') || lower.includes('approve') || lower.includes('approval')) return 'review'

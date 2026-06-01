@@ -403,9 +403,10 @@ export function renderPlainWorkflowLifecycle(vm: WorkflowLifecycleViewModel): st
   // Blocked gate items
   if (vm.blockedGateItems && vm.blockedGateItems.length > 0) {
     lines.push('Blocked Gates:')
+    const gateIndent = '  [FAIL] '.length // 9 chars — aligns "Fix:" under gate detail
     for (const g of vm.blockedGateItems) {
       lines.push(`  [FAIL] ${g.gate}: ${g.detail}`)
-      if (g.action) lines.push(wrapIndent(`         Fix: ${g.action}`, 9))
+      if (g.action) lines.push(wrapIndent(`${' '.repeat(gateIndent)}Fix: ${g.action}`, gateIndent))
     }
     lines.push('')
   }
