@@ -123,7 +123,17 @@ describe('Real render smoke test', () => {
     expect(model.groups.map(g => g.category)).toEqual(['merge-request', 'profile-sync']);
 
     // category label
-    expect(getCategoryLabel('profile-sync')).toBe('Sync Profile');
+    expect(getCategoryLabel('profile-sync')).toBe('Profile Sync');
+  });
+
+  it('keeps GitHub review approvals outside TUI confirmation actions', async () => {
+    const { isTuiConfirmableApprovalCategory } = await import('../views/ApprovalCenterView.js');
+
+    expect(isTuiConfirmableApprovalCategory('github-review')).toBe(false);
+    expect(isTuiConfirmableApprovalCategory('plan')).toBe(true);
+    expect(isTuiConfirmableApprovalCategory('merge-request')).toBe(true);
+    expect(isTuiConfirmableApprovalCategory('workflow-effect')).toBe(true);
+    expect(isTuiConfirmableApprovalCategory('profile-sync')).toBe(true);
   });
 
   it('maps profile view model with syncDetails and mode', async () => {

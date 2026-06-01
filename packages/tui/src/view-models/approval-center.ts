@@ -43,11 +43,11 @@ export interface ApprovalCenterViewModel {
 }
 
 const CATEGORY_LABELS: Record<ApprovalCategory, string> = {
-  plan: 'Approve Plan',
-  'merge-request': 'Confirm Merge',
-  'workflow-effect': 'Confirm Effect',
-  'profile-sync': 'Sync Profile',
-  'github-review': 'GitHub Review',
+  plan: 'Operator Plans',
+  'merge-request': 'Merge Requests',
+  'workflow-effect': 'Workflow Effects',
+  'profile-sync': 'Profile Sync',
+  'github-review': 'GitHub Reviews Required',
 }
 
 export function getCategoryLabel(category: ApprovalCategory): string {

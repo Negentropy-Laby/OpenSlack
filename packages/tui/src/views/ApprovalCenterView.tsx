@@ -1,11 +1,9 @@
 import React, { useState, useCallback } from 'react'
 import Box from '../ink/components/Box.js'
 import Text from '../ink/components/Text.js'
-import useApp from '../ink/hooks/use-app.js'
 import useInput from '../ink/hooks/use-input.js'
 import Pane from '../design-system/Pane.js'
 import ThemedText from '../design-system/ThemedText.js'
-import ThemedBox from '../design-system/ThemedBox.js'
 import Divider from '../design-system/Divider.js'
 import StatusIcon from '../design-system/StatusIcon.js'
 import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
@@ -70,7 +68,7 @@ function getActionVerb(category: ApprovalCategory, isApprove: boolean): string {
       case 'profile-sync':
         return 'Sync profile'
       case 'github-review':
-        return 'Approve review'
+        return 'Show GitHub approval command'
     }
   }
   switch (category) {
@@ -83,16 +81,21 @@ function getActionVerb(category: ApprovalCategory, isApprove: boolean): string {
     case 'profile-sync':
       return 'Cancel sync'
     case 'github-review':
-      return 'Dismiss review'
+      return 'Show GitHub request-changes command'
   }
 }
 
+export function isTuiConfirmableApprovalCategory(category: ApprovalCategory): boolean {
+  return category !== 'github-review'
+}
+
 /** CLI command suggestion for a given category. */
-function getCliSuggestion(category: ApprovalCategory, isApprove: boolean): string {
+function getCliSuggestion(category: ApprovalCategory, isApprove: boolean, prNumber?: number): string {
   if (category === 'github-review') {
+    const target = prNumber ? String(prNumber) : '<PR>'
     return isApprove
-      ? 'gh pr review <PR> --approve'
-      : 'gh pr review <PR> --request-changes'
+      ? `gh pr review ${target} --approve`
+      : `gh pr review ${target} --request-changes`
   }
   if (category === 'merge-request') {
     return 'openslack pr merge <PR>'
@@ -128,12 +131,13 @@ export default function ApprovalCenterView({ model, actionHandlers }: ApprovalCe
   const items = flatItems
   const [selectedIndex, setSelectedIndex] = useClampedIndex(items.length)
   const selected: ApprovalItem | undefined = items[selectedIndex]
+  const isExternalGithubReview = selected ? !isTuiConfirmableApprovalCategory(selected.category) : false
 
   /** Build a TuiAction for the selected item. */
   const buildAction = useCallback((isApprove: boolean): TuiAction | null => {
     if (!selected) return null
     const verb = getActionVerb(selected.category, isApprove)
-    const suggestion = getCliSuggestion(selected.category, isApprove)
+    const suggestion = getCliSuggestion(selected.category, isApprove, selected.prNumber)
     return {
       id: `${selected.id}-${isApprove ? 'approve' : 'reject'}`,
       category: toActionCategory(selected.category),
@@ -210,6 +214,7 @@ export default function ApprovalCenterView({ model, actionHandlers }: ApprovalCe
     }
 
     if (mode === 'detail') {
+      if (isExternalGithubReview) return
       if (input === 'a' || input === 'A') {
         const action = buildAction(true)
         if (action) {
@@ -402,27 +407,85 @@ export default function ApprovalCenterView({ model, actionHandlers }: ApprovalCe
                     'This requires a human GitHub identity. The TUI cannot approve GitHub PRs directly.',
                   ),
                 ),
+                React.createElement(
+                  Box,
+                  { flexDirection: 'row', marginTop: 1 },
+                  React.createElement(ThemedText, { colorTheme: 'muted' }, 'Use: '),
+                  React.createElement(ThemedText, { colorTheme: 'accent' }, getCliSuggestion(selected.category, true, selected.prNumber)),
+                ),
+                React.createElement(
+                  Box,
+                  { flexDirection: 'row', marginTop: 1 },
+                  React.createElement(ThemedText, { colorTheme: 'muted' }, 'TUI action: '),
+                  React.createElement(ThemedText, { colorTheme: 'foreground' }, 'disabled for GitHub review approvals'),
+                ),
+              )
+            : null,
+          // Merge request specific note about PRMS re-check
+          selected.category === 'merge-request'
+            ? React.createElement(
+                Box,
+                { flexDirection: 'column', marginTop: 1 },
+                React.createElement(
+                  Box,
+                  { flexDirection: 'row' },
+                  React.createElement(StatusIcon, { status: 'info' }),
+                  React.createElement(Text, null, ' '),
+                  React.createElement(ThemedText, { colorTheme: 'info' },
+                    'Merge will re-run PRMS doctor before executing to verify all gates still pass.',
+                  ),
+                ),
+                React.createElement(
+                  Box,
+                  { flexDirection: 'row', marginTop: 1 },
+                  React.createElement(ThemedText, { colorTheme: 'muted' }, 'Forbidden: '),
+                  React.createElement(ThemedText, { colorTheme: 'error' }, 'Self-merge, auto-merge, Black Zone merge'),
+                ),
+              )
+            : null,
+          // Boundary note for workflow effects
+          selected.category === 'workflow-effect'
+            ? React.createElement(
+                Box,
+                { flexDirection: 'row', marginTop: 1 },
+                React.createElement(ThemedText, { colorTheme: 'muted' }, 'Boundary: '),
+                React.createElement(ThemedText, { colorTheme: 'foreground' }, 'TUI confirmation resumes or cancels the workflow. GitHub PR approval is separate.'),
+              )
+            : null,
+          // Boundary note for plans
+          selected.category === 'plan'
+            ? React.createElement(
+                Box,
+                { flexDirection: 'row', marginTop: 1 },
+                React.createElement(ThemedText, { colorTheme: 'muted' }, 'Boundary: '),
+                React.createElement(ThemedText, { colorTheme: 'foreground' }, 'TUI confirmation approves or rejects the plan. This is not a GitHub PR approval.'),
               )
             : null,
           React.createElement(
             Box,
             { flexDirection: 'row', marginTop: 1 },
             React.createElement(ThemedText, { colorTheme: 'muted' }, 'CLI: '),
-            React.createElement(ThemedText, { colorTheme: 'accent' }, getCliSuggestion(selected.category, true)),
+            React.createElement(ThemedText, { colorTheme: 'accent' }, getCliSuggestion(selected.category, true, selected.prNumber)),
           ),
         ),
       ),
       overlay,
       React.createElement(Divider, { length: 40 }),
-      React.createElement(
-        Box,
-        { flexDirection: 'row' },
-        React.createElement(KeyboardShortcutHint, { keys: ['a'], description: 'Approve' }),
-        React.createElement(Text, null, '  '),
-        React.createElement(KeyboardShortcutHint, { keys: ['r'], description: 'Reject' }),
-        React.createElement(Text, null, '  '),
-        React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'Back' }),
-      ),
+      isExternalGithubReview
+        ? React.createElement(
+            Box,
+            { flexDirection: 'row' },
+            React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'Back' }),
+          )
+        : React.createElement(
+            Box,
+            { flexDirection: 'row' },
+            React.createElement(KeyboardShortcutHint, { keys: ['a'], description: 'Approve' }),
+            React.createElement(Text, null, '  '),
+            React.createElement(KeyboardShortcutHint, { keys: ['r'], description: 'Reject' }),
+            React.createElement(Text, null, '  '),
+            React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'Back' }),
+          ),
     )
   }
 
