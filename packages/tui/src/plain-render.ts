@@ -26,7 +26,8 @@ function wrap(text: string, width: number = MAX_WIDTH): string {
 
 /** Wrap but indent subsequent lines by `indent` spaces. */
 function wrapIndent(text: string, indent: number, width: number = MAX_WIDTH): string {
-  if (visibleWidth(text) <= width) return text
+  const inner = width - indent
+  if (inner <= 0 || visibleWidth(text) <= inner) return text
   return wrapIndentVisible(text, indent, width)
 }
 

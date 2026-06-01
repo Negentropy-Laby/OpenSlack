@@ -54,6 +54,28 @@ describe('truncateVisible', () => {
     const result = truncateVisible('hello', 2)
     expect(result.length).toBeLessThanOrEqual(2)
   })
+
+  it('does not inflate width on ANSI-colored text', () => {
+    // \x1B[31m...\x1B[0m wraps "world" in red — 0 visible width for escapes
+    const colored = 'hello \x1B[31mworld\x1B[0m this is a long colored string'
+    const result = truncateVisible(colored, 20)
+    expect(visibleWidth(result)).toBeLessThanOrEqual(20)
+    expect(result).toContain('...')
+  })
+
+  it('preserves ANSI escapes inside the kept portion', () => {
+    const colored = '\x1B[32mhello world\x1B[0m'
+    const result = truncateVisible(colored, 15)
+    // Should not truncate — "hello world" is 11 visible cols
+    expect(result).toBe(colored)
+    expect(visibleWidth(result)).toBeLessThanOrEqual(15)
+  })
+
+  it('handles very small maxWidth with CJK', () => {
+    const result = truncateVisible('中文测试', 2)
+    // Should return at most 2 visible columns, not 2 string characters (which would be 4 cols)
+    expect(visibleWidth(result)).toBeLessThanOrEqual(2)
+  })
 })
 
 describe('wrapVisible', () => {
