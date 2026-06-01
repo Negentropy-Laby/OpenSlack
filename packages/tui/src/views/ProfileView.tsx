@@ -9,7 +9,7 @@ import ListItem from '../design-system/ListItem.js'
 import Divider from '../design-system/Divider.js'
 import StatusIcon from '../design-system/StatusIcon.js'
 import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
-import type { ProfileViewModel, ProfileGuidedStep, ProfileCheckGroup, ProfileGuidedStep as ProfileGuidedStepType } from '../view-models/profile.js'
+import type { ProfileViewModel, ProfileGuidedStep, ProfileCheckGroup } from '../view-models/profile.js'
 
 export type ProfileViewProps = {
   model: ProfileViewModel
@@ -94,7 +94,7 @@ export default function ProfileView({ model, onBack, onAction }: ProfileViewProp
   const [isRunning, setIsRunning] = useState(false)
   const [diffOutput, setDiffOutput] = useState<string | undefined>(model.diffOutput)
   const [checkGroups, setCheckGroups] = useState<ProfileCheckGroup[] | undefined>(model.checkGroups)
-  const [guidedStep, setGuidedStep] = useState<ProfileGuidedStepType | undefined>(model.guidedStep)
+  const [guidedStep, setGuidedStep] = useState<ProfileGuidedStep | undefined>(model.guidedStep)
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
@@ -173,7 +173,7 @@ export default function ProfileView({ model, onBack, onAction }: ProfileViewProp
       ? React.createElement(
           Pane,
           { title: 'Check Results', marginY: 0 },
-          ...model.checkGroups.map((g, i) =>
+          ...checkGroups.map((g, i) =>
             React.createElement(ListItem, {
               key: `check-${i}`,
               label: g.label,
@@ -375,7 +375,7 @@ export default function ProfileView({ model, onBack, onAction }: ProfileViewProp
         )
         return React.createElement(ListItem, {
           key: `action-${a.id}`,
-          label: `${a.key} -- ${a.label}${isRecommended ? ' *' : ''}`,
+          label: `${a.key} — ${a.label}${isRecommended ? ' *' : ''}`,
           detail: a.description,
           status: a.risk === 'high' ? 'fail' : a.risk === 'medium' ? 'warn' : isRecommended ? 'pass' : 'info',
         })
@@ -388,7 +388,7 @@ export default function ProfileView({ model, onBack, onAction }: ProfileViewProp
       ...model.actions.filter(a => !['check', 'preview', 'create-pr'].includes(a.id)).map((a) =>
         React.createElement(ListItem, {
           key: `action-${a.id}`,
-          label: `${a.key} -- ${a.label}`,
+          label: `${a.key} — ${a.label}`,
           detail: a.description,
           status: a.risk === 'high' ? 'fail' : a.risk === 'medium' ? 'warn' : 'info',
         }),
