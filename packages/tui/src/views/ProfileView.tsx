@@ -9,7 +9,15 @@ import ListItem from '../design-system/ListItem.js'
 import Divider from '../design-system/Divider.js'
 import StatusIcon from '../design-system/StatusIcon.js'
 import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
-import type { ProfileViewModel, ProfileGuidedStep, ProfileCheckGroup } from '../view-models/profile.js'
+import { sanitizeTerminalText } from '../sanitize.js'
+import {
+  sanitizeProfileActionResult,
+  sanitizeProfileCheckGroups,
+  type ProfileActionResult,
+  type ProfileViewModel,
+  type ProfileGuidedStep,
+  type ProfileCheckGroup,
+} from '../view-models/profile.js'
 
 export type ProfileViewProps = {
   model: ProfileViewModel
@@ -90,10 +98,16 @@ function renderGuidedStepBar(currentStep: ProfileGuidedStep | undefined): React.
 
 export default function ProfileView({ model, onBack, onAction }: ProfileViewProps): React.JSX.Element {
   const { exit } = useApp()
-  const [actionResult, setActionResult] = useState(model.actionResult)
+  const [actionResult, setActionResult] = useState<ProfileActionResult | undefined>(() =>
+    model.actionResult ? sanitizeProfileActionResult(model.actionResult) : undefined,
+  )
   const [isRunning, setIsRunning] = useState(false)
-  const [diffOutput, setDiffOutput] = useState<string | undefined>(model.diffOutput)
-  const [checkGroups, setCheckGroups] = useState<ProfileCheckGroup[] | undefined>(model.checkGroups)
+  const [diffOutput, setDiffOutput] = useState<string | undefined>(() =>
+    model.diffOutput ? sanitizeTerminalText(model.diffOutput) : undefined,
+  )
+  const [checkGroups, setCheckGroups] = useState<ProfileCheckGroup[] | undefined>(() =>
+    sanitizeProfileCheckGroups(model.checkGroups),
+  )
   const [guidedStep, setGuidedStep] = useState<ProfileGuidedStep | undefined>(model.guidedStep)
 
   useInput((input, key) => {
@@ -110,14 +124,14 @@ export default function ProfileView({ model, onBack, onAction }: ProfileViewProp
       onAction(action.id)
         .then((result) => {
           if (result) {
-            setActionResult({ actionId: action.id, success: result.success, message: result.message })
+            setActionResult(sanitizeProfileActionResult({ actionId: action.id, success: result.success, message: result.message }))
             if (action.id === 'check') {
               // Store check groups and advance step
-              const groups = result.data?.checkGroups as ProfileCheckGroup[] | undefined
-              if (groups) setCheckGroups(groups)
+              const groups = result.data?.checkGroups
+              if (Array.isArray(groups)) setCheckGroups(sanitizeProfileCheckGroups(groups as ProfileCheckGroup[]))
               if (result.success) setGuidedStep('preview')
             } else if (action.id === 'preview' && result.success && result.data?.diff && typeof result.data.diff === 'string') {
-              setDiffOutput(result.data.diff)
+              setDiffOutput(sanitizeTerminalText(result.data.diff))
               setGuidedStep('create-pr')
             } else if (action.id === 'create-pr' && result.success) {
               setGuidedStep('complete')
@@ -130,7 +144,7 @@ export default function ProfileView({ model, onBack, onAction }: ProfileViewProp
         })
         .catch((err: unknown) => {
           const msg = err instanceof Error ? err.message : String(err)
-          setActionResult({ actionId: action.id, success: false, message: msg })
+          setActionResult(sanitizeProfileActionResult({ actionId: action.id, success: false, message: msg }))
         })
         .finally(() => {
           setIsRunning(false)

@@ -85,6 +85,25 @@ export interface ProfileViewModel {
   }
 }
 
+export type ProfileActionResult = NonNullable<ProfileViewModel['actionResult']>
+
+export function sanitizeProfileActionResult(result: ProfileActionResult): ProfileActionResult {
+  return {
+    actionId: sanitizeTerminalText(result.actionId),
+    success: result.success,
+    message: sanitizeTerminalText(result.message),
+  }
+}
+
+export function sanitizeProfileCheckGroups(groups: ProfileCheckGroup[] | undefined): ProfileCheckGroup[] | undefined {
+  return groups?.map((group) => ({
+    key: sanitizeTerminalText(group.key),
+    label: sanitizeTerminalText(group.label),
+    status: group.status,
+    detail: sanitizeTerminalText(group.detail ?? ''),
+  }))
+}
+
 export function mapProfileToViewModel(data?: {
   targetRepo?: string
   targetPath?: string
@@ -181,12 +200,7 @@ export function mapProfileToViewModel(data?: {
       : undefined,
     mode: data?.mode ?? 'manual',
     diffOutput: data?.diffOutput ? s(data.diffOutput) : undefined,
-    checkGroups: data?.checkGroups?.map(g => ({
-      key: s(g.key),
-      label: s(g.label),
-      status: g.status,
-      detail: s(g.detail),
-    })),
+    checkGroups: sanitizeProfileCheckGroups(data?.checkGroups),
     guidedStep: data?.guidedStep ?? (
       data?.syncStatus === 'synced' ? 'complete' as ProfileGuidedStep
       : data?.syncStatus === 'failed' ? 'check' as ProfileGuidedStep
@@ -194,6 +208,6 @@ export function mapProfileToViewModel(data?: {
       : 'check' as ProfileGuidedStep
     ),
     actions,
-    actionResult: data?.actionResult,
+    actionResult: data?.actionResult ? sanitizeProfileActionResult(data.actionResult) : undefined,
   }
 }

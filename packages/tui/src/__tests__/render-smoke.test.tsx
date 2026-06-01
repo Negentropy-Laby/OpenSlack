@@ -5,7 +5,7 @@
  * end-to-end by rendering a Box+Text tree into a mock writable stream
  * and asserting the rendered output contains the expected text.
  */
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import React from 'react';
 import { Writable } from 'stream';
 
@@ -263,6 +263,30 @@ describe('Real render smoke test', () => {
     expect(output).toContain('sha-target');
     expect(output).toContain('#55');
     expect(output).toContain('2026-05-28');
+  });
+
+  it('sanitizes profile action result and check groups', async () => {
+    const { mapProfileToViewModel } = await import('../view-models/profile.js');
+
+    const model = mapProfileToViewModel({
+      actionResult: {
+        actionId: 'check',
+        success: false,
+        message: 'Check failed \x1b]0;bad-title\x07',
+      },
+      checkGroups: [
+        {
+          key: 'source',
+          label: '\x1b]52;c;payload\x07Source repository',
+          status: 'warn',
+          detail: '\x1b]8;;https://bad.example\x07click\x1b]8;;\x07 detail',
+        },
+      ],
+    });
+
+    expect(model.actionResult?.message).toBe('Check failed ');
+    expect(model.checkGroups?.[0]?.label).toBe('Source repository');
+    expect(model.checkGroups?.[0]?.detail).toBe('click detail');
   });
 
   it('defaults profile mode to manual when not specified', async () => {
