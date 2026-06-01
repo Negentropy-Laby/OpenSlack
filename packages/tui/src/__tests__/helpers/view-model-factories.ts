@@ -12,6 +12,8 @@ import type { ProfileViewModel } from '../../view-models/profile.js'
 import type { WorkflowLifecycleViewModel } from '../../view-models/workflow-lifecycle.js'
 import type { WorkflowGalleryViewModel } from '../../view-models/workflow-gallery.js'
 import type { DashboardViewModel } from '../../view-models/dashboard.js'
+import type { ApprovalCenterViewModel, ApprovalCategory } from '../../view-models/approval-center.js'
+import type { RoomViewModel } from '../../view-models/room.js'
 
 export function createHomeViewModel(): HomeViewModel {
   return {
@@ -259,6 +261,114 @@ export function createDashboardViewModel(): DashboardViewModel {
     recentActivity: [
       { time: '12:00 PM', type: 'pr.merged', summary: 'PR #127 merged', actor: 'agent-a' },
       { time: '11:30 AM', type: 'task.completed', summary: 'Issue #119 closed', actor: 'agent-b' },
+    ],
+  }
+}
+
+export function createApprovalCenterViewModel(): ApprovalCenterViewModel {
+  const groups: ApprovalCenterViewModel['groups'] = [
+    {
+      category: 'plan' as ApprovalCategory,
+      label: 'Operator Plans',
+      items: [
+        {
+          id: 'plan-001',
+          category: 'plan' as ApprovalCategory,
+          title: 'Deploy to production',
+          detail: 'Plan to deploy v0.1-rc to production cluster',
+          risk: 'medium',
+          requestedBy: 'agent-ops',
+          requestedAt: '2026-06-01T10:00:00Z',
+          planId: 'plan-001',
+          explanation: {
+            why: 'Production deployment requires human confirmation',
+            ifApproved: 'Agent will execute deployment steps',
+            ifRejected: 'Deployment halted, agent notified',
+            source: 'openslack plan confirm plan-001',
+          },
+        },
+      ],
+    },
+    {
+      category: 'merge-request' as ApprovalCategory,
+      label: 'Merge Requests',
+      items: [
+        {
+          id: 'merge-001',
+          category: 'merge-request' as ApprovalCategory,
+          title: 'Merge PR #42: Fix auth flow',
+          detail: 'PRMS doctor: READY_TO_MERGE. All gates passed.',
+          risk: 'green',
+          requestedBy: 'agent-merge',
+          requestedAt: '2026-06-01T09:00:00Z',
+          prNumber: 42,
+          explanation: {
+            why: 'Merge after human approval per constitutional constraint #4',
+            ifApproved: 'Merge Steward will merge after re-running PRMS doctor',
+            ifRejected: 'PR remains open, no merge performed',
+            source: 'gh pr review 42 --approve',
+          },
+        },
+      ],
+    },
+    {
+      category: 'github-review' as ApprovalCategory,
+      label: 'GitHub Reviews Required',
+      items: [
+        {
+          id: 'gh-review-001',
+          category: 'github-review' as ApprovalCategory,
+          title: 'PR #55: Layout Primitives migration',
+          detail: 'CODEOWNER review required for packages/tui/src/layout/',
+          risk: 'red',
+          requestedBy: 'agent-operator',
+          requestedAt: '2026-06-01T08:00:00Z',
+          prNumber: 55,
+          explanation: {
+            why: 'Red Zone path requires human CODEOWNER approval',
+            ifApproved: 'PR can proceed to merge after other gates pass',
+            ifRejected: 'PR blocked until approval from valid CODEOWNER',
+            source: 'gh pr review 55 --approve',
+          },
+        },
+      ],
+    },
+  ]
+
+  return {
+    pendingApprovals: groups.flatMap((g) => g.items),
+    groups,
+    summary: {
+      plans: 1,
+      mergeRequests: 1,
+      workflowEffects: 0,
+      profileSyncs: 0,
+      githubReviews: 1,
+    },
+  }
+}
+
+export function createRoomViewModel(): RoomViewModel {
+  return {
+    roomId: 'pr:42',
+    objectKind: 'pr',
+    objectId: '42',
+    sourceUrl: 'https://github.com/Negentropy-Laby/OpenSlack/pull/42',
+    owner: 'team-lead',
+    nextAction: 'Review and approve',
+    blockerCount: 1,
+    blockers: [
+      { type: 'check', summary: 'CI test suite failing on Node 18', timestamp: '2026-06-01T08:00:00Z' },
+    ],
+    handoffs: [
+      { id: 'h-001', from: 'agent-a', to: 'agent-b', status: 'open', context: 'Continue review after CI fix' },
+    ],
+    decisions: [
+      { id: 'd-001', topic: 'Approve layout changes', decision: 'pending', status: 'active' },
+    ],
+    recentActivity: [
+      { time: '12:00 PM', type: 'review.comment', summary: 'Commented on layout width calculation', actor: 'agent-a' },
+      { time: '11:30 AM', type: 'check.failed', summary: 'CI test failed: width exceeds 80 cols', actor: 'ci-bot' },
     ],
   }
 }
