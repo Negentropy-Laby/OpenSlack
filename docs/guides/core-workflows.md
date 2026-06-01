@@ -1,6 +1,6 @@
 # Core Workflows
 
-Six workflows that cover day-to-day OpenSlack use. Each one is a quick reference: what you want, where to start, what you will see, the safe default, and what to do next.
+Seven workflows that cover day-to-day OpenSlack use. Each one is a quick reference: what you want, where to start, what you will see, the safe default, and what to do next.
 
 For the full CLI reference, see [`user-guide.md`](../user-guide.md).
 
@@ -157,14 +157,40 @@ To view or accept a handoff: `collaboration handoff show <id>` then `collaborati
 
 ---
 
+## 7. Maintain Organization Profile
+
+**Goal:** Keep the organization profile README projection in sync with source whitepapers so the public-facing profile is always up to date.
+
+**Start here:**
+
+```bash
+bun run openslack collaboration workflow profile-sync check
+```
+
+**What you will see:** A drift report showing whether the current profile README projection matches the latest whitepaper sources. If everything is in sync, the check reports no changes needed. If drift is detected, it lists which sections are out of date and what changed in the source documents.
+
+**Safe default:** The `check` command is read-only. It compares source state against the current projection without writing anything. Use `preview` next to inspect the proposed changes before applying them.
+
+**Next action:**
+
+```bash
+bun run openslack collaboration workflow profile-sync preview
+bun run openslack collaboration workflow profile-sync run
+bun run openslack collaboration workflow profile-sync status
+```
+
+Preview shows the diff of what would change. Run applies the projection update. Status confirms whether the profile is currently in sync. Run `check` periodically or after whitepaper updates to catch drift early.
+
+---
+
 ## Core Loop
 
 OpenSlack runs on one repeating cycle:
 
 ```
-Workflow --> Agent Work --> PRMS Review --> Human Approval --> Merge --> Collaboration Memory
+Workflow --> Agent Work --> PRMS Review --> Human Approval --> Merge --> Collaboration Memory --> Profile Sync
 ```
 
-Preview the work, let agents execute it, review the PR, confirm governed actions, and keep the collaboration record.
+Preview the work, let agents execute it, review the PR, confirm governed actions, keep the collaboration record, and maintain the organization profile.
 
-Each step feeds the next: a workflow spawns agent work, the agent submits a PR, PRMS reviews it, a human approves and merges, and the collaboration layer records the outcome for the next cycle.
+Each step feeds the next: a workflow spawns agent work, the agent submits a PR, PRMS reviews it, a human approves and merges, the collaboration layer records the outcome for the next cycle, and profile sync keeps the public-facing README projection current with the latest whitepapers.

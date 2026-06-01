@@ -15,6 +15,39 @@ export type HomeViewProps = {
 }
 
 /**
+ * Goal-oriented group for task items.
+ */
+type TaskGroupCategory = 'start-work' | 'review-work' | 'govern' | 'maintain'
+
+interface TaskGroup {
+  category: TaskGroupCategory
+  label: string
+}
+
+const TASK_GROUPS: TaskGroup[] = [
+  { category: 'start-work', label: 'Start Work' },
+  { category: 'review-work', label: 'Review Work' },
+  { category: 'govern', label: 'Govern Actions' },
+  { category: 'maintain', label: 'Maintain Profile' },
+]
+
+const TASK_KEY_TO_GROUP: Record<string, TaskGroupCategory> = {
+  'start-work': 'start-work',
+  'run-workflow': 'start-work',
+  'see-attention': 'review-work',
+  'review-prs': 'review-work',
+  'approve-pending': 'govern',
+  'maintain-profile': 'maintain',
+}
+
+const GROUP_ORDER: Record<TaskGroupCategory, number> = {
+  'start-work': 0,
+  'review-work': 1,
+  'govern': 2,
+  'maintain': 3,
+}
+
+/**
  * Combined selectable item for the unified keyboard handler.
  * Tasks come first (index 0..n-1), nav items follow (index n..m).
  */
@@ -26,6 +59,7 @@ interface CombinedItem {
   colorTheme: 'accent' | 'muted'
   shortcut: string
   attentionBadge?: string
+  groupCategory?: TaskGroupCategory
 }
 
 const URGENCY_COLOR: Record<RecommendedAction['urgency'], 'warning' | 'info' | 'muted'> = {
@@ -38,17 +72,26 @@ const URGENCY_COLOR: Record<RecommendedAction['urgency'], 'warning' | 'info' | '
 function buildCombinedItems(model: HomeViewModel): CombinedItem[] {
   const items: CombinedItem[] = []
 
-  for (const t of model.tasks) {
-    items.push({
-      label: t.label,
-      detail: t.description,
-      route: t.route,
-      kind: 'task',
-      colorTheme: 'accent',
-      shortcut: t.shortcut,
-      attentionBadge: t.attentionBadge,
-    })
-  }
+  // Build task items and sort by group order for visual grouping
+  const taskItems = model.tasks.map(t => ({
+    label: t.label,
+    detail: t.description,
+    route: t.route,
+    kind: 'task' as const,
+    colorTheme: 'accent' as const,
+    shortcut: t.shortcut,
+    attentionBadge: t.attentionBadge,
+    groupCategory: (TASK_KEY_TO_GROUP[t.key] ?? 'start-work') as TaskGroupCategory,
+  }))
+
+  // Sort tasks by group order while preserving original order within same group
+  const sortedTasks = taskItems.slice().sort((a, b) => {
+    const ga = GROUP_ORDER[a.groupCategory ?? 'start-work']
+    const gb = GROUP_ORDER[b.groupCategory ?? 'start-work']
+    return ga - gb
+  })
+
+  items.push(...sortedTasks)
 
   for (const n of model.navItems) {
     items.push({
@@ -113,10 +156,19 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
     }
   })
 
-  // Render task section items
+  // Render task section items grouped by category
   const taskElements: React.ReactNode[] = []
+  let lastGroup: TaskGroupCategory | null = null
   for (let i = 0; i < taskCount; i++) {
     const item = combined[i]
+    const group = item.groupCategory ?? 'start-work'
+    if (group !== lastGroup) {
+      const groupDef = TASK_GROUPS.find(g => g.category === group)
+      if (groupDef) {
+        taskElements.push(renderGroupHeader(groupDef.label))
+      }
+      lastGroup = group
+    }
     const isSelected = selectedIndex === i
     taskElements.push(renderTaskRow(item, isSelected, i, handleItemClick, handleItemHover))
   }
@@ -225,6 +277,25 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
       React.createElement(Text, null, '  '),
       React.createElement(KeyboardShortcutHint, { keys: ['1-9/0', 'p/r'], description: 'Jump' }),
     ),
+  )
+}
+
+/**
+ * Renders a group header with styled separator like "── Group Name ──".
+ */
+function renderGroupHeader(label: string): React.ReactNode {
+  const pad = 1
+  const totalWidth = 28
+  const textWidth = label.length + 2 // 2 for spaces around label
+  const leftPad = Math.max(pad, Math.floor((totalWidth - textWidth) / 2))
+  const rightPad = Math.max(pad, totalWidth - leftPad - textWidth)
+  const leftLine = '─'.repeat(leftPad)
+  const rightLine = '─'.repeat(rightPad)
+  const headerText = `${leftLine} ${label} ${rightLine}`
+  return React.createElement(
+    Box,
+    { key: `group-${label}`, marginTop: 1, marginBottom: 0 },
+    React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, headerText),
   )
 }
 

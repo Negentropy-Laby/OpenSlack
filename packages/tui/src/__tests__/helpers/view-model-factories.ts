@@ -14,6 +14,15 @@ import type { WorkflowGalleryViewModel } from '../../view-models/workflow-galler
 import type { DashboardViewModel } from '../../view-models/dashboard.js'
 import type { ApprovalCenterViewModel, ApprovalCategory } from '../../view-models/approval-center.js'
 import type { RoomViewModel } from '../../view-models/room.js'
+import type { ActivityViewModel } from '../../view-models/activity.js'
+import type { DecisionListViewModel, DecisionDetailViewModel } from '../../view-models/decision.js'
+import type { DigestViewModel } from '../../view-models/digest.js'
+import type { HandoffListViewModel, HandoffDetailViewModel } from '../../view-models/handoff.js'
+import type { IssuesPrViewModel } from '../../view-models/issues-pr.js'
+import type { SetupViewModel } from '../../view-models/setup.js'
+import type { StatusViewModel } from '../../view-models/status.js'
+import type { WorkflowPreviewViewModel } from '../../view-models/workflow-preview.js'
+import type { ShellViewData } from '../../views/render-shell.js'
 
 export function createHomeViewModel(): HomeViewModel {
   return {
@@ -191,8 +200,8 @@ export function createWorkflowLifecycleViewModel(): WorkflowLifecycleViewModel {
       { name: 'merged', label: 'Merged', status: 'pending', icon: 'clock', detail: 'Not merged yet' },
     ],
     phaseIssues: [
-      { phase: 'proposal', issueNumber: 120, status: 'closed' },
-      { phase: 'review', issueNumber: 121, status: 'closed' },
+      { phase: 'proposal', issueNumber: 120, status: 'closed', trackingMode: 'native' },
+      { phase: 'review', issueNumber: 121, status: 'closed', trackingMode: 'native' },
     ],
     currentRun: {
       runId: 'run-001',
@@ -208,6 +217,7 @@ export function createWorkflowLifecycleViewModel(): WorkflowLifecycleViewModel {
     fallbackReasons: [],
     blockedGateItems: [],
     statusSummary: 'At run stage, waiting for execution to complete',
+    parentIssueNumber: 42,
   }
 }
 
@@ -370,5 +380,221 @@ export function createRoomViewModel(): RoomViewModel {
       { time: '12:00 PM', type: 'review.comment', summary: 'Commented on layout width calculation', actor: 'agent-a' },
       { time: '11:30 AM', type: 'check.failed', summary: 'CI test failed: width exceeds 80 cols', actor: 'ci-bot' },
     ],
+  }
+}
+
+export function createActivityViewModel(): ActivityViewModel {
+  return {
+    title: 'Activity Feed',
+    periodHours: 24,
+    totalEvents: 4,
+    events: [
+      { time: '12:00', type: 'pr.merged', summary: 'PR #127 merged', actor: 'agent-a', objectKind: 'pr', objectId: '127' },
+      { time: '11:30', type: 'check.failed', summary: 'CI check failed on PR #130', actor: 'ci-bot', objectKind: 'pr', objectId: '130' },
+      { time: '11:00', type: 'task.completed', summary: 'Issue #119 closed', actor: 'agent-b', objectKind: 'issue', objectId: '119' },
+      { time: '10:00', type: 'handoff.created', summary: 'Handoff h-001 created', actor: 'agent-a', objectKind: 'handoff', objectId: 'h-001' },
+    ],
+    today: [
+      { time: '12:00', type: 'pr.merged', summary: 'PR #127 merged', actor: 'agent-a', objectKind: 'pr', objectId: '127' },
+      { time: '11:30', type: 'check.failed', summary: 'CI check failed on PR #130', actor: 'ci-bot', objectKind: 'pr', objectId: '130' },
+      { time: '11:00', type: 'task.completed', summary: 'Issue #119 closed', actor: 'agent-b', objectKind: 'issue', objectId: '119' },
+      { time: '10:00', type: 'handoff.created', summary: 'Handoff h-001 created', actor: 'agent-a', objectKind: 'handoff', objectId: 'h-001' },
+    ],
+    yesterday: [],
+    older: [],
+  }
+}
+
+export function createDecisionListViewModel(): DecisionListViewModel {
+  return {
+    title: 'Decisions',
+    totalCount: 2,
+    activeCount: 1,
+    items: [
+      { id: 'd-001', topic: 'Adopt new branching strategy', decision: 'Approved', status: 'active', decidedBy: 'team-lead', age: '2d' },
+      { id: 'd-002', topic: 'Use YAML workflow format', decision: 'Approved', status: 'superseded', decidedBy: 'dev-lead', age: '7d' },
+    ],
+  }
+}
+
+export function createDecisionDetailViewModel(): DecisionDetailViewModel {
+  return {
+    id: 'd-001',
+    topic: 'Adopt new branching strategy',
+    decision: 'Approved',
+    rationale: 'Current strategy causes frequent merge conflicts',
+    alternatives: ['Keep current strategy', 'Use trunk-based development'],
+    consequences: ['Requires team training', 'Simpler release process'],
+    decidedBy: 'team-lead',
+    createdAt: '2026-05-29T10:00:00Z',
+    status: 'active',
+    tags: ['branching', 'process'],
+  }
+}
+
+export function createDigestViewModel(): DigestViewModel {
+  return {
+    title: 'OpenSlack Digest',
+    periodHours: 24,
+    totalEvents: 5,
+    groups: [
+      {
+        label: 'Completed',
+        count: 2,
+        status: 'pass',
+        events: [
+          { time: '12:00', type: 'pr.merged', summary: 'PR #127 merged', objectKind: 'pr', objectId: '127' },
+          { time: '11:30', type: 'task.completed', summary: 'Issue #119 closed', objectKind: 'issue', objectId: '119' },
+        ],
+      },
+      {
+        label: 'Blocked',
+        count: 1,
+        status: 'fail',
+        events: [
+          { time: '11:00', type: 'check.failed', summary: 'CI check failed on PR #130', objectKind: 'pr', objectId: '130' },
+        ],
+      },
+      {
+        label: 'Agent Activity',
+        count: 2,
+        status: 'info',
+        events: [
+          { time: '10:30', type: 'handoff.created', summary: 'Handoff h-001 created', objectKind: 'handoff', objectId: 'h-001' },
+          { time: '10:00', type: 'approval.requested', summary: 'PR #130 needs review', objectKind: 'pr', objectId: '130' },
+        ],
+      },
+    ],
+    recommendedNext: [
+      { objectKind: 'pr', objectId: '130', action: 'Review and approve PR #130' },
+    ],
+  }
+}
+
+export function createHandoffListViewModel(): HandoffListViewModel {
+  return {
+    title: 'Handoffs',
+    totalCount: 2,
+    openCount: 1,
+    items: [
+      { id: 'h-001', from: 'agent-a', to: 'agent-b', status: 'open', context: 'Continue PR review after CI fix', age: '2h', ref: 'pr:130' },
+      { id: 'h-002', from: 'agent-b', to: 'agent-a', status: 'closed', context: 'Initial investigation done', age: '5d', ref: 'issue:119' },
+    ],
+  }
+}
+
+export function createHandoffDetailViewModel(): HandoffDetailViewModel {
+  return {
+    id: 'h-001',
+    status: 'open',
+    from: 'agent-a',
+    to: 'agent-b',
+    createdAt: '2026-05-31T10:00:00Z',
+    context: 'Continue PR review after CI fix',
+    nextSteps: ['Fix failing tests', 'Re-run CI', 'Submit for review'],
+    notes: 'PR #130 has a flaky test in the auth module. Check the CI logs before re-running.',
+    canAccept: true,
+    canClose: true,
+  }
+}
+
+export function createIssuesPrViewModel(): IssuesPrViewModel {
+  return {
+    tab: 'prs',
+    issues: [
+      { number: 119, title: 'Fix auth flow edge case', status: 'claimed', assignee: 'agent-a', labels: ['bug', 'priority:high'] },
+      { number: 120, title: 'Add workflow validation', status: 'ready', labels: ['enhancement'] },
+    ],
+    prs: [
+      { number: 127, title: 'Fix auth flow edge case', status: 'ready', author: 'test-bot', riskZone: 'green', nextAction: 'Merge when approved' },
+      { number: 130, title: 'Add new dashboard metrics', status: 'blocked', author: 'test-bot', riskZone: 'yellow', blocker: 'CI checks failing', nextAction: 'Fix test failures' },
+    ],
+    summary: {
+      issues: { total: 2, ready: 1, claimed: 1, blocked: 0 },
+      prs: { total: 2, ready: 1, blocked: 1, pending: 0 },
+    },
+  }
+}
+
+export function createSetupViewModel(): SetupViewModel {
+  return {
+    readiness: 'almost ready',
+    root: '/home/user/project',
+    totalChecks: 4,
+    passedChecks: 2,
+    fixable: [
+      { id: 'labels', title: 'Create required labels', status: 'WARN', detail: 'Labels task:ready, task:claimed missing', nextAction: 'Run label setup command', command: 'openslack setup labels' },
+    ],
+    needsAction: [
+      { id: 'branch-protection', title: 'Enable branch protection', status: 'FAIL', detail: 'Main branch is not protected', nextAction: 'Enable in GitHub settings', command: '' },
+    ],
+    ok: [
+      { id: 'repo', title: 'Repository accessible', status: 'PASS', detail: 'Connected to GitHub', nextAction: '', command: '' },
+      { id: 'git', title: 'Git available', status: 'PASS', detail: 'Git 2.40+', nextAction: '', command: '' },
+    ],
+  }
+}
+
+export function createStatusViewModel(): StatusViewModel {
+  return {
+    title: 'OpenSlack Status',
+    version: 'v0.1 Developer Preview',
+    commit: 'abc1234',
+    commitSubject: 'Merge PR #127: Fix auth flow',
+    modules: [
+      { name: 'Self-Evolution Kernel', status: 'ACTIVE', tests: 120 },
+      { name: 'GitHub Issues Task Loop', status: 'ACTIVE', tests: 85 },
+      { name: 'Operator Interface', status: 'EARLY', tests: 42 },
+      { name: 'PR Review & Merge Steward', status: 'ACTIVE', tests: 156 },
+      { name: 'Collaboration Layer', status: 'ACTIVE', tests: 123 },
+    ],
+    gitHub: {
+      available: true,
+      tasksReady: 3,
+      tasksClaimed: 2,
+      tasksBlocked: 1,
+      prsOpen: 4,
+      prsBlocked: 1,
+      prsReady: 2,
+    },
+    testSuite: {
+      totalTests: 526,
+      totalFiles: 45,
+    },
+    recommendations: [
+      { title: 'Review PR #130', action: 'CI failing, needs attention', command: 'openslack pr doctor 130' },
+    ],
+    attentionItems: [
+      { type: 'PR', description: 'PR #130 has failing checks', action: 'Fix test failures', priority: 'high' },
+    ],
+    nextAction: 'Review PR #130 and fix failing checks',
+  }
+}
+
+export function createWorkflowPreviewViewModel(): WorkflowPreviewViewModel {
+  return {
+    templateId: 'test-workflow',
+    name: 'Test Workflow',
+    correlationId: 'corr-001',
+    steps: [
+      { phase: 'Setup', type: 'action', title: 'Run setup', actionId: 'setup', sideEffects: false, requiresConfirmation: false, requiredRole: '' },
+      { phase: 'Execute', type: 'action', title: 'Execute task', actionId: 'execute', sideEffects: true, requiresConfirmation: false, requiredRole: '' },
+    ],
+    phases: ['Setup', 'Execute'],
+    phaseCount: 2,
+    stepCount: 2,
+    hasSideEffects: true,
+    requiresConfirmation: false,
+    errors: [],
+    hasErrors: false,
+  }
+}
+
+export function createShellViewData(): ShellViewData {
+  return {
+    dashboard: createDashboardViewModel(),
+    status: createStatusViewModel(),
+    prQueue: createPrQueueViewModel(),
+    profile: createProfileViewModel(),
   }
 }

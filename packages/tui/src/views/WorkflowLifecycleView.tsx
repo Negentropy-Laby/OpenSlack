@@ -518,6 +518,57 @@ export default function WorkflowLifecycleView({ model, actionHandlers, onBack }:
           )
         : null,
     ),
+    // Relationship Map tree
+    model.phaseIssues.length > 0 && model.parentIssueNumber
+      ? React.createElement(
+          Box,
+          { flexDirection: 'column', marginTop: 1 },
+          React.createElement(
+            Box,
+            { flexDirection: 'row' },
+            React.createElement(ThemedText, { colorTheme: 'muted' }, 'Relationship Map:'),
+          ),
+          // Root node: parent issue
+          React.createElement(
+            Box,
+            { flexDirection: 'row' },
+            React.createElement(ThemedText, { colorTheme: 'foreground' }, '\u{1F4CB} '),
+            React.createElement(ThemedText, { colorTheme: 'accent' }, `#${model.parentIssueNumber}`),
+            React.createElement(Text, null, ' '),
+            React.createElement(ThemedText, { colorTheme: 'foreground' }, 'Parent Issue'),
+          ),
+          // Phase children
+          ...model.phaseIssues.map((pi: PhaseIssueItem, idx: number) => {
+            const isLast = idx === model.phaseIssues.length - 1
+            const connector = isLast ? '└── ' : '├── '
+            const isNative = pi.trackingMode === 'native' || (pi.trackingMode === undefined && pi.issueNumber !== undefined && model.subIssueMode !== 'fallback')
+
+            return React.createElement(
+              Box,
+              { key: `rel-${pi.phase}`, flexDirection: 'row' },
+              React.createElement(ThemedText, { colorTheme: 'muted' }, connector),
+              isNative
+                ? React.createElement(
+                    React.Fragment,
+                    null,
+                    React.createElement(ThemedText, { colorTheme: 'accent' }, pi.issueNumber ? `#${pi.issueNumber}` : ''),
+                    React.createElement(Text, null, ' '),
+                    React.createElement(ThemedText, { colorTheme: 'foreground' }, `${pi.phase}`),
+                    React.createElement(Text, null, ' '),
+                    React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, '(sub-issue)'),
+                  )
+                : React.createElement(
+                    React.Fragment,
+                    null,
+                    React.createElement(ThemedText, { colorTheme: 'muted' }, '\u{1F4DD} '),
+                    React.createElement(ThemedText, { colorTheme: 'foreground' }, `${pi.phase} tracked via comment`),
+                    React.createElement(Text, null, ' '),
+                    React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, `(#${model.parentIssueNumber})`),
+                  ),
+            )
+          }),
+        )
+      : null,
     // Horizontal progress bar
     stages.length > 0
       ? React.createElement(

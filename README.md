@@ -88,7 +88,8 @@ OpenSlack/
 │   ├── pr/                  # PR Review & Merge Steward (fetch, classify, readiness, report)
 │   ├── operator/            # Structured planner and intent router
 │   ├── chat-gateway/        # Webhook / Slack projection frontend
-│   └── collaboration/       # Activity, digest, dashboard, handoff, decision, room views
+│   ├── collaboration/       # Activity, digest, dashboard, handoff, decision, room views
+│   ├── tui/                  # Ink TUI views, layout primitives, terminal workbench
 │   └── workflows/           # Workflow engine: load, validate, execute, checkpoint, resume
 ├── apps/cli/                # User command surface and module command groups
 ├── templates/new-agent/     # 9 onboarding template files

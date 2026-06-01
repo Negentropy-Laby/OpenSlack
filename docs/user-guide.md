@@ -16,6 +16,7 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 | Diagnose why a PR cannot merge | `openslack pr doctor <n>` | Shows blocker owner, evidence, and next action. |
 | See team state across events and PRs | `openslack collaboration dashboard` | Projection-only; does not create dashboard-specific state. |
 | Record a handoff or decision | `openslack collaboration handoff ...` / `openslack collaboration decision ...` | Creates auditable collaboration objects. |
+| Keep the org profile in sync | `openslack collaboration workflow profile-sync check` | Profile Sync Robot checks and previews are read-only; `run` requires confirmation. |
 
 ## Common Workflows
 
@@ -70,11 +71,26 @@ bun run openslack collaboration handoff create \
 
 ```bash
 bun run openslack collaboration workflow preview <file> --input issue_number=7
-# Review the preview, then:
-bun run openslack collaboration workflow execute <file> --input issue_number=7
+# Review the preview, then dry-run to simulate:
+bun run openslack collaboration workflow dry-run <file> --input issue_number=7
+# When ready for real execution:
+bun run openslack collaboration workflow run <file> --input issue_number=7
 ```
 
-Use an existing workflow YAML file path for `<file>`.
+Use an existing workflow YAML file path for `<file>`. Use `dry-run` to simulate side effects safely; use `run` to execute with real side effects.
+
+### 7. Maintain organization profile
+
+The Profile Sync Robot keeps the organization's GitHub profile README in sync with an upstream whitepapers or content repository. All commands are safe by default: `check` and `preview` are read-only, and `run` requires explicit confirmation.
+
+```bash
+openslack collaboration workflow profile-sync check        # Verify source and target are accessible
+openslack collaboration workflow profile-sync preview       # Preview what a sync would change (no side effects)
+openslack collaboration workflow profile-sync run           # Run sync and open a PR (prompts for confirmation)
+openslack collaboration workflow profile-sync status        # Show last sync date and pending PR
+```
+
+Start with `check` to confirm readiness, then `preview` to review the proposed changes, and `run` only when you are ready for real side effects.
 
 ## Quick Reference by Role
 
@@ -384,8 +400,10 @@ step. Ready PRs display a Confirm merge button.
 | `openslack collaboration room show pr:42 --format tui` | Interactive room view (q/Esc to exit) |
 | `openslack collaboration workflow preview <file>` | Preview a typed workflow template |
 | `openslack collaboration workflow preview <file> --input pr_number=42` | Preview with template inputs |
-| `openslack collaboration workflow execute <file> --dry-run` | Validate and dry-run a workflow template |
-| `openslack collaboration workflow execute <file> --agent-id <id>` | Execute with agent principal authorization |
+| `openslack collaboration workflow dry-run <name>` | Simulate workflow execution without real side effects |
+| `openslack collaboration workflow dry-run <name> --input key=value` | Dry-run with input values |
+| `openslack collaboration workflow run <name>` | Execute a workflow with real side effects |
+| `openslack collaboration workflow run <name> --agent-id <id>` | Execute with agent principal authorization |
 
 The Collaboration Layer is projection-only. GitHub/Git/.openslack remain the sole source of truth. Activity feed, digest, handoffs, decisions, and room views are all derived from events and YAML files.
 
