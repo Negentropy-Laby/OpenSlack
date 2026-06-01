@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { renderFindingsPlain } from '@openslack/runtime';
 import type { PlainFinding } from '@openslack/runtime';
-import { getCODEOWNERS, commentOnPR } from '@openslack/github';
+import { getCODEOWNERS, commentOnPR, getClient, GitHubAuthRequiredError } from '@openslack/github';
 import {
   fetchPRDetails,
   classifyPRReport,
@@ -18,6 +18,12 @@ import {
   renderPRQueue,
 } from '@openslack/pr';
 import { recordEvent } from '@openslack/collaboration';
+import {
+  buildPRDoctorClientOptions,
+  renderAuthRequiredMessage,
+  renderDoctorDryRunReport,
+  renderDoctorEvidenceBanner,
+} from './pr-doctor-evidence.js';
 
 export function prCommands(): Command {
   const cmd = new Command('pr').description('PR Review & Merge Steward');
@@ -120,18 +126,56 @@ export function prCommands(): Command {
     .description('Run comprehensive governance diagnosis on a PR')
     .option('--comment', 'Post the doctor report as a PR comment')
     .option('--format <format>', 'Output format: standard, plain, or tui', 'standard')
-    .action(async (number: string, options: { comment?: boolean; format: string }) => {
+    .option('--dry-run', 'Simulate the diagnosis plan without fetching live GitHub evidence')
+    .option('--repo <owner/name>', 'Target GitHub repository')
+    .option('--auth <mode>', 'Auth mode: auto, app, token, or dry-run', 'auto')
+    .action(async (number: string, options: { comment?: boolean; format: string; dryRun?: boolean; repo?: string; auth?: string }) => {
       const prNumber = parseInt(number, 10);
-      const report = await fetchPRDetails(prNumber);
+      let clientOptions;
+      let client;
+      try {
+        clientOptions = buildPRDoctorClientOptions(options);
+        client = await getClient(clientOptions);
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        if (err instanceof GitHubAuthRequiredError || err.message.includes('AUTH_REQUIRED')) {
+          console.error(renderAuthRequiredMessage(prNumber, err));
+          process.exitCode = 1;
+          return;
+        }
+        console.error(err.message);
+        process.exitCode = 1;
+        return;
+      }
+
+      if (client.isDryRun) {
+        console.log(renderDoctorDryRunReport(prNumber, client));
+        return;
+      }
+
+      if (options.comment && client.authMode !== 'github_app_installation') {
+        console.error('BOT_AUTH_REQUIRED: pr doctor --comment requires GitHub App bot authentication.');
+        console.error('Try: powershell -ExecutionPolicy Bypass -File scripts\\openslack-bot.ps1 pr doctor ' + prNumber + ' --comment');
+        process.exitCode = 1;
+        return;
+      }
+
+      const evidenceBanner = renderDoctorEvidenceBanner(client);
+      const report = await fetchPRDetails(prNumber, clientOptions);
+      if (report.state === 'unknown') {
+        console.error(`PR_FETCH_FAILED: Could not fetch PR #${prNumber} from ${client.owner}/${client.repo}.`);
+        process.exitCode = 1;
+        return;
+      }
       const classified = classifyPRReport(report);
       const policy = loadPRReviewPolicy();
 
-      const codeownersContent = await getCODEOWNERS(classified.baseRef);
+      const codeownersContent = await getCODEOWNERS(classified.baseRef, clientOptions);
       const codeownersEntries = codeownersContent ? parseCODEOWNERS(codeownersContent) : [];
       const codeowners = resolveCodeowners(classified.changedFiles, codeownersEntries);
 
       const diagnosed = diagnosePR(classified, policy, codeowners);
-      const doctorOutput = generateDoctorReport(diagnosed, codeowners);
+      const doctorOutput = `${evidenceBanner}\n\n${generateDoctorReport(diagnosed, codeowners)}`;
 
       const isReady = diagnosed.decision === 'READY_TO_MERGE';
       try {
@@ -157,7 +201,7 @@ export function prCommands(): Command {
       }
 
       if (options.comment) {
-        await commentOnPR(prNumber, doctorOutput);
+        await commentOnPR(prNumber, doctorOutput, clientOptions);
         console.log(`Doctor report posted on PR #${prNumber}`);
       } else if (options.format === 'tui') {
         try {
@@ -165,7 +209,10 @@ export function prCommands(): Command {
           const summary = summarizePRDecision(diagnosed, codeowners);
           const { renderDoctorTui } = await import('@openslack/tui');
           await renderDoctorTui(diagnosed, {
-            evidence: summary.evidence,
+            evidence: [
+              ...evidenceBanner.split('\n'),
+              ...summary.evidence,
+            ],
             profileSyncGate: diagnosed.profileSyncGate && diagnosed.profileSyncGate.overall !== 'N/A'
               ? { passed: diagnosed.profileSyncGate.overall === 'PASS', detail: diagnosed.profileSyncGate.criteria.map(c => `${c.name}: ${c.status}${c.detail ? ' - ' + c.detail : ''}`).join('; ') }
               : undefined,
@@ -176,6 +223,11 @@ export function prCommands(): Command {
         }
       } else if (options.format === 'plain') {
         const findings: PlainFinding[] = [];
+        findings.push({
+          status: 'PASS',
+          title: 'GitHub evidence',
+          detail: `LIVE; Repo: ${client.owner}/${client.repo}; Auth: ${client.authMode}`,
+        });
         findings.push({
           status: diagnosed.draft ? 'FAIL' : 'PASS',
           title: 'Draft state',

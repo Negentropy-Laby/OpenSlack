@@ -512,3 +512,85 @@ For batches touching TUI views, additionally verify:
 ```bash
 bun run openslack collaboration dashboard --format tui
 ```
+
+---
+
+## Follow-up — PR Doctor Live Evidence Hardening
+
+**Purpose:** Fix the UX/governance gap where `bun run openslack pr doctor <n>`
+silently falls back to dry-run when OpenSlack credentials are missing, producing
+a misleading PRMS report. The command must fail closed unless the user explicitly
+asks for dry-run.
+
+### Key Changes
+
+- Make `pr doctor` require live GitHub evidence by default.
+  - No GitHub App env, `GITHUB_TOKEN`, or explicit auth mode means exit non-zero
+    with `AUTH_REQUIRED`.
+  - Do not generate `READY_TO_MERGE`, `BLOCKED_POLICY`, or other governance
+    decisions from dry-run placeholder data.
+  - Add an evidence banner to every output format: `GitHub evidence: LIVE |
+    DRY-RUN`, `Repo`, and `Auth`.
+
+- Add explicit CLI options.
+  - `--dry-run`: simulation only; decision must be `NOT_EVALUATED`.
+  - `--repo owner/name`: override target repo.
+  - `--auth auto|app|token|dry-run`: explicit credential mode.
+  - `--auth app` may use the wrapper/PEM path; normal package code should still
+    avoid implicit secret-file reads.
+
+- Fix repository resolution.
+  - Precedence: `--repo` → `GITHUB_OWNER/GITHUB_REPO` → `git remote origin` →
+    configured workspace repo → fail.
+  - Remove unsafe default behavior that resolves to `wsman/OpenSlack` for this
+    checkout.
+
+- Preserve mutation safety.
+  - Read-only `pr doctor` may use live read credentials.
+  - `--comment`, `pr merge`, and PR mutations still require bot/app auth, not a
+    human PAT.
+  - Wrapper commands remain supported:
+
+    ```powershell
+    powershell -ExecutionPolicy Bypass -File scripts\openslack-bot.ps1 pr doctor <PR_NUMBER>
+    ```
+
+- Update docs.
+  - `docs/user-guide.md`: document `--dry-run`, `--repo`, `--auth`, and the
+    `AUTH_REQUIRED` failure.
+  - `docs/developer/github-automation.md`: clarify that direct
+    `bun run openslack pr doctor` does not read `.openslack.local/github-app.pem`;
+    wrapper or explicit app auth is required.
+  - Do not hand-edit `docs/status/current.md`; regenerate only if command
+    ownership or generated status changes.
+
+### Test Plan
+
+- CLI behavior:
+  - No credential + no `--dry-run` exits non-zero with `AUTH_REQUIRED`.
+  - No credential + `--dry-run` outputs `GitHub evidence: DRY-RUN` and
+    `Decision: NOT_EVALUATED`.
+  - `--repo Negentropy-Laby/OpenSlack` targets that repo.
+  - Git remote origin is parsed when `--repo` and env vars are absent.
+  - `--comment` rejects token/human auth and requires app/bot auth.
+
+- Output formats:
+  - `standard`, `plain`, and `tui` all show evidence mode and repo.
+  - Dry-run output never shows merge-ready or blocked-policy decisions.
+
+- Validation:
+
+  ```powershell
+  bun run typecheck
+  bun run test
+  bun run openslack status verify
+  git diff --check
+  ```
+
+### Assumptions
+
+- This is a follow-up plan, not part of the already-completed 14 Beta
+  productization batches.
+- Secret boundary stays intact: package code should not silently read or print
+  PEM contents.
+- Human approval and PRMS merge gates remain unchanged.

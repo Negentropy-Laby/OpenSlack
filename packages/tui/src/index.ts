@@ -53,6 +53,8 @@ export type { ActionStatusProps } from './design-system/ActionStatus.js';
 
 // Infrastructure
 export { isTuiSupported } from './capabilities.js';
+export { diagnoseTui, renderDiagnosticsPlain } from './diagnostics.js';
+export type { TuiDiagnosticReport, TuiDiagnosticFinding, DiagnosticStatus } from './diagnostics.js';
 export { sanitizeTerminalText } from './sanitize.js';
 export { renderTui } from './render.js';
 export type { RenderTuiOptions } from './render.js';
