@@ -8,7 +8,7 @@ import Divider from '../design-system/Divider.js'
 import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
 import { useNavigation } from '../navigation/context.js'
 import { useClampedIndex } from '../hooks/use-clamped-index.js'
-import type { HomeViewModel, TaskItem } from '../view-models/home.js'
+import type { HomeViewModel, TaskItem, RecommendedAction } from '../view-models/home.js'
 
 export type HomeViewProps = {
   model: HomeViewModel
@@ -26,6 +26,13 @@ interface CombinedItem {
   colorTheme: 'accent' | 'muted'
   shortcut: string
   attentionBadge?: string
+}
+
+const URGENCY_COLOR: Record<RecommendedAction['urgency'], 'warning' | 'info' | 'muted'> = {
+  governance: 'warning',
+  blocker: 'warning',
+  operational: 'info',
+  informational: 'muted',
 }
 
 function buildCombinedItems(model: HomeViewModel): CombinedItem[] {
@@ -153,6 +160,41 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
     ),
 
     React.createElement(Divider, { length: 40 }),
+
+    // Section: Next Recommended Action
+    ...(model.nextRecommendedAction
+      ? [
+          React.createElement(
+            Box,
+            { flexDirection: 'column', marginTop: 0, marginBottom: 0 },
+            React.createElement(
+              Box,
+              { flexDirection: 'row' },
+              React.createElement(
+                ThemedText,
+                { colorTheme: URGENCY_COLOR[model.nextRecommendedAction.urgency], bold: true },
+                '>',
+              ),
+              React.createElement(Text, null, ' '),
+              React.createElement(
+                ThemedText,
+                { colorTheme: URGENCY_COLOR[model.nextRecommendedAction.urgency] },
+                `Next: ${model.nextRecommendedAction.label}`,
+              ),
+            ),
+            React.createElement(
+              Box,
+              { flexDirection: 'row', marginLeft: 2 },
+              React.createElement(
+                ThemedText,
+                { colorTheme: 'muted', dim: true },
+                model.nextRecommendedAction.reason,
+              ),
+            ),
+          ),
+          React.createElement(Divider, { length: 40 }),
+        ]
+      : []),
 
     // Section 2: Quick Navigation
     React.createElement(
