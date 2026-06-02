@@ -199,19 +199,21 @@ Planned collaboration events at conversation lifecycle boundaries:
 
 | Event | When | Status |
 |-------|------|--------|
-| `agent.conversation.started` | Thread created and agent begins | **Not yet implemented** |
-| `agent.conversation.completed` | Agent finishes successfully | **Not yet implemented** |
-| `agent.conversation.failed` | Agent encounters an error | **Not yet implemented** |
+| `agent.conversation.started` | Agent call begins in execute mode | ✅ Implemented |
+| `agent.conversation.completed` | Agent finishes successfully | ✅ Implemented |
+| `agent.conversation.failed` | Agent encounters an error | ✅ Implemented |
 
-These events will be stored in the standard collaboration event log
+These events are stored in the standard collaboration event log
 (`.openslack.local/collaboration/events.jsonl`) and appear in the
-activity feed, digest, and room views once implemented.
+activity feed, digest, and room views. The bridge is wired through
+`executeRun()` / `executeResume()` via `agentEventEmitter` which converts
+`AgentConversationEvent` into `CollaborationEvent` via `recordEvent()`.
 
 ### Correlation
 
-Planned: every workflow-agent conversation will carry a `correlationId`
-linking the started, completed/failed events, the thread, and the parent
-workflow run. This is not yet implemented.
+Every workflow-agent conversation carries a `correlationId` (set to the
+workflow `runId`) linking the started, completed/failed events, and the
+parent workflow run.
 
 ## Security Model
 

@@ -10,7 +10,7 @@ import type {
 import { createRuntime, ExecuteDeniedError, WorkflowPausedError } from './runtime.js'
 import type { ConfirmCallback } from './runtime.js'
 import { validateEffectAgainstManifest } from './manifest-validator.js'
-import type { AgentLauncher, AgentCacheStore } from './agent-shim.js'
+import type { AgentLauncher, AgentCacheStore, AgentEventEmitter } from './agent-shim.js'
 import type { PipelineCacheStore } from './pipeline-runner.js'
 
 /**
@@ -105,6 +105,18 @@ export interface ExecuteRunOptions {
    * and either auto-confirms known effects or pauses on unexpected ones.
    */
   confirmationPolicy?: ConfirmationPolicy
+  /**
+   * Optional event emitter for agent conversation lifecycle events.
+   * When provided, the runtime emits started/completed/failed events during
+   * agent calls in execute mode. The collaboration bridge emitter converts
+   * these into CollaborationEvent records via recordEvent().
+   */
+  agentEventEmitter?: AgentEventEmitter
+  /**
+   * Root directory for resolving agent types and collaboration paths.
+   * Defaults to process.cwd().
+   */
+  rootDir?: string
 }
 
 /**
@@ -321,6 +333,8 @@ export async function executeRun(
     agentCache: options.agentCache,
     pipelineCache: options.pipelineCache,
     onConfirm: effectiveOnConfirm,
+    agentEventEmitter: options.agentEventEmitter,
+    rootDir: options.rootDir,
   })
 
   // Handle claude-ambient workflows
@@ -373,6 +387,10 @@ export async function executeResume(
     /** Allow non-interactive execution without confirmation (CI/test use). */
     allowUnattended?: boolean
     confirmationPolicy?: ConfirmationPolicy
+    /** Optional event emitter for agent conversation lifecycle events. */
+    agentEventEmitter?: AgentEventEmitter
+    /** Root directory for resolving agent types and collaboration paths. */
+    rootDir?: string
   },
 ): Promise<RunResult> {
   const {
@@ -414,6 +432,8 @@ export async function executeResume(
     agentCache: options.agentCache,
     pipelineCache: options.pipelineCache,
     onConfirm: effectiveOnConfirm,
+    agentEventEmitter: options.agentEventEmitter,
+    rootDir: options.rootDir,
   })
 
   // Handle claude-ambient workflows
