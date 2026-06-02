@@ -93,6 +93,9 @@ describe('Dirty-state-aware worktree cleanup', () => {
     // Run should complete successfully
     const runs = store.listRuns();
     expect(runs[0].status).toBe('completed');
+
+    // Clean worktree should NOT have a handoff
+    expect(runs[0].worktreeHandoff).toBeUndefined();
   });
 
   it('preserves dirty worktree and records progress event', async () => {
@@ -134,6 +137,15 @@ describe('Dirty-state-aware worktree cleanup', () => {
     expect((preservedEvent!.data as Record<string, unknown>).worktreePath).toBeDefined();
     expect((preservedEvent!.data as Record<string, unknown>).branchName).toBeDefined();
     expect((preservedEvent!.data as Record<string, unknown>).reason).toContain('Uncommitted changes');
+
+    // Run state should have worktreeHandoff for recovery
+    const refreshedRun = store.getRun(run.runId);
+    expect(refreshedRun).toBeDefined();
+    expect(refreshedRun!.worktreeHandoff).toBeDefined();
+    expect(refreshedRun!.worktreeHandoff!.worktreePath).toBeDefined();
+    expect(refreshedRun!.worktreeHandoff!.branchName).toBeDefined();
+    expect(refreshedRun!.worktreeHandoff!.reason).toContain('Uncommitted changes');
+    expect(refreshedRun!.worktreeHandoff!.preservedAt).toBeTruthy();
   });
 
   it('attempts cleanup when dirty check returns error (fail-closed)', async () => {

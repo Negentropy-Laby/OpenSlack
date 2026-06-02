@@ -6,6 +6,7 @@ export type {
   AgentRunState,
   AgentRunEvent,
   AgentRunResult,
+  WorktreeHandoff,
 } from './types.js';
 
 export { AgentUnavailableError, PermissionDeniedError } from './types.js';

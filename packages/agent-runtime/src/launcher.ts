@@ -158,12 +158,22 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
           if (dirtyResult.status === 'dirty') {
             // Preserve worktree — it contains uncommitted changes that
             // should be reviewed or committed before removal.
+            const branchName = `agent/${resolvedConfig.agentId}/run-${runId}/${runId}`;
             recorder.progress(runId, {
               step: 'worktree_dirty_preserved',
               worktreePath,
-              branchName: `agent/${resolvedConfig.agentId}/run-${runId}/${runId}`,
+              branchName,
               reason: dirtyResult.reason ?? 'Uncommitted changes detected',
             });
+
+            // Record the handoff in run state so it can be recovered.
+            const handoff: import('./types.js').WorktreeHandoff = {
+              worktreePath,
+              branchName,
+              reason: dirtyResult.reason ?? 'Uncommitted changes detected',
+              preservedAt: new Date().toISOString(),
+            };
+            runStore.updateRun(runId, { worktreeHandoff: handoff });
           } else if (dirtyResult.status === 'error') {
             // Fail-closed: if we cannot determine dirty state, attempt
             // cleanup rather than leaking an unmanaged worktree.
