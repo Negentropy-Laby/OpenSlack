@@ -50,6 +50,21 @@ export interface AgentRunRequest {
   worktreePath?: string;
 }
 
+/**
+ * Records a preserved dirty worktree that was not cleaned up after a run.
+ * This binds the run to a recoverable worktree with uncommitted changes.
+ */
+export interface WorktreeHandoff {
+  /** Filesystem path to the preserved worktree. */
+  worktreePath: string;
+  /** Git branch name of the worktree. */
+  branchName: string;
+  /** Why the worktree was preserved (e.g., 'Uncommitted changes detected'). */
+  reason: string;
+  /** ISO timestamp when the handoff was recorded. */
+  preservedAt: string;
+}
+
 export interface AgentRunState {
   runId: string;
   status: AgentRunStatus;
@@ -64,6 +79,12 @@ export interface AgentRunState {
   error?: string;
   worktreePath?: string;
   transcriptPath: string;
+  /**
+   * Set when the worktree was preserved (not cleaned up) because it
+   * contained uncommitted changes. Null or undefined when the worktree
+   * was cleaned up normally or no worktree was used.
+   */
+  worktreeHandoff?: WorktreeHandoff;
 }
 
 export interface AgentRunEvent {
