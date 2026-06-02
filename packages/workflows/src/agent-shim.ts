@@ -1,19 +1,20 @@
-import type { AgentOptions, AgentResult, BudgetState, ExecutionMode } from './types.js'
-import { checkPermission } from './permission-checker.js'
-import type { ResolvedAgentConfig } from './agent-resolver.js'
+import type { AgentOptions, AgentResult, BudgetState, ExecutionMode } from './types.js';
+import { checkPermission } from './permission-checker.js';
+import type { ResolvedAgentConfig } from './agent-resolver.js';
+import { generateRunId } from '@openslack/agent-runtime';
 
 /**
  * Error thrown when agent result fails schema validation.
  */
 export class SchemaValidationError extends Error {
-  readonly label: string
-  readonly violations: string[]
+  readonly label: string;
+  readonly violations: string[];
 
   constructor(label: string, violations: string[]) {
-    super(`Schema validation failed for "${label}": ${violations.join(', ')}`)
-    this.name = 'SchemaValidationError'
-    this.label = label
-    this.violations = violations
+    super(`Schema validation failed for "${label}": ${violations.join(', ')}`);
+    this.name = 'SchemaValidationError';
+    this.label = label;
+    this.violations = violations;
   }
 }
 
@@ -21,8 +22,8 @@ export class SchemaValidationError extends Error {
  * Cache store interface used by the agent shim.
  */
 export interface AgentCacheStore {
-  load(runId: string, cacheKey: string): Promise<AgentResult | null>
-  save(runId: string, cacheKey: string, result: AgentResult): Promise<void>
+  load(runId: string, cacheKey: string): Promise<AgentResult | null>;
+  save(runId: string, cacheKey: string, result: AgentResult): Promise<void>;
 }
 
 /**
@@ -30,20 +31,21 @@ export interface AgentCacheStore {
  * Used to record agent conversation events into the collaboration layer.
  */
 export interface AgentConversationEvent {
-  type: 'agent.conversation.started' | 'agent.conversation.completed' | 'agent.conversation.failed'
-  agentId: string
-  label: string
-  phase: string
-  runId: string
-  resolvedAgentId?: string
-  error?: string
+  type: 'agent.conversation.started' | 'agent.conversation.completed' | 'agent.conversation.failed';
+  agentId: string;
+  label: string;
+  phase: string;
+  runId: string;
+  agentRunId?: string;
+  resolvedAgentId?: string;
+  error?: string;
 }
 
 /**
  * Event emitter callback for agent conversation events.
  * When provided, the agent shim emits lifecycle events during execution.
  */
-export type AgentEventEmitter = (event: AgentConversationEvent) => void
+export type AgentEventEmitter = (event: AgentConversationEvent) => void;
 
 /**
  * Agent launcher function type. The real implementation would call an
@@ -52,7 +54,7 @@ export type AgentEventEmitter = (event: AgentConversationEvent) => void
 export type AgentLauncher<T = unknown> = (
   prompt: string,
   options: AgentOptions,
-) => Promise<AgentResult<T>>
+) => Promise<AgentResult<T>>;
 
 /**
  * Lightweight JSON schema subset validator.
@@ -63,42 +65,42 @@ function validateAgainstSchema(
   schema: NonNullable<AgentOptions['schema']>,
   path: string = 'root',
 ): string[] {
-  const violations: string[] = []
+  const violations: string[] = [];
 
   if (schema.type !== undefined) {
-    const expected = Array.isArray(schema.type) ? schema.type : [schema.type]
-    const actualType = data === null ? 'null' : Array.isArray(data) ? 'array' : typeof data
+    const expected = Array.isArray(schema.type) ? schema.type : [schema.type];
+    const actualType = data === null ? 'null' : Array.isArray(data) ? 'array' : typeof data;
 
     if (!expected.includes(actualType)) {
-      violations.push(`${path}: expected type ${expected.join('|')}, got ${actualType}`)
+      violations.push(`${path}: expected type ${expected.join('|')}, got ${actualType}`);
     }
   }
 
   if (schema.enum !== undefined && !schema.enum.includes(data)) {
-    violations.push(`${path}: value must be one of ${JSON.stringify(schema.enum)}`)
+    violations.push(`${path}: value must be one of ${JSON.stringify(schema.enum)}`);
   }
 
   if (schema.properties && typeof data === 'object' && data !== null && !Array.isArray(data)) {
-    const obj = data as Record<string, unknown>
+    const obj = data as Record<string, unknown>;
     for (const [key, propSchema] of Object.entries(schema.properties)) {
       if (key in obj) {
-        violations.push(...validateAgainstSchema(obj[key], propSchema, `${path}.${key}`))
+        violations.push(...validateAgainstSchema(obj[key], propSchema, `${path}.${key}`));
       } else if (schema.required?.includes(key)) {
-        violations.push(`${path}.${key}: required property missing`)
+        violations.push(`${path}.${key}: required property missing`);
       }
     }
   }
 
   if (schema.items && Array.isArray(data)) {
     for (const [i, item] of data.entries()) {
-      const itemSchema = Array.isArray(schema.items) ? schema.items[i] : schema.items
+      const itemSchema = Array.isArray(schema.items) ? schema.items[i] : schema.items;
       if (itemSchema) {
-        violations.push(...validateAgainstSchema(item, itemSchema, `${path}[${i}]`))
+        violations.push(...validateAgainstSchema(item, itemSchema, `${path}[${i}]`));
       }
     }
   }
 
-  return violations
+  return violations;
 }
 
 /**
@@ -109,25 +111,26 @@ export async function executeAgentCall<T>(
   prompt: string,
   options: AgentOptions,
   config: {
-    runId: string
-    mode: ExecutionMode
-    budget: BudgetState
-    permissions: Set<string>
-    cache: AgentCacheStore
-    launcher: AgentLauncher<T>
-    log: (message: string) => void
-    cacheKey: string
-    eventEmitter?: AgentEventEmitter
-    resolvedAgent?: ResolvedAgentConfig | null
+    runId: string;
+    mode: ExecutionMode;
+    budget: BudgetState;
+    permissions: Set<string>;
+    cache: AgentCacheStore;
+    launcher: AgentLauncher<T>;
+    log: (message: string) => void;
+    cacheKey: string;
+    eventEmitter?: AgentEventEmitter;
+    resolvedAgent?: ResolvedAgentConfig | null;
+    agentRunId?: string;
   },
 ): Promise<T> {
   // 1. Mode check
   if (config.mode === 'validate') {
-    throw new Error('Agent calls not allowed in validate mode')
+    throw new Error('Agent calls not allowed in validate mode');
   }
 
   // 2. Permission check
-  const permKey = `agent.${options.label}`
+  const permKey = `agent.${options.label}`;
   if (!checkPermission(config.permissions, permKey)) {
     // Agent calls are generally allowed; the permission system gates
     // specific actions, not the agent call itself. We check that the
@@ -136,18 +139,19 @@ export async function executeAgentCall<T>(
 
   // 3. Budget check
   if (config.budget.tokensRemaining !== null && config.budget.tokensRemaining <= 0) {
-    throw new Error('Budget exhausted: no tokens remaining')
+    throw new Error('Budget exhausted: no tokens remaining');
   }
 
   // 4. Cache lookup
-  const cached = await config.cache.load(config.runId, config.cacheKey)
+  const cached = await config.cache.load(config.runId, config.cacheKey);
   if (cached !== null) {
-    return cached.data as T
+    return cached.data as T;
   }
 
   // 5. Execute agent call (with optional event emission for execute mode)
-  const agentId = config.resolvedAgent?.agentId ?? options.agentType ?? options.label
-  const shouldEmit = config.mode === 'execute' && config.eventEmitter
+  const agentId = config.resolvedAgent?.agentId ?? options.agentType ?? options.label;
+  const shouldEmit = config.mode === 'execute' && config.eventEmitter;
+  const agentRunId = config.agentRunId ?? generateRunId();
 
   if (shouldEmit) {
     config.eventEmitter!({
@@ -156,13 +160,14 @@ export async function executeAgentCall<T>(
       label: options.label,
       phase: options.phase,
       runId: config.runId,
+      agentRunId,
       resolvedAgentId: config.resolvedAgent?.agentId,
-    })
+    });
   }
 
-  let result: AgentResult<T>
+  let result: AgentResult<T>;
   try {
-    result = await config.launcher(prompt, options)
+    result = await config.launcher(prompt, { ...options, agentRunId });
   } catch (err) {
     if (shouldEmit) {
       config.eventEmitter!({
@@ -171,11 +176,12 @@ export async function executeAgentCall<T>(
         label: options.label,
         phase: options.phase,
         runId: config.runId,
+        agentRunId,
         resolvedAgentId: config.resolvedAgent?.agentId,
         error: err instanceof Error ? err.message : String(err),
-      })
+      });
     }
-    throw err
+    throw err;
   }
 
   if (shouldEmit) {
@@ -185,31 +191,32 @@ export async function executeAgentCall<T>(
       label: options.label,
       phase: options.phase,
       runId: config.runId,
+      agentRunId: result.runId ?? agentRunId,
       resolvedAgentId: config.resolvedAgent?.agentId,
-    })
+    });
   }
 
   // 6. Schema validation
   if (options.schema) {
-    const violations = validateAgainstSchema(result.data, options.schema)
+    const violations = validateAgainstSchema(result.data, options.schema);
     if (violations.length > 0) {
-      config.log(`Schema validation failed for ${options.label}`)
-      throw new SchemaValidationError(options.label, violations)
+      config.log(`Schema validation failed for ${options.label}`);
+      throw new SchemaValidationError(options.label, violations);
     }
   }
 
   // 7. Cache result
-  await config.cache.save(config.runId, config.cacheKey, result as AgentResult)
+  await config.cache.save(config.runId, config.cacheKey, result as AgentResult);
 
   // 8. Update budget
-  const usage = result.tokenUsage ?? 0
-  config.budget.tokensUsed += usage
+  const usage = result.tokenUsage ?? 0;
+  config.budget.tokensUsed += usage;
   if (config.budget.tokensRemaining !== null) {
-    config.budget.tokensRemaining -= usage
+    config.budget.tokensRemaining -= usage;
   }
-  config.budget.agentCalls += 1
+  config.budget.agentCalls += 1;
 
-  return result.data as T
+  return result.data as T;
 }
 
 /**
@@ -223,12 +230,12 @@ export function computeAgentCacheKey(
   resolvedAgentId?: string,
 ): string {
   // Simple hash of the prompt for cache key stability
-  let promptHash = 0
+  let promptHash = 0;
   for (let i = 0; i < prompt.length; i++) {
-    promptHash = ((promptHash << 5) - promptHash + prompt.charCodeAt(i)) | 0
+    promptHash = ((promptHash << 5) - promptHash + prompt.charCodeAt(i)) | 0;
   }
-  const agentPart = resolvedAgentId ? `:${resolvedAgentId}` : ''
-  return `${manifestHash}:${phase}:${label}${agentPart}:${promptHash.toString(36)}`
+  const agentPart = resolvedAgentId ? `:${resolvedAgentId}` : '';
+  return `${manifestHash}:${phase}:${label}${agentPart}:${promptHash.toString(36)}`;
 }
 
-export { validateAgainstSchema }
+export { validateAgainstSchema };

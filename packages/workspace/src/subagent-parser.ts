@@ -50,7 +50,9 @@ export function parseSubagentMarkdown(content: string, filePath: string): Subage
   }
 
   if (closeIdx === -1) {
-    throw new Error(`Subagent file "${filePath}" has unclosed YAML frontmatter (missing closing ---)`);
+    throw new Error(
+      `Subagent file "${filePath}" has unclosed YAML frontmatter (missing closing ---)`,
+    );
   }
 
   const yamlBlock = lines.slice(openIdx + 1, closeIdx).join('\n');
@@ -59,7 +61,9 @@ export function parseSubagentMarkdown(content: string, filePath: string): Subage
   try {
     data = parseYaml(yamlBlock) as Record<string, unknown>;
   } catch (err) {
-    throw new Error(`Subagent file "${filePath}" has unparseable YAML frontmatter: ${(err as Error).message}`);
+    throw new Error(
+      `Subagent file "${filePath}" has unparseable YAML frontmatter: ${(err as Error).message}`,
+    );
   }
 
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
@@ -74,10 +78,15 @@ export function parseSubagentMarkdown(content: string, filePath: string): Subage
   }
 
   if (!description || typeof description !== 'string' || description.trim().length === 0) {
-    throw new Error(`Subagent file "${filePath}" missing required "description" field in frontmatter`);
+    throw new Error(
+      `Subagent file "${filePath}" missing required "description" field in frontmatter`,
+    );
   }
 
-  const promptBody = lines.slice(closeIdx + 1).join('\n').trim();
+  const promptBody = lines
+    .slice(closeIdx + 1)
+    .join('\n')
+    .trim();
 
   const filename = basename(filePath, '.md');
   const source = inferSource(filePath);
@@ -93,13 +102,19 @@ export function parseSubagentMarkdown(content: string, filePath: string): Subage
 
   // Optional fields — only set if present, with runtime type validation
   if (data.tools !== undefined) {
-    if (!Array.isArray(data.tools)) throw new Error(`Subagent file "${filePath}" field "tools" must be an array`);
-    if (!(data.tools as unknown[]).every((v): v is string => typeof v === 'string')) throw new Error(`Subagent file "${filePath}" field "tools" must contain only strings`);
+    if (!Array.isArray(data.tools))
+      throw new Error(`Subagent file "${filePath}" field "tools" must be an array`);
+    if (!(data.tools as unknown[]).every((v): v is string => typeof v === 'string'))
+      throw new Error(`Subagent file "${filePath}" field "tools" must contain only strings`);
     def.tools = data.tools as string[];
   }
   if (data.disallowedTools !== undefined) {
-    if (!Array.isArray(data.disallowedTools)) throw new Error(`Subagent file "${filePath}" field "disallowedTools" must be an array`);
-    if (!(data.disallowedTools as unknown[]).every((v): v is string => typeof v === 'string')) throw new Error(`Subagent file "${filePath}" field "disallowedTools" must contain only strings`);
+    if (!Array.isArray(data.disallowedTools))
+      throw new Error(`Subagent file "${filePath}" field "disallowedTools" must be an array`);
+    if (!(data.disallowedTools as unknown[]).every((v): v is string => typeof v === 'string'))
+      throw new Error(
+        `Subagent file "${filePath}" field "disallowedTools" must contain only strings`,
+      );
     def.disallowedTools = data.disallowedTools as string[];
   }
   if (data.model !== undefined) def.model = String(data.model);
@@ -114,32 +129,105 @@ export function parseSubagentMarkdown(content: string, filePath: string): Subage
     def.permissionMode = mode as PermissionMode;
   }
   if (data.maxTurns !== undefined) {
-    if (typeof data.maxTurns !== 'number') throw new Error(`Subagent file "${filePath}" field "maxTurns" must be a number`);
+    if (typeof data.maxTurns !== 'number')
+      throw new Error(`Subagent file "${filePath}" field "maxTurns" must be a number`);
     def.maxTurns = data.maxTurns;
   }
   if (data.skills !== undefined) {
-    if (!Array.isArray(data.skills)) throw new Error(`Subagent file "${filePath}" field "skills" must be an array`);
-    if (!(data.skills as unknown[]).every((v): v is string => typeof v === 'string')) throw new Error(`Subagent file "${filePath}" field "skills" must contain only strings`);
+    if (!Array.isArray(data.skills))
+      throw new Error(`Subagent file "${filePath}" field "skills" must be an array`);
+    if (!(data.skills as unknown[]).every((v): v is string => typeof v === 'string'))
+      throw new Error(`Subagent file "${filePath}" field "skills" must contain only strings`);
     def.skills = data.skills as string[];
   }
   if (data.mcpServers !== undefined) {
-    if (!Array.isArray(data.mcpServers)) throw new Error(`Subagent file "${filePath}" field "mcpServers" must be an array`);
-    if (!(data.mcpServers as unknown[]).every((v): v is object => typeof v === 'object' && v !== null)) throw new Error(`Subagent file "${filePath}" field "mcpServers" must contain only objects`);
+    if (!Array.isArray(data.mcpServers))
+      throw new Error(`Subagent file "${filePath}" field "mcpServers" must be an array`);
+    if (
+      !(data.mcpServers as unknown[]).every((v): v is object => typeof v === 'object' && v !== null)
+    )
+      throw new Error(`Subagent file "${filePath}" field "mcpServers" must contain only objects`);
     def.mcpServers = data.mcpServers as unknown[];
   }
   if (data.memory !== undefined) {
     const validMemory = ['user', 'project', 'local', 'none'];
     const mem = String(data.memory);
-    if (!validMemory.includes(mem)) throw new Error(`Subagent file "${filePath}" has invalid memory "${mem}". Must be one of: ${validMemory.join(', ')}`);
+    if (!validMemory.includes(mem))
+      throw new Error(
+        `Subagent file "${filePath}" has invalid memory "${mem}". Must be one of: ${validMemory.join(', ')}`,
+      );
     def.memory = mem as 'user' | 'project' | 'local' | 'none';
   }
   if (data.isolation !== undefined) {
     const validIsolation = ['none', 'worktree'];
     const iso = String(data.isolation);
-    if (!validIsolation.includes(iso)) throw new Error(`Subagent file "${filePath}" has invalid isolation "${iso}". Must be one of: ${validIsolation.join(', ')}`);
+    if (!validIsolation.includes(iso))
+      throw new Error(
+        `Subagent file "${filePath}" has invalid isolation "${iso}". Must be one of: ${validIsolation.join(', ')}`,
+      );
     def.isolation = iso as 'none' | 'worktree';
   }
   if (data.color !== undefined) def.color = String(data.color);
+
+  // Phase AR — Agent Runtime Hardening extensions
+  if (data.effort !== undefined) {
+    const validEffort = ['low', 'medium', 'high'];
+    const effort = String(data.effort);
+    if (!validEffort.includes(effort))
+      throw new Error(
+        `Subagent file "${filePath}" has invalid effort "${effort}". Must be one of: ${validEffort.join(', ')}`,
+      );
+    def.effort = effort as 'low' | 'medium' | 'high';
+  }
+  if (data.hooks !== undefined) {
+    if (typeof data.hooks !== 'object' || data.hooks === null || Array.isArray(data.hooks)) {
+      throw new Error(`Subagent file "${filePath}" field "hooks" must be an object`);
+    }
+    const hooksObj = data.hooks as Record<string, unknown>;
+    const hooks: { before?: string; after?: string } = {};
+    if (hooksObj.before !== undefined) {
+      if (typeof hooksObj.before !== 'string')
+        throw new Error(`Subagent file "${filePath}" field "hooks.before" must be a string`);
+      hooks.before = hooksObj.before;
+    }
+    if (hooksObj.after !== undefined) {
+      if (typeof hooksObj.after !== 'string')
+        throw new Error(`Subagent file "${filePath}" field "hooks.after" must be a string`);
+      hooks.after = hooksObj.after;
+    }
+    def.hooks = hooks;
+  }
+  if (data.initialPrompt !== undefined) {
+    if (typeof data.initialPrompt !== 'string')
+      throw new Error(`Subagent file "${filePath}" field "initialPrompt" must be a string`);
+    def.initialPrompt = data.initialPrompt;
+  }
+  if (data.background !== undefined) {
+    if (typeof data.background !== 'boolean')
+      throw new Error(`Subagent file "${filePath}" field "background" must be a boolean`);
+    def.background = data.background;
+  }
+  if (data.requiredMcpServers !== undefined) {
+    if (!Array.isArray(data.requiredMcpServers))
+      throw new Error(`Subagent file "${filePath}" field "requiredMcpServers" must be an array`);
+    if (!(data.requiredMcpServers as unknown[]).every((v): v is string => typeof v === 'string'))
+      throw new Error(
+        `Subagent file "${filePath}" field "requiredMcpServers" must contain only strings`,
+      );
+    def.requiredMcpServers = data.requiredMcpServers as string[];
+  }
+  if (data.criticalSystemReminder !== undefined) {
+    if (typeof data.criticalSystemReminder !== 'string')
+      throw new Error(
+        `Subagent file "${filePath}" field "criticalSystemReminder" must be a string`,
+      );
+    def.criticalSystemReminder = data.criticalSystemReminder;
+  }
+  if (data.remote !== undefined) {
+    if (typeof data.remote !== 'boolean')
+      throw new Error(`Subagent file "${filePath}" field "remote" must be a boolean`);
+    def.remote = data.remote;
+  }
 
   return def;
 }
@@ -228,8 +316,7 @@ export function resolveSubagent(agentId: string, rootDir: string): SubagentDefin
  */
 function readMdFiles(dir: string): string[] {
   try {
-    return readdirSync(dir)
-      .filter((f) => f.endsWith('.md'));
+    return readdirSync(dir).filter((f) => f.endsWith('.md'));
   } catch {
     return [];
   }

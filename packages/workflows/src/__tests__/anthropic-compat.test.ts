@@ -77,12 +77,11 @@ describe('createAnthropicCompatSandbox', () => {
       expect(result).toEqual({ ok: true })
     })
 
-    it('passes through agent errors', async () => {
+    it('uses default launcher when no custom launcher provided', async () => {
       const rt = makeRuntime()
       const sandbox = createAnthropicCompatSandbox(rt)
-      await expect(
-        sandbox.agent('prompt', { label: 'test', phase: 'Scan' }),
-      ).rejects.toThrow('No agent launcher')
+      const result = await sandbox.agent('prompt', { label: 'test', phase: 'Scan' })
+      expect(result).toBeDefined()
     })
   })
 

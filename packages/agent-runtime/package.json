@@ -1,5 +1,5 @@
 {
-  "name": "@openslack/workflows",
+  "name": "@openslack/agent-runtime",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -18,12 +18,9 @@
   },
   "dependencies": {
     "@openslack/kernel": "workspace:*",
-    "@openslack/runtime": "workspace:*",
-    "@openslack/github": "workspace:*",
-    "@openslack/pr": "workspace:*",
-    "@openslack/collaboration": "workspace:*",
     "@openslack/workspace": "workspace:*",
-    "@openslack/agent-runtime": "workspace:*",
+    "@openslack/collaboration": "workspace:*",
+    "@openslack/runtime": "workspace:*",
     "yaml": "^2.7.0"
   }
 }

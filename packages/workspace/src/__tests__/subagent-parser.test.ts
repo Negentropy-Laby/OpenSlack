@@ -17,7 +17,10 @@ function writeAgent(base: string, filename: string, content: string): void {
 }
 
 beforeEach(() => {
-  fixtureRoot = join(tmpdir(), `openslack-subagent-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  fixtureRoot = join(
+    tmpdir(),
+    `openslack-subagent-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
   mkdirSync(fixtureRoot, { recursive: true });
 });
 
@@ -46,6 +49,17 @@ mcpServers:
 memory: project
 isolation: worktree
 color: blue
+effort: high
+hooks:
+  before: scripts/before.sh
+  after: scripts/after.sh
+initialPrompt: Start here
+background: true
+requiredMcpServers:
+  - github
+  - slack
+criticalSystemReminder: Do not expose secrets
+remote: true
 ---
 You are a fully specified agent.`;
 
@@ -65,6 +79,14 @@ You are a fully specified agent.`;
     expect(result.isolation).toBe('worktree');
     expect(result.color).toBe('blue');
     expect(result.rawPath).toBe('/fake/full-agent.md');
+    // Phase AR extensions
+    expect(result.effort).toBe('high');
+    expect(result.hooks).toEqual({ before: 'scripts/before.sh', after: 'scripts/after.sh' });
+    expect(result.initialPrompt).toBe('Start here');
+    expect(result.background).toBe(true);
+    expect(result.requiredMcpServers).toEqual(['github', 'slack']);
+    expect(result.criticalSystemReminder).toBe('Do not expose secrets');
+    expect(result.remote).toBe(true);
   });
 
   it('parses valid frontmatter with only required fields', () => {
@@ -286,21 +308,145 @@ Bad.`;
       /must contain only strings/,
     );
   });
+
+  // Phase AR — Agent Runtime Hardening extension validation tests
+
+  it('rejects invalid effort value', () => {
+    const content = `---
+name: Bad Effort
+description: Invalid effort value
+effort: extreme
+---
+Bad.`;
+
+    expect(() => parseSubagentMarkdown(content, '/fake/bad-effort.md')).toThrow(
+      /invalid effort "extreme"/,
+    );
+  });
+
+  it('rejects non-object hooks field', () => {
+    const content = `---
+name: Bad Hooks
+description: Hooks is not an object
+hooks: "before.sh"
+---
+Bad.`;
+
+    expect(() => parseSubagentMarkdown(content, '/fake/bad-hooks.md')).toThrow(
+      /field "hooks" must be an object/,
+    );
+  });
+
+  it('rejects non-string hooks.before field', () => {
+    const content = `---
+name: Bad Hook Before
+description: hooks.before is not a string
+hooks:
+  before: 42
+---
+Bad.`;
+
+    expect(() => parseSubagentMarkdown(content, '/fake/bad-hook-before.md')).toThrow(
+      /field "hooks.before" must be a string/,
+    );
+  });
+
+  it('rejects non-boolean background field', () => {
+    const content = `---
+name: Bad Background
+description: background is not a boolean
+background: "yes"
+---
+Bad.`;
+
+    expect(() => parseSubagentMarkdown(content, '/fake/bad-background.md')).toThrow(
+      /field "background" must be a boolean/,
+    );
+  });
+
+  it('rejects non-array requiredMcpServers field', () => {
+    const content = `---
+name: Bad MCP
+description: requiredMcpServers is not an array
+requiredMcpServers: "github"
+---
+Bad.`;
+
+    expect(() => parseSubagentMarkdown(content, '/fake/bad-mcp.md')).toThrow(
+      /field "requiredMcpServers" must be an array/,
+    );
+  });
+
+  it('rejects requiredMcpServers array with non-string items', () => {
+    const content = `---
+name: Bad MCP Items
+description: requiredMcpServers contains a number
+requiredMcpServers:
+  - github
+  - 42
+---
+Bad.`;
+
+    expect(() => parseSubagentMarkdown(content, '/fake/bad-mcp-items.md')).toThrow(
+      /field "requiredMcpServers" must contain only strings/,
+    );
+  });
+
+  it('rejects non-boolean remote field', () => {
+    const content = `---
+name: Bad Remote
+description: remote is not a boolean
+remote: "yes"
+---
+Bad.`;
+
+    expect(() => parseSubagentMarkdown(content, '/fake/bad-remote.md')).toThrow(
+      /field "remote" must be a boolean/,
+    );
+  });
+
+  it('parses minimal Phase AR fields correctly', () => {
+    const content = `---
+name: Minimal AR
+description: Minimal AR agent
+effort: low
+background: false
+remote: false
+---
+Do the thing.`;
+
+    const result = parseSubagentMarkdown(content, '/fake/minimal-ar.md');
+    expect(result.effort).toBe('low');
+    expect(result.background).toBe(false);
+    expect(result.remote).toBe(false);
+    expect(result.hooks).toBeUndefined();
+    expect(result.initialPrompt).toBeUndefined();
+    expect(result.requiredMcpServers).toBeUndefined();
+    expect(result.criticalSystemReminder).toBeUndefined();
+  });
 });
 
 describe('discoverSubagents', () => {
   it('discovers agents from project directory', () => {
-    writeAgent(fixtureRoot, 'reviewer.md', `---
+    writeAgent(
+      fixtureRoot,
+      'reviewer.md',
+      `---
 name: Reviewer
 description: Reviews code
 ---
-Review carefully.`);
+Review carefully.`,
+    );
 
-    writeAgent(fixtureRoot, 'builder.md', `---
+    writeAgent(
+      fixtureRoot,
+      'builder.md',
+      `---
 name: Builder
 description: Builds things
 ---
-Build well.`);
+Build well.`,
+    );
 
     const results = discoverSubagents(fixtureRoot);
     expect(results.length).toBeGreaterThanOrEqual(2);
@@ -351,11 +497,15 @@ User-level work.`,
 describe('resolveSubagent', () => {
   it('resolves with project-over-user priority', () => {
     // Write project-level agent
-    writeAgent(fixtureRoot, 'shared.md', `---
+    writeAgent(
+      fixtureRoot,
+      'shared.md',
+      `---
 name: Shared Project
 description: Project version
 ---
-Project prompt.`);
+Project prompt.`,
+    );
 
     // Write user-level agent with same id
     const fakeHome = join(fixtureRoot, 'home');

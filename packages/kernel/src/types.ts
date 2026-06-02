@@ -41,8 +41,16 @@ export interface SelfValidationResult {
   prNumber: number;
   headSha: string;
   checks: Record<string, { result: 'pass' | 'fail' | 'skip'; command: string }>;
-  protectedPathCheck: { result: 'pass' | 'fail'; red_zone_touched: boolean; black_zone_touched: boolean };
-  score: { overall: number; decision: 'pass' | 'review' | 'block'; dimensions: Record<string, unknown> };
+  protectedPathCheck: {
+    result: 'pass' | 'fail';
+    red_zone_touched: boolean;
+    black_zone_touched: boolean;
+  };
+  score: {
+    overall: number;
+    decision: 'pass' | 'review' | 'block';
+    dimensions: Record<string, unknown>;
+  };
   decision: 'pass' | 'fail' | 'requires_human';
 }
 
@@ -199,4 +207,12 @@ export interface SubagentDefinition {
   isolation?: 'none' | 'worktree';
   color?: string;
   rawPath?: string;
+  // Phase AR — Agent Runtime Hardening extensions
+  effort?: 'low' | 'medium' | 'high';
+  hooks?: { before?: string; after?: string };
+  initialPrompt?: string;
+  background?: boolean;
+  requiredMcpServers?: string[];
+  criticalSystemReminder?: string;
+  remote?: boolean;
 }

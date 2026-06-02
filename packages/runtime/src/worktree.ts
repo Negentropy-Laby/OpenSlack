@@ -39,16 +39,62 @@ function assertSafeSegment(value: string, label: string): void {
   }
 }
 
-export function createWorktree(taskId: string, agentId: string, runId: string): WorktreeResult {
-  const root = findRepoRoot();
-  const errors: string[] = [];
+function resolveRepoRoot(rootDir?: string): { root: string } | { error: string } {
+  if (!rootDir) return { root: findRepoRoot() };
 
+  try {
+    execFileSync('git', ['rev-parse', '--git-dir'], { cwd: rootDir, stdio: 'pipe' });
+    return { root: rootDir };
+  } catch {
+    return { error: `Provided rootDir is not a git repository: ${rootDir}` };
+  }
+}
+
+function deleteBranchesForRun(root: string, runId: string): void {
+  let branches: string[] = [];
+  try {
+    // Escape runId for use in regex (assertSafeSegment already validated it).
+    const escaped = runId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Match the canonical agent branch format: agent/<agentId>/<taskId>/<runId>
+    const branchPattern = new RegExp(`^agent/[^/]+/[^/]+/${escaped}$`);
+
+    const raw = execFileSync(
+      'git',
+      ['for-each-ref', '--format=%(refname:short)', 'refs/heads/agent'],
+      { cwd: root, stdio: 'pipe' },
+    ).toString();
+    branches = raw
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => branchPattern.test(line));
+  } catch {
+    return;
+  }
+
+  for (const branch of branches) {
+    try {
+      execFileSync('git', ['branch', '-D', branch], { cwd: root, stdio: 'pipe' });
+    } catch {
+      // Best-effort branch cleanup. Worktree cleanup should not fail because a
+      // local branch was already removed or is still protected by Git.
+    }
+  }
+}
+
+export function createWorktree(taskId: string, agentId: string, runId: string, rootDir?: string): WorktreeResult {
   // Validate all user-controlled inputs before any shell execution.
   assertSafeSegment(agentId, 'agentId');
   assertSafeSegment(taskId, 'taskId');
   assertSafeSegment(runId, 'runId');
 
   const branchName = `agent/${agentId}/${taskId}/${runId}`;
+  const resolvedRoot = resolveRepoRoot(rootDir);
+  if ('error' in resolvedRoot) {
+    return { success: false, worktreePath: '', branchName, errors: [resolvedRoot.error] };
+  }
+
+  const root = resolvedRoot.root;
+  const errors: string[] = [];
   const worktreeRoot = join(root, '.worktrees', runId);
   const worktreeAbs = resolve(worktreeRoot);
 
@@ -104,15 +150,18 @@ export function checkDirty(worktreePath: string): DirtyStatus {
   }
 }
 
-export function cleanupWorktree(runId: string): boolean {
-  const root = findRepoRoot();
-
+export function cleanupWorktree(runId: string, rootDir?: string): boolean {
   // Validate user-controlled input.
   assertSafeSegment(runId, 'runId');
 
+  const resolvedRoot = resolveRepoRoot(rootDir);
+  if ('error' in resolvedRoot) return false;
+
+  const root = resolvedRoot.root;
   const worktreePath = join(root, '.worktrees', runId);
   try {
     execFileSync('git', ['worktree', 'remove', worktreePath, '--force'], { cwd: root, stdio: 'pipe' });
+    deleteBranchesForRun(root, runId);
     return true;
   } catch {
     try {
@@ -121,6 +170,7 @@ export function cleanupWorktree(runId: string): boolean {
     } catch {
       // Last resort cleanup
     }
+    deleteBranchesForRun(root, runId);
     return false;
   }
 }

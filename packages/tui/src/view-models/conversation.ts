@@ -168,6 +168,15 @@ function mapMessageToItem(
         content: s(msg.summary),
         metadata: { handoffId: s(msg.handoffId), toParticipant: s(msg.toParticipant) },
       }
+    case 'agent_run_event':
+      return {
+        id: msg.id,
+        kind: 'agent_run_event',
+        authorDisplay,
+        timestamp,
+        content: s(msg.summary),
+        metadata: { runId: s(msg.runId), eventType: s(msg.eventType) },
+      }
     default: {
       const _exhaustive: never = msg
       throw new Error(`Unhandled message kind: ${(msg as { kind: string }).kind}`)
