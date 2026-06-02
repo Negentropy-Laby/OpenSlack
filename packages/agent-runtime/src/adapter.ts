@@ -1,5 +1,69 @@
 import type { AgentRunState, AgentPermissionProfile, ResolvedAgentConfig } from './types.js';
+import { PermissionDeniedError } from './types.js';
+import { isActionAllowed, enforceToolScope } from './permissions.js';
 import type { RunRecorder } from './recorder.js';
+
+/**
+ * Tool guard provided to execution adapters. Adapters MUST call
+ * `check(toolName)` before every tool invocation. If the tool is denied,
+ * the guard throws `PermissionDeniedError` and writes a `tool_denied`
+ * transcript event.
+ *
+ * The guard is constructed by the launcher and injected via
+ * `AdapterExecutionContext`. Adapters must never bypass it.
+ */
+export class ToolGuard {
+  constructor(
+    private readonly profile: AgentPermissionProfile,
+    private readonly recorder: RunRecorder,
+    private readonly runId: string,
+  ) {}
+
+  /**
+   * Check whether a tool is allowed. Returns `true` if allowed.
+   * Throws `PermissionDeniedError` if denied, after writing a transcript event.
+   */
+  check(toolName: string): boolean {
+    if (!isActionAllowed(this.profile, toolName)) {
+      this.recorder.progress(this.runId, {
+        step: 'tool_denied',
+        toolName,
+        reason: `Tool "${toolName}" is not in the allowed set or is in the deny list`,
+      });
+      throw new PermissionDeniedError(
+        `tool.${toolName}`,
+        `Tool "${toolName}" is denied by the permission profile`,
+      );
+    }
+    return true;
+  }
+
+  /**
+   * Non-throwing variant: returns whether a tool is allowed.
+   * Use when the adapter wants to filter available tools proactively
+   * rather than waiting for a denial.
+   */
+  isAllowed(toolName: string): boolean {
+    return isActionAllowed(this.profile, toolName);
+  }
+
+  /**
+   * Batch enforce: given a list of requested tools, return allowed/denied.
+   * Writes a `tool_scope_enforced` transcript event listing denied tools.
+   * Does NOT throw — caller decides what to do with denied tools.
+   */
+  enforceScope(requestedTools: string[]): { allowed: string[]; denied: string[] } {
+    const result = enforceToolScope(this.profile, requestedTools);
+    if (result.denied.length > 0) {
+      this.recorder.progress(this.runId, {
+        step: 'tool_scope_enforced',
+        deniedTools: result.denied,
+        allowedTools: result.allowed,
+      });
+    }
+    return result;
+  }
+}
 
 /**
  * Context passed to an execution adapter. Contains everything the adapter
@@ -24,6 +88,12 @@ export interface AdapterExecutionContext {
   recorder: RunRecorder;
   /** Current run state (snapshot from recorder.start). */
   runState: AgentRunState;
+  /**
+   * Tool guard for permission enforcement. Adapters MUST call
+   * `toolGuard.check(toolName)` before every tool invocation.
+   * Denied tools throw `PermissionDeniedError`.
+   */
+  toolGuard: ToolGuard;
 }
 
 /**
@@ -92,16 +162,23 @@ export class LocalExecutionAdapter implements AgentExecutionAdapter {
   readonly adapterId = 'local';
 
   async execute<T>(context: AdapterExecutionContext): Promise<AdapterExecutionResult<T>> {
-    const { prompt, permissionProfile, recorder, runState } = context;
+    const { prompt, permissionProfile, recorder, runState, toolGuard } = context;
 
     // Record the execution
     recorder.progress(runState.runId, { step: 'parsing_prompt', promptLength: prompt.length });
 
-    // Simulate tool usage based on permission profile
-    const simulatedTools = permissionProfile.allowedTools.slice(0, 3);
-    for (const tool of simulatedTools) {
-      recorder.toolCall(runState.runId, tool, { query: prompt.slice(0, 50) });
-      recorder.toolResult(runState.runId, tool, { found: true, matches: 1 });
+    // Simulate tool usage: only tools that pass the guard
+    const candidateTools = permissionProfile.allowedTools.slice(0, 3);
+    const simulatedTools: string[] = [];
+    for (const tool of candidateTools) {
+      // Use the non-throwing check to filter, then call check() to
+      // demonstrate the guard pattern that real adapters must follow.
+      if (toolGuard.isAllowed(tool)) {
+        toolGuard.check(tool);
+        simulatedTools.push(tool);
+        recorder.toolCall(runState.runId, tool, { query: prompt.slice(0, 50) });
+        recorder.toolResult(runState.runId, tool, { found: true, matches: 1 });
+      }
     }
 
     // Parse prompt for structured intent

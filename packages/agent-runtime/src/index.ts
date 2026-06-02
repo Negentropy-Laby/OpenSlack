@@ -26,7 +26,7 @@ export type { LauncherOptions } from './launcher.js';
 export { createOpenSlackAgentLauncher } from './launcher.js';
 
 export type { AgentExecutionAdapter, AdapterExecutionContext, AdapterExecutionResult } from './adapter.js';
-export { LocalExecutionAdapter } from './adapter.js';
+export { LocalExecutionAdapter, ToolGuard } from './adapter.js';
 
 export type { RunRecorder } from './recorder.js';
 export { createRunRecorder } from './recorder.js';

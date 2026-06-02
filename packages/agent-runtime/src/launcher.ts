@@ -5,7 +5,7 @@ import { createRunRecorder } from './recorder.js';
 import type { AgentRunStore } from './run-store.js';
 import { generateRunId } from './run-store.js';
 import type { AgentExecutionAdapter } from './adapter.js';
-import { LocalExecutionAdapter } from './adapter.js';
+import { LocalExecutionAdapter, ToolGuard } from './adapter.js';
 
 export interface LauncherOptions {
   runStore: AgentRunStore;
@@ -122,6 +122,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
 
     try {
       // Delegate execution to the adapter
+      const toolGuard = new ToolGuard(permissionProfile, recorder, runId);
       const adapterResult = await adapter.execute<T>({
         prompt,
         runId,
@@ -131,6 +132,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
         worktreePath,
         recorder,
         runState: state,
+        toolGuard,
       });
 
       // Complete run with adapter-provided token usage
