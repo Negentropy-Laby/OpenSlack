@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -23,27 +22,11 @@ function makeTempRoot(): string {
   return mkdtempSync(join(tmpdir(), 'agent-dirty-test-'));
 }
 
-function initGitRepo(root: string) {
-  execFileSync('git', ['init'], { cwd: root, stdio: 'pipe' });
-  execFileSync('git', ['config', 'user.email', 'test@example.invalid'], {
-    cwd: root,
-    stdio: 'pipe',
-  });
-  execFileSync('git', ['config', 'user.name', 'Test'], {
-    cwd: root,
-    stdio: 'pipe',
-  });
-  writeFileSync(join(root, 'README.md'), 'test\n', 'utf-8');
-  execFileSync('git', ['add', 'README.md'], { cwd: root, stdio: 'pipe' });
-  execFileSync('git', ['commit', '-m', 'init'], { cwd: root, stdio: 'pipe' });
-}
-
 describe('Dirty-state-aware worktree cleanup', () => {
   let root: string;
 
   beforeEach(() => {
     root = makeTempRoot();
-    initGitRepo(root);
     mockCheckDirty.mockReset();
     mockCleanupWorktree.mockReset();
     mockCreateWorktree.mockReset();
@@ -135,7 +118,8 @@ describe('Dirty-state-aware worktree cleanup', () => {
 
     expect(preservedEvent).toBeDefined();
     expect((preservedEvent!.data as Record<string, unknown>).worktreePath).toBeDefined();
-    expect((preservedEvent!.data as Record<string, unknown>).branchName).toBeDefined();
+    // branchName should come from createWorktree result, not reconstructed
+    expect((preservedEvent!.data as Record<string, unknown>).branchName).toBe('agent/test/run-1/RUN-FAKE');
     expect((preservedEvent!.data as Record<string, unknown>).reason).toContain('Uncommitted changes');
 
     // Run state should have worktreeHandoff for recovery

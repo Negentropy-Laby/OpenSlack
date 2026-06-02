@@ -185,10 +185,6 @@ describe('Custom adapter injection', () => {
         context.recorder.toolCall(context.runId, 'CustomTool', { arg: 'value' });
         context.recorder.toolResult(context.runId, 'CustomTool', { result: 'ok' });
         return { data: { done: true } as T };
-        context.recorder.progress(context.runId, { step: 'custom_step', detail: 'hello' });
-        context.recorder.toolCall(context.runId, 'CustomTool', { arg: 'value' });
-        context.recorder.toolResult(context.runId, 'CustomTool', { result: 'ok' });
-        return { data: { done: true } as T };
       },
     };
 

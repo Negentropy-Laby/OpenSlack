@@ -74,6 +74,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
 
     // Enforce worktree isolation for implementer agents
     let worktreePath: string | undefined;
+    let worktreeBranchName: string | undefined;
     const isImplementer =
       resolvedConfig.agentId?.toLowerCase().includes('implement') ||
       resolvedConfig.prompt?.toLowerCase().includes('implement');
@@ -95,6 +96,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
         );
       }
       worktreePath = wtResult.worktreePath;
+      worktreeBranchName = wtResult.branchName;
     }
 
     // Build permission profile
@@ -158,7 +160,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
           if (dirtyResult.status === 'dirty') {
             // Preserve worktree — it contains uncommitted changes that
             // should be reviewed or committed before removal.
-            const branchName = `agent/${resolvedConfig.agentId}/run-${runId}/${runId}`;
+            const branchName = worktreeBranchName ?? `agent/${resolvedConfig.agentId}/run-${runId}/${runId}`;
             recorder.progress(runId, {
               step: 'worktree_dirty_preserved',
               worktreePath,
