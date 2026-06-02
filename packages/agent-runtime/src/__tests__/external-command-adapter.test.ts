@@ -281,4 +281,34 @@ describe('ExternalCommandAdapter', () => {
     expect(completeEvent).toBeDefined();
     expect((completeEvent!.data as Record<string, unknown>).exitCode).toBe(0);
   });
+
+  it('passes prompt to child process via OPENSLACK_AGENT_PROMPT env var', async () => {
+    // Command that echoes back the prompt env var
+    const adapter = new ExternalCommandAdapter({
+      command: NODE,
+      args: ['-e', 'console.log(JSON.stringify({prompt: process.env.OPENSLACK_AGENT_PROMPT, agentId: process.env.OPENSLACK_AGENT_ID}))'],
+      timeoutMs: 5000,
+    });
+
+    const store = createRunStore(root);
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      adapter,
+    });
+
+    const result = await launcher('review the authentication module', {
+      label: 'reviewer',
+      phase: 'review',
+      resolvedAgentConfig: {
+        agentId: 'reviewer',
+        source: 'test',
+        permissionMode: 'default',
+      },
+    });
+
+    const data = result.data as Record<string, unknown>;
+    expect(data.prompt).toBe('review the authentication module');
+    expect(data.agentId).toBe('reviewer');
+  });
 });

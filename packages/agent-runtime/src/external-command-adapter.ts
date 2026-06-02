@@ -50,14 +50,23 @@ const TRUNCATION_MARKER = '\n... [truncated]';
  * External command execution adapter.
  *
  * Spawns a child process, captures stdout/stderr with size caps,
- * handles timeout, cancel, and structured JSON result parsing.
+ * handles timeout kill, and parses structured JSON results.
+ *
+ * The prompt is passed to the child process via the `OPENSLACK_AGENT_PROMPT`
+ * environment variable so external agents can consume structured input.
  *
  * Security:
- * - CWD is set to worktreePath when available, otherwise rootDir
+ * - CWD is set to worktreePath when available, otherwise inherits parent cwd
  * - Tool guard is enforced: the adapter checks 'Bash' permission
-   before spawning any process
+ *   before spawning any process
  * - stdout/stderr are size-capped to prevent unbounded memory growth
  * - Exit code, signal, and timeout are all recorded
+ *
+ * Limitations (AR-2.4):
+ * - No AbortSignal / cancel API — only timeout-based kill (SIGTERM → SIGKILL)
+ * - No streaming stdout/stderr — full capture before resolve
+ * - The command and args are fixed at construction time; prompt is
+ *   passed via env var, not as an arg
  */
 export class ExternalCommandAdapter implements AgentExecutionAdapter {
   readonly adapterId = 'external-command';
@@ -68,7 +77,7 @@ export class ExternalCommandAdapter implements AgentExecutionAdapter {
   }
 
   async execute<T>(context: AdapterExecutionContext): Promise<AdapterExecutionResult<T>> {
-    const { recorder, runState, toolGuard } = context;
+    const { prompt, recorder, runState, toolGuard } = context;
     const {
       command,
       args = [],
@@ -96,7 +105,14 @@ export class ExternalCommandAdapter implements AgentExecutionAdapter {
     try {
       const result = await this.spawnProcess(command, args, {
         cwd,
-        extraEnv,
+        extraEnv: {
+          // Pass prompt and run metadata to the child process so adapters
+          // can use structured input instead of parsing fixed args.
+          OPENSLACK_AGENT_PROMPT: prompt,
+          OPENSLACK_AGENT_ID: context.agentId,
+          OPENSLACK_RUN_ID: runState.runId,
+          ...extraEnv,
+        },
         timeoutMs,
         maxCaptureBytes,
       });
@@ -178,7 +194,6 @@ export class ExternalCommandAdapter implements AgentExecutionAdapter {
       let stderr = '';
       let truncated = false;
       let timedOut = false;
-      let killed = false;
 
       const env = { ...process.env, ...opts.extraEnv };
 
@@ -199,7 +214,6 @@ export class ExternalCommandAdapter implements AgentExecutionAdapter {
 
       const timeout = setTimeout(() => {
         timedOut = true;
-        killed = true;
         child.kill('SIGTERM');
         // Give 5s for graceful shutdown, then force kill
         setTimeout(() => {
