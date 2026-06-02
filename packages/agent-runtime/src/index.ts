@@ -29,5 +29,8 @@ export { createOpenSlackAgentLauncher } from './launcher.js';
 export type { AgentExecutionAdapter, AdapterExecutionContext, AdapterExecutionResult } from './adapter.js';
 export { LocalExecutionAdapter, ToolGuard } from './adapter.js';
 
+export type { ExternalCommandAdapterOptions, ExternalCommandResult } from './external-command-adapter.js';
+export { ExternalCommandAdapter } from './external-command-adapter.js';
+
 export type { RunRecorder } from './recorder.js';
 export { createRunRecorder } from './recorder.js';
