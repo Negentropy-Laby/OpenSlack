@@ -1,6 +1,6 @@
 schema: openslack.modules.v1
-vitest_tests: 2974
-vitest_files: 213
+vitest_tests: 2981
+vitest_files: 214
 modules:
   - id: self_evolution
     name: Self-Evolution Kernel
@@ -110,6 +110,6 @@ modules:
       - "@openslack/tui"
       - "@openslack/github"
       - "@openslack/agent-runtime"
-    tests: 1625
-    test_files: 125
+    tests: 1632
+    test_files: 126
     notes: Full 2D/2E Collaboration Layer active with typed workflow template preview/execute and dashboard with filters (--owner, --module, --risk, --blocker, --type). Workflow engine with JS module discovery, preview, dry-run, execute, resume, trust levels, and inspect (HTML/JSON/Markdown). Event model, activity feed, digest, handoff, decision, and room views with agent display name resolution. Authz-gated chat cards for handoffs, decisions, tasks, workflows, and plans. Agent registry v1 to v2 migration command. TUI dashboard and room views via --format tui. Full workflow GitHub Issues lifecycle including proposal, review, run audit, improvement (with CLI), split with native sub-issue linking and linear dependency fallback, workflow-aware PRMS gate (BLOCKED_WORKFLOW_GATE), and post-merge lifecycle finalizer. Profile Sync Robot active with config-driven check/preview/run, idempotent branch naming, failure issue creation, profile_sync.failed event, watch-daemon auto-pr trigger (manual/watch/auto-pr modes), dedupe queue/worker, TUI profile workbench with 6 actions, PRMS profile-sync governance gate (BLOCKED_PROFILE_SYNC_GATE), and buildProfileSyncStatus finalizer. Agent Conversations active with typed thread model (7 message kinds), JSONL persistence, secret scanning on messages and metadata, agent type resolution with Claude Code subagent compatibility, and conversation commands (start/list/show/send/summarize/archive). Agent Runtime (@openslack/agent-runtime) active with launcher, permission profiles, run store, transcript recording, local adapter, worktree isolation, and fail-closed metadata validation. Lifecycle events (started/completed/failed) are wired through executeRun/executeResume via agentEventEmitter bridge into collaboration recordEvent, with activity feed and room integration. TUI AgentRun detail view with event timeline.

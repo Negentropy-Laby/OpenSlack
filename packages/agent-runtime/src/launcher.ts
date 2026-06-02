@@ -1,9 +1,11 @@
-import type { AgentRunRequest, AgentRunState, AgentPermissionProfile } from './types.js';
+import type { AgentRunRequest } from './types.js';
 import { PermissionDeniedError, AgentUnavailableError } from './types.js';
 import { buildPermissionProfile, validatePermissionProfile } from './permissions.js';
-import { createRunRecorder, type RunRecorder } from './recorder.js';
+import { createRunRecorder } from './recorder.js';
 import type { AgentRunStore } from './run-store.js';
 import { generateRunId } from './run-store.js';
+import type { AgentExecutionAdapter } from './adapter.js';
+import { LocalExecutionAdapter } from './adapter.js';
 
 export interface LauncherOptions {
   runStore: AgentRunStore;
@@ -11,18 +13,32 @@ export interface LauncherOptions {
   rootDir?: string;
   /** List of available MCP server names. Agents requiring unavailable servers will be rejected. */
   availableMcpServers?: string[];
+  /**
+   * Execution adapter to use for agent runs. Defaults to LocalExecutionAdapter.
+   * Override to provide external command, Claude Code, or other adapters.
+   */
+  adapter?: AgentExecutionAdapter;
 }
 
 /**
- * Create an OpenSlack-local agent launcher.
+ * Create an OpenSlack agent launcher.
  *
- * This launcher replaces the "No agent launcher configured" stub.
- * It creates a fully instrumented agent run with permission checks,
- * transcript recording, and structured result generation — without
- * requiring an external LLM or Claude Code binary.
+ * The launcher handles infrastructure concerns (MCP checks, worktree lifecycle,
+ * permission validation, run recording, transcript) and delegates actual
+ * execution to an {@link AgentExecutionAdapter}.
+ *
+ * By default, uses the {@link LocalExecutionAdapter} which produces placeholder
+ * responses without invoking an external LLM. Pass a custom adapter to connect
+ * real execution backends.
  */
 export function createOpenSlackAgentLauncher(options: LauncherOptions) {
-  const { runStore, model, rootDir, availableMcpServers = [] } = options;
+  const {
+    runStore,
+    model,
+    rootDir,
+    availableMcpServers = [],
+    adapter = new LocalExecutionAdapter(),
+  } = options;
   const recorder = createRunRecorder(runStore, rootDir);
 
   return async function launchAgent<T>(
@@ -46,7 +62,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       model: agentOptions.model ?? model,
     };
 
-    // Phase AR: Check required MCP servers before launching
+    // Check required MCP servers before launching
     if (resolvedConfig.requiredMcpServers && resolvedConfig.requiredMcpServers.length > 0) {
       const missing = resolvedConfig.requiredMcpServers.filter(
         (name) => !availableMcpServers.includes(name),
@@ -56,7 +72,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       }
     }
 
-    // Phase AR: Enforce worktree isolation for implementer agents
+    // Enforce worktree isolation for implementer agents
     let worktreePath: string | undefined;
     const isImplementer =
       resolvedConfig.agentId?.toLowerCase().includes('implement') ||
@@ -105,22 +121,24 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
     const state = recorder.start(request);
 
     try {
-      // --- Local adapter execution (no external LLM) ---
-      const result = await executeLocalAdapter<T>(
+      // Delegate execution to the adapter
+      const adapterResult = await adapter.execute<T>({
         prompt,
+        runId,
+        agentId: resolvedConfig.agentId,
         resolvedConfig,
         permissionProfile,
+        worktreePath,
         recorder,
-        state,
-      );
+        runState: state,
+      });
 
-      // Complete run
-      const tokenUsage = estimateTokenUsage(prompt, result);
-      recorder.complete(runId, result, tokenUsage);
+      // Complete run with adapter-provided token usage
+      recorder.complete(runId, adapterResult.data, adapterResult.tokenUsage);
 
       return {
-        data: result,
-        tokenUsage,
+        data: adapterResult.data,
+        tokenUsage: adapterResult.tokenUsage,
         runId,
       };
     } catch (err) {
@@ -169,91 +187,4 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       }
     }
   };
-}
-
-/**
- * Local adapter: produces a structured result without calling an external LLM.
- *
- * This parses the prompt for known patterns and returns appropriate
- * placeholder data. It's a bridge that makes ctx.agent() runnable
- * while the real LLM integration is being built.
- *
- * TODO(phase-ar-llm): Replace placeholder responses with real LLM calls.
- * Every return statement below uses `as T` to satisfy the generic type.
- * This is safe only because this adapter produces hardcoded mock data.
- * When a real adapter is added, the `as T` casts must be removed and
- * the adapter should produce properly typed results via the schema
- * validation already present in the agent shim.
- */
-async function executeLocalAdapter<T>(
-  prompt: string,
-  _resolvedConfig: import('./types.js').ResolvedAgentConfig,
-  permissionProfile: AgentPermissionProfile,
-  recorder: RunRecorder,
-  state: AgentRunState,
-): Promise<T> {
-  // Record the execution
-  recorder.progress(state.runId, { step: 'parsing_prompt', promptLength: prompt.length });
-
-  // Simulate tool usage based on permission profile
-  const simulatedTools = permissionProfile.allowedTools.slice(0, 3);
-  for (const tool of simulatedTools) {
-    recorder.toolCall(state.runId, tool, { query: prompt.slice(0, 50) });
-    recorder.toolResult(state.runId, tool, { found: true, matches: 1 });
-  }
-
-  // Parse prompt for structured intent
-  const lowerPrompt = prompt.toLowerCase();
-
-  // Review request pattern
-  if (lowerPrompt.includes('review') || lowerPrompt.includes('check')) {
-    recorder.progress(state.runId, { step: 'generating_review' });
-    return {
-      review: 'Local adapter review: no issues found in analyzed scope.',
-      findings: [],
-      approved: true,
-    } as T;
-  }
-
-  // Research request pattern
-  if (
-    lowerPrompt.includes('research') ||
-    lowerPrompt.includes('find') ||
-    lowerPrompt.includes('search')
-  ) {
-    recorder.progress(state.runId, { step: 'generating_research' });
-    return {
-      summary: 'Local adapter research: analyzed available context.',
-      sources: ['local-context'],
-      confidence: 'medium',
-    } as T;
-  }
-
-  // Plan request pattern
-  if (lowerPrompt.includes('plan') || lowerPrompt.includes('design')) {
-    recorder.progress(state.runId, { step: 'generating_plan' });
-    return {
-      plan: [
-        'Step 1: Analyze requirements',
-        'Step 2: Implement changes',
-        'Step 3: Validate results',
-      ],
-      estimatedEffort: 'medium',
-    } as T;
-  }
-
-  // Default: generic structured response
-  recorder.progress(state.runId, { step: 'generating_response' });
-  return {
-    response: 'Local adapter executed successfully.',
-    promptAnalyzed: true,
-    toolsUsed: simulatedTools,
-  } as T;
-}
-
-function estimateTokenUsage(prompt: string, result: unknown): number {
-  // Rough heuristic: ~4 chars per token
-  const promptTokens = Math.ceil(prompt.length / 4);
-  const resultTokens = Math.ceil(JSON.stringify(result).length / 4);
-  return promptTokens + resultTokens + 50; // overhead
 }
