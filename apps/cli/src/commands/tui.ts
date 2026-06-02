@@ -332,6 +332,22 @@ export function tuiCommands(): Command {
           // Handoff data unavailable
         }
 
+        // Pre-fetch conversation thread data
+        try {
+          const { listThreads, getThread } = await import('@openslack/collaboration');
+          const threads = listThreads();
+          const messages: Record<string, NonNullable<ReturnType<typeof getThread>>['messages']> = {};
+          for (const t of threads) {
+            const detail = getThread(t.id);
+            if (detail) {
+              messages[t.id] = detail.messages;
+            }
+          }
+          data.conversations = { threads, messages };
+        } catch {
+          // Conversation data unavailable
+        }
+
         // Pre-fetch decision list data
         try {
           const { listDecisions } = await import('@openslack/collaboration');

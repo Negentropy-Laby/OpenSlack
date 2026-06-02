@@ -11,6 +11,8 @@ export type {
   ActionVerdict, AgentRegistryIdentity, AgentPermissions, AgentRegistryEntry,
   AgentRuntimeIdentity, AgentPrincipal, AgentPermissionSnapshot,
   AuthorizationDecision, AuthorizationEvidence, AuthorizationResult,
+  SubagentDefinition,
+  PermissionMode,
 } from './types.js';
 
 export type {

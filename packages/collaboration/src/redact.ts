@@ -1,14 +1,14 @@
 import type { CollaborationEvent } from './types.js';
 
 const SECRET_PATTERNS: { pattern: RegExp; name: string }[] = [
-  { pattern: /xox[baprs]-[A-Za-z0-9-]+/g, name: 'Slack token' },
-  { pattern: /gh[pousr]_[A-Za-z0-9_]+/g, name: 'GitHub token' },
-  { pattern: /-----BEGIN [A-Z ]+PRIVATE KEY-----/g, name: 'Private key' },
-  { pattern: /AWS_SECRET_ACCESS_KEY\s*=/gi, name: 'AWS secret' },
-  { pattern: /OPENSLACK_.*SECRET\s*=/gi, name: 'OpenSlack secret' },
+  { pattern: /xox[baprs]-[A-Za-z0-9-]+/, name: 'Slack token' },
+  { pattern: /gh[pousr]_[A-Za-z0-9_]+/, name: 'GitHub token' },
+  { pattern: /-----BEGIN [A-Z ]+PRIVATE KEY-----/, name: 'Private key' },
+  { pattern: /AWS_SECRET_ACCESS_KEY\s*=/i, name: 'AWS secret' },
+  { pattern: /OPENSLACK_.*SECRET\s*=/i, name: 'OpenSlack secret' },
 ];
 
-function containsSecret(value: unknown): { found: boolean; name?: string } {
+export function containsSecret(value: unknown): { found: boolean; name?: string } {
   if (typeof value !== 'string') return { found: false };
 
   for (const { pattern, name } of SECRET_PATTERNS) {
@@ -20,7 +20,10 @@ function containsSecret(value: unknown): { found: boolean; name?: string } {
   return { found: false };
 }
 
-function scanValue(value: unknown, path: string): { found: boolean; name?: string; path?: string } {
+export function scanValue(value: unknown, path: string, depth: number = 0): { found: boolean; name?: string; path?: string } {
+  // Guard against circular references and excessive depth
+  if (depth > 10) return { found: false };
+
   if (value === null || value === undefined) {
     return { found: false };
   }
@@ -36,12 +39,12 @@ function scanValue(value: unknown, path: string): { found: boolean; name?: strin
   if (typeof value === 'object') {
     if (Array.isArray(value)) {
       for (let i = 0; i < value.length; i++) {
-        const result = scanValue(value[i], `${path}[${i}]`);
+        const result = scanValue(value[i], `${path}[${i}]`, depth + 1);
         if (result.found) return result;
       }
     } else {
       for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
-        const result = scanValue(val, `${path}.${key}`);
+        const result = scanValue(val, `${path}.${key}`, depth + 1);
         if (result.found) return result;
       }
     }

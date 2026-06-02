@@ -87,7 +87,11 @@ export {
   computeAgentCacheKey,
   validateAgainstSchema,
 } from './agent-shim.js'
-export type { AgentCacheStore, AgentLauncher } from './agent-shim.js'
+export type { AgentCacheStore, AgentLauncher, AgentEventEmitter, AgentConversationEvent } from './agent-shim.js'
+
+// ── Agent Resolver ────────────────────────────────────────────────────────────
+export { resolveAgentType } from './agent-resolver.js'
+export type { ResolvedAgentConfig } from './agent-resolver.js'
 
 // ── Parallel Runner ───────────────────────────────────────────────────────────
 export { runParallel } from './parallel-runner.js'

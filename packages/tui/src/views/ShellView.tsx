@@ -21,6 +21,9 @@ import { mapRoomToViewModel } from '../view-models/room.js'
 import type { RoomViewModel } from '../view-models/room.js'
 import { mapProfileToViewModel } from '../view-models/profile.js'
 import type { ProfileViewModel } from '../view-models/profile.js'
+import { mapConversationListToViewModel, mapThreadToViewModel } from '../view-models/conversation.js'
+import { mapSubagentToViewModel } from '../view-models/agent-detail.js'
+import type { SubagentDefinition } from '@openslack/kernel'
 import type { ShellViewData, TuiActionHandlers } from './render-shell.js'
 
 import HomeView from './HomeView.js'
@@ -37,6 +40,9 @@ import DecisionListView from './DecisionListView.js'
 import RoomView from './RoomView.js'
 import WorkflowLifecycleViewWrapper from './WorkflowLifecycleViewWrapper.js'
 import ProfileView from './ProfileView.js'
+import ConversationListView from './ConversationListView.js'
+import ThreadView from './ThreadView.js'
+import SubagentDetailView from './SubagentDetailView.js'
 
 /**
  * A view that hasn't been wired to live data yet.
@@ -184,7 +190,7 @@ function RoomViewWrapper({ roomId, onBack }: { roomId: string; onBack?: () => vo
  * Maps a route to a rendered view component.
  */
 function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
-  const { current, pop } = useNavigation()
+  const { current, pop, push } = useNavigation()
 
   switch (current.view) {
     case 'home': {
@@ -293,6 +299,38 @@ function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
     case 'issues': {
       const issuesPrModel = mapIssuesPrToViewModel({ tab: current.view as 'issues' | 'prs' })
       return React.createElement(IssuesPrView, { model: issuesPrModel })
+    }
+    case 'conversations': {
+      const threads = data?.conversations?.threads ?? []
+      const convModel = mapConversationListToViewModel(threads)
+      return React.createElement(ConversationListView, {
+        model: convModel,
+        onSelect: (item: { id: string }) => {
+          // Navigate to thread view with the selected conversation id
+          push({ view: 'conversation-thread', params: { threadId: item.id } })
+        },
+        onBack: pop,
+      })
+    }
+    case 'conversation-thread': {
+      const threadId = current.params?.threadId as string | undefined
+      if (threadId) {
+        const threadData = data?.conversations?.threads?.find(t => t.id === threadId)
+        const messages = data?.conversations?.messages?.[threadId] ?? []
+        if (threadData) {
+          const threadModel = mapThreadToViewModel(threadData, messages)
+          return React.createElement(ThreadView, { model: threadModel, onBack: pop })
+        }
+      }
+      return React.createElement(PlaceholderView, { route: current })
+    }
+    case 'agent-detail': {
+      const agentDef = current.params?.agent as SubagentDefinition | undefined
+      if (agentDef) {
+        const agentModel = mapSubagentToViewModel(agentDef)
+        return React.createElement(SubagentDetailView, { model: agentModel, onBack: pop })
+      }
+      return React.createElement(PlaceholderView, { route: current })
     }
     default:
       return React.createElement(PlaceholderView, { route: current })

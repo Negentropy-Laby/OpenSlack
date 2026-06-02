@@ -74,3 +74,15 @@ export type { ConversationTurn, Conversation } from './conversation-store.js';
 export type { ContextResolution } from './context-resolver.js';
 export { getRoleGuide, listRoles, renderGuide } from './guides.js';
 export type { RoleGuide, RoleGuideSection } from './guides.js';
+export {
+  registerConversationStoreAdapter,
+  listConversationsForOperator,
+  showConversationForOperator,
+  sendConversationMessage,
+} from './conversation-bridge.js';
+export type {
+  ConversationStoreAdapter,
+  ConversationListOptions,
+  ConversationListItem,
+  ConversationDetailView,
+} from './conversation-bridge.js';

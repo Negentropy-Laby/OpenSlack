@@ -13,6 +13,7 @@ import {
   previewWorkflowTemplate, executeWorkflowTemplate, renderWorkflowPreview,
   validateWorkflowTemplate,
   buildDashboardProjection, renderDashboardProjection, renderDashboardMarkdown, BLOCKER_TYPES,
+  recordEvent,
 } from '@openslack/collaboration';
 import type { WorkflowTemplate } from '@openslack/collaboration';
 import { resolveAgentPrincipal, renderFindingsPlain } from '@openslack/runtime';
@@ -37,7 +38,7 @@ import {
   renderRunJson,
   renderRunMarkdown,
 } from '@openslack/workflows';
-import type { DryRunResult, SimulatedEffect } from '@openslack/workflows';
+import type { DryRunResult, SimulatedEffect, AgentEventEmitter, AgentConversationEvent } from '@openslack/workflows';
 import {
   publishWorkflowProposal,
   publishWorkflowReviewRequest,
@@ -73,6 +74,36 @@ function resolveAgentAuthOptions(agentId: string | undefined): AgentAuthOptions 
     process.exit(1);
   }
   return { principal: resolved.principal, snapshot: resolved.snapshot };
+}
+
+/**
+ * Create an AgentEventEmitter bridge that records agent conversation lifecycle
+ * events into the collaboration event store. Converts the lightweight
+ * AgentConversationEvent from the workflow runtime into a full CollaborationEvent
+ * via recordEvent().
+ */
+function createCollaborationEventEmitter(): AgentEventEmitter {
+  return (event: AgentConversationEvent) => {
+    const severity = event.type === 'agent.conversation.failed' ? 'critical' : undefined;
+    const summary = event.type === 'agent.conversation.started'
+      ? `Agent ${event.agentId} started conversation in phase "${event.phase}" (run ${event.runId})`
+      : event.type === 'agent.conversation.completed'
+        ? `Agent ${event.agentId} completed conversation in phase "${event.phase}" (run ${event.runId})`
+        : `Agent ${event.agentId} failed in phase "${event.phase}" (run ${event.runId}): ${event.error ?? 'unknown error'}`;
+
+    recordEvent({
+      type: event.type,
+      actor: { id: event.agentId, kind: 'agent' },
+      object: { kind: 'agent', id: event.resolvedAgentId ?? event.agentId },
+      source: { kind: 'openslack', ref: event.runId },
+      summary,
+      visibility: 'local',
+      redacted: false,
+      containsSensitiveData: false,
+      correlationId: event.runId,
+      ...(severity ? { severity } : {}),
+    });
+  };
 }
 
 function parseInputs(items: string[] | undefined): Record<string, unknown> {
@@ -1007,6 +1038,8 @@ export function collaborationCommands(): Command {
           budget: { tokens: Number.isFinite(budgetTokens) ? budgetTokens : 100000, costUsd: 1.0 },
           onConfirm,
           allowUnattended: options.yes,
+          agentEventEmitter: createCollaborationEventEmitter(),
+          rootDir: findRepoRoot(),
           ...resolveAgentAuthOptions(options.agentId),
         });
 
@@ -1124,6 +1157,8 @@ export function collaborationCommands(): Command {
           args: meta.args,
           onConfirm,
           allowUnattended: options.yes,
+          agentEventEmitter: createCollaborationEventEmitter(),
+          rootDir: findRepoRoot(),
         });
 
         // Mark run as completed
@@ -1805,6 +1840,8 @@ export function collaborationCommands(): Command {
           budget: { tokens: 100000, costUsd: 1.0 },
           onConfirm,
           allowUnattended: options.yes,
+          agentEventEmitter: createCollaborationEventEmitter(),
+          rootDir: findRepoRoot(),
           ...resolveAgentAuthOptions(options.agentId),
         })
 

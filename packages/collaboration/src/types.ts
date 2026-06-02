@@ -39,6 +39,9 @@ export type RepairEvent =
 export type NotificationEvent =
   | 'notification.sent' | 'notification.failed';
 
+export type AgentConversationEventType =
+  | 'agent.conversation.started' | 'agent.conversation.completed' | 'agent.conversation.failed';
+
 export type CollaborationEventType =
   | TaskEvent
   | PRMSEvent
@@ -47,7 +50,8 @@ export type CollaborationEventType =
   | GovernanceEvent
   | CollaborationObjectEvent
   | RepairEvent
-  | NotificationEvent;
+  | NotificationEvent
+  | AgentConversationEventType;
 
 export interface CollaborationActor {
   id: string;

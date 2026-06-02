@@ -287,6 +287,8 @@ export async function executeWorkflowRun(
     hashString,
   } = await import('@openslack/workflows')
 
+  const { recordEvent } = await import('@openslack/collaboration')
+
   const found = await findWorkflow(workflowName, root)
   if (!found) {
     return { success: false, message: `Workflow "${workflowName}" not found.` }
@@ -339,6 +341,27 @@ export async function executeWorkflowRun(
     )
 
     // Step 3: Execute with manifest-based confirmation policy
+    const agentEventEmitter = (event: import('@openslack/workflows').AgentConversationEvent) => {
+      const severity = event.type === 'agent.conversation.failed' ? 'critical' : undefined
+      const summary = event.type === 'agent.conversation.started'
+        ? `Agent ${event.agentId} started conversation in phase "${event.phase}" (run ${event.runId})`
+        : event.type === 'agent.conversation.completed'
+          ? `Agent ${event.agentId} completed conversation in phase "${event.phase}" (run ${event.runId})`
+          : `Agent ${event.agentId} failed in phase "${event.phase}" (run ${event.runId}): ${event.error ?? 'unknown error'}`
+      recordEvent({
+        type: event.type,
+        actor: { id: event.agentId, kind: 'agent' },
+        object: { kind: 'agent', id: event.resolvedAgentId ?? event.agentId },
+        source: { kind: 'openslack', ref: event.runId },
+        summary,
+        visibility: 'local',
+        redacted: false,
+        containsSensitiveData: false,
+        correlationId: event.runId,
+        ...(severity ? { severity } : {}),
+      })
+    }
+
     const result = await executeRun(mod, {
       manifest: mod.meta,
       args: {},
@@ -349,6 +372,8 @@ export async function executeWorkflowRun(
         approvalManifest,
         onUnexpectedEffect: 'pause',
       },
+      agentEventEmitter,
+      rootDir: root,
     })
 
     return {

@@ -36,6 +36,7 @@ const TASK_KEY_TO_GROUP: Record<string, TaskGroupCategory> = {
   'run-workflow': 'start-work',
   'see-attention': 'review-work',
   'review-prs': 'review-work',
+  'view-conversations': 'review-work',
   'approve-pending': 'govern',
   'maintain-profile': 'maintain',
 }

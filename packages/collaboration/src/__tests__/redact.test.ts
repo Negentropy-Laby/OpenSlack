@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sanitizeEvent, getSecretPatterns } from '../redact.js';
+import { sanitizeEvent, getSecretPatterns, containsSecret, scanValue } from '../redact.js';
 import type { CollaborationEvent } from '../types.js';
 
 describe('redact', () => {
@@ -122,5 +122,47 @@ describe('redact', () => {
     expect(patterns.length).toBeGreaterThan(0);
     expect(patterns.some((p) => p.name === 'Slack token')).toBe(true);
     expect(patterns.some((p) => p.name === 'GitHub token')).toBe(true);
+  });
+
+  // R1: Verify that removing /g flag fixes the lastIndex bug —
+  // consecutive calls with the same pattern must both detect the secret.
+  it('detects same pattern in consecutive calls to containsSecret', () => {
+    const first = containsSecret('token: ghp_abcdef1234567890abcdef1234567890abcd');
+    expect(first.found).toBe(true);
+
+    // Second call with a different string containing the same pattern type
+    const second = containsSecret('another: ghp_zyxwvut9876543210zyxwvut9876543210zyx');
+    expect(second.found).toBe(true);
+  });
+
+  it('detects secrets after a previous match set lastIndex', () => {
+    // First match at position 3 in a short string
+    const first = containsSecret('a ghp_short0000 string');
+    expect(first.found).toBe(true);
+
+    // Second match at position 0 in a new string — must not be missed
+    const second = containsSecret('ghp_atStart1111 of string');
+    expect(second.found).toBe(true);
+  });
+
+  // M2: Circular reference guard — scanValue must not hang on circular objects
+  it('does not hang on circular object references', () => {
+    const circular: Record<string, unknown> = { key: 'safe value' };
+    circular.self = circular;
+
+    // Should return { found: false } without hanging
+    const result = scanValue(circular, 'root');
+    expect(result.found).toBe(false);
+  });
+
+  it('does not hang on deeply nested objects', () => {
+    let obj: Record<string, unknown> = { deep: 'safe' };
+    // Create a 20-level deep nesting — deeper than the depth limit of 10
+    for (let i = 0; i < 20; i++) {
+      obj = { child: obj };
+    }
+
+    const result = scanValue(obj, 'root');
+    expect(result.found).toBe(false);
   });
 });

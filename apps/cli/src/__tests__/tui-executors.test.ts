@@ -16,6 +16,7 @@ vi.mock('@openslack/operator', () => ({
 vi.mock('@openslack/collaboration', () => ({
   recordDecision: vi.fn(),
   listHandoffs: vi.fn(() => []),
+  recordEvent: vi.fn(),
 }))
 
 vi.mock('@openslack/pr', () => ({
