@@ -1,9 +1,9 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
-import type { PermissionMode } from '@openslack/kernel';
 import { discoverSubagents } from '@openslack/workspace';
 import type { SubagentDefinition } from '@openslack/kernel';
+import type { ResolvedAgentConfig } from '@openslack/agent-runtime';
 
 /**
  * Cache for discoverSubagents results to avoid repeated directory scans.
@@ -26,20 +26,7 @@ export function clearSubagentCache(): void {
   cache = null;
 }
 
-/**
- * Resolved agent configuration from either the OpenSlack registry or
- * Claude Code subagent definitions.
- */
-export interface ResolvedAgentConfig {
-  agentId: string;
-  source: string;
-  model?: string;
-  tools?: string[];
-  disallowedTools?: string[];
-  permissionMode?: PermissionMode;
-  isolation?: string;
-  prompt?: string;
-}
+export type { ResolvedAgentConfig } from '@openslack/agent-runtime';
 
 /**
  * Read YAML files from a directory (non-recursive).
@@ -56,7 +43,10 @@ function readYamlFiles(dir: string): string[] {
  * Parse an OpenSlack registry YAML file and extract fields relevant
  * to agent execution.
  */
-function parseRegistryYaml(content: string, filePath: string): { agentId: string; model?: string } | null {
+function parseRegistryYaml(
+  content: string,
+  filePath: string,
+): { agentId: string; model?: string } | null {
   let data: Record<string, unknown>;
   try {
     data = parseYaml(content) as Record<string, unknown>;
@@ -80,10 +70,7 @@ function parseRegistryYaml(content: string, filePath: string): { agentId: string
  * Look for agentType in the OpenSlack registry (.openslack/agents/registry/).
  * Returns a partial ResolvedAgentConfig if found, or null.
  */
-function lookupOpenSlackRegistry(
-  agentType: string,
-  rootDir: string,
-): ResolvedAgentConfig | null {
+function lookupOpenSlackRegistry(agentType: string, rootDir: string): ResolvedAgentConfig | null {
   const registryDir = join(rootDir, '.openslack', 'agents', 'registry');
   if (!existsSync(registryDir)) return null;
 
@@ -114,10 +101,7 @@ function lookupOpenSlackRegistry(
  * Returns null if the agentType is not found anywhere.
  * Does NOT throw for unknown agent types.
  */
-export function resolveAgentType(
-  agentType: string,
-  rootDir: string,
-): ResolvedAgentConfig | null {
+export function resolveAgentType(agentType: string, rootDir: string): ResolvedAgentConfig | null {
   // 1. OpenSlack registry
   const registryMatch = lookupOpenSlackRegistry(agentType, rootDir);
   if (registryMatch) return registryMatch;
@@ -125,7 +109,8 @@ export function resolveAgentType(
   // 2. Claude Code subagents (project-level > user-level priority)
   const all = discoverSubagentsCached(rootDir);
   const projectMatch = all.find((d) => d.id === agentType && d.source === 'claude-project');
-  const subagent = projectMatch || all.find((d) => d.id === agentType && d.source === 'claude-user');
+  const subagent =
+    projectMatch || all.find((d) => d.id === agentType && d.source === 'claude-user');
   if (subagent) {
     return {
       agentId: subagent.id,
@@ -136,6 +121,13 @@ export function resolveAgentType(
       permissionMode: subagent.permissionMode,
       isolation: subagent.isolation,
       prompt: subagent.prompt,
+      effort: subagent.effort,
+      hooks: subagent.hooks,
+      initialPrompt: subagent.initialPrompt,
+      background: subagent.background,
+      requiredMcpServers: subagent.requiredMcpServers,
+      criticalSystemReminder: subagent.criticalSystemReminder,
+      remote: subagent.remote,
     };
   }
 

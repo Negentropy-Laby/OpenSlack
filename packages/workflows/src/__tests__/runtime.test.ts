@@ -121,11 +121,10 @@ describe('createRuntime', () => {
   })
 
   describe('agent', () => {
-    it('throws when no launcher configured', async () => {
+    it('uses default OpenSlack launcher when none configured', async () => {
       const rt = makeRuntime()
-      await expect(
-        rt.agent('prompt', { label: 'test', phase: 'Scan' }),
-      ).rejects.toThrow('No agent launcher')
+      const result = await rt.agent('prompt', { label: 'test', phase: 'Scan' })
+      expect(result).toBeDefined()
     })
 
     it('throws in validate mode', async () => {

@@ -13,6 +13,7 @@
     { "path": "../../packages/github" },
     { "path": "../../packages/pr" },
     { "path": "../../packages/collaboration" },
-    { "path": "../../packages/workflows" }
+    { "path": "../../packages/workflows" },
+    { "path": "../../packages/agent-runtime" }
   ]
 }

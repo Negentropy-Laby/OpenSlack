@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "pretest": "git worktree prune",
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "tsc --build",

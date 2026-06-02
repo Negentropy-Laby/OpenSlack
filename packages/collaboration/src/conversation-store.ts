@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, appendFileSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+  appendFileSync,
+  rmSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type {
@@ -84,18 +92,24 @@ export function createThread(options: {
   // Secret-scanning — scan thread metadata before persisting
   const titleScan = scanValue(options.title, 'title');
   if (titleScan.found) {
-    throw new Error(`Thread title contains ${titleScan.name} at ${titleScan.path}. Refusing to persist.`);
+    throw new Error(
+      `Thread title contains ${titleScan.name} at ${titleScan.path}. Refusing to persist.`,
+    );
   }
   if (options.participants) {
     const participantScan = scanValue(options.participants, 'participants');
     if (participantScan.found) {
-      throw new Error(`Thread participants contain ${participantScan.name} at ${participantScan.path}. Refusing to persist.`);
+      throw new Error(
+        `Thread participants contain ${participantScan.name} at ${participantScan.path}. Refusing to persist.`,
+      );
     }
   }
   if (options.linkedObjects) {
     const linkedScan = scanValue(options.linkedObjects, 'linkedObjects');
     if (linkedScan.found) {
-      throw new Error(`Thread linked objects contain ${linkedScan.name} at ${linkedScan.path}. Refusing to persist.`);
+      throw new Error(
+        `Thread linked objects contain ${linkedScan.name} at ${linkedScan.path}. Refusing to persist.`,
+      );
     }
   }
 
@@ -104,7 +118,10 @@ export function createThread(options: {
   return thread;
 }
 
-export function listThreads(options?: { status?: ConversationStatus; rootDir?: string }): AgentConversationThread[] {
+export function listThreads(options?: {
+  status?: ConversationStatus;
+  rootDir?: string;
+}): AgentConversationThread[] {
   const baseDir = getConversationsBaseDir(options?.rootDir);
   if (!existsSync(baseDir)) return [];
 
@@ -133,7 +150,10 @@ export function listThreads(options?: { status?: ConversationStatus; rootDir?: s
   return threads.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
-export function getThread(threadId: string, rootDir?: string): { thread: AgentConversationThread; messages: AgentConversationMessage[] } | null {
+export function getThread(
+  threadId: string,
+  rootDir?: string,
+): { thread: AgentConversationThread; messages: AgentConversationMessage[] } | null {
   validateThreadId(threadId);
   const metaPath = getThreadMetaPath(threadId, rootDir);
   if (!existsSync(metaPath)) return null;
@@ -233,13 +253,43 @@ export function archiveThread(threadId: string, rootDir?: string): boolean {
   }
 }
 
+/**
+ * Link an agent run to a conversation thread by adding it to the thread's
+ * linked objects.
+ */
+export function linkRunToThread(threadId: string, runId: string, rootDir?: string): boolean {
+  validateThreadId(threadId);
+  const metaPath = getThreadMetaPath(threadId, rootDir);
+  if (!existsSync(metaPath)) return false;
+
+  try {
+    const result = updateThreadMeta(metaPath, (thread) => {
+      const alreadyLinked = thread.linkedObjects.some(
+        (o) => o.kind === 'workflow_run' && o.id === runId,
+      );
+      if (alreadyLinked) return null;
+
+      thread.linkedObjects.push({ kind: 'workflow_run', id: runId });
+      thread.updatedAt = new Date().toISOString();
+      return thread;
+    });
+    return result !== null;
+  } catch {
+    return false;
+  }
+}
+
 // M3: Policy-aware TTL — different retention based on memoryPolicy
 function getMaxAgeForPolicy(policy: MemoryPolicy, defaultMs: number): number {
   switch (policy) {
-    case 'project': return defaultMs * 7;   // 7 days for project-scoped threads
-    case 'none': return Math.floor(defaultMs / 2); // 12h for ephemeral threads
-    case 'local': return defaultMs;  // 24h default for local threads
-    default: return defaultMs;
+    case 'project':
+      return defaultMs * 7; // 7 days for project-scoped threads
+    case 'none':
+      return Math.floor(defaultMs / 2); // 12h for ephemeral threads
+    case 'local':
+      return defaultMs; // 24h default for local threads
+    default:
+      return defaultMs;
   }
 }
 

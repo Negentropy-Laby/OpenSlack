@@ -1,6 +1,6 @@
 schema: openslack.modules.v1
-vitest_tests: 2910
-vitest_files: 207
+vitest_tests: 2969
+vitest_files: 212
 modules:
   - id: self_evolution
     name: Self-Evolution Kernel
@@ -13,7 +13,7 @@ modules:
       - "@openslack/kernel"
       - "@openslack/workspace"
       - "@openslack/runtime"
-    tests: 166
+    tests: 170
     test_files: 25
     golden_evals: 7
 
@@ -29,7 +29,7 @@ modules:
       - "@openslack/github"
       - "@openslack/runtime"
       - "@openslack/core"
-    tests: 388
+    tests: 391
     test_files: 47
     notes: "GitHub Issues task loop active with typed task creation, dry-run repair, and Phase 4 watch daemon (webhook receiver, dedupe, console/Slack/webhook notifications, polling fallback, optional auto-claim with agent identity and authorization gates, collaboration event recording)."
 
@@ -109,6 +109,7 @@ modules:
       - "@openslack/workflows"
       - "@openslack/tui"
       - "@openslack/github"
-    tests: 1573
-    test_files: 119
-    notes: Full 2D/2E Collaboration Layer active with typed workflow template preview/execute and dashboard with filters (--owner, --module, --risk, --blocker, --type). Workflow engine with JS module discovery, preview, dry-run, execute, resume, trust levels, and inspect (HTML/JSON/Markdown). Event model, activity feed, digest, handoff, decision, and room views with agent display name resolution. Authz-gated chat cards for handoffs, decisions, tasks, workflows, and plans. Agent registry v1 to v2 migration command. TUI dashboard and room views via --format tui. Full workflow GitHub Issues lifecycle including proposal, review, run audit, improvement (with CLI), split with native sub-issue linking and linear dependency fallback, workflow-aware PRMS gate (BLOCKED_WORKFLOW_GATE), and post-merge lifecycle finalizer. Profile Sync Robot active with config-driven check/preview/run, idempotent branch naming, failure issue creation, profile_sync.failed event, watch-daemon auto-pr trigger (manual/watch/auto-pr modes), dedupe queue/worker, TUI profile workbench with 6 actions, PRMS profile-sync governance gate (BLOCKED_PROFILE_SYNC_GATE), and buildProfileSyncStatus finalizer. Agent Conversations active with typed thread model (7 message kinds), JSONL persistence, secret scanning on messages and metadata, agent type resolution with Claude Code subagent compatibility, and conversation commands (start/list/show/send/summarize/archive). Lifecycle events (started/completed/failed) are wired through executeRun/executeResume via agentEventEmitter bridge into collaboration recordEvent, with activity feed and room integration.
+      - "@openslack/agent-runtime"
+    tests: 1620
+    test_files: 124
+    notes: Full 2D/2E Collaboration Layer active with typed workflow template preview/execute and dashboard with filters (--owner, --module, --risk, --blocker, --type). Workflow engine with JS module discovery, preview, dry-run, execute, resume, trust levels, and inspect (HTML/JSON/Markdown). Event model, activity feed, digest, handoff, decision, and room views with agent display name resolution. Authz-gated chat cards for handoffs, decisions, tasks, workflows, and plans. Agent registry v1 to v2 migration command. TUI dashboard and room views via --format tui. Full workflow GitHub Issues lifecycle including proposal, review, run audit, improvement (with CLI), split with native sub-issue linking and linear dependency fallback, workflow-aware PRMS gate (BLOCKED_WORKFLOW_GATE), and post-merge lifecycle finalizer. Profile Sync Robot active with config-driven check/preview/run, idempotent branch naming, failure issue creation, profile_sync.failed event, watch-daemon auto-pr trigger (manual/watch/auto-pr modes), dedupe queue/worker, TUI profile workbench with 6 actions, PRMS profile-sync governance gate (BLOCKED_PROFILE_SYNC_GATE), and buildProfileSyncStatus finalizer. Agent Conversations active with typed thread model (7 message kinds), JSONL persistence, secret scanning on messages and metadata, agent type resolution with Claude Code subagent compatibility, and conversation commands (start/list/show/send/summarize/archive). Agent Runtime (@openslack/agent-runtime) active with launcher, permission profiles, run store, transcript recording, local adapter, worktree isolation, and fail-closed metadata validation. Lifecycle events (started/completed/failed) are wired through executeRun/executeResume via agentEventEmitter bridge into collaboration recordEvent, with activity feed and room integration. TUI AgentRun detail view with event timeline.

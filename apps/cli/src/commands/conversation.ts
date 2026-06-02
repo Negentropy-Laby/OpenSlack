@@ -54,12 +54,23 @@ export function conversationCommands(): Command {
     .description('List conversation threads')
     .option('--status <status>', 'Filter by status: open, active, paused, completed, archived')
     .action((options: { status?: string }) => {
-      const validStatuses: ConversationStatus[] = ['open', 'active', 'paused', 'completed', 'archived'];
-      const filterStatus = options.status && validStatuses.includes(options.status as ConversationStatus)
-        ? (options.status as ConversationStatus)
-        : undefined;
+      const validStatuses: ConversationStatus[] = [
+        'open',
+        'active',
+        'paused',
+        'completed',
+        'archived',
+      ];
+      const filterStatus =
+        options.status && validStatuses.includes(options.status as ConversationStatus)
+          ? (options.status as ConversationStatus)
+          : undefined;
 
-      const threads = listThreads(filterStatus ? { status: filterStatus, rootDir: findRepoRoot() } : { rootDir: findRepoRoot() });
+      const threads = listThreads(
+        filterStatus
+          ? { status: filterStatus, rootDir: findRepoRoot() }
+          : { rootDir: findRepoRoot() },
+      );
 
       if (threads.length === 0) {
         console.log('No conversation threads found.');
@@ -71,7 +82,9 @@ export function conversationCommands(): Command {
       for (const t of threads) {
         const title = t.title.length > 30 ? t.title.slice(0, 27) + '...' : t.title;
         const lastActivity = new Date(t.updatedAt).toLocaleDateString();
-        console.log(`| ${t.id} | ${title} | ${t.participants.length} | ${lastActivity} | ${t.status} |`);
+        console.log(
+          `| ${t.id} | ${title} | ${t.participants.length} | ${lastActivity} | ${t.status} |`,
+        );
       }
     });
 
@@ -95,7 +108,9 @@ export function conversationCommands(): Command {
         console.log(`Created: ${new Date(thread.createdAt).toLocaleString()}`);
         console.log(`Updated: ${new Date(thread.updatedAt).toLocaleString()}`);
         if (thread.participants.length > 0) {
-          console.log(`Participants: ${thread.participants.map((p) => p.displayName || p.id).join(', ')}`);
+          console.log(
+            `Participants: ${thread.participants.map((p) => p.displayName || p.id).join(', ')}`,
+          );
         }
         if (thread.linkedObjects.length > 0) {
           console.log(`Linked: ${thread.linkedObjects.map((o) => `${o.kind}:${o.id}`).join(', ')}`);
@@ -119,16 +134,84 @@ export function conversationCommands(): Command {
 
   cmd
     .command('send <threadId> <message>')
-    .description('Send a user message to a thread')
-    .action((threadId: string, message: string) => {
+    .description('Send a user message to a thread. Use @agent-id to dispatch a subagent.')
+    .action(async (threadId: string, message: string) => {
       try {
         const rootDir = findRepoRoot();
-        const msg = appendMessage(threadId, {
-          kind: 'user_message',
+
+        // Phase AR: Check for @agent-id mention pattern
+        const mentionMatch = message.match(/^@(\S+)\s+(.+)$/);
+        if (mentionMatch) {
+          const agentId = mentionMatch[1];
+          const prompt = mentionMatch[2];
+
+          // Resolve agent
+          const { resolveAgentType } = await import('@openslack/workflows');
+          const resolvedConfig = resolveAgentType(agentId, rootDir);
+          if (!resolvedConfig) {
+            console.log(`Agent "${agentId}" not found. Message sent as plain text.`);
+          } else {
+            // Append user message first
+            appendMessage(
+              threadId,
+              {
+                kind: 'user_message',
+                threadId,
+                authorId: 'cli-user',
+                text: message,
+              },
+              rootDir,
+            );
+
+            // Launch agent run
+            const { createOpenSlackAgentLauncher, createRunStore } =
+              await import('@openslack/agent-runtime');
+            const store = createRunStore(rootDir);
+            const launcher = createOpenSlackAgentLauncher({ runStore: store, rootDir });
+
+            const runResult = await launcher(prompt, {
+              label: agentId,
+              phase: 'conversation',
+              agentType: agentId,
+              resolvedAgentConfig: resolvedConfig,
+            });
+
+            // Append agent response
+            appendMessage(
+              threadId,
+              {
+                kind: 'agent_response',
+                threadId,
+                authorId: agentId,
+                text:
+                  typeof runResult.data === 'string'
+                    ? runResult.data
+                    : JSON.stringify(runResult.data, null, 2),
+                structured: runResult.data,
+              },
+              rootDir,
+            );
+
+            // Link run to thread using the actual runId from the launcher
+            const { linkRunToThread } = await import('@openslack/collaboration');
+            linkRunToThread(threadId, runResult.runId, rootDir);
+
+            console.log(`Agent "${agentId}" dispatched. Result appended to thread.`);
+            console.log(`Thread: ${threadId}`);
+            return;
+          }
+        }
+
+        const msg = appendMessage(
           threadId,
-          authorId: 'cli-user',
-          text: message,
-        }, rootDir);
+          {
+            kind: 'user_message',
+            threadId,
+            authorId: 'cli-user',
+            text: message,
+          },
+          rootDir,
+        );
         console.log(`Message sent: ${msg.id}`);
         console.log(`Thread: ${threadId}`);
       } catch (err) {
@@ -156,11 +239,15 @@ export function conversationCommands(): Command {
         } else {
           const userMsgs = messages.filter((m) => m.kind === 'user_message').length;
           const agentMsgs = messages.filter((m) => m.kind === 'agent_response').length;
-          console.log(`Summary: ${messages.length} message(s) — ${userMsgs} user, ${agentMsgs} agent`);
+          console.log(
+            `Summary: ${messages.length} message(s) — ${userMsgs} user, ${agentMsgs} agent`,
+          );
         }
 
         if (thread.nextAction) {
-          console.log(`Next action: ${thread.nextAction.action} (owner: ${thread.nextAction.owner})`);
+          console.log(
+            `Next action: ${thread.nextAction.action} (owner: ${thread.nextAction.owner})`,
+          );
           if (thread.nextAction.command) {
             console.log(`Command: ${thread.nextAction.command}`);
           }

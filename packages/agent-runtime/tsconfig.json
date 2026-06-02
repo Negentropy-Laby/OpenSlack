@@ -7,10 +7,8 @@
   "include": ["src"],
   "references": [
     { "path": "../kernel" },
-    { "path": "../runtime" },
-    { "path": "../github" },
-    { "path": "../pr" },
+    { "path": "../workspace" },
     { "path": "../collaboration" },
-    { "path": "../agent-runtime" }
+    { "path": "../runtime" }
   ]
 }

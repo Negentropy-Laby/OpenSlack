@@ -35,13 +35,81 @@ export interface AgentConversationThread {
 }
 
 export type AgentConversationMessage =
-  | { kind: 'user_message'; id: string; threadId: string; timestamp: string; authorId: string; text: string; source?: { kind: string; ref: string } }
-  | { kind: 'agent_response'; id: string; threadId: string; timestamp: string; authorId: string; text: string; structured?: unknown }
-  | { kind: 'tool_event'; id: string; threadId: string; timestamp: string; authorId: string; toolName: string; input?: unknown; output?: unknown }
-  | { kind: 'plan'; id: string; threadId: string; timestamp: string; authorId: string; planId: string; steps: string[] }
-  | { kind: 'approval_request'; id: string; threadId: string; timestamp: string; authorId: string; targetAction: string; riskLevel: string }
-  | { kind: 'decision'; id: string; threadId: string; timestamp: string; authorId: string; decisionId: string; summary: string }
-  | { kind: 'handoff'; id: string; threadId: string; timestamp: string; authorId: string; handoffId: string; toParticipant: string; summary: string };
+  | {
+      kind: 'user_message';
+      id: string;
+      threadId: string;
+      timestamp: string;
+      authorId: string;
+      text: string;
+      source?: { kind: string; ref: string };
+    }
+  | {
+      kind: 'agent_response';
+      id: string;
+      threadId: string;
+      timestamp: string;
+      authorId: string;
+      text: string;
+      structured?: unknown;
+    }
+  | {
+      kind: 'tool_event';
+      id: string;
+      threadId: string;
+      timestamp: string;
+      authorId: string;
+      toolName: string;
+      input?: unknown;
+      output?: unknown;
+    }
+  | {
+      kind: 'plan';
+      id: string;
+      threadId: string;
+      timestamp: string;
+      authorId: string;
+      planId: string;
+      steps: string[];
+    }
+  | {
+      kind: 'approval_request';
+      id: string;
+      threadId: string;
+      timestamp: string;
+      authorId: string;
+      targetAction: string;
+      riskLevel: string;
+    }
+  | {
+      kind: 'decision';
+      id: string;
+      threadId: string;
+      timestamp: string;
+      authorId: string;
+      decisionId: string;
+      summary: string;
+    }
+  | {
+      kind: 'handoff';
+      id: string;
+      threadId: string;
+      timestamp: string;
+      authorId: string;
+      handoffId: string;
+      toParticipant: string;
+      summary: string;
+    }
+  | {
+      kind: 'agent_run_event';
+      id: string;
+      threadId: string;
+      timestamp: string;
+      authorId: string;
+      runId: string;
+      eventType: string;
+      summary: string;
+    };
 
 export type AgentConversationMessageKind = AgentConversationMessage['kind'];
 
@@ -53,8 +121,14 @@ export function isAgentConversationMessage(value: unknown): value is AgentConver
   const obj = value as Record<string, unknown>;
   if (typeof obj.kind !== 'string') return false;
   const validKinds: string[] = [
-    'user_message', 'agent_response', 'tool_event',
-    'plan', 'approval_request', 'decision', 'handoff',
+    'user_message',
+    'agent_response',
+    'tool_event',
+    'plan',
+    'approval_request',
+    'decision',
+    'handoff',
+    'agent_run_event',
   ];
   return validKinds.includes(obj.kind);
 }

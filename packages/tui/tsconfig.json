@@ -9,5 +9,6 @@
     "strict": false,
     "noImplicitAny": false
   },
-  "include": ["src"]
+  "include": ["src"],
+  "references": [{ "path": "../kernel" }, { "path": "../runtime" }, { "path": "../agent-runtime" }]
 }

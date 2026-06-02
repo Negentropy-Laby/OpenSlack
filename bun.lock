@@ -27,6 +27,7 @@
         "openslack": "./dist/index.js",
       },
       "dependencies": {
+        "@openslack/agent-runtime": "workspace:*",
         "@openslack/chat-gateway": "workspace:*",
         "@openslack/collaboration": "workspace:*",
         "@openslack/github": "workspace:*",
@@ -42,6 +43,17 @@
       },
       "devDependencies": {
         "@types/node": "^22.0.0",
+      },
+    },
+    "packages/agent-runtime": {
+      "name": "@openslack/agent-runtime",
+      "version": "0.1.0",
+      "dependencies": {
+        "@openslack/collaboration": "workspace:*",
+        "@openslack/kernel": "workspace:*",
+        "@openslack/runtime": "workspace:*",
+        "@openslack/workspace": "workspace:*",
+        "yaml": "^2.7.0",
       },
     },
     "packages/chat-gateway": {
@@ -119,6 +131,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@alcalzone/ansi-tokenize": "^0.3.0",
+        "@openslack/agent-runtime": "workspace:*",
         "@openslack/collaboration": "workspace:*",
         "@openslack/kernel": "workspace:*",
         "@openslack/runtime": "workspace:*",
@@ -148,6 +161,7 @@
       "name": "@openslack/workflows",
       "version": "0.1.0",
       "dependencies": {
+        "@openslack/agent-runtime": "workspace:*",
         "@openslack/collaboration": "workspace:*",
         "@openslack/github": "workspace:*",
         "@openslack/kernel": "workspace:*",
@@ -278,6 +292,8 @@
     "@octokit/rest": ["@octokit/rest@21.1.1", "", { "dependencies": { "@octokit/core": "^6.1.4", "@octokit/plugin-paginate-rest": "^11.4.2", "@octokit/plugin-request-log": "^5.3.1", "@octokit/plugin-rest-endpoint-methods": "^13.3.0" } }, "sha512-sTQV7va0IUVZcntzy1q3QqPm/r8rWtDCqpRAmb8eXXnKkjoQEtFe3Nt5GTVsHft+R6jJoHeSiVLcgcvhtue/rg=="],
 
     "@octokit/types": ["@octokit/types@14.1.0", "", { "dependencies": { "@octokit/openapi-types": "^25.1.0" } }, "sha512-1y6DgTy8Jomcpu33N+p5w58l6xyt55Ar2I91RPiIA0xCJBXyUAhXCcmZaDWSANiha7R9a6qJJ2CRomGPZ6f46g=="],
+
+    "@openslack/agent-runtime": ["@openslack/agent-runtime@workspace:packages/agent-runtime"],
 
     "@openslack/auth-callback": ["@openslack/auth-callback@workspace:apps/auth-callback"],
 

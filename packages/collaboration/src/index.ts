@@ -22,12 +22,7 @@ export {
   filterEvents as filterActivityEvents,
 } from './activity.js';
 
-export {
-  groupEvents,
-  getRecommendedNext,
-  buildDigest,
-  renderDigest,
-} from './digest.js';
+export { groupEvents, getRecommendedNext, buildDigest, renderDigest } from './digest.js';
 
 export type { DigestGroup, DigestSummary } from './digest.js';
 
@@ -54,13 +49,7 @@ export {
 
 export type { Decision, DecisionPrincipal } from './decision.js';
 
-export {
-  parseRoomId,
-  buildRoomView,
-  renderRoom,
-  renderRoomPlain,
-  renderRoomChat,
-} from './room.js';
+export { parseRoomId, buildRoomView, renderRoom, renderRoomPlain, renderRoomChat } from './room.js';
 
 export type { RoomView } from './room.js';
 
@@ -91,13 +80,8 @@ export type {
   WorkflowRunResult,
 } from './workflow.js';
 
-export {
-  buildProfileSyncStatus,
-} from './profile-sync-status.js';
-export type {
-  ProfileSyncStatus,
-  ProfileSyncStatusOptions,
-} from './profile-sync-status.js';
+export { buildProfileSyncStatus } from './profile-sync-status.js';
+export type { ProfileSyncStatus, ProfileSyncStatusOptions } from './profile-sync-status.js';
 
 export {
   createThread,
@@ -106,14 +90,11 @@ export {
   appendMessage,
   archiveThread,
   pruneExpiredThreads,
+  linkRunToThread,
   getConversationsDirForTesting,
 } from './conversation-store.js';
 
-export {
-  renderThreadList,
-  renderThread,
-  renderMessage,
-} from './conversation-render.js';
+export { renderThreadList, renderThread, renderMessage } from './conversation-render.js';
 
 export type {
   AgentParticipant,
