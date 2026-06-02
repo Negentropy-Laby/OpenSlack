@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -22,15 +21,6 @@ function makeTempRoot(): string {
 
 function cleanup(root: string) {
   try { rmSync(root, { recursive: true, force: true }); } catch { /* ignore */ }
-}
-
-function initGitRepo(root: string) {
-  execFileSync('git', ['init'], { cwd: root, stdio: 'pipe' });
-  execFileSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: root, stdio: 'pipe' });
-  execFileSync('git', ['config', 'user.name', 'Test'], { cwd: root, stdio: 'pipe' });
-  writeFileSync(join(root, 'README.md'), 'test\n', 'utf-8');
-  execFileSync('git', ['add', 'README.md'], { cwd: root, stdio: 'pipe' });
-  execFileSync('git', ['commit', '-m', 'init'], { cwd: root, stdio: 'pipe' });
 }
 
 describe('ToolGuard', () => {
@@ -160,7 +150,6 @@ describe('ToolGuard in adapter execution', () => {
 
   beforeEach(() => {
     root = makeTempRoot();
-    initGitRepo(root);
   });
 
   afterEach(() => {
