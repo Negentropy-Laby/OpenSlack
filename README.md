@@ -65,6 +65,7 @@ See [Advanced Setup](#advanced-setup) for development mode, production builds, a
 | Create a task preview | `bun run openslack task create --title "Fix docs" --path "docs/**" --preview` |
 | Diagnose a PR | `bun run openslack pr doctor <PR_NUMBER>` |
 | See team activity | `bun run openslack collaboration dashboard` |
+| Start a conversation thread | `bun run openslack conversation start --title "Review PR #42"` |
 | Launch the interactive TUI | `bun run openslack tui` |
 | Maintain organization profile | `bun run openslack collaboration workflow profile-sync status` |
 | Find the full CLI reference | [`docs/user-guide.md`](docs/user-guide.md) |
@@ -161,8 +162,9 @@ The projection and coordination layer. It makes tasks, PRs, handoffs, decisions,
 - **Workflow Engine:** `openslack collaboration workflow preview <file>` → validate typed workflow templates before execution
 - **Workflow Execution:** `openslack collaboration workflow run <name>` → execute workflows with preview, dry-run, and execute modes, checkpointing, resume, trust levels, and inspect (HTML/JSON/Markdown)
 - **Profile Sync Robot:** `openslack collaboration workflow profile-sync check` → keep an organization's public profile in sync with an upstream whitepapers repository (check, preview, run, status)
+- **Agent Conversations:** `openslack conversation start --title "..."` → structured multi-turn interaction threads between humans and agents with JSONL persistence, 7 typed message kinds, secret scanning, and memory policy control (`start`, `list`, `show`, `send`, `summarize`, `archive`)
 
-See: [`docs/product/collaboration-layer.md`](docs/product/collaboration-layer.md)
+See: [`docs/product/collaboration-layer.md`](docs/product/collaboration-layer.md), [`docs/product/agent-conversations.md`](docs/product/agent-conversations.md)
 
 ## Advanced Setup
 
@@ -275,6 +277,8 @@ output_contract:
 | GitHub watch daemon and realtime Issue notifications | [`docs/developer/github-watch-daemon.md`](docs/developer/github-watch-daemon.md) |
 | PR review and merge governance | [`docs/product/module-04-pr-review-merge-steward.md`](docs/product/module-04-pr-review-merge-steward.md) |
 | Collaboration, handoff, decision, room, workflow views | [`docs/product/collaboration-layer.md`](docs/product/collaboration-layer.md), [`docs/developer/collaboration-events.md`](docs/developer/collaboration-events.md) |
+| Agent Conversations and subagent runtime | [`docs/product/agent-conversations.md`](docs/product/agent-conversations.md), [`docs/developer/subagent-runtime.md`](docs/developer/subagent-runtime.md) |
+| Subagent security and permissions | [`docs/security/subagent-permissions.md`](docs/security/subagent-permissions.md) |
 | TUI workbench guide | [`docs/guides/tui-workbench.md`](docs/guides/tui-workbench.md) |
 | Workflow engine runtime and execution model | [`docs/developer/workflow-runtime.md`](docs/developer/workflow-runtime.md) |
 | Workflow security model and trust levels | [`docs/security/workflow-execution.md`](docs/security/workflow-execution.md) |

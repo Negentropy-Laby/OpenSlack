@@ -177,3 +177,26 @@ export interface AuthorizationResult {
   prompt_message?: string;
   diagnostics: string[];
 }
+
+// --- Subagent Definition ---
+
+export type PermissionMode = 'plan' | 'acceptEdits' | 'default' | 'strict';
+
+export interface SubagentDefinition {
+  id: string;
+  source: 'openslack' | 'claude-project' | 'claude-user' | 'codex' | 'runtime';
+  name: string;
+  description: string;
+  prompt: string;
+  tools?: string[];
+  disallowedTools?: string[];
+  model?: string;
+  permissionMode?: PermissionMode;
+  maxTurns?: number;
+  skills?: string[];
+  mcpServers?: unknown[];
+  memory?: 'user' | 'project' | 'local' | 'none';
+  isolation?: 'none' | 'worktree';
+  color?: string;
+  rawPath?: string;
+}

@@ -65,38 +65,42 @@ describe('HomeView coordinate diagnostic', () => {
     // Task [4]: Review and merge PRs
     expect(lines[13]).toContain('Review and merge PRs')
     expect(lines[14]).toContain('Check open PRs, run doctor, and merge when ready')
+    // Task [c]: View active conversations
+    expect(lines[15]).toContain('View active conversations')
+    expect(lines[16]).toContain('Browse agent conversation threads and messages')
 
     // Group header: Govern Actions
-    // line 15: blank (marginTop)
-    // line 16: ── Govern Actions ──
-    expect(lines[16]).toContain('Govern Actions')
+    // line 17: blank (marginTop)
+    // line 18: ── Govern Actions ──
+    expect(lines[18]).toContain('Govern Actions')
     // Task [5]: Approve pending items
-    expect(lines[17]).toContain('Approve pending items')
-    expect(lines[18]).toContain('Approve plans, merge requests, and workflow effects')
+    expect(lines[19]).toContain('Approve pending items')
+    expect(lines[20]).toContain('Approve plans, merge requests, and workflow effects')
 
     // Group header: Maintain Profile
-    // line 19: blank (marginTop)
-    // line 20: ── Maintain Profile ──
-    expect(lines[20]).toContain('Maintain Profile')
+    // line 21: blank (marginTop)
+    // line 22: ── Maintain Profile ──
+    expect(lines[22]).toContain('Maintain Profile')
     // Task [6]: Maintain organization profile
-    expect(lines[21]).toContain('Maintain organization profile')
-    expect(lines[22]).toContain('Check, preview, and sync your organization profile')
+    expect(lines[23]).toContain('Maintain organization profile')
+    expect(lines[24]).toContain('Check, preview, and sync your organization profile')
 
-    expect(lines[23]).toContain('─')
+    expect(lines[25]).toContain('─')
 
     // Section 2: Quick Navigation
-    expect(lines[24]).toContain('Quick Navigation')
-    // Nav items: Dashboard, Status, Activity, Digest, Workflows, Profile
-    expect(lines[25]).toContain('Dashboard')
-    expect(lines[26]).toContain('Status')
-    expect(lines[27]).toContain('Activity')
-    expect(lines[28]).toContain('Digest')
-    expect(lines[29]).toContain('Workflows')
-    expect(lines[30]).toContain('Profile')
+    expect(lines[26]).toContain('Quick Navigation')
+    // Nav items: Dashboard, Status, Activity, Digest, Workflows, Profile, Conversations
+    expect(lines[27]).toContain('Dashboard')
+    expect(lines[28]).toContain('Status')
+    expect(lines[29]).toContain('Activity')
+    expect(lines[30]).toContain('Digest')
+    expect(lines[31]).toContain('Workflows')
+    expect(lines[32]).toContain('Profile')
+    expect(lines[33]).toContain('Conversations')
 
     // Footer
-    expect(lines[31]).toContain('─')
-    expect(lines[32]).toContain('Quit')
+    expect(lines[34]).toContain('─')
+    expect(lines[35]).toContain('Quit')
 
     instance.unmount()
   })
@@ -142,7 +146,7 @@ describe('HomeView coordinate diagnostic', () => {
     instance.unmount()
   })
 
-  it('renders all 6 tasks with correct shortcuts', async () => {
+  it('renders all 7 tasks with correct shortcuts', async () => {
     const { stdout, chunks } = createMockStdout(80, 50)
     const model = mapHomeToViewModel()
     const instance = await render(
@@ -155,21 +159,23 @@ describe('HomeView coordinate diagnostic', () => {
 
     const output = chunks.join('')
 
-    // Verify all 6 task labels are present
+    // Verify all 7 task labels are present
     expect(output).toContain('See what needs attention')
     expect(output).toContain('Start or continue work')
     expect(output).toContain('Run or check a workflow')
     expect(output).toContain('Review and merge PRs')
     expect(output).toContain('Approve pending items')
     expect(output).toContain('Maintain organization profile')
+    expect(output).toContain('View active conversations')
 
-    // Verify shortcuts [1] through [6] for tasks
+    // Verify shortcuts [1] through [6] for tasks, plus [c] for conversations
     expect(output).toContain('[1]')
     expect(output).toContain('[2]')
     expect(output).toContain('[3]')
     expect(output).toContain('[4]')
     expect(output).toContain('[5]')
     expect(output).toContain('[6]')
+    expect(output).toContain('[c]')
 
     instance.unmount()
   })
@@ -187,13 +193,14 @@ describe('HomeView coordinate diagnostic', () => {
 
     const output = chunks.join('')
 
-    // Verify nav shortcuts [7], [8], [9], [0], [p], [r]
+    // Verify nav shortcuts [7], [8], [9], [0], [p], [r], [c]
     expect(output).toContain('[7]')
     expect(output).toContain('[8]')
     expect(output).toContain('[9]')
     expect(output).toContain('[0]')
     expect(output).toContain('[p]')
     expect(output).toContain('[r]')
+    expect(output).toContain('[c]')
 
     // Verify nav labels
     expect(output).toContain('Dashboard')
@@ -202,6 +209,7 @@ describe('HomeView coordinate diagnostic', () => {
     expect(output).toContain('Digest')
     expect(output).toContain('Workflows')
     expect(output).toContain('Profile')
+    expect(output).toContain('Conversations')
 
     instance.unmount()
   })

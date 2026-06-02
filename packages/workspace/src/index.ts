@@ -19,3 +19,6 @@ export type { ParsedAgentRegistryEntry } from './agent-registry-parser.js';
 export { migrateV1ToV2, migrateRegistry } from './registry-migrate.js';
 export type { MigrationResult } from './registry-migrate.js';
 
+// Subagent Parser
+export { parseSubagentMarkdown, discoverSubagents, resolveSubagent } from './subagent-parser.js';
+

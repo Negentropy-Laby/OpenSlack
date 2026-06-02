@@ -9,7 +9,7 @@ export {
   getEventsDirForTesting,
 } from './events.js';
 
-export { sanitizeEvent, getSecretPatterns } from './redact.js';
+export { sanitizeEvent, getSecretPatterns, containsSecret, scanValue } from './redact.js';
 
 export { resolveAgentDisplayName, clearNameCache } from './agent-resolve.js';
 
@@ -99,6 +99,36 @@ export type {
   ProfileSyncStatusOptions,
 } from './profile-sync-status.js';
 
+export {
+  createThread,
+  listThreads,
+  getThread,
+  appendMessage,
+  archiveThread,
+  pruneExpiredThreads,
+  getConversationsDirForTesting,
+} from './conversation-store.js';
+
+export {
+  renderThreadList,
+  renderThread,
+  renderMessage,
+} from './conversation-render.js';
+
+export type {
+  AgentParticipant,
+  ConversationStatus,
+  MemoryPolicy,
+  ConversationLinkedObject,
+  AgentConversationThread,
+  AgentConversationMessage,
+  AgentConversationMessageKind,
+  NewConversationMessage,
+  DistributiveOmit,
+} from './conversation-types.js';
+
+export { isAgentConversationMessage } from './conversation-types.js';
+
 export type {
   CollaborationEvent,
   CollaborationEventType,
@@ -121,4 +151,5 @@ export type {
   GovernanceEvent,
   CollaborationObjectEvent,
   RepairEvent,
+  AgentConversationEventType,
 } from './types.js';

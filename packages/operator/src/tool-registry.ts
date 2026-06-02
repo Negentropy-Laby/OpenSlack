@@ -27,7 +27,13 @@ export type RegisteredActionId =
   | 'github.issue_done'
   | 'github.repair.labels.preview'
   | 'github.repair.claims.preview'
-  | 'task.repair.worktrees.preview';
+  | 'task.repair.worktrees.preview'
+  | 'conversation.start'
+  | 'conversation.list'
+  | 'conversation.show'
+  | 'conversation.send'
+  | 'conversation.summarize'
+  | 'conversation.archive';
 
 type InputType = 'string' | 'number' | 'boolean';
 
@@ -326,6 +332,76 @@ export const REGISTERED_ACTIONS: Record<RegisteredActionId, RegisteredAction> = 
     confirmationRequired: false,
     build: (_input, id) => ({ id, actionId: 'task.repair.worktrees.preview', input: {}, tool: 'openslack-cli', command: 'task', args: ['repair', 'worktrees'], description: 'Preview local worktree repair', confirmationRequired: false }),
     match: exact('task', ['repair', 'worktrees']),
+  },
+  'conversation.start': {
+    id: 'conversation.start',
+    description: 'Create a new conversation thread',
+    inputSchema: { title: { type: 'string', required: true }, pr: { type: 'number' }, issue: { type: 'number' }, workflow: { type: 'string' } },
+    riskLevel: 'low',
+    sideEffects: true,
+    confirmationRequired: false,
+    build: (input, id) => {
+      const args = ['start', '--title', str(input.title)];
+      if (input.pr !== undefined) args.push('--pr', str(input.pr));
+      if (input.issue !== undefined) args.push('--issue', str(input.issue));
+      if (input.workflow !== undefined) args.push('--workflow', str(input.workflow));
+      return { id, actionId: 'conversation.start', input, tool: 'openslack-cli', command: 'conversation', args, description: `Create conversation thread "${input.title}"`, confirmationRequired: false };
+    },
+    match: (step) => variable('conversation', ['start'], 3)(step) && step.args.includes('--title'),
+  },
+  'conversation.list': {
+    id: 'conversation.list',
+    description: 'List conversation threads',
+    inputSchema: { status: { type: 'string' } },
+    riskLevel: 'none',
+    sideEffects: false,
+    confirmationRequired: false,
+    build: (input, id) => {
+      const args = ['list'];
+      if (input.status) args.push('--status', str(input.status));
+      return { id, actionId: 'conversation.list', input, tool: 'openslack-cli', command: 'conversation', args, description: 'List conversation threads', confirmationRequired: false };
+    },
+    match: (step) => variable('conversation', ['list'], 1)(step),
+  },
+  'conversation.show': {
+    id: 'conversation.show',
+    description: 'Show conversation thread details',
+    inputSchema: { threadId: { type: 'string', required: true } },
+    riskLevel: 'none',
+    sideEffects: false,
+    confirmationRequired: false,
+    build: (input, id) => ({ id, actionId: 'conversation.show', input, tool: 'openslack-cli', command: 'conversation', args: ['show', str(input.threadId)], description: `Show conversation thread ${input.threadId}`, confirmationRequired: false }),
+    match: (step) => variable('conversation', ['show'], 2)(step),
+  },
+  'conversation.send': {
+    id: 'conversation.send',
+    description: 'Send message to conversation thread',
+    inputSchema: { threadId: { type: 'string', required: true }, message: { type: 'string', required: true } },
+    riskLevel: 'medium',
+    sideEffects: true,
+    confirmationRequired: false,
+    build: (input, id) => ({ id, actionId: 'conversation.send', input, tool: 'openslack-cli', command: 'conversation', args: ['send', str(input.threadId), str(input.message)], description: `Send message to thread ${input.threadId}`, confirmationRequired: false }),
+    match: (step) => variable('conversation', ['send'], 3)(step),
+  },
+  'conversation.summarize': {
+    id: 'conversation.summarize',
+    description: 'Show conversation thread summary and next action',
+    inputSchema: { threadId: { type: 'string', required: true } },
+    riskLevel: 'none',
+    sideEffects: false,
+    confirmationRequired: false,
+    build: (input, id) => ({ id, actionId: 'conversation.summarize', input, tool: 'openslack-cli', command: 'conversation', args: ['summarize', str(input.threadId)], description: `Summarize conversation thread ${input.threadId}`, confirmationRequired: false }),
+    match: (step) => variable('conversation', ['summarize'], 2)(step),
+  },
+  'conversation.archive': {
+    id: 'conversation.archive',
+    description: 'Archive a conversation thread',
+    inputSchema: { threadId: { type: 'string', required: true } },
+    riskLevel: 'medium',
+    sideEffects: true,
+    confirmationRequired: false,
+    build: (input, id) => ({ id, actionId: 'conversation.archive', input, tool: 'openslack-cli', command: 'conversation', args: ['archive', str(input.threadId)], description: `Archive conversation thread ${input.threadId}`, confirmationRequired: false }),
+    match: (step) => variable('conversation', ['archive'], 2)(step),
   },
 };
 

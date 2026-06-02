@@ -44,7 +44,7 @@ describe('HomeView render debug', () => {
     instance.unmount()
   })
 
-  it('renders all 6 tasks in the tasks section', async () => {
+  it('renders all 7 tasks in the tasks section', async () => {
     const { stdout, chunks } = createMockStdout(80, 50)
     const model = mapHomeToViewModel()
     const instance = await render(
@@ -61,6 +61,7 @@ describe('HomeView render debug', () => {
     expect(output).toContain('Review and merge PRs')
     expect(output).toContain('Approve pending items')
     expect(output).toContain('Maintain organization profile')
+    expect(output).toContain('View active conversations')
     instance.unmount()
   })
 

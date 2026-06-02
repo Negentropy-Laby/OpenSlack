@@ -14,6 +14,7 @@ import { doctorCommands } from './commands/doctor.js';
 import { governanceCommands } from './commands/governance.js';
 import { chatCommands } from './commands/chat.js';
 import { collaborationCommands } from './commands/collaboration.js';
+import { conversationCommands } from './commands/conversation.js';
 import { guideCommands } from './commands/guide.js';
 import { tuiCommands } from './commands/tui.js';
 
@@ -41,6 +42,7 @@ program.addCommand(governanceCommands());
 program.addCommand(setupCommands());
 program.addCommand(chatCommands());
 program.addCommand(collaborationCommands());
+program.addCommand(conversationCommands());
 program.addCommand(guideCommands());
 program.addCommand(tuiCommands());
 

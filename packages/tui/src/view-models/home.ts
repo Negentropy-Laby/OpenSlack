@@ -286,6 +286,13 @@ export function mapHomeToViewModel(data?: {
       description: 'Check, preview, and sync your organization profile',
       shortcut: '6',
     },
+    {
+      key: 'view-conversations',
+      label: 'View active conversations',
+      route: 'conversations',
+      description: 'Browse agent conversation threads and messages',
+      shortcut: 'c',
+    },
   ]
 
   const navItems: NavItem[] = [
@@ -295,6 +302,7 @@ export function mapHomeToViewModel(data?: {
     { label: 'Digest', key: 'digest', shortcut: '0' },
     { label: 'Workflows', key: 'workflows', shortcut: 'p' },
     { label: 'Profile', key: 'profile', shortcut: 'r' },
+    { label: 'Conversations', key: 'conversations', shortcut: 'c' },
   ]
 
   return {

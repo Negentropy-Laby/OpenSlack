@@ -17,6 +17,7 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 | See team state across events and PRs | `openslack collaboration dashboard` | Projection-only; does not create dashboard-specific state. |
 | Record a handoff or decision | `openslack collaboration handoff ...` / `openslack collaboration decision ...` | Creates auditable collaboration objects. |
 | Keep the org profile in sync | `openslack collaboration workflow profile-sync check` | Profile Sync Robot checks and previews are read-only; `run` requires confirmation. |
+| Start a conversation with an agent | `openslack conversation start --title "..."` | Creates a typed thread with JSONL persistence and secret scanning. |
 
 ## Common Workflows
 
@@ -406,6 +407,31 @@ step. Ready PRs display a Confirm merge button.
 | `openslack collaboration workflow run <name> --agent-id <id>` | Execute with agent principal authorization |
 
 The Collaboration Layer is projection-only. GitHub/Git/.openslack remain the sole source of truth. Activity feed, digest, handoffs, decisions, and room views are all derived from events and YAML files.
+
+## Agent Conversations
+
+Agent Conversations provide structured, observable multi-turn interaction threads
+between humans and agents. Threads are stored in `.openslack.local/conversations/`
+with JSONL persistence and secret scanning on all messages.
+
+| Command | Purpose |
+|---------|---------|
+| `openslack conversation start --title "..."` | Create a new conversation thread |
+| `openslack conversation start --title "..." --pr 42` | Create thread linked to a PR |
+| `openslack conversation start --title "..." --issue 15` | Create thread linked to an issue |
+| `openslack conversation list` | List all conversation threads |
+| `openslack conversation list --status active` | Filter threads by status |
+| `openslack conversation show <threadId>` | Show thread details and messages |
+| `openslack conversation send <threadId> <message>` | Append a user message to a thread |
+| `openslack conversation summarize <threadId>` | Show thread summary and next action |
+| `openslack conversation archive <threadId>` | Archive a conversation thread |
+
+Thread IDs follow the format `CONV-YYYYMMDD-XXXXXXXX` (8 random base-36 characters).
+Messages support 7 kinds: `user_message`, `agent_response`, `tool_event`, `plan`,
+`approval_request`, `decision`, `handoff`.
+
+**Memory policies:** Threads can be created with `--memory-policy local` (default,
+24h retention), `project` (7-day retention), or `none` (ephemeral, not persisted).
 
 ## Profile Sync Robot
 

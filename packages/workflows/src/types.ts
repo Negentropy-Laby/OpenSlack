@@ -70,6 +70,7 @@ export interface AgentOptions {
   budget?: { tokens: number }
   model?: string
   agentType?: string
+  resolvedAgentId?: string
 }
 
 export interface ParallelOptions {

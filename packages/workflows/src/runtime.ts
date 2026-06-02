@@ -12,10 +12,11 @@ import type {
 } from './types.js'
 import { resolvePermissions } from './permission-checker.js'
 import { executeAgentCall, computeAgentCacheKey, SchemaValidationError } from './agent-shim.js'
-import type { AgentCacheStore, AgentLauncher } from './agent-shim.js'
+import type { AgentCacheStore, AgentLauncher, AgentEventEmitter } from './agent-shim.js'
 import { runParallel } from './parallel-runner.js'
 import { runPipeline, runMultiStagePipeline } from './pipeline-runner.js'
 import type { PipelineCacheStore } from './pipeline-runner.js'
+import { resolveAgentType } from './agent-resolver.js'
 
 /**
  * Maximum nesting depth for ctx.workflow() calls.
@@ -61,6 +62,10 @@ export interface RuntimeOptions {
   onWorkflowCall?: (name: string, args?: Record<string, unknown>) => Promise<unknown>
   /** Confirmation gate for execute mode. Required when mode is 'execute'. */
   onConfirm?: ConfirmCallback
+  /** Optional event emitter for agent conversation lifecycle events. */
+  agentEventEmitter?: AgentEventEmitter
+  /** Root directory for resolving agent types. Defaults to cwd. */
+  rootDir?: string
 }
 
 /**
@@ -231,11 +236,20 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
     },
 
     async agent<T>(prompt: string, agentOptions: AgentOptions): Promise<T> {
+      // Resolve agentType if provided
+      let resolvedAgent: import('./agent-resolver.js').ResolvedAgentConfig | null = null
+      if (agentOptions.agentType) {
+        resolvedAgent = resolveAgentType(agentOptions.agentType, options.rootDir ?? process.cwd())
+      }
+
+      const resolvedAgentId = resolvedAgent?.agentId ?? agentOptions.resolvedAgentId
+
       const cacheKey = computeAgentCacheKey(
         manifest.name,
         agentOptions.phase,
         agentOptions.label,
         prompt,
+        resolvedAgentId,
       )
 
       return executeAgentCall<T>(prompt, agentOptions, {
@@ -247,6 +261,8 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
         launcher: launcher as AgentLauncher<T>,
         log: runtime.log.bind(runtime),
         cacheKey,
+        eventEmitter: options.agentEventEmitter,
+        resolvedAgent,
       })
     },
 

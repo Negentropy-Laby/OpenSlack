@@ -23,6 +23,7 @@ const ALL_EVENT_TYPES: CollaborationEventType[] = [
   'profile_sync.triggered', 'profile_sync.queued', 'profile_sync.started', 'profile_sync.completed', 'profile_sync.failed',
   'repair.previewed', 'repair.applied', 'repair.failed',
   'notification.sent', 'notification.failed',
+  'agent.conversation.started', 'agent.conversation.completed', 'agent.conversation.failed',
 ];
 
 function getEventsDir(): string {

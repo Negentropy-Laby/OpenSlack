@@ -1,5 +1,6 @@
 import type { AgentOptions, AgentResult, BudgetState, ExecutionMode } from './types.js'
 import { checkPermission } from './permission-checker.js'
+import type { ResolvedAgentConfig } from './agent-resolver.js'
 
 /**
  * Error thrown when agent result fails schema validation.
@@ -23,6 +24,26 @@ export interface AgentCacheStore {
   load(runId: string, cacheKey: string): Promise<AgentResult | null>
   save(runId: string, cacheKey: string, result: AgentResult): Promise<void>
 }
+
+/**
+ * Event emitted during the agent call lifecycle.
+ * Used to record agent conversation events into the collaboration layer.
+ */
+export interface AgentConversationEvent {
+  type: 'agent.conversation.started' | 'agent.conversation.completed' | 'agent.conversation.failed'
+  agentId: string
+  label: string
+  phase: string
+  runId: string
+  resolvedAgentId?: string
+  error?: string
+}
+
+/**
+ * Event emitter callback for agent conversation events.
+ * When provided, the agent shim emits lifecycle events during execution.
+ */
+export type AgentEventEmitter = (event: AgentConversationEvent) => void
 
 /**
  * Agent launcher function type. The real implementation would call an
@@ -96,6 +117,8 @@ export async function executeAgentCall<T>(
     launcher: AgentLauncher<T>
     log: (message: string) => void
     cacheKey: string
+    eventEmitter?: AgentEventEmitter
+    resolvedAgent?: ResolvedAgentConfig | null
   },
 ): Promise<T> {
   // 1. Mode check
@@ -122,8 +145,49 @@ export async function executeAgentCall<T>(
     return cached.data as T
   }
 
-  // 5. Execute agent call
-  const result = await config.launcher(prompt, options)
+  // 5. Execute agent call (with optional event emission for execute mode)
+  const agentId = config.resolvedAgent?.agentId ?? options.agentType ?? options.label
+  const shouldEmit = config.mode === 'execute' && config.eventEmitter
+
+  if (shouldEmit) {
+    config.eventEmitter!({
+      type: 'agent.conversation.started',
+      agentId,
+      label: options.label,
+      phase: options.phase,
+      runId: config.runId,
+      resolvedAgentId: config.resolvedAgent?.agentId,
+    })
+  }
+
+  let result: AgentResult<T>
+  try {
+    result = await config.launcher(prompt, options)
+  } catch (err) {
+    if (shouldEmit) {
+      config.eventEmitter!({
+        type: 'agent.conversation.failed',
+        agentId,
+        label: options.label,
+        phase: options.phase,
+        runId: config.runId,
+        resolvedAgentId: config.resolvedAgent?.agentId,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+    throw err
+  }
+
+  if (shouldEmit) {
+    config.eventEmitter!({
+      type: 'agent.conversation.completed',
+      agentId,
+      label: options.label,
+      phase: options.phase,
+      runId: config.runId,
+      resolvedAgentId: config.resolvedAgent?.agentId,
+    })
+  }
 
   // 6. Schema validation
   if (options.schema) {
@@ -156,13 +220,15 @@ export function computeAgentCacheKey(
   phase: string,
   label: string,
   prompt: string,
+  resolvedAgentId?: string,
 ): string {
   // Simple hash of the prompt for cache key stability
   let promptHash = 0
   for (let i = 0; i < prompt.length; i++) {
     promptHash = ((promptHash << 5) - promptHash + prompt.charCodeAt(i)) | 0
   }
-  return `${manifestHash}:${phase}:${label}:${promptHash.toString(36)}`
+  const agentPart = resolvedAgentId ? `:${resolvedAgentId}` : ''
+  return `${manifestHash}:${phase}:${label}${agentPart}:${promptHash.toString(36)}`
 }
 
 export { validateAgainstSchema }
