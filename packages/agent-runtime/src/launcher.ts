@@ -74,6 +74,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
 
     // Enforce worktree isolation for implementer agents
     let worktreePath: string | undefined;
+    let worktreeBranchName: string | undefined;
     const isImplementer =
       resolvedConfig.agentId?.toLowerCase().includes('implement') ||
       resolvedConfig.prompt?.toLowerCase().includes('implement');
@@ -95,6 +96,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
         );
       }
       worktreePath = wtResult.worktreePath;
+      worktreeBranchName = wtResult.branchName;
     }
 
     // Build permission profile
@@ -159,7 +161,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
             recorder.progress(runId, {
               step: 'worktree_dirty_preserved',
               worktreePath,
-              branchName: `agent/${resolvedConfig.agentId}/run-${runId}/${runId}`,
+              branchName: worktreeBranchName ?? `agent/${resolvedConfig.agentId}/run-${runId}/${runId}`,
               reason: dirtyResult.reason ?? 'Uncommitted changes detected',
             });
           } else if (dirtyResult.status === 'error') {
