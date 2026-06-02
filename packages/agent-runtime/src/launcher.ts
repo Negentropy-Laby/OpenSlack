@@ -127,11 +127,36 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       recorder.fail(runId, err instanceof Error ? err : new Error(String(err)));
       throw err;
     } finally {
-      // Cleanup worktree if created
+      // Dirty-state-aware worktree cleanup: preserve worktrees with
+      // uncommitted changes so real work is never destroyed by an
+      // automatic cleanup sweep.
       if (worktreePath) {
         try {
-          const { cleanupWorktree } = await import('@openslack/runtime');
-          cleanupWorktree(runId, rootDir);
+          const { checkDirty, cleanupWorktree } = await import('@openslack/runtime');
+          const dirtyResult = checkDirty(worktreePath);
+
+          if (dirtyResult.status === 'dirty') {
+            // Preserve worktree — it contains uncommitted changes that
+            // should be reviewed or committed before removal.
+            recorder.progress(runId, {
+              step: 'worktree_dirty_preserved',
+              worktreePath,
+              branchName: `agent/${resolvedConfig.agentId}/run-${runId}/${runId}`,
+              reason: dirtyResult.reason ?? 'Uncommitted changes detected',
+            });
+          } else if (dirtyResult.status === 'error') {
+            // Fail-closed: if we cannot determine dirty state, attempt
+            // cleanup rather than leaking an unmanaged worktree.
+            recorder.progress(runId, {
+              step: 'worktree_dirty_check_failed',
+              worktreePath,
+              reason: dirtyResult.reason ?? 'Unknown dirty-check error',
+            });
+            cleanupWorktree(runId, rootDir);
+          } else {
+            // Clean — safe to remove.
+            cleanupWorktree(runId, rootDir);
+          }
         } catch (cleanupErr) {
           // Log cleanup failure so orphan worktrees are discoverable, but do
           // not mask the original result or error from the run.

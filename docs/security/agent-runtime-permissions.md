@@ -27,6 +27,7 @@ and hardcoded denylists.
 | `bypassPermissions` mode grants unlimited access   | Parser rejects `bypassPermissions`; permission builder defaults to `strict`           | Implemented |
 | Corrupted run metadata allows replay               | `getRun()` returns `null` on parse failure                                            | Implemented |
 | Path traversal via runId                           | `RUN_ID_RE` validates format before any filesystem access                             | Implemented |
+| Run artifacts contain leaked secrets               | `scanValue()` scans all run metadata and transcript events before persist; refuses write if detected | Implemented |
 
 ## Hardcoded Denylist
 
@@ -68,17 +69,31 @@ When `isolation=worktree`:
 1. `createWorktree()` creates isolated git worktree on temp branch
 2. Agent's working directory set to worktree root
 3. File operations confined to worktree
-4. Cleanup in `finally` block
+4. Cleanup in `finally` block is dirty-state-aware:
+   - **Clean worktree**: removed automatically
+   - **Dirty worktree**: preserved with a `worktree_dirty_preserved` progress
+     event recording the path, branch name, and reason; not deleted
+   - **Error state** (dirty check fails): fail-closed — attempt cleanup rather
+     than leak an unmanaged worktree, with a `worktree_dirty_check_failed` event
 
 Implementer agents (detected by ID/prompt containing "implement") are **required**
 to use worktree isolation. If not configured, the launcher warns and creates one
 automatically.
 
+> **Note (Phase AR-2):** The current launcher uses a local adapter that produces
+> placeholder responses without invoking an external LLM. The dirty-state-aware
+> cleanup is wired but cannot produce dirty state until a real execution adapter
+> (e.g. external command or Claude Code adapter) is connected. The guard exists
+> now so that the first real adapter inherits protection from day one.
+
 ## Secret Scanning
 
-Run artifacts (`run.json`, `metadata.json`, `transcript.jsonl`) are not yet
-secret-scanned in Phase AR. This is planned for Phase AR-2. Conversation messages
-already use `scanValue()` from `@openslack/collaboration`.
+Run artifacts (`run.json`, `metadata.json`, `transcript.jsonl`) are
+secret-scanned via `scanValue()` from `@openslack/collaboration` before every
+persist. `run-store.ts` calls `scanValue()` on metadata in both `createRun` and
+`updateRun`; `transcript.ts` calls `scanValue()` on events in
+`appendTranscriptEvent`. Both refuse the write and throw if secrets are detected.
+Conversation messages also use `scanValue()` through the same collaboration layer.
 
 ## Audit Trail
 
