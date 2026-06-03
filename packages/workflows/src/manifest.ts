@@ -64,6 +64,13 @@ export function parseManifest(raw: unknown): WorkflowMeta {
     meta.whenToUse = obj.whenToUse
   }
 
+  if (obj.draftCreatedAt !== undefined) {
+    if (typeof obj.draftCreatedAt !== 'string') {
+      throw new Error('Manifest "draftCreatedAt" must be a string')
+    }
+    meta.draftCreatedAt = obj.draftCreatedAt
+  }
+
   if (obj.dynamicPattern !== undefined) {
     if (typeof obj.dynamicPattern !== 'string') {
       throw new Error('Manifest "dynamicPattern" must be a string')

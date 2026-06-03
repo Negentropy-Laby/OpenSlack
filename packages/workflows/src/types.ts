@@ -38,6 +38,7 @@ export interface WorkflowMeta {
   name: string;
   version?: string;
   description: string;
+  draftCreatedAt?: string;
   whenToUse?: string;
   phases: WorkflowPhase[];
   inputs?: Record<string, WorkflowInput>;

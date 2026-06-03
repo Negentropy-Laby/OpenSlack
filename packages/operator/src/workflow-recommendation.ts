@@ -1,10 +1,11 @@
+import { inferWorkflowPatternId } from '@openslack/core';
 import type { RiskLevel, WorkflowRecommendation } from './types.js';
 
 const WORKFLOW_TRIGGER_PATTERNS = [
   /\buse (a )?workflow\b/i,
   /\bultracode\b/i,
   /\bdeep (audit|review|research|verification)\b/i,
-  /\bworkflow\b/i,
+  /\bworkflow\s+(to|for|that)\b/i,
 ];
 
 const HIGH_FANOUT_PATTERNS = [
@@ -44,20 +45,6 @@ export interface WorkflowRecommendationOptions {
   allowDraft?: boolean;
 }
 
-function choosePattern(query: string): string | undefined {
-  const q = query.toLowerCase();
-  if (q.includes('tournament') || q.includes('compete') || q.includes('compare') || q.includes('alternative')) {
-    return 'tournament';
-  }
-  if (q.includes('classify') || q.includes('triage')) return 'classify-and-act';
-  if (q.includes('verify') || q.includes('review') || q.includes('audit')) return 'adversarial-verification';
-  if (q.includes('generate') || q.includes('filter') || q.includes('dedupe')) return 'generate-filter';
-  if (q.includes('loop') || q.includes('until') || q.includes('repeat')) return 'loop-until-done';
-  if (q.includes('model') || q.includes('routing')) return 'model-router';
-  if (q.includes('research') || q.includes('codebase') || q.includes('every') || q.includes('all')) return 'fanout-synthesize';
-  return undefined;
-}
-
 function riskForQuery(query: string): RiskLevel {
   const q = query.toLowerCase();
   if (q.includes('merge') || q.includes('write') || q.includes('fix') || q.includes('implement') || q.includes('migration')) {
@@ -75,7 +62,7 @@ export function recommendWorkflowForQuery(
   const explicitWorkflow = WORKFLOW_TRIGGER_PATTERNS.some((pattern) => pattern.test(trimmed));
   const highFanoutHits = HIGH_FANOUT_PATTERNS.filter((pattern) => pattern.test(trimmed)).length;
   const simpleHits = SIMPLE_TASK_PATTERNS.filter((pattern) => pattern.test(trimmed)).length;
-  const suggestedPattern = choosePattern(trimmed);
+  const suggestedPattern = inferWorkflowPatternId(trimmed);
   const risk = riskForQuery(trimmed);
 
   if (/\bultracode\b/i.test(trimmed)) {

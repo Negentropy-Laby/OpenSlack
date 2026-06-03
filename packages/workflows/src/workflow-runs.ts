@@ -2,6 +2,8 @@ import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import type { RunStatus, WorkflowRunControlAction, WorkflowRunControlResult } from './types.js'
 
+const TERMINAL_RUN_STATUSES = new Set<RunStatus['status']>(['completed', 'failed', 'cancelled'])
+
 export interface ListWorkflowRunsOptions {
   rootDir?: string
   status?: RunStatus['status']
@@ -17,6 +19,31 @@ async function readJson<T>(path: string): Promise<T | null> {
   } catch {
     return null
   }
+}
+
+function nextStatusForAction(
+  current: RunStatus['status'],
+  action: WorkflowRunControlAction,
+): RunStatus['status'] | undefined {
+  if (action === 'saveScript') return current
+  if (action === 'pause') {
+    return current === 'running' ? 'paused' : undefined
+  }
+  if (action === 'resume') {
+    if (current === 'paused') return 'running'
+    if (current === 'paused_waiting_approval') return 'resuming'
+    return undefined
+  }
+  if (action === 'stopRun') {
+    return TERMINAL_RUN_STATUSES.has(current) ? undefined : 'cancelled'
+  }
+  if (action === 'stopAgent') {
+    return current === 'running' || current === 'resuming' ? current : undefined
+  }
+  if (action === 'restartAgent') {
+    return current === 'running' || current === 'resuming' || current === 'paused' ? current : undefined
+  }
+  return undefined
 }
 
 export async function listWorkflowRuns(options: ListWorkflowRunsOptions = {}): Promise<RunStatus[]> {
@@ -66,13 +93,15 @@ export async function controlWorkflowRun(
   if (!status) {
     return { runId, action, status: 'rejected', message: `Workflow run not found: ${runId}` }
   }
-  const nextStatus = action === 'pause'
-    ? 'paused'
-    : action === 'resume'
-      ? 'running'
-      : action === 'stopRun'
-        ? 'cancelled'
-        : status.status
+  const nextStatus = nextStatusForAction(status.status, action)
+  if (nextStatus === undefined) {
+    return {
+      runId,
+      action,
+      status: 'rejected',
+      message: `${action} is not valid while workflow run ${runId} is ${status.status}.`,
+    }
+  }
   status.status = nextStatus as RunStatus['status']
   status.updatedAt = new Date().toISOString()
   status.controlEvents = [

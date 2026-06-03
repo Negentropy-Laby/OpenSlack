@@ -1,11 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
+  controlWorkflowRun,
   exportWorkflowSkill,
   generateWorkflowDraft,
   getWorkflowPattern,
+  inferWorkflowPatternId,
   listWorkflowPatterns,
   previewWorkflowDraft,
   readWorkflowPolicy,
@@ -33,6 +35,11 @@ describe('dynamic workflow pattern registry', () => {
     expect(pattern?.phases.length).toBeGreaterThan(0)
     expect(pattern?.requiredCapabilities).toContain('judging')
   })
+
+  it('uses one pattern inference helper for generated drafts and operator recommendations', () => {
+    expect(inferWorkflowPatternId('compare three implementation alternatives')).toBe('tournament')
+    expect(inferWorkflowPatternId('研究所有 package 边界')).toBe('fanout-synthesize')
+  })
 })
 
 describe('dynamic workflow drafts and policy', () => {
@@ -58,6 +65,7 @@ describe('dynamic workflow drafts and policy', () => {
 
     const preview = await previewWorkflowDraft({ draftIdOrPath: 'draft-test', rootDir: root })
     expect(preview.draft.pattern).toBe('fanout-synthesize')
+    expect(preview.draft.createdAt).toBe(draft.createdAt)
     expect(preview.trustRequirement).toBe('untrusted')
     expect(renderWorkflowDraftPreview(preview)).toContain('Budget:')
   })
@@ -97,4 +105,56 @@ describe('dynamic workflow drafts and policy', () => {
     expect(skill).toContain('Workflow script:')
     expect(skill).not.toContain('.openslack.local')
   })
+
+  it('applies valid workflow run control transitions', async () => {
+    const statusPath = writeWorkflowRunStatus(root, 'run-control', 'running')
+
+    const result = await controlWorkflowRun('run-control', 'pause', { rootDir: root })
+
+    expect(result.status).toBe('applied')
+    const status = JSON.parse(readFileSync(statusPath, 'utf-8')) as { status: string; controlEvents?: Array<{ action: string }> }
+    expect(status.status).toBe('paused')
+    expect(status.controlEvents?.at(-1)?.action).toBe('pause')
+  })
+
+  it('rejects invalid workflow run control transitions without mutating status', async () => {
+    const statusPath = writeWorkflowRunStatus(root, 'run-paused', 'paused')
+
+    const result = await controlWorkflowRun('run-paused', 'pause', { rootDir: root })
+
+    expect(result.status).toBe('rejected')
+    const status = JSON.parse(readFileSync(statusPath, 'utf-8')) as { status: string; controlEvents?: unknown[] }
+    expect(status.status).toBe('paused')
+    expect(status.controlEvents).toBeUndefined()
+  })
+
+  it('allows saveScript evidence without changing terminal run status', async () => {
+    const statusPath = writeWorkflowRunStatus(root, 'run-complete', 'completed')
+
+    const result = await controlWorkflowRun('run-complete', 'saveScript', { rootDir: root })
+
+    expect(result.status).toBe('applied')
+    const status = JSON.parse(readFileSync(statusPath, 'utf-8')) as { status: string; controlEvents?: Array<{ action: string }> }
+    expect(status.status).toBe('completed')
+    expect(status.controlEvents?.at(-1)?.action).toBe('saveScript')
+  })
 })
+
+function writeWorkflowRunStatus(root: string, runId: string, status: string): string {
+  const runDir = join(root, '.openslack.local', 'workflows', 'runs', runId)
+  mkdirSync(runDir, { recursive: true })
+  writeFileSync(join(runDir, 'meta.json'), JSON.stringify({
+    runId,
+    workflowName: 'test-workflow',
+    mode: 'execute',
+    args: {},
+    startedAt: '2026-01-01T00:00:00.000Z',
+  }, null, 2))
+  const statusPath = join(runDir, 'status.json')
+  writeFileSync(statusPath, JSON.stringify({
+    status,
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    phases: [],
+  }, null, 2))
+  return statusPath
+}

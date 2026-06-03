@@ -215,6 +215,7 @@ export {
   getWorkflowPattern,
   renderWorkflowPattern,
 } from './pattern-registry.js'
+export { inferWorkflowPatternId } from '@openslack/core'
 
 // ── Dynamic Workflow Drafts ─────────────────────────────────────────────────
 export {

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import { inferWorkflowPatternId } from '@openslack/core'
 import { loadWorkflow } from './loader.js'
 import { ALWAYS_FORBIDDEN } from './manifest-validator.js'
 import { getWorkflowPattern } from './pattern-registry.js'
@@ -40,24 +41,11 @@ function selectPattern(prompt: string, requested?: string): WorkflowPatternManif
     if (!found) throw new Error(`Unknown workflow pattern: ${requested}`)
     return found
   }
-  const q = prompt.toLowerCase()
-  const inferred = q.includes('tournament') || q.includes('compare')
-    ? 'tournament'
-    : q.includes('triage') || q.includes('classify')
-      ? 'classify-and-act'
-      : q.includes('verify') || q.includes('review') || q.includes('audit')
-        ? 'adversarial-verification'
-        : q.includes('loop') || q.includes('until')
-          ? 'loop-until-done'
-          : q.includes('model')
-            ? 'model-router'
-            : q.includes('generate') || q.includes('filter')
-              ? 'generate-filter'
-              : 'fanout-synthesize'
+  const inferred = inferWorkflowPatternId(prompt) ?? 'fanout-synthesize'
   return getWorkflowPattern(inferred)!
 }
 
-function createManifest(prompt: string, pattern: WorkflowPatternManifest): WorkflowMeta {
+function createManifest(prompt: string, pattern: WorkflowPatternManifest, createdAt: string): WorkflowMeta {
   const name = `draft-${slugify(prompt)}`
   const budgetPolicy: WorkflowBudgetPolicy = {
     tokenBudget: 100000,
@@ -69,6 +57,7 @@ function createManifest(prompt: string, pattern: WorkflowPatternManifest): Workf
     name,
     version: '0.1.0',
     description: `Dynamic workflow draft for: ${prompt}`,
+    draftCreatedAt: createdAt,
     dynamicPattern: pattern.id,
     whenToUse: `Use when the task benefits from the ${pattern.name} pattern and independent evidence collection.`,
     phases: pattern.phases,
@@ -136,7 +125,8 @@ export async function generateWorkflowDraft(options: GenerateWorkflowDraftOption
   if (!prompt) throw new Error('Workflow draft generation requires --prompt')
   const rootDir = options.rootDir ?? process.cwd()
   const pattern = selectPattern(prompt, options.pattern)
-  const manifest = createManifest(prompt, pattern)
+  const createdAt = new Date().toISOString()
+  const manifest = createManifest(prompt, pattern, createdAt)
   const script = renderScript(manifest, prompt, pattern)
   const draftId = options.draftId ?? `${manifest.name}-${Date.now().toString(36)}`
   const dir = resolve(rootDir, '.openslack', 'workflows', 'drafts')
@@ -150,7 +140,7 @@ export async function generateWorkflowDraft(options: GenerateWorkflowDraftOption
     pattern: pattern.id,
     manifest,
     scriptHash: hash(script),
-    createdAt: new Date().toISOString(),
+    createdAt,
   }
 }
 
@@ -161,6 +151,7 @@ export async function previewWorkflowDraft(options: PreviewWorkflowDraftOptions)
     : resolve(rootDir, '.openslack', 'workflows', 'drafts', `${options.draftIdOrPath}.mjs`)
   const source = await readFile(path, 'utf-8')
   const loaded = await loadWorkflow(path)
+  const fileStat = await stat(path)
   const draft: WorkflowDraft = {
     draftId: path.split(/[\\/]/).pop()?.replace(/\.(mjs|js|ts)$/, '') ?? 'draft',
     path,
@@ -168,7 +159,7 @@ export async function previewWorkflowDraft(options: PreviewWorkflowDraftOptions)
     pattern: loaded.meta.dynamicPattern ?? 'fanout-synthesize',
     manifest: loaded.meta,
     scriptHash: hash(source),
-    createdAt: new Date().toISOString(),
+    createdAt: loaded.meta.draftCreatedAt ?? fileStat.birthtime.toISOString(),
   }
   return {
     draft,

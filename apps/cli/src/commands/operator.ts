@@ -80,30 +80,32 @@ async function runAsk(
   query: string,
   options: { plan?: boolean; agentId?: string; session?: string; effort?: string },
 ): Promise<void> {
-  const effectiveQuery = options.effort === 'ultracode' && !/\bultracode\b/i.test(query)
-    ? `ultracode: ${query}`
-    : query;
+  const ultracodeEffort = options.effort === 'ultracode';
   const sessionId = options.session || generateSessionId();
   const root = findRepoRoot();
 
-  console.log(`\nOperator: "${effectiveQuery}"`);
+  console.log(`\nOperator: "${query}"`);
+  if (ultracodeEffort) console.log('Effort: ultracode');
   console.log('─'.repeat(50));
 
   // Load conversation history and append user turn
   const history = getRecentTurns(sessionId, 10, root);
-  const messageSlots = extractSlotsFromMessage(effectiveQuery);
+  const messageSlots = extractSlotsFromMessage(query);
 
   // Check context: affirmation/negation or slot inheritance
   const pendingPlans = listPendingPlans(root);
   const lastPending = pendingPlans.find((p) => p.state === 'pending');
 
-  let intent = await resolveIntent(effectiveQuery);
+  let intent = await resolveIntent(query);
+  if (ultracodeEffort && !/\bultracode\b/i.test(query)) {
+    intent = { kind: 'workflow_draft_required', slots: { query }, confidence: 0.95 };
+  }
 
   if (intent.kind === 'unknown' && history.length > 0) {
     // Maybe the query is a short response to a previous plan
     const context = resolveContext(intent, history, lastPending?.planId, query);
     if (context.type === 'confirm_last_plan' && lastPending) {
-      appendTurn(sessionId, { role: 'user', content: effectiveQuery, timestamp: new Date().toISOString() }, root);
+      appendTurn(sessionId, { role: 'user', content: query, timestamp: new Date().toISOString() }, root);
       console.log(`Confirming plan: ${lastPending.planId}`);
       updatePendingPlanState(lastPending.planId, 'approved', root);
 
@@ -126,7 +128,7 @@ async function runAsk(
     }
 
     if (context.type === 'cancel_last_plan' && lastPending) {
-      appendTurn(sessionId, { role: 'user', content: effectiveQuery, timestamp: new Date().toISOString() }, root);
+      appendTurn(sessionId, { role: 'user', content: query, timestamp: new Date().toISOString() }, root);
       updatePendingPlanState(lastPending.planId, 'cancelled', root);
       appendTurn(sessionId, { role: 'assistant', content: `Cancelled plan: ${lastPending.planId}`, intent, timestamp: new Date().toISOString() }, root);
       console.log(`Cancelled plan: ${lastPending.planId}\n`);
@@ -135,7 +137,7 @@ async function runAsk(
   }
 
   if (intent.kind === 'unknown') {
-    console.log(`I don't understand "${effectiveQuery}".`);
+    console.log(`I don't understand "${query}".`);
     console.log('Try: check status, PR #12 doctor, merge PR #12, create task, eval');
     console.log('');
     return;
@@ -156,7 +158,7 @@ async function runAsk(
   }
 
   // Append user turn with resolved intent
-  appendTurn(sessionId, { role: 'user', content: effectiveQuery, intent, timestamp: new Date().toISOString() }, root);
+  appendTurn(sessionId, { role: 'user', content: query, intent, timestamp: new Date().toISOString() }, root);
 
   const plan = planActions(intent);
 
@@ -178,7 +180,7 @@ async function runAsk(
         return;
       }
       const draft = await generateWorkflowDraft({
-        prompt: effectiveQuery.replace(/^ultracode:\s*/i, ''),
+        prompt: String(intent.slots.query ?? query).replace(/^ultracode:\s*/i, ''),
         pattern: plan.workflowRecommendation.suggestedPattern,
         rootDir: root,
       });
@@ -224,7 +226,7 @@ async function runAsk(
     }
 
     const pending = savePendingPlan({
-      query: effectiveQuery, plan, actorId: 'cli', root,
+      query, plan, actorId: 'cli', root,
       state: 'pending',
     });
     // Update clarification rounds
@@ -251,7 +253,7 @@ async function runAsk(
   console.log('');
 
   if (options.plan) {
-    const pending = savePendingPlan({ query: effectiveQuery, plan, actorId: 'cli', root });
+    const pending = savePendingPlan({ query, plan, actorId: 'cli', root });
     console.log(`Saved pending plan: ${pending.planId}`);
     console.log(`Approve later with: openslack ask plan approve ${pending.planId}`);
     appendTurn(sessionId, { role: 'assistant', content: `Plan saved: ${pending.planId}`, intent, timestamp: new Date().toISOString() }, root);
@@ -260,7 +262,7 @@ async function runAsk(
 
   let pendingPlanId: string | undefined;
   if (plan.requiresConfirmation) {
-    const pending = savePendingPlan({ query: effectiveQuery, plan, actorId: 'cli', root });
+    const pending = savePendingPlan({ query, plan, actorId: 'cli', root });
     pendingPlanId = pending.planId;
     console.log(`Saved pending plan: ${pending.planId}`);
     console.log(`Approve later with: openslack ask plan approve ${pending.planId}`);

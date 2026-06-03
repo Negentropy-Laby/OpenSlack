@@ -54,7 +54,14 @@ import {
   saveWorkflow,
   exportWorkflowSkill,
 } from '@openslack/workflows';
-import type { DryRunResult, SimulatedEffect, AgentEventEmitter, AgentConversationEvent } from '@openslack/workflows';
+import type {
+  DryRunResult,
+  SimulatedEffect,
+  AgentEventEmitter,
+  AgentConversationEvent,
+  RunStatus,
+  WorkflowRunControlAction,
+} from '@openslack/workflows';
 import {
   publishWorkflowProposal,
   publishWorkflowReviewRequest,
@@ -142,6 +149,43 @@ function ensureWorkflowEnabled(action: string): void {
     console.error(policy.reason ?? 'Enable workflows with: openslack collaboration workflow config enable');
     process.exit(1);
   }
+}
+
+const WORKFLOW_RUN_STATUSES = [
+  'created',
+  'previewed',
+  'confirmed',
+  'running',
+  'paused',
+  'paused_waiting_approval',
+  'resuming',
+  'completed',
+  'failed',
+  'cancelled',
+] as const satisfies readonly RunStatus['status'][];
+
+const WORKFLOW_RUN_CONTROL_ACTIONS = [
+  'pause',
+  'resume',
+  'stopRun',
+  'stopAgent',
+  'restartAgent',
+  'saveScript',
+] as const satisfies readonly WorkflowRunControlAction[];
+
+function parseWorkflowRunStatus(value: string | undefined): RunStatus['status'] | undefined {
+  if (value === undefined) return undefined;
+  if ((WORKFLOW_RUN_STATUSES as readonly string[]).includes(value)) return value as RunStatus['status'];
+  console.error(`Invalid workflow run status: ${value}`);
+  console.error(`Allowed values: ${WORKFLOW_RUN_STATUSES.join(', ')}`);
+  process.exit(1);
+}
+
+function parseWorkflowRunControlAction(value: string): WorkflowRunControlAction {
+  if ((WORKFLOW_RUN_CONTROL_ACTIONS as readonly string[]).includes(value)) return value as WorkflowRunControlAction;
+  console.error(`Invalid workflow run control action: ${value}`);
+  console.error(`Allowed values: ${WORKFLOW_RUN_CONTROL_ACTIONS.join(', ')}`);
+  process.exit(1);
 }
 
 function resolveBuiltinTemplatePath(id: string): string | undefined {
@@ -814,7 +858,7 @@ export function collaborationCommands(): Command {
     .description('List workflow runs')
     .option('--status <status>', 'Filter by run status')
     .action(async (options: { status?: string }) => {
-      const result = await listWorkflowRuns({ rootDir: findRepoRoot(), status: options.status as never });
+      const result = await listWorkflowRuns({ rootDir: findRepoRoot(), status: parseWorkflowRunStatus(options.status) });
       console.log(renderWorkflowRuns(result));
     });
 
@@ -835,7 +879,8 @@ export function collaborationCommands(): Command {
     .description('Record a workflow run control action')
     .requiredOption('--action <action>', 'pause, resume, stopRun, stopAgent, restartAgent, or saveScript')
     .action(async (runId: string, options: { action: string }) => {
-      const result = await controlWorkflowRun(runId, options.action as never, { rootDir: findRepoRoot() });
+      const action = parseWorkflowRunControlAction(options.action);
+      const result = await controlWorkflowRun(runId, action, { rootDir: findRepoRoot() });
       console.log(result.message);
       if (result.status !== 'applied') process.exit(1);
     });
