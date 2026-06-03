@@ -25,6 +25,18 @@ export function formatPlan(plan: ActionPlan): string {
     }
   }
 
+  if (plan.workflowRecommendation) {
+    lines.push('');
+    lines.push('Workflow recommendation:');
+    lines.push(`  Decision: ${plan.workflowRecommendation.decision}`);
+    lines.push(`  Reason: ${plan.workflowRecommendation.reason}`);
+    lines.push(`  Confidence: ${(plan.workflowRecommendation.confidence * 100).toFixed(0)}%`);
+    if (plan.workflowRecommendation.suggestedPattern) {
+      lines.push(`  Suggested pattern: ${plan.workflowRecommendation.suggestedPattern}`);
+    }
+    lines.push(`  Next: ${plan.workflowRecommendation.nextAction}`);
+  }
+
   if (plan.requiresConfirmation) {
     lines.push('');
     lines.push('This plan requires confirmation before execution.');

@@ -2,6 +2,7 @@ import type { Intent, ActionPlan, PlanStep, MissingParam } from './types.js';
 import { identifyMissingParams } from './clarify.js';
 import { assessRisk, hasSideEffects } from './risk.js';
 import { createRegisteredStep } from './tool-registry.js';
+import { recommendWorkflowForQuery } from './workflow-recommendation.js';
 
 const ALLOWLISTED_INTENTS = new Set([
   'status',
@@ -21,6 +22,9 @@ const ALLOWLISTED_INTENTS = new Set([
   'github_repair_claims',
   'task_repair_worktrees',
   'governance_audit',
+  'workflow_recommended',
+  'workflow_not_needed',
+  'workflow_draft_required',
 ]);
 
 function buildSteps(intent: Intent): PlanStep[] {
@@ -33,6 +37,11 @@ function buildSteps(intent: Intent): PlanStep[] {
     createRegisteredStep(actionId, input, id);
 
   switch (intent.kind) {
+    case 'workflow_recommended':
+    case 'workflow_not_needed':
+    case 'workflow_draft_required':
+      return [];
+
     case 'status': {
       const scope = intent.slots.scope as string | undefined;
       if (scope === 'workspace') return [step('workspace.status')];
@@ -132,6 +141,11 @@ function buildGoal(intent: Intent): string {
     case 'github_repair_labels': return 'Preview GitHub label repair';
     case 'github_repair_claims': return 'Preview GitHub claim repair';
     case 'task_repair_worktrees': return 'Preview local worktree repair';
+    case 'workflow_recommended':
+    case 'workflow_draft_required':
+      return 'Prepare a dynamic workflow recommendation';
+    case 'workflow_not_needed':
+      return 'Recommend direct operator action';
     default: return 'Unknown request';
   }
 }
@@ -153,6 +167,10 @@ export function planActions(intent: Intent): ActionPlan {
   const missing = identifyMissingParams(intent);
   const steps = missing.length === 0 ? buildSteps(intent) : [];
   const risk = assessRisk(intent);
+  const workflowRecommendation =
+    intent.kind === 'workflow_recommended' || intent.kind === 'workflow_not_needed' || intent.kind === 'workflow_draft_required'
+      ? recommendWorkflowForQuery(String(intent.slots.query ?? ''), { allowDraft: intent.kind === 'workflow_draft_required' })
+      : undefined;
 
   // Any step that requires confirmation triggers plan-level confirmation
   const hasConfirmStep = steps.some((s) => s.confirmationRequired);
@@ -167,5 +185,6 @@ export function planActions(intent: Intent): ActionPlan {
     missingParams: missing,
     requiresConfirmation,
     sideEffects: hasSideEffects(intent),
+    workflowRecommendation,
   };
 }

@@ -31,6 +31,9 @@ export type IntentKind =
   | 'github_repair_claims'
   | 'task_repair_worktrees'
   | 'governance_audit'
+  | 'workflow_recommended'
+  | 'workflow_not_needed'
+  | 'workflow_draft_required'
   | 'unknown';
 
 export interface Intent {
@@ -69,6 +72,16 @@ export interface ActionPlan {
   missingParams: MissingParam[];
   requiresConfirmation: boolean;
   sideEffects: boolean;
+  workflowRecommendation?: WorkflowRecommendation;
+}
+
+export interface WorkflowRecommendation {
+  decision: 'workflow_recommended' | 'workflow_not_needed' | 'workflow_draft_required';
+  reason: string;
+  confidence: number;
+  suggestedPattern?: string;
+  risk: RiskLevel;
+  nextAction: string;
 }
 
 export interface StepResult {

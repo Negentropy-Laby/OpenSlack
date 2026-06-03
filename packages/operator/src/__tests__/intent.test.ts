@@ -134,4 +134,18 @@ describe('parseIntent', () => {
       expect(i.kind).toBe('unknown');
     });
   });
+
+  describe('dynamic workflows', () => {
+    it('parses explicit workflow requests', () => {
+      const i = parseIntent('use a workflow to audit every API endpoint');
+      expect(i.kind).toBe('workflow_recommended');
+      expect(i.slots.query).toContain('audit every API endpoint');
+    });
+
+    it('parses ultracode requests as workflow draft triggers', () => {
+      const i = parseIntent('ultracode: review all PRMS gates');
+      expect(i.kind).toBe('workflow_draft_required');
+      expect(i.confidence).toBeGreaterThan(0.9);
+    });
+  });
 });

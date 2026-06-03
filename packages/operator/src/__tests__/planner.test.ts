@@ -74,4 +74,20 @@ describe('planActions', () => {
     const plan = planActions(intent);
     expect(plan.steps.length).toBe(0);
   });
+
+  it('plans workflow recommendations without executing them', () => {
+    const intent = parseIntent('use a workflow to audit every API endpoint');
+    const plan = planActions(intent);
+    expect(plan.steps).toEqual([]);
+    expect(plan.workflowRecommendation?.decision).toBe('workflow_recommended');
+    expect(plan.workflowRecommendation?.suggestedPattern).toBeTruthy();
+    expect(plan.workflowRecommendation?.nextAction).toContain('workflow generate');
+  });
+
+  it('plans ultracode as a workflow draft requirement', () => {
+    const intent = parseIntent('ultracode: root-cause all failing workflow tests');
+    const plan = planActions(intent);
+    expect(plan.workflowRecommendation?.decision).toBe('workflow_draft_required');
+    expect(plan.requiresConfirmation).toBe(false);
+  });
 });

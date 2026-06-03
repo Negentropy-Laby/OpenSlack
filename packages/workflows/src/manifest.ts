@@ -64,6 +64,20 @@ export function parseManifest(raw: unknown): WorkflowMeta {
     meta.whenToUse = obj.whenToUse
   }
 
+  if (obj.draftCreatedAt !== undefined) {
+    if (typeof obj.draftCreatedAt !== 'string') {
+      throw new Error('Manifest "draftCreatedAt" must be a string')
+    }
+    meta.draftCreatedAt = obj.draftCreatedAt
+  }
+
+  if (obj.dynamicPattern !== undefined) {
+    if (typeof obj.dynamicPattern !== 'string') {
+      throw new Error('Manifest "dynamicPattern" must be a string')
+    }
+    meta.dynamicPattern = obj.dynamicPattern
+  }
+
   // Optional risk
   if (obj.risk !== undefined) {
     if (obj.risk !== 'low' && obj.risk !== 'medium' && obj.risk !== 'high') {
@@ -102,6 +116,27 @@ export function parseManifest(raw: unknown): WorkflowMeta {
       throw new Error('Manifest "forbidden" must be an array')
     }
     meta.forbidden = obj.forbidden as string[]
+  }
+
+  if (obj.modelRouting !== undefined) {
+    if (typeof obj.modelRouting !== 'object' || obj.modelRouting === null) {
+      throw new Error('Manifest "modelRouting" must be an object')
+    }
+    meta.modelRouting = obj.modelRouting as Record<string, string>
+  }
+
+  if (obj.isolationPolicy !== undefined) {
+    if (typeof obj.isolationPolicy !== 'object' || obj.isolationPolicy === null) {
+      throw new Error('Manifest "isolationPolicy" must be an object')
+    }
+    meta.isolationPolicy = obj.isolationPolicy as Record<string, 'none' | 'worktree'>
+  }
+
+  if (obj.budgetPolicy !== undefined) {
+    if (typeof obj.budgetPolicy !== 'object' || obj.budgetPolicy === null) {
+      throw new Error('Manifest "budgetPolicy" must be an object')
+    }
+    meta.budgetPolicy = obj.budgetPolicy as WorkflowMeta['budgetPolicy']
   }
 
   return meta

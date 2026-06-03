@@ -78,12 +78,14 @@ function resolveAgentAuthOptions(agentId: string | undefined): AgentAuthOptions 
 
 async function runAsk(
   query: string,
-  options: { plan?: boolean; agentId?: string; session?: string },
+  options: { plan?: boolean; agentId?: string; session?: string; effort?: string },
 ): Promise<void> {
+  const ultracodeEffort = options.effort === 'ultracode';
   const sessionId = options.session || generateSessionId();
   const root = findRepoRoot();
 
   console.log(`\nOperator: "${query}"`);
+  if (ultracodeEffort) console.log('Effort: ultracode');
   console.log('─'.repeat(50));
 
   // Load conversation history and append user turn
@@ -95,6 +97,9 @@ async function runAsk(
   const lastPending = pendingPlans.find((p) => p.state === 'pending');
 
   let intent = await resolveIntent(query);
+  if (ultracodeEffort && !/\bultracode\b/i.test(query)) {
+    intent = { kind: 'workflow_draft_required', slots: { query }, confidence: 0.95 };
+  }
 
   if (intent.kind === 'unknown' && history.length > 0) {
     // Maybe the query is a short response to a previous plan
@@ -156,6 +161,40 @@ async function runAsk(
   appendTurn(sessionId, { role: 'user', content: query, intent, timestamp: new Date().toISOString() }, root);
 
   const plan = planActions(intent);
+
+  if (plan.workflowRecommendation?.decision === 'workflow_draft_required' && !options.plan) {
+    try {
+      const {
+        readWorkflowPolicy,
+        generateWorkflowDraft,
+        previewWorkflowDraft,
+        renderWorkflowDraftPreview,
+      } = await import('@openslack/workflows');
+      const policy = readWorkflowPolicy({ rootDir: root });
+      if (!policy.enabled || !policy.ultracode) {
+        console.log(formatPlan(plan));
+        console.log('');
+        console.log(policy.enabled
+          ? 'Ultracode workflow draft generation is disabled. Enable with: openslack collaboration workflow config enable --ultracode'
+          : 'Workflow generation is disabled. Enable with: openslack collaboration workflow config enable');
+        return;
+      }
+      const draft = await generateWorkflowDraft({
+        prompt: String(intent.slots.query ?? query).replace(/^ultracode:\s*/i, ''),
+        pattern: plan.workflowRecommendation.suggestedPattern,
+        rootDir: root,
+      });
+      const preview = await previewWorkflowDraft({ draftIdOrPath: draft.path, rootDir: root });
+      console.log(formatPlan(plan));
+      console.log('');
+      console.log(renderWorkflowDraftPreview(preview));
+      appendTurn(sessionId, { role: 'assistant', content: `Workflow draft created: ${draft.draftId}`, intent, timestamp: new Date().toISOString() }, root);
+      return;
+    } catch (error) {
+      console.log(`Workflow draft generation failed: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  }
 
   try {
     recordEvent({
@@ -278,7 +317,8 @@ export function buildAskCommand(): Command {
     .option('--plan', 'Show the execution plan without running it')
     .option('--agent-id <id>', 'Agent ID for authorization')
     .option('--session <id>', 'Session ID for conversation continuity')
-    .action(async (queryParts: string[], options: { plan?: boolean; agentId?: string; session?: string }) => {
+    .option('--effort <level>', 'Reasoning/workflow effort level; use ultracode to create a dynamic workflow draft')
+    .action(async (queryParts: string[], options: { plan?: boolean; agentId?: string; session?: string; effort?: string }) => {
       await runAsk(queryParts.join(' '), options);
     });
 
