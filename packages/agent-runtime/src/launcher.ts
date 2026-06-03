@@ -12,6 +12,7 @@ import type { BridgeRuntimeResolver } from './bridge-runtime-resolver.js';
 import {
   BridgeRuntimeConfigError,
   createBridgeRuntimeResolver,
+  isAbyRuntime,
 } from './bridge-runtime-resolver.js';
 
 export interface LauncherOptions {
@@ -122,10 +123,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       resolvedConfig.agentId?.toLowerCase().includes('implement') ||
       resolvedConfig.prompt?.toLowerCase().includes('implement');
     const isAbyBridgeRun =
-      resolvedConfig.bridgeMode === 'process' &&
-      (resolvedConfig.runtime === 'aby_assistant' ||
-        resolvedConfig.runtime === 'aby' ||
-        resolvedConfig.provider === 'aby');
+      resolvedConfig.bridgeMode === 'process' && isAbyRuntime(resolvedConfig);
     const isWriteCapable =
       permissionProfile.permissionMode !== 'plan' ||
       permissionProfile.allowedTools.some((tool) => ['Edit', 'Write', 'Bash'].includes(tool));

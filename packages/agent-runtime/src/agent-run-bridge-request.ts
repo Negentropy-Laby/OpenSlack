@@ -11,6 +11,15 @@ export interface BuildAgentRunBridgeRequestOptions {
   availableMcpServers: string[];
 }
 
+/**
+ * Build the provider-neutral Agent Run Bridge request sent to an external
+ * bridge runtime.
+ *
+ * The builder serializes the permission profile exactly as provided. Callers
+ * must apply `BridgePermissionGuard.filterOutboundTools()` first so
+ * `allowedTools` has already had OpenSlack forbidden actions and denied tools
+ * removed before crossing the process boundary.
+ */
 export function buildAgentRunBridgeRequestPayload(
   options: BuildAgentRunBridgeRequestOptions,
 ): AgentRunBridgeRequestPayload {

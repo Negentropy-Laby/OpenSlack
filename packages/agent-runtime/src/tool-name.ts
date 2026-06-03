@@ -16,9 +16,15 @@ export function normalizeToolName(toolName: string): string {
   const canonical = CANONICAL_TOOL_NAMES[lower];
   if (canonical) return canonical;
 
+  if (lower.startsWith('mcp.')) {
+    return lower;
+  }
+
   const mcpMatch = /^mcp__([^_]+)__(.+)$/i.exec(trimmed);
   if (mcpMatch) {
-    return `mcp.${mcpMatch[1]}.${mcpMatch[2]}`;
+    const server = mcpMatch[1].toLowerCase();
+    const tool = mcpMatch[2].toLowerCase().replace(/__/g, '.');
+    return `mcp.${server}.${tool}`;
   }
 
   if (/^(github|ruleset|secrets|workflow|agent)__/.test(lower)) {
