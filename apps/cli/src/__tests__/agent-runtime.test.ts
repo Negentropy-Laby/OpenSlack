@@ -223,6 +223,30 @@ describe('agent-runtime command', () => {
     logSpy.mockRestore();
   });
 
+  it('rejects agent-runtime mcp status without an agent or run context', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit');
+    });
+
+    const cmd = agentRuntimeCommands({
+      getAgentRuntimeMcpStatus: (options) => mockGetAgentRuntimeMcpStatus(options),
+    });
+    await expect(
+      cmd.parseAsync(['node', 'openslack agent-runtime', 'mcp', 'status', '--provider', 'aby'], {
+        from: 'node',
+      }),
+    ).rejects.toThrow('process.exit');
+
+    expect(mockGetAgentRuntimeMcpStatus).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(
+      'Pass --agent <agentId> or --run <runId> to inspect MCP status.',
+    );
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    errorSpy.mockRestore();
+    exitSpy.mockRestore();
+  });
+
   it('exits nonzero when Aby doctor fails', async () => {
     mockDiagnoseAbyRuntime.mockReturnValue({
       ...passReport,

@@ -36,6 +36,10 @@ export interface AbyRuntimeDoctorReport {
   env: AgentRuntimeEnvAudit;
   checks: AgentRuntimeDoctorCheck[];
   remediations: string[];
+  /**
+   * @deprecated Use `remediations` for structured caller output. This string is
+   * kept for compatibility with older AR-4/AR-5 doctor consumers.
+   */
   remediation: string;
 }
 

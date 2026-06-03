@@ -133,14 +133,20 @@ export function agentRuntimeCommands(
     .option('--available <servers>', 'Comma-separated available server override')
     .action(async (options) => {
       normalizeProvider(options.provider);
+      const agentId = readString(options.agent);
+      const runId = readString(options.run);
+      if (!agentId && !runId) {
+        console.error('Pass --agent <agentId> or --run <runId> to inspect MCP status.');
+        process.exit(1);
+      }
       const getAgentRuntimeMcpStatus =
         dependencies.getAgentRuntimeMcpStatus ??
         (await import('@openslack/agent-runtime')).getAgentRuntimeMcpStatus;
       const report = getAgentRuntimeMcpStatus({
         rootDir: findRepoRoot(),
         provider: 'aby',
-        agentId: readString(options.agent),
-        runId: readString(options.run),
+        agentId,
+        runId,
         availableServers: readCsv(options.available),
       });
       console.log(renderAgentRuntimeMcpStatusReport(report));

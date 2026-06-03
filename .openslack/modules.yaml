@@ -1,5 +1,5 @@
 schema: openslack.modules.v1
-vitest_tests: 3207
+vitest_tests: 3208
 vitest_files: 236
 modules:
   - id: self_evolution
@@ -48,7 +48,7 @@ modules:
       - "@openslack/operator"
       - "@openslack/chat-gateway"
       - "@openslack/tui"
-    tests: 749
+    tests: 750
     test_files: 82
     notes: Structured planner active. Webhook and Slack chat adapters active with actor mapping. PRMS chat cards and action confirmation active. Typed tool registry, optional LLM fallback, setup report, and 24h pending plan store active. Session-based conversation memory with multi-turn context resolution and progressive clarification. Doctor --format plain for non-technical output. TUI setup report view and PR doctor view via --format tui.
 
