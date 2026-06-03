@@ -276,12 +276,16 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       // a terminal envelope (complete or error) arrives. This handles
       // real bridge runtimes that emit progress/tool events before
       // producing a final result.
-      const deadline = this.options.timeoutMs ?? DEFAULT_BRIDGE_TIMEOUT_MS;
+      const totalTimeoutMs = this.options.timeoutMs ?? DEFAULT_BRIDGE_TIMEOUT_MS;
       let finalResult: { data: T; tokenUsage?: number } | null = null;
       const reconciliationEvents: Array<{ kind: string; payload: unknown }> = [];
 
       while (finalResult === null) {
-        const envelope = await this.waitForResponse(deadline);
+        // Track elapsed time so the total budget is shared across all
+        // envelopes, not multiplied per envelope.
+        const elapsed = Date.now() - startTime;
+        const remaining = Math.max(totalTimeoutMs - elapsed, 1000); // min 1s for final envelope
+        const envelope = await this.waitForResponse(remaining);
 
         // Validate every incoming envelope
         const validation = validateBridgeEnvelope(envelope);

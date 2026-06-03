@@ -139,14 +139,14 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
     // Start run
     const state = recorder.start(request);
 
-    try {
-      // Select adapter for this run: per-run bridgeMode > global default
-      const runBridgeMode = resolvedConfig.bridgeMode;
-      const runAdapter: AgentExecutionAdapter =
-        (runBridgeMode && runBridgeMode !== bridgeMode)
-          ? createBridgeAdapter({ bridgeMode: runBridgeMode, availableMcpServers })
-          : defaultAdapter;
+    // Select adapter for this run: per-run bridgeMode > global default
+    const runBridgeMode = resolvedConfig.bridgeMode;
+    const runAdapter: AgentExecutionAdapter =
+      (runBridgeMode && runBridgeMode !== bridgeMode)
+        ? createBridgeAdapter({ bridgeMode: runBridgeMode, availableMcpServers })
+        : defaultAdapter;
 
+    try {
       // Delegate execution to the adapter
       const toolGuard = new ToolGuard(permissionProfile, recorder, runId);
       const adapterResult = await runAdapter.execute<T>({
@@ -164,11 +164,14 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       // Complete run with adapter-provided token usage
       recorder.complete(runId, adapterResult.data, adapterResult.tokenUsage);
 
-      recorder.progress(runId, {
-        step: 'bridge_lifecycle_complete',
-        runId,
-        status: 'completed',
-      });
+      // Record bridge lifecycle marker only when the adapter is actually a bridge
+      if (runAdapter.bridgeContract) {
+        recorder.progress(runId, {
+          step: 'bridge_lifecycle_complete',
+          runId,
+          status: 'completed',
+        });
+      }
 
       return {
         data: adapterResult.data,
@@ -177,12 +180,14 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       };
     } catch (err) {
       recorder.fail(runId, err instanceof Error ? err : new Error(String(err)));
-      recorder.progress(runId, {
-        step: 'bridge_lifecycle_complete',
-        runId,
-        status: 'failed',
-        error: err instanceof Error ? err.message : String(err),
-      });
+      if (runAdapter.bridgeContract) {
+        recorder.progress(runId, {
+          step: 'bridge_lifecycle_complete',
+          runId,
+          status: 'failed',
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
       throw err;
     } finally {
       // Dirty-state-aware worktree cleanup: preserve worktrees with
