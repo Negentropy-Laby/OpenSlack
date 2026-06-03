@@ -48,6 +48,7 @@ import ConversationListView from './ConversationListView.js';
 import ThreadView from './ThreadView.js';
 import SubagentDetailView from './SubagentDetailView.js';
 import AgentRunDetailView from './AgentRunDetailView.js';
+import AgentRuntimeDiagnosticsView from './AgentRuntimeDiagnosticsView.js';
 
 /**
  * A view that hasn't been wired to live data yet.
@@ -313,6 +314,15 @@ function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
           }
         },
       });
+    }
+    case 'agent-runtime': {
+      if (data?.agentRuntime) {
+        return React.createElement(AgentRuntimeDiagnosticsView, {
+          model: data.agentRuntime,
+          onBack: pop,
+        });
+      }
+      return React.createElement(PlaceholderView, { route: current });
     }
     case 'prs':
     case 'issues': {

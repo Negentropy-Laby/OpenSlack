@@ -23,7 +23,7 @@ export function tuiCommands(): Command {
           process.exit(0);
         }
 
-        const { renderShellTui, mapStatusToViewModel, mapPrQueueToViewModel, mapWorkflowGalleryToViewModel, mapApprovalCenterToViewModel, mapWorkflowLifecycleToViewModel } = await import('@openslack/tui');
+        const { renderShellTui, mapStatusToViewModel, mapPrQueueToViewModel, mapWorkflowGalleryToViewModel, mapApprovalCenterToViewModel, mapWorkflowLifecycleToViewModel, mapAbyRuntimeDoctorToViewModel } = await import('@openslack/tui');
         const data: import('@openslack/tui').ShellViewData = { rootDir: process.cwd() };
 
         // Resolve repo root
@@ -90,6 +90,17 @@ export function tuiCommands(): Command {
           });
         } catch {
           // Status data unavailable
+        }
+
+        // Pre-fetch agent runtime diagnostics
+        try {
+          const { diagnoseAbyRuntime } = await import('@openslack/agent-runtime');
+          data.agentRuntime = mapAbyRuntimeDoctorToViewModel(
+            diagnoseAbyRuntime({ rootDir: root, env: process.env }),
+            { rootDir: root },
+          );
+        } catch {
+          // Agent runtime diagnostics unavailable
         }
 
         // Pre-fetch workflow gallery data

@@ -20,6 +20,16 @@ transcripts, worktree lifecycle, and PRMS decisions.
 
 Use one of these configuration paths.
 
+Recommended CLI setup:
+
+```powershell
+bun run openslack agent-runtime setup aby --root "D:\path\to\Aby" --dry-run
+bun run openslack agent-runtime setup aby --root "D:\path\to\Aby" --write
+```
+
+The setup command validates the root path, both Aby bridge entrypoints, `bun`
+availability, and safe bridge env keys before writing local config.
+
 Environment variable:
 
 ```powershell
@@ -69,6 +79,7 @@ First diagnose configuration:
 
 ```powershell
 bun run openslack agent-runtime doctor --provider aby
+bun run openslack agent-runtime doctor --provider aby --format json
 ```
 
 Expected passing output includes:
@@ -83,6 +94,7 @@ agentRunBridge.ts: ...
 Then use one of the existing agent entry points:
 
 ```powershell
+bun run openslack agent-runtime smoke --provider aby
 bun run openslack conversation start --title "Aby bridge smoke"
 bun run openslack conversation send <threadId> "@anthropic_architect_aby inspect this repository"
 ```
@@ -99,6 +111,17 @@ bun test packages/agent-runtime/src/__tests__/aby-e2e.test.ts
 ```
 
 This test is skipped by default so CI does not require a local Aby checkout.
+
+## MCP Status
+
+OpenSlack validates MCP descriptors and tool namespaces. Aby still owns MCP
+client bootstrap, server sessions, and cleanup. Use these commands to inspect
+the OpenSlack-side evidence:
+
+```powershell
+bun run openslack agent-runtime mcp status --provider aby --agent anthropic_architect_aby
+bun run openslack agent-runtime mcp status --provider aby --run <runId>
+```
 
 ## Evidence To Inspect
 

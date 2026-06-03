@@ -124,4 +124,37 @@ export {
   isSafeBridgeEnvKey,
 } from './bridge-env.js';
 
+export type {
+  AgentRuntimeRegistryEntry,
+} from './agent-runtime-registry.js';
+export {
+  findAgentRuntimeRegistryEntry,
+  listAgentRuntimeRegistryEntries,
+  listAbyRuntimeAgents,
+} from './agent-runtime-registry.js';
+
+export type {
+  AbyRuntimeSetupConfigPreview,
+  AbyRuntimeSetupMode,
+  AbyRuntimeSetupReport,
+  AbyRuntimeSetupStatus,
+  SetupAbyRuntimeOptions,
+} from './agent-runtime-setup.js';
+export { setupAbyRuntime } from './agent-runtime-setup.js';
+
+export type {
+  AbyRuntimeSmokeReport,
+  AbyRuntimeSmokeStatus,
+  RunAbyRuntimeSmokeOptions,
+} from './agent-runtime-smoke.js';
+export { runAbyRuntimeSmoke } from './agent-runtime-smoke.js';
+
+export type {
+  AgentRuntimeMcpStatus,
+  AgentRuntimeMcpStatusOptions,
+  AgentRuntimeMcpStatusReport,
+  AgentRuntimeMcpToolEvidence,
+} from './agent-runtime-mcp-status.js';
+export { getAgentRuntimeMcpStatus } from './agent-runtime-mcp-status.js';
+
 export { normalizeToolName, normalizeToolNames } from './tool-name.js';

@@ -35,6 +35,11 @@ export interface AbyRuntimeDoctorReport {
   timeoutMs?: number;
   env: AgentRuntimeEnvAudit;
   checks: AgentRuntimeDoctorCheck[];
+  remediations: string[];
+  /**
+   * @deprecated Use `remediations` for structured caller output. This string is
+   * kept for compatibility with older AR-4/AR-5 doctor consumers.
+   */
   remediation: string;
 }
 
@@ -61,6 +66,7 @@ export function diagnoseAbyRuntime(
       args: [],
       env: { allowedKeys: [], rejectedKeys: [] },
       checks: [{ name: 'config', status: 'FAIL', detail: message }],
+      remediations: ['Fix .openslack.local/agent-runtime.json so it is valid JSON.'],
       remediation: 'Fix .openslack.local/agent-runtime.json so it is valid JSON.',
     };
   }
@@ -134,6 +140,7 @@ export function diagnoseAbyRuntime(
   const status: AgentRuntimeDoctorStatus = checks.some((check) => check.status === 'FAIL')
     ? 'FAIL'
     : 'PASS';
+  const remediations = remediationsFor(checks);
 
   return {
     provider: 'aby',
@@ -150,16 +157,17 @@ export function diagnoseAbyRuntime(
       rejectedKeys: envAudit.rejectedKeys,
     },
     checks,
-    remediation: remediationFor(checks),
+    remediations,
+    remediation: remediations.join('\n'),
   };
 }
 
-function remediationFor(checks: AgentRuntimeDoctorCheck[]): string {
+function remediationsFor(checks: AgentRuntimeDoctorCheck[]): string[] {
   const failed = checks.filter((check) => check.status === 'FAIL');
-  if (failed.length === 0) return 'Aby bridge runtime is configured and ready.';
+  if (failed.length === 0) return ['Aby bridge runtime is configured and ready.'];
 
   const remediations = failed.map(remediationForFailedCheck);
-  return [...new Set(remediations)].join('\n');
+  return [...new Set(remediations)];
 }
 
 function remediationForFailedCheck(check: AgentRuntimeDoctorCheck): string {

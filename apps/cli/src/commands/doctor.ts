@@ -26,8 +26,13 @@ interface CheckResult {
   detail: string;
 }
 
-export function doctorCommands(): Command {
+interface DoctorCommandDependencies {
+  execSync?: typeof execSync;
+}
+
+export function doctorCommands(dependencies: DoctorCommandDependencies = {}): Command {
   const cmd = new Command('doctor').description('OpenSlack multi-module health check');
+  const runExecSync = dependencies.execSync ?? execSync;
 
   cmd
     .option('--format <format>', 'Output format: standard or plain', 'standard')
@@ -50,7 +55,7 @@ export function doctorCommands(): Command {
 
       // Golden evals check
       try {
-        execSync('bun run openslack self eval --suite golden', { cwd: root, stdio: 'pipe', encoding: 'utf-8' });
+        runExecSync('bun run openslack self eval --suite golden', { cwd: root, stdio: 'pipe', encoding: 'utf-8' });
         checks.push({ name: 'Golden evals', state: 'PASS', detail: '7/7 passing' });
       } catch {
         checks.push({ name: 'Golden evals', state: 'FAIL', detail: 'Some evals failed' });
@@ -129,6 +134,35 @@ export function doctorCommands(): Command {
         checks.push({ name: 'Module registry', state: 'FAIL', detail: `Error: ${(e as Error).message}` });
       }
 
+      // Agent runtime / Aby readiness check. This is a configuration-only
+      // diagnostic; it never launches the external runtime.
+      try {
+        const { listAbyRuntimeAgents, diagnoseAbyRuntime } = await import('@openslack/agent-runtime');
+        const abyAgents = listAbyRuntimeAgents(root);
+        if (abyAgents.length === 0) {
+          checks.push({
+            name: 'Agent Runtime / Aby',
+            state: 'WARN',
+            detail: 'Aby runtime not required by registered agents',
+          });
+        } else {
+          const report = diagnoseAbyRuntime({ rootDir: root, env: process.env });
+          checks.push({
+            name: 'Agent Runtime / Aby',
+            state: report.status === 'PASS' ? 'PASS' : 'FAIL',
+            detail: report.status === 'PASS'
+              ? `Configured for ${abyAgents.map((agent) => agent.agentId).join(', ')}`
+              : report.remediations.join(' '),
+          });
+        }
+      } catch (e) {
+        checks.push({
+          name: 'Agent Runtime / Aby',
+          state: 'FAIL',
+          detail: `Error: ${(e as Error).message}`,
+        });
+      }
+
       // Branch protection check
       try {
         const client = await getClient();
@@ -177,7 +211,7 @@ export function doctorCommands(): Command {
       try {
         const genesis = detectGenesisShell(root);
         if (!genesis.command) throw new Error(genesis.detail);
-        execSync(genesis.command, { cwd: root, stdio: 'pipe', timeout: 30000 });
+        runExecSync(genesis.command, { cwd: root, stdio: 'pipe', timeout: 30000 });
         checks.push({ name: 'Genesis validate', state: 'PASS', detail: '5/5 checks passing' });
       } catch (err) {
         const detail = (err as Error).message || 'Genesis checks failed';
