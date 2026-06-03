@@ -75,6 +75,8 @@ export interface AgentOptions {
   resolvedAgentConfig?: import('./agent-resolver.js').ResolvedAgentConfig;
   /** Pre-generated agent runtime run ID. Passed through to launcher for stable correlation. */
   agentRunId?: string;
+  /** Bridge mode for adapter selection (e.g., 'fake', 'process', 'local'). */
+  bridgeMode?: 'local' | 'external-command' | 'process' | 'fake';
 }
 
 export interface ParallelOptions {

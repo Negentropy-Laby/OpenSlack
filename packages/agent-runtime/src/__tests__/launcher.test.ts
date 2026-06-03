@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createOpenSlackAgentLauncher, createRunStore } from '../index.js';
+import { createOpenSlackAgentLauncher, createRunStore, FakeBridgeAdapter, BridgeFactory } from '../index.js';
 
 function makeTempRoot(): string {
   return mkdtempSync(join(tmpdir(), 'agent-launcher-test-'));
@@ -133,5 +133,60 @@ describe('createOpenSlackAgentLauncher', () => {
       phase: 'plan',
     });
     expect((planResult.data as any).plan).toBeDefined();
+  });
+
+  it('uses per-run bridgeMode from resolvedConfig to select bridge adapter', async () => {
+    const store = createRunStore(root);
+    // Create launcher with NO global bridgeMode — defaults to local adapter
+    const launcher = createOpenSlackAgentLauncher({ runStore: store, rootDir: root });
+
+    // Run with per-run bridgeMode='fake' — should use FakeBridgeAdapter
+    const result = await launcher('review this code', {
+      label: 'bridge-test',
+      phase: 'review',
+      resolvedAgentConfig: {
+        agentId: 'bridge-test',
+        source: 'openslack-registry',
+        bridgeMode: 'fake',
+      },
+    });
+
+    expect(result).toBeDefined();
+    expect(result.data).toBeDefined();
+
+    // Verify bridge_lifecycle_complete event is present (proves bridge adapter was used)
+    const run = store.listRuns()[0];
+    const { readTranscript } = await import('../transcript.js');
+    const transcript = readTranscript(run.runId, root);
+
+    const lifecycleEvent = transcript.find(
+      (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'bridge_lifecycle_complete',
+    );
+    expect(lifecycleEvent).toBeDefined();
+    expect((lifecycleEvent!.data as Record<string, unknown>).status).toBe('completed');
+  });
+
+  it('does not emit bridge_lifecycle_complete for local adapter runs', async () => {
+    const store = createRunStore(root);
+    const launcher = createOpenSlackAgentLauncher({ runStore: store, rootDir: root });
+
+    // No bridgeMode — uses default LocalExecutionAdapter
+    await launcher('review this code', {
+      label: 'local-test',
+      phase: 'review',
+      resolvedAgentConfig: {
+        agentId: 'local-test',
+        source: 'test',
+      },
+    });
+
+    const run = store.listRuns()[0];
+    const { readTranscript } = await import('../transcript.js');
+    const transcript = readTranscript(run.runId, root);
+
+    const lifecycleEvent = transcript.find(
+      (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'bridge_lifecycle_complete',
+    );
+    expect(lifecycleEvent).toBeUndefined();
   });
 });

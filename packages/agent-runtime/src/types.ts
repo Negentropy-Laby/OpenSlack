@@ -36,6 +36,8 @@ export interface ResolvedAgentConfig {
   requiredMcpServers?: string[];
   criticalSystemReminder?: string;
   remote?: boolean;
+  /** Bridge mode hint for adapter selection. */
+  bridgeMode?: 'local' | 'external-command' | 'process' | 'fake';
 }
 
 export interface AgentRunRequest {
@@ -99,6 +101,12 @@ export interface AgentRunResult {
   transcript: AgentRunEvent[];
 }
 
+// ---------------------------------------------------------------------------
+// Bridge types (AR-2.5A) — re-exported from bridge-contract.ts (canonical source)
+// ---------------------------------------------------------------------------
+
+export type { BridgeSessionState, BridgeErrorKind, BridgeCapabilityDescriptor } from './bridge-contract.js';
+
 export class AgentUnavailableError extends Error {
   readonly missingMcpServers: string[];
 
@@ -119,4 +127,26 @@ export class PermissionDeniedError extends Error {
     this.action = action;
     this.reason = reason;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Bridge session summary (AR-2.5C)
+// ---------------------------------------------------------------------------
+
+export interface BridgeSessionSummary {
+  runId: string;
+  sessionId: string;
+  terminalReason?: 'completed' | 'failed' | 'cancelled' | 'timeout';
+  resultSummary?: Record<string, unknown>;
+  errorDetails?: {
+    kind: string;
+    message: string;
+  };
+  tokenUsage?: number;
+  toolStats?: {
+    totalCalls: number;
+    uniqueTools: string[];
+    lastTool?: string;
+  };
+  durationMs?: number;
 }

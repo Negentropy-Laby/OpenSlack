@@ -67,6 +67,12 @@ const TRUNCATION_MARKER = '\n... [truncated]';
  * - No streaming stdout/stderr — full capture before resolve
  * - The command and args are fixed at construction time; prompt is
  *   passed via env var, not as an arg
+ *
+ * Note: For external runtime integration with structured bridge envelopes,
+ * session state machines, and capability negotiation, use
+ * {@link BridgeProcessAdapter} (AR-2.5B) instead. ExternalCommandAdapter
+ * remains for simple command execution that does not need bridge protocol
+ * features.
  */
 export class ExternalCommandAdapter implements AgentExecutionAdapter {
   readonly adapterId = 'external-command';

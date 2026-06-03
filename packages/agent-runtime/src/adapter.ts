@@ -2,6 +2,7 @@ import type { AgentRunState, AgentPermissionProfile, ResolvedAgentConfig } from 
 import { PermissionDeniedError } from './types.js';
 import { isActionAllowed, enforceToolScope } from './permissions.js';
 import type { RunRecorder } from './recorder.js';
+import type { BridgeContract } from './bridge-contract.js';
 
 /**
  * Tool guard provided to execution adapters. Adapters MUST call
@@ -128,6 +129,12 @@ export interface AdapterExecutionResult<T = unknown> {
 export interface AgentExecutionAdapter {
   /** Unique identifier for this adapter type (e.g., 'local', 'external-command'). */
   readonly adapterId: string;
+
+  /**
+   * Optional bridge contract for external runtime integration.
+   * Set when this adapter is backed by a BridgeContract-compliant runtime.
+   */
+  readonly bridgeContract?: BridgeContract;
 
   /**
    * Execute an agent run.
