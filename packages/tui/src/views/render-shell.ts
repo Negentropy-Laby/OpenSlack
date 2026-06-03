@@ -13,16 +13,10 @@ import type { WorkflowLifecycleViewModel } from '../view-models/workflow-lifecyc
 import type { ProfileViewModel } from '../view-models/profile.js'
 import type { AgentRuntimeDiagnosticsViewModel } from '../view-models/agent-runtime.js'
 import type { AgentConversationThread, AgentConversationMessage } from '@openslack/collaboration'
+import type { WorkflowRunControlAction, WorkflowRunControlTarget } from '@openslack/workflows'
 import type { WorkflowRunProgressItem } from '../view-models/workflow-runs.js'
 
-export type WorkflowRunControlAction = 'pause' | 'resume' | 'stopRun' | 'stopAgent' | 'restartAgent' | 'saveScript'
-
-export interface WorkflowRunControlTarget {
-  runId: string
-  phase?: string
-  agentRunId?: string
-  agentId?: string
-}
+export type { WorkflowRunControlAction, WorkflowRunControlTarget } from '@openslack/workflows'
 
 export interface WorkflowLifecycleBaseData {
   workflowHash: string
