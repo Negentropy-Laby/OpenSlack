@@ -51,9 +51,17 @@ import {
   controlWorkflowRun,
   renderWorkflowRuns,
   renderWorkflowRun,
+  getWorkflowRunProgress,
+  renderWorkflowRunProgress,
+  listWorkflowCatalog,
+  getWorkflowCatalogEntry,
+  renderWorkflowCatalogList,
+  renderWorkflowCatalogEntry,
   saveWorkflow,
+  saveWorkflowRunScript,
   exportWorkflowSkill,
 } from '@openslack/workflows';
+import { recommendWorkflowForQuery } from '@openslack/operator';
 import type {
   DryRunResult,
   SimulatedEffect,
@@ -61,6 +69,7 @@ import type {
   AgentConversationEvent,
   RunStatus,
   WorkflowRunControlAction,
+  WorkflowRunControlTarget,
 } from '@openslack/workflows';
 import {
   publishWorkflowProposal,
@@ -173,6 +182,10 @@ const WORKFLOW_RUN_CONTROL_ACTIONS = [
   'saveScript',
 ] as const satisfies readonly WorkflowRunControlAction[];
 
+const WORKFLOW_RUN_SHOW_DETAILS = ['summary', 'progress'] as const;
+const WORKFLOW_RUN_SHOW_FORMATS = ['plain', 'json'] as const;
+const WORKFLOW_SAVE_TARGETS = ['project', 'user', 'claude-project'] as const;
+
 function parseWorkflowRunStatus(value: string | undefined): RunStatus['status'] | undefined {
   if (value === undefined) return undefined;
   if ((WORKFLOW_RUN_STATUSES as readonly string[]).includes(value)) return value as RunStatus['status'];
@@ -181,10 +194,32 @@ function parseWorkflowRunStatus(value: string | undefined): RunStatus['status'] 
   process.exit(1);
 }
 
+function parseWorkflowRunShowDetail(value: string | undefined): typeof WORKFLOW_RUN_SHOW_DETAILS[number] {
+  const resolved = value ?? 'summary';
+  if ((WORKFLOW_RUN_SHOW_DETAILS as readonly string[]).includes(resolved)) return resolved as typeof WORKFLOW_RUN_SHOW_DETAILS[number];
+  console.error(`Invalid workflow run detail: ${resolved}`);
+  console.error(`Allowed values: ${WORKFLOW_RUN_SHOW_DETAILS.join(', ')}`);
+  process.exit(1);
+}
+
+function parseWorkflowRunShowFormat(value: string | undefined): typeof WORKFLOW_RUN_SHOW_FORMATS[number] {
+  const resolved = value ?? 'plain';
+  if ((WORKFLOW_RUN_SHOW_FORMATS as readonly string[]).includes(resolved)) return resolved as typeof WORKFLOW_RUN_SHOW_FORMATS[number];
+  console.error(`Invalid workflow run format: ${resolved}`);
+  console.error(`Allowed values: ${WORKFLOW_RUN_SHOW_FORMATS.join(', ')}`);
+  process.exit(1);
+}
+
 function parseWorkflowRunControlAction(value: string): WorkflowRunControlAction {
   if ((WORKFLOW_RUN_CONTROL_ACTIONS as readonly string[]).includes(value)) return value as WorkflowRunControlAction;
   console.error(`Invalid workflow run control action: ${value}`);
   console.error(`Allowed values: ${WORKFLOW_RUN_CONTROL_ACTIONS.join(', ')}`);
+  process.exit(1);
+}
+
+function parseWorkflowSaveTarget(value: string): typeof WORKFLOW_SAVE_TARGETS[number] {
+  if ((WORKFLOW_SAVE_TARGETS as readonly string[]).includes(value)) return value as typeof WORKFLOW_SAVE_TARGETS[number];
+  console.error(`--to must be one of: ${WORKFLOW_SAVE_TARGETS.join(', ')}`);
   process.exit(1);
 }
 
@@ -808,6 +843,114 @@ export function collaborationCommands(): Command {
 
   workflow.addCommand(patterns);
 
+  const catalog = new Command('catalog').description('List or preview workflow use-case catalog entries');
+
+  catalog
+    .command('list')
+    .description('List Dynamic Workflow catalog entries')
+    .action(() => {
+      console.log(renderWorkflowCatalogList(listWorkflowCatalog()));
+    });
+
+  catalog
+    .command('show <id>')
+    .description('Show a workflow catalog entry')
+    .action((id: string) => {
+      const entry = getWorkflowCatalogEntry(id);
+      if (!entry) {
+        console.error(`Unknown workflow catalog entry: ${id}`);
+        process.exit(1);
+      }
+      console.log(renderWorkflowCatalogEntry(entry));
+    });
+
+  catalog
+    .command('preview <id>')
+    .description('Preview a catalog entry as a workflow draft plan without writing a draft')
+    .action((id: string) => {
+      const entry = getWorkflowCatalogEntry(id);
+      if (!entry) {
+        console.error(`Unknown workflow catalog entry: ${id}`);
+        process.exit(1);
+      }
+      const pattern = getWorkflowPattern(entry.pattern);
+      if (!pattern) {
+        console.error(`Catalog entry ${id} references unknown pattern: ${entry.pattern}`);
+        process.exit(1);
+      }
+      console.log(renderWorkflowCatalogEntry(entry));
+      console.log('');
+      console.log('Draft preview:')
+      console.log(`  Pattern: ${pattern.id}`);
+      console.log(`  Budget: 100000 tokens, max agents ${pattern.id === 'loop-until-done' ? 100 : 1000}, concurrency 16`);
+      console.log('  Phases:');
+      for (const phase of pattern.phases) console.log(`    - ${phase.title}: ${phase.detail}`);
+      console.log('');
+      console.log(`Generate: openslack collaboration workflow generate --pattern ${entry.pattern} --prompt "${entry.prompt.replace(/"/g, '\\"')}"`);
+    });
+
+  workflow.addCommand(catalog);
+
+  workflow
+    .command('start')
+    .description('Start the Dynamic Workflow path from a prompt, pattern, or saved workflow')
+    .option('--prompt <text>', 'Task prompt to evaluate and draft')
+    .option('--pattern <pattern>', 'Pattern id to draft from')
+    .option('--saved <name>', 'Saved workflow name to preview next')
+    .action(async (options: { prompt?: string; pattern?: string; saved?: string }) => {
+      ensureWorkflowEnabled('start');
+      const selected = [options.prompt, options.pattern, options.saved].filter(Boolean).length;
+      if (selected !== 1 && !(options.prompt && options.pattern && !options.saved)) {
+        console.error('Use exactly one start path: --prompt, --pattern, or --saved. You may combine --prompt with --pattern.');
+        process.exit(1);
+      }
+      try {
+        if (options.saved) {
+          const found = await findJsWorkflow(options.saved);
+          if (!found) {
+            console.error(`Saved workflow not found: ${options.saved}`);
+            process.exit(1);
+          }
+          const mod = await loadWorkflow(found.path);
+          console.log('Dynamic Workflow start: saved workflow');
+          console.log(`Workflow: ${mod.meta.name}`);
+          console.log(`Risk: ${mod.meta.risk ?? 'not recorded'}`);
+          console.log(`Pattern: ${mod.meta.dynamicPattern ?? 'not recorded'}`);
+          console.log(`Budget: ${mod.meta.budgetPolicy?.tokenBudget ?? 'unlimited'} tokens`);
+          console.log('');
+          console.log(`Preview: openslack collaboration workflow preview-js ${mod.meta.name}`);
+          console.log(`Dry-run: openslack collaboration workflow dry-run ${mod.meta.name}`);
+          console.log(`Run: openslack collaboration workflow run ${mod.meta.name}`);
+          return;
+        }
+
+        const prompt = options.prompt ?? `use a workflow for ${options.pattern}`;
+        const recommendation = recommendWorkflowForQuery(prompt, { allowDraft: true });
+        const pattern = options.pattern ?? recommendation.suggestedPattern;
+        console.log('Dynamic Workflow start: recommendation');
+        console.log(`Decision: ${recommendation.decision}`);
+        console.log(`Reason: ${recommendation.reason}`);
+        console.log(`Confidence: ${recommendation.confidence}`);
+        console.log(`Pattern: ${pattern ?? 'fanout-synthesize'}`);
+        console.log(`Risk: ${recommendation.risk}`);
+        console.log('Budget: draft defaults apply; review preview before any run.');
+        console.log('');
+
+        const draft = await generateWorkflowDraft({
+          prompt,
+          pattern,
+          rootDir: findRepoRoot(),
+        });
+        const preview = await previewWorkflowDraft({ draftIdOrPath: draft.path, rootDir: findRepoRoot() });
+        console.log(renderWorkflowDraftPreview(preview));
+        console.log('');
+        console.log(`Next: openslack collaboration workflow preview-draft ${draft.draftId}`);
+      } catch (err) {
+        console.error(`Workflow start failed: ${(err as Error).message}`);
+        process.exit(1);
+      }
+    });
+
   workflow
     .command('generate')
     .description('Generate a dynamic workflow draft without executing it')
@@ -865,24 +1008,49 @@ export function collaborationCommands(): Command {
   runs
     .command('show <runId>')
     .description('Show workflow run detail')
-    .action(async (runId: string) => {
+    .option('--detail <detail>', 'summary or progress', 'summary')
+    .option('--format <format>', 'plain or json', 'plain')
+    .action(async (runId: string, options: { detail?: string; format?: string }) => {
+      const detail = parseWorkflowRunShowDetail(options.detail);
+      const format = parseWorkflowRunShowFormat(options.format);
+      if (detail === 'progress') {
+        const progress = await getWorkflowRunProgress(runId, { rootDir: findRepoRoot() });
+        if (!progress) {
+          console.error(`Workflow run not found: ${runId}`);
+          process.exit(1);
+        }
+        console.log(format === 'json' ? JSON.stringify(progress, null, 2) : renderWorkflowRunProgress(progress));
+        return;
+      }
       const run = await showWorkflowRun(runId, { rootDir: findRepoRoot() });
       if (!run) {
         console.error(`Workflow run not found: ${runId}`);
         process.exit(1);
       }
-      console.log(renderWorkflowRun(run));
+      console.log(format === 'json' ? JSON.stringify(run, null, 2) : renderWorkflowRun(run));
     });
 
   runs
     .command('control <runId>')
     .description('Record a workflow run control action')
     .requiredOption('--action <action>', 'pause, resume, stopRun, stopAgent, restartAgent, or saveScript')
-    .action(async (runId: string, options: { action: string }) => {
+    .option('--agent-run-id <id>', 'Target AgentRun ID for stopAgent/restartAgent')
+    .option('--phase <phase>', 'Target workflow phase for agent-level controls')
+    .option('--agent <agent>', 'Target workflow agent label/type for agent-level controls')
+    .action(async (runId: string, options: { action: string; agentRunId?: string; phase?: string; agent?: string }) => {
       const action = parseWorkflowRunControlAction(options.action);
-      const result = await controlWorkflowRun(runId, action, { rootDir: findRepoRoot() });
+      const target: WorkflowRunControlTarget | undefined =
+        options.agentRunId || options.phase || options.agent
+          ? {
+              runId,
+              agentRunId: options.agentRunId,
+              phase: options.phase,
+              agentId: options.agent,
+            }
+          : undefined;
+      const result = await controlWorkflowRun(runId, action, { rootDir: findRepoRoot(), target });
       console.log(result.message);
-      if (result.status !== 'applied') process.exit(1);
+      if (result.status === 'rejected') process.exit(1);
     });
 
   workflow.addCommand(runs);
@@ -916,19 +1084,34 @@ export function collaborationCommands(): Command {
   workflow
     .command('save <name>')
     .description('Save a reusable workflow to project or user workflow storage')
-    .requiredOption('--to <target>', 'project or user')
+    .requiredOption('--to <target>', 'project, user, or claude-project')
     .action(async (name: string, options: { to: string }) => {
-      if (options.to !== 'project' && options.to !== 'user') {
-        console.error('--to must be project or user');
-        process.exit(1);
-      }
+      const target = parseWorkflowSaveTarget(options.to);
       try {
-        const result = await saveWorkflow(name, { rootDir: findRepoRoot(), to: options.to });
+        const result = await saveWorkflow(name, { rootDir: findRepoRoot(), to: target });
         console.log(`Saved workflow "${result.workflowName}" to ${result.source}.`);
         console.log(`Path: ${result.path}`);
         console.log(`Hash: ${result.scriptHash}`);
       } catch (err) {
         console.error(`Workflow save failed: ${(err as Error).message}`);
+        process.exit(1);
+      }
+    });
+
+  workflow
+    .command('save-run <runId>')
+    .description('Save the workflow script associated with a recorded run')
+    .requiredOption('--to <target>', 'project, user, or claude-project')
+    .action(async (runId: string, options: { to: string }) => {
+      const target = parseWorkflowSaveTarget(options.to);
+      try {
+        const result = await saveWorkflowRunScript(runId, { rootDir: findRepoRoot(), to: target });
+        console.log(`Saved workflow "${result.workflowName}" from run ${runId} to ${result.source}.`);
+        console.log(`Source: ${result.sourcePath}`);
+        console.log(`Path: ${result.path}`);
+        console.log(`Hash: ${result.scriptHash}`);
+      } catch (err) {
+        console.error(`Workflow save-run failed: ${(err as Error).message}`);
         process.exit(1);
       }
     });

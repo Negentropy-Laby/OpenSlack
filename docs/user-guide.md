@@ -532,18 +532,28 @@ The workflow engine loads, validates, executes, checkpoints, and resumes OpenSla
 | `openslack collaboration workflow resume <runId>` | Resume a paused workflow run from its last checkpoint |
 | `openslack collaboration workflow resume <runId> --yes` | Resume with auto-approved side effects |
 | `openslack collaboration workflow resume <runId> --agent-id <id>` | Resume with agent principal authorization |
+| `openslack collaboration workflow start --prompt "..."` | Start the Dynamic Workflow path from a prompt by generating a previewable draft |
+| `openslack collaboration workflow start --pattern <pattern>` | Start from a known orchestration pattern without executing |
+| `openslack collaboration workflow start --saved <name>` | Show preview, dry-run, and run commands for a saved workflow |
 | `openslack collaboration workflow patterns list` | List dynamic workflow orchestration patterns |
 | `openslack collaboration workflow patterns show <pattern>` | Show a dynamic workflow pattern |
+| `openslack collaboration workflow catalog list` | List workflow use-case catalog entries |
+| `openslack collaboration workflow catalog show <id>` | Show when to use a catalog workflow and required evidence |
+| `openslack collaboration workflow catalog preview <id>` | Preview the catalog phases and draft command without writing a draft |
 | `openslack collaboration workflow generate --prompt "..."` | Generate a safe dynamic workflow draft without running it |
 | `openslack collaboration workflow generate --pattern fanout-synthesize --prompt "..."` | Generate a draft from a specific pattern |
 | `openslack collaboration workflow preview-draft <draftId>` | Preview a generated draft's phases, budget, permissions, and side effects |
 | `openslack collaboration workflow runs list` | List recorded workflow runs |
 | `openslack collaboration workflow runs show <runId>` | Show run-level phase evidence |
+| `openslack collaboration workflow runs show <runId> --detail progress` | Show run, phase, agent, transcript, and budget evidence |
+| `openslack collaboration workflow runs show <runId> --detail progress --format json` | Emit structured run progress evidence |
 | `openslack collaboration workflow runs control <runId> --action pause` | Record a workflow run control action |
 | `openslack collaboration workflow config show` | Show project workflow policy |
 | `openslack collaboration workflow config enable --ultracode` | Enable workflows and ultracode draft triggers |
 | `openslack collaboration workflow config disable` | Disable workflow generation and execution |
 | `openslack collaboration workflow save <name> --to project` | Save a reusable workflow to project workflow storage |
+| `openslack collaboration workflow save <name> --to claude-project` | Save a reusable workflow to `.claude/workflows/` for Claude-compatible project sharing |
+| `openslack collaboration workflow save-run <runId> --to project` | Save the workflow script associated with a recorded run |
 | `openslack collaboration workflow export-skill <name> --out skills/<name>` | Export a workflow as a skill-style package |
 | `openslack collaboration workflow trust <name>` | View the current trust level for a workflow |
 | `openslack collaboration workflow trust <name> --level <level>` | Set trust level (untrusted, trusted) |

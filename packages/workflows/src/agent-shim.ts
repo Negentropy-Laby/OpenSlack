@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto';
 import type { AgentOptions, AgentResult, BudgetState, ExecutionMode } from './types.js';
 import { checkPermission } from './permission-checker.js';
 import type { ResolvedAgentConfig } from './agent-resolver.js';
 import { generateRunId } from '@openslack/agent-runtime';
+import { isAgentLaunchBlockedByWorkflowControl } from './workflow-runs.js';
 
 /**
  * Error thrown when agent result fails schema validation.
@@ -55,6 +57,14 @@ export type AgentLauncher<T = unknown> = (
   prompt: string,
   options: AgentOptions,
 ) => Promise<AgentResult<T>>;
+
+function hashPrompt(prompt: string): string {
+  return createHash('sha256').update(prompt).digest('hex').slice(0, 12);
+}
+
+function summarizePrompt(prompt: string): string {
+  return prompt.replace(/\s+/g, ' ').trim().slice(0, 240) || 'not recorded';
+}
 
 /**
  * Lightweight JSON schema subset validator.
@@ -122,6 +132,7 @@ export async function executeAgentCall<T>(
     eventEmitter?: AgentEventEmitter;
     resolvedAgent?: ResolvedAgentConfig | null;
     agentRunId?: string;
+    rootDir?: string;
   },
 ): Promise<T> {
   // 1. Mode check
@@ -152,6 +163,17 @@ export async function executeAgentCall<T>(
   const agentId = config.resolvedAgent?.agentId ?? options.agentType ?? options.label;
   const shouldEmit = config.mode === 'execute' && config.eventEmitter;
   const agentRunId = config.agentRunId ?? generateRunId();
+  const blockedReason = await isAgentLaunchBlockedByWorkflowControl({
+    rootDir: config.rootDir,
+    runId: config.runId,
+    phase: options.phase,
+    label: options.label,
+    agentType: options.agentType,
+    agentRunId,
+  });
+  if (blockedReason) {
+    throw new Error(blockedReason);
+  }
 
   if (shouldEmit) {
     config.eventEmitter!({
@@ -166,6 +188,7 @@ export async function executeAgentCall<T>(
   }
 
   let result: AgentResult<T>;
+  const startedAt = new Date().toISOString();
   try {
     result = await config.launcher(prompt, { ...options, agentRunId });
   } catch (err) {
@@ -205,16 +228,35 @@ export async function executeAgentCall<T>(
     }
   }
 
-  // 7. Cache result
-  await config.cache.save(config.runId, config.cacheKey, result as AgentResult);
-
-  // 8. Update budget
+  // 7. Update budget and persist result evidence
   const usage = result.tokenUsage ?? 0;
+  const evidenceResult: AgentResult<T> = {
+    ...result,
+    workflowEvidence: {
+      label: options.label,
+      phase: options.phase,
+      agentRunId: result.runId ?? agentRunId,
+      model: options.model,
+      isolation: options.isolation,
+      agentType: options.agentType,
+      bridgeMode: options.bridgeMode,
+      promptSummary: summarizePrompt(prompt),
+      promptHash: hashPrompt(prompt),
+      startedAt,
+      completedAt: new Date().toISOString(),
+      tokenUsage: usage,
+    },
+  };
+
   config.budget.tokensUsed += usage;
   if (config.budget.tokensRemaining !== null) {
     config.budget.tokensRemaining -= usage;
   }
   config.budget.agentCalls += 1;
+
+  // Re-save with runtime evidence after budget accounting. Older cache
+  // entries without workflowEvidence remain readable by the progress model.
+  await config.cache.save(config.runId, config.cacheKey, evidenceResult as AgentResult);
 
   return result.data as T;
 }

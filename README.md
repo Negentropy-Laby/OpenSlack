@@ -162,11 +162,11 @@ The projection and coordination layer. It makes tasks, PRs, handoffs, decisions,
 - **Room:** `openslack collaboration room show pr:42` → reconstruct object-centered collaboration context
 - **Workflow Engine:** `openslack collaboration workflow preview <file>` → validate typed workflow templates before execution
 - **Workflow Execution:** `openslack collaboration workflow run <name>` → execute workflows with preview, dry-run, and execute modes, checkpointing, resume, trust levels, and inspect (HTML/JSON/Markdown)
-- **Dynamic Workflows:** `openslack ask --effort ultracode "..."` and `openslack collaboration workflow generate --prompt "..."` → recommend or draft workflow harnesses for broad, long-running, or verification-heavy tasks without bypassing OpenSlack permissions
+- **Dynamic Workflows:** `openslack ask --effort ultracode "..."`, `openslack collaboration workflow start --prompt "..."`, and `openslack collaboration workflow runs show <runId> --detail progress` → recommend, draft, watch, budget, and reuse workflow harnesses for broad, long-running, or verification-heavy tasks without bypassing OpenSlack permissions
 - **Profile Sync Robot:** `openslack collaboration workflow profile-sync check` → keep an organization's public profile in sync with an upstream whitepapers repository (check, preview, run, status)
 - **Agent Conversations:** `openslack conversation start --title "..."` → structured multi-turn interaction threads between humans and agents with JSONL persistence, 7 typed message kinds, secret scanning, and memory policy control (`start`, `list`, `show`, `send`, `summarize`, `archive`)
 
-See: [`docs/product/collaboration-layer.md`](docs/product/collaboration-layer.md), [`docs/product/agent-conversations.md`](docs/product/agent-conversations.md), [`docs/product/dynamic-workflows.md`](docs/product/dynamic-workflows.md)
+See: [`docs/product/collaboration-layer.md`](docs/product/collaboration-layer.md), [`docs/product/agent-conversations.md`](docs/product/agent-conversations.md), [`docs/product/dynamic-workflows.md`](docs/product/dynamic-workflows.md), [`docs/product/dynamic-workflow-ux-closure.md`](docs/product/dynamic-workflow-ux-closure.md)
 
 ## Advanced Setup
 
@@ -283,7 +283,7 @@ output_contract:
 | Aby external runtime setup | [`docs/guides/aby-integration.md`](docs/guides/aby-integration.md) |
 | Subagent security and permissions | [`docs/security/subagent-permissions.md`](docs/security/subagent-permissions.md) |
 | TUI workbench guide | [`docs/guides/tui-workbench.md`](docs/guides/tui-workbench.md) |
-| Workflow engine runtime and execution model | [`docs/developer/workflow-runtime.md`](docs/developer/workflow-runtime.md) |
+| Workflow engine runtime, UX closure, and execution model | [`docs/product/dynamic-workflow-ux-closure.md`](docs/product/dynamic-workflow-ux-closure.md), [`docs/developer/workflow-runtime.md`](docs/developer/workflow-runtime.md) |
 | Workflow security model and trust levels | [`docs/security/workflow-execution.md`](docs/security/workflow-execution.md) |
 | Agent identity and onboarding | [`docs/developer/agent-registry-schema.md`](docs/developer/agent-registry-schema.md), [`docs/developer/new-agent-onboarding.md`](docs/developer/new-agent-onboarding.md) |
 | GitHub authentication and setup | [`docs/developer/github-automation.md`](docs/developer/github-automation.md) |

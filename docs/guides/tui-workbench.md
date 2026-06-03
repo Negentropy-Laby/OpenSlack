@@ -21,8 +21,8 @@ Both entry points land on the Home screen, which is the workbench landing page.
 
 The Home screen shows:
 
-- **What do you want to do?** -- 6 task-oriented actions with keyboard shortcuts [1]-[6]
-- **Quick Navigation** -- direct links to Dashboard, Status, Activity, Digest, Workflows, Profile
+- **What do you want to do?** -- task-oriented actions with keyboard shortcuts
+- **Quick Navigation** -- direct links to Dashboard, Status, Activity, Digest, Workflows, Workflow Runs, Profile
 - **Next Recommended Action** -- the single most important thing to do next, derived from your workspace state
 
 ### Task-Oriented Actions
@@ -31,7 +31,9 @@ The Home screen shows:
 |----------|------|-------------|
 | 1 | See what needs attention | View items needing immediate action |
 | 2 | Start or continue work | Create tasks, claim issues, work in isolated branches |
-| 3 | Run or check a workflow | Browse, execute, and inspect workflow runs |
+| 3 | Start a Dynamic Workflow | Generate from prompt, choose a pattern, or run a saved workflow |
+| w | Watch workflow runs | Inspect run, phase, agent, transcript, and budget evidence |
+| s | Reuse workflow assets | Save, export as skill, or publish workflow proposals |
 | 4 | Review and merge PRs | Check open PRs, run doctor, and merge when ready |
 | 5 | Approve pending items | Approve plans, merge requests, and workflow effects |
 | 6 | Maintain organization profile | Check, preview, and sync your organization profile |
@@ -74,6 +76,12 @@ Organization profile sync status with guided actions: check, preview, create PR,
 ### Workflow Lifecycle
 
 Horizontal 5-stage progress bar (Proposal -> Review -> Run -> PR -> Merged) with detailed stage information.
+
+### Workflow Runs
+
+Run, phase, and agent drilldown for recorded workflow evidence. The view shows
+status, current phase, token budget, pending approvals, recent tool evidence,
+result summaries, transcript paths, and run-level controls.
 
 ### Approval Center
 

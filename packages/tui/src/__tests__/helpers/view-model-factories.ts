@@ -39,7 +39,9 @@ export function createHomeViewModel(): HomeViewModel {
     tasks: [
       { key: 'see-attention', label: 'See what needs attention', route: 'dashboard', description: 'View items needing immediate action', shortcut: '1' },
       { key: 'start-work', label: 'Start or continue work', route: 'workflows', description: 'Create tasks, claim issues, and work in isolated branches', shortcut: '2' },
-      { key: 'run-workflow', label: 'Run or check a workflow', route: 'workflows', description: 'Browse, execute, and inspect workflow runs', shortcut: '3' },
+      { key: 'run-workflow', label: 'Start a Dynamic Workflow', route: 'workflows', description: 'Generate from prompt, choose a pattern, or run a saved workflow', shortcut: '3' },
+      { key: 'watch-workflows', label: 'Watch workflow runs', route: 'workflow-runs', description: 'Inspect run, phase, agent, transcript, and budget evidence', shortcut: 'w' },
+      { key: 'reuse-workflows', label: 'Reuse workflow assets', route: 'workflows', description: 'Save, export as skill, or publish workflow proposals', shortcut: 's' },
       { key: 'review-prs', label: 'Review and merge PRs', route: 'pr-queue', description: 'Check open PRs, run doctor, and merge when ready', shortcut: '4' },
       { key: 'approve-pending', label: 'Approve pending items', route: 'approvals', description: 'Approve plans, merge requests, and workflow effects', shortcut: '5' },
       { key: 'maintain-profile', label: 'Maintain organization profile', route: 'profile', description: 'Check, preview, and sync your organization profile', shortcut: '6' },

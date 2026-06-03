@@ -111,6 +111,8 @@ export type { ApprovalCenterViewModel, ApprovalItem, ApprovalCategory } from './
 export { mapApprovalCenterToViewModel, getCategoryLabel } from './view-models/approval-center.js';
 export type { WorkflowGalleryViewModel, WorkflowGalleryItem, WorkflowDetailViewModel } from './view-models/workflow-gallery.js';
 export { mapWorkflowGalleryToViewModel, mapWorkflowDetailToViewModel } from './view-models/workflow-gallery.js';
+export type { WorkflowRunProgressViewModel, WorkflowRunProgressItem, WorkflowPhaseProgressItem, WorkflowAgentProgressItem } from './view-models/workflow-runs.js';
+export { mapWorkflowRunsToViewModel } from './view-models/workflow-runs.js';
 export type { WorkflowLifecycleViewModel, LifecycleStage, PhaseIssueItem, CanonicalStageSlot, CanonicalStageKey, CanonicalStageStatus } from './view-models/workflow-lifecycle.js';
 export { mapWorkflowLifecycleToViewModel, mapCanonicalStages } from './view-models/workflow-lifecycle.js';
 export type { IssuesPrViewModel, IssueItem, PrItem } from './view-models/issues-pr.js';

@@ -2,10 +2,11 @@ import { createHash } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import { findWorkflow, loadWorkflow } from './loader.js'
+import type { WorkflowRunScriptSource } from './types.js'
 
 export interface SaveWorkflowOptions {
   rootDir?: string
-  to: 'project' | 'user'
+  to: 'project' | 'user' | 'claude-project'
   sourcePath?: string
 }
 
@@ -13,7 +14,8 @@ export interface SaveWorkflowResult {
   workflowName: string
   path: string
   scriptHash: string
-  source: 'project' | 'user'
+  source: 'project' | 'user' | 'claude-project'
+  sourceRunId?: string
 }
 
 function hash(content: string): string {
@@ -28,7 +30,9 @@ export async function saveWorkflow(workflowName: string, options: SaveWorkflowOp
   const content = await readFile(found.path, 'utf-8')
   const targetDir = options.to === 'project'
     ? resolve(rootDir, '.openslack', 'workflows')
-    : resolve(process.env.USERPROFILE ?? process.env.HOME ?? rootDir, '.claude', 'workflows')
+    : options.to === 'claude-project'
+      ? resolve(rootDir, '.claude', 'workflows')
+      : resolve(process.env.USERPROFILE ?? process.env.HOME ?? rootDir, '.claude', 'workflows')
   await mkdir(targetDir, { recursive: true })
   const targetPath = join(targetDir, `${loaded.meta.name}.mjs`)
   await writeFile(targetPath, content, 'utf-8')
@@ -37,6 +41,42 @@ export async function saveWorkflow(workflowName: string, options: SaveWorkflowOp
     path: targetPath,
     scriptHash: hash(content),
     source: options.to,
+  }
+}
+
+export interface SaveWorkflowRunOptions {
+  rootDir?: string
+  to: 'project' | 'user' | 'claude-project'
+}
+
+export async function saveWorkflowRunScript(
+  runId: string,
+  options: SaveWorkflowRunOptions,
+): Promise<SaveWorkflowResult & WorkflowRunScriptSource> {
+  const rootDir = options.rootDir ?? process.cwd()
+  const metaPath = resolve(rootDir, '.openslack.local', 'workflows', 'runs', runId, 'meta.json')
+  let meta: { workflowName?: string }
+  try {
+    meta = JSON.parse(await readFile(metaPath, 'utf-8')) as { workflowName?: string }
+  } catch {
+    throw new Error(`Workflow run metadata not found: ${runId}`)
+  }
+  if (!meta.workflowName) throw new Error(`Workflow run ${runId} does not record workflowName`)
+  const found = await findWorkflow(meta.workflowName, rootDir)
+  if (!found) throw new Error(`Workflow source not found for run ${runId}: ${meta.workflowName}`)
+  const result = await saveWorkflow(meta.workflowName, {
+    rootDir,
+    to: options.to,
+    sourcePath: found.path,
+  })
+  return {
+    ...result,
+    sourceRunId: runId,
+    runId,
+    workflowName: result.workflowName,
+    sourcePath: found.path,
+    scriptHash: result.scriptHash,
+    savedPath: result.path,
   }
 }
 

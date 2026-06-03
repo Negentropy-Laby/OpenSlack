@@ -56,6 +56,11 @@ describe('mapHomeToViewModel', () => {
     const taskRoutes = model.tasks.map(t => t.route)
     expect(taskRoutes).toContain('pr-queue')
     expect(taskRoutes).toContain('profile')
+    expect(taskRoutes).toContain('workflow-runs')
+
+    const taskLabels = model.tasks.map(t => t.label)
+    expect(taskLabels).toContain('Start a Dynamic Workflow')
+    expect(taskLabels).toContain('Watch workflow runs')
   })
 
   it('returns default systemStatus when no data provided', async () => {
@@ -74,5 +79,61 @@ describe('mapHomeToViewModel', () => {
     const { mapHomeToViewModel } = await import('../view-models/home.js')
     const model = mapHomeToViewModel({ systemStatus: 'ok\x1b[31m evil' })
     expect(model.systemStatus).toBe('ok evil')
+  })
+})
+
+describe('mapWorkflowRunsToViewModel', () => {
+  it('summarizes run progress for workflow run drilldown', async () => {
+    const { mapWorkflowRunsToViewModel } = await import('../view-models/workflow-runs.js')
+    const model = mapWorkflowRunsToViewModel([
+      {
+        runId: 'run-1',
+        workflowName: 'audit',
+        mode: 'execute',
+        status: 'running',
+        startedAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:01:00.000Z',
+        currentPhase: 'Scan',
+        args: {},
+        phaseCount: 1,
+        agentCount: 1,
+        pendingApprovalCount: 1,
+        budget: {
+          tokenBudget: 100,
+          tokensUsed: 12,
+          tokensRemaining: 88,
+          agentCalls: 1,
+          source: 'manifest',
+        },
+        phases: [{
+          phase: 'Scan',
+          status: 'running',
+          agentCount: 1,
+          tokenTotal: 12,
+          cachedCount: 1,
+          liveCount: 0,
+          failedCount: 0,
+          agents: [{
+            id: 'agent-1',
+            label: 'scan-api',
+            phase: 'Scan',
+            status: 'completed',
+            cached: true,
+            promptSummary: 'scan api',
+            tokensUsed: 12,
+            tokensRemaining: 88,
+            recentTools: [],
+            warnings: [],
+          }],
+          warnings: [],
+        }],
+        logTail: [],
+        warnings: [],
+      },
+    ])
+
+    expect(model.summary.running).toBe(1)
+    expect(model.summary.pendingApprovals).toBe(1)
+    expect(model.selectedRun?.phases[0].agents[0].label).toBe('scan-api')
   })
 })

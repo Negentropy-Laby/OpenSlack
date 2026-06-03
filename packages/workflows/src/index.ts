@@ -38,6 +38,14 @@ export type {
   WorkflowRecommendation,
   WorkflowRunControlAction,
   WorkflowRunControlResult,
+  WorkflowRunProgress,
+  WorkflowPhaseProgress,
+  WorkflowAgentProgress,
+  WorkflowToolEvidence,
+  WorkflowBudgetUsage,
+  WorkflowRunControlTarget,
+  WorkflowAgentControlResult,
+  WorkflowRunScriptSource,
   WorkflowCall,
   WorkflowHelperAPI,
   ModelIsolationRoute,
@@ -243,14 +251,32 @@ export {
 } from './workflow-runs.js'
 export type { ListWorkflowRunsOptions } from './workflow-runs.js'
 
+export {
+  getWorkflowRunProgress,
+  renderWorkflowRunProgress,
+} from './workflow-progress.js'
+export type { GetWorkflowRunProgressOptions } from './workflow-progress.js'
+
+// ── Workflow Catalog ───────────────────────────────────────────────────────
+export {
+  listWorkflowCatalog,
+  getWorkflowCatalogEntry,
+  getWorkflowCatalogPattern,
+  renderWorkflowCatalogList,
+  renderWorkflowCatalogEntry,
+} from './workflow-catalog.js'
+export type { WorkflowCatalogEntry } from './workflow-catalog.js'
+
 // ── Workflow Save / Export ─────────────────────────────────────────────────
 export {
   saveWorkflow,
+  saveWorkflowRunScript,
   exportWorkflowSkill,
 } from './workflow-save.js'
 export type {
   SaveWorkflowOptions,
   SaveWorkflowResult,
+  SaveWorkflowRunOptions,
   ExportWorkflowSkillOptions,
   ExportWorkflowSkillResult,
 } from './workflow-save.js'
