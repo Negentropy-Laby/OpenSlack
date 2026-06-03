@@ -215,4 +215,6 @@ export interface SubagentDefinition {
   requiredMcpServers?: string[];
   criticalSystemReminder?: string;
   remote?: boolean;
+  /** Bridge mode hint for adapter selection. */
+  bridgeMode?: 'local' | 'external-command' | 'process' | 'fake';
 }
