@@ -98,4 +98,32 @@ describe('diagnoseAbyRuntime', () => {
     expect(report.env.rejectedKeys).toEqual(['OPENSLACK_PRIVATE_KEY']);
     expect(JSON.stringify(report)).not.toContain('should-not-print');
   });
+
+  it('reports remediation for every failed check', () => {
+    const abyRoot = createFakeAbyRoot(root, { bridge: false });
+    const configDir = join(root, '.openslack.local');
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, 'agent-runtime.json'),
+      JSON.stringify({
+        aby: {
+          root: abyRoot,
+          env: {
+            OPENSLACK_PRIVATE_KEY: 'should-not-print',
+          },
+        },
+      }),
+      'utf-8',
+    );
+
+    const report = diagnoseAbyRuntime({ rootDir: root, env: {} });
+
+    expect(report.status).toBe('FAIL');
+    expect(report.checks.find((check) => check.name === 'agentRunBridge.ts')?.status).toBe('FAIL');
+    expect(report.checks.find((check) => check.name === 'safe-env')?.status).toBe('FAIL');
+    expect(report.remediation).toContain('agentRunBridge.ts');
+    expect(report.remediation).toContain('Remove unsafe env keys');
+    expect(report.remediation.split('\n')).toHaveLength(2);
+    expect(JSON.stringify(report)).not.toContain('should-not-print');
+  });
 });

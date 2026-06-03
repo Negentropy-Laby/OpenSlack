@@ -59,6 +59,7 @@ export interface TuiActionHandlers {
 }
 
 export interface ShellViewData {
+  rootDir?: string
   dashboard?: DashboardViewModel
   prQueue?: PrQueueViewModel
   status?: StatusViewModel

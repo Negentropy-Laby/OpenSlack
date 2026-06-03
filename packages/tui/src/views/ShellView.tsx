@@ -356,7 +356,9 @@ function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
         | import('@openslack/agent-runtime').AgentRunState
         | undefined;
       if (runState) {
-        const runModel = mapAgentRunToViewModel(runState);
+        const runModel = mapAgentRunToViewModel(runState, {
+          rootDir: data?.rootDir ?? process.cwd(),
+        });
         return React.createElement(AgentRunDetailView, { model: runModel, onBack: pop });
       }
       return React.createElement(PlaceholderView, { route: current });

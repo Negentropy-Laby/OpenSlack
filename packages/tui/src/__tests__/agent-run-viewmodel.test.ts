@@ -128,4 +128,44 @@ describe('mapAgentRunToViewModel', () => {
     expect(model.permissionDenies).toBe(1);
     expect(model.worktreeHandoffStatus).toContain('preserved');
   });
+
+  it('resolves relative transcript paths from the current working directory when rootDir is omitted', () => {
+    const runId = 'RUN-20260603-RELATIVE';
+    appendTranscriptEvent(
+      runId,
+      {
+        timestamp: '2026-06-03T00:00:00.000Z',
+        type: 'start',
+        data: {
+          agentId: 'anthropic_architect_aby',
+          runtime: 'aby_assistant',
+          provider: 'aby',
+          bridgeMode: 'process',
+        },
+      },
+      root,
+    );
+
+    const originalCwd = process.cwd();
+    process.chdir(root);
+    try {
+      const state: AgentRunState = {
+        runId,
+        status: 'running',
+        agentId: 'anthropic_architect_aby',
+        startedAt: '2026-06-03T00:00:00.000Z',
+        tokensUsed: 0,
+        tokensRemaining: null,
+        toolCalls: 0,
+        transcriptPath: join('.openslack.local', 'agents', 'runs', runId, 'transcript.jsonl'),
+      };
+
+      const model = mapAgentRunToViewModel(state);
+
+      expect(model.events).toHaveLength(1);
+      expect(model.runtimeProvider).toBe('aby / aby_assistant / process');
+    } finally {
+      process.chdir(originalCwd);
+    }
+  });
 });

@@ -24,7 +24,7 @@ export function tuiCommands(): Command {
         }
 
         const { renderShellTui, mapStatusToViewModel, mapPrQueueToViewModel, mapWorkflowGalleryToViewModel, mapApprovalCenterToViewModel, mapWorkflowLifecycleToViewModel } = await import('@openslack/tui');
-        const data: import('@openslack/tui').ShellViewData = {};
+        const data: import('@openslack/tui').ShellViewData = { rootDir: process.cwd() };
 
         // Resolve repo root
         const { existsSync } = await import('node:fs');

@@ -70,6 +70,14 @@ export function renderAbyRuntimeDoctorReport(report: AbyRuntimeDoctorReport): st
     lines.push(`  [${check.status}] ${check.name}: ${check.detail}`);
   }
   lines.push('');
-  lines.push(`Remediation: ${report.remediation}`);
+  const remediationLines = report.remediation.split('\n').filter((line) => line.trim());
+  if (remediationLines.length <= 1) {
+    lines.push(`Remediation: ${report.remediation}`);
+  } else {
+    lines.push('Remediation:');
+    for (const line of remediationLines) {
+      lines.push(`  - ${line}`);
+    }
+  }
   return lines.join('\n');
 }

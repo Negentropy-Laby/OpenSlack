@@ -155,10 +155,15 @@ export function diagnoseAbyRuntime(
 }
 
 function remediationFor(checks: AgentRuntimeDoctorCheck[]): string {
-  const failed = checks.find((check) => check.status === 'FAIL');
-  if (!failed) return 'Aby bridge runtime is configured and ready.';
+  const failed = checks.filter((check) => check.status === 'FAIL');
+  if (failed.length === 0) return 'Aby bridge runtime is configured and ready.';
 
-  switch (failed.name) {
+  const remediations = failed.map(remediationForFailedCheck);
+  return [...new Set(remediations)].join('\n');
+}
+
+function remediationForFailedCheck(check: AgentRuntimeDoctorCheck): string {
+  switch (check.name) {
     case 'config-source':
       return 'Set OPENSLACK_ABY_ROOT or add .openslack.local/agent-runtime.json with an aby.root value.';
     case 'aby-root':

@@ -43,6 +43,24 @@ describe('agent-runtime command', () => {
     expect(output).not.toContain('secret');
   });
 
+  it('renders multiple remediation lines as a list', () => {
+    const output = renderAbyRuntimeDoctorReport({
+      ...passReport,
+      status: 'FAIL',
+      checks: [
+        { name: 'agentRunBridge.ts', status: 'FAIL' as const, detail: 'Missing bridge' },
+        { name: 'safe-env', status: 'FAIL' as const, detail: 'Rejected unsafe keys: OPENSLACK_PRIVATE_KEY' },
+      ],
+      remediation: [
+        'Update Aby to a bridge-capable checkout that contains src/sidecar/entrypoints/agentRunBridge.ts.',
+        'Remove unsafe env keys from .openslack.local/agent-runtime.json; task content and secrets must not cross the bridge through env.',
+      ].join('\n'),
+    });
+
+    expect(output).toContain('Remediation:\n  - Update Aby');
+    expect(output).toContain('\n  - Remove unsafe env keys');
+  });
+
   it('runs agent-runtime doctor --provider aby', async () => {
     const logs: string[] = [];
     const logSpy = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
