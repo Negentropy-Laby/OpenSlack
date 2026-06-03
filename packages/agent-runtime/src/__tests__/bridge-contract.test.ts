@@ -181,8 +181,10 @@ describe('buildBridgeEnvelope', () => {
     const kinds: BridgeEnvelopeKind[] = [
       'handshake_request',
       'handshake_response',
-      'session_open',
-      'session_close',
+      'run_request',
+      'run_started',
+      'assistant_text',
+      'approval_required',
       'tool_request',
       'tool_response',
       'progress',

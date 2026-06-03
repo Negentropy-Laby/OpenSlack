@@ -1,4 +1,5 @@
 import type { ResolvedAgentConfig, AgentPermissionProfile } from './types.js';
+import { normalizeToolName, normalizeToolNames } from './tool-name.js';
 
 /**
  * Actions that subagents are NEVER allowed to perform,
@@ -7,6 +8,16 @@ import type { ResolvedAgentConfig, AgentPermissionProfile } from './types.js';
 export const SUBAGENT_ALWAYS_FORBIDDEN = new Set([
   'github.pr.approve',
   'github.pr.merge',
+  'mcp.github.pr.approve',
+  'mcp.github.pr.merge',
+  'mcp.github.pr_approve',
+  'mcp.github.pr_merge',
+  'mcp.ruleset.bypass',
+  'mcp.secrets.read',
+  'mcp.agent.registry.write',
+  'mcp.agent.registry_write',
+  'mcp.workflow.trust.upgrade',
+  'mcp.workflow.trust_upgrade',
   'ruleset.bypass',
   'secrets.read',
   'agent.registry.write',
@@ -45,13 +56,14 @@ export function buildPermissionProfile(
   // Apply tools allowlist: if specified, intersect with baseline
   let allowedTools: string[];
   if (resolvedConfig.tools && resolvedConfig.tools.length > 0) {
-    allowedTools = baseline.filter((t) => resolvedConfig.tools!.includes(t));
+    const requestedTools = normalizeToolNames(resolvedConfig.tools);
+    allowedTools = baseline.filter((t) => requestedTools.includes(t));
   } else {
     allowedTools = [...baseline];
   }
 
   // Apply disallowedTools denylist
-  const deniedTools = resolvedConfig.disallowedTools ?? [];
+  const deniedTools = normalizeToolNames(resolvedConfig.disallowedTools ?? []);
   allowedTools = allowedTools.filter((t) => !deniedTools.includes(t));
 
   // Add hardcoded forbidden actions to denied list
@@ -74,9 +86,10 @@ export function buildPermissionProfile(
  * Check if a specific action is allowed by the permission profile.
  */
 export function isActionAllowed(profile: AgentPermissionProfile, action: string): boolean {
-  if (profile.deniedTools.includes(action)) return false;
-  if (SUBAGENT_ALWAYS_FORBIDDEN.has(action)) return false;
-  return profile.allowedTools.includes(action);
+  const normalized = normalizeToolName(action);
+  if (profile.deniedTools.map(normalizeToolName).includes(normalized)) return false;
+  if (SUBAGENT_ALWAYS_FORBIDDEN.has(normalized)) return false;
+  return profile.allowedTools.map(normalizeToolName).includes(normalized);
 }
 
 /**
@@ -112,7 +125,8 @@ export function validatePermissionProfile(profile: AgentPermissionProfile): {
   const violations: string[] = [];
 
   for (const tool of profile.allowedTools) {
-    if (SUBAGENT_ALWAYS_FORBIDDEN.has(tool)) {
+    const normalized = normalizeToolName(tool);
+    if (SUBAGENT_ALWAYS_FORBIDDEN.has(normalized)) {
       violations.push(`Forbidden tool in allowed list: ${tool}`);
     }
   }

@@ -3,6 +3,7 @@ import { PermissionDeniedError } from './types.js';
 import { isActionAllowed, enforceToolScope } from './permissions.js';
 import type { RunRecorder } from './recorder.js';
 import type { BridgeContract } from './bridge-contract.js';
+import { normalizeToolName } from './tool-name.js';
 
 /**
  * Tool guard provided to execution adapters. Adapters MUST call
@@ -25,14 +26,16 @@ export class ToolGuard {
    * Throws `PermissionDeniedError` if denied, after writing a transcript event.
    */
   check(toolName: string): boolean {
-    if (!isActionAllowed(this.profile, toolName)) {
+    const normalizedToolName = normalizeToolName(toolName);
+    if (!isActionAllowed(this.profile, normalizedToolName)) {
       this.recorder.progress(this.runId, {
         step: 'tool_denied',
         toolName,
+        normalizedToolName,
         reason: `Tool "${toolName}" is not in the allowed set or is in the deny list`,
       });
       throw new PermissionDeniedError(
-        `tool.${toolName}`,
+        `tool.${normalizedToolName}`,
         `Tool "${toolName}" is denied by the permission profile`,
       );
     }
@@ -45,7 +48,7 @@ export class ToolGuard {
    * rather than waiting for a denial.
    */
   isAllowed(toolName: string): boolean {
-    return isActionAllowed(this.profile, toolName);
+    return isActionAllowed(this.profile, normalizeToolName(toolName));
   }
 
   /**

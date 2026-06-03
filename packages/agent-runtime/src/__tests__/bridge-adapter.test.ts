@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -8,6 +8,7 @@ import {
   FakeBridgeAdapter,
   BridgeProcessAdapter,
   BridgeAdapterError,
+  type AgentPermissionProfile,
 } from '../index.js';
 import { readTranscript } from '../transcript.js';
 import { buildPermissionProfile } from '../permissions.js';
@@ -367,6 +368,151 @@ describe('BridgeProcessAdapter', () => {
     expect(err.kind).toBe('timeout');
     expect(err.message).toBe('test error');
     expect(err.name).toBe('BridgeAdapterError');
+  });
+
+  it('sends filtered permission profile in run_request payload', async () => {
+    const root = makeTempRoot();
+    try {
+      const bridgeScript = join(root, 'capture-bridge.mjs');
+      writeFileSync(
+        bridgeScript,
+        [
+          "import { stdin, stdout } from 'node:process';",
+          "let buffer = '';",
+          "stdin.setEncoding('utf8');",
+          "function envelope(input, kind, payload) {",
+          "  return JSON.stringify({ protocolVersion: input.protocolVersion, sessionId: input.sessionId, correlationId: input.correlationId, timestamp: new Date().toISOString(), kind, payload }) + '\\n';",
+          "}",
+          "stdin.on('data', chunk => {",
+          "  buffer += chunk;",
+          "  const lines = buffer.split('\\n');",
+          "  buffer = lines.pop() ?? '';",
+          "  for (const line of lines) {",
+          "    if (!line.trim()) continue;",
+          "    const input = JSON.parse(line);",
+          "    if (input.kind === 'handshake_request') stdout.write(envelope(input, 'handshake_response', { accepted: true }));",
+          "    if (input.kind === 'run_request') stdout.write(envelope(input, 'complete', { data: { payload: input.payload }, tokenUsage: 1 }));",
+          "  }",
+          "});",
+        ].join('\n'),
+        'utf-8',
+      );
+
+      const adapter = new BridgeProcessAdapter({
+        command: process.execPath,
+        args: [bridgeScript],
+      });
+      const store = createRunStore(root);
+      const recorder = createRunRecorder(store, root);
+      const permissionProfile: AgentPermissionProfile = {
+        allowedTools: ['Read', 'github.pr.merge'],
+        deniedTools: [],
+        permissionMode: 'default',
+        canApprovePR: false,
+        canMerge: false,
+        canReadSecrets: false,
+        canBypassRulesets: false,
+        acceptEdits: false,
+        isReadOnly: false,
+      };
+      const runId = generateRunId();
+      const runState = recorder.start({
+        runId,
+        agentId: 'bridge-test',
+        prompt: 'capture permissions',
+        resolvedConfig: { agentId: 'bridge-test', source: 'test' },
+        permissionProfile,
+      });
+
+      const result = await adapter.execute({
+        prompt: 'capture permissions',
+        runId,
+        agentId: 'bridge-test',
+        resolvedConfig: { agentId: 'bridge-test', source: 'test' },
+        permissionProfile,
+        recorder,
+        runState,
+        toolGuard: new ToolGuard(permissionProfile, recorder, runId),
+      });
+
+      const data = result.data as Record<string, unknown>;
+      const payload = data.payload as Record<string, unknown>;
+      expect(payload.allowedTools).toEqual(['Read']);
+      expect(payload.permissionMode).toBe('default');
+      expect(payload.deniedTools as string[]).toContain('github.pr.merge');
+      expect(payload.input).toEqual([{ role: 'user', content: 'capture permissions' }]);
+      expect((payload.metadata as Record<string, unknown>).integrationId).toBe('openslack');
+    } finally {
+      cleanup(root);
+    }
+  });
+
+  it('fails closed when a bridge emits approval_required', async () => {
+    const root = makeTempRoot();
+    try {
+      const bridgeScript = join(root, 'approval-bridge.mjs');
+      writeFileSync(
+        bridgeScript,
+        [
+          "import { stdin, stdout } from 'node:process';",
+          "let buffer = '';",
+          "stdin.setEncoding('utf8');",
+          "function envelope(input, kind, payload) {",
+          "  return JSON.stringify({ protocolVersion: input.protocolVersion, sessionId: input.sessionId, correlationId: input.correlationId, timestamp: new Date().toISOString(), kind, payload }) + '\\n';",
+          "}",
+          "stdin.on('data', chunk => {",
+          "  buffer += chunk;",
+          "  const lines = buffer.split('\\n');",
+          "  buffer = lines.pop() ?? '';",
+          "  for (const line of lines) {",
+          "    if (!line.trim()) continue;",
+          "    const input = JSON.parse(line);",
+          "    if (input.kind === 'handshake_request') stdout.write(envelope(input, 'handshake_response', { accepted: true }));",
+          "    if (input.kind === 'run_request') stdout.write(envelope(input, 'approval_required', { action: 'write', reason: 'needs human' }));",
+          "  }",
+          "});",
+        ].join('\n'),
+        'utf-8',
+      );
+
+      const adapter = new BridgeProcessAdapter({
+        command: process.execPath,
+        args: [bridgeScript],
+      });
+      const store = createRunStore(root);
+      const recorder = createRunRecorder(store, root);
+      const permissionProfile = buildPermissionProfile({
+        agentId: 'bridge-test',
+        source: 'test',
+        permissionMode: 'plan',
+      });
+      const runId = generateRunId();
+      const runState = recorder.start({
+        runId,
+        agentId: 'bridge-test',
+        prompt: 'needs approval',
+        resolvedConfig: { agentId: 'bridge-test', source: 'test' },
+        permissionProfile,
+      });
+
+      await expect(
+        adapter.execute({
+          prompt: 'needs approval',
+          runId,
+          agentId: 'bridge-test',
+          resolvedConfig: { agentId: 'bridge-test', source: 'test' },
+          permissionProfile,
+          recorder,
+          runState,
+          toolGuard: new ToolGuard(permissionProfile, recorder, runId),
+        }),
+      ).rejects.toThrow(/requested approval/);
+
+      const transcript = readTranscript(runId, root);
+      expect(transcript.some((event) => event.type === 'progress' && event.data.step === 'bridge_approval_required')).toBe(true);
+    } finally {
+      cleanup(root);
+    }
   });
 
   // Multi-envelope processing tests (AR-2.5B fix)

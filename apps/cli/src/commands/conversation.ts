@@ -188,6 +188,7 @@ export function conversationCommands(): Command {
                     ? runResult.data
                     : JSON.stringify(runResult.data, null, 2),
                 structured: runResult.data,
+                runId: runResult.runId,
               },
               rootDir,
             );

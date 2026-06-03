@@ -6,6 +6,11 @@ const mockListThreads = vi.fn();
 const mockGetThread = vi.fn();
 const mockAppendMessage = vi.fn();
 const mockArchiveThread = vi.fn();
+const mockLinkRunToThread = vi.fn();
+const mockResolveAgentType = vi.fn();
+const mockCreateRunStore = vi.fn();
+const mockLauncher = vi.fn();
+const mockCreateOpenSlackAgentLauncher = vi.fn((_options?: unknown) => mockLauncher);
 
 vi.mock('@openslack/collaboration', () => ({
   createThread: (opts: unknown) => mockCreateThread(opts),
@@ -13,6 +18,7 @@ vi.mock('@openslack/collaboration', () => ({
   getThread: (id: string) => mockGetThread(id),
   appendMessage: (threadId: string, msg: unknown) => mockAppendMessage(threadId, msg),
   archiveThread: (id: string) => mockArchiveThread(id),
+  linkRunToThread: (threadId: string, runId: string) => mockLinkRunToThread(threadId, runId),
   renderMessage: (msg: { kind: string; authorId?: string; text?: string; [key: string]: unknown }) => {
     const ts = new Date((msg as { timestamp?: string }).timestamp || '').toLocaleString();
     switch (msg.kind) {
@@ -28,8 +34,21 @@ vi.mock('@openslack/collaboration', () => ({
   },
 }));
 
+vi.mock('@openslack/workflows', () => ({
+  resolveAgentType: (agentId: string, rootDir: string) => mockResolveAgentType(agentId, rootDir),
+}));
+
+vi.mock('@openslack/agent-runtime', () => ({
+  createRunStore: (rootDir: string) => mockCreateRunStore(rootDir),
+  createOpenSlackAgentLauncher: (options: unknown) => mockCreateOpenSlackAgentLauncher(options),
+}));
+
 beforeEach(() => {
   vi.clearAllMocks();
+  mockCreateRunStore.mockReturnValue({ kind: 'run-store' });
+  mockLauncher.mockReset();
+  mockCreateOpenSlackAgentLauncher.mockClear();
+  mockCreateOpenSlackAgentLauncher.mockReturnValue(mockLauncher);
 });
 
 afterEach(() => {
@@ -194,6 +213,63 @@ describe('conversation CLI commands', () => {
     );
     const output = logs.join('\n');
     expect(output).toContain('MSG-NEW');
+  });
+
+  it('conversation send dispatches @agent and records the launcher runId on the response', async () => {
+    mockResolveAgentType.mockReturnValue({
+      agentId: 'anthropic_architect_aby',
+      source: 'openslack-registry',
+      runtime: 'aby_assistant',
+      bridgeMode: 'process',
+    });
+    mockLauncher.mockResolvedValue({
+      data: { response: 'Architect response' },
+      runId: 'RUN-20260603-ABC123',
+      tokenUsage: 12,
+    });
+
+    const logs: string[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => {
+      logs.push(a.map(String).join(' '));
+    });
+
+    const cmd = conversationCommands();
+    await cmd.parseAsync(
+      ['node', 'openslack conversation', 'send', 'CONV-001', '@anthropic_architect_aby review this'],
+      { from: 'node' },
+    );
+
+    logSpy.mockRestore();
+
+    expect(mockResolveAgentType).toHaveBeenCalledWith('anthropic_architect_aby', expect.any(String));
+    expect(mockLauncher).toHaveBeenCalledWith(
+      'review this',
+      expect.objectContaining({
+        label: 'anthropic_architect_aby',
+        phase: 'conversation',
+        agentType: 'anthropic_architect_aby',
+      }),
+    );
+    expect(mockAppendMessage).toHaveBeenNthCalledWith(
+      1,
+      'CONV-001',
+      expect.objectContaining({
+        kind: 'user_message',
+        text: '@anthropic_architect_aby review this',
+      }),
+    );
+    expect(mockAppendMessage).toHaveBeenNthCalledWith(
+      2,
+      'CONV-001',
+      expect.objectContaining({
+        kind: 'agent_response',
+        authorId: 'anthropic_architect_aby',
+        runId: 'RUN-20260603-ABC123',
+        structured: { response: 'Architect response' },
+      }),
+    );
+    expect(mockLinkRunToThread).toHaveBeenCalledWith('CONV-001', 'RUN-20260603-ABC123');
+    expect(logs.join('\n')).toContain('Agent "anthropic_architect_aby" dispatched');
   });
 
   it('conversation summarize shows summary', async () => {

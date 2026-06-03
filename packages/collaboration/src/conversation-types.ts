@@ -52,6 +52,7 @@ export type AgentConversationMessage =
       authorId: string;
       text: string;
       structured?: unknown;
+      runId?: string;
     }
   | {
       kind: 'tool_event';

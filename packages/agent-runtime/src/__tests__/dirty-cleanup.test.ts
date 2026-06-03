@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -230,5 +230,68 @@ describe('Dirty-state-aware worktree cleanup', () => {
     // Neither checkDirty nor cleanupWorktree should have been called
     expect(mockCheckDirty).not.toHaveBeenCalled();
     expect(mockCleanupWorktree).not.toHaveBeenCalled();
+  });
+
+  it('creates a worktree for write-capable Aby bridge runs', async () => {
+    const worktreePath = join(root, '.worktrees', 'aby-wt');
+    mkdirSync(worktreePath, { recursive: true });
+    mockCreateWorktree.mockReturnValue({
+      success: true,
+      worktreePath,
+      branchName: 'agent/aby/run-1/RUN-ABY',
+      errors: [],
+    });
+
+    const bridgeScript = join(root, 'fake-bridge.mjs');
+    writeFileSync(
+      bridgeScript,
+      [
+        "import { stdin, stdout } from 'node:process';",
+        "let buffer = '';",
+        "stdin.setEncoding('utf8');",
+        "function envelope(input, kind, payload) {",
+        "  return JSON.stringify({ protocolVersion: input.protocolVersion, sessionId: input.sessionId, correlationId: input.correlationId, timestamp: new Date().toISOString(), kind, payload }) + '\\n';",
+        "}",
+        "stdin.on('data', chunk => {",
+        "  buffer += chunk;",
+        "  const lines = buffer.split('\\n');",
+        "  buffer = lines.pop() ?? '';",
+        "  for (const line of lines) {",
+        "    if (!line.trim()) continue;",
+        "    const input = JSON.parse(line);",
+        "    if (input.kind === 'handshake_request') stdout.write(envelope(input, 'handshake_response', { accepted: true }));",
+        "    if (input.kind === 'run_request') stdout.write(envelope(input, 'complete', { data: { cwd: process.cwd(), worktreePath: input.payload.worktreePath } }));",
+        "  }",
+        "});",
+      ].join('\n'),
+      'utf-8',
+    );
+
+    const store = createRunStore(root);
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      bridgeRuntimeResolver: {
+        resolve: () => ({ command: process.execPath, args: [bridgeScript] }),
+      },
+    });
+
+    const result = await launcher('write architecture notes', {
+      label: 'aby',
+      phase: 'execute',
+      resolvedAgentConfig: {
+        agentId: 'aby',
+        source: 'openslack-registry',
+        runtime: 'aby_assistant',
+        bridgeMode: 'process',
+        permissionMode: 'default',
+      },
+    });
+
+    expect(mockCreateWorktree).toHaveBeenCalledTimes(1);
+    expect(mockCheckDirty).toHaveBeenCalledTimes(1);
+    expect(mockCleanupWorktree).toHaveBeenCalledTimes(1);
+    expect((result.data as any).cwd).toBe(worktreePath);
+    expect((result.data as any).worktreePath).toBe(worktreePath);
   });
 });

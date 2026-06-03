@@ -28,7 +28,7 @@ import {
   validateBridgeEnvelope,
   BRIDGE_PROTOCOL_VERSION,
 } from './bridge-contract.js';
-import { PermissionDeniedError } from './types.js';
+import { buildAgentRunBridgeRequestPayload } from './agent-run-bridge-request.js';
 import { BridgeLifecycleMapper } from './bridge-lifecycle.js';
 import { BridgePermissionGuard } from './bridge-permission-guard.js';
 import { BridgeWorktreeGuard } from './bridge-worktree-guard.js';
@@ -225,15 +225,18 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     // Build worktree config if available
     const worktreeConfig = BridgeWorktreeGuard.buildConfig(worktreePath);
 
+    const bridgePermissionProfile = {
+      ...permissionProfile,
+      allowedTools: outboundFiltered.allowed,
+      deniedTools: [...permissionProfile.deniedTools, ...outboundFiltered.denied],
+      permissionMode: permissionProfile.permissionMode,
+    };
+
     const sessionConfig: BridgeSessionConfig = {
       runId,
       agentId,
       prompt,
-      permissionProfile: {
-        allowedTools: outboundFiltered.allowed,
-        deniedTools: [...permissionProfile.deniedTools, ...outboundFiltered.denied],
-        permissionMode: permissionProfile.permissionMode,
-      },
+      permissionProfile: bridgePermissionProfile,
       worktreePath,
       timeout: this.options.timeoutMs ?? DEFAULT_BRIDGE_TIMEOUT_MS,
       metadata: {
@@ -261,13 +264,13 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       const execEnvelope = buildBridgeEnvelope(
         sessionId,
         runId,
-        'session_open',
-        {
-          prompt,
-          worktreePath,
-          allowedTools: permissionProfile.allowedTools,
-          deniedTools: permissionProfile.deniedTools,
-        },
+        'run_request',
+        buildAgentRunBridgeRequestPayload({
+          sessionId,
+          config: sessionConfig,
+          resolvedConfig,
+          availableMcpServers,
+        }),
       );
 
       await this.sendEnvelope(this.sessionMachine!.id, execEnvelope);
@@ -301,6 +304,18 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
 
         // Process by kind
         switch (envelope.kind) {
+          case 'run_started': {
+            lifecycle.onBridgeProgress('run_started', envelope.payload as Record<string, unknown>);
+            reconciliationEvents.push({ kind: envelope.kind, payload: envelope.payload });
+            break;
+          }
+
+          case 'assistant_text': {
+            lifecycle.onBridgeProgress('assistant_text', envelope.payload as Record<string, unknown>);
+            reconciliationEvents.push({ kind: envelope.kind, payload: envelope.payload });
+            break;
+          }
+
           case 'progress': {
             lifecycle.onBridgeProgress('event', envelope.payload as Record<string, unknown>);
             reconciliationEvents.push({ kind: envelope.kind, payload: envelope.payload });
@@ -349,6 +364,18 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
           case 'heartbeat': {
             // Liveness signal — no action needed, just prevents timeout
             break;
+          }
+
+          case 'approval_required': {
+            recorder.progress(runId, {
+              step: 'bridge_approval_required',
+              payload: envelope.payload,
+              reason: 'External bridge requested approval; OpenSlack does not accept external approval decisions',
+            });
+            throw new BridgeAdapterError(
+              'permission_denied',
+              'Bridge runtime requested approval, which is not allowed for subagent runs',
+            );
           }
 
           case 'complete': {
@@ -440,13 +467,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
   private async spawnProcess(config: BridgeSessionConfig): Promise<void> {
     const { command, args = [], env: extraEnv } = this.options;
 
-    const env: Record<string, string> = {
-      ...process.env,
-      OPENSLACK_RUN_ID: config.runId,
-      OPENSLACK_AGENT_ID: config.agentId,
-      OPENSLACK_BRIDGE_PROTOCOL_VERSION: BRIDGE_PROTOCOL_VERSION,
-      ...extraEnv,
-    };
+    const env = buildBridgeProcessEnv(config, extraEnv);
 
     const spawnOpts: Parameters<typeof spawn>[2] = {
       env,
@@ -612,6 +633,54 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       }, 5000);
     }
   }
+}
+
+function buildBridgeProcessEnv(
+  config: BridgeSessionConfig,
+  extraEnv?: Record<string, string>,
+): Record<string, string> {
+  const env: Record<string, string> = {};
+
+  // Minimal OS/runtime variables needed for process lookup and Bun/Node
+  // startup. Do not inherit arbitrary credentials from the parent shell.
+  for (const key of [
+    'PATH',
+    'Path',
+    'PATHEXT',
+    'SystemRoot',
+    'WINDIR',
+    'TEMP',
+    'TMP',
+    'HOME',
+    'USERPROFILE',
+    'APPDATA',
+    'LOCALAPPDATA',
+    'COMSPEC',
+  ]) {
+    const value = process.env[key];
+    if (typeof value === 'string') env[key] = value;
+  }
+
+  env.AGENT_RUN_ID = config.runId;
+  env.AGENT_ID = config.agentId;
+  env.AGENT_RUN_BRIDGE_PROTOCOL_VERSION = BRIDGE_PROTOCOL_VERSION;
+
+  for (const [key, value] of Object.entries(extraEnv ?? {})) {
+    if (isSafeBridgeProcessEnvKey(key)) {
+      env[key] = value;
+    }
+  }
+
+  return env;
+}
+
+function isSafeBridgeProcessEnvKey(key: string): boolean {
+  if (!/^[A-Z0-9_]+$/.test(key)) return false;
+  if (/(TOKEN|SECRET|PASSWORD|PRIVATE|PEM|CREDENTIAL|KEY)/.test(key)) return false;
+  return (
+    key === 'AGENT_RUN_BRIDGE_RUNNER' ||
+    key.startsWith('AGENT_RUN_SAFE_')
+  );
 }
 
 /**

@@ -2,12 +2,19 @@
 
 > Phase AR-2.5A-2.7: Replace Claude/Codex Adapter Preview with Aby Runtime Bridge Preview
 
-**Status**: Proposed
+**Status**: AR-2.5A-2.7 preview implemented; AR-3 runtime execution in progress
 **Date**: 2026-06-03
 **Depends on**: AR-2 PRs #146-#150 (agent-runtime baseline)
-**Review note**: This plan is scoped to a bridge preview. It must not turn Aby
+**Review note**: AR-2.5A-2.7 is scoped to a bridge preview. It must not turn Aby
 into a compile-time dependency, a CI prerequisite, or a replacement owner for
 OpenSlack's run store, permissions, transcript, or worktree lifecycle.
+
+**AR-3 baseline**: OpenSlack owns `BridgeProcessAdapter`, runtime resolution,
+and the OpenSlack-to-generic request adapter. Aby exposes only the generic L3
+`agentRunBridge.ts` JSONL entrypoint. OpenSlack resolves that entrypoint through
+`OPENSLACK_ABY_ROOT` or `.openslack.local/agent-runtime.json`; missing Aby
+configuration fails closed only for agents that explicitly request the Aby
+runtime. Local and fake adapters remain the CI/default paths.
 
 ---
 
@@ -47,21 +54,21 @@ adapter default used by workflow `ctx.agent()`.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| prompt | string | yes | Task instruction, carried in a JSON bridge envelope over stdin or a request file; avoid env vars for full prompts |
+| input | array | yes | Generic L3 messages (`system`, `user`, `tool`); prompt/task text is carried only in the JSON bridge envelope |
 | agentId | string | yes | Agent identifier from registry or subagent discovery |
 | runId | string | yes | `RUN-YYYYMMDD-XXXXXXXX` format, correlates all events |
-| permissionProfile | object | yes | allowedTools, deniedTools, permissionMode, boolean flags |
+| allowedTools | string[] | yes | OpenSlack-filtered allowed tool names |
+| deniedTools | string[] | yes | OpenSlack deny list plus tools filtered by BridgePermissionGuard |
+| permissionMode | string | yes | `plan`, `acceptEdits`, `default`, or `strict` |
 | worktreePath | string | no | Isolated git worktree path, set as CWD |
-| allowedTools | string[] | no | Derived read-only copy of permissionProfile.allowedTools for bridge convenience; not a second authority |
-| deniedTools | string[] | no | Derived read-only copy of permissionProfile.deniedTools for bridge convenience; not a second authority |
 | timeout | integer | no | Default 120000ms, from adapter or agent config |
-| metadata | object | no | model, correlationId, threadId, budget, resolvedConfig |
+| metadata | object | no | OpenSlack-owned adapter metadata such as integrationId, source, correlationId, threadId, budget, and safe resolvedConfig |
 
-Only minimal process metadata should be passed via environment variables, such
-as `OPENSLACK_RUN_ID`, `OPENSLACK_AGENT_ID`, and
-`OPENSLACK_BRIDGE_PROTOCOL_VERSION`. Full prompts, permission profiles, and
-linked-object metadata should stay in the bridge envelope so they can be
-validated, size-capped, and redacted consistently.
+Only generic process metadata is passed via environment variables:
+`AGENT_RUN_ID`, `AGENT_ID`, `AGENT_RUN_BRIDGE_PROTOCOL_VERSION`, and optional
+safe runner switches such as `AGENT_RUN_BRIDGE_RUNNER`. Full prompts,
+permission data, MCP descriptors, and linked-object metadata stay in the bridge
+envelope so they can be validated, size-capped, and redacted consistently.
 
 ### Response Bridge Schema (Aby -> OpenSlack)
 
@@ -129,6 +136,27 @@ preview.
 ---
 
 ## Integration Phases
+
+### AR-3: Aby Bridge Runtime Execution
+
+AR-3 builds on the preview contract without changing the protocol version.
+OpenSlack adds a `BridgeRuntimeResolver` that recognizes
+`runtime: "aby_assistant"` / `provider: "aby"` resolved agent configs and
+constructs a process bridge command from explicit local configuration. Aby
+exposes `src/sidecar/entrypoints/agentRunBridge.ts` as the generic public L3
+bridge entrypoint. OpenSlack-specific request and event adaptation lives only in
+OpenSlack.
+
+The first AR-3 execution target remains a single subagent run. The bridge
+entrypoint starts with an in-memory runner so the handshake/run/progress/tool/
+complete/error envelope contract can be validated before `runAgent()` is
+introduced. Aby maps generic `run_request` to a constrained `runAgent()`
+invocation, but OpenSlack still treats all Aby output as untrusted until
+`BridgePermissionGuard`, `ToolGuard`, transcript secret scanning, and worktree
+evidence checks accept it.
+
+AR-3 intentionally does not migrate Aby AppState, React Tool UI, tmux/iTerm
+teammates, remote CCR, or Perfetto telemetry into OpenSlack.
 
 ### AR-2.5A: Bridge Contract
 

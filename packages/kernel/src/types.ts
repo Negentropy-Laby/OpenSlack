@@ -202,7 +202,7 @@ export interface SubagentDefinition {
   permissionMode?: PermissionMode;
   maxTurns?: number;
   skills?: string[];
-  mcpServers?: unknown[];
+  mcpServers?: Array<string | Record<string, unknown>>;
   memory?: 'user' | 'project' | 'local' | 'none';
   isolation?: 'none' | 'worktree';
   color?: string;

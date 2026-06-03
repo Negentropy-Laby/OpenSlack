@@ -44,11 +44,12 @@ function eventIcon(type: string): string {
 }
 
 function eventSummary(e: AgentRunEvent): string {
+  const toolName = String(e.data?.toolName ?? e.data?.tool ?? 'unknown');
   switch (e.type) {
     case 'start': return `started -- ${String(e.data?.agentId ?? 'agent')}`;
     case 'progress': return `step: ${String(e.data?.step ?? 'unknown')}`;
-    case 'tool_call': return `tool: ${String(e.data?.tool ?? 'unknown')}`;
-    case 'tool_result': return `result: ${String(e.data?.tool ?? 'unknown')}`;
+    case 'tool_call': return `tool: ${toolName}`;
+    case 'tool_result': return `result: ${toolName}`;
     case 'complete': return `completed (${String(e.data?.tokenUsage ?? 0)} tokens)`;
     case 'fail': return `failed: ${String(e.data?.error ?? 'unknown error')}`;
     default: return e.type;
