@@ -16,7 +16,6 @@ import type {
   BridgeContract,
   BridgeCapabilityDescriptor,
   BridgeEnvelope,
-  BridgeEnvelopeKind,
   BridgeErrorKind,
   BridgeErrorPayload,
   BridgeSessionConfig,
@@ -33,12 +32,12 @@ import { BridgeLifecycleMapper } from './bridge-lifecycle.js';
 import { BridgePermissionGuard } from './bridge-permission-guard.js';
 import { BridgeWorktreeGuard } from './bridge-worktree-guard.js';
 import {
-  negotiateMcpServers,
   validateRequiredMcpServers,
   extractMcpToolsFromProfile,
   validateMcpToolNamespace,
   buildMcpServerDescriptors,
 } from './bridge-mcp-scope.js';
+import { buildBridgeProcessEnv } from './bridge-env.js';
 
 const DEFAULT_BRIDGE_TIMEOUT_MS = 120_000;
 const DEFAULT_HANDSHAKE_TIMEOUT_MS = 10_000;
@@ -52,7 +51,7 @@ export interface BridgeProcessAdapterOptions {
   command: string;
   /** Arguments to pass to the command. */
   args?: string[];
-  /** Environment variables merged with process.env. */
+  /** Safe bridge env variables added to the child process allowlist. */
   env?: Record<string, string>;
   /** Session timeout in milliseconds. */
   timeoutMs?: number;
@@ -202,6 +201,11 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
 
     // Validate MCP servers if configured
     const availableMcpServers = this.options.availableMcpServers ?? [];
+    recorder.progress(runId, {
+      step: 'bridge_mcp_availability',
+      required: resolvedConfig.requiredMcpServers ?? [],
+      available: availableMcpServers,
+    });
     if (resolvedConfig.requiredMcpServers && resolvedConfig.requiredMcpServers.length > 0) {
       const mcpDescriptors = buildMcpServerDescriptors(resolvedConfig.requiredMcpServers);
       validateRequiredMcpServers(mcpDescriptors, availableMcpServers);
@@ -241,7 +245,8 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       timeout: this.options.timeoutMs ?? DEFAULT_BRIDGE_TIMEOUT_MS,
       metadata: {
         model: resolvedConfig.model,
-        correlationId: runId,
+        correlationId: context.correlationId ?? runId,
+        threadId: context.threadId,
         budget: context.runState.tokensRemaining
           ? { tokens: context.runState.tokensRemaining, costUsd: 0 }
           : undefined,
@@ -431,7 +436,6 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
         tokenUsage: finalResult.tokenUsage,
       };
     } catch (err) {
-      const durationMs = Date.now() - startTime;
       const sessionId = this.sessionMachine?.id ?? 'unknown';
       const errorKind = err instanceof BridgeAdapterError ? err.kind : 'unknown';
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -635,54 +639,6 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
   }
 }
 
-function buildBridgeProcessEnv(
-  config: BridgeSessionConfig,
-  extraEnv?: Record<string, string>,
-): Record<string, string> {
-  const env: Record<string, string> = {};
-
-  // Minimal OS/runtime variables needed for process lookup and Bun/Node
-  // startup. Do not inherit arbitrary credentials from the parent shell.
-  for (const key of [
-    'PATH',
-    'Path',
-    'PATHEXT',
-    'SystemRoot',
-    'WINDIR',
-    'TEMP',
-    'TMP',
-    'HOME',
-    'USERPROFILE',
-    'APPDATA',
-    'LOCALAPPDATA',
-    'COMSPEC',
-  ]) {
-    const value = process.env[key];
-    if (typeof value === 'string') env[key] = value;
-  }
-
-  env.AGENT_RUN_ID = config.runId;
-  env.AGENT_ID = config.agentId;
-  env.AGENT_RUN_BRIDGE_PROTOCOL_VERSION = BRIDGE_PROTOCOL_VERSION;
-
-  for (const [key, value] of Object.entries(extraEnv ?? {})) {
-    if (isSafeBridgeProcessEnvKey(key)) {
-      env[key] = value;
-    }
-  }
-
-  return env;
-}
-
-function isSafeBridgeProcessEnvKey(key: string): boolean {
-  if (!/^[A-Z0-9_]+$/.test(key)) return false;
-  if (/(TOKEN|SECRET|PASSWORD|PRIVATE|PEM|CREDENTIAL|KEY)/.test(key)) return false;
-  return (
-    key === 'AGENT_RUN_BRIDGE_RUNNER' ||
-    key.startsWith('AGENT_RUN_SAFE_')
-  );
-}
-
 /**
  * Error thrown by bridge adapters with structured error kind.
  */
@@ -760,7 +716,7 @@ export class FakeBridgeAdapter implements AgentExecutionAdapter, BridgeContract 
     return 'shutdown';
   }
 
-  async sendEnvelope<T>(_sessionId: string, envelope: BridgeEnvelope<T>): Promise<void> {
+  async sendEnvelope<T>(_sessionId: string, _envelope: BridgeEnvelope<T>): Promise<void> {
     if (!this.sessionMachine || this.sessionMachine.currentState === 'shutdown') {
       throw new BridgeAdapterError('session_unavailable', 'Fake bridge session not active');
     }
@@ -777,7 +733,7 @@ export class FakeBridgeAdapter implements AgentExecutionAdapter, BridgeContract 
   // ---------------------------------------------------------------------------
 
   async execute<T>(context: AdapterExecutionContext): Promise<AdapterExecutionResult<T>> {
-    const { prompt, runId, permissionProfile, recorder, runState, toolGuard } = context;
+    const { prompt, runId, permissionProfile, recorder, toolGuard } = context;
 
     const lifecycle = new BridgeLifecycleMapper(recorder, runId);
     const guard = new BridgePermissionGuard(permissionProfile, recorder, runId);
@@ -786,6 +742,11 @@ export class FakeBridgeAdapter implements AgentExecutionAdapter, BridgeContract 
 
     // Validate MCP servers if configured
     const availableMcpServers = this.options.availableMcpServers ?? [];
+    recorder.progress(runId, {
+      step: 'bridge_mcp_availability',
+      required: context.resolvedConfig.requiredMcpServers ?? [],
+      available: availableMcpServers,
+    });
     if (context.resolvedConfig.requiredMcpServers && context.resolvedConfig.requiredMcpServers.length > 0) {
       const mcpDescriptors = buildMcpServerDescriptors(context.resolvedConfig.requiredMcpServers);
       validateRequiredMcpServers(mcpDescriptors, availableMcpServers);

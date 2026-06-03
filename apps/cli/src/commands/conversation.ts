@@ -174,6 +174,8 @@ export function conversationCommands(): Command {
               phase: 'conversation',
               agentType: agentId,
               resolvedAgentConfig: resolvedConfig,
+              correlationId: threadId,
+              threadId,
             });
 
             // Append agent response

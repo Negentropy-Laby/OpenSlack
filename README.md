@@ -89,6 +89,7 @@ OpenSlack/
 │   ├── pr/                  # PR Review & Merge Steward (fetch, classify, readiness, report)
 │   ├── operator/            # Structured planner and intent router
 │   ├── chat-gateway/        # Webhook / Slack projection frontend
+│   ├── agent-runtime/       # Agent runs, bridge adapters, transcript, permissions, Aby provider diagnostics
 │   ├── collaboration/       # Activity, digest, dashboard, handoff, decision, room views
 │   ├── tui/                  # Ink TUI views, layout primitives, terminal workbench
 │   └── workflows/           # Workflow engine: load, validate, execute, checkpoint, resume
@@ -278,6 +279,7 @@ output_contract:
 | PR review and merge governance | [`docs/product/module-04-pr-review-merge-steward.md`](docs/product/module-04-pr-review-merge-steward.md) |
 | Collaboration, handoff, decision, room, workflow views | [`docs/product/collaboration-layer.md`](docs/product/collaboration-layer.md), [`docs/developer/collaboration-events.md`](docs/developer/collaboration-events.md) |
 | Agent Conversations and subagent runtime | [`docs/product/agent-conversations.md`](docs/product/agent-conversations.md), [`docs/developer/subagent-runtime.md`](docs/developer/subagent-runtime.md) |
+| Aby external runtime setup | [`docs/guides/aby-integration.md`](docs/guides/aby-integration.md) |
 | Subagent security and permissions | [`docs/security/subagent-permissions.md`](docs/security/subagent-permissions.md) |
 | TUI workbench guide | [`docs/guides/tui-workbench.md`](docs/guides/tui-workbench.md) |
 | Workflow engine runtime and execution model | [`docs/developer/workflow-runtime.md`](docs/developer/workflow-runtime.md) |

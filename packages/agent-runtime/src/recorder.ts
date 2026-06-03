@@ -1,4 +1,4 @@
-import type { AgentRunState, AgentRunEvent, AgentRunRequest } from './types.js';
+import type { AgentRunState, AgentRunRequest } from './types.js';
 import { appendTranscriptEvent } from './transcript.js';
 import type { AgentRunStore } from './run-store.js';
 
@@ -26,8 +26,13 @@ export function createRunRecorder(store: AgentRunStore, rootDir?: string): RunRe
           data: {
             agentId: request.agentId,
             model: request.resolvedConfig.model,
+            runtime: request.resolvedConfig.runtime,
+            provider: request.resolvedConfig.provider,
+            bridgeMode: request.resolvedConfig.bridgeMode,
             permissionMode: request.permissionProfile.permissionMode,
             allowedTools: request.permissionProfile.allowedTools,
+            requiredMcpServers: request.resolvedConfig.requiredMcpServers,
+            mcpServers: request.resolvedConfig.mcpServers,
           },
         },
         rootDir,

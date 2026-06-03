@@ -248,6 +248,8 @@ describe('conversation CLI commands', () => {
         label: 'anthropic_architect_aby',
         phase: 'conversation',
         agentType: 'anthropic_architect_aby',
+        correlationId: 'CONV-001',
+        threadId: 'CONV-001',
       }),
     );
     expect(mockAppendMessage).toHaveBeenNthCalledWith(

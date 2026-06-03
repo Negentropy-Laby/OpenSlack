@@ -104,4 +104,24 @@ export {
   loadAbyBridgeRuntimeConfig,
 } from './bridge-runtime-resolver.js';
 
+export type {
+  AgentRuntimeDoctorCheck,
+  AgentRuntimeDoctorCheckStatus,
+  AgentRuntimeDoctorProvider,
+  AgentRuntimeDoctorStatus,
+  AgentRuntimeEnvAudit,
+  AbyRuntimeConfigSource,
+  AbyRuntimeDoctorReport,
+  DiagnoseAbyRuntimeOptions,
+} from './agent-runtime-doctor.js';
+export { diagnoseAbyRuntime } from './agent-runtime-doctor.js';
+
+export type { BridgeEnvAudit } from './bridge-env.js';
+export {
+  auditBridgeEnv,
+  buildBridgeProcessEnv,
+  buildSafeBridgeEnv,
+  isSafeBridgeEnvKey,
+} from './bridge-env.js';
+
 export { normalizeToolName, normalizeToolNames } from './tool-name.js';
