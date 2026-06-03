@@ -532,6 +532,19 @@ The workflow engine loads, validates, executes, checkpoints, and resumes OpenSla
 | `openslack collaboration workflow resume <runId>` | Resume a paused workflow run from its last checkpoint |
 | `openslack collaboration workflow resume <runId> --yes` | Resume with auto-approved side effects |
 | `openslack collaboration workflow resume <runId> --agent-id <id>` | Resume with agent principal authorization |
+| `openslack collaboration workflow patterns list` | List dynamic workflow orchestration patterns |
+| `openslack collaboration workflow patterns show <pattern>` | Show a dynamic workflow pattern |
+| `openslack collaboration workflow generate --prompt "..."` | Generate a safe dynamic workflow draft without running it |
+| `openslack collaboration workflow generate --pattern fanout-synthesize --prompt "..."` | Generate a draft from a specific pattern |
+| `openslack collaboration workflow preview-draft <draftId>` | Preview a generated draft's phases, budget, permissions, and side effects |
+| `openslack collaboration workflow runs list` | List recorded workflow runs |
+| `openslack collaboration workflow runs show <runId>` | Show run-level phase evidence |
+| `openslack collaboration workflow runs control <runId> --action pause` | Record a workflow run control action |
+| `openslack collaboration workflow config show` | Show project workflow policy |
+| `openslack collaboration workflow config enable --ultracode` | Enable workflows and ultracode draft triggers |
+| `openslack collaboration workflow config disable` | Disable workflow generation and execution |
+| `openslack collaboration workflow save <name> --to project` | Save a reusable workflow to project workflow storage |
+| `openslack collaboration workflow export-skill <name> --out skills/<name>` | Export a workflow as a skill-style package |
 | `openslack collaboration workflow trust <name>` | View the current trust level for a workflow |
 | `openslack collaboration workflow trust <name> --level <level>` | Set trust level (untrusted, trusted) |
 | `openslack collaboration inspect <runId>` | Inspect a workflow run (HTML, JSON, or Markdown) |
@@ -595,7 +608,18 @@ openslack collaboration inspect run-abc123 --format html --out report.html
 
 # Set a workflow to trusted level
 openslack collaboration workflow trust my-workflow --level trusted
+
+# Generate a dynamic workflow draft for a broad task
+openslack collaboration workflow generate --prompt "audit every API endpoint"
+
+# Ask the operator to draft an ultracode workflow when enabled
+openslack ask --effort ultracode "review all workflow governance gates"
 ```
+
+Dynamic workflows are best for broad, long-running, fan-out, or independently
+verified tasks. They usually spend more tokens than direct operator actions.
+`ultracode` is a draft trigger only; it does not bypass side-effect manifests,
+permission profiles, trust levels, PRMS gates, or human approval.
 
 ## Governance
 

@@ -42,6 +42,14 @@ function extractTitle(text: string): string | undefined {
 export function parseIntent(text: string): Intent {
   const q = text.toLowerCase().trim();
 
+  if (q.includes('ultracode')) {
+    return { kind: 'workflow_draft_required', slots: { query: text }, confidence: 0.95 };
+  }
+
+  if (/\buse (a )?workflow\b/i.test(text)) {
+    return { kind: 'workflow_recommended', slots: { query: text }, confidence: 0.9 };
+  }
+
   // ── PRMS ─────────────────────────────────────────────────
   // Detect PR context even without a number (for clarification)
   const hasPRContext = /\bpr\b|\bpull request\b/i.test(text);

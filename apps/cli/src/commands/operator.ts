@@ -78,29 +78,32 @@ function resolveAgentAuthOptions(agentId: string | undefined): AgentAuthOptions 
 
 async function runAsk(
   query: string,
-  options: { plan?: boolean; agentId?: string; session?: string },
+  options: { plan?: boolean; agentId?: string; session?: string; effort?: string },
 ): Promise<void> {
+  const effectiveQuery = options.effort === 'ultracode' && !/\bultracode\b/i.test(query)
+    ? `ultracode: ${query}`
+    : query;
   const sessionId = options.session || generateSessionId();
   const root = findRepoRoot();
 
-  console.log(`\nOperator: "${query}"`);
+  console.log(`\nOperator: "${effectiveQuery}"`);
   console.log('─'.repeat(50));
 
   // Load conversation history and append user turn
   const history = getRecentTurns(sessionId, 10, root);
-  const messageSlots = extractSlotsFromMessage(query);
+  const messageSlots = extractSlotsFromMessage(effectiveQuery);
 
   // Check context: affirmation/negation or slot inheritance
   const pendingPlans = listPendingPlans(root);
   const lastPending = pendingPlans.find((p) => p.state === 'pending');
 
-  let intent = await resolveIntent(query);
+  let intent = await resolveIntent(effectiveQuery);
 
   if (intent.kind === 'unknown' && history.length > 0) {
     // Maybe the query is a short response to a previous plan
     const context = resolveContext(intent, history, lastPending?.planId, query);
     if (context.type === 'confirm_last_plan' && lastPending) {
-      appendTurn(sessionId, { role: 'user', content: query, timestamp: new Date().toISOString() }, root);
+      appendTurn(sessionId, { role: 'user', content: effectiveQuery, timestamp: new Date().toISOString() }, root);
       console.log(`Confirming plan: ${lastPending.planId}`);
       updatePendingPlanState(lastPending.planId, 'approved', root);
 
@@ -123,7 +126,7 @@ async function runAsk(
     }
 
     if (context.type === 'cancel_last_plan' && lastPending) {
-      appendTurn(sessionId, { role: 'user', content: query, timestamp: new Date().toISOString() }, root);
+      appendTurn(sessionId, { role: 'user', content: effectiveQuery, timestamp: new Date().toISOString() }, root);
       updatePendingPlanState(lastPending.planId, 'cancelled', root);
       appendTurn(sessionId, { role: 'assistant', content: `Cancelled plan: ${lastPending.planId}`, intent, timestamp: new Date().toISOString() }, root);
       console.log(`Cancelled plan: ${lastPending.planId}\n`);
@@ -132,7 +135,7 @@ async function runAsk(
   }
 
   if (intent.kind === 'unknown') {
-    console.log(`I don't understand "${query}".`);
+    console.log(`I don't understand "${effectiveQuery}".`);
     console.log('Try: check status, PR #12 doctor, merge PR #12, create task, eval');
     console.log('');
     return;
@@ -153,9 +156,43 @@ async function runAsk(
   }
 
   // Append user turn with resolved intent
-  appendTurn(sessionId, { role: 'user', content: query, intent, timestamp: new Date().toISOString() }, root);
+  appendTurn(sessionId, { role: 'user', content: effectiveQuery, intent, timestamp: new Date().toISOString() }, root);
 
   const plan = planActions(intent);
+
+  if (plan.workflowRecommendation?.decision === 'workflow_draft_required' && !options.plan) {
+    try {
+      const {
+        readWorkflowPolicy,
+        generateWorkflowDraft,
+        previewWorkflowDraft,
+        renderWorkflowDraftPreview,
+      } = await import('@openslack/workflows');
+      const policy = readWorkflowPolicy({ rootDir: root });
+      if (!policy.enabled || !policy.ultracode) {
+        console.log(formatPlan(plan));
+        console.log('');
+        console.log(policy.enabled
+          ? 'Ultracode workflow draft generation is disabled. Enable with: openslack collaboration workflow config enable --ultracode'
+          : 'Workflow generation is disabled. Enable with: openslack collaboration workflow config enable');
+        return;
+      }
+      const draft = await generateWorkflowDraft({
+        prompt: effectiveQuery.replace(/^ultracode:\s*/i, ''),
+        pattern: plan.workflowRecommendation.suggestedPattern,
+        rootDir: root,
+      });
+      const preview = await previewWorkflowDraft({ draftIdOrPath: draft.path, rootDir: root });
+      console.log(formatPlan(plan));
+      console.log('');
+      console.log(renderWorkflowDraftPreview(preview));
+      appendTurn(sessionId, { role: 'assistant', content: `Workflow draft created: ${draft.draftId}`, intent, timestamp: new Date().toISOString() }, root);
+      return;
+    } catch (error) {
+      console.log(`Workflow draft generation failed: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  }
 
   try {
     recordEvent({
@@ -187,7 +224,7 @@ async function runAsk(
     }
 
     const pending = savePendingPlan({
-      query, plan, actorId: 'cli', root,
+      query: effectiveQuery, plan, actorId: 'cli', root,
       state: 'pending',
     });
     // Update clarification rounds
@@ -214,7 +251,7 @@ async function runAsk(
   console.log('');
 
   if (options.plan) {
-    const pending = savePendingPlan({ query, plan, actorId: 'cli', root });
+    const pending = savePendingPlan({ query: effectiveQuery, plan, actorId: 'cli', root });
     console.log(`Saved pending plan: ${pending.planId}`);
     console.log(`Approve later with: openslack ask plan approve ${pending.planId}`);
     appendTurn(sessionId, { role: 'assistant', content: `Plan saved: ${pending.planId}`, intent, timestamp: new Date().toISOString() }, root);
@@ -223,7 +260,7 @@ async function runAsk(
 
   let pendingPlanId: string | undefined;
   if (plan.requiresConfirmation) {
-    const pending = savePendingPlan({ query, plan, actorId: 'cli', root });
+    const pending = savePendingPlan({ query: effectiveQuery, plan, actorId: 'cli', root });
     pendingPlanId = pending.planId;
     console.log(`Saved pending plan: ${pending.planId}`);
     console.log(`Approve later with: openslack ask plan approve ${pending.planId}`);
@@ -278,7 +315,8 @@ export function buildAskCommand(): Command {
     .option('--plan', 'Show the execution plan without running it')
     .option('--agent-id <id>', 'Agent ID for authorization')
     .option('--session <id>', 'Session ID for conversation continuity')
-    .action(async (queryParts: string[], options: { plan?: boolean; agentId?: string; session?: string }) => {
+    .option('--effort <level>', 'Reasoning/workflow effort level; use ultracode to create a dynamic workflow draft')
+    .action(async (queryParts: string[], options: { plan?: boolean; agentId?: string; session?: string; effort?: string }) => {
       await runAsk(queryParts.join(' '), options);
     });
 

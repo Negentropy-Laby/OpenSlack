@@ -43,6 +43,9 @@ const KNOWN_INTENTS: IntentKind[] = [
   'pr_watch',
   'pr_merge',
   'governance_audit',
+  'workflow_recommended',
+  'workflow_not_needed',
+  'workflow_draft_required',
   'unknown',
 ];
 

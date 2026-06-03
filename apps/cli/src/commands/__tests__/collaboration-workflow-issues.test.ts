@@ -31,6 +31,22 @@ vi.mock('@openslack/workflows', () => ({
   renderRunHtml: vi.fn(),
   renderRunJson: vi.fn(),
   renderRunMarkdown: vi.fn(),
+  listWorkflowPatterns: vi.fn().mockReturnValue([]),
+  getWorkflowPattern: vi.fn(),
+  renderWorkflowPattern: vi.fn(),
+  generateWorkflowDraft: vi.fn(),
+  previewWorkflowDraft: vi.fn(),
+  renderWorkflowDraftPreview: vi.fn(),
+  readWorkflowPolicy: vi.fn().mockReturnValue({ enabled: true, ultracode: false, maxConcurrency: 16, maxAgentsPerRun: 1000, source: 'default' }),
+  writeWorkflowPolicy: vi.fn(),
+  renderWorkflowPolicy: vi.fn(),
+  listWorkflowRuns: vi.fn().mockResolvedValue([]),
+  showWorkflowRun: vi.fn(),
+  controlWorkflowRun: vi.fn(),
+  renderWorkflowRuns: vi.fn(),
+  renderWorkflowRun: vi.fn(),
+  saveWorkflow: vi.fn(),
+  exportWorkflowSkill: vi.fn(),
   TrustStore: vi.fn().mockImplementation(() => ({
     get: vi.fn().mockReturnValue('untrusted'),
     set: vi.fn(),
@@ -109,5 +125,20 @@ describe('collaboration workflow issue commands', () => {
       ?.commands.find((c) => c.name() === 'finalize-pr')
     expect(finalize).toBeDefined()
     expect(finalize?.description()).toContain('Finalize')
+  })
+
+  it('dynamic workflow parity commands exist', () => {
+    const workflow = createTestProgram().commands.find((c) => c.name() === 'collaboration')
+      ?.commands.find((c) => c.name() === 'workflow')
+    const names = workflow?.commands.map((c) => c.name()) ?? []
+    expect(names).toEqual(expect.arrayContaining([
+      'patterns',
+      'generate',
+      'preview-draft',
+      'runs',
+      'config',
+      'save',
+      'export-skill',
+    ]))
   })
 })

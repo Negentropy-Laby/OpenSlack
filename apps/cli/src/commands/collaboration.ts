@@ -37,6 +37,22 @@ import {
   renderRunHtml,
   renderRunJson,
   renderRunMarkdown,
+  listWorkflowPatterns,
+  getWorkflowPattern,
+  renderWorkflowPattern,
+  generateWorkflowDraft,
+  previewWorkflowDraft,
+  renderWorkflowDraftPreview,
+  readWorkflowPolicy,
+  writeWorkflowPolicy,
+  renderWorkflowPolicy,
+  listWorkflowRuns,
+  showWorkflowRun,
+  controlWorkflowRun,
+  renderWorkflowRuns,
+  renderWorkflowRun,
+  saveWorkflow,
+  exportWorkflowSkill,
 } from '@openslack/workflows';
 import type { DryRunResult, SimulatedEffect, AgentEventEmitter, AgentConversationEvent } from '@openslack/workflows';
 import {
@@ -117,6 +133,15 @@ function parseInputs(items: string[] | undefined): Record<string, unknown> {
     else inputs[key] = value;
   }
   return inputs;
+}
+
+function ensureWorkflowEnabled(action: string): void {
+  const policy = readWorkflowPolicy({ rootDir: findRepoRoot() });
+  if (!policy.enabled) {
+    console.error(`Workflow ${action} is disabled.`);
+    console.error(policy.reason ?? 'Enable workflows with: openslack collaboration workflow config enable');
+    process.exit(1);
+  }
 }
 
 function resolveBuiltinTemplatePath(id: string): string | undefined {
@@ -650,6 +675,7 @@ export function collaborationCommands(): Command {
     .option('--dry-run', 'Validate and execute registered actions in dry-run mode')
     .option('--agent-id <id>', 'Agent ID for authorization')
     .action(async (file: string, options: { input: string[]; dryRun?: boolean; agentId?: string }) => {
+      ensureWorkflowEnabled('execution');
       const template = loadWorkflowTemplate(file);
       const result = await executeWorkflowTemplate(template, parseInputs(options.input), {
         dryRun: options.dryRun,
@@ -708,6 +734,174 @@ export function collaborationCommands(): Command {
       console.log('Use: openslack collaboration workflow preview <id> --input key=value');
       console.log('     openslack collaboration workflow validate <name>');
       console.log('     openslack collaboration workflow show <name>');
+    });
+
+  const patterns = new Command('patterns').description('List or inspect dynamic workflow patterns');
+
+  patterns
+    .command('list')
+    .description('List dynamic workflow patterns')
+    .action(() => {
+      const items = listWorkflowPatterns();
+      console.log('| Pattern | Risk | Description |');
+      console.log('|---------|------|-------------|');
+      for (const pattern of items) {
+        console.log(`| ${pattern.id} | ${pattern.defaultRisk} | ${pattern.description} |`);
+      }
+    });
+
+  patterns
+    .command('show <pattern>')
+    .description('Show a dynamic workflow pattern')
+    .action((patternId: string) => {
+      const pattern = getWorkflowPattern(patternId);
+      if (!pattern) {
+        console.error(`Unknown workflow pattern: ${patternId}`);
+        process.exit(1);
+      }
+      console.log(renderWorkflowPattern(pattern));
+    });
+
+  workflow.addCommand(patterns);
+
+  workflow
+    .command('generate')
+    .description('Generate a dynamic workflow draft without executing it')
+    .option('--prompt <text>', 'Task prompt for the dynamic workflow')
+    .option('--pattern <pattern>', 'Pattern id, such as fanout-synthesize or tournament')
+    .option('--input <key=value>', 'Draft input hint', (value, previous: string[]) => [...previous, value], [])
+    .action(async (options: { prompt?: string; pattern?: string; input: string[] }) => {
+      ensureWorkflowEnabled('generation');
+      if (!options.prompt) {
+        console.error('Workflow draft generation requires --prompt.');
+        process.exit(1);
+      }
+      try {
+        const draft = await generateWorkflowDraft({
+          prompt: options.prompt,
+          pattern: options.pattern,
+          inputs: parseInputs(options.input),
+          rootDir: findRepoRoot(),
+        });
+        const preview = await previewWorkflowDraft({ draftIdOrPath: draft.path, rootDir: findRepoRoot() });
+        console.log('Dynamic workflow draft created.');
+        console.log(renderWorkflowDraftPreview(preview));
+        console.log('');
+        console.log(`Preview with: openslack collaboration workflow preview-draft ${draft.draftId}`);
+      } catch (err) {
+        console.error(`Workflow draft generation failed: ${(err as Error).message}`);
+        process.exit(1);
+      }
+    });
+
+  workflow
+    .command('preview-draft <draftIdOrPath>')
+    .description('Preview a generated dynamic workflow draft')
+    .action(async (draftIdOrPath: string) => {
+      try {
+        const preview = await previewWorkflowDraft({ draftIdOrPath, rootDir: findRepoRoot() });
+        console.log(renderWorkflowDraftPreview(preview));
+      } catch (err) {
+        console.error(`Workflow draft preview failed: ${(err as Error).message}`);
+        process.exit(1);
+      }
+    });
+
+  const runs = new Command('runs').description('Inspect and control workflow runs');
+
+  runs
+    .command('list')
+    .description('List workflow runs')
+    .option('--status <status>', 'Filter by run status')
+    .action(async (options: { status?: string }) => {
+      const result = await listWorkflowRuns({ rootDir: findRepoRoot(), status: options.status as never });
+      console.log(renderWorkflowRuns(result));
+    });
+
+  runs
+    .command('show <runId>')
+    .description('Show workflow run detail')
+    .action(async (runId: string) => {
+      const run = await showWorkflowRun(runId, { rootDir: findRepoRoot() });
+      if (!run) {
+        console.error(`Workflow run not found: ${runId}`);
+        process.exit(1);
+      }
+      console.log(renderWorkflowRun(run));
+    });
+
+  runs
+    .command('control <runId>')
+    .description('Record a workflow run control action')
+    .requiredOption('--action <action>', 'pause, resume, stopRun, stopAgent, restartAgent, or saveScript')
+    .action(async (runId: string, options: { action: string }) => {
+      const result = await controlWorkflowRun(runId, options.action as never, { rootDir: findRepoRoot() });
+      console.log(result.message);
+      if (result.status !== 'applied') process.exit(1);
+    });
+
+  workflow.addCommand(runs);
+
+  const config = new Command('config').description('Show or change workflow policy');
+
+  config
+    .command('show')
+    .description('Show workflow policy')
+    .action(() => {
+      console.log(renderWorkflowPolicy(readWorkflowPolicy({ rootDir: findRepoRoot() })));
+    });
+
+  config
+    .command('enable')
+    .description('Enable workflow generation and execution')
+    .option('--ultracode', 'Also enable ultracode workflow draft triggers')
+    .action((options: { ultracode?: boolean }) => {
+      console.log(renderWorkflowPolicy(writeWorkflowPolicy({ enabled: true, ...(options.ultracode ? { ultracode: true } : {}) }, { rootDir: findRepoRoot() })));
+    });
+
+  config
+    .command('disable')
+    .description('Disable workflow generation and execution')
+    .action(() => {
+      console.log(renderWorkflowPolicy(writeWorkflowPolicy({ enabled: false, reason: 'disabled by operator command' }, { rootDir: findRepoRoot() })));
+    });
+
+  workflow.addCommand(config);
+
+  workflow
+    .command('save <name>')
+    .description('Save a reusable workflow to project or user workflow storage')
+    .requiredOption('--to <target>', 'project or user')
+    .action(async (name: string, options: { to: string }) => {
+      if (options.to !== 'project' && options.to !== 'user') {
+        console.error('--to must be project or user');
+        process.exit(1);
+      }
+      try {
+        const result = await saveWorkflow(name, { rootDir: findRepoRoot(), to: options.to });
+        console.log(`Saved workflow "${result.workflowName}" to ${result.source}.`);
+        console.log(`Path: ${result.path}`);
+        console.log(`Hash: ${result.scriptHash}`);
+      } catch (err) {
+        console.error(`Workflow save failed: ${(err as Error).message}`);
+        process.exit(1);
+      }
+    });
+
+  workflow
+    .command('export-skill <name>')
+    .description('Export a workflow as a skill-style package')
+    .requiredOption('--out <path>', 'Output skill directory')
+    .action(async (name: string, options: { out: string }) => {
+      try {
+        const result = await exportWorkflowSkill(name, { rootDir: findRepoRoot(), outDir: options.out });
+        console.log(`Exported workflow "${result.workflowName}" as a skill package.`);
+        console.log(`Skill: ${result.skillPath}`);
+        console.log(`Workflow: ${result.workflowPath}`);
+      } catch (err) {
+        console.error(`Workflow skill export failed: ${(err as Error).message}`);
+        process.exit(1);
+      }
     });
 
   workflow
@@ -903,6 +1097,7 @@ export function collaborationCommands(): Command {
     .option('--budget-tokens <number>', 'Token budget for dry-run', '50000')
     .option('--agent-id <id>', 'Agent ID for authorization')
     .action(async (name: string, options: { input: string[]; budgetTokens: string; agentId?: string }) => {
+      ensureWorkflowEnabled('dry-run');
       // Try YAML template first
       const builtinPath = resolveBuiltinTemplatePath(name);
       if (builtinPath) {
@@ -979,6 +1174,7 @@ export function collaborationCommands(): Command {
     .option('--agent-id <id>', 'Agent ID for authorization')
     .option('--audit-issue', 'Create a GitHub issue to audit this workflow run', false)
     .action(async (name: string, options: { input: string[]; budgetTokens: string; yes?: boolean; agentId?: string; auditIssue?: boolean }) => {
+      ensureWorkflowEnabled('execution');
       const found = await findJsWorkflow(name);
       if (!found) {
         console.log(`JS workflow module "${name}" not found.`);
@@ -1079,6 +1275,7 @@ export function collaborationCommands(): Command {
     .option('--yes', 'Auto-approve all side effects without interactive confirmation')
     .option('--agent-id <id>', 'Agent ID for authorization')
     .action(async (runId: string, options: { yes?: boolean; agentId?: string }) => {
+      ensureWorkflowEnabled('resume');
       const root = findRepoRoot();
       const store = new RunStore({
         baseDir: join(root, '.openslack.local', 'workflows'),

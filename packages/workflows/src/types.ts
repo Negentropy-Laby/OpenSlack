@@ -45,6 +45,10 @@ export interface WorkflowMeta {
   sideEffects?: string[];
   forbidden?: string[];
   risk?: 'low' | 'medium' | 'high';
+  dynamicPattern?: string;
+  modelRouting?: Record<string, string>;
+  isolationPolicy?: Record<string, 'none' | 'worktree'>;
+  budgetPolicy?: WorkflowBudgetPolicy;
 }
 
 // ── Runtime ───────────────────────────────────────────────────────────────────
@@ -208,7 +212,7 @@ export interface WorkflowRuntime {
       | Array<(prev: unknown, item: T, index: number) => Promise<unknown>>,
     options?: PipelineOptions,
   ): Promise<R[]>;
-  workflow(name: string, args?: Record<string, unknown>): Promise<unknown>;
+  workflow: WorkflowCall;
 
   openslack: {
     task: {
@@ -235,6 +239,141 @@ export interface WorkflowRuntime {
       audit(action: string, details?: unknown): Promise<void>;
     };
   };
+}
+
+export interface FanoutSynthesizeOptions<T, R, S> {
+  items: T[];
+  worker: (item: T, index: number) => Promise<R> | R;
+  synthesizer: (results: R[]) => Promise<S> | S;
+}
+
+export interface FanoutSynthesizeResult<R, S> {
+  pattern: 'fanout-synthesize';
+  itemCount: number;
+  results: R[];
+  synthesis: S;
+}
+
+export interface AdversarialVerifyOptions<T> {
+  candidates: T[];
+  verifier: (candidate: T, index: number) => Promise<'confirmed' | 'refuted' | 'needs-human-review'> | 'confirmed' | 'refuted' | 'needs-human-review';
+}
+
+export interface AdversarialVerifyResult<T> {
+  pattern: 'adversarial-verification';
+  decisions: Array<{ candidate: T; verdict: 'confirmed' | 'refuted' | 'needs-human-review' }>;
+}
+
+export interface GenerateAndFilterOptions<T> {
+  generate: () => Promise<T[]> | T[];
+  filter: (items: T[]) => Promise<T[]> | T[];
+  topK?: number;
+}
+
+export interface TournamentOptions<T> {
+  contestants: T[];
+  judge: (a: T, b: T) => Promise<T> | T;
+}
+
+export interface TournamentResult<T> {
+  pattern: 'tournament';
+  rounds: Array<{ left: T; right: T; winner: T }>;
+  winner: T | null;
+}
+
+export interface LoopUntilDoneOptions<T> {
+  maxIterations: number;
+  step: (iteration: number, previous: T | undefined) => Promise<T> | T;
+  done: (value: T, iteration: number) => boolean;
+}
+
+export interface LoopUntilDoneResult<T> {
+  pattern: 'loop-until-done';
+  iterations: number;
+  completed: boolean;
+  result?: T;
+}
+
+export interface ModelIsolationRoute {
+  label: string;
+  model: string;
+  isolation: 'none' | 'worktree';
+  reason: string;
+}
+
+export interface WorkflowHelperAPI {
+  fanoutSynthesize<T, R, S>(options: FanoutSynthesizeOptions<T, R, S>): Promise<FanoutSynthesizeResult<R, S>>;
+  adversarialVerify<T>(options: AdversarialVerifyOptions<T>): Promise<AdversarialVerifyResult<T>>;
+  generateAndFilter<T>(options: GenerateAndFilterOptions<T>): Promise<{ pattern: 'generate-filter'; generated: number; kept: T[] }>;
+  tournament<T>(options: TournamentOptions<T>): Promise<TournamentResult<T>>;
+  loopUntilDone<T>(options: LoopUntilDoneOptions<T>): Promise<LoopUntilDoneResult<T>>;
+  routeModelAndIsolation(task: { label: string; purpose?: string; write?: boolean }): ModelIsolationRoute;
+}
+
+export type WorkflowCall = ((name: string, args?: Record<string, unknown>) => Promise<unknown>) & WorkflowHelperAPI;
+
+export interface WorkflowBudgetPolicy {
+  maxAgents?: number;
+  maxConcurrency?: number;
+  tokenBudget?: number;
+  onExceeded?: 'pause' | 'fail';
+}
+
+export interface WorkflowDisablePolicy {
+  enabled: boolean;
+  ultracode: boolean;
+  maxConcurrency: number;
+  maxAgentsPerRun: number;
+  source: 'default' | 'env' | 'project';
+  reason?: string;
+}
+
+export interface WorkflowPatternManifest {
+  id: string;
+  name: string;
+  description: string;
+  argsSchema: Record<string, unknown>;
+  defaultRisk: 'low' | 'medium' | 'high';
+  phases: WorkflowPhase[];
+  requiredCapabilities: string[];
+  useCases: string[];
+}
+
+export interface WorkflowDraft {
+  draftId: string;
+  path: string;
+  prompt: string;
+  pattern: string;
+  manifest: WorkflowMeta;
+  scriptHash: string;
+  createdAt: string;
+}
+
+export interface WorkflowDraftPreview {
+  draft: WorkflowDraft;
+  phasePlan: WorkflowPhase[];
+  requiredPermissions: WorkflowPermissions;
+  sideEffects: string[];
+  budgetEstimate: WorkflowBudgetPolicy;
+  trustRequirement: 'untrusted' | 'trusted';
+}
+
+export interface WorkflowRecommendation {
+  decision: 'workflow_recommended' | 'workflow_not_needed' | 'workflow_draft_required';
+  reason: string;
+  confidence: number;
+  suggestedPattern?: string;
+  risk: 'none' | 'low' | 'medium' | 'high';
+  nextAction: string;
+}
+
+export type WorkflowRunControlAction = 'pause' | 'resume' | 'stopRun' | 'stopAgent' | 'restartAgent' | 'saveScript';
+
+export interface WorkflowRunControlResult {
+  runId: string;
+  action: WorkflowRunControlAction;
+  status: 'applied' | 'rejected';
+  message: string;
 }
 
 // ── Results ───────────────────────────────────────────────────────────────────

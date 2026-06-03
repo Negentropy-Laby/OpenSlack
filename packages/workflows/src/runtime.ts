@@ -9,6 +9,7 @@ import type {
   PipelineOptions,
   PhaseCheckpoint,
   PrmsDoctorResult,
+  WorkflowCall,
 } from './types.js';
 import { resolvePermissions } from './permission-checker.js';
 import { executeAgentCall, computeAgentCacheKey, SchemaValidationError } from './agent-shim.js';
@@ -204,6 +205,121 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
     },
   };
 
+  // --- Workflow helper function object ---
+  const workflowCall = (async (name: string, args?: Record<string, unknown>): Promise<unknown> => {
+    if (nestingDepth >= MAX_NESTING_DEPTH) {
+      throw new Error(
+        `Workflow nesting depth limit (${MAX_NESTING_DEPTH}) exceeded. ` +
+          'Child workflows cannot call ctx.workflow() again.',
+      );
+    }
+
+    if (mode === 'validate') {
+      throw new Error('Nested workflow calls not allowed in validate mode');
+    }
+
+    if (onWorkflowCall) {
+      return onWorkflowCall(name, args);
+    }
+
+    throw new Error(`No workflow loader configured to resolve "${name}"`);
+  }) as WorkflowCall;
+
+  workflowCall.fanoutSynthesize = async (helperOptions) => {
+    const results = await runParallel(
+      helperOptions.items.map((item, index) => async () => helperOptions.worker(item, index)),
+      undefined,
+      budget,
+    );
+    const synthesis = await helperOptions.synthesizer(results);
+    return {
+      pattern: 'fanout-synthesize',
+      itemCount: helperOptions.items.length,
+      results,
+      synthesis,
+    };
+  };
+
+  workflowCall.adversarialVerify = async (helperOptions) => {
+    const decisions = await runParallel(
+      helperOptions.candidates.map((candidate, index) => async () => ({
+        candidate,
+        verdict: await helperOptions.verifier(candidate, index),
+      })),
+      undefined,
+      budget,
+    );
+    return { pattern: 'adversarial-verification', decisions };
+  };
+
+  workflowCall.generateAndFilter = async (helperOptions) => {
+    const generated = await helperOptions.generate();
+    const kept = await helperOptions.filter(generated);
+    const capped = typeof helperOptions.topK === 'number' ? kept.slice(0, helperOptions.topK) : kept;
+    return { pattern: 'generate-filter', generated: generated.length, kept: capped };
+  };
+
+  workflowCall.tournament = async (helperOptions) => {
+    let contestants = [...helperOptions.contestants];
+    const rounds: Array<{ left: (typeof contestants)[number]; right: (typeof contestants)[number]; winner: (typeof contestants)[number] }> = [];
+    while (contestants.length > 1) {
+      const next: typeof contestants = [];
+      for (let i = 0; i < contestants.length; i += 2) {
+        const left = contestants[i];
+        const right = contestants[i + 1];
+        if (right === undefined) {
+          next.push(left);
+          continue;
+        }
+        const winner = await helperOptions.judge(left, right);
+        rounds.push({ left, right, winner });
+        next.push(winner);
+      }
+      contestants = next;
+    }
+    return { pattern: 'tournament', rounds, winner: contestants[0] ?? null };
+  };
+
+  workflowCall.loopUntilDone = async (helperOptions) => {
+    if (helperOptions.maxIterations <= 0) {
+      throw new Error('loopUntilDone requires maxIterations > 0');
+    }
+    let previous: unknown;
+    for (let i = 0; i < helperOptions.maxIterations; i++) {
+      const result = await helperOptions.step(i, previous as never);
+      previous = result;
+      if (helperOptions.done(result, i)) {
+        return { pattern: 'loop-until-done', iterations: i + 1, completed: true, result };
+      }
+    }
+    return {
+      pattern: 'loop-until-done',
+      iterations: helperOptions.maxIterations,
+      completed: false,
+      result: previous as never,
+    };
+  };
+
+  workflowCall.routeModelAndIsolation = (task) => {
+    const purpose = task.purpose?.toLowerCase() ?? task.label.toLowerCase();
+    const strong = purpose.includes('security') ||
+      purpose.includes('architecture') ||
+      purpose.includes('verify') ||
+      purpose.includes('synthesize');
+    const model = strong ? 'strong' : 'cheap';
+    const isolation = task.write ? 'worktree' : 'none';
+    return {
+      label: task.label,
+      model,
+      isolation,
+      reason: task.write
+        ? 'Write-capable workflow work requires worktree isolation.'
+        : strong
+          ? 'Verification, security, architecture, and synthesis tasks route to a stronger model.'
+          : 'Classification and scan tasks use a cheaper model by default.',
+    };
+  };
+
   // --- Runtime interface ---
   const runtime: WorkflowRuntime = {
     get runId() {
@@ -340,25 +456,7 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
       ) as Promise<R[]>;
     },
 
-    async workflow(name: string, args?: Record<string, unknown>): Promise<unknown> {
-      // Check nesting depth
-      if (nestingDepth >= MAX_NESTING_DEPTH) {
-        throw new Error(
-          `Workflow nesting depth limit (${MAX_NESTING_DEPTH}) exceeded. ` +
-            'Child workflows cannot call ctx.workflow() again.',
-        );
-      }
-
-      if (mode === 'validate') {
-        throw new Error('Nested workflow calls not allowed in validate mode');
-      }
-
-      if (onWorkflowCall) {
-        return onWorkflowCall(name, args);
-      }
-
-      throw new Error(`No workflow loader configured to resolve "${name}"`);
-    },
+    workflow: workflowCall,
 
     openslack: {
       task: {

@@ -9,6 +9,7 @@ Use this page when you know what you want to do, but not which document owns it.
 | Install, run setup, and understand the product quickly | `../README.md` |
 | Follow step-by-step workflows (first run, workflows, blocked PRs, governed actions, activity, handoffs) | `guides/core-workflows.md` |
 | Configure Aby as an external agent runtime | `guides/aby-integration.md` |
+| Understand dynamic workflows and work-unit boundaries | `product/dynamic-workflows.md`, `product/agent-work-units.md` |
 | Find the exact CLI command and flags | `user-guide.md` |
 | Check current modules, packages, commands, and test counts | `status/current.md` |
 | Understand repository rules for contributors and agents | `../AGENTS.md` |
@@ -27,6 +28,7 @@ Use this page when you know what you want to do, but not which document owns it.
 | Self-evolution, risk zones, and rollback | `product/phase-1.md`, `developer/self-evolution-kernel.md`, `security/self-evolution-guardrails.md` |
 | PR review, human approval, and merge governance | `product/module-04-pr-review-merge-steward.md`, `security/human-approval.md`, `user-guide.md` |
 | Collaboration events, handoffs, decisions, rooms, and workflows | `product/collaboration-layer.md`, `developer/collaboration-events.md`, `security/collaboration-audit.md` |
+| Dynamic workflow recommendation, pattern library, drafts, and policy | `product/dynamic-workflows.md`, `product/agent-work-units.md` |
 | UX roadmap and productization plan | `product/user-experience-roadmap.md` |
 | Technical debt register | `developer/technical-debt.md` |
 

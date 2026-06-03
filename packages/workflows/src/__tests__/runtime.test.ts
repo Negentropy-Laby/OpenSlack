@@ -245,6 +245,33 @@ describe('createRuntime', () => {
       expect(onCall).toHaveBeenCalledWith('child-workflow', { arg: 1 })
     })
 
+    it('exposes dynamic workflow helpers without breaking child workflow calls', async () => {
+      const rt = makeRuntime()
+      const fanout = await rt.workflow.fanoutSynthesize({
+        items: [1, 2, 3],
+        worker: async (item) => item * 2,
+        synthesizer: async (results) => results.reduce((sum, value) => sum + value, 0),
+      })
+      expect(fanout.pattern).toBe('fanout-synthesize')
+      expect(fanout.synthesis).toBe(12)
+
+      const verify = await rt.workflow.adversarialVerify({
+        candidates: ['a', 'b'],
+        verifier: (candidate) => candidate === 'a' ? 'confirmed' : 'refuted',
+      })
+      expect(verify.decisions.map((d) => d.verdict)).toEqual(['confirmed', 'refuted'])
+
+      const tournament = await rt.workflow.tournament({
+        contestants: ['a', 'b', 'c'],
+        judge: (left) => left,
+      })
+      expect(tournament.winner).toBe('a')
+
+      const route = rt.workflow.routeModelAndIsolation({ label: 'verify', purpose: 'security verification' })
+      expect(route.model).toBe('strong')
+      expect(route.isolation).toBe('none')
+    })
+
     it('throws when nesting depth exceeds limit', async () => {
       const rt = makeRuntime({ nestingDepth: 1 })
       await expect(rt.workflow('nested')).rejects.toThrow('nesting depth limit')

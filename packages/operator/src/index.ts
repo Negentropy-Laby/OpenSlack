@@ -12,6 +12,7 @@ export {
 } from './llm.js';
 export { identifyMissingParams, buildClarificationQuestion, MAX_CLARIFICATION_ROUNDS } from './clarify.js';
 export { planActions } from './planner.js';
+export { recommendWorkflowForQuery } from './workflow-recommendation.js';
 export { assessRisk, hasSideEffects } from './risk.js';
 export { executePlan } from './executor.js';
 export { formatPlan, summarizeResults } from './summarizer.js';
@@ -52,6 +53,7 @@ export type {
   MissingParam,
   PlanStep,
   ActionPlan,
+  WorkflowRecommendation,
   RiskLevel,
   StepResult,
   ExecutionResult,

@@ -30,6 +30,17 @@ export type {
   ApprovedEffect,
   WorkflowApprovalManifest,
   ConfirmationPolicy,
+  WorkflowBudgetPolicy,
+  WorkflowDisablePolicy,
+  WorkflowPatternManifest,
+  WorkflowDraft,
+  WorkflowDraftPreview,
+  WorkflowRecommendation,
+  WorkflowRunControlAction,
+  WorkflowRunControlResult,
+  WorkflowCall,
+  WorkflowHelperAPI,
+  ModelIsolationRoute,
 } from './types.js'
 
 // ── Manifest ──────────────────────────────────────────────────────────────────
@@ -197,3 +208,48 @@ export {
   renderRunMarkdown,
 } from './html-renderer.js'
 export type { HtmlRenderOptions } from './html-renderer.js'
+
+// ── Dynamic Workflow Patterns ───────────────────────────────────────────────
+export {
+  listWorkflowPatterns,
+  getWorkflowPattern,
+  renderWorkflowPattern,
+} from './pattern-registry.js'
+
+// ── Dynamic Workflow Drafts ─────────────────────────────────────────────────
+export {
+  generateWorkflowDraft,
+  previewWorkflowDraft,
+  renderWorkflowDraftPreview,
+} from './workflow-draft.js'
+export type { GenerateWorkflowDraftOptions, PreviewWorkflowDraftOptions } from './workflow-draft.js'
+
+// ── Workflow Policy ─────────────────────────────────────────────────────────
+export {
+  readWorkflowPolicy,
+  writeWorkflowPolicy,
+  renderWorkflowPolicy,
+} from './workflow-policy.js'
+export type { WorkflowPolicyOptions } from './workflow-policy.js'
+
+// ── Workflow Runs ───────────────────────────────────────────────────────────
+export {
+  listWorkflowRuns,
+  showWorkflowRun,
+  controlWorkflowRun,
+  renderWorkflowRuns,
+  renderWorkflowRun,
+} from './workflow-runs.js'
+export type { ListWorkflowRunsOptions } from './workflow-runs.js'
+
+// ── Workflow Save / Export ─────────────────────────────────────────────────
+export {
+  saveWorkflow,
+  exportWorkflowSkill,
+} from './workflow-save.js'
+export type {
+  SaveWorkflowOptions,
+  SaveWorkflowResult,
+  ExportWorkflowSkillOptions,
+  ExportWorkflowSkillResult,
+} from './workflow-save.js'
