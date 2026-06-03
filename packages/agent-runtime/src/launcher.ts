@@ -6,6 +6,8 @@ import type { AgentRunStore } from './run-store.js';
 import { generateRunId } from './run-store.js';
 import type { AgentExecutionAdapter } from './adapter.js';
 import { LocalExecutionAdapter, ToolGuard } from './adapter.js';
+import type { BridgeMode } from './bridge-factory.js';
+import { createBridgeAdapter } from './bridge-factory.js';
 
 export interface LauncherOptions {
   runStore: AgentRunStore;
@@ -18,6 +20,11 @@ export interface LauncherOptions {
    * Override to provide external command, Claude Code, or other adapters.
    */
   adapter?: AgentExecutionAdapter;
+  /**
+   * Bridge mode for adapter selection. Only used when adapter is not explicitly provided.
+   * @see createBridgeAdapter
+   */
+  bridgeMode?: BridgeMode;
 }
 
 /**
@@ -37,8 +44,18 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
     model,
     rootDir,
     availableMcpServers = [],
-    adapter = new LocalExecutionAdapter(),
+    bridgeMode,
   } = options;
+
+  // Select default adapter: explicit adapter > global bridgeMode > local default.
+  // Per-run bridgeMode from resolvedConfig is handled inside launchAgent so
+  // that a single launcher can serve mixed local/bridge agent calls.
+  const defaultAdapter: AgentExecutionAdapter =
+    options.adapter ??
+    (bridgeMode
+      ? createBridgeAdapter({ bridgeMode, availableMcpServers })
+      : new LocalExecutionAdapter());
+
   const recorder = createRunRecorder(runStore, rootDir);
 
   return async function launchAgent<T>(
@@ -123,9 +140,16 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
     const state = recorder.start(request);
 
     try {
+      // Select adapter for this run: per-run bridgeMode > global default
+      const runBridgeMode = resolvedConfig.bridgeMode;
+      const runAdapter: AgentExecutionAdapter =
+        (runBridgeMode && runBridgeMode !== bridgeMode)
+          ? createBridgeAdapter({ bridgeMode: runBridgeMode, availableMcpServers })
+          : defaultAdapter;
+
       // Delegate execution to the adapter
       const toolGuard = new ToolGuard(permissionProfile, recorder, runId);
-      const adapterResult = await adapter.execute<T>({
+      const adapterResult = await runAdapter.execute<T>({
         prompt,
         runId,
         agentId: resolvedConfig.agentId,
@@ -140,6 +164,12 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       // Complete run with adapter-provided token usage
       recorder.complete(runId, adapterResult.data, adapterResult.tokenUsage);
 
+      recorder.progress(runId, {
+        step: 'bridge_lifecycle_complete',
+        runId,
+        status: 'completed',
+      });
+
       return {
         data: adapterResult.data,
         tokenUsage: adapterResult.tokenUsage,
@@ -147,6 +177,12 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       };
     } catch (err) {
       recorder.fail(runId, err instanceof Error ? err : new Error(String(err)));
+      recorder.progress(runId, {
+        step: 'bridge_lifecycle_complete',
+        runId,
+        status: 'failed',
+        error: err instanceof Error ? err.message : String(err),
+      });
       throw err;
     } finally {
       // Dirty-state-aware worktree cleanup: preserve worktrees with

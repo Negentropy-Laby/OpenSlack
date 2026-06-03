@@ -299,6 +299,62 @@ describe('resolveAgentType', () => {
 
   // rootDir cache-bust test
 
+  it('maps bridgeMode from registry vendor runtime=aby_assistant', () => {
+    const root = makeTempRoot();
+    try {
+      const registryDir = join(root, '.openslack', 'agents', 'registry');
+      mkdirSync(registryDir, { recursive: true });
+      writeFileSync(
+        join(registryDir, 'aby-agent.yaml'),
+        [
+          'schema: openslack.agent_registry.v1',
+          'agent_id: "aby-agent"',
+          'display_name: "Aby Agent"',
+          'employee_type: ai_agent',
+          'vendor:',
+          '  provider: "aby"',
+          '  runtime: "aby_assistant"',
+          '  model: "sonnet"',
+        ].join('\n'),
+      );
+
+      const result = resolveAgentType('aby-agent', root);
+      expect(result).not.toBeNull();
+      expect(result!.agentId).toBe('aby-agent');
+      expect(result!.source).toBe('openslack-registry');
+      expect(result!.bridgeMode).toBe('process');
+    } finally {
+      cleanup(root);
+    }
+  });
+
+  it('returns undefined bridgeMode for non-aby registry agents', () => {
+    const root = makeTempRoot();
+    try {
+      const registryDir = join(root, '.openslack', 'agents', 'registry');
+      mkdirSync(registryDir, { recursive: true });
+      writeFileSync(
+        join(registryDir, 'local-agent.yaml'),
+        [
+          'schema: openslack.agent_registry.v1',
+          'agent_id: "local-agent"',
+          'display_name: "Local Agent"',
+          'employee_type: ai_agent',
+          'vendor:',
+          '  provider: "anthropic"',
+          '  runtime: "claude_code"',
+          '  model: "sonnet"',
+        ].join('\n'),
+      );
+
+      const result = resolveAgentType('local-agent', root);
+      expect(result).not.toBeNull();
+      expect(result!.bridgeMode).toBeUndefined();
+    } finally {
+      cleanup(root);
+    }
+  });
+
   it('bypasses cache when rootDir changes', () => {
     const rootA = makeTempRoot();
     const rootB = makeTempRoot();

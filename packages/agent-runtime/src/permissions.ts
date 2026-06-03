@@ -4,7 +4,7 @@ import type { ResolvedAgentConfig, AgentPermissionProfile } from './types.js';
  * Actions that subagents are NEVER allowed to perform,
  * regardless of permission mode or declared tools.
  */
-const SUBAGENT_ALWAYS_FORBIDDEN = new Set([
+export const SUBAGENT_ALWAYS_FORBIDDEN = new Set([
   'github.pr.approve',
   'github.pr.merge',
   'ruleset.bypass',

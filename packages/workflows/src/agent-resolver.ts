@@ -46,7 +46,7 @@ function readYamlFiles(dir: string): string[] {
 function parseRegistryYaml(
   content: string,
   filePath: string,
-): { agentId: string; model?: string } | null {
+): { agentId: string; model?: string; bridgeMode?: string } | null {
   let data: Record<string, unknown>;
   try {
     data = parseYaml(content) as Record<string, unknown>;
@@ -62,8 +62,20 @@ function parseRegistryYaml(
 
   const vendor = data.vendor as Record<string, unknown> | undefined;
   const model = vendor?.model as string | undefined;
+  const runtime = vendor?.runtime as string | undefined;
+  const provider = vendor?.provider as string | undefined;
 
-  return { agentId, model: model === 'default' ? undefined : model };
+  // Map bridge hint from runtime/provider fields
+  let bridgeMode: ResolvedAgentConfig['bridgeMode'] | undefined;
+  if (runtime === 'aby_assistant' || provider === 'aby') {
+    bridgeMode = 'process';
+  }
+
+  return {
+    agentId,
+    model: model === 'default' ? undefined : model,
+    bridgeMode,
+  };
 }
 
 /**
@@ -84,6 +96,7 @@ function lookupOpenSlackRegistry(agentType: string, rootDir: string): ResolvedAg
         agentId: parsed.agentId,
         source: 'openslack-registry',
         model: parsed.model,
+        bridgeMode: parsed.bridgeMode as ResolvedAgentConfig['bridgeMode'],
       };
     }
   }
@@ -128,6 +141,7 @@ export function resolveAgentType(agentType: string, rootDir: string): ResolvedAg
       requiredMcpServers: subagent.requiredMcpServers,
       criticalSystemReminder: subagent.criticalSystemReminder,
       remote: subagent.remote,
+      bridgeMode: subagent.bridgeMode,
     };
   }
 
