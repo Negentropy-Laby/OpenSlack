@@ -14,6 +14,7 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 | Preview a task before creating an Issue | `openslack task create --title "..." --path "docs/**" --preview` | Preview is the safe first step. Add `--create-issue` only when ready. |
 | Let an agent pick up ready work | `openslack agent tick --agent-id <id> --source github-issues` | Requires a registered and bootstrapped agent identity. |
 | Diagnose an Aby external runtime | `openslack agent-runtime doctor --provider aby` | Checks local bridge configuration without launching a task. |
+| Configure an Aby external runtime | `openslack agent-runtime setup aby --root <path> --write` | Writes local gitignored bridge config after validation. |
 | Diagnose why a PR cannot merge | `openslack pr doctor <n>` | Shows blocker owner, evidence, and next action. |
 | See team state across events and PRs | `openslack collaboration dashboard` | Projection-only; does not create dashboard-specific state. |
 | Record a handoff or decision | `openslack collaboration handoff ...` / `openslack collaboration decision ...` | Creates auditable collaboration objects. |
@@ -162,6 +163,7 @@ Several commands support a `--format` option:
 
 Commands with `--format plain`:
 
+- `openslack agent-runtime doctor --provider aby --format plain`
 - `openslack pr doctor <n> --format plain`
 - `openslack doctor --format plain`
 - `openslack setup interactive --format plain`
@@ -173,6 +175,7 @@ Commands with `--format plain`:
 
 Commands with `--format tui`:
 
+- `openslack agent-runtime doctor --provider aby --format tui` — Interactive runtime diagnostics view
 - `openslack collaboration dashboard --format tui` — Interactive team dashboard with blockers, handoffs, decisions
 - `openslack collaboration room show <id> --format tui` — Focused room view for a PR or issue
 - `openslack pr doctor <n> --format tui` — Interactive PR governance diagnosis with gates, checks, reviews
@@ -264,7 +267,14 @@ approval on stale PR checks.
 
 | Command | Purpose |
 |---------|---------|
+| `openslack agent-runtime setup aby --root <path> --dry-run` | Preview the local Aby bridge configuration without writing it |
+| `openslack agent-runtime setup aby --root <path> --write` | Validate and write `.openslack.local/agent-runtime.json` |
 | `openslack agent-runtime doctor --provider aby` | Diagnose local Aby bridge runtime configuration without launching a task |
+| `openslack agent-runtime doctor --provider aby --format json` | Emit redacted structured diagnostics for scripting |
+| `openslack agent-runtime smoke --provider aby` | Run a read-only bridge smoke through the existing launcher |
+| `openslack agent-runtime smoke --provider aby --agent <agentId>` | Smoke a specific Aby-backed agent id |
+| `openslack agent-runtime mcp status --provider aby --agent <agentId>` | Show required/available MCP descriptor status for an agent |
+| `openslack agent-runtime mcp status --provider aby --run <runId>` | Show MCP tool evidence from a run transcript |
 
 Aby is a configurable external provider, not a bundled OpenSlack backend. See
 `docs/guides/aby-integration.md` for setup and smoke-test steps.

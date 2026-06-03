@@ -69,6 +69,7 @@ export {
   renderPlainWorkflowLifecycle,
   renderPlainWorkflowWorkbench,
   renderPlainDashboard,
+  renderPlainAgentRuntimeDiagnostics,
 } from './plain-render.js';
 
 // Views
@@ -89,6 +90,15 @@ export { mapPrQueueToViewModel } from './view-models/pr-queue.js';
 export { renderStatusTui } from './views/render-status.js';
 export type { StatusViewModel } from './view-models/status.js';
 export { mapStatusToViewModel } from './view-models/status.js';
+
+// Agent runtime diagnostics
+export { renderAgentRuntimeDiagnosticsTui } from './views/render-agent-runtime.js';
+export type {
+  AgentRuntimeDiagnosticsCheckViewModel,
+  AgentRuntimeDiagnosticsViewModel,
+  AgentRuntimeSmokeSummaryViewModel,
+} from './view-models/agent-runtime.js';
+export { mapAbyRuntimeDoctorToViewModel } from './view-models/agent-runtime.js';
 
 // Navigation shell
 export { renderShellTui } from './views/render-shell.js';

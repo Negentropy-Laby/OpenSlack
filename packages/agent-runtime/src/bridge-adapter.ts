@@ -89,6 +89,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
   private responseTimer: ReturnType<typeof setTimeout> | null = null;
   private processExited = false;
   private envelopeQueue: BridgeEnvelope[] = [];
+  private stderrBuffer = '';
 
   constructor(options: BridgeProcessAdapterOptions) {
     this.options = options;
@@ -117,6 +118,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     const sessionId = `bridge-${config.runId}`;
     this.processExited = false;
     this.envelopeQueue = [];
+    this.stderrBuffer = '';
     this.sessionMachine = new BridgeSessionStateMachine(sessionId);
 
     // Spawn the external process
@@ -499,6 +501,10 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
         this.handleStdoutChunk(chunk);
       });
 
+      this.process.stderr?.on('data', (chunk: Buffer) => {
+        this.captureStderr(chunk);
+      });
+
       // Handle process exit — set flag so future waitForResponse calls detect it
       this.process.on('close', (code, signal) => {
         this.processExited = true;
@@ -507,6 +513,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
             new BridgeAdapterError(
               'process_crash',
               `Bridge process exited with code ${code}, signal ${signal}`,
+              this.getStderrSummary(),
             ),
           );
           this.pendingResponse = null;
@@ -597,7 +604,11 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     // Check if process already exited before waiting
     if (this.processExited) {
       return Promise.reject(
-        new BridgeAdapterError('process_crash', 'Bridge process has already exited'),
+        new BridgeAdapterError(
+          'process_crash',
+          'Bridge process has already exited',
+          this.getStderrSummary(),
+        ),
       );
     }
 
@@ -613,13 +624,35 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
 
       this.responseTimer = setTimeout(() => {
         if (this.pendingReject) {
-          this.pendingReject(new BridgeAdapterError('timeout', `Bridge response timed out after ${timeoutMs}ms`));
+          this.pendingReject(
+            new BridgeAdapterError(
+              'timeout',
+              `Bridge response timed out after ${timeoutMs}ms`,
+              this.getStderrSummary(),
+            ),
+          );
           this.pendingResponse = null;
           this.pendingReject = null;
         }
         this.responseTimer = null;
       }, timeoutMs);
     });
+  }
+
+  private captureStderr(chunk: Buffer): void {
+    this.stderrBuffer += chunk.toString('utf-8');
+    if (this.stderrBuffer.length > 4096) {
+      this.stderrBuffer = this.stderrBuffer.slice(this.stderrBuffer.length - 4096);
+    }
+  }
+
+  private getStderrSummary(): string | undefined {
+    const lines = this.stderrBuffer
+      .split(/\r?\n/)
+      .map((line) => redactStderrLine(line.trim()))
+      .filter(Boolean)
+      .slice(-5);
+    return lines.length > 0 ? lines.join(' | ') : undefined;
   }
 
   private killProcess(): void {
@@ -644,12 +677,21 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
  */
 export class BridgeAdapterError extends Error {
   readonly kind: BridgeErrorKind;
+  readonly stderrSummary?: string;
 
-  constructor(kind: BridgeErrorKind, message: string) {
+  constructor(kind: BridgeErrorKind, message: string, stderrSummary?: string) {
     super(message);
     this.name = 'BridgeAdapterError';
     this.kind = kind;
+    this.stderrSummary = stderrSummary;
   }
+}
+
+function redactStderrLine(line: string): string {
+  return line.replace(
+    /([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PRIVATE|PEM|CREDENTIAL|KEY)[A-Z0-9_]*\s*[:=]\s*)\S+/gi,
+    '$1[redacted]',
+  );
 }
 
 /**

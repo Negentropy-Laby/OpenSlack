@@ -22,6 +22,7 @@ import type { IssuesPrViewModel } from './view-models/issues-pr.js'
 import type { SetupViewModel } from './view-models/setup.js'
 import type { StatusViewModel } from './view-models/status.js'
 import type { WorkflowPreviewViewModel } from './view-models/workflow-preview.js'
+import type { AgentRuntimeDiagnosticsViewModel } from './view-models/agent-runtime.js'
 import type { ShellViewData } from './views/render-shell.js'
 import { visibleWidth, wrapVisible, wrapIndentVisible } from './layout/index.js'
 
@@ -877,6 +878,47 @@ export function renderPlainStatus(vm: StatusViewModel, width: number = MAX_WIDTH
   return lines.join('\n')
 }
 
+export function renderPlainAgentRuntimeDiagnostics(
+  vm: AgentRuntimeDiagnosticsViewModel,
+  width: number = MAX_WIDTH,
+): string {
+  const lines: string[] = []
+  lines.push(separator('=', width))
+  lines.push(wrap(`Agent Runtime / ${vm.provider}`, width))
+  lines.push(separator('=', width))
+  lines.push(wrap(`Status: ${statusLabel(vm.status)} ${vm.status}`, width))
+  lines.push(wrap(`Config source: ${vm.configSource}`, width))
+  lines.push(wrap(`Config path: ${vm.configPath}`, width))
+  lines.push(wrap(`Aby root: ${vm.root}`, width))
+  lines.push(wrap(`Command: ${vm.command}`, width))
+  lines.push(wrap(`Args: ${vm.args.length > 0 ? vm.args.join(' ') : 'not recorded'}`, width))
+  lines.push(wrap(`Timeout: ${vm.timeoutMs}`, width))
+  lines.push('')
+  lines.push(wrap(`Safe env allowed: ${vm.safeEnvAllowed.join(', ') || 'none'}`, width))
+  lines.push(wrap(`Safe env rejected: ${vm.safeEnvRejected.join(', ') || 'none'}`, width))
+  lines.push('')
+  lines.push('Checks:')
+  for (const check of vm.checks) {
+    lines.push(wrapIndent(`  ${statusLabel(check.status)} ${check.name}: ${check.detail}`, 4, width))
+  }
+  lines.push('')
+  lines.push('Last Smoke:')
+  if (vm.lastSmokeRun) {
+    lines.push(wrap(`  Run: ${vm.lastSmokeRun.runId} (${vm.lastSmokeRun.status})`, width))
+    lines.push(wrap(`  Started: ${vm.lastSmokeRun.startedAt}`, width))
+    lines.push(wrap(`  Transcript: ${vm.lastSmokeRun.transcriptJsonl}`, width))
+  } else {
+    lines.push('  not recorded')
+  }
+  lines.push('')
+  lines.push('Remediation:')
+  for (const remediation of vm.remediations) {
+    lines.push(wrapIndent(`  - ${remediation}`, 4, width))
+  }
+  lines.push(separator('-', width))
+  return lines.join('\n')
+}
+
 export function renderPlainShell(data: ShellViewData, width: number = MAX_WIDTH): string {
   const sections: string[] = []
 
@@ -903,6 +945,9 @@ export function renderPlainShell(data: ShellViewData, width: number = MAX_WIDTH)
   }
   if (data.profile) {
     sections.push(renderPlainProfile(data.profile, width))
+  }
+  if (data.agentRuntime) {
+    sections.push(renderPlainAgentRuntimeDiagnostics(data.agentRuntime, width))
   }
 
   if (sections.length === 0) {
@@ -988,6 +1033,7 @@ export function renderPlain(viewName: string, vm: unknown, width: number = MAX_W
     case 'issues-pr': return renderPlainIssuesPr(vm as IssuesPrViewModel, width)
     case 'setup': return renderPlainSetup(vm as SetupViewModel, width)
     case 'status': return renderPlainStatus(vm as StatusViewModel, width)
+    case 'agent-runtime': return renderPlainAgentRuntimeDiagnostics(vm as AgentRuntimeDiagnosticsViewModel, width)
     case 'shell': return renderPlainShell(vm as ShellViewData, width)
     case 'workflow-preview': return renderPlainWorkflowPreview(vm as WorkflowPreviewViewModel, width)
     default: return `Plain rendering not available for view: ${viewName}`

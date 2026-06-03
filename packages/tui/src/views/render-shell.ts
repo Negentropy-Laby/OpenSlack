@@ -11,6 +11,7 @@ import type { HandoffListViewModel } from '../view-models/handoff.js'
 import type { DecisionListViewModel } from '../view-models/decision.js'
 import type { WorkflowLifecycleViewModel } from '../view-models/workflow-lifecycle.js'
 import type { ProfileViewModel } from '../view-models/profile.js'
+import type { AgentRuntimeDiagnosticsViewModel } from '../view-models/agent-runtime.js'
 import type { AgentConversationThread, AgentConversationMessage } from '@openslack/collaboration'
 
 export interface WorkflowLifecycleBaseData {
@@ -72,6 +73,7 @@ export interface ShellViewData {
   workflowLifecycleBase?: Record<string, WorkflowLifecycleBaseData>
   workflowLifecycleLoader?: WorkflowLifecycleLoader
   profile?: ProfileViewModel
+  agentRuntime?: AgentRuntimeDiagnosticsViewModel
   conversations?: {
     threads: AgentConversationThread[]
     messages: Record<string, AgentConversationMessage[]>
