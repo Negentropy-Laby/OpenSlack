@@ -46,7 +46,13 @@ function readYamlFiles(dir: string): string[] {
 function parseRegistryYaml(
   content: string,
   filePath: string,
-): { agentId: string; model?: string; bridgeMode?: string } | null {
+): {
+  agentId: string;
+  model?: string;
+  runtime?: string;
+  provider?: string;
+  bridgeMode?: string;
+} | null {
   let data: Record<string, unknown>;
   try {
     data = parseYaml(content) as Record<string, unknown>;
@@ -74,6 +80,8 @@ function parseRegistryYaml(
   return {
     agentId,
     model: model === 'default' ? undefined : model,
+    runtime,
+    provider,
     bridgeMode,
   };
 }
@@ -96,6 +104,8 @@ function lookupOpenSlackRegistry(agentType: string, rootDir: string): ResolvedAg
         agentId: parsed.agentId,
         source: 'openslack-registry',
         model: parsed.model,
+        runtime: parsed.runtime,
+        provider: parsed.provider,
         bridgeMode: parsed.bridgeMode as ResolvedAgentConfig['bridgeMode'],
       };
     }
@@ -134,10 +144,12 @@ export function resolveAgentType(agentType: string, rootDir: string): ResolvedAg
       permissionMode: subagent.permissionMode,
       isolation: subagent.isolation,
       prompt: subagent.prompt,
+      maxTurns: subagent.maxTurns,
       effort: subagent.effort,
       hooks: subagent.hooks,
       initialPrompt: subagent.initialPrompt,
       background: subagent.background,
+      mcpServers: extractMcpServerNames(subagent.mcpServers),
       requiredMcpServers: subagent.requiredMcpServers,
       criticalSystemReminder: subagent.criticalSystemReminder,
       remote: subagent.remote,
@@ -146,4 +158,30 @@ export function resolveAgentType(agentType: string, rootDir: string): ResolvedAg
   }
 
   return null;
+}
+
+function extractMcpServerNames(
+  specs: SubagentDefinition['mcpServers'],
+): string[] | undefined {
+  if (!specs || specs.length === 0) return undefined;
+
+  const names = new Set<string>();
+  for (const spec of specs) {
+    if (typeof spec === 'string') {
+      const trimmed = spec.trim();
+      if (trimmed) names.add(trimmed);
+      continue;
+    }
+    if (!spec || typeof spec !== 'object' || Array.isArray(spec)) continue;
+    const named = (spec as Record<string, unknown>).name;
+    if (typeof named === 'string' && named.trim()) {
+      names.add(named.trim());
+      continue;
+    }
+    for (const key of Object.keys(spec)) {
+      if (key.trim()) names.add(key.trim());
+    }
+  }
+
+  return names.size > 0 ? [...names] : undefined;
 }

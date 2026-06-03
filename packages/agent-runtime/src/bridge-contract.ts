@@ -68,8 +68,10 @@ export interface BridgeEnvelope<T = unknown> {
 export type BridgeEnvelopeKind =
   | 'handshake_request'
   | 'handshake_response'
-  | 'session_open'
-  | 'session_close'
+  | 'run_request'
+  | 'run_started'
+  | 'assistant_text'
+  | 'approval_required'
   | 'tool_request'
   | 'tool_response'
   | 'progress'
@@ -84,6 +86,30 @@ export interface BridgeErrorPayload {
   kind: BridgeErrorKind;
   message: string;
   details?: Record<string, unknown>;
+}
+
+/**
+ * Generic L3 Agent Run Bridge request sent to external runtimes.
+ * OpenSlack-specific governance fields stay outside this wire payload and
+ * are enforced locally by BridgePermissionGuard and ToolGuard.
+ */
+export interface AgentRunBridgeRequestPayload {
+  runId: string;
+  agentId: string;
+  sessionId?: string;
+  input: Array<{ role: 'user' | 'system' | 'tool'; content: unknown }>;
+  worktreePath?: string;
+  allowedTools: string[];
+  deniedTools: string[];
+  permissionMode: PermissionMode;
+  model?: string;
+  effort?: 'low' | 'medium' | 'high' | number;
+  maxTurns?: number;
+  mcp?: {
+    required: string[];
+    available: string[];
+  };
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -331,8 +357,10 @@ export function validateBridgeEnvelope(envelope: unknown): { valid: boolean; err
   const validKinds: BridgeEnvelopeKind[] = [
     'handshake_request',
     'handshake_response',
-    'session_open',
-    'session_close',
+    'run_request',
+    'run_started',
+    'assistant_text',
+    'approval_required',
     'tool_request',
     'tool_response',
     'progress',

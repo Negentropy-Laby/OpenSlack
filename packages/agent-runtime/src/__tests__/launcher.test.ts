@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createOpenSlackAgentLauncher, createRunStore, FakeBridgeAdapter, BridgeFactory } from '../index.js';
@@ -188,5 +188,90 @@ describe('createOpenSlackAgentLauncher', () => {
       (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'bridge_lifecycle_complete',
     );
     expect(lifecycleEvent).toBeUndefined();
+  });
+
+  it('uses the runtime resolver for per-run process bridge agents', async () => {
+    const store = createRunStore(root);
+    const bridgeScript = join(root, 'fake-bridge.mjs');
+    writeFileSync(
+      bridgeScript,
+      [
+        "import { stdin, stdout } from 'node:process';",
+        "let buffer = '';",
+        "stdin.setEncoding('utf8');",
+        "function envelope(input, kind, payload) {",
+        "  return JSON.stringify({ protocolVersion: input.protocolVersion, sessionId: input.sessionId, correlationId: input.correlationId, timestamp: new Date().toISOString(), kind, payload }) + '\\n';",
+        "}",
+        "stdin.on('data', chunk => {",
+        "  buffer += chunk;",
+        "  const lines = buffer.split('\\n');",
+        "  buffer = lines.pop() ?? '';",
+        "  for (const line of lines) {",
+        "    if (!line.trim()) continue;",
+        "    const input = JSON.parse(line);",
+        "    if (input.kind === 'handshake_request') stdout.write(envelope(input, 'handshake_response', { accepted: true }));",
+        "    if (input.kind === 'run_request') stdout.write(envelope(input, 'complete', { data: { ok: true, payload: input.payload, env: { prompt: process.env.OPENSLACK_AGENT_PROMPT ?? null, anthropicKey: process.env.ANTHROPIC_API_KEY ?? null, runner: process.env.AGENT_RUN_BRIDGE_RUNNER ?? null, safeTrace: process.env.AGENT_RUN_SAFE_TRACE ?? null, oldRunId: process.env.OPENSLACK_RUN_ID ?? null, oldAgentId: process.env.OPENSLACK_AGENT_ID ?? null, runId: process.env.AGENT_RUN_ID ?? null, agentId: process.env.AGENT_ID ?? null } }, tokenUsage: 7 }));",
+        "  }",
+        "});",
+      ].join('\n'),
+      'utf-8',
+    );
+
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      availableMcpServers: ['github'],
+      bridgeRuntimeResolver: {
+        resolve: () => ({
+          command: process.execPath,
+          args: [bridgeScript],
+          env: {
+            ANTHROPIC_API_KEY: 'must-not-leak',
+            AGENT_RUN_BRIDGE_RUNNER: 'fake',
+            AGENT_RUN_SAFE_TRACE: '1',
+          },
+        }),
+      },
+    });
+
+    const result = await launcher('hello bridge', {
+      label: 'aby',
+      phase: 'execute',
+      resolvedAgentConfig: {
+        agentId: 'aby',
+        source: 'test',
+        runtime: 'aby_assistant',
+        bridgeMode: 'process',
+        permissionMode: 'plan',
+        model: 'sonnet',
+        effort: 'high',
+        maxTurns: 4,
+        requiredMcpServers: ['github'],
+      },
+    });
+
+    expect((result.data as any).ok).toBe(true);
+    expect((result.data as any).payload.input).toEqual([{ role: 'user', content: 'hello bridge' }]);
+    expect((result.data as any).payload.runId).toBe(result.runId);
+    expect((result.data as any).payload.agentId).toBe('aby');
+    expect((result.data as any).payload.model).toBe('sonnet');
+    expect((result.data as any).payload.effort).toBe('high');
+    expect((result.data as any).payload.maxTurns).toBe(4);
+    expect((result.data as any).payload.allowedTools).toContain('Read');
+    expect((result.data as any).payload.permissionMode).toBe('plan');
+    expect((result.data as any).payload.mcp).toEqual({ required: ['github'], available: ['github'] });
+    expect((result.data as any).payload.metadata.integrationId).toBe('openslack');
+    expect((result.data as any).payload.metadata.resolvedConfig.model).toBe('sonnet');
+    expect((result.data as any).env).toMatchObject({
+      prompt: null,
+      anthropicKey: null,
+      runner: 'fake',
+      safeTrace: '1',
+      oldRunId: null,
+      oldAgentId: null,
+      runId: result.runId,
+      agentId: 'aby',
+    });
+    expect(result.tokenUsage).toBe(7);
   });
 });

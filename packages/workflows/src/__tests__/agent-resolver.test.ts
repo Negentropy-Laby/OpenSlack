@@ -222,7 +222,15 @@ describe('resolveAgentType', () => {
           'name: AR Agent',
           'description: An agent with Phase AR fields',
           'model: sonnet',
+          'maxTurns: 8',
           'effort: high',
+          'mcpServers:',
+          '  - github',
+          '  - slack:',
+          '      command: should-not-forward',
+          '  - name: sentry',
+          '    env:',
+          '      SECRET_TOKEN: should-not-forward',
           'hooks:',
           '  before: scripts/before.sh',
           '  after: scripts/after.sh',
@@ -242,7 +250,9 @@ describe('resolveAgentType', () => {
       expect(result).not.toBeNull();
       expect(result!.agentId).toBe('ar-agent');
       expect(result!.model).toBe('sonnet');
+      expect(result!.maxTurns).toBe(8);
       expect(result!.effort).toBe('high');
+      expect(result!.mcpServers).toEqual(['github', 'slack', 'sentry']);
       expect(result!.hooks).toEqual({ before: 'scripts/before.sh', after: 'scripts/after.sh' });
       expect(result!.initialPrompt).toBe('Start here');
       expect(result!.background).toBe(true);
@@ -322,6 +332,8 @@ describe('resolveAgentType', () => {
       expect(result).not.toBeNull();
       expect(result!.agentId).toBe('aby-agent');
       expect(result!.source).toBe('openslack-registry');
+      expect(result!.runtime).toBe('aby_assistant');
+      expect(result!.provider).toBe('aby');
       expect(result!.bridgeMode).toBe('process');
     } finally {
       cleanup(root);

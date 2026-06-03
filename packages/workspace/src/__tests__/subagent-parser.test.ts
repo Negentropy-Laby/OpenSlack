@@ -89,6 +89,20 @@ You are a fully specified agent.`;
     expect(result.remote).toBe(true);
   });
 
+  it('accepts Aby-style mcpServers string references', () => {
+    const content = `---
+name: MCP Agent
+description: Uses named MCP servers
+mcpServers:
+  - github
+  - slack
+---
+Use MCP tools.`;
+
+    const result = parseSubagentMarkdown(content, '/fake/mcp-agent.md');
+    expect(result.mcpServers).toEqual(['github', 'slack']);
+  });
+
   it('parses valid frontmatter with only required fields', () => {
     const content = `---
 name: Minimal Agent

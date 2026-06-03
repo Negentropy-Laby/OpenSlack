@@ -12,6 +12,7 @@ import type { AgentPermissionProfile } from './types.js';
 import { SUBAGENT_ALWAYS_FORBIDDEN } from './permissions.js';
 import type { RunRecorder } from './recorder.js';
 import type { BridgeEnvelope } from './bridge-contract.js';
+import { normalizeToolName } from './tool-name.js';
 
 /**
  * Guards bridge envelopes against permission violations.
@@ -159,9 +160,10 @@ export class BridgePermissionGuard {
    * including SUBAGENT_ALWAYS_FORBIDDEN enforcement.
    */
   private isToolAllowed(toolName: string): boolean {
-    if (SUBAGENT_ALWAYS_FORBIDDEN.has(toolName)) return false;
-    if (this.profile.deniedTools.includes(toolName)) return false;
-    return this.profile.allowedTools.includes(toolName);
+    const normalized = normalizeToolName(toolName);
+    if (SUBAGENT_ALWAYS_FORBIDDEN.has(normalized)) return false;
+    if (this.profile.deniedTools.map(normalizeToolName).includes(normalized)) return false;
+    return this.profile.allowedTools.map(normalizeToolName).includes(normalized);
   }
 
   /**
@@ -176,7 +178,7 @@ export class BridgePermissionGuard {
 
     for (const field of actionFields) {
       const value = payload[field];
-      if (typeof value === 'string' && SUBAGENT_ALWAYS_FORBIDDEN.has(value)) {
+      if (typeof value === 'string' && SUBAGENT_ALWAYS_FORBIDDEN.has(normalizeToolName(value))) {
         return value;
       }
     }
@@ -196,7 +198,7 @@ export class BridgePermissionGuard {
 
     for (const field of actionFields) {
       const value = record[field];
-      if (typeof value === 'string' && SUBAGENT_ALWAYS_FORBIDDEN.has(value)) {
+      if (typeof value === 'string' && SUBAGENT_ALWAYS_FORBIDDEN.has(normalizeToolName(value))) {
         return value;
       }
     }
@@ -219,6 +221,7 @@ export class BridgePermissionGuard {
     this.recorder.progress(this.runId, {
       step: 'bridge_permission_denied',
       toolName,
+      normalizedToolName: normalizeToolName(toolName),
       context,
       reason: `Tool "${toolName}" is denied by BridgePermissionGuard`,
     });

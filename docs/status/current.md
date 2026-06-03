@@ -92,9 +92,9 @@ supersedes:
 
 ## Test Suite
 
-2997 Vitest tests across 216 files. All passing.
+3174 Vitest tests across 225 files. All passing.
 
-Module-attributed coverage: 3381 tests across 321 module test files (packages shared across modules are counted per module).
+Module-attributed coverage: 3395 tests across 323 module test files (packages shared across modules are counted per module).
 
 Note: The test counts shown above are module-attributed counts from .openslack/modules.yaml, where each test file is counted once per module that claims it. The raw Vitest total (bun run test) may differ because it deduplicates across module boundaries. Use module counts for coverage tracking; use raw Vitest output for CI verification.
 

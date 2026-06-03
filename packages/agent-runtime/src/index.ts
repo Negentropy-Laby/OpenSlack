@@ -44,6 +44,7 @@ export type {
   BridgeEnvelope,
   BridgeEnvelopeKind,
   BridgeErrorPayload,
+  AgentRunBridgeRequestPayload,
   BridgeContract,
   BridgeSessionConfig,
 } from './bridge-contract.js';
@@ -54,6 +55,8 @@ export {
   buildBridgeEnvelope,
   validateBridgeEnvelope,
 } from './bridge-contract.js';
+export type { BuildAgentRunBridgeRequestOptions } from './agent-run-bridge-request.js';
+export { buildAgentRunBridgeRequestPayload } from './agent-run-bridge-request.js';
 
 // Bridge adapter (AR-2.5B)
 export type { BridgeProcessAdapterOptions, FakeBridgeAdapterOptions } from './bridge-adapter.js';
@@ -88,3 +91,17 @@ export {
 // Bridge factory (AR-2.7)
 export type { BridgeMode, BridgeFactoryOptions } from './bridge-factory.js';
 export { BridgeFactory, createBridgeAdapter, BridgeFactoryError } from './bridge-factory.js';
+
+export type {
+  AbyBridgeRuntimeConfig,
+  BridgeRuntimeResolver,
+  BridgeRuntimeResolverOptions,
+} from './bridge-runtime-resolver.js';
+export {
+  BridgeRuntimeConfigError,
+  createBridgeRuntimeResolver,
+  isAbyRuntime,
+  loadAbyBridgeRuntimeConfig,
+} from './bridge-runtime-resolver.js';
+
+export { normalizeToolName, normalizeToolNames } from './tool-name.js';

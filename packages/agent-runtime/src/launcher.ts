@@ -8,6 +8,11 @@ import type { AgentExecutionAdapter } from './adapter.js';
 import { LocalExecutionAdapter, ToolGuard } from './adapter.js';
 import type { BridgeMode } from './bridge-factory.js';
 import { createBridgeAdapter } from './bridge-factory.js';
+import type { BridgeRuntimeResolver } from './bridge-runtime-resolver.js';
+import {
+  BridgeRuntimeConfigError,
+  createBridgeRuntimeResolver,
+} from './bridge-runtime-resolver.js';
 
 export interface LauncherOptions {
   runStore: AgentRunStore;
@@ -25,6 +30,12 @@ export interface LauncherOptions {
    * @see createBridgeAdapter
    */
   bridgeMode?: BridgeMode;
+  /**
+   * Resolves provider-specific process bridge configuration. Defaults to the
+   * OpenSlack local resolver, which uses OPENSLACK_ABY_ROOT or
+   * .openslack.local/agent-runtime.json for Aby runtimes.
+   */
+  bridgeRuntimeResolver?: BridgeRuntimeResolver;
 }
 
 /**
@@ -46,6 +57,9 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
     availableMcpServers = [],
     bridgeMode,
   } = options;
+  const bridgeRuntimeResolver =
+    options.bridgeRuntimeResolver ??
+    createBridgeRuntimeResolver({ rootDir });
 
   // Select default adapter: explicit adapter > global bridgeMode > local default.
   // Per-run bridgeMode from resolvedConfig is handled inside launchAgent so
@@ -89,13 +103,36 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       }
     }
 
-    // Enforce worktree isolation for implementer agents
+    // Build permission profile before worktree selection so Aby bridge runs
+    // with write-capable tools are isolated even when the registry did not
+    // explicitly request a worktree.
+    const permissionProfile = buildPermissionProfile(resolvedConfig);
+
+    // Validate profile
+    const { valid: profileValid, violations } = validatePermissionProfile(permissionProfile);
+    if (!profileValid) {
+      throw new PermissionDeniedError('profile.validation', violations.join('; '));
+    }
+
+    // Enforce worktree isolation for implementer agents and write-capable
+    // Aby bridge agents.
     let worktreePath: string | undefined;
     let worktreeBranchName: string | undefined;
     const isImplementer =
       resolvedConfig.agentId?.toLowerCase().includes('implement') ||
       resolvedConfig.prompt?.toLowerCase().includes('implement');
-    const needsWorktree = resolvedConfig.isolation === 'worktree' || isImplementer;
+    const isAbyBridgeRun =
+      resolvedConfig.bridgeMode === 'process' &&
+      (resolvedConfig.runtime === 'aby_assistant' ||
+        resolvedConfig.runtime === 'aby' ||
+        resolvedConfig.provider === 'aby');
+    const isWriteCapable =
+      permissionProfile.permissionMode !== 'plan' ||
+      permissionProfile.allowedTools.some((tool) => ['Edit', 'Write', 'Bash'].includes(tool));
+    const needsWorktree =
+      resolvedConfig.isolation === 'worktree' ||
+      isImplementer ||
+      (isAbyBridgeRun && isWriteCapable);
 
     const runId = agentOptions.agentRunId ?? generateRunId();
 
@@ -116,15 +153,6 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       worktreeBranchName = wtResult.branchName;
     }
 
-    // Build permission profile
-    const permissionProfile = buildPermissionProfile(resolvedConfig);
-
-    // Validate profile
-    const { valid: profileValid, violations } = validatePermissionProfile(permissionProfile);
-    if (!profileValid) {
-      throw new PermissionDeniedError('profile.validation', violations.join('; '));
-    }
-
     // Build run request
     const request: AgentRunRequest = {
       runId,
@@ -141,9 +169,22 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
 
     // Select adapter for this run: per-run bridgeMode > global default
     const runBridgeMode = resolvedConfig.bridgeMode;
+    const runtimeOptions =
+      runBridgeMode === 'process'
+        ? bridgeRuntimeResolver.resolve(resolvedConfig)
+        : null;
+    if (runBridgeMode === 'process' && !runtimeOptions?.command) {
+      throw new BridgeRuntimeConfigError(
+        `Process bridge requested for agent "${resolvedConfig.agentId}" but no bridge command was resolved.`,
+      );
+    }
     const runAdapter: AgentExecutionAdapter =
       (runBridgeMode && runBridgeMode !== bridgeMode)
-        ? createBridgeAdapter({ bridgeMode: runBridgeMode, availableMcpServers })
+        ? createBridgeAdapter({
+            bridgeMode: runBridgeMode,
+            availableMcpServers,
+            ...(runtimeOptions ?? {}),
+          })
         : defaultAdapter;
 
     try {

@@ -144,10 +144,15 @@ export function parseSubagentMarkdown(content: string, filePath: string): Subage
     if (!Array.isArray(data.mcpServers))
       throw new Error(`Subagent file "${filePath}" field "mcpServers" must be an array`);
     if (
-      !(data.mcpServers as unknown[]).every((v): v is object => typeof v === 'object' && v !== null)
+      !(data.mcpServers as unknown[]).every(
+        (v): v is string | Record<string, unknown> =>
+          typeof v === 'string' || (typeof v === 'object' && v !== null && !Array.isArray(v)),
+      )
     )
-      throw new Error(`Subagent file "${filePath}" field "mcpServers" must contain only objects`);
-    def.mcpServers = data.mcpServers as unknown[];
+      throw new Error(
+        `Subagent file "${filePath}" field "mcpServers" must contain only strings or objects`,
+      );
+    def.mcpServers = data.mcpServers as Array<string | Record<string, unknown>>;
   }
   if (data.memory !== undefined) {
     const validMemory = ['user', 'project', 'local', 'none'];

@@ -23,16 +23,20 @@ export interface AgentPermissionProfile {
 export interface ResolvedAgentConfig {
   agentId: string;
   source: string;
+  runtime?: string;
+  provider?: string;
   model?: string;
   tools?: string[];
   disallowedTools?: string[];
   permissionMode?: PermissionMode;
   isolation?: string;
   prompt?: string;
+  maxTurns?: number;
   effort?: 'low' | 'medium' | 'high';
   hooks?: { before?: string; after?: string };
   initialPrompt?: string;
   background?: boolean;
+  mcpServers?: string[];
   requiredMcpServers?: string[];
   criticalSystemReminder?: string;
   remote?: boolean;
