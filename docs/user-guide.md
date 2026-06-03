@@ -13,6 +13,7 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 | Ask OpenSlack what to do | `openslack ask "检查系统状态"` | Uses the local keyword router first; LLM fallback is optional. |
 | Preview a task before creating an Issue | `openslack task create --title "..." --path "docs/**" --preview` | Preview is the safe first step. Add `--create-issue` only when ready. |
 | Let an agent pick up ready work | `openslack agent tick --agent-id <id> --source github-issues` | Requires a registered and bootstrapped agent identity. |
+| Diagnose an Aby external runtime | `openslack agent-runtime doctor --provider aby` | Checks local bridge configuration without launching a task. |
 | Diagnose why a PR cannot merge | `openslack pr doctor <n>` | Shows blocker owner, evidence, and next action. |
 | See team state across events and PRs | `openslack collaboration dashboard` | Projection-only; does not create dashboard-specific state. |
 | Record a handoff or decision | `openslack collaboration handoff ...` / `openslack collaboration decision ...` | Creates auditable collaboration objects. |
@@ -134,6 +135,7 @@ Manage agent lifecycle and task claiming.
 bun run openslack agent hire --agent-id <id>    # Generate onboarding package
 bun run openslack agent bootstrap --agent-id <id>  # Verify readiness
 bun run openslack agent tick --agent-id <id> --source github-issues  # Claim work
+bun run openslack agent-runtime doctor --provider aby  # Diagnose Aby bridge config
 ```
 
 ### Repository Admin
@@ -257,6 +259,15 @@ approval on stale PR checks.
 | `openslack agent hire --agent-id <id>` | Generate onboarding package |
 | `openslack agent bootstrap --agent-id <id>` | Verify agent readiness |
 | `openslack agent tick --agent-id <id> --source github-issues` | Claim a task from GitHub |
+
+## Agent Runtime
+
+| Command | Purpose |
+|---------|---------|
+| `openslack agent-runtime doctor --provider aby` | Diagnose local Aby bridge runtime configuration without launching a task |
+
+Aby is a configurable external provider, not a bundled OpenSlack backend. See
+`docs/guides/aby-integration.md` for setup and smoke-test steps.
 
 ## Task
 

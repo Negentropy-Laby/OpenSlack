@@ -88,6 +88,10 @@ export interface AdapterExecutionContext {
   permissionProfile: AgentPermissionProfile;
   /** Path to worktree if isolation is active, undefined otherwise. */
   worktreePath?: string;
+  /** Optional external correlation ID for workflow/conversation projections. */
+  correlationId?: string;
+  /** Optional conversation thread ID linked to this run. */
+  threadId?: string;
   /** Run recorder for emitting transcript events. */
   recorder: RunRecorder;
   /** Current run state (snapshot from recorder.start). */

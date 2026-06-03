@@ -8,6 +8,7 @@ Use this page when you know what you want to do, but not which document owns it.
 |------|------|
 | Install, run setup, and understand the product quickly | `../README.md` |
 | Follow step-by-step workflows (first run, workflows, blocked PRs, governed actions, activity, handoffs) | `guides/core-workflows.md` |
+| Configure Aby as an external agent runtime | `guides/aby-integration.md` |
 | Find the exact CLI command and flags | `user-guide.md` |
 | Check current modules, packages, commands, and test counts | `status/current.md` |
 | Understand repository rules for contributors and agents | `../AGENTS.md` |
@@ -22,6 +23,7 @@ Use this page when you know what you want to do, but not which document owns it.
 | GitHub Issues task loop | `developer/github-issues-loop.md`, `user-guide.md` |
 | GitHub watch daemon and realtime Issue notifications | `developer/github-watch-daemon.md`, `product/user-experience-roadmap.md` |
 | Agent identity and onboarding | `developer/agent-registry-schema.md`, `developer/new-agent-onboarding.md` |
+| Aby external runtime setup | `guides/aby-integration.md`, `developer/aby-bridge-integration-plan.md` |
 | Self-evolution, risk zones, and rollback | `product/phase-1.md`, `developer/self-evolution-kernel.md`, `security/self-evolution-guardrails.md` |
 | PR review, human approval, and merge governance | `product/module-04-pr-review-merge-steward.md`, `security/human-approval.md`, `user-guide.md` |
 | Collaboration events, handoffs, decisions, rooms, and workflows | `product/collaboration-layer.md`, `developer/collaboration-events.md`, `security/collaboration-audit.md` |

@@ -159,6 +159,65 @@ export default function AgentRunDetailView({
       ),
     ),
 
+    React.createElement(
+      Pane,
+      { title: 'Observability', marginY: 0 },
+      React.createElement(
+        Box,
+        { flexDirection: 'column' },
+        React.createElement(
+          Box,
+          { flexDirection: 'row' },
+          React.createElement(ThemedText, { colorTheme: 'muted' }, 'Runtime: '),
+          React.createElement(ThemedText, { colorTheme: 'foreground' }, model.runtimeProvider),
+        ),
+        React.createElement(
+          Box,
+          { flexDirection: 'row' },
+          React.createElement(ThemedText, { colorTheme: 'muted' }, 'Bridge Session: '),
+          React.createElement(ThemedText, { colorTheme: 'foreground' }, model.bridgeSessionId),
+        ),
+        React.createElement(
+          Box,
+          { flexDirection: 'row' },
+          React.createElement(ThemedText, { colorTheme: 'muted' }, 'Terminal Reason: '),
+          React.createElement(ThemedText, { colorTheme: 'foreground' }, model.terminalReason),
+        ),
+        React.createElement(
+          Box,
+          { flexDirection: 'row' },
+          React.createElement(ThemedText, { colorTheme: 'muted' }, 'MCP Required: '),
+          React.createElement(
+            ThemedText,
+            { colorTheme: 'foreground' },
+            model.mcpRequired.length > 0 ? model.mcpRequired.join(', ') : 'none',
+          ),
+        ),
+        React.createElement(
+          Box,
+          { flexDirection: 'row' },
+          React.createElement(ThemedText, { colorTheme: 'muted' }, 'MCP Available: '),
+          React.createElement(
+            ThemedText,
+            { colorTheme: 'foreground' },
+            model.mcpAvailable.length > 0 ? model.mcpAvailable.join(', ') : 'none',
+          ),
+        ),
+        React.createElement(
+          Box,
+          { flexDirection: 'row' },
+          React.createElement(ThemedText, { colorTheme: 'muted' }, 'Permission Denies: '),
+          React.createElement(ThemedText, { colorTheme: 'foreground' }, String(model.permissionDenies)),
+        ),
+        React.createElement(
+          Box,
+          { flexDirection: 'row' },
+          React.createElement(ThemedText, { colorTheme: 'muted' }, 'Worktree Handoff: '),
+          React.createElement(ThemedText, { colorTheme: 'foreground' }, model.worktreeHandoffStatus),
+        ),
+      ),
+    ),
+
     // Isolation section
     ...(model.worktreePath
       ? [

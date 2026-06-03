@@ -86,6 +86,8 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       resolvedAgentId?: string;
       resolvedAgentConfig?: import('./types.js').ResolvedAgentConfig;
       agentRunId?: string;
+      correlationId?: string;
+      threadId?: string;
     },
   ): Promise<{ data: T; tokenUsage?: number; runId: string }> {
     const resolvedConfig = agentOptions.resolvedAgentConfig ?? {
@@ -159,6 +161,8 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       resolvedConfig,
       permissionProfile,
       budget: agentOptions.budget,
+      correlationId: agentOptions.correlationId,
+      threadId: agentOptions.threadId,
       worktreePath,
     };
 
@@ -195,6 +199,8 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
         resolvedConfig,
         permissionProfile,
         worktreePath,
+        correlationId: agentOptions.correlationId,
+        threadId: agentOptions.threadId,
         recorder,
         runState: state,
         toolGuard,

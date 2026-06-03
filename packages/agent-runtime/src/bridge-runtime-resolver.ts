@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { isAbsolute, join, resolve } from 'node:path';
 import type { BridgeFactoryOptions } from './bridge-factory.js';
 import type { ResolvedAgentConfig } from './types.js';
+import { buildSafeBridgeEnv } from './bridge-env.js';
 
 export interface AbyBridgeRuntimeConfig {
   root?: string;
@@ -141,25 +142,4 @@ function readPositiveInteger(value: unknown): number | undefined {
 function resolveConfiguredPath(pathValue: string, rootDir?: string): string {
   if (isAbsolute(pathValue)) return resolve(pathValue);
   return resolve(rootDir ?? process.cwd(), pathValue);
-}
-
-function buildSafeBridgeEnv(input?: Record<string, string>): Record<string, string> | undefined {
-  if (!input) return undefined;
-
-  const output: Record<string, string> = {};
-  for (const [key, value] of Object.entries(input)) {
-    if (!isSafeBridgeEnvKey(key)) continue;
-    output[key] = value;
-  }
-
-  return Object.keys(output).length > 0 ? output : undefined;
-}
-
-function isSafeBridgeEnvKey(key: string): boolean {
-  if (!/^[A-Z0-9_]+$/.test(key)) return false;
-  if (/(TOKEN|SECRET|PASSWORD|PRIVATE|PEM|CREDENTIAL|KEY)/.test(key)) return false;
-  return (
-    key === 'AGENT_RUN_BRIDGE_RUNNER' ||
-    key.startsWith('AGENT_RUN_SAFE_')
-  );
 }
