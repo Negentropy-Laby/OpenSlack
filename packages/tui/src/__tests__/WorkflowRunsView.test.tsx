@@ -134,7 +134,7 @@ describe('WorkflowRunsView', () => {
     expect(output).toContain('[1] Project workflow - .openslack/workflows')
     expect(output).toContain('[2] Claude project - .claude/workflows')
     expect(output).toContain('[3] User workflow - ~/.claude/workflows')
-    expect(output).toContain('[4] Skill package - skills/<name>')
+    expect(output).toContain('[4] Skill package - skills/<name> (CLI only)')
     expect(output).toContain('This saves source only. It does not copy transcripts, secrets, or local evidence.')
     expect(output).toContain('dynamic-audit')
     expect(output).toContain('Scan')

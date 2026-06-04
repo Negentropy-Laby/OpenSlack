@@ -31,7 +31,7 @@ const SAVE_TARGET_OPTIONS: SaveTargetOption[] = [
   { key: '1', label: 'Project workflow', detail: '.openslack/workflows', target: 'project' },
   { key: '2', label: 'Claude project', detail: '.claude/workflows', target: 'claude-project' },
   { key: '3', label: 'User workflow', detail: '~/.claude/workflows', target: 'user' },
-  { key: '4', label: 'Skill package', detail: 'skills/<name>' },
+  { key: '4', label: 'Skill package', detail: 'skills/<name> (CLI only)' },
 ]
 
 export interface WorkflowRunsViewProps {
@@ -111,7 +111,7 @@ export default function WorkflowRunsView({ model, actionHandlers, onBack }: Work
       : undefined
     if (action === 'saveScript') {
       if (!saveTargetOption.target) {
-        setMessage(`Use: openslack collaboration workflow export-skill ${selectedRun.workflowName} --out skills/${selectedRun.workflowName}`)
+        setMessage(`CLI only. Use: openslack collaboration workflow export-skill ${selectedRun.workflowName} --out skills/${selectedRun.workflowName}`)
         return
       }
       if (actionHandlers?.saveWorkflowRunScript) {
@@ -155,8 +155,10 @@ export default function WorkflowRunsView({ model, actionHandlers, onBack }: Work
     if (input === 'R') void applyAction('restartAgent')
     if (input === 's') void applyAction('saveScript')
     if (input === 'S') setSaveTargetIndex(saveTargetIndex + 1)
-    const saveOptionIndex = SAVE_TARGET_OPTIONS.findIndex((option) => option.key === input)
-    if (saveOptionIndex >= 0) setSaveTargetIndex(saveOptionIndex)
+    if (selectedRun) {
+      const saveOptionIndex = SAVE_TARGET_OPTIONS.findIndex((option) => option.key === input)
+      if (saveOptionIndex >= 0) setSaveTargetIndex(saveOptionIndex)
+    }
   })
 
   return React.createElement(

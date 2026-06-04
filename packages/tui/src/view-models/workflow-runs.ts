@@ -124,6 +124,7 @@ export function deriveWorkflowRunDecisionSummary(run: WorkflowRunProgressItem): 
   }
 
   if (run.budget.status === 'exceeded') {
+    // Older run evidence may omit onExceeded; keep the summary useful without inventing a policy.
     const nextAction = run.budget.onExceeded === 'pause'
       ? 'open approvals or increase budget'
       : run.budget.onExceeded === 'fail'
