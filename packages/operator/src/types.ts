@@ -34,6 +34,7 @@ export type IntentKind =
   | 'workflow_recommended'
   | 'workflow_not_needed'
   | 'workflow_draft_required'
+  | 'profile_sync'
   | 'unknown';
 
 export interface Intent {

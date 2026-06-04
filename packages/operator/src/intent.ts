@@ -39,6 +39,17 @@ function extractTitle(text: string): string | undefined {
   return flag?.[1]?.trim();
 }
 
+function looksProfileSync(q: string): boolean {
+  return /\bprofile[- ]?sync\b|\bprofile\b.*\b(drift|sync|preview|check)\b|\bgithub\b.*\bprofile\b/i.test(q) ||
+    /主页|主頁|个人主页|個人主頁|画像|档案|檔案/.test(q);
+}
+
+function extractProfileSyncAction(q: string): 'check' | 'preview' | 'create-pr' {
+  if (q.includes('preview') || q.includes('预览') || q.includes('預覽')) return 'preview';
+  if (q.includes('run') || q.includes('create pr') || q.includes('创建') || q.includes('建立')) return 'create-pr';
+  return 'check';
+}
+
 function looksWorkflowShaped(q: string): boolean {
   if (/\bpr\s*#?\d+|\bpull request\s*#?\d+/i.test(q)) return false;
   const broadScope = /\b(all|every|across|multiple|many|open prs?|prs|pull requests?|issues?|endpoints?|packages?|codebase|migration)\b/i.test(q) ||
@@ -63,6 +74,10 @@ export function parseIntent(text: string): Intent {
     return { kind: 'workflow_recommended', slots: { query: text }, confidence: 0.85 };
   }
 
+  if (looksProfileSync(q)) {
+    return { kind: 'profile_sync', slots: { action: extractProfileSyncAction(q), query: text }, confidence: 0.85 };
+  }
+
   // ── PRMS ─────────────────────────────────────────────────
   // Detect PR context even without a number (for clarification)
   const hasPRContext = /\bpr\b|\bpull request\b/i.test(text);
@@ -70,6 +85,10 @@ export function parseIntent(text: string): Intent {
 
   if ((q.includes('pr') || q.includes('pull request')) && (q.includes('queue') || q.includes('队列'))) {
     return { kind: 'pr_queue', slots: {}, confidence: 0.9 };
+  }
+
+  if (!prNumber && hasPRContext && (q.includes('check') || q.includes('检查') || q.includes('status') || q.includes('状态') || q.includes('review') || q.includes('审查'))) {
+    return { kind: 'pr_queue', slots: {}, confidence: 0.8 };
   }
 
   // "merge PR" without number → still recognize intent

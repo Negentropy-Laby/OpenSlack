@@ -28,6 +28,27 @@ export interface WorkflowLifecycleBaseData {
 import type { TuiActionResult } from '../actions/types.js'
 export type WorkflowSaveTarget = 'project' | 'user' | 'claude-project'
 
+export interface ConversationActionCard {
+  id: string
+  label: string
+  detail: string
+  kind: 'route' | 'command' | 'workflow_draft' | 'approval' | 'agent_run'
+  route?: string
+  routeParams?: Record<string, unknown>
+  command?: string
+  prompt?: string
+  riskLevel: 'none' | 'low' | 'medium' | 'high'
+  confirmationRequired: boolean
+  linkedObject?: { kind: 'issue' | 'pr' | 'workflow_run'; id: string }
+}
+
+export interface TuiAskResult {
+  threadId: string
+  status: 'recorded' | 'planned' | 'agent_dispatched' | 'error'
+  message: string
+  cards: ConversationActionCard[]
+}
+
 export type WorkflowLifecycleLoader = (
   workflowName: string,
   baseData?: WorkflowLifecycleBaseData,
@@ -65,6 +86,8 @@ export interface TuiActionHandlers {
   splitWorkflowIntoIssues?: (workflowName: string, parentIssue?: number) => Promise<TuiActionResult>
   openWorkflowLifecycle?: (workflowName: string) => Promise<TuiActionResult>
   finalizeWorkflowPr?: (workflowName: string, prNumber: number) => Promise<TuiActionResult>
+  submitWorkbenchAsk?: (input: string, threadId?: string) => Promise<TuiAskResult>
+  recordWorkbenchAction?: (threadId: string, card: ConversationActionCard, message: string) => Promise<TuiActionResult>
   profileSync?: ProfileActionHandlers
 }
 

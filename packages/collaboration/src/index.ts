@@ -91,6 +91,7 @@ export {
   archiveThread,
   pruneExpiredThreads,
   linkRunToThread,
+  linkObjectToThread,
   getConversationsDirForTesting,
 } from './conversation-store.js';
 

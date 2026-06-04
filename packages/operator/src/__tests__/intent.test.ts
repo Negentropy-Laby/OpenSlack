@@ -159,4 +159,17 @@ describe('parseIntent', () => {
       expect(i.kind).toBe('status');
     });
   });
+
+  describe('conversation-first workbench', () => {
+    it('routes broad PR checks without a number to the PR queue', () => {
+      const i = parseIntent('检查 PR');
+      expect(i.kind).toBe('pr_queue');
+    });
+
+    it('routes profile sync requests to profile sync intent', () => {
+      const i = parseIntent('检查 GitHub 主页是否需要更新');
+      expect(i.kind).toBe('profile_sync');
+      expect(i.slots.action).toBe('check');
+    });
+  });
 });

@@ -13,6 +13,7 @@ export {
 export { identifyMissingParams, buildClarificationQuestion, MAX_CLARIFICATION_ROUNDS } from './clarify.js';
 export { planActions } from './planner.js';
 export { recommendWorkflowForQuery } from './workflow-recommendation.js';
+export { buildTuiAskPlan } from './tui-ask.js';
 export { assessRisk, hasSideEffects } from './risk.js';
 export { executePlan } from './executor.js';
 export { formatPlan, summarizeResults } from './summarizer.js';
@@ -74,6 +75,7 @@ export type {
 export type { PendingPlan, PlanApprovalState } from './plan-store.js';
 export type { ConversationTurn, Conversation } from './conversation-store.js';
 export type { ContextResolution } from './context-resolver.js';
+export type { ConversationActionCard, TuiAskPlan } from './tui-ask.js';
 export { getRoleGuide, listRoles, renderGuide } from './guides.js';
 export type { RoleGuide, RoleGuideSection } from './guides.js';
 export {

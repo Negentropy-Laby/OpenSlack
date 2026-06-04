@@ -43,7 +43,13 @@ export { TuiActionCategory, TuiRiskLevel, TuiActionStatus, REQUIRES_CONFIRMATION
 export type { TuiAction, TuiActionResult, TuiActionState } from './actions/types.js';
 export { useActionDispatch } from './actions/use-action-dispatch.js';
 export type { UseActionDispatchReturn } from './actions/use-action-dispatch.js';
-export type { TuiActionHandlers, ApprovalExecutionParams } from './views/render-shell.js';
+export type { TuiActionHandlers, ApprovalExecutionParams, ConversationActionCard, TuiAskResult } from './views/render-shell.js';
+
+// Conversation-first workbench UI
+export { default as AskBar } from './components/AskBar.js';
+export type { AskBarProps, AskBarSubmit } from './components/AskBar.js';
+export { default as ActionCard } from './components/ActionCard.js';
+export type { ActionCardProps } from './components/ActionCard.js';
 
 // Design system — action UI
 export { default as ConfirmationDialog } from './design-system/ConfirmationDialog.js';

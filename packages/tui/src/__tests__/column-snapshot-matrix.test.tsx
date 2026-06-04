@@ -106,7 +106,8 @@ describe.each(COLUMN_WIDTHS)('at %d columns', (cols) => {
 
     expect(output).toContain('OpenSlack')
     expect(output).toContain('ready')
-    expect(output).toContain('What do you want to do?')
+    expect(output).toContain('Ask OpenSlack:')
+    expect(output).toContain('Suggested shortcuts')
     expect(output).toContain('See what needs attention')
     expect(output).toContain('Start or continue work')
     expect(output).toContain('Review and merge PRs')
@@ -371,7 +372,8 @@ describe.each(COLUMN_WIDTHS)('at %d columns', (cols) => {
 
     expect(output).toContain('OpenSlack')
     expect(output).toContain('ready')
-    expect(output).toContain('What do you want to do?')
+    expect(output).toContain('Ask OpenSlack:')
+    expect(output).toContain('Suggested shortcuts')
     assertNoLineExceedsWidth(output, cols)
   })
 

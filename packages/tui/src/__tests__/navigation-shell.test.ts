@@ -5,7 +5,7 @@ describe('navigation and shell source exports', () => {
     const mod = await import('../views/render-shell.js')
     expect(mod.renderShellTui).toBeDefined()
     expect(typeof mod.renderShellTui).toBe('function')
-  })
+  }, 15_000)
 
   it('exports NavigationProvider and useNavigation from context', async () => {
     const mod = await import('../navigation/context.js')

@@ -1,12 +1,17 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import {
   executeApproval,
   executeTrustChange,
   executeWorkflowRun,
+  recordWorkbenchActionFromTui,
   saveWorkflowRunScriptFromTui,
   splitWorkflowIntoIssues,
   startWorkflowFromPattern,
   startWorkflowFromPrompt,
+  submitWorkbenchAskFromTui,
 } from '../commands/tui-executors.js'
 import type { ApprovalExecutionParams } from '../commands/tui-executors.js'
 import { TrustStore } from '@openslack/workflows'
@@ -17,16 +22,24 @@ import * as github from '@openslack/github'
 
 // ── Module-level mocks ──────────────────────────────────────────────────────────
 
-vi.mock('@openslack/operator', () => ({
-  updatePendingPlanState: vi.fn(),
-  listPendingPlans: vi.fn(),
-}))
+vi.mock('@openslack/operator', async () => {
+  const actual = await vi.importActual<typeof import('@openslack/operator')>('@openslack/operator')
+  return {
+    ...actual,
+    updatePendingPlanState: vi.fn(),
+    listPendingPlans: vi.fn(),
+  }
+})
 
-vi.mock('@openslack/collaboration', () => ({
-  recordDecision: vi.fn(),
-  listHandoffs: vi.fn(() => []),
-  recordEvent: vi.fn(),
-}))
+vi.mock('@openslack/collaboration', async () => {
+  const actual = await vi.importActual<typeof import('@openslack/collaboration')>('@openslack/collaboration')
+  return {
+    ...actual,
+    recordDecision: vi.fn(),
+    listHandoffs: vi.fn(() => []),
+    recordEvent: vi.fn(),
+  }
+})
 
 vi.mock('@openslack/pr', () => ({
   mergeIfReady: vi.fn(),
@@ -708,5 +721,96 @@ describe('executeApproval workflow-effect with runId', () => {
         tags: expect.arrayContaining(['workflow-effect', 'tui', 'run-run-001']),
       }),
     )
+  })
+})
+
+// ── conversation-first workbench ask handlers ─────────────────────────────────
+
+describe('conversation-first workbench ask handlers', () => {
+  let tempRoot: string
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    tempRoot = mkdtempSync(join(tmpdir(), 'openslack-tui-ask-'))
+  })
+
+  afterEach(() => {
+    rmSync(tempRoot, { recursive: true, force: true })
+  })
+
+  it('creates a workbench thread and records user ask plus plan summary', async () => {
+    const result = await submitWorkbenchAskFromTui('check status', tempRoot, 'tui-user')
+
+    expect(result.status).toBe('planned')
+    expect(result.threadId).toMatch(/^CONV-/)
+    expect(result.message).toContain('status')
+    expect(result.cards.some(card => card.route === 'status')).toBe(true)
+
+    const stored = collaboration.getThread(result.threadId, tempRoot)
+    expect(stored?.thread.title).toBe('OpenSlack Workbench Session')
+    expect(stored?.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'user_message',
+        authorId: 'tui-user',
+        text: 'check status',
+      }),
+      expect.objectContaining({
+        kind: 'plan',
+        authorId: 'openslack',
+        steps: expect.arrayContaining([expect.stringContaining('status')]),
+      }),
+    ]))
+  })
+
+  it('does not create a workbench thread for empty input', async () => {
+    const result = await submitWorkbenchAskFromTui('   ', tempRoot, 'tui-user')
+
+    expect(result.status).toBe('error')
+    expect(collaboration.listThreads({ rootDir: tempRoot })).toHaveLength(0)
+  })
+
+  it('records action card execution and links referenced objects', async () => {
+    const ask = await submitWorkbenchAskFromTui('PR #42 status', tempRoot, 'tui-user')
+    expect(ask.cards).toEqual(expect.arrayContaining([
+      expect.objectContaining({ command: 'openslack pr status 42' }),
+    ]))
+    const card = ask.cards.find(item => item.linkedObject?.kind === 'pr')
+    expect(card).toBeDefined()
+
+    const result = await recordWorkbenchActionFromTui(
+      ask.threadId,
+      card!,
+      'Use: openslack pr status 42',
+      tempRoot,
+      'tui-user',
+    )
+
+    expect(result.success).toBe(true)
+    const stored = collaboration.getThread(ask.threadId, tempRoot)
+    expect(stored?.thread.linkedObjects).toContainEqual({ kind: 'pr', id: '42' })
+    expect(stored?.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'tool_event',
+        toolName: 'tui.action_card',
+        input: expect.objectContaining({ id: card!.id, kind: card!.kind }),
+        output: expect.objectContaining({ message: 'Use: openslack pr status 42' }),
+      }),
+    ]))
+  })
+
+  it('records missing subagent mentions as user messages without dispatching', async () => {
+    const result = await submitWorkbenchAskFromTui('@missing-agent review PR #42', tempRoot, 'tui-user')
+
+    expect(result.status).toBe('recorded')
+    expect(result.cards).toHaveLength(0)
+    expect(result.message).toContain('Agent "missing-agent" not found')
+
+    const stored = collaboration.getThread(result.threadId, tempRoot)
+    expect(stored?.messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'user_message',
+        text: '@missing-agent review PR #42',
+      }),
+    ]))
   })
 })

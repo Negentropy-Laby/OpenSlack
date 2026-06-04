@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react'
+import React, { useCallback, useState } from 'react'
 import Box from '../ink/components/Box.js'
 import Text from '../ink/components/Text.js'
 import useApp from '../ink/hooks/use-app.js'
@@ -9,9 +9,16 @@ import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
 import { useNavigation } from '../navigation/context.js'
 import { useClampedIndex } from '../hooks/use-clamped-index.js'
 import type { HomeViewModel, TaskItem, RecommendedAction } from '../view-models/home.js'
+import AskBar from '../components/AskBar.js'
+import ActionCard from '../components/ActionCard.js'
+import type { AskBarSubmit } from '../components/AskBar.js'
+import type { ConversationActionCard, TuiActionHandlers, TuiAskResult } from './render-shell.js'
 
 export type HomeViewProps = {
   model: HomeViewModel
+  actionHandlers?: TuiActionHandlers
+  onAskSubmit?: (input: AskBarSubmit, threadId?: string) => Promise<TuiAskResult | void> | TuiAskResult | void
+  askState?: { value?: string; busy?: boolean; message?: string }
 }
 
 /**
@@ -67,6 +74,8 @@ interface CombinedItem {
   groupCategory?: TaskGroupCategory
 }
 
+type FocusRegion = 'ask' | 'cards' | 'menu'
+
 const URGENCY_COLOR: Record<RecommendedAction['urgency'], 'warning' | 'info' | 'muted'> = {
   governance: 'warning',
   blocker: 'warning',
@@ -111,7 +120,7 @@ function buildCombinedItems(model: HomeViewModel): CombinedItem[] {
   return items
 }
 
-export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
+export default function HomeView({ model, actionHandlers, onAskSubmit, askState }: HomeViewProps): React.JSX.Element {
   const { exit } = useApp()
   const { push } = useNavigation()
 
@@ -120,6 +129,17 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
   const totalCount = combined.length
 
   const [selectedIndex, setSelectedIndex] = useClampedIndex(totalCount)
+  const [focusRegion, setFocusRegion] = useState<FocusRegion>('ask')
+  const [askValue, setAskValue] = useState(askState?.value ?? '')
+  const [askBusy, setAskBusy] = useState(Boolean(askState?.busy))
+  const [askMessage, setAskMessage] = useState<string | undefined>(askState?.message)
+  const [askResult, setAskResult] = useState<TuiAskResult | undefined>()
+  const [askHistory, setAskHistory] = useState<string[]>([])
+  const [historyCursor, setHistoryCursor] = useState<number | undefined>()
+  const cards = askResult?.cards ?? []
+  const [selectedCardIndex, setSelectedCardIndex] = useClampedIndex(cards.length)
+
+  const askFocused = focusRegion === 'ask'
 
   const handleItemClick = useCallback((index: number) => {
     push({ view: combined[index].route })
@@ -138,7 +158,194 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
     }
   }
 
+  const submitAsk = useCallback(async () => {
+    const text = askValue.trim()
+    if (!text || askBusy) return
+    setAskBusy(true)
+    setAskMessage('Planning request...')
+    try {
+      const submit = onAskSubmit
+        ? (value: string, threadId?: string) => onAskSubmit({ text: value }, threadId)
+        : actionHandlers?.submitWorkbenchAsk
+      if (!submit) {
+        const fallback: TuiAskResult = {
+          threadId: askResult?.threadId ?? '',
+          status: 'recorded',
+          message: `Use: openslack ask "${text.replace(/"/g, '\\"')}"`,
+          cards: [{
+            id: 'fallback-ask',
+            label: 'Use OpenSlack Ask',
+            detail: 'This TUI session does not provide an ask handler.',
+            kind: 'command',
+            command: `openslack ask "${text.replace(/"/g, '\\"')}"`,
+            riskLevel: 'none',
+            confirmationRequired: false,
+          }],
+        }
+        setAskResult(fallback)
+        setAskMessage(fallback.message)
+        setFocusRegion('cards')
+        return
+      }
+      const result = await submit(text, askResult?.threadId)
+      if (result) {
+        setAskResult(result)
+        setAskMessage(result.message.split('\n')[0])
+        if (result.cards.length > 0) setFocusRegion('cards')
+      }
+      setAskHistory(prev => [text, ...prev.filter(item => item !== text)].slice(0, 20))
+      setHistoryCursor(undefined)
+      setAskValue('')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setAskMessage(`Ask failed: ${message}`)
+      setAskResult({
+        threadId: askResult?.threadId ?? '',
+        status: 'error',
+        message,
+        cards: [],
+      })
+    } finally {
+      setAskBusy(false)
+    }
+  }, [actionHandlers, askBusy, askResult?.threadId, askValue, onAskSubmit])
+
+  const executeCard = useCallback(async (card: ConversationActionCard) => {
+    const threadId = askResult?.threadId
+    const record = async (message: string) => {
+      if (threadId && actionHandlers?.recordWorkbenchAction) {
+        await actionHandlers.recordWorkbenchAction(threadId, card, message)
+      }
+    }
+
+    if ((card.kind === 'route' || card.kind === 'approval') && card.route) {
+      const message = card.confirmationRequired
+        ? `Opening ${card.label}; confirmation is still required.`
+        : `Opening ${card.label}.`
+      setAskMessage(message)
+      await record(message)
+      push({ view: card.route, params: card.routeParams })
+      return
+    }
+
+    if (card.kind === 'workflow_draft') {
+      if (card.prompt && actionHandlers?.startWorkflowFromPrompt) {
+        try {
+          setAskBusy(true)
+          const result = await actionHandlers.startWorkflowFromPrompt(card.prompt)
+          setAskMessage(result.message)
+          await record(result.message)
+        } catch (err) {
+          const message = `Workflow draft failed: ${err instanceof Error ? err.message : String(err)}`
+          setAskMessage(message)
+          await record(message)
+        } finally {
+          setAskBusy(false)
+        }
+        return
+      }
+      const message = card.command ? `Use: ${card.command}` : 'Workflow draft handler is not available.'
+      setAskMessage(message)
+      await record(message)
+      return
+    }
+
+    if (card.kind === 'agent_run' && card.route) {
+      const message = `Opening ${card.label}.`
+      setAskMessage(message)
+      await record(message)
+      push({ view: card.route, params: card.routeParams })
+      return
+    }
+
+    const message = card.command ? `Use: ${card.command}` : `${card.label} is not executable in this TUI session.`
+    setAskMessage(message)
+    await record(message)
+  }, [actionHandlers, askResult?.threadId, push])
+
+  const selectHistory = useCallback((direction: -1 | 1) => {
+    if (askHistory.length === 0) return
+    const next = historyCursor === undefined
+      ? direction === -1 ? 0 : askHistory.length - 1
+      : Math.min(Math.max(historyCursor + direction, 0), askHistory.length - 1)
+    setHistoryCursor(next)
+    setAskValue(askHistory[next] ?? '')
+  }, [askHistory, historyCursor])
+
   useInput((input, key) => {
+    if (focusRegion === 'ask') {
+      if (key.ctrl && input === 'p') {
+        selectHistory(-1)
+        return
+      }
+      if (key.ctrl && input === 'n') {
+        selectHistory(1)
+        return
+      }
+      if (key.return) {
+        void submitAsk()
+        return
+      }
+      if (key.backspace || key.delete) {
+        setAskValue(prev => prev.slice(0, -1))
+        return
+      }
+      if (key.downArrow) {
+        setFocusRegion(cards.length > 0 ? 'cards' : 'menu')
+        return
+      }
+      if (key.escape) {
+        if (askValue.length > 0) {
+          setAskValue('')
+          return
+        }
+        exit()
+        return
+      }
+      if (input === 'q' && askValue.length === 0) {
+        exit()
+        return
+      }
+      if (input && input.length > 0 && !key.ctrl && !key.meta) {
+        setAskValue(prev => `${prev}${input}`.slice(0, 400))
+      }
+      return
+    }
+
+    if (focusRegion === 'cards') {
+      if (input === 'q' || key.escape) {
+        setFocusRegion('ask')
+        return
+      }
+      if (key.upArrow) {
+        setSelectedCardIndex(prev => (prev > 0 ? prev - 1 : Math.max(cards.length - 1, 0)))
+        return
+      }
+      if (key.downArrow) {
+        setSelectedCardIndex(prev => (prev < cards.length - 1 ? prev + 1 : 0))
+        return
+      }
+      const numeric = Number.parseInt(input, 10)
+      if (Number.isFinite(numeric) && numeric >= 1 && numeric <= cards.length) {
+        void executeCard(cards[numeric - 1])
+        return
+      }
+      if (key.return && cards[selectedCardIndex]) {
+        void executeCard(cards[selectedCardIndex])
+        return
+      }
+      if (input === 'm') {
+        setFocusRegion('menu')
+        return
+      }
+      return
+    }
+
+    if (input === '/') {
+      setFocusRegion('ask')
+      return
+    }
+
     if (input === 'q' || key.escape) {
       exit()
       return
@@ -174,7 +381,7 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
       }
       lastGroup = group
     }
-    const isSelected = selectedIndex === i
+    const isSelected = focusRegion === 'menu' && selectedIndex === i
     taskElements.push(renderTaskRow(item, isSelected, i, handleItemClick, handleItemHover))
   }
 
@@ -182,7 +389,7 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
   const navElements: React.ReactNode[] = []
   for (let i = taskCount; i < totalCount; i++) {
     const item = combined[i]
-    const isSelected = selectedIndex === i
+    const isSelected = focusRegion === 'menu' && selectedIndex === i
     navElements.push(renderNavRow(item, isSelected, i, handleItemClick, handleItemHover))
   }
 
@@ -200,14 +407,52 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
     ),
     React.createElement(Divider, { length: 40 }),
 
-    // Section 1: What do you want to do?
+    // Section 1: Ask OpenSlack
+    React.createElement(AskBar, {
+      value: askValue,
+      focused: askFocused,
+      busy: askBusy,
+      threadId: askResult?.threadId,
+      message: askMessage,
+    }),
+
+    cards.length > 0
+      ? React.createElement(
+          Box,
+          { flexDirection: 'column', marginTop: 1 },
+          React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, 'OpenSlack suggests:'),
+          ...cards.map((card, index) =>
+            React.createElement(
+              Box,
+              {
+                key: card.id,
+                flexDirection: 'column',
+                onClick: () => { void executeCard(card) },
+                onMouseEnter: () => {
+                  setFocusRegion('cards')
+                  setSelectedCardIndex(index)
+                },
+              },
+              React.createElement(ActionCard, {
+                card,
+                index,
+                selected: focusRegion === 'cards' && selectedCardIndex === index,
+              }),
+            ),
+          ),
+        )
+      : null,
+
+    React.createElement(Divider, { length: 40 }),
+
+    // Section 2: Suggested shortcuts
     React.createElement(
       Box,
       { flexDirection: 'column', marginTop: 0, marginBottom: 0 },
       React.createElement(
         ThemedText,
         { colorTheme: 'accent', bold: true },
-        'What do you want to do?',
+        'Suggested shortcuts',
       ),
       React.createElement(
         Box,
@@ -276,11 +521,13 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
       { flexDirection: 'row' },
       React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'Quit' }),
       React.createElement(Text, null, '  '),
-      React.createElement(KeyboardShortcutHint, { keys: ['Up/Down'], description: 'Navigate' }),
+      React.createElement(KeyboardShortcutHint, { keys: ['Enter'], description: 'Ask/select' }),
       React.createElement(Text, null, '  '),
-      React.createElement(KeyboardShortcutHint, { keys: ['Enter'], description: 'Select' }),
+      React.createElement(KeyboardShortcutHint, { keys: ['Down'], description: 'suggestions/menu' }),
       React.createElement(Text, null, '  '),
-      React.createElement(KeyboardShortcutHint, { keys: ['1-9/0', 'p/r'], description: 'Jump' }),
+      React.createElement(KeyboardShortcutHint, { keys: ['/'], description: 'focus ask' }),
+      React.createElement(Text, null, '  '),
+      React.createElement(KeyboardShortcutHint, { keys: ['Ctrl+P/N'], description: 'history' }),
     ),
   )
 }

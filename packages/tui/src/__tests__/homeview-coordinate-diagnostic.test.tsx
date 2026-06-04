@@ -42,11 +42,12 @@ describe('HomeView coordinate diagnostic', () => {
     expect(lines[0]).toContain('OpenSlack')
     expect(lines[1]).toContain('─')
 
-    // Section 1: What do you want to do?
-    expect(lines[2]).toContain('What do you want to do?')
+    // Section 1: Ask OpenSlack
+    expect(lines[2]).toContain('Ask OpenSlack:')
+    expect(output).toContain('What do you want OpenSlack to do?')
 
     const startHeader = indexOfLine('Start Work')
-    expect(startHeader).toBeGreaterThan(indexOfLine('What do you want to do?'))
+    expect(startHeader).toBeGreaterThan(indexOfLine('Suggested shortcuts'))
     expect(indexOfLine('Start or continue work')).toBeGreaterThan(startHeader)
     expect(indexOfLine('Start a workflow')).toBeGreaterThan(startHeader)
     expect(indexOfLine('Watch running workflows')).toBeGreaterThan(startHeader)
@@ -125,7 +126,8 @@ describe('HomeView coordinate diagnostic', () => {
     const output = chunks.join('')
 
     // Verify the output contains key structural elements
-    expect(output).toContain('What do you want to do?')
+    expect(output).toContain('Ask OpenSlack:')
+    expect(output).toContain('Suggested shortcuts')
     expect(output).toContain('See what needs attention')
     expect(output).toContain('Review and merge PRs')
     expect(output).toContain('Approve pending items')

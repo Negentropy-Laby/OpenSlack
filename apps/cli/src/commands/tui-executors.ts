@@ -1,6 +1,10 @@
-import type { TuiActionResult } from '@openslack/tui'
+import type { ConversationActionCard, TuiActionResult, TuiAskResult } from '@openslack/tui'
 import type { WorkflowRunControlAction, WorkflowRunControlTarget } from '@openslack/workflows'
 import { join } from 'node:path'
+import {
+  dispatchConversationAgentMessage,
+  resolveWorkbenchThread,
+} from './conversation-dispatch.js'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -35,6 +39,8 @@ export interface TuiActionHandlers {
   requestWorkflowReview?: (workflowName: string) => Promise<TuiActionResult>
   splitWorkflowIntoIssues?: (workflowName: string, parentIssue?: number) => Promise<TuiActionResult>
   finalizeWorkflowPr?: (workflowName: string, prNumber: number) => Promise<TuiActionResult>
+  submitWorkbenchAsk?: (input: string, threadId?: string) => Promise<TuiAskResult>
+  recordWorkbenchAction?: (threadId: string, card: ConversationActionCard, message: string) => Promise<TuiActionResult>
   profileSync?: ProfileActionHandlers
 }
 
@@ -769,6 +775,122 @@ export async function saveWorkflowRunScriptFromTui(
   }
 }
 
+export async function submitWorkbenchAskFromTui(
+  input: string,
+  root: string,
+  actorId: string = 'tui-user',
+  threadId?: string,
+): Promise<TuiAskResult> {
+  const text = input.trim()
+  if (!text) {
+    return { threadId: threadId ?? '', status: 'error', message: 'Ask text is empty.', cards: [] }
+  }
+
+  const thread = resolveWorkbenchThread(threadId, root)
+  const mentionMatch = text.match(/^@(\S+)\s+(.+)$/)
+  if (mentionMatch) {
+    const agentId = mentionMatch[1]
+    const prompt = mentionMatch[2]
+    const result = await dispatchConversationAgentMessage({
+      rootDir: root,
+      threadId: thread.id,
+      authorId: actorId,
+      agentId,
+      prompt,
+      originalText: text,
+    })
+    const cards: ConversationActionCard[] = result.runId
+      ? [{
+          id: `agent-run-${result.runId}`,
+          label: 'Open Agent Run',
+          detail: `Inspect run ${result.runId} created by ${agentId}.`,
+          kind: 'agent_run',
+          route: 'agent-run-detail',
+          routeParams: { runId: result.runId },
+          command: `openslack agent-runtime mcp status --run ${result.runId}`,
+          riskLevel: 'low',
+          confirmationRequired: false,
+          linkedObject: { kind: 'workflow_run', id: result.runId },
+        }]
+      : []
+    return {
+      threadId: thread.id,
+      status: result.dispatched ? 'agent_dispatched' : 'recorded',
+      message: result.responseText,
+      cards,
+    }
+  }
+
+  const { appendMessage } = await import('@openslack/collaboration')
+  appendMessage(
+    thread.id,
+    {
+      kind: 'user_message',
+      threadId: thread.id,
+      authorId: actorId,
+      text,
+    },
+    root,
+  )
+
+  const { buildTuiAskPlan } = await import('@openslack/operator')
+  const planned = buildTuiAskPlan(text)
+  appendMessage(
+    thread.id,
+    {
+      kind: 'plan',
+      threadId: thread.id,
+      authorId: 'openslack',
+      planId: `tui-${Date.now()}`,
+      steps: planned.message.split('\n').filter(line => line.trim().length > 0),
+    },
+    root,
+  )
+
+  return {
+    threadId: thread.id,
+    status: 'planned',
+    message: planned.message,
+    cards: planned.cards,
+  }
+}
+
+export async function recordWorkbenchActionFromTui(
+  threadId: string,
+  card: ConversationActionCard,
+  message: string,
+  root: string,
+  actorId: string = 'tui-user',
+): Promise<TuiActionResult> {
+  try {
+    const { appendMessage, linkObjectToThread } = await import('@openslack/collaboration')
+    appendMessage(
+      threadId,
+      {
+        kind: 'tool_event',
+        threadId,
+        authorId: actorId,
+        toolName: 'tui.action_card',
+        input: {
+          id: card.id,
+          label: card.label,
+          kind: card.kind,
+          route: card.route,
+          command: card.command,
+        },
+        output: { message },
+      },
+      root,
+    )
+    if (card.linkedObject) {
+      linkObjectToThread(threadId, card.linkedObject, root)
+    }
+    return { success: true, message: 'Action recorded in conversation thread.' }
+  } catch (err: unknown) {
+    return { success: false, message: `Conversation audit failed: ${(err as Error).message}` }
+  }
+}
+
 export function createActionHandlers(root: string, actorId: string = 'tui-user'): TuiActionHandlers {
   return {
     executeApproval: (params, isApprove) => executeApproval(params, isApprove, root, actorId),
@@ -782,6 +904,8 @@ export function createActionHandlers(root: string, actorId: string = 'tui-user')
     requestWorkflowReview: (name) => requestWorkflowReview(name, root, actorId),
     splitWorkflowIntoIssues: (name, parentIssue) => splitWorkflowIntoIssues(name, parentIssue, root),
     finalizeWorkflowPr: (name, prNumber) => finalizeWorkflowPr(name, prNumber, root),
+    submitWorkbenchAsk: (input, threadId) => submitWorkbenchAskFromTui(input, root, actorId, threadId),
+    recordWorkbenchAction: (threadId, card, message) => recordWorkbenchActionFromTui(threadId, card, message, root, actorId),
     profileSync: createProfileSyncHandlers(root),
   }
 }

@@ -36,7 +36,9 @@ describe('HomeView render debug', () => {
     await new Promise<void>((r) => setTimeout(r, 200))
     const output = chunks.join('')
     expect(output).toContain('OpenSlack')
-    expect(output).toContain('What do you want to do?')
+    expect(output).toContain('Ask OpenSlack:')
+    expect(output).toContain('What do you want OpenSlack to do?')
+    expect(output).toContain('Suggested shortcuts')
     expect(output).toContain('Quick Navigation')
     // Verify no old sections remain
     expect(output).not.toContain('Needs Attention')

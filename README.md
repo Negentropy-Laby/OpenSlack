@@ -16,7 +16,7 @@ Three commands to get going:
 
 ```bash
 bun run openslack setup          # Validate workspace, GitHub auth, golden evals
-bun run openslack tui            # Interactive workflow-first workbench
+bun run openslack tui            # Conversation-first workbench
 bun run openslack status         # Module health, test counts, GitHub ops
 ```
 
@@ -67,7 +67,7 @@ See [Advanced Setup](#advanced-setup) for development mode, production builds, a
 | Diagnose a PR | `bun run openslack pr doctor <PR_NUMBER>` |
 | See team activity | `bun run openslack collaboration dashboard` |
 | Start a conversation thread | `bun run openslack conversation start --title "Review PR #42"` |
-| Launch the interactive workflow-first workbench | `bun run openslack tui` |
+| Launch the conversation-first workbench | `bun run openslack tui` |
 | Maintain organization profile | `bun run openslack collaboration workflow profile-sync status` |
 | Find the full CLI reference | [`docs/user-guide.md`](docs/user-guide.md) |
 
@@ -129,7 +129,8 @@ See: [`docs/developer/github-issues-loop.md`](docs/developer/github-issues-loop.
 
 The human-facing entry point. Natural language queries route through a structured planner to the appropriate CLI commands.
 
-- **Ask:** `openslack operator ask "..."` — natural language → parse intent → optional LLM fallback → typed registered actions → execute → summarize
+- **Ask:** `openslack ask "..."` — natural language → parse intent → optional LLM fallback → typed registered actions → preview, plan, or execute through risk gates
+- **TUI Ask:** `openslack tui` — opens on `Ask OpenSlack:`. Natural language produces Operator recommendations and safe action cards; `@agent-id prompt` dispatches through the conversation subagent path
 - **Chat:** `openslack chat start --adapter webhook|slack` — chat gateway for Slack/HTTP projections
 - **Setup:** `openslack setup` — one-step workspace validation + health check
 - **Setup GitHub:** `openslack setup github` — read-only setup report; `--apply` required for repairs
@@ -166,6 +167,7 @@ The projection and coordination layer. It makes tasks, PRs, handoffs, decisions,
 - **Dynamic Workflows:** `openslack ask --effort ultracode "..."`, `openslack collaboration workflow start --prompt "..."`, and `openslack collaboration workflow runs show <runId> --detail progress` -> recommend, draft, watch/control, budget, save/share, and publish workflow harnesses for broad, long-running, or verification-heavy tasks without bypassing OpenSlack permissions
 - **Profile Sync Robot:** `openslack collaboration workflow profile-sync check` → keep an organization's public profile in sync with an upstream whitepapers repository (check, preview, run, status)
 - **Agent Conversations:** `openslack conversation start --title "..."` → structured multi-turn interaction threads between humans and agents with JSONL persistence, 7 typed message kinds, secret scanning, and memory policy control (`start`, `list`, `show`, `send`, `summarize`, `archive`)
+- **Conversation-first TUI:** `openslack tui` → Ask OpenSlack from the first screen, get safe action cards for PRMS, workflow drafts, approvals, profile sync, and subagent dispatch, and record asks/actions into the current conversation thread
 
 See: [`docs/product/collaboration-layer.md`](docs/product/collaboration-layer.md), [`docs/product/agent-conversations.md`](docs/product/agent-conversations.md), [`docs/product/dynamic-workflows.md`](docs/product/dynamic-workflows.md), [`docs/product/dynamic-workflow-ux-closure.md`](docs/product/dynamic-workflow-ux-closure.md)
 
