@@ -52,7 +52,7 @@ export interface HomeViewModel {
   allClear: boolean
   /** Quick navigation items with number shortcuts */
   navItems: NavItem[]
-  /** Task-oriented items for the "What do you want to do?" section */
+  /** Task-oriented items for the "Suggested shortcuts" section */
   tasks: TaskItem[]
   systemStatus: string
   /** The single most recommended next action, derived from shellData */

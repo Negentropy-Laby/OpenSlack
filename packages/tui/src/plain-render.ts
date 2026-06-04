@@ -82,6 +82,10 @@ export function renderPlainHome(vm: HomeViewModel, width: number = MAX_WIDTH): s
   lines.push(separator('=', width))
   lines.push('')
 
+  lines.push('Ask OpenSlack:')
+  lines.push(wrap('  > What do you want OpenSlack to do?', width))
+  lines.push('')
+
   // Attention items
   if (vm.attentionItems.length > 0) {
     lines.push('Attention:')
@@ -99,7 +103,7 @@ export function renderPlainHome(vm: HomeViewModel, width: number = MAX_WIDTH): s
 
   // Tasks
   if (vm.tasks.length > 0) {
-    lines.push('What do you want to do?')
+    lines.push('Suggested shortcuts:')
     vm.tasks.forEach((t) => {
       const badge = t.attentionBadge ? ` (${t.attentionBadge})` : ''
       lines.push(wrap(`  [${t.shortcut}] ${t.label}${badge}`, width))

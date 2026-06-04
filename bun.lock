@@ -135,6 +135,7 @@
         "@openslack/agent-runtime": "workspace:*",
         "@openslack/collaboration": "workspace:*",
         "@openslack/kernel": "workspace:*",
+        "@openslack/operator": "workspace:*",
         "@openslack/runtime": "workspace:*",
         "@openslack/workflows": "workspace:*",
         "auto-bind": "^5.0.1",

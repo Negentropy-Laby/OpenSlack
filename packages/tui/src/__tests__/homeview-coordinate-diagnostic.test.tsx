@@ -1,10 +1,12 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { Writable } from 'stream'
 import React from 'react'
 import { render } from '@openslack/tui'
-import HomeView from '../views/HomeView.js'
+import stripAnsi from 'strip-ansi'
+import HomeView, { executeConversationActionCard, resolveAskHistorySelection } from '../views/HomeView.js'
 import { mapHomeToViewModel } from '../view-models/home.js'
 import { NavigationProvider } from '../navigation/context.js'
+import { TerminalSizeContext } from '../ink/components/TerminalSizeContext.js'
 
 function createMockStdout(columns = 80, rows = 50) {
   const chunks: string[] = []
@@ -23,6 +25,156 @@ function createMockStdout(columns = 80, rows = 50) {
 }
 
 describe('HomeView coordinate diagnostic', () => {
+  it('keeps the default 80x24 home screen compact enough for stable terminal redraw', async () => {
+    const rows = 24
+    const { stdout, chunks } = createMockStdout(80, rows)
+    const model = mapHomeToViewModel({
+      shellData: {
+        approvals: {
+          pendingApprovals: [{ id: 'plan-1', category: 'plan', title: 'review all workflow approvals', risk: 'medium' }],
+          summary: { plans: 1, mergeRequests: 0, workflowEffects: 0, githubReviews: 0 },
+        },
+      },
+    })
+    const instance = await render(
+      React.createElement(NavigationProvider, null,
+        React.createElement(TerminalSizeContext.Provider, { value: { columns: 80, rows } },
+          React.createElement(HomeView, { model })
+        )
+      ),
+      { stdout, patchConsole: false },
+    )
+    await new Promise<void>((r) => setTimeout(r, 200))
+
+    const output = stripAnsi(chunks.join(''))
+    const visibleLines = output.split('\n').filter((line) => line.trim().length > 0)
+
+    expect(output).toContain('Ask OpenSlack:')
+    expect(output).toContain('Suggested shortcuts')
+    expect(output).toContain('Maintain organization profile')
+    expect(output).toContain('Next:')
+    expect(output).not.toContain('Quick Navigation')
+    expect(output).not.toContain('Create tasks, claim issues')
+    expect(visibleLines.length).toBeLessThan(rows)
+
+    instance.unmount()
+  })
+
+  it('resolves Ctrl+P as older history and Ctrl+N as newer history', () => {
+    const history = ['second ask', 'first ask']
+    const newest = resolveAskHistorySelection(history, undefined, 'older')
+    expect(newest).toEqual({ cursor: 0, value: 'second ask' })
+
+    const older = resolveAskHistorySelection(history, newest?.cursor, 'older')
+    expect(older).toEqual({ cursor: 1, value: 'first ask' })
+
+    const newer = resolveAskHistorySelection(history, older?.cursor, 'newer')
+    expect(newer).toEqual({ cursor: 0, value: 'second ask' })
+
+    const currentInput = resolveAskHistorySelection(history, newer?.cursor, 'newer')
+    expect(currentInput).toEqual({ cursor: undefined, value: '' })
+
+    expect(resolveAskHistorySelection(history, undefined, 'newer')).toBeUndefined()
+  })
+
+  it('executes action cards safely and reports handler errors', async () => {
+    const messages: string[] = []
+    const busyStates: boolean[] = []
+    const pushes: Array<{ view: string; params?: Record<string, unknown> }> = []
+    const recordWorkbenchAction = vi.fn(async () => ({ success: true, message: 'recorded' }))
+    const startWorkflowFromPrompt = vi.fn(async () => ({ success: true, message: 'Draft ready.' }))
+    const base = {
+      threadId: 'CONV-test',
+      actionHandlers: { recordWorkbenchAction, startWorkflowFromPrompt },
+      push: (location: { view: string; params?: Record<string, unknown> }) => { pushes.push(location) },
+      setAskMessage: (message: string) => { messages.push(message) },
+      setAskBusy: (busy: boolean) => { busyStates.push(busy) },
+    }
+
+    await executeConversationActionCard({
+      ...base,
+      card: {
+        id: 'status',
+        label: 'Open Status',
+        detail: 'Open status view.',
+        kind: 'route',
+        route: 'status',
+        riskLevel: 'low',
+        confirmationRequired: false,
+      },
+    })
+    await executeConversationActionCard({
+      ...base,
+      card: {
+        id: 'agent-run',
+        label: 'Open Agent Run',
+        detail: 'Inspect run.',
+        kind: 'agent_run',
+        route: 'agent-run-detail',
+        routeParams: { runId: 'run-1' },
+        riskLevel: 'low',
+        confirmationRequired: false,
+      },
+    })
+    await executeConversationActionCard({
+      ...base,
+      card: {
+        id: 'workflow-draft',
+        label: 'Generate Draft',
+        detail: 'Generate a draft.',
+        kind: 'workflow_draft',
+        prompt: 'audit endpoints',
+        riskLevel: 'low',
+        confirmationRequired: false,
+      },
+    })
+    await executeConversationActionCard({
+      ...base,
+      card: {
+        id: 'command',
+        label: 'Use CLI',
+        detail: 'Fallback command.',
+        kind: 'command',
+        command: 'openslack status',
+        riskLevel: 'none',
+        confirmationRequired: false,
+      },
+    })
+
+    expect(pushes).toEqual([
+      { view: 'status', params: undefined },
+      { view: 'agent-run-detail', params: { runId: 'run-1' } },
+    ])
+    expect(startWorkflowFromPrompt).toHaveBeenCalledWith('audit endpoints')
+    expect(messages).toEqual(expect.arrayContaining([
+      'Opening Open Status.',
+      'Opening Open Agent Run.',
+      'Draft ready.',
+      'Use: openslack status',
+    ]))
+    expect(busyStates).toEqual([true, false])
+
+    const pushCountBeforeFailure = pushes.length
+    await executeConversationActionCard({
+      ...base,
+      actionHandlers: {
+        recordWorkbenchAction: vi.fn(async () => { throw new Error('audit failed') }),
+      },
+      card: {
+        id: 'bad-route',
+        label: 'Bad Route',
+        detail: 'Fails while recording.',
+        kind: 'route',
+        route: 'status',
+        riskLevel: 'low',
+        confirmationRequired: false,
+      },
+    })
+
+    expect(messages.at(-1)).toBe('Action failed: audit failed')
+    expect(pushes).toHaveLength(pushCountBeforeFailure)
+  })
+
   it('renders with empty data and verifies grouped task layout', async () => {
     const { stdout, chunks } = createMockStdout(80, 50)
     const model = mapHomeToViewModel()
@@ -42,11 +194,12 @@ describe('HomeView coordinate diagnostic', () => {
     expect(lines[0]).toContain('OpenSlack')
     expect(lines[1]).toContain('─')
 
-    // Section 1: What do you want to do?
-    expect(lines[2]).toContain('What do you want to do?')
+    // Section 1: Ask OpenSlack
+    expect(lines[2]).toContain('Ask OpenSlack:')
+    expect(output).toContain('What do you want OpenSlack to do?')
 
     const startHeader = indexOfLine('Start Work')
-    expect(startHeader).toBeGreaterThan(indexOfLine('What do you want to do?'))
+    expect(startHeader).toBeGreaterThan(indexOfLine('Suggested shortcuts'))
     expect(indexOfLine('Start or continue work')).toBeGreaterThan(startHeader)
     expect(indexOfLine('Start a workflow')).toBeGreaterThan(startHeader)
     expect(indexOfLine('Watch running workflows')).toBeGreaterThan(startHeader)
@@ -125,7 +278,8 @@ describe('HomeView coordinate diagnostic', () => {
     const output = chunks.join('')
 
     // Verify the output contains key structural elements
-    expect(output).toContain('What do you want to do?')
+    expect(output).toContain('Ask OpenSlack:')
+    expect(output).toContain('Suggested shortcuts')
     expect(output).toContain('See what needs attention')
     expect(output).toContain('Review and merge PRs')
     expect(output).toContain('Approve pending items')

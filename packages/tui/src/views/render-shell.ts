@@ -15,8 +15,10 @@ import type { AgentRuntimeDiagnosticsViewModel } from '../view-models/agent-runt
 import type { AgentConversationThread, AgentConversationMessage } from '@openslack/collaboration'
 import type { WorkflowRunControlAction, WorkflowRunControlTarget } from '@openslack/workflows'
 import type { WorkflowRunProgressItem } from '../view-models/workflow-runs.js'
+import type { ConversationActionCard, TuiAskResult } from '@openslack/operator'
 
 export type { WorkflowRunControlAction, WorkflowRunControlTarget } from '@openslack/workflows'
+export type { ConversationActionCard, TuiAskResult } from '@openslack/operator'
 
 export interface WorkflowLifecycleBaseData {
   workflowHash: string
@@ -65,6 +67,8 @@ export interface TuiActionHandlers {
   splitWorkflowIntoIssues?: (workflowName: string, parentIssue?: number) => Promise<TuiActionResult>
   openWorkflowLifecycle?: (workflowName: string) => Promise<TuiActionResult>
   finalizeWorkflowPr?: (workflowName: string, prNumber: number) => Promise<TuiActionResult>
+  submitWorkbenchAsk?: (input: string, threadId?: string) => Promise<TuiAskResult>
+  recordWorkbenchAction?: (threadId: string, card: ConversationActionCard, message: string) => Promise<TuiActionResult>
   profileSync?: ProfileActionHandlers
 }
 

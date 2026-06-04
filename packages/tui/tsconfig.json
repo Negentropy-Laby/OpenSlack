@@ -12,6 +12,7 @@
   "include": ["src"],
   "references": [
     { "path": "../kernel" },
+    { "path": "../operator" },
     { "path": "../runtime" },
     { "path": "../agent-runtime" },
     { "path": "../workflows" }

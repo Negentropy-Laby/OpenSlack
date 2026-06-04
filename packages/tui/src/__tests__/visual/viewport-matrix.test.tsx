@@ -99,7 +99,7 @@ const VIEWS: ViewSpec[] = [
   {
     name: 'HomeView',
     needsNav: true,
-    markers: ['OpenSlack', 'What do you want to do?'],
+    markers: ['OpenSlack', 'Ask OpenSlack:'],
     create: () => React.createElement(HomeView, { model: createHomeViewModel() }),
   },
   {

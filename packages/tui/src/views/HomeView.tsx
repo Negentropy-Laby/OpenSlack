@@ -1,17 +1,25 @@
-import React, { useCallback } from 'react'
+import React, { useCallback, useContext, useRef, useState } from 'react'
 import Box from '../ink/components/Box.js'
 import Text from '../ink/components/Text.js'
 import useApp from '../ink/hooks/use-app.js'
 import useInput from '../ink/hooks/use-input.js'
+import { TerminalSizeContext } from '../ink/components/TerminalSizeContext.js'
 import ThemedText from '../design-system/ThemedText.js'
 import Divider from '../design-system/Divider.js'
 import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
 import { useNavigation } from '../navigation/context.js'
 import { useClampedIndex } from '../hooks/use-clamped-index.js'
 import type { HomeViewModel, TaskItem, RecommendedAction } from '../view-models/home.js'
+import AskBar from '../components/AskBar.js'
+import ActionCard from '../components/ActionCard.js'
+import type { AskBarSubmit } from '../components/AskBar.js'
+import type { ConversationActionCard, TuiActionHandlers, TuiAskResult } from './render-shell.js'
 
 export type HomeViewProps = {
   model: HomeViewModel
+  actionHandlers?: TuiActionHandlers
+  onAskSubmit?: (input: AskBarSubmit, threadId?: string) => Promise<TuiAskResult | void> | TuiAskResult | void
+  askState?: { value?: string; busy?: boolean; message?: string }
 }
 
 /**
@@ -67,11 +75,115 @@ interface CombinedItem {
   groupCategory?: TaskGroupCategory
 }
 
+type FocusRegion = 'ask' | 'cards' | 'menu'
+
+const COMPACT_HOME_ROWS = 28
+
+export type AskHistoryDirection = 'older' | 'newer'
+
+export interface AskHistorySelection {
+  cursor: number | undefined
+  value: string
+}
+
+interface ConversationActionCardExecutionInput {
+  card: ConversationActionCard
+  threadId?: string
+  actionHandlers?: Pick<TuiActionHandlers, 'recordWorkbenchAction' | 'startWorkflowFromPrompt'>
+  push: (location: { view: string; params?: Record<string, unknown> }) => void
+  setAskMessage: (message: string) => void
+  setAskBusy: (busy: boolean) => void
+}
+
 const URGENCY_COLOR: Record<RecommendedAction['urgency'], 'warning' | 'info' | 'muted'> = {
   governance: 'warning',
   blocker: 'warning',
   operational: 'info',
   informational: 'muted',
+}
+
+export function resolveAskHistorySelection(
+  askHistory: string[],
+  historyCursor: number | undefined,
+  direction: AskHistoryDirection,
+): AskHistorySelection | undefined {
+  if (askHistory.length === 0) return undefined
+  if (direction === 'older') {
+    const cursor = historyCursor === undefined
+      ? 0
+      : Math.min(historyCursor + 1, askHistory.length - 1)
+    return { cursor, value: askHistory[cursor] ?? '' }
+  }
+
+  if (historyCursor === undefined) return undefined
+  if (historyCursor === 0) {
+    return { cursor: undefined, value: '' }
+  }
+  const cursor = historyCursor - 1
+  return { cursor, value: askHistory[cursor] ?? '' }
+}
+
+export async function executeConversationActionCard({
+  card,
+  threadId,
+  actionHandlers,
+  push,
+  setAskMessage,
+  setAskBusy,
+}: ConversationActionCardExecutionInput): Promise<void> {
+  const record = async (message: string) => {
+    if (threadId && actionHandlers?.recordWorkbenchAction) {
+      await actionHandlers.recordWorkbenchAction(threadId, card, message)
+    }
+  }
+
+  try {
+    if ((card.kind === 'route' || card.kind === 'approval') && card.route) {
+      const message = card.confirmationRequired
+        ? `Opening ${card.label}; confirmation is still required.`
+        : `Opening ${card.label}.`
+      setAskMessage(message)
+      await record(message)
+      push({ view: card.route, params: card.routeParams })
+      return
+    }
+
+    if (card.kind === 'workflow_draft') {
+      if (card.prompt && actionHandlers?.startWorkflowFromPrompt) {
+        setAskBusy(true)
+        try {
+          const result = await actionHandlers.startWorkflowFromPrompt(card.prompt)
+          setAskMessage(result.message)
+          await record(result.message)
+        } catch (err) {
+          const message = `Workflow draft failed: ${err instanceof Error ? err.message : String(err)}`
+          setAskMessage(message)
+          await record(message)
+        } finally {
+          setAskBusy(false)
+        }
+        return
+      }
+      const message = card.command ? `Use: ${card.command}` : 'Workflow draft handler is not available.'
+      setAskMessage(message)
+      await record(message)
+      return
+    }
+
+    if (card.kind === 'agent_run' && card.route) {
+      const message = `Opening ${card.label}.`
+      setAskMessage(message)
+      await record(message)
+      push({ view: card.route, params: card.routeParams })
+      return
+    }
+
+    const message = card.command ? `Use: ${card.command}` : `${card.label} is not executable in this TUI session.`
+    setAskMessage(message)
+    await record(message)
+  } catch (err) {
+    setAskMessage(`Action failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
 }
 
 function buildCombinedItems(model: HomeViewModel): CombinedItem[] {
@@ -111,15 +223,29 @@ function buildCombinedItems(model: HomeViewModel): CombinedItem[] {
   return items
 }
 
-export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
+export default function HomeView({ model, actionHandlers, onAskSubmit, askState }: HomeViewProps): React.JSX.Element {
   const { exit } = useApp()
   const { push } = useNavigation()
+  const terminalSize = useContext(TerminalSizeContext)
+  const compactHome = (terminalSize?.rows ?? 40) <= COMPACT_HOME_ROWS
 
   const combined = buildCombinedItems(model)
   const taskCount = model.tasks.length
   const totalCount = combined.length
 
   const [selectedIndex, setSelectedIndex] = useClampedIndex(totalCount)
+  const [focusRegion, setFocusRegion] = useState<FocusRegion>('ask')
+  const [askValue, setAskValue] = useState(askState?.value ?? '')
+  const [askBusy, setAskBusy] = useState(Boolean(askState?.busy))
+  const [askMessage, setAskMessage] = useState<string | undefined>(askState?.message)
+  const [askResult, setAskResult] = useState<TuiAskResult | undefined>()
+  const [askHistory, setAskHistory] = useState<string[]>([])
+  const [historyCursor, setHistoryCursor] = useState<number | undefined>()
+  const askSubmitInFlight = useRef(false)
+  const cards = askResult?.cards ?? []
+  const [selectedCardIndex, setSelectedCardIndex] = useClampedIndex(cards.length)
+
+  const askFocused = focusRegion === 'ask'
 
   const handleItemClick = useCallback((index: number) => {
     push({ view: combined[index].route })
@@ -138,7 +264,152 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
     }
   }
 
+  const submitAsk = useCallback(async () => {
+    const text = askValue.trim()
+    if (!text || askBusy || askSubmitInFlight.current) return
+    askSubmitInFlight.current = true
+    setAskBusy(true)
+    setAskMessage('Planning request...')
+    try {
+      const submit = onAskSubmit
+        ? (value: string, threadId?: string) => onAskSubmit({ text: value }, threadId)
+        : actionHandlers?.submitWorkbenchAsk
+      if (!submit) {
+        const fallback: TuiAskResult = {
+          threadId: askResult?.threadId ?? '',
+          status: 'recorded',
+          message: `Use: openslack ask "${text.replace(/"/g, '\\"')}"`,
+          cards: [{
+            id: 'fallback-ask',
+            label: 'Use OpenSlack Ask',
+            detail: 'This TUI session does not provide an ask handler.',
+            kind: 'command',
+            command: `openslack ask "${text.replace(/"/g, '\\"')}"`,
+            riskLevel: 'none',
+            confirmationRequired: false,
+          }],
+        }
+        setAskResult(fallback)
+        setAskMessage(fallback.message)
+        setFocusRegion('cards')
+        return
+      }
+      const result = await submit(text, askResult?.threadId)
+      if (result) {
+        setAskResult(result)
+        setAskMessage(result.message.split('\n')[0])
+        if (result.cards.length > 0) setFocusRegion('cards')
+      }
+      setAskHistory(prev => [text, ...prev.filter(item => item !== text)].slice(0, 20))
+      setHistoryCursor(undefined)
+      setAskValue('')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      setAskMessage(`Ask failed: ${message}`)
+      setAskResult({
+        threadId: askResult?.threadId ?? '',
+        status: 'error',
+        message,
+        cards: [],
+      })
+    } finally {
+      askSubmitInFlight.current = false
+      setAskBusy(false)
+    }
+  }, [actionHandlers, askBusy, askResult?.threadId, askValue, onAskSubmit])
+
+  const executeCard = useCallback(async (card: ConversationActionCard) => {
+    await executeConversationActionCard({
+      card,
+      threadId: askResult?.threadId,
+      actionHandlers,
+      push,
+      setAskMessage,
+      setAskBusy,
+    })
+  }, [actionHandlers, askResult?.threadId, push])
+
+  const selectHistory = useCallback((direction: AskHistoryDirection) => {
+    const selection = resolveAskHistorySelection(askHistory, historyCursor, direction)
+    if (!selection) return
+    setHistoryCursor(selection.cursor)
+    setAskValue(selection.value)
+  }, [askHistory, historyCursor])
+
   useInput((input, key) => {
+    if (focusRegion === 'ask') {
+      if (key.ctrl && input === 'p') {
+        selectHistory('older')
+        return
+      }
+      if (key.ctrl && input === 'n') {
+        selectHistory('newer')
+        return
+      }
+      if (key.return) {
+        void submitAsk()
+        return
+      }
+      if (key.backspace || key.delete) {
+        setAskValue(prev => prev.slice(0, -1))
+        return
+      }
+      if (key.downArrow) {
+        setFocusRegion(cards.length > 0 ? 'cards' : 'menu')
+        return
+      }
+      if (key.escape) {
+        if (askValue.length > 0) {
+          setAskValue('')
+          return
+        }
+        exit()
+        return
+      }
+      if (input === 'q' && askValue.length === 0) {
+        exit()
+        return
+      }
+      if (input && input.length > 0 && !key.ctrl && !key.meta) {
+        setAskValue(prev => `${prev}${input}`.slice(0, 400))
+      }
+      return
+    }
+
+    if (focusRegion === 'cards') {
+      if (input === 'q' || key.escape) {
+        setFocusRegion('ask')
+        return
+      }
+      if (key.upArrow) {
+        setSelectedCardIndex(prev => (prev > 0 ? prev - 1 : Math.max(cards.length - 1, 0)))
+        return
+      }
+      if (key.downArrow) {
+        setSelectedCardIndex(prev => (prev < cards.length - 1 ? prev + 1 : 0))
+        return
+      }
+      const numeric = Number.parseInt(input, 10)
+      if (Number.isFinite(numeric) && numeric >= 1 && numeric <= cards.length) {
+        void executeCard(cards[numeric - 1])
+        return
+      }
+      if (key.return && cards[selectedCardIndex]) {
+        void executeCard(cards[selectedCardIndex])
+        return
+      }
+      if (input === 'm') {
+        setFocusRegion('menu')
+        return
+      }
+      return
+    }
+
+    if (input === '/') {
+      setFocusRegion('ask')
+      return
+    }
+
     if (input === 'q' || key.escape) {
       exit()
       return
@@ -170,19 +441,19 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
     if (group !== lastGroup) {
       const groupDef = TASK_GROUPS.find(g => g.category === group)
       if (groupDef) {
-        taskElements.push(renderGroupHeader(groupDef.label))
+        taskElements.push(renderGroupHeader(groupDef.label, compactHome))
       }
       lastGroup = group
     }
-    const isSelected = selectedIndex === i
-    taskElements.push(renderTaskRow(item, isSelected, i, handleItemClick, handleItemHover))
+    const isSelected = focusRegion === 'menu' && selectedIndex === i
+    taskElements.push(renderTaskRow(item, isSelected, i, handleItemClick, handleItemHover, compactHome))
   }
 
   // Render nav section items
   const navElements: React.ReactNode[] = []
   for (let i = taskCount; i < totalCount; i++) {
     const item = combined[i]
-    const isSelected = selectedIndex === i
+    const isSelected = focusRegion === 'menu' && selectedIndex === i
     navElements.push(renderNavRow(item, isSelected, i, handleItemClick, handleItemHover))
   }
 
@@ -200,14 +471,52 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
     ),
     React.createElement(Divider, { length: 40 }),
 
-    // Section 1: What do you want to do?
+    // Section 1: Ask OpenSlack
+    React.createElement(AskBar, {
+      value: askValue,
+      focused: askFocused,
+      busy: askBusy,
+      threadId: askResult?.threadId,
+      message: askMessage,
+    }),
+
+    cards.length > 0
+      ? React.createElement(
+          Box,
+          { flexDirection: 'column', marginTop: 1 },
+          React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, 'OpenSlack suggests:'),
+          ...cards.map((card, index) =>
+            React.createElement(
+              Box,
+              {
+                key: card.id,
+                flexDirection: 'column',
+                onClick: () => { void executeCard(card) },
+                onMouseEnter: () => {
+                  setFocusRegion('cards')
+                  setSelectedCardIndex(index)
+                },
+              },
+              React.createElement(ActionCard, {
+                card,
+                index,
+                selected: focusRegion === 'cards' && selectedCardIndex === index,
+              }),
+            ),
+          ),
+        )
+      : null,
+
+    React.createElement(Divider, { length: 40 }),
+
+    // Section 2: Suggested shortcuts
     React.createElement(
       Box,
       { flexDirection: 'column', marginTop: 0, marginBottom: 0 },
       React.createElement(
         ThemedText,
         { colorTheme: 'accent', bold: true },
-        'What do you want to do?',
+        'Suggested shortcuts',
       ),
       React.createElement(
         Box,
@@ -220,13 +529,11 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
 
     // Section: Next Recommended Action
     ...(model.nextRecommendedAction
-      ? [
-          React.createElement(
-            Box,
-            { flexDirection: 'column', marginTop: 0, marginBottom: 0 },
+      ? compactHome
+        ? [
             React.createElement(
               Box,
-              { flexDirection: 'row' },
+              { key: 'compact-next-action', flexDirection: 'row' },
               React.createElement(
                 ThemedText,
                 { colorTheme: URGENCY_COLOR[model.nextRecommendedAction.urgency], bold: true },
@@ -235,60 +542,94 @@ export default function HomeView({ model }: HomeViewProps): React.JSX.Element {
               React.createElement(Text, null, ' '),
               React.createElement(
                 ThemedText,
-                { colorTheme: URGENCY_COLOR[model.nextRecommendedAction.urgency] },
+                { colorTheme: URGENCY_COLOR[model.nextRecommendedAction.urgency], wrap: 'truncate-end' },
                 `Next: ${model.nextRecommendedAction.label}`,
               ),
             ),
+          ]
+        : [
             React.createElement(
               Box,
-              { flexDirection: 'row', marginLeft: 2 },
+              { flexDirection: 'column', marginTop: 0, marginBottom: 0 },
               React.createElement(
-                ThemedText,
-                { colorTheme: 'muted', dim: true },
-                model.nextRecommendedAction.reason,
+                Box,
+                { flexDirection: 'row' },
+                React.createElement(
+                  ThemedText,
+                  { colorTheme: URGENCY_COLOR[model.nextRecommendedAction.urgency], bold: true },
+                  '>',
+                ),
+                React.createElement(Text, null, ' '),
+                React.createElement(
+                  ThemedText,
+                  { colorTheme: URGENCY_COLOR[model.nextRecommendedAction.urgency] },
+                  `Next: ${model.nextRecommendedAction.label}`,
+                ),
+              ),
+              React.createElement(
+                Box,
+                { flexDirection: 'row', marginLeft: 2 },
+                React.createElement(
+                  ThemedText,
+                  { colorTheme: 'muted', dim: true },
+                  model.nextRecommendedAction.reason,
+                ),
               ),
             ),
-          ),
-          React.createElement(Divider, { length: 40 }),
-        ]
+            React.createElement(Divider, { length: 40 }),
+          ]
       : []),
 
-    // Section 2: Quick Navigation
-    React.createElement(
-      Box,
-      { flexDirection: 'column', marginTop: 0, marginBottom: 0 },
-      React.createElement(
-        ThemedText,
-        { colorTheme: 'accent', bold: true },
-        'Quick Navigation',
-      ),
-      React.createElement(
-        Box,
-        { flexDirection: 'column' },
-        ...navElements,
-      ),
-    ),
+    ...(compactHome
+      ? model.nextRecommendedAction
+        ? []
+        : [
+            React.createElement(
+              ThemedText,
+              { key: 'compact-home-help', colorTheme: 'muted', dim: true },
+              'Use / for Ask, numbers for shortcuts, q/Esc to quit.',
+            ),
+          ]
+      : [
+          // Section 2: Quick Navigation
+          React.createElement(
+            Box,
+            { key: 'quick-navigation', flexDirection: 'column', marginTop: 0, marginBottom: 0 },
+            React.createElement(
+              ThemedText,
+              { colorTheme: 'accent', bold: true },
+              'Quick Navigation',
+            ),
+            React.createElement(
+              Box,
+              { flexDirection: 'column' },
+              ...navElements,
+            ),
+          ),
 
-    // Footer
-    React.createElement(Divider, { length: 40 }),
-    React.createElement(
-      Box,
-      { flexDirection: 'row' },
-      React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'Quit' }),
-      React.createElement(Text, null, '  '),
-      React.createElement(KeyboardShortcutHint, { keys: ['Up/Down'], description: 'Navigate' }),
-      React.createElement(Text, null, '  '),
-      React.createElement(KeyboardShortcutHint, { keys: ['Enter'], description: 'Select' }),
-      React.createElement(Text, null, '  '),
-      React.createElement(KeyboardShortcutHint, { keys: ['1-9/0', 'p/r'], description: 'Jump' }),
-    ),
+          // Footer
+          React.createElement(Divider, { key: 'footer-divider', length: 40 }),
+          React.createElement(
+            Box,
+            { key: 'footer-help', flexDirection: 'row' },
+            React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'Quit' }),
+            React.createElement(Text, null, '  '),
+            React.createElement(KeyboardShortcutHint, { keys: ['Enter'], description: 'Ask/select' }),
+            React.createElement(Text, null, '  '),
+            React.createElement(KeyboardShortcutHint, { keys: ['Down'], description: 'suggestions/menu' }),
+            React.createElement(Text, null, '  '),
+            React.createElement(KeyboardShortcutHint, { keys: ['/'], description: 'focus ask' }),
+            React.createElement(Text, null, '  '),
+            React.createElement(KeyboardShortcutHint, { keys: ['Ctrl+P/N'], description: 'history' }),
+          ),
+        ]),
   )
 }
 
 /**
  * Renders a group header with styled separator like "── Group Name ──".
  */
-function renderGroupHeader(label: string): React.ReactNode {
+function renderGroupHeader(label: string, compact = false): React.ReactNode {
   const pad = 1
   const totalWidth = 28
   const textWidth = label.length + 2 // 2 for spaces around label
@@ -299,7 +640,7 @@ function renderGroupHeader(label: string): React.ReactNode {
   const headerText = `${leftLine} ${label} ${rightLine}`
   return React.createElement(
     Box,
-    { key: `group-${label}`, marginTop: 1, marginBottom: 0 },
+    { key: `group-${label}`, marginTop: compact ? 0 : 1, marginBottom: 0 },
     React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, headerText),
   )
 }
@@ -313,6 +654,7 @@ function renderTaskRow(
   index: number,
   onItemClick: (index: number) => void,
   onItemHover: (index: number) => void,
+  compact = false,
 ): React.ReactNode {
   const pointer = isSelected ? '>' : ' '
   const colorTheme = isSelected ? item.colorTheme : 'muted'
@@ -333,7 +675,7 @@ function renderTaskRow(
       )
     : null
 
-  const detailElement = item.detail
+  const detailElement = item.detail && (!compact || isSelected)
     ? React.createElement(
         Box,
         { marginLeft: 4 },

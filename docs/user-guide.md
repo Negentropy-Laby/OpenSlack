@@ -28,7 +28,7 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 ```bash
 bun run openslack setup interactive    # Guided onboarding with step-by-step prompts
 bun run openslack status               # See module status and recommended next steps
-bun run openslack tui                      # Open the workflow-first workbench
+bun run openslack tui                  # Open the conversation-first workbench
 ```
 
 ### 2. Create a task for work
@@ -184,11 +184,13 @@ Commands with `--format plain`:
 Commands with `--format tui`:
 
 - `openslack agent-runtime doctor --provider aby --format tui` — Interactive runtime diagnostics view
-- `openslack tui` — Interactive workflow-first workbench for workflows, PRs, approvals, and profile sync
+- `openslack tui` — Conversation-first workbench for Ask OpenSlack, workflows, PRs, approvals, profile sync, and subagent mentions
 - `openslack collaboration dashboard --format tui` — Interactive team dashboard with blockers, handoffs, decisions
 - `openslack collaboration room show <id> --format tui` — Focused room view for a PR or issue
 - `openslack pr doctor <n> --format tui` — Interactive PR governance diagnosis with gates, checks, reviews
 - `openslack setup interactive --format tui` — Read-only setup report TUI with readiness classification
+
+`openslack tui` opens with `Ask OpenSlack:` focused. Normal natural language asks are routed through the Operator planner and produce safe recommendations/action cards instead of executing side effects. `@agent-id prompt` dispatches through the existing conversation subagent path. Ask results and card actions are written to the current workbench conversation thread.
 
 TUI views use q or Esc to exit. They require a terminal with at least 40 columns and 12 rows, and are disabled in CI, when `NO_COLOR` is set, or when `OPENSLACK_TUI=0`.
 

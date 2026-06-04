@@ -258,6 +258,14 @@ export function archiveThread(threadId: string, rootDir?: string): boolean {
  * linked objects.
  */
 export function linkRunToThread(threadId: string, runId: string, rootDir?: string): boolean {
+  return linkObjectToThread(threadId, { kind: 'workflow_run', id: runId }, rootDir);
+}
+
+export function linkObjectToThread(
+  threadId: string,
+  object: ConversationLinkedObject,
+  rootDir?: string,
+): boolean {
   validateThreadId(threadId);
   const metaPath = getThreadMetaPath(threadId, rootDir);
   if (!existsSync(metaPath)) return false;
@@ -265,11 +273,11 @@ export function linkRunToThread(threadId: string, runId: string, rootDir?: strin
   try {
     const result = updateThreadMeta(metaPath, (thread) => {
       const alreadyLinked = thread.linkedObjects.some(
-        (o) => o.kind === 'workflow_run' && o.id === runId,
+        (o) => o.kind === object.kind && o.id === object.id,
       );
       if (alreadyLinked) return null;
 
-      thread.linkedObjects.push({ kind: 'workflow_run', id: runId });
+      thread.linkedObjects.push(object);
       thread.updatedAt = new Date().toISOString();
       return thread;
     });

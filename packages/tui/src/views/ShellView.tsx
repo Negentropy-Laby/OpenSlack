@@ -29,6 +29,7 @@ import { mapSubagentToViewModel } from '../view-models/agent-detail.js';
 import { mapAgentRunToViewModel } from '../view-models/agent-run.js';
 import { mapWorkflowRunsToViewModel } from '../view-models/workflow-runs.js';
 import type { SubagentDefinition } from '@openslack/kernel';
+import { createRunStore } from '@openslack/agent-runtime';
 import type { ShellViewData, TuiActionHandlers } from './render-shell.js';
 
 import HomeView from './HomeView.js';
@@ -211,7 +212,7 @@ function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
   switch (current.view) {
     case 'home': {
       const model = mapHomeToViewModel({ shellData: data });
-      return React.createElement(HomeView, { model });
+      return React.createElement(HomeView, { model, actionHandlers: data?.actionHandlers });
     }
     case 'dashboard': {
       if (data?.dashboard) {
@@ -375,8 +376,10 @@ function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
       const runState = current.params?.runState as
         | import('@openslack/agent-runtime').AgentRunState
         | undefined;
-      if (runState) {
-        const runModel = mapAgentRunToViewModel(runState, {
+      const runId = current.params?.runId as string | undefined;
+      const resolvedRunState = runState ?? (runId ? createRunStore(data?.rootDir ?? process.cwd()).getRun(runId) ?? undefined : undefined);
+      if (resolvedRunState) {
+        const runModel = mapAgentRunToViewModel(resolvedRunState, {
           rootDir: data?.rootDir ?? process.cwd(),
         });
         return React.createElement(AgentRunDetailView, { model: runModel, onBack: pop });

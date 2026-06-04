@@ -10,6 +10,7 @@ import {
   renderMessage,
 } from '@openslack/collaboration';
 import type { ConversationStatus } from '@openslack/collaboration';
+import { dispatchConversationAgentMessage } from './conversation-dispatch.js';
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -145,64 +146,22 @@ export function conversationCommands(): Command {
           const agentId = mentionMatch[1];
           const prompt = mentionMatch[2];
 
-          // Resolve agent
-          const { resolveAgentType } = await import('@openslack/workflows');
-          const resolvedConfig = resolveAgentType(agentId, rootDir);
-          if (!resolvedConfig) {
-            console.log(`Agent "${agentId}" not found. Message sent as plain text.`);
-          } else {
-            // Append user message first
-            appendMessage(
-              threadId,
-              {
-                kind: 'user_message',
-                threadId,
-                authorId: 'cli-user',
-                text: message,
-              },
-              rootDir,
-            );
-
-            // Launch agent run
-            const { createOpenSlackAgentLauncher, createRunStore } =
-              await import('@openslack/agent-runtime');
-            const store = createRunStore(rootDir);
-            const launcher = createOpenSlackAgentLauncher({ runStore: store, rootDir });
-
-            const runResult = await launcher(prompt, {
-              label: agentId,
-              phase: 'conversation',
-              agentType: agentId,
-              resolvedAgentConfig: resolvedConfig,
-              correlationId: threadId,
-              threadId,
-            });
-
-            // Append agent response
-            appendMessage(
-              threadId,
-              {
-                kind: 'agent_response',
-                threadId,
-                authorId: agentId,
-                text:
-                  typeof runResult.data === 'string'
-                    ? runResult.data
-                    : JSON.stringify(runResult.data, null, 2),
-                structured: runResult.data,
-                runId: runResult.runId,
-              },
-              rootDir,
-            );
-
-            // Link run to thread using the actual runId from the launcher
-            const { linkRunToThread } = await import('@openslack/collaboration');
-            linkRunToThread(threadId, runResult.runId, rootDir);
-
+          const result = await dispatchConversationAgentMessage({
+            rootDir,
+            threadId,
+            authorId: 'cli-user',
+            agentId,
+            prompt,
+            originalText: message,
+          });
+          if (result.dispatched) {
             console.log(`Agent "${agentId}" dispatched. Result appended to thread.`);
             console.log(`Thread: ${threadId}`);
             return;
           }
+          console.log(result.responseText);
+          console.log(`Thread: ${threadId}`);
+          return;
         }
 
         const msg = appendMessage(

@@ -25,6 +25,7 @@ const ALLOWLISTED_INTENTS = new Set([
   'workflow_recommended',
   'workflow_not_needed',
   'workflow_draft_required',
+  'profile_sync',
 ]);
 
 function buildSteps(intent: Intent): PlanStep[] {
@@ -40,6 +41,7 @@ function buildSteps(intent: Intent): PlanStep[] {
     case 'workflow_recommended':
     case 'workflow_not_needed':
     case 'workflow_draft_required':
+    case 'profile_sync':
       return [];
 
     case 'status': {
@@ -146,6 +148,8 @@ function buildGoal(intent: Intent): string {
       return 'Prepare a dynamic workflow recommendation';
     case 'workflow_not_needed':
       return 'Recommend direct operator action';
+    case 'profile_sync':
+      return 'Recommend profile sync action';
     default: return 'Unknown request';
   }
 }

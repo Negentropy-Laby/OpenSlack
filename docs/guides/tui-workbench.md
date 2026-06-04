@@ -2,7 +2,7 @@
 
 ## Overview
 
-The TUI Workbench is the interactive terminal interface for OpenSlack. Launch it with:
+The TUI Workbench is the conversation-first terminal interface for OpenSlack. Launch it with:
 
 ```bash
 bun run openslack tui
@@ -15,17 +15,21 @@ There are two ways to enter the TUI:
 1. `bun run openslack tui` -- launches directly into the workbench shell
 2. `bun run openslack collaboration dashboard --format tui` -- opens the collaboration dashboard in TUI mode, which navigates to the same shell
 
-Both entry points land on the Home screen, which is the workbench landing page.
+`bun run openslack tui` lands on the Home screen with `Ask OpenSlack:` focused. Dashboard TUI remains a focused collaboration dashboard entry.
 
 ## Home Screen
 
 The Home screen shows:
 
-- **What do you want to do?** -- task-oriented actions with keyboard shortcuts
+- **Ask OpenSlack:** -- single-line natural language input with per-session history
+- **OpenSlack suggests:** -- action cards after an ask, including route cards, command fallbacks, workflow draft cards, approval cards, and agent run cards
+- **Suggested shortcuts** -- task-oriented actions with keyboard shortcuts
 - **Quick Navigation** -- direct links to Dashboard, Status, Activity, Digest, Workflows, Workflow Runs, Profile
 - **Next Recommended Action** -- the single most important thing to do next, derived from your workspace state
 
-### Task-Oriented Actions
+Normal natural language asks use the Operator planner and do not execute side effects by default. They record the user ask and plan summary in an `OpenSlack Workbench Session` conversation thread. `@agent-id prompt` reuses the conversation subagent dispatch path and records the agent response plus linked run.
+
+### Suggested Shortcuts
 
 | Shortcut | Task | Description |
 |----------|------|-------------|
@@ -56,6 +60,8 @@ The Home screen computes the most important next action from your workspace stat
 - Shortcut keys to jump directly
 - q or Esc to go back or quit
 - Mouse click support on most items
+- Ctrl+P / Ctrl+N to move through AskBar history
+- Esc clears non-empty AskBar input; empty AskBar keeps the usual back/quit behavior
 
 ## Views
 
