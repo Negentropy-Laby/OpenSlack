@@ -121,7 +121,7 @@ function workflowCards(prompt: string, risk: RiskLevel): ConversationActionCard[
     {
       id: 'workflow-preview-draft',
       label: 'Preview Draft',
-      detail: 'Inspect generated phases, budget, permissions, and side effects before dry-run or execution.',
+      detail: 'Inspect generated phases, budget, permissions, and side effects. Replace <draftId> with the ID returned by Generate Draft.',
       kind: 'command',
       route: 'workflows',
       command: 'openslack collaboration workflow preview-draft <draftId>',
@@ -131,7 +131,7 @@ function workflowCards(prompt: string, risk: RiskLevel): ConversationActionCard[
     {
       id: 'workflow-dry-run',
       label: 'Dry-run after draft review',
-      detail: 'Use after a draft exists and has been inspected.',
+      detail: 'Use after a reviewed workflow file exists. Replace <workflow-file> with that file path.',
       kind: 'command',
       command: 'openslack collaboration workflow dry-run <workflow-file>',
       riskLevel: 'low',
@@ -140,7 +140,7 @@ function workflowCards(prompt: string, risk: RiskLevel): ConversationActionCard[
     {
       id: 'workflow-run',
       label: 'Run after approval',
-      detail: 'Execution can create side effects and must pass workflow approval gates.',
+      detail: 'Execution can create side effects and must pass workflow approval gates. Replace <workflow-file> with the approved file path.',
       kind: 'approval',
       route: 'approvals',
       command: 'openslack collaboration workflow run <workflow-file>',

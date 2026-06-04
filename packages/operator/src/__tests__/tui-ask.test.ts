@@ -25,10 +25,12 @@ describe('buildTuiAskPlan', () => {
     expect(result.cards).toContainEqual(expect.objectContaining({
       label: 'Preview Draft',
       command: 'openslack collaboration workflow preview-draft <draftId>',
+      detail: expect.stringContaining('Replace <draftId>'),
     }));
     expect(result.cards).toContainEqual(expect.objectContaining({
       label: 'Run after approval',
       confirmationRequired: true,
+      detail: expect.stringContaining('Replace <workflow-file>'),
     }));
   });
 

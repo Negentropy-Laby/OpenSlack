@@ -1,9 +1,9 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { Writable } from 'stream'
 import React from 'react'
 import { render } from '@openslack/tui'
 import stripAnsi from 'strip-ansi'
-import HomeView, { resolveAskHistorySelection } from '../views/HomeView.js'
+import HomeView, { executeConversationActionCard, resolveAskHistorySelection } from '../views/HomeView.js'
 import { mapHomeToViewModel } from '../view-models/home.js'
 import { NavigationProvider } from '../navigation/context.js'
 import { TerminalSizeContext } from '../ink/components/TerminalSizeContext.js'
@@ -75,6 +75,104 @@ describe('HomeView coordinate diagnostic', () => {
     expect(currentInput).toEqual({ cursor: undefined, value: '' })
 
     expect(resolveAskHistorySelection(history, undefined, 'newer')).toBeUndefined()
+  })
+
+  it('executes action cards safely and reports handler errors', async () => {
+    const messages: string[] = []
+    const busyStates: boolean[] = []
+    const pushes: Array<{ view: string; params?: Record<string, unknown> }> = []
+    const recordWorkbenchAction = vi.fn(async () => ({ success: true, message: 'recorded' }))
+    const startWorkflowFromPrompt = vi.fn(async () => ({ success: true, message: 'Draft ready.' }))
+    const base = {
+      threadId: 'CONV-test',
+      actionHandlers: { recordWorkbenchAction, startWorkflowFromPrompt },
+      push: (location: { view: string; params?: Record<string, unknown> }) => { pushes.push(location) },
+      setAskMessage: (message: string) => { messages.push(message) },
+      setAskBusy: (busy: boolean) => { busyStates.push(busy) },
+    }
+
+    await executeConversationActionCard({
+      ...base,
+      card: {
+        id: 'status',
+        label: 'Open Status',
+        detail: 'Open status view.',
+        kind: 'route',
+        route: 'status',
+        riskLevel: 'low',
+        confirmationRequired: false,
+      },
+    })
+    await executeConversationActionCard({
+      ...base,
+      card: {
+        id: 'agent-run',
+        label: 'Open Agent Run',
+        detail: 'Inspect run.',
+        kind: 'agent_run',
+        route: 'agent-run-detail',
+        routeParams: { runId: 'run-1' },
+        riskLevel: 'low',
+        confirmationRequired: false,
+      },
+    })
+    await executeConversationActionCard({
+      ...base,
+      card: {
+        id: 'workflow-draft',
+        label: 'Generate Draft',
+        detail: 'Generate a draft.',
+        kind: 'workflow_draft',
+        prompt: 'audit endpoints',
+        riskLevel: 'low',
+        confirmationRequired: false,
+      },
+    })
+    await executeConversationActionCard({
+      ...base,
+      card: {
+        id: 'command',
+        label: 'Use CLI',
+        detail: 'Fallback command.',
+        kind: 'command',
+        command: 'openslack status',
+        riskLevel: 'none',
+        confirmationRequired: false,
+      },
+    })
+
+    expect(pushes).toEqual([
+      { view: 'status', params: undefined },
+      { view: 'agent-run-detail', params: { runId: 'run-1' } },
+    ])
+    expect(startWorkflowFromPrompt).toHaveBeenCalledWith('audit endpoints')
+    expect(messages).toEqual(expect.arrayContaining([
+      'Opening Open Status.',
+      'Opening Open Agent Run.',
+      'Draft ready.',
+      'Use: openslack status',
+    ]))
+    expect(busyStates).toEqual([true, false])
+
+    const pushCountBeforeFailure = pushes.length
+    await executeConversationActionCard({
+      ...base,
+      actionHandlers: {
+        recordWorkbenchAction: vi.fn(async () => { throw new Error('audit failed') }),
+      },
+      card: {
+        id: 'bad-route',
+        label: 'Bad Route',
+        detail: 'Fails while recording.',
+        kind: 'route',
+        route: 'status',
+        riskLevel: 'low',
+        confirmationRequired: false,
+      },
+    })
+
+    expect(messages.at(-1)).toBe('Action failed: audit failed')
+    expect(pushes).toHaveLength(pushCountBeforeFailure)
   })
 
   it('renders with empty data and verifies grouped task layout', async () => {

@@ -1,4 +1,4 @@
-import React, { useCallback, useContext, useState } from 'react'
+import React, { useCallback, useContext, useRef, useState } from 'react'
 import Box from '../ink/components/Box.js'
 import Text from '../ink/components/Text.js'
 import useApp from '../ink/hooks/use-app.js'
@@ -86,6 +86,15 @@ export interface AskHistorySelection {
   value: string
 }
 
+interface ConversationActionCardExecutionInput {
+  card: ConversationActionCard
+  threadId?: string
+  actionHandlers?: Pick<TuiActionHandlers, 'recordWorkbenchAction' | 'startWorkflowFromPrompt'>
+  push: (location: { view: string; params?: Record<string, unknown> }) => void
+  setAskMessage: (message: string) => void
+  setAskBusy: (busy: boolean) => void
+}
+
 const URGENCY_COLOR: Record<RecommendedAction['urgency'], 'warning' | 'info' | 'muted'> = {
   governance: 'warning',
   blocker: 'warning',
@@ -112,6 +121,69 @@ export function resolveAskHistorySelection(
   }
   const cursor = historyCursor - 1
   return { cursor, value: askHistory[cursor] ?? '' }
+}
+
+export async function executeConversationActionCard({
+  card,
+  threadId,
+  actionHandlers,
+  push,
+  setAskMessage,
+  setAskBusy,
+}: ConversationActionCardExecutionInput): Promise<void> {
+  const record = async (message: string) => {
+    if (threadId && actionHandlers?.recordWorkbenchAction) {
+      await actionHandlers.recordWorkbenchAction(threadId, card, message)
+    }
+  }
+
+  try {
+    if ((card.kind === 'route' || card.kind === 'approval') && card.route) {
+      const message = card.confirmationRequired
+        ? `Opening ${card.label}; confirmation is still required.`
+        : `Opening ${card.label}.`
+      setAskMessage(message)
+      await record(message)
+      push({ view: card.route, params: card.routeParams })
+      return
+    }
+
+    if (card.kind === 'workflow_draft') {
+      if (card.prompt && actionHandlers?.startWorkflowFromPrompt) {
+        setAskBusy(true)
+        try {
+          const result = await actionHandlers.startWorkflowFromPrompt(card.prompt)
+          setAskMessage(result.message)
+          await record(result.message)
+        } catch (err) {
+          const message = `Workflow draft failed: ${err instanceof Error ? err.message : String(err)}`
+          setAskMessage(message)
+          await record(message)
+        } finally {
+          setAskBusy(false)
+        }
+        return
+      }
+      const message = card.command ? `Use: ${card.command}` : 'Workflow draft handler is not available.'
+      setAskMessage(message)
+      await record(message)
+      return
+    }
+
+    if (card.kind === 'agent_run' && card.route) {
+      const message = `Opening ${card.label}.`
+      setAskMessage(message)
+      await record(message)
+      push({ view: card.route, params: card.routeParams })
+      return
+    }
+
+    const message = card.command ? `Use: ${card.command}` : `${card.label} is not executable in this TUI session.`
+    setAskMessage(message)
+    await record(message)
+  } catch (err) {
+    setAskMessage(`Action failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
 }
 
 function buildCombinedItems(model: HomeViewModel): CombinedItem[] {
@@ -169,6 +241,7 @@ export default function HomeView({ model, actionHandlers, onAskSubmit, askState 
   const [askResult, setAskResult] = useState<TuiAskResult | undefined>()
   const [askHistory, setAskHistory] = useState<string[]>([])
   const [historyCursor, setHistoryCursor] = useState<number | undefined>()
+  const askSubmitInFlight = useRef(false)
   const cards = askResult?.cards ?? []
   const [selectedCardIndex, setSelectedCardIndex] = useClampedIndex(cards.length)
 
@@ -193,7 +266,8 @@ export default function HomeView({ model, actionHandlers, onAskSubmit, askState 
 
   const submitAsk = useCallback(async () => {
     const text = askValue.trim()
-    if (!text || askBusy) return
+    if (!text || askBusy || askSubmitInFlight.current) return
+    askSubmitInFlight.current = true
     setAskBusy(true)
     setAskMessage('Planning request...')
     try {
@@ -239,61 +313,20 @@ export default function HomeView({ model, actionHandlers, onAskSubmit, askState 
         cards: [],
       })
     } finally {
+      askSubmitInFlight.current = false
       setAskBusy(false)
     }
   }, [actionHandlers, askBusy, askResult?.threadId, askValue, onAskSubmit])
 
   const executeCard = useCallback(async (card: ConversationActionCard) => {
-    const threadId = askResult?.threadId
-    const record = async (message: string) => {
-      if (threadId && actionHandlers?.recordWorkbenchAction) {
-        await actionHandlers.recordWorkbenchAction(threadId, card, message)
-      }
-    }
-
-    if ((card.kind === 'route' || card.kind === 'approval') && card.route) {
-      const message = card.confirmationRequired
-        ? `Opening ${card.label}; confirmation is still required.`
-        : `Opening ${card.label}.`
-      setAskMessage(message)
-      await record(message)
-      push({ view: card.route, params: card.routeParams })
-      return
-    }
-
-    if (card.kind === 'workflow_draft') {
-      if (card.prompt && actionHandlers?.startWorkflowFromPrompt) {
-        try {
-          setAskBusy(true)
-          const result = await actionHandlers.startWorkflowFromPrompt(card.prompt)
-          setAskMessage(result.message)
-          await record(result.message)
-        } catch (err) {
-          const message = `Workflow draft failed: ${err instanceof Error ? err.message : String(err)}`
-          setAskMessage(message)
-          await record(message)
-        } finally {
-          setAskBusy(false)
-        }
-        return
-      }
-      const message = card.command ? `Use: ${card.command}` : 'Workflow draft handler is not available.'
-      setAskMessage(message)
-      await record(message)
-      return
-    }
-
-    if (card.kind === 'agent_run' && card.route) {
-      const message = `Opening ${card.label}.`
-      setAskMessage(message)
-      await record(message)
-      push({ view: card.route, params: card.routeParams })
-      return
-    }
-
-    const message = card.command ? `Use: ${card.command}` : `${card.label} is not executable in this TUI session.`
-    setAskMessage(message)
-    await record(message)
+    await executeConversationActionCard({
+      card,
+      threadId: askResult?.threadId,
+      actionHandlers,
+      push,
+      setAskMessage,
+      setAskBusy,
+    })
   }, [actionHandlers, askResult?.threadId, push])
 
   const selectHistory = useCallback((direction: AskHistoryDirection) => {
