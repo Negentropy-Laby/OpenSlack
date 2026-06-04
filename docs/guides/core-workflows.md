@@ -3,6 +3,8 @@
 Seven workflows that cover day-to-day OpenSlack use. Each one is a quick reference: what you want, where to start, what you will see, the safe default, and what to do next.
 
 For the full CLI reference, see [`user-guide.md`](../user-guide.md).
+For workflow-first operation, see
+[`dynamic-workflow-workbench.md`](dynamic-workflow-workbench.md).
 
 ---
 
@@ -47,6 +49,10 @@ bun run openslack collaboration workflow run <name> --input key=value
 ```
 
 For interactive execution with a TUI, add `--format tui` where supported. To inspect a completed run, use `openslack collaboration inspect <runId>`.
+
+For prompt-based generation, patterns, run drilldown, save/share, publish, and
+disable policy, use the [Dynamic Workflow Workbench](dynamic-workflow-workbench.md)
+guide.
 
 ---
 

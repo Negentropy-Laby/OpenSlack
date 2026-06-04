@@ -12,6 +12,10 @@ import type { ConfirmCallback } from './runtime.js'
 import { validateEffectAgainstManifest } from './manifest-validator.js'
 import type { AgentLauncher, AgentCacheStore, AgentEventEmitter } from './agent-shim.js'
 import type { PipelineCacheStore } from './pipeline-runner.js'
+import { RunStore } from './run-store.js'
+import type { RuntimeWithPersistence } from './runtime.js'
+import { WorkflowBudgetPausedError } from './agent-shim.js'
+import { join } from 'node:path'
 
 /**
  * Error thrown when a dry-run validation encounters issues.
@@ -117,6 +121,107 @@ export interface ExecuteRunOptions {
    * Defaults to process.cwd().
    */
   rootDir?: string
+}
+
+function workflowRunStore(rootDir: string): RunStore {
+  return new RunStore({ baseDir: join(rootDir, '.openslack.local', 'workflows') })
+}
+
+function workflowHash(
+  workflow: { meta: WorkflowMeta; hash?: string },
+  manifest: WorkflowMeta,
+): string {
+  return workflow.hash ?? `${manifest.name}:${manifest.version ?? 'unversioned'}`
+}
+
+function createRunStoreAgentCache(
+  store: RunStore,
+  delegate?: AgentCacheStore,
+): AgentCacheStore {
+  return {
+    async load(runId: string, cacheKey: string) {
+      const stored = await store.loadAgentResult(runId, cacheKey)
+      if (stored !== null) return stored as Awaited<ReturnType<AgentCacheStore['load']>>
+      return delegate ? delegate.load(runId, cacheKey) : null
+    },
+    async save(runId: string, cacheKey: string, result) {
+      if (delegate) await delegate.save(runId, cacheKey, result)
+      await store.saveAgentResult(runId, cacheKey, result)
+    },
+  }
+}
+
+function createRunStorePipelineCache(
+  store: RunStore,
+  delegate?: PipelineCacheStore,
+): PipelineCacheStore {
+  return {
+    async loadItem(runId: string, phase: string, index: number) {
+      const stored = await store.loadPipelineItem(runId, phase, index)
+      if (stored !== null) return stored
+      return delegate ? delegate.loadItem(runId, phase, index) : null
+    },
+    async saveItem(runId: string, phase: string, index: number, result: unknown) {
+      if (delegate) await delegate.saveItem(runId, phase, index, result)
+      await store.savePipelineItem(runId, phase, index, result)
+    },
+  }
+}
+
+async function safeTransition(
+  store: RunStore,
+  runId: string,
+  status: import('./types.js').RunStatus['status'],
+): Promise<void> {
+  try {
+    const current = await store.loadStatus(runId)
+    if (!current || current.status === status) return
+    await store.transitionStatus(runId, status)
+  } catch {
+    // Failure handling must not mask the workflow error/result.
+  }
+}
+
+async function ensureRunInitialized(options: {
+  store: RunStore
+  runId: string
+  manifest: WorkflowMeta
+  mode: ExecutionMode
+  args: Record<string, unknown>
+  startedAt?: string
+  manifestHash: string
+  budget?: { tokens: number; costUsd: number }
+}): Promise<void> {
+  if (await options.store.runExists(options.runId)) return
+  const startedAt = options.startedAt ?? new Date().toISOString()
+  await options.store.initRun(options.runId, {
+    runId: options.runId,
+    workflowName: options.manifest.name,
+    mode: options.mode,
+    manifestHash: options.manifestHash,
+    args: options.args,
+    startedAt,
+    budget: options.budget,
+    budgetPolicy: options.manifest.budgetPolicy,
+  })
+}
+
+async function flushRuntime(runtime: WorkflowRuntime): Promise<void> {
+  const flush = (runtime as Partial<RuntimeWithPersistence>).flushPersistence
+  if (flush) await flush()
+}
+
+async function pauseForUnexpectedEffect(
+  store: RunStore,
+  runId: string,
+  error: WorkflowPausedError,
+): Promise<void> {
+  await store.savePendingApproval(runId, {
+    operation: error.operation,
+    detail: error.detail,
+    timestamp: new Date().toISOString(),
+  })
+  await safeTransition(store, runId, 'paused_waiting_approval')
 }
 
 /**
@@ -299,6 +404,19 @@ export async function executeRun(
 
   const runId = options.confirmationPolicy?.runId
     ?? `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  const rootDir = options.rootDir ?? process.cwd()
+  const store = workflowRunStore(rootDir)
+  const effectiveBudget = budget ?? { tokens: 100000, costUsd: 1.0 }
+
+  await ensureRunInitialized({
+    store,
+    runId,
+    manifest,
+    mode: 'execute',
+    args,
+    manifestHash: workflowHash(workflow, manifest),
+    budget: effectiveBudget,
+  })
 
   // Resolve confirmation callback: confirmationPolicy takes precedence over legacy options
   let effectiveOnConfirm: ConfirmCallback | undefined
@@ -323,39 +441,62 @@ export async function executeRun(
     runId,
     mode: 'execute' as ExecutionMode,
     manifest,
-    budget: budget ?? { tokens: 100000, costUsd: 1.0 },
+    budget: effectiveBudget,
     permissions: {
       declared: manifest.permissions ?? {},
       granted: manifest.permissions ?? {},
       trustLevel: manifest.risk === 'low' ? 'trusted' : 'core',
     },
     agentLauncher: options.agentLauncher,
-    agentCache: options.agentCache,
-    pipelineCache: options.pipelineCache,
+    agentCache: createRunStoreAgentCache(store, options.agentCache),
+    pipelineCache: createRunStorePipelineCache(store, options.pipelineCache),
     onConfirm: effectiveOnConfirm,
     agentEventEmitter: options.agentEventEmitter,
-    rootDir: options.rootDir,
+    rootDir,
+    runStore: store,
   })
 
-  // Handle claude-ambient workflows
-  if (workflow.format === 'claude-ambient' && workflow.sourceBody) {
-    const { executeAmbientWorkflow } = await import('./ambient-runner.js')
-    const ambientResult = await executeAmbientWorkflow(workflow.sourceBody, runtime, args)
-    const result = {
-      status: 'completed',
-      ...(typeof ambientResult === 'object' && ambientResult !== null
-        ? ambientResult as Record<string, unknown>
-        : { result: ambientResult }),
-    } as RunResult
-    return { ...result, runId }
-  }
+  try {
+    // Handle claude-ambient workflows
+    if (workflow.format === 'claude-ambient' && workflow.sourceBody) {
+      const { executeAmbientWorkflow } = await import('./ambient-runner.js')
+      const ambientResult = await executeAmbientWorkflow(workflow.sourceBody, runtime, args)
+      const result = {
+        status: 'completed',
+        ...(typeof ambientResult === 'object' && ambientResult !== null
+          ? ambientResult as Record<string, unknown>
+          : { result: ambientResult }),
+      } as RunResult
+      const output = { ...result, runId }
+      await flushRuntime(runtime)
+      await store.saveOutput(runId, output)
+      await safeTransition(store, runId, 'completed')
+      return output
+    }
 
-  if (!workflow.run) {
-    throw new Error(`Workflow "${manifest.name}" has no run function`)
-  }
+    if (!workflow.run) {
+      throw new Error(`Workflow "${manifest.name}" has no run function`)
+    }
 
-  const result = await workflow.run(runtime, args)
-  return { ...result, runId }
+    const result = await workflow.run(runtime, args)
+    const output = { ...result, runId }
+    await flushRuntime(runtime)
+    await store.saveOutput(runId, output)
+    await safeTransition(store, runId, 'completed')
+    return output
+  } catch (err) {
+    await flushRuntime(runtime)
+    if (err instanceof WorkflowPausedError) {
+      await pauseForUnexpectedEffect(store, runId, err)
+      throw err
+    }
+    if (err instanceof WorkflowBudgetPausedError) {
+      await safeTransition(store, runId, 'paused_waiting_approval')
+      throw err
+    }
+    await safeTransition(store, runId, 'failed')
+    throw err
+  }
 }
 
 /**
@@ -399,6 +540,28 @@ export async function executeResume(
     args = {},
     budget,
   } = options
+  const rootDir = options.rootDir ?? process.cwd()
+  const store = workflowRunStore(rootDir)
+  const effectiveBudget = budget ?? { tokens: 100000, costUsd: 1.0 }
+
+  await ensureRunInitialized({
+    store,
+    runId,
+    manifest,
+    mode: 'execute',
+    args,
+    manifestHash: workflowHash(workflow, manifest),
+    budget: effectiveBudget,
+  })
+  const status = await store.loadStatus(runId)
+  if (status?.status === 'paused_waiting_approval') {
+    await safeTransition(store, runId, 'resuming')
+    await safeTransition(store, runId, 'running')
+  } else if (status?.status === 'paused') {
+    await safeTransition(store, runId, 'running')
+  } else if (status?.status === 'resuming') {
+    await safeTransition(store, runId, 'running')
+  }
 
   // Resolve confirmation callback: confirmationPolicy takes precedence over legacy options
   let effectiveOnConfirm: ConfirmCallback | undefined
@@ -422,37 +585,60 @@ export async function executeResume(
     runId,
     mode: 'execute' as ExecutionMode,
     manifest,
-    budget: budget ?? { tokens: 100000, costUsd: 1.0 },
+    budget: effectiveBudget,
     permissions: {
       declared: manifest.permissions ?? {},
       granted: manifest.permissions ?? {},
       trustLevel: manifest.risk === 'low' ? 'trusted' : 'core',
     },
     agentLauncher: options.agentLauncher,
-    agentCache: options.agentCache,
-    pipelineCache: options.pipelineCache,
+    agentCache: createRunStoreAgentCache(store, options.agentCache),
+    pipelineCache: createRunStorePipelineCache(store, options.pipelineCache),
     onConfirm: effectiveOnConfirm,
     agentEventEmitter: options.agentEventEmitter,
-    rootDir: options.rootDir,
+    rootDir,
+    runStore: store,
   })
 
-  // Handle claude-ambient workflows
-  if (workflow.format === 'claude-ambient' && workflow.sourceBody) {
-    const { executeAmbientWorkflow } = await import('./ambient-runner.js')
-    const ambientResult = await executeAmbientWorkflow(workflow.sourceBody, runtime, args)
-    const result = {
-      status: 'completed',
-      ...(typeof ambientResult === 'object' && ambientResult !== null
-        ? ambientResult as Record<string, unknown>
-        : { result: ambientResult }),
-    } as RunResult
-    return { ...result, runId }
-  }
+  try {
+    // Handle claude-ambient workflows
+    if (workflow.format === 'claude-ambient' && workflow.sourceBody) {
+      const { executeAmbientWorkflow } = await import('./ambient-runner.js')
+      const ambientResult = await executeAmbientWorkflow(workflow.sourceBody, runtime, args)
+      const result = {
+        status: 'completed',
+        ...(typeof ambientResult === 'object' && ambientResult !== null
+          ? ambientResult as Record<string, unknown>
+          : { result: ambientResult }),
+      } as RunResult
+      const output = { ...result, runId }
+      await flushRuntime(runtime)
+      await store.saveOutput(runId, output)
+      await safeTransition(store, runId, 'completed')
+      return output
+    }
 
-  if (!workflow.run) {
-    throw new Error(`Workflow "${manifest.name}" has no run function`)
-  }
+    if (!workflow.run) {
+      throw new Error(`Workflow "${manifest.name}" has no run function`)
+    }
 
-  const result = await workflow.run(runtime, args)
-  return { ...result, runId }
+    const result = await workflow.run(runtime, args)
+    const output = { ...result, runId }
+    await flushRuntime(runtime)
+    await store.saveOutput(runId, output)
+    await safeTransition(store, runId, 'completed')
+    return output
+  } catch (err) {
+    await flushRuntime(runtime)
+    if (err instanceof WorkflowPausedError) {
+      await pauseForUnexpectedEffect(store, runId, err)
+      throw err
+    }
+    if (err instanceof WorkflowBudgetPausedError) {
+      await safeTransition(store, runId, 'paused_waiting_approval')
+      throw err
+    }
+    await safeTransition(store, runId, 'failed')
+    throw err
+  }
 }

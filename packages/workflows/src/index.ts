@@ -74,7 +74,7 @@ export type { WorkflowSummary } from './loader.js'
 
 // ── Runtime ───────────────────────────────────────────────────────────────────
 export { createRuntime, ExecuteDeniedError, WorkflowPausedError } from './runtime.js'
-export type { RuntimeOptions, RuntimeInternals, ConfirmCallback } from './runtime.js'
+export type { RuntimeOptions, RuntimeInternals, ConfirmCallback, RuntimeWithPersistence } from './runtime.js'
 
 // ── Permission Checker ────────────────────────────────────────────────────────
 export {
@@ -102,6 +102,8 @@ export {
 // ── Agent Shim ────────────────────────────────────────────────────────────────
 export {
   SchemaValidationError,
+  WorkflowBudgetExceededError,
+  WorkflowBudgetPausedError,
   executeAgentCall,
   computeAgentCacheKey,
   validateAgainstSchema,
@@ -121,7 +123,17 @@ export type { PipelineCacheStore } from './pipeline-runner.js'
 
 // ── Run Store ─────────────────────────────────────────────────────────────────
 export { RunStore } from './run-store.js'
-export type { RunStoreFs, RunStoreOptions, RunMeta, RunStatusFile, LogEntry as RunLogEntry } from './run-store.js'
+export type {
+  RunStoreFs,
+  RunStoreOptions,
+  RunMeta,
+  RunStatusFile,
+  LogEntry as RunLogEntry,
+  AgentReplayInput,
+  AgentReplayInputLoadResult,
+  AgentReplayInputPersistenceResult,
+  BudgetWarning,
+} from './run-store.js'
 
 // ── Cache ─────────────────────────────────────────────────────────────────────
 export {
@@ -256,6 +268,15 @@ export {
   renderWorkflowRunProgress,
 } from './workflow-progress.js'
 export type { GetWorkflowRunProgressOptions } from './workflow-progress.js'
+
+export {
+  DEFAULT_BUDGET_WARNING_THRESHOLD,
+  WORKFLOW_COST_SCHEMA,
+  estimateWorkflowAgentCost,
+  getBudgetWarningThreshold,
+  loadWorkflowCostConfig,
+} from './cost.js'
+export type { WorkflowCostConfig, WorkflowCostEstimate, WorkflowCostRate } from './cost.js'
 
 // ── Workflow Catalog ───────────────────────────────────────────────────────
 export {

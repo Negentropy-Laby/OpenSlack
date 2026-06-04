@@ -44,7 +44,7 @@ describe('HomeView render debug', () => {
     instance.unmount()
   })
 
-  it('renders all 9 tasks in the tasks section', async () => {
+  it('renders workflow-first tasks in the tasks section', async () => {
     const { stdout, chunks } = createMockStdout(80, 50)
     const model = mapHomeToViewModel()
     const instance = await render(
@@ -57,9 +57,11 @@ describe('HomeView render debug', () => {
     const output = chunks.join('')
     expect(output).toContain('See what needs attention')
     expect(output).toContain('Start or continue work')
-    expect(output).toContain('Start a Dynamic Workflow')
-    expect(output).toContain('Watch workflow runs')
-    expect(output).toContain('Reuse workflow assets')
+    expect(output).toContain('Start a workflow')
+    expect(output).toContain('Watch running workflows')
+    expect(output).toContain('Handle paused workflow approvals')
+    expect(output).toContain('Save/share run')
+    expect(output).toContain('Publish workflow to GitHub Issues')
     expect(output).toContain('Review and merge PRs')
     expect(output).toContain('Approve pending items')
     expect(output).toContain('Maintain organization profile')

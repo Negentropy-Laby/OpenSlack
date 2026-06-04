@@ -4,7 +4,6 @@ import Text from '../ink/components/Text.js'
 import useInput from '../ink/hooks/use-input.js'
 import Pane from '../design-system/Pane.js'
 import ThemedText from '../design-system/ThemedText.js'
-import ThemedBox from '../design-system/ThemedBox.js'
 import Divider from '../design-system/Divider.js'
 import StatusIcon from '../design-system/StatusIcon.js'
 import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
@@ -20,14 +19,15 @@ import {
 } from '../actions/types.js'
 import type { TuiAction, TuiActionResult } from '../actions/types.js'
 import { sanitizeTerminalText } from '../sanitize.js'
-import type { WorkflowGalleryViewModel, WorkflowGalleryItem } from '../view-models/workflow-gallery.js'
+import type { WorkflowGalleryViewModel, WorkflowGalleryItem, WorkflowStartPatternItem } from '../view-models/workflow-gallery.js'
 import type { TuiActionHandlers } from './render-shell.js'
 
-type ViewMode = 'gallery' | 'detail' | 'issues-menu' | 'action-result'
+type ViewMode = 'gallery' | 'start-menu' | 'prompt-input' | 'pattern-start' | 'detail' | 'issues-menu' | 'action-result'
 
 /** Trust levels ordered from least to most privileged. */
 const TRUST_LEVELS = ['untrusted', 'trusted'] as const
 const PROTECTED_TRUST_LEVELS = new Set(['core', 'builtin'])
+const MAX_PROMPT_INPUT_LENGTH = 280
 
 type WorkflowWorkbenchProps = {
   galleryModel: WorkflowGalleryViewModel
@@ -94,13 +94,18 @@ function lastRunColorTheme(status: string | undefined): 'success' | 'error' | 'w
 export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: WorkflowWorkbenchProps): React.JSX.Element {
   const { pop, push } = useNavigation()
   const [mode, setMode] = useState<ViewMode>('gallery')
-  const [lastRunStatus, setLastRunStatus] = useState<string | undefined>(undefined)  // kept for future run-store integration
+  const [lastRunStatus] = useState<string | undefined>(undefined)
 
   const actionDispatch = useActionDispatch()
 
   const items = galleryModel.workflows
+  const patterns = galleryModel.patterns ?? []
   const [selectedIndex, setSelectedIndex] = useClampedIndex(items.length)
   const currentWf = items[selectedIndex] as WorkflowGalleryItem | undefined
+  const [patternIndex, setPatternIndex] = useClampedIndex(patterns.length)
+  const currentPattern = patterns[patternIndex] as WorkflowStartPatternItem | undefined
+  const [promptInput, setPromptInput] = useState('')
+  const [resultReturnMode, setResultReturnMode] = useState<ViewMode>('gallery')
 
   // --- Action factories ---
 
@@ -183,16 +188,55 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
     }
   }, [actionHandlers])
 
+  const makeStartPromptAction = useCallback((prompt: string): TuiAction => ({
+    id: 'workflow-start-prompt',
+    category: TuiActionCategory.WorkflowPreview,
+    risk: TuiRiskLevel.Low,
+    label: 'Start workflow from prompt',
+    description: 'Generate a safe dynamic workflow draft from the entered prompt.',
+    requiresConfirmation: false,
+    handler: async (): Promise<TuiActionResult> => {
+      if (actionHandlers?.startWorkflowFromPrompt) {
+        return actionHandlers.startWorkflowFromPrompt(prompt)
+      }
+      return {
+        success: false,
+        message: 'Workflow prompt start is not available in TUI.',
+        data: { cliCommand: `openslack collaboration workflow start --prompt "${prompt}"` },
+      }
+    },
+  }), [actionHandlers])
+
+  const makeStartPatternAction = useCallback((pattern: WorkflowStartPatternItem): TuiAction => ({
+    id: `workflow-start-pattern-${pattern.id}`,
+    category: TuiActionCategory.WorkflowPreview,
+    risk: TuiRiskLevel.Low,
+    label: `Start pattern ${pattern.id}`,
+    description: `Generate a safe workflow draft from pattern "${pattern.id}".`,
+    requiresConfirmation: false,
+    handler: async (): Promise<TuiActionResult> => {
+      if (actionHandlers?.startWorkflowFromPattern) {
+        return actionHandlers.startWorkflowFromPattern(pattern.id)
+      }
+      return {
+        success: false,
+        message: 'Workflow pattern start is not available in TUI.',
+        data: { cliCommand: `openslack collaboration workflow start --pattern ${pattern.id}` },
+      }
+    },
+  }), [actionHandlers])
+
   // --- Transition helpers ---
 
-  const goToActionResult = useCallback(() => {
+  const goToActionResult = useCallback((returnMode: ViewMode = currentWf ? 'detail' : 'gallery') => {
+    setResultReturnMode(returnMode === 'action-result' ? 'gallery' : returnMode)
     setMode('action-result')
-  }, [])
+  }, [currentWf])
 
-  const goToDetail = useCallback(() => {
+  const returnFromActionResult = useCallback(() => {
     actionDispatch.reset()
-    setMode('detail')
-  }, [actionDispatch])
+    setMode(resultReturnMode)
+  }, [actionDispatch, resultReturnMode])
 
   // --- Input handler ---
 
@@ -204,7 +248,11 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
     // Global back
     if (input === 'q' || key.escape) {
       if (mode === 'action-result') {
-        goToDetail()
+        returnFromActionResult()
+        return
+      }
+      if (mode === 'start-menu' || mode === 'prompt-input' || mode === 'pattern-start') {
+        setMode('gallery')
         return
       }
       if (mode === 'issues-menu') {
@@ -228,6 +276,89 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
         setSelectedIndex(prev => (prev < items.length - 1 ? prev + 1 : 0))
       } else if (key.return && items.length > 0) {
         setMode('detail')
+      } else if (input === '1') {
+        setMode('start-menu')
+      } else if (input === '2') {
+        push({ view: 'workflow-runs' })
+      } else if (input === '3') {
+        push({ view: 'approvals' })
+      } else if (input === '4') {
+        push({ view: 'workflow-runs' })
+      } else if (input === '5') {
+        const publishAction: TuiAction = currentWf && actionHandlers?.publishWorkflowAsIssue
+          ? {
+              id: `publish-issue-${currentWf.name}`,
+              category: TuiActionCategory.WorkflowPreview,
+              risk: TuiRiskLevel.Low,
+              label: `Publish ${currentWf.name} to GitHub Issues`,
+              description: `Create a GitHub proposal issue for workflow "${currentWf.name}".`,
+              requiresConfirmation: false,
+              handler: () => actionHandlers.publishWorkflowAsIssue!(currentWf.name),
+            }
+          : {
+              id: 'publish-issue-unavailable',
+              category: TuiActionCategory.WorkflowPreview,
+              risk: TuiRiskLevel.Low,
+              label: 'Publish workflow to GitHub Issues',
+              description: 'A workflow selection and publish handler are required before publishing.',
+              requiresConfirmation: false,
+              handler: async () => ({
+                success: false,
+                message: currentWf
+                  ? 'Publish is not available in this TUI session.'
+                  : 'Select a workflow before publishing to GitHub Issues.',
+                data: { cliCommand: 'openslack collaboration workflow publish <workflow-name>' },
+              }),
+            }
+        actionDispatch.dispatch(publishAction)
+        goToActionResult('gallery')
+      }
+      return
+    }
+
+    if (mode === 'start-menu') {
+      if (input === 'p') {
+        setPromptInput('')
+        setMode('prompt-input')
+        return
+      }
+      if (input === 't') {
+        setMode('pattern-start')
+        return
+      }
+      if (input === 's') {
+        setMode('gallery')
+        return
+      }
+    }
+
+    if (mode === 'prompt-input' && !inputBlocked) {
+      if (key.return) {
+        const prompt = promptInput.trim()
+        if (prompt) {
+          actionDispatch.dispatch(makeStartPromptAction(prompt))
+          goToActionResult('gallery')
+        }
+        return
+      }
+      if (key.backspace || key.delete) {
+        setPromptInput(prev => prev.slice(0, -1))
+        return
+      }
+      if (input && input.length > 0) {
+        setPromptInput(prev => `${prev}${input}`.slice(0, MAX_PROMPT_INPUT_LENGTH))
+      }
+      return
+    }
+
+    if (mode === 'pattern-start' && !inputBlocked) {
+      if (key.upArrow) {
+        setPatternIndex(prev => (prev > 0 ? prev - 1 : patterns.length - 1))
+      } else if (key.downArrow) {
+        setPatternIndex(prev => (prev < patterns.length - 1 ? prev + 1 : 0))
+      } else if (key.return && currentPattern) {
+        actionDispatch.dispatch(makeStartPatternAction(currentPattern))
+        goToActionResult('gallery')
       }
       return
     }
@@ -236,12 +367,12 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
     if (mode === 'detail' && currentWf && !inputBlocked) {
       if (input === 'p') {
         actionDispatch.dispatch(makePreviewAction(currentWf))
-        goToActionResult()
+        goToActionResult('detail')
         return
       }
       if (input === 'd') {
         actionDispatch.dispatch(makeDryRunAction(currentWf))
-        goToActionResult()
+        goToActionResult('detail')
         return
       }
       if (input === 'r') {
@@ -254,6 +385,44 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
       }
       if (input === 'i') {
         setMode('issues-menu')
+        return
+      }
+      if (input === 'u' && actionHandlers?.publishWorkflowAsIssue) {
+        actionDispatch.dispatch({
+          id: `publish-issue-${currentWf.name}`,
+          category: TuiActionCategory.WorkflowPreview,
+          risk: TuiRiskLevel.Low,
+          label: `Publish ${currentWf.name} as proposal issue`,
+          description: `Create a GitHub proposal issue for workflow "${currentWf.name}".`,
+          requiresConfirmation: false,
+          handler: () => actionHandlers.publishWorkflowAsIssue!(currentWf.name),
+        })
+        goToActionResult('detail')
+        return
+      }
+      if (input === 'v' && actionHandlers?.requestWorkflowReview) {
+        actionDispatch.dispatch({
+          id: `review-issue-${currentWf.name}`,
+          category: TuiActionCategory.WorkflowPreview,
+          risk: TuiRiskLevel.Low,
+          label: `Request review for ${currentWf.name}`,
+          description: `Create a security review issue for workflow "${currentWf.name}".`,
+          requiresConfirmation: false,
+          handler: () => actionHandlers.requestWorkflowReview!(currentWf.name),
+        })
+        goToActionResult('detail')
+        return
+      }
+      if (input === 'm' && actionHandlers?.splitWorkflowIntoIssues) {
+        actionDispatch.dispatch({
+          id: `split-issue-${currentWf.name}`,
+          category: TuiActionCategory.WorkflowPreview,
+          risk: TuiRiskLevel.Low,
+          label: `Split ${currentWf.name} into phase issues`,
+          description: `Create a new parent issue and sub-issues for each phase of workflow "${currentWf.name}".`,
+          requiresConfirmation: true,
+          handler: () => actionHandlers.splitWorkflowIntoIssues!(currentWf.name),
+        })
         return
       }
       if (input === 'l') {
@@ -274,7 +443,7 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
           requiresConfirmation: false,
           handler: () => actionHandlers.publishWorkflowAsIssue!(currentWf.name),
         })
-        goToActionResult()
+        goToActionResult('detail')
         return
       }
       if (input === 'r' && actionHandlers?.requestWorkflowReview) {
@@ -287,7 +456,7 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
           requiresConfirmation: false,
           handler: () => actionHandlers.requestWorkflowReview!(currentWf.name),
         })
-        goToActionResult()
+        goToActionResult('detail')
         return
       }
       if (input === 's' && actionHandlers?.splitWorkflowIntoIssues) {
@@ -298,7 +467,7 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
           label: `Split ${currentWf.name} into phase issues`,
           description: `Create a new parent issue and sub-issues for each phase of workflow "${currentWf.name}".`,
           requiresConfirmation: true,
-          handler: () => actionHandlers.splitWorkflowIntoIssues!(currentWf.name, 0),
+          handler: () => actionHandlers.splitWorkflowIntoIssues!(currentWf.name),
         })
         return
       }
@@ -313,7 +482,7 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
       if (key.return) {
         const terminal = actionDispatch.state.status === TuiActionStatus.Success || actionDispatch.state.status === TuiActionStatus.Error
         if (terminal) {
-          goToDetail()
+          returnFromActionResult()
         }
       }
     }
@@ -340,11 +509,78 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
       React.createElement(Text, null, '  '),
       React.createElement(KeyboardShortcutHint, { keys: ['t'], description: 'Trust' }),
       React.createElement(Text, null, '  '),
-      React.createElement(KeyboardShortcutHint, { keys: ['i'], description: 'Issues' }),
+      React.createElement(KeyboardShortcutHint, { keys: ['u'], description: 'Publish' }),
+      React.createElement(Text, null, '  '),
+      React.createElement(KeyboardShortcutHint, { keys: ['v'], description: 'Review' }),
+      React.createElement(Text, null, '  '),
+      React.createElement(KeyboardShortcutHint, { keys: ['m'], description: 'Split' }),
       React.createElement(Text, null, '  '),
       React.createElement(KeyboardShortcutHint, { keys: ['l'], description: 'Lifecycle' }),
       React.createElement(Text, null, '  '),
+      React.createElement(KeyboardShortcutHint, { keys: ['i'], description: 'More issues' }),
+      React.createElement(Text, null, '  '),
       React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'Back' }),
+    )
+
+  const renderGalleryHintBar = () =>
+    React.createElement(
+      Box,
+      { flexDirection: 'row' },
+      React.createElement(KeyboardShortcutHint, { keys: ['1'], description: 'Start' }),
+      React.createElement(Text, null, '  '),
+      React.createElement(KeyboardShortcutHint, { keys: ['2'], description: 'Watch' }),
+      React.createElement(Text, null, '  '),
+      React.createElement(KeyboardShortcutHint, { keys: ['3'], description: 'Approvals' }),
+      React.createElement(Text, null, '  '),
+      React.createElement(KeyboardShortcutHint, { keys: ['4'], description: 'Save/share' }),
+      React.createElement(Text, null, '  '),
+      React.createElement(KeyboardShortcutHint, { keys: ['5'], description: 'Publish' }),
+      React.createElement(Text, null, '  '),
+      React.createElement(KeyboardShortcutHint, { keys: ['Enter'], description: 'inspect saved' }),
+      React.createElement(Text, null, '  '),
+      React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'back' }),
+    )
+
+  const renderStartHintBar = () =>
+    React.createElement(
+      Box,
+      { flexDirection: 'row' },
+      React.createElement(KeyboardShortcutHint, { keys: ['p'], description: 'Prompt draft' }),
+      React.createElement(Text, null, '  '),
+      React.createElement(KeyboardShortcutHint, { keys: ['t'], description: 'Pattern' }),
+      React.createElement(Text, null, '  '),
+      React.createElement(KeyboardShortcutHint, { keys: ['s'], description: 'Saved workflow' }),
+      React.createElement(Text, null, '  '),
+      React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'Back' }),
+    )
+
+  const renderPromptHintBar = () =>
+    React.createElement(
+      Box,
+      { flexDirection: 'row' },
+      React.createElement(KeyboardShortcutHint, { keys: ['Enter'], description: 'Generate draft' }),
+      React.createElement(Text, null, '  '),
+      React.createElement(KeyboardShortcutHint, { keys: ['Backspace'], description: 'edit' }),
+      React.createElement(Text, null, '  '),
+      React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'Back' }),
+    )
+
+  const renderPatternHintBar = () =>
+    React.createElement(
+      Box,
+      { flexDirection: 'row' },
+      React.createElement(KeyboardShortcutHint, { keys: ['Up/Down'], description: 'choose pattern' }),
+      React.createElement(Text, null, '  '),
+      React.createElement(KeyboardShortcutHint, { keys: ['Enter'], description: 'Generate draft' }),
+      React.createElement(Text, null, '  '),
+      React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'Back' }),
+    )
+
+  const renderActionResultHintBar = () =>
+    React.createElement(
+      Box,
+      { flexDirection: 'row' },
+      React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc', 'Enter'], description: 'back' }),
     )
 
   const renderIssuesMenuHintBar = () =>
@@ -396,12 +632,12 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
     )
   }
 
-  // --- Confirmation overlay for run / trust in detail mode ---
-  if (mode === 'detail' && currentWf && actionDispatch.activeAction && isConfirming) {
+  // --- Confirmation overlay for run / trust / issue split actions ---
+  if (actionDispatch.activeAction && isConfirming) {
     return React.createElement(
       Box,
       { flexDirection: 'column', paddingX: 1 },
-      renderBreadcrumbs(` / ${currentWf.name}`),
+      renderBreadcrumbs(currentWf ? ` / ${currentWf.name}` : ''),
       React.createElement(Divider, { length: 40 }),
       React.createElement(
         Pane,
@@ -416,7 +652,99 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
         }),
       ),
       React.createElement(Divider, { length: 40 }),
-      renderDetailHintBar(),
+      currentWf ? renderDetailHintBar() : renderGalleryHintBar(),
+    )
+  }
+
+  // --- Workflow start menu ---
+  if (mode === 'start-menu') {
+    return React.createElement(
+      Box,
+      { flexDirection: 'column', paddingX: 1 },
+      renderBreadcrumbs(' / Start'),
+      React.createElement(Divider, { length: 40 }),
+      React.createElement(
+        Pane,
+        { title: 'Start A Workflow', marginY: 0 },
+        React.createElement(Box, { flexDirection: 'column' },
+          React.createElement(Box, { flexDirection: 'row' },
+            React.createElement(ThemedText, { colorTheme: 'accent' }, '[p] '),
+            React.createElement(ThemedText, { colorTheme: 'foreground' }, 'Prompt draft'),
+            React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, '  generate a safe draft from a task prompt'),
+          ),
+          React.createElement(Box, { flexDirection: 'row' },
+            React.createElement(ThemedText, { colorTheme: 'accent' }, '[t] '),
+            React.createElement(ThemedText, { colorTheme: 'foreground' }, 'Pattern start'),
+            React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, '  choose a Dynamic Workflow pattern'),
+          ),
+          React.createElement(Box, { flexDirection: 'row' },
+            React.createElement(ThemedText, { colorTheme: 'accent' }, '[s] '),
+            React.createElement(ThemedText, { colorTheme: 'foreground' }, 'Saved workflow'),
+            React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, '  preview, dry-run, or run a discovered workflow'),
+          ),
+        ),
+      ),
+      React.createElement(Divider, { length: 40 }),
+      renderStartHintBar(),
+    )
+  }
+
+  // --- Prompt start mode ---
+  if (mode === 'prompt-input') {
+    const displayPrompt = promptInput.length > 0 ? promptInput : 'type a workflow task prompt'
+    const isAtPromptLimit = promptInput.length >= MAX_PROMPT_INPUT_LENGTH
+    return React.createElement(
+      Box,
+      { flexDirection: 'column', paddingX: 1 },
+      renderBreadcrumbs(' / Start / Prompt'),
+      React.createElement(Divider, { length: 40 }),
+      React.createElement(
+        Pane,
+        { title: 'Prompt Draft', marginY: 0 },
+        React.createElement(Box, { flexDirection: 'column' },
+          React.createElement(ThemedText, { colorTheme: promptInput.length > 0 ? 'foreground' : 'muted' }, displayPrompt),
+          React.createElement(ThemedText, { colorTheme: isAtPromptLimit ? 'warning' : 'muted', dim: !isAtPromptLimit }, `Prompt length: ${promptInput.length}/${MAX_PROMPT_INPUT_LENGTH}`),
+          React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, 'Creates a draft in .openslack/workflows/drafts/ using workflow start semantics.'),
+        ),
+      ),
+      React.createElement(Divider, { length: 40 }),
+      renderPromptHintBar(),
+    )
+  }
+
+  // --- Pattern start mode ---
+  if (mode === 'pattern-start') {
+    const patternRows = patterns.map((pattern, i) => {
+      const isSelected = i === patternIndex
+      return React.createElement(
+        Box,
+        { key: pattern.id, flexDirection: 'column' },
+        React.createElement(Box, { flexDirection: 'row' },
+          React.createElement(ThemedText, { colorTheme: isSelected ? 'accent' : 'muted' }, isSelected ? '>' : ' '),
+          React.createElement(Text, null, ' '),
+          React.createElement(ThemedText, { colorTheme: isSelected ? 'accent' : 'foreground', bold: isSelected }, pattern.id),
+          React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, `  ${pattern.name}`),
+        ),
+        React.createElement(Box, { marginLeft: 3 },
+          React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, pattern.description),
+        ),
+      )
+    })
+
+    return React.createElement(
+      Box,
+      { flexDirection: 'column', paddingX: 1 },
+      renderBreadcrumbs(' / Start / Pattern'),
+      React.createElement(Divider, { length: 40 }),
+      patterns.length > 0
+        ? React.createElement(Pane, { title: 'Pattern Start', marginY: 0 },
+            React.createElement(Box, { flexDirection: 'column' }, ...patternRows),
+          )
+        : React.createElement(Pane, { title: 'Pattern Start', marginY: 0 },
+            React.createElement(ThemedText, { colorTheme: 'muted' }, 'No Dynamic Workflow patterns discovered.'),
+          ),
+      React.createElement(Divider, { length: 40 }),
+      renderPatternHintBar(),
     )
   }
 
@@ -468,12 +796,12 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
   }
 
   // --- Action result mode ---
-  if (mode === 'action-result' && currentWf) {
+  if (mode === 'action-result') {
     const actionLabel = actionDispatch.activeAction?.label ?? 'Action'
     return React.createElement(
       Box,
       { flexDirection: 'column', paddingX: 1 },
-      renderBreadcrumbs(` / ${currentWf.name} / Result`),
+      renderBreadcrumbs(currentWf ? ` / ${currentWf.name} / Result` : ' / Result'),
       React.createElement(Divider, { length: 40 }),
       React.createElement(
         Pane,
@@ -492,11 +820,7 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
           : null,
       ),
       React.createElement(Divider, { length: 40 }),
-      React.createElement(
-        Box,
-        { flexDirection: 'row' },
-        React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc', 'Enter'], description: 'back to detail' }),
-      ),
+      renderActionResultHintBar(),
     )
   }
 
@@ -543,6 +867,16 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
             React.createElement(ThemedText, { colorTheme: 'muted' }, 'Operations: '),
             React.createElement(ThemedText, { colorTheme: 'info', dim: true }, opsLine),
           ),
+        ),
+      ),
+      React.createElement(Divider, { length: 40 }),
+      React.createElement(
+        Pane,
+        { title: 'Publish Actions', marginY: 0 },
+        React.createElement(Box, { flexDirection: 'column' },
+          React.createElement(ThemedText, { colorTheme: actionHandlers?.publishWorkflowAsIssue ? 'foreground' : 'muted' }, '[u] Publish workflow to GitHub Issues'),
+          React.createElement(ThemedText, { colorTheme: actionHandlers?.requestWorkflowReview ? 'foreground' : 'muted' }, '[v] Request workflow review'),
+          React.createElement(ThemedText, { colorTheme: actionHandlers?.splitWorkflowIntoIssues ? 'foreground' : 'muted' }, '[m] Split workflow phases into issues'),
         ),
       ),
       React.createElement(Divider, { length: 40 }),
@@ -604,6 +938,14 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
 
   const summaryText = `${galleryModel.summary.total} workflows (${galleryModel.summary.yaml} YAML, ${galleryModel.summary.js} JS)`
 
+  const workflowHomeActions = [
+    { key: '1', label: 'Start a workflow', detail: 'Prompt draft, pattern start, or saved workflow' },
+    { key: '2', label: 'Watch running workflows', detail: 'Open run, phase, agent, transcript, and budget evidence' },
+    { key: '3', label: 'Handle paused workflow approvals', detail: 'Resolve workflow-effect and budget approvals' },
+    { key: '4', label: 'Save/share run', detail: 'Choose a run, then save scripts to project, user, or Claude project targets' },
+    { key: '5', label: 'Publish workflow to GitHub Issues', detail: 'Create proposal, review, or phase-tracking issues' },
+  ]
+
   return React.createElement(
     Box,
     { flexDirection: 'column', paddingX: 1 },
@@ -618,9 +960,17 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
     React.createElement(Divider, { length: 40 }),
     React.createElement(Pane, { title: 'Dynamic Workflows', marginY: 0 },
       React.createElement(Box, { flexDirection: 'column' },
-        React.createElement(ThemedText, { colorTheme: 'foreground' }, 'Start  Prompt draft | Pattern draft | Saved workflow'),
-        React.createElement(ThemedText, { colorTheme: 'foreground' }, 'Watch  Running | Paused | Recent results'),
-        React.createElement(ThemedText, { colorTheme: 'foreground' }, 'Reuse  Save | Export skill | Publish'),
+        ...workflowHomeActions.map((action) =>
+          React.createElement(Box, { key: action.key, flexDirection: 'column' },
+            React.createElement(Box, { flexDirection: 'row' },
+              React.createElement(ThemedText, { colorTheme: 'accent' }, `[${action.key}] `),
+              React.createElement(ThemedText, { colorTheme: 'foreground' }, action.label),
+            ),
+            React.createElement(Box, { marginLeft: 4 },
+              React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, action.detail),
+            ),
+          ),
+        ),
       ),
     ),
     React.createElement(Divider, { length: 40 }),
@@ -630,14 +980,6 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
         )
       : React.createElement(ThemedText, { colorTheme: 'muted' }, 'No workflows discovered.'),
     React.createElement(Divider, { length: 40 }),
-    React.createElement(
-      Box,
-      { flexDirection: 'row' },
-      React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'back' }),
-      React.createElement(Text, null, '  '),
-      React.createElement(KeyboardShortcutHint, { keys: ['Up/Down'], description: 'navigate' }),
-      React.createElement(Text, null, '  '),
-      React.createElement(KeyboardShortcutHint, { keys: ['Enter'], description: 'inspect' }),
-    ),
+    renderGalleryHintBar(),
   )
 }

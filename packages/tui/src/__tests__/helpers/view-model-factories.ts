@@ -39,12 +39,15 @@ export function createHomeViewModel(): HomeViewModel {
     tasks: [
       { key: 'see-attention', label: 'See what needs attention', route: 'dashboard', description: 'View items needing immediate action', shortcut: '1' },
       { key: 'start-work', label: 'Start or continue work', route: 'workflows', description: 'Create tasks, claim issues, and work in isolated branches', shortcut: '2' },
-      { key: 'run-workflow', label: 'Start a Dynamic Workflow', route: 'workflows', description: 'Generate from prompt, choose a pattern, or run a saved workflow', shortcut: '3' },
-      { key: 'watch-workflows', label: 'Watch workflow runs', route: 'workflow-runs', description: 'Inspect run, phase, agent, transcript, and budget evidence', shortcut: 'w' },
-      { key: 'reuse-workflows', label: 'Reuse workflow assets', route: 'workflows', description: 'Save, export as skill, or publish workflow proposals', shortcut: 's' },
+      { key: 'run-workflow', label: 'Start a workflow', route: 'workflows', description: 'Generate from prompt, choose a pattern, or run a saved workflow', shortcut: '3' },
+      { key: 'watch-workflows', label: 'Watch running workflows', route: 'workflow-runs', description: 'Inspect run, phase, agent, transcript, controls, and budget evidence', shortcut: 'w' },
+      { key: 'approve-workflows', label: 'Handle paused workflow approvals', route: 'approvals', description: 'Approve or reject workflow effects and budget pauses', shortcut: 'a' },
+      { key: 'save-share-workflow', label: 'Save/share run', route: 'workflow-runs', description: 'Choose a workflow run, then save scripts to project, user, or Claude project targets', shortcut: 's' },
+      { key: 'publish-workflow', label: 'Publish workflow to GitHub Issues', route: 'workflows', description: 'Create proposal, review, or phase tracking issues', shortcut: 'g' },
       { key: 'review-prs', label: 'Review and merge PRs', route: 'pr-queue', description: 'Check open PRs, run doctor, and merge when ready', shortcut: '4' },
       { key: 'approve-pending', label: 'Approve pending items', route: 'approvals', description: 'Approve plans, merge requests, and workflow effects', shortcut: '5' },
       { key: 'maintain-profile', label: 'Maintain organization profile', route: 'profile', description: 'Check, preview, and sync your organization profile', shortcut: '6' },
+      { key: 'view-conversations', label: 'View active conversations', route: 'conversations', description: 'Browse agent conversation threads and messages', shortcut: 'c' },
     ],
     systemStatus: 'ready',
     nextRecommendedAction: undefined,
@@ -249,6 +252,18 @@ export function createWorkflowWorkbenchViewModel(): WorkflowGalleryViewModel {
       yaml: 1,
       js: 1,
     },
+    patterns: [
+      {
+        id: 'fanout-synthesize',
+        name: 'Fanout synthesize',
+        description: 'Split broad research across agents and synthesize results',
+      },
+      {
+        id: 'tournament',
+        name: 'Tournament',
+        description: 'Compare alternatives and choose a winner',
+      },
+    ],
   }
 }
 

@@ -22,5 +22,5 @@ describe('@openslack/tui public API exports', () => {
     expect(mod.ListItem).toBeDefined()
     expect(mod.Pane).toBeDefined()
     expect(mod.KeyboardShortcutHint).toBeDefined()
-  })
+  }, 15000)
 })

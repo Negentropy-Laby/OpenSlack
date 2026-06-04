@@ -448,6 +448,30 @@ export function renderPlainWorkflowWorkbench(vm: WorkflowGalleryViewModel, width
   lines.push(wrap(`Total: ${vm.summary.total}  YAML: ${vm.summary.yaml}  JS: ${vm.summary.js}`, width))
   lines.push('')
 
+  lines.push('Workflow Home Actions:')
+  lines.push(wrap('  [1] Start a workflow', width))
+  lines.push(wrapIndent('      Prompt draft, pattern start, or saved workflow', 6, width))
+  lines.push(wrap('  [2] Watch running workflows', width))
+  lines.push(wrapIndent('      Run, phase, agent, transcript, and budget evidence', 6, width))
+  lines.push(wrap('  [3] Handle paused workflow approvals', width))
+  lines.push(wrapIndent('      Workflow-effect and budget approvals', 6, width))
+  lines.push(wrap('  [4] Save/share run', width))
+  lines.push(wrapIndent('      Choose a run, then save scripts to project, user, or Claude project', 6, width))
+  lines.push(wrap('  [5] Publish workflow to GitHub Issues', width))
+  lines.push(wrapIndent('      Proposal, review, or phase-tracking issues', 6, width))
+  lines.push('')
+
+  if (vm.patterns && vm.patterns.length > 0) {
+    lines.push('Pattern Start:')
+    for (const pattern of vm.patterns) {
+      lines.push(wrap(`  ${pattern.id} -- ${pattern.name}`, width))
+      if (pattern.description) {
+        lines.push(wrapIndent(`    ${pattern.description}`, 4, width))
+      }
+    }
+    lines.push('')
+  }
+
   if (vm.workflows.length === 0) {
     lines.push('No workflows found.')
   }

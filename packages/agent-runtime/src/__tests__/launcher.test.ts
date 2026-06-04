@@ -9,6 +9,8 @@ import {
   BridgeFactory,
   readTranscript,
   requestAgentRunCancellation,
+  requestAgentRunRestart,
+  AgentRunRestartRequestedError,
 } from '../index.js';
 import type { AdapterExecutionContext, AgentExecutionAdapter } from '../index.js';
 
@@ -108,6 +110,53 @@ describe('createOpenSlackAgentLauncher', () => {
     await expect(runPromise).rejects.toThrow(/cancelled|test requested stopAgent/);
     expect(store.getRun(activeRunId)?.status).toBe('cancelled');
     expect(readTranscript(activeRunId, root).at(-1)?.type).toBe('cancel');
+  });
+
+  it('requests restart for a live adapter run through the runtime control registry', async () => {
+    const store = createRunStore(root);
+    let activeRunId: string | undefined;
+    const adapter: AgentExecutionAdapter = {
+      adapterId: 'restart-blocking-test',
+      async execute<T>(context: AdapterExecutionContext) {
+        activeRunId = context.runId;
+        await new Promise((_resolve, reject) => {
+          context.signal?.addEventListener('abort', () => {
+            reject(context.signal?.reason ?? new Error('restart requested'));
+          }, { once: true });
+        });
+        return { data: { ok: true } as T };
+      },
+    };
+    const launcher = createOpenSlackAgentLauncher({ runStore: store, rootDir: root, adapter });
+
+    const runPromise = launcher('wait until restart', {
+      label: 'restart-agent',
+      phase: 'execute',
+      resolvedAgentConfig: {
+        agentId: 'restart-agent',
+        source: 'test',
+        permissionMode: 'plan',
+      },
+    });
+
+    while (!activeRunId) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+
+    const restart = requestAgentRunRestart(activeRunId, 'test requested restartAgent');
+
+    expect(restart.status).toBe('restart_requested');
+    await expect(runPromise).rejects.toBeInstanceOf(AgentRunRestartRequestedError);
+    expect(store.getRun(activeRunId)?.status).toBe('cancelled');
+    const transcript = readTranscript(activeRunId, root);
+    expect(transcript.some((entry) =>
+      entry.type === 'progress' &&
+      (entry.data as Record<string, unknown>).step === 'agent_restart_requested'
+    )).toBe(true);
+    expect(transcript.some((entry) =>
+      entry.type === 'progress' &&
+      (entry.data as Record<string, unknown>).step === 'agent_restart_handoff'
+    )).toBe(true);
   });
 
   it('writes transcript events', async () => {

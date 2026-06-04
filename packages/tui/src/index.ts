@@ -109,7 +109,7 @@ export type { HomeViewModel } from './view-models/home.js';
 export { mapHomeToViewModel } from './view-models/home.js';
 export type { ApprovalCenterViewModel, ApprovalItem, ApprovalCategory } from './view-models/approval-center.js';
 export { mapApprovalCenterToViewModel, getCategoryLabel } from './view-models/approval-center.js';
-export type { WorkflowGalleryViewModel, WorkflowGalleryItem, WorkflowDetailViewModel } from './view-models/workflow-gallery.js';
+export type { WorkflowGalleryViewModel, WorkflowGalleryItem, WorkflowDetailViewModel, WorkflowStartPatternItem } from './view-models/workflow-gallery.js';
 export { mapWorkflowGalleryToViewModel, mapWorkflowDetailToViewModel } from './view-models/workflow-gallery.js';
 export type { WorkflowRunProgressViewModel, WorkflowRunProgressItem, WorkflowPhaseProgressItem, WorkflowAgentProgressItem } from './view-models/workflow-runs.js';
 export { mapWorkflowRunsToViewModel } from './view-models/workflow-runs.js';

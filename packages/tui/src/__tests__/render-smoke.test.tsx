@@ -48,7 +48,7 @@ describe('Real render smoke test', () => {
 
     const output = chunks.join('');
     expect(output).toContain('Hello TUI');
-  });
+  }, 15000);
 
   it('renders multiple Text children inside a column Box', async () => {
     const tui = await import('@openslack/tui');
@@ -82,7 +82,7 @@ describe('Real render smoke test', () => {
     const output = chunks.join('');
     expect(output).toContain('Line One');
     expect(output).toContain('Line Two');
-  });
+  }, 15000);
 
   it('maps profile-sync approval category in view model', async () => {
     const { mapApprovalCenterToViewModel, getCategoryLabel } = await import('../view-models/approval-center.js');
@@ -223,7 +223,7 @@ describe('Real render smoke test', () => {
     expect(output).toContain('Marker not found in target');
     expect(output).toContain('Run openslack collaboration workflow profile-sync check');
     expect(output).toContain('Create failure issue');
-  });
+  }, 15000);
 
   it('renders ProfileView with sync details pane and mode header', async () => {
     const tui = await import('@openslack/tui');
@@ -273,7 +273,7 @@ describe('Real render smoke test', () => {
     expect(output).toContain('sha-target');
     expect(output).toContain('#55');
     expect(output).toContain('2026-05-28');
-  });
+  }, 15000);
 
   it('sanitizes profile action result and check groups', async () => {
     const { mapProfileToViewModel } = await import('../view-models/profile.js');

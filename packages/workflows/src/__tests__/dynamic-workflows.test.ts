@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
   controlWorkflowRun,
+  estimateWorkflowAgentCost,
   exportWorkflowSkill,
   generateWorkflowDraft,
   getWorkflowCatalogEntry,
@@ -12,15 +13,20 @@ import {
   inferWorkflowPatternId,
   listWorkflowCatalog,
   listWorkflowPatterns,
+  loadWorkflowCostConfig,
   previewWorkflowDraft,
   readWorkflowPolicy,
   renderWorkflowRunProgress,
   renderWorkflowDraftPreview,
+  RunStore,
   saveWorkflow,
   saveWorkflowRunScript,
+  WorkflowBudgetExceededError,
+  WorkflowBudgetPausedError,
   writeWorkflowPolicy,
 } from '../index.js'
 import { executeAgentCall } from '../agent-shim.js'
+import { AgentRunRestartRequestedError } from '@openslack/agent-runtime'
 
 describe('dynamic workflow pattern registry', () => {
   it('lists Anthropic dynamic workflow patterns', () => {
@@ -246,6 +252,40 @@ describe('dynamic workflow drafts and policy', () => {
     expect(status.pendingAgentControls?.[0].target?.agentRunId).toBe('RUN-20260101-NOHANDLE')
   })
 
+  it('rejects restartAgent when replay input is missing', async () => {
+    writeWorkflowRunStatus(root, 'run-restart-missing', 'running')
+
+    const result = await controlWorkflowRun('run-restart-missing', 'restartAgent', {
+      rootDir: root,
+      target: {
+        runId: 'run-restart-missing',
+        phase: 'Scan',
+        agentRunId: 'RUN-20260101-NOREPLAY',
+        agentId: 'scan-api',
+      },
+    })
+
+    expect(result.status).toBe('rejected')
+    expect(result.message).toContain('replay input missing')
+  })
+
+  it('rejects restartAgent for completed terminal workflow runs', async () => {
+    writeWorkflowRunStatus(root, 'run-restart-terminal', 'completed')
+
+    const result = await controlWorkflowRun('run-restart-terminal', 'restartAgent', {
+      rootDir: root,
+      target: {
+        runId: 'run-restart-terminal',
+        phase: 'Scan',
+        agentRunId: 'RUN-20260101-DONE',
+        agentId: 'scan-api',
+      },
+    })
+
+    expect(result.status).toBe('rejected')
+    expect(result.message).toContain('completed')
+  })
+
   it('blocks a matching future agent launch after pending stopAgent', async () => {
     writeWorkflowRunStatus(root, 'run-block-agent', 'running')
     await controlWorkflowRun('run-block-agent', 'stopAgent', {
@@ -273,6 +313,233 @@ describe('dynamic workflow drafts and policy', () => {
       agentRunId: 'RUN-20260101-BLOCKED',
       rootDir: root,
     })).rejects.toThrow(/Pending stop recorded/)
+  })
+
+  it('loads configured workflow cost rates and leaves unknown rates unknown', async () => {
+    writeCostConfig(root)
+
+    const config = await loadWorkflowCostConfig(root)
+    const known = estimateWorkflowAgentCost({
+      config,
+      provider: 'test-provider',
+      model: 'test-model',
+      tokens: 500_000,
+    })
+    const unknown = estimateWorkflowAgentCost({
+      config,
+      provider: 'test-provider',
+      model: 'other-model',
+      tokens: 500_000,
+    })
+
+    expect(known).toMatchObject({
+      known: true,
+      estimatedUsd: 1,
+      source: 'config',
+    })
+    expect(unknown).toMatchObject({
+      known: false,
+      source: 'unknown-rate',
+    })
+  })
+
+  it('records budget threshold warnings with configured cost estimates', async () => {
+    writeCostConfig(root)
+    const runStore = await initWorkflowRunStore(root, 'run-budget-warning', {
+      tokenBudget: 100,
+      maxAgents: 4,
+      maxConcurrency: 2,
+      onExceeded: 'pause',
+    })
+    const budget = { tokensUsed: 0, tokensRemaining: 100, costUsd: 0, agentCalls: 0 }
+
+    await executeAgentCall('scan api endpoints', {
+      label: 'scan-api',
+      phase: 'Scan',
+      model: 'test-model',
+    }, {
+      runId: 'run-budget-warning',
+      mode: 'execute',
+      budget,
+      budgetPolicy: { tokenBudget: 100, onExceeded: 'pause' },
+      permissions: new Set(),
+      cache: { async load() { return null }, async save(runId, cacheKey, result) { await runStore.saveAgentResult(runId, cacheKey, result) } },
+      launcher: async () => ({ data: { ok: true }, tokenUsage: 80, runId: 'RUN-BUDGET-WARN' }),
+      log: () => {},
+      cacheKey: 'budget-warning',
+      rootDir: root,
+      runStore,
+      resolvedAgent: {
+        agentId: 'scan-api',
+        source: 'test',
+        provider: 'test-provider',
+        model: 'test-model',
+      },
+    })
+
+    const status = await runStore.loadStatus('run-budget-warning')
+    expect(status?.budgetWarnings?.[0]).toMatchObject({
+      kind: 'threshold',
+      tokensUsed: 80,
+      tokenBudget: 100,
+      costUsd: 0.00016,
+    })
+    expect(budget.costUsd).toBe(0.00016)
+  })
+
+  it('pauses and creates approval evidence when budget policy is exceeded with pause', async () => {
+    const runStore = await initWorkflowRunStore(root, 'run-budget-pause', {
+      tokenBudget: 100,
+      onExceeded: 'pause',
+    })
+
+    await expect(executeAgentCall('scan beyond budget', {
+      label: 'scan-api',
+      phase: 'Scan',
+    }, {
+      runId: 'run-budget-pause',
+      mode: 'execute',
+      budget: { tokensUsed: 0, tokensRemaining: 100, costUsd: 0, agentCalls: 0 },
+      budgetPolicy: { tokenBudget: 100, onExceeded: 'pause' },
+      permissions: new Set(),
+      cache: { async load() { return null }, async save(runId, cacheKey, result) { await runStore.saveAgentResult(runId, cacheKey, result) } },
+      launcher: async () => ({ data: { ok: true }, tokenUsage: 101, runId: 'RUN-BUDGET-PAUSE' }),
+      log: () => {},
+      cacheKey: 'budget-pause',
+      rootDir: root,
+      runStore,
+    })).rejects.toBeInstanceOf(WorkflowBudgetPausedError)
+
+    const status = await runStore.loadStatus('run-budget-pause')
+    const approvals = await runStore.loadPendingApprovals('run-budget-pause')
+    expect(status?.status).toBe('paused_waiting_approval')
+    expect(approvals[0]).toMatchObject({
+      operation: 'workflow.budget.exceeded',
+      status: 'pending',
+    })
+  })
+
+  it('fails closed when budget policy is exceeded with fail', async () => {
+    const runStore = await initWorkflowRunStore(root, 'run-budget-fail', {
+      tokenBudget: 100,
+      onExceeded: 'fail',
+    })
+
+    await expect(executeAgentCall('scan beyond budget', {
+      label: 'scan-api',
+      phase: 'Scan',
+    }, {
+      runId: 'run-budget-fail',
+      mode: 'execute',
+      budget: { tokensUsed: 0, tokensRemaining: 100, costUsd: 0, agentCalls: 0 },
+      budgetPolicy: { tokenBudget: 100, onExceeded: 'fail' },
+      permissions: new Set(),
+      cache: { async load() { return null }, async save(runId, cacheKey, result) { await runStore.saveAgentResult(runId, cacheKey, result) } },
+      launcher: async () => ({ data: { ok: true }, tokenUsage: 101, runId: 'RUN-BUDGET-FAIL' }),
+      log: () => {},
+      cacheKey: 'budget-fail',
+      rootDir: root,
+      runStore,
+    })).rejects.toBeInstanceOf(WorkflowBudgetExceededError)
+  })
+
+  it('rejects before launching an agent when token budget is already exhausted', async () => {
+    let launches = 0
+
+    await expect(executeAgentCall('scan after exhausted budget', {
+      label: 'scan-api',
+      phase: 'Scan',
+    }, {
+      runId: 'run-budget-prelaunch',
+      mode: 'execute',
+      budget: { tokensUsed: 100, tokensRemaining: 0, costUsd: 0, agentCalls: 1 },
+      budgetPolicy: { tokenBudget: 100, onExceeded: 'fail' },
+      permissions: new Set(),
+      cache: { async load() { return null }, async save() {} },
+      launcher: async () => {
+        launches += 1
+        return { data: { ok: true }, tokenUsage: 1 }
+      },
+      log: () => {},
+      cacheKey: 'budget-prelaunch',
+      rootDir: root,
+    })).rejects.toThrow(/Budget exhausted/)
+
+    expect(launches).toBe(0)
+  })
+
+  it('restarts an active agent call from persisted replay input', async () => {
+    const runStore = await initWorkflowRunStore(root, 'run-replay', {
+      tokenBudget: 100,
+      onExceeded: 'pause',
+    })
+    let calls = 0
+
+    const result = await executeAgentCall('scan packages', {
+      label: 'scan-api',
+      phase: 'Scan',
+      agentRunId: 'RUN-REPLAY-ORIGINAL',
+    }, {
+      runId: 'run-replay',
+      mode: 'execute',
+      budget: { tokensUsed: 0, tokensRemaining: 100, costUsd: 0, agentCalls: 0 },
+      permissions: new Set(),
+      cache: { async load() { return null }, async save(runId, cacheKey, value) { await runStore.saveAgentResult(runId, cacheKey, value) } },
+      launcher: async () => {
+        calls += 1
+        if (calls === 1) {
+          throw new AgentRunRestartRequestedError('RUN-REPLAY-ORIGINAL', 'test restart')
+        }
+        return { data: { ok: true, calls }, tokenUsage: 5, runId: 'RUN-REPLAY-REPLACEMENT' }
+      },
+      log: () => {},
+      cacheKey: 'replay-cache',
+      agentRunId: 'RUN-REPLAY-ORIGINAL',
+      rootDir: root,
+      runStore,
+    })
+
+    expect(result).toEqual({ ok: true, calls: 2 })
+    expect(calls).toBe(2)
+    expect(await runStore.loadAgentReplayInput('run-replay', 'RUN-REPLAY-ORIGINAL')).toMatchObject({
+      available: true,
+    })
+    const cached = await runStore.loadAgentResult('run-replay', 'replay-cache') as { workflowEvidence?: { agentRunId?: string; replayAvailable?: boolean } }
+    expect(cached.workflowEvidence).toMatchObject({
+      agentRunId: 'RUN-REPLAY-REPLACEMENT',
+      replayAvailable: true,
+    })
+  })
+
+  it('rejects restart when replay input was blocked by the secret scanner', async () => {
+    const runStore = await initWorkflowRunStore(root, 'run-replay-secret', {
+      tokenBudget: 100,
+      onExceeded: 'pause',
+    })
+
+    await expect(executeAgentCall('scan with OPENSLACK_TEST_SECRET=placeholder', {
+      label: 'scan-api',
+      phase: 'Scan',
+      agentRunId: 'RUN-REPLAY-SECRET',
+    }, {
+      runId: 'run-replay-secret',
+      mode: 'execute',
+      budget: { tokensUsed: 0, tokensRemaining: 100, costUsd: 0, agentCalls: 0 },
+      permissions: new Set(),
+      cache: { async load() { return null }, async save() {} },
+      launcher: async () => {
+        throw new AgentRunRestartRequestedError('RUN-REPLAY-SECRET', 'test restart')
+      },
+      log: () => {},
+      cacheKey: 'replay-secret',
+      agentRunId: 'RUN-REPLAY-SECRET',
+      rootDir: root,
+      runStore,
+    })).rejects.toThrow(/Restart rejected: Replay input contains OpenSlack secret/)
+
+    expect(await runStore.loadAgentReplayInput('run-replay-secret', 'RUN-REPLAY-SECRET')).toMatchObject({
+      available: false,
+    })
   })
 })
 
@@ -312,4 +579,40 @@ export async function preview() {
 }
 `, 'utf-8')
   return path
+}
+
+function writeCostConfig(root: string): void {
+  const dir = join(root, '.openslack', 'workflows')
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(join(dir, 'cost.yaml'), [
+    'schema: openslack.workflow_cost.v1',
+    'warning_threshold: 0.8',
+    'rates:',
+    '  - provider: test-provider',
+    '    model: test-model',
+    '    total_per_1m_tokens_usd: 2',
+  ].join('\n'), 'utf-8')
+}
+
+async function initWorkflowRunStore(
+  root: string,
+  runId: string,
+  budgetPolicy: {
+    tokenBudget: number
+    maxAgents?: number
+    maxConcurrency?: number
+    onExceeded: 'pause' | 'fail'
+  },
+): Promise<RunStore> {
+  const runStore = new RunStore({ baseDir: join(root, '.openslack.local', 'workflows') })
+  await runStore.initRun(runId, {
+    runId,
+    workflowName: 'test-workflow',
+    mode: 'execute',
+    manifestHash: 'hash-test-workflow',
+    args: {},
+    startedAt: '2026-01-01T00:00:00.000Z',
+    budgetPolicy,
+  })
+  return runStore
 }

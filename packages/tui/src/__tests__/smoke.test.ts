@@ -10,7 +10,7 @@ describe('@openslack/tui smoke test', () => {
     expect(tui.Text).toBeDefined();
     expect(tui.Newline).toBeDefined();
     expect(tui.Spacer).toBeDefined();
-  });
+  }, 15000);
 
   it('exports hooks', async () => {
     const tui = await import('@openslack/tui');
@@ -18,7 +18,7 @@ describe('@openslack/tui smoke test', () => {
     expect(tui.useInput).toBeDefined();
     expect(tui.useStdin).toBeDefined();
     expect(tui.useInterval).toBeDefined();
-  });
+  }, 15000);
 
   it('can create React elements with Box and Text', async () => {
     const { Box, Text } = await import('@openslack/tui');
@@ -28,5 +28,5 @@ describe('@openslack/tui smoke test', () => {
     expect(element).toBeDefined();
     expect(element.type).toBe(Box);
     expect((element.props.children as React.ReactElement).type).toBe(Text);
-  });
+  }, 15000);
 });

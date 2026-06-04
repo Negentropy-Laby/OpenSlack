@@ -31,9 +31,11 @@ The Home screen shows:
 |----------|------|-------------|
 | 1 | See what needs attention | View items needing immediate action |
 | 2 | Start or continue work | Create tasks, claim issues, work in isolated branches |
-| 3 | Start a Dynamic Workflow | Generate from prompt, choose a pattern, or run a saved workflow |
-| w | Watch workflow runs | Inspect run, phase, agent, transcript, and budget evidence |
-| s | Reuse workflow assets | Save, export as skill, or publish workflow proposals |
+| 3 | Start a workflow | Generate from prompt, choose a pattern, or run a saved workflow |
+| w | Watch running workflows | Inspect run, phase, agent, transcript, controls, and budget evidence |
+| a | Handle paused workflow approvals | Approve or reject workflow effects and budget pauses |
+| s | Save/share run | Choose a workflow run, then save scripts to project, user, or Claude project targets |
+| g | Publish workflow to GitHub Issues | Create proposal, review, or phase-tracking issues |
 | 4 | Review and merge PRs | Check open PRs, run doctor, and merge when ready |
 | 5 | Approve pending items | Approve plans, merge requests, and workflow effects |
 | 6 | Maintain organization profile | Check, preview, and sync your organization profile |
@@ -80,8 +82,9 @@ Horizontal 5-stage progress bar (Proposal -> Review -> Run -> PR -> Merged) with
 ### Workflow Runs
 
 Run, phase, and agent drilldown for recorded workflow evidence. The view shows
-status, current phase, token budget, pending approvals, recent tool evidence,
-result summaries, transcript paths, and run-level controls.
+status, current phase, token budget, budget percent, configured cost estimate,
+pending approvals, recent tool evidence, replay availability, result summaries,
+transcript paths, and run/agent controls.
 
 ### Approval Center
 
@@ -123,6 +126,7 @@ bun run openslack collaboration dashboard --format plain
 
 ## Related
 
-- [Core Workflows](core-workflows.md) -- six day-to-day workflow guides
+- [Core Workflows](core-workflows.md) -- day-to-day workflow guides
+- [Dynamic Workflow Workbench](dynamic-workflow-workbench.md) -- workflow start, progress, save/share, publish, and disable paths
 - [CLI Reference](../user-guide.md) -- complete command reference
 - [TUI Style Guide](../developer/tui-style-guide.md) -- rendering conventions and column width matrix

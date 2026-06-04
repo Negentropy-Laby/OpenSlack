@@ -105,7 +105,7 @@ export function tuiCommands(): Command {
 
         // Pre-fetch workflow gallery data
         try {
-          const { discoverJsWorkflows, discoverYamlTemplates, TrustStore } = await import('@openslack/workflows');
+          const { discoverJsWorkflows, discoverYamlTemplates, TrustStore, listWorkflowPatterns } = await import('@openslack/workflows');
           const trustStore = new TrustStore({ rootDir: root });
           const jsWorkflows = await discoverJsWorkflows(root);
           const yamlDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', 'templates', 'workflows');
@@ -130,7 +130,14 @@ export function tuiCommands(): Command {
             })),
           ];
 
-          data.workflowGallery = mapWorkflowGalleryToViewModel({ workflows });
+          data.workflowGallery = mapWorkflowGalleryToViewModel({
+            workflows,
+            patterns: listWorkflowPatterns().map(pattern => ({
+              id: pattern.id,
+              name: pattern.name,
+              description: pattern.description,
+            })),
+          });
 
           // Pre-fetch workflow lifecycle base data (cheap local data only)
           try {

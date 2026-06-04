@@ -17,8 +17,15 @@ export interface WorkflowGalleryItem {
   lastRunStatus?: string
 }
 
+export interface WorkflowStartPatternItem {
+  id: string
+  name: string
+  description: string
+}
+
 export interface WorkflowGalleryViewModel {
   workflows: WorkflowGalleryItem[]
+  patterns?: WorkflowStartPatternItem[]
   summary: {
     total: number
     yaml: number
@@ -36,6 +43,11 @@ export function mapWorkflowGalleryToViewModel(data?: {
     phases?: number
     lastRunStatus?: string
   }>
+  patterns?: Array<{
+    id: string
+    name: string
+    description?: string
+  }>
 }): WorkflowGalleryViewModel {
   const s = sanitizeTerminalText
 
@@ -51,6 +63,11 @@ export function mapWorkflowGalleryToViewModel(data?: {
 
   return {
     workflows,
+    patterns: (data?.patterns ?? []).map((pattern) => ({
+      id: s(pattern.id),
+      name: s(pattern.name),
+      description: s(pattern.description ?? ''),
+    })),
     summary: {
       total: workflows.length,
       yaml: workflows.filter(w => w.format === 'yaml').length,

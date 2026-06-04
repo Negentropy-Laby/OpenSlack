@@ -31,6 +31,8 @@ import {
   executeDryRun,
   executeRun,
   executeResume,
+  WorkflowBudgetPausedError,
+  WorkflowPausedError,
   RunStore,
   checkResumable,
   prepareResume,
@@ -221,6 +223,18 @@ function parseWorkflowSaveTarget(value: string): typeof WORKFLOW_SAVE_TARGETS[nu
   if ((WORKFLOW_SAVE_TARGETS as readonly string[]).includes(value)) return value as typeof WORKFLOW_SAVE_TARGETS[number];
   console.error(`--to must be one of: ${WORKFLOW_SAVE_TARGETS.join(', ')}`);
   process.exit(1);
+}
+
+async function markRunFailedIfActive(store: RunStore, runId: string): Promise<void> {
+  try {
+    const status = await store.loadStatus(runId);
+    if (status?.status === 'running' || status?.status === 'resuming') {
+      await store.transitionStatus(runId, 'failed');
+    }
+  } catch {
+    // executeResume owns the primary state transition. This fallback must not
+    // mask the original resume error reported to the operator.
+  }
 }
 
 function resolveBuiltinTemplatePath(id: string): string | undefined {
@@ -1491,6 +1505,18 @@ export function collaborationCommands(): Command {
           }
         }
       } catch (err) {
+        if (err instanceof WorkflowPausedError) {
+          console.log(`Workflow paused for approval: ${err.operation}`);
+          console.log(`  Run ID: ${err.runId}`);
+          console.log(`  Detail: ${err.detail}`);
+          process.exit(1);
+        }
+        if (err instanceof WorkflowBudgetPausedError) {
+          console.log('Workflow paused for budget approval.');
+          console.log(`  Run ID: ${err.runId}`);
+          console.log(`  Detail: ${err.detail}`);
+          process.exit(1);
+        }
         console.log(`Execution failed for workflow "${name}":`);
         console.log(`  ${(err as Error).message}`);
         process.exit(1);
@@ -1552,9 +1578,6 @@ export function collaborationCommands(): Command {
         console.log(`  Next phase index: ${resumeState.nextPhaseIndex}`);
         console.log('');
 
-        // Transition back to running
-        await store.transitionStatus(runId, 'running');
-
         const onConfirm = options.yes
           ? async (operation: string, detail: string): Promise<boolean> => {
               console.log(`[AUTO-APPROVE] ${operation}: ${detail}`);
@@ -1586,19 +1609,22 @@ export function collaborationCommands(): Command {
           rootDir: findRepoRoot(),
         });
 
-        // Mark run as completed
-        await store.transitionStatus(runId, 'completed');
-        await store.saveOutput(runId, result);
-
         console.log('Resume Result:');
         console.log(JSON.stringify(result, null, 2));
       } catch (err) {
-        // Try to mark the run as failed
-        try {
-          await store.transitionStatus(runId, 'failed');
-        } catch {
-          // Ignore transition errors during failure handling
+        if (err instanceof WorkflowPausedError) {
+          console.log(`Workflow paused for approval: ${err.operation}`);
+          console.log(`  Run ID: ${err.runId}`);
+          console.log(`  Detail: ${err.detail}`);
+          process.exit(1);
         }
+        if (err instanceof WorkflowBudgetPausedError) {
+          console.log('Workflow paused for budget approval.');
+          console.log(`  Run ID: ${err.runId}`);
+          console.log(`  Detail: ${err.detail}`);
+          process.exit(1);
+        }
+        await markRunFailedIfActive(store, runId);
         console.log(`Resume failed for run ${runId}:`);
         console.log(`  ${(err as Error).message}`);
         process.exit(1);

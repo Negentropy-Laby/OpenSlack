@@ -34,9 +34,13 @@ const TASK_GROUPS: TaskGroup[] = [
 const TASK_KEY_TO_GROUP: Record<string, TaskGroupCategory> = {
   'start-work': 'start-work',
   'run-workflow': 'start-work',
+  'watch-workflows': 'start-work',
+  'save-share-workflow': 'start-work',
+  'publish-workflow': 'start-work',
   'see-attention': 'review-work',
   'review-prs': 'review-work',
   'view-conversations': 'review-work',
+  'approve-workflows': 'govern',
   'approve-pending': 'govern',
   'maintain-profile': 'maintain',
 }
