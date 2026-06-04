@@ -4,6 +4,7 @@ import {
   executeTrustChange,
   executeWorkflowRun,
   saveWorkflowRunScriptFromTui,
+  splitWorkflowIntoIssues,
   startWorkflowFromPattern,
   startWorkflowFromPrompt,
 } from '../commands/tui-executors.js'
@@ -12,6 +13,7 @@ import { TrustStore } from '@openslack/workflows'
 import * as operator from '@openslack/operator'
 import * as collaboration from '@openslack/collaboration'
 import * as pr from '@openslack/pr'
+import * as github from '@openslack/github'
 
 // ── Module-level mocks ──────────────────────────────────────────────────────────
 
@@ -28,6 +30,10 @@ vi.mock('@openslack/collaboration', () => ({
 
 vi.mock('@openslack/pr', () => ({
   mergeIfReady: vi.fn(),
+}))
+
+vi.mock('@openslack/github', () => ({
+  publishWorkflowSplit: vi.fn(),
 }))
 
 vi.mock('@openslack/workflows', async () => {
@@ -469,6 +475,48 @@ describe('workflow start and save/share handlers', () => {
     expect(saveWorkflowRunScript).toHaveBeenNthCalledWith(1, 'run-001', { rootDir: ROOT, to: 'project' })
     expect(saveWorkflowRunScript).toHaveBeenNthCalledWith(2, 'run-001', { rootDir: ROOT, to: 'user' })
     expect(saveWorkflowRunScript).toHaveBeenNthCalledWith(3, 'run-001', { rootDir: ROOT, to: 'claude-project' })
+  })
+
+  it('splits workflow phases by creating a parent issue when none is provided', async () => {
+    const { findWorkflow, loadWorkflow } = await import('@openslack/workflows')
+    vi.mocked(findWorkflow).mockResolvedValueOnce({ path: '/test/wf.js', name: 'test-wf', source: 'openslack-project' })
+    vi.mocked(loadWorkflow).mockResolvedValueOnce({
+      meta: { name: 'test-wf', description: 'Test', phases: [{ title: 'Scan', detail: 'Scan' }], risk: 'medium' },
+      format: 'openslack-native',
+      hash: 'hash123',
+    })
+    vi.mocked(github.publishWorkflowSplit).mockResolvedValueOnce({
+      parentIssueNumber: 100,
+      subIssues: [{ phase: 'Scan', issueNumber: 101, url: 'https://github.com/test/101' }],
+      links: { nativeSubIssues: 0, fallbackSubIssues: 1, nativeDependencies: 0, fallbackDependencies: 0, fallbackReasons: [] },
+    })
+
+    const result = await splitWorkflowIntoIssues('test-wf', undefined, ROOT)
+
+    expect(result.success).toBe(true)
+    expect(github.publishWorkflowSplit).toHaveBeenCalledWith(expect.any(Object), {})
+    expect(result.data?.parentIssueNumber).toBe(100)
+  })
+
+  it('passes an existing parent issue when splitting workflow phases', async () => {
+    const { findWorkflow, loadWorkflow } = await import('@openslack/workflows')
+    vi.mocked(findWorkflow).mockResolvedValueOnce({ path: '/test/wf.js', name: 'test-wf', source: 'openslack-project' })
+    vi.mocked(loadWorkflow).mockResolvedValueOnce({
+      meta: { name: 'test-wf', description: 'Test', phases: [{ title: 'Scan', detail: 'Scan' }], risk: 'medium' },
+      format: 'openslack-native',
+      hash: 'hash123',
+    })
+    vi.mocked(github.publishWorkflowSplit).mockResolvedValueOnce({
+      parentIssueNumber: 42,
+      subIssues: [{ phase: 'Scan', issueNumber: 43, url: 'https://github.com/test/43' }],
+      links: { nativeSubIssues: 0, fallbackSubIssues: 1, nativeDependencies: 0, fallbackDependencies: 0, fallbackReasons: [] },
+    })
+
+    const result = await splitWorkflowIntoIssues('test-wf', 42, ROOT)
+
+    expect(result.success).toBe(true)
+    expect(github.publishWorkflowSplit).toHaveBeenCalledWith(expect.any(Object), { parentIssue: 42 })
+    expect(result.data?.parentIssueNumber).toBe(42)
   })
 })
 

@@ -33,7 +33,7 @@ export interface TuiActionHandlers {
   saveWorkflowRunScript?: (runId: string, target?: 'project' | 'user' | 'claude-project') => Promise<TuiActionResult>
   publishWorkflowAsIssue?: (workflowName: string) => Promise<TuiActionResult>
   requestWorkflowReview?: (workflowName: string) => Promise<TuiActionResult>
-  splitWorkflowIntoIssues?: (workflowName: string, parentIssue: number) => Promise<TuiActionResult>
+  splitWorkflowIntoIssues?: (workflowName: string, parentIssue?: number) => Promise<TuiActionResult>
   finalizeWorkflowPr?: (workflowName: string, prNumber: number) => Promise<TuiActionResult>
   profileSync?: ProfileActionHandlers
 }
@@ -567,7 +567,7 @@ export async function finalizeWorkflowPr(
 
 export async function splitWorkflowIntoIssues(
   workflowName: string,
-  parentIssue: number,
+  parentIssue: number | undefined,
   root: string,
 ): Promise<TuiActionResult> {
   try {
@@ -578,7 +578,10 @@ export async function splitWorkflowIntoIssues(
     }
     const mod = await loadWorkflow(found.path)
     const { publishWorkflowSplit } = await import('@openslack/github')
-    const result = await publishWorkflowSplit(mod, { parentIssue })
+    const options = Number.isFinite(parentIssue) && (parentIssue ?? 0) > 0
+      ? { parentIssue: parentIssue as number }
+      : {}
+    const result = await publishWorkflowSplit(mod, options)
     return {
       success: true,
       message: `Workflow split into ${result.subIssues.length} phase issues.`,

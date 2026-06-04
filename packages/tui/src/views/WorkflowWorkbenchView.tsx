@@ -27,6 +27,7 @@ type ViewMode = 'gallery' | 'start-menu' | 'prompt-input' | 'pattern-start' | 'd
 /** Trust levels ordered from least to most privileged. */
 const TRUST_LEVELS = ['untrusted', 'trusted'] as const
 const PROTECTED_TRUST_LEVELS = new Set(['core', 'builtin'])
+const MAX_PROMPT_INPUT_LENGTH = 280
 
 type WorkflowWorkbenchProps = {
   galleryModel: WorkflowGalleryViewModel
@@ -283,16 +284,33 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
         push({ view: 'approvals' })
       } else if (input === '4') {
         push({ view: 'workflow-runs' })
-      } else if (input === '5' && currentWf && actionHandlers?.publishWorkflowAsIssue) {
-        actionDispatch.dispatch({
-          id: `publish-issue-${currentWf.name}`,
-          category: TuiActionCategory.WorkflowPreview,
-          risk: TuiRiskLevel.Low,
-          label: `Publish ${currentWf.name} to GitHub Issues`,
-          description: `Create a GitHub proposal issue for workflow "${currentWf.name}".`,
-          requiresConfirmation: false,
-          handler: () => actionHandlers.publishWorkflowAsIssue!(currentWf.name),
-        })
+      } else if (input === '5') {
+        const publishAction: TuiAction = currentWf && actionHandlers?.publishWorkflowAsIssue
+          ? {
+              id: `publish-issue-${currentWf.name}`,
+              category: TuiActionCategory.WorkflowPreview,
+              risk: TuiRiskLevel.Low,
+              label: `Publish ${currentWf.name} to GitHub Issues`,
+              description: `Create a GitHub proposal issue for workflow "${currentWf.name}".`,
+              requiresConfirmation: false,
+              handler: () => actionHandlers.publishWorkflowAsIssue!(currentWf.name),
+            }
+          : {
+              id: 'publish-issue-unavailable',
+              category: TuiActionCategory.WorkflowPreview,
+              risk: TuiRiskLevel.Low,
+              label: 'Publish workflow to GitHub Issues',
+              description: 'A workflow selection and publish handler are required before publishing.',
+              requiresConfirmation: false,
+              handler: async () => ({
+                success: false,
+                message: currentWf
+                  ? 'Publish is not available in this TUI session.'
+                  : 'Select a workflow before publishing to GitHub Issues.',
+                data: { cliCommand: 'openslack collaboration workflow publish <workflow-name>' },
+              }),
+            }
+        actionDispatch.dispatch(publishAction)
         goToActionResult('gallery')
       }
       return
@@ -328,7 +346,7 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
         return
       }
       if (input && input.length > 0) {
-        setPromptInput(prev => `${prev}${input}`.slice(0, 280))
+        setPromptInput(prev => `${prev}${input}`.slice(0, MAX_PROMPT_INPUT_LENGTH))
       }
       return
     }
@@ -403,7 +421,7 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
           label: `Split ${currentWf.name} into phase issues`,
           description: `Create a new parent issue and sub-issues for each phase of workflow "${currentWf.name}".`,
           requiresConfirmation: true,
-          handler: () => actionHandlers.splitWorkflowIntoIssues!(currentWf.name, 0),
+          handler: () => actionHandlers.splitWorkflowIntoIssues!(currentWf.name),
         })
         return
       }
@@ -449,7 +467,7 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
           label: `Split ${currentWf.name} into phase issues`,
           description: `Create a new parent issue and sub-issues for each phase of workflow "${currentWf.name}".`,
           requiresConfirmation: true,
-          handler: () => actionHandlers.splitWorkflowIntoIssues!(currentWf.name, 0),
+          handler: () => actionHandlers.splitWorkflowIntoIssues!(currentWf.name),
         })
         return
       }
@@ -674,6 +692,7 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
   // --- Prompt start mode ---
   if (mode === 'prompt-input') {
     const displayPrompt = promptInput.length > 0 ? promptInput : 'type a workflow task prompt'
+    const isAtPromptLimit = promptInput.length >= MAX_PROMPT_INPUT_LENGTH
     return React.createElement(
       Box,
       { flexDirection: 'column', paddingX: 1 },
@@ -684,6 +703,7 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
         { title: 'Prompt Draft', marginY: 0 },
         React.createElement(Box, { flexDirection: 'column' },
           React.createElement(ThemedText, { colorTheme: promptInput.length > 0 ? 'foreground' : 'muted' }, displayPrompt),
+          React.createElement(ThemedText, { colorTheme: isAtPromptLimit ? 'warning' : 'muted', dim: !isAtPromptLimit }, `Prompt length: ${promptInput.length}/${MAX_PROMPT_INPUT_LENGTH}`),
           React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, 'Creates a draft in .openslack/workflows/drafts/ using workflow start semantics.'),
         ),
       ),
@@ -922,7 +942,7 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
     { key: '1', label: 'Start a workflow', detail: 'Prompt draft, pattern start, or saved workflow' },
     { key: '2', label: 'Watch running workflows', detail: 'Open run, phase, agent, transcript, and budget evidence' },
     { key: '3', label: 'Handle paused workflow approvals', detail: 'Resolve workflow-effect and budget approvals' },
-    { key: '4', label: 'Save/share workflow', detail: 'Save run scripts to project, user, or Claude project targets' },
+    { key: '4', label: 'Save/share run', detail: 'Choose a run, then save scripts to project, user, or Claude project targets' },
     { key: '5', label: 'Publish workflow to GitHub Issues', detail: 'Create proposal, review, or phase-tracking issues' },
   ]
 

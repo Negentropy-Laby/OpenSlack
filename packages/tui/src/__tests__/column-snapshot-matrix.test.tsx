@@ -194,7 +194,7 @@ describe.each(COLUMN_WIDTHS)('at %d columns', (cols) => {
     expect(output).toContain('Start a workflow')
     expect(output).toContain('Watch running workflows')
     expect(output).toContain('Handle paused workflow approvals')
-    expect(output).toContain('Save/share workflow')
+    expect(output).toContain('Save/share run')
     expect(output).toContain('Publish workflow to GitHub Issues')
     expect(output).toContain('test-workflow')
     expect(output).toContain('deploy-workflow')

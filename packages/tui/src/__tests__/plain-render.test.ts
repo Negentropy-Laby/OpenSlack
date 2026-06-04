@@ -483,7 +483,7 @@ describe('renderPlainWorkflowWorkbench', () => {
     expect(out).toContain('Start a workflow')
     expect(out).toContain('Watch running workflows')
     expect(out).toContain('Handle paused workflow approvals')
-    expect(out).toContain('Save/share workflow')
+    expect(out).toContain('Save/share run')
     expect(out).toContain('Publish workflow to GitHub Issues')
     expect(out).toContain('Pattern Start:')
     expect(out).toContain('test-workflow')

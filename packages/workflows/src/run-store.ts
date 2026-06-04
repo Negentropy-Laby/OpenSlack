@@ -686,5 +686,8 @@ function createNodeFs(): RunStoreFs {
 }
 
 function safeFileName(value: string): string {
+  // The returned value is used only as a single path segment. encodeURIComponent
+  // escapes path separators and traversal dots, and the explicit '*' escape keeps
+  // the segment stable across filesystems that treat glob characters specially.
   return encodeURIComponent(value).replace(/\*/g, '%2A')
 }

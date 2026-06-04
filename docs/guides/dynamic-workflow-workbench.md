@@ -80,7 +80,7 @@ From Home choose:
 - `Start a workflow`
 - `Watch running workflows`
 - `Handle paused workflow approvals`
-- `Save/share workflow`
+- `Save/share run`
 - `Publish workflow to GitHub Issues`
 
 The run view shows the run, phase, and agent tree with prompt summaries,

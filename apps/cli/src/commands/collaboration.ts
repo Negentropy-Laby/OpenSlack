@@ -225,6 +225,18 @@ function parseWorkflowSaveTarget(value: string): typeof WORKFLOW_SAVE_TARGETS[nu
   process.exit(1);
 }
 
+async function markRunFailedIfActive(store: RunStore, runId: string): Promise<void> {
+  try {
+    const status = await store.loadStatus(runId);
+    if (status?.status === 'running' || status?.status === 'resuming') {
+      await store.transitionStatus(runId, 'failed');
+    }
+  } catch {
+    // executeResume owns the primary state transition. This fallback must not
+    // mask the original resume error reported to the operator.
+  }
+}
+
 function resolveBuiltinTemplatePath(id: string): string | undefined {
   const builtinPath = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', 'templates', 'workflows', `${id}.yaml`);
   return existsSync(builtinPath) ? builtinPath : undefined;
@@ -1612,6 +1624,7 @@ export function collaborationCommands(): Command {
           console.log(`  Detail: ${err.detail}`);
           process.exit(1);
         }
+        await markRunFailedIfActive(store, runId);
         console.log(`Resume failed for run ${runId}:`);
         console.log(`  ${(err as Error).message}`);
         process.exit(1);

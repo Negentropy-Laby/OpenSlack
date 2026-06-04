@@ -62,7 +62,7 @@ export interface TuiActionHandlers {
   saveWorkflowRunScript?: (runId: string, target?: WorkflowSaveTarget) => Promise<TuiActionResult>
   publishWorkflowAsIssue?: (workflowName: string) => Promise<TuiActionResult>
   requestWorkflowReview?: (workflowName: string) => Promise<TuiActionResult>
-  splitWorkflowIntoIssues?: (workflowName: string, parentIssue: number) => Promise<TuiActionResult>
+  splitWorkflowIntoIssues?: (workflowName: string, parentIssue?: number) => Promise<TuiActionResult>
   openWorkflowLifecycle?: (workflowName: string) => Promise<TuiActionResult>
   finalizeWorkflowPr?: (workflowName: string, prNumber: number) => Promise<TuiActionResult>
   profileSync?: ProfileActionHandlers

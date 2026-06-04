@@ -34,7 +34,7 @@ The Home screen shows:
 | 3 | Start a workflow | Generate from prompt, choose a pattern, or run a saved workflow |
 | w | Watch running workflows | Inspect run, phase, agent, transcript, controls, and budget evidence |
 | a | Handle paused workflow approvals | Approve or reject workflow effects and budget pauses |
-| s | Save/share workflow | Save runs to project, user, or Claude project targets |
+| s | Save/share run | Choose a workflow run, then save scripts to project, user, or Claude project targets |
 | g | Publish workflow to GitHub Issues | Create proposal, review, or phase-tracking issues |
 | 4 | Review and merge PRs | Check open PRs, run doctor, and merge when ready |
 | 5 | Approve pending items | Approve plans, merge requests, and workflow effects |

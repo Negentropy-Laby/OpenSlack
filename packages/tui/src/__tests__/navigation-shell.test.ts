@@ -62,7 +62,7 @@ describe('mapHomeToViewModel', () => {
     expect(taskLabels).toContain('Start a workflow')
     expect(taskLabels).toContain('Watch running workflows')
     expect(taskLabels).toContain('Handle paused workflow approvals')
-    expect(taskLabels).toContain('Save/share workflow')
+    expect(taskLabels).toContain('Save/share run')
     expect(taskLabels).toContain('Publish workflow to GitHub Issues')
   })
 

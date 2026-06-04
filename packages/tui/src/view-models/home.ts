@@ -280,9 +280,9 @@ export function mapHomeToViewModel(data?: {
     },
     {
       key: 'save-share-workflow',
-      label: 'Save/share workflow',
-      route: 'workflows',
-      description: 'Save runs to project, user, or Claude project targets',
+      label: 'Save/share run',
+      route: 'workflow-runs',
+      description: 'Choose a workflow run, then save scripts to project, user, or Claude project targets',
       shortcut: 's',
     },
     {
