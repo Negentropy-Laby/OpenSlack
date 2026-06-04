@@ -467,6 +467,8 @@ export interface AgentResult<T = unknown> {
     startedAt: string;
     completedAt?: string;
     tokenUsage?: number;
+    replayAvailable?: boolean;
+    replayUnavailableReason?: string;
   };
 }
 
@@ -484,6 +486,12 @@ export interface WorkflowBudgetUsage {
   tokensUsed: number;
   tokensRemaining: number | null;
   costUsd?: number;
+  costEstimateUsd?: number;
+  costSource: 'config' | 'unknown' | 'not-recorded';
+  tokenBudgetPercent?: number;
+  warningThreshold: number;
+  status: 'ok' | 'warning' | 'exceeded' | 'unknown';
+  warnings: string[];
   agentCalls: number;
   maxAgents?: number;
   maxConcurrency?: number;
@@ -507,6 +515,8 @@ export interface WorkflowAgentProgress {
   transcriptPath?: string;
   resultSummary?: string;
   terminalReason?: string;
+  replayAvailable?: boolean;
+  replayUnavailableReason?: string;
   tokensUsed: number;
   tokensRemaining: number | null;
   recentTools: WorkflowToolEvidence[];

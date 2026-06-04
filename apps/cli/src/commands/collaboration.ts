@@ -31,6 +31,8 @@ import {
   executeDryRun,
   executeRun,
   executeResume,
+  WorkflowBudgetPausedError,
+  WorkflowPausedError,
   RunStore,
   checkResumable,
   prepareResume,
@@ -1491,6 +1493,18 @@ export function collaborationCommands(): Command {
           }
         }
       } catch (err) {
+        if (err instanceof WorkflowPausedError) {
+          console.log(`Workflow paused for approval: ${err.operation}`);
+          console.log(`  Run ID: ${err.runId}`);
+          console.log(`  Detail: ${err.detail}`);
+          process.exit(1);
+        }
+        if (err instanceof WorkflowBudgetPausedError) {
+          console.log('Workflow paused for budget approval.');
+          console.log(`  Run ID: ${err.runId}`);
+          console.log(`  Detail: ${err.detail}`);
+          process.exit(1);
+        }
         console.log(`Execution failed for workflow "${name}":`);
         console.log(`  ${(err as Error).message}`);
         process.exit(1);
@@ -1552,9 +1566,6 @@ export function collaborationCommands(): Command {
         console.log(`  Next phase index: ${resumeState.nextPhaseIndex}`);
         console.log('');
 
-        // Transition back to running
-        await store.transitionStatus(runId, 'running');
-
         const onConfirm = options.yes
           ? async (operation: string, detail: string): Promise<boolean> => {
               console.log(`[AUTO-APPROVE] ${operation}: ${detail}`);
@@ -1586,18 +1597,20 @@ export function collaborationCommands(): Command {
           rootDir: findRepoRoot(),
         });
 
-        // Mark run as completed
-        await store.transitionStatus(runId, 'completed');
-        await store.saveOutput(runId, result);
-
         console.log('Resume Result:');
         console.log(JSON.stringify(result, null, 2));
       } catch (err) {
-        // Try to mark the run as failed
-        try {
-          await store.transitionStatus(runId, 'failed');
-        } catch {
-          // Ignore transition errors during failure handling
+        if (err instanceof WorkflowPausedError) {
+          console.log(`Workflow paused for approval: ${err.operation}`);
+          console.log(`  Run ID: ${err.runId}`);
+          console.log(`  Detail: ${err.detail}`);
+          process.exit(1);
+        }
+        if (err instanceof WorkflowBudgetPausedError) {
+          console.log('Workflow paused for budget approval.');
+          console.log(`  Run ID: ${err.runId}`);
+          console.log(`  Detail: ${err.detail}`);
+          process.exit(1);
         }
         console.log(`Resume failed for run ${runId}:`);
         console.log(`  ${(err as Error).message}`);

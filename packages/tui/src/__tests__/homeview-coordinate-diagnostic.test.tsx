@@ -45,23 +45,20 @@ describe('HomeView coordinate diagnostic', () => {
     // Section 1: What do you want to do?
     expect(lines[2]).toContain('What do you want to do?')
 
-    // Group header: Start Work (marginTop:1 adds blank line)
-    // line 3: blank (marginTop)
-    // line 4: ── Start Work ──
-    expect(lines[4]).toContain('Start Work')
-    // Task [2]: Start or continue work
-    expect(lines[5]).toContain('Start or continue work')
-    expect(lines[6]).toContain('Create tasks, claim issues, and work in isolated branches')
-    // Dynamic workflow start/watch/reuse entries stay in the Start Work group.
-    expect(lines[7]).toContain('Start a Dynamic Workflow')
-    expect(lines[8]).toContain('Generate from prompt, choose a pattern, or run a saved workflow')
-    expect(lines[9]).toContain('Watch workflow runs')
-    expect(lines[10]).toContain('Inspect run, phase, agent, transcript, and budget evidence')
-    expect(lines[11]).toContain('Reuse workflow assets')
-    expect(lines[12]).toContain('Save, export as skill, or publish workflow proposals')
+    const startHeader = indexOfLine('Start Work')
+    expect(startHeader).toBeGreaterThan(indexOfLine('What do you want to do?'))
+    expect(indexOfLine('Start or continue work')).toBeGreaterThan(startHeader)
+    expect(indexOfLine('Start a workflow')).toBeGreaterThan(startHeader)
+    expect(indexOfLine('Watch running workflows')).toBeGreaterThan(startHeader)
+    expect(indexOfLine('Save/share workflow')).toBeGreaterThan(startHeader)
+    expect(indexOfLine('Publish workflow to GitHub Issues')).toBeGreaterThan(startHeader)
+    expect(output).toContain('Generate from prompt, choose a pattern, or run a saved workflow')
+    expect(output).toContain('Inspect run, phase, agent, transcript')
+    expect(output).toContain('Save runs to project, user, or Claude project targets')
+    expect(output).toContain('Create proposal, review, or phase tracking issues')
 
     const reviewHeader = indexOfLine('Review Work')
-    expect(reviewHeader).toBeGreaterThan(indexOfLine('Reuse workflow assets'))
+    expect(reviewHeader).toBeGreaterThan(indexOfLine('Publish workflow to GitHub Issues'))
     expect(lines[reviewHeader + 1]).toContain('See what needs attention')
     expect(lines[reviewHeader + 2]).toContain('View items needing immediate action')
     expect(lines[reviewHeader + 3]).toContain('Review and merge PRs')
@@ -71,8 +68,10 @@ describe('HomeView coordinate diagnostic', () => {
 
     const governHeader = indexOfLine('Govern Actions')
     expect(governHeader).toBeGreaterThan(reviewHeader)
-    expect(lines[governHeader + 1]).toContain('Approve pending items')
-    expect(lines[governHeader + 2]).toContain('Approve plans, merge requests, and workflow effects')
+    expect(lines[governHeader + 1]).toContain('Handle paused workflow approvals')
+    expect(lines[governHeader + 2]).toContain('Approve or reject workflow effects and budget pauses')
+    expect(lines[governHeader + 3]).toContain('Approve pending items')
+    expect(lines[governHeader + 4]).toContain('Approve plans, merge requests, and workflow effects')
 
     const maintainHeader = indexOfLine('Maintain Profile')
     expect(maintainHeader).toBeGreaterThan(governHeader)
@@ -143,7 +142,7 @@ describe('HomeView coordinate diagnostic', () => {
     instance.unmount()
   })
 
-  it('renders all 9 tasks with correct shortcuts', async () => {
+  it('renders workflow-first tasks with correct shortcuts', async () => {
     const { stdout, chunks } = createMockStdout(80, 50)
     const model = mapHomeToViewModel()
     const instance = await render(
@@ -156,23 +155,27 @@ describe('HomeView coordinate diagnostic', () => {
 
     const output = chunks.join('')
 
-    // Verify all 9 task labels are present
+    // Verify task labels are present
     expect(output).toContain('See what needs attention')
     expect(output).toContain('Start or continue work')
-    expect(output).toContain('Start a Dynamic Workflow')
-    expect(output).toContain('Watch workflow runs')
-    expect(output).toContain('Reuse workflow assets')
+    expect(output).toContain('Start a workflow')
+    expect(output).toContain('Watch running workflows')
+    expect(output).toContain('Handle paused workflow approvals')
+    expect(output).toContain('Save/share workflow')
+    expect(output).toContain('Publish workflow to GitHub Issues')
     expect(output).toContain('Review and merge PRs')
     expect(output).toContain('Approve pending items')
     expect(output).toContain('Maintain organization profile')
     expect(output).toContain('View active conversations')
 
-    // Verify shortcuts [1] through [6] for tasks, plus workflow [w]/[s] and [c] for conversations
+    // Verify shortcuts [1] through [6] plus workflow [w]/[a]/[s]/[g] and conversations [c].
     expect(output).toContain('[1]')
     expect(output).toContain('[2]')
     expect(output).toContain('[3]')
     expect(output).toContain('[w]')
+    expect(output).toContain('[a]')
     expect(output).toContain('[s]')
+    expect(output).toContain('[g]')
     expect(output).toContain('[4]')
     expect(output).toContain('[5]')
     expect(output).toContain('[6]')

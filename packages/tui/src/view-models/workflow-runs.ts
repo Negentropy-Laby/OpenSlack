@@ -23,6 +23,8 @@ export interface WorkflowAgentProgressItem {
   transcriptPath?: string
   resultSummary?: string
   terminalReason?: string
+  replayAvailable?: boolean
+  replayUnavailableReason?: string
   tokensUsed: number
   tokensRemaining: number | null
   recentTools: WorkflowToolEvidenceViewModel[]
@@ -62,6 +64,12 @@ export interface WorkflowRunProgressItem {
     tokensUsed: number
     tokensRemaining: number | null
     costUsd?: number
+    costEstimateUsd?: number
+    costSource?: string
+    tokenBudgetPercent?: number
+    warningThreshold?: number
+    status?: 'ok' | 'warning' | 'exceeded' | 'unknown'
+    warnings?: string[]
     agentCalls: number
     maxAgents?: number
     maxConcurrency?: number
@@ -106,6 +114,7 @@ export function mapWorkflowRunsToViewModel(runs: WorkflowRunProgressItem[]): Wor
         promptSummary: s(agent.promptSummary),
         resultSummary: agent.resultSummary ? s(agent.resultSummary) : undefined,
         terminalReason: agent.terminalReason ? s(agent.terminalReason) : undefined,
+        replayUnavailableReason: agent.replayUnavailableReason ? s(agent.replayUnavailableReason) : undefined,
         warnings: agent.warnings.map(s),
         recentTools: agent.recentTools.map((tool) => ({
           ...tool,
@@ -114,6 +123,10 @@ export function mapWorkflowRunsToViewModel(runs: WorkflowRunProgressItem[]): Wor
         })),
       })),
     })),
+    budget: {
+      ...run.budget,
+      warnings: (run.budget.warnings ?? []).map(s),
+    },
   }))
   return {
     runs: cleanRuns,

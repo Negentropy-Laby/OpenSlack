@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { executeApproval, executeTrustChange, executeWorkflowRun } from '../commands/tui-executors.js'
+import {
+  executeApproval,
+  executeTrustChange,
+  executeWorkflowRun,
+  saveWorkflowRunScriptFromTui,
+  startWorkflowFromPattern,
+  startWorkflowFromPrompt,
+} from '../commands/tui-executors.js'
 import type { ApprovalExecutionParams } from '../commands/tui-executors.js'
 import { TrustStore } from '@openslack/workflows'
 import * as operator from '@openslack/operator'
@@ -50,6 +57,29 @@ vi.mock('@openslack/workflows', async () => {
       expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
       approvedEffects: [],
     })),
+    generateWorkflowDraft: vi.fn(() => Promise.resolve({
+      draftId: 'draft-001',
+      path: '/test/root/.openslack/workflows/drafts/draft-001.workflow.yaml',
+      pattern: 'fanout-synthesize',
+      createdAt: '2026-01-01T00:00:00.000Z',
+    })),
+    getWorkflowPattern: vi.fn((patternId: string) => patternId === 'fanout-synthesize'
+      ? {
+          id: 'fanout-synthesize',
+          name: 'Fanout synthesize',
+          description: 'Fan out research and synthesize evidence',
+          useCases: ['research broad task surfaces'],
+          phases: [],
+          requiredCapabilities: [],
+        }
+      : null),
+    saveWorkflowRunScript: vi.fn(() => Promise.resolve({
+      workflowName: 'test-wf',
+      sourceRunId: 'run-001',
+      source: 'project',
+      path: '/test/root/.openslack/workflows/test-wf.mjs',
+      scriptHash: 'script-hash',
+    })),
     WorkflowPausedError: class WorkflowPausedError extends Error {
       readonly operation: string
       readonly runId: string
@@ -58,6 +88,16 @@ vi.mock('@openslack/workflows', async () => {
         this.name = 'WorkflowPausedError'
         this.operation = operation
         this.runId = runId
+      }
+    },
+    WorkflowBudgetPausedError: class WorkflowBudgetPausedError extends Error {
+      readonly runId: string
+      readonly detail: string
+      constructor(runId: string, detail: string) {
+        super(`Workflow paused: budget exceeded for run ${runId}`)
+        this.name = 'WorkflowBudgetPausedError'
+        this.runId = runId
+        this.detail = detail
       }
     },
     hashString: vi.fn(() => 'hashed-input'),
@@ -376,6 +416,59 @@ describe('executeTrustChange', () => {
 
     expect(result.success).toBe(false)
     expect(result.message).toContain('permission denied')
+  })
+})
+
+// ── workflow start and save/share handlers ─────────────────────────────────────
+
+describe('workflow start and save/share handlers', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('starts a workflow draft from prompt', async () => {
+    const { generateWorkflowDraft } = await import('@openslack/workflows')
+
+    const result = await startWorkflowFromPrompt('audit all workflow routes', ROOT)
+
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('draft-001')
+    expect(generateWorkflowDraft).toHaveBeenCalledWith({
+      prompt: 'audit all workflow routes',
+      rootDir: ROOT,
+    })
+  })
+
+  it('starts a workflow draft from pattern registry', async () => {
+    const { generateWorkflowDraft, getWorkflowPattern } = await import('@openslack/workflows')
+
+    const result = await startWorkflowFromPattern('fanout-synthesize', ROOT)
+
+    expect(result.success).toBe(true)
+    expect(getWorkflowPattern).toHaveBeenCalledWith('fanout-synthesize')
+    expect(generateWorkflowDraft).toHaveBeenCalledWith(expect.objectContaining({
+      pattern: 'fanout-synthesize',
+      rootDir: ROOT,
+    }))
+  })
+
+  it('rejects unknown workflow start patterns', async () => {
+    const result = await startWorkflowFromPattern('missing-pattern', ROOT)
+
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('Unknown workflow pattern')
+  })
+
+  it('saves workflow run scripts to project, user, and Claude project targets', async () => {
+    const { saveWorkflowRunScript } = await import('@openslack/workflows')
+
+    await saveWorkflowRunScriptFromTui('run-001', ROOT, 'project')
+    await saveWorkflowRunScriptFromTui('run-001', ROOT, 'user')
+    await saveWorkflowRunScriptFromTui('run-001', ROOT, 'claude-project')
+
+    expect(saveWorkflowRunScript).toHaveBeenNthCalledWith(1, 'run-001', { rootDir: ROOT, to: 'project' })
+    expect(saveWorkflowRunScript).toHaveBeenNthCalledWith(2, 'run-001', { rootDir: ROOT, to: 'user' })
+    expect(saveWorkflowRunScript).toHaveBeenNthCalledWith(3, 'run-001', { rootDir: ROOT, to: 'claude-project' })
   })
 })
 

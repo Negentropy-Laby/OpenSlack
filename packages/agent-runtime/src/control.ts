@@ -12,6 +12,18 @@ export class AgentRunCancelledError extends Error {
   }
 }
 
+export class AgentRunRestartRequestedError extends Error {
+  readonly runId: string;
+  readonly reason: string;
+
+  constructor(runId: string, reason: string) {
+    super(`Agent run ${runId} restart requested: ${reason}`);
+    this.name = 'AgentRunRestartRequestedError';
+    this.runId = runId;
+    this.reason = reason;
+  }
+}
+
 export interface ActiveAgentRunControl {
   runId: string;
   abortController: AbortController;
@@ -22,6 +34,12 @@ export interface ActiveAgentRunControl {
 export interface AgentRunCancelResult {
   runId: string;
   status: 'cancelled' | 'not_found' | 'already_cancelled';
+  message: string;
+}
+
+export interface AgentRunRestartResult {
+  runId: string;
+  status: 'restart_requested' | 'not_found' | 'already_aborting';
   message: string;
 }
 
@@ -68,5 +86,36 @@ export function requestAgentRunCancellation(
     runId,
     status: 'cancelled',
     message: `Cancellation requested for live agent run ${runId}.`,
+  };
+}
+
+export function requestAgentRunRestart(
+  runId: string,
+  reason = 'workflow control requested restart',
+): AgentRunRestartResult {
+  const handle = activeRuns.get(runId);
+  if (!handle) {
+    return {
+      runId,
+      status: 'not_found',
+      message: `No live agent runtime handle found for ${runId}.`,
+    };
+  }
+  if (handle.abortController.signal.aborted) {
+    return {
+      runId,
+      status: 'already_aborting',
+      message: `Agent run ${runId} is already aborting.`,
+    };
+  }
+  handle.recorder.progress(runId, {
+    step: 'agent_restart_requested',
+    reason,
+  });
+  handle.abortController.abort(new AgentRunRestartRequestedError(runId, reason));
+  return {
+    runId,
+    status: 'restart_requested',
+    message: `Restart requested for live agent run ${runId}.`,
   };
 }

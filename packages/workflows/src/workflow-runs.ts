@@ -1,12 +1,13 @@
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { requestAgentRunCancellation } from '@openslack/agent-runtime'
+import { requestAgentRunCancellation, requestAgentRunRestart } from '@openslack/agent-runtime'
 import type {
   RunStatus,
   WorkflowRunControlAction,
   WorkflowRunControlResult,
   WorkflowRunControlTarget,
 } from './types.js'
+import { RunStore } from './run-store.js'
 
 const TERMINAL_RUN_STATUSES = new Set<RunStatus['status']>(['completed', 'failed', 'cancelled'])
 
@@ -152,21 +153,42 @@ export async function controlWorkflowRun(
     }
   } else if (action === 'restartAgent') {
     const target = options.target
-    if (!target?.agentRunId && !target?.agentId) {
+    if (!target?.agentRunId) {
       return {
         runId,
         action,
         status: 'rejected',
-        message: 'restartAgent requires target.agentRunId or target.agentId.',
+        message: 'restartAgent requires target.agentRunId so OpenSlack can restart a selected live agent.',
         target,
       }
     }
-    resultStatus = 'recorded'
-    message = 'restartAgent request recorded. Targeted replay requires persisted replay input and is refused for completed agents.'
-    status.pendingAgentControls = [
-      ...(Array.isArray(status.pendingAgentControls) ? status.pendingAgentControls : []),
-      { action, timestamp, target, status: 'recorded', message },
-    ]
+    const store = new RunStore({ baseDir: join(rootDir, '.openslack.local', 'workflows') })
+    const replay = await store.loadAgentReplayInput(runId, target.agentRunId)
+    if (!replay) {
+      return {
+        runId,
+        action,
+        status: 'rejected',
+        message: `restartAgent rejected: replay input missing for ${target.agentRunId}.`,
+        target,
+      }
+    }
+    if (!replay.available) {
+      return {
+        runId,
+        action,
+        status: 'rejected',
+        message: `restartAgent rejected: ${replay.reason}`,
+        target,
+      }
+    }
+    const restart = requestAgentRunRestart(target.agentRunId, `workflow ${runId} restartAgent`)
+    if (restart.status === 'restart_requested') {
+      message = restart.message
+    } else {
+      resultStatus = 'rejected'
+      message = `${restart.message} Restart is only available for live agent runs in the current OpenSlack process.`
+    }
   } else if (action === 'saveScript') {
     message = `saveScript recorded for ${runId}.`
   }

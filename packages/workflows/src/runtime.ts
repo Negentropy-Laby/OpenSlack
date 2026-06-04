@@ -18,6 +18,7 @@ import { runParallel } from './parallel-runner.js';
 import { runPipeline, runMultiStagePipeline } from './pipeline-runner.js';
 import type { PipelineCacheStore } from './pipeline-runner.js';
 import { resolveAgentType } from './agent-resolver.js';
+import type { RunStore } from './run-store.js';
 
 /**
  * Maximum nesting depth for ctx.workflow() calls.
@@ -67,6 +68,12 @@ export interface RuntimeOptions {
   agentEventEmitter?: AgentEventEmitter;
   /** Root directory for resolving agent types. Defaults to cwd. */
   rootDir?: string;
+  /** Workflow run store used for evidence, replay, budget warnings, and approvals. */
+  runStore?: RunStore;
+}
+
+export interface RuntimeWithPersistence extends WorkflowRuntime {
+  flushPersistence(): Promise<void>;
 }
 
 /**
@@ -115,6 +122,12 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
   const phaseCheckpoints: PhaseCheckpoint[] = [];
   const logEntries: LogEntry[] = [];
   const phaseStatusMap = new Map<string, 'running' | 'completed' | 'failed'>();
+  const persistenceTasks: Promise<void>[] = [];
+
+  function persist(task: Promise<void> | undefined): void {
+    if (!task) return;
+    persistenceTasks.push(task.catch(() => undefined));
+  }
 
   // --- Budget ---
   const budget: BudgetState = {
@@ -368,6 +381,8 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
       };
       phaseCheckpoints.push(checkpoint);
       phaseStatusMap.set(name, 'completed');
+      persist(options.runStore?.setCurrentPhase(runId, name));
+      persist(options.runStore?.savePhaseCheckpoint(runId, checkpoint));
     },
 
     log(message: string): void {
@@ -378,6 +393,7 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
         runId,
       };
       logEntries.push(entry);
+      persist(options.runStore?.appendLog(runId, entry));
     },
 
     async agent<T>(prompt: string, agentOptions: AgentOptions): Promise<T> {
@@ -415,6 +431,8 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
         eventEmitter: options.agentEventEmitter,
         resolvedAgent,
         rootDir: options.rootDir,
+        runStore: options.runStore,
+        budgetPolicy: manifest.budgetPolicy,
       });
     },
 
@@ -737,6 +755,13 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
       },
     },
   };
+
+  Object.defineProperty(runtime, 'flushPersistence', {
+    value: async () => {
+      await Promise.all(persistenceTasks);
+    },
+    enumerable: false,
+  });
 
   return runtime;
 }

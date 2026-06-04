@@ -3,6 +3,13 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { createRunStore, type AgentRunEvent, type AgentRunState } from '@openslack/agent-runtime'
 import { redactString } from './redact.js'
+import {
+  estimateWorkflowAgentCost,
+  getBudgetWarningThreshold,
+  loadWorkflowCostConfig,
+  type WorkflowCostConfig,
+} from './cost.js'
+import type { BudgetWarning } from './run-store.js'
 import type {
   AgentResult,
   ExecutionMode,
@@ -40,6 +47,7 @@ interface RunStatusFileLike {
   updatedAt?: string
   phases?: PhaseCheckpoint[]
   controlEvents?: Array<{ action?: string; timestamp?: string }>
+  budgetWarnings?: BudgetWarning[]
 }
 
 interface ReadResult<T> {
@@ -129,6 +137,8 @@ function readEvidence(result: AgentResult | Record<string, unknown>, filename: s
     isolation: evidence?.isolation,
     promptSummary: redactString(evidence?.promptSummary ?? 'not recorded'),
     resultSummary: summarize(agentResult.data),
+    replayAvailable: evidence?.replayAvailable,
+    replayUnavailableReason: evidence?.replayUnavailableReason,
     tokensUsed: tokenUsage,
     tokensRemaining: null,
     recentTools: [],
@@ -214,15 +224,79 @@ async function readAgentResults(runDir: string, rootDir: string, warnings: strin
   return agents
 }
 
-function buildBudget(meta: WorkflowMeta | null, agents: WorkflowAgentProgress[]): WorkflowBudgetUsage {
+function budgetState(
+  tokenBudget: number | null,
+  tokensUsed: number,
+  threshold: number,
+): WorkflowBudgetUsage['status'] {
+  if (tokenBudget === null || tokenBudget <= 0) return 'unknown'
+  const percent = tokensUsed / tokenBudget
+  if (tokensUsed >= tokenBudget) return 'exceeded'
+  if (percent >= threshold) return 'warning'
+  return 'ok'
+}
+
+function buildCostSummary(
+  agents: WorkflowAgentProgress[],
+  costConfig: WorkflowCostConfig | null,
+): { costEstimateUsd?: number; costSource: WorkflowBudgetUsage['costSource']; warnings: string[] } {
+  if (agents.length === 0) {
+    return { costSource: 'not-recorded', warnings: [] }
+  }
+  let total = 0
+  const warnings: string[] = []
+  let knownCount = 0
+  for (const agent of agents) {
+    const estimate = estimateWorkflowAgentCost({
+      config: costConfig,
+      provider: agent.runtimeProvider,
+      model: agent.model,
+      tokens: agent.tokensUsed,
+    })
+    if (estimate.known) {
+      knownCount += 1
+      total += estimate.estimatedUsd
+    } else {
+      warnings.push(estimate.reason)
+    }
+  }
+  if (knownCount === agents.length) {
+    return { costEstimateUsd: total, costSource: 'config', warnings }
+  }
+  return {
+    costEstimateUsd: knownCount > 0 ? total : undefined,
+    costSource: 'unknown',
+    warnings,
+  }
+}
+
+function buildBudget(
+  meta: WorkflowMeta | null,
+  agents: WorkflowAgentProgress[],
+  status: RunStatusFileLike | null,
+  costConfig: WorkflowCostConfig | null,
+): WorkflowBudgetUsage {
   const policy = meta?.budgetPolicy
   const tokensUsed = agents.reduce((sum, agent) => sum + agent.tokensUsed, 0)
   const tokenBudget = policy?.tokenBudget ?? null
+  const threshold = getBudgetWarningThreshold(costConfig)
+  const percent = tokenBudget && tokenBudget > 0 ? tokensUsed / tokenBudget : undefined
+  const cost = buildCostSummary(agents, costConfig)
+  const warningMessages = [
+    ...cost.warnings,
+    ...(status?.budgetWarnings ?? []).map((warning) => warning.message),
+  ]
   return {
     tokenBudget,
     tokensUsed,
     tokensRemaining: tokenBudget === null ? null : Math.max(0, tokenBudget - tokensUsed),
-    costUsd: meta?.budgetPolicy ? 0 : undefined,
+    costUsd: cost.costEstimateUsd,
+    costEstimateUsd: cost.costEstimateUsd,
+    costSource: cost.costSource,
+    tokenBudgetPercent: percent,
+    warningThreshold: threshold,
+    status: budgetState(tokenBudget, tokensUsed, threshold),
+    warnings: warningMessages,
     agentCalls: agents.length,
     maxAgents: policy?.maxAgents,
     maxConcurrency: policy?.maxConcurrency,
@@ -298,7 +372,11 @@ export async function getWorkflowRunProgress(
   const workflowMeta = await loadWorkflowMeta(rootDir, metaRead.value?.workflowName)
   const agents = await readAgentResults(runDir, rootDir, warnings)
   const phases = groupPhases(statusRead.value, workflowMeta, agents)
-  const budget = buildBudget(workflowMeta, agents)
+  const costConfig = await loadWorkflowCostConfig(rootDir).catch((err) => {
+    warnings.push(`workflow cost config could not be loaded: ${err instanceof Error ? err.message : String(err)}`)
+    return null
+  })
+  const budget = buildBudget(workflowMeta, agents, statusRead.value, costConfig)
 
   const startedAt = metaRead.value?.startedAt
   const updatedAt = statusRead.value?.updatedAt
@@ -342,7 +420,14 @@ export function renderWorkflowRunProgress(progress: WorkflowRunProgress): string
   lines.push(`Elapsed: ${formatDuration(progress.elapsedMs)}`)
   lines.push(`Agents: ${progress.agentCount}`)
   lines.push(`Pending approvals: ${progress.pendingApprovalCount}`)
-  lines.push(`Budget: ${progress.budget.tokensUsed}/${progress.budget.tokenBudget ?? 'unlimited'} tokens, remaining ${progress.budget.tokensRemaining ?? 'unlimited'}`)
+  const budgetPercent = progress.budget.tokenBudgetPercent === undefined
+    ? 'n/a'
+    : `${Math.round(progress.budget.tokenBudgetPercent * 100)}%`
+  const cost = progress.budget.costEstimateUsd === undefined
+    ? 'unknown'
+    : `$${progress.budget.costEstimateUsd.toFixed(6)}`
+  lines.push(`Budget: ${progress.budget.tokensUsed}/${progress.budget.tokenBudget ?? 'unlimited'} tokens, remaining ${progress.budget.tokensRemaining ?? 'unlimited'}, ${budgetPercent}, ${progress.budget.status}, cost ${cost} (${progress.budget.costSource})`)
+  for (const warning of progress.budget.warnings.slice(-3)) lines.push(`  budget warning: ${warning}`)
   lines.push('')
   lines.push('Phases:')
   for (const phase of progress.phases) {

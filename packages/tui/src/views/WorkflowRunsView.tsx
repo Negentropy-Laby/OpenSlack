@@ -15,9 +15,10 @@ import type {
   WorkflowRunProgressItem,
   WorkflowRunProgressViewModel,
 } from '../view-models/workflow-runs.js'
-import type { TuiActionHandlers, WorkflowRunControlAction, WorkflowRunControlTarget } from './render-shell.js'
+import type { TuiActionHandlers, WorkflowRunControlAction, WorkflowRunControlTarget, WorkflowSaveTarget } from './render-shell.js'
 
 type ViewMode = 'runs' | 'phases' | 'agent'
+const SAVE_TARGETS: WorkflowSaveTarget[] = ['project', 'user', 'claude-project']
 
 export interface WorkflowRunsViewProps {
   model: WorkflowRunProgressViewModel
@@ -47,6 +48,16 @@ function actionLabel(action: WorkflowRunControlAction): string {
   return action
 }
 
+function budgetLine(run: WorkflowRunProgressItem): string {
+  const percent = run.budget.tokenBudgetPercent === undefined
+    ? 'n/a'
+    : `${Math.round(run.budget.tokenBudgetPercent * 100)}%`
+  const cost = run.budget.costEstimateUsd === undefined
+    ? 'cost unknown'
+    : `cost $${run.budget.costEstimateUsd.toFixed(6)}`
+  return `${run.budget.tokensUsed}/${run.budget.tokenBudget ?? 'unlimited'} tokens | ${percent} | ${run.budget.status ?? 'unknown'} | ${cost}`
+}
+
 export default function WorkflowRunsView({ model, actionHandlers, onBack }: WorkflowRunsViewProps): React.JSX.Element {
   const { pop } = useNavigation()
   const [mode, setMode] = useState<ViewMode>('runs')
@@ -57,6 +68,8 @@ export default function WorkflowRunsView({ model, actionHandlers, onBack }: Work
   const selectedPhase = selectedRun?.phases[phaseIndex] as WorkflowPhaseProgressItem | undefined
   const [agentIndex, setAgentIndex] = useClampedIndex(selectedPhase?.agents.length ?? 0)
   const selectedAgent = selectedPhase?.agents[agentIndex] as WorkflowAgentProgressItem | undefined
+  const [saveTargetIndex, setSaveTargetIndex] = useClampedIndex(SAVE_TARGETS.length)
+  const saveTarget = SAVE_TARGETS[saveTargetIndex] ?? 'project'
 
   const goBack = useCallback(() => {
     if (mode === 'agent') {
@@ -82,7 +95,7 @@ export default function WorkflowRunsView({ model, actionHandlers, onBack }: Work
         }
       : undefined
     if (action === 'saveScript' && actionHandlers?.saveWorkflowRunScript) {
-      const result = await actionHandlers.saveWorkflowRunScript(selectedRun.runId)
+      const result = await actionHandlers.saveWorkflowRunScript(selectedRun.runId, saveTarget)
       setMessage(result.message)
       return
     }
@@ -93,7 +106,7 @@ export default function WorkflowRunsView({ model, actionHandlers, onBack }: Work
     }
     const agentArg = target?.agentRunId ? ` --agent-run-id ${target.agentRunId}` : ''
     setMessage(`Use: openslack collaboration workflow runs control ${selectedRun.runId} --action ${action}${agentArg}`)
-  }, [actionHandlers, selectedAgent, selectedRun])
+  }, [actionHandlers, saveTarget, selectedAgent, selectedRun])
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
@@ -118,6 +131,7 @@ export default function WorkflowRunsView({ model, actionHandlers, onBack }: Work
     if (input === 'a') void applyAction('stopAgent')
     if (input === 'R') void applyAction('restartAgent')
     if (input === 's') void applyAction('saveScript')
+    if (input === 'S') setSaveTargetIndex(saveTargetIndex + 1)
   })
 
   return React.createElement(
@@ -127,10 +141,19 @@ export default function WorkflowRunsView({ model, actionHandlers, onBack }: Work
       Box,
       { flexDirection: 'column', gap: 1 },
       React.createElement(ThemedText, { colorTheme: 'muted' }, `Runs ${model.summary.total} | running ${model.summary.running} | paused ${model.summary.paused} | failed ${model.summary.failed} | approvals ${model.summary.pendingApprovals}`),
+      selectedRun ? React.createElement(ThemedText, { colorTheme: selectedRun.budget.status === 'exceeded' ? 'error' : selectedRun.budget.status === 'warning' ? 'warning' : 'muted' }, `Budget ${budgetLine(selectedRun)} | save target ${saveTarget}`) : null,
+      selectedRun?.budget.warnings?.length
+        ? React.createElement(ThemedText, { colorTheme: 'warning' }, `Budget warning: ${selectedRun.budget.warnings.at(-1)}`)
+        : null,
       message ? React.createElement(ThemedText, { colorTheme: 'info' }, message) : null,
       React.createElement(Divider, null),
       mode === 'runs'
-        ? React.createElement(RunList, { runs: model.runs, selectedIndex: runIndex })
+        ? React.createElement(Box, { flexDirection: 'column', gap: 1 },
+            React.createElement(RunList, { runs: model.runs, selectedIndex: runIndex }),
+            selectedRun
+              ? React.createElement(PhaseList, { run: selectedRun, phases: selectedRun.phases, selectedIndex: phaseIndex })
+              : null,
+          )
         : mode === 'phases' && selectedRun
           ? React.createElement(PhaseList, { run: selectedRun, phases: selectedRun.phases, selectedIndex: phaseIndex })
           : selectedRun && selectedPhase && selectedAgent
@@ -145,6 +168,7 @@ export default function WorkflowRunsView({ model, actionHandlers, onBack }: Work
         React.createElement(KeyboardShortcutHint, { keys: ['a'], description: actionLabel('stopAgent') }),
         React.createElement(KeyboardShortcutHint, { keys: ['R'], description: actionLabel('restartAgent') }),
         React.createElement(KeyboardShortcutHint, { keys: ['s'], description: actionLabel('saveScript') }),
+        React.createElement(KeyboardShortcutHint, { keys: ['S'], description: 'save target' }),
         React.createElement(KeyboardShortcutHint, { keys: ['q'], description: 'back' }),
       ),
     ),
@@ -163,7 +187,7 @@ function RunList({ runs, selectedIndex }: { runs: WorkflowRunProgressItem[]; sel
       React.createElement(StatusIcon, { status: statusCategory(run.status) }),
       React.createElement(ThemedText, { colorTheme: index === selectedIndex ? 'accent' : 'foreground' }, run.workflowName),
       React.createElement(ThemedText, { colorTheme: 'muted' }, run.runId),
-      React.createElement(ThemedText, { colorTheme: 'muted' }, `${run.status} ${run.currentPhase ?? 'no phase'} ${run.budget.tokensUsed}/${run.budget.tokenBudget ?? 'unlimited'} tokens`),
+      React.createElement(ThemedText, { colorTheme: 'muted' }, `${run.status} ${run.currentPhase ?? 'no phase'} ${budgetLine(run)}`),
     )),
   )
 }
@@ -172,14 +196,24 @@ function PhaseList({ run, phases, selectedIndex }: { run: WorkflowRunProgressIte
   return React.createElement(
     Box,
     { flexDirection: 'column', gap: 1 },
-    React.createElement(ThemedText, { colorTheme: 'info' }, `${run.workflowName} | ${run.status} | elapsed ${duration(run.elapsedMs)}`),
+    React.createElement(ThemedText, { colorTheme: 'info' }, `${run.workflowName} | ${run.status} | elapsed ${duration(run.elapsedMs)} | ${budgetLine(run)}`),
     ...phases.map((phase, index) => React.createElement(
       Box,
-      { key: phase.phase, gap: 1 },
-      React.createElement(Text, null, index === selectedIndex ? '>' : ' '),
-      React.createElement(StatusIcon, { status: statusCategory(phase.status) }),
-      React.createElement(ThemedText, { colorTheme: index === selectedIndex ? 'accent' : 'foreground' }, phase.phase),
-      React.createElement(ThemedText, { colorTheme: 'muted' }, `agents ${phase.agentCount} | cached ${phase.cachedCount} | live ${phase.liveCount} | failed ${phase.failedCount} | tokens ${phase.tokenTotal}`),
+      { key: phase.phase, flexDirection: 'column' },
+      React.createElement(Box, { gap: 1 },
+        React.createElement(Text, null, index === selectedIndex ? '>' : ' '),
+        React.createElement(StatusIcon, { status: statusCategory(phase.status) }),
+        React.createElement(ThemedText, { colorTheme: index === selectedIndex ? 'accent' : 'foreground' }, phase.phase),
+        React.createElement(ThemedText, { colorTheme: 'muted' }, `agents ${phase.agentCount} | cached ${phase.cachedCount} | live ${phase.liveCount} | failed ${phase.failedCount} | tokens ${phase.tokenTotal}`),
+      ),
+      ...phase.agents.map((agent) => React.createElement(
+        Box,
+        { key: `${phase.phase}-${agent.id}`, marginLeft: 3, gap: 1 },
+        React.createElement(ThemedText, { colorTheme: 'muted' }, '-'),
+        React.createElement(StatusIcon, { status: statusCategory(agent.status) }),
+        React.createElement(ThemedText, { colorTheme: 'foreground' }, agent.label),
+        React.createElement(ThemedText, { colorTheme: 'muted' }, `${agent.status} | ${agent.tokensUsed} tokens | replay ${agent.replayAvailable === false ? 'no' : 'yes'}`),
+      )),
     )),
   )
 }
@@ -193,6 +227,7 @@ function AgentDetail({ run, phase, agent }: { run: WorkflowRunProgressItem; phas
     React.createElement(ThemedText, { colorTheme: 'muted' }, `model ${agent.model ?? 'not recorded'} | runtime ${agent.runtimeProvider ?? 'not recorded'} | isolation ${agent.isolation ?? 'not recorded'} | tokens ${agent.tokensUsed}`),
     React.createElement(ThemedText, { colorTheme: 'muted' }, `worktree ${agent.worktreePath ?? 'not recorded'}`),
     React.createElement(ThemedText, { colorTheme: 'muted' }, `terminal ${agent.terminalReason ?? 'not recorded'}`),
+    React.createElement(ThemedText, { colorTheme: agent.replayAvailable === false ? 'warning' : 'muted' }, `replay ${agent.replayAvailable === false ? `unavailable: ${agent.replayUnavailableReason ?? 'not recorded'}` : 'available'}`),
     React.createElement(ThemedText, { colorTheme: 'foreground' }, `prompt: ${agent.promptSummary}`),
     agent.resultSummary ? React.createElement(ThemedText, { colorTheme: 'foreground' }, `result: ${agent.resultSummary}`) : null,
     agent.transcriptPath ? React.createElement(ThemedText, { colorTheme: 'muted' }, `transcript: ${agent.transcriptPath}`) : null,

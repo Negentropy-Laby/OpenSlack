@@ -27,8 +27,10 @@ export interface TuiActionHandlers {
   executeApproval: (params: ApprovalExecutionParams, isApprove: boolean) => Promise<TuiActionResult>
   executeTrustChange: (workflowName: string, fromLevel: string, toLevel: string) => Promise<TuiActionResult>
   executeWorkflowRun: (workflowName: string, mode: 'preview' | 'dry-run' | 'run') => Promise<TuiActionResult>
+  startWorkflowFromPrompt?: (prompt: string) => Promise<TuiActionResult>
+  startWorkflowFromPattern?: (patternId: string) => Promise<TuiActionResult>
   controlWorkflowRun?: (runId: string, action: WorkflowRunControlAction, target?: WorkflowRunControlTarget) => Promise<TuiActionResult>
-  saveWorkflowRunScript?: (runId: string) => Promise<TuiActionResult>
+  saveWorkflowRunScript?: (runId: string, target?: 'project' | 'user' | 'claude-project') => Promise<TuiActionResult>
   publishWorkflowAsIssue?: (workflowName: string) => Promise<TuiActionResult>
   requestWorkflowReview?: (workflowName: string) => Promise<TuiActionResult>
   splitWorkflowIntoIssues?: (workflowName: string, parentIssue: number) => Promise<TuiActionResult>
@@ -161,12 +163,15 @@ export async function executeApproval(
                 await executeResume(mod, {
                   runId: params.runId,
                   manifest: mod.meta,
+                  args: meta.args,
+                  budget: meta.budget ? { tokens: meta.budget.tokens, costUsd: meta.budget.costUsd ?? 0 } : undefined,
                   confirmationPolicy: {
                     mode: 'preapproved-manifest',
                     actorId,
                     runId: params.runId,
                     onUnexpectedEffect: 'pause',
                   },
+                  rootDir: root,
                 })
               }
             }
@@ -272,6 +277,48 @@ export async function executeTrustChange(
 
 // ── executeWorkflowRun ─────────────────────────────────────────────────────────
 
+export async function startWorkflowFromPrompt(
+  prompt: string,
+  root: string,
+): Promise<TuiActionResult> {
+  try {
+    const { generateWorkflowDraft } = await import('@openslack/workflows')
+    const draft = await generateWorkflowDraft({ prompt, rootDir: root })
+    return {
+      success: true,
+      message: `Workflow draft created: ${draft.draftId}`,
+      data: { draftId: draft.draftId, path: draft.path, pattern: draft.pattern },
+    }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    return { success: false, message: `Workflow start failed: ${message}` }
+  }
+}
+
+export async function startWorkflowFromPattern(
+  patternId: string,
+  root: string,
+): Promise<TuiActionResult> {
+  try {
+    const { generateWorkflowDraft, getWorkflowPattern } = await import('@openslack/workflows')
+    const pattern = getWorkflowPattern(patternId)
+    if (!pattern) return { success: false, message: `Unknown workflow pattern: ${patternId}` }
+    const draft = await generateWorkflowDraft({
+      prompt: `Start ${pattern.name}: ${pattern.useCases[0] ?? pattern.description}`,
+      pattern: patternId,
+      rootDir: root,
+    })
+    return {
+      success: true,
+      message: `Pattern draft created: ${draft.draftId}`,
+      data: { draftId: draft.draftId, path: draft.path, pattern: draft.pattern },
+    }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    return { success: false, message: `Pattern start failed: ${message}` }
+  }
+}
+
 export async function executeWorkflowRun(
   workflowName: string,
   mode: 'preview' | 'dry-run' | 'run',
@@ -287,6 +334,7 @@ export async function executeWorkflowRun(
     TrustStore,
     buildApprovalManifest,
     WorkflowPausedError,
+    WorkflowBudgetPausedError,
     hashString,
   } = await import('@openslack/workflows')
 
@@ -390,6 +438,13 @@ export async function executeWorkflowRun(
         success: false,
         message: `Workflow paused: unexpected effect "${error.operation}" requires approval in Approval Center.`,
         data: { runId: error.runId, operation: error.operation },
+      }
+    }
+    if (error instanceof WorkflowBudgetPausedError) {
+      return {
+        success: false,
+        message: `Workflow paused: budget exceeded and requires approval in Approval Center.`,
+        data: { runId: error.runId, operation: 'workflow.budget.exceeded' },
       }
     }
     const message = error instanceof Error ? error.message : String(error)
@@ -513,11 +568,11 @@ export async function finalizeWorkflowPr(
 export async function splitWorkflowIntoIssues(
   workflowName: string,
   parentIssue: number,
-  _root: string,
+  root: string,
 ): Promise<TuiActionResult> {
   try {
     const { findWorkflow, loadWorkflow } = await import('@openslack/workflows')
-    const found = await findWorkflow(workflowName)
+    const found = await findWorkflow(workflowName, root)
     if (!found) {
       return { success: false, message: `Workflow "${workflowName}" not found.` }
     }
@@ -696,14 +751,15 @@ export async function controlWorkflowRunFromTui(
 export async function saveWorkflowRunScriptFromTui(
   runId: string,
   root: string,
+  target: 'project' | 'user' | 'claude-project' = 'project',
 ): Promise<TuiActionResult> {
   try {
     const { saveWorkflowRunScript } = await import('@openslack/workflows')
-    const result = await saveWorkflowRunScript(runId, { rootDir: root, to: 'project' })
+    const result = await saveWorkflowRunScript(runId, { rootDir: root, to: target })
     return {
       success: true,
       message: `Saved workflow "${result.workflowName}" to ${result.path}`,
-      data: { runId, path: result.path, hash: result.scriptHash },
+      data: { runId, path: result.path, hash: result.scriptHash, target },
     }
   } catch (err: unknown) {
     return { success: false, message: `Workflow save failed: ${(err as Error).message}` }
@@ -715,8 +771,10 @@ export function createActionHandlers(root: string, actorId: string = 'tui-user')
     executeApproval: (params, isApprove) => executeApproval(params, isApprove, root, actorId),
     executeTrustChange: (name, from, to) => executeTrustChange(name, from, to, root),
     executeWorkflowRun: (name, mode) => executeWorkflowRun(name, mode, root, actorId),
+    startWorkflowFromPrompt: (prompt) => startWorkflowFromPrompt(prompt, root),
+    startWorkflowFromPattern: (patternId) => startWorkflowFromPattern(patternId, root),
     controlWorkflowRun: (runId, action, target) => controlWorkflowRunFromTui(runId, action, root, target),
-    saveWorkflowRunScript: (runId) => saveWorkflowRunScriptFromTui(runId, root),
+    saveWorkflowRunScript: (runId, target) => saveWorkflowRunScriptFromTui(runId, root, target),
     publishWorkflowAsIssue: (name) => publishWorkflowAsIssue(name, root, actorId),
     requestWorkflowReview: (name) => requestWorkflowReview(name, root, actorId),
     splitWorkflowIntoIssues: (name, parentIssue) => splitWorkflowIntoIssues(name, parentIssue, root),

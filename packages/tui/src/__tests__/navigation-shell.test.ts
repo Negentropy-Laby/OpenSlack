@@ -59,8 +59,11 @@ describe('mapHomeToViewModel', () => {
     expect(taskRoutes).toContain('workflow-runs')
 
     const taskLabels = model.tasks.map(t => t.label)
-    expect(taskLabels).toContain('Start a Dynamic Workflow')
-    expect(taskLabels).toContain('Watch workflow runs')
+    expect(taskLabels).toContain('Start a workflow')
+    expect(taskLabels).toContain('Watch running workflows')
+    expect(taskLabels).toContain('Handle paused workflow approvals')
+    expect(taskLabels).toContain('Save/share workflow')
+    expect(taskLabels).toContain('Publish workflow to GitHub Issues')
   })
 
   it('returns default systemStatus when no data provided', async () => {

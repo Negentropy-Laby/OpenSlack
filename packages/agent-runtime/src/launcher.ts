@@ -2,6 +2,7 @@ import type { AgentRunRequest } from './types.js';
 import { PermissionDeniedError, AgentUnavailableError } from './types.js';
 import {
   AgentRunCancelledError,
+  AgentRunRestartRequestedError,
   registerActiveAgentRunControl,
 } from './control.js';
 import { buildPermissionProfile, validatePermissionProfile } from './permissions.js';
@@ -242,6 +243,22 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
         runId,
       };
     } catch (err) {
+      if (err instanceof AgentRunRestartRequestedError) {
+        recorder.progress(runId, {
+          step: 'agent_restart_handoff',
+          reason: err.reason,
+        });
+        recorder.cancel(runId);
+        if (runAdapter.bridgeContract) {
+          recorder.progress(runId, {
+            step: 'bridge_lifecycle_complete',
+            runId,
+            status: 'cancelled',
+            reason: err.reason,
+          });
+        }
+        throw err;
+      }
       if (abortController.signal.aborted || err instanceof AgentRunCancelledError) {
         const reason = err instanceof AgentRunCancelledError
           ? err.reason

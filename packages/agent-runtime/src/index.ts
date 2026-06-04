@@ -36,12 +36,14 @@ export { ExternalCommandAdapter } from './external-command-adapter.js';
 export type { RunRecorder } from './recorder.js';
 export { createRunRecorder } from './recorder.js';
 
-export type { ActiveAgentRunControl, AgentRunCancelResult } from './control.js';
+export type { ActiveAgentRunControl, AgentRunCancelResult, AgentRunRestartResult } from './control.js';
 export {
   AgentRunCancelledError,
+  AgentRunRestartRequestedError,
   getActiveAgentRunControl,
   registerActiveAgentRunControl,
   requestAgentRunCancellation,
+  requestAgentRunRestart,
 } from './control.js';
 
 // Bridge contract (AR-2.5A)

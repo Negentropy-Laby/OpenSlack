@@ -26,6 +26,7 @@ export interface WorkflowLifecycleBaseData {
   currentRun?: { runId: string; status: string; startedAt: string }
 }
 import type { TuiActionResult } from '../actions/types.js'
+export type WorkflowSaveTarget = 'project' | 'user' | 'claude-project'
 
 export type WorkflowLifecycleLoader = (
   workflowName: string,
@@ -55,8 +56,10 @@ export interface TuiActionHandlers {
   executeApproval: (params: ApprovalExecutionParams, isApprove: boolean) => Promise<TuiActionResult>
   executeTrustChange: (workflowName: string, fromLevel: string, toLevel: string) => Promise<TuiActionResult>
   executeWorkflowRun: (workflowName: string, mode: 'preview' | 'dry-run' | 'run') => Promise<TuiActionResult>
+  startWorkflowFromPrompt?: (prompt: string) => Promise<TuiActionResult>
+  startWorkflowFromPattern?: (patternId: string) => Promise<TuiActionResult>
   controlWorkflowRun?: (runId: string, action: WorkflowRunControlAction, target?: WorkflowRunControlTarget) => Promise<TuiActionResult>
-  saveWorkflowRunScript?: (runId: string) => Promise<TuiActionResult>
+  saveWorkflowRunScript?: (runId: string, target?: WorkflowSaveTarget) => Promise<TuiActionResult>
   publishWorkflowAsIssue?: (workflowName: string) => Promise<TuiActionResult>
   requestWorkflowReview?: (workflowName: string) => Promise<TuiActionResult>
   splitWorkflowIntoIssues?: (workflowName: string, parentIssue: number) => Promise<TuiActionResult>

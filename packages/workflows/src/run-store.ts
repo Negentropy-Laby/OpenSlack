@@ -4,11 +4,13 @@ import type {
   RunStatus,
   RunStatusState,
   PendingApproval,
+  WorkflowBudgetPolicy,
   WorkflowRunInfo,
 } from './types.js'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile as fsReadFile, writeFile as fsWriteFile, appendFile as fsAppendFile, access } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { scanValue } from '@openslack/collaboration'
 
 // ── Directory layout ──────────────────────────────────────────────────────────
 //
@@ -58,6 +60,8 @@ export interface RunMeta {
   manifestHash: string
   args: Record<string, unknown>
   startedAt: string
+  budget?: { tokens: number; costUsd?: number }
+  budgetPolicy?: WorkflowBudgetPolicy
 }
 
 /**
@@ -69,6 +73,9 @@ export interface RunStatusFile {
   currentPhase?: string
   updatedAt: string
   phases: PhaseCheckpoint[]
+  budgetWarnings?: BudgetWarning[]
+  controlEvents?: Array<Record<string, unknown>>
+  pendingAgentControls?: Array<Record<string, unknown>>
 }
 
 /**
@@ -79,6 +86,40 @@ export interface LogEntry {
   phase?: string
   message: string
   runId: string
+}
+
+export interface BudgetWarning {
+  timestamp: string
+  kind: 'threshold' | 'exceeded'
+  message: string
+  tokensUsed: number
+  tokenBudget: number
+  percent: number
+  costUsd?: number
+}
+
+export interface AgentReplayInput {
+  schema: 'openslack.workflow_agent_replay_input.v1'
+  workflowRunId: string
+  agentRunId: string
+  prompt: string
+  options: Record<string, unknown>
+  resolvedAgentConfig?: unknown
+  phase: string
+  label: string
+  cacheKey: string
+  attempt: number
+  createdAt: string
+}
+
+export type AgentReplayInputLoadResult =
+  | { available: true; input: AgentReplayInput }
+  | { available: false; reason: string }
+
+export interface AgentReplayInputPersistenceResult {
+  available: boolean
+  reason?: string
+  path: string
 }
 
 /**
@@ -156,7 +197,22 @@ export class RunStore {
 
   /** Path to an agent cache file. */
   agentPath(runId: string, cacheKey: string): string {
-    return `${this.agentsDir(runId)}/${cacheKey}.json`
+    return `${this.agentsDir(runId)}/${safeFileName(cacheKey)}.json`
+  }
+
+  /** Path to the replay input directory. */
+  replayDir(runId: string): string {
+    return `${this.runDir(runId)}/replay/agents`
+  }
+
+  /** Path to a replay input file. */
+  replayInputPath(runId: string, agentRunId: string): string {
+    return `${this.replayDir(runId)}/${safeFileName(agentRunId)}.json`
+  }
+
+  /** Path to a replay-unavailable marker. */
+  replayUnavailablePath(runId: string, agentRunId: string): string {
+    return `${this.replayDir(runId)}/${safeFileName(agentRunId)}.unavailable.json`
   }
 
   /** Path to the pipeline directory. */
@@ -194,6 +250,7 @@ export class RunStore {
     await this.fs.mkdir(dir)
     await this.fs.mkdir(this.phasesDir(runId))
     await this.fs.mkdir(this.agentsDir(runId))
+    await this.fs.mkdir(this.replayDir(runId))
 
     // Write meta.json
     await this.fs.writeFile(this.metaPath(runId), JSON.stringify(meta, null, 2))
@@ -321,6 +378,53 @@ export class RunStore {
     )
   }
 
+  async saveAgentReplayInput(
+    runId: string,
+    agentRunId: string,
+    input: AgentReplayInput,
+  ): Promise<AgentReplayInputPersistenceResult> {
+    await this.fs.mkdir(this.replayDir(runId))
+    const targetPath = this.replayInputPath(runId, agentRunId)
+    const scan = scanValue(input, 'replayInput')
+    if (scan.found) {
+      const reason = `Replay input contains ${scan.name} at ${scan.path}. Restart unavailable.`
+      await this.markAgentReplayUnavailable(runId, agentRunId, reason)
+      return { available: false, reason, path: this.replayUnavailablePath(runId, agentRunId) }
+    }
+    await this.fs.writeFile(targetPath, JSON.stringify(input, null, 2))
+    return { available: true, path: targetPath }
+  }
+
+  async markAgentReplayUnavailable(
+    runId: string,
+    agentRunId: string,
+    reason: string,
+  ): Promise<void> {
+    await this.fs.mkdir(this.replayDir(runId))
+    await this.fs.writeFile(
+      this.replayUnavailablePath(runId, agentRunId),
+      JSON.stringify({ agentRunId, available: false, reason, timestamp: new Date().toISOString() }, null, 2),
+    )
+  }
+
+  async loadAgentReplayInput(
+    runId: string,
+    agentRunId: string,
+  ): Promise<AgentReplayInputLoadResult | null> {
+    const unavailable = await this.fs.readFile(this.replayUnavailablePath(runId, agentRunId))
+    if (unavailable !== null) {
+      try {
+        const parsed = JSON.parse(unavailable) as { reason?: string }
+        return { available: false, reason: parsed.reason ?? 'Replay input is unavailable.' }
+      } catch {
+        return { available: false, reason: 'Replay input availability marker could not be parsed.' }
+      }
+    }
+    const raw = await this.fs.readFile(this.replayInputPath(runId, agentRunId))
+    if (raw === null) return null
+    return { available: true, input: JSON.parse(raw) as AgentReplayInput }
+  }
+
   /**
    * Load a cached agent result. Returns null if not found.
    */
@@ -373,6 +477,14 @@ export class RunStore {
    */
   async appendLog(runId: string, entry: LogEntry): Promise<void> {
     await this.fs.appendFile(this.logPath(runId), JSON.stringify(entry) + '\n')
+  }
+
+  async appendBudgetWarning(runId: string, warning: BudgetWarning): Promise<void> {
+    const status = await this.loadStatus(runId)
+    if (status === null) return
+    status.budgetWarnings = [...(status.budgetWarnings ?? []), warning]
+    status.updatedAt = new Date().toISOString()
+    await this.fs.writeFile(this.statusPath(runId), JSON.stringify(status, null, 2))
   }
 
   /**
@@ -571,4 +683,8 @@ function createNodeFs(): RunStoreFs {
       }
     },
   }
+}
+
+function safeFileName(value: string): string {
+  return encodeURIComponent(value).replace(/\*/g, '%2A')
 }
