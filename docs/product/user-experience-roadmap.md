@@ -59,6 +59,27 @@ actions still expose implementation details directly.
 The product should therefore treat the current system as a reliable substrate
 and improve the user journey around it, not replace the substrate.
 
+## L2/L3 Productization Track
+
+After the conversation-first TUI and workflow UX closure, the next
+productization track is to expose OpenSlack as an embeddable local control
+plane. The contract lives in `docs/product/l2-l3-productization.md`.
+
+The track keeps `openslack tui` as the default human entrypoint and adds:
+
+- Local control-plane contracts for receipts, entity envelopes, trace refs,
+  linked objects, and surface generations.
+- Shared snapshot builders so TUI, API, SDK, and future dashboards re-read
+  current state instead of treating events as truth.
+- A read-first loopback API under `openslack collaboration api ...`.
+- Typed route specs, OpenAPI JSON, and a minimal TypeScript SDK.
+- Fine-grained conversation permissions for CLI, TUI, chat, and API planning.
+- External runtime provider profiles for diagnostics and remediation.
+
+This track does not add dashboard-only state, does not make API confirmations
+into GitHub approvals, and does not move the source of truth away from GitHub,
+Git, `.openslack`, or `.openslack.local`.
+
 ## Main UX Gaps
 
 1. Setup is still technical, but now guided by a read-only report.

@@ -10,6 +10,7 @@ Use this page when you know what you want to do, but not which document owns it.
 | Follow step-by-step workflows (first run, workflows, blocked PRs, governed actions, activity, handoffs) | `guides/core-workflows.md` |
 | Use the workflow-first TUI and CLI workbench | `guides/dynamic-workflow-workbench.md` |
 | Configure Aby as an external agent runtime | `guides/aby-integration.md` |
+| Understand the L2/L3 API, SDK, receipt, and rehydrate productization plan | `product/l2-l3-productization.md` |
 | Understand dynamic workflows and work-unit boundaries | `product/dynamic-workflows.md`, `product/agent-work-units.md` |
 | Find the exact CLI command and flags | `user-guide.md` |
 | Check current modules, packages, commands, and test counts | `status/current.md` |
@@ -31,6 +32,7 @@ Use this page when you know what you want to do, but not which document owns it.
 | Collaboration events, handoffs, decisions, rooms, and workflows | `product/collaboration-layer.md`, `developer/collaboration-events.md`, `security/collaboration-audit.md` |
 | Dynamic workflow recommendation, pattern library, drafts, and policy | `guides/dynamic-workflow-workbench.md`, `product/dynamic-workflows.md`, `product/agent-work-units.md` |
 | UX roadmap and productization plan | `product/user-experience-roadmap.md` |
+| L2/L3 API, SDK, receipt, and rehydrate productization | `product/l2-l3-productization.md` |
 | Technical debt register | `developer/technical-debt.md` |
 
 ## Source-Of-Truth Rules
