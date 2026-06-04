@@ -96,6 +96,8 @@ export interface AdapterExecutionContext {
   recorder: RunRecorder;
   /** Current run state (snapshot from recorder.start). */
   runState: AgentRunState;
+  /** Cancellation signal owned by the launcher for live run controls. */
+  signal?: AbortSignal;
   /**
    * Tool guard for permission enforcement. Adapters MUST call
    * `toolGuard.check(toolName)` before every tool invocation.
@@ -177,6 +179,7 @@ export class LocalExecutionAdapter implements AgentExecutionAdapter {
 
   async execute<T>(context: AdapterExecutionContext): Promise<AdapterExecutionResult<T>> {
     const { prompt, permissionProfile, recorder, runState, toolGuard } = context;
+    throwIfAborted(context.signal);
 
     // Record the execution
     recorder.progress(runState.runId, { step: 'parsing_prompt', promptLength: prompt.length });
@@ -185,6 +188,7 @@ export class LocalExecutionAdapter implements AgentExecutionAdapter {
     const candidateTools = permissionProfile.allowedTools.slice(0, 3);
     const simulatedTools: string[] = [];
     for (const tool of candidateTools) {
+      throwIfAborted(context.signal);
       // Use the non-throwing check to filter, then call check() to
       // demonstrate the guard pattern that real adapters must follow.
       if (toolGuard.isAllowed(tool)) {
@@ -197,6 +201,7 @@ export class LocalExecutionAdapter implements AgentExecutionAdapter {
 
     // Parse prompt for structured intent
     const lowerPrompt = prompt.toLowerCase();
+    throwIfAborted(context.signal);
 
     // Review request pattern
     if (lowerPrompt.includes('review') || lowerPrompt.includes('check')) {
@@ -255,6 +260,12 @@ export class LocalExecutionAdapter implements AgentExecutionAdapter {
       tokenUsage: estimateTokenUsage(prompt, { response: 'placeholder' }),
     };
   }
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  const reason = signal.reason;
+  throw reason instanceof Error ? reason : new Error(String(reason ?? 'Agent run cancelled'));
 }
 
 function estimateTokenUsage(prompt: string, result: unknown): number {

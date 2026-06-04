@@ -373,8 +373,9 @@ export type WorkflowRunControlAction = 'pause' | 'resume' | 'stopRun' | 'stopAge
 export interface WorkflowRunControlResult {
   runId: string;
   action: WorkflowRunControlAction;
-  status: 'applied' | 'rejected';
+  status: 'applied' | 'recorded' | 'rejected';
   message: string;
+  target?: WorkflowRunControlTarget;
 }
 
 // ── Results ───────────────────────────────────────────────────────────────────
@@ -453,4 +454,118 @@ export interface AgentResult<T = unknown> {
   tokenUsage?: number;
   schemaVersion?: string;
   runId?: string;
+  workflowEvidence?: {
+    label: string;
+    phase: string;
+    agentRunId?: string;
+    model?: string;
+    isolation?: 'none' | 'worktree';
+    agentType?: string;
+    bridgeMode?: 'local' | 'external-command' | 'process' | 'fake';
+    promptSummary: string;
+    promptHash: string;
+    startedAt: string;
+    completedAt?: string;
+    tokenUsage?: number;
+  };
+}
+
+// ── Workflow Run Progress ───────────────────────────────────────────────────
+
+export interface WorkflowToolEvidence {
+  type: 'tool_call' | 'tool_result' | 'progress';
+  name: string;
+  timestamp?: string;
+  summary: string;
+}
+
+export interface WorkflowBudgetUsage {
+  tokenBudget: number | null;
+  tokensUsed: number;
+  tokensRemaining: number | null;
+  costUsd?: number;
+  agentCalls: number;
+  maxAgents?: number;
+  maxConcurrency?: number;
+  onExceeded?: 'pause' | 'fail';
+  source: 'manifest' | 'runtime' | 'agent-results' | 'not-recorded';
+}
+
+export interface WorkflowAgentProgress {
+  id: string;
+  label: string;
+  phase: string;
+  status: string;
+  cached: boolean;
+  agentRunId?: string;
+  model?: string;
+  runtimeProvider?: string;
+  bridgeMode?: string;
+  isolation?: 'none' | 'worktree';
+  worktreePath?: string;
+  promptSummary: string;
+  transcriptPath?: string;
+  resultSummary?: string;
+  terminalReason?: string;
+  tokensUsed: number;
+  tokensRemaining: number | null;
+  recentTools: WorkflowToolEvidence[];
+  warnings: string[];
+}
+
+export interface WorkflowPhaseProgress {
+  phase: string;
+  status: 'not-started' | 'running' | 'completed' | 'failed' | 'skipped' | 'unknown';
+  timestamp?: string;
+  elapsedMs?: number;
+  agentCount: number;
+  tokenTotal: number;
+  cachedCount: number;
+  liveCount: number;
+  failedCount: number;
+  agents: WorkflowAgentProgress[];
+  resultSummary?: string;
+  warnings: string[];
+}
+
+export interface WorkflowRunProgress {
+  runId: string;
+  workflowName: string;
+  mode: ExecutionMode | 'not-recorded';
+  status: RunStatusState | 'not-recorded';
+  startedAt?: string;
+  updatedAt?: string;
+  elapsedMs?: number;
+  currentPhase?: string;
+  args: Record<string, unknown>;
+  phaseCount: number;
+  agentCount: number;
+  pendingApprovalCount: number;
+  budget: WorkflowBudgetUsage;
+  phases: WorkflowPhaseProgress[];
+  outputSummary?: string;
+  logTail: string[];
+  warnings: string[];
+}
+
+export interface WorkflowRunControlTarget {
+  runId: string;
+  phase?: string;
+  agentRunId?: string;
+  agentId?: string;
+}
+
+export interface WorkflowAgentControlResult {
+  target: WorkflowRunControlTarget;
+  action: WorkflowRunControlAction;
+  status: 'applied' | 'recorded' | 'rejected';
+  message: string;
+}
+
+export interface WorkflowRunScriptSource {
+  runId: string;
+  workflowName: string;
+  sourcePath: string;
+  scriptHash: string;
+  savedPath?: string;
 }

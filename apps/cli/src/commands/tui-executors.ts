@@ -1,4 +1,5 @@
 import type { TuiActionResult } from '@openslack/tui'
+import type { WorkflowRunControlAction, WorkflowRunControlTarget } from '@openslack/workflows'
 import { join } from 'node:path'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -26,6 +27,8 @@ export interface TuiActionHandlers {
   executeApproval: (params: ApprovalExecutionParams, isApprove: boolean) => Promise<TuiActionResult>
   executeTrustChange: (workflowName: string, fromLevel: string, toLevel: string) => Promise<TuiActionResult>
   executeWorkflowRun: (workflowName: string, mode: 'preview' | 'dry-run' | 'run') => Promise<TuiActionResult>
+  controlWorkflowRun?: (runId: string, action: WorkflowRunControlAction, target?: WorkflowRunControlTarget) => Promise<TuiActionResult>
+  saveWorkflowRunScript?: (runId: string) => Promise<TuiActionResult>
   publishWorkflowAsIssue?: (workflowName: string) => Promise<TuiActionResult>
   requestWorkflowReview?: (workflowName: string) => Promise<TuiActionResult>
   splitWorkflowIntoIssues?: (workflowName: string, parentIssue: number) => Promise<TuiActionResult>
@@ -671,11 +674,49 @@ export function createProfileSyncHandlers(root: string) {
   }
 }
 
+export async function controlWorkflowRunFromTui(
+  runId: string,
+  action: WorkflowRunControlAction,
+  root: string,
+  target?: WorkflowRunControlTarget,
+): Promise<TuiActionResult> {
+  try {
+    const { controlWorkflowRun } = await import('@openslack/workflows')
+    const result = await controlWorkflowRun(runId, action, { rootDir: root, target })
+    return {
+      success: result.status === 'applied' || result.status === 'recorded',
+      message: result.message,
+      data: { runId, action, status: result.status, target },
+    }
+  } catch (err: unknown) {
+    return { success: false, message: `Workflow run control failed: ${(err as Error).message}` }
+  }
+}
+
+export async function saveWorkflowRunScriptFromTui(
+  runId: string,
+  root: string,
+): Promise<TuiActionResult> {
+  try {
+    const { saveWorkflowRunScript } = await import('@openslack/workflows')
+    const result = await saveWorkflowRunScript(runId, { rootDir: root, to: 'project' })
+    return {
+      success: true,
+      message: `Saved workflow "${result.workflowName}" to ${result.path}`,
+      data: { runId, path: result.path, hash: result.scriptHash },
+    }
+  } catch (err: unknown) {
+    return { success: false, message: `Workflow save failed: ${(err as Error).message}` }
+  }
+}
+
 export function createActionHandlers(root: string, actorId: string = 'tui-user'): TuiActionHandlers {
   return {
     executeApproval: (params, isApprove) => executeApproval(params, isApprove, root, actorId),
     executeTrustChange: (name, from, to) => executeTrustChange(name, from, to, root),
     executeWorkflowRun: (name, mode) => executeWorkflowRun(name, mode, root, actorId),
+    controlWorkflowRun: (runId, action, target) => controlWorkflowRunFromTui(runId, action, root, target),
+    saveWorkflowRunScript: (runId) => saveWorkflowRunScriptFromTui(runId, root),
     publishWorkflowAsIssue: (name) => publishWorkflowAsIssue(name, root, actorId),
     requestWorkflowReview: (name) => requestWorkflowReview(name, root, actorId),
     splitWorkflowIntoIssues: (name, parentIssue) => splitWorkflowIntoIssues(name, parentIssue, root),

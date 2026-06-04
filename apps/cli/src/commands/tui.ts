@@ -23,7 +23,7 @@ export function tuiCommands(): Command {
           process.exit(0);
         }
 
-        const { renderShellTui, mapStatusToViewModel, mapPrQueueToViewModel, mapWorkflowGalleryToViewModel, mapApprovalCenterToViewModel, mapWorkflowLifecycleToViewModel, mapAbyRuntimeDoctorToViewModel } = await import('@openslack/tui');
+        const { renderShellTui, mapStatusToViewModel, mapPrQueueToViewModel, mapWorkflowGalleryToViewModel, mapApprovalCenterToViewModel, mapWorkflowLifecycleToViewModel, mapAbyRuntimeDoctorToViewModel, mapWorkflowRunsToViewModel } = await import('@openslack/tui');
         const data: import('@openslack/tui').ShellViewData = { rootDir: process.cwd() };
 
         // Resolve repo root
@@ -169,6 +169,21 @@ export function tuiCommands(): Command {
           }
         } catch {
           // Workflow gallery data unavailable
+        }
+
+        // Pre-fetch workflow run progress data
+        try {
+          const { listWorkflowRuns, getWorkflowRunProgress } = await import('@openslack/workflows');
+          const runs = await listWorkflowRuns({ rootDir: root });
+          const progress = [];
+          for (const run of runs.slice(0, 20)) {
+            const item = await getWorkflowRunProgress(run.runId, { rootDir: root });
+            if (item) progress.push(item);
+          }
+          data.workflowRunProgress = progress;
+          data.workflowRuns = mapWorkflowRunsToViewModel(progress);
+        } catch {
+          // Workflow run progress unavailable
         }
 
         data.workflowLifecycleLoader = async (

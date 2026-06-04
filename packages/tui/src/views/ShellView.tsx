@@ -27,6 +27,7 @@ import {
 } from '../view-models/conversation.js';
 import { mapSubagentToViewModel } from '../view-models/agent-detail.js';
 import { mapAgentRunToViewModel } from '../view-models/agent-run.js';
+import { mapWorkflowRunsToViewModel } from '../view-models/workflow-runs.js';
 import type { SubagentDefinition } from '@openslack/kernel';
 import type { ShellViewData, TuiActionHandlers } from './render-shell.js';
 
@@ -49,6 +50,7 @@ import ThreadView from './ThreadView.js';
 import SubagentDetailView from './SubagentDetailView.js';
 import AgentRunDetailView from './AgentRunDetailView.js';
 import AgentRuntimeDiagnosticsView from './AgentRuntimeDiagnosticsView.js';
+import WorkflowRunsView from './WorkflowRunsView.js';
 
 /**
  * A view that hasn't been wired to live data yet.
@@ -279,6 +281,14 @@ function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
         });
       }
       return React.createElement(PlaceholderView, { route: current });
+    }
+    case 'workflow-runs': {
+      const model = data?.workflowRuns ?? mapWorkflowRunsToViewModel(data?.workflowRunProgress ?? []);
+      return React.createElement(WorkflowRunsView, {
+        model,
+        actionHandlers: data?.actionHandlers,
+        onBack: pop,
+      });
     }
     case 'room': {
       const roomId = current.params?.roomId as string | undefined;

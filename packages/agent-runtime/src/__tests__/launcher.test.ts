@@ -2,7 +2,15 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createOpenSlackAgentLauncher, createRunStore, FakeBridgeAdapter, BridgeFactory } from '../index.js';
+import {
+  createOpenSlackAgentLauncher,
+  createRunStore,
+  FakeBridgeAdapter,
+  BridgeFactory,
+  readTranscript,
+  requestAgentRunCancellation,
+} from '../index.js';
+import type { AdapterExecutionContext, AgentExecutionAdapter } from '../index.js';
 
 function makeTempRoot(): string {
   return mkdtempSync(join(tmpdir(), 'agent-launcher-test-'));
@@ -61,6 +69,45 @@ describe('createOpenSlackAgentLauncher', () => {
     expect(runs[0].agentId).toBe('research-agent');
     expect(runs[0].status).toBe('completed');
     expect(runs[0].model).toBe('sonnet');
+  });
+
+  it('cancels a live adapter run through the runtime control registry', async () => {
+    const store = createRunStore(root);
+    let activeRunId: string | undefined;
+    const adapter: AgentExecutionAdapter = {
+      adapterId: 'blocking-test',
+      async execute<T>(context: AdapterExecutionContext) {
+        activeRunId = context.runId;
+        await new Promise((_resolve, reject) => {
+          context.signal?.addEventListener('abort', () => {
+            reject(context.signal?.reason ?? new Error('cancelled'));
+          }, { once: true });
+        });
+        return { data: { ok: true } as T };
+      },
+    };
+    const launcher = createOpenSlackAgentLauncher({ runStore: store, rootDir: root, adapter });
+
+    const runPromise = launcher('wait until cancelled', {
+      label: 'blocked-agent',
+      phase: 'execute',
+      resolvedAgentConfig: {
+        agentId: 'blocked-agent',
+        source: 'test',
+        permissionMode: 'plan',
+      },
+    });
+
+    while (!activeRunId) {
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+
+    const cancel = requestAgentRunCancellation(activeRunId, 'test requested stopAgent');
+
+    expect(cancel.status).toBe('cancelled');
+    await expect(runPromise).rejects.toThrow(/cancelled|test requested stopAgent/);
+    expect(store.getRun(activeRunId)?.status).toBe('cancelled');
+    expect(readTranscript(activeRunId, root).at(-1)?.type).toBe('cancel');
   });
 
   it('writes transcript events', async () => {

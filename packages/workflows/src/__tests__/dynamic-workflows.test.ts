@@ -6,15 +6,21 @@ import {
   controlWorkflowRun,
   exportWorkflowSkill,
   generateWorkflowDraft,
+  getWorkflowCatalogEntry,
+  getWorkflowRunProgress,
   getWorkflowPattern,
   inferWorkflowPatternId,
+  listWorkflowCatalog,
   listWorkflowPatterns,
   previewWorkflowDraft,
   readWorkflowPolicy,
+  renderWorkflowRunProgress,
   renderWorkflowDraftPreview,
   saveWorkflow,
+  saveWorkflowRunScript,
   writeWorkflowPolicy,
 } from '../index.js'
+import { executeAgentCall } from '../agent-shim.js'
 
 describe('dynamic workflow pattern registry', () => {
   it('lists Anthropic dynamic workflow patterns', () => {
@@ -39,6 +45,18 @@ describe('dynamic workflow pattern registry', () => {
   it('uses one pattern inference helper for generated drafts and operator recommendations', () => {
     expect(inferWorkflowPatternId('compare three implementation alternatives')).toBe('tournament')
     expect(inferWorkflowPatternId('研究所有 package 边界')).toBe('fanout-synthesize')
+  })
+
+  it('lists workflow catalog entries backed by dynamic patterns', () => {
+    const ids = listWorkflowCatalog().map((entry) => entry.id)
+    expect(ids).toEqual(expect.arrayContaining([
+      'deep-research',
+      'codebase-audit',
+      'pr-deep-verification',
+      'refactor-migration',
+    ]))
+    expect(getWorkflowCatalogEntry('deep-research')?.requiredEvidence).toContain('citations')
+    expect(getWorkflowCatalogEntry('pr-deep-verification')?.requiredEvidence).toContain('file/line references')
   })
 })
 
@@ -106,6 +124,74 @@ describe('dynamic workflow drafts and policy', () => {
     expect(skill).not.toContain('.openslack.local')
   })
 
+  it('saves the workflow source associated with a recorded run', async () => {
+    writeWorkflowSource(root, 'test-workflow')
+    writeWorkflowRunStatus(root, 'run-save', 'completed')
+
+    const result = await saveWorkflowRunScript('run-save', { rootDir: root, to: 'claude-project' })
+
+    expect(result.sourceRunId).toBe('run-save')
+    expect(result.source).toBe('claude-project')
+    expect(result.path).toContain(join('.claude', 'workflows'))
+    expect(existsSync(result.path)).toBe(true)
+  })
+
+  it('builds workflow run progress from phase, agent, transcript, and budget evidence', async () => {
+    writeWorkflowSource(root, 'test-workflow')
+    writeWorkflowRunStatus(root, 'run-progress', 'running')
+    writeFileSync(join(root, '.openslack.local', 'workflows', 'runs', 'run-progress', 'status.json'), JSON.stringify({
+      status: 'running',
+      currentPhase: 'Scan',
+      updatedAt: '2026-01-01T00:01:00.000Z',
+      phases: [{ phase: 'Scan', timestamp: '2026-01-01T00:00:30.000Z', status: 'completed', result: { files: 2 } }],
+    }, null, 2))
+    const agentsDir = join(root, '.openslack.local', 'workflows', 'runs', 'run-progress', 'agents')
+    mkdirSync(agentsDir, { recursive: true })
+    writeFileSync(join(agentsDir, 'agent-1.json'), JSON.stringify({
+      data: { finding: 'ok' },
+      runId: 'RUN-20260101-ABCDEFGH',
+      tokenUsage: 12,
+      workflowEvidence: {
+        label: 'scan-api',
+        phase: 'Scan',
+        agentRunId: 'RUN-20260101-ABCDEFGH',
+        model: 'cheap',
+        isolation: 'none',
+        promptSummary: 'scan all api endpoints',
+        promptHash: 'abc123',
+        startedAt: '2026-01-01T00:00:10.000Z',
+        completedAt: '2026-01-01T00:00:20.000Z',
+        tokenUsage: 12,
+      },
+    }, null, 2))
+    const agentDir = join(root, '.openslack.local', 'agents', 'runs', 'RUN-20260101-ABCDEFGH')
+    mkdirSync(agentDir, { recursive: true })
+    writeFileSync(join(agentDir, 'run.json'), JSON.stringify({
+      runId: 'RUN-20260101-ABCDEFGH',
+      status: 'completed',
+      agentId: 'architect',
+      model: 'cheap',
+      startedAt: '2026-01-01T00:00:10.000Z',
+      completedAt: '2026-01-01T00:00:20.000Z',
+      tokensUsed: 12,
+      tokensRemaining: 88,
+      toolCalls: 1,
+      transcriptPath: join(agentDir, 'transcript.jsonl'),
+    }, null, 2))
+    writeFileSync(join(agentDir, 'transcript.jsonl'), [
+      JSON.stringify({ timestamp: '2026-01-01T00:00:10.000Z', type: 'start', data: { provider: 'local' } }),
+      JSON.stringify({ timestamp: '2026-01-01T00:00:11.000Z', type: 'tool_call', data: { tool: 'read_file', path: 'packages/api.ts' } }),
+      JSON.stringify({ timestamp: '2026-01-01T00:00:20.000Z', type: 'complete', data: { result: { ok: true }, terminalReason: 'completed' } }),
+    ].join('\n'))
+
+    const progress = await getWorkflowRunProgress('run-progress', { rootDir: root })
+
+    expect(progress?.agentCount).toBe(1)
+    expect(progress?.budget.tokensUsed).toBe(12)
+    expect(progress?.phases[0].agents[0].recentTools[0].name).toBe('read_file')
+    expect(renderWorkflowRunProgress(progress!)).toContain('scan-api')
+  })
+
   it('applies valid workflow run control transitions', async () => {
     const statusPath = writeWorkflowRunStatus(root, 'run-control', 'running')
 
@@ -138,6 +224,56 @@ describe('dynamic workflow drafts and policy', () => {
     expect(status.status).toBe('completed')
     expect(status.controlEvents?.at(-1)?.action).toBe('saveScript')
   })
+
+  it('records pending stopAgent when no live handle exists', async () => {
+    const statusPath = writeWorkflowRunStatus(root, 'run-stop-agent', 'running')
+
+    const result = await controlWorkflowRun('run-stop-agent', 'stopAgent', {
+      rootDir: root,
+      target: {
+        runId: 'run-stop-agent',
+        phase: 'Scan',
+        agentRunId: 'RUN-20260101-NOHANDLE',
+        agentId: 'scan-api',
+      },
+    })
+
+    expect(result.status).toBe('recorded')
+    const status = JSON.parse(readFileSync(statusPath, 'utf-8')) as {
+      pendingAgentControls?: Array<{ action: string; target?: { agentRunId?: string } }>
+    }
+    expect(status.pendingAgentControls?.[0].action).toBe('stopAgent')
+    expect(status.pendingAgentControls?.[0].target?.agentRunId).toBe('RUN-20260101-NOHANDLE')
+  })
+
+  it('blocks a matching future agent launch after pending stopAgent', async () => {
+    writeWorkflowRunStatus(root, 'run-block-agent', 'running')
+    await controlWorkflowRun('run-block-agent', 'stopAgent', {
+      rootDir: root,
+      target: {
+        runId: 'run-block-agent',
+        phase: 'Scan',
+        agentRunId: 'RUN-20260101-BLOCKED',
+        agentId: 'scan-api',
+      },
+    })
+
+    await expect(executeAgentCall('scan packages/api.ts', {
+      label: 'scan-api',
+      phase: 'Scan',
+    }, {
+      runId: 'run-block-agent',
+      mode: 'execute',
+      budget: { tokensUsed: 0, tokensRemaining: 100, costUsd: 0, agentCalls: 0 },
+      permissions: new Set(),
+      cache: { async load() { return null }, async save() {} },
+      launcher: async () => ({ data: { ok: true }, tokenUsage: 1 }),
+      log: () => {},
+      cacheKey: 'cache-key',
+      agentRunId: 'RUN-20260101-BLOCKED',
+      rootDir: root,
+    })).rejects.toThrow(/Pending stop recorded/)
+  })
 })
 
 function writeWorkflowRunStatus(root: string, runId: string, status: string): string {
@@ -157,4 +293,23 @@ function writeWorkflowRunStatus(root: string, runId: string, status: string): st
     phases: [],
   }, null, 2))
   return statusPath
+}
+
+function writeWorkflowSource(root: string, name: string): string {
+  const dir = join(root, '.openslack', 'workflows')
+  mkdirSync(dir, { recursive: true })
+  const path = join(dir, `${name}.mjs`)
+  writeFileSync(path, `export const meta = {
+  name: ${JSON.stringify(name)},
+  description: 'Test workflow',
+  phases: [{ title: 'Scan', detail: 'Scan evidence' }],
+  risk: 'low',
+  budgetPolicy: { tokenBudget: 100, maxAgents: 10, maxConcurrency: 2, onExceeded: 'pause' }
+}
+
+export async function preview() {
+  return { preview: true }
+}
+`, 'utf-8')
+  return path
 }

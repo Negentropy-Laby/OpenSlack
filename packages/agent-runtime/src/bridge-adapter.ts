@@ -90,6 +90,7 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
   private processExited = false;
   private envelopeQueue: BridgeEnvelope[] = [];
   private stderrBuffer = '';
+  private abortListener: (() => void) | null = null;
 
   constructor(options: BridgeProcessAdapterOptions) {
     this.options = options;
@@ -258,6 +259,17 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
     };
 
     try {
+      if (context.signal) {
+        this.abortListener = () => {
+          lifecycle.onBridgeProgress('agent_cancel_requested', { runId, reason: 'AbortSignal' });
+          this.killProcess();
+        };
+        if (context.signal.aborted) {
+          this.abortListener();
+        } else {
+          context.signal.addEventListener('abort', this.abortListener, { once: true });
+        }
+      }
       // Open session (spawns process + handshake)
       const sessionState = await this.openSession(sessionConfig);
       const sessionId = this.sessionMachine!.id;
@@ -456,6 +468,10 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       // evidence that would conflict with the launcher's real check.
       if (worktreeConfig) {
         worktreeGuard.recordPostSessionValidation(worktreeConfig);
+      }
+      if (context.signal && this.abortListener) {
+        context.signal.removeEventListener('abort', this.abortListener);
+        this.abortListener = null;
       }
       // Always close session
       if (this.sessionMachine) {

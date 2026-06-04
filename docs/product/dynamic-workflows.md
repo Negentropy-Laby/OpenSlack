@@ -22,8 +22,27 @@ Dynamic Workflow Parity v1 adds these user-facing capabilities:
 - `openslack collaboration workflow config show|enable|disable` controls
   project workflow availability.
 
+Dynamic Workflow UX Closure adds the first workflow-first loop:
+
+- `openslack collaboration workflow start --prompt "..."` evaluates a prompt,
+  creates a draft, and shows the preview path without executing.
+- `openslack collaboration workflow start --pattern <id>` starts from a known
+  orchestration pattern.
+- `openslack collaboration workflow start --saved <name>` shows preview,
+  dry-run, and run commands for an existing workflow.
+- `openslack collaboration workflow runs show <runId> --detail progress` shows
+  run, phase, agent, transcript, and budget evidence.
+- `openslack collaboration workflow save-run <runId> --to project|user|claude-project`
+  saves the workflow script associated with a run.
+- `openslack collaboration workflow catalog list|show|preview` exposes common
+  Dynamic Workflow use cases as reusable catalog entries.
+
 Generated drafts are scaffolds. They are previewable and auditable, but they do
 not become trusted high-permission workflows automatically.
+
+UX Closure does not claim full Claude Code `/workflows` parity. Agent-level
+stop/restart is still recorded as control evidence until the live runtime
+controller is enabled.
 
 ## Built-In Patterns
 

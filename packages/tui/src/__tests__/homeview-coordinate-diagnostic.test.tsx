@@ -36,6 +36,7 @@ describe('HomeView coordinate diagnostic', () => {
 
     const output = chunks.join('')
     const lines = output.split('\n')
+    const indexOfLine = (text: string) => lines.findIndex((line) => line.includes(text))
 
     // Header
     expect(lines[0]).toContain('OpenSlack')
@@ -51,56 +52,52 @@ describe('HomeView coordinate diagnostic', () => {
     // Task [2]: Start or continue work
     expect(lines[5]).toContain('Start or continue work')
     expect(lines[6]).toContain('Create tasks, claim issues, and work in isolated branches')
-    // Task [3]: Run or check a workflow
-    expect(lines[7]).toContain('Run or check a workflow')
-    expect(lines[8]).toContain('Browse, execute, and inspect workflow runs')
+    // Dynamic workflow start/watch/reuse entries stay in the Start Work group.
+    expect(lines[7]).toContain('Start a Dynamic Workflow')
+    expect(lines[8]).toContain('Generate from prompt, choose a pattern, or run a saved workflow')
+    expect(lines[9]).toContain('Watch workflow runs')
+    expect(lines[10]).toContain('Inspect run, phase, agent, transcript, and budget evidence')
+    expect(lines[11]).toContain('Reuse workflow assets')
+    expect(lines[12]).toContain('Save, export as skill, or publish workflow proposals')
 
-    // Group header: Review Work
-    // line 9: blank (marginTop)
-    // line 10: ── Review Work ──
-    expect(lines[10]).toContain('Review Work')
-    // Task [1]: See what needs attention
-    expect(lines[11]).toContain('See what needs attention')
-    expect(lines[12]).toContain('View items needing immediate action')
-    // Task [4]: Review and merge PRs
-    expect(lines[13]).toContain('Review and merge PRs')
-    expect(lines[14]).toContain('Check open PRs, run doctor, and merge when ready')
-    // Task [c]: View active conversations
-    expect(lines[15]).toContain('View active conversations')
-    expect(lines[16]).toContain('Browse agent conversation threads and messages')
+    const reviewHeader = indexOfLine('Review Work')
+    expect(reviewHeader).toBeGreaterThan(indexOfLine('Reuse workflow assets'))
+    expect(lines[reviewHeader + 1]).toContain('See what needs attention')
+    expect(lines[reviewHeader + 2]).toContain('View items needing immediate action')
+    expect(lines[reviewHeader + 3]).toContain('Review and merge PRs')
+    expect(lines[reviewHeader + 4]).toContain('Check open PRs, run doctor, and merge when ready')
+    expect(lines[reviewHeader + 5]).toContain('View active conversations')
+    expect(lines[reviewHeader + 6]).toContain('Browse agent conversation threads and messages')
 
-    // Group header: Govern Actions
-    // line 17: blank (marginTop)
-    // line 18: ── Govern Actions ──
-    expect(lines[18]).toContain('Govern Actions')
-    // Task [5]: Approve pending items
-    expect(lines[19]).toContain('Approve pending items')
-    expect(lines[20]).toContain('Approve plans, merge requests, and workflow effects')
+    const governHeader = indexOfLine('Govern Actions')
+    expect(governHeader).toBeGreaterThan(reviewHeader)
+    expect(lines[governHeader + 1]).toContain('Approve pending items')
+    expect(lines[governHeader + 2]).toContain('Approve plans, merge requests, and workflow effects')
 
-    // Group header: Maintain Profile
-    // line 21: blank (marginTop)
-    // line 22: ── Maintain Profile ──
-    expect(lines[22]).toContain('Maintain Profile')
-    // Task [6]: Maintain organization profile
-    expect(lines[23]).toContain('Maintain organization profile')
-    expect(lines[24]).toContain('Check, preview, and sync your organization profile')
+    const maintainHeader = indexOfLine('Maintain Profile')
+    expect(maintainHeader).toBeGreaterThan(governHeader)
+    expect(lines[maintainHeader + 1]).toContain('Maintain organization profile')
+    expect(lines[maintainHeader + 2]).toContain('Check, preview, and sync your organization profile')
 
-    expect(lines[25]).toContain('─')
+    const quickNavHeader = indexOfLine('Quick Navigation')
+    expect(quickNavHeader).toBeGreaterThan(maintainHeader)
 
     // Section 2: Quick Navigation
-    expect(lines[26]).toContain('Quick Navigation')
-    // Nav items: Dashboard, Status, Activity, Digest, Workflows, Profile, Conversations
-    expect(lines[27]).toContain('Dashboard')
-    expect(lines[28]).toContain('Status')
-    expect(lines[29]).toContain('Activity')
-    expect(lines[30]).toContain('Digest')
-    expect(lines[31]).toContain('Workflows')
-    expect(lines[32]).toContain('Profile')
-    expect(lines[33]).toContain('Conversations')
+    expect(lines[quickNavHeader]).toContain('Quick Navigation')
+    // Nav items: Dashboard, Status, Activity, Digest, Workflows, Workflow Runs, Profile, Conversations
+    expect(lines[quickNavHeader + 1]).toContain('Dashboard')
+    expect(lines[quickNavHeader + 2]).toContain('Status')
+    expect(lines[quickNavHeader + 3]).toContain('Activity')
+    expect(lines[quickNavHeader + 4]).toContain('Digest')
+    expect(lines[quickNavHeader + 5]).toContain('Workflows')
+    expect(lines[quickNavHeader + 6]).toContain('Workflow Runs')
+    expect(lines[quickNavHeader + 7]).toContain('Profile')
+    expect(lines[quickNavHeader + 8]).toContain('Conversations')
 
     // Footer
-    expect(lines[34]).toContain('─')
-    expect(lines[35]).toContain('Quit')
+    const footer = indexOfLine('Quit')
+    expect(footer).toBeGreaterThan(quickNavHeader)
+    expect(lines[footer]).toContain('Quit')
 
     instance.unmount()
   })
@@ -146,7 +143,7 @@ describe('HomeView coordinate diagnostic', () => {
     instance.unmount()
   })
 
-  it('renders all 7 tasks with correct shortcuts', async () => {
+  it('renders all 9 tasks with correct shortcuts', async () => {
     const { stdout, chunks } = createMockStdout(80, 50)
     const model = mapHomeToViewModel()
     const instance = await render(
@@ -159,19 +156,23 @@ describe('HomeView coordinate diagnostic', () => {
 
     const output = chunks.join('')
 
-    // Verify all 7 task labels are present
+    // Verify all 9 task labels are present
     expect(output).toContain('See what needs attention')
     expect(output).toContain('Start or continue work')
-    expect(output).toContain('Run or check a workflow')
+    expect(output).toContain('Start a Dynamic Workflow')
+    expect(output).toContain('Watch workflow runs')
+    expect(output).toContain('Reuse workflow assets')
     expect(output).toContain('Review and merge PRs')
     expect(output).toContain('Approve pending items')
     expect(output).toContain('Maintain organization profile')
     expect(output).toContain('View active conversations')
 
-    // Verify shortcuts [1] through [6] for tasks, plus [c] for conversations
+    // Verify shortcuts [1] through [6] for tasks, plus workflow [w]/[s] and [c] for conversations
     expect(output).toContain('[1]')
     expect(output).toContain('[2]')
     expect(output).toContain('[3]')
+    expect(output).toContain('[w]')
+    expect(output).toContain('[s]')
     expect(output).toContain('[4]')
     expect(output).toContain('[5]')
     expect(output).toContain('[6]')
@@ -193,12 +194,13 @@ describe('HomeView coordinate diagnostic', () => {
 
     const output = chunks.join('')
 
-    // Verify nav shortcuts [7], [8], [9], [0], [p], [r], [c]
+    // Verify nav shortcuts [7], [8], [9], [0], [p], [w], [r], [c]
     expect(output).toContain('[7]')
     expect(output).toContain('[8]')
     expect(output).toContain('[9]')
     expect(output).toContain('[0]')
     expect(output).toContain('[p]')
+    expect(output).toContain('[w]')
     expect(output).toContain('[r]')
     expect(output).toContain('[c]')
 
@@ -208,6 +210,7 @@ describe('HomeView coordinate diagnostic', () => {
     expect(output).toContain('Activity')
     expect(output).toContain('Digest')
     expect(output).toContain('Workflows')
+    expect(output).toContain('Workflow Runs')
     expect(output).toContain('Profile')
     expect(output).toContain('Conversations')
 

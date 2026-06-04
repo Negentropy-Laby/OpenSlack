@@ -13,6 +13,10 @@ import type { WorkflowLifecycleViewModel } from '../view-models/workflow-lifecyc
 import type { ProfileViewModel } from '../view-models/profile.js'
 import type { AgentRuntimeDiagnosticsViewModel } from '../view-models/agent-runtime.js'
 import type { AgentConversationThread, AgentConversationMessage } from '@openslack/collaboration'
+import type { WorkflowRunControlAction, WorkflowRunControlTarget } from '@openslack/workflows'
+import type { WorkflowRunProgressItem } from '../view-models/workflow-runs.js'
+
+export type { WorkflowRunControlAction, WorkflowRunControlTarget } from '@openslack/workflows'
 
 export interface WorkflowLifecycleBaseData {
   workflowHash: string
@@ -51,6 +55,8 @@ export interface TuiActionHandlers {
   executeApproval: (params: ApprovalExecutionParams, isApprove: boolean) => Promise<TuiActionResult>
   executeTrustChange: (workflowName: string, fromLevel: string, toLevel: string) => Promise<TuiActionResult>
   executeWorkflowRun: (workflowName: string, mode: 'preview' | 'dry-run' | 'run') => Promise<TuiActionResult>
+  controlWorkflowRun?: (runId: string, action: WorkflowRunControlAction, target?: WorkflowRunControlTarget) => Promise<TuiActionResult>
+  saveWorkflowRunScript?: (runId: string) => Promise<TuiActionResult>
   publishWorkflowAsIssue?: (workflowName: string) => Promise<TuiActionResult>
   requestWorkflowReview?: (workflowName: string) => Promise<TuiActionResult>
   splitWorkflowIntoIssues?: (workflowName: string, parentIssue: number) => Promise<TuiActionResult>
@@ -72,6 +78,8 @@ export interface ShellViewData {
   workflowLifecycle?: WorkflowLifecycleViewModel
   workflowLifecycleBase?: Record<string, WorkflowLifecycleBaseData>
   workflowLifecycleLoader?: WorkflowLifecycleLoader
+  workflowRuns?: import('../view-models/workflow-runs.js').WorkflowRunProgressViewModel
+  workflowRunProgress?: WorkflowRunProgressItem[]
   profile?: ProfileViewModel
   agentRuntime?: AgentRuntimeDiagnosticsViewModel
   conversations?: {

@@ -63,7 +63,6 @@ const TRUNCATION_MARKER = '\n... [truncated]';
  * - Exit code, signal, and timeout are all recorded
  *
  * Limitations (AR-2.4):
- * - No AbortSignal / cancel API — only timeout-based kill (SIGTERM → SIGKILL)
  * - No streaming stdout/stderr — full capture before resolve
  * - The command and args are fixed at construction time; prompt is
  *   passed via env var, not as an arg
@@ -121,6 +120,7 @@ export class ExternalCommandAdapter implements AgentExecutionAdapter {
         },
         timeoutMs,
         maxCaptureBytes,
+        signal: context.signal,
       });
 
       const durationMs = Date.now() - startTime;
@@ -193,6 +193,7 @@ export class ExternalCommandAdapter implements AgentExecutionAdapter {
       extraEnv?: Record<string, string>;
       timeoutMs: number;
       maxCaptureBytes: number;
+      signal?: AbortSignal;
     },
   ): Promise<ExternalCommandResult> {
     return new Promise((resolve) => {
@@ -218,15 +219,26 @@ export class ExternalCommandAdapter implements AgentExecutionAdapter {
 
       const child: ChildProcess = spawn(command, args, spawnOpts);
 
-      const timeout = setTimeout(() => {
-        timedOut = true;
+      const killChild = () => {
         child.kill('SIGTERM');
-        // Give 5s for graceful shutdown, then force kill
         setTimeout(() => {
           if (!child.killed) {
             child.kill('SIGKILL');
           }
         }, 5000);
+      };
+
+      if (opts.signal?.aborted) {
+        killChild();
+      }
+      const onAbort = () => {
+        killChild();
+      };
+      opts.signal?.addEventListener('abort', onAbort, { once: true });
+
+      const timeout = setTimeout(() => {
+        timedOut = true;
+        killChild();
       }, opts.timeoutMs);
 
       child.stdout?.on('data', (chunk: Buffer) => {
@@ -255,6 +267,7 @@ export class ExternalCommandAdapter implements AgentExecutionAdapter {
 
       child.on('close', (code, signal) => {
         clearTimeout(timeout);
+        opts.signal?.removeEventListener('abort', onAbort);
         resolve({
           exitCode: code,
           signal: signal,
@@ -268,6 +281,7 @@ export class ExternalCommandAdapter implements AgentExecutionAdapter {
 
       child.on('error', (err) => {
         clearTimeout(timeout);
+        opts.signal?.removeEventListener('abort', onAbort);
         resolve({
           exitCode: null,
           signal: null,

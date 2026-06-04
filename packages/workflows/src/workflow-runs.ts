@@ -1,8 +1,29 @@
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import type { RunStatus, WorkflowRunControlAction, WorkflowRunControlResult } from './types.js'
+import { requestAgentRunCancellation } from '@openslack/agent-runtime'
+import type {
+  RunStatus,
+  WorkflowRunControlAction,
+  WorkflowRunControlResult,
+  WorkflowRunControlTarget,
+} from './types.js'
 
 const TERMINAL_RUN_STATUSES = new Set<RunStatus['status']>(['completed', 'failed', 'cancelled'])
+
+interface ControlEvent {
+  action?: WorkflowRunControlAction
+  timestamp?: string
+  target?: WorkflowRunControlTarget
+  status?: 'applied' | 'recorded' | 'rejected'
+  message?: string
+}
+
+interface RunStatusWithControls {
+  status: RunStatus['status']
+  updatedAt: string
+  controlEvents?: ControlEvent[]
+  pendingAgentControls?: ControlEvent[]
+}
 
 export interface ListWorkflowRunsOptions {
   rootDir?: string
@@ -84,14 +105,14 @@ export async function showWorkflowRun(runId: string, options: { rootDir?: string
 export async function controlWorkflowRun(
   runId: string,
   action: WorkflowRunControlAction,
-  options: { rootDir?: string } = {},
+  options: { rootDir?: string; target?: WorkflowRunControlTarget } = {},
 ): Promise<WorkflowRunControlResult> {
   const rootDir = options.rootDir ?? process.cwd()
   const dir = join(runsDir(rootDir), runId)
   const statusPath = join(dir, 'status.json')
-  const status = await readJson<{ status: RunStatus['status']; updatedAt: string; controlEvents?: unknown[] }>(statusPath)
+  const status = await readJson<RunStatusWithControls>(statusPath)
   if (!status) {
-    return { runId, action, status: 'rejected', message: `Workflow run not found: ${runId}` }
+    return { runId, action, status: 'rejected', message: `Workflow run not found: ${runId}`, target: options.target }
   }
   const nextStatus = nextStatusForAction(status.status, action)
   if (nextStatus === undefined) {
@@ -100,19 +121,88 @@ export async function controlWorkflowRun(
       action,
       status: 'rejected',
       message: `${action} is not valid while workflow run ${runId} is ${status.status}.`,
+      target: options.target,
     }
   }
+  const timestamp = new Date().toISOString()
+  let resultStatus: WorkflowRunControlResult['status'] = 'applied'
+  let message = `${action} applied to ${runId}.`
+
+  if (action === 'stopAgent') {
+    const agentRunId = options.target?.agentRunId
+    if (!agentRunId) {
+      return {
+        runId,
+        action,
+        status: 'rejected',
+        message: 'stopAgent requires target.agentRunId so OpenSlack can cancel a selected live agent.',
+        target: options.target,
+      }
+    }
+    const cancel = requestAgentRunCancellation(agentRunId, `workflow ${runId} stopAgent`)
+    if (cancel.status === 'cancelled' || cancel.status === 'already_cancelled') {
+      message = cancel.message
+    } else {
+      resultStatus = 'recorded'
+      message = `${cancel.message} Pending stop recorded and matching future launches for this run will be blocked.`
+      status.pendingAgentControls = [
+        ...(Array.isArray(status.pendingAgentControls) ? status.pendingAgentControls : []),
+        { action, timestamp, target: options.target, status: 'recorded', message },
+      ]
+    }
+  } else if (action === 'restartAgent') {
+    const target = options.target
+    if (!target?.agentRunId && !target?.agentId) {
+      return {
+        runId,
+        action,
+        status: 'rejected',
+        message: 'restartAgent requires target.agentRunId or target.agentId.',
+        target,
+      }
+    }
+    resultStatus = 'recorded'
+    message = 'restartAgent request recorded. Targeted replay requires persisted replay input and is refused for completed agents.'
+    status.pendingAgentControls = [
+      ...(Array.isArray(status.pendingAgentControls) ? status.pendingAgentControls : []),
+      { action, timestamp, target, status: 'recorded', message },
+    ]
+  } else if (action === 'saveScript') {
+    message = `saveScript recorded for ${runId}.`
+  }
+
   status.status = nextStatus as RunStatus['status']
-  status.updatedAt = new Date().toISOString()
+  status.updatedAt = timestamp
   status.controlEvents = [
     ...(Array.isArray(status.controlEvents) ? status.controlEvents : []),
-    { action, timestamp: status.updatedAt },
+    { action, timestamp, target: options.target, status: resultStatus, message },
   ]
   await writeFile(statusPath, JSON.stringify(status, null, 2), 'utf-8')
-  const message = action === 'restartAgent' || action === 'stopAgent' || action === 'saveScript'
-    ? `${action} recorded for ${runId}; full agent-level execution control is handled by a later runtime controller.`
-    : `${action} applied to ${runId}.`
-  return { runId, action, status: 'applied', message }
+  return { runId, action, status: resultStatus, message, target: options.target }
+}
+
+export async function isAgentLaunchBlockedByWorkflowControl(options: {
+  rootDir?: string
+  runId: string
+  phase: string
+  label: string
+  agentRunId: string
+  agentType?: string
+}): Promise<string | null> {
+  const statusPath = join(runsDir(options.rootDir ?? process.cwd()), options.runId, 'status.json')
+  const status = await readJson<RunStatusWithControls>(statusPath)
+  const pending = status?.pendingAgentControls
+  if (!Array.isArray(pending)) return null
+  const blocked = pending.find((event) => {
+    if (event.action !== 'stopAgent') return false
+    const target = event.target
+    if (!target) return false
+    if (target.agentRunId === options.agentRunId) return true
+    const samePhase = !target.phase || target.phase === options.phase
+    const targetAgent = target.agentId
+    return samePhase && !!targetAgent && (targetAgent === options.label || targetAgent === options.agentType)
+  })
+  return blocked ? blocked.message ?? 'Agent launch blocked by pending stopAgent control.' : null
 }
 
 export function renderWorkflowRuns(runs: RunStatus[]): string {

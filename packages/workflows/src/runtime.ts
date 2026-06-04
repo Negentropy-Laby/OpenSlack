@@ -414,6 +414,7 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
         cacheKey,
         eventEmitter: options.agentEventEmitter,
         resolvedAgent,
+        rootDir: options.rootDir,
       });
     },
 

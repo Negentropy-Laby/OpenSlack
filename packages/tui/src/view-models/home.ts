@@ -258,10 +258,24 @@ export function mapHomeToViewModel(data?: {
     },
     {
       key: 'run-workflow',
-      label: 'Run or check a workflow',
+      label: 'Start a Dynamic Workflow',
       route: 'workflows',
-      description: 'Browse, execute, and inspect workflow runs',
+      description: 'Generate from prompt, choose a pattern, or run a saved workflow',
       shortcut: '3',
+    },
+    {
+      key: 'watch-workflows',
+      label: 'Watch workflow runs',
+      route: 'workflow-runs',
+      description: 'Inspect run, phase, agent, transcript, and budget evidence',
+      shortcut: 'w',
+    },
+    {
+      key: 'reuse-workflows',
+      label: 'Reuse workflow assets',
+      route: 'workflows',
+      description: 'Save, export as skill, or publish workflow proposals',
+      shortcut: 's',
     },
     {
       key: 'review-prs',
@@ -301,6 +315,7 @@ export function mapHomeToViewModel(data?: {
     { label: 'Activity', key: 'activity', shortcut: '9' },
     { label: 'Digest', key: 'digest', shortcut: '0' },
     { label: 'Workflows', key: 'workflows', shortcut: 'p' },
+    { label: 'Workflow Runs', key: 'workflow-runs', shortcut: 'w' },
     { label: 'Profile', key: 'profile', shortcut: 'r' },
     { label: 'Conversations', key: 'conversations', shortcut: 'c' },
   ]

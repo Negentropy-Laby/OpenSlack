@@ -10,5 +10,10 @@
     "noImplicitAny": false
   },
   "include": ["src"],
-  "references": [{ "path": "../kernel" }, { "path": "../runtime" }, { "path": "../agent-runtime" }]
+  "references": [
+    { "path": "../kernel" },
+    { "path": "../runtime" },
+    { "path": "../agent-runtime" },
+    { "path": "../workflows" }
+  ]
 }
