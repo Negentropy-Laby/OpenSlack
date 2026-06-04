@@ -79,12 +79,25 @@ Organization profile sync status with guided actions: check, preview, create PR,
 
 Horizontal 5-stage progress bar (Proposal -> Review -> Run -> PR -> Merged) with detailed stage information.
 
+### Workflow Workbench
+
+Workflow home uses five action verbs:
+
+| Key | Action | Description |
+|-----|--------|-------------|
+| 1 | Start | Generate from prompt, choose a pattern, or open a saved workflow |
+| 2 | Watch | Open running and paused workflow runs |
+| 3 | Approve | Resolve workflow side effects and budget pauses |
+| 4 | Reuse | Save, export, or share workflow outputs |
+| 5 | Publish | Push workflow lifecycle to GitHub Issues |
+
 ### Workflow Runs
 
 Run, phase, and agent drilldown for recorded workflow evidence. The view shows
 status, current phase, token budget, budget percent, configured cost estimate,
 pending approvals, recent tool evidence, replay availability, result summaries,
-transcript paths, and run/agent controls.
+transcript paths, and run/agent controls. The top of the view also summarizes
+Status, Owner, Blocker, and Next action for the selected run.
 
 ### Approval Center
 

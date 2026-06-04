@@ -77,15 +77,16 @@ bun run openslack tui
 
 From Home choose:
 
-- `Start a workflow`
-- `Watch running workflows`
-- `Handle paused workflow approvals`
-- `Save/share run`
-- `Publish workflow to GitHub Issues`
+- `Start` to generate from prompt, choose a pattern, or open a saved workflow
+- `Watch` to inspect running and paused workflow runs
+- `Approve` to resolve workflow side effects and budget pauses
+- `Reuse` to save, export, or share workflow outputs
+- `Publish` to push workflow lifecycle to GitHub Issues
 
 The run view shows the run, phase, and agent tree with prompt summaries,
 tool evidence, result summaries, transcript paths, token usage, replay
-availability, live controls, budget state, and pending approvals.
+availability, live controls, budget state, pending approvals, and a
+Status/Owner/Blocker/Next action decision summary.
 
 Live agent stop/restart is scoped to the current OpenSlack process. Restart
 requires persisted replay input and rejects completed terminal runs, missing

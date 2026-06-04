@@ -16,10 +16,17 @@ const HIGH_FANOUT_PATTERNS = [
   /\bmigration\b/i,
   /\brefactor\b/i,
   /\broot[- ]cause\b/i,
+  /\bscan\b/i,
   /\btriage\b/i,
+  /\bgovernance\b/i,
+  /\bopen prs?\b/i,
+  /\blong[- ]running\b/i,
+  /\bend[- ]to[- ]end\b/i,
   /\bresearch\b/i,
   /\bverify\b/i,
+  /\bverification\b/i,
   /\baudit\b/i,
+  /\bindependent\b/i,
   /\bmultiple\b/i,
   /\bmany\b/i,
   /\bpackages?\//i,
@@ -68,33 +75,33 @@ export function recommendWorkflowForQuery(
   if (/\bultracode\b/i.test(trimmed)) {
     return {
       decision: 'workflow_draft_required',
-      reason: 'The request explicitly asks for ultracode, which OpenSlack treats as a workflow draft trigger with no permission bypass.',
+      reason: 'This looks like a workflow task: ultracode requests create a workflow draft with no permission bypass.',
       confidence: 0.95,
       suggestedPattern: suggestedPattern ?? 'fanout-synthesize',
       risk,
-      nextAction: `openslack collaboration workflow generate --prompt "${trimmed.replace(/"/g, '\\"')}"`,
+      nextAction: `Generate workflow draft: openslack collaboration workflow generate --prompt "${trimmed.replace(/"/g, '\\"')}"`,
     };
   }
 
   if (explicitWorkflow && (options.allowDraft || suggestedPattern || highFanoutHits > 0)) {
     return {
       decision: options.allowDraft ? 'workflow_draft_required' : 'workflow_recommended',
-      reason: 'The request explicitly asks for a workflow and has enough scope to benefit from runtime orchestration.',
+      reason: 'This looks like a workflow task: the request explicitly asks for workflow orchestration and has enough scope to benefit from it.',
       confidence: 0.9,
       suggestedPattern: suggestedPattern ?? 'fanout-synthesize',
       risk,
-      nextAction: `openslack collaboration workflow generate --prompt "${trimmed.replace(/"/g, '\\"')}"`,
+      nextAction: `Generate workflow draft: openslack collaboration workflow generate --prompt "${trimmed.replace(/"/g, '\\"')}"`,
     };
   }
 
   if (highFanoutHits >= 2) {
     return {
       decision: 'workflow_recommended',
-      reason: 'The request spans enough work items or verification steps that fan-out, caching, and synthesis are useful.',
+      reason: 'This looks like a workflow task: multiple targets, long-running scan, or independent verification signals were detected.',
       confidence: Math.min(0.85, 0.55 + highFanoutHits * 0.1),
       suggestedPattern: suggestedPattern ?? 'fanout-synthesize',
       risk,
-      nextAction: `openslack collaboration workflow generate --prompt "${trimmed.replace(/"/g, '\\"')}"`,
+      nextAction: `Generate workflow draft: openslack collaboration workflow generate --prompt "${trimmed.replace(/"/g, '\\"')}"`,
     };
   }
 

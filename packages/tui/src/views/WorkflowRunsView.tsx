@@ -15,10 +15,24 @@ import type {
   WorkflowRunProgressItem,
   WorkflowRunProgressViewModel,
 } from '../view-models/workflow-runs.js'
+import { deriveWorkflowRunDecisionSummary } from '../view-models/workflow-runs.js'
 import type { TuiActionHandlers, WorkflowRunControlAction, WorkflowRunControlTarget, WorkflowSaveTarget } from './render-shell.js'
 
 type ViewMode = 'runs' | 'phases' | 'agent'
-const SAVE_TARGETS: WorkflowSaveTarget[] = ['project', 'user', 'claude-project']
+
+type SaveTargetOption = {
+  key: string
+  label: string
+  detail: string
+  target?: WorkflowSaveTarget
+}
+
+const SAVE_TARGET_OPTIONS: SaveTargetOption[] = [
+  { key: '1', label: 'Project workflow', detail: '.openslack/workflows', target: 'project' },
+  { key: '2', label: 'Claude project', detail: '.claude/workflows', target: 'claude-project' },
+  { key: '3', label: 'User workflow', detail: '~/.claude/workflows', target: 'user' },
+  { key: '4', label: 'Skill package', detail: 'skills/<name>' },
+]
 
 export interface WorkflowRunsViewProps {
   model: WorkflowRunProgressViewModel
@@ -68,8 +82,9 @@ export default function WorkflowRunsView({ model, actionHandlers, onBack }: Work
   const selectedPhase = selectedRun?.phases[phaseIndex] as WorkflowPhaseProgressItem | undefined
   const [agentIndex, setAgentIndex] = useClampedIndex(selectedPhase?.agents.length ?? 0)
   const selectedAgent = selectedPhase?.agents[agentIndex] as WorkflowAgentProgressItem | undefined
-  const [saveTargetIndex, setSaveTargetIndex] = useClampedIndex(SAVE_TARGETS.length)
-  const saveTarget = SAVE_TARGETS[saveTargetIndex] ?? 'project'
+  const [saveTargetIndex, setSaveTargetIndex] = useClampedIndex(SAVE_TARGET_OPTIONS.length)
+  const saveTargetOption = SAVE_TARGET_OPTIONS[saveTargetIndex] ?? SAVE_TARGET_OPTIONS[0]!
+  const decisionSummary = selectedRun ? deriveWorkflowRunDecisionSummary(selectedRun) : undefined
 
   const goBack = useCallback(() => {
     if (mode === 'agent') {
@@ -94,9 +109,17 @@ export default function WorkflowRunsView({ model, actionHandlers, onBack }: Work
           agentId: selectedAgent.label,
         }
       : undefined
-    if (action === 'saveScript' && actionHandlers?.saveWorkflowRunScript) {
-      const result = await actionHandlers.saveWorkflowRunScript(selectedRun.runId, saveTarget)
-      setMessage(result.message)
+    if (action === 'saveScript') {
+      if (!saveTargetOption.target) {
+        setMessage(`Use: openslack collaboration workflow export-skill ${selectedRun.workflowName} --out skills/${selectedRun.workflowName}`)
+        return
+      }
+      if (actionHandlers?.saveWorkflowRunScript) {
+        const result = await actionHandlers.saveWorkflowRunScript(selectedRun.runId, saveTargetOption.target)
+        setMessage(result.message)
+        return
+      }
+      setMessage(`Use: openslack collaboration workflow save-run ${selectedRun.runId} --to ${saveTargetOption.target}`)
       return
     }
     if (actionHandlers?.controlWorkflowRun) {
@@ -106,7 +129,7 @@ export default function WorkflowRunsView({ model, actionHandlers, onBack }: Work
     }
     const agentArg = target?.agentRunId ? ` --agent-run-id ${target.agentRunId}` : ''
     setMessage(`Use: openslack collaboration workflow runs control ${selectedRun.runId} --action ${action}${agentArg}`)
-  }, [actionHandlers, saveTarget, selectedAgent, selectedRun])
+  }, [actionHandlers, saveTargetOption, selectedAgent, selectedRun])
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
@@ -132,6 +155,8 @@ export default function WorkflowRunsView({ model, actionHandlers, onBack }: Work
     if (input === 'R') void applyAction('restartAgent')
     if (input === 's') void applyAction('saveScript')
     if (input === 'S') setSaveTargetIndex(saveTargetIndex + 1)
+    const saveOptionIndex = SAVE_TARGET_OPTIONS.findIndex((option) => option.key === input)
+    if (saveOptionIndex >= 0) setSaveTargetIndex(saveOptionIndex)
   })
 
   return React.createElement(
@@ -141,10 +166,12 @@ export default function WorkflowRunsView({ model, actionHandlers, onBack }: Work
       Box,
       { flexDirection: 'column', gap: 1 },
       React.createElement(ThemedText, { colorTheme: 'muted' }, `Runs ${model.summary.total} | running ${model.summary.running} | paused ${model.summary.paused} | failed ${model.summary.failed} | approvals ${model.summary.pendingApprovals}`),
-      selectedRun ? React.createElement(ThemedText, { colorTheme: selectedRun.budget.status === 'exceeded' ? 'error' : selectedRun.budget.status === 'warning' ? 'warning' : 'muted' }, `Budget ${budgetLine(selectedRun)} | save target ${saveTarget}`) : null,
+      decisionSummary ? React.createElement(DecisionSummary, { summary: decisionSummary }) : null,
+      selectedRun ? React.createElement(ThemedText, { colorTheme: selectedRun.budget.status === 'exceeded' ? 'error' : selectedRun.budget.status === 'warning' ? 'warning' : 'muted' }, `Budget ${budgetLine(selectedRun)} | save target ${saveTargetOption.label}`) : null,
       selectedRun?.budget.warnings?.length
         ? React.createElement(ThemedText, { colorTheme: 'warning' }, `Budget warning: ${selectedRun.budget.warnings.at(-1)}`)
         : null,
+      selectedRun ? React.createElement(SaveShareChooser, { selectedKey: saveTargetOption.key }) : null,
       message ? React.createElement(ThemedText, { colorTheme: 'info' }, message) : null,
       React.createElement(Divider, null),
       mode === 'runs'
@@ -172,6 +199,29 @@ export default function WorkflowRunsView({ model, actionHandlers, onBack }: Work
         React.createElement(KeyboardShortcutHint, { keys: ['q'], description: 'back' }),
       ),
     ),
+  )
+}
+
+function DecisionSummary({ summary }: { summary: ReturnType<typeof deriveWorkflowRunDecisionSummary> }): React.JSX.Element {
+  return React.createElement(
+    Box,
+    { flexDirection: 'column' },
+    React.createElement(ThemedText, { colorTheme: 'info', bold: true }, 'Decision Summary'),
+    React.createElement(ThemedText, { colorTheme: 'foreground' }, `Status: ${summary.status} | Owner: ${summary.owner}`),
+    React.createElement(ThemedText, { colorTheme: summary.blocker === 'none' ? 'muted' : 'warning' }, `Blocker: ${summary.blocker}`),
+    React.createElement(ThemedText, { colorTheme: 'foreground' }, `Next action: ${summary.nextAction}`),
+  )
+}
+
+function SaveShareChooser({ selectedKey }: { selectedKey: string }): React.JSX.Element {
+  return React.createElement(
+    Box,
+    { flexDirection: 'column' },
+    React.createElement(ThemedText, { colorTheme: 'info', bold: true }, 'Save/share workflow source'),
+    ...SAVE_TARGET_OPTIONS.map((option) =>
+      React.createElement(ThemedText, { key: option.key, colorTheme: option.key === selectedKey ? 'accent' : 'muted' }, `[${option.key}] ${option.label} - ${option.detail}`),
+    ),
+    React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, 'This saves source only. It does not copy transcripts, secrets, or local evidence.'),
   )
 }
 

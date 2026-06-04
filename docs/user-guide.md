@@ -28,7 +28,7 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 ```bash
 bun run openslack setup interactive    # Guided onboarding with step-by-step prompts
 bun run openslack status               # See module status and recommended next steps
-bun run openslack collaboration dashboard  # Check team activity
+bun run openslack tui                      # Open the workflow-first workbench
 ```
 
 ### 2. Create a task for work
@@ -70,17 +70,25 @@ bun run openslack collaboration handoff create \
   --pr 42
 ```
 
-### 6. Run a workflow template
+### 6. Start a workflow
+
+```bash
+bun run openslack collaboration workflow start --prompt "verify this migration end to end"
+bun run openslack collaboration workflow catalog
+bun run openslack collaboration workflow runs
+```
+
+Use `workflow start --prompt` as the default path for new workflow work. Use `catalog` to choose known orchestration patterns and `runs` to inspect running, paused, or completed workflow evidence.
+
+Advanced file workflow path:
 
 ```bash
 bun run openslack collaboration workflow preview <file> --input issue_number=7
-# Review the preview, then dry-run to simulate:
 bun run openslack collaboration workflow dry-run <file> --input issue_number=7
-# When ready for real execution:
 bun run openslack collaboration workflow run <file> --input issue_number=7
 ```
 
-Use an existing workflow YAML file path for `<file>`. Use `dry-run` to simulate side effects safely; use `run` to execute with real side effects.
+Use an existing workflow YAML or JS module path for `<file>`. Use `dry-run` to simulate side effects safely; use `run` to execute with real side effects.
 
 ### 7. Maintain organization profile
 
@@ -158,7 +166,7 @@ Several commands support a `--format` option:
 |--------|-------------|---------|
 | `standard` (default) | Human-readable terminal output | `openslack pr doctor 42` |
 | `plain` | Plain language with status/owner/next-action; good for logs and CI | `openslack pr doctor 42 --format plain` |
-| `tui` | Interactive terminal UI with keyboard navigation; requires TTY | `openslack collaboration dashboard --format tui` |
+| `tui` | Interactive terminal UI with keyboard navigation; requires TTY | `openslack tui` |
 | `json` | Structured data for scripting or piping | (Coming in future release) |
 
 Commands with `--format plain`:
@@ -176,6 +184,7 @@ Commands with `--format plain`:
 Commands with `--format tui`:
 
 - `openslack agent-runtime doctor --provider aby --format tui` — Interactive runtime diagnostics view
+- `openslack tui` — Interactive workflow-first workbench for workflows, PRs, approvals, and profile sync
 - `openslack collaboration dashboard --format tui` — Interactive team dashboard with blockers, handoffs, decisions
 - `openslack collaboration room show <id> --format tui` — Focused room view for a PR or issue
 - `openslack pr doctor <n> --format tui` — Interactive PR governance diagnosis with gates, checks, reviews

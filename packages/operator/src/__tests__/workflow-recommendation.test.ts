@@ -20,7 +20,9 @@ describe('recommendWorkflowForQuery', () => {
     const recommendation = recommendWorkflowForQuery('use a workflow to audit every API endpoint');
 
     expect(recommendation.decision).toBe('workflow_recommended');
+    expect(recommendation.reason).toContain('This looks like a workflow task');
     expect(recommendation.suggestedPattern).toBe('adversarial-verification');
+    expect(recommendation.nextAction).toContain('Generate workflow draft');
     expect(recommendation.nextAction).toContain('workflow generate');
   });
 
@@ -44,5 +46,14 @@ describe('recommendWorkflowForQuery', () => {
     expect(recommendation.decision).toBe('workflow_draft_required');
     expect(recommendation.confidence).toBeGreaterThan(0.9);
     expect(recommendation.nextAction).toContain('workflow generate');
+  });
+
+  it('recommends workflows for broad PR governance review', () => {
+    const recommendation = recommendWorkflowForQuery('review all open PRs for governance issues');
+
+    expect(recommendation.decision).toBe('workflow_recommended');
+    expect(recommendation.reason).toContain('multiple targets');
+    expect(recommendation.suggestedPattern).toBe('adversarial-verification');
+    expect(recommendation.nextAction).toContain('Generate workflow draft');
   });
 });

@@ -94,6 +94,84 @@ export interface WorkflowRunProgressViewModel {
   }
 }
 
+export interface WorkflowRunDecisionSummary {
+  status: string
+  owner: 'workflow' | 'human' | 'agent/operator' | 'none'
+  blocker: string
+  nextAction: string
+}
+
+export function deriveWorkflowRunDecisionSummary(run: WorkflowRunProgressItem): WorkflowRunDecisionSummary {
+  const failedPhase = run.phases.find((phase) => phase.status === 'failed')
+  const currentPhase = run.currentPhase ?? failedPhase?.phase ?? 'current phase'
+
+  if (run.status === 'failed' || run.status === 'cancelled' || failedPhase) {
+    return {
+      status: run.status,
+      owner: 'agent/operator',
+      blocker: failedPhase ? `failed phase: ${failedPhase.phase}` : run.status,
+      nextAction: 'inspect failed phase',
+    }
+  }
+
+  if ((run.status === 'paused' || run.status === 'paused_waiting_approval') && run.pendingApprovalCount > 0) {
+    return {
+      status: run.status,
+      owner: 'human',
+      blocker: `${run.pendingApprovalCount} pending approval${run.pendingApprovalCount === 1 ? '' : 's'}`,
+      nextAction: 'open approvals',
+    }
+  }
+
+  if (run.budget.status === 'exceeded') {
+    const nextAction = run.budget.onExceeded === 'pause'
+      ? 'open approvals or increase budget'
+      : run.budget.onExceeded === 'fail'
+        ? 'inspect failed budget stop'
+        : 'review budget policy'
+    return {
+      status: run.status,
+      owner: run.budget.onExceeded === 'pause' ? 'human' : 'agent/operator',
+      blocker: 'budget exceeded',
+      nextAction,
+    }
+  }
+
+  if (run.budget.status === 'warning') {
+    return {
+      status: run.status,
+      owner: 'workflow',
+      blocker: 'budget warning',
+      nextAction: 'review budget / pause / continue',
+    }
+  }
+
+  if (run.status === 'running' || run.status === 'resuming') {
+    return {
+      status: run.status,
+      owner: 'workflow',
+      blocker: 'none',
+      nextAction: `watch ${currentPhase}`,
+    }
+  }
+
+  if (run.status === 'completed') {
+    return {
+      status: run.status,
+      owner: 'none',
+      blocker: 'none',
+      nextAction: 'save/share or publish',
+    }
+  }
+
+  return {
+    status: run.status,
+    owner: 'workflow',
+    blocker: 'none',
+    nextAction: 'inspect workflow run evidence',
+  }
+}
+
 export function mapWorkflowRunsToViewModel(runs: WorkflowRunProgressItem[]): WorkflowRunProgressViewModel {
   const s = sanitizeTerminalText
   const cleanRuns = runs.map((run) => ({

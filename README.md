@@ -16,7 +16,7 @@ Three commands to get going:
 
 ```bash
 bun run openslack setup          # Validate workspace, GitHub auth, golden evals
-bun run openslack collaboration dashboard --format tui   # Interactive team dashboard
+bun run openslack tui            # Interactive workflow-first workbench
 bun run openslack status         # Module health, test counts, GitHub ops
 ```
 
@@ -67,7 +67,7 @@ See [Advanced Setup](#advanced-setup) for development mode, production builds, a
 | Diagnose a PR | `bun run openslack pr doctor <PR_NUMBER>` |
 | See team activity | `bun run openslack collaboration dashboard` |
 | Start a conversation thread | `bun run openslack conversation start --title "Review PR #42"` |
-| Launch the interactive TUI | `bun run openslack tui` |
+| Launch the interactive workflow-first workbench | `bun run openslack tui` |
 | Maintain organization profile | `bun run openslack collaboration workflow profile-sync status` |
 | Find the full CLI reference | [`docs/user-guide.md`](docs/user-guide.md) |
 

@@ -39,6 +39,15 @@ function extractTitle(text: string): string | undefined {
   return flag?.[1]?.trim();
 }
 
+function looksWorkflowShaped(q: string): boolean {
+  if (/\bpr\s*#?\d+|\bpull request\s*#?\d+/i.test(q)) return false;
+  const broadScope = /\b(all|every|across|multiple|many|open prs?|prs|pull requests?|issues?|endpoints?|packages?|codebase|migration)\b/i.test(q) ||
+    /全部|所有|多个|批量|迁移|端点|包|代码库/i.test(q);
+  const workflowWork = /\b(review|audit|verify|verification|triage|research|scan|root[- ]cause|governance|end to end)\b/i.test(q) ||
+    /审查|验证|研究|扫描|根因|治理|端到端/i.test(q);
+  return broadScope && workflowWork;
+}
+
 export function parseIntent(text: string): Intent {
   const q = text.toLowerCase().trim();
 
@@ -48,6 +57,10 @@ export function parseIntent(text: string): Intent {
 
   if (/\buse (a )?workflow\b/i.test(text)) {
     return { kind: 'workflow_recommended', slots: { query: text }, confidence: 0.9 };
+  }
+
+  if (looksWorkflowShaped(q)) {
+    return { kind: 'workflow_recommended', slots: { query: text }, confidence: 0.85 };
   }
 
   // ── PRMS ─────────────────────────────────────────────────
