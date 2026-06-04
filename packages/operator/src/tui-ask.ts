@@ -23,6 +23,13 @@ export interface TuiAskPlan {
   cards: ConversationActionCard[];
 }
 
+export interface TuiAskResult {
+  threadId: string;
+  status: 'recorded' | 'planned' | 'agent_dispatched' | 'error';
+  message: string;
+  cards: ConversationActionCard[];
+}
+
 function quote(value: string): string {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 }

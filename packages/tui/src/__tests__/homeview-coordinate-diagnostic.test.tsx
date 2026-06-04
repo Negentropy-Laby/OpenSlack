@@ -3,7 +3,7 @@ import { Writable } from 'stream'
 import React from 'react'
 import { render } from '@openslack/tui'
 import stripAnsi from 'strip-ansi'
-import HomeView from '../views/HomeView.js'
+import HomeView, { resolveAskHistorySelection } from '../views/HomeView.js'
 import { mapHomeToViewModel } from '../view-models/home.js'
 import { NavigationProvider } from '../navigation/context.js'
 import { TerminalSizeContext } from '../ink/components/TerminalSizeContext.js'
@@ -58,6 +58,23 @@ describe('HomeView coordinate diagnostic', () => {
     expect(visibleLines.length).toBeLessThan(rows)
 
     instance.unmount()
+  })
+
+  it('resolves Ctrl+P as older history and Ctrl+N as newer history', () => {
+    const history = ['second ask', 'first ask']
+    const newest = resolveAskHistorySelection(history, undefined, 'older')
+    expect(newest).toEqual({ cursor: 0, value: 'second ask' })
+
+    const older = resolveAskHistorySelection(history, newest?.cursor, 'older')
+    expect(older).toEqual({ cursor: 1, value: 'first ask' })
+
+    const newer = resolveAskHistorySelection(history, older?.cursor, 'newer')
+    expect(newer).toEqual({ cursor: 0, value: 'second ask' })
+
+    const currentInput = resolveAskHistorySelection(history, newer?.cursor, 'newer')
+    expect(currentInput).toEqual({ cursor: undefined, value: '' })
+
+    expect(resolveAskHistorySelection(history, undefined, 'newer')).toBeUndefined()
   })
 
   it('renders with empty data and verifies grouped task layout', async () => {

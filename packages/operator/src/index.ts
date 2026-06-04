@@ -75,7 +75,7 @@ export type {
 export type { PendingPlan, PlanApprovalState } from './plan-store.js';
 export type { ConversationTurn, Conversation } from './conversation-store.js';
 export type { ContextResolution } from './context-resolver.js';
-export type { ConversationActionCard, TuiAskPlan } from './tui-ask.js';
+export type { ConversationActionCard, TuiAskPlan, TuiAskResult } from './tui-ask.js';
 export { getRoleGuide, listRoles, renderGuide } from './guides.js';
 export type { RoleGuide, RoleGuideSection } from './guides.js';
 export {

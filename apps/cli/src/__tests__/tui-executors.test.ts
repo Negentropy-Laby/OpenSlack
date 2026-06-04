@@ -757,6 +757,7 @@ describe('conversation-first workbench ask handlers', () => {
       expect.objectContaining({
         kind: 'plan',
         authorId: 'openslack',
+        planId: `tui-${result.threadId}-plan-2`,
         steps: expect.arrayContaining([expect.stringContaining('status')]),
       }),
     ]))

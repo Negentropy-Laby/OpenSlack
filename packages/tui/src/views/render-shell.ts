@@ -15,8 +15,10 @@ import type { AgentRuntimeDiagnosticsViewModel } from '../view-models/agent-runt
 import type { AgentConversationThread, AgentConversationMessage } from '@openslack/collaboration'
 import type { WorkflowRunControlAction, WorkflowRunControlTarget } from '@openslack/workflows'
 import type { WorkflowRunProgressItem } from '../view-models/workflow-runs.js'
+import type { ConversationActionCard, TuiAskResult } from '@openslack/operator'
 
 export type { WorkflowRunControlAction, WorkflowRunControlTarget } from '@openslack/workflows'
+export type { ConversationActionCard, TuiAskResult } from '@openslack/operator'
 
 export interface WorkflowLifecycleBaseData {
   workflowHash: string
@@ -27,27 +29,6 @@ export interface WorkflowLifecycleBaseData {
 }
 import type { TuiActionResult } from '../actions/types.js'
 export type WorkflowSaveTarget = 'project' | 'user' | 'claude-project'
-
-export interface ConversationActionCard {
-  id: string
-  label: string
-  detail: string
-  kind: 'route' | 'command' | 'workflow_draft' | 'approval' | 'agent_run'
-  route?: string
-  routeParams?: Record<string, unknown>
-  command?: string
-  prompt?: string
-  riskLevel: 'none' | 'low' | 'medium' | 'high'
-  confirmationRequired: boolean
-  linkedObject?: { kind: 'issue' | 'pr' | 'workflow_run'; id: string }
-}
-
-export interface TuiAskResult {
-  threadId: string
-  status: 'recorded' | 'planned' | 'agent_dispatched' | 'error'
-  message: string
-  cards: ConversationActionCard[]
-}
 
 export type WorkflowLifecycleLoader = (
   workflowName: string,

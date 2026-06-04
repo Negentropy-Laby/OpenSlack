@@ -36,6 +36,7 @@
     "wrap-ansi": "^10.0.0",
     "@openslack/collaboration": "workspace:*",
     "@openslack/kernel": "workspace:*",
+    "@openslack/operator": "workspace:*",
     "@openslack/runtime": "workspace:*",
     "@openslack/agent-runtime": "workspace:*",
     "@openslack/workflows": "workspace:*"

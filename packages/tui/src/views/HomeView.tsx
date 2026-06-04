@@ -79,11 +79,39 @@ type FocusRegion = 'ask' | 'cards' | 'menu'
 
 const COMPACT_HOME_ROWS = 28
 
+export type AskHistoryDirection = 'older' | 'newer'
+
+export interface AskHistorySelection {
+  cursor: number | undefined
+  value: string
+}
+
 const URGENCY_COLOR: Record<RecommendedAction['urgency'], 'warning' | 'info' | 'muted'> = {
   governance: 'warning',
   blocker: 'warning',
   operational: 'info',
   informational: 'muted',
+}
+
+export function resolveAskHistorySelection(
+  askHistory: string[],
+  historyCursor: number | undefined,
+  direction: AskHistoryDirection,
+): AskHistorySelection | undefined {
+  if (askHistory.length === 0) return undefined
+  if (direction === 'older') {
+    const cursor = historyCursor === undefined
+      ? 0
+      : Math.min(historyCursor + 1, askHistory.length - 1)
+    return { cursor, value: askHistory[cursor] ?? '' }
+  }
+
+  if (historyCursor === undefined) return undefined
+  if (historyCursor === 0) {
+    return { cursor: undefined, value: '' }
+  }
+  const cursor = historyCursor - 1
+  return { cursor, value: askHistory[cursor] ?? '' }
 }
 
 function buildCombinedItems(model: HomeViewModel): CombinedItem[] {
@@ -268,23 +296,21 @@ export default function HomeView({ model, actionHandlers, onAskSubmit, askState 
     await record(message)
   }, [actionHandlers, askResult?.threadId, push])
 
-  const selectHistory = useCallback((direction: -1 | 1) => {
-    if (askHistory.length === 0) return
-    const next = historyCursor === undefined
-      ? direction === -1 ? 0 : askHistory.length - 1
-      : Math.min(Math.max(historyCursor + direction, 0), askHistory.length - 1)
-    setHistoryCursor(next)
-    setAskValue(askHistory[next] ?? '')
+  const selectHistory = useCallback((direction: AskHistoryDirection) => {
+    const selection = resolveAskHistorySelection(askHistory, historyCursor, direction)
+    if (!selection) return
+    setHistoryCursor(selection.cursor)
+    setAskValue(selection.value)
   }, [askHistory, historyCursor])
 
   useInput((input, key) => {
     if (focusRegion === 'ask') {
       if (key.ctrl && input === 'p') {
-        selectHistory(-1)
+        selectHistory('older')
         return
       }
       if (key.ctrl && input === 'n') {
-        selectHistory(1)
+        selectHistory('newer')
         return
       }
       if (key.return) {
