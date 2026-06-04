@@ -4,7 +4,8 @@ import { Writable } from 'stream'
 import { render } from '@openslack/tui'
 import { NavigationProvider } from '../navigation/context.js'
 import WorkflowRunsView from '../views/WorkflowRunsView.js'
-import type { WorkflowRunProgressViewModel } from '../view-models/workflow-runs.js'
+import { deriveWorkflowRunDecisionSummary } from '../view-models/workflow-runs.js'
+import type { WorkflowRunProgressItem, WorkflowRunProgressViewModel } from '../view-models/workflow-runs.js'
 
 function createMockStdout(columns = 100, rows = 50) {
   const chunks: string[] = []
@@ -119,14 +120,124 @@ describe('WorkflowRunsView', () => {
 
     expect(output).toContain('Dynamic Workflows / Runs')
     expect(output).toContain('approvals 1')
+    expect(output).toContain('Decision Summary')
+    expect(output).toContain('Status: paused_waiting_approval | Owner: human')
+    expect(output).toContain('Blocker: 1 pending approval')
+    expect(output).toContain('Next action: open approvals')
     expect(output).toContain('Budget 90/100 tokens')
     expect(output).toContain('90%')
     expect(output).toContain('warning')
     expect(output).toContain('cost $0.000180')
     expect(output).toContain('Budget warning: 90% of token budget used.')
-    expect(output).toContain('save target project')
+    expect(output).toContain('save target Project workflow')
+    expect(output).toContain('Save/share workflow source')
+    expect(output).toContain('[1] Project workflow - .openslack/workflows')
+    expect(output).toContain('[2] Claude project - .claude/workflows')
+    expect(output).toContain('[3] User workflow - ~/.claude/workflows')
+    expect(output).toContain('[4] Skill package - skills/<name> (CLI only)')
+    expect(output).toContain('This saves source only. It does not copy transcripts, secrets, or local evidence.')
     expect(output).toContain('dynamic-audit')
     expect(output).toContain('Scan')
     expect(output).toContain('replay yes')
+  })
+})
+
+function makeRun(overrides: Partial<WorkflowRunProgressItem> = {}): WorkflowRunProgressItem {
+  return {
+    runId: 'run-001',
+    workflowName: 'dynamic-audit',
+    mode: 'execute',
+    status: 'running',
+    currentPhase: 'Scan',
+    args: {},
+    phaseCount: 1,
+    agentCount: 0,
+    pendingApprovalCount: 0,
+    budget: {
+      tokenBudget: 100,
+      tokensUsed: 10,
+      tokensRemaining: 90,
+      tokenBudgetPercent: 0.1,
+      status: 'ok',
+      warnings: [],
+      agentCalls: 1,
+      source: 'manifest',
+    },
+    phases: [
+      {
+        phase: 'Scan',
+        status: 'running',
+        agentCount: 0,
+        tokenTotal: 10,
+        cachedCount: 0,
+        liveCount: 0,
+        failedCount: 0,
+        agents: [],
+        warnings: [],
+      },
+    ],
+    logTail: [],
+    warnings: [],
+    ...overrides,
+  }
+}
+
+describe('deriveWorkflowRunDecisionSummary', () => {
+  it('maps running runs to workflow ownership', () => {
+    expect(deriveWorkflowRunDecisionSummary(makeRun())).toMatchObject({
+      status: 'running',
+      owner: 'workflow',
+      blocker: 'none',
+      nextAction: 'watch Scan',
+    })
+  })
+
+  it('maps paused approvals to human ownership', () => {
+    expect(deriveWorkflowRunDecisionSummary(makeRun({ status: 'paused_waiting_approval', pendingApprovalCount: 2 }))).toMatchObject({
+      owner: 'human',
+      blocker: '2 pending approvals',
+      nextAction: 'open approvals',
+    })
+  })
+
+  it('maps budget warning to review budget guidance', () => {
+    expect(deriveWorkflowRunDecisionSummary(makeRun({ budget: { ...makeRun().budget, status: 'warning' } }))).toMatchObject({
+      owner: 'workflow',
+      blocker: 'budget warning',
+      nextAction: 'review budget / pause / continue',
+    })
+  })
+
+  it('maps exceeded budget according to policy', () => {
+    expect(deriveWorkflowRunDecisionSummary(makeRun({ budget: { ...makeRun().budget, status: 'exceeded', onExceeded: 'pause' } }))).toMatchObject({
+      owner: 'human',
+      blocker: 'budget exceeded',
+      nextAction: 'open approvals or increase budget',
+    })
+    expect(deriveWorkflowRunDecisionSummary(makeRun({ budget: { ...makeRun().budget, status: 'exceeded', onExceeded: 'fail' } }))).toMatchObject({
+      owner: 'agent/operator',
+      blocker: 'budget exceeded',
+      nextAction: 'inspect failed budget stop',
+    })
+  })
+
+  it('maps failed phases to inspection guidance', () => {
+    const run = makeRun({
+      status: 'running',
+      phases: [{ ...makeRun().phases[0]!, phase: 'Verify', status: 'failed' }],
+    })
+    expect(deriveWorkflowRunDecisionSummary(run)).toMatchObject({
+      owner: 'agent/operator',
+      blocker: 'failed phase: Verify',
+      nextAction: 'inspect failed phase',
+    })
+  })
+
+  it('maps completed runs to save/share or publish', () => {
+    expect(deriveWorkflowRunDecisionSummary(makeRun({ status: 'completed' }))).toMatchObject({
+      owner: 'none',
+      blocker: 'none',
+      nextAction: 'save/share or publish',
+    })
   })
 })

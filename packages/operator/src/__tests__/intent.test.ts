@@ -142,10 +142,21 @@ describe('parseIntent', () => {
       expect(i.slots.query).toContain('audit every API endpoint');
     });
 
+    it('routes broad governance review into workflow recommendation', () => {
+      const i = parseIntent('review all open PRs for governance issues');
+      expect(i.kind).toBe('workflow_recommended');
+      expect(i.slots.query).toContain('open PRs');
+    });
+
     it('parses ultracode requests as workflow draft triggers', () => {
       const i = parseIntent('ultracode: review all PRMS gates');
       expect(i.kind).toBe('workflow_draft_required');
       expect(i.confidence).toBeGreaterThan(0.9);
+    });
+
+    it('keeps small one-step tasks outside workflow routing', () => {
+      const i = parseIntent('check status');
+      expect(i.kind).toBe('status');
     });
   });
 });

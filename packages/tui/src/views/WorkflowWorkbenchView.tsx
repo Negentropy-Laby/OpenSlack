@@ -939,11 +939,11 @@ export default function WorkflowWorkbenchView({ galleryModel, actionHandlers }: 
   const summaryText = `${galleryModel.summary.total} workflows (${galleryModel.summary.yaml} YAML, ${galleryModel.summary.js} JS)`
 
   const workflowHomeActions = [
-    { key: '1', label: 'Start a workflow', detail: 'Prompt draft, pattern start, or saved workflow' },
-    { key: '2', label: 'Watch running workflows', detail: 'Open run, phase, agent, transcript, and budget evidence' },
-    { key: '3', label: 'Handle paused workflow approvals', detail: 'Resolve workflow-effect and budget approvals' },
-    { key: '4', label: 'Save/share run', detail: 'Choose a run, then save scripts to project, user, or Claude project targets' },
-    { key: '5', label: 'Publish workflow to GitHub Issues', detail: 'Create proposal, review, or phase-tracking issues' },
+    { key: '1', label: 'Start', detail: 'Generate from prompt, choose pattern, or open a saved workflow' },
+    { key: '2', label: 'Watch', detail: 'Open running and paused workflow runs' },
+    { key: '3', label: 'Approve', detail: 'Resolve workflow side effects and budget pauses' },
+    { key: '4', label: 'Reuse', detail: 'Save, export, or share workflow outputs' },
+    { key: '5', label: 'Publish', detail: 'Push workflow lifecycle to GitHub Issues' },
   ]
 
   return React.createElement(
