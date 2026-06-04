@@ -2,9 +2,11 @@ import { describe, it, expect } from 'vitest'
 import { Writable } from 'stream'
 import React from 'react'
 import { render } from '@openslack/tui'
+import stripAnsi from 'strip-ansi'
 import HomeView from '../views/HomeView.js'
 import { mapHomeToViewModel } from '../view-models/home.js'
 import { NavigationProvider } from '../navigation/context.js'
+import { TerminalSizeContext } from '../ink/components/TerminalSizeContext.js'
 
 function createMockStdout(columns = 80, rows = 50) {
   const chunks: string[] = []
@@ -23,6 +25,41 @@ function createMockStdout(columns = 80, rows = 50) {
 }
 
 describe('HomeView coordinate diagnostic', () => {
+  it('keeps the default 80x24 home screen compact enough for stable terminal redraw', async () => {
+    const rows = 24
+    const { stdout, chunks } = createMockStdout(80, rows)
+    const model = mapHomeToViewModel({
+      shellData: {
+        approvals: {
+          pendingApprovals: [{ id: 'plan-1', category: 'plan', title: 'review all workflow approvals', risk: 'medium' }],
+          summary: { plans: 1, mergeRequests: 0, workflowEffects: 0, githubReviews: 0 },
+        },
+      },
+    })
+    const instance = await render(
+      React.createElement(NavigationProvider, null,
+        React.createElement(TerminalSizeContext.Provider, { value: { columns: 80, rows } },
+          React.createElement(HomeView, { model })
+        )
+      ),
+      { stdout, patchConsole: false },
+    )
+    await new Promise<void>((r) => setTimeout(r, 200))
+
+    const output = stripAnsi(chunks.join(''))
+    const visibleLines = output.split('\n').filter((line) => line.trim().length > 0)
+
+    expect(output).toContain('Ask OpenSlack:')
+    expect(output).toContain('Suggested shortcuts')
+    expect(output).toContain('Maintain organization profile')
+    expect(output).toContain('Next:')
+    expect(output).not.toContain('Quick Navigation')
+    expect(output).not.toContain('Create tasks, claim issues')
+    expect(visibleLines.length).toBeLessThan(rows)
+
+    instance.unmount()
+  })
+
   it('renders with empty data and verifies grouped task layout', async () => {
     const { stdout, chunks } = createMockStdout(80, 50)
     const model = mapHomeToViewModel()

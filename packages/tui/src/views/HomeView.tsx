@@ -1,8 +1,9 @@
-import React, { useCallback, useState } from 'react'
+import React, { useCallback, useContext, useState } from 'react'
 import Box from '../ink/components/Box.js'
 import Text from '../ink/components/Text.js'
 import useApp from '../ink/hooks/use-app.js'
 import useInput from '../ink/hooks/use-input.js'
+import { TerminalSizeContext } from '../ink/components/TerminalSizeContext.js'
 import ThemedText from '../design-system/ThemedText.js'
 import Divider from '../design-system/Divider.js'
 import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
@@ -76,6 +77,8 @@ interface CombinedItem {
 
 type FocusRegion = 'ask' | 'cards' | 'menu'
 
+const COMPACT_HOME_ROWS = 28
+
 const URGENCY_COLOR: Record<RecommendedAction['urgency'], 'warning' | 'info' | 'muted'> = {
   governance: 'warning',
   blocker: 'warning',
@@ -123,6 +126,8 @@ function buildCombinedItems(model: HomeViewModel): CombinedItem[] {
 export default function HomeView({ model, actionHandlers, onAskSubmit, askState }: HomeViewProps): React.JSX.Element {
   const { exit } = useApp()
   const { push } = useNavigation()
+  const terminalSize = useContext(TerminalSizeContext)
+  const compactHome = (terminalSize?.rows ?? 40) <= COMPACT_HOME_ROWS
 
   const combined = buildCombinedItems(model)
   const taskCount = model.tasks.length
@@ -377,12 +382,12 @@ export default function HomeView({ model, actionHandlers, onAskSubmit, askState 
     if (group !== lastGroup) {
       const groupDef = TASK_GROUPS.find(g => g.category === group)
       if (groupDef) {
-        taskElements.push(renderGroupHeader(groupDef.label))
+        taskElements.push(renderGroupHeader(groupDef.label, compactHome))
       }
       lastGroup = group
     }
     const isSelected = focusRegion === 'menu' && selectedIndex === i
-    taskElements.push(renderTaskRow(item, isSelected, i, handleItemClick, handleItemHover))
+    taskElements.push(renderTaskRow(item, isSelected, i, handleItemClick, handleItemHover, compactHome))
   }
 
   // Render nav section items
@@ -465,13 +470,11 @@ export default function HomeView({ model, actionHandlers, onAskSubmit, askState 
 
     // Section: Next Recommended Action
     ...(model.nextRecommendedAction
-      ? [
-          React.createElement(
-            Box,
-            { flexDirection: 'column', marginTop: 0, marginBottom: 0 },
+      ? compactHome
+        ? [
             React.createElement(
               Box,
-              { flexDirection: 'row' },
+              { key: 'compact-next-action', flexDirection: 'row' },
               React.createElement(
                 ThemedText,
                 { colorTheme: URGENCY_COLOR[model.nextRecommendedAction.urgency], bold: true },
@@ -480,62 +483,94 @@ export default function HomeView({ model, actionHandlers, onAskSubmit, askState 
               React.createElement(Text, null, ' '),
               React.createElement(
                 ThemedText,
-                { colorTheme: URGENCY_COLOR[model.nextRecommendedAction.urgency] },
+                { colorTheme: URGENCY_COLOR[model.nextRecommendedAction.urgency], wrap: 'truncate-end' },
                 `Next: ${model.nextRecommendedAction.label}`,
               ),
             ),
+          ]
+        : [
             React.createElement(
               Box,
-              { flexDirection: 'row', marginLeft: 2 },
+              { flexDirection: 'column', marginTop: 0, marginBottom: 0 },
               React.createElement(
-                ThemedText,
-                { colorTheme: 'muted', dim: true },
-                model.nextRecommendedAction.reason,
+                Box,
+                { flexDirection: 'row' },
+                React.createElement(
+                  ThemedText,
+                  { colorTheme: URGENCY_COLOR[model.nextRecommendedAction.urgency], bold: true },
+                  '>',
+                ),
+                React.createElement(Text, null, ' '),
+                React.createElement(
+                  ThemedText,
+                  { colorTheme: URGENCY_COLOR[model.nextRecommendedAction.urgency] },
+                  `Next: ${model.nextRecommendedAction.label}`,
+                ),
+              ),
+              React.createElement(
+                Box,
+                { flexDirection: 'row', marginLeft: 2 },
+                React.createElement(
+                  ThemedText,
+                  { colorTheme: 'muted', dim: true },
+                  model.nextRecommendedAction.reason,
+                ),
               ),
             ),
-          ),
-          React.createElement(Divider, { length: 40 }),
-        ]
+            React.createElement(Divider, { length: 40 }),
+          ]
       : []),
 
-    // Section 2: Quick Navigation
-    React.createElement(
-      Box,
-      { flexDirection: 'column', marginTop: 0, marginBottom: 0 },
-      React.createElement(
-        ThemedText,
-        { colorTheme: 'accent', bold: true },
-        'Quick Navigation',
-      ),
-      React.createElement(
-        Box,
-        { flexDirection: 'column' },
-        ...navElements,
-      ),
-    ),
+    ...(compactHome
+      ? model.nextRecommendedAction
+        ? []
+        : [
+            React.createElement(
+              ThemedText,
+              { key: 'compact-home-help', colorTheme: 'muted', dim: true },
+              'Use / for Ask, numbers for shortcuts, q/Esc to quit.',
+            ),
+          ]
+      : [
+          // Section 2: Quick Navigation
+          React.createElement(
+            Box,
+            { key: 'quick-navigation', flexDirection: 'column', marginTop: 0, marginBottom: 0 },
+            React.createElement(
+              ThemedText,
+              { colorTheme: 'accent', bold: true },
+              'Quick Navigation',
+            ),
+            React.createElement(
+              Box,
+              { flexDirection: 'column' },
+              ...navElements,
+            ),
+          ),
 
-    // Footer
-    React.createElement(Divider, { length: 40 }),
-    React.createElement(
-      Box,
-      { flexDirection: 'row' },
-      React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'Quit' }),
-      React.createElement(Text, null, '  '),
-      React.createElement(KeyboardShortcutHint, { keys: ['Enter'], description: 'Ask/select' }),
-      React.createElement(Text, null, '  '),
-      React.createElement(KeyboardShortcutHint, { keys: ['Down'], description: 'suggestions/menu' }),
-      React.createElement(Text, null, '  '),
-      React.createElement(KeyboardShortcutHint, { keys: ['/'], description: 'focus ask' }),
-      React.createElement(Text, null, '  '),
-      React.createElement(KeyboardShortcutHint, { keys: ['Ctrl+P/N'], description: 'history' }),
-    ),
+          // Footer
+          React.createElement(Divider, { key: 'footer-divider', length: 40 }),
+          React.createElement(
+            Box,
+            { key: 'footer-help', flexDirection: 'row' },
+            React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'Quit' }),
+            React.createElement(Text, null, '  '),
+            React.createElement(KeyboardShortcutHint, { keys: ['Enter'], description: 'Ask/select' }),
+            React.createElement(Text, null, '  '),
+            React.createElement(KeyboardShortcutHint, { keys: ['Down'], description: 'suggestions/menu' }),
+            React.createElement(Text, null, '  '),
+            React.createElement(KeyboardShortcutHint, { keys: ['/'], description: 'focus ask' }),
+            React.createElement(Text, null, '  '),
+            React.createElement(KeyboardShortcutHint, { keys: ['Ctrl+P/N'], description: 'history' }),
+          ),
+        ]),
   )
 }
 
 /**
  * Renders a group header with styled separator like "── Group Name ──".
  */
-function renderGroupHeader(label: string): React.ReactNode {
+function renderGroupHeader(label: string, compact = false): React.ReactNode {
   const pad = 1
   const totalWidth = 28
   const textWidth = label.length + 2 // 2 for spaces around label
@@ -546,7 +581,7 @@ function renderGroupHeader(label: string): React.ReactNode {
   const headerText = `${leftLine} ${label} ${rightLine}`
   return React.createElement(
     Box,
-    { key: `group-${label}`, marginTop: 1, marginBottom: 0 },
+    { key: `group-${label}`, marginTop: compact ? 0 : 1, marginBottom: 0 },
     React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, headerText),
   )
 }
@@ -560,6 +595,7 @@ function renderTaskRow(
   index: number,
   onItemClick: (index: number) => void,
   onItemHover: (index: number) => void,
+  compact = false,
 ): React.ReactNode {
   const pointer = isSelected ? '>' : ' '
   const colorTheme = isSelected ? item.colorTheme : 'muted'
@@ -580,7 +616,7 @@ function renderTaskRow(
       )
     : null
 
-  const detailElement = item.detail
+  const detailElement = item.detail && (!compact || isSelected)
     ? React.createElement(
         Box,
         { marginLeft: 4 },
