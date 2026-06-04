@@ -277,6 +277,7 @@ output_contract:
 | Complete CLI reference | [`docs/user-guide.md`](docs/user-guide.md) |
 | Product documentation map | [`docs/product/openslack-product-current.md`](docs/product/openslack-product-current.md) |
 | Product UX roadmap and remaining productization work | [`docs/product/user-experience-roadmap.md`](docs/product/user-experience-roadmap.md) |
+| L2/L3 API, SDK, receipt, and rehydrate productization | [`docs/product/l2-l3-productization.md`](docs/product/l2-l3-productization.md) |
 | Self-evolution architecture | [`docs/product/phase-1.md`](docs/product/phase-1.md), [`docs/developer/self-evolution-kernel.md`](docs/developer/self-evolution-kernel.md) |
 | GitHub Issues task loop | [`docs/developer/github-issues-loop.md`](docs/developer/github-issues-loop.md) |
 | GitHub watch daemon and realtime Issue notifications | [`docs/developer/github-watch-daemon.md`](docs/developer/github-watch-daemon.md) |

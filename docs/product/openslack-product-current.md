@@ -18,6 +18,7 @@ current-state document.
 | User-facing overview and quick start | `README.md` |
 | Complete CLI reference | `docs/user-guide.md` |
 | UX/productization roadmap | `docs/product/user-experience-roadmap.md` |
+| L2/L3 productization contract | `docs/product/l2-l3-productization.md` |
 | Technical debt register | `docs/developer/technical-debt.md` |
 
 ## User Journey Map
@@ -31,6 +32,7 @@ current-state document.
 | Review and merge PRs | `docs/product/module-04-pr-review-merge-steward.md`, `docs/user-guide.md` | `openslack pr doctor`, `openslack pr queue`, `openslack pr merge` |
 | Run agent workflows | `docs/product/workflow-modules.md`, `docs/developer/workflow-runtime.md`, `docs/security/workflow-execution.md` | `openslack collaboration workflow preview`, `openslack collaboration workflow run`, `openslack collaboration workflow resume` |
 | Coordinate humans and agents | `docs/product/collaboration-layer.md`, `docs/developer/collaboration-events.md` | `openslack collaboration dashboard`, `handoff`, `decision`, `room`, `workflow` |
+| Build API/SDK/dashboard integrations | `docs/product/l2-l3-productization.md` | Planned: `openslack collaboration api ...` |
 | Onboard or authorize agents | `docs/developer/agent-registry-schema.md`, `docs/developer/new-agent-onboarding.md` | `openslack agent hire`, `openslack agent bootstrap` |
 | Understand guardrails | `AGENTS.md`, `docs/security/self-evolution-guardrails.md`, `docs/security/collaboration-audit.md` | `openslack self classify-pr`, `openslack governance audit` |
 
@@ -55,6 +57,7 @@ current-state document.
 | 2026-05-28 | `docs/product/workflow-modules.md` | Complete workflow system product design — DSL, execution modes, permissions, integration |
 | 2026-05-28 | `docs/developer/workflow-runtime.md` | Technical runtime design for `@openslack/workflows` package |
 | 2026-05-28 | `docs/security/workflow-execution.md` | Workflow security model — trust levels, sandboxing, audit logging |
+| 2026-06-05 | `docs/product/l2-l3-productization.md` | L2/L3 productization contract for receipts, rehydrate, local API, OpenAPI, SDK, permissions, and external runtime profiles |
 
 ## Maintenance Rules
 
