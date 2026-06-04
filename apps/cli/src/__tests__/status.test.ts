@@ -135,6 +135,13 @@ describe('status command', () => {
     expect(output).toContain('2 PRs blocked');
   });
 
+  it('explains raw and module-attributed test counts separately', async () => {
+    const logs = await runStatus();
+    const output = logs.join('\n');
+    expect(output).toContain('Raw passing Vitest count from .openslack/modules.yaml');
+    expect(output).toContain('Module-attributed counts (72 tests, 12 files)');
+  });
+
   it('shows All clear when no attention items', async () => {
     mockGetAttentionItems.mockResolvedValueOnce([]);
     mockGetNextAction.mockReturnValueOnce('All clear — no immediate actions needed.');
