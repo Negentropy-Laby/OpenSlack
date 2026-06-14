@@ -1,5 +1,13 @@
-import { describe, it, expect } from 'vitest';
-import { describeLLMRoutingConfig } from '../index.js';
+import { afterEach, describe, it, expect } from 'vitest';
+import {
+  clearLLMPlannerProviders,
+  describeLLMRoutingConfig,
+  registerLLMPlannerProvider,
+} from '../index.js';
+
+afterEach(() => {
+  clearLLMPlannerProviders();
+});
 
 describe('describeLLMRoutingConfig', () => {
   it('returns keyword-only when no provider configured', () => {
@@ -55,6 +63,33 @@ describe('describeLLMRoutingConfig', () => {
       'OPENSLACK_LLM_API_KEY not set',
       'OPENSLACK_LLM_MODEL not set',
     ]);
+  });
+
+  it('returns llm-first for a registered custom provider without OpenAI credentials', () => {
+    registerLLMPlannerProvider({
+      id: 'local-mock',
+      async classifyAndPlan() {
+        return { intent: { kind: 'status', slots: {}, confidence: 1 } };
+      },
+    });
+
+    const result = describeLLMRoutingConfig({
+      OPENSLACK_LLM_PROVIDER: 'local-mock',
+    });
+
+    expect(result.mode).toBe('llm-first');
+    expect(result.provider).toBe('local-mock');
+    expect(result.hasApiKey).toBe(false);
+    expect(result.issues).toBeUndefined();
+  });
+
+  it('returns misconfigured for an unregistered custom provider', () => {
+    const result = describeLLMRoutingConfig({
+      OPENSLACK_LLM_PROVIDER: 'missing-provider',
+    });
+
+    expect(result.mode).toBe('misconfigured');
+    expect(result.issues).toEqual(['LLM provider not registered: missing-provider']);
   });
 
   it('never exposes API key value in output', () => {

@@ -1,8 +1,9 @@
 /**
- * Pure function for describing LLM routing config status.
+ * Describes LLM routing config status without exposing secret values.
  *
  * SECURITY: This module must NEVER include the API key value in its output.
  */
+import { getLLMPlannerProvider } from './llm.js';
 
 export interface LLMConfigStatus {
   mode: 'llm-first' | 'keyword-only' | 'misconfigured';
@@ -11,6 +12,10 @@ export interface LLMConfigStatus {
   baseUrl?: string;
   hasApiKey: boolean;
   issues?: string[];
+}
+
+function isBuiltInProvider(provider: string): boolean {
+  return provider === 'openai' || provider === 'openai-compatible';
 }
 
 /**
@@ -32,11 +37,15 @@ export function describeLLMRoutingConfig(
   const issues: string[] = [];
 
   if (provider) {
-    if (!hasApiKey) {
-      issues.push('OPENSLACK_LLM_API_KEY not set');
-    }
-    if ((provider === 'openai' || provider === 'openai-compatible') && !hasModel) {
-      issues.push('OPENSLACK_LLM_MODEL not set');
+    if (isBuiltInProvider(provider)) {
+      if (!hasApiKey) {
+        issues.push('OPENSLACK_LLM_API_KEY not set');
+      }
+      if (!hasModel) {
+        issues.push('OPENSLACK_LLM_MODEL not set');
+      }
+    } else if (!getLLMPlannerProvider(provider)) {
+      issues.push(`LLM provider not registered: ${provider}`);
     }
 
     if (issues.length === 0) {
