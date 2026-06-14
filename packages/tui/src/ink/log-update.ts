@@ -676,11 +676,13 @@ function renderFrame(
   stylePool: StylePool,
 ): void {
   renderFrameSlice(screen, frame, 0, frame.screen.height, stylePool)
+  moveCursorTo(screen, frame.cursor.x, frame.cursor.y)
 }
 
 /**
  * Render a slice of rows from the frame's screen.
- * Each row is rendered followed by a newline. Cursor ends at (0, endY).
+ * Rows before the final row are followed by CRLF. The final row is left in
+ * place so rendering a viewport-height frame does not scroll the terminal.
  */
 function renderFrameSlice(
   screen: VirtualScreen,
@@ -767,10 +769,12 @@ function renderFrameSlice(
       currentHyperlink,
       undefined,
     )
-    // CR+LF at end of row — \r resets to column 0, \n moves to next line.
-    // Without \r, the terminal cursor stays at whatever column content ended
-    // (since we skip trailing spaces, this can be mid-row).
-    screen.txn(prev => [[CARRIAGE_RETURN, NEWLINE], { dx: -prev.x, dy: 1 }])
+    if (y < endY - 1) {
+      // CR+LF between rows — \r resets to column 0, \n moves to next line.
+      // Without \r, the terminal cursor stays at whatever column content ended
+      // (since we skip trailing spaces, this can be mid-row).
+      screen.txn(prev => [[CARRIAGE_RETURN, NEWLINE], { dx: -prev.x, dy: 1 }])
+    }
   }
 
   // Reset any open style/hyperlink at end of slice

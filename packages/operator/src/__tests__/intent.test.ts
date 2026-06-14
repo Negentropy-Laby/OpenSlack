@@ -43,6 +43,12 @@ describe('parseIntent', () => {
       const i = parseIntent('当前状态');
       expect(i.kind).toBe('status');
     });
+
+    it('routes Chinese first-check recommendations to doctor', () => {
+      const i = parseIntent('这个仓库现在最值得先检查哪一块');
+      expect(i.kind).toBe('doctor');
+      expect(i.slots.scope).toBe('recommendation');
+    });
   });
 
   describe('PRMS', () => {

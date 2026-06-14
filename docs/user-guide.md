@@ -10,7 +10,7 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 | Get guided setup with prompts | `openslack setup interactive` | Walks fixable items step by step; supports `--format plain` |
 | Run CI-style setup checks | `openslack setup --strict` | Treats warnings as failures. Use this for release or PR validation. |
 | Check GitHub readiness without changing anything | `openslack setup github` | Read-only by default. Use `--apply` only for explicit repairs. |
-| Ask OpenSlack what to do | `openslack ask "检查系统状态"` | Uses the local keyword router first; LLM fallback is optional. |
+| Ask OpenSlack what to do | `openslack ask "检查系统状态"` | Uses LLM-first routing when configured; otherwise uses the keyword router. |
 | Preview a task before creating an Issue | `openslack task create --title "..." --path "docs/**" --preview` | Preview is the safe first step. Add `--create-issue` only when ready. |
 | Let an agent pick up ready work | `openslack agent tick --agent-id <id> --source github-issues` | Requires a registered and bootstrapped agent identity. |
 | Diagnose an Aby external runtime | `openslack agent-runtime doctor --provider aby` | Checks local bridge configuration without launching a task. |
@@ -379,10 +379,7 @@ Steward still re-runs PRMS and blocks unless all gates pass.
 | `openslack ask plan approve <id>` | Approve and execute a pending Operator plan |
 | `openslack ask plan cancel <id>` | Cancel a pending Operator plan |
 
-Known requests use the built-in keyword router. Unknown or low-confidence requests
-may use the optional LLM fallback when `OPENSLACK_LLM_PROVIDER`,
-`OPENSLACK_LLM_MODEL`, and `OPENSLACK_LLM_API_KEY` are configured. LLM output is
-restricted to registered OpenSlack actions; raw shell commands are rejected.
+When an LLM provider is configured (`OPENSLACK_LLM_PROVIDER`, `OPENSLACK_LLM_MODEL`, `OPENSLACK_LLM_API_KEY`), OpenSlack uses LLM-first intent classification. The deterministic keyword router serves as fallback when the LLM is unavailable or returns an invalid response. Without LLM configuration, all routing uses the keyword router. LLM output is restricted to registered OpenSlack actions; raw shell commands are rejected.
 
 ## Chat Gateway
 

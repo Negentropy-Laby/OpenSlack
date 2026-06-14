@@ -8,6 +8,7 @@ import {
   getNextSteps,
 } from '@openslack/runtime';
 import type { PlainFinding } from '@openslack/runtime';
+import { describeLLMRoutingConfig } from '@openslack/operator';
 import { recordEvent } from '@openslack/collaboration';
 
 export function readStrictOption(source: unknown): boolean {
@@ -96,6 +97,23 @@ export function setupCommands(): Command {
         step: 'Genesis validate',
         passed: false,
         detail: `Genesis validation failed: ${(err as Error).message}`.slice(0, 200),
+      });
+    }
+
+    // LLM routing status
+    {
+      const llmConfig = describeLLMRoutingConfig(process.env as Record<string, string | undefined>);
+      const detail =
+        llmConfig.mode === 'keyword-only'
+          ? 'Keyword router active. Configure OPENSLACK_LLM_PROVIDER to enable LLM-first routing.'
+          : llmConfig.mode === 'llm-first'
+            ? `LLM-first routing (provider: ${llmConfig.provider}, model: ${llmConfig.model}). Keyword router serves as fallback.`
+            : `LLM provider set but configuration incomplete: ${llmConfig.issues?.join(', ') ?? 'unknown'}`;
+      results.push({
+        step: `Intent Routing: ${llmConfig.mode}`,
+        passed: llmConfig.mode !== 'misconfigured',
+        detail,
+        warn: llmConfig.mode === 'misconfigured',
       });
     }
 
@@ -241,6 +259,23 @@ export function setupCommands(): Command {
       results.push({ check: 'Genesis validate', passed: true, detail: '5/5' });
     } catch {
       results.push({ check: 'Genesis validate', passed: false, detail: 'Failed' });
+    }
+
+    // LLM routing status
+    {
+      const llmConfig = describeLLMRoutingConfig(process.env as Record<string, string | undefined>);
+      const detail =
+        llmConfig.mode === 'keyword-only'
+          ? 'Keyword router active. Configure OPENSLACK_LLM_PROVIDER to enable LLM-first routing.'
+          : llmConfig.mode === 'llm-first'
+            ? `LLM-first routing (provider: ${llmConfig.provider}, model: ${llmConfig.model}). Keyword router serves as fallback.`
+            : `LLM provider set but configuration incomplete: ${llmConfig.issues?.join(', ') ?? 'unknown'}`;
+      results.push({
+        check: `Intent Routing: ${llmConfig.mode}`,
+        passed: llmConfig.mode !== 'misconfigured',
+        detail,
+        warn: llmConfig.mode === 'misconfigured',
+      });
     }
 
     const passed = results.filter((r) => r.passed).length;

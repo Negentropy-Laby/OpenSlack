@@ -1,4 +1,4 @@
-import { parseIntent, planActions, executePlan } from '@openslack/operator';
+import { resolveIntent, planActions, executePlan } from '@openslack/operator';
 import type { ExecutionResult } from '@openslack/operator';
 import type { ChatMessage, ChatResponse, GatewayConfig } from './types.js';
 import { verifyRequestSignature, mapActor, canExecuteSideEffects, buildDefaultActor, loadActorMappings } from './authz.js';
@@ -102,12 +102,13 @@ export async function routeMessage(
     }
   }
 
-  // 4. Parse intent
-  const intent = parseIntent(message.text);
+  // 4. Resolve intent (keyword-first, optional LLM fallback)
+  const { intent, fallbackReason } = await resolveIntent(message.text);
+  const fallbackPrefix = fallbackReason ? `⚠️ ${fallbackReason}\n\n` : '';
 
   if (intent.kind === 'unknown') {
     return {
-      text: `I don't understand that. Try: status, PR #N doctor, merge PR #N, create task.`,
+      text: fallbackPrefix + `I don't understand that. Try: status, PR #N doctor, merge PR #N, create task.`,
     };
   }
 
@@ -117,7 +118,7 @@ export async function routeMessage(
   // 6. Handle missing params
   if (plan.missingParams.length > 0) {
     markProcessed(message.id, message.text, message.user.id, message.channel.id);
-    return { text: formatPlanAsMarkdown(plan) };
+    return { text: fallbackPrefix + formatPlanAsMarkdown(plan) };
   }
 
   // 7. Side-effect policy check
@@ -140,7 +141,7 @@ export async function routeMessage(
       // best-effort event recording
     }
     return {
-      text: formatPlanAsMarkdown(plan) + '\n\n⚠️ This action has side effects. Unmapped actors are read-only. Add this user to the actor mapping with a write role to continue.',
+      text: fallbackPrefix + formatPlanAsMarkdown(plan) + '\n\n⚠️ This action has side effects. Unmapped actors are read-only. Add this user to the actor mapping with a write role to continue.',
     };
   }
 
@@ -186,12 +187,12 @@ export async function routeMessage(
       // best-effort event recording
     }
 
-    return { text: lines.join('\n') };
+    return { text: fallbackPrefix + lines.join('\n') };
   }
 
   // 9. Execute
   const result = await executePlan(plan, { dryRun: false, ...agentAuth });
   markProcessed(message.id, message.text, message.user.id, message.channel.id);
 
-  return formatResultAsMarkdown(result);
+  return { text: fallbackPrefix + formatResultAsMarkdown(result).text };
 }

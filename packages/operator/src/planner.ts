@@ -3,30 +3,9 @@ import { identifyMissingParams } from './clarify.js';
 import { assessRisk, hasSideEffects } from './risk.js';
 import { createRegisteredStep } from './tool-registry.js';
 import { recommendWorkflowForQuery } from './workflow-recommendation.js';
+import { KNOWN_INTENTS } from './intent-kinds.js';
 
-const ALLOWLISTED_INTENTS = new Set([
-  'status',
-  'doctor',
-  'create_task',
-  'claim_task',
-  'checkout_task',
-  'sync_task',
-  'issue_done',
-  'pr_status',
-  'pr_doctor',
-  'pr_review',
-  'pr_queue',
-  'pr_watch',
-  'pr_merge',
-  'github_repair_labels',
-  'github_repair_claims',
-  'task_repair_worktrees',
-  'governance_audit',
-  'workflow_recommended',
-  'workflow_not_needed',
-  'workflow_draft_required',
-  'profile_sync',
-]);
+const ALLOWLISTED_INTENTS = new Set(KNOWN_INTENTS.filter(k => k !== 'unknown'));
 
 function buildSteps(intent: Intent): PlanStep[] {
   const prNumber = intent.slots.prNumber as number | undefined;

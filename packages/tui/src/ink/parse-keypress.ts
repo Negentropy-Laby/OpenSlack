@@ -219,7 +219,7 @@ export function parseMultipleKeypresses(
         pasteBuffer += token.value
       } else if (
         /^\[<\d+;\d+;\d+[Mm]$/.test(token.value) ||
-        /^\[M[\x60-\x7f][\x20-￿]{2}$/.test(token.value)
+        /^\[M[\x20-￿]{3}$/.test(token.value)
       ) {
         const resynthesized = '\x1b' + token.value
         const mouse = parseMouseEvent(resynthesized)
@@ -479,15 +479,28 @@ export type ParsedInput = ParsedKey | ParsedMouse | ParsedResponse
 
 function parseMouseEvent(s: string): ParsedMouse | null {
   const match = SGR_MOUSE_RE.exec(s)
-  if (!match) return null
-  const button = parseInt(match[1]!, 10)
+  if (match) {
+    const button = parseInt(match[1]!, 10)
+    if ((button & 0x40) !== 0) return null
+    return {
+      kind: 'mouse',
+      button,
+      action: match[4] === 'M' ? 'press' : 'release',
+      col: parseInt(match[2]!, 10),
+      row: parseInt(match[3]!, 10),
+      sequence: s,
+    }
+  }
+  if (s.length !== 6 || !s.startsWith('\x1b[M')) return null
+  const button = s.charCodeAt(3) - 32
   if ((button & 0x40) !== 0) return null
+  const action = (button & 0x03) === 3 && (button & 0x20) === 0 ? 'release' : 'press'
   return {
     kind: 'mouse',
     button,
-    action: match[4] === 'M' ? 'press' : 'release',
-    col: parseInt(match[2]!, 10),
-    row: parseInt(match[3]!, 10),
+    action,
+    col: s.charCodeAt(4) - 32,
+    row: s.charCodeAt(5) - 32,
     sequence: s,
   }
 }

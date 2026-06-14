@@ -11,7 +11,7 @@ import sliceAnsi from '../utils/slice-ansi.js'
 import { stringWidth } from '../ink/stringWidth.js'
 import wrapText from '../ink/wrap-text.js'
 import { LogUpdate } from '../ink/log-update.js'
-import type { Frame } from '../ink/frame.js'
+import { emptyFrame, type Frame } from '../ink/frame.js'
 import {
   CharPool,
   HyperlinkPool,
@@ -118,6 +118,27 @@ describe('terminal layout regressions', () => {
     expect(content).toContain('Check open PRs')
     expect(content).toContain('\x1b[K')
     expect(stripAnsi(content)).not.toContain('merge readiness')
+  })
+
+  it('does not scroll on first TTY render when content fills the viewport', () => {
+    const rows = 3
+    const { frame, stylePool } = makeFrame(['Header', 'Body', 'Footer'], 20, rows)
+    const prev = emptyFrame(
+      rows,
+      frame.viewport.width,
+      stylePool,
+      frame.screen.charPool,
+      frame.screen.hyperlinkPool,
+    )
+    const logUpdate = new LogUpdate({ isTTY: true, stylePool })
+
+    const diff = logUpdate.render(prev, frame)
+    const newlines = diff.filter(patch => patch.type === 'stdout' && patch.content === '\n')
+    const content = diff.map(patch => ('content' in patch ? patch.content : '')).join('')
+
+    expect(content).toContain('Header')
+    expect(content).toContain('Footer')
+    expect(newlines).toHaveLength(rows - 1)
   })
 
   it('renders digest groups without React key warnings', async () => {

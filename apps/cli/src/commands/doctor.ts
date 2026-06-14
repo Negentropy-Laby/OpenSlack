@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { readModules, validateModules } from '@openslack/workspace';
 import { getClient } from '@openslack/github';
+import { describeLLMRoutingConfig } from '@openslack/operator';
 import { detectGenesisShell, renderFindingsPlain } from '@openslack/runtime';
 import type { PlainFinding } from '@openslack/runtime';
 
@@ -216,6 +217,22 @@ export function doctorCommands(dependencies: DoctorCommandDependencies = {}): Co
       } catch (err) {
         const detail = (err as Error).message || 'Genesis checks failed';
         checks.push({ name: 'Genesis validate', state: 'FAIL', detail: `Genesis validation failed: ${detail}` });
+      }
+
+      // LLM routing status
+      {
+        const llmConfig = describeLLMRoutingConfig(process.env as Record<string, string | undefined>);
+        const detail =
+          llmConfig.mode === 'keyword-only'
+            ? 'Keyword router active. Configure OPENSLACK_LLM_PROVIDER to enable LLM-first routing.'
+            : llmConfig.mode === 'llm-first'
+              ? `LLM-first routing (provider: ${llmConfig.provider}, model: ${llmConfig.model}). Keyword router serves as fallback.`
+              : `LLM provider set but configuration incomplete: ${llmConfig.issues?.join(', ') ?? 'unknown'}`;
+        checks.push({
+          name: `Intent Routing: ${llmConfig.mode}`,
+          state: llmConfig.mode === 'misconfigured' ? 'WARN' : 'PASS',
+          detail,
+        });
       }
 
       console.log('OpenSlack Doctor');

@@ -686,27 +686,30 @@ export function handleMouseEvent(app: App, m: ParsedMouse): void {
   const col = m.col - 1
   const row = m.row - 1
   const baseButton = m.button & 0x03
-  if (m.action === 'press') {
-    if ((m.button & 0x20) !== 0 && baseButton === 3) {
-      // Mode-1003 motion with no button held. Dispatch hover; skip the
-      // rest of this handler (no selection, no click-count side effects).
-      // Lost-release recovery: no-button motion while isDragging=true means
-      // the release happened outside the terminal window (iTerm2 doesn't
-      // capture the pointer past window bounds, so the SGR 'm' never
-      // arrives). Finish the selection here so copy-on-select fires. The
-      // FOCUS_OUT handler covers the "switched apps" case but not "released
-      // past the edge, came back" — and tmux drops focus events unless
-      // `focus-events on` is set, so this is the more reliable signal.
-      if (sel.isDragging) {
-        finishSelection(sel)
-        app.props.onSelectionChange()
-      }
-      if (col === app.lastHoverCol && row === app.lastHoverRow) return
-      app.lastHoverCol = col
-      app.lastHoverRow = row
-      app.props.onHoverAt(col, row)
-      return
+  if ((m.button & 0x20) !== 0 && baseButton === 3) {
+    // Mode-1003 motion with no button held. Dispatch hover; skip the
+    // rest of this handler (no selection, no click-count side effects).
+    // Some terminals report this as a release-shaped SGR event, so this
+    // must run before the action-specific press/release branches.
+    //
+    // Lost-release recovery: no-button motion while isDragging=true means
+    // the release happened outside the terminal window (iTerm2 doesn't
+    // capture the pointer past window bounds, so the SGR 'm' never
+    // arrives). Finish the selection here so copy-on-select fires. The
+    // FOCUS_OUT handler covers the "switched apps" case but not "released
+    // past the edge, came back" — and tmux drops focus events unless
+    // `focus-events on` is set, so this is the more reliable signal.
+    if (sel.isDragging) {
+      finishSelection(sel)
+      app.props.onSelectionChange()
     }
+    if (col === app.lastHoverCol && row === app.lastHoverRow) return
+    app.lastHoverCol = col
+    app.lastHoverRow = row
+    app.props.onHoverAt(col, row)
+    return
+  }
+  if (m.action === 'press') {
     if (baseButton !== 0) {
       // Non-left press breaks the multi-click chain.
       app.clickCount = 0

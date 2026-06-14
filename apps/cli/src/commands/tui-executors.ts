@@ -835,7 +835,10 @@ export async function submitWorkbenchAskFromTui(
   const planMessageIndex = (getThread(thread.id, root)?.messages.length ?? 0) + 1
 
   const { buildTuiAskPlan } = await import('@openslack/operator')
-  const planned = buildTuiAskPlan(text)
+  const planned = await buildTuiAskPlan(text)
+  const planMessage = planned.fallbackReason
+    ? `⚠ ${planned.fallbackReason}\n\n${planned.message}`
+    : planned.message;
   appendMessage(
     thread.id,
     {
@@ -843,7 +846,7 @@ export async function submitWorkbenchAskFromTui(
       threadId: thread.id,
       authorId: 'openslack',
       planId: `tui-${thread.id}-plan-${planMessageIndex}`,
-      steps: planned.message.split('\n').filter(line => line.trim().length > 0),
+      steps: planMessage.split('\n').filter(line => line.trim().length > 0),
     },
     root,
   )
