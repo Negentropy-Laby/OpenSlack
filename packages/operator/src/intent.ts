@@ -59,6 +59,14 @@ function looksWorkflowShaped(q: string): boolean {
   return broadScope && workflowWork;
 }
 
+function looksFirstCheckRecommendation(q: string): boolean {
+  const asksWhatToCheck = /先检查|優先檢查|优先检查|先看哪|先看哪里|先看哪裏|检查哪|檢查哪/.test(q) ||
+    (/最值得|值得|应该|應該|应当|應當/.test(q) && /检查|檢查|排查|看哪/.test(q));
+  const repoScope = /\brepo\b|\brepository\b|\bcodebase\b|\bworkspace\b/.test(q) ||
+    /仓库|倉庫|项目|專案|工程|代码库|代碼庫|系统|系統/.test(q);
+  return asksWhatToCheck && repoScope;
+}
+
 export function parseIntent(text: string): Intent {
   const q = text.toLowerCase().trim();
 
@@ -148,6 +156,10 @@ export function parseIntent(text: string): Intent {
   }
 
   // ── Diagnostics ──────────────────────────────────────────
+  if (looksFirstCheckRecommendation(q)) {
+    return { kind: 'doctor', slots: { scope: 'recommendation' }, confidence: 0.78 };
+  }
+
   // Exact "doctor" match
   if (q === 'doctor' || q === 'check health' || q === 'health check') {
     return { kind: 'doctor', slots: {}, confidence: 0.95 };

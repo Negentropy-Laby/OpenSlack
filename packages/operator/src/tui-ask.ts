@@ -1,4 +1,4 @@
-import { parseIntent } from './intent.js';
+import { resolveIntent } from './llm.js';
 import { planActions } from './planner.js';
 import { formatPlan } from './summarizer.js';
 import type { ActionPlan, PlanStep, RiskLevel } from './types.js';
@@ -21,6 +21,8 @@ export interface TuiAskPlan {
   message: string;
   plan: ActionPlan;
   cards: ConversationActionCard[];
+  llmSource?: 'keyword' | 'llm' | 'keyword-fallback';
+  fallbackReason?: string;
 }
 
 export interface TuiAskResult {
@@ -225,13 +227,15 @@ function cardsForPlan(plan: ActionPlan, originalText: string): ConversationActio
   ];
 }
 
-export function buildTuiAskPlan(text: string): TuiAskPlan {
-  const intent = parseIntent(text);
+export async function buildTuiAskPlan(text: string): Promise<TuiAskPlan> {
+  const { intent, source, fallbackReason } = await resolveIntent(text);
   const plan = planActions(intent);
   const message = formatPlan(plan);
   return {
     message,
     plan,
     cards: cardsForPlan(plan, text),
+    llmSource: source,
+    fallbackReason,
   };
 }

@@ -64,7 +64,11 @@ export type {
   LLMPlannerProvider,
   LLMPlannerRequest,
   LLMPlannerResponse,
+  ResolvedIntent,
 } from './llm.js';
+export { describeLLMRoutingConfig } from './llm-config.js';
+export type { LLMConfigStatus } from './llm-config.js';
+export { KNOWN_INTENTS } from './intent-kinds.js';
 export type {
   RegisteredAction,
   RegisteredActionCall,

@@ -96,7 +96,7 @@ async function runAsk(
   const pendingPlans = listPendingPlans(root);
   const lastPending = pendingPlans.find((p) => p.state === 'pending');
 
-  let intent = await resolveIntent(query);
+  let { intent } = await resolveIntent(query);
   if (ultracodeEffort && !/\bultracode\b/i.test(query)) {
     intent = { kind: 'workflow_draft_required', slots: { query }, confidence: 0.95 };
   }

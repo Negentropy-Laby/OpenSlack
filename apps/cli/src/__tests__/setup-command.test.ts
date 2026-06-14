@@ -33,6 +33,12 @@ const mockGetNextSteps = vi.fn<() => Array<{ label: string; command: string; des
   { label: 'Get a role-specific guide', command: 'bun run openslack guide operator', description: 'Show the operator role guide with common workflows' },
   { label: 'Run diagnostics', command: 'bun run openslack doctor', description: 'Run a full diagnostic check on your workspace' },
 ]);
+const LLM_ENV_KEYS = [
+  'OPENSLACK_LLM_PROVIDER',
+  'OPENSLACK_LLM_API_KEY',
+  'OPENSLACK_LLM_MODEL',
+] as const;
+let savedLlmEnv: Map<string, string | undefined>;
 
 vi.mock('@openslack/runtime', () => ({
   detectGenesisShell: vi.fn(() => ({
@@ -48,6 +54,15 @@ vi.mock('@openslack/runtime', () => ({
   renderFindingsPlain: (findings: unknown) => mockRenderFindingsPlain(findings),
   getNextSteps: () => mockGetNextSteps(),
 }));
+
+vi.mock('@openslack/operator', async () => {
+  const actual = await vi.importActual<typeof import('../../../../packages/operator/src/llm-config.js')>(
+    '../../../../packages/operator/src/llm-config.js',
+  );
+  return {
+    describeLLMRoutingConfig: actual.describeLLMRoutingConfig,
+  };
+});
 
 vi.mock('@openslack/collaboration', () => ({
   recordEvent: vi.fn(),
@@ -80,12 +95,44 @@ async function runInteractive(args: string[]): Promise<string[]> {
   return logs;
 }
 
+async function runSmoke(): Promise<string[]> {
+  const command = setupCommands();
+  const logs: string[] = [];
+  const logSpy = vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => {
+    logs.push(a.map(String).join(' '));
+  });
+  const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+    throw new Error('process.exit');
+  });
+
+  try {
+    await command.parseAsync(['node', 'openslack setup', 'smoke'], { from: 'node' });
+  } catch (err) {
+    if (!(err instanceof Error) || err.message !== 'process.exit') {
+      throw err;
+    }
+  } finally {
+    logSpy.mockRestore();
+    exitSpy.mockRestore();
+  }
+  return logs;
+}
+
 describe('setup interactive', () => {
   beforeEach(() => {
+    savedLlmEnv = new Map(LLM_ENV_KEYS.map((key) => [key, process.env[key]]));
     vi.clearAllMocks();
   });
 
   afterEach(() => {
+    for (const key of LLM_ENV_KEYS) {
+      const value = savedLlmEnv.get(key);
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
     vi.restoreAllMocks();
   });
 
@@ -164,5 +211,16 @@ describe('setup interactive', () => {
     expect(output).toContain('See the team dashboard');
     expect(output).toContain('Get a role-specific guide');
     expect(output).toContain('Run diagnostics');
+  });
+
+  it('setup smoke warns when OpenAI-compatible LLM routing is missing a model', async () => {
+    process.env.OPENSLACK_LLM_PROVIDER = 'openai-compatible';
+    process.env.OPENSLACK_LLM_API_KEY = 'dummy';
+    delete process.env.OPENSLACK_LLM_MODEL;
+
+    const output = (await runSmoke()).join('\n');
+
+    expect(output).toContain('⚠ Intent Routing: misconfigured');
+    expect(output).not.toContain('model: default');
   });
 });

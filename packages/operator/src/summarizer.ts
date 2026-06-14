@@ -1,5 +1,20 @@
 import type { ActionPlan, ExecutionResult } from './types.js';
 
+function redactPotentialSecrets(value: string): string {
+  return value
+    .replace(/sk-[a-zA-Z0-9]{20,}/g, '[redacted secret]')
+    .replace(/-----BEGIN (RSA|EC|OPENSSH|DSA) PRIVATE KEY-----[\s\S]*?-----END \1 PRIVATE KEY-----/g, '[redacted private key]');
+}
+
+function formatOutputSnippet(output: string): string[] {
+  const redacted = redactPotentialSecrets(output).trim();
+  if (!redacted) return [];
+
+  const maxChars = 1200;
+  const snippet = redacted.length > maxChars ? `${redacted.slice(0, maxChars)}\n... [output truncated]` : redacted;
+  return snippet.split(/\r?\n/).map((line) => `    ${line}`);
+}
+
 export function formatPlan(plan: ActionPlan): string {
   const lines: string[] = [];
   lines.push(`Goal: ${plan.goal}`);
@@ -55,6 +70,13 @@ export function summarizeResults(result: ExecutionResult): string {
     for (const step of result.steps) {
       const icon = step.status === 'success' ? '✓' : step.status === 'skipped' ? '⊘' : '✗';
       lines.push(`${icon} ${step.stepId}: ${step.status}`);
+      if (step.status === 'failed' && step.output) {
+        const outputLines = formatOutputSnippet(step.output);
+        if (outputLines.length > 0) {
+          lines.push('  Output:');
+          lines.push(...outputLines);
+        }
+      }
     }
     lines.push('');
   }
