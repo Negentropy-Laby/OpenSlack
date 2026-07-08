@@ -131,7 +131,7 @@ OpenSlack can contribute to the Negentropy-Lab slot platform as an external `sce
 - Profile-sync projection payloads (`openslack collaboration workflow profile-sync status`)
 - Collaboration event/activity summaries (projection-only, from `.openslack.local/collaboration/events.jsonl`)
 
-OpenSlack **never owns `AuthorityState`**, never receives a writer handle, and never calls `proposeMutation` or `authorityWriterHandle`. The contribution would start with `gate.mode: SHADOW` and remain an external, non-authority mutation. Planned commands: `openslack integration negentropy export-slot`, `doctor`, `status`.
+OpenSlack **never owns `AuthorityState`**, never receives a writer handle, and never calls `proposeMutation` or `authorityWriterHandle`. The contribution would start with `gate.mode: SHADOW` and remain an external, non-authority-writing contribution. Planned commands: `openslack integration negentropy export-slot`, `openslack integration negentropy doctor`, and `openslack integration negentropy status`.
 
 ## Modules
 

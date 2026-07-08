@@ -8,7 +8,8 @@ surface, not a currently mounted integration.
 All `openslack integration negentropy ...` commands described here are
 **Planned** and are not implemented yet. The real, current evidence sources are
 the existing `openslack collaboration ...`, `openslack pr ...`, and
-`openslack profile-sync ...` commands listed in each section.
+`openslack collaboration workflow profile-sync ...` commands listed in each
+section.
 
 For the product framing, see [`docs/product/negentropy-lab-integration.md`](../product/negentropy-lab-integration.md).
 For the hard security rules, see [`docs/security/negentropy-slot-boundary.md`](../security/negentropy-slot-boundary.md).
@@ -46,55 +47,87 @@ that satisfies the real Negentropy-Lab manifest fields. No writer handle is
 included; the contribution is projection-only.
 
 ```typescript
-interface SlotManifest {
-  contributionId: "openslack-scenario-pack.v0",
-  slotId: "scenario-pack.extension",
-  name: "OpenSlack Scenario Pack",
-  version: "0.1.0-rc",
-  providerKind: "external",
-  providerId: "Negentropy-Laby/OpenSlack",
-  layer: "L5",
-  kind: "scenario-pack",
-  requiredPlatformCapabilities?: ["github-webhook", "event-store-read"],
-  permission: {
-    // No authority writer handle; forbidden by slot policy.
-    forbiddenApiMethods: ["authorityWriterHandle", "proposeMutation"]
+const openslackContribution: SlotContribution = {
+  manifest: {
+    contributionId: "openslack-scenario-pack.v0",
+    slotId: "scenario-pack.extension",
+    name: "OpenSlack Scenario Pack",
+    version: "0.1.0-rc",
+    providerKind: "external",
+    providerId: "Negentropy-Laby/OpenSlack",
+    layer: "L5",
+    kind: "scenario-pack",
+    requiredPlatformCapabilities: ["github-webhook", "event-store-read"],
+    permission: {
+      // No authority writer handle; forbidden by slot policy.
+      forbiddenApiMethods: ["authorityWriterHandle", "proposeMutation"]
+    },
+    gate: {
+      mode: "SHADOW", // "OFF" | "SHADOW" | "ENFORCE"
+      activationMode: "opt-in"
+    },
+    evidenceRefs: [
+      "openslack:evidence:workflow-run-json",
+      "openslack:evidence:prms-report",
+      "openslack:evidence:profile-sync-status",
+      "openslack:evidence:collaboration-events"
+    ],
+    signature: {
+      algorithm: "external-signature-placeholder",
+      keyId: "openslack-external",
+      value: "<signature>"
+    },
+    docPath: "memory_bank/t1_axioms/integrations/openslack-scenario-pack.md",
+    skuKey: "openslack-external-scenario-pack",
+    metadata: {
+      owner: "OpenSlack",
+      sourceRepo: "Negentropy-Laby/OpenSlack",
+      trustTier: "external-shadow",
+      evidenceContracts: [
+        { kind: "workflow-run-json", path: "/evidence/runs/{runId}.json" },
+        { kind: "prms-report", path: "/evidence/prms/{prNumber}.json" },
+        { kind: "profile-sync-status", path: "/evidence/profile-sync/status.json" },
+        { kind: "collaboration-events", path: "/evidence/events/summary.jsonl" }
+      ]
+    }
   },
-  gate: {
-    mode: "SHADOW" // "OFF" | "SHADOW" | "ENFORCE"
-  },
-  evidenceRefs?: [
-    { kind: "workflow-run-json", path: "/evidence/runs/{runId}.json" },
-    { kind: "prms-report", path: "/evidence/prms/{prNumber}.json" },
-    { kind: "profile-sync-status", path: "/evidence/profile-sync/status.json" },
-    { kind: "collaboration-events", path: "/evidence/events/summary.jsonl" }
+  routes: [
+    {
+      method: "GET",
+      path: "/openslack/evidence/workflow-runs/:runId",
+      installerId: "openslack.evidence.workflow-runs",
+      boundary: "read-only"
+    },
+    {
+      method: "GET",
+      path: "/openslack/evidence/prms/:prNumber",
+      installerId: "openslack.evidence.prms",
+      boundary: "read-only"
+    }
   ],
-  signature?: "<external-signature>",
-  docPath?: "memory_bank/t1_axioms/integrations/openslack-scenario-pack.md",
-  skuKey?: "openslack-external-scenario-pack",
-  metadata?: {
-    owner: "OpenSlack",
-    sourceRepo: "Negentropy-Laby/OpenSlack",
-    trustTier: "external-shadow"
-  }
-}
-
-interface SlotContribution {
-  manifest: SlotManifest,
-  routes?: {
-    // External read-only evidence routes. No mutation routes.
-    evidenceBase: "/evidence/openslack"
+  realtimeRooms: [
+    {
+      roomName: "openslack:workflow-runs",
+      readOnly: true
+    },
+    {
+      roomName: "openslack:prms",
+      readOnly: true
+    }
+  ],
+  lifecycle: {
+    activate() {
+      return { ok: true, note: "OpenSlack evidence export enabled in SHADOW mode." };
+    },
+    deactivate() {
+      return { ok: true, note: "OpenSlack evidence export disabled." };
+    }
   },
-  realtimeRooms?: ["openslack:workflow-runs", "openslack:prms"],
-  lifecycle?: {
-    // Maps to SlotLifecycleState; see Activation Lifecycle below.
-    autoPromote: false,
-    promotionRequires: ["human-approval", "golden-eval-pass"]
-  },
-  metadata?: {
-    description: "OpenSlack exports workflow, PRMS, profile-sync, and collaboration evidence to Negentropy-Lab as a read-only scenario-pack contribution."
+  metadata: {
+    description:
+      "OpenSlack exports workflow, PRMS, profile-sync, and collaboration evidence to Negentropy-Lab as a read-only scenario-pack contribution."
   }
-}
+};
 ```
 
 The `permission.forbiddenApiMethods` array is required by the

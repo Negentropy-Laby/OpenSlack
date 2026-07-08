@@ -56,7 +56,7 @@ The slot definition forbids these API methods for scenario-pack contributions:
 - `authorityWriterHandle`
 - `proposeMutation`
 
-OpenSlack will never receive a writer handle or call mutation routes.
+OpenSlack will never receive a writer handle or call authority mutation routes.
 
 Slot contributions follow a nine-state lifecycle:
 
@@ -96,8 +96,8 @@ OpenSlack exports structured evidence from its workbench operations:
 - Profile Sync projection payloads
 - Collaboration event JSONL summaries
 
-This evidence is read-only audit material. Negentropy-Lab can ingest it as
-`EventStore` input without treating OpenSlack as an authority writer.
+This evidence is read-only audit material. Negentropy-Lab can absorb it as
+audit evidence without treating OpenSlack as an authority writer.
 
 ### 2. Scenario-Pack Slot Contribution
 

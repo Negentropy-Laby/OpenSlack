@@ -669,4 +669,3 @@ Commands marked **Planned** are not implemented in this docs-only change.
 
 **Planned** commands are design targets for a future `openslack integration` command
 group. They are not available in the current release.
-
