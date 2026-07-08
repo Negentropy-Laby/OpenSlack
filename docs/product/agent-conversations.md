@@ -227,6 +227,7 @@ Planned export surface:
 - **Agent run IDs** — correlation IDs tying the conversation to workflow runs (`runId`) and agent events.
 - **Decision and handoff refs** — `decisionId` and `handoffId` identifiers, not the full decision or handoff content.
 
+Only these references and redacted summaries cross the slot boundary by default.
 Raw message transcripts remain in `.openslack.local/conversations/` (gitignored) unless a human explicitly exports them. OpenSlack does not propose mutations to Negentropy-Lab `AuthorityState`, request a writer handle, or call `proposeMutation`. The Negentropy-Lab contribution would target the `scenario-pack.extension` slot with `gate.mode: SHADOW`.
 
 ## Security Model

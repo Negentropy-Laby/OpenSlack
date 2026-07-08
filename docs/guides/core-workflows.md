@@ -198,6 +198,7 @@ Preview shows the diff of what would change. Run applies the projection update. 
 **Commands:** (Planned — not implemented yet)
 
 ```bash
+# Planned — not implemented yet
 openslack integration negentropy export-slot
 openslack integration negentropy doctor
 openslack integration negentropy status

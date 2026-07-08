@@ -43,8 +43,11 @@ needs `ENFORCE`.
 ## Contribution Manifest Sketch
 
 The planned OpenSlack contribution is a `SlotContribution` with a `SlotManifest`
-that satisfies the real Negentropy-Lab manifest fields. No writer handle is
-included; the contribution is projection-only.
+that satisfies the real Negentropy-Lab manifest fields. The sketch below is
+limited to fields verified in the slot/contribution contract; route, realtime
+room, and lifecycle object shapes are intentionally omitted until the adapter is
+implemented against the real Negentropy-Lab source. No writer handle is included;
+the contribution is projection-only.
 
 ```typescript
 const openslackContribution: SlotContribution = {
@@ -63,8 +66,7 @@ const openslackContribution: SlotContribution = {
       forbiddenApiMethods: ["authorityWriterHandle", "proposeMutation"]
     },
     gate: {
-      mode: "SHADOW", // "OFF" | "SHADOW" | "ENFORCE"
-      activationMode: "opt-in"
+      mode: "SHADOW" // "OFF" | "SHADOW" | "ENFORCE"
     },
     evidenceRefs: [
       "openslack:evidence:workflow-run-json",
@@ -72,55 +74,13 @@ const openslackContribution: SlotContribution = {
       "openslack:evidence:profile-sync-status",
       "openslack:evidence:collaboration-events"
     ],
-    signature: {
-      algorithm: "external-signature-placeholder",
-      keyId: "openslack-external",
-      value: "<signature>"
-    },
+    signature: "<external-signature>",
     docPath: "memory_bank/t1_axioms/integrations/openslack-scenario-pack.md",
     skuKey: "openslack-external-scenario-pack",
     metadata: {
       owner: "OpenSlack",
       sourceRepo: "Negentropy-Laby/OpenSlack",
-      trustTier: "external-shadow",
-      evidenceContracts: [
-        { kind: "workflow-run-json", path: "/evidence/runs/{runId}.json" },
-        { kind: "prms-report", path: "/evidence/prms/{prNumber}.json" },
-        { kind: "profile-sync-status", path: "/evidence/profile-sync/status.json" },
-        { kind: "collaboration-events", path: "/evidence/events/summary.jsonl" }
-      ]
-    }
-  },
-  routes: [
-    {
-      method: "GET",
-      path: "/openslack/evidence/workflow-runs/:runId",
-      installerId: "openslack.evidence.workflow-runs",
-      boundary: "read-only"
-    },
-    {
-      method: "GET",
-      path: "/openslack/evidence/prms/:prNumber",
-      installerId: "openslack.evidence.prms",
-      boundary: "read-only"
-    }
-  ],
-  realtimeRooms: [
-    {
-      roomName: "openslack:workflow-runs",
-      readOnly: true
-    },
-    {
-      roomName: "openslack:prms",
-      readOnly: true
-    }
-  ],
-  lifecycle: {
-    activate() {
-      return { ok: true, note: "OpenSlack evidence export enabled in SHADOW mode." };
-    },
-    deactivate() {
-      return { ok: true, note: "OpenSlack evidence export disabled." };
+      trustTier: "external-shadow"
     }
   },
   metadata: {
@@ -134,6 +94,11 @@ The `permission.forbiddenApiMethods` array is required by the
 `scenario-pack.extension` slot policy and explicitly blocks the two methods
 that could mutate authority state: `authorityWriterHandle` and
 `proposeMutation`.
+
+The `evidenceRefs` entries name planned evidence contracts only. Concrete route
+schemas, realtime rooms, lifecycle hooks, and signature verification details must
+be generated from the adapter implementation and validated against Negentropy-Lab
+before they are documented as literal API shapes.
 
 ---
 

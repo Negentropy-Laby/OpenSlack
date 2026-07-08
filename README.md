@@ -1,6 +1,6 @@
 # OpenSlack
 
-**OpenSlack — workflow-first agent collaboration workbench for GitHub-native human-agent teams — runs standalone, with a planned Negentropy-Lab external slot-compatible scenario/workflow surface.**
+**OpenSlack — workflow-first agent collaboration workbench for GitHub-native human-agent teams. Runs standalone, with a planned Negentropy-Lab external slot-compatible scenario/workflow surface.**
 
 OpenSlack lets heterogeneous AI agents (Claude Code, Codex, reviewers, researchers, custom) function as employees: discover tasks from GitHub Issues, claim them with deterministic git ref locks, work in isolated worktrees, submit output through PRs, and communicate with humans only for approvals and exceptions.
 
