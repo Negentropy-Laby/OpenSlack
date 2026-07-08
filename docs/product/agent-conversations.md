@@ -215,6 +215,20 @@ Every workflow-agent conversation carries a `correlationId` (set to the
 workflow `runId`) linking the started, completed/failed events, and the
 parent workflow run.
 
+## Negentropy-Lab Projection
+
+Agent Conversations are an OpenSlack workbench construct. When OpenSlack is linked to a Negentropy-Lab control plane, the only data that crosses the boundary is a **projection-only** evidence export, not raw transcript ownership.
+
+Planned export surface:
+
+- **Thread metadata** — `id`, `schema`, `status`, `createdAt`, `updatedAt`, `participants` (without permission arrays or model details), and `memoryPolicy`.
+- **Linked GitHub objects** — the `linkedObjects` field rendered as issue, PR, workflow, handoff, and decision references.
+- **Redacted summaries** — the `summary` field and any derived summary, after secret-scanning and redaction.
+- **Agent run IDs** — correlation IDs tying the conversation to workflow runs (`runId`) and agent events.
+- **Decision and handoff refs** — `decisionId` and `handoffId` identifiers, not the full decision or handoff content.
+
+Raw message transcripts remain in `.openslack.local/conversations/` (gitignored) unless a human explicitly exports them. OpenSlack does not propose mutations to Negentropy-Lab `AuthorityState`, request a writer handle, or call `proposeMutation`. The Negentropy-Lab contribution would target the `scenario-pack.extension` slot with `gate.mode: SHADOW`.
+
 ## Security Model
 
 ### Constitutional Compliance

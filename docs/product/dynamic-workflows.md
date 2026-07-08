@@ -86,6 +86,18 @@ $env:OPENSLACK_DISABLE_WORKFLOWS="1"
 When disabled, OpenSlack still allows read-only list, show, and inspect
 commands, but blocks generation and execution.
 
+## Negentropy-Lab Slot Use
+
+OpenSlack dynamic workflow runs can be exported to Negentropy-Lab as
+evidence-bearing `scenario-pack.extension` slot contributions. In that mode,
+OpenSlack contributes workflow run summaries, phase transcripts, agent
+attribution, and budget evidence; it does not mutate Negentropy-Lab
+`AuthorityState` or obtain a writer handle.
+
+Current workflow evidence is inspectable through the existing run commands
+listed in this document. The slot contribution and export path is planned; it
+is not yet an active integration.
+
 ## Security Boundary
 
 Dynamic workflow generation never approves itself. Workflow trust changes,
