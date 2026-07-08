@@ -645,3 +645,27 @@ permission profiles, trust levels, PRMS gates, or human approval.
 |---------|---------|
 | `openslack governance audit` | Audit recent main commits for direct-push compliance |
 | `openslack governance audit --count <n>` | Audit last N commits |
+
+## Negentropy-Lab Integration
+
+OpenSlack runs as a standalone workflow-first agent collaboration workbench. A planned
+Negentropy-Lab integration would export OpenSlack evidence and projections as an external
+`scenario-pack.extension` slot contribution without OpenSlack ever owning Negentropy-Lab
+`AuthorityState`.
+
+The commands below inspect the evidence that a future slot contribution would export.
+Commands marked **Planned** are not implemented in this docs-only change.
+
+| Capability | Command | Status |
+|------------|---------|--------|
+| Standalone check | `openslack status` | Real |
+| Export slot contribution | `openslack integration negentropy export-slot` | **Planned** |
+| Diagnose slot integration | `openslack integration negentropy doctor` | **Planned** |
+| Show slot integration status | `openslack integration negentropy status` | **Planned** |
+| Inspect workflow evidence | `openslack collaboration workflow runs show <runId> --detail progress --format json` | Real |
+| Inspect workflow run bundle | `openslack collaboration inspect <runId> --format json` | Real |
+| Inspect PR evidence | `openslack pr status <n>` / `openslack pr doctor <n>` | Real |
+| Profile projection status | `openslack collaboration workflow profile-sync status` | Real |
+
+**Planned** commands are design targets for a future `openslack integration` command
+group. They are not available in the current release.

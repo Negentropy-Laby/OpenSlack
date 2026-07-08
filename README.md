@@ -1,6 +1,6 @@
 # OpenSlack
 
-**OpenSlack — agent-native collaboration workspace for human-agent teams.**
+**OpenSlack — workflow-first agent collaboration workbench for GitHub-native human-agent teams. Runs standalone, with a planned Negentropy-Lab external slot-compatible scenario/workflow surface.**
 
 OpenSlack lets heterogeneous AI agents (Claude Code, Codex, reviewers, researchers, custom) function as employees: discover tasks from GitHub Issues, claim them with deterministic git ref locks, work in isolated worktrees, submit output through PRs, and communicate with humans only for approvals and exceptions.
 
@@ -21,13 +21,35 @@ bun run openslack status         # Module health, test counts, GitHub ops
 ```
 
 ```
-Workflow --> Agent Work --> PRMS Review --> Human Approval --> Merge --> Collaboration Memory
+Workflow --> Agent Work --> PRMS Review --> Human Approval --> Merge --> Collaboration Memory --> Evidence Projection
 ```
 
-Preview the work, let agents execute it, review the PR, confirm governed actions, and keep the collaboration record.
+Preview the work, let agents execute it, review the PR, confirm governed actions, and keep the collaboration record. **Evidence Projection** is the integration boundary where external authority systems such as Negentropy-Lab may absorb OpenSlack outputs as read-only audit data; the slot-level export into Negentropy-Lab's `scenario-pack.extension` is planned and not active today.
 
 See the step-by-step guides: [`docs/guides/core-workflows.md`](docs/guides/core-workflows.md)
 and [`docs/guides/dynamic-workflow-workbench.md`](docs/guides/dynamic-workflow-workbench.md)
+
+---
+
+## Two Integration Modes
+
+OpenSlack runs as a **standalone workflow-first agent collaboration workbench** for GitHub-native human-agent teams. It also exposes a planned **Negentropy-Lab external slot-compatible scenario/workflow surface** without changing its standalone behavior.
+
+### Standalone Workbench Mode
+
+Everything in this README works out of the box. The sources of truth are GitHub Issues, Pull Requests, Git branches, and the local `.openslack` workspace. PRMS review, human approval, and Merge Stewardship all happen inside OpenSlack. No external control plane is required.
+
+### Negentropy-Lab Slot Mode (Planned)
+
+In the future, OpenSlack can contribute to the `scenario-pack.extension` slot on a Negentropy-Lab control plane as an external provider:
+
+- `layer: L5`, `defaultGateMode: SHADOW`, `sealed: false`, `allowExternal: true` on the slot definition.
+- The OpenSlack contribution would set `providerKind: external` and `gate.mode: SHADOW`.
+- OpenSlack exports workflow run evidence, PRMS reports, profile-sync projections, and collaboration summaries as read-only audit material.
+- OpenSlack **never owns `AuthorityState`**, never receives a writer handle, and never calls `proposeMutation` or `authorityWriterHandle`.
+- All GitHub-side mutations remain ordinary GitHub Issues/PR mutations; any Negentropy-Lab authority mutation would be a governed action request processed by Negentropy-Lab itself.
+
+The `openslack integration negentropy ...` commands are planned and not implemented yet. See [`docs/product/negentropy-lab-integration.md`](docs/product/negentropy-lab-integration.md).
 
 ---
 
@@ -100,6 +122,17 @@ OpenSlack/
 └── docs/                    # Full acceptance, developer, security documentation
 ```
 
+### Negentropy-Lab Slot Integration (Planned)
+
+OpenSlack can contribute to the Negentropy-Lab slot platform as an external `scenario-pack.extension` contribution. The integration surface is one-way, evidence-only, and projection-only:
+
+- Workflow run summaries and progress evidence (`openslack collaboration workflow runs show ...`)
+- PRMS readiness reports and diagnostics (`openslack pr status`, `openslack pr doctor`)
+- Profile-sync projection payloads (`openslack collaboration workflow profile-sync status`)
+- Collaboration event/activity summaries (projection-only, from `.openslack.local/collaboration/events.jsonl`)
+
+OpenSlack **never owns `AuthorityState`**, never receives a writer handle, and never calls `proposeMutation` or `authorityWriterHandle`. The contribution would start with `gate.mode: SHADOW` and remain an external, non-authority-writing contribution. Planned commands: `openslack integration negentropy export-slot`, `openslack integration negentropy doctor`, and `openslack integration negentropy status`.
+
 ## Modules
 
 ### Module 01: OSEK (Self-Evolution Kernel)
@@ -170,6 +203,26 @@ The projection and coordination layer. It makes tasks, PRs, handoffs, decisions,
 - **Conversation-first TUI:** `openslack tui` → Ask OpenSlack from the first screen, get safe action cards for PRMS, workflow drafts, approvals, profile sync, and subagent dispatch, and record asks/actions into the current conversation thread
 
 See: [`docs/product/collaboration-layer.md`](docs/product/collaboration-layer.md), [`docs/product/agent-conversations.md`](docs/product/agent-conversations.md), [`docs/product/dynamic-workflows.md`](docs/product/dynamic-workflows.md), [`docs/product/dynamic-workflow-ux-closure.md`](docs/product/dynamic-workflow-ux-closure.md)
+
+### Cross-Cutting Integration: Negentropy-Lab Slot Surface (Planned)
+
+Target slot: `scenario-pack.extension` on Negentropy-Lab.
+
+**What OpenSlack contributes**
+
+- Workflow run evidence, phase summaries, and correlation IDs
+- PRMS `doctor`/`status` reports and merge-readiness payloads
+- Profile-sync projection payloads (whitepapers → `.github/profile/README.md`)
+- Collaboration activity/digest/room/handoff/decision summaries
+- Agent conversation metadata and redacted summaries
+
+**What OpenSlack must not own**
+
+- Negentropy-Lab `AuthorityState` or policy truth
+- Writer handles or direct mutation routes (`authorityWriterHandle`, `proposeMutation`)
+- Negentropy-Lab transport/runtime internals
+
+OpenSlack remains a standalone GitHub-agent workbench; the planned Negentropy-Lab slot contribution would be an external, `gate.mode: SHADOW`, projection-only contribution. See [`docs/product/negentropy-lab-integration.md`](docs/product/negentropy-lab-integration.md), [`docs/developer/negentropy-slot-adapter.md`](docs/developer/negentropy-slot-adapter.md), and [`docs/security/negentropy-slot-boundary.md`](docs/security/negentropy-slot-boundary.md).
 
 ## Advanced Setup
 
@@ -272,6 +325,8 @@ output_contract:
 
 | User Need | Start Here |
 |-----------|------------|
+| Negentropy-Lab integration, slot surface, and boundary | [`docs/product/negentropy-lab-integration.md`](docs/product/negentropy-lab-integration.md), [`docs/developer/negentropy-slot-adapter.md`](docs/developer/negentropy-slot-adapter.md), [`docs/security/negentropy-slot-boundary.md`](docs/security/negentropy-slot-boundary.md), [`docs/guides/embed-openslack-in-negentropy-lab.md`](docs/guides/embed-openslack-in-negentropy-lab.md) |
+| Profile Sync Robot and projection | [`docs/product/profile-sync.md`](docs/product/profile-sync.md) |
 | Documentation home | [`docs/README.md`](docs/README.md) |
 | Current status, modules, commands, and test counts | [`docs/status/current.md`](docs/status/current.md) |
 | Complete CLI reference | [`docs/user-guide.md`](docs/user-guide.md) |

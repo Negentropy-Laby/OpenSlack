@@ -1,6 +1,6 @@
 # Core Workflows
 
-Seven workflows that cover day-to-day OpenSlack use. Each one is a quick reference: what you want, where to start, what you will see, the safe default, and what to do next.
+Eight workflows that cover day-to-day OpenSlack use. Each one is a quick reference: what you want, where to start, what you will see, the safe default, and what to do next.
 
 For the full CLI reference, see [`user-guide.md`](../user-guide.md).
 For workflow-first operation, see
@@ -189,14 +189,41 @@ Preview shows the diff of what would change. Run applies the projection update. 
 
 ---
 
+## 8. Embed OpenSlack into Negentropy-Lab
+
+**Goal:** Treat OpenSlack as an external `scenario-pack.extension` contributor to the Negentropy-Lab control plane, exporting workflow evidence, PRMS reports, and profile-sync projections without owning `AuthorityState`.
+
+**Path:** OpenSlack contributes to the `scenario-pack.extension` slot (layer L5, `defaultGateMode: SHADOW`) as an `external` provider. The contribution gate starts in `SHADOW` mode, so Negentropy-Lab can observe exported evidence before any enforcement. OpenSlack never receives a writer handle, never calls `proposeMutation`, and never owns Negentropy-Lab authority state.
+
+**Commands:** (Planned — not implemented yet)
+
+```bash
+# Planned — not implemented yet
+openslack integration negentropy export-slot
+openslack integration negentropy doctor
+openslack integration negentropy status
+```
+
+For current evidence inspection, use the existing collaboration and PRMS commands:
+
+```bash
+openslack collaboration workflow runs list
+openslack collaboration workflow runs show <runId> --detail progress --format json
+openslack collaboration inspect <runId> --format json
+openslack pr status <n>
+openslack pr doctor <n>
+```
+
+---
+
 ## Core Loop
 
 OpenSlack runs on one repeating cycle:
 
 ```
-Workflow --> Agent Work --> PRMS Review --> Human Approval --> Merge --> Collaboration Memory --> Profile Sync
+Workflow --> Agent Work --> PRMS Review --> Human Approval --> Merge --> Collaboration Memory --> Profile Sync --> Evidence Projection
 ```
 
-Preview the work, let agents execute it, review the PR, confirm governed actions, keep the collaboration record, and maintain the organization profile.
+Preview the work, let agents execute it, review the PR, confirm governed actions, keep the collaboration record, maintain the organization profile, and export the resulting evidence as a projection for external authority systems.
 
-Each step feeds the next: a workflow spawns agent work, the agent submits a PR, PRMS reviews it, a human approves and merges, the collaboration layer records the outcome for the next cycle, and profile sync keeps the public-facing README projection current with the latest whitepapers.
+Each step feeds the next: a workflow spawns agent work, the agent submits a PR, PRMS reviews it, a human approves and merges, the collaboration layer records the outcome, profile sync keeps the public-facing README projection current, and **Evidence Projection** becomes the integration boundary where Negentropy-Lab may absorb those outputs as audit data. The slot-level export into Negentropy-Lab's `scenario-pack.extension` is planned and not active today; existing collaboration and PRMS commands already expose the evidence that would be exported.

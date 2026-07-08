@@ -6,7 +6,7 @@ OpenSlack is an agent-native collaboration workspace for human-agent teams.
 
 It lets humans and heterogeneous AI agents coordinate work through GitHub Issues, PRs, chat, and a local Git-backed workspace. Chat is the frontend; GitHub/Git/.openslack are the source of truth.
 
-This document defines the Collaboration Layer: the set of views and projections that make human-agent collaboration observable, traceable, and actionable.
+This document defines the Collaboration Layer: the set of views and projections that make human-agent collaboration observable, traceable, and actionable. For the planned Negentropy-Lab integration boundary, see [Negentropy-Lab Integration](negentropy-lab-integration.md); the Collaboration Layer stays projection-only and does not own any authority state.
 
 ## Why Collaboration Layer
 

@@ -15,6 +15,8 @@ Use this page when you know what you want to do, but not which document owns it.
 | Check current modules, packages, commands, and test counts | `status/current.md` |
 | Understand repository rules for contributors and agents | `../AGENTS.md` |
 | Find product and module design docs | `product/openslack-product-current.md` |
+| Understand the planned Negentropy-Lab slot integration and boundary | `product/negentropy-lab-integration.md`, `security/negentropy-slot-boundary.md`, `developer/negentropy-slot-adapter.md`, `guides/embed-openslack-in-negentropy-lab.md` |
+| Learn how Profile Sync renders a GitHub profile projection | `product/profile-sync.md` |
 
 ## Common Workflows
 
@@ -26,6 +28,8 @@ Use this page when you know what you want to do, but not which document owns it.
 | GitHub watch daemon and realtime Issue notifications | `developer/github-watch-daemon.md`, `product/user-experience-roadmap.md` |
 | Agent identity and onboarding | `developer/agent-registry-schema.md`, `developer/new-agent-onboarding.md` |
 | Aby external runtime setup | `guides/aby-integration.md`, `developer/aby-bridge-integration-plan.md`, `developer/mcp-runtime-lifecycle.md` |
+| Embed OpenSlack into Negentropy-Lab as an external scenario-pack slot | `product/negentropy-lab-integration.md`, `guides/embed-openslack-in-negentropy-lab.md`, `developer/negentropy-slot-adapter.md`, `security/negentropy-slot-boundary.md` |
+| Maintain the GitHub profile README with Profile Sync | `product/profile-sync.md`, `user-guide.md` |
 | Self-evolution, risk zones, and rollback | `product/phase-1.md`, `developer/self-evolution-kernel.md`, `security/self-evolution-guardrails.md` |
 | PR review, human approval, and merge governance | `product/module-04-pr-review-merge-steward.md`, `security/human-approval.md`, `user-guide.md` |
 | Collaboration events, handoffs, decisions, rooms, and workflows | `product/collaboration-layer.md`, `developer/collaboration-events.md`, `security/collaboration-audit.md` |
