@@ -10,6 +10,9 @@ All `openslack integration negentropy ...` commands described here are
 the existing `openslack collaboration ...`, `openslack pr ...`, and
 `openslack profile-sync ...` commands listed in each section.
 
+For the product framing, see [`docs/product/negentropy-lab-integration.md`](../product/negentropy-lab-integration.md).
+For the hard security rules, see [`docs/security/negentropy-slot-boundary.md`](../security/negentropy-slot-boundary.md).
+
 ---
 
 ## Target Slot
@@ -268,6 +271,8 @@ Planned diagnostic commands for operators:
 - OpenSlack **never** calls `proposeMutation` or `authorityWriterHandle`.
 - All GitHub-side mutations remain ordinary GitHub Issue / PR mutations.
 - Negentropy-Lab absorbs OpenSlack output only as evidence, projection, or a
-governed action request.
+  governed action request.
 - The contribution starts and remains in `SHADOW` until an explicit promotion path
-is approved.
+  is approved.
+
+These rules are expanded in [`docs/security/negentropy-slot-boundary.md`](../security/negentropy-slot-boundary.md).
