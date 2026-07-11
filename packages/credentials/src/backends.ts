@@ -11,6 +11,8 @@ import type { Entry as KeyringEntry } from '@napi-rs/keyring';
 export interface NativeKeychainEntry {
   getPassword(): string | null;
   setPassword(value: string): void;
+  getSecret?(): Array<number> | Uint8Array | null;
+  setSecret?(value: Uint8Array): void;
   deleteCredential(): boolean;
 }
 
@@ -127,7 +129,27 @@ export class NativeKeychainBackend implements CredentialBackend {
   private read(reference: SecretReference): string | null {
     const parsed = requireKeychainReference(reference);
     try {
-      return this.entry(parsed.service, parsed.account).getPassword();
+      const entry = this.entry(parsed.service, parsed.account);
+      if (this.platform === 'win32' && entry.getSecret && entry.setSecret) {
+        const rawSecret = entry.getSecret();
+        if (rawSecret === null) return null;
+        const encoded = Buffer.from(rawSecret);
+        try {
+          if (
+            encoded
+              .subarray(0, WINDOWS_UTF8_SECRET_PREFIX.length)
+              .equals(WINDOWS_UTF8_SECRET_PREFIX)
+          ) {
+            return encoded.subarray(WINDOWS_UTF8_SECRET_PREFIX.length).toString('utf-8');
+          }
+        } finally {
+          encoded.fill(0);
+          rawSecret.fill(0);
+        }
+        // Entries created before the UTF-8 envelope used setPassword(), which
+        // stores UTF-16 bytes on Windows. Keep those references readable.
+      }
+      return entry.getPassword();
     } catch {
       throw backendUnavailable();
     }
@@ -136,8 +158,28 @@ export class NativeKeychainBackend implements CredentialBackend {
   private write(reference: SecretReference, secret: string): void {
     const parsed = requireKeychainReference(reference);
     try {
-      this.entry(parsed.service, parsed.account).setPassword(secret);
-    } catch {
+      const entry = this.entry(parsed.service, parsed.account);
+      if (this.platform === 'win32' && entry.getSecret && entry.setSecret) {
+        const byteLength = WINDOWS_UTF8_SECRET_PREFIX.length + Buffer.byteLength(secret, 'utf-8');
+        if (byteLength > WINDOWS_CREDENTIAL_BLOB_MAX_BYTES) {
+          throw new CredentialStoreError(
+            'CREDENTIAL_TOO_LARGE',
+            'Credential exceeds the Windows Credential Manager capacity.',
+          );
+        }
+        const encoded = Buffer.allocUnsafe(byteLength);
+        WINDOWS_UTF8_SECRET_PREFIX.copy(encoded);
+        encoded.write(secret, WINDOWS_UTF8_SECRET_PREFIX.length, 'utf-8');
+        try {
+          entry.setSecret(encoded);
+        } finally {
+          encoded.fill(0);
+        }
+        return;
+      }
+      entry.setPassword(secret);
+    } catch (error) {
+      if (error instanceof CredentialStoreError) throw error;
       throw backendUnavailable();
     }
   }
@@ -226,6 +268,12 @@ function backendUnavailable(): CredentialStoreError {
     'Native OS keyring operation failed safely.',
   );
 }
+
+// CredWriteW limits a generic credential blob to 5 * 512 bytes. setPassword()
+// encodes strings as UTF-16 and halves the usable capacity, so Windows entries
+// written by OpenSlack use setSecret() with an explicit UTF-8 envelope.
+const WINDOWS_CREDENTIAL_BLOB_MAX_BYTES = 5 * 512;
+const WINDOWS_UTF8_SECRET_PREFIX = Buffer.from('openslack.credential.utf8.v1\0', 'utf-8');
 
 function loadNativeEntryFactory(): NativeKeychainBackendOptions['entryFactory'] {
   try {

@@ -24,7 +24,8 @@ export class CredentialStoreError extends Error {
       | 'CREDENTIAL_BACKEND_UNAVAILABLE'
       | 'CREDENTIAL_BACKEND_READ_ONLY'
       | 'CREDENTIAL_ATOMIC_OPERATION_UNAVAILABLE'
-      | 'CREDENTIAL_ALREADY_EXISTS',
+      | 'CREDENTIAL_ALREADY_EXISTS'
+      | 'CREDENTIAL_TOO_LARGE',
     message: string,
   ) {
     super(message);

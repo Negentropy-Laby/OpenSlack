@@ -2,7 +2,11 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { CredentialStore, MemoryKeychainBackend } from '@openslack/credentials';
+import {
+  CredentialStore,
+  CredentialStoreError,
+  MemoryKeychainBackend,
+} from '@openslack/credentials';
 import { applyGitHubAppImport, planGitHubAppImport } from '../app-import.js';
 
 const roots: string[] = [];
@@ -55,6 +59,33 @@ describe('GitHub App manual import', () => {
     });
     expect(result.sourceDeleted).toBe(false);
     expect(result.warnings.join(' ')).not.toContain('canary-secret');
+  });
+
+  it('reports safe credential-store failure categories without exposing backend details', () => {
+    const root = temp();
+    const store = new CredentialStore([new MemoryKeychainBackend()]);
+    vi.spyOn(store, 'putIfAbsent').mockImplementation(() => {
+      throw new CredentialStoreError(
+        'CREDENTIAL_TOO_LARGE',
+        'native failure included canary-secret',
+      );
+    });
+    const plan = planGitHubAppImport({
+      localStateRoot: root,
+      sourcePath: join(root, 'fixture.pem'),
+      appId: '123',
+      installationId: '456',
+      appSlug: 'acme-agent',
+      privateKeyRef: 'keychain:openslack/acme-agent',
+    });
+
+    expect(() =>
+      applyGitHubAppImport(plan, {
+        credentialStore: store,
+        readSource: () =>
+          Buffer.from('-----BEGIN PRIVATE KEY-----\ncanary-secret\n-----END PRIVATE KEY-----'),
+      }),
+    ).toThrowError('GitHub App private key exceeds the OS keychain item capacity.');
   });
 });
 
