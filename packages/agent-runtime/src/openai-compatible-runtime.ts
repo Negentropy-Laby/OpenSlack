@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createDefaultCredentialStore, type CredentialStore } from '@openslack/credentials';
 import {
   AgentBudgetExceededError,
   AgentLimitExceededError,
@@ -128,21 +129,13 @@ export function loadOpenAICompatibleRuntimeConfig(
 export function resolveRuntimeCredential(
   credentialRef: string,
   env: NodeJS.ProcessEnv = process.env,
+  credentialStore: CredentialStore = createDefaultCredentialStore(env),
 ): string {
-  if (!credentialRef.startsWith('env:')) {
-    throw new RuntimeMisconfiguredError(
-      'Only env: credential references are supported until CredentialStore is configured.',
-    );
-  }
-  const key = credentialRef.slice('env:'.length);
-  if (!/^[A-Z][A-Z0-9_]*$/.test(key)) {
-    throw new RuntimeMisconfiguredError('Agent runtime credentialRef is invalid.');
-  }
-  const value = env[key];
-  if (!value || !value.trim()) {
+  try {
+    return credentialStore.withSecret(credentialRef, (secret) => secret);
+  } catch {
     throw new RuntimeMisconfiguredError('Agent runtime credential is unavailable.');
   }
-  return value;
 }
 
 export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {

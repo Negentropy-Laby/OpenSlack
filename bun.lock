@@ -54,6 +54,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@openslack/collaboration": "workspace:*",
+        "@openslack/credentials": "workspace:*",
         "@openslack/kernel": "workspace:*",
         "@openslack/runtime": "workspace:*",
         "@openslack/workspace": "workspace:*",
@@ -81,6 +82,10 @@
     },
     "packages/core": {
       "name": "@openslack/core",
+      "version": "0.1.0",
+    },
+    "packages/credentials": {
+      "name": "@openslack/credentials",
       "version": "0.1.0",
     },
     "packages/delivery": {
@@ -320,6 +325,8 @@
     "@openslack/collaboration": ["@openslack/collaboration@workspace:packages/collaboration"],
 
     "@openslack/core": ["@openslack/core@workspace:packages/core"],
+
+    "@openslack/credentials": ["@openslack/credentials@workspace:packages/credentials"],
 
     "@openslack/delivery": ["@openslack/delivery@workspace:packages/delivery"],
 

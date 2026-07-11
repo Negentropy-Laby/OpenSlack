@@ -7,6 +7,7 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 | If you want to...                                | Start with                                                                     | Notes                                                                              |
 | ------------------------------------------------ | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
 | Verify a fresh checkout                          | `openslack setup`                                                              | Runs workspace, golden, GitHub, genesis, and agent-runtime readiness checks.       |
+| Initialize an ordinary Git repository            | `openslack init --root <repo> --repo <owner/name>`                             | Preview-first; add `--apply` only after reviewing the file plan.                   |
 | Get guided setup with prompts                    | `openslack setup interactive`                                                  | Walks fixable items step by step; supports `--format plain`                        |
 | Run CI-style setup checks                        | `openslack setup --strict`                                                     | Treats warnings as failures. Use this for release or PR validation.                |
 | Check GitHub readiness without changing anything | `openslack setup github`                                                       | Read-only by default. Use `--apply` only for explicit repairs.                     |
@@ -248,6 +249,27 @@ approval on stale PR checks.
 | `openslack setup interactive --format tui`       | Read-only setup report TUI with readiness classification                                      |
 
 ## Workspace
+
+Initialize a normal workspace without copying the OpenSlack source tree into the
+target repository:
+
+```bash
+openslack init --root ../my-product --repo acme/my-product
+# Review the create/append/conflict plan, then:
+openslack init --root ../my-product --repo acme/my-product --apply
+```
+
+The command creates only missing files, appends `.openslack.local/` to the
+existing `.gitignore`, rejects conflicting content and symlink/path escapes, and
+revalidates the preview immediately before applying. Generated provider config
+contains only a credential reference, never a secret. Re-running the same command
+is idempotent.
+
+`WorkspaceContext` keeps installed product assets, checked-in project state, and
+gitignored local state as separate roots. The current embedded asset set covers
+the minimal agent, provider, and workflow templates; source-only maintenance
+commands will be migrated behind the explicit `sourceCheckout` flag during the
+remaining standalone-product slices.
 
 | Command | Purpose |
 |---------|---------|
