@@ -8,6 +8,9 @@ import {
   createRunStore,
 } from '../index.js';
 import { readTranscript } from '../transcript.js';
+import { resolveTestBunExecutable } from './test-executable.js';
+
+const BUN = resolveTestBunExecutable();
 
 function makeTempRoot(): string {
   return mkdtempSync(join(tmpdir(), 'bridge-process-smoke-test-'));
@@ -91,6 +94,7 @@ describe('Aby process bridge smoke', () => {
       JSON.stringify({
         aby: {
           root: abyRoot,
+          command: BUN,
           timeoutMs: 15_000,
           env: {
             AGENT_RUN_BRIDGE_RUNNER: 'fake',
@@ -109,24 +113,30 @@ describe('Aby process bridge smoke', () => {
       bridgeRuntimeResolver: createBridgeRuntimeResolver({ rootDir: root, env: {} }),
     });
 
-    const result = await launcher<{
-      response: string;
-      payload: Record<string, unknown>;
-      envAudit: { safeRunner?: string; unsafePresent: boolean };
-    }>('inspect README', {
-      label: 'anthropic_architect_aby',
-      phase: 'conversation',
-      resolvedAgentConfig: {
-        agentId: 'anthropic_architect_aby',
-        source: 'test',
-        runtime: 'aby_assistant',
-        bridgeMode: 'process',
-        permissionMode: 'plan',
-        requiredMcpServers: ['github'],
-      },
-      threadId: 'CONV-20260603-ABCDEFGH',
-      correlationId: 'CONV-20260603-ABCDEFGH',
-    });
+    let result;
+    try {
+      result = await launcher<{
+        response: string;
+        payload: Record<string, unknown>;
+        envAudit: { safeRunner?: string; unsafePresent: boolean };
+      }>('inspect README', {
+        label: 'anthropic_architect_aby',
+        phase: 'conversation',
+        resolvedAgentConfig: {
+          agentId: 'anthropic_architect_aby',
+          source: 'test',
+          runtime: 'aby_assistant',
+          bridgeMode: 'process',
+          permissionMode: 'plan',
+          requiredMcpServers: ['github'],
+        },
+        threadId: 'CONV-20260603-ABCDEFGH',
+        correlationId: 'CONV-20260603-ABCDEFGH',
+      });
+    } catch (error) {
+      const stderr = (error as { stderrSummary?: string }).stderrSummary;
+      throw new Error(`${error instanceof Error ? error.message : String(error)}\n${stderr ?? ''}`);
+    }
 
     expect(result.data.response).toBe('fake aby complete');
     expect(result.data.payload.input).toEqual([{ role: 'user', content: 'inspect README' }]);

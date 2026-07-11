@@ -27,11 +27,9 @@ function cleanup(root: string) {
   }
 }
 
-// Use node -e for cross-platform command execution in tests
-// Use 'bun' directly since tests run under bun and it's in PATH without spaces.
-// process.execPath on Windows may contain spaces (e.g. C:\Program Files\nodejs\node.exe)
-// which bun's spawn with shell:false cannot resolve.
-const NODE = 'bun';
+// An absolute executable path is portable with spawn({ shell: false }), including
+// Windows paths that contain spaces, and does not depend on the worker's PATH.
+const NODE = process.execPath;
 
 function createToolPlane(
   rootPath: string,

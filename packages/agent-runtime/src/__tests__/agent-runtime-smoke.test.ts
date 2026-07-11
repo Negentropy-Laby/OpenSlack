@@ -3,6 +3,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { runAbyRuntimeSmoke } from '../index.js';
+import { resolveTestBunExecutable } from './test-executable.js';
+
+const BUN = resolveTestBunExecutable();
 
 function makeTempRoot(): string {
   return mkdtempSync(join(tmpdir(), 'agent-runtime-smoke-test-'));
@@ -94,7 +97,7 @@ describe('runAbyRuntimeSmoke', () => {
     mkdirSync(join(root, '.openslack.local'), { recursive: true });
     writeFileSync(
       join(root, '.openslack.local', 'agent-runtime.json'),
-      JSON.stringify({ aby: { root: abyRoot, timeoutMs: 15_000 } }),
+      JSON.stringify({ aby: { root: abyRoot, command: BUN, timeoutMs: 15_000 } }),
       'utf-8',
     );
 
@@ -104,7 +107,7 @@ describe('runAbyRuntimeSmoke', () => {
       agentId: 'anthropic_architect_aby',
     });
 
-    expect(report.status).toBe('PASS');
+    expect(report.status, JSON.stringify(report, null, 2)).toBe('PASS');
     expect(report.runId).toMatch(/^RUN-/);
     expect(report.checks.find((check) => check.name === 'bridge_session_started')?.status).toBe('PASS');
     expect(report.checks.find((check) => check.name === 'terminal_event')?.status).toBe('PASS');
