@@ -3,6 +3,7 @@ import {
   clearTokenCache,
   inspectInstallationRepositoryAccess,
   requireAppInstallationToken,
+  resolveGitHubAppLocalStateRoot,
   type GitHubInstallationRepositoryAccess,
 } from '@openslack/github';
 import { DeliveryError, DeliveryProbeCleanupError } from './errors.js';
@@ -33,7 +34,7 @@ export interface GitHubDeliveryProbeOptions {
 }
 
 export class GitHubDeliveryProbe {
-  private readonly tokenProvider: DeliveryTokenProvider;
+  private readonly tokenProvider?: DeliveryTokenProvider;
   private readonly gitPublisher: GitProbePublisher;
   private readonly repositoryInspector: NonNullable<
     GitHubDeliveryProbeOptions['repositoryInspector']
@@ -42,7 +43,7 @@ export class GitHubDeliveryProbe {
   private readonly uuid: () => string;
 
   constructor(options: GitHubDeliveryProbeOptions = {}) {
-    this.tokenProvider = options.tokenProvider ?? defaultTokenProvider();
+    this.tokenProvider = options.tokenProvider;
     this.gitPublisher = options.gitPublisher ?? new GitAskPassPublisher();
     this.repositoryInspector = options.repositoryInspector ?? inspectInstallationRepositoryAccess;
     this.now = options.now ?? (() => new Date());
@@ -162,7 +163,7 @@ export class GitHubDeliveryProbe {
         false,
       );
     }
-    const token = await this.acquireToken();
+    const token = await this.acquireToken(input.rootDir);
     const permissions = diagnoseDeliveryPermissions(token.permissions);
     assertDeliveryPermissions(
       permissions.filter((permission) => permission.capability === 'contents'),
@@ -188,9 +189,11 @@ export class GitHubDeliveryProbe {
     this.gitPublisher.deleteRemoteRef(transportInput);
   }
 
-  private async acquireToken(): Promise<DeliveryToken> {
+  private async acquireToken(rootDir: string): Promise<DeliveryToken> {
     try {
-      return await this.tokenProvider.acquire();
+      return await (
+        this.tokenProvider ?? defaultTokenProvider(resolveGitHubAppLocalStateRoot(rootDir))
+      ).acquire();
     } catch {
       throw new DeliveryError(
         'DELIVERY_AUTH_REQUIRED',
@@ -206,7 +209,7 @@ export class GitHubDeliveryProbe {
     repositoryAccess: GitHubInstallationRepositoryAccess & { accessible: true; complete: true };
   }> {
     validateProbeInput(input);
-    const token = await this.acquireToken();
+    const token = await this.acquireToken(input.rootDir);
     const permissions = diagnoseDeliveryPermissions(token.permissions, input.requireIssuesWrite);
     assertDeliveryPermissions(permissions);
     const repositoryAccess = await this.inspectRepository(token, input);
@@ -254,10 +257,10 @@ export class GitHubDeliveryProbe {
   }
 }
 
-function defaultTokenProvider(): DeliveryTokenProvider {
+function defaultTokenProvider(localStateRoot: string | undefined): DeliveryTokenProvider {
   return {
     async acquire() {
-      const token = await requireAppInstallationToken();
+      const token = await requireAppInstallationToken({ localStateRoot });
       return {
         value: token.token,
         expiresAt: token.expiresAt,

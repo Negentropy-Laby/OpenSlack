@@ -1,8 +1,8 @@
 import { Octokit } from '@octokit/rest';
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { getAppInstallationToken } from './auth.js';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { requireAppInstallationToken, type GitHubAppInstallationTokenOptions } from './auth.js';
 
 export type AuthMode = 'github_app_installation' | 'token' | 'dry_run';
 export type GitHubAuthPreference = 'auto' | 'app' | 'token' | 'dry-run';
@@ -21,6 +21,8 @@ export interface GitHubClientOptions {
   requireLive?: boolean;
   strictEvidence?: boolean;
   cwd?: string;
+  localStateRoot?: string;
+  credentialStore?: GitHubAppInstallationTokenOptions['credentialStore'];
 }
 
 export interface GitHubClient {
@@ -30,6 +32,7 @@ export interface GitHubClient {
   authMode: AuthMode;
   isDryRun: boolean;
   tokenExpiresAt?: string;
+  appSlug?: string;
 }
 
 export interface GitHubIdentity {
@@ -173,6 +176,67 @@ export function resolveGitHubRepoTarget(options: GitHubClientOptions = {}): GitH
   );
 }
 
+export function resolveGitHubAppLocalStateRoot(cwd: string = process.cwd()): string | undefined {
+  let current = resolve(cwd);
+  let workspaceRoot: string | undefined;
+  for (;;) {
+    if (existsSync(join(current, 'openslack.yaml'))) {
+      workspaceRoot = current;
+      break;
+    }
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  const workspaceLocalState = workspaceRoot ? join(workspaceRoot, '.openslack.local') : undefined;
+  if (workspaceLocalState && existsSync(join(workspaceLocalState, 'github-app.json'))) {
+    return workspaceLocalState;
+  }
+
+  try {
+    const commonGitDir = execFileSync(
+      'git',
+      ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+      {
+        cwd: workspaceRoot ?? resolve(cwd),
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      },
+    ).trim();
+    if (commonGitDir && workspaceRoot) {
+      const primaryRoot = dirname(resolve(commonGitDir));
+      const worktreeOutput = execFileSync('git', ['worktree', 'list', '--porcelain', '-z'], {
+        cwd: workspaceRoot,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const registered = new Set(
+        worktreeOutput
+          .split('\0')
+          .filter((field) => field.startsWith('worktree '))
+          .map((field) => normalizeRealPath(field.slice('worktree '.length))),
+      );
+      const currentPath = normalizeRealPath(workspaceRoot);
+      const primaryPath = normalizeRealPath(primaryRoot);
+      if (
+        registered.has(currentPath) &&
+        registered.has(primaryPath) &&
+        existsSync(join(primaryRoot, 'openslack.yaml'))
+      ) {
+        return join(primaryRoot, '.openslack.local');
+      }
+    }
+  } catch {
+    // A non-Git initialized workspace still owns its local state beside openslack.yaml.
+  }
+  return workspaceLocalState;
+}
+
+function normalizeRealPath(path: string): string {
+  const value = realpathSync.native(path);
+  return process.platform === 'win32' ? value.toLowerCase() : value;
+}
+
 export async function getClient(options: GitHubClientOptions = {}): Promise<GitHubClient> {
   const target = resolveGitHubRepoTarget(options);
   const owner = target.owner;
@@ -205,11 +269,22 @@ export async function getClient(options: GitHubClientOptions = {}): Promise<GitH
       };
     }
 
+    const localStateRoot =
+      options.localStateRoot ?? resolveGitHubAppLocalStateRoot(options.cwd ?? process.cwd());
+    const appConfigured = hasGitHubAppConfigurationIntent(localStateRoot);
     let appToken = null;
     try {
-      appToken = await getAppInstallationToken();
+      appToken = await requireAppInstallationToken({
+        localStateRoot,
+        credentialStore: options.credentialStore,
+      });
     } catch {
-      // JWT signing or API call failed — fall through to Tier 2 in auto mode.
+      if (auth === 'app' || appConfigured) {
+        throw new GitHubAuthRequiredError(
+          `AUTH_REQUIRED: configured GitHub App credentials are unavailable for ${owner}/${repo}.`,
+        );
+      }
+      // With no App configuration intent, auto mode retains the explicit dev PAT fallback.
     }
     if (appToken) {
       return {
@@ -219,6 +294,7 @@ export async function getClient(options: GitHubClientOptions = {}): Promise<GitH
         authMode: 'github_app_installation',
         isDryRun: false,
         tokenExpiresAt: appToken.expiresAt,
+        appSlug: appToken.appSlug,
       };
     }
 
@@ -226,7 +302,7 @@ export async function getClient(options: GitHubClientOptions = {}): Promise<GitH
       // App mode is identity-strict even when requireLive is false. Callers that
       // want a non-live client must request dry-run explicitly.
       throw new GitHubAuthRequiredError(
-        `AUTH_REQUIRED: GitHub App credentials are required for ${owner}/${repo}. Use scripts/openslack-bot.ps1 or set OPENSLACK_GITHUB_APP_* environment variables.`,
+        `AUTH_REQUIRED: GitHub App credentials are required for ${owner}/${repo}. Complete GitHub App onboarding or set OPENSLACK_GITHUB_APP_* environment variables.`,
       );
     }
   }
@@ -253,7 +329,7 @@ export async function getClient(options: GitHubClientOptions = {}): Promise<GitH
 
   if (options.requireLive) {
     throw new GitHubAuthRequiredError(
-      `AUTH_REQUIRED: live GitHub credentials are required for ${owner}/${repo}. Use scripts/openslack-bot.ps1, set GITHUB_TOKEN, or pass --dry-run.`,
+      `AUTH_REQUIRED: live GitHub credentials are required for ${owner}/${repo}. Complete GitHub App onboarding, configure OPENSLACK_GITHUB_APP_*, or select an explicit development token mode.`,
     );
   }
 
@@ -267,6 +343,15 @@ export async function getClient(options: GitHubClientOptions = {}): Promise<GitH
   };
 }
 
+function hasGitHubAppConfigurationIntent(localStateRoot: string | undefined): boolean {
+  return Boolean(
+    process.env.OPENSLACK_GITHUB_APP_ID ||
+    process.env.OPENSLACK_GITHUB_APP_INSTALLATION_ID ||
+    process.env.OPENSLACK_GITHUB_APP_PRIVATE_KEY ||
+    (localStateRoot && existsSync(join(localStateRoot, 'github-app.json'))),
+  );
+}
+
 export async function getAuthenticatedIdentity(
   options: GitHubClientOptions = {},
 ): Promise<GitHubIdentity> {
@@ -274,7 +359,7 @@ export async function getAuthenticatedIdentity(
 
   if (client.authMode === 'github_app_installation') {
     return {
-      login: process.env.OPENSLACK_GITHUB_APP_SLUG || 'openslack-github-app',
+      login: client.appSlug || process.env.OPENSLACK_GITHUB_APP_SLUG || 'openslack-github-app',
       type: 'github_app',
       authMode: client.authMode,
       isBot: true,

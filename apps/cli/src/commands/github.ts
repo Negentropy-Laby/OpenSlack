@@ -2,7 +2,13 @@ import { Command } from 'commander';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
-import { defaultGitHubAppManifestRefs, getClient, queryReadyItems } from '@openslack/github';
+import {
+  bindGitHubAppInstallation,
+  defaultGitHubAppManifestRefs,
+  getClient,
+  queryReadyItems,
+  readGitHubAppLocalConfig,
+} from '@openslack/github';
 import { recordEvent as _recordEvent } from '@openslack/collaboration';
 import type { RecordEventFn } from '@openslack/github';
 import { createDefaultCredentialStore, type CredentialStore } from '@openslack/credentials';
@@ -186,6 +192,39 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
       }
     });
 
+  app
+    .command('bind-installation')
+    .description('Bind a completed App Manifest setup to its installation ID')
+    .requiredOption('--installation-id <id>', 'GitHub App installation ID')
+    .option('--apply', 'Write the non-secret installation ID to local config')
+    .action((options) => {
+      try {
+        const root = findRepoRoot();
+        const context = resolveWorkspaceContext({ workspaceRoot: root });
+        const installationId = String(options.installationId);
+        const config = readGitHubAppLocalConfig(context.localStateRoot);
+        if (!config) throw new Error('GitHub App local configuration is missing.');
+        console.log('GitHub App installation binding preview');
+        console.log(`- App: ${config.appSlug} (${config.appId})`);
+        console.log(`- Installation ID: ${installationId}`);
+        if (!options.apply) {
+          console.log('No local config was changed. Re-run with --apply after verification.');
+          return;
+        }
+        const result = bindGitHubAppInstallation(context.localStateRoot, installationId);
+        console.log(
+          result.changed
+            ? 'GitHub App installation binding saved.'
+            : 'GitHub App installation binding already matches.',
+        );
+      } catch (error) {
+        console.error(
+          error instanceof Error ? error.message : 'GitHub App installation binding failed.',
+        );
+        process.exitCode = 1;
+      }
+    });
+
   cmd
     .command('doctor')
     .description('Check GitHub setup readiness')
@@ -196,7 +235,10 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
       // Auth tier check
       let client;
       try {
-        client = await getClient();
+        client = await getClient({
+          cwd: root,
+          credentialStore: dependencies.credentialStore,
+        });
       } catch {
         client = { authMode: 'dry_run' as const, isDryRun: true, tokenExpiresAt: undefined };
       }
@@ -211,6 +253,32 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
         passed: client.authMode !== 'dry_run',
         detail: `${authTier}${client?.tokenExpiresAt ? ` (expires: ${client.tokenExpiresAt})` : ''}`,
       });
+
+      try {
+        const context = resolveWorkspaceContext({ workspaceRoot: root });
+        const localConfig = readGitHubAppLocalConfig(context.localStateRoot);
+        if (localConfig) {
+          checks.push({
+            name: 'GitHub App local config',
+            passed: true,
+            detail: `${localConfig.appSlug} (${localConfig.appId}); private key reference configured`,
+          });
+          checks.push({
+            name: 'Local installation binding',
+            passed: localConfig.installationId !== null,
+            detail:
+              localConfig.installationId === null
+                ? 'Not bound — run github app bind-installation after installing the App'
+                : `Installation ${localConfig.installationId}`,
+          });
+        }
+      } catch {
+        checks.push({
+          name: 'GitHub App local config',
+          passed: false,
+          detail: 'Invalid local App metadata; no credential value was read',
+        });
+      }
 
       const appId = process.env.OPENSLACK_GITHUB_APP_ID;
       const installId = process.env.OPENSLACK_GITHUB_APP_INSTALLATION_ID;

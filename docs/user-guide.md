@@ -326,7 +326,16 @@ distinct, workspace-derived `keychain:` references using create-only writes.
 Preflight refuses an unavailable backend, an existing config, or an occupied
 reference before GitHub creates the App. No OAuth/PAT token or plaintext secret
 file is accepted. After creation, install the App on the selected repository
-and run `openslack github doctor`.
+and bind the installation ID before running doctor:
+
+```bash
+openslack github app bind-installation --installation-id <id>
+openslack github app bind-installation --installation-id <id> --apply
+openslack github doctor
+```
+
+The binding command changes only non-secret local metadata, is preview-first,
+is idempotent for the same ID, and refuses to replace a different installation.
 
 If the App already exists, use the manual import flow below.
 
@@ -347,6 +356,20 @@ explicit apply, passed directly to the selected credential backend, zeroed from
 the import buffer, and never written to workspace config. The local config stores
 only the `keychain:` reference. `--delete-source` is optional and best-effort;
 failure produces a manual cleanup warning rather than claiming secure deletion.
+
+After import, ordinary installed commands automatically use that non-secret
+local config. Confirm the selected repository and effective installation
+permissions before the first write:
+
+```bash
+openslack delivery doctor --repo acme/project --require-issues-write
+openslack delivery probe --repo acme/project
+```
+
+The probe is preview-only until `--apply` is supplied. A complete
+`OPENSLACK_GITHUB_APP_*` environment configuration remains supported and takes
+precedence; partial environment configuration fails closed instead of mixing
+environment IDs with a keychain private key.
 
 The default writable backend is the pinned native `@napi-rs/keyring` adapter:
 Windows uses Credential Manager and Linux uses Secret Service. Missing native
