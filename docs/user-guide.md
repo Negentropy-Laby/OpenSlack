@@ -316,9 +316,12 @@ the import buffer, and never written to workspace config. The local config store
 only the `keychain:` reference. `--delete-source` is optional and best-effort;
 failure produces a manual cleanup warning rather than claiming secure deletion.
 
-The repository currently ships the credential contract plus an environment
-backend; the production Windows/Linux keychain backend remains fail-closed until
-the P0 packaging matrix selects and verifies a distributable implementation.
+The default writable backend is the pinned native `@napi-rs/keyring` adapter:
+Windows uses Credential Manager and Linux uses Secret Service. Missing native
+bindings or an unavailable OS service fail closed before external App creation;
+CI/headless setups may continue to use read-only `env:` references. OpenSlack
+does not fall back to plaintext, encrypted files, PowerShell, or `secret-tool`.
+See `docs/developer/keychain-packaging.md` for the artifact contract.
 
 | Command | Purpose |
 |---------|---------|

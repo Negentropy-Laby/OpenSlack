@@ -107,7 +107,7 @@ OpenSlack/
 ├── packages/                # Active packages; see docs/status/current.md
 │   ├── kernel/              # Zone classifier, merge decision, policy engine
 │   ├── workspace/           # Validation, indexing, schemas
-│   ├── credentials/         # Typed env/keychain references and fail-closed backends
+│   ├── credentials/         # Typed env/native OS keychain references and fail-closed backends
 │   ├── core/                # ClaimBroker with file-locked persistence
 │   ├── runtime/             # Self-evolution ops, golden evals, agent tick, worktree, PR proposal
 │   ├── github/              # App auth, Issues task loop, task creation, claims, lifecycle, repair
