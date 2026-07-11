@@ -624,10 +624,19 @@ step. Ready PRs display a Confirm merge button.
 
 | Command | Purpose |
 |---------|---------|
-| `openslack status` | Product dashboard with modules and GitHub ops |
+| `openslack status` | Product dashboard with lifecycle, maturity, operator configuration, blockers, evidence, and GitHub ops |
+| `openslack status --format plain` | Non-interactive status renderer for logs and CI |
+| `openslack status --format tui` | Interactive status renderer when the terminal supports it |
 | `openslack status generate` | Generate `docs/status/current.md` |
 | `openslack status verify` | Verify consistency across docs |
 | `openslack doctor` | Multi-module health check |
+
+Module lifecycle and delivery maturity are independent. `ACTIVE` means the
+module belongs to the current product; it does not imply live verification.
+`LOCAL_READY` is intentionally shown as a warning, while only
+`LIVE_VERIFIED` and `PRODUCTION_READY` may appear as passing maturity. See
+[`developer/module-maturity.md`](developer/module-maturity.md) for evidence and
+compatibility rules.
 
 ## Collaboration Layer
 

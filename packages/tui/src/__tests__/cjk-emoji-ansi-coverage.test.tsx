@@ -406,7 +406,6 @@ describe('CJK/emoji/ANSI coverage - HomeView', () => {
     expect(stripped).toContain('시스템')
   })
 })
-
 describe('CJK/emoji/ANSI coverage - DoctorView', () => {
   it('renders CJK labels and long URLs without exceeding column width', async () => {
     const model = createCjkDoctorViewModel()
@@ -809,13 +808,15 @@ function createCjkStatusViewModel(): StatusViewModel {
   return {
     title: `${CJK_CHINESE_LABEL} — OpenSlack Status ${EMOJI_TITLE}`,
     version: `v0.1 ${CJK_JAPANESE_LABEL}`,
+    mode: 'SOURCE_CHECKOUT',
     commit: `${ANSI_BOLD}abc1234`,
     commitSubject: `${CJK_KOREAN_LABEL} release ${EMOJI_TITLE} ${ANSI_COLORED}`,
     modules: [
-      { name: `${CJK_CHINESE_LABEL} Kernel ${EMOJI_TITLE}`, status: `${ANSI_BOLD}ACTIVE`, tests: 100 },
-      { name: `${CJK_JAPANESE_LABEL} GitHub ${ANSI_COLORED}`, status: 'ACTIVE', tests: 80 },
-      { name: `${CJK_KOREAN_LABEL} PRMS ${CJK_WITH_ANSI}`, status: 'ACTIVE', tests: null },
+      cjkStatusModule(`${CJK_CHINESE_LABEL} Kernel ${EMOJI_TITLE}`, 100, `${ANSI_BOLD}ACTIVE`),
+      cjkStatusModule(`${CJK_JAPANESE_LABEL} GitHub ${ANSI_COLORED}`, 80),
+      cjkStatusModule(`${CJK_KOREAN_LABEL} PRMS ${CJK_WITH_ANSI}`, null),
     ],
+    deferredWork: [],
     gitHub: {
       available: true,
       tasksReady: 3,
@@ -830,14 +831,45 @@ function createCjkStatusViewModel(): StatusViewModel {
       totalFiles: 42,
     },
     recommendations: [
-      { title: `${CJK_JAPANESE_LABEL} review PR #42 ${EMOJI_TITLE}`, action: `${CJK_KOREAN_LABEL} merge ${LONG_URL}`, command: `${ANSI_BOLD} openslack pr review 42 ${ANSI_COLORED}` },
-      { title: `${CJK_CHINESE_LABEL} fix CI ${CJK_WITH_ANSI}`, action: MIXED_CONTENT, command: null },
+      {
+        title: `${CJK_JAPANESE_LABEL} review PR #42 ${EMOJI_TITLE}`,
+        action: `${CJK_KOREAN_LABEL} merge ${LONG_URL}`,
+        command: `${ANSI_BOLD} openslack pr review 42 ${ANSI_COLORED}`,
+      },
+      {
+        title: `${CJK_CHINESE_LABEL} fix CI ${CJK_WITH_ANSI}`,
+        action: MIXED_CONTENT,
+        command: null,
+      },
     ],
     attentionItems: [
-      { type: `${ANSI_BOLD}CI ${CJK_JAPANESE_LABEL}`, description: `${CJK_KOREAN_LABEL} build failing ${EMOJI_TITLE} ${LONG_URL}`, action: `${ANSI_COLORED} re-run ${CJK_CHINESE_LABEL}`, priority: 'high' },
-      { type: `${CJK_WITH_ANSI}approval`, description: `${CJK_CHINESE_LABEL} pending ${OSC_HYPERLINK}`, action: MIXED_CONTENT, priority: 'medium' },
+      {
+        type: `${ANSI_BOLD}CI ${CJK_JAPANESE_LABEL}`,
+        description: `${CJK_KOREAN_LABEL} build failing ${EMOJI_TITLE} ${LONG_URL}`,
+        action: `${ANSI_COLORED} re-run ${CJK_CHINESE_LABEL}`,
+        priority: 'high',
+      },
+      {
+        type: `${CJK_WITH_ANSI}approval`,
+        description: `${CJK_CHINESE_LABEL} pending ${OSC_HYPERLINK}`,
+        action: MIXED_CONTENT,
+        priority: 'medium',
+      },
     ],
     nextAction: `${MIXED_CONTENT} ${CJK_JAPANESE_LABEL} ${EMOJI_TITLE}`,
+  }
+}
+
+function cjkStatusModule(name: string, tests: number | null, lifecycle = 'ACTIVE') {
+  return {
+    name,
+    lifecycle,
+    maturity: 'LOCAL_READY',
+    operatorConfigured: false,
+    externalBlockers: [`${CJK_CHINESE_LABEL} live smoke pending`],
+    evidenceRefs: ['test:cjk-status'],
+    tests,
+    components: [],
   }
 }
 

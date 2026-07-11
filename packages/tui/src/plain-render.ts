@@ -33,7 +33,6 @@ function wrap(text: string, width: number = MAX_WIDTH): string {
   if (visibleWidth(text) <= width) return text
   return wrapVisible(text, width)
 }
-
 /** Wrap but indent subsequent lines by `indent` spaces. */
 function wrapIndent(text: string, indent: number, width: number = MAX_WIDTH): string {
   const inner = width - indent
@@ -846,6 +845,7 @@ export function renderPlainStatus(vm: StatusViewModel, width: number = MAX_WIDTH
   lines.push(wrap(vm.title, width))
   lines.push(separator('=', width))
   lines.push(wrap(`Version: ${vm.version}`, width))
+  lines.push(wrap(`Mode: ${vm.mode}`, width))
   lines.push(wrap(`Commit: ${vm.commit}`, width))
   lines.push(wrap(vm.commitSubject, width))
   lines.push('')
@@ -855,8 +855,47 @@ export function renderPlainStatus(vm: StatusViewModel, width: number = MAX_WIDTH
     lines.push(`Modules (${vm.modules.length}):`)
     for (const m of vm.modules) {
       const testInfo = m.tests !== null ? ` (${m.tests} tests)` : ''
-      const label = m.status === 'ACTIVE' ? '[PASS]' : '[INFO]'
-      lines.push(wrap(`  ${label} ${m.name}${testInfo}: ${m.status}`, width))
+      const label =
+        m.maturity === 'LIVE_VERIFIED' || m.maturity === 'PRODUCTION_READY'
+          ? '[PASS]'
+          : m.maturity === 'LOCAL_READY'
+            ? '[WARN]'
+            : '[INFO]'
+      lines.push(
+        wrap(
+          `  ${label} ${m.name}${testInfo}: lifecycle ${m.lifecycle}; maturity ${m.maturity}; declared operator baseline ${m.operatorConfigured ? 'CONFIGURED' : 'NOT_CONFIGURED'}`,
+          width,
+        ),
+      )
+      lines.push(wrapIndent(`    Blockers: ${m.externalBlockers.join(', ') || 'none'}`, 4, width))
+      lines.push(wrapIndent(`    Evidence: ${m.evidenceRefs.join(', ') || 'none'}`, 4, width))
+      for (const component of m.components) {
+        const componentLabel =
+          component.maturity === 'LIVE_VERIFIED' || component.maturity === 'PRODUCTION_READY'
+            ? '[PASS]'
+            : component.maturity === 'LOCAL_READY'
+              ? '[WARN]'
+              : '[INFO]'
+        lines.push(
+          wrap(
+            `    ${componentLabel} Component ${component.name}: maturity ${component.maturity}; declared operator baseline ${component.operatorConfigured ? 'CONFIGURED' : 'NOT_CONFIGURED'}`,
+            width,
+          ),
+        )
+      }
+    }
+    lines.push('')
+  }
+
+  if (vm.deferredWork.length > 0) {
+    lines.push('Deferred (excluded from standalone):')
+    for (const item of vm.deferredWork) {
+      lines.push(
+        wrap(
+          `  [INFO] ${item.name}: ${item.maturity}${item.branch ? `; ${item.branch}` : ''}`,
+          width,
+        ),
+      )
     }
     lines.push('')
   }
@@ -864,15 +903,30 @@ export function renderPlainStatus(vm: StatusViewModel, width: number = MAX_WIDTH
   // GitHub
   lines.push('GitHub:')
   if (vm.gitHub.available) {
-    lines.push(wrap(`  Tasks ready: ${vm.gitHub.tasksReady}  claimed: ${vm.gitHub.tasksClaimed}  blocked: ${vm.gitHub.tasksBlocked}`, width))
-    lines.push(wrap(`  PRs open: ${vm.gitHub.prsOpen}  blocked: ${vm.gitHub.prsBlocked}  ready: ${vm.gitHub.prsReady}`, width))
+    lines.push(
+      wrap(
+        `  Tasks ready: ${vm.gitHub.tasksReady}  claimed: ${vm.gitHub.tasksClaimed}  blocked: ${vm.gitHub.tasksBlocked}`,
+        width,
+      ),
+    )
+    lines.push(
+      wrap(
+        `  PRs open: ${vm.gitHub.prsOpen}  blocked: ${vm.gitHub.prsBlocked}  ready: ${vm.gitHub.prsReady}`,
+        width,
+      ),
+    )
   } else {
     lines.push('  unavailable')
   }
   lines.push('')
 
   // Test Suite
-  lines.push(wrap(`Test Suite: ${vm.testSuite.totalTests} tests across ${vm.testSuite.totalFiles} files`, width))
+  lines.push(
+    wrap(
+      `Test Suite: ${vm.testSuite.totalTests} tests across ${vm.testSuite.totalFiles} files`,
+      width,
+    ),
+  )
   lines.push('')
 
   // Recommendations
@@ -890,8 +944,11 @@ export function renderPlainStatus(vm: StatusViewModel, width: number = MAX_WIDTH
   if (vm.attentionItems.length > 0) {
     lines.push('Needs Attention:')
     for (const a of vm.attentionItems) {
-      const prioLabel = a.priority === 'high' ? '[FAIL]' : a.priority === 'medium' ? '[WARN]' : '[INFO]'
-      lines.push(wrap(`  ${prioLabel} [${a.priority.toUpperCase()}] ${a.type}: ${a.description}`, width))
+      const prioLabel =
+        a.priority === 'high' ? '[FAIL]' : a.priority === 'medium' ? '[WARN]' : '[INFO]'
+      lines.push(
+        wrap(`  ${prioLabel} [${a.priority.toUpperCase()}] ${a.type}: ${a.description}`, width),
+      )
       lines.push(wrapIndent(`    ${a.action}`, 4, width))
     }
     lines.push('')

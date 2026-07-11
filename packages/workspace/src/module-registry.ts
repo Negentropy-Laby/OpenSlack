@@ -1,11 +1,48 @@
 import { readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { isAbsolute, join, normalize } from 'node:path';
 import { parse as parseYaml } from 'yaml';
+import type { WorkspaceContext } from './workspace-context.js';
+
+export type ModuleLifecycleStatus = 'planned' | 'early' | 'active' | 'retired';
+export type ModuleMaturity =
+  | 'planned'
+  | 'implemented'
+  | 'local_ready'
+  | 'live_verified'
+  | 'production_ready';
+
+export interface ProductComponent {
+  id: string;
+  name: string;
+  maturity: ModuleMaturity;
+  operatorConfigured: boolean;
+  externalBlockers: string[];
+  evidenceRefs: string[];
+}
 
 export interface ProductModule {
   id: string;
   name: string;
-  status: string;
+  status: ModuleLifecycleStatus;
+  maturity: ModuleMaturity;
+  operatorConfigured: boolean;
+  externalBlockers: string[];
+  evidenceRefs: string[];
+  phase: string;
+  cli?: string[];
+  packages?: string[];
+  tests?: number;
+  test_files?: number;
+  golden_evals?: number;
+  notes?: string;
+  components?: ProductComponent[];
+}
+
+export interface ProductModuleV1 {
+  id: string;
+  name: string;
+  status: ModuleLifecycleStatus;
   phase: string;
   cli?: string[];
   packages?: string[];
@@ -15,11 +52,37 @@ export interface ProductModule {
   notes?: string;
 }
 
-export interface ModulesRegistry {
-  schema: string;
+export interface DeferredWorkItem {
+  id: string;
+  name: string;
+  status: 'deferred';
+  maturity: ModuleMaturity;
+  countedTowardStandalone: false;
+  branch?: string;
+  evidenceRefs: string[];
+  notes?: string;
+}
+
+interface RegistryCounts {
   vitest_tests?: number;
   vitest_files?: number;
+}
+
+export interface ModulesRegistryV1 extends RegistryCounts {
+  schema: 'openslack.modules.v1';
+  modules: ProductModuleV1[];
+}
+
+export interface ModulesRegistryV2 extends RegistryCounts {
+  schema: 'openslack.modules.v2';
   modules: ProductModule[];
+  deferredWork?: DeferredWorkItem[];
+}
+
+export type RawModulesRegistry = ModulesRegistryV1 | ModulesRegistryV2;
+
+export interface ModulesRegistry extends ModulesRegistryV2 {
+  sourceSchema?: 'openslack.modules.v1' | 'openslack.modules.v2';
 }
 
 export interface RegistryValidationResult {
@@ -28,62 +91,216 @@ export interface RegistryValidationResult {
   registry?: ModulesRegistry;
 }
 
-const REQUIRED_FIELDS = ['id', 'name', 'status', 'phase'];
+const REQUIRED_FIELDS = [
+  'id',
+  'name',
+  'status',
+  'maturity',
+  'operatorConfigured',
+  'externalBlockers',
+  'evidenceRefs',
+  'phase',
+] as const;
+const LIFECYCLE_VALUES = new Set<ModuleLifecycleStatus>(['planned', 'early', 'active', 'retired']);
+const MATURITY_VALUES = new Set<ModuleMaturity>([
+  'planned',
+  'implemented',
+  'local_ready',
+  'live_verified',
+  'production_ready',
+]);
+const MATURITY_RANK: Record<ModuleMaturity, number> = {
+  planned: 0,
+  implemented: 1,
+  local_ready: 2,
+  live_verified: 3,
+  production_ready: 4,
+};
 
 export function readModules(rootPath: string): ModulesRegistry {
   const yamlPath = join(rootPath, '.openslack', 'modules.yaml');
+  return readModulesFile(yamlPath);
+}
+
+export function readProductModules(
+  context: Pick<WorkspaceContext, 'productHome' | 'sourceCheckout' | 'workspaceRoot'>,
+): ModulesRegistry {
+  const yamlPath = context.sourceCheckout
+    ? join(context.workspaceRoot, '.openslack', 'modules.yaml')
+    : join(context.productHome, 'assets', 'product', 'modules.yaml');
+  return readModulesFile(yamlPath);
+}
+
+function readModulesFile(yamlPath: string): ModulesRegistry {
   if (!existsSync(yamlPath)) {
     throw new Error(`modules.yaml not found at ${yamlPath}`);
   }
   const raw = readFileSync(yamlPath, 'utf-8');
-  const parsed = parseYaml(raw) as ModulesRegistry;
+  const parsed = parseYaml(raw) as unknown;
   if (!parsed || typeof parsed !== 'object') {
     throw new Error('modules.yaml is empty or invalid');
   }
-  if (parsed.schema !== 'openslack.modules.v1') {
-    throw new Error(`Expected schema "openslack.modules.v1", got "${String(parsed.schema)}"`);
+  const schema = (parsed as { schema?: unknown }).schema;
+  if (schema !== 'openslack.modules.v1' && schema !== 'openslack.modules.v2') {
+    throw new Error(
+      `Expected schema "openslack.modules.v1" or "openslack.modules.v2", got "${String(schema)}"`,
+    );
   }
-  if (!Array.isArray(parsed.modules)) {
+  const registry = parsed as RawModulesRegistry;
+  if (!Array.isArray(registry.modules)) {
     throw new Error('modules.yaml must contain a "modules" array');
   }
-  return parsed;
+  return { ...migrateModulesRegistry(registry), sourceSchema: registry.schema };
 }
 
-export function validateModules(registry: ModulesRegistry): RegistryValidationResult {
+export interface RegistryValidationOptions {
+  rootPath?: string;
+}
+
+export function validateModules(
+  registry: RawModulesRegistry,
+  options: RegistryValidationOptions = {},
+): RegistryValidationResult {
+  const schema = (registry as { schema?: unknown }).schema;
+  if (schema !== 'openslack.modules.v1' && schema !== 'openslack.modules.v2') {
+    return {
+      valid: false,
+      errors: [`Unsupported registry schema: ${String(schema)}`],
+    };
+  }
+  const normalized = migrateModulesRegistry(registry);
   const errors: string[] = [];
 
-  for (const mod of registry.modules) {
+  if (normalized.schema !== 'openslack.modules.v2') {
+    errors.push(`Unsupported normalized registry schema: ${normalized.schema}`);
+  }
+  validateCount(normalized.vitest_tests, 'vitest_tests', errors);
+  validateCount(normalized.vitest_files, 'vitest_files', errors);
+
+  for (const mod of normalized.modules) {
     if (!mod || typeof mod !== 'object') {
       errors.push('Module entry is not an object');
       continue;
     }
     for (const field of REQUIRED_FIELDS) {
-      if (!mod[field as keyof ProductModule]) {
+      if (mod[field] === undefined || mod[field] === null || mod[field] === '') {
         errors.push(`Module "${mod.id || 'unknown'}" missing required field: ${field}`);
       }
     }
-    if (mod.tests !== undefined && typeof mod.tests !== 'number') {
-      errors.push(`Module "${mod.id}" tests must be a number`);
+    if (!LIFECYCLE_VALUES.has(mod.status)) {
+      errors.push(`Module "${mod.id}" has invalid lifecycle status: ${String(mod.status)}`);
     }
-    if (mod.test_files !== undefined && typeof mod.test_files !== 'number') {
-      errors.push(`Module "${mod.id}" test_files must be a number`);
+    validateMaturityOwner(mod, `Module "${mod.id}"`, errors, options, mod.id);
+    validateCount(mod.tests, `Module "${mod.id}" tests`, errors);
+    validateCount(mod.test_files, `Module "${mod.id}" test_files`, errors);
+    validateCount(mod.golden_evals, `Module "${mod.id}" golden_evals`, errors);
+    if (mod.components !== undefined && !Array.isArray(mod.components)) {
+      errors.push(`Module "${mod.id}" components must be an array`);
+    } else if (mod.components) {
+      validateUniqueIds(mod.components, `Module "${mod.id}" component`, errors);
+      for (const component of mod.components) {
+        if (!component || typeof component !== 'object') {
+          errors.push(`Module "${mod.id}" component is not an object`);
+          continue;
+        }
+        if (!component.id || !component.name) {
+          errors.push(`Module "${mod.id}" component must have id and name`);
+          continue;
+        }
+        validateMaturityOwner(
+          component,
+          `Component "${component.id}"`,
+          errors,
+          options,
+          component.id,
+        );
+        if (
+          MATURITY_VALUES.has(mod.maturity) &&
+          MATURITY_VALUES.has(component.maturity) &&
+          MATURITY_RANK[mod.maturity] > MATURITY_RANK[component.maturity]
+        ) {
+          errors.push(
+            `Module "${mod.id}" maturity ${mod.maturity} exceeds component "${component.id}" maturity ${component.maturity}`,
+          );
+        }
+      }
     }
   }
 
   // Check for duplicate IDs
-  const ids = registry.modules.map((m) => m.id);
-  const seen = new Set<string>();
-  for (const id of ids) {
-    if (seen.has(id)) {
-      errors.push(`Duplicate module id: ${id}`);
+  validateUniqueIds(normalized.modules, 'module', errors);
+
+  if (normalized.deferredWork !== undefined && !Array.isArray(normalized.deferredWork)) {
+    errors.push('deferredWork must be an array');
+  } else if (normalized.deferredWork) {
+    validateUniqueIds(normalized.deferredWork, 'deferred work', errors);
+    for (const item of normalized.deferredWork) {
+      if (!item || typeof item !== 'object') {
+        errors.push('Deferred work entry is not an object');
+        continue;
+      }
+      if (!item.id || !item.name) {
+        errors.push('Deferred work entries must have id and name');
+      }
+      if (item.status !== 'deferred' || item.countedTowardStandalone !== false) {
+        errors.push(
+          `Deferred work "${item.id}" must remain deferred and excluded from standalone completion`,
+        );
+      }
+      if (!MATURITY_VALUES.has(item.maturity)) {
+        errors.push(`Deferred work "${item.id}" has invalid maturity: ${String(item.maturity)}`);
+      }
+      if (
+        MATURITY_VALUES.has(item.maturity) &&
+        MATURITY_RANK[item.maturity] > MATURITY_RANK.local_ready
+      ) {
+        errors.push(`Deferred work "${item.id}" cannot claim live or production maturity`);
+      }
+      if (!isStringArray(item.evidenceRefs)) {
+        errors.push(`Deferred work "${item.id}" evidenceRefs must be non-empty strings`);
+      } else {
+        for (const reference of item.evidenceRefs) {
+          validateEvidenceReference(
+            reference,
+            `Deferred work "${item.id}"`,
+            errors,
+            options.rootPath,
+          );
+        }
+        const branchEvidence = item.evidenceRefs
+          .filter((reference) => reference.startsWith('branch:'))
+          .map((reference) => reference.slice('branch:'.length));
+        if (branchEvidence.length > 0 && (!item.branch || !branchEvidence.includes(item.branch))) {
+          errors.push(`Deferred work "${item.id}" branch evidence must match its branch field`);
+        }
+      }
     }
-    seen.add(id);
   }
 
   return {
     valid: errors.length === 0,
     errors,
-    registry: errors.length === 0 ? registry : undefined,
+    registry: errors.length === 0 ? normalized : undefined,
+  };
+}
+
+export function migrateModulesRegistry(registry: RawModulesRegistry): ModulesRegistry {
+  if (registry.schema === 'openslack.modules.v2') return registry;
+  if ((registry as { schema?: unknown }).schema !== 'openslack.modules.v1') {
+    throw new Error(
+      `Unsupported registry schema: ${String((registry as { schema?: unknown }).schema)}`,
+    );
+  }
+  return {
+    ...registry,
+    schema: 'openslack.modules.v2',
+    modules: registry.modules.map((mod) => ({
+      ...mod,
+      maturity: 'planned',
+      operatorConfigured: false,
+      externalBlockers: ['maturity_evidence_not_audited'],
+      evidenceRefs: [],
+    })),
   };
 }
 
@@ -97,4 +314,242 @@ export function getTotalTests(registry: ModulesRegistry): number {
 
 export function getTotalTestFiles(registry: ModulesRegistry): number {
   return registry.modules.reduce((sum, m) => sum + (m.test_files || 0), 0);
+}
+
+interface MaturityOwner {
+  maturity: ModuleMaturity;
+  operatorConfigured: boolean;
+  externalBlockers: string[];
+  evidenceRefs: string[];
+}
+
+function validateMaturityOwner(
+  owner: MaturityOwner,
+  label: string,
+  errors: string[],
+  options: RegistryValidationOptions,
+  ownerId: string,
+): void {
+  if (!MATURITY_VALUES.has(owner.maturity)) {
+    errors.push(`${label} has invalid maturity: ${String(owner.maturity)}`);
+  }
+  if (typeof owner.operatorConfigured !== 'boolean') {
+    errors.push(`${label} operatorConfigured must be a boolean`);
+  }
+  if (!isStringArray(owner.externalBlockers)) {
+    errors.push(`${label} externalBlockers must be non-empty strings`);
+  }
+  if (!isStringArray(owner.evidenceRefs)) {
+    errors.push(`${label} evidenceRefs must be non-empty strings`);
+  }
+  const evidenceRefs = Array.isArray(owner.evidenceRefs) ? owner.evidenceRefs : [];
+  const externalBlockers = Array.isArray(owner.externalBlockers) ? owner.externalBlockers : [];
+  for (const reference of evidenceRefs) {
+    validateEvidenceReference(reference, label, errors, options.rootPath);
+  }
+  if (owner.maturity !== 'planned' && evidenceRefs.length === 0) {
+    errors.push(`${label} cannot claim ${owner.maturity} without evidenceRefs`);
+  }
+  if (
+    owner.maturity !== 'planned' &&
+    !evidenceRefs.some((reference) => /^(commit|test|repo):/.test(reference))
+  ) {
+    errors.push(`${label} cannot claim ${owner.maturity} from branch metadata alone`);
+  }
+  if (
+    (owner.maturity === 'live_verified' || owner.maturity === 'production_ready') &&
+    !evidenceRefs.some((reference) => reference.startsWith('commit:'))
+  ) {
+    errors.push(`${label} cannot claim ${owner.maturity} without committed evidence`);
+  }
+  if (owner.maturity === 'live_verified' || owner.maturity === 'production_ready') {
+    if (!evidenceRefs.some(isLiveEvidenceReference)) {
+      errors.push(`${label} cannot claim ${owner.maturity} without structured live evidence`);
+    }
+    if (options.rootPath) {
+      validateEvidencePathsAtDeclaredCommits(evidenceRefs, label, errors, options.rootPath);
+      validateStructuredLiveEvidence(ownerId, evidenceRefs, label, errors, options.rootPath);
+    }
+  }
+  if (
+    owner.maturity === 'production_ready' &&
+    (!owner.operatorConfigured || externalBlockers.length > 0)
+  ) {
+    errors.push(`${label} cannot claim production_ready while unconfigured or externally blocked`);
+  }
+}
+
+function validateEvidenceReference(
+  reference: string,
+  label: string,
+  errors: string[],
+  rootPath?: string,
+): void {
+  const [kind, value] = reference.split(/:(.*)/s, 2);
+  if (!value || !['commit', 'test', 'repo', 'branch'].includes(kind)) {
+    errors.push(`${label} has unsupported evidence reference: ${reference}`);
+    return;
+  }
+  if (kind === 'commit') {
+    if (!/^[a-f0-9]{7,40}$/i.test(value)) {
+      errors.push(`${label} has invalid commit evidence reference: ${reference}`);
+      return;
+    }
+    if (rootPath) {
+      try {
+        execFileSync('git', ['cat-file', '-e', `${value}^{commit}`], {
+          cwd: rootPath,
+          stdio: 'ignore',
+        });
+        execFileSync('git', ['merge-base', '--is-ancestor', value, 'HEAD'], {
+          cwd: rootPath,
+          stdio: 'ignore',
+        });
+      } catch {
+        errors.push(`${label} commit evidence is not an ancestor of current HEAD: ${reference}`);
+      }
+    }
+    return;
+  }
+  if (kind === 'branch') {
+    if (!/^[A-Za-z0-9._/-]+$/.test(value) || value.includes('..')) {
+      errors.push(`${label} has invalid branch evidence reference: ${reference}`);
+    }
+    return;
+  }
+  const normalized = normalize(value);
+  if (
+    isAbsolute(value) ||
+    normalized === '..' ||
+    normalized.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`)
+  ) {
+    errors.push(`${label} has unsafe repository evidence path: ${reference}`);
+    return;
+  }
+  if (rootPath && !existsSync(join(rootPath, normalized))) {
+    errors.push(`${label} repository evidence path is missing: ${reference}`);
+    return;
+  }
+  if (rootPath) {
+    try {
+      const tracked = execFileSync('git', ['ls-files', '--', normalized], {
+        cwd: rootPath,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
+      if (!tracked) throw new Error('untracked');
+    } catch {
+      errors.push(`${label} repository evidence is not committed: ${reference}`);
+    }
+  }
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.every((item) => typeof item === 'string' && item.trim().length > 0)
+  );
+}
+
+function validateCount(value: unknown, label: string, errors: string[]): void {
+  if (value !== undefined && (!Number.isInteger(value) || Number(value) < 0)) {
+    errors.push(`${label} must be a non-negative integer`);
+  }
+}
+
+function validateUniqueIds(items: unknown[], label: string, errors: string[]): void {
+  const seen = new Set<string>();
+  for (const item of items) {
+    if (!item || typeof item !== 'object') continue;
+    const id = (item as { id?: unknown }).id;
+    if (typeof id !== 'string' || id.length === 0) continue;
+    if (seen.has(id)) errors.push(`Duplicate ${label} id: ${id}`);
+    seen.add(id);
+  }
+}
+
+function isLiveEvidenceReference(reference: string): boolean {
+  return reference.startsWith('repo:.openslack/evidence/live/') && reference.endsWith('.json');
+}
+
+function validateEvidencePathsAtDeclaredCommits(
+  evidenceRefs: string[],
+  label: string,
+  errors: string[],
+  rootPath: string,
+): void {
+  const commits = evidenceRefs
+    .filter((reference) => reference.startsWith('commit:'))
+    .map((reference) => reference.slice('commit:'.length));
+  for (const reference of evidenceRefs.filter((item) => /^(test|repo):/.test(item))) {
+    const path = normalize(reference.slice(reference.indexOf(':') + 1));
+    const committed = commits.some((commit) => {
+      try {
+        execFileSync('git', ['cat-file', '-e', `${commit}:${path}`], {
+          cwd: rootPath,
+          stdio: 'ignore',
+        });
+        return true;
+      } catch {
+        return false;
+      }
+    });
+    if (!committed) {
+      errors.push(`${label} evidence path is not present at a declared commit: ${reference}`);
+    }
+  }
+}
+
+function validateStructuredLiveEvidence(
+  ownerId: string,
+  evidenceRefs: string[],
+  label: string,
+  errors: string[],
+  rootPath: string,
+): void {
+  const commits = evidenceRefs
+    .filter((reference) => reference.startsWith('commit:'))
+    .map((reference) => reference.slice('commit:'.length));
+  for (const reference of evidenceRefs.filter(isLiveEvidenceReference)) {
+    const path = normalize(reference.slice('repo:'.length));
+    let accepted = false;
+    for (const commit of commits) {
+      try {
+        const content = execFileSync('git', ['show', `${commit}:${path}`], {
+          cwd: rootPath,
+          encoding: 'utf-8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+        });
+        const evidence = JSON.parse(content) as Record<string, unknown>;
+        const observedAt = Date.parse(String(evidence.observedAt ?? ''));
+        const expiresAt = Date.parse(String(evidence.expiresAt ?? ''));
+        const testedCommit = String(evidence.testedCommit ?? '');
+        if (
+          evidence.schema !== 'openslack.live_evidence.v1' ||
+          evidence.ownerId !== ownerId ||
+          evidence.outcome !== 'pass' ||
+          typeof evidence.environment !== 'string' ||
+          evidence.environment.length === 0 ||
+          !/^[a-f0-9]{7,40}$/i.test(testedCommit) ||
+          !Number.isFinite(observedAt) ||
+          !Number.isFinite(expiresAt) ||
+          expiresAt < observedAt ||
+          expiresAt < Date.now()
+        ) {
+          continue;
+        }
+        execFileSync('git', ['merge-base', '--is-ancestor', testedCommit, 'HEAD'], {
+          cwd: rootPath,
+          stdio: 'ignore',
+        });
+        accepted = true;
+        break;
+      } catch {
+        // Try the next declared evidence commit.
+      }
+    }
+    if (!accepted) {
+      errors.push(`${label} has invalid, expired, or uncommitted live evidence: ${reference}`);
+    }
+  }
 }

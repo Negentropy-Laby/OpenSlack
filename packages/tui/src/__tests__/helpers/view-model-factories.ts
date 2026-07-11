@@ -53,7 +53,6 @@ export function createHomeViewModel(): HomeViewModel {
     nextRecommendedAction: undefined,
   }
 }
-
 export function createHomeViewModelWithAction(): HomeViewModel {
   return {
     ...createHomeViewModel(),
@@ -553,17 +552,42 @@ export function createSetupViewModel(): SetupViewModel {
 }
 
 export function createStatusViewModel(): StatusViewModel {
+  const module = (
+    name: string,
+    maturity: string,
+    tests: number,
+  ): StatusViewModel['modules'][number] => ({
+    name,
+    lifecycle: 'ACTIVE',
+    maturity,
+    operatorConfigured: false,
+    externalBlockers: maturity === 'LOCAL_READY' ? ['operator_configuration_pending'] : [],
+    evidenceRefs: ['test:packages/tui/src/__tests__'],
+    tests,
+    components: [],
+  })
+
   return {
     title: 'OpenSlack Status',
     version: 'v0.1 Developer Preview',
+    mode: 'SOURCE_CHECKOUT',
     commit: 'abc1234',
     commitSubject: 'Merge PR #127: Fix auth flow',
     modules: [
-      { name: 'Self-Evolution Kernel', status: 'ACTIVE', tests: 120 },
-      { name: 'GitHub Issues Task Loop', status: 'ACTIVE', tests: 85 },
-      { name: 'Operator Interface', status: 'EARLY', tests: 42 },
-      { name: 'PR Review & Merge Steward', status: 'ACTIVE', tests: 156 },
-      { name: 'Collaboration Layer', status: 'ACTIVE', tests: 123 },
+      module('Self-Evolution Kernel', 'LOCAL_READY', 120),
+      module('GitHub Issues Task Loop', 'LOCAL_READY', 85),
+      module('Operator Interface', 'IMPLEMENTED', 42),
+      module('PR Review & Merge Steward', 'LOCAL_READY', 156),
+      module('Collaboration Layer', 'LOCAL_READY', 123),
+    ],
+    deferredWork: [
+      {
+        name: 'Negentropy sidecar bridge',
+        maturity: 'LOCAL_READY',
+        branch: 'agent/negentropy-sidecar-v1',
+        evidenceRefs: ['branch:agent/negentropy-sidecar-v1'],
+        countedTowardStandalone: false,
+      },
     ],
     gitHub: {
       available: true,
@@ -579,10 +603,19 @@ export function createStatusViewModel(): StatusViewModel {
       totalFiles: 45,
     },
     recommendations: [
-      { title: 'Review PR #130', action: 'CI failing, needs attention', command: 'openslack pr doctor 130' },
+      {
+        title: 'Review PR #130',
+        action: 'CI failing, needs attention',
+        command: 'openslack pr doctor 130',
+      },
     ],
     attentionItems: [
-      { type: 'PR', description: 'PR #130 has failing checks', action: 'Fix test failures', priority: 'high' },
+      {
+        type: 'PR',
+        description: 'PR #130 has failing checks',
+        action: 'Fix test failures',
+        priority: 'high',
+      },
     ],
     nextAction: 'Review PR #130 and fix failing checks',
   }

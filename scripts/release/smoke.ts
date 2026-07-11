@@ -58,6 +58,12 @@ export function smokeBundle(bundleDir: string, target: ReleaseTarget): ArtifactS
     run(executable, ['workspace', 'validate'], { cwd: workspaceRoot, env });
     checks.push('workspace-init-validate');
 
+    const status = run(executable, ['status'], { cwd: workspaceRoot, env }).stdout;
+    if (!status.includes('Maturity: LOCAL_READY') || !status.includes('Deferred (excluded)')) {
+      throw new Error('Packaged product maturity metadata was not rendered.');
+    }
+    checks.push('product-maturity-status');
+
     const workflowList = run(executable, ['collaboration', 'workflow', 'list'], {
       cwd: workspaceRoot,
       env,
@@ -104,7 +110,7 @@ export function smokeBundle(bundleDir: string, target: ReleaseTarget): ArtifactS
     }
     checks.push('keychain-binding-provider-guidance');
 
-    const combined = [version.stdout, workflowList, tui, doctorOutput].join('\n');
+    const combined = [version.stdout, status, workflowList, tui, doctorOutput].join('\n');
     // Repository-relative evidence references are valid product metadata. Fail
     // only when output exposes the build checkout itself or a runtime-only
     // source script entrypoint.

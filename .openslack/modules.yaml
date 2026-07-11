@@ -1,80 +1,124 @@
-schema: openslack.modules.v1
-vitest_tests: 3603
-vitest_files: 283
+schema: openslack.modules.v2
+vitest_tests: 3486
+vitest_files: 271
 modules:
   - id: self_evolution
     name: Self-Evolution Kernel
     status: active
-    phase: "1.6"
+    maturity: local_ready
+    operatorConfigured: true
+    externalBlockers:
+      - clean_machine_release_capstone_pending
+    evidenceRefs:
+      - commit:f26f1bb
+      - test:packages/kernel/src/self/core/__tests__/classify-pr.test.ts
+      - repo:.openslack/self/eval_suites/golden
+    phase: '1.6'
     cli:
       - openslack self
       - openslack workspace
       - openslack init
     packages:
-      - "@openslack/kernel"
-      - "@openslack/workspace"
-      - "@openslack/runtime"
-    tests: 177
-    test_files: 27
+      - '@openslack/kernel'
+      - '@openslack/workspace'
+      - '@openslack/runtime'
+    tests: 187
+    test_files: 28
     golden_evals: 7
 
   - id: github_task_loop
     name: GitHub Issues Task Loop
     status: active
-    phase: "1.7"
+    maturity: local_ready
+    operatorConfigured: false
+    externalBlockers:
+      - github_app_installation_write_permissions_pending
+      - clean_machine_bot_delivery_smoke_pending
+    evidenceRefs:
+      - commit:72b0ff7
+      - test:packages/delivery/src/__tests__/service.test.ts
+      - test:packages/github/src/__tests__/watch-daemon.test.ts
+    phase: '1.7'
     cli:
       - openslack github
       - openslack agent
       - openslack task
       - openslack delivery
     packages:
-      - "@openslack/github"
-      - "@openslack/runtime"
-      - "@openslack/core"
-      - "@openslack/delivery"
-    tests: 472
-    test_files: 61
-    notes: "GitHub Issues task loop active with typed task creation, dry-run repair, Phase 4 watch daemon, and installation-scoped GitHub delivery. Delivery publishes HEAD and a draft PR through the same GitHub App token, disables host credentials and hooks, synchronizes remote/PR SHAs, and returns AWAITING_GATES evidence for PRMS. Read-only installation-scope diagnostics and a preview-first temporary-ref push/delete probe verify selected-repository access and contents write capability before first delivery."
+      - '@openslack/github'
+      - '@openslack/runtime'
+      - '@openslack/core'
+      - '@openslack/delivery'
+    tests: 438
+    test_files: 57
+    notes: 'GitHub Issues task loop active with typed task creation, dry-run repair, Phase 4 watch daemon, and installation-scoped GitHub delivery. Delivery publishes HEAD and a draft PR through the same GitHub App token, disables host credentials and hooks, synchronizes remote/PR SHAs, and returns AWAITING_GATES evidence for PRMS. Read-only installation-scope diagnostics and a preview-first temporary-ref push/delete probe verify selected-repository access and contents write capability before first delivery.'
 
   - id: operator
     name: Operator Interface
     status: active
-    phase: "2A/2B/2C"
+    maturity: local_ready
+    operatorConfigured: false
+    externalBlockers:
+      - model_endpoint_not_configured
+      - clean_machine_onboarding_smoke_pending
+    evidenceRefs:
+      - commit:ce0f707
+      - commit:d34ff2c
+      - test:apps/cli/src/__tests__/setup-onboarding.test.ts
+      - test:scripts/release/__tests__/verify.test.ts
+    phase: '2A/2B/2C'
     cli:
       - openslack ask
       - openslack setup
       - openslack status
       - openslack doctor
+      - openslack version
       - openslack chat
     packages:
-      - "@openslack/cli"
-      - "@openslack/operator"
-      - "@openslack/chat-gateway"
-      - "@openslack/tui"
-      - "@openslack/credentials"
-    tests: 862
-    test_files: 99
+      - '@openslack/cli'
+      - '@openslack/operator'
+      - '@openslack/chat-gateway'
+      - '@openslack/tui'
+      - '@openslack/credentials'
+    tests: 857
+    test_files: 100
     notes: Structured planner active. Webhook and Slack chat adapters active with actor mapping. PRMS chat cards and action confirmation active. Typed tool registry, LLM-first intent routing with deterministic keyword fallback, setup report, and 24h pending plan store active. Session-based conversation memory with multi-turn context resolution and progressive clarification. Doctor --format plain for non-technical output. Conversation-first TUI workbench with Ask OpenSlack, Operator recommendation cards, workflow draft-first cards, profile sync recommendations, and subagent mention dispatch. TUI setup report view and PR doctor view via --format tui. Versioned Windows x64 and Linux x64 archive builds embed the CLI, workflow assets, native keychain binding, build metadata, SBOM, checksums, and provenance; native build and unpacked smoke are enforced by the release matrix.
 
   - id: pr_review_merge
     name: PR Review & Merge Steward
     status: active
-    phase: "1.14"
+    maturity: local_ready
+    operatorConfigured: false
+    externalBlockers:
+      - bot_authored_pr_human_approval_merge_capstone_pending
+    evidenceRefs:
+      - test:packages/pr/src/__tests__/doctor.test.ts
+      - test:packages/pr/src/__tests__/merge.test.ts
+    phase: '1.14'
     cli:
       - openslack pr
       - openslack governance
     packages:
-      - "@openslack/pr"
-      - "@openslack/github"
-      - "@openslack/kernel"
-    tests: 483
-    test_files: 46
-    notes: Phase 2C chat report and action confirmation active. Supports status/review/recommend/doctor/queue/merge/watch, review/doctor comments, governance audit, operational decision summaries, deadlock detection, Red Zone author-risk preflight, and chat-friendly PR summaries with confirm-merge flow. Workflow artifact governance is bound to deterministic base/head tree evidence and a single current-head human approval carrying Workflow-Trust.
+      - '@openslack/pr'
+      - '@openslack/github'
+      - '@openslack/kernel'
+    tests: 435
+    test_files: 42
+    notes: Phase 2C chat report and action confirmation active. Supports status/review/recommend/doctor/queue/merge/watch, review/doctor comments, governance audit, operational decision summaries, deadlock detection, Red Zone author-risk preflight, and chat-friendly PR summaries with confirm-merge flow.
 
   - id: collaboration
     name: Collaboration Layer
     status: active
-    phase: "2D/2E"
+    maturity: local_ready
+    operatorConfigured: false
+    externalBlockers:
+      - model_endpoint_not_configured
+      - clean_machine_agent_task_capstone_pending
+    evidenceRefs:
+      - commit:81c993c
+      - test:packages/agent-runtime/src/__tests__/openai-compatible-runtime.test.ts
+      - test:packages/collaboration/src/__tests__/conversation-workflow-integration.test.ts
+    phase: '2D/2E'
     cli:
       - openslack collaboration activity
       - openslack collaboration digest
@@ -123,13 +167,34 @@ modules:
       - openslack agent-runtime smoke
       - openslack agent-runtime mcp status
     packages:
-      - "@openslack/collaboration"
-      - "@openslack/workflows"
-      - "@openslack/tui"
-      - "@openslack/github"
-      - "@openslack/agent-runtime"
-    tests: 1798
-    test_files: 146
+      - '@openslack/collaboration'
+      - '@openslack/workflows'
+      - '@openslack/tui'
+      - '@openslack/github'
+      - '@openslack/agent-runtime'
+    tests: 1783
+    test_files: 145
+    components:
+      - id: agent_runtime
+        name: Agent Runtime
+        maturity: local_ready
+        operatorConfigured: false
+        externalBlockers:
+          - model_endpoint_not_configured
+          - live_provider_smoke_pending
+        evidenceRefs:
+          - commit:81c993c
+          - test:packages/agent-runtime/src/__tests__/openai-compatible-runtime.test.ts
     notes: >-
-      Agent Runtime includes the governed OpenAI-compatible Chat Completions provider and repository tool plane with worktree containment, permission enforcement, budget and response limits, redaction, schema-before-complete, and provider-neutral setup/doctor/smoke UX.
-      Full 2D/2E Collaboration Layer active with typed workflow template preview/execute and dashboard with filters (--owner, --module, --risk, --blocker, --type). Workflow engine with JS module discovery, preview, dry-run, execute, resume, trust levels, and inspect (HTML/JSON/Markdown). Dynamic Workflow Parity v1 active with Operator workflow recommendation/ultracode draft trigger, dynamic workflow draft generation, pattern registry (classify-and-act, fanout-synthesize, adversarial-verification, generate-filter, tournament, loop-until-done, model-router), workflow policy config, run listing/control evidence, save/export-skill, budget/model/isolation metadata, and helper APIs on ctx.workflow. Dynamic Workflow UX Closure active with workflow start aggregation, catalog preview, progress evidence model, TUI workflow home and run drilldown, save-run to project/user/Claude project, and budget/routing visibility across draft/run evidence. Event model, activity feed, digest, handoff, decision, and room views with agent display name resolution. Authz-gated chat cards for handoffs, decisions, tasks, workflows, and plans. Agent registry v1 to v2 migration command. TUI dashboard and room views via --format tui. Workflow artifact PRs use one current-head human Workflow-Trust review, deterministic tree evidence, and one Governance Issue only for new/core artifacts; legacy proposal/review publishers remain available but are not merge gates. Run audit, improvement, split with native sub-issue linking and linear dependency fallback, workflow-aware PRMS blocking, and post-merge governance finalization remain active. Profile Sync Robot active with config-driven check/preview/run, idempotent branch naming, failure issue creation, profile_sync.failed event, watch-daemon auto-pr trigger (manual/watch/auto-pr modes), dedupe queue/worker, TUI profile workbench with 6 actions, PRMS profile-sync governance gate (BLOCKED_PROFILE_SYNC_GATE), and buildProfileSyncStatus finalizer. Agent Conversations active with typed thread model (7 message kinds), JSONL persistence, secret scanning on messages and metadata, agent type resolution with Claude Code subagent compatibility, workbench ask/action audit trail, and conversation commands (start/list/show/send/summarize/archive). Agent Runtime (@openslack/agent-runtime) active with launcher, permission profiles, run store, transcript recording, an instance-scoped provider registry, fail-closed runtime gating, test-only local adapter injection, process bridge diagnostics, Aby external runtime doctor/setup/smoke, worktree isolation, fail-closed metadata validation, MCP descriptor status UX, and redacted bridge stderr summaries. Lifecycle events (started/completed/failed) are wired through executeRun/executeResume via agentEventEmitter bridge into collaboration recordEvent, with activity feed and room integration. TUI AgentRun detail view with bridge/MCP observability timeline and Agent Runtime diagnostics view. Negentropy-Lab slot integration surface is planned as an external scenario-pack.extension contribution; OpenSlack exports workflow, PRMS, profile-sync evidence, and projection data without owning Negentropy-Lab AuthorityState.
+      Full 2D/2E Collaboration Layer active with typed workflow template preview/execute and dashboard with filters (--owner, --module, --risk, --blocker, --type). Workflow engine with JS module discovery, preview, dry-run, execute, resume, trust levels, and inspect (HTML/JSON/Markdown). Dynamic Workflow Parity v1 active with Operator workflow recommendation/ultracode draft trigger, dynamic workflow draft generation, pattern registry (classify-and-act, fanout-synthesize, adversarial-verification, generate-filter, tournament, loop-until-done, model-router), workflow policy config, run listing/control evidence, save/export-skill, budget/model/isolation metadata, and helper APIs on ctx.workflow. Dynamic Workflow UX Closure active with workflow start aggregation, catalog preview, progress evidence model, TUI workflow home and run drilldown, save-run to project/user/Claude project, and budget/routing visibility across draft/run evidence. Event model, activity feed, digest, handoff, decision, and room views with agent display name resolution. Authz-gated chat cards for handoffs, decisions, tasks, workflows, and plans. Agent registry v1 to v2 migration command. TUI dashboard and room views via --format tui. Full workflow GitHub Issues lifecycle including proposal, review, run audit, improvement (with CLI), split with native sub-issue linking and linear dependency fallback, workflow-aware PRMS gate (BLOCKED_WORKFLOW_GATE), and post-merge lifecycle finalizer. Profile Sync Robot active with config-driven check/preview/run, idempotent branch naming, failure issue creation, profile_sync.failed event, watch-daemon auto-pr trigger (manual/watch/auto-pr modes), dedupe queue/worker, TUI profile workbench with 6 actions, PRMS profile-sync governance gate (BLOCKED_PROFILE_SYNC_GATE), and buildProfileSyncStatus finalizer. Agent Conversations active with typed thread model (7 message kinds), JSONL persistence, secret scanning on messages and metadata, agent type resolution with Claude Code subagent compatibility, workbench ask/action audit trail, and conversation commands (start/list/show/send/summarize/archive). Agent Runtime (@openslack/agent-runtime) active with launcher, permission profiles, run store, transcript recording, an instance-scoped provider registry, fail-closed runtime gating, test-only local adapter injection, process bridge diagnostics, Aby external runtime doctor/setup/smoke, and the production OpenAI-compatible Chat Completions provider. The OpenSlack-owned repository tool plane enforces typed arguments, ToolGuard, worktree containment, Black/runtime-metadata path denial, byte limits, redaction, token charging, schema-before-complete, independent safety limits, write-capable worktree isolation, dirty handoff recovery, and provider-neutral setup/doctor/smoke UX. Lifecycle events (started/completed/failed) are wired through executeRun/executeResume via agentEventEmitter bridge into collaboration recordEvent, with activity feed and room integration. TUI AgentRun detail view with bridge/MCP observability timeline and Agent Runtime diagnostics view. Negentropy-Lab slot integration surface is planned as an external scenario-pack.extension contribution; OpenSlack exports workflow, PRMS, profile-sync evidence, and projection data without owning Negentropy-Lab AuthorityState.
+
+deferredWork:
+  - id: negentropy_sidecar
+    name: Negentropy-Lab Sidecar Integration
+    status: deferred
+    maturity: local_ready
+    countedTowardStandalone: false
+    branch: agent/negentropy-sidecar-v1
+    evidenceRefs:
+      - branch:agent/negentropy-sidecar-v1
+    notes: Local-only at a80db19 and deliberately excluded from standalone P0 completion.

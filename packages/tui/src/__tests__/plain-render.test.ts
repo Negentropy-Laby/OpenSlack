@@ -185,7 +185,6 @@ describe('renderPlainHome', () => {
     assertNoLineExceeds80(out)
   })
 })
-
 // --- Doctor ---
 
 describe('renderPlainDoctor', () => {
@@ -1064,6 +1063,12 @@ describe('renderPlainStatus', () => {
     assertNoAnsi(renderPlainStatus(createStatusViewModel()))
   })
 
+  it('does not render local-ready modules as passing live verification', () => {
+    const output = renderPlainStatus(createStatusViewModel())
+    expect(output).toContain('[WARN] Self-Evolution Kernel')
+    expect(output).not.toContain('[PASS] Self-Evolution Kernel')
+  })
+
   it('no line exceeds 80 columns', () => {
     assertNoLineExceeds80(renderPlainStatus(createStatusViewModel()))
   })
@@ -1072,9 +1077,11 @@ describe('renderPlainStatus', () => {
     const vm: StatusViewModel = {
       title: 'OpenSlack Status',
       version: 'v0.1',
+      mode: 'WORKSPACE',
       commit: 'abc123',
       commitSubject: 'Initial commit',
       modules: [],
+      deferredWork: [],
       gitHub: { available: false, tasksReady: 0, tasksClaimed: 0, tasksBlocked: 0, prsOpen: 0, prsBlocked: 0, prsReady: 0 },
       testSuite: { totalTests: 0, totalFiles: 0 },
       recommendations: [],

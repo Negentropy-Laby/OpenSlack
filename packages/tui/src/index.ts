@@ -75,6 +75,7 @@ export {
   renderPlainWorkflowLifecycle,
   renderPlainWorkflowWorkbench,
   renderPlainDashboard,
+  renderPlainStatus,
   renderPlainAgentRuntimeDiagnostics,
 } from './plain-render.js';
 
@@ -94,6 +95,7 @@ export { renderPrQueueTui } from './views/render-pr-queue.js';
 export type { PrQueueInputItem, PrQueueViewModel } from './view-models/pr-queue.js';
 export { mapPrQueueToViewModel } from './view-models/pr-queue.js';
 export { renderStatusTui } from './views/render-status.js';
+export type { StatusTuiData } from './views/render-status.js';
 export type { StatusViewModel } from './view-models/status.js';
 export { mapStatusToViewModel } from './view-models/status.js';
 

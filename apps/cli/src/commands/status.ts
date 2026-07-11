@@ -1,39 +1,59 @@
 import { Command } from 'commander';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { execSync } from 'node:child_process';
-import { readModules, validateModules, getTotalTests, getTotalTestFiles } from '@openslack/workspace';
+import { execFileSync, execSync } from 'node:child_process';
+import {
+  readModules,
+  readProductModules,
+  resolveWorkspaceContext,
+  validateModules,
+  getTotalTests,
+  getTotalTestFiles,
+} from '@openslack/workspace';
+import type { WorkspaceContext } from '@openslack/workspace';
+import type { StatusTuiData } from '@openslack/tui';
 import { recommendNextActions } from '@openslack/runtime';
 import { getAttentionItems, getNextAction } from '@openslack/runtime';
 import { buildSetupReport } from '@openslack/runtime';
 import { buildDashboardProjection } from '@openslack/collaboration';
 import { diagnoseAgentRuntime } from '@openslack/agent-runtime';
 
-function findRepoRoot(): string {
-  let dir = process.cwd();
-  for (let i = 0; i < 10; i++) {
-    if (existsSync(join(dir, 'openslack.yaml'))) return dir;
-    const parent = join(dir, '..');
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return process.cwd();
-}
-
-function getGitInfo(root: string): { commitCount: number; latestCommit: string; latestSubject: string } {
+function getGitInfo(root: string): {
+  commitCount: number;
+  latestCommit: string;
+  latestSubject: string;
+} {
   try {
-    const commitCount = parseInt(execSync('git rev-list --count HEAD', { cwd: root, encoding: 'utf-8', stdio: 'pipe' }).trim(), 10);
-    const latestCommit = execSync('git rev-parse --short HEAD', { cwd: root, encoding: 'utf-8', stdio: 'pipe' }).trim();
-    const latestSubject = execSync('git log -1 --format=%s', { cwd: root, encoding: 'utf-8', stdio: 'pipe' }).trim();
+    const commitCount = parseInt(
+      execSync('git rev-list --count HEAD', { cwd: root, encoding: 'utf-8', stdio: 'pipe' }).trim(),
+      10,
+    );
+    const latestCommit = execSync('git rev-parse --short HEAD', {
+      cwd: root,
+      encoding: 'utf-8',
+      stdio: 'pipe',
+    }).trim();
+    const latestSubject = execSync('git log -1 --format=%s', {
+      cwd: root,
+      encoding: 'utf-8',
+      stdio: 'pipe',
+    }).trim();
     return { commitCount, latestCommit, latestSubject };
   } catch {
     return { commitCount: 0, latestCommit: 'unknown', latestSubject: 'unknown' };
   }
 }
 
-function extractCurrentMetrics(current: string): { tests?: number; testFiles?: number; vitestTests?: number; vitestFiles?: number } {
+function extractCurrentMetrics(current: string): {
+  tests?: number;
+  testFiles?: number;
+  vitestTests?: number;
+  vitestFiles?: number;
+} {
   const testMatch = current.match(/(\d+)\s*tests across\s*(\d+)\s*module test file/i);
-  const vitestMatch = current.match(/(\d+)\s*(?:passing\s*)?Vitest tests across\s*(\d+)\s*(?:passing\s*)?files/i);
+  const vitestMatch = current.match(
+    /(\d+)\s*(?:passing\s*)?Vitest tests across\s*(\d+)\s*(?:passing\s*)?files/i,
+  );
   return {
     tests: testMatch ? parseInt(testMatch[1], 10) : undefined,
     testFiles: testMatch ? parseInt(testMatch[2], 10) : undefined,
@@ -42,9 +62,21 @@ function extractCurrentMetrics(current: string): { tests?: number; testFiles?: n
   };
 }
 
+function tableCell(value: string): string {
+  return value.replace(/\|/g, '\\|').replace(/\s+/g, ' ').trim();
+}
+
+function listCell(values: string[]): string {
+  return values.length > 0 ? values.map(tableCell).join('<br>') : 'None';
+}
+
+function operatorLabel(configured: boolean): string {
+  return configured ? 'CONFIGURED' : 'NOT_CONFIGURED';
+}
+
 function generateStatusDoc(root: string): string {
   const registry = readModules(root);
-  const validation = validateModules(registry);
+  const validation = validateModules(registry, { rootPath: root });
   if (!validation.valid) {
     throw new Error(`modules.yaml validation failed:\n${validation.errors.join('\n')}`);
   }
@@ -56,7 +88,26 @@ function generateStatusDoc(root: string): string {
   const totalGoldenEvals = registry.modules.reduce((sum, m) => sum + (m.golden_evals || 0), 0);
 
   const moduleRows = registry.modules
-    .map((m) => `| ${m.name} | ${m.phase} | ${m.status.toUpperCase()} | ${m.notes || ''} |`)
+    .map(
+      (m) =>
+        `| ${tableCell(m.name)} | ${tableCell(m.phase)} | ${m.status.toUpperCase()} | ${m.maturity.toUpperCase()} | ${operatorLabel(m.operatorConfigured)} | ${listCell(m.externalBlockers)} | ${listCell(m.evidenceRefs)} | ${tableCell(m.notes || '')} |`,
+    )
+    .join('\n');
+
+  const componentRows = registry.modules
+    .flatMap((module) =>
+      (module.components ?? []).map(
+        (component) =>
+          `| ${tableCell(module.name)} | ${tableCell(component.name)} | ${component.maturity.toUpperCase()} | ${operatorLabel(component.operatorConfigured)} | ${listCell(component.externalBlockers)} | ${listCell(component.evidenceRefs)} |`,
+      ),
+    )
+    .join('\n');
+
+  const deferredRows = (registry.deferredWork ?? [])
+    .map(
+      (item) =>
+        `| ${tableCell(item.name)} | ${item.status.toUpperCase()} | ${item.maturity.toUpperCase()} | NO | ${tableCell(item.branch ?? '')} | ${listCell(item.evidenceRefs)} | ${tableCell(item.notes ?? '')} |`,
+    )
     .join('\n');
 
   const packageSet = new Set<string>();
@@ -72,7 +123,7 @@ function generateStatusDoc(root: string): string {
   const cliCommands = Array.from(cliSet);
 
   return `---
-schema: openslack.status.v1
+schema: openslack.status.v2
 source_of_truth: true
 supersedes:
   - phase-1-prehardening
@@ -88,9 +139,24 @@ supersedes:
 
 ## Modules
 
-| Module | Phase | Status | Notes |
-|--------|-------|--------|-------|
+| Module | Phase | Lifecycle | Maturity | Declared Operator Baseline | External Blockers | Evidence | Notes |
+|--------|-------|-----------|----------|----------|-------------------|----------|-------|
 ${moduleRows}
+
+## Components
+
+| Owning Module | Component | Maturity | Declared Operator Baseline | External Blockers | Evidence |
+|---------------|-----------|----------|----------|-------------------|----------|
+${componentRows || '| None | None | PLANNED | NOT_CONFIGURED | None | None |'}
+
+## Deferred Work
+
+Deferred work is visible but is not a product module and is not counted toward
+standalone P0 completion.
+
+| Work | Status | Maturity | Counts Toward Standalone | Branch | Evidence | Notes |
+|------|--------|----------|--------------------------|--------|----------|-------|
+${deferredRows || '| None | DEFERRED | PLANNED | NO |  | None | |'}
 
 ## Packages (${packages.length} active)
 
@@ -128,11 +194,15 @@ interface GitHubOps {
   available: boolean;
 }
 
-function getGitHubOps(): GitHubOps {
+function getGitHubOps(context: WorkspaceContext): GitHubOps {
   try {
-    const issuesJson = execSync(
-      'gh issue list --repo Negentropy-Laby/OpenSlack --state open --limit 200 --json labels',
-      { encoding: 'utf-8', stdio: 'pipe' },
+    const remote = context.config?.canonical_remote;
+    if (!remote || remote.provider !== 'github') throw new Error('GitHub remote is not configured');
+    const repository = `${remote.owner}/${remote.repo}`;
+    const issuesJson = execFileSync(
+      'gh',
+      ['issue', 'list', '--repo', repository, '--state', 'open', '--limit', '200', '--json', 'labels'],
+      { cwd: context.workspaceRoot, encoding: 'utf-8', stdio: 'pipe' },
     );
     const issues = JSON.parse(issuesJson) as Array<{ labels: Array<{ name: string }> }>;
     let ready = 0;
@@ -145,9 +215,21 @@ function getGitHubOps(): GitHubOps {
       if (names.includes('openslack:blocked')) blocked++;
     }
 
-    const prsJson = execSync(
-      'gh pr list --repo Negentropy-Laby/OpenSlack --state open --limit 200 --json mergeStateStatus',
-      { encoding: 'utf-8', stdio: 'pipe' },
+    const prsJson = execFileSync(
+      'gh',
+      [
+        'pr',
+        'list',
+        '--repo',
+        repository,
+        '--state',
+        'open',
+        '--limit',
+        '200',
+        '--json',
+        'mergeStateStatus',
+      ],
+      { cwd: context.workspaceRoot, encoding: 'utf-8', stdio: 'pipe' },
     );
     const prs = JSON.parse(prsJson) as Array<{ mergeStateStatus: string }>;
     const openPRs = prs.length;
@@ -156,31 +238,60 @@ function getGitHubOps(): GitHubOps {
 
     return { ready, claimed, blocked, openPRs, blockedPRs, readyPRs, available: true };
   } catch {
-    return { ready: 0, claimed: 0, blocked: 0, openPRs: 0, blockedPRs: 0, readyPRs: 0, available: false };
+    return {
+      ready: 0,
+      claimed: 0,
+      blocked: 0,
+      openPRs: 0,
+      blockedPRs: 0,
+      readyPRs: 0,
+      available: false,
+    };
   }
 }
 
-async function showStatusDashboard(root: string): Promise<void> {
+async function showStatusDashboard(context: WorkspaceContext): Promise<void> {
   try {
-    const registry = readModules(root);
+    const root = context.workspaceRoot;
+    const registry = readProductModules(context);
+    const validation = validateModules(registry, {
+      rootPath: context.sourceCheckout ? root : undefined,
+    });
+    if (!validation.valid) {
+      throw new Error(`product module metadata is invalid: ${validation.errors.join('; ')}`);
+    }
     const gitInfo = getGitInfo(root);
     const totalTests = getTotalTests(registry);
     const totalTestFiles = getTotalTestFiles(registry);
     const vitestTests = registry.vitest_tests ?? totalTests;
     const vitestFiles = registry.vitest_files ?? totalTestFiles;
-    const ops = getGitHubOps();
+    const ops = getGitHubOps(context);
 
     console.log('OpenSlack Status');
     console.log('════════════════');
     console.log(`Version:    v0.1 Developer Preview`);
-    console.log(`Mode:       Self-Project`);
+    console.log(`Mode:       ${context.sourceCheckout ? 'SOURCE_CHECKOUT' : 'WORKSPACE'}`);
     console.log(`Commit:     ${gitInfo.latestCommit}`);
     console.log('');
     console.log('Modules:');
     for (const m of registry.modules) {
       const testLabel = m.tests ? ` (${m.tests} tests)` : '';
-      const status = m.status.toUpperCase();
-      console.log(`  ${m.name.padEnd(22)} ${status}${testLabel}`);
+      console.log(`  ${m.name}${testLabel}`);
+      console.log(
+        `    Lifecycle: ${m.status.toUpperCase()} | Maturity: ${m.maturity.toUpperCase()} | Declared operator baseline: ${operatorLabel(m.operatorConfigured)}`,
+      );
+      console.log(`    External blockers: ${m.externalBlockers.join(', ') || 'none'}`);
+      console.log(`    Evidence: ${m.evidenceRefs.join(', ') || 'none'}`);
+      for (const component of m.components ?? []) {
+        console.log(
+          `    Component ${component.name}: ${component.maturity.toUpperCase()} | Declared operator baseline: ${operatorLabel(component.operatorConfigured)}`,
+        );
+      }
+    }
+    for (const item of registry.deferredWork ?? []) {
+      console.log(
+        `  Deferred (excluded): ${item.name} | ${item.maturity.toUpperCase()} | ${item.branch ?? 'no branch'}`,
+      );
     }
     console.log('');
 
@@ -204,8 +315,12 @@ async function showStatusDashboard(root: string): Promise<void> {
       console.log('');
     }
 
-    console.log(`Test Suite: ${vitestTests} passing Vitest tests across ${vitestFiles} passing files`);
-    console.log(`  Note: Raw passing Vitest count from .openslack/modules.yaml. Module-attributed counts (${totalTests} tests, ${totalTestFiles} files) count each test file once per module that claims it. Use module counts for coverage tracking; use raw bun run test output for CI verification, including skipped tests.`);
+    console.log(
+      `Test Suite: ${vitestTests} passing Vitest tests across ${vitestFiles} passing files`,
+    );
+    console.log(
+      `  Note: Raw passing Vitest count from .openslack/modules.yaml. Module-attributed counts (${totalTests} tests, ${totalTestFiles} files) count each test file once per module that claims it. Use module counts for coverage tracking; use raw bun run test output for CI verification, including skipped tests.`,
+    );
     console.log('');
 
     const setupReport = await buildSetupReport({ dryRun: true });
@@ -275,93 +390,124 @@ async function showStatusDashboard(root: string): Promise<void> {
   }
 }
 
+async function buildStatusTuiData(
+  context: WorkspaceContext,
+): Promise<StatusTuiData> {
+  const root = context.workspaceRoot;
+  const registry = readProductModules(context);
+  const validation = validateModules(registry, {
+    rootPath: context.sourceCheckout ? root : undefined,
+  });
+  if (!validation.valid) {
+    throw new Error(`product module metadata is invalid: ${validation.errors.join('; ')}`);
+  }
+
+  const gitInfo = getGitInfo(root);
+  const totalTests = getTotalTests(registry);
+  const totalTestFiles = getTotalTestFiles(registry);
+  const ops = getGitHubOps(context);
+  const setupReport = await buildSetupReport({ dryRun: true });
+  const dashboard = buildDashboardProjection();
+  const setupFindings = setupReport.findings.map((finding) => ({
+    status: finding.status,
+    title: finding.title,
+    nextAction: finding.nextAction,
+    command: finding.command,
+  }));
+  const blockers = dashboard.blockers.map((blocker) => ({
+    object: blocker.object,
+    summary: blocker.summary,
+    owner: blocker.owner,
+    nextAction: blocker.nextAction,
+  }));
+  const recommendations = recommendNextActions({
+    setupFindings,
+    gitHubOps: ops,
+    blockers,
+  });
+  const attentionItems = await getAttentionItems({ setupFindings, gitHubOps: ops, blockers });
+
+  return {
+    mode: context.sourceCheckout ? 'SOURCE_CHECKOUT' : 'WORKSPACE',
+    commit: gitInfo.latestCommit,
+    commitSubject: gitInfo.latestSubject,
+    modules: registry.modules.map((module) => ({
+      name: module.name,
+      lifecycle: module.status.toUpperCase(),
+      maturity: module.maturity.toUpperCase(),
+      operatorConfigured: module.operatorConfigured,
+      externalBlockers: module.externalBlockers,
+      evidenceRefs: module.evidenceRefs,
+      tests: module.tests,
+      components: module.components?.map((component) => ({
+        name: component.name,
+        maturity: component.maturity.toUpperCase(),
+        operatorConfigured: component.operatorConfigured,
+        externalBlockers: component.externalBlockers,
+        evidenceRefs: component.evidenceRefs,
+      })),
+    })),
+    deferredWork: (registry.deferredWork ?? []).map((item) => ({
+      name: item.name,
+      maturity: item.maturity.toUpperCase(),
+      branch: item.branch,
+      evidenceRefs: item.evidenceRefs,
+      countedTowardStandalone: false,
+    })),
+    gitHub: {
+      available: ops.available,
+      tasksReady: ops.ready,
+      tasksClaimed: ops.claimed,
+      tasksBlocked: ops.blocked,
+      prsOpen: ops.openPRs,
+      prsBlocked: ops.blockedPRs,
+      prsReady: ops.readyPRs,
+    },
+    testSuite: {
+      totalTests: registry.vitest_tests ?? totalTests,
+      totalFiles: registry.vitest_files ?? totalTestFiles,
+    },
+    recommendations: recommendations.map((recommendation) => ({
+      title: recommendation.title,
+      action: recommendation.action,
+      command: recommendation.command,
+    })),
+    attentionItems,
+    nextAction: getNextAction(attentionItems),
+  };
+}
+
 export function statusCommands(): Command {
   const cmd = new Command('status').description('OpenSlack status and module registry commands');
 
   cmd
-    .option('--format <format>', 'Output format: standard or tui', 'standard')
+    .option('--format <format>', 'Output format: standard, plain, or tui', 'standard')
     .action(async (options: { format: string }) => {
-      const root = findRepoRoot();
+      const context = resolveWorkspaceContext();
 
       if (options.format === 'tui') {
         try {
-          const registry = readModules(root);
-          const gitInfo = getGitInfo(root);
-          const totalTests = getTotalTests(registry);
-          const totalTestFiles = getTotalTestFiles(registry);
-          const vitestTests = registry.vitest_tests ?? totalTests;
-          const vitestFiles = registry.vitest_files ?? totalTestFiles;
-          const ops = getGitHubOps();
-
-          const setupReport = await buildSetupReport({ dryRun: true });
-          const dashboard = buildDashboardProjection();
-          const recs = recommendNextActions({
-            setupFindings: setupReport.findings.map((f) => ({
-              status: f.status,
-              title: f.title,
-              nextAction: f.nextAction,
-              command: f.command,
-            })),
-            gitHubOps: ops,
-            blockers: dashboard.blockers.map((b) => ({
-              object: b.object,
-              summary: b.summary,
-              owner: b.owner,
-              nextAction: b.nextAction,
-            })),
-          });
-
-          const attentionCtx = {
-            setupFindings: setupReport.findings.map((f) => ({
-              status: f.status,
-              title: f.title,
-              nextAction: f.nextAction,
-              command: f.command,
-            })),
-            gitHubOps: ops,
-            blockers: dashboard.blockers.map((b) => ({
-              object: b.object,
-              summary: b.summary,
-              owner: b.owner,
-              nextAction: b.nextAction,
-            })),
-          };
-          const attentionItems = await getAttentionItems(attentionCtx);
-          const nextAction = getNextAction(attentionItems);
-
           const { renderStatusTui } = await import('@openslack/tui');
-          await renderStatusTui({
-            commit: gitInfo.latestCommit,
-            commitSubject: gitInfo.latestSubject,
-            modules: registry.modules.map((m) => ({
-              name: m.name,
-              status: m.status.toUpperCase(),
-              tests: m.tests,
-            })),
-            gitHub: {
-              available: ops.available,
-              tasksReady: ops.ready,
-              tasksClaimed: ops.claimed,
-              tasksBlocked: ops.blocked,
-              prsOpen: ops.openPRs,
-              prsBlocked: ops.blockedPRs,
-              prsReady: ops.readyPRs,
-            },
-            testSuite: { totalTests: vitestTests, totalFiles: vitestFiles },
-            recommendations: recs.map((r) => ({
-              title: r.title,
-              action: r.action,
-              command: r.command,
-            })),
-            attentionItems,
-            nextAction,
-          });
-        } catch (error) {
+          await renderStatusTui(await buildStatusTuiData(context));
+        } catch {
           console.error('TUI unavailable. Falling back to standard output.');
-          await showStatusDashboard(root);
+          await showStatusDashboard(context);
+        }
+      } else if (options.format === 'plain') {
+        try {
+          const { mapStatusToViewModel, renderPlainStatus } = await import('@openslack/tui');
+          console.log(renderPlainStatus(mapStatusToViewModel(await buildStatusTuiData(context))));
+        } catch (error) {
+          console.error(`Plain status failed: ${(error as Error).message}`);
+          process.exit(1);
         }
       } else {
-        await showStatusDashboard(root);
+        if (options.format !== 'standard') {
+          console.error(`Unknown status format: ${options.format}. Use standard, plain, or tui.`);
+          process.exit(1);
+          return;
+        }
+        await showStatusDashboard(context);
       }
     });
 
@@ -370,7 +516,11 @@ export function statusCommands(): Command {
     .description('Generate docs/status/current.md from .openslack/modules.yaml')
     .action(() => {
       try {
-        const root = findRepoRoot();
+        const context = resolveWorkspaceContext();
+        if (!context.sourceCheckout) {
+          throw new Error('status generate is available only in an OpenSlack source checkout');
+        }
+        const root = context.workspaceRoot;
         const doc = generateStatusDoc(root);
         const outPath = join(root, 'docs', 'status', 'current.md');
         writeFileSync(outPath, doc, 'utf-8');
@@ -387,9 +537,13 @@ export function statusCommands(): Command {
     .description('Verify consistency across README, current.md, and modules.yaml')
     .action(() => {
       try {
-        const root = findRepoRoot();
+        const context = resolveWorkspaceContext();
+        if (!context.sourceCheckout) {
+          throw new Error('status verify is available only in an OpenSlack source checkout');
+        }
+        const root = context.workspaceRoot;
         const registry = readModules(root);
-        const validation = validateModules(registry);
+        const validation = validateModules(registry, { rootPath: root });
         if (!validation.valid) {
           console.error('modules.yaml validation failed:');
           for (const err of validation.errors) console.error(`  ✗ ${err}`);
@@ -409,7 +563,16 @@ export function statusCommands(): Command {
 
         // modules.yaml checks
         checks.push({ name: 'modules.yaml schema', passed: true, detail: registry.schema });
-        checks.push({ name: 'modules.yaml modules count', passed: registry.modules.length > 0, detail: `${registry.modules.length} modules` });
+        checks.push({
+          name: 'canonical modules.yaml source schema',
+          passed: registry.sourceSchema === 'openslack.modules.v2',
+          detail: registry.sourceSchema ?? 'unknown',
+        });
+        checks.push({
+          name: 'modules.yaml modules count',
+          passed: registry.modules.length > 0,
+          detail: `${registry.modules.length} modules`,
+        });
 
         // Vitest actual counts
         if (currentMetrics.vitestTests !== undefined) {
@@ -443,13 +606,11 @@ export function statusCommands(): Command {
           });
         }
 
-        // Module consistency
-        const currentModuleNames = current.match(/\|\s*(.+?)\s*\|\s*[^|]+\s*\|\s*(ACTIVE|EARLY|MVP|PLANNED)/g) || [];
-        const registryModuleNames = registry.modules.map((m) => m.name);
+        const expectedCurrent = generateStatusDoc(root);
         checks.push({
-          name: 'current.md modules match modules.yaml',
-          passed: registry.modules.length === currentModuleNames.length,
-          detail: `modules.yaml: ${registry.modules.length}, current.md: ${currentModuleNames.length}`,
+          name: 'current.md deterministic generation',
+          passed: current === expectedCurrent,
+          detail: current === expectedCurrent ? 'exact byte match' : 'generated content differs',
         });
 
         console.log('Status Verification\n');
