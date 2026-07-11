@@ -11,6 +11,7 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 | Get guided setup with prompts                    | `openslack setup interactive`                                                  | Walks fixable items step by step; supports `--format plain`                        |
 | Run CI-style setup checks                        | `openslack setup --strict`                                                     | Treats warnings as failures. Use this for release or PR validation.                |
 | Check GitHub readiness without changing anything | `openslack setup github`                                                       | Read-only by default. Use `--apply` only for explicit repairs.                     |
+| Preview importing an owned GitHub App key        | `openslack github app import ...`                                              | Preview does not read the PEM; `--apply` requires a writable keychain backend.     |
 | Ask OpenSlack what to do                         | `openslack ask "检查系统状态"`                                                 | Uses LLM-first routing when configured; otherwise uses the keyword router.         |
 | Preview a task before creating an Issue          | `openslack task create --title "..." --path "docs/**" --preview`               | Preview is the safe first step. Add `--create-issue` only when ready.              |
 | Let an agent pick up ready work                  | `openslack agent tick --agent-id <id> --source github-issues`                  | Requires a registered and bootstrapped agent identity.                             |
@@ -270,6 +271,30 @@ gitignored local state as separate roots. The current embedded asset set covers
 the minimal agent, provider, and workflow templates; source-only maintenance
 commands will be migrated behind the explicit `sourceCheckout` flag during the
 remaining standalone-product slices.
+
+### Import an organization-owned GitHub App
+
+After initializing the workspace, preview a manual import without reading the
+private-key file:
+
+```bash
+openslack github app import \
+  --source /path/to/app.pem \
+  --app-id 123 \
+  --installation-id 456 \
+  --slug acme-openslack \
+  --key-ref keychain:openslack/acme-openslack
+```
+
+Add `--apply` only after reviewing the plan. PEM content is read only during the
+explicit apply, passed directly to the selected credential backend, zeroed from
+the import buffer, and never written to workspace config. The local config stores
+only the `keychain:` reference. `--delete-source` is optional and best-effort;
+failure produces a manual cleanup warning rather than claiming secure deletion.
+
+The repository currently ships the credential contract plus an environment
+backend; the production Windows/Linux keychain backend remains fail-closed until
+the P0 packaging matrix selects and verifies a distributable implementation.
 
 | Command | Purpose |
 |---------|---------|

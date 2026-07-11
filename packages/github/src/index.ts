@@ -27,6 +27,13 @@ export type {
   GitHubInstallationRepositoryAccess,
   InstallationRepositoryPage,
 } from './installation-access.js';
+export { applyGitHubAppImport, planGitHubAppImport } from './app-import.js';
+export type {
+  GitHubAppImportDependencies,
+  GitHubAppImportInput,
+  GitHubAppImportPlan,
+  GitHubAppImportResult,
+} from './app-import.js';
 export { createTaskIssue, queryReadyIssueTasks } from './issue-tasks.js';
 export type { IssueTask } from './issue-tasks.js';
 export { claimIssueTask, releaseIssueClaim, moveIssueToReview, heartbeatIssueClaim, expireIssueClaim, releaseIssueClaimWithOwner } from './claims.js';

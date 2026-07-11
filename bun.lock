@@ -33,6 +33,7 @@
         "@openslack/agent-runtime": "workspace:*",
         "@openslack/chat-gateway": "workspace:*",
         "@openslack/collaboration": "workspace:*",
+        "@openslack/credentials": "workspace:*",
         "@openslack/delivery": "workspace:*",
         "@openslack/github": "workspace:*",
         "@openslack/kernel": "workspace:*",
@@ -100,6 +101,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@octokit/rest": "^21.0.0",
+        "@openslack/credentials": "workspace:*",
         "@openslack/kernel": "workspace:*",
         "yaml": "^2.7.0",
       },

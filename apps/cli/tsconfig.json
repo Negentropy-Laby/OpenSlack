@@ -6,6 +6,7 @@
   },
   "include": ["src"],
   "references": [
+    { "path": "../../packages/credentials" },
     { "path": "../../packages/core" },
     { "path": "../../packages/kernel" },
     { "path": "../../packages/workspace" },
