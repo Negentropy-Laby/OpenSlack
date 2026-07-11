@@ -2,12 +2,15 @@
 
 ## Zone Classification
 
-| Zone | Paths | Auto-Merge | Human Required |
-|------|-------|-----------|---------------|
-| **Green** | `docs/**`, `templates/**`, `.openslack/tasks/**`, `.openslack/self/scorecards/**` | Yes | No |
-| **Yellow** | `apps/**`, `packages/core/**`, `packages/workspace/**`, `packages/github-provider/**`, `packages/agent-runtime/**`, `packages/git-sync/**`, `packages/self-evolution/src/ops/**`, `.openslack/self/eval_suites/**` | With agent review | No |
-| **Red** | `.github/**`, `.openslack/policies/**`, `.openslack/agents/registry/**`, `.openslack/agents/prompts/**`, `.openslack/self/constitution.md`, `.openslack/self/invariants.yaml`, `packages/kernel/src/**`, `packages/self-evolution/src/core/**` | Never | Yes |
-| **Black** | `.env`, `**/*.pem`, `**/*.key`, `secrets/**`, `credentials/**`, `private/**`, `production-tokens/**` | Never (auto-reject) | N/A |
+| Zone       | Paths                                                                                                                                                                                                                             | Auto-Merge                    | Human Required |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- | -------------- |
+| **Green**  | `docs/**`, `templates/**`, `.openslack/tasks/**`, `.openslack/audit/**`, `.openslack/self/scorecards/**`, `.openslack/self/experiments/**`                                                                                        | Yes, after checks             | No             |
+| **Yellow** | `apps/**`, the non-kernel `packages/**` listed in `AGENTS.md`, `.openslack/self/eval_suites/**`, and every unmatched path                                                                                                         | With independent agent review | No             |
+| **Red**    | `AGENTS.md`, `CLAUDE.md`, `.github/**`, `.openslack/policies/**`, `.openslack/agents/registry/**`, `.openslack/agents/prompts/**`, `.openslack/self/constitution.md`, `.openslack/self/invariants.yaml`, `packages/kernel/src/**` | Never                         | Yes            |
+| **Black**  | `.env`, `**/*.pem`, `**/*.key`, `secrets/**`, `credentials/**`, `private/**`, `production-tokens/**`                                                                                                                              | Never (auto-reject)           | N/A            |
+
+Green is an explicit allowlist, not a default. A new package, root manifest, or
+otherwise unrecognized path is Yellow until governance deliberately classifies it.
 
 ## Agent Rules (Always Enforced)
 
@@ -20,6 +23,7 @@
 ## Constitutional Paths
 
 These require human approval for ANY change:
+
 - `.openslack/self/constitution.md`
 - `.openslack/self/invariants.yaml`
 - `.openslack/policies/constitutional_paths.yaml`
@@ -28,6 +32,7 @@ These require human approval for ANY change:
 ## Rollback
 
 When regression detected:
+
 1. `monitorPostMerge()` flags regression
 2. `createRollbackTask()` creates EVOL task
 3. `scripts/genesis-rollback.sh` generates revert

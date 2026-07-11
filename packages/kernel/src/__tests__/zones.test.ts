@@ -14,6 +14,12 @@ describe('classifyPaths', () => {
     expect(classifyPaths(['.openslack/tasks/open/TASK-001.yaml'])).toBe('green');
   });
 
+  it('classifies every explicit generated-state allowlist as green', () => {
+    expect(classifyPaths(['.openslack/audit/pr-42.yaml'])).toBe('green');
+    expect(classifyPaths(['.openslack/self/scorecards/2026/07/report.yaml'])).toBe('green');
+    expect(classifyPaths(['.openslack/self/experiments/EXP-001.yaml'])).toBe('green');
+  });
+
   it('classifies package core changes as yellow', () => {
     expect(classifyPaths(['packages/core/src/claim-broker.ts'])).toBe('yellow');
   });
@@ -24,6 +30,19 @@ describe('classifyPaths', () => {
 
   it('classifies runtime package changes as yellow', () => {
     expect(classifyPaths(['packages/runtime/src/evals/runner.ts'])).toBe('yellow');
+  });
+
+  it('classifies agent runtime package changes as yellow', () => {
+    expect(classifyPaths(['packages/agent-runtime/src/launcher.ts'])).toBe('yellow');
+    expect(classifyPaths(['packages/agent-runtime/package.json'])).toBe('yellow');
+  });
+
+  it('classifies TUI package changes as yellow', () => {
+    expect(classifyPaths(['packages/tui/src/views/HomeView.tsx'])).toBe('yellow');
+  });
+
+  it('classifies workflow package changes as yellow', () => {
+    expect(classifyPaths(['packages/workflows/src/runtime.ts'])).toBe('yellow');
   });
 
   it('classifies operator package changes as yellow', () => {
@@ -44,6 +63,11 @@ describe('classifyPaths', () => {
 
   it('classifies agent registry changes as red', () => {
     expect(classifyPaths(['.openslack/agents/registry/codex_agent.yaml'])).toBe('red');
+  });
+
+  it('classifies canonical agent instructions as red', () => {
+    expect(classifyPaths(['AGENTS.md'])).toBe('red');
+    expect(classifyPaths(['CLAUDE.md'])).toBe('red');
   });
 
   it('classifies constitution.md change as red', () => {
@@ -80,5 +104,19 @@ describe('classifyPaths', () => {
 
   it('returns red for yellow + red mixed', () => {
     expect(classifyPaths(['packages/core/src/foo.ts', '.github/workflows/test.yml'])).toBe('red');
+  });
+
+  it('defaults unmatched paths to yellow', () => {
+    expect(classifyPaths(['package.json'])).toBe('yellow');
+    expect(classifyPaths(['packages/future-provider/src/index.ts'])).toBe('yellow');
+    expect(classifyPaths(['packages/future-provider/package.json'])).toBe('yellow');
+  });
+
+  it('does not let an explicit green path hide an unmatched path', () => {
+    expect(classifyPaths(['docs/readme.md', 'new-root-config.yaml'])).toBe('yellow');
+  });
+
+  it('fails safe to yellow for an empty path set', () => {
+    expect(classifyPaths([])).toBe('yellow');
   });
 });

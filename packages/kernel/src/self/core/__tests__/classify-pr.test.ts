@@ -18,6 +18,14 @@ describe('classifySelfEvolutionPR', () => {
     expect(result.requiredAgentReviews).toBe(2);
   });
 
+  it('fails unmatched paths safe to yellow without auto-merge', () => {
+    const result = classifySelfEvolutionPR(['new-root-config.yaml']);
+    expect(result.riskZone).toBe('yellow');
+    expect(result.autoMergeAllowed).toBe(false);
+    expect(result.humanApprovalRequired).toBe(false);
+    expect(result.requiredAgentReviews).toBe(2);
+  });
+
   it('returns red for GitHub workflow paths', () => {
     const result = classifySelfEvolutionPR(['.github/workflows/test.yml']);
     expect(result.riskZone).toBe('red');

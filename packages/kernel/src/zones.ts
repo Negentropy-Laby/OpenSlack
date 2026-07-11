@@ -3,11 +3,21 @@ import type { RiskZone } from './types.js';
 const ZONE_PATTERNS: Array<{ zone: RiskZone; globs: string[] }> = [
   {
     zone: 'black',
-    globs: ['.env', '**/*.pem', '**/*.key', 'secrets/**', 'credentials/**', 'private/**', 'production-tokens/**'],
+    globs: [
+      '.env',
+      '**/*.pem',
+      '**/*.key',
+      'secrets/**',
+      'credentials/**',
+      'private/**',
+      'production-tokens/**',
+    ],
   },
   {
     zone: 'red',
     globs: [
+      'AGENTS.md',
+      'CLAUDE.md',
       '.github/**',
       '.openslack/policies/**',
       '.openslack/agents/registry/**',
@@ -29,6 +39,9 @@ const ZONE_PATTERNS: Array<{ zone: RiskZone; globs: string[] }> = [
       'packages/operator/**',
       'packages/chat-gateway/**',
       'packages/collaboration/**',
+      'packages/agent-runtime/**',
+      'packages/tui/**',
+      'packages/workflows/**',
       '.openslack/self/eval_suites/**',
     ],
   },
@@ -59,18 +72,30 @@ function matchesGlob(path: string, glob: string): boolean {
 }
 
 export function classifyPaths(changedPaths: string[]): RiskZone {
+  if (changedPaths.length === 0) return 'yellow';
+
   let highestZone: RiskZone = 'green';
   const zoneOrder: RiskZone[] = ['green', 'yellow', 'red', 'black'];
 
   for (const path of changedPaths) {
+    let pathZone: RiskZone | undefined;
+
     for (const { zone, globs } of ZONE_PATTERNS) {
       for (const glob of globs) {
         if (matchesGlob(path, glob)) {
-          if (zoneOrder.indexOf(zone) > zoneOrder.indexOf(highestZone)) {
-            highestZone = zone;
+          if (!pathZone || zoneOrder.indexOf(zone) > zoneOrder.indexOf(pathZone)) {
+            pathZone = zone;
           }
         }
       }
+    }
+
+    // Only explicitly enumerated Green paths are auto-merge eligible. New,
+    // misspelled, or otherwise unclassified paths fail safe to Yellow so a
+    // future package cannot silently bypass independent review.
+    const effectiveZone = pathZone ?? 'yellow';
+    if (zoneOrder.indexOf(effectiveZone) > zoneOrder.indexOf(highestZone)) {
+      highestZone = effectiveZone;
     }
   }
 

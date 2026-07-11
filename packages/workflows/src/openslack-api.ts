@@ -1,10 +1,10 @@
-import { classifyPaths } from '@openslack/kernel'
 import type { PRReviewReport, PRReviewPolicy } from '@openslack/pr'
 import { fetchPRDetails, classifyPRReport, diagnosePR, loadPRReviewPolicy, mergeIfReady } from '@openslack/pr'
 import { parseCODEOWNERS, resolveCodeowners } from '@openslack/pr'
 import { getCODEOWNERS, listOpenPRs } from '@openslack/github'
 import { recordEvent as collabRecordEvent, createHandoff as collabCreateHandoff, recordDecision as collabRecordDecision } from '@openslack/collaboration'
 import type { PrmsDoctorResult } from './types.js'
+import { classifyPathGroups } from './risk-classification.js'
 
 /**
  * Result from the PRMS Merge Steward (mergeIfReady).
@@ -55,18 +55,7 @@ export interface OpenSlackAPIOptions {
  * - All real I/O is pluggable via the options for testability.
  */
 export function createOpenSlackAPI(options: OpenSlackAPIOptions = {}) {
-  const classify = options._classifyPaths ?? ((paths: string[]) => {
-    const green: string[] = []
-    const yellow: string[] = []
-    const red: string[] = []
-    for (const p of paths) {
-      const z = classifyPaths([p])
-      if (z === 'green') green.push(p)
-      else if (z === 'yellow') yellow.push(p)
-      else if (z === 'red' || z === 'black') red.push(p)
-    }
-    return { green, yellow, red }
-  })
+  const classify = options._classifyPaths ?? classifyPathGroups
 
   // Use `as any` to bridge from loosely-typed overrides to strict package types.
   // When no override is provided, the real implementation is used directly.

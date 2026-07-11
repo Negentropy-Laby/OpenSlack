@@ -84,9 +84,9 @@ describe('createOpenSlackAPI', () => {
 
     it('prms.classify delegates to real classifyPaths by default', async () => {
       const api = makeAPI()
-      // 'docs/**' is green zone
-      const result = await api.prms.classify(['docs/faq.md'])
+      const result = await api.prms.classify(['docs/faq.md', 'new-root-config.yaml'])
       expect(result.green).toContain('docs/faq.md')
+      expect(result.yellow).toContain('new-root-config.yaml')
     })
 
     it('prms.doctor returns READY_TO_MERGE when all gates pass', async () => {
