@@ -281,6 +281,14 @@ export function validateModules(
             `Deferred work "${item.id}" cannot claim ${item.maturity} without a declared evidence commit`,
           );
         }
+        if (
+          item.maturity !== 'planned' &&
+          !item.evidenceRefs.some((reference) => /^(test|repo):/.test(reference))
+        ) {
+          errors.push(
+            `Deferred work "${item.id}" cannot claim ${item.maturity} without test or repository evidence`,
+          );
+        }
         if (item.maturity !== 'planned' && options.rootPath) {
           validateEvidencePathsAtDeclaredCommits(
             item.evidenceRefs,
@@ -371,6 +379,12 @@ function validateMaturityOwner(
     !evidenceRefs.some((reference) => reference.startsWith('commit:'))
   ) {
     errors.push(`${label} cannot claim ${owner.maturity} without a declared evidence commit`);
+  }
+  if (
+    owner.maturity !== 'planned' &&
+    !evidenceRefs.some((reference) => /^(test|repo):/.test(reference))
+  ) {
+    errors.push(`${label} cannot claim ${owner.maturity} without test or repository evidence`);
   }
   if (owner.maturity !== 'planned' && options.rootPath) {
     validateEvidencePathsAtDeclaredCommits(evidenceRefs, label, errors, options.rootPath);

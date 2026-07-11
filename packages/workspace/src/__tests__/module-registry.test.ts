@@ -175,6 +175,16 @@ describe('validateModules', () => {
     expect(
       ordinaryResult.errors.some((error) => error.includes('without structured live evidence')),
     ).toBe(true);
+
+    const commitOnly = {
+      ...validRegistry,
+      modules: [moduleFixture({ evidenceRefs: ['commit:1234567'] })],
+    } as ModulesRegistry;
+    expect(
+      validateModules(commitOnly).errors.some((error) =>
+        error.includes('without test or repository evidence'),
+      ),
+    ).toBe(true);
   });
 
   it('caps module maturity at the least mature component', () => {
@@ -327,7 +337,7 @@ describe('readProductModules', () => {
         '    maturity: local_ready',
         '    operatorConfigured: false',
         '    externalBlockers: [live_smoke_pending]',
-        '    evidenceRefs: [commit:1234567]',
+        '    evidenceRefs: [commit:1234567, test:bundled.test.ts]',
         "    phase: '1.0'",
         '',
       ].join('\n'),
