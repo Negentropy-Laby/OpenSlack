@@ -270,9 +270,11 @@ is idempotent.
 
 `WorkspaceContext` keeps installed product assets, checked-in project state, and
 gitignored local state as separate roots. The current embedded asset set covers
-the minimal agent, provider, and workflow templates; source-only maintenance
-commands will be migrated behind the explicit `sourceCheckout` flag during the
-remaining standalone-product slices.
+the minimal agent, provider, and workflow templates. Normal `setup`, setup smoke,
+interactive validation, setup reports, and multi-module `doctor` now execute
+package APIs against `workspaceRoot`; they do not spawn
+`apps/cli/src/index.ts` or require the OpenSlack source tree. Golden, Genesis,
+and product module-registry checks run only when `sourceCheckout` is true.
 
 ### Import an organization-owned GitHub App
 

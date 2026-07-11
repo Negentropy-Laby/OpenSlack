@@ -371,6 +371,12 @@ The callback does not implement human OAuth, does not accept an `access_token`
 query, and never writes a PAT or installation token to a plaintext file.
 `apps/auth-callback/` is the thin HTTP transport for this product flow.
 
+Normal workspace setup and doctor commands resolve the explicit
+`WorkspaceContext` and call package diagnostics in-process. They do not require
+the monorepo CLI source entry, Genesis script, golden suite, or product module
+registry. Those maintenance checks remain available only in an OpenSlack source
+checkout.
+
 `scripts/setup-gh.sh` installs `gh` CLI on any platform for developer convenience.
 
 ## Token Priority (getClient)

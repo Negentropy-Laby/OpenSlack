@@ -2,6 +2,7 @@ import { execFileSync, execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { REQUIRED_OPENSLACK_LABELS, getClient } from '@openslack/github';
+import { resolveWorkspaceContext } from '@openslack/workspace';
 
 export type SetupFindingStatus =
   | 'ok'
@@ -143,7 +144,10 @@ async function buildGitHubFindings(): Promise<SetupFinding[]> {
         `OPENSLACK_GITHUB_APP_INSTALLATION_ID=${installationId ? 'set' : 'missing'}`,
         `OPENSLACK_GITHUB_APP_PRIVATE_KEY=${privateKeyPresent ? 'set (masked)' : 'missing'}`,
       ].join(', '),
-      nextAction: appId && installationId && privateKeyPresent ? undefined : 'Set all GitHub App variables or use GITHUB_TOKEN for local development.',
+      nextAction:
+        appId && installationId && privateKeyPresent
+          ? undefined
+          : 'Set all GitHub App variables or use GITHUB_TOKEN for local development.',
     });
   } else if (tokenPresent) {
     findings.push({
@@ -166,15 +170,19 @@ async function buildGitHubFindings(): Promise<SetupFinding[]> {
     id: 'branch-protection',
     title: 'Branch protection / ruleset',
     status: 'requires_github_admin',
-    detail: 'Remote branch protection is best-effort from local setup and must be confirmed in GitHub repository settings.',
+    detail:
+      'Remote branch protection is best-effort from local setup and must be confirmed in GitHub repository settings.',
     nextAction: 'Confirm required checks, CODEOWNER review, and ruleset bypass settings in GitHub.',
   });
 
   return findings;
 }
 
-export async function buildSetupReport(options: { root?: string; dryRun?: boolean } = {}): Promise<SetupReport> {
+export async function buildSetupReport(
+  options: { root?: string; dryRun?: boolean } = {},
+): Promise<SetupReport> {
   const root = options.root ?? findRepoRoot();
+  const context = resolveWorkspaceContext({ workspaceRoot: root });
   const findings: SetupFinding[] = [];
 
   findings.push({
@@ -182,7 +190,9 @@ export async function buildSetupReport(options: { root?: string; dryRun?: boolea
     title: 'Workspace root',
     status: existsSync(join(root, 'openslack.yaml')) ? 'ok' : 'fixable_by_command',
     detail: root,
-    nextAction: existsSync(join(root, 'openslack.yaml')) ? undefined : 'Run setup from the OpenSlack repository root.',
+    nextAction: existsSync(join(root, 'openslack.yaml'))
+      ? undefined
+      : 'Run openslack init from the target Git repository root.',
   });
 
   findings.push({
@@ -210,11 +220,22 @@ export async function buildSetupReport(options: { root?: string; dryRun?: boolea
     title: 'Local state directories',
     status: existsSync(join(root, '.openslack')) ? 'ok' : 'fixable_by_command',
     detail: existsSync(join(root, '.openslack')) ? '.openslack exists' : '.openslack is missing',
-    nextAction: existsSync(join(root, '.openslack')) ? undefined : 'Restore workspace state from the repository.',
+    nextAction: existsSync(join(root, '.openslack'))
+      ? undefined
+      : 'Restore workspace state from the repository.',
   });
 
-  findings.push(detectGenesisShell(root));
-  findings.push(...await buildGitHubFindings());
+  findings.push(
+    context.sourceCheckout
+      ? detectGenesisShell(root)
+      : {
+          id: 'source-maintenance',
+          title: 'Source maintenance checks',
+          status: 'informational',
+          detail: 'Genesis and golden maintenance checks are not required in a normal workspace.',
+        },
+  );
+  findings.push(...(await buildGitHubFindings()));
 
   return {
     root,
@@ -234,27 +255,27 @@ export function getNextSteps(): SetupNextStep[] {
   return [
     {
       label: 'Check your workspace status',
-      command: 'bun run openslack status',
+      command: 'openslack status',
       description: 'Show current workspace state, modules, and health',
     },
     {
       label: 'Review your PRs',
-      command: 'bun run openslack pr list',
+      command: 'openslack pr list',
       description: 'List open pull requests and their status',
     },
     {
       label: 'See the team dashboard',
-      command: 'bun run openslack collaboration dashboard',
+      command: 'openslack collaboration dashboard',
       description: 'View team activity, events, and collaboration metrics',
     },
     {
       label: 'Get a role-specific guide',
-      command: 'bun run openslack guide operator',
+      command: 'openslack guide operator',
       description: 'Show the operator role guide with common workflows',
     },
     {
       label: 'Run diagnostics',
-      command: 'bun run openslack doctor',
+      command: 'openslack doctor',
       description: 'Run a full diagnostic check on your workspace',
     },
   ];
@@ -277,4 +298,3 @@ export function renderSetupReport(report: SetupReport): string {
 
   return lines.join('\n');
 }
-

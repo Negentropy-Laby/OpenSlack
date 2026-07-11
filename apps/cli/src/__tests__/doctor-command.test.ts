@@ -2,6 +2,10 @@ import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { doctorCommands } from '../commands/doctor.js';
 
 const mockDiagnoseAgentRuntime = vi.fn();
+const mockResolveWorkspaceContext = vi.fn(() => ({
+  workspaceRoot: process.cwd(),
+  sourceCheckout: true,
+}));
 const LLM_ENV_KEYS = [
   'OPENSLACK_LLM_PROVIDER',
   'OPENSLACK_LLM_API_KEY',
@@ -10,6 +14,7 @@ const LLM_ENV_KEYS = [
 let savedLlmEnv: Map<string, string | undefined>;
 
 vi.mock('@openslack/workspace', () => ({
+  resolveWorkspaceContext: () => mockResolveWorkspaceContext(),
   validateWorkspace: vi.fn(() => ({ valid: true, errors: [] })),
   readModules: vi.fn(() => ({ modules: [] })),
   validateModules: vi.fn(() => ({ valid: true, errors: [] })),
@@ -21,15 +26,18 @@ vi.mock('@openslack/github', () => ({
 
 vi.mock('@openslack/runtime', () => ({
   detectGenesisShell: vi.fn(() => ({ command: 'echo genesis', detail: 'ok' })),
+  runGoldenEval: vi.fn(() =>
+    Array.from({ length: 7 }, (_, index) => ({ caseId: `case-${index}`, passed: true })),
+  ),
   renderFindingsPlain: vi.fn((findings: Array<{ status: string; title: string; detail: string }>) =>
     findings.map((finding) => `${finding.status}: ${finding.title}: ${finding.detail}`).join('\n'),
   ),
 }));
 
 vi.mock('@openslack/operator', async () => {
-  const actual = await vi.importActual<typeof import('../../../../packages/operator/src/llm-config.js')>(
-    '../../../../packages/operator/src/llm-config.js',
-  );
+  const actual = await vi.importActual<
+    typeof import('../../../../packages/operator/src/llm-config.js')
+  >('../../../../packages/operator/src/llm-config.js');
   return {
     describeLLMRoutingConfig: actual.describeLLMRoutingConfig,
   };
@@ -62,6 +70,10 @@ describe('doctor command agent runtime aggregation', () => {
   beforeEach(() => {
     savedLlmEnv = new Map(LLM_ENV_KEYS.map((key) => [key, process.env[key]]));
     vi.clearAllMocks();
+    mockResolveWorkspaceContext.mockReturnValue({
+      workspaceRoot: process.cwd(),
+      sourceCheckout: true,
+    });
     mockDiagnoseAgentRuntime.mockReturnValue({
       status: 'PASS',
       readiness: 'ready',
@@ -111,5 +123,16 @@ describe('doctor command agent runtime aggregation', () => {
     expect(output).toContain('[WARN] Intent Routing: misconfigured');
     expect(output).toContain('OPENSLACK_LLM_MODEL not set');
     expect(output).not.toContain('model: default');
+  });
+
+  it('skips source-only golden, module-registry, and Genesis checks in a normal workspace', async () => {
+    mockResolveWorkspaceContext.mockReturnValue({
+      workspaceRoot: process.cwd(),
+      sourceCheckout: false,
+    });
+    const output = await runDoctor();
+    expect(output).toContain('[PASS] Source maintenance:');
+    expect(output).toContain('[PASS] Product module registry:');
+    expect(output).not.toContain('Genesis validate');
   });
 });

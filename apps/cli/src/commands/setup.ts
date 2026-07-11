@@ -1,17 +1,22 @@
 import { Command } from 'commander';
 import { execSync, execFileSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { join } from 'node:path';
 import {
-  buildSetupReport, detectGenesisShell, renderSetupReport,
-  recommendNextActions, renderFindingsPlain,
-  getNextSteps, OnboardingStore,
+  buildSetupReport,
+  detectGenesisShell,
+  renderSetupReport,
+  recommendNextActions,
+  renderFindingsPlain,
+  getNextSteps,
+  OnboardingStore,
+  runGoldenEval,
 } from '@openslack/runtime';
 import type { PlainFinding } from '@openslack/runtime';
 import { describeLLMRoutingConfig } from '@openslack/operator';
 import { recordEvent } from '@openslack/collaboration';
 import { diagnoseAgentRuntime } from '@openslack/agent-runtime';
-import { resolveWorkspaceContext } from '@openslack/workspace';
+import { resolveWorkspaceContext, validateWorkspace } from '@openslack/workspace';
+import { getClient } from '@openslack/github';
 
 export function readStrictOption(source: unknown): boolean {
   if (!source || typeof source !== 'object') return false;
@@ -22,11 +27,22 @@ export function readStrictOption(source: unknown): boolean {
   return false;
 }
 
+export interface SetupCommandDependencies {
+  resolveContext?: typeof resolveWorkspaceContext;
+  validate?: typeof validateWorkspace;
+  runGolden?: typeof runGoldenEval;
+  getGitHubClient?: typeof getClient;
+}
+
 function readStrictFromCommander(args: unknown[], command: Command): boolean {
   return readStrictOption(command) || args.some((arg) => readStrictOption(arg));
 }
 
-export function setupCommands(): Command {
+export function setupCommands(dependencies: SetupCommandDependencies = {}): Command {
+  const resolveContext = dependencies.resolveContext ?? resolveWorkspaceContext;
+  const validate = dependencies.validate ?? validateWorkspace;
+  const runGolden = dependencies.runGolden ?? runGoldenEval;
+  const getGitHubClient = dependencies.getGitHubClient ?? getClient;
   const cmd = new Command('setup').description('One-step OpenSlack setup wizard');
 
   cmd
@@ -35,7 +51,7 @@ export function setupCommands(): Command {
     .option('--start', 'Create a new onboarding session')
     .action((options: { start?: boolean }) => {
       try {
-        const context = resolveWorkspaceContext();
+        const context = resolveContext();
         const store = new OnboardingStore(context.localStateRoot);
         const state = options.start ? store.create() : store.load();
         console.log(`Onboarding session: ${state.sessionId}`);
@@ -58,67 +74,65 @@ export function setupCommands(): Command {
     });
   }
 
-  function runFullChecklist(strict = false): void {
-    const root = process.cwd();
-    const node = process.execPath;
-    const cli = join(root, 'apps', 'cli', 'src', 'index.ts');
+  async function runFullChecklist(strict = false): Promise<void> {
+    const context = resolveContext();
+    const root = context.workspaceRoot;
     const results: Array<{ step: string; passed: boolean; detail: string; warn?: boolean }> = [];
 
-    function runStep(label: string, args: string[]): void {
-      try {
-        const out = execSync(`"${node}" --import tsx "${cli}" ${args.join(' ')}`, {
-          cwd: root,
-          stdio: 'pipe',
-          timeout: 60000,
-        });
-        results.push({
-          step: label,
-          passed: true,
-          detail: out.toString().trim().split('\n')[0] || 'PASS',
-        });
-      } catch (e) {
-        const stderr = (e as { stderr?: Buffer }).stderr?.toString() || (e as Error).message;
-        results.push({ step: label, passed: false, detail: stderr.slice(0, 200) });
-      }
-    }
-
     console.log('OpenSlack Setup\n');
-    runStep('Workspace validate', ['workspace', 'validate']);
-    runStep('Golden evals', ['self', 'eval', '--suite', 'golden']);
+    const workspace = validate(root);
+    results.push({
+      step: 'Workspace validate',
+      passed: workspace.valid,
+      detail: workspace.valid ? 'PASS' : `${workspace.errors.length} validation error(s)`,
+    });
+    if (context.sourceCheckout) {
+      const golden = runGolden();
+      const passed = golden.filter((result) => result.passed).length;
+      results.push({
+        step: 'Golden evals',
+        passed: passed === golden.length,
+        detail: `${passed}/${golden.length} passing`,
+      });
+    } else {
+      results.push({
+        step: 'Source maintenance',
+        passed: true,
+        detail: 'Golden and Genesis checks are not required in a normal workspace.',
+      });
+    }
 
     // GitHub doctor: WARN on failure (not FAIL unless --strict)
     try {
-      const out = execSync(`"${node}" --import tsx "${cli}" github doctor`, {
-        cwd: root,
-        stdio: 'pipe',
-        timeout: 60000,
-      });
+      const client = await getGitHubClient();
       results.push({
         step: 'GitHub doctor',
-        passed: true,
-        detail: out.toString().trim().split('\n')[0] || 'PASS',
+        passed: !client.isDryRun,
+        detail: client.isDryRun ? 'Dry-run (no credentials)' : client.authMode,
+        warn: client.isDryRun,
       });
-    } catch (e) {
-      const stderr = (e as { stderr?: Buffer }).stderr?.toString() || (e as Error).message;
+    } catch {
       results.push({
         step: 'GitHub doctor',
         passed: false,
-        detail: stderr.slice(0, 200),
+        detail: 'GitHub authentication diagnostic failed safely.',
         warn: true,
       });
     }
 
-    try {
-      const genesis = detectGenesisShell(root);
-      if (!genesis.command) throw new Error(genesis.detail);
-      execSync(genesis.command, { cwd: root, stdio: 'pipe', timeout: 30000 });
-      results.push({ step: 'Genesis validate', passed: true, detail: '5/5 checks passed' });
-    } catch (err) {
-      results.push({
-        step: 'Genesis validate',
-        passed: false,
-        detail: `Genesis validation failed: ${(err as Error).message}`.slice(0, 200),
-      });
+    if (context.sourceCheckout) {
+      try {
+        const genesis = detectGenesisShell(root);
+        if (!genesis.command) throw new Error(genesis.detail);
+        execSync(genesis.command, { cwd: root, stdio: 'pipe', timeout: 30000 });
+        results.push({ step: 'Genesis validate', passed: true, detail: '5/5 checks passed' });
+      } catch (err) {
+        results.push({
+          step: 'Genesis validate',
+          passed: false,
+          detail: `Genesis validation failed: ${(err as Error).message}`.slice(0, 200),
+        });
+      }
     }
 
     const runtimeReport = diagnoseAgentRuntime({ rootDir: root, env: process.env });
@@ -187,13 +201,13 @@ export function setupCommands(): Command {
   // Default action: run full checklist
   cmd
     .option('--strict', 'Treat warnings as failures (non-zero exit)')
-    .action((...args: unknown[]) => runFullChecklist(readStrictFromCommander(args, cmd)));
+    .action(async (...args: unknown[]) => runFullChecklist(readStrictFromCommander(args, cmd)));
 
   const runCommand = cmd
     .command('run')
     .description('Run the full OpenSlack setup checklist')
     .option('--strict', 'Treat warnings as failures (non-zero exit)');
-  runCommand.action((...args: unknown[]) =>
+  runCommand.action(async (...args: unknown[]) =>
     runFullChecklist(readStrictFromCommander(args, runCommand)),
   );
 
@@ -242,57 +256,57 @@ export function setupCommands(): Command {
     .command('smoke')
     .description('Run read-only smoke test (no side effects)')
     .option('--strict', 'Treat warnings as failures (non-zero exit)');
-  smokeCommand.action((...args: unknown[]) => {
+  smokeCommand.action(async (...args: unknown[]) => {
     const strict = readStrictFromCommander(args, smokeCommand);
-    const root = process.cwd();
-    const node = process.execPath;
-    const cli = join(root, 'apps', 'cli', 'src', 'index.ts');
+    const context = resolveContext();
+    const root = context.workspaceRoot;
     const results: Array<{ check: string; passed: boolean; detail: string; warn?: boolean }> = [];
 
-    function runCheck(label: string, args: string[]): void {
-      try {
-        execSync(`"${node}" --import tsx "${cli}" ${args.join(' ')}`, {
-          cwd: root,
-          stdio: 'pipe',
-          timeout: 60000,
-        });
-        results.push({ check: label, passed: true, detail: 'PASS' });
-      } catch (e) {
-        const stderr = (e as { stderr?: Buffer }).stderr?.toString() || (e as Error).message;
-        results.push({ check: label, passed: false, detail: stderr.slice(0, 150) });
-      }
-    }
-
     console.log('OpenSlack Smoke Test\n');
-
-    runCheck('Workspace validate', ['workspace', 'validate']);
-    runCheck('Golden evals', ['self', 'eval', '--suite', 'golden', '--clean']);
+    const workspace = validate(root);
+    results.push({
+      check: 'Workspace validate',
+      passed: workspace.valid,
+      detail: workspace.valid ? 'PASS' : `${workspace.errors.length} validation error(s)`,
+    });
+    if (context.sourceCheckout) {
+      const golden = runGolden();
+      const passed = golden.filter((result) => result.passed).length;
+      results.push({
+        check: 'Golden evals',
+        passed: passed === golden.length,
+        detail: `${passed}/${golden.length}`,
+      });
+    } else {
+      results.push({
+        check: 'Source maintenance',
+        passed: true,
+        detail: 'Not required in a normal workspace',
+      });
+    }
 
     // GitHub doctor: WARN on failure (not FAIL unless --strict)
     try {
-      execSync(`"${node}" --import tsx "${cli}" github doctor`, {
-        cwd: root,
-        stdio: 'pipe',
-        timeout: 60000,
-      });
-      results.push({ check: 'GitHub doctor', passed: true, detail: 'PASS' });
-    } catch (e) {
-      const stderr = (e as { stderr?: Buffer }).stderr?.toString() || (e as Error).message;
+      const client = await getGitHubClient();
       results.push({
         check: 'GitHub doctor',
-        passed: false,
-        detail: stderr.slice(0, 150),
-        warn: true,
+        passed: !client.isDryRun,
+        detail: client.isDryRun ? 'Dry-run: no credentials' : client.authMode,
+        warn: client.isDryRun,
       });
+    } catch {
+      results.push({ check: 'GitHub doctor', passed: false, detail: 'Unavailable', warn: true });
     }
 
-    try {
-      const genesis = detectGenesisShell(root);
-      if (!genesis.command) throw new Error(genesis.detail);
-      execSync(genesis.command, { cwd: root, stdio: 'pipe', timeout: 30000 });
-      results.push({ check: 'Genesis validate', passed: true, detail: '5/5' });
-    } catch {
-      results.push({ check: 'Genesis validate', passed: false, detail: 'Failed' });
+    if (context.sourceCheckout) {
+      try {
+        const genesis = detectGenesisShell(root);
+        if (!genesis.command) throw new Error(genesis.detail);
+        execSync(genesis.command, { cwd: root, stdio: 'pipe', timeout: 30000 });
+        results.push({ check: 'Genesis validate', passed: true, detail: '5/5' });
+      } catch {
+        results.push({ check: 'Genesis validate', passed: false, detail: 'Failed' });
+      }
     }
 
     // LLM routing status
@@ -343,12 +357,17 @@ export function setupCommands(): Command {
       return;
     }
     const argv = stripped.split(/\s+/);
-    const root = process.cwd();
-    const node = process.execPath;
-    const cli = join(root, 'apps', 'cli', 'src', 'index.ts');
+    const context = resolveContext();
+    const cliEntry = process.argv[1];
+    if (!cliEntry) {
+      console.log(
+        '  Current OpenSlack executable entrypoint is unavailable. Run the command manually.',
+      );
+      return;
+    }
     try {
-      execFileSync(node, ['--import', 'tsx', cli, ...argv], {
-        cwd: root,
+      execFileSync(process.execPath, [...process.execArgv, cliEntry, ...argv], {
+        cwd: context.workspaceRoot,
         stdio: 'inherit',
         timeout: 60000,
       });
@@ -373,34 +392,32 @@ export function setupCommands(): Command {
 
   function runValidationSteps(): PlainFinding[] {
     const results: PlainFinding[] = [];
-    const root = process.cwd();
-    const node = process.execPath;
-    const cli = join(root, 'apps', 'cli', 'src', 'index.ts');
+    const context = resolveContext();
+    const root = context.workspaceRoot;
 
-    // Workspace validate
-    try {
-      execFileSync(node, ['--import', 'tsx', cli, 'workspace', 'validate'], {
-        cwd: root,
-        stdio: 'pipe',
-        timeout: 60000,
-      });
-      results.push({ status: 'PASS', title: 'Workspace validate', detail: 'Schema and structure valid' });
-    } catch (e) {
-      const stderr = (e as { stderr?: Buffer }).stderr?.toString() || (e as Error).message;
-      results.push({ status: 'FAIL', title: 'Workspace validate', detail: stderr.slice(0, 200) });
-    }
+    const workspace = validate(root);
+    results.push({
+      status: workspace.valid ? 'PASS' : 'FAIL',
+      title: 'Workspace validate',
+      detail: workspace.valid
+        ? 'Schema and structure valid'
+        : `${workspace.errors.length} validation error(s)`,
+    });
 
-    // Golden evals
-    try {
-      execFileSync(node, ['--import', 'tsx', cli, 'self', 'eval', '--suite', 'golden', '--clean'], {
-        cwd: root,
-        stdio: 'pipe',
-        timeout: 120000,
+    if (context.sourceCheckout) {
+      const golden = runGolden();
+      const passed = golden.filter((result) => result.passed).length;
+      results.push({
+        status: passed === golden.length ? 'PASS' : 'FAIL',
+        title: 'Golden evals',
+        detail: `${passed}/${golden.length} passing`,
       });
-      results.push({ status: 'PASS', title: 'Golden evals', detail: 'All golden evals passing' });
-    } catch (e) {
-      const stderr = (e as { stderr?: Buffer }).stderr?.toString() || (e as Error).message;
-      results.push({ status: 'FAIL', title: 'Golden evals', detail: stderr.slice(0, 200) });
+    } else {
+      results.push({
+        status: 'PASS',
+        title: 'Source maintenance',
+        detail: 'Not required in a normal workspace',
+      });
     }
 
     return results;

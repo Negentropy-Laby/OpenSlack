@@ -2,22 +2,16 @@ import { Command } from 'commander';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
-import { readModules, validateModules } from '@openslack/workspace';
+import {
+  readModules,
+  resolveWorkspaceContext,
+  validateModules,
+  validateWorkspace,
+} from '@openslack/workspace';
 import { getClient } from '@openslack/github';
 import { describeLLMRoutingConfig } from '@openslack/operator';
-import { detectGenesisShell, renderFindingsPlain } from '@openslack/runtime';
+import { detectGenesisShell, renderFindingsPlain, runGoldenEval } from '@openslack/runtime';
 import type { PlainFinding } from '@openslack/runtime';
-
-function findRepoRoot(): string {
-  let dir = process.cwd();
-  for (let i = 0; i < 10; i++) {
-    if (existsSync(join(dir, 'openslack.yaml'))) return dir;
-    const parent = join(dir, '..');
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return process.cwd();
-}
 
 type CheckState = 'PASS' | 'WARN' | 'FAIL';
 
@@ -38,12 +32,12 @@ export function doctorCommands(dependencies: DoctorCommandDependencies = {}): Co
   cmd
     .option('--format <format>', 'Output format: standard or plain', 'standard')
     .action(async (options: { format: string }) => {
-      const root = findRepoRoot();
+      const context = resolveWorkspaceContext();
+      const root = context.workspaceRoot;
       const checks: CheckResult[] = [];
 
       // Workspace check
       try {
-        const { validateWorkspace } = await import('@openslack/workspace');
         const result = validateWorkspace(root);
         checks.push({
           name: 'Workspace valid',
@@ -51,15 +45,28 @@ export function doctorCommands(dependencies: DoctorCommandDependencies = {}): Co
           detail: result.valid ? 'openslack.yaml valid' : `${result.errors.length} errors`,
         });
       } catch (e) {
-        checks.push({ name: 'Workspace valid', state: 'FAIL', detail: `Error: ${(e as Error).message}` });
+        checks.push({
+          name: 'Workspace valid',
+          state: 'FAIL',
+          detail: `Error: ${(e as Error).message}`,
+        });
       }
 
-      // Golden evals check
-      try {
-        runExecSync('bun run openslack self eval --suite golden', { cwd: root, stdio: 'pipe', encoding: 'utf-8' });
-        checks.push({ name: 'Golden evals', state: 'PASS', detail: '7/7 passing' });
-      } catch {
-        checks.push({ name: 'Golden evals', state: 'FAIL', detail: 'Some evals failed' });
+      // Product source maintenance checks do not belong to ordinary workspaces.
+      if (context.sourceCheckout) {
+        const golden = runGoldenEval();
+        const passed = golden.filter((result) => result.passed).length;
+        checks.push({
+          name: 'Golden evals',
+          state: passed === golden.length ? 'PASS' : 'FAIL',
+          detail: `${passed}/${golden.length} passing`,
+        });
+      } else {
+        checks.push({
+          name: 'Source maintenance',
+          state: 'PASS',
+          detail: 'Golden and Genesis checks are not required in a normal workspace.',
+        });
       }
 
       // GitHub auth check
@@ -71,14 +78,22 @@ export function doctorCommands(dependencies: DoctorCommandDependencies = {}): Co
           checks.push({ name: 'GitHub auth', state: 'PASS', detail: `${client.authMode}` });
         }
       } catch (e) {
-        checks.push({ name: 'GitHub auth', state: 'FAIL', detail: `Error: ${(e as Error).message}` });
+        checks.push({
+          name: 'GitHub auth',
+          state: 'FAIL',
+          detail: `Error: ${(e as Error).message}`,
+        });
       }
 
       // Required labels check
       try {
         const client = await getClient();
         if (client.isDryRun) {
-          checks.push({ name: 'Required labels', state: 'WARN', detail: 'Dry-run: cannot verify remotely' });
+          checks.push({
+            name: 'Required labels',
+            state: 'WARN',
+            detail: 'Dry-run: cannot verify remotely',
+          });
         } else {
           const requiredLabels = [
             'openslack:task',
@@ -111,28 +126,46 @@ export function doctorCommands(dependencies: DoctorCommandDependencies = {}): Co
           }
         }
       } catch (e) {
-        checks.push({ name: 'Required labels', state: 'FAIL', detail: `Error: ${(e as Error).message}` });
+        checks.push({
+          name: 'Required labels',
+          state: 'FAIL',
+          detail: `Error: ${(e as Error).message}`,
+        });
       }
 
       // CODEOWNERS check
       const codeowners = join(root, '.github', 'CODEOWNERS');
       checks.push({
         name: 'CODEOWNERS',
-        state: existsSync(codeowners) ? 'PASS' : 'FAIL',
+        state: existsSync(codeowners) ? 'PASS' : context.sourceCheckout ? 'FAIL' : 'WARN',
         detail: existsSync(codeowners) ? 'Exists' : 'Missing',
       });
 
       // Module registry check
-      try {
-        const registry = readModules(root);
-        const validation = validateModules(registry);
+      if (context.sourceCheckout) {
+        try {
+          const registry = readModules(root);
+          const validation = validateModules(registry);
+          checks.push({
+            name: 'Module registry',
+            state: validation.valid ? 'PASS' : 'FAIL',
+            detail: validation.valid
+              ? `${registry.modules.length} modules`
+              : `${validation.errors.length} errors`,
+          });
+        } catch (e) {
+          checks.push({
+            name: 'Module registry',
+            state: 'FAIL',
+            detail: `Error: ${(e as Error).message}`,
+          });
+        }
+      } else {
         checks.push({
-          name: 'Module registry',
-          state: validation.valid ? 'PASS' : 'FAIL',
-          detail: validation.valid ? `${registry.modules.length} modules` : `${validation.errors.length} errors`,
+          name: 'Product module registry',
+          state: 'PASS',
+          detail: 'Bundled product metadata; no workspace registry required.',
         });
-      } catch (e) {
-        checks.push({ name: 'Module registry', state: 'FAIL', detail: `Error: ${(e as Error).message}` });
       }
 
       // Overall execution-provider readiness. This is a configuration-only
@@ -173,7 +206,9 @@ export function doctorCommands(dependencies: DoctorCommandDependencies = {}): Co
           });
           const hasPullRequestRule = rules.some((r: { type: string }) => r.type === 'pull_request');
           const hasDeletionRule = rules.some((r: { type: string }) => r.type === 'deletion');
-          const hasNonFastForwardRule = rules.some((r: { type: string }) => r.type === 'non_fast_forward');
+          const hasNonFastForwardRule = rules.some(
+            (r: { type: string }) => r.type === 'non_fast_forward',
+          );
           const details: string[] = [];
           if (hasPullRequestRule) details.push('PR required');
           if (hasDeletionRule) details.push('delete protected');
@@ -201,19 +236,27 @@ export function doctorCommands(dependencies: DoctorCommandDependencies = {}): Co
       }
 
       // Genesis check (uses detectGenesisShell for Windows compatibility)
-      try {
-        const genesis = detectGenesisShell(root);
-        if (!genesis.command) throw new Error(genesis.detail);
-        runExecSync(genesis.command, { cwd: root, stdio: 'pipe', timeout: 30000 });
-        checks.push({ name: 'Genesis validate', state: 'PASS', detail: '5/5 checks passing' });
-      } catch (err) {
-        const detail = (err as Error).message || 'Genesis checks failed';
-        checks.push({ name: 'Genesis validate', state: 'FAIL', detail: `Genesis validation failed: ${detail}` });
+      if (context.sourceCheckout) {
+        try {
+          const genesis = detectGenesisShell(root);
+          if (!genesis.command) throw new Error(genesis.detail);
+          runExecSync(genesis.command, { cwd: root, stdio: 'pipe', timeout: 30000 });
+          checks.push({ name: 'Genesis validate', state: 'PASS', detail: '5/5 checks passing' });
+        } catch (err) {
+          const detail = (err as Error).message || 'Genesis checks failed';
+          checks.push({
+            name: 'Genesis validate',
+            state: 'FAIL',
+            detail: `Genesis validation failed: ${detail}`,
+          });
+        }
       }
 
       // LLM routing status
       {
-        const llmConfig = describeLLMRoutingConfig(process.env as Record<string, string | undefined>);
+        const llmConfig = describeLLMRoutingConfig(
+          process.env as Record<string, string | undefined>,
+        );
         const detail =
           llmConfig.mode === 'keyword-only'
             ? 'Keyword router active. Configure OPENSLACK_LLM_PROVIDER to enable LLM-first routing.'
@@ -250,14 +293,18 @@ export function doctorCommands(dependencies: DoctorCommandDependencies = {}): Co
 
       console.log('');
       if (hasFail) {
-        console.log(options.format === 'plain'
-          ? 'Some items need attention. Check the "Action needed" items above.'
-          : 'Some checks failed. Review output above.');
+        console.log(
+          options.format === 'plain'
+            ? 'Some items need attention. Check the "Action needed" items above.'
+            : 'Some checks failed. Review output above.',
+        );
         process.exit(1);
       } else {
-        console.log(options.format === 'plain'
-          ? 'Everything looks good. Review "Attention" items if any.'
-          : 'All critical checks passed. Review WARN items above.');
+        console.log(
+          options.format === 'plain'
+            ? 'Everything looks good. Review "Attention" items if any.'
+            : 'All critical checks passed. Review WARN items above.',
+        );
       }
     });
 
