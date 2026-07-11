@@ -9,7 +9,7 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 | Verify a fresh checkout                          | `openslack setup`                                                              | Runs workspace, golden, GitHub, genesis, and agent-runtime readiness checks.                   |
 | Initialize an ordinary Git repository            | `openslack init --root <repo> --repo <owner/name>`                             | Preview-first; add `--apply` only after reviewing the file plan.                               |
 | Get guided setup with prompts                    | `openslack setup interactive`                                                  | Walks fixable items step by step; supports `--format plain`                                    |
-| Start/resume the durable onboarding ledger       | `openslack setup onboarding --start`                                           | Persists step intent/receipts under gitignored local state; rerun without `--start` to resume. |
+| Start/resume the durable onboarding ledger       | `openslack setup onboarding --start`                                           | Start once; rerun without `--start` to resume. Existing receipts are never overwritten.       |
 | Run CI-style setup checks                        | `openslack setup --strict`                                                     | Treats warnings as failures. Use this for release or PR validation.                            |
 | Check GitHub readiness without changing anything | `openslack setup github`                                                       | Read-only by default. Use `--apply` only for explicit repairs.                                 |
 | Preview importing an owned GitHub App key        | `openslack github app import ...`                                              | Preview does not read the PEM; `--apply` requires a writable keychain backend.                 |
@@ -27,6 +27,38 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 | Start a conversation with an agent               | `openslack conversation start --title "..."`                                   | Creates a typed thread with JSONL persistence and secret scanning.                             |
 
 ## Common Workflows
+
+### 0. Resume-safe standalone onboarding
+
+Start the local ledger once, then begin the recommended step before performing
+its preview/apply commands:
+
+```bash
+openslack setup onboarding --start
+openslack setup onboarding begin
+```
+
+If the process or terminal stops after intent is recorded, the step becomes
+`needs_reconcile`. Verify the external state before continuing. Record a safe,
+redacted receipt when the operation succeeded:
+
+```bash
+openslack setup onboarding reconcile-complete workspace \
+  --summary "Workspace initialized" \
+  --evidence-ref workspace://openslack.yaml
+```
+
+Only when verification proves that the interrupted mutation did not occur may
+the step return to pending:
+
+```bash
+openslack setup onboarding reconcile-retry github_app
+```
+
+The ledger guides workspace initialization, provider configuration, GitHub App
+creation/import, installation permissions, author/reviewer identity separation,
+runtime smoke, and the temporary delivery ref probe. It stores intent and safe
+references under gitignored local state; it does not store credentials.
 
 ### 1. Start using OpenSlack on a new checkout
 

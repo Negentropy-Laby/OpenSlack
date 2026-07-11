@@ -1,4 +1,12 @@
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  linkSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { dirname, join } from 'node:path';
 
@@ -40,6 +48,14 @@ export interface OnboardingState {
   steps: OnboardingStepState[];
 }
 
+export interface OnboardingStepGuide {
+  id: OnboardingStepId;
+  title: string;
+  objective: string;
+  commands: string[];
+  verification: string;
+}
+
 export class OnboardingStateError extends Error {
   constructor(
     readonly code: 'ONBOARDING_STATE_INVALID' | 'ONBOARDING_STEP_INVALID',
@@ -61,6 +77,12 @@ export class OnboardingStore {
   }
 
   create(sessionId: string = randomUUID()): OnboardingState {
+    if (existsSync(this.path)) {
+      throw new OnboardingStateError(
+        'ONBOARDING_STATE_INVALID',
+        'An onboarding session already exists. Resume it instead of replacing its receipts.',
+      );
+    }
     const timestamp = this.now().toISOString();
     const state: OnboardingState = {
       schema: 'openslack.onboarding.v1',
@@ -69,7 +91,7 @@ export class OnboardingStore {
       updatedAt: timestamp,
       steps: STEP_IDS.map((id) => ({ id, status: 'pending', updatedAt: timestamp, attempt: 0 })),
     };
-    this.save(state);
+    this.save(state, true);
     return state;
   }
 
@@ -98,14 +120,24 @@ export class OnboardingStore {
   }
 
   begin(state: OnboardingState, stepId: OnboardingStepId): OnboardingState {
-    return this.updateStep(state, stepId, (step, timestamp) => ({
-      ...step,
-      status: 'running',
-      updatedAt: timestamp,
-      attempt: step.attempt + 1,
-      receipt: undefined,
-      errorCode: undefined,
-    }));
+    return this.updateStep(state, stepId, (step, timestamp) => {
+      if (step.status !== 'pending' && step.status !== 'failed') {
+        throw new OnboardingStateError(
+          'ONBOARDING_STEP_INVALID',
+          step.status === 'needs_reconcile'
+            ? 'Interrupted onboarding work must be reconciled before it can be retried.'
+            : 'Only a pending or failed onboarding step can begin.',
+        );
+      }
+      return {
+        ...step,
+        status: 'running',
+        updatedAt: timestamp,
+        attempt: step.attempt + 1,
+        receipt: undefined,
+        errorCode: undefined,
+      };
+    });
   }
 
   complete(
@@ -141,6 +173,46 @@ export class OnboardingStore {
     }));
   }
 
+  reconcile(
+    state: OnboardingState,
+    stepId: OnboardingStepId,
+    outcome: 'completed' | 'retry',
+    receipt?: OnboardingReceipt,
+  ): OnboardingState {
+    if (outcome === 'completed') {
+      if (!receipt) {
+        throw new OnboardingStateError(
+          'ONBOARDING_STEP_INVALID',
+          'A safely redacted receipt is required to reconcile a completed step.',
+        );
+      }
+      assertSafeReceipt(receipt);
+    } else if (receipt) {
+      throw new OnboardingStateError(
+        'ONBOARDING_STEP_INVALID',
+        'Retry reconciliation must not attach a completion receipt.',
+      );
+    }
+
+    return this.updateStep(state, stepId, (step, timestamp) => {
+      if (step.status !== 'needs_reconcile') {
+        throw new OnboardingStateError(
+          'ONBOARDING_STEP_INVALID',
+          'Only an interrupted onboarding step can be reconciled.',
+        );
+      }
+      return outcome === 'completed'
+        ? { ...step, status: 'completed', updatedAt: timestamp, receipt, errorCode: undefined }
+        : {
+            ...step,
+            status: 'pending',
+            updatedAt: timestamp,
+            receipt: undefined,
+            errorCode: undefined,
+          };
+    });
+  }
+
   nextActionable(state: OnboardingState): OnboardingStepState | null {
     return (
       state.steps.find((step) => step.status === 'needs_reconcile') ??
@@ -170,7 +242,7 @@ export class OnboardingStore {
     return next;
   }
 
-  private save(state: OnboardingState): void {
+  private save(state: OnboardingState, createOnly: boolean = false): void {
     mkdirSync(dirname(this.path), { recursive: true });
     const temporary = `${this.path}.${randomUUID()}.tmp`;
     try {
@@ -179,7 +251,21 @@ export class OnboardingStore {
         flag: 'wx',
         mode: 0o600,
       });
-      renameSync(temporary, this.path);
+      if (createOnly) {
+        try {
+          linkSync(temporary, this.path);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+            throw new OnboardingStateError(
+              'ONBOARDING_STATE_INVALID',
+              'An onboarding session already exists. Resume it instead of replacing its receipts.',
+            );
+          }
+          throw error;
+        }
+      } else {
+        renameSync(temporary, this.path);
+      }
     } finally {
       rmSync(temporary, { force: true });
     }
@@ -187,18 +273,60 @@ export class OnboardingStore {
 }
 
 function validateState(state: OnboardingState): void {
+  const stepIds = Array.isArray(state?.steps) ? state.steps.map((step) => step?.id) : [];
   if (
     state?.schema !== 'openslack.onboarding.v1' ||
     typeof state.sessionId !== 'string' ||
+    state.sessionId.length < 1 ||
+    state.sessionId.length > 200 ||
+    !isIsoTimestamp(state.createdAt) ||
+    !isIsoTimestamp(state.updatedAt) ||
     !Array.isArray(state.steps) ||
     state.steps.length !== STEP_IDS.length ||
-    !STEP_IDS.every((id) => state.steps.some((step) => step.id === id))
+    new Set(stepIds).size !== STEP_IDS.length ||
+    !STEP_IDS.every((id) => stepIds.includes(id)) ||
+    state.steps.some((step) => !isValidStepState(step))
   ) {
     throw new OnboardingStateError(
       'ONBOARDING_STATE_INVALID',
       'Onboarding state schema is invalid.',
     );
   }
+}
+
+function isValidStepState(step: OnboardingStepState): boolean {
+  const statuses: OnboardingStepStatus[] = [
+    'pending',
+    'running',
+    'completed',
+    'needs_reconcile',
+    'failed',
+  ];
+  if (
+    !STEP_IDS.includes(step?.id) ||
+    !statuses.includes(step?.status) ||
+    !isIsoTimestamp(step.updatedAt) ||
+    !Number.isSafeInteger(step.attempt) ||
+    step.attempt < 0 ||
+    (step.errorCode !== undefined && !/^[A-Z][A-Z0-9_]{2,80}$/.test(step.errorCode)) ||
+    (step.status === 'failed' && step.errorCode === undefined) ||
+    (step.status !== 'failed' && step.errorCode !== undefined) ||
+    (step.status === 'completed' && step.receipt === undefined) ||
+    (step.status !== 'completed' && step.receipt !== undefined)
+  ) {
+    return false;
+  }
+  if (!step.receipt) return true;
+  try {
+    assertSafeReceipt(step.receipt);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isIsoTimestamp(value: unknown): value is string {
+  return typeof value === 'string' && Number.isFinite(Date.parse(value));
 }
 
 function assertSafeReceipt(receipt: OnboardingReceipt): void {
@@ -225,3 +353,65 @@ const STEP_IDS: OnboardingStepId[] = [
   'runtime_smoke',
   'delivery_probe',
 ];
+
+export const ONBOARDING_STEP_GUIDES: Readonly<Record<OnboardingStepId, OnboardingStepGuide>> = {
+  workspace: {
+    id: 'workspace',
+    title: 'Initialize the workspace',
+    objective: 'Create the minimal OpenSlack workspace without a source checkout.',
+    commands: ['openslack init', 'openslack init --apply'],
+    verification: 'Run openslack workspace validate.',
+  },
+  provider: {
+    id: 'provider',
+    title: 'Configure a model provider',
+    objective: 'Select a real provider and store only an env: or keychain: credential reference.',
+    commands: ['openslack setup interactive', 'openslack setup smoke'],
+    verification: 'Confirm the runtime smoke reports a configured non-fixture provider.',
+  },
+  github_app: {
+    id: 'github_app',
+    title: 'Create or import the organization GitHub App',
+    objective: 'Store App credentials in the configured keychain without project-state secrets.',
+    commands: [
+      'openslack github app create --org <organization>',
+      'openslack github app create --org <organization> --apply',
+    ],
+    verification: 'Confirm local config contains keychain references only.',
+  },
+  installation: {
+    id: 'installation',
+    title: 'Verify installation scope and permissions',
+    objective: 'Distinguish public read access from selected-repository installation access.',
+    commands: ['openslack delivery doctor --repo <owner/repo> --require-issues-write'],
+    verification: 'Confirm contents, pull requests, issues, and repository selection pass.',
+  },
+  identity: {
+    id: 'identity',
+    title: 'Verify author and approval identities',
+    objective: 'Keep bot PR authorship separate from the human reviewer/CODEOWNER.',
+    commands: ['openslack setup run', 'openslack doctor'],
+    verification: 'Review CODEOWNERS guidance; apply any Red-zone change through a human-approved PR.',
+  },
+  runtime_smoke: {
+    id: 'runtime_smoke',
+    title: 'Run the standalone runtime smoke',
+    objective: 'Prove the configured provider fails closed and can execute governed runtime work.',
+    commands: ['openslack setup smoke'],
+    verification: 'Retain only redacted smoke evidence and typed failure/success codes.',
+  },
+  delivery_probe: {
+    id: 'delivery_probe',
+    title: 'Probe bot-authenticated Git delivery',
+    objective: 'Push, verify, and delete a unique temporary installation-authenticated ref.',
+    commands: [
+      'openslack delivery probe --repo <owner/repo>',
+      'openslack delivery probe --repo <owner/repo> --apply',
+    ],
+    verification: 'Confirm the remote probe ref was deleted or run the exact cleanup remediation.',
+  },
+};
+
+export function getOnboardingStepGuide(stepId: OnboardingStepId): OnboardingStepGuide {
+  return ONBOARDING_STEP_GUIDES[stepId];
+}

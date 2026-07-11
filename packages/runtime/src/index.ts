@@ -19,12 +19,14 @@ export {
   getNextSteps,
 } from './setup-report.js';
 export { OnboardingStateError, OnboardingStore } from './onboarding-store.js';
+export { getOnboardingStepGuide, ONBOARDING_STEP_GUIDES } from './onboarding-store.js';
 export type {
   OnboardingReceipt,
   OnboardingState,
   OnboardingStepId,
   OnboardingStepState,
   OnboardingStepStatus,
+  OnboardingStepGuide,
 } from './onboarding-store.js';
 export type {
   SetupFinding,

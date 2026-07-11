@@ -8,10 +8,11 @@ import {
   recommendNextActions,
   renderFindingsPlain,
   getNextSteps,
+  getOnboardingStepGuide,
   OnboardingStore,
   runGoldenEval,
 } from '@openslack/runtime';
-import type { PlainFinding } from '@openslack/runtime';
+import type { OnboardingState, OnboardingStepId, PlainFinding } from '@openslack/runtime';
 import { describeLLMRoutingConfig } from '@openslack/operator';
 import { recordEvent } from '@openslack/collaboration';
 import { diagnoseAgentRuntime } from '@openslack/agent-runtime';
@@ -38,6 +39,24 @@ function readStrictFromCommander(args: unknown[], command: Command): boolean {
   return readStrictOption(command) || args.some((arg) => readStrictOption(arg));
 }
 
+function renderOnboardingState(store: OnboardingStore, state: OnboardingState): void {
+  console.log(`Onboarding session: ${state.sessionId}`);
+  for (const step of state.steps) console.log(`[${step.status.toUpperCase()}] ${step.id}`);
+  const next = store.nextActionable(state);
+  if (!next) {
+    console.log('Onboarding ledger complete.');
+    return;
+  }
+  console.log(`Next: ${next.id} (${next.status})`);
+  if (next.status === 'needs_reconcile') {
+    console.log('Verify the interrupted operation before choosing reconcile-complete or reconcile-retry.');
+    return;
+  }
+  const guide = getOnboardingStepGuide(next.id);
+  console.log(`${guide.title}: ${guide.objective}`);
+  console.log(`Begin with: openslack setup onboarding begin ${next.id}`);
+}
+
 export function setupCommands(dependencies: SetupCommandDependencies = {}): Command {
   const resolveContext = dependencies.resolveContext ?? resolveWorkspaceContext;
   const validate = dependencies.validate ?? validateWorkspace;
@@ -45,7 +64,7 @@ export function setupCommands(dependencies: SetupCommandDependencies = {}): Comm
   const getGitHubClient = dependencies.getGitHubClient ?? getClient;
   const cmd = new Command('setup').description('One-step OpenSlack setup wizard');
 
-  cmd
+  const onboarding = cmd
     .command('onboarding')
     .description('Start or resume the durable standalone-product onboarding ledger')
     .option('--start', 'Create a new onboarding session')
@@ -54,12 +73,83 @@ export function setupCommands(dependencies: SetupCommandDependencies = {}): Comm
         const context = resolveContext();
         const store = new OnboardingStore(context.localStateRoot);
         const state = options.start ? store.create() : store.load();
-        console.log(`Onboarding session: ${state.sessionId}`);
-        for (const step of state.steps) console.log(`[${step.status.toUpperCase()}] ${step.id}`);
-        const next = store.nextActionable(state);
-        console.log(next ? `Next: ${next.id} (${next.status})` : 'Onboarding ledger complete.');
+        renderOnboardingState(store, state);
       } catch (error) {
         console.error(error instanceof Error ? error.message : 'Onboarding state failed.');
+        process.exitCode = 1;
+      }
+    });
+
+  onboarding
+    .command('begin [step]')
+    .description('Persist intent for the next onboarding step before running its commands')
+    .action((stepId?: string) => {
+      try {
+        const context = resolveContext();
+        const store = new OnboardingStore(context.localStateRoot);
+        const state = store.load();
+        const selected = stepId
+          ? state.steps.find((step) => step.id === stepId)
+          : store.nextActionable(state);
+        if (stepId && !selected) throw new Error(`Unknown onboarding step: ${stepId}`);
+        if (!selected) {
+          console.log('Onboarding ledger complete.');
+          return;
+        }
+        const next = store.begin(state, selected.id);
+        const guide = getOnboardingStepGuide(selected.id);
+        console.log(`Intent recorded: ${guide.title}`);
+        console.log(guide.objective);
+        for (const command of guide.commands) console.log(`  ${command}`);
+        console.log(`Verify: ${guide.verification}`);
+        console.log(
+          `After verification: openslack setup onboarding reconcile-complete ${selected.id} --summary <redacted-summary> --evidence-ref <safe-reference>`,
+        );
+        console.log(
+          `If verification proves no mutation occurred: openslack setup onboarding reconcile-retry ${selected.id}`,
+        );
+        const running = next.steps.find((step) => step.id === selected.id);
+        console.log(`Ledger status: ${running?.status ?? 'unknown'} (attempt ${running?.attempt ?? 0})`);
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : 'Onboarding step failed.');
+        process.exitCode = 1;
+      }
+    });
+
+  onboarding
+    .command('reconcile-complete <step>')
+    .description('Record a verified completed mutation without rerunning it')
+    .requiredOption('--summary <summary>', 'Safely redacted completion summary')
+    .requiredOption('--evidence-ref <reference...>', 'One or more safe evidence references')
+    .action((stepId: string, options: { summary: string; evidenceRef: string[] }) => {
+      try {
+        const context = resolveContext();
+        const store = new OnboardingStore(context.localStateRoot);
+        const state = store.load();
+        const next = store.reconcile(state, stepId as OnboardingStepId, 'completed', {
+          summary: options.summary,
+          evidenceRefs: options.evidenceRef,
+        });
+        renderOnboardingState(store, next);
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : 'Onboarding reconciliation failed.');
+        process.exitCode = 1;
+      }
+    });
+
+  onboarding
+    .command('reconcile-retry <step>')
+    .description('Retry only after verification proves the interrupted mutation did not occur')
+    .action((stepId: string) => {
+      try {
+        const context = resolveContext();
+        const store = new OnboardingStore(context.localStateRoot);
+        const state = store.load();
+        const next = store.reconcile(state, stepId as OnboardingStepId, 'retry');
+        console.log(`Verified absent; ${stepId} is pending and may be started again.`);
+        renderOnboardingState(store, next);
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : 'Onboarding reconciliation failed.');
         process.exitCode = 1;
       }
     });

@@ -2,7 +2,8 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { OnboardingStateError, OnboardingStore } from '../onboarding-store.js';
+import { OnboardingStore } from '../onboarding-store.js';
+import type { OnboardingStateError } from '../onboarding-store.js';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -14,16 +15,17 @@ describe('OnboardingStore', () => {
     const store = createStore();
     let state = store.create('session-1');
     state = store.begin(state, 'workspace');
-    expect(store.load().steps.find((step) => step.id === 'workspace')?.status).toBe(
-      'needs_reconcile',
-    );
+    state = store.load();
+    expect(state.steps.find((step) => step.id === 'workspace')?.status).toBe('needs_reconcile');
 
-    state = store.begin(store.load(), 'workspace');
-    state = store.complete(state, 'workspace', {
+    state = store.reconcile(state, 'workspace', 'completed', {
       summary: 'Workspace initialized',
       evidenceRefs: ['workspace://openslack.yaml'],
     });
     expect(store.nextActionable(state)?.id).toBe('provider');
+    expect(() => store.begin(state, 'workspace')).toThrowError(
+      expect.objectContaining({ code: 'ONBOARDING_STEP_INVALID' }),
+    );
   });
 
   it('fails closed on corrupt state and rejects secret-shaped receipts', () => {
@@ -33,14 +35,36 @@ describe('OnboardingStore', () => {
       expect.objectContaining<Partial<OnboardingStateError>>({ code: 'ONBOARDING_STATE_INVALID' }),
     );
 
-    let state = store.create('session-2');
-    state = store.begin(state, 'workspace');
+    const receiptStore = createStore();
+    let state = receiptStore.create('session-2');
+    state = receiptStore.begin(state, 'workspace');
     expect(() =>
-      store.complete(state, 'workspace', {
+      receiptStore.complete(state, 'workspace', {
         summary: 'stored private key',
         evidenceRefs: [],
       }),
     ).toThrowError(expect.objectContaining({ code: 'ONBOARDING_STEP_INVALID' }));
+  });
+
+  it('refuses to replace receipts and requires reconciliation before retry', () => {
+    const store = createStore();
+    let state = store.create('session-3');
+    expect(() => store.create('replacement')).toThrowError(
+      expect.objectContaining({ code: 'ONBOARDING_STATE_INVALID' }),
+    );
+
+    state = store.begin(state, 'github_app');
+    state = store.load();
+    expect(() => store.begin(state, 'github_app')).toThrowError(
+      expect.objectContaining({ code: 'ONBOARDING_STEP_INVALID' }),
+    );
+
+    state = store.reconcile(state, 'github_app', 'retry');
+    expect(state.steps.find((step) => step.id === 'github_app')?.status).toBe('pending');
+    expect(store.begin(state, 'github_app').steps.find((step) => step.id === 'github_app')).toMatchObject({
+      status: 'running',
+      attempt: 2,
+    });
   });
 });
 

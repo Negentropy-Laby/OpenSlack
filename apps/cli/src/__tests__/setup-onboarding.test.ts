@@ -21,6 +21,28 @@ describe('setup onboarding', () => {
       });
       await setupCommands().parseAsync(['node', 'openslack', 'onboarding'], { from: 'node' });
       expect(log).toHaveBeenCalledWith('Next: workspace (pending)');
+
+      await setupCommands().parseAsync(
+        ['node', 'openslack', 'onboarding', 'begin', 'workspace'],
+        { from: 'node' },
+      );
+      expect(log).toHaveBeenCalledWith('Intent recorded: Initialize the workspace');
+
+      await setupCommands().parseAsync(
+        [
+          'node',
+          'openslack',
+          'onboarding',
+          'reconcile-complete',
+          'workspace',
+          '--summary',
+          'Workspace initialized',
+          '--evidence-ref',
+          'workspace://openslack.yaml',
+        ],
+        { from: 'node' },
+      );
+      expect(log).toHaveBeenCalledWith('Next: provider (pending)');
     } finally {
       process.chdir(previous);
       log.mockRestore();
