@@ -20,7 +20,9 @@
       "name": "@openslack/auth-callback",
       "version": "0.1.0",
       "dependencies": {
+        "@openslack/credentials": "workspace:*",
         "@openslack/github": "workspace:*",
+        "@openslack/workspace": "workspace:*",
       },
     },
     "apps/cli": {
@@ -31,6 +33,7 @@
       },
       "dependencies": {
         "@openslack/agent-runtime": "workspace:*",
+        "@openslack/auth-callback": "workspace:*",
         "@openslack/chat-gateway": "workspace:*",
         "@openslack/collaboration": "workspace:*",
         "@openslack/credentials": "workspace:*",

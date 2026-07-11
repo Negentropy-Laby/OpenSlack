@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { linkSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { parseSecretReference, type CredentialStore } from '@openslack/credentials';
@@ -80,7 +80,7 @@ export function applyGitHubAppImport(
 
   let stored = false;
   try {
-    dependencies.credentialStore.put(reference, value);
+    dependencies.credentialStore.putIfAbsent(reference, value);
     stored = true;
     writeConfigAtomic(plan.configPath, {
       schema: 'openslack.github_app_local.v1',
@@ -142,7 +142,7 @@ function writeConfigAtomic(path: string, value: object): void {
       flag: 'wx',
       mode: 0o600,
     });
-    renameSync(temporary, path);
+    linkSync(temporary, path);
   } finally {
     rmSync(temporary, { force: true });
   }

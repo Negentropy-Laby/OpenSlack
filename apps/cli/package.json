@@ -13,6 +13,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@openslack/auth-callback": "workspace:*",
     "@openslack/credentials": "workspace:*",
     "@openslack/workspace": "workspace:*",
     "@openslack/kernel": "workspace:*",

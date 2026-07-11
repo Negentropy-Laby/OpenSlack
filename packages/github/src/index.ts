@@ -34,6 +34,22 @@ export type {
   GitHubAppImportPlan,
   GitHubAppImportResult,
 } from './app-import.js';
+export {
+  completeGitHubAppManifest,
+  createGitHubAppManifestSession,
+  defaultGitHubAppManifestRefs,
+  exchangeGitHubAppManifestCode,
+  preflightGitHubAppManifest,
+} from './app-manifest.js';
+export type {
+  GitHubAppManifestConversion,
+  GitHubAppManifestDefinition,
+  GitHubAppManifestDependencies,
+  GitHubAppManifestExchangeOptions,
+  GitHubAppManifestInput,
+  GitHubAppManifestResult,
+  GitHubAppManifestSession,
+} from './app-manifest.js';
 export { createTaskIssue, queryReadyIssueTasks } from './issue-tasks.js';
 export type { IssueTask } from './issue-tasks.js';
 export { claimIssueTask, releaseIssueClaim, moveIssueToReview, heartbeatIssueClaim, expireIssueClaim, releaseIssueClaimWithOwner } from './claims.js';

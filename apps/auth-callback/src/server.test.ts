@@ -1,177 +1,148 @@
-import { EventEmitter } from 'node:events';
-import { describe, expect, it, vi } from 'vitest';
+import { createServer, request } from 'node:http';
+import { generateKeyPairSync } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { CredentialStore, MemoryKeychainBackend } from '@openslack/credentials';
+import { assertLoopbackHost, isExpectedHost, startAuthServer } from './server.js';
 
-const requestMock = vi.hoisted(() => vi.fn());
+const roots: string[] = [];
+afterEach(() => {
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
 
-vi.mock('node:https', () => ({ request: requestMock }));
+describe('GitHub App Manifest callback server', () => {
+  it('rejects non-loopback bind hosts', () => {
+    expect(() => assertLoopbackHost('0.0.0.0')).toThrow(/127\.0\.0\.1/);
+    expect(() => assertLoopbackHost('localhost')).toThrow(/127\.0\.0\.1/);
+    expect(() => assertLoopbackHost('127.0.0.1')).not.toThrow();
+    expect(isExpectedHost('evil.example:8200', '127.0.0.1', 8200)).toBe(false);
+    expect(isExpectedHost('127.0.0.1:8200', '127.0.0.1', 8200)).toBe(true);
+  });
 
-import {
-  createOAuthState,
-  exchangeCodeForToken,
-  oauthStatesMatch,
-  parseOAuthCallback,
-} from './server.js';
+  it('does not accept an access_token query as a credential', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'openslack-auth-callback-'));
+    roots.push(root);
+    const port = await freePort();
+    const exchangeCode = vi.fn();
+    const completion = startAuthServer({
+      host: '127.0.0.1',
+      port,
+      timeoutMs: 250,
+      workspaceRoot: root,
+      credentialStore: new CredentialStore([new MemoryKeychainBackend()]),
+      exchangeCode,
+    });
+    const page = await fetchWhenReady(`http://127.0.0.1:${port}/`);
+    const html = await page.text();
+    const rebound = await requestWithHost(port, 'evil.example:8200');
+    expect(rebound.status).toBe(421);
+    expect(rebound.body).not.toContain('state=');
+    const state = /state=([^&"]+)/.exec(html)?.[1];
+    expect(state).toBeTruthy();
+    const response = await fetch(
+      `http://127.0.0.1:${port}/callback?state=${state}&access_token=canary-token`,
+    );
+    expect(response.status).toBe(400);
+    expect(await response.text()).not.toContain('canary-token');
+    expect(exchangeCode).not.toHaveBeenCalled();
 
-const EXPECTED_STATE = 'expected-state';
+    const responseWithCode = await fetch(
+      `http://127.0.0.1:${port}/callback?state=${state}&code=${'a'.repeat(40)}&access_token=second-canary-token`,
+    );
+    expect(responseWithCode.status).toBe(400);
+    expect(await responseWithCode.text()).not.toContain('second-canary-token');
+    expect(exchangeCode).not.toHaveBeenCalled();
+    await expect(completion).resolves.toEqual({ status: 'timed_out' });
+  });
 
-interface MockResponseOptions {
-  statusCode?: number;
-  chunks?: Array<string | Buffer>;
-  networkError?: Error;
-  neverRespond?: boolean;
+  it('does not consume state for a missing code and does not timeout while processing', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'openslack-auth-callback-processing-'));
+    roots.push(root);
+    const port = await freePort();
+    let release!: (value: unknown) => void;
+    const exchangeCode = vi.fn(
+      async () => await new Promise<unknown>((resolve) => (release = resolve)),
+    );
+    const completion = startAuthServer({
+      port,
+      timeoutMs: 100,
+      workspaceRoot: root,
+      credentialStore: new CredentialStore([new MemoryKeychainBackend()]),
+      exchangeCode,
+    });
+    const page = await fetchWhenReady(`http://127.0.0.1:${port}/`);
+    const state = /state=([^&"]+)/.exec(await page.text())?.[1];
+    expect(state).toBeTruthy();
+    const missing = await fetch(`http://127.0.0.1:${port}/callback?state=${state}`);
+    expect(missing.status).toBe(400);
+    const callback = fetch(
+      `http://127.0.0.1:${port}/callback?state=${state}&code=${'a'.repeat(40)}`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    const pending = await Promise.race([
+      completion.then(() => false),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 10)),
+    ]);
+    expect(pending).toBe(true);
+    release(validConversion());
+    expect((await callback).status).toBe(200);
+    await expect(completion).resolves.toMatchObject({ status: 'completed', appId: '123' });
+  });
+});
+
+function validConversion() {
+  const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 1024 });
+  return {
+    id: 123,
+    slug: 'openslack-agent-operator',
+    client_id: 'Iv1.example',
+    client_secret: 'client-secret-value',
+    webhook_secret: 'webhook-secret-value',
+    pem: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+  };
 }
 
-function installResponse(options: MockResponseOptions = {}): { destroy: ReturnType<typeof vi.fn> } {
-  const destroy = vi.fn();
-  requestMock.mockImplementation(
-    (
-      _requestOptions: unknown,
-      callback: (response: EventEmitter & { statusCode?: number }) => void,
-    ) => {
-      const req = Object.assign(new EventEmitter(), {
-        write: vi.fn(),
-        destroy,
-        end: vi.fn(() => {
-          if (options.neverRespond) return;
-          if (options.networkError) {
-            queueMicrotask(() => req.emit('error', options.networkError));
-            return;
-          }
-
-          const response = Object.assign(new EventEmitter(), {
-            statusCode: options.statusCode ?? 200,
-            resume: vi.fn(),
-          });
-          callback(response);
-          queueMicrotask(() => {
-            for (const chunk of options.chunks ?? []) response.emit('data', chunk);
-            response.emit('end');
-          });
-        }),
-      });
-      return req;
-    },
+async function freePort(): Promise<number> {
+  const server = createServer();
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Could not allocate a test port.');
+  await new Promise<void>((resolve, reject) =>
+    server.close((error) => (error ? reject(error) : resolve())),
   );
-  return { destroy };
+  return address.port;
 }
 
-describe('OAuth callback parsing', () => {
-  it('creates cryptographically random URL-safe states and compares them safely', () => {
-    const first = createOAuthState();
-    const second = createOAuthState();
-
-    expect(first).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(second).not.toBe(first);
-    expect(oauthStatesMatch(first, first)).toBe(true);
-    expect(oauthStatesMatch(second, first)).toBe(false);
-    expect(oauthStatesMatch(null, first)).toBe(false);
-  });
-
-  it('rejects access tokens supplied in the URL without reflecting them', () => {
-    const tokenCanary = 'query-token-canary';
-    const result = parseOAuthCallback(
-      new URL(`http://127.0.0.1/callback?state=${EXPECTED_STATE}&access_token=${tokenCanary}`),
-      EXPECTED_STATE,
+async function requestWithHost(
+  port: number,
+  host: string,
+): Promise<{ status: number; body: string }> {
+  return await new Promise((resolve, reject) => {
+    const outgoing = request(
+      { hostname: '127.0.0.1', port, path: '/', headers: { Host: host } },
+      (response) => {
+        let body = '';
+        response.setEncoding('utf-8');
+        response.on('data', (chunk: string) => {
+          body += chunk;
+        });
+        response.on('end', () => resolve({ status: response.statusCode ?? 0, body }));
+      },
     );
-
-    expect(result).toEqual({
-      accepted: false,
-      message: 'OAuth token query parameters are not accepted.',
-    });
-    expect(JSON.stringify(result)).not.toContain(tokenCanary);
+    outgoing.on('error', reject);
+    outgoing.end();
   });
+}
 
-  it('rejects a token query parameter even when an authorization code is present', () => {
-    const result = parseOAuthCallback(
-      new URL(
-        `http://127.0.0.1/callback?state=${EXPECTED_STATE}&code=valid-code&access_token=token-canary`,
-      ),
-      EXPECTED_STATE,
-    );
-
-    expect(result.accepted).toBe(false);
-  });
-
-  it('accepts only a valid state and authorization code', () => {
-    expect(
-      parseOAuthCallback(
-        new URL(`http://127.0.0.1/callback?state=${EXPECTED_STATE}&code=valid-code`),
-        EXPECTED_STATE,
-      ),
-    ).toEqual({ accepted: true, code: 'valid-code' });
-  });
-
-  it('fails closed for an invalid state or missing authorization code', () => {
-    expect(
-      parseOAuthCallback(
-        new URL('http://127.0.0.1/callback?state=wrong&code=valid-code'),
-        EXPECTED_STATE,
-      ),
-    ).toEqual({ accepted: false, message: 'Invalid OAuth state parameter.' });
-    expect(
-      parseOAuthCallback(
-        new URL(`http://127.0.0.1/callback?state=${EXPECTED_STATE}`),
-        EXPECTED_STATE,
-      ),
-    ).toEqual({ accepted: false, message: 'No authorization code received.' });
-  });
-});
-
-describe('OAuth token exchange', () => {
-  it('accepts a bounded successful response', async () => {
-    requestMock.mockReset();
-    installResponse({ chunks: [JSON.stringify({ access_token: 'oauth-token' })] });
-
-    await expect(exchangeCodeForToken('authorization-code')).resolves.toEqual({
-      ok: true,
-      token: 'oauth-token',
-    });
-  });
-
-  it('rejects non-success responses without returning their contents', async () => {
-    requestMock.mockReset();
-    const canary = 'oauth-http-response-canary';
-    installResponse({
-      statusCode: 500,
-      chunks: [JSON.stringify({ access_token: canary, message: canary })],
-    });
-
-    const result = await exchangeCodeForToken('authorization-code');
-    expect(result).toEqual({ ok: false, code: 'OAUTH_TOKEN_HTTP_ERROR' });
-    expect(JSON.stringify(result)).not.toContain(canary);
-  });
-
-  it('rejects invalid and oversized responses without returning their contents', async () => {
-    requestMock.mockReset();
-    const invalidCanary = 'oauth-invalid-json-canary';
-    installResponse({ chunks: [`not-json-${invalidCanary}`] });
-    const invalidResult = await exchangeCodeForToken('authorization-code');
-    expect(invalidResult).toEqual({ ok: false, code: 'OAUTH_TOKEN_INVALID_JSON' });
-    expect(JSON.stringify(invalidResult)).not.toContain(invalidCanary);
-
-    requestMock.mockReset();
-    const oversizedCanary = 'oauth-oversized-response-canary';
-    installResponse({ chunks: ['x'.repeat(64 * 1024), oversizedCanary] });
-    const oversizedResult = await exchangeCodeForToken('authorization-code');
-    expect(oversizedResult).toEqual({ ok: false, code: 'OAUTH_TOKEN_RESPONSE_TOO_LARGE' });
-    expect(JSON.stringify(oversizedResult)).not.toContain(oversizedCanary);
-  });
-
-  it('returns fixed timeout and network error codes', async () => {
-    requestMock.mockReset();
-    vi.useFakeTimers();
-    const { destroy } = installResponse({ neverRespond: true });
-    const pending = exchangeCodeForToken('authorization-code');
-    await vi.advanceTimersByTimeAsync(10_001);
-    await expect(pending).resolves.toEqual({ ok: false, code: 'OAUTH_TOKEN_TIMEOUT' });
-    expect(destroy).toHaveBeenCalledOnce();
-    vi.useRealTimers();
-
-    requestMock.mockReset();
-    const networkCanary = 'oauth-network-error-canary';
-    installResponse({ networkError: new Error(networkCanary) });
-    const networkResult = await exchangeCodeForToken('authorization-code');
-    expect(networkResult).toEqual({ ok: false, code: 'OAUTH_TOKEN_NETWORK_ERROR' });
-    expect(JSON.stringify(networkResult)).not.toContain(networkCanary);
-  });
-});
+async function fetchWhenReady(url: string): Promise<Response> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      return await fetch(url);
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+  throw new Error('Callback test server did not start.');
+}

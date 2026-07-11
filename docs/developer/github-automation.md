@@ -355,9 +355,21 @@ export GITHUB_TOKEN=ghp_xxxxxxxxxxxxx
 
 The provider falls back to this when `OPENSLACK_GITHUB_APP_ID` is not set.
 
-## Human Login: OAuth / gh CLI
+## GitHub App Manifest callback
 
-`apps/auth-callback/` provides a local OAuth callback server (`http://127.0.0.1:8200/callback`) for human login. This is **not** used by the agent runtime.
+`openslack github app create --org <organization> --apply` starts the packaged
+App Manifest callback surface. It binds only to `127.0.0.1` (or explicit `::1`),
+uses a cryptographic, expiring, single-use state, and exchanges GitHub's
+temporary manifest code through a bounded request. The private key, webhook
+secret, and client secret are written through `CredentialStore`; local config
+contains references only. The backend must support atomic create-only writes;
+preflight refuses unavailable or occupied destinations before showing the
+external registration form. A rollback deletion failure writes a reference-only
+reconciliation receipt under the gitignored local state root.
+
+The callback does not implement human OAuth, does not accept an `access_token`
+query, and never writes a PAT or installation token to a plaintext file.
+`apps/auth-callback/` is the thin HTTP transport for this product flow.
 
 `scripts/setup-gh.sh` installs `gh` CLI on any platform for developer convenience.
 

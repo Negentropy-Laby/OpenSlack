@@ -47,4 +47,13 @@ describe('credential references and store', () => {
       expect.objectContaining<Partial<CredentialStoreError>>({ code: 'CREDENTIAL_UNAVAILABLE' }),
     );
   });
+
+  it('supports atomic create-only writes without replacing existing values', () => {
+    const store = new CredentialStore([new MemoryKeychainBackend()]);
+    store.putIfAbsent('keychain:openslack/app', 'first');
+    expect(() => store.putIfAbsent('keychain:openslack/app', 'second')).toThrowError(
+      expect.objectContaining<Partial<CredentialStoreError>>({ code: 'CREDENTIAL_ALREADY_EXISTS' }),
+    );
+    expect(store.withSecret('keychain:openslack/app', (secret) => secret)).toBe('first');
+  });
 });

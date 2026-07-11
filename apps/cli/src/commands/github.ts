@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
-import { getClient, queryReadyItems } from '@openslack/github';
+import { defaultGitHubAppManifestRefs, getClient, queryReadyItems } from '@openslack/github';
 import { recordEvent as _recordEvent } from '@openslack/collaboration';
 import type { RecordEventFn } from '@openslack/github';
 import { createDefaultCredentialStore, type CredentialStore } from '@openslack/credentials';
@@ -69,12 +69,80 @@ function recordGithubRepair(
 
 export interface GitHubCommandDependencies {
   credentialStore?: CredentialStore;
+  startAppManifestServer?: (options: {
+    workspaceRoot: string;
+    organization: string;
+    appName?: string;
+    port?: number;
+    webhookUrl?: string;
+    credentialStore?: CredentialStore;
+  }) => Promise<{ status: 'completed' | 'timed_out'; appId?: string; appSlug?: string }>;
 }
 
 export function githubCommands(dependencies: GitHubCommandDependencies = {}): Command {
   const cmd = new Command('github').description('GitHub integration commands');
 
   const app = cmd.command('app').description('Configure an organization-owned GitHub App');
+  app
+    .command('create')
+    .description('Preview or start the loopback GitHub App Manifest flow')
+    .requiredOption('--org <organization>', 'Organization that will own the GitHub App')
+    .option('--name <name>', 'GitHub App name', 'OpenSlack Agent Operator')
+    .option('--port <number>', 'Loopback callback port', '8200')
+    .option('--webhook-url <https-url>', 'Webhook URL; delivery is disabled initially')
+    .option('--apply', 'Start the loopback server after preview')
+    .action(async (options) => {
+      try {
+        const port = Number.parseInt(String(options.port), 10);
+        if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+          throw new Error('GitHub App Manifest callback port is invalid.');
+        }
+        const organization = String(options.org);
+        const appName = String(options.name);
+        const root = findRepoRoot();
+        const refs = defaultGitHubAppManifestRefs(root);
+        console.log('GitHub App Manifest preview');
+        console.log(`- Owner: ${organization}`);
+        console.log(`- App: ${appName}`);
+        console.log(`- Callback: http://127.0.0.1:${port}/callback`);
+        console.log(
+          '- Permissions: metadata:read, contents:write, issues:write, pull_requests:write',
+        );
+        console.log(`- Private key: ${refs.privateKeyRef}`);
+        console.log(`- Webhook secret: ${refs.webhookSecretRef}`);
+        console.log(`- Client secret: ${refs.clientSecretRef}`);
+        if (!options.apply) {
+          console.log('No server was started and no credential was written. Re-run with --apply.');
+          return;
+        }
+        const start =
+          dependencies.startAppManifestServer ??
+          (await import('@openslack/auth-callback')).startAuthServer;
+        const result = await start({
+          workspaceRoot: root,
+          organization,
+          appName,
+          port,
+          webhookUrl: options.webhookUrl ? String(options.webhookUrl) : undefined,
+          credentialStore:
+            dependencies.credentialStore ?? createDefaultCredentialStore(process.env),
+        });
+        if (result.status === 'timed_out') {
+          throw new Error('GitHub App Manifest setup timed out without changing credentials.');
+        }
+        console.log(`GitHub App created: ${result.appSlug} (${result.appId})`);
+        console.log(
+          'Install the App on the selected repository, then run openslack github doctor.',
+        );
+      } catch (error) {
+        console.error(
+          error instanceof Error && error.message.startsWith('GitHub App Manifest')
+            ? error.message
+            : 'GitHub App Manifest setup failed safely.',
+        );
+        process.exitCode = 1;
+      }
+    });
   app
     .command('import')
     .description('Preview or import an existing App private key into the configured keychain')

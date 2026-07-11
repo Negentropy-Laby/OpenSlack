@@ -2,5 +2,9 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "outDir": "./dist", "rootDir": "./src" },
   "include": ["src"],
-  "references": [{ "path": "../../packages/github" }]
+  "references": [
+    { "path": "../../packages/credentials" },
+    { "path": "../../packages/github" },
+    { "path": "../../packages/workspace" }
+  ]
 }

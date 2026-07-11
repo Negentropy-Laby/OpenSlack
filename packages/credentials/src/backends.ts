@@ -19,6 +19,11 @@ export class EnvironmentCredentialBackend implements CredentialBackend {
     }
     return consumer(value);
   }
+  has(reference: SecretReference): boolean {
+    if (reference.scheme !== 'env') throw new Error('Environment backend received another scheme.');
+    const value = this.env[reference.name];
+    return value !== undefined && value.trim().length > 0;
+  }
 }
 
 export class UnavailableKeychainBackend implements CredentialBackend {
@@ -62,10 +67,22 @@ export class MemoryKeychainBackend implements CredentialBackend {
     }
     return consumer(value);
   }
+  has(reference: SecretReference): boolean {
+    if (reference.scheme !== 'keychain')
+      throw new Error('Keychain backend received another scheme.');
+    return this.values.has(reference.canonical);
+  }
   put(reference: SecretReference, secret: string): void {
     if (reference.scheme !== 'keychain')
       throw new Error('Keychain backend received another scheme.');
     this.values.set(reference.canonical, secret);
+  }
+  putIfAbsent(reference: SecretReference, secret: string): boolean {
+    if (reference.scheme !== 'keychain')
+      throw new Error('Keychain backend received another scheme.');
+    if (this.values.has(reference.canonical)) return false;
+    this.values.set(reference.canonical, secret);
+    return true;
   }
   delete(reference: SecretReference): void {
     if (reference.scheme !== 'keychain')
