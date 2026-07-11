@@ -4,6 +4,7 @@ export { createDraftPR, commentOnPR, updatePRBody, getPR, listOpenPRs, listPRFil
 export type { CreatePRResult, PRDetail, OpenPRSummary, PRFilePatch, PRCheckRun, PRReview, GitTreeEntry, MergePRResult } from './pr.js';
 export {
   getClient,
+  createInstallationClient,
   getAuthenticatedIdentity,
   resolveGitHubRepoTarget,
   parseGitHubRepoSpec,
@@ -18,30 +19,69 @@ export type {
   GitHubIdentity,
   GitHubRepoTarget,
 } from './client.js';
-export { getAppInstallationToken, clearTokenCache } from './auth.js';
+export {
+  getAppInstallationToken,
+  requireAppInstallationToken,
+  clearTokenCache,
+  GitHubAppTokenError,
+} from './auth.js';
+export type { GitHubAppInstallationToken } from './auth.js';
 export { createTaskIssue, queryReadyIssueTasks } from './issue-tasks.js';
 export type { IssueTask } from './issue-tasks.js';
-export { claimIssueTask, releaseIssueClaim, moveIssueToReview, heartbeatIssueClaim, expireIssueClaim, releaseIssueClaimWithOwner } from './claims.js';
+export {
+  claimIssueTask,
+  releaseIssueClaim,
+  moveIssueToReview,
+  heartbeatIssueClaim,
+  expireIssueClaim,
+  releaseIssueClaimWithOwner,
+} from './claims.js';
 export type { IssueClaimResult, HeartbeatResult, ReleaseInput } from './claims.js';
 export { markIssueRunning, markIssueBlocked, markIssueDone } from './lifecycle.js';
-export { filterByCapability, filterByRisk, filterByPath, filterRedZonePaths, riskLevelToZone, runAutoClaimGates } from './task-filter.js';
+export {
+  filterByCapability,
+  filterByRisk,
+  filterByPath,
+  filterRedZonePaths,
+  riskLevelToZone,
+  runAutoClaimGates,
+} from './task-filter.js';
 export type { FilterResult, AutoClaimGateResult } from './task-filter.js';
 export { repairExpiredClaims, repairLabels, REQUIRED_OPENSLACK_LABELS } from './repair.js';
 export type { RepairOptions, RepairResult } from './repair.js';
 export { parseIssueTaskManifest, renderIssueTaskManifest, extractTaskBlock } from './manifest.js';
 export type { IssueTaskManifest, ManifestParseResult } from './manifest.js';
 export { previewTaskCreation, createTaskFromPreview } from './task-create.js';
-export type { TaskCreationInput, TaskCreationPreview, TaskCreationResult, TaskTemplateKind } from './task-create.js';
+export type {
+  TaskCreationInput,
+  TaskCreationPreview,
+  TaskCreationResult,
+  TaskTemplateKind,
+} from './task-create.js';
 export { parseGitHubWatchConfig, loadGitHubWatchConfig } from './watch-config.js';
-export type { GitHubWatchConfig, GitHubWatchRepo, GitHubWatchRoute, WatchConfigParseResult } from './watch-config.js';
+export type {
+  GitHubWatchConfig,
+  GitHubWatchRepo,
+  GitHubWatchRoute,
+  WatchConfigParseResult,
+} from './watch-config.js';
 export { verifyGitHubWebhookSignature } from './webhook-verify.js';
 export { normalizeIssueEvent, matchesRepoConfig } from './issue-normalizer.js';
 export type { NormalizedIssueEvent } from './issue-normalizer.js';
 export { normalizePushEvent, matchesPushRepoConfig } from './push-normalizer.js';
 export type { NormalizedPushEvent } from './push-normalizer.js';
 export { WatchDedupeStore } from './watch-dedupe.js';
-export { WatchDaemon, createNotificationPayload, formatConsoleNotification } from './watch-daemon.js';
-export type { NotificationPayload, AutoClaimFn, RecordEventFn, CollaborationEventRecord } from './watch-daemon.js';
+export {
+  WatchDaemon,
+  createNotificationPayload,
+  formatConsoleNotification,
+} from './watch-daemon.js';
+export type {
+  NotificationPayload,
+  AutoClaimFn,
+  RecordEventFn,
+  CollaborationEventRecord,
+} from './watch-daemon.js';
 export { createSinks, ConsoleSink, SlackSink, WebhookSink } from './notification-sinks.js';
 export type { NotificationSink, SinkResult } from './notification-sinks.js';
 export { WatchCursorStore } from './watch-cursor.js';
@@ -124,30 +164,13 @@ export {
   parseProfileSyncConfig,
   DEFAULT_PROFILE_SYNC_CONFIG,
 } from './profile-sync-config.js';
-export type {
-  ProfileSyncConfig,
-  ProfileSyncConfigParseResult,
-} from './profile-sync-config.js';
-export {
-  checkProfileSync,
-} from './profile-sync-check.js';
-export type {
-  ProfileSyncCheckResult,
-  ProfileSyncPostFailure,
-} from './profile-sync-check.js';
-export {
-  previewProfileSync,
-} from './profile-sync-preview.js';
-export type {
-  ProfileSyncPreviewResult,
-} from './profile-sync-preview.js';
-export {
-  runProfileSync,
-} from './profile-sync-run.js';
-export type {
-  ProfileSyncRunOptions,
-  ProfileSyncRunResult,
-} from './profile-sync-run.js';
+export type { ProfileSyncConfig, ProfileSyncConfigParseResult } from './profile-sync-config.js';
+export { checkProfileSync } from './profile-sync-check.js';
+export type { ProfileSyncCheckResult, ProfileSyncPostFailure } from './profile-sync-check.js';
+export { previewProfileSync } from './profile-sync-preview.js';
+export type { ProfileSyncPreviewResult } from './profile-sync-preview.js';
+export { runProfileSync } from './profile-sync-run.js';
+export type { ProfileSyncRunOptions, ProfileSyncRunResult } from './profile-sync-run.js';
 export {
   enqueueProfileSyncJob,
   dequeueProfileSyncJob,
@@ -157,21 +180,11 @@ export {
   isDuplicate,
   recordDedupe,
 } from './profile-sync-queue.js';
-export type {
-  ProfileSyncJob,
-} from './profile-sync-queue.js';
-export {
-  ProfileSyncWorker,
-} from './profile-sync-worker.js';
-export type {
-  ProfileSyncWorkerOptions,
-} from './profile-sync-worker.js';
-export {
-  buildMarkers,
-} from './profile-sync-markers.js';
-export type {
-  MarkerPair,
-} from './profile-sync-markers.js';
+export type { ProfileSyncJob } from './profile-sync-queue.js';
+export { ProfileSyncWorker } from './profile-sync-worker.js';
+export type { ProfileSyncWorkerOptions } from './profile-sync-worker.js';
+export { buildMarkers } from './profile-sync-markers.js';
+export type { MarkerPair } from './profile-sync-markers.js';
 export {
   renderProfileSyncProposalBody,
   renderProfileSyncFailureBody,

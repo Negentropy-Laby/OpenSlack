@@ -69,7 +69,24 @@ function createOctokit(auth: string): Octokit {
   });
 }
 
-export function parseGitHubRepoSpec(input: string | undefined): { owner: string; repo: string } | null {
+export function createInstallationClient(
+  token: string,
+  options: Omit<GitHubClientOptions, 'auth'> = {},
+): GitHubClient {
+  if (!token) throw new GitHubAuthRequiredError('AUTH_REQUIRED: installation token is empty.');
+  const target = resolveGitHubRepoTarget(options);
+  return {
+    owner: target.owner,
+    repo: target.repo,
+    octokit: createOctokit(token),
+    authMode: 'github_app_installation',
+    isDryRun: false,
+  };
+}
+
+export function parseGitHubRepoSpec(
+  input: string | undefined,
+): { owner: string; repo: string } | null {
   if (!input) return null;
   const value = input.trim();
   if (!value) return null;
@@ -114,7 +131,9 @@ function resolveWorkspaceRepo(cwd: string): { owner: string; repo: string } | nu
 
   try {
     const content = readFileSync(workspacePath, 'utf-8');
-    const canonical = content.match(/canonical_remote:[\s\S]*?owner:\s*([^\s#]+)[\s\S]*?repo:\s*([^\s#]+)/);
+    const canonical = content.match(
+      /canonical_remote:[\s\S]*?owner:\s*([^\s#]+)[\s\S]*?repo:\s*([^\s#]+)/,
+    );
     if (!canonical) return null;
     return { owner: canonical[1].replace(/['"]/g, ''), repo: canonical[2].replace(/['"]/g, '') };
   } catch {
@@ -128,7 +147,9 @@ export function resolveGitHubRepoTarget(options: GitHubClientOptions = {}): GitH
   if (options.repoFullName) {
     const explicit = parseGitHubRepoSpec(options.repoFullName);
     if (!explicit) {
-      throw new GitHubRepoRequiredError(`Invalid GitHub repository "${options.repoFullName}". Expected owner/name.`);
+      throw new GitHubRepoRequiredError(
+        `Invalid GitHub repository "${options.repoFullName}". Expected owner/name.`,
+      );
     }
     return { ...explicit, source: 'explicit' };
   }
@@ -156,7 +177,10 @@ export async function getClient(options: GitHubClientOptions = {}): Promise<GitH
   const target = resolveGitHubRepoTarget(options);
   const owner = target.owner;
   const repo = target.repo;
-  const auth = options.auth ?? 'auto';
+  const envAuth = process.env.OPENSLACK_GITHUB_AUTH_MODE;
+  const auth =
+    options.auth ??
+    (envAuth === 'app' || envAuth === 'token' || envAuth === 'dry-run' ? envAuth : 'auto');
 
   if (auth === 'dry-run') {
     return {
@@ -198,7 +222,7 @@ export async function getClient(options: GitHubClientOptions = {}): Promise<GitH
       };
     }
 
-    if (auth === 'app' && options.requireLive) {
+    if (auth === 'app') {
       throw new GitHubAuthRequiredError(
         `AUTH_REQUIRED: GitHub App credentials are required for ${owner}/${repo}. Use scripts/openslack-bot.ps1 or set OPENSLACK_GITHUB_APP_* environment variables.`,
       );
@@ -241,7 +265,9 @@ export async function getClient(options: GitHubClientOptions = {}): Promise<GitH
   };
 }
 
-export async function getAuthenticatedIdentity(options: GitHubClientOptions = {}): Promise<GitHubIdentity> {
+export async function getAuthenticatedIdentity(
+  options: GitHubClientOptions = {},
+): Promise<GitHubIdentity> {
   const client = await getClient(options);
 
   if (client.authMode === 'github_app_installation') {

@@ -1,4 +1,8 @@
-import { describe, it, expect } from 'vitest';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, it, expect, vi } from 'vitest';
 import { proposeWorkspacePR } from '../propose.js';
 import type { AgentPermissionSnapshot } from '@openslack/kernel';
 
@@ -48,5 +52,103 @@ describe('proposeWorkspacePR authorization', () => {
     expect(result.success).toBe(false);
     expect(result.errors[0]).toContain('Authorization denied');
     expect(result.errors[0]).toContain('red');
+  });
+
+  it('commits locally and delegates publication to GitHubDeliveryService', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'openslack-propose-delivery-'));
+    try {
+      execFileSync('git', ['init'], { cwd: root, stdio: 'ignore' });
+      execFileSync('git', ['config', 'user.email', 'test@example.test'], { cwd: root });
+      execFileSync('git', ['config', 'user.name', 'Runtime Test'], { cwd: root });
+      writeFileSync(
+        join(root, 'openslack.yaml'),
+        'canonical_remote:\n  owner: acme\n  repo: project\n',
+        'utf-8',
+      );
+      writeFileSync(join(root, 'work.txt'), 'before\n', 'utf-8');
+      execFileSync('git', ['add', '.'], { cwd: root });
+      execFileSync('git', ['commit', '-m', 'test: seed workspace'], { cwd: root });
+      writeFileSync(join(root, 'work.txt'), 'after\n', 'utf-8');
+      const publish = vi.fn(async () => ({
+        state: 'AWAITING_GATES' as const,
+        history: [
+          'PREPARED',
+          'PUSHED',
+          'PR_CREATED',
+          'HEAD_SYNCHRONIZED',
+          'AWAITING_GATES',
+        ] as const,
+        action: 'created' as const,
+        prNumber: 7,
+        prUrl: 'https://github.com/acme/project/pull/7',
+        branchSha: 'a'.repeat(40),
+        prHeadSha: 'a'.repeat(40),
+        checks: [],
+        checksStatus: 'empty' as const,
+        permissions: [],
+        evidenceTimestamp: '2026-07-11T00:00:00.000Z',
+      }));
+      const result = await proposeWorkspacePR({
+        agentId: 'test-agent',
+        taskId: 'TASK-7',
+        runId: 'RUN-7',
+        changedPaths: ['work.txt'],
+        rootDir: root,
+        deliveryService: { publish },
+      });
+      expect(result).toMatchObject({
+        success: true,
+        prUrl: 'https://github.com/acme/project/pull/7',
+        delivery: { state: 'AWAITING_GATES' },
+      });
+      expect(publish).toHaveBeenCalledWith(
+        expect.objectContaining({ rootDir: root, owner: 'acme', repo: 'project' }),
+      );
+      expect(
+        execFileSync('git', ['log', '-1', '--pretty=%s'], { cwd: root, encoding: 'utf-8' }).trim(),
+      ).toBe('runtime: deliver TASK-7 workspace changes');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses to include paths that were already staged by another operation', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'openslack-propose-staged-'));
+    try {
+      execFileSync('git', ['init'], { cwd: root, stdio: 'ignore' });
+      execFileSync('git', ['config', 'user.email', 'test@example.test'], { cwd: root });
+      execFileSync('git', ['config', 'user.name', 'Runtime Test'], { cwd: root });
+      writeFileSync(
+        join(root, 'openslack.yaml'),
+        'canonical_remote:\n  owner: acme\n  repo: project\n',
+        'utf-8',
+      );
+      writeFileSync(join(root, 'work.txt'), 'before\n', 'utf-8');
+      writeFileSync(join(root, 'unexpected.txt'), 'before\n', 'utf-8');
+      execFileSync('git', ['add', '.'], { cwd: root });
+      execFileSync('git', ['commit', '-m', 'test: seed workspace'], { cwd: root });
+      writeFileSync(join(root, 'work.txt'), 'after\n', 'utf-8');
+      writeFileSync(join(root, 'unexpected.txt'), 'staged elsewhere\n', 'utf-8');
+      execFileSync('git', ['add', 'unexpected.txt'], { cwd: root });
+      const publish = vi.fn();
+
+      const result = await proposeWorkspacePR({
+        agentId: 'test-agent',
+        taskId: 'TASK-8',
+        runId: 'RUN-8',
+        changedPaths: ['work.txt'],
+        rootDir: root,
+        deliveryService: { publish },
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.errors[0]).toContain('already contains staged paths');
+      expect(publish).not.toHaveBeenCalled();
+      expect(
+        execFileSync('git', ['log', '-1', '--pretty=%s'], { cwd: root, encoding: 'utf-8' }).trim(),
+      ).toBe('test: seed workspace');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

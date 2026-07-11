@@ -1,4 +1,4 @@
-import { execFileSync, execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { classifyPaths } from '@openslack/kernel';
@@ -6,6 +6,8 @@ import { authorizeAgentAction } from '@openslack/kernel';
 import type { AgentPrincipal, AgentPermissionSnapshot, RiskZone } from '@openslack/kernel';
 import { assessPRAuthorRisk, parseCODEOWNERS, resolveCodeowners } from '@openslack/pr';
 import type { PRAuthorRiskPreflight } from '@openslack/pr';
+import { DeliveryError, GitHubDeliveryService } from '@openslack/delivery';
+import type { GitHubDeliveryInput, GitHubDeliveryResult } from '@openslack/delivery';
 
 export interface PRProposalInput {
   agentId: string;
@@ -15,6 +17,10 @@ export interface PRProposalInput {
   description?: string;
   principal?: AgentPrincipal;
   snapshot?: AgentPermissionSnapshot;
+  rootDir?: string;
+  baseBranch?: string;
+  remote?: string;
+  deliveryService?: { publish(input: GitHubDeliveryInput): Promise<GitHubDeliveryResult> };
 }
 
 export interface PRProposalResult {
@@ -25,15 +31,7 @@ export interface PRProposalResult {
   errors: string[];
   prUrl?: string;
   authorRisk?: PRAuthorRiskPreflight;
-}
-
-function hasGitRemote(root: string): boolean {
-  try {
-    const result = execSync('git remote get-url origin', { cwd: root, stdio: 'pipe' });
-    return result.toString().trim().length > 0;
-  } catch {
-    return false;
-  }
+  delivery?: GitHubDeliveryResult;
 }
 
 function loadLocalCodeowners(root: string, changedPaths: string[]): string[] {
@@ -58,10 +56,22 @@ export async function proposeWorkspacePR(input: PRProposalInput): Promise<PRProp
 
   // Authorization gate — if snapshot provided, enforce
   if (input.snapshot) {
-    const auth = authorizeAgentAction({ snapshot: input.snapshot, action: 'pr.propose', changedPaths: input.changedPaths, riskZone: riskZone as RiskZone });
+    const auth = authorizeAgentAction({
+      snapshot: input.snapshot,
+      action: 'pr.propose',
+      changedPaths: input.changedPaths,
+      riskZone: riskZone as RiskZone,
+    });
     if (auth.decision !== 'allow') {
-      const prefix = auth.decision === 'ask' ? 'Authorization requires confirmation' : 'Authorization denied';
-      return { success: false, prBody: '', branchName: '', riskZone, errors: [`${prefix}: ${auth.evidence.reason}`] };
+      const prefix =
+        auth.decision === 'ask' ? 'Authorization requires confirmation' : 'Authorization denied';
+      return {
+        success: false,
+        prBody: '',
+        branchName: '',
+        riskZone,
+        errors: [`${prefix}: ${auth.evidence.reason}`],
+      };
     }
   }
   const prBody = `## OpenSlack Self-Evolution PR
@@ -82,11 +92,15 @@ ${input.changedPaths.map((p) => `- ${p}`).join('\n')}
 ### Description
 ${input.description || 'No description provided.'}
 
-${input.principal ? `### Principal
+${
+  input.principal
+    ? `### Principal
 - **Registry ID:** ${input.principal.registry_id}
 - **Run ID:** ${input.principal.run_id}
 - **Provider:** ${input.principal.provider}
-` : ''}
+`
+    : ''
+}
 ### Validation
 - [ ] \`openslack workspace validate\`
 - [ ] \`bun run typecheck\`
@@ -104,20 +118,44 @@ ${riskZone === 'red' ? '- [ ] **Human approval required** (Red Zone files modifi
 `;
 
   if (blackViolations.length > 0) {
-    return { success: false, prBody, branchName, riskZone, errors: ['PR cannot be proposed: Black Zone files modified'] };
+    return {
+      success: false,
+      prBody,
+      branchName,
+      riskZone,
+      errors: ['PR cannot be proposed: Black Zone files modified'],
+    };
   }
 
-  // Attempt git commit + push + draft PR if remote is configured
+  // Stage and commit locally, then delegate every publication side effect to
+  // the installation-scoped delivery service.
   let prUrl: string | undefined;
   let authorRisk: PRAuthorRiskPreflight | undefined;
+  let delivery: GitHubDeliveryResult | undefined;
   try {
-    const root = process.cwd();
-    const commitMsg = `[OpenSlack][${input.taskId}][${input.agentId}] ${input.description || 'Workspace changes'}`;
+    const root = input.rootDir ?? process.cwd();
+    const commitMsg = `runtime: deliver ${input.taskId} workspace changes`;
+    const preStaged = listGitPaths(root, ['diff', '--cached', '--name-only']);
+    if (preStaged.length > 0) {
+      return {
+        success: false,
+        prBody,
+        branchName,
+        riskZone,
+        errors: [
+          'PR cannot be proposed: the Git index already contains staged paths outside this delivery.',
+        ],
+      };
+    }
 
     if (redViolations.length > 0) {
       const { getAuthenticatedIdentity } = await import('@openslack/github');
-      const identity = await getAuthenticatedIdentity();
-      const author = process.env.OPENSLACK_PR_AUTHOR_LOGIN || identity.login;
+      const identity = await getAuthenticatedIdentity({
+        auth: 'app',
+        requireLive: true,
+        cwd: root,
+      });
+      const author = identity.login;
       authorRisk = assessPRAuthorRisk({
         author,
         authorIsBot: identity.isBot,
@@ -136,28 +174,75 @@ ${riskZone === 'red' ? '- [ ] **Human approval required** (Red Zone files modifi
       }
     }
 
-    if (hasGitRemote(root)) {
-      execFileSync('git', ['add', ...input.changedPaths], { cwd: root, stdio: 'pipe' });
-      execFileSync('git', ['commit', '-m', commitMsg], { cwd: root, stdio: 'pipe' });
-      try {
-        execFileSync('git', ['push', 'origin', branchName], { cwd: root, stdio: 'pipe', timeout: 30000 });
-
-        // Try to create a draft PR via GitHub provider if token is available
-        try {
-          const { createDraftPR } = await import('@openslack/github');
-          const draftResult = await createDraftPR(branchName, 'main', commitMsg, prBody);
-          prUrl = draftResult.url;
-        } catch {
-          // Fallback: compare URL when token not available
-          prUrl = `https://github.com/wsman/OpenSlack/compare/main...${branchName}`;
-        }
-      } catch {
-        errors.push('Git push failed — branch may already exist or no credentials configured');
-      }
+    execFileSync('git', ['add', '--', ...input.changedPaths], { cwd: root, stdio: 'pipe' });
+    const stagedPaths = listGitPaths(root, ['diff', '--cached', '--name-only']);
+    if (!samePathSet(stagedPaths, input.changedPaths)) {
+      execFileSync('git', ['reset', '--', ...input.changedPaths], { cwd: root, stdio: 'pipe' });
+      throw new Error('Staged paths do not exactly match the declared delivery paths.');
     }
-  } catch {
-    // Graceful fallback: commit/push are optional; PR body is the minimum deliverable
+    execFileSync('git', ['commit', '-m', commitMsg], { cwd: root, stdio: 'pipe' });
+    const committedPaths = listGitPaths(root, [
+      'diff-tree',
+      '--root',
+      '--no-commit-id',
+      '--name-only',
+      '-r',
+      'HEAD',
+    ]);
+    if (!samePathSet(committedPaths, input.changedPaths)) {
+      throw new Error('Committed paths do not exactly match the declared delivery paths.');
+    }
+    const { resolveGitHubRepoTarget } = await import('@openslack/github');
+    const target = resolveGitHubRepoTarget({ cwd: root });
+    delivery = await (input.deliveryService ?? new GitHubDeliveryService()).publish({
+      rootDir: root,
+      owner: target.owner,
+      repo: target.repo,
+      branch: branchName,
+      base: input.baseBranch ?? 'main',
+      remote: input.remote ?? 'origin',
+      title: commitMsg,
+      body: prBody,
+      requireIssuesWrite: false,
+    });
+    prUrl = delivery.prUrl;
+  } catch (error) {
+    const summary =
+      error instanceof DeliveryError
+        ? `${error.code}: ${error.message}`
+        : error instanceof Error
+          ? error.message
+          : 'Unknown delivery failure.';
+    return {
+      success: false,
+      prBody,
+      branchName,
+      riskZone,
+      errors: [summary],
+      authorRisk,
+      delivery,
+    };
   }
 
-  return { success: true, prBody, branchName, riskZone, prUrl, errors, authorRisk };
+  return { success: true, prBody, branchName, riskZone, prUrl, errors, authorRisk, delivery };
+}
+
+function listGitPaths(root: string, args: string[]): string[] {
+  return execFileSync('git', args, {
+    cwd: root,
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+    .split(/\r?\n/)
+    .map((path) => path.trim().replaceAll('\\', '/'))
+    .filter(Boolean);
+}
+
+function samePathSet(left: string[], right: string[]): boolean {
+  const normalizedLeft = [...new Set(left)].sort();
+  const normalizedRight = [...new Set(right.map((path) => path.replaceAll('\\', '/')))].sort();
+  return (
+    normalizedLeft.length === normalizedRight.length &&
+    normalizedLeft.every((path, index) => path === normalizedRight[index])
+  );
 }

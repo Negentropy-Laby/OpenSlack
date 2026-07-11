@@ -25,13 +25,15 @@ modules:
       - openslack github
       - openslack agent
       - openslack task
+      - openslack delivery
     packages:
       - "@openslack/github"
       - "@openslack/runtime"
       - "@openslack/core"
-    tests: 398
-    test_files: 48
-    notes: "GitHub Issues task loop active with typed task creation, dry-run repair, and Phase 4 watch daemon (webhook receiver, dedupe, console/Slack/webhook notifications, polling fallback, optional auto-claim with agent identity and authorization gates, collaboration event recording)."
+      - "@openslack/delivery"
+    tests: 414
+    test_files: 52
+    notes: "GitHub Issues task loop active with typed task creation, dry-run repair, Phase 4 watch daemon, and installation-scoped GitHub delivery. Delivery publishes HEAD and a draft PR through the same GitHub App token, disables host credentials and hooks, synchronizes remote/PR SHAs, and returns AWAITING_GATES evidence for PRMS."
 
   - id: operator
     name: Operator Interface
@@ -48,8 +50,8 @@ modules:
       - "@openslack/operator"
       - "@openslack/chat-gateway"
       - "@openslack/tui"
-    tests: 827
-    test_files: 90
+    tests: 833
+    test_files: 91
     notes: Structured planner active. Webhook and Slack chat adapters active with actor mapping. PRMS chat cards and action confirmation active. Typed tool registry, LLM-first intent routing with deterministic keyword fallback, setup report, and 24h pending plan store active. Session-based conversation memory with multi-turn context resolution and progressive clarification. Doctor --format plain for non-technical output. Conversation-first TUI workbench with Ask OpenSlack, Operator recommendation cards, workflow draft-first cards, profile sync recommendations, and subagent mention dispatch. TUI setup report view and PR doctor view via --format tui.
 
   - id: pr_review_merge

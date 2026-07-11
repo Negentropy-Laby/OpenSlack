@@ -23,6 +23,7 @@
     "@openslack/collaboration": "workspace:*",
     "@openslack/workflows": "workspace:*",
     "@openslack/agent-runtime": "workspace:*",
+    "@openslack/delivery": "workspace:*",
     "@openslack/tui": "workspace:*",
     "commander": "^13.1.0",
     "yaml": "^2.7.0"

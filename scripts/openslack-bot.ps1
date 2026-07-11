@@ -156,22 +156,53 @@ if ([string]::IsNullOrWhiteSpace($InstallationId)) {
   exit 1
 }
 
-$env:OPENSLACK_GITHUB_AUTH_MODE = 'app'
-$env:OPENSLACK_GITHUB_APP_ID = $AppId
-$env:OPENSLACK_GITHUB_APP_INSTALLATION_ID = $InstallationId
-$env:OPENSLACK_GITHUB_APP_PRIVATE_KEY = $privateKey
-$env:OPENSLACK_GITHUB_APP_SLUG = $AppSlug
-$env:GITHUB_OWNER = $Owner
-$env:GITHUB_REPO = $Repo
-
-# Prevent silent fallback to a human PAT in bot-auth runs.
-if (Test-Path Env:GITHUB_TOKEN) {
-  Remove-Item Env:GITHUB_TOKEN
+$managedEnvNames = @(
+  'OPENSLACK_GITHUB_AUTH_MODE',
+  'OPENSLACK_GITHUB_APP_ID',
+  'OPENSLACK_GITHUB_APP_INSTALLATION_ID',
+  'OPENSLACK_GITHUB_APP_PRIVATE_KEY',
+  'OPENSLACK_GITHUB_APP_SLUG',
+  'GITHUB_OWNER',
+  'GITHUB_REPO',
+  'GITHUB_TOKEN',
+  'GH_TOKEN'
+)
+$previousEnv = @{}
+foreach ($name in $managedEnvNames) {
+  $previousEnv[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
 }
 
-if (-not $OpenSlackArgs -or $OpenSlackArgs.Count -eq 0) {
-  $OpenSlackArgs = @('setup', 'github')
+$commandExit = 1
+try {
+  $env:OPENSLACK_GITHUB_AUTH_MODE = 'app'
+  $env:OPENSLACK_GITHUB_APP_ID = $AppId
+  $env:OPENSLACK_GITHUB_APP_INSTALLATION_ID = $InstallationId
+  $env:OPENSLACK_GITHUB_APP_PRIVATE_KEY = $privateKey
+  $env:OPENSLACK_GITHUB_APP_SLUG = $AppSlug
+  $env:GITHUB_OWNER = $Owner
+  $env:GITHUB_REPO = $Repo
+
+  # Prevent every human token fallback in bot-auth runs. The client consumes
+  # OPENSLACK_GITHUB_AUTH_MODE=app and fails closed if App auth is unavailable.
+  Remove-Item Env:GITHUB_TOKEN -ErrorAction SilentlyContinue
+  Remove-Item Env:GH_TOKEN -ErrorAction SilentlyContinue
+
+  if (-not $OpenSlackArgs -or $OpenSlackArgs.Count -eq 0) {
+    $OpenSlackArgs = @('setup', 'github')
+  }
+
+  & pnpm openslack @OpenSlackArgs
+  $commandExit = $LASTEXITCODE
+} finally {
+  foreach ($name in $managedEnvNames) {
+    $value = $previousEnv[$name]
+    if ($null -eq $value) {
+      [Environment]::SetEnvironmentVariable($name, $null, 'Process')
+    } else {
+      [Environment]::SetEnvironmentVariable($name, [string]$value, 'Process')
+    }
+  }
+  $privateKey = $null
 }
 
-& pnpm openslack @OpenSlackArgs
-exit $LASTEXITCODE
+exit $commandExit
