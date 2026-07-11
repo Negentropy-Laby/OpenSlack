@@ -1,5 +1,21 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
+import { parse } from 'yaml';
+import type { RiskZone } from '../types.js';
+import { DEFAULT_RISK_ZONE, ZONE_PATTERNS } from '../zone-policy.js';
 import { classifyPaths } from '../zones.js';
+
+interface SelfEvolutionPolicyFile {
+  zones: {
+    fallback_zone: RiskZone;
+    green: { paths: string[] };
+    yellow: { paths: string[] };
+    red: { paths: string[] };
+    black: { paths: string[] };
+  };
+}
+
+const POLICY_PATH = new URL('../../../../.openslack/policies/self_evolution.yaml', import.meta.url);
 
 describe('classifyPaths', () => {
   it('classifies docs changes as green', () => {
@@ -118,5 +134,18 @@ describe('classifyPaths', () => {
 
   it('fails safe to yellow for an empty path set', () => {
     expect(classifyPaths([])).toBe('yellow');
+  });
+});
+
+describe('risk zone policy synchronization', () => {
+  it('keeps the declarative YAML policy aligned with the runtime classifier', () => {
+    const policy = parse(readFileSync(POLICY_PATH, 'utf8')) as SelfEvolutionPolicyFile;
+
+    expect(policy.zones.fallback_zone).toBe(DEFAULT_RISK_ZONE);
+    for (const zone of ['green', 'yellow', 'red', 'black'] as const) {
+      const runtimeDefinition = ZONE_PATTERNS.find((definition) => definition.zone === zone);
+      expect(runtimeDefinition, `runtime definition for ${zone}`).toBeDefined();
+      expect(policy.zones[zone].paths).toEqual(runtimeDefinition?.globs);
+    }
   });
 });

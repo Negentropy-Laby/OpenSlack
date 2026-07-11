@@ -1,62 +1,5 @@
 import type { RiskZone } from './types.js';
-
-const ZONE_PATTERNS: Array<{ zone: RiskZone; globs: string[] }> = [
-  {
-    zone: 'black',
-    globs: [
-      '.env',
-      '**/*.pem',
-      '**/*.key',
-      'secrets/**',
-      'credentials/**',
-      'private/**',
-      'production-tokens/**',
-    ],
-  },
-  {
-    zone: 'red',
-    globs: [
-      'AGENTS.md',
-      'CLAUDE.md',
-      '.github/**',
-      '.openslack/policies/**',
-      '.openslack/agents/registry/**',
-      '.openslack/agents/prompts/**',
-      '.openslack/self/constitution.md',
-      '.openslack/self/invariants.yaml',
-      'packages/kernel/src/**',
-    ],
-  },
-  {
-    zone: 'yellow',
-    globs: [
-      'apps/**',
-      'packages/core/**',
-      'packages/workspace/**',
-      'packages/runtime/**',
-      'packages/github/**',
-      'packages/pr/**',
-      'packages/operator/**',
-      'packages/chat-gateway/**',
-      'packages/collaboration/**',
-      'packages/agent-runtime/**',
-      'packages/tui/**',
-      'packages/workflows/**',
-      '.openslack/self/eval_suites/**',
-    ],
-  },
-  {
-    zone: 'green',
-    globs: [
-      'docs/**',
-      'templates/**',
-      '.openslack/tasks/**',
-      '.openslack/audit/**',
-      '.openslack/self/experiments/**',
-      '.openslack/self/scorecards/**',
-    ],
-  },
-];
+import { DEFAULT_RISK_ZONE, ZONE_PATTERNS } from './zone-policy.js';
 
 function matchesGlob(path: string, glob: string): boolean {
   // Simple glob matching: ** matches any depth, * matches within a segment
@@ -93,7 +36,7 @@ export function classifyPaths(changedPaths: string[]): RiskZone {
     // Only explicitly enumerated Green paths are auto-merge eligible. New,
     // misspelled, or otherwise unclassified paths fail safe to Yellow so a
     // future package cannot silently bypass independent review.
-    const effectiveZone = pathZone ?? 'yellow';
+    const effectiveZone = pathZone ?? DEFAULT_RISK_ZONE;
     if (zoneOrder.indexOf(effectiveZone) > zoneOrder.indexOf(highestZone)) {
       highestZone = effectiveZone;
     }
