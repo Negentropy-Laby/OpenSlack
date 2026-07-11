@@ -92,6 +92,38 @@ describe('GitAskPassPublisher', () => {
     expect(spawn).toHaveBeenCalledTimes(1);
   });
 
+  it('surfaces redacted porcelain rejection details written to stdout', () => {
+    const token = 'delivery-canary-token';
+    const spawn = vi.fn((_command: string, args: readonly string[]) => {
+      if (args[0] === 'remote') return result('https://github.com/acme/repo.git\n');
+      if (args[0] === 'rev-parse') return result(`${'a'.repeat(40)}\n`);
+      if (args.includes('push')) {
+        return {
+          pid: 1,
+          output: [],
+          stdout: `!\tHEAD:refs/heads/topic\t[remote rejected] (ruleset blocked ${token})\nDone\n`,
+          stderr: "error: failed to push some refs to 'https://github.com/acme/repo.git'\n",
+          status: 1,
+          signal: null,
+        };
+      }
+      return result('');
+    }) as unknown as typeof spawnSync;
+    const publisher = new GitAskPassPublisher({ spawn });
+
+    expect(() =>
+      publisher.push({
+        rootDir: '.',
+        remote: 'origin',
+        branch: 'topic',
+        owner: 'acme',
+        repo: 'repo',
+        token,
+        timeoutMs: 1000,
+      }),
+    ).toThrow('remote rejected] (ruleset blocked [redacted])');
+  });
+
   it('pushes HEAD to a test bare remote without mutating remote or credential config', () => {
     const root = temp('delivery-work-');
     const bare = temp('delivery-bare-');

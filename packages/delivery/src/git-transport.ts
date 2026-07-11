@@ -265,7 +265,7 @@ function runAuthenticatedGit(
   });
   if (result.error || result.status !== 0) {
     const detail = redactTransportText(
-      `${result.stderr ?? ''}\n${result.error?.message ?? ''}`,
+      `${result.stdout ?? ''}\n${result.stderr ?? ''}\n${result.error?.message ?? ''}`,
       token,
     );
     const timeout = (result.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT';
