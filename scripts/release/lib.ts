@@ -86,3 +86,48 @@ export function parseArg(name: string): string | undefined {
 export function hasArg(name: string): boolean {
   return process.argv.includes(name);
 }
+
+export interface GitContentState {
+  dirty: boolean;
+  staged: boolean;
+  unstaged: boolean;
+  untracked: string[];
+}
+
+/**
+ * Determine whether a release checkout contains content that is not represented
+ * by HEAD. `git status --porcelain` is deliberately not used here: on Windows a
+ * CRLF/stat refresh can report `.M` even when the index and worktree blobs are
+ * byte-identical. Release provenance must describe content, not filesystem stat
+ * cache noise.
+ */
+export function getGitContentState(root: string): GitContentState {
+  const staged = gitDiffHasContent(root, [
+    'diff',
+    '--cached',
+    '--quiet',
+    '--ignore-submodules',
+    '--',
+  ]);
+  const unstaged = gitDiffHasContent(root, ['diff', '--quiet', '--ignore-submodules', '--']);
+  const untrackedResult = run('git', ['ls-files', '--others', '--exclude-standard', '-z'], {
+    cwd: root,
+    allowFailure: true,
+  });
+  if (untrackedResult.error || untrackedResult.status !== 0) {
+    throw new Error('git failed while checking untracked release inputs.');
+  }
+  const untracked = String(untrackedResult.stdout ?? '')
+    .split('\0')
+    .filter(Boolean)
+    .sort();
+  return { dirty: staged || unstaged || untracked.length > 0, staged, unstaged, untracked };
+}
+
+function gitDiffHasContent(root: string, args: string[]): boolean {
+  const result = run('git', args, { cwd: root, allowFailure: true });
+  if (result.error || (result.status !== 0 && result.status !== 1)) {
+    throw new Error('git failed while checking release content state.');
+  }
+  return result.status === 1;
+}

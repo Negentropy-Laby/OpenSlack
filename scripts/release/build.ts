@@ -12,6 +12,7 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
+  getGitContentState,
   hasArg,
   hostTarget,
   parseArg,
@@ -22,7 +23,21 @@ import {
   writeJson,
 } from './lib.js';
 import { buildCycloneDxSbom } from './sbom.js';
+import { consumeReleaseSigningEnvironment, createProvenanceSignature } from './signature.js';
 import { smokeBundle, type ArtifactSmokeResult } from './smoke.js';
+
+// This must run before the first Git/build/smoke child process. Never allow the
+// signing private key to flow into inherited child environments.
+const releaseSigningEnvironment = consumeReleaseSigningEnvironment();
+const requireSignature = hasArg('--require-signature');
+if (
+  requireSignature &&
+  (!releaseSigningEnvironment.privateKey || !releaseSigningEnvironment.trustedPublicKey)
+) {
+  throw new Error(
+    'Signed release builds require OPENSLACK_RELEASE_SIGNING_PRIVATE_KEY and OPENSLACK_RELEASE_TRUSTED_PUBLIC_KEY.',
+  );
+}
 
 const root = resolve(import.meta.dirname, '..', '..');
 const rootManifest = JSON.parse(readFileSync(join(root, 'package.json'), 'utf-8')) as {
@@ -40,7 +55,7 @@ const releaseRoot = resolve(parseArg('--out-dir') ?? join(root, 'dist', 'release
 const bundleName = `openslack-v${version}-${target}`;
 const bundleDir = join(releaseRoot, bundleName);
 const commit = run('git', ['rev-parse', 'HEAD'], { cwd: root }).stdout.trim();
-const dirty = run('git', ['status', '--porcelain'], { cwd: root }).stdout.trim().length > 0;
+const dirty = getGitContentState(root).dirty;
 if (dirty && !hasArg('--allow-dirty')) {
   throw new Error(
     'Release build requires a clean worktree. Use --allow-dirty only for local spikes.',
@@ -124,16 +139,24 @@ mkdirSync(releaseRoot, { recursive: true });
 const archiveName = `${bundleName}${definition.archiveExtension}`;
 const archivePath = join(releaseRoot, archiveName);
 rmSync(archivePath, { force: true });
+// Use a relative archive name with cwd=releaseRoot: MSYS/GNU tar (Git Bash, e.g.
+// the release workflow's `shell: bash` on windows-2022) misparses absolute `D:\`
+// paths as `host:path`; bsdtar handles them, and a relative name is portable
+// across both.
 if (target === 'windows-x64') {
-  run('tar', ['-a', '-cf', archivePath, bundleName], { cwd: releaseRoot });
+  run('tar', ['-a', '-cf', archiveName, bundleName], { cwd: releaseRoot });
 } else {
-  run('tar', ['-czf', archivePath, bundleName], { cwd: releaseRoot });
+  run('tar', ['-czf', archiveName, bundleName], { cwd: releaseRoot });
 }
 
 const extractionRoot = mkdtempSync(join(tmpdir(), 'openslack-release-extract-'));
 let archiveSmoke: ArtifactSmokeResult;
 try {
-  run('tar', ['-xf', archivePath, '-C', extractionRoot]);
+  // MSYS/GNU tar also fails to resolve Windows-native `-C` temp paths, so copy the
+  // archive into the temp dir and extract by relative name with cwd=extractionRoot.
+  // No absolute path is passed to tar, keeping this portable across GNU tar/bsdtar.
+  copyFileSync(archivePath, join(extractionRoot, archiveName));
+  run('tar', ['-xf', archiveName], { cwd: extractionRoot });
   archiveSmoke = smokeBundle(join(extractionRoot, bundleName), target);
 } finally {
   rmSync(extractionRoot, { recursive: true, force: true });
@@ -146,7 +169,10 @@ const provenanceName = `${bundleName}.provenance.intoto.json`;
 const provenancePath = join(releaseRoot, provenanceName);
 writeJson(provenancePath, {
   _type: 'https://in-toto.io/Statement/v1',
-  subject: [{ name: archiveName, digest: { sha256: sha256File(archivePath) } }],
+  subject: [
+    { name: archiveName, digest: { sha256: sha256File(archivePath) } },
+    { name: sbomName, digest: { sha256: sha256File(sbomPath) } },
+  ],
   predicateType: 'https://slsa.dev/provenance/v1',
   predicate: {
     buildDefinition: {
@@ -163,6 +189,42 @@ writeJson(provenancePath, {
     runDetails: { builder: { id: 'https://openslack.dev/release-builder/v1' } },
   },
 });
+
+let provenanceSignature:
+  | {
+      status: 'signed';
+      file: string;
+      sha256: string;
+      algorithm: 'ed25519';
+      keyId: string;
+    }
+  | { status: 'unsigned'; reason: 'operator-signing-not-configured' };
+let signatureName: string | undefined;
+if (requireSignature) {
+  const privateKey = releaseSigningEnvironment.privateKey!;
+  const trustedPublicKey = releaseSigningEnvironment.trustedPublicKey!;
+  signatureName = `${provenanceName}.sig`;
+  const signaturePath = join(releaseRoot, signatureName);
+  const envelope = createProvenanceSignature(
+    readFileSync(provenancePath),
+    privateKey,
+    trustedPublicKey,
+  );
+  writeJson(signaturePath, envelope);
+  provenanceSignature = {
+    status: 'signed',
+    file: signatureName,
+    sha256: sha256File(signaturePath),
+    algorithm: 'ed25519',
+    keyId: envelope.keyId,
+  };
+} else {
+  provenanceSignature = {
+    status: 'unsigned',
+    reason: 'operator-signing-not-configured',
+  };
+}
+
 const manifestName = `${bundleName}.release-manifest.json`;
 const manifestPath = join(releaseRoot, manifestName);
 const manifest = {
@@ -177,13 +239,14 @@ const manifest = {
     file: provenanceName,
     sha256: sha256File(provenancePath),
     format: 'in-toto/SLSA-1',
-    signature: 'operator-required',
+    signature: provenanceSignature,
   },
   smoke: { bundleChecks: smoke.checks, archiveChecks: archiveSmoke.checks },
 };
 writeJson(manifestPath, manifest);
 
 const checksumFiles = [archiveName, sbomName, manifestName, provenanceName];
+if (signatureName) checksumFiles.push(signatureName);
 const checksums = checksumFiles
   .map((file) => `${sha256File(join(releaseRoot, file))}  ${file}`)
   .join('\n');

@@ -8,7 +8,11 @@ not runtime dependencies.
 ## Verify the download
 
 Download the target archive together with its release manifest, CycloneDX SBOM,
-provenance statement, and `SHA256SUMS`. Verify the checksum before extraction.
+provenance statement, detached provenance signature, and `SHA256SUMS`. Verify the
+checksum before extraction. Stable tag releases are fail-closed unless every
+target has a trusted Ed25519 provenance signature. PR and manual development
+artifacts are explicitly marked `unsigned` in their manifest and must not be
+treated as published releases.
 
 Windows PowerShell:
 
@@ -23,8 +27,26 @@ sha256sum openslack-v0.1.0-linux-x64.tar.gz
 ```
 
 The result must equal both `SHA256SUMS` and the archive digest in the release
-manifest. A release operator may additionally publish a signature or CI
-attestation; signing keys are never stored in the repository or release bundle.
+manifest. The signed provenance subjects bind both the archive and its SBOM.
+From a trusted OpenSlack source checkout, verify the signature against the
+release public key obtained from the organization's pinned, out-of-band trust
+channel:
+
+```bash
+bun scripts/release/verify.ts \
+  --manifest openslack-v0.1.0-linux-x64.release-manifest.json \
+  --require-signature \
+  --public-key /trusted/path/openslack-release-public.pem
+```
+
+The `.sig` envelope contains a public key for inspection, but that embedded key
+is self-asserted and is not a substitute for the trusted public key. Signing
+private keys are never stored in the repository, release bundle, logs, or
+support evidence.
+
+Published tag assets are immutable. Re-running a tag workflow is a no-op only
+when the existing asset file set and every byte are identical; a missing, extra,
+or different asset fails the workflow rather than replacing it.
 
 ## Extract and run
 
@@ -66,6 +88,19 @@ openslack setup onboarding --start
 Continue with the guided onboarding ledger. Preview commands before apply
 commands, store only `env:` or `keychain:` credential references, and keep bot PR
 authorship separate from human approval.
+
+When GitHub App setup writes `.openslack.local/github-app.json`, the installed
+CLI resolves its `privateKeyRef` from the OS keychain for GitHub and delivery
+commands. The config contains only App metadata and a credential reference; the
+private key is not passed through argv or written to delivery evidence. Verify
+the installation scope before the first mutation:
+
+```bash
+openslack github app bind-installation --installation-id <id>
+openslack github app bind-installation --installation-id <id> --apply
+openslack delivery doctor --repo <owner/repository> --require-issues-write
+openslack delivery probe --repo <owner/repository>
+```
 
 ## Linux keychain prerequisite
 
