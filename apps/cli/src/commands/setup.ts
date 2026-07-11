@@ -5,12 +5,13 @@ import { join } from 'node:path';
 import {
   buildSetupReport, detectGenesisShell, renderSetupReport,
   recommendNextActions, renderFindingsPlain,
-  getNextSteps,
+  getNextSteps, OnboardingStore,
 } from '@openslack/runtime';
 import type { PlainFinding } from '@openslack/runtime';
 import { describeLLMRoutingConfig } from '@openslack/operator';
 import { recordEvent } from '@openslack/collaboration';
 import { diagnoseAgentRuntime } from '@openslack/agent-runtime';
+import { resolveWorkspaceContext } from '@openslack/workspace';
 
 export function readStrictOption(source: unknown): boolean {
   if (!source || typeof source !== 'object') return false;
@@ -27,6 +28,25 @@ function readStrictFromCommander(args: unknown[], command: Command): boolean {
 
 export function setupCommands(): Command {
   const cmd = new Command('setup').description('One-step OpenSlack setup wizard');
+
+  cmd
+    .command('onboarding')
+    .description('Start or resume the durable standalone-product onboarding ledger')
+    .option('--start', 'Create a new onboarding session')
+    .action((options: { start?: boolean }) => {
+      try {
+        const context = resolveWorkspaceContext();
+        const store = new OnboardingStore(context.localStateRoot);
+        const state = options.start ? store.create() : store.load();
+        console.log(`Onboarding session: ${state.sessionId}`);
+        for (const step of state.steps) console.log(`[${step.status.toUpperCase()}] ${step.id}`);
+        const next = store.nextActionable(state);
+        console.log(next ? `Next: ${next.id} (${next.status})` : 'Onboarding ledger complete.');
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : 'Onboarding state failed.');
+        process.exitCode = 1;
+      }
+    });
 
   function confirmPrompt(message: string): Promise<boolean> {
     const rl = createInterface({ input: process.stdin, output: process.stdout });

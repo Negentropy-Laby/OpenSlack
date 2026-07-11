@@ -11,8 +11,27 @@ export { generateRuntimeIdentity, loadRuntimeIdentity, resolveAgentPrincipal } f
 export { proposeWorkspacePR } from './propose.js';
 export type { PRProposalInput, PRProposalResult } from './propose.js';
 export { createWorktree, cleanupWorktree, checkDirty } from './worktree.js';
-export { buildSetupReport, detectGenesisShell, findRepoRoot, renderSetupReport, getNextSteps } from './setup-report.js';
-export type { SetupFinding, SetupFindingStatus, SetupReport, SetupNextStep } from './setup-report.js';
+export {
+  buildSetupReport,
+  detectGenesisShell,
+  findRepoRoot,
+  renderSetupReport,
+  getNextSteps,
+} from './setup-report.js';
+export { OnboardingStateError, OnboardingStore } from './onboarding-store.js';
+export type {
+  OnboardingReceipt,
+  OnboardingState,
+  OnboardingStepId,
+  OnboardingStepState,
+  OnboardingStepStatus,
+} from './onboarding-store.js';
+export type {
+  SetupFinding,
+  SetupFindingStatus,
+  SetupReport,
+  SetupNextStep,
+} from './setup-report.js';
 export { repairWorktrees, renderWorktreeRepair } from './repair.js';
 export type { WorktreeRepairItem, WorktreeRepairResult } from './repair.js';
 export type { WorktreeResult } from './worktree.js';
@@ -38,9 +57,20 @@ export {
   ROLLBACK_TTL_DAYS,
   ROLLBACK_RATE_LIMIT_MS,
 } from './self/ops/rollback.js';
-export type { CreateRollbackTaskOptions, RollbackTaskResult, ExpireRollbackTasksResult } from './self/ops/rollback.js';
+export type {
+  CreateRollbackTaskOptions,
+  RollbackTaskResult,
+  ExpireRollbackTasksResult,
+} from './self/ops/rollback.js';
 
 // Golden Evals (moved from workspace to runtime to break circular dependency)
 export { runEvalSuite, runGoldenEval, generateScorecard } from './evals/runner.js';
 export { loadGoldenSuite } from './evals/suites/golden.js';
-export type { EvalCase, EvalSuite, EvalResult, EvalAssertion, EvalSetup, EvalScenario } from './evals/types.js';
+export type {
+  EvalCase,
+  EvalSuite,
+  EvalResult,
+  EvalAssertion,
+  EvalSetup,
+  EvalScenario,
+} from './evals/types.js';
