@@ -323,7 +323,7 @@ configuration and agent-registry contract.
 
 `task sync` delegates publication to the same package-backed path as
 `openslack delivery publish`. The delivery path requires a GitHub App installation
-with `contents:write` and `pull_requests:write`, disables host credential helpers
+with `contents:write`, `pull_requests:write`, and `workflows:write`, disables host credential helpers
 and repository hooks for the push child, and returns `AWAITING_GATES` only after
 the remote branch SHA matches the PR head SHA. An empty initial check rollup is
 reported as `empty`, never as passed.

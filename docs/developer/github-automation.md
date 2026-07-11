@@ -149,7 +149,7 @@ openslack delivery probe --repo OWNER/REPO --apply
 ```
 
 The doctor calls the installation-scoped repository-list endpoint and checks
-`contents:write` plus `pull_requests:write`; public read access is not accepted
+`contents:write`, `pull_requests:write`, and `workflows:write`; public read access is not accepted
 as evidence that a selected repository is installed. The probe uses the same
 allowlisted askpass environment as delivery, pushes a unique
 `openslack/probes/write-*` ref, verifies its SHA, and deletes it in cleanup. A
