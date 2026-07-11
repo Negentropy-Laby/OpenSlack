@@ -12,7 +12,11 @@ import {
 import { createOpenSlackAgentLauncher } from './launcher.js';
 import { createRunStore } from './run-store.js';
 import { readTranscript } from './transcript.js';
-import { readRuntimeConfigForMerge, writeRuntimeConfigAtomic } from './runtime-config-file.js';
+import {
+  AGENT_RUNTIME_CONFIG_SCHEMA,
+  readRuntimeConfigForMerge,
+  writeRuntimeConfigAtomic,
+} from './runtime-config-file.js';
 
 export interface DiagnoseOpenAICompatibleRuntimeOptions {
   rootDir?: string;
@@ -178,6 +182,7 @@ export function setupOpenAICompatibleRuntime(
       const providers = readRecord(existing.providers) ?? {};
       const merged = {
         ...existing,
+        schema: AGENT_RUNTIME_CONFIG_SCHEMA,
         providers: { ...providers, 'openai-compatible': config },
       };
       writeRuntimeConfigAtomic(configPath, merged);

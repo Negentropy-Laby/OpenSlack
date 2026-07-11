@@ -15,6 +15,7 @@ function providerConfig(root: string): string {
   writeFileSync(
     path,
     JSON.stringify({
+      schema: 'openslack.agent_runtime.v1',
       providers: {
         'openai-compatible': {
           baseUrl: 'https://example.test/v1',
@@ -73,7 +74,14 @@ describe('OpenAI-compatible runtime diagnostics', () => {
   it('is preview-first and merges non-secret config without deleting legacy providers', () => {
     const path = join(root, '.openslack.local', 'agent-runtime.json');
     mkdirSync(join(root, '.openslack.local'), { recursive: true });
-    writeFileSync(path, JSON.stringify({ aby: { root: '../Aby', command: 'bun' } }), 'utf-8');
+    writeFileSync(
+      path,
+      JSON.stringify({
+        schema: 'openslack.agent_runtime.v1',
+        aby: { root: '../Aby', command: 'bun' },
+      }),
+      'utf-8',
+    );
     const options = {
       rootDir: root,
       baseUrl: 'http://127.0.0.1:43121/v1',

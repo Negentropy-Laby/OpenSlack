@@ -69,6 +69,7 @@ export {
   analyzeStaticMeta,
   discoverYamlTemplates,
   discoverJsWorkflows,
+  resolveBuiltinTemplatesDir,
 } from './loader.js'
 export type { WorkflowSummary } from './loader.js'
 

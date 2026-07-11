@@ -10,6 +10,7 @@ import {
 } from '@openslack/workspace';
 import { getClient } from '@openslack/github';
 import { describeLLMRoutingConfig } from '@openslack/operator';
+import { NativeKeychainBackend } from '@openslack/credentials';
 import { detectGenesisShell, renderFindingsPlain, runGoldenEval } from '@openslack/runtime';
 import type { PlainFinding } from '@openslack/runtime';
 
@@ -51,6 +52,14 @@ export function doctorCommands(dependencies: DoctorCommandDependencies = {}): Co
           detail: `Error: ${(e as Error).message}`,
         });
       }
+
+      // Binding availability only; this never reads or mutates an OS credential.
+      const keychain = new NativeKeychainBackend().status();
+      checks.push({
+        name: 'OS keychain backend',
+        state: keychain.available && keychain.writable ? 'PASS' : 'FAIL',
+        detail: keychain.detail,
+      });
 
       // Product source maintenance checks do not belong to ordinary workspaces.
       if (context.sourceCheckout) {

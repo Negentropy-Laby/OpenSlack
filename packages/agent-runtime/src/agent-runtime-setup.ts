@@ -10,7 +10,11 @@ import type {
 } from './agent-runtime-doctor.js';
 import { diagnoseAbyRuntime } from './agent-runtime-doctor.js';
 import { auditBridgeEnv } from './bridge-env.js';
-import { readRuntimeConfigForMerge, writeRuntimeConfigAtomic } from './runtime-config-file.js';
+import {
+  AGENT_RUNTIME_CONFIG_SCHEMA,
+  readRuntimeConfigForMerge,
+  writeRuntimeConfigAtomic,
+} from './runtime-config-file.js';
 
 export type AbyRuntimeSetupStatus = 'PASS' | 'FAIL';
 export type AbyRuntimeSetupMode = 'dry-run' | 'write';
@@ -217,7 +221,7 @@ function buildWritableConfig(
 ): Record<string, unknown> {
   const aby: Record<string, unknown> = { root, command, timeoutMs };
   if (Object.keys(safeEnv).length > 0) aby.env = safeEnv;
-  return { aby };
+  return { schema: AGENT_RUNTIME_CONFIG_SCHEMA, aby };
 }
 
 function remediationForSetup(checks: AgentRuntimeDoctorCheck[], wroteConfig: boolean): string[] {

@@ -32,6 +32,18 @@ export type { WorktreeRepairItem, WorktreeRepairResult } from './repair.js';
 export type { WorktreeResult } from './worktree.js';
 export { renderFindingPlain, renderFindingsPlain } from './plain-render.js';
 export type { PlainFinding } from './plain-render.js';
+export {
+  assertLocalStateCompatibility,
+  diagnoseLocalStateCompatibility,
+  LocalStateCompatibilityError,
+  migrateLocalStateSchemas,
+} from './state-compatibility.js';
+export type {
+  LocalStateCompatibilityCheck,
+  LocalStateCompatibilityReport,
+  LocalStateCompatibilityStatus,
+  LocalStateMigrationAction,
+} from './state-compatibility.js';
 export { recommendNextActions, getAttentionItems, getNextAction } from './next-action.js';
 export type { NextActionRecommendation, NextActionContext, AttentionItem } from './next-action.js';
 

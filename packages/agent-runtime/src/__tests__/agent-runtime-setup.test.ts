@@ -81,6 +81,7 @@ describe('setupAbyRuntime', () => {
     expect(report.readiness).toBe('ready');
     expect(report.wroteConfig).toBe(true);
     expect(JSON.parse(readFileSync(configPath, 'utf-8'))).toEqual({
+      schema: 'openslack.agent_runtime.v1',
       aby: { root: abyRoot, command: 'bun', timeoutMs: 120000 },
     });
   });
@@ -98,7 +99,10 @@ describe('setupAbyRuntime', () => {
     };
     writeFileSync(
       configPath,
-      JSON.stringify({ providers: { 'openai-compatible': openAIConfig } }),
+      JSON.stringify({
+        schema: 'openslack.agent_runtime.v1',
+        providers: { 'openai-compatible': openAIConfig },
+      }),
       'utf-8',
     );
     const report = setupAbyRuntime({

@@ -227,4 +227,14 @@ describe('diagnoseAbyRuntime', () => {
     expect(Object.keys(report.providers)).toEqual(['openai-compatible']);
     expect(JSON.stringify(report)).not.toContain('transport-only-test-value');
   });
+
+  it('recommends the built-in provider first when no runtime is configured', () => {
+    const report = diagnoseAgentRuntime({ rootDir: root, env: {} });
+    expect(report).toMatchObject({ status: 'FAIL', readiness: 'not_configured' });
+    expect(Object.keys(report.providers)).toEqual(['openai-compatible', 'aby']);
+    expect(report.remediations.join(' ')).toContain(
+      'openslack agent-runtime setup openai-compatible',
+    );
+    expect(report.remediations.join(' ')).toContain('Aby is optional');
+  });
 });

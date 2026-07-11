@@ -1,4 +1,12 @@
 import type { WorkflowMeta, WorkflowRuntime, PreviewResult, RunResult } from '../types.js'
+import {
+  parseFrontmatter,
+  readRepoDirectory,
+  readRepoFile,
+  renderLatestInsightsSection,
+  sortPostsByDate,
+  validatePost,
+} from '@openslack/github'
 
 export const meta: WorkflowMeta = {
   name: 'profile-sync',
@@ -94,15 +102,6 @@ export async function preview(
 
   // Phase 1: Collect
   ctx.phase('Collect')
-  const {
-    readRepoDirectory,
-    readRepoFile,
-    parseFrontmatter,
-    validatePost,
-    sortPostsByDate,
-    renderLatestInsightsSection,
-  } = await import('@openslack/github')
-
   const entries = await readRepoDirectory(source.owner, source.repo, sourcePostsPath)
   const mdFiles = entries.filter((e: { name: string; type: string }) =>
     e.type === 'file' && e.name.endsWith('.md'),

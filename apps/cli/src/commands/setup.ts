@@ -4,12 +4,14 @@ import { createInterface } from 'node:readline';
 import {
   buildSetupReport,
   detectGenesisShell,
+  diagnoseLocalStateCompatibility,
   renderSetupReport,
   recommendNextActions,
   renderFindingsPlain,
   getNextSteps,
   getOnboardingStepGuide,
   OnboardingStore,
+  migrateLocalStateSchemas,
   runGoldenEval,
 } from '@openslack/runtime';
 import type { OnboardingState, OnboardingStepId, PlainFinding } from '@openslack/runtime';
@@ -112,6 +114,48 @@ export function setupCommands(dependencies: SetupCommandDependencies = {}): Comm
         console.log(`Ledger status: ${running?.status ?? 'unknown'} (attempt ${running?.attempt ?? 0})`);
       } catch (error) {
         console.error(error instanceof Error ? error.message : 'Onboarding step failed.');
+        process.exitCode = 1;
+      }
+    });
+
+  cmd
+    .command('state')
+    .description('Diagnose local state schema compatibility without changing files')
+    .action(() => {
+      const context = resolveContext();
+      const report = diagnoseLocalStateCompatibility(context.localStateRoot);
+      console.log('Local state compatibility');
+      if (report.checks.length === 0) console.log('[PASS] No versioned local state files yet.');
+      for (const check of report.checks) {
+        const label = check.status === 'incompatible' ? 'FAIL' : check.status === 'legacy' ? 'WARN' : 'PASS';
+        console.log(`[${label}] ${check.file}: ${check.detail}`);
+      }
+      if (!report.compatible) process.exitCode = 1;
+    });
+
+  cmd
+    .command('migrate-state')
+    .description('Preview or apply backup-first P0 local state schema migrations')
+    .option('--apply', 'Create a backup and apply each migration')
+    .action((options: { apply?: boolean }) => {
+      try {
+        const context = resolveContext();
+        const actions = migrateLocalStateSchemas(context.localStateRoot, {
+          apply: options.apply,
+        });
+        if (actions.length === 0) {
+          console.log('No local state migrations are required.');
+          return;
+        }
+        for (const action of actions) {
+          console.log(
+            `[${action.applied ? 'APPLIED' : 'PREVIEW'}] ${action.file}: ${action.from} -> ${action.to}`,
+          );
+          if (action.backupPath) console.log(`Backup: ${action.backupPath}`);
+        }
+        if (!options.apply) console.log('No files changed. Re-run with --apply after review.');
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : 'Local state migration failed.');
         process.exitCode = 1;
       }
     });
