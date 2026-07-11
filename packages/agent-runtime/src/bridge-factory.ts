@@ -43,7 +43,7 @@ export interface BridgeFactoryOptions {
  * Create an execution adapter based on bridge mode.
  *
  * Mode mapping:
- * - 'local' → LocalExecutionAdapter (default)
+ * - 'local' → LocalExecutionAdapter (explicit fixture selection only)
  * - 'external-command' → ExternalCommandAdapter
  * - 'process' → BridgeProcessAdapter
  * - 'fake' → FakeBridgeAdapter
@@ -51,7 +51,12 @@ export interface BridgeFactoryOptions {
  * Unknown mode throws a descriptive error.
  */
 export function createBridgeAdapter(options: BridgeFactoryOptions = {}): AgentExecutionAdapter {
-  const mode = options.bridgeMode ?? 'local';
+  const mode = options.bridgeMode;
+  if (!mode) {
+    throw new BridgeFactoryError(
+      'bridgeMode is required; there is no implicit local execution adapter',
+    );
+  }
 
   switch (mode) {
     case 'local':

@@ -1,5 +1,6 @@
 export type {
   AgentRunStatus,
+  AgentRunFailureCode,
   AgentPermissionProfile,
   ResolvedAgentConfig,
   AgentRunRequest,
@@ -9,7 +10,14 @@ export type {
   WorktreeHandoff,
 } from './types.js';
 
-export { AgentUnavailableError, PermissionDeniedError } from './types.js';
+export {
+  AgentUnavailableError,
+  PermissionDeniedError,
+  RuntimeNotConfiguredError,
+  RuntimeMisconfiguredError,
+  getAgentRunFailureCode,
+  getAgentRunFailureSummary,
+} from './types.js';
 
 export type { AgentRunStore } from './run-store.js';
 export { createRunStore, generateRunId } from './run-store.js';
@@ -30,7 +38,17 @@ export { createOpenSlackAgentLauncher } from './launcher.js';
 export type { AgentExecutionAdapter, AdapterExecutionContext, AdapterExecutionResult } from './adapter.js';
 export { LocalExecutionAdapter, ToolGuard } from './adapter.js';
 
-export type { ExternalCommandAdapterOptions, ExternalCommandResult } from './external-command-adapter.js';
+export type {
+  ProviderRegistration,
+  ProviderResolution,
+  ProviderTransport,
+} from './provider-registry.js';
+export { ProviderRegistry, ProviderRegistryError, inferProviderId } from './provider-registry.js';
+
+export type {
+  ExternalCommandAdapterOptions,
+  ExternalCommandResult,
+} from './external-command-adapter.js';
 export { ExternalCommandAdapter } from './external-command-adapter.js';
 
 export type { RunRecorder } from './recorder.js';
@@ -119,12 +137,14 @@ export type {
   AgentRuntimeDoctorCheckStatus,
   AgentRuntimeDoctorProvider,
   AgentRuntimeDoctorStatus,
+  AgentRuntimeReadiness,
+  AgentRuntimeReadinessReport,
   AgentRuntimeEnvAudit,
   AbyRuntimeConfigSource,
   AbyRuntimeDoctorReport,
   DiagnoseAbyRuntimeOptions,
 } from './agent-runtime-doctor.js';
-export { diagnoseAbyRuntime } from './agent-runtime-doctor.js';
+export { diagnoseAbyRuntime, diagnoseAgentRuntime } from './agent-runtime-doctor.js';
 
 export type { BridgeEnvAudit } from './bridge-env.js';
 export {

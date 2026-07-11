@@ -101,7 +101,14 @@ export async function runAbyRuntimeSmoke(
     });
   } catch (err) {
     const bridgeError = err instanceof BridgeAdapterError ? err : null;
-    const failedRun = runId ? store.getRun(runId) : store.listRuns({ agentId }).find((run) => run.status === 'failed');
+    const rejectedRunId =
+      err && typeof err === 'object' && typeof (err as { runId?: unknown }).runId === 'string'
+        ? (err as { runId: string }).runId
+        : undefined;
+    runId = runId ?? rejectedRunId;
+    const failedRun = runId
+      ? store.getRun(runId)
+      : store.listRuns({ agentId }).find((run) => run.status === 'failed');
     runId = runId ?? failedRun?.runId;
     return buildSmokeReport({
       status: 'FAIL',

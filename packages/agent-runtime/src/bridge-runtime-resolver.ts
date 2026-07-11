@@ -71,6 +71,7 @@ export function createBridgeRuntimeResolver(
 
 export function isAbyRuntime(config: ResolvedAgentConfig): boolean {
   return (
+    config.runtimeProvider === 'aby' ||
     config.runtime === 'aby_assistant' ||
     config.runtime === 'aby' ||
     config.provider === 'aby'

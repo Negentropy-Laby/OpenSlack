@@ -1,9 +1,12 @@
-import { describe, it, expect, vi } from 'vitest'
-import { createRuntime } from '../runtime.js'
-import type { RuntimeOptions } from '../runtime.js'
-import type { AgentCacheStore, AgentLauncher } from '../agent-shim.js'
-import type { PipelineCacheStore } from '../pipeline-runner.js'
-import type { WorkflowMeta, BudgetState } from '../types.js'
+import { describe, it, expect, vi } from 'vitest';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createRuntime } from '../runtime.js';
+import type { RuntimeOptions } from '../runtime.js';
+import type { AgentCacheStore, AgentLauncher } from '../agent-shim.js';
+import type { PipelineCacheStore } from '../pipeline-runner.js';
+import type { WorkflowMeta, BudgetState } from '../types.js';
 
 const testManifest: WorkflowMeta = {
   name: 'test-workflow',
@@ -121,11 +124,45 @@ describe('createRuntime', () => {
   })
 
   describe('agent', () => {
-    it('uses default OpenSlack launcher when none configured', async () => {
-      const rt = makeRuntime()
-      const result = await rt.agent('prompt', { label: 'test', phase: 'Scan' })
-      expect(result).toBeDefined()
-    })
+    it('fails closed when the default launcher has no provider configured', async () => {
+      const rootDir = mkdtempSync(join(tmpdir(), 'workflow-runtime-provider-test-'));
+      try {
+        const rt = makeRuntime({ rootDir });
+        await expect(
+          rt.agent('prompt sentinel', { label: 'test', phase: 'Scan' }),
+        ).rejects.toMatchObject({ code: 'RUNTIME_NOT_CONFIGURED' });
+
+        const { createRunStore, readTranscript } = await import('@openslack/agent-runtime');
+        const runs = createRunStore(rootDir).listRuns();
+        expect(runs).toHaveLength(1);
+        expect(runs[0]).toMatchObject({
+          status: 'failed',
+          failureCode: 'RUNTIME_NOT_CONFIGURED',
+        });
+        expect(readTranscript(runs[0].runId, rootDir).map((event) => event.type)).toEqual(['fail']);
+        expect(existsSync(join(rootDir, '.worktrees'))).toBe(false);
+      } finally {
+        rmSync(rootDir, { recursive: true, force: true });
+      }
+    });
+
+    it('does not let a cached result bypass the default provider gate', async () => {
+      const rootDir = mkdtempSync(join(tmpdir(), 'workflow-runtime-cache-gate-test-'));
+      const cache: AgentCacheStore = {
+        async load() {
+          return { data: { placeholder: 'must-not-return' } };
+        },
+        async save() {},
+      };
+      try {
+        const rt = makeRuntime({ rootDir, agentCache: cache });
+        await expect(rt.agent('prompt', { label: 'test', phase: 'Scan' })).rejects.toMatchObject({
+          code: 'RUNTIME_NOT_CONFIGURED',
+        });
+      } finally {
+        rmSync(rootDir, { recursive: true, force: true });
+      }
+    });
 
     it('throws in validate mode', async () => {
       const rt = makeRuntime({ mode: 'validate' })

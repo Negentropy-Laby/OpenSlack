@@ -815,7 +815,7 @@ export async function submitWorkbenchAskFromTui(
       : []
     return {
       threadId: thread.id,
-      status: result.dispatched ? 'agent_dispatched' : 'recorded',
+      status: result.failureCode ? 'error' : result.dispatched ? 'agent_dispatched' : 'recorded',
       message: result.responseText,
       cards,
     }

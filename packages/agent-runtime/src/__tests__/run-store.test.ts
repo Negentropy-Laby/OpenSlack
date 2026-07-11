@@ -158,4 +158,60 @@ describe('createRunStore', () => {
 
     expect(state.worktreePath).toBe('/tmp/wt-123');
   });
+
+  it('persists a rejected run directly in its terminal failed state', () => {
+    const store = createRunStore(root);
+    const state = store.createFailedRun(makeRequest(), {
+      failureCode: 'RUNTIME_NOT_CONFIGURED',
+      errorSummary: 'Agent runtime is not configured.',
+    });
+
+    expect(state).toMatchObject({
+      status: 'failed',
+      failureCode: 'RUNTIME_NOT_CONFIGURED',
+      errorSummary: 'Agent runtime is not configured.',
+    });
+    expect(state.completedAt).toBeDefined();
+    expect(store.getRun(state.runId)).toEqual(state);
+  });
+
+  it('does not persist prompt-bearing resolved config fields', () => {
+    const store = createRunStore(root);
+    store.createRun(
+      makeRequest({
+        prompt: 'TOP_LEVEL_PROMPT_SENTINEL',
+        resolvedConfig: {
+          agentId: 'test-agent',
+          source: 'test',
+          prompt: 'RESOLVED_PROMPT_SENTINEL',
+          initialPrompt: 'INITIAL_PROMPT_SENTINEL',
+          criticalSystemReminder: 'REMINDER_SENTINEL',
+        },
+      }),
+    );
+
+    const metadataPath = join(
+      root,
+      '.openslack.local',
+      'agents/runs',
+      'RUN-20260101-TEST1234',
+      'metadata.json',
+    );
+    const raw = readFileSync(metadataPath, 'utf-8');
+    expect(raw).not.toContain('TOP_LEVEL_PROMPT_SENTINEL');
+    expect(raw).not.toContain('RESOLVED_PROMPT_SENTINEL');
+    expect(raw).not.toContain('INITIAL_PROMPT_SENTINEL');
+    expect(raw).not.toContain('REMINDER_SENTINEL');
+  });
+
+  it('secret-scans state and metadata before creating a run directory', () => {
+    const store = createRunStore(root);
+    const request = makeRequest();
+    request.permissionProfile.allowedTools = ['ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ'];
+
+    expect(() => store.createRun(request)).toThrow(/Refusing to persist/);
+    expect(existsSync(join(root, '.openslack.local', 'agents/runs', 'RUN-20260101-TEST1234'))).toBe(
+      false,
+    );
+  });
 });

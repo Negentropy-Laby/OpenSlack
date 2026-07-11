@@ -168,4 +168,27 @@ describe('mapAgentRunToViewModel', () => {
       process.chdir(originalCwd);
     }
   });
+
+  it('surfaces a fail-closed runtime code when no bridge session was started', () => {
+    const runId = 'RUN-20260603-NOCONFIG';
+    const state: AgentRunState = {
+      runId,
+      status: 'failed',
+      agentId: 'unconfigured-agent',
+      startedAt: '2026-06-03T00:00:00.000Z',
+      completedAt: '2026-06-03T00:00:00.000Z',
+      failureCode: 'RUNTIME_NOT_CONFIGURED',
+      errorSummary: 'Agent runtime is not configured.',
+      tokensUsed: 0,
+      tokensRemaining: null,
+      toolCalls: 0,
+      transcriptPath: join(root, '.openslack.local', 'agents', 'runs', runId, 'transcript.jsonl'),
+    };
+
+    const model = mapAgentRunToViewModel(state, { rootDir: root });
+
+    expect(model.runtimeProvider).toBe('not recorded');
+    expect(model.bridgeSessionId).toBe('not recorded');
+    expect(model.terminalReason).toBe('RUNTIME_NOT_CONFIGURED');
+  });
 });

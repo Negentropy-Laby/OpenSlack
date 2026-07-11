@@ -8,6 +8,12 @@ export type AgentRunStatus =
   | 'failed'
   | 'cancelled';
 
+export type AgentRunFailureCode =
+  | 'RUNTIME_NOT_CONFIGURED'
+  | 'RUNTIME_MISCONFIGURED'
+  | 'PROVIDER_UNAVAILABLE'
+  | 'EXECUTION_FAILED';
+
 export interface AgentPermissionProfile {
   allowedTools: string[];
   deniedTools: string[];
@@ -24,6 +30,9 @@ export interface ResolvedAgentConfig {
   agentId: string;
   source: string;
   runtime?: string;
+  /** Execution provider owned by the runtime host (distinct from model vendor). */
+  runtimeProvider?: string;
+  /** Model/API vendor metadata; not used to select an execution transport. */
   provider?: string;
   model?: string;
   tools?: string[];
@@ -82,6 +91,9 @@ export interface AgentRunState {
   tokensRemaining: number | null;
   toolCalls: number;
   lastTool?: string;
+  failureCode?: AgentRunFailureCode;
+  errorSummary?: string;
+  /** @deprecated Use errorSummary for operator-safe failure rendering. */
   error?: string;
   worktreePath?: string;
   transcriptPath: string;
@@ -130,6 +142,62 @@ export class PermissionDeniedError extends Error {
     this.name = 'PermissionDeniedError';
     this.action = action;
     this.reason = reason;
+  }
+}
+
+export class RuntimeNotConfiguredError extends Error {
+  readonly code = 'RUNTIME_NOT_CONFIGURED' as const;
+  runId?: string;
+
+  constructor(
+    message = 'Agent runtime is not configured. Configure a provider before starting agent work.',
+  ) {
+    super(message);
+    this.name = 'RuntimeNotConfiguredError';
+  }
+}
+
+export class RuntimeMisconfiguredError extends Error {
+  readonly code = 'RUNTIME_MISCONFIGURED' as const;
+  runId?: string;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'RuntimeMisconfiguredError';
+  }
+}
+
+export function getAgentRunFailureCode(error: unknown): AgentRunFailureCode {
+  if (error instanceof RuntimeNotConfiguredError) return error.code;
+  if (error instanceof RuntimeMisconfiguredError) return error.code;
+  if (error && typeof error === 'object') {
+    const code = (error as { code?: unknown }).code;
+    if (
+      code === 'RUNTIME_NOT_CONFIGURED' ||
+      code === 'RUNTIME_MISCONFIGURED' ||
+      code === 'PROVIDER_UNAVAILABLE' ||
+      code === 'EXECUTION_FAILED'
+    ) {
+      return code;
+    }
+  }
+  return 'EXECUTION_FAILED';
+}
+
+/** Operator-safe, allowlisted failure text. Raw provider errors are never persisted. */
+export function getAgentRunFailureSummary(
+  error: unknown,
+  failureCode: AgentRunFailureCode = getAgentRunFailureCode(error),
+): string {
+  switch (failureCode) {
+    case 'RUNTIME_NOT_CONFIGURED':
+      return 'Agent runtime is not configured. Configure an execution provider before retrying.';
+    case 'RUNTIME_MISCONFIGURED':
+      return 'Agent runtime configuration is invalid. Run openslack agent-runtime doctor for details.';
+    case 'PROVIDER_UNAVAILABLE':
+      return 'Agent execution provider is unavailable. Check runtime diagnostics and retry.';
+    case 'EXECUTION_FAILED':
+      return 'Agent execution failed. Inspect runtime diagnostics for details.';
   }
 }
 

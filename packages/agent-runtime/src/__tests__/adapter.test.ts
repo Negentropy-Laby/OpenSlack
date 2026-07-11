@@ -174,7 +174,7 @@ describe('Custom adapter injection', () => {
     const runs = store.listRuns();
     expect(runs.length).toBe(1);
     expect(runs[0].status).toBe('failed');
-    expect(runs[0].error).toContain('adapter execution failed');
+    expect(runs[0].error).toBe('Agent execution failed. Inspect runtime diagnostics for details.');
   });
 
   it('custom adapter can use recorder for transcript events', async () => {

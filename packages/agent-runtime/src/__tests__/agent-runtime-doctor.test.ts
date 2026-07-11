@@ -39,9 +39,14 @@ describe('diagnoseAbyRuntime', () => {
   });
 
   it('fails closed when no Aby root is configured', () => {
-    const report = diagnoseAbyRuntime({ rootDir: root, env: {} });
+    const report = diagnoseAbyRuntime({
+      rootDir: root,
+      env: {},
+      checkCommand: () => ({ available: true, detail: 'available for test' }),
+    });
 
     expect(report.status).toBe('FAIL');
+    expect(report.readiness).toBe('not_configured');
     expect(report.configSource).toBe('none');
     expect(report.checks.find((check) => check.name === 'config-source')?.status).toBe('FAIL');
     expect(report.remediation).toContain('OPENSLACK_ABY_ROOT');
@@ -52,9 +57,11 @@ describe('diagnoseAbyRuntime', () => {
     const report = diagnoseAbyRuntime({
       rootDir: root,
       env: { OPENSLACK_ABY_ROOT: abyRoot },
+      checkCommand: () => ({ available: true, detail: 'bun test-version' }),
     });
 
     expect(report.status).toBe('PASS');
+    expect(report.readiness).toBe('ready');
     expect(report.configSource).toBe('OPENSLACK_ABY_ROOT');
     expect(report.command).toBe('bun');
     expect(report.args[0]).toContain('runEntrypoint.ts');
@@ -69,6 +76,7 @@ describe('diagnoseAbyRuntime', () => {
     });
 
     expect(report.status).toBe('FAIL');
+    expect(report.readiness).toBe('misconfigured');
     expect(report.checks.find((check) => check.name === 'agentRunBridge.ts')?.status).toBe('FAIL');
     expect(report.remediation).toContain('agentRunBridge.ts');
   });
@@ -91,12 +99,32 @@ describe('diagnoseAbyRuntime', () => {
       'utf-8',
     );
 
-    const report = diagnoseAbyRuntime({ rootDir: root, env: {} });
+    const report = diagnoseAbyRuntime({
+      rootDir: root,
+      env: {},
+      checkCommand: () => ({ available: true, detail: 'available for test' }),
+    });
 
     expect(report.status).toBe('FAIL');
     expect(report.env.allowedKeys).toEqual(['AGENT_RUN_BRIDGE_RUNNER']);
     expect(report.env.rejectedKeys).toEqual(['OPENSLACK_PRIVATE_KEY']);
     expect(JSON.stringify(report)).not.toContain('should-not-print');
+  });
+
+  it('distinguishes configured but unavailable commands', () => {
+    const abyRoot = createFakeAbyRoot(root);
+    const report = diagnoseAbyRuntime({
+      rootDir: root,
+      env: { OPENSLACK_ABY_ROOT: abyRoot },
+      checkCommand: () => ({ available: false, detail: 'Command unavailable' }),
+    });
+
+    expect(report.status).toBe('FAIL');
+    expect(report.readiness).toBe('unavailable');
+    expect(report.checks.find((check) => check.name === 'command-available')).toMatchObject({
+      status: 'FAIL',
+    });
+    expect(report.remediation).toContain('Install the configured bridge command');
   });
 
   it('reports remediation for every failed check', () => {
@@ -116,7 +144,11 @@ describe('diagnoseAbyRuntime', () => {
       'utf-8',
     );
 
-    const report = diagnoseAbyRuntime({ rootDir: root, env: {} });
+    const report = diagnoseAbyRuntime({
+      rootDir: root,
+      env: {},
+      checkCommand: () => ({ available: true, detail: 'available for test' }),
+    });
 
     expect(report.status).toBe('FAIL');
     expect(report.checks.find((check) => check.name === 'agentRunBridge.ts')?.status).toBe('FAIL');

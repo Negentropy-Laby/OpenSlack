@@ -1,16 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   createOpenSlackAgentLauncher,
   createRunStore,
-  FakeBridgeAdapter,
-  BridgeFactory,
   readTranscript,
   requestAgentRunCancellation,
   requestAgentRunRestart,
   AgentRunRestartRequestedError,
+  LocalExecutionAdapter,
+  RuntimeNotConfiguredError,
 } from '../index.js';
 import type { AdapterExecutionContext, AgentExecutionAdapter } from '../index.js';
 
@@ -37,22 +37,143 @@ describe('createOpenSlackAgentLauncher', () => {
     cleanup(root);
   });
 
-  it('does not throw "No agent launcher configured"', async () => {
+  it('fails closed with an auditable terminal run when no provider is configured', async () => {
     const store = createRunStore(root);
     const launcher = createOpenSlackAgentLauncher({ runStore: store, rootDir: root });
 
-    const result = await launcher('review this code', {
-      label: 'reviewer',
-      phase: 'review',
+    let failure: RuntimeNotConfiguredError | undefined;
+    try {
+      await launcher('review this code SECRET_PROMPT_SENTINEL', {
+        label: 'reviewer',
+        phase: 'review',
+        isolation: 'worktree',
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(RuntimeNotConfiguredError);
+      failure = error as RuntimeNotConfiguredError;
+    }
+
+    expect(failure?.code).toBe('RUNTIME_NOT_CONFIGURED');
+    expect(failure?.runId).toMatch(/^RUN-/);
+    const runs = store.listRuns();
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({
+      status: 'failed',
+      failureCode: 'RUNTIME_NOT_CONFIGURED',
+    });
+    expect(runs[0]).not.toHaveProperty('worktreePath');
+    expect(runs[0].completedAt).toBeDefined();
+    expect(readTranscript(runs[0].runId, root)).toEqual([
+      expect.objectContaining({
+        type: 'fail',
+        data: expect.objectContaining({ failureCode: 'RUNTIME_NOT_CONFIGURED' }),
+      }),
+    ]);
+    expect(JSON.stringify(readTranscript(runs[0].runId, root))).not.toContain(
+      'SECRET_PROMPT_SENTINEL',
+    );
+    expect(existsSync(join(root, '.worktrees'))).toBe(false);
+  });
+
+  it('records process runtime misconfiguration before creating a worktree', async () => {
+    const store = createRunStore(root);
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      bridgeRuntimeResolver: {
+        resolve() {
+          throw new Error('bridge config unavailable');
+        },
+      },
     });
 
-    expect(result).toBeDefined();
-    expect(result.data).toBeDefined();
+    await expect(
+      launcher('implement the change', {
+        label: 'aby-implementer',
+        phase: 'execute',
+        isolation: 'worktree',
+        resolvedAgentConfig: {
+          agentId: 'aby-implementer',
+          source: 'test',
+          runtime: 'aby_assistant',
+          runtimeProvider: 'aby',
+          bridgeMode: 'process',
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'RUNTIME_MISCONFIGURED' });
+
+    expect(store.listRuns()[0]).toMatchObject({
+      status: 'failed',
+      failureCode: 'RUNTIME_MISCONFIGURED',
+    });
+    expect(existsSync(join(root, '.worktrees'))).toBe(false);
+  });
+
+  it('does not let missing MCP prerequisites mask a missing execution provider', async () => {
+    const store = createRunStore(root);
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      availableMcpServers: [],
+    });
+
+    await expect(
+      launcher('review this', {
+        label: 'reviewer',
+        phase: 'review',
+        resolvedAgentConfig: {
+          agentId: 'reviewer',
+          source: 'test',
+          requiredMcpServers: ['github'],
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'RUNTIME_NOT_CONFIGURED' });
+
+    expect(store.listRuns()).toEqual([
+      expect.objectContaining({ failureCode: 'RUNTIME_NOT_CONFIGURED', status: 'failed' }),
+    ]);
+  });
+
+  it('persists an allowlisted summary instead of raw provider errors', async () => {
+    const store = createRunStore(root);
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      bridgeRuntimeResolver: {
+        resolve() {
+          throw new Error('request failed for https://user:secret@example.test with sk-sensitive');
+        },
+      },
+    });
+
+    await expect(
+      launcher('run', {
+        label: 'aby',
+        phase: 'execute',
+        resolvedAgentConfig: {
+          agentId: 'aby',
+          source: 'test',
+          runtimeProvider: 'aby',
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'RUNTIME_MISCONFIGURED' });
+
+    const persisted = JSON.stringify({
+      run: store.listRuns()[0],
+      transcript: readTranscript(store.listRuns()[0].runId, root),
+    });
+    expect(persisted).toContain('Agent runtime configuration is invalid');
+    expect(persisted).not.toContain('secret');
+    expect(persisted).not.toContain('sk-sensitive');
   });
 
   it('creates a run record', async () => {
     const store = createRunStore(root);
-    const launcher = createOpenSlackAgentLauncher({ runStore: store, rootDir: root });
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      adapter: new LocalExecutionAdapter(),
+    });
 
     await launcher('research something', {
       label: 'researcher',
@@ -161,7 +282,11 @@ describe('createOpenSlackAgentLauncher', () => {
 
   it('writes transcript events', async () => {
     const store = createRunStore(root);
-    const launcher = createOpenSlackAgentLauncher({ runStore: store, rootDir: root });
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      adapter: new LocalExecutionAdapter(),
+    });
 
     await launcher('plan this feature', {
       label: 'planner',
@@ -184,7 +309,11 @@ describe('createOpenSlackAgentLauncher', () => {
 
   it('respects permission mode in profile', async () => {
     const store = createRunStore(root);
-    const launcher = createOpenSlackAgentLauncher({ runStore: store, rootDir: root });
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      adapter: new LocalExecutionAdapter(),
+    });
 
     await launcher('do something', {
       label: 'worker',
@@ -210,7 +339,11 @@ describe('createOpenSlackAgentLauncher', () => {
 
   it('returns different result shapes based on prompt', async () => {
     const store = createRunStore(root);
-    const launcher = createOpenSlackAgentLauncher({ runStore: store, rootDir: root });
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      adapter: new LocalExecutionAdapter(),
+    });
 
     const reviewResult = await launcher('review PR #42', {
       label: 'reviewer',
@@ -231,42 +364,33 @@ describe('createOpenSlackAgentLauncher', () => {
     expect((planResult.data as any).plan).toBeDefined();
   });
 
-  it('uses per-run bridgeMode from resolvedConfig to select bridge adapter', async () => {
+  it('does not allow per-run fake mode to bypass provider configuration', async () => {
     const store = createRunStore(root);
-    // Create launcher with NO global bridgeMode — defaults to local adapter
     const launcher = createOpenSlackAgentLauncher({ runStore: store, rootDir: root });
 
-    // Run with per-run bridgeMode='fake' — should use FakeBridgeAdapter
-    const result = await launcher('review this code', {
-      label: 'bridge-test',
-      phase: 'review',
-      resolvedAgentConfig: {
-        agentId: 'bridge-test',
-        source: 'openslack-registry',
-        bridgeMode: 'fake',
-      },
-    });
-
-    expect(result).toBeDefined();
-    expect(result.data).toBeDefined();
-
-    // Verify bridge_lifecycle_complete event is present (proves bridge adapter was used)
-    const run = store.listRuns()[0];
-    const { readTranscript } = await import('../transcript.js');
-    const transcript = readTranscript(run.runId, root);
-
-    const lifecycleEvent = transcript.find(
-      (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'bridge_lifecycle_complete',
-    );
-    expect(lifecycleEvent).toBeDefined();
-    expect((lifecycleEvent!.data as Record<string, unknown>).status).toBe('completed');
+    await expect(
+      launcher('review this code', {
+        label: 'bridge-test',
+        phase: 'review',
+        resolvedAgentConfig: {
+          agentId: 'bridge-test',
+          source: 'openslack-registry',
+          bridgeMode: 'fake',
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'RUNTIME_NOT_CONFIGURED' });
+    expect(store.listRuns()[0].status).toBe('failed');
   });
 
   it('does not emit bridge_lifecycle_complete for local adapter runs', async () => {
     const store = createRunStore(root);
-    const launcher = createOpenSlackAgentLauncher({ runStore: store, rootDir: root });
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      adapter: new LocalExecutionAdapter(),
+    });
 
-    // No bridgeMode — uses default LocalExecutionAdapter
+    // Fixture behavior is available only through explicit adapter injection.
     await launcher('review this code', {
       label: 'local-test',
       phase: 'review',

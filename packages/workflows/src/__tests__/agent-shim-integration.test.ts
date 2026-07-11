@@ -87,11 +87,13 @@ describe('executeAgentCall with event emission', () => {
     const opts: AgentOptions = { label: 'crash-test', phase: 'Run' }
     await expect(executeAgentCall('prompt', opts, config)).rejects.toThrow('Agent crashed')
 
-    expect(events).toHaveLength(2)
-    expect(events[0].type).toBe('agent.conversation.started')
-    expect(events[1].type).toBe('agent.conversation.failed')
-    expect(events[1].error).toBe('Agent crashed')
-  })
+    expect(events).toHaveLength(2);
+    expect(events[0].type).toBe('agent.conversation.started');
+    expect(events[1].type).toBe('agent.conversation.failed');
+    expect(events[1].error).toBe(
+      'Agent execution failed. Inspect runtime diagnostics for details.',
+    );
+  });
 
   it('does NOT emit events in dry-run mode', async () => {
     const events: Array<Parameters<AgentEventEmitter>[0]> = []

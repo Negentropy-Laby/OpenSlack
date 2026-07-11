@@ -161,6 +161,7 @@ export function conversationCommands(): Command {
           }
           console.log(result.responseText);
           console.log(`Thread: ${threadId}`);
+          if (result.failureCode) process.exitCode = 1;
           return;
         }
 

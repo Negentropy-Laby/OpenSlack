@@ -8,6 +8,7 @@ export interface AgentRuntimeRegistryEntry {
   agentId: string;
   sourcePath: string;
   runtime?: string;
+  runtimeProvider?: string;
   provider?: string;
   bridgeMode?: ResolvedAgentConfig['bridgeMode'];
   mcpServers: string[];
@@ -35,6 +36,7 @@ export function listAbyRuntimeAgents(rootDir = process.cwd()): AgentRuntimeRegis
       agentId: entry.agentId,
       source: 'openslack-registry',
       runtime: entry.runtime,
+      runtimeProvider: entry.runtimeProvider,
       provider: entry.provider,
     }),
   );
@@ -69,6 +71,12 @@ function parseRegistryEntry(sourcePath: string): AgentRuntimeRegistryEntry | nul
     sourcePath,
     provider: readString(vendor.provider) ?? readString(record.provider),
     runtime: readString(vendor.runtime) ?? readString(record.runtime),
+    runtimeProvider:
+      readString(vendor.runtime_provider) ??
+      readString(vendor.execution_provider) ??
+      (readString(vendor.runtime) === 'aby_assistant' || readString(vendor.runtime) === 'aby'
+        ? 'aby'
+        : undefined),
     bridgeMode: readBridgeMode(runtimeBlock.bridgeMode ?? record.bridgeMode),
     mcpServers: readStringList(
       record.mcpServers ??

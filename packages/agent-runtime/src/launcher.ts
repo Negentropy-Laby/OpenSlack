@@ -1,5 +1,10 @@
-import type { AgentRunRequest } from './types.js';
-import { PermissionDeniedError, AgentUnavailableError } from './types.js';
+import type { AgentRunRequest, ResolvedAgentConfig, WorktreeHandoff } from './types.js';
+import {
+  PermissionDeniedError,
+  AgentUnavailableError,
+  RuntimeMisconfiguredError,
+  RuntimeNotConfiguredError,
+} from './types.js';
 import {
   AgentRunCancelledError,
   AgentRunRestartRequestedError,
@@ -10,15 +15,16 @@ import { createRunRecorder } from './recorder.js';
 import type { AgentRunStore } from './run-store.js';
 import { generateRunId } from './run-store.js';
 import type { AgentExecutionAdapter } from './adapter.js';
-import { LocalExecutionAdapter, ToolGuard } from './adapter.js';
+import { ToolGuard } from './adapter.js';
 import type { BridgeMode } from './bridge-factory.js';
 import { createBridgeAdapter } from './bridge-factory.js';
 import type { BridgeRuntimeResolver } from './bridge-runtime-resolver.js';
 import {
   BridgeRuntimeConfigError,
   createBridgeRuntimeResolver,
-  isAbyRuntime,
 } from './bridge-runtime-resolver.js';
+import type { ProviderResolution, ProviderTransport } from './provider-registry.js';
+import { ProviderRegistry } from './provider-registry.js';
 
 export interface LauncherOptions {
   runStore: AgentRunStore;
@@ -27,15 +33,17 @@ export interface LauncherOptions {
   /** List of available MCP server names. Agents requiring unavailable servers will be rejected. */
   availableMcpServers?: string[];
   /**
-   * Execution adapter to use for agent runs. Defaults to LocalExecutionAdapter.
-   * Override to provide external command, Claude Code, or other adapters.
+   * Explicit execution adapter injection. Intended for tests and runtime hosts
+   * that construct a governed adapter directly. There is no production default.
    */
   adapter?: AgentExecutionAdapter;
   /**
-   * Bridge mode for adapter selection. Only used when adapter is not explicitly provided.
-   * @see createBridgeAdapter
+   * Legacy transport metadata for an explicitly injected adapter. This value
+   * never selects or constructs an adapter.
    */
   bridgeMode?: BridgeMode;
+  /** Instance-scoped provider registry. Defaults to an opt-in Aby registration. */
+  providerRegistry?: ProviderRegistry;
   /**
    * Resolves provider-specific process bridge configuration. Defaults to the
    * OpenSlack local resolver, which uses OPENSLACK_ABY_ROOT or
@@ -51,9 +59,8 @@ export interface LauncherOptions {
  * permission validation, run recording, transcript) and delegates actual
  * execution to an {@link AgentExecutionAdapter}.
  *
- * By default, uses the {@link LocalExecutionAdapter} which produces placeholder
- * responses without invoking an external LLM. Pass a custom adapter to connect
- * real execution backends.
+ * A launcher without an explicit adapter or registered provider fails closed
+ * with {@link RuntimeNotConfiguredError}; it never returns fixture output.
  */
 export function createOpenSlackAgentLauncher(options: LauncherOptions) {
   const {
@@ -67,18 +74,44 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
     options.bridgeRuntimeResolver ??
     createBridgeRuntimeResolver({ rootDir });
 
-  // Select default adapter: explicit adapter > global bridgeMode > local default.
-  // Per-run bridgeMode from resolvedConfig is handled inside launchAgent so
-  // that a single launcher can serve mixed local/bridge agent calls.
-  const defaultAdapter: AgentExecutionAdapter =
-    options.adapter ??
-    (bridgeMode
-      ? createBridgeAdapter({ bridgeMode, availableMcpServers })
-      : new LocalExecutionAdapter());
+  // Fixtures are available only through explicit adapter injection. bridgeMode
+  // describes transport and never constructs a production execution backend.
+  const explicitlyConfiguredAdapter = options.adapter;
+  const providerRegistry =
+    options.providerRegistry ??
+    createDefaultProviderRegistry(bridgeRuntimeResolver, availableMcpServers);
 
   const recorder = createRunRecorder(runStore, rootDir);
 
-  return async function launchAgent<T>(
+  function resolveProvider(resolvedConfig: ResolvedAgentConfig): ProviderResolution {
+    return explicitlyConfiguredAdapter
+      ? {
+          providerId:
+            resolvedConfig.runtimeProvider?.trim().toLowerCase() ||
+            `injected:${explicitlyConfiguredAdapter.adapterId}`,
+          transport: transportForExplicitAdapter(bridgeMode),
+          adapter: explicitlyConfiguredAdapter,
+        }
+      : providerRegistry.resolve(resolvedConfig);
+  }
+
+  function validatePrerequisites(resolvedConfig: ResolvedAgentConfig) {
+    if (resolvedConfig.requiredMcpServers && resolvedConfig.requiredMcpServers.length > 0) {
+      const missing = resolvedConfig.requiredMcpServers.filter(
+        (name) => !availableMcpServers.includes(name),
+      );
+      if (missing.length > 0) throw new AgentUnavailableError(missing);
+    }
+
+    const permissionProfile = buildPermissionProfile(resolvedConfig);
+    const { valid, violations } = validatePermissionProfile(permissionProfile);
+    if (!valid) {
+      throw new PermissionDeniedError('profile.validation', violations.join('; '));
+    }
+    return permissionProfile;
+  }
+
+  const launchAgent = async function launchAgent<T>(
     prompt: string,
     agentOptions: {
       label: string;
@@ -89,7 +122,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       model?: string;
       agentType?: string;
       resolvedAgentId?: string;
-      resolvedAgentConfig?: import('./types.js').ResolvedAgentConfig;
+      resolvedAgentConfig?: ResolvedAgentConfig;
       agentRunId?: string;
       correlationId?: string;
       threadId?: string;
@@ -100,27 +133,36 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       source: 'runtime',
       model: agentOptions.model ?? model,
     };
+    const runId = agentOptions.agentRunId ?? generateRunId();
 
-    // Check required MCP servers before launching
-    if (resolvedConfig.requiredMcpServers && resolvedConfig.requiredMcpServers.length > 0) {
-      const missing = resolvedConfig.requiredMcpServers.filter(
-        (name) => !availableMcpServers.includes(name),
-      );
-      if (missing.length > 0) {
-        throw new AgentUnavailableError(missing);
-      }
-    }
-
-    // Build permission profile before worktree selection so Aby bridge runs
-    // with write-capable tools are isolated even when the registry did not
-    // explicitly request a worktree.
+    // Build the safe request envelope first. Provider resolution intentionally
+    // precedes MCP/profile checks so those checks cannot mask a missing runtime.
     const permissionProfile = buildPermissionProfile(resolvedConfig);
 
-    // Validate profile
-    const { valid: profileValid, violations } = validatePermissionProfile(permissionProfile);
-    if (!profileValid) {
-      throw new PermissionDeniedError('profile.validation', violations.join('; '));
+    const request: AgentRunRequest = {
+      runId,
+      agentId: resolvedConfig.agentId,
+      prompt,
+      resolvedConfig,
+      permissionProfile,
+      budget: agentOptions.budget,
+      correlationId: agentOptions.correlationId,
+      threadId: agentOptions.threadId,
+    };
+
+    // Resolve and validate the runtime before any worktree or process side
+    // effect. Rejections are persisted directly as terminal failed runs.
+    let providerResolution: ProviderResolution;
+    try {
+      providerResolution = resolveProvider(resolvedConfig);
+    } catch (error) {
+      const runtimeError = normalizeRuntimeResolutionError(error);
+      runtimeError.runId = runId;
+      recorder.reject(request, runtimeError);
+      throw runtimeError;
     }
+
+    validatePrerequisites(resolvedConfig);
 
     // Enforce worktree isolation for implementer agents and write-capable
     // Aby bridge agents.
@@ -130,7 +172,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       resolvedConfig.agentId?.toLowerCase().includes('implement') ||
       resolvedConfig.prompt?.toLowerCase().includes('implement');
     const isAbyBridgeRun =
-      resolvedConfig.bridgeMode === 'process' && isAbyRuntime(resolvedConfig);
+      providerResolution.providerId === 'aby' && providerResolution.transport === 'process';
     const isWriteCapable =
       permissionProfile.permissionMode !== 'plan' ||
       permissionProfile.allowedTools.some((tool) => ['Edit', 'Write', 'Bash'].includes(tool));
@@ -138,8 +180,6 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       resolvedConfig.isolation === 'worktree' ||
       isImplementer ||
       (isAbyBridgeRun && isWriteCapable);
-
-    const runId = agentOptions.agentRunId ?? generateRunId();
 
     if (needsWorktree) {
       const { createWorktree } = await import('@openslack/runtime');
@@ -156,20 +196,8 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       }
       worktreePath = wtResult.worktreePath;
       worktreeBranchName = wtResult.branchName;
+      request.worktreePath = worktreePath;
     }
-
-    // Build run request
-    const request: AgentRunRequest = {
-      runId,
-      agentId: resolvedConfig.agentId,
-      prompt,
-      resolvedConfig,
-      permissionProfile,
-      budget: agentOptions.budget,
-      correlationId: agentOptions.correlationId,
-      threadId: agentOptions.threadId,
-      worktreePath,
-    };
 
     // Start run
     const state = recorder.start(request);
@@ -181,25 +209,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       startedAt: state.startedAt,
     });
 
-    // Select adapter for this run: per-run bridgeMode > global default
-    const runBridgeMode = resolvedConfig.bridgeMode;
-    const runtimeOptions =
-      runBridgeMode === 'process'
-        ? bridgeRuntimeResolver.resolve(resolvedConfig)
-        : null;
-    if (runBridgeMode === 'process' && !runtimeOptions?.command) {
-      throw new BridgeRuntimeConfigError(
-        `Process bridge requested for agent "${resolvedConfig.agentId}" but no bridge command was resolved.`,
-      );
-    }
-    const runAdapter: AgentExecutionAdapter =
-      (runBridgeMode && runBridgeMode !== bridgeMode)
-        ? createBridgeAdapter({
-            bridgeMode: runBridgeMode,
-            availableMcpServers,
-            ...(runtimeOptions ?? {}),
-          })
-        : defaultAdapter;
+    const runAdapter = providerResolution.adapter;
 
     try {
       // Delegate execution to the adapter
@@ -310,7 +320,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
             });
 
             // Record the handoff in run state so it can be recovered.
-            const handoff: import('./types.js').WorktreeHandoff = {
+            const handoff: WorktreeHandoff = {
               worktreePath,
               branchName,
               reason: dirtyResult.reason ?? 'Uncommitted changes detected',
@@ -342,4 +352,99 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       }
     }
   };
+
+  launchAgent.preflight = async (
+    prompt: string,
+    agentOptions: Parameters<typeof launchAgent>[1],
+  ): Promise<void> => {
+    const resolvedConfig = agentOptions.resolvedAgentConfig ?? {
+      agentId: agentOptions.agentType ?? agentOptions.label,
+      source: 'runtime',
+      model: agentOptions.model ?? model,
+    };
+    const runId = agentOptions.agentRunId ?? generateRunId();
+    const permissionProfile = buildPermissionProfile(resolvedConfig);
+    const request: AgentRunRequest = {
+      runId,
+      agentId: resolvedConfig.agentId,
+      prompt,
+      resolvedConfig,
+      permissionProfile,
+      budget: agentOptions.budget,
+      correlationId: agentOptions.correlationId,
+      threadId: agentOptions.threadId,
+    };
+
+    try {
+      resolveProvider(resolvedConfig);
+    } catch (error) {
+      const runtimeError = normalizeRuntimeResolutionError(error);
+      runtimeError.runId = runId;
+      recorder.reject(request, runtimeError);
+      throw runtimeError;
+    }
+    validatePrerequisites(resolvedConfig);
+  };
+
+  return launchAgent;
+}
+
+function createDefaultProviderRegistry(
+  bridgeRuntimeResolver: BridgeRuntimeResolver,
+  availableMcpServers: string[],
+): ProviderRegistry {
+  const registry = new ProviderRegistry();
+  registry.register({
+    id: 'aby',
+    resolve(config) {
+      if (config.bridgeMode && config.bridgeMode !== 'process') {
+        throw new RuntimeMisconfiguredError(
+          `Aby provider requires process transport, not "${config.bridgeMode}".`,
+        );
+      }
+
+      let runtimeOptions;
+      try {
+        runtimeOptions = bridgeRuntimeResolver.resolve(config);
+      } catch (error) {
+        throw normalizeRuntimeResolutionError(error);
+      }
+      if (!runtimeOptions?.command) {
+        throw new RuntimeMisconfiguredError(
+          `Aby provider is configured for agent "${config.agentId}" but no bridge command was resolved.`,
+        );
+      }
+
+      return {
+        providerId: 'aby',
+        transport: 'process',
+        adapter: createBridgeAdapter({
+          bridgeMode: 'process',
+          availableMcpServers,
+          ...runtimeOptions,
+        }),
+      };
+    },
+  });
+  return registry;
+}
+
+function transportForExplicitAdapter(bridgeMode?: BridgeMode): ProviderTransport {
+  if (bridgeMode === 'process') return 'process';
+  if (bridgeMode === 'external-command') return 'external-command';
+  return 'test-fixture';
+}
+
+function normalizeRuntimeResolutionError(
+  error: unknown,
+): RuntimeNotConfiguredError | RuntimeMisconfiguredError {
+  if (error instanceof RuntimeNotConfiguredError || error instanceof RuntimeMisconfiguredError) {
+    return error;
+  }
+  if (error instanceof BridgeRuntimeConfigError) {
+    return new RuntimeMisconfiguredError(error.message);
+  }
+  return new RuntimeMisconfiguredError(
+    `Agent runtime configuration could not be resolved: ${error instanceof Error ? error.message : String(error)}`,
+  );
 }

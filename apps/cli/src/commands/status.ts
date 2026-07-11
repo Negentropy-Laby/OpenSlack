@@ -7,6 +7,7 @@ import { recommendNextActions } from '@openslack/runtime';
 import { getAttentionItems, getNextAction } from '@openslack/runtime';
 import { buildSetupReport } from '@openslack/runtime';
 import { buildDashboardProjection } from '@openslack/collaboration';
+import { diagnoseAgentRuntime } from '@openslack/agent-runtime';
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -180,6 +181,15 @@ async function showStatusDashboard(root: string): Promise<void> {
       const testLabel = m.tests ? ` (${m.tests} tests)` : '';
       const status = m.status.toUpperCase();
       console.log(`  ${m.name.padEnd(22)} ${status}${testLabel}`);
+    }
+    console.log('');
+
+    const runtimeReport = diagnoseAgentRuntime({ rootDir: root, env: process.env });
+    console.log(`Agent Runtime: ${runtimeReport.readiness}`);
+    if (runtimeReport.readiness !== 'ready') {
+      console.log(
+        `  Next: ${runtimeReport.remediations[0] ?? 'Run openslack agent-runtime doctor --provider aby'}`,
+      );
     }
     console.log('');
 

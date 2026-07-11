@@ -4,22 +4,22 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 
 ## Start With User Goals
 
-| If you want to... | Start with | Notes |
-|-------------------|------------|-------|
-| Verify a fresh checkout | `openslack setup` | Runs workspace validation, golden evals, GitHub doctor, and genesis validation. |
-| Get guided setup with prompts | `openslack setup interactive` | Walks fixable items step by step; supports `--format plain` |
-| Run CI-style setup checks | `openslack setup --strict` | Treats warnings as failures. Use this for release or PR validation. |
-| Check GitHub readiness without changing anything | `openslack setup github` | Read-only by default. Use `--apply` only for explicit repairs. |
-| Ask OpenSlack what to do | `openslack ask "检查系统状态"` | Uses LLM-first routing when configured; otherwise uses the keyword router. |
-| Preview a task before creating an Issue | `openslack task create --title "..." --path "docs/**" --preview` | Preview is the safe first step. Add `--create-issue` only when ready. |
-| Let an agent pick up ready work | `openslack agent tick --agent-id <id> --source github-issues` | Requires a registered and bootstrapped agent identity. |
-| Diagnose an Aby external runtime | `openslack agent-runtime doctor --provider aby` | Checks local bridge configuration without launching a task. |
-| Configure an Aby external runtime | `openslack agent-runtime setup aby --root <path> --write` | Writes local gitignored bridge config after validation. |
-| Diagnose why a PR cannot merge | `openslack pr doctor <n>` | Shows blocker owner, evidence, and next action. |
-| See team state across events and PRs | `openslack collaboration dashboard` | Projection-only; does not create dashboard-specific state. |
-| Record a handoff or decision | `openslack collaboration handoff ...` / `openslack collaboration decision ...` | Creates auditable collaboration objects. |
-| Keep the org profile in sync | `openslack collaboration workflow profile-sync check` | Profile Sync Robot checks and previews are read-only; `run` requires confirmation. |
-| Start a conversation with an agent | `openslack conversation start --title "..."` | Creates a typed thread with JSONL persistence and secret scanning. |
+| If you want to...                                | Start with                                                                     | Notes                                                                              |
+| ------------------------------------------------ | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| Verify a fresh checkout                          | `openslack setup`                                                              | Runs workspace, golden, GitHub, genesis, and agent-runtime readiness checks.       |
+| Get guided setup with prompts                    | `openslack setup interactive`                                                  | Walks fixable items step by step; supports `--format plain`                        |
+| Run CI-style setup checks                        | `openslack setup --strict`                                                     | Treats warnings as failures. Use this for release or PR validation.                |
+| Check GitHub readiness without changing anything | `openslack setup github`                                                       | Read-only by default. Use `--apply` only for explicit repairs.                     |
+| Ask OpenSlack what to do                         | `openslack ask "检查系统状态"`                                                 | Uses LLM-first routing when configured; otherwise uses the keyword router.         |
+| Preview a task before creating an Issue          | `openslack task create --title "..." --path "docs/**" --preview`               | Preview is the safe first step. Add `--create-issue` only when ready.              |
+| Let an agent pick up ready work                  | `openslack agent tick --agent-id <id> --source github-issues`                  | Requires a registered and bootstrapped agent identity.                             |
+| Diagnose an Aby external runtime                 | `openslack agent-runtime doctor --provider aby`                                | Checks local bridge configuration without launching a task.                        |
+| Configure an Aby external runtime                | `openslack agent-runtime setup aby --root <path> --write`                      | Writes local gitignored bridge config after validation.                            |
+| Diagnose why a PR cannot merge                   | `openslack pr doctor <n>`                                                      | Shows blocker owner, evidence, and next action.                                    |
+| See team state across events and PRs             | `openslack collaboration dashboard`                                            | Projection-only; does not create dashboard-specific state.                         |
+| Record a handoff or decision                     | `openslack collaboration handoff ...` / `openslack collaboration decision ...` | Creates auditable collaboration objects.                                           |
+| Keep the org profile in sync                     | `openslack collaboration workflow profile-sync check`                          | Profile Sync Robot checks and previews are read-only; `run` requires confirmation. |
+| Start a conversation with an agent               | `openslack conversation start --title "..."`                                   | Creates a typed thread with JSONL persistence and secret scanning.                 |
 
 ## Common Workflows
 
@@ -233,17 +233,17 @@ approval on stale PR checks.
 
 ## Setup
 
-| Command | Purpose |
-|---------|---------|
-| `openslack setup` | One-step full workspace validation (alt: `openslack setup run`) |
-| `openslack setup --strict` | Run setup and fail on warnings as well as critical failures |
-| `openslack setup run --strict` | Run the full checklist with CI-style strict warning handling |
-| `openslack setup smoke` | Run read-only smoke checks with GitHub setup warnings non-blocking |
-| `openslack setup smoke --strict` | Run smoke checks and fail on warnings |
-| `openslack setup github` | Read-only setup report for GitHub auth, labels, CODEOWNERS, rulesets, and local prerequisites |
-| `openslack setup github --repair-labels` | Preview required OpenSlack label repair |
-| `openslack setup github --repair-labels --apply` | Apply required OpenSlack label repair |
-| `openslack setup interactive --format tui` | Read-only setup report TUI with readiness classification |
+| Command                                          | Purpose                                                                                       |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `openslack setup`                                | Full workspace validation plus explicit agent-runtime readiness (alt: `openslack setup run`)  |
+| `openslack setup --strict`                       | Run setup and fail on warnings as well as critical failures                                   |
+| `openslack setup run --strict`                   | Run the full checklist with CI-style strict warning handling                                  |
+| `openslack setup smoke`                          | Run read-only smoke checks with GitHub setup warnings non-blocking                            |
+| `openslack setup smoke --strict`                 | Run smoke checks and fail on warnings                                                         |
+| `openslack setup github`                         | Read-only setup report for GitHub auth, labels, CODEOWNERS, rulesets, and local prerequisites |
+| `openslack setup github --repair-labels`         | Preview required OpenSlack label repair                                                       |
+| `openslack setup github --repair-labels --apply` | Apply required OpenSlack label repair                                                         |
+| `openslack setup interactive --format tui`       | Read-only setup report TUI with readiness classification                                      |
 
 ## Workspace
 
@@ -276,19 +276,21 @@ approval on stale PR checks.
 
 ## Agent Runtime
 
-| Command | Purpose |
-|---------|---------|
-| `openslack agent-runtime setup aby --root <path> --dry-run` | Preview the local Aby bridge configuration without writing it |
-| `openslack agent-runtime setup aby --root <path> --write` | Validate and write `.openslack.local/agent-runtime.json` |
-| `openslack agent-runtime doctor --provider aby` | Diagnose local Aby bridge runtime configuration without launching a task |
-| `openslack agent-runtime doctor --provider aby --format json` | Emit redacted structured diagnostics for scripting |
-| `openslack agent-runtime smoke --provider aby` | Run a read-only bridge smoke through the existing launcher |
-| `openslack agent-runtime smoke --provider aby --agent <agentId>` | Smoke a specific Aby-backed agent id |
-| `openslack agent-runtime mcp status --provider aby --agent <agentId>` | Show required/available MCP descriptor status for an agent |
-| `openslack agent-runtime mcp status --provider aby --run <runId>` | Show MCP tool evidence from a run transcript |
+| Command                                                               | Purpose                                                                                                             |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `openslack agent-runtime setup aby --root <path> --dry-run`           | Preview the local Aby bridge configuration without writing it                                                       |
+| `openslack agent-runtime setup aby --root <path> --write`             | Validate and write `.openslack.local/agent-runtime.json`                                                            |
+| `openslack agent-runtime doctor --provider aby`                       | Diagnose runtime readiness as `not_configured`, `misconfigured`, `unavailable`, or `ready` without launching a task |
+| `openslack agent-runtime doctor --provider aby --format json`         | Emit redacted structured diagnostics for scripting                                                                  |
+| `openslack agent-runtime smoke --provider aby`                        | Run a read-only bridge smoke through the existing launcher                                                          |
+| `openslack agent-runtime smoke --provider aby --agent <agentId>`      | Smoke a specific Aby-backed agent id                                                                                |
+| `openslack agent-runtime mcp status --provider aby --agent <agentId>` | Show required/available MCP descriptor status for an agent                                                          |
+| `openslack agent-runtime mcp status --provider aby --run <runId>`     | Show MCP tool evidence from a run transcript                                                                        |
 
 Aby is a configurable external provider, not a bundled OpenSlack backend. See
 `docs/guides/aby-integration.md` for setup and smoke-test steps.
+Agent calls fail with `RUNTIME_NOT_CONFIGURED` until an execution provider is
+selected and ready; OpenSlack never substitutes placeholder output.
 
 ## Task
 

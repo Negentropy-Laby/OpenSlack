@@ -194,11 +194,19 @@ function enrichAgent(agent: WorkflowAgentProgress, rootDir: string): WorkflowAge
     ...agent,
     status: state.status,
     model: state.model ?? agent.model,
-    runtimeProvider: transcript.find((event) => event.type === 'start')?.data?.provider as string | undefined,
+    runtimeProvider: (transcript.find((event) => event.type === 'start')?.data?.runtimeProvider ??
+      transcript.find((event) => event.type === 'start')?.data?.provider) as string | undefined,
     worktreePath: state.worktreePath,
     transcriptPath: state.transcriptPath,
-    resultSummary: complete ? summarize(complete.data?.result, agent.resultSummary) : agent.resultSummary,
-    terminalReason: String(complete?.data?.terminalReason ?? fail?.data?.errorKind ?? (cancel ? 'cancelled' : agent.terminalReason ?? 'not recorded')),
+    resultSummary: complete
+      ? summarize(complete.data?.result, agent.resultSummary)
+      : agent.resultSummary,
+    terminalReason: String(
+      complete?.data?.terminalReason ??
+        fail?.data?.failureCode ??
+        fail?.data?.errorKind ??
+        (cancel ? 'cancelled' : (agent.terminalReason ?? 'not recorded')),
+    ),
     tokensUsed: state.tokensUsed || agent.tokensUsed,
     tokensRemaining: state.tokensRemaining,
     recentTools: toolEvidenceFromTranscript(transcript),

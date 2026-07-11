@@ -1,6 +1,16 @@
 import { createHash } from 'node:crypto';
-import { AgentRunRestartRequestedError, generateRunId } from '@openslack/agent-runtime';
-import type { AgentOptions, AgentResult, BudgetState, ExecutionMode, WorkflowBudgetPolicy } from './types.js';
+import {
+  AgentRunRestartRequestedError,
+  generateRunId,
+  getAgentRunFailureSummary,
+} from '@openslack/agent-runtime';
+import type {
+  AgentOptions,
+  AgentResult,
+  BudgetState,
+  ExecutionMode,
+  WorkflowBudgetPolicy,
+} from './types.js';
 import { checkPermission } from './permission-checker.js';
 import type { ResolvedAgentConfig } from './agent-resolver.js';
 import { isAgentLaunchBlockedByWorkflowControl } from './workflow-runs.js';
@@ -59,10 +69,11 @@ export type AgentEventEmitter = (event: AgentConversationEvent) => void;
  * Agent launcher function type. The real implementation would call an
  * AI agent; tests inject a stub.
  */
-export type AgentLauncher<T = unknown> = (
-  prompt: string,
-  options: AgentOptions,
-) => Promise<AgentResult<T>>;
+export interface AgentLauncher<T = unknown> {
+  (prompt: string, options: AgentOptions): Promise<AgentResult<T>>;
+  /** Fail-closed runtime validation performed before cache lookup. */
+  preflight?: (prompt: string, options: AgentOptions) => Promise<void>;
+}
 
 export class WorkflowBudgetPausedError extends Error {
   readonly runId: string;
@@ -342,16 +353,37 @@ export async function executeAgentCall<T>(
     throw new Error('Budget exhausted: no tokens remaining');
   }
 
-  // 4. Cache lookup
+  // 4. Provider preflight. Production launchers validate before cache lookup so
+  // stale fixture/cache data cannot make an unconfigured runtime look ready.
+  let agentRunId = config.agentRunId ?? generateRunId();
+  let launchOptions = { ...options, agentRunId };
+  const agentId = config.resolvedAgent?.agentId ?? options.agentType ?? options.label;
+  const shouldEmit = config.mode === 'execute' && config.eventEmitter;
+  try {
+    await config.launcher.preflight?.(prompt, launchOptions);
+  } catch (error) {
+    if (shouldEmit) {
+      config.eventEmitter!({
+        type: 'agent.conversation.failed',
+        agentId,
+        label: options.label,
+        phase: options.phase,
+        runId: config.runId,
+        agentRunId,
+        resolvedAgentId: config.resolvedAgent?.agentId,
+        error: getAgentRunFailureSummary(error),
+      });
+    }
+    throw error;
+  }
+
+  // 5. Cache lookup
   const cached = await config.cache.load(config.runId, config.cacheKey);
   if (cached !== null) {
     return cached.data as T;
   }
 
-  // 5. Execute agent call (with optional event emission for execute mode)
-  const agentId = config.resolvedAgent?.agentId ?? options.agentType ?? options.label;
-  const shouldEmit = config.mode === 'execute' && config.eventEmitter;
-  let agentRunId = config.agentRunId ?? generateRunId();
+  // 6. Execute agent call (with optional event emission for execute mode)
   const blockedReason = await isAgentLaunchBlockedByWorkflowControl({
     rootDir: config.rootDir,
     runId: config.runId,
@@ -370,7 +402,6 @@ export async function executeAgentCall<T>(
   let replayUnavailableReason: string | undefined;
   let attempt = 0;
   let launchPrompt = prompt;
-  let launchOptions = { ...options, agentRunId };
 
   while (true) {
     const replayResult = await persistReplayInput({
@@ -438,7 +469,7 @@ export async function executeAgentCall<T>(
           runId: config.runId,
           agentRunId,
           resolvedAgentId: config.resolvedAgent?.agentId,
-          error: err instanceof Error ? err.message : String(err),
+          error: getAgentRunFailureSummary(err),
         });
       }
       throw err;

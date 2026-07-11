@@ -161,6 +161,7 @@ export function renderAbyRuntimeDoctorReport(report: AbyRuntimeDoctorReport): st
   lines.push('Agent Runtime Doctor');
   lines.push(`Provider: ${report.provider}`);
   lines.push(`Status: ${report.status}`);
+  lines.push(`Readiness: ${report.readiness}`);
   lines.push(`Config source: ${report.configSource}`);
   lines.push(`Config path: ${report.configPath}`);
   lines.push(`Aby root: ${report.resolvedRoot ?? report.root ?? '(not configured)'}`);
@@ -192,6 +193,7 @@ export function renderAbyRuntimeDoctorJson(report: AbyRuntimeDoctorReport): stri
     {
       provider: report.provider,
       status: report.status,
+      readiness: report.readiness,
       configSource: report.configSource,
       configPath: report.configPath,
       root: report.root,
@@ -217,6 +219,7 @@ export function renderAbyRuntimeSetupReport(report: AbyRuntimeSetupReport): stri
   lines.push(`Provider: ${report.provider}`);
   lines.push(`Mode: ${report.mode}`);
   lines.push(`Status: ${report.status}`);
+  lines.push(`Readiness: ${report.readiness}`);
   lines.push(`Aby root: ${report.resolvedRoot}`);
   lines.push(`Config path: ${report.configPath}`);
   lines.push(`Config written: ${report.wroteConfig ? 'yes' : 'no'}`);

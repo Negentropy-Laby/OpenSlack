@@ -15,7 +15,7 @@ vi.mock('@openslack/runtime', () => ({
   cleanupWorktree: (...args: unknown[]) => mockCleanupWorktree(...args),
 }));
 
-import { createOpenSlackAgentLauncher, createRunStore } from '../index.js';
+import { createOpenSlackAgentLauncher, createRunStore, LocalExecutionAdapter } from '../index.js';
 import { readTranscript } from '../transcript.js';
 
 function makeTempRoot(): string {
@@ -55,6 +55,7 @@ describe('Dirty-state-aware worktree cleanup', () => {
     const launcher = createOpenSlackAgentLauncher({
       runStore: store,
       rootDir: root,
+      adapter: new LocalExecutionAdapter(),
     });
 
     await launcher('implement feature X', {
@@ -91,6 +92,7 @@ describe('Dirty-state-aware worktree cleanup', () => {
     const launcher = createOpenSlackAgentLauncher({
       runStore: store,
       rootDir: root,
+      adapter: new LocalExecutionAdapter(),
     });
 
     await launcher('implement feature X', {
@@ -142,6 +144,7 @@ describe('Dirty-state-aware worktree cleanup', () => {
     const launcher = createOpenSlackAgentLauncher({
       runStore: store,
       rootDir: root,
+      adapter: new LocalExecutionAdapter(),
     });
 
     await launcher('implement feature X', {
@@ -182,6 +185,7 @@ describe('Dirty-state-aware worktree cleanup', () => {
     const launcher = createOpenSlackAgentLauncher({
       runStore: store,
       rootDir: root,
+      adapter: new LocalExecutionAdapter(),
     });
 
     // Should not throw — cleanup failure is logged, not propagated
@@ -215,6 +219,7 @@ describe('Dirty-state-aware worktree cleanup', () => {
     const launcher = createOpenSlackAgentLauncher({
       runStore: store,
       rootDir: root,
+      adapter: new LocalExecutionAdapter(),
     });
 
     await launcher('review this PR', {

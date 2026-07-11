@@ -50,6 +50,7 @@ function parseRegistryYaml(
   agentId: string;
   model?: string;
   runtime?: string;
+  runtimeProvider?: string;
   provider?: string;
   bridgeMode?: string;
 } | null {
@@ -70,6 +71,12 @@ function parseRegistryYaml(
   const model = vendor?.model as string | undefined;
   const runtime = vendor?.runtime as string | undefined;
   const provider = vendor?.provider as string | undefined;
+  const configuredRuntimeProvider =
+    (vendor?.runtime_provider as string | undefined) ??
+    (vendor?.execution_provider as string | undefined);
+  const runtimeProvider =
+    configuredRuntimeProvider ??
+    (runtime === 'aby_assistant' || runtime === 'aby' || provider === 'aby' ? 'aby' : undefined);
 
   // Map bridge hint from runtime/provider fields
   let bridgeMode: ResolvedAgentConfig['bridgeMode'] | undefined;
@@ -81,6 +88,7 @@ function parseRegistryYaml(
     agentId,
     model: model === 'default' ? undefined : model,
     runtime,
+    runtimeProvider,
     provider,
     bridgeMode,
   };
@@ -105,6 +113,7 @@ function lookupOpenSlackRegistry(agentType: string, rootDir: string): ResolvedAg
         source: 'openslack-registry',
         model: parsed.model,
         runtime: parsed.runtime,
+        runtimeProvider: parsed.runtimeProvider,
         provider: parsed.provider,
         bridgeMode: parsed.bridgeMode as ResolvedAgentConfig['bridgeMode'],
       };

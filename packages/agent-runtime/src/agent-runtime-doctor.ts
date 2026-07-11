@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { isAbsolute, join, resolve } from 'node:path';
 import type { BridgeRuntimeResolverOptions } from './bridge-runtime-resolver.js';
 import { loadAbyBridgeRuntimeConfig } from './bridge-runtime-resolver.js';
@@ -7,6 +8,7 @@ import { auditBridgeEnv } from './bridge-env.js';
 export type AgentRuntimeDoctorProvider = 'aby';
 export type AgentRuntimeDoctorStatus = 'PASS' | 'FAIL';
 export type AgentRuntimeDoctorCheckStatus = 'PASS' | 'FAIL' | 'WARN';
+export type AgentRuntimeReadiness = 'not_configured' | 'misconfigured' | 'unavailable' | 'ready';
 export type AbyRuntimeConfigSource =
   | 'OPENSLACK_ABY_ROOT'
   | '.openslack.local/agent-runtime.json'
@@ -26,6 +28,7 @@ export interface AgentRuntimeEnvAudit {
 export interface AbyRuntimeDoctorReport {
   provider: AgentRuntimeDoctorProvider;
   status: AgentRuntimeDoctorStatus;
+  readiness: AgentRuntimeReadiness;
   configSource: AbyRuntimeConfigSource;
   configPath: string;
   root?: string;
@@ -43,7 +46,29 @@ export interface AbyRuntimeDoctorReport {
   remediation: string;
 }
 
-export type DiagnoseAbyRuntimeOptions = BridgeRuntimeResolverOptions;
+export interface DiagnoseAbyRuntimeOptions extends BridgeRuntimeResolverOptions {
+  checkCommand?: (command: string) => { available: boolean; detail: string };
+}
+
+export interface AgentRuntimeReadinessReport {
+  status: AgentRuntimeDoctorStatus;
+  readiness: AgentRuntimeReadiness;
+  providers: { aby: AbyRuntimeDoctorReport };
+  remediations: string[];
+}
+
+/** Overall execution-provider readiness used by product setup/status/doctor. */
+export function diagnoseAgentRuntime(
+  options: DiagnoseAbyRuntimeOptions = {},
+): AgentRuntimeReadinessReport {
+  const aby = diagnoseAbyRuntime(options);
+  return {
+    status: aby.status,
+    readiness: aby.readiness,
+    providers: { aby },
+    remediations: aby.remediations,
+  };
+}
 
 export function diagnoseAbyRuntime(
   options: DiagnoseAbyRuntimeOptions = {},
@@ -61,6 +86,7 @@ export function diagnoseAbyRuntime(
     return {
       provider: 'aby',
       status: 'FAIL',
+      readiness: 'misconfigured',
       configSource: 'none',
       configPath,
       args: [],
@@ -96,6 +122,15 @@ export function diagnoseAbyRuntime(
     detail: configSource === 'none'
       ? 'No Aby root configured'
       : `Using ${configSource}`,
+  });
+  const commandCheck =
+    configSource === 'none'
+      ? { available: false, detail: 'Not checked because runtime is not configured' }
+      : (options.checkCommand ?? checkCommandAvailability)(command);
+  checks.push({
+    name: 'command-available',
+    status: configSource === 'none' ? 'WARN' : commandCheck.available ? 'PASS' : 'FAIL',
+    detail: commandCheck.detail,
   });
   checks.push({
     name: 'aby-root',
@@ -137,14 +172,24 @@ export function diagnoseAbyRuntime(
       : `Rejected unsafe keys: ${envAudit.rejectedKeys.join(', ')}`,
   });
 
-  const status: AgentRuntimeDoctorStatus = checks.some((check) => check.status === 'FAIL')
-    ? 'FAIL'
-    : 'PASS';
+  const structuralFailures = checks.some(
+    (check) => check.name !== 'command-available' && check.status === 'FAIL',
+  );
+  const readiness: AgentRuntimeReadiness =
+    configSource === 'none'
+      ? 'not_configured'
+      : structuralFailures
+        ? 'misconfigured'
+        : commandCheck.available
+          ? 'ready'
+          : 'unavailable';
+  const status: AgentRuntimeDoctorStatus = readiness === 'ready' ? 'PASS' : 'FAIL';
   const remediations = remediationsFor(checks);
 
   return {
     provider: 'aby',
     status,
+    readiness,
     configSource,
     configPath,
     root,
@@ -182,6 +227,8 @@ function remediationForFailedCheck(check: AgentRuntimeDoctorCheck): string {
       return 'Update Aby to a bridge-capable checkout that contains src/sidecar/entrypoints/agentRunBridge.ts.';
     case 'safe-env':
       return 'Remove unsafe env keys from .openslack.local/agent-runtime.json; task content and secrets must not cross the bridge through env.';
+    case 'command-available':
+      return 'Install the configured bridge command or update aby.command to an executable available to OpenSlack.';
     default:
       return 'Fix the failed check and run openslack agent-runtime doctor --provider aby again.';
   }
@@ -194,4 +241,26 @@ function readString(value: unknown): string | undefined {
 function resolveConfiguredPath(pathValue: string, rootDir?: string): string {
   if (isAbsolute(pathValue)) return resolve(pathValue);
   return resolve(rootDir ?? process.cwd(), pathValue);
+}
+
+function checkCommandAvailability(command: string): { available: boolean; detail: string } {
+  const result = spawnSync(command, ['--version'], {
+    encoding: 'utf-8',
+    stdio: 'pipe',
+    timeout: 5_000,
+    windowsHide: true,
+  });
+  if (result.error) {
+    return { available: false, detail: `Command unavailable: ${result.error.message}` };
+  }
+  if (result.status !== 0) {
+    return { available: false, detail: `Command exited with status ${String(result.status)}` };
+  }
+  const version = String(result.stdout ?? '')
+    .trim()
+    .split(/\r?\n/, 1)[0];
+  return {
+    available: true,
+    detail: version ? `${command}: ${version}` : `${command} is available`,
+  };
 }
