@@ -27,6 +27,7 @@ Use this page when you know what you want to do, but not which document owns it.
 | GitHub Issues task loop | `developer/github-issues-loop.md`, `user-guide.md` |
 | GitHub watch daemon and realtime Issue notifications | `developer/github-watch-daemon.md`, `product/user-experience-roadmap.md` |
 | Agent identity and onboarding | `developer/agent-registry-schema.md`, `developer/new-agent-onboarding.md` |
+| Install, upgrade, and rollback | `guides/install-openslack.md`, `guides/manual-upgrade-rollback.md` |
 | Aby external runtime setup | `guides/aby-integration.md`, `developer/aby-bridge-integration-plan.md`, `developer/mcp-runtime-lifecycle.md` |
 | Embed OpenSlack into Negentropy-Lab as an external scenario-pack slot | `product/negentropy-lab-integration.md`, `guides/embed-openslack-in-negentropy-lab.md`, `developer/negentropy-slot-adapter.md`, `security/negentropy-slot-boundary.md` |
 | Maintain the GitHub profile README with Profile Sync | `product/profile-sync.md`, `user-guide.md` |

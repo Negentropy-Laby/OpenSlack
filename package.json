@@ -8,7 +8,7 @@
     "apps/*"
   ],
   "scripts": {
-    "typecheck": "tsc --build",
+    "typecheck": "tsc --build && tsc --noEmit -p scripts/release/tsconfig.json",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -16,6 +16,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "tsc --build",
+    "release:build": "bun scripts/release/build.ts",
+    "release:verify": "bun scripts/release/verify.ts",
+    "release:smoke": "bun scripts/release/smoke.ts",
     "openslack": "node --import tsx apps/cli/src/index.ts",
     "clean": "rimraf packages/*/dist apps/*/dist packages/*/tsconfig.tsbuildinfo apps/*/tsconfig.tsbuildinfo"
   },
