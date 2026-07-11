@@ -23,7 +23,7 @@ const validRegistry: ModulesRegistry = {
       maturity: 'local_ready',
       operatorConfigured: false,
       externalBlockers: ['live_test_pending'],
-      evidenceRefs: ['test:packages/workspace/src/__tests__/module-registry.test.ts'],
+      evidenceRefs: ['commit:1234567', 'test:packages/workspace/src/__tests__/module-registry.test.ts'],
       phase: '1.0',
       cli: ['openslack test'],
       packages: ['@openslack/test'],
@@ -38,7 +38,7 @@ const validRegistry: ModulesRegistry = {
       maturity: 'implemented',
       operatorConfigured: false,
       externalBlockers: [],
-      evidenceRefs: ['test:packages/workspace/src/__tests__/module-registry.test.ts'],
+      evidenceRefs: ['commit:1234567', 'test:packages/workspace/src/__tests__/module-registry.test.ts'],
       phase: '1.1',
       tests: 5,
       test_files: 1,
@@ -191,7 +191,7 @@ describe('validateModules', () => {
               maturity: 'local_ready',
               operatorConfigured: false,
               externalBlockers: ['live_smoke_pending'],
-              evidenceRefs: ['test:runtime.test.ts'],
+              evidenceRefs: ['commit:1234567', 'test:runtime.test.ts'],
             },
           ],
         }),
@@ -238,6 +238,45 @@ describe('validateModules', () => {
     } as ModulesRegistry;
     const mismatchResult = validateModules(mismatch);
     expect(mismatchResult.errors.some((error) => error.includes('must match'))).toBe(true);
+
+    const emptyEvidence = {
+      ...validRegistry,
+      deferredWork: [
+        {
+          id: 'empty',
+          name: 'Empty evidence',
+          status: 'deferred',
+          maturity: 'local_ready',
+          countedTowardStandalone: false,
+          evidenceRefs: [],
+        },
+      ],
+    } as ModulesRegistry;
+    expect(
+      validateModules(emptyEvidence).errors.some((error) =>
+        error.includes('without a declared evidence commit'),
+      ),
+    ).toBe(true);
+
+    const missingBranch = {
+      ...validRegistry,
+      deferredWork: [
+        {
+          id: 'missing-branch',
+          name: 'Missing branch',
+          status: 'deferred',
+          maturity: 'local_ready',
+          countedTowardStandalone: false,
+          branch: 'agent/does-not-exist',
+          evidenceRefs: ['commit:1234567', 'branch:agent/does-not-exist'],
+        },
+      ],
+    } as ModulesRegistry;
+    expect(
+      validateModules(missingBranch, { rootPath: process.cwd() }).errors.some((error) =>
+        error.includes('branch evidence does not resolve'),
+      ),
+    ).toBe(true);
   });
 
   it('verifies tracked repository paths and current-history commit evidence', () => {
@@ -288,7 +327,7 @@ describe('readProductModules', () => {
         '    maturity: local_ready',
         '    operatorConfigured: false',
         '    externalBlockers: [live_smoke_pending]',
-        '    evidenceRefs: [branch:release/test]',
+        '    evidenceRefs: [commit:1234567]',
         "    phase: '1.0'",
         '',
       ].join('\n'),
@@ -316,7 +355,7 @@ function moduleFixture(overrides: Partial<ModulesRegistry['modules'][number]> = 
     maturity: 'local_ready' as const,
     operatorConfigured: false,
     externalBlockers: [],
-    evidenceRefs: ['test:module.test.ts'],
+    evidenceRefs: ['commit:1234567', 'test:module.test.ts'],
     phase: '1.0',
     ...overrides,
   };

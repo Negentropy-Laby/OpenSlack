@@ -273,6 +273,22 @@ export function validateModules(
         if (branchEvidence.length > 0 && (!item.branch || !branchEvidence.includes(item.branch))) {
           errors.push(`Deferred work "${item.id}" branch evidence must match its branch field`);
         }
+        if (
+          item.maturity !== 'planned' &&
+          !item.evidenceRefs.some((reference) => reference.startsWith('commit:'))
+        ) {
+          errors.push(
+            `Deferred work "${item.id}" cannot claim ${item.maturity} without a declared evidence commit`,
+          );
+        }
+        if (item.maturity !== 'planned' && options.rootPath) {
+          validateEvidencePathsAtDeclaredCommits(
+            item.evidenceRefs,
+            `Deferred work "${item.id}"`,
+            errors,
+            options.rootPath,
+          );
+        }
       }
     }
   }
@@ -352,9 +368,12 @@ function validateMaturityOwner(
   }
   if (
     owner.maturity !== 'planned' &&
-    !evidenceRefs.some((reference) => /^(commit|test|repo):/.test(reference))
+    !evidenceRefs.some((reference) => reference.startsWith('commit:'))
   ) {
-    errors.push(`${label} cannot claim ${owner.maturity} from branch metadata alone`);
+    errors.push(`${label} cannot claim ${owner.maturity} without a declared evidence commit`);
+  }
+  if (owner.maturity !== 'planned' && options.rootPath) {
+    validateEvidencePathsAtDeclaredCommits(evidenceRefs, label, errors, options.rootPath);
   }
   if (
     (owner.maturity === 'live_verified' || owner.maturity === 'production_ready') &&
@@ -367,7 +386,6 @@ function validateMaturityOwner(
       errors.push(`${label} cannot claim ${owner.maturity} without structured live evidence`);
     }
     if (options.rootPath) {
-      validateEvidencePathsAtDeclaredCommits(evidenceRefs, label, errors, options.rootPath);
       validateStructuredLiveEvidence(ownerId, evidenceRefs, label, errors, options.rootPath);
     }
   }
@@ -414,6 +432,24 @@ function validateEvidenceReference(
   if (kind === 'branch') {
     if (!/^[A-Za-z0-9._/-]+$/.test(value) || value.includes('..')) {
       errors.push(`${label} has invalid branch evidence reference: ${reference}`);
+      return;
+    }
+    if (rootPath) {
+      const refs = value.startsWith('refs/')
+        ? [value]
+        : [`refs/heads/${value}`, `refs/remotes/origin/${value}`];
+      const exists = refs.some((ref) => {
+        try {
+          execFileSync('git', ['show-ref', '--verify', '--quiet', ref], {
+            cwd: rootPath,
+            stdio: 'ignore',
+          });
+          return true;
+        } catch {
+          return false;
+        }
+      });
+      if (!exists) errors.push(`${label} branch evidence does not resolve: ${reference}`);
     }
     return;
   }
@@ -483,9 +519,10 @@ function validateEvidencePathsAtDeclaredCommits(
     .map((reference) => reference.slice('commit:'.length));
   for (const reference of evidenceRefs.filter((item) => /^(test|repo):/.test(item))) {
     const path = normalize(reference.slice(reference.indexOf(':') + 1));
+    const gitPath = path.replace(/\\/g, '/');
     const committed = commits.some((commit) => {
       try {
-        execFileSync('git', ['cat-file', '-e', `${commit}:${path}`], {
+        execFileSync('git', ['cat-file', '-e', `${commit}:${gitPath}`], {
           cwd: rootPath,
           stdio: 'ignore',
         });
@@ -512,10 +549,11 @@ function validateStructuredLiveEvidence(
     .map((reference) => reference.slice('commit:'.length));
   for (const reference of evidenceRefs.filter(isLiveEvidenceReference)) {
     const path = normalize(reference.slice('repo:'.length));
+    const gitPath = path.replace(/\\/g, '/');
     let accepted = false;
     for (const commit of commits) {
       try {
-        const content = execFileSync('git', ['show', `${commit}:${path}`], {
+        const content = execFileSync('git', ['show', `${commit}:${gitPath}`], {
           cwd: rootPath,
           encoding: 'utf-8',
           stdio: ['ignore', 'pipe', 'ignore'],

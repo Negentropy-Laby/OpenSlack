@@ -92,6 +92,7 @@ modules:
     externalBlockers:
       - bot_authored_pr_human_approval_merge_capstone_pending
     evidenceRefs:
+      - commit:8ffc896
       - test:packages/pr/src/__tests__/doctor.test.ts
       - test:packages/pr/src/__tests__/merge.test.ts
     phase: '1.14'
@@ -196,5 +197,6 @@ deferredWork:
     countedTowardStandalone: false
     branch: agent/negentropy-sidecar-v1
     evidenceRefs:
-      - branch:agent/negentropy-sidecar-v1
+      - commit:4ee4151
+      - repo:docs/status/deferred/negentropy-sidecar.md
     notes: Local-only at a80db19 and deliberately excluded from standalone P0 completion.

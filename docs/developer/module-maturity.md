@@ -71,9 +71,11 @@ infer maturity.
 Work that is intentionally outside the standalone product baseline belongs in
 `deferredWork`. Deferred items must set `countedTowardStandalone: false` and
 cannot claim maturity above `local_ready`. The Negentropy-Lab sidecar is tracked
-this way until its separate branch is governed and merged. A deferred `branch:`
-reference is metadata, must match the item's `branch` field, and cannot promote a
-normal module or component by itself.
+this way until its separate branch is governed and merged. The `branch` field is
+a locator, not maturity evidence. A deferred `branch:` evidence reference, when
+used, must resolve and match that field. The durable Sidecar evidence is a
+committed ledger path; branch metadata cannot promote a normal module or
+component by itself.
 
 Run these checks after changing the registry or evidence:
 
