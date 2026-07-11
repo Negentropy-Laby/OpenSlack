@@ -93,6 +93,53 @@ export interface GitBranchPublisher {
   }): string;
 }
 
+export interface GitProbePublisher extends GitBranchPublisher {
+  deleteRemoteRef(input: {
+    rootDir: string;
+    remote: string;
+    branch: string;
+    owner: string;
+    repo: string;
+    token: string;
+    timeoutMs: number;
+  }): void;
+}
+
+export interface GitHubDeliveryProbeInput {
+  rootDir: string;
+  owner: string;
+  repo: string;
+  remote?: string;
+  timeoutMs?: number;
+  requireIssuesWrite?: boolean;
+}
+
+export interface GitHubDeliveryProbeResult {
+  state: 'PROBE_CLEANED';
+  probeRef: string;
+  branchSha: string;
+  remoteSha: string;
+  repositoryAccess: {
+    accessible: true;
+    totalAccessibleRepositories: number;
+    pagesScanned: number;
+  };
+  permissions: DeliveryPermissionCheck[];
+  cleanup: 'PASS';
+  evidenceTimestamp: string;
+}
+
+export interface GitHubDeliveryDiagnosticResult {
+  state: 'READY_FOR_PROBE';
+  repositoryAccess: {
+    accessible: true;
+    totalAccessibleRepositories: number;
+    pagesScanned: number;
+  };
+  permissions: DeliveryPermissionCheck[];
+  evidenceTimestamp: string;
+}
+
 export interface GitHubDeliveryInput {
   rootDir: string;
   owner: string;

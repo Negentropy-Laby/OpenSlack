@@ -141,6 +141,22 @@ updates the exact-head draft PR through the API, and verifies the synchronized
 head SHA. `GITHUB_TOKEN` and `GH_TOKEN` are removed before delegation, so the
 operation cannot silently fall back to a human identity.
 
+Before the first publication to a repository, use:
+
+```bash
+openslack delivery doctor --repo OWNER/REPO
+openslack delivery probe --repo OWNER/REPO --apply
+```
+
+The doctor calls the installation-scoped repository-list endpoint and checks
+`contents:write` plus `pull_requests:write`; public read access is not accepted
+as evidence that a selected repository is installed. The probe uses the same
+allowlisted askpass environment as delivery, pushes a unique
+`openslack/probes/write-*` ref, verifies its SHA, and deletes it in cleanup. A
+cleanup failure is a typed error with an exact `openslack delivery cleanup-ref`
+command. That command is preview-first and rejects every ref outside the probe
+namespace.
+
 For other supported `gh` commands, the generic wrappers launch a narrow Node
 adapter. It obtains the installation token in memory, removes human-token and App
 key variables from the `gh` child, sets child-only `GH_TOKEN`, and forwards the

@@ -3,7 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DeliveryError } from './errors.js';
-import type { GitBranchPublisher } from './types.js';
+import type { GitProbePublisher } from './types.js';
 
 export interface GitAskPassPublisherOptions {
   allowLocalRemoteForTests?: boolean;
@@ -20,7 +20,7 @@ interface GitTransportInput {
   timeoutMs: number;
 }
 
-export class GitAskPassPublisher implements GitBranchPublisher {
+export class GitAskPassPublisher implements GitProbePublisher {
   constructor(private readonly options: GitAskPassPublisherOptions = {}) {}
 
   push(input: GitTransportInput): { branchSha: string; remoteSha: string } {
@@ -83,6 +83,49 @@ export class GitAskPassPublisher implements GitBranchPublisher {
         input.token,
       ),
     );
+  }
+
+  deleteRemoteRef(input: GitTransportInput): void {
+    assertGitRef(input.branch);
+    const spawn = this.options.spawn ?? spawnSync;
+    const pushUrl = resolvePushUrl(spawn, input, this.options.allowLocalRemoteForTests === true);
+    withAskPassEnvironment(input.token, (env, hooksDir) => {
+      runAuthenticatedGit(
+        spawn,
+        input.rootDir,
+        [
+          '-c',
+          'credential.helper=',
+          '-c',
+          `core.hooksPath=${hooksDir}`,
+          'push',
+          '--porcelain',
+          pushUrl,
+          `:refs/heads/${input.branch}`,
+        ],
+        env,
+        input.timeoutMs,
+        input.token,
+        'Temporary delivery ref cleanup',
+      );
+      const remaining = readRemoteShaAtUrl(
+        spawn,
+        input.rootDir,
+        pushUrl,
+        input.branch,
+        env,
+        hooksDir,
+        input.timeoutMs,
+        input.token,
+      );
+      if (remaining) {
+        throw new DeliveryError(
+          'DELIVERY_PUSH_FAILED',
+          'Temporary delivery ref cleanup could not be verified.',
+          true,
+        );
+      }
+    });
   }
 }
 

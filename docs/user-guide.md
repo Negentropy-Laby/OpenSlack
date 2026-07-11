@@ -336,6 +336,29 @@ openslack delivery publish \
   --body-file pr-body.md
 ```
 
+Before the first real delivery, run the read-only installation/permission
+diagnostic, then explicitly apply the temporary-ref write probe:
+
+```bash
+openslack delivery doctor --repo acme/product
+openslack delivery probe --repo acme/product
+openslack delivery probe --repo acme/product --apply
+```
+
+The doctor lists repositories through the installation-token endpoint instead
+of treating public repository readability as installation evidence. The applied
+probe pushes current `HEAD` to a unique `openslack/probes/write-*` ref, verifies
+the remote SHA, and deletes the ref in the same operation. If cleanup cannot be
+verified, the error prints an exact, preview-first recovery command:
+
+```bash
+openslack delivery cleanup-ref --branch openslack/probes/write-<id> --repo acme/product
+openslack delivery cleanup-ref --branch openslack/probes/write-<id> --repo acme/product --apply
+```
+
+Manual cleanup is restricted to the temporary probe namespace; it cannot delete
+normal delivery or product branches.
+
 ## GitHub
 
 | Command | Purpose |

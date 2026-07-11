@@ -31,9 +31,9 @@ modules:
       - "@openslack/runtime"
       - "@openslack/core"
       - "@openslack/delivery"
-    tests: 414
-    test_files: 52
-    notes: "GitHub Issues task loop active with typed task creation, dry-run repair, Phase 4 watch daemon, and installation-scoped GitHub delivery. Delivery publishes HEAD and a draft PR through the same GitHub App token, disables host credentials and hooks, synchronizes remote/PR SHAs, and returns AWAITING_GATES evidence for PRMS."
+    tests: 435
+    test_files: 56
+    notes: "GitHub Issues task loop active with typed task creation, dry-run repair, Phase 4 watch daemon, and installation-scoped GitHub delivery. Delivery publishes HEAD and a draft PR through the same GitHub App token, disables host credentials and hooks, synchronizes remote/PR SHAs, and returns AWAITING_GATES evidence for PRMS. Read-only installation-scope diagnostics and a preview-first temporary-ref push/delete probe verify selected-repository access and contents write capability before first delivery."
 
   - id: operator
     name: Operator Interface

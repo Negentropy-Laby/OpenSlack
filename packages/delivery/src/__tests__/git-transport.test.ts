@@ -138,7 +138,8 @@ describe('GitAskPassPublisher', () => {
     run('git', ['-C', root, 'config', 'credential.helper', '!exit 99']);
     const beforeRemote = output('git', ['-C', root, 'remote', 'get-url', 'origin']);
     const beforeHelper = output('git', ['-C', root, 'config', 'credential.helper']);
-    const result = new GitAskPassPublisher({ allowLocalRemoteForTests: true }).push({
+    const publisher = new GitAskPassPublisher({ allowLocalRemoteForTests: true });
+    const transportInput = {
       rootDir: root,
       remote: 'origin',
       branch: 'agent/test-delivery',
@@ -146,11 +147,16 @@ describe('GitAskPassPublisher', () => {
       repo: 'delivery',
       token: 'test-only-token',
       timeoutMs: 5000,
-    });
+    };
+    const result = publisher.push(transportInput);
     expect(result.remoteSha).toBe(result.branchSha);
     expect(output('git', ['-C', root, 'remote', 'get-url', 'origin'])).toBe(beforeRemote);
     expect(output('git', ['-C', root, 'config', 'credential.helper'])).toBe(beforeHelper);
     expect(existsSync(join(root, 'test-only-token'))).toBe(false);
+    publisher.deleteRemoteRef(transportInput);
+    expect(
+      output('git', ['--git-dir', bare, 'for-each-ref', '--format=%(refname)', 'refs/heads']),
+    ).toBe('');
   });
 });
 

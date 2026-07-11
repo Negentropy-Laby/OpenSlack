@@ -26,6 +26,12 @@ export {
   GitHubAppTokenError,
 } from './auth.js';
 export type { GitHubAppInstallationToken } from './auth.js';
+export { inspectInstallationRepositoryAccess } from './installation-access.js';
+export type {
+  GitHubInstallationAccessDependencies,
+  GitHubInstallationRepositoryAccess,
+  InstallationRepositoryPage,
+} from './installation-access.js';
 export { createTaskIssue, queryReadyIssueTasks } from './issue-tasks.js';
 export type { IssueTask } from './issue-tasks.js';
 export {
