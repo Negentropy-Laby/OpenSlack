@@ -5,6 +5,9 @@ const mockDiagnoseAbyRuntime = vi.fn();
 const mockSetupAbyRuntime = vi.fn();
 const mockRunAbyRuntimeSmoke = vi.fn();
 const mockGetAgentRuntimeMcpStatus = vi.fn();
+const mockDiagnoseOpenAICompatibleRuntime = vi.fn();
+const mockSetupOpenAICompatibleRuntime = vi.fn();
+const mockRunOpenAICompatibleRuntimeSmoke = vi.fn();
 
 const passReport = {
   provider: 'aby' as const,
@@ -15,7 +18,10 @@ const passReport = {
   root: '/aby',
   resolvedRoot: '/aby',
   command: 'bun',
-  args: ['/aby/src/sidecar/entrypoints/runEntrypoint.ts', '/aby/src/sidecar/entrypoints/agentRunBridge.ts'],
+  args: [
+    '/aby/src/sidecar/entrypoints/runEntrypoint.ts',
+    '/aby/src/sidecar/entrypoints/agentRunBridge.ts',
+  ],
   env: { allowedKeys: ['AGENT_RUN_BRIDGE_RUNNER'], rejectedKeys: [] },
   checks: [
     { name: 'config-source', status: 'PASS' as const, detail: 'Using OPENSLACK_ABY_ROOT' },
@@ -63,7 +69,8 @@ describe('agent-runtime command', () => {
     mockGetAgentRuntimeMcpStatus.mockReturnValue({
       provider: 'aby',
       status: 'PASS',
-      scopeNote: 'OpenSlack validates MCP descriptors and namespaces; Aby owns MCP client lifecycle.',
+      scopeNote:
+        'OpenSlack validates MCP descriptors and namespaces; Aby owns MCP client lifecycle.',
       agentId: 'anthropic_architect_aby',
       requiredServers: ['github'],
       availableServers: ['github'],
@@ -72,6 +79,51 @@ describe('agent-runtime command', () => {
       invalidTools: [],
       toolEvidence: [],
       remediations: ['MCP descriptors and transcript evidence are consistent.'],
+    });
+    mockDiagnoseOpenAICompatibleRuntime.mockResolvedValue({
+      provider: 'openai-compatible',
+      status: 'PASS',
+      readiness: 'ready',
+      configSource: '.openslack.local/agent-runtime.json',
+      configPath: '/repo/.openslack.local/agent-runtime.json',
+      baseUrl: 'https://example.test/v1',
+      model: 'test-model',
+      credentialRef: 'env:TEST_RUNTIME_KEY',
+      timeoutMs: 60000,
+      checks: [{ name: 'endpoint', status: 'PASS', detail: 'Endpoint is reachable.' }],
+      remediations: [],
+    });
+    mockSetupOpenAICompatibleRuntime.mockReturnValue({
+      provider: 'openai-compatible',
+      mode: 'dry-run',
+      status: 'PASS',
+      readiness: 'not_configured',
+      configPath: '/repo/.openslack.local/agent-runtime.json',
+      wroteConfig: false,
+      configPreview: {
+        providers: {
+          'openai-compatible': {
+            baseUrl: 'https://example.test/v1',
+            model: 'test-model',
+            credentialRef: 'env:TEST_RUNTIME_KEY',
+          },
+        },
+      },
+      checks: [{ name: 'credential-ref', status: 'PASS', detail: 'env:TEST_RUNTIME_KEY' }],
+      remediations: ['Preview passed.'],
+    });
+    mockRunOpenAICompatibleRuntimeSmoke.mockResolvedValue({
+      provider: 'openai-compatible',
+      status: 'PASS',
+      doctor: awaitableDoctorReport(),
+      runId: 'RUN-20260711-OPENAISMOKE',
+      terminalReason: 'completed',
+      evidence: {
+        runJson: '/repo/run.json',
+        metadataJson: '/repo/metadata.json',
+        transcriptJsonl: '/repo/transcript.jsonl',
+      },
+      checks: [{ name: 'terminal-event', status: 'PASS', detail: 'terminal evidence' }],
     });
   });
 
@@ -100,7 +152,11 @@ describe('agent-runtime command', () => {
       readiness: 'misconfigured',
       checks: [
         { name: 'agentRunBridge.ts', status: 'FAIL' as const, detail: 'Missing bridge' },
-        { name: 'safe-env', status: 'FAIL' as const, detail: 'Rejected unsafe keys: OPENSLACK_PRIVATE_KEY' },
+        {
+          name: 'safe-env',
+          status: 'FAIL' as const,
+          detail: 'Rejected unsafe keys: OPENSLACK_PRIVATE_KEY',
+        },
       ],
       remediations: [
         'Update Aby to a bridge-capable checkout that contains src/sidecar/entrypoints/agentRunBridge.ts.',
@@ -136,6 +192,26 @@ describe('agent-runtime command', () => {
     );
     expect(logs.join('\n')).toContain('Agent Runtime Doctor');
     expect(logs.join('\n')).toContain('Status: PASS');
+  });
+
+  it('runs provider-neutral doctor for openai-compatible without rendering credentials', async () => {
+    const logs: string[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+    const cmd = agentRuntimeCommands({
+      diagnoseOpenAICompatibleRuntime: (options) => mockDiagnoseOpenAICompatibleRuntime(options),
+    });
+    await cmd.parseAsync(
+      ['node', 'openslack agent-runtime', 'doctor', '--provider', 'openai-compatible'],
+      { from: 'node' },
+    );
+    const output = logs.join('\n');
+    expect(mockDiagnoseOpenAICompatibleRuntime).toHaveBeenCalled();
+    expect(output).toContain('Provider: openai-compatible');
+    expect(output).toContain('Credential ref: env:TEST_RUNTIME_KEY');
+    expect(output).not.toContain('transport-only-test-value');
+    logSpy.mockRestore();
   });
 
   it('renders JSON doctor output with stable redacted fields', async () => {
@@ -185,6 +261,40 @@ describe('agent-runtime command', () => {
     logSpy.mockRestore();
   });
 
+  it('previews openai-compatible setup using only a credential reference', async () => {
+    const logs: string[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+    const cmd = agentRuntimeCommands({
+      setupOpenAICompatibleRuntime: (options) => mockSetupOpenAICompatibleRuntime(options),
+    });
+    await cmd.parseAsync(
+      [
+        'node',
+        'openslack agent-runtime',
+        'setup',
+        'openai-compatible',
+        '--base-url',
+        'https://example.test/v1',
+        '--model',
+        'test-model',
+        '--credential-ref',
+        'env:TEST_RUNTIME_KEY',
+      ],
+      { from: 'node' },
+    );
+    expect(mockSetupOpenAICompatibleRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({
+        credentialRef: 'env:TEST_RUNTIME_KEY',
+        write: false,
+      }),
+    );
+    expect(logs.join('\n')).toContain('Config written: no');
+    expect(logs.join('\n')).not.toContain('transport-only-test-value');
+    logSpy.mockRestore();
+  });
+
   it('runs agent-runtime smoke --provider aby', async () => {
     const logs: string[] = [];
     const logSpy = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
@@ -194,16 +304,33 @@ describe('agent-runtime command', () => {
     const cmd = agentRuntimeCommands({
       runAbyRuntimeSmoke: (options) => mockRunAbyRuntimeSmoke(options),
     });
-    await cmd.parseAsync(
-      ['node', 'openslack agent-runtime', 'smoke', '--provider', 'aby'],
-      { from: 'node' },
-    );
+    await cmd.parseAsync(['node', 'openslack agent-runtime', 'smoke', '--provider', 'aby'], {
+      from: 'node',
+    });
 
     expect(mockRunAbyRuntimeSmoke).toHaveBeenCalledWith(
       expect.objectContaining({ agentId: 'anthropic_architect_aby' }),
     );
     expect(logs.join('\n')).toContain('Aby Runtime Smoke');
     expect(logs.join('\n')).toContain('RUN-20260603-SMOKE');
+    logSpy.mockRestore();
+  });
+
+  it('runs agent-runtime smoke --provider openai-compatible', async () => {
+    const logs: string[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+    const cmd = agentRuntimeCommands({
+      runOpenAICompatibleRuntimeSmoke: (options) => mockRunOpenAICompatibleRuntimeSmoke(options),
+    });
+    await cmd.parseAsync(
+      ['node', 'openslack agent-runtime', 'smoke', '--provider', 'openai-compatible'],
+      { from: 'node' },
+    );
+    expect(mockRunOpenAICompatibleRuntimeSmoke).toHaveBeenCalled();
+    expect(logs.join('\n')).toContain('OpenAI-compatible Runtime Smoke');
+    expect(logs.join('\n')).toContain('RUN-20260711-OPENAISMOKE');
     logSpy.mockRestore();
   });
 
@@ -217,7 +344,16 @@ describe('agent-runtime command', () => {
       getAgentRuntimeMcpStatus: (options) => mockGetAgentRuntimeMcpStatus(options),
     });
     await cmd.parseAsync(
-      ['node', 'openslack agent-runtime', 'mcp', 'status', '--provider', 'aby', '--agent', 'anthropic_architect_aby'],
+      [
+        'node',
+        'openslack agent-runtime',
+        'mcp',
+        'status',
+        '--provider',
+        'aby',
+        '--agent',
+        'anthropic_architect_aby',
+      ],
       { from: 'node' },
     );
 
@@ -302,3 +438,18 @@ describe('agent-runtime command', () => {
     exitSpy.mockRestore();
   });
 });
+
+function awaitableDoctorReport() {
+  return {
+    provider: 'openai-compatible' as const,
+    status: 'PASS' as const,
+    readiness: 'ready' as const,
+    configSource: '.openslack.local/agent-runtime.json' as const,
+    configPath: '/repo/.openslack.local/agent-runtime.json',
+    baseUrl: 'https://example.test/v1',
+    model: 'test-model',
+    credentialRef: 'env:TEST_RUNTIME_KEY',
+    checks: [],
+    remediations: [],
+  };
+}

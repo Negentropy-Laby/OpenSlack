@@ -4,6 +4,7 @@ import { isActionAllowed, enforceToolScope } from './permissions.js';
 import type { RunRecorder } from './recorder.js';
 import type { BridgeContract } from './bridge-contract.js';
 import { normalizeToolName } from './tool-name.js';
+import type { ToolExecutor } from './tool-executor.js';
 
 /**
  * Tool guard provided to execution adapters. Adapters MUST call
@@ -104,6 +105,8 @@ export interface AdapterExecutionContext {
    * Denied tools throw `PermissionDeniedError`.
    */
   toolGuard: ToolGuard;
+  /** OpenSlack-owned repository tool plane. Authorization is enforced internally. */
+  toolExecutor: ToolExecutor;
 }
 
 /**
@@ -114,6 +117,8 @@ export interface AdapterExecutionResult<T = unknown> {
   data: T;
   /** Estimated or actual token usage, if available. */
   tokenUsage?: number;
+  /** True when the adapter charged usage incrementally through RunRecorder. */
+  tokenUsageRecorded?: boolean;
 }
 
 /**

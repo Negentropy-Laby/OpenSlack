@@ -202,4 +202,29 @@ describe('diagnoseAbyRuntime', () => {
     expect(report.remediation.split('\n')).toHaveLength(2);
     expect(JSON.stringify(report)).not.toContain('should-not-print');
   });
+
+  it('reports aggregate readiness when the built-in provider is configured', () => {
+    const configDir = join(root, '.openslack.local');
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, 'agent-runtime.json'),
+      JSON.stringify({
+        providers: {
+          'openai-compatible': {
+            baseUrl: 'https://example.test/v1',
+            model: 'test-model',
+            credentialRef: 'env:TEST_RUNTIME_KEY',
+          },
+        },
+      }),
+      'utf-8',
+    );
+    const report = diagnoseAgentRuntime({
+      rootDir: root,
+      env: { TEST_RUNTIME_KEY: 'transport-only-test-value' },
+    });
+    expect(report).toMatchObject({ status: 'PASS', readiness: 'ready' });
+    expect(Object.keys(report.providers)).toEqual(['openai-compatible']);
+    expect(JSON.stringify(report)).not.toContain('transport-only-test-value');
+  });
 });

@@ -28,6 +28,18 @@ import {
 } from './bridge-runtime-resolver.js';
 import type { ProviderResolution, ProviderTransport } from './provider-registry.js';
 import { ProviderRegistry } from './provider-registry.js';
+import { RepositoryToolExecutor } from './tool-executor.js';
+import type { OpenAICompatibleRuntimeOptions } from './openai-compatible-runtime.js';
+import {
+  loadOpenAICompatibleRuntimeConfig,
+  OpenAICompatibleExecutionAdapter,
+  resolveRuntimeCredential,
+} from './openai-compatible-runtime.js';
+import { assertAgentResultSchema } from './schema-validation.js';
+
+export interface OpenAICompatibleRuntimeHostOptions extends OpenAICompatibleRuntimeOptions {
+  fetchImpl?: typeof fetch;
+}
 
 export interface LauncherOptions {
   runStore: AgentRunStore;
@@ -53,6 +65,8 @@ export interface LauncherOptions {
    * .openslack.local/agent-runtime.json for Aby runtimes.
    */
   bridgeRuntimeResolver?: BridgeRuntimeResolver;
+  /** OpenAI-compatible runtime host dependencies and non-secret config location. */
+  openAICompatible?: OpenAICompatibleRuntimeHostOptions;
 }
 
 export interface AgentLaunchOptions {
@@ -60,7 +74,7 @@ export interface AgentLaunchOptions {
   phase: string;
   schema?: unknown;
   isolation?: 'none' | 'worktree';
-  budget?: { tokens: number; costUsd: number };
+  budget?: { tokens: number; costUsd?: number };
   model?: string;
   agentType?: string;
   resolvedAgentId?: string;
@@ -81,23 +95,21 @@ export interface AgentLaunchOptions {
  * with {@link RuntimeNotConfiguredError}; it never returns fixture output.
  */
 export function createOpenSlackAgentLauncher(options: LauncherOptions) {
-  const {
-    runStore,
-    model,
-    rootDir,
-    availableMcpServers = [],
-    bridgeMode,
-  } = options;
+  const { runStore, model, rootDir, availableMcpServers = [], bridgeMode } = options;
   const bridgeRuntimeResolver =
-    options.bridgeRuntimeResolver ??
-    createBridgeRuntimeResolver({ rootDir });
+    options.bridgeRuntimeResolver ?? createBridgeRuntimeResolver({ rootDir });
 
   // Fixtures are available only through explicit adapter injection. bridgeMode
   // describes transport and never constructs a production execution backend.
   const explicitlyConfiguredAdapter = options.adapter;
   const providerRegistry =
     options.providerRegistry ??
-    createDefaultProviderRegistry(bridgeRuntimeResolver, availableMcpServers);
+    createDefaultProviderRegistry(
+      bridgeRuntimeResolver,
+      availableMcpServers,
+      rootDir,
+      options.openAICompatible,
+    );
 
   const recorder = createRunRecorder(runStore, rootDir);
 
@@ -154,7 +166,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       prompt,
       resolvedConfig,
       permissionProfile,
-      budget: agentOptions.budget,
+      budget: normalizeBudget(agentOptions.budget),
       correlationId: agentOptions.correlationId,
       threadId: agentOptions.threadId,
     };
@@ -173,11 +185,12 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       validatePrerequisites(resolvedConfig, permissionProfile);
     } catch (error) {
       const rejection = error instanceof Error ? error : new Error('Runtime prerequisite failed.');
-      const failureCode = error instanceof AgentUnavailableError
-        ? 'PROVIDER_UNAVAILABLE'
-        : error instanceof PermissionDeniedError
-          ? 'RUNTIME_MISCONFIGURED'
-          : getAgentRunFailureCode(error);
+      const failureCode =
+        error instanceof AgentUnavailableError
+          ? 'PROVIDER_UNAVAILABLE'
+          : error instanceof PermissionDeniedError
+            ? 'RUNTIME_MISCONFIGURED'
+            : getAgentRunFailureCode(error);
       recorder.reject(request, rejection, failureCode);
       throw error;
     }
@@ -201,22 +214,20 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       resolvedConfig.prompt?.toLowerCase().includes('implement');
     const isAbyBridgeRun =
       providerResolution.providerId === 'aby' && providerResolution.transport === 'process';
-    const isWriteCapable =
-      permissionProfile.permissionMode !== 'plan' ||
-      permissionProfile.allowedTools.some((tool) => ['Edit', 'Write', 'Bash'].includes(tool));
+    const isOpenAICompatibleRun = providerResolution.providerId === 'openai-compatible';
+    const isWriteCapable = permissionProfile.allowedTools.some((tool) =>
+      ['Edit', 'Write', 'Bash', 'repo.apply_patch'].includes(tool),
+    );
     const needsWorktree =
       resolvedConfig.isolation === 'worktree' ||
+      agentOptions.isolation === 'worktree' ||
       isImplementer ||
-      (isAbyBridgeRun && isWriteCapable);
+      (isAbyBridgeRun && isWriteCapable) ||
+      (isOpenAICompatibleRun && permissionProfile.allowedTools.includes('repo.apply_patch'));
 
     if (needsWorktree) {
       const { createWorktree } = await import('@openslack/runtime');
-      const wtResult = createWorktree(
-        `run-${runId}`,
-        resolvedConfig.agentId,
-        runId,
-        rootDir,
-      );
+      const wtResult = createWorktree(`run-${runId}`, resolvedConfig.agentId, runId, rootDir);
       if (!wtResult.success) {
         throw new Error(
           `Worktree isolation required but creation failed: ${wtResult.errors.join(', ')}`,
@@ -242,6 +253,12 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
     try {
       // Delegate execution to the adapter
       const toolGuard = new ToolGuard(permissionProfile, recorder, runId);
+      const toolExecutor = new RepositoryToolExecutor({
+        rootPath: worktreePath ?? rootDir ?? process.cwd(),
+        toolGuard,
+        recorder,
+        runId,
+      });
       const adapterResult = await runAdapter.execute<T>({
         prompt,
         runId,
@@ -254,6 +271,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
         recorder,
         runState: state,
         toolGuard,
+        toolExecutor,
         signal: abortController.signal,
       });
 
@@ -263,8 +281,15 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
           : new AgentRunCancelledError(runId, 'agent run aborted');
       }
 
+      if (agentOptions.schema) assertAgentResultSchema(adapterResult.data, agentOptions.schema);
+
       // Complete run with adapter-provided token usage
-      recorder.complete(runId, adapterResult.data, adapterResult.tokenUsage);
+      recorder.complete(
+        runId,
+        adapterResult.data,
+        adapterResult.tokenUsage,
+        adapterResult.tokenUsageRecorded,
+      );
 
       // Record bridge lifecycle marker only when the adapter is actually a bridge
       if (runAdapter.bridgeContract) {
@@ -281,6 +306,14 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
         runId,
       };
     } catch (err) {
+      const chargedUsage = runStore.getRun(runId)?.tokensUsed ?? 0;
+      if (chargedUsage > 0 && err instanceof Error) {
+        Object.defineProperty(err, 'tokenUsage', {
+          value: chargedUsage,
+          enumerable: false,
+          configurable: true,
+        });
+      }
       if (err instanceof AgentRunRestartRequestedError) {
         recorder.progress(runId, {
           step: 'agent_restart_handoff',
@@ -298,11 +331,12 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
         throw err;
       }
       if (abortController.signal.aborted || err instanceof AgentRunCancelledError) {
-        const reason = err instanceof AgentRunCancelledError
-          ? err.reason
-          : err instanceof Error
-            ? err.message
-            : 'agent run cancelled';
+        const reason =
+          err instanceof AgentRunCancelledError
+            ? err.reason
+            : err instanceof Error
+              ? err.message
+              : 'agent run cancelled';
         recorder.cancel(runId);
         if (runAdapter.bridgeContract) {
           recorder.progress(runId, {
@@ -315,10 +349,6 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
         throw err instanceof AgentRunCancelledError
           ? err
           : new AgentRunCancelledError(runId, reason);
-      }
-      if (err instanceof PermissionDeniedError) {
-        recorder.fail(runId, err, 'EXECUTION_FAILED');
-        throw err;
       }
       const failureCode = getAgentRunFailureCode(err);
       const executionError = new AgentExecutionFailedError(failureCode, runId);
@@ -346,7 +376,8 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
           if (dirtyResult.status === 'dirty') {
             // Preserve worktree — it contains uncommitted changes that
             // should be reviewed or committed before removal.
-            const branchName = worktreeBranchName ?? `agent/${resolvedConfig.agentId}/run-${runId}/${runId}`;
+            const branchName =
+              worktreeBranchName ?? `agent/${resolvedConfig.agentId}/run-${runId}/${runId}`;
             recorder.progress(runId, {
               step: 'worktree_dirty_preserved',
               worktreePath,
@@ -398,9 +429,17 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
   return launchAgent;
 }
 
+function normalizeBudget(
+  budget: { tokens: number; costUsd?: number } | undefined,
+): AgentRunRequest['budget'] {
+  return budget ? { tokens: budget.tokens, costUsd: budget.costUsd ?? 0 } : undefined;
+}
+
 function createDefaultProviderRegistry(
   bridgeRuntimeResolver: BridgeRuntimeResolver,
   availableMcpServers: string[],
+  rootDir?: string,
+  openAICompatible?: OpenAICompatibleRuntimeHostOptions,
 ): ProviderRegistry {
   const registry = new ProviderRegistry();
   registry.register({
@@ -431,6 +470,31 @@ function createDefaultProviderRegistry(
           bridgeMode: 'process',
           availableMcpServers,
           ...runtimeOptions,
+        }),
+      };
+    },
+  });
+  registry.register({
+    id: 'openai-compatible',
+    resolve() {
+      const env = openAICompatible?.env ?? process.env;
+      const config = loadOpenAICompatibleRuntimeConfig({
+        rootDir,
+        ...openAICompatible,
+        env,
+      });
+      if (!config) {
+        throw new RuntimeMisconfiguredError(
+          'OpenAI-compatible provider was selected but is not configured.',
+        );
+      }
+      return {
+        providerId: 'openai-compatible',
+        transport: 'in-process',
+        adapter: new OpenAICompatibleExecutionAdapter({
+          ...config,
+          apiKey: resolveRuntimeCredential(config.credentialRef, env),
+          fetchImpl: openAICompatible?.fetchImpl,
         }),
       };
     },

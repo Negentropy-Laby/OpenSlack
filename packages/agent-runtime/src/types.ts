@@ -12,6 +12,12 @@ export type AgentRunFailureCode =
   | 'RUNTIME_NOT_CONFIGURED'
   | 'RUNTIME_MISCONFIGURED'
   | 'PROVIDER_UNAVAILABLE'
+  | 'PROVIDER_TIMEOUT'
+  | 'PROVIDER_INVALID_RESPONSE'
+  | 'TOOL_ARGUMENT_INVALID'
+  | 'TOOL_DENIED'
+  | 'BUDGET_EXCEEDED'
+  | 'LIMIT_EXCEEDED'
   | 'EXECUTION_FAILED';
 
 export interface AgentPermissionProfile {
@@ -121,7 +127,11 @@ export interface AgentRunResult {
 // Bridge types (AR-2.5A) — re-exported from bridge-contract.ts (canonical source)
 // ---------------------------------------------------------------------------
 
-export type { BridgeSessionState, BridgeErrorKind, BridgeCapabilityDescriptor } from './bridge-contract.js';
+export type {
+  BridgeSessionState,
+  BridgeErrorKind,
+  BridgeCapabilityDescriptor,
+} from './bridge-contract.js';
 
 export class AgentUnavailableError extends Error {
   readonly missingMcpServers: string[];
@@ -170,22 +180,89 @@ export class RuntimeMisconfiguredError extends Error {
 export class AgentExecutionFailedError extends Error {
   readonly runId: string;
 
-  constructor(readonly code: AgentRunFailureCode, runId: string) {
+  constructor(
+    readonly code: AgentRunFailureCode,
+    runId: string,
+  ) {
     super(getAgentRunFailureSummary(undefined, code));
     this.name = 'AgentExecutionFailedError';
     this.runId = runId;
   }
 }
 
+export class ProviderUnavailableError extends Error {
+  readonly code = 'PROVIDER_UNAVAILABLE' as const;
+
+  constructor(message = 'Agent execution provider is unavailable.') {
+    super(message);
+    this.name = 'ProviderUnavailableError';
+  }
+}
+
+export class ProviderTimeoutError extends Error {
+  readonly code = 'PROVIDER_TIMEOUT' as const;
+
+  constructor(message = 'Agent execution provider timed out.') {
+    super(message);
+    this.name = 'ProviderTimeoutError';
+  }
+}
+
+export class ProviderInvalidResponseError extends Error {
+  readonly code = 'PROVIDER_INVALID_RESPONSE' as const;
+
+  constructor(message = 'Agent execution provider returned an invalid response.') {
+    super(message);
+    this.name = 'ProviderInvalidResponseError';
+  }
+}
+
+export class ToolArgumentInvalidError extends Error {
+  readonly code = 'TOOL_ARGUMENT_INVALID' as const;
+
+  constructor(
+    readonly toolName: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ToolArgumentInvalidError';
+  }
+}
+
+export class AgentBudgetExceededError extends Error {
+  readonly code = 'BUDGET_EXCEEDED' as const;
+
+  constructor(message = 'Budget exhausted: agent token budget is exhausted.') {
+    super(message);
+    this.name = 'AgentBudgetExceededError';
+  }
+}
+
+export class AgentLimitExceededError extends Error {
+  readonly code = 'LIMIT_EXCEEDED' as const;
+
+  constructor(message = 'Agent execution limit was exceeded.') {
+    super(message);
+    this.name = 'AgentLimitExceededError';
+  }
+}
+
 export function getAgentRunFailureCode(error: unknown): AgentRunFailureCode {
   if (error instanceof RuntimeNotConfiguredError) return error.code;
   if (error instanceof RuntimeMisconfiguredError) return error.code;
+  if (error instanceof PermissionDeniedError) return 'TOOL_DENIED';
   if (error && typeof error === 'object') {
     const code = (error as { code?: unknown }).code;
     if (
       code === 'RUNTIME_NOT_CONFIGURED' ||
       code === 'RUNTIME_MISCONFIGURED' ||
       code === 'PROVIDER_UNAVAILABLE' ||
+      code === 'PROVIDER_TIMEOUT' ||
+      code === 'PROVIDER_INVALID_RESPONSE' ||
+      code === 'TOOL_ARGUMENT_INVALID' ||
+      code === 'TOOL_DENIED' ||
+      code === 'BUDGET_EXCEEDED' ||
+      code === 'LIMIT_EXCEEDED' ||
       code === 'EXECUTION_FAILED'
     ) {
       return code;
@@ -206,6 +283,18 @@ export function getAgentRunFailureSummary(
       return 'Agent runtime configuration is invalid. Run openslack agent-runtime doctor for details.';
     case 'PROVIDER_UNAVAILABLE':
       return 'Agent execution provider is unavailable. Check runtime diagnostics and retry.';
+    case 'PROVIDER_TIMEOUT':
+      return 'Agent execution provider timed out.';
+    case 'PROVIDER_INVALID_RESPONSE':
+      return 'Agent execution provider returned an invalid response.';
+    case 'TOOL_ARGUMENT_INVALID':
+      return 'Agent requested invalid repository tool arguments.';
+    case 'TOOL_DENIED':
+      return 'Agent requested a repository tool that is not authorized.';
+    case 'BUDGET_EXCEEDED':
+      return 'Agent token budget was exceeded.';
+    case 'LIMIT_EXCEEDED':
+      return 'Agent execution stopped after reaching a configured safety limit.';
     case 'EXECUTION_FAILED':
       return 'Agent execution failed. Inspect runtime diagnostics for details.';
   }

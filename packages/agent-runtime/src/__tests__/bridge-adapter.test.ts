@@ -8,6 +8,7 @@ import {
   FakeBridgeAdapter,
   BridgeProcessAdapter,
   BridgeAdapterError,
+  RepositoryToolExecutor,
   type AgentPermissionProfile,
 } from '../index.js';
 import { readTranscript } from '../transcript.js';
@@ -22,10 +23,27 @@ function makeTempRoot(): string {
 }
 
 function cleanup(root: string) {
-  try { rmSync(root, { recursive: true, force: true }); } catch { /* ignore */ }
+  try {
+    rmSync(root, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
 }
 
 const NODE = 'bun';
+
+function createToolPlane(
+  rootPath: string,
+  profile: AgentPermissionProfile,
+  recorder: ReturnType<typeof createRunRecorder>,
+  runId: string,
+) {
+  const toolGuard = new ToolGuard(profile, recorder, runId);
+  return {
+    toolGuard,
+    toolExecutor: new RepositoryToolExecutor({ rootPath, toolGuard, recorder, runId }),
+  };
+}
 
 describe('FakeBridgeAdapter', () => {
   let root: string;
@@ -62,10 +80,7 @@ describe('FakeBridgeAdapter', () => {
 
   it('negotiateCapabilities returns requested non-MCP caps', async () => {
     const adapter = new FakeBridgeAdapter();
-    const caps = await adapter.negotiateCapabilities([
-      { name: 'Read' },
-      { name: 'Write' },
-    ]);
+    const caps = await adapter.negotiateCapabilities([{ name: 'Read' }, { name: 'Write' }]);
     expect(caps).toHaveLength(2);
     expect(caps[0].name).toBe('Read');
   });
@@ -200,7 +215,7 @@ describe('FakeBridgeAdapter', () => {
       permissionProfile: profile,
       recorder,
       runState: state,
-      toolGuard: new ToolGuard(profile, recorder, runId),
+      ...createToolPlane(root, profile, recorder, runId),
     });
 
     // plan mode should not have Bash in toolsUsed
@@ -233,12 +248,16 @@ describe('FakeBridgeAdapter', () => {
     const transcript = readTranscript(run.runId, root);
 
     const startEvent = transcript.find(
-      (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'bridge_session_started',
+      (e) =>
+        e.type === 'progress' &&
+        (e.data as Record<string, unknown>).step === 'bridge_session_started',
     );
     expect(startEvent).toBeDefined();
 
     const completeEvent = transcript.find(
-      (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'bridge_session_completed',
+      (e) =>
+        e.type === 'progress' &&
+        (e.data as Record<string, unknown>).step === 'bridge_session_completed',
     );
     expect(completeEvent).toBeDefined();
   });
@@ -332,7 +351,10 @@ describe('FakeBridgeAdapter', () => {
     await adapter.closeSession('fake-RUN-20250101-ABCD');
 
     await expect(
-      adapter.sendEnvelope('fake-RUN-20250101-ABCD', buildBridgeEnvelope('fake-RUN-20250101-ABCD', 'run', 'progress', {})),
+      adapter.sendEnvelope(
+        'fake-RUN-20250101-ABCD',
+        buildBridgeEnvelope('fake-RUN-20250101-ABCD', 'run', 'progress', {}),
+      ),
     ).rejects.toThrow(BridgeAdapterError);
   });
 });
@@ -383,20 +405,20 @@ describe('BridgeProcessAdapter', () => {
           "import { stdin, stdout } from 'node:process';",
           "let buffer = '';",
           "stdin.setEncoding('utf8');",
-          "function envelope(input, kind, payload) {",
+          'function envelope(input, kind, payload) {',
           "  return JSON.stringify({ protocolVersion: input.protocolVersion, sessionId: input.sessionId, correlationId: input.correlationId, timestamp: new Date().toISOString(), kind, payload }) + '\\n';",
-          "}",
+          '}',
           "stdin.on('data', chunk => {",
-          "  buffer += chunk;",
+          '  buffer += chunk;',
           "  const lines = buffer.split('\\n');",
           "  buffer = lines.pop() ?? '';",
-          "  for (const line of lines) {",
-          "    if (!line.trim()) continue;",
-          "    const input = JSON.parse(line);",
+          '  for (const line of lines) {',
+          '    if (!line.trim()) continue;',
+          '    const input = JSON.parse(line);',
           "    if (input.kind === 'handshake_request') stdout.write(envelope(input, 'handshake_response', { accepted: true }));",
           "    if (input.kind === 'run_request') stdout.write(envelope(input, 'complete', { data: { payload: input.payload }, tokenUsage: 1 }));",
-          "  }",
-          "});",
+          '  }',
+          '});',
         ].join('\n'),
         'utf-8',
       );
@@ -435,7 +457,7 @@ describe('BridgeProcessAdapter', () => {
         permissionProfile,
         recorder,
         runState,
-        toolGuard: new ToolGuard(permissionProfile, recorder, runId),
+        ...createToolPlane(root, permissionProfile, recorder, runId),
       });
 
       const data = result.data as Record<string, unknown>;
@@ -460,20 +482,20 @@ describe('BridgeProcessAdapter', () => {
           "import { stdin, stdout } from 'node:process';",
           "let buffer = '';",
           "stdin.setEncoding('utf8');",
-          "function envelope(input, kind, payload) {",
+          'function envelope(input, kind, payload) {',
           "  return JSON.stringify({ protocolVersion: input.protocolVersion, sessionId: input.sessionId, correlationId: input.correlationId, timestamp: new Date().toISOString(), kind, payload }) + '\\n';",
-          "}",
+          '}',
           "stdin.on('data', chunk => {",
-          "  buffer += chunk;",
+          '  buffer += chunk;',
           "  const lines = buffer.split('\\n');",
           "  buffer = lines.pop() ?? '';",
-          "  for (const line of lines) {",
-          "    if (!line.trim()) continue;",
-          "    const input = JSON.parse(line);",
+          '  for (const line of lines) {',
+          '    if (!line.trim()) continue;',
+          '    const input = JSON.parse(line);',
           "    if (input.kind === 'handshake_request') stdout.write(envelope(input, 'handshake_response', { accepted: true }));",
           "    if (input.kind === 'run_request') stdout.write(envelope(input, 'approval_required', { action: 'write', reason: 'needs human' }));",
-          "  }",
-          "});",
+          '  }',
+          '});',
         ].join('\n'),
         'utf-8',
       );
@@ -507,12 +529,16 @@ describe('BridgeProcessAdapter', () => {
           permissionProfile,
           recorder,
           runState,
-          toolGuard: new ToolGuard(permissionProfile, recorder, runId),
+          ...createToolPlane(root, permissionProfile, recorder, runId),
         }),
       ).rejects.toThrow(/requested approval/);
 
       const transcript = readTranscript(runId, root);
-      expect(transcript.some((event) => event.type === 'progress' && event.data.step === 'bridge_approval_required')).toBe(true);
+      expect(
+        transcript.some(
+          (event) => event.type === 'progress' && event.data.step === 'bridge_approval_required',
+        ),
+      ).toBe(true);
     } finally {
       cleanup(root);
     }
@@ -521,14 +547,22 @@ describe('BridgeProcessAdapter', () => {
   // Multi-envelope processing tests (AR-2.5B fix)
   describe('multi-envelope event loop', () => {
     let mr: string;
-    beforeEach(() => { mr = makeTempRoot(); });
-    afterEach(() => { cleanup(mr); });
+    beforeEach(() => {
+      mr = makeTempRoot();
+    });
+    afterEach(() => {
+      cleanup(mr);
+    });
 
     it('records bridge lifecycle events during fake adapter execution', async () => {
       const adapter = new FakeBridgeAdapter();
       const store = createRunStore(mr);
       const recorder = createRunRecorder(store, mr);
-      const profile = buildPermissionProfile({ agentId: 'test', source: 'test', permissionMode: 'default' });
+      const profile = buildPermissionProfile({
+        agentId: 'test',
+        source: 'test',
+        permissionMode: 'default',
+      });
       const runId = generateRunId();
       const state = recorder.start({
         runId,
@@ -546,7 +580,7 @@ describe('BridgeProcessAdapter', () => {
         permissionProfile: profile,
         recorder,
         runState: state,
-        toolGuard: new ToolGuard(profile, recorder, runId),
+        ...createToolPlane(mr, profile, recorder, runId),
       });
 
       expect(result).toBeDefined();
@@ -558,7 +592,9 @@ describe('BridgeProcessAdapter', () => {
       expect(lifecycleEvents.length).toBeGreaterThan(0);
       // Should include session started and completed
       const started = lifecycleEvents.some((e: any) => e.data.step === 'bridge_session_started');
-      const completed = lifecycleEvents.some((e: any) => e.data.step === 'bridge_session_completed');
+      const completed = lifecycleEvents.some(
+        (e: any) => e.data.step === 'bridge_session_completed',
+      );
       expect(started).toBe(true);
       expect(completed).toBe(true);
     });
@@ -567,7 +603,11 @@ describe('BridgeProcessAdapter', () => {
       const adapter = new FakeBridgeAdapter();
       const store = createRunStore(mr);
       const recorder = createRunRecorder(store, mr);
-      const profile = buildPermissionProfile({ agentId: 'test', source: 'test', permissionMode: 'default' });
+      const profile = buildPermissionProfile({
+        agentId: 'test',
+        source: 'test',
+        permissionMode: 'default',
+      });
       const runId = generateRunId();
       const state = recorder.start({
         runId,
@@ -586,7 +626,7 @@ describe('BridgeProcessAdapter', () => {
         worktreePath: join(mr, 'test-worktree'),
         recorder,
         runState: state,
-        toolGuard: new ToolGuard(profile, recorder, runId),
+        ...createToolPlane(mr, profile, recorder, runId),
       });
 
       const transcript = readTranscript(runId, mr);
@@ -608,7 +648,11 @@ describe('BridgeProcessAdapter', () => {
       const store = createRunStore(mr);
       const recorder = createRunRecorder(store, mr);
       // Plan mode: only Read/Grep/Glob/Find — no Edit/Write/Bash
-      const profile = buildPermissionProfile({ agentId: 'test', source: 'test', permissionMode: 'plan' });
+      const profile = buildPermissionProfile({
+        agentId: 'test',
+        source: 'test',
+        permissionMode: 'plan',
+      });
       const runId = generateRunId();
       const state = recorder.start({
         runId,
@@ -630,7 +674,7 @@ describe('BridgeProcessAdapter', () => {
         permissionProfile: profile,
         recorder,
         runState: state,
-        toolGuard: new ToolGuard(profile, recorder, runId),
+        ...createToolPlane(mr, profile, recorder, runId),
       });
 
       expect(result).toBeDefined();

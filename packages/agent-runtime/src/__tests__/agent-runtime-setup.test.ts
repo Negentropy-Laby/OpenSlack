@@ -85,6 +85,49 @@ describe('setupAbyRuntime', () => {
     });
   });
 
+  it('preserves an existing OpenAI-compatible provider when writing Aby config', () => {
+    const abyRoot = createFakeAbyRoot(root);
+    const configDir = join(root, '.openslack.local');
+    const configPath = join(configDir, 'agent-runtime.json');
+    mkdirSync(configDir, { recursive: true });
+    const openAIConfig = {
+      baseUrl: 'https://example.test/v1',
+      model: 'test-model',
+      credentialRef: 'env:TEST_RUNTIME_KEY',
+      maxOutputTokens: 2048,
+    };
+    writeFileSync(
+      configPath,
+      JSON.stringify({ providers: { 'openai-compatible': openAIConfig } }),
+      'utf-8',
+    );
+    const report = setupAbyRuntime({
+      rootDir: root,
+      root: abyRoot,
+      write: true,
+      checkCommandAvailable: () => true,
+      diagnose: () => ({
+        provider: 'aby',
+        status: 'PASS',
+        readiness: 'ready',
+        configSource: '.openslack.local/agent-runtime.json',
+        configPath,
+        root: abyRoot,
+        resolvedRoot: abyRoot,
+        command: 'bun',
+        args: [],
+        env: { allowedKeys: [], rejectedKeys: [] },
+        checks: [],
+        remediations: [],
+        remediation: '',
+      }),
+    });
+    expect(report.status).toBe('PASS');
+    const saved = JSON.parse(readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+    expect(saved.providers).toEqual({ 'openai-compatible': openAIConfig });
+    expect(saved.aby).toEqual({ root: abyRoot, command: 'bun', timeoutMs: 120000 });
+  });
+
   it('fails closed when an entrypoint or command is missing', () => {
     const abyRoot = createFakeAbyRoot(root, { bridge: false });
     const report = setupAbyRuntime({

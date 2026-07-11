@@ -46,17 +46,21 @@ describe('buildPermissionProfile', () => {
     expect(profile.allowedTools).toContain('Bash');
   });
 
-  it('strict mode allows all tools', () => {
+  it('strict mode is fail-closed and read-only', () => {
     const profile = buildPermissionProfile(makeConfig({ permissionMode: 'strict' }));
+    expect(profile.isReadOnly).toBe(true);
     expect(profile.allowedTools).toContain('Read');
-    expect(profile.allowedTools).toContain('Edit');
-    expect(profile.allowedTools).toContain('Write');
-    expect(profile.allowedTools).toContain('Bash');
+    expect(profile.allowedTools).toContain('repo.diff');
+    expect(profile.allowedTools).not.toContain('Edit');
+    expect(profile.allowedTools).not.toContain('Write');
+    expect(profile.allowedTools).not.toContain('Bash');
+    expect(profile.allowedTools).not.toContain('repo.apply_patch');
   });
 
   it('missing mode defaults to strict', () => {
     const profile = buildPermissionProfile(makeConfig());
     expect(profile.permissionMode).toBe('strict');
+    expect(profile.isReadOnly).toBe(true);
   });
 
   it('applies tools allowlist', () => {
