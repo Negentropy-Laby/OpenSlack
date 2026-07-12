@@ -67,9 +67,13 @@ export function mapAgentRunToViewModel(
     ),
     terminalReason: String(
       bridgeCompleted?.data.terminalReason ??
-        (bridgeFailed ? bridgeFailed.data.errorKind ?? 'failed' : 'not recorded'),
+        (bridgeFailed
+          ? (bridgeFailed.data.errorKind ?? 'failed')
+          : (state.failureCode ?? 'not recorded')),
     ),
-    mcpRequired: readStringArray(mcpAvailability?.data.required ?? startEvent?.data.requiredMcpServers),
+    mcpRequired: readStringArray(
+      mcpAvailability?.data.required ?? startEvent?.data.requiredMcpServers,
+    ),
     mcpAvailable: readStringArray(mcpAvailability?.data.available ?? startEvent?.data.mcpServers),
     permissionDenies,
     worktreeHandoffStatus: state.worktreeHandoff
@@ -117,8 +121,10 @@ function readTranscriptFromState(state: AgentRunState, rootDir?: string): AgentR
 
 function formatRuntimeProvider(data: Record<string, unknown> | undefined): string {
   const runtime = typeof data?.runtime === 'string' ? data.runtime : undefined;
+  const runtimeProvider =
+    typeof data?.runtimeProvider === 'string' ? data.runtimeProvider : undefined;
   const provider = typeof data?.provider === 'string' ? data.provider : undefined;
   const bridgeMode = typeof data?.bridgeMode === 'string' ? data.bridgeMode : undefined;
-  const parts = [provider, runtime, bridgeMode].filter(Boolean);
+  const parts = [runtimeProvider ?? provider, runtime, bridgeMode].filter(Boolean);
   return parts.length > 0 ? parts.join(' / ') : 'not recorded';
 }

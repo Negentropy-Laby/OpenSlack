@@ -274,6 +274,44 @@ describe('conversation CLI commands', () => {
     expect(logs.join('\n')).toContain('Agent "anthropic_architect_aby" dispatched');
   });
 
+  it('renders runtime configuration failure without appending a mock agent response', async () => {
+    const originalExitCode = process.exitCode;
+    mockResolveAgentType.mockReturnValue({
+      agentId: 'unconfigured-agent',
+      source: 'openslack-registry',
+      provider: 'anthropic',
+    });
+    mockLauncher.mockRejectedValue(
+      Object.assign(new Error('Agent runtime is not configured.'), {
+        code: 'RUNTIME_NOT_CONFIGURED',
+        runId: 'RUN-20260603-NOCONFIG',
+      }),
+    );
+
+    const logs: string[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+
+    const cmd = conversationCommands();
+    await cmd.parseAsync(
+      ['node', 'openslack conversation', 'send', 'CONV-001', '@unconfigured-agent review this'],
+      { from: 'node' },
+    );
+    logSpy.mockRestore();
+
+    expect(mockAppendMessage).toHaveBeenCalledTimes(1);
+    expect(mockAppendMessage).toHaveBeenCalledWith(
+      'CONV-001',
+      expect.objectContaining({ kind: 'user_message' }),
+    );
+    expect(mockLinkRunToThread).toHaveBeenCalledWith('CONV-001', 'RUN-20260603-NOCONFIG');
+    expect(logs.join('\n')).toContain('[RUNTIME_NOT_CONFIGURED]');
+    expect(logs.join('\n')).not.toContain('dispatched. Result appended');
+    expect(process.exitCode).toBe(1);
+    process.exitCode = originalExitCode;
+  });
+
   it('conversation summarize shows summary', async () => {
     mockGetThread.mockReturnValue({
       thread: {

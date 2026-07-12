@@ -262,7 +262,10 @@ describe('FakeBridgeAdapter', () => {
           permissionMode: 'default',
         },
       }),
-    ).rejects.toThrow(/Fake bridge configured to fail/);
+    ).rejects.toMatchObject({
+      code: 'EXECUTION_FAILED',
+      message: 'Agent execution failed. Inspect runtime diagnostics for details.',
+    });
 
     const runs = store.listRuns();
     expect(runs[0].status).toBe('failed');

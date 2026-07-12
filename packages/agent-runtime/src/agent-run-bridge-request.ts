@@ -79,6 +79,7 @@ function buildSafeResolvedConfig(config: ResolvedAgentConfig): Record<string, un
 
   const optionalStringFields = [
     'runtime',
+    'runtimeProvider',
     'provider',
     'model',
     'permissionMode',

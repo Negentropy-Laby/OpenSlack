@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { join } from 'node:path'
-import { tmpdir } from 'node:os'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import {
   executeApproval,
   executeTrustChange,
@@ -806,12 +806,43 @@ describe('conversation-first workbench ask handlers', () => {
     expect(result.cards).toHaveLength(0)
     expect(result.message).toContain('Agent "missing-agent" not found')
 
-    const stored = collaboration.getThread(result.threadId, tempRoot)
-    expect(stored?.messages).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        kind: 'user_message',
-        text: '@missing-agent review PR #42',
-      }),
-    ]))
-  })
-})
+    const stored = collaboration.getThread(result.threadId, tempRoot);
+    expect(stored?.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'user_message',
+          text: '@missing-agent review PR #42',
+        }),
+      ]),
+    );
+  });
+
+  it('surfaces an unconfigured agent runtime as an error without a mock response', async () => {
+    const registryDir = join(tempRoot, '.openslack', 'agents', 'registry');
+    mkdirSync(registryDir, { recursive: true });
+    writeFileSync(
+      join(registryDir, 'unconfigured-agent.yaml'),
+      [
+        'schema: openslack.agent_registry.v1',
+        'agent_id: unconfigured-agent',
+        'vendor:',
+        '  provider: anthropic',
+        '  model: test-model',
+      ].join('\n'),
+      'utf-8',
+    );
+
+    const result = await submitWorkbenchAskFromTui(
+      '@unconfigured-agent review PR #42',
+      tempRoot,
+      'tui-user',
+    );
+
+    expect(result.status).toBe('error');
+    expect(result.message).toContain('[RUNTIME_NOT_CONFIGURED]');
+    expect(result.cards).toEqual([expect.objectContaining({ kind: 'agent_run' })]);
+    const stored = collaboration.getThread(result.threadId, tempRoot);
+    expect(stored?.messages.filter((message) => message.kind === 'user_message')).toHaveLength(1);
+    expect(stored?.messages.filter((message) => message.kind === 'agent_response')).toHaveLength(0);
+  });
+});

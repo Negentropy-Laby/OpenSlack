@@ -190,6 +190,63 @@ describe('executeAgentCall', () => {
     expect(launcher).not.toHaveBeenCalled()
   })
 
+  it('runs provider preflight before returning a cached result', async () => {
+    const cache: AgentCacheStore = {
+      load: vi.fn(async () => ({ data: { cached: true } })),
+      async save() {},
+    };
+    const launcher = vi.fn(async () => ({ data: { fresh: true } })) as unknown as AgentLauncher;
+    launcher.preflight = vi.fn(async () => {
+      throw Object.assign(new Error('runtime not configured'), {
+        code: 'RUNTIME_NOT_CONFIGURED',
+      });
+    });
+    const { config } = makeConfig({ cache, launcher });
+
+    await expect(
+      executeAgentCall('prompt', { label: 'test', phase: 'Scan' }, config),
+    ).rejects.toMatchObject({ code: 'RUNTIME_NOT_CONFIGURED' });
+    expect(cache.load).not.toHaveBeenCalled();
+    expect(launcher).not.toHaveBeenCalled();
+  });
+
+  it('emits a failed lifecycle event when provider preflight rejects', async () => {
+    const eventEmitter = vi.fn();
+    const launcher = vi.fn(async () => ({ data: { fresh: true } })) as unknown as AgentLauncher;
+    launcher.preflight = vi.fn(async () => {
+      throw Object.assign(new Error('raw provider detail'), {
+        code: 'RUNTIME_NOT_CONFIGURED',
+      });
+    });
+    const { config } = makeConfig({ launcher });
+
+    await expect(
+      executeAgentCall(
+        'prompt',
+        { label: 'test', phase: 'Scan' },
+        {
+          ...config,
+          eventEmitter,
+          resolvedAgent: { agentId: 'test', source: 'registry' },
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'RUNTIME_NOT_CONFIGURED' });
+
+    expect(eventEmitter).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'agent.conversation.failed',
+        agentId: 'test',
+        agentRunId: expect.stringMatching(/^RUN-/),
+        error: expect.stringContaining('not configured'),
+      }),
+    );
+    expect(eventEmitter).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'agent.conversation.started',
+      }),
+    );
+  });
+
   it('calls launcher and returns result on cache miss', async () => {
     const launcher: AgentLauncher = async () => ({ data: { fresh: true }, tokenUsage: 10 })
     const cache: AgentCacheStore = {

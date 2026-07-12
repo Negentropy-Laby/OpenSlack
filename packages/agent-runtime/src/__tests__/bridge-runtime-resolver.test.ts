@@ -41,7 +41,8 @@ describe('BridgeRuntimeResolver', () => {
     cleanup(root);
   });
 
-  it('detects Aby runtime hints only from runtime/provider', () => {
+  it('detects Aby runtime hints from the execution provider and legacy fields', () => {
+    expect(isAbyRuntime({ agentId: 'a', source: 'test', runtimeProvider: 'aby' })).toBe(true);
     expect(isAbyRuntime({ agentId: 'a', source: 'test', runtime: 'aby_assistant' })).toBe(true);
     expect(isAbyRuntime({ agentId: 'a', source: 'test', runtime: 'aby' })).toBe(true);
     expect(isAbyRuntime({ agentId: 'a', source: 'test', provider: 'aby' })).toBe(true);
@@ -78,6 +79,24 @@ describe('BridgeRuntimeResolver', () => {
     expect(resolved?.abyRoot).toBe(abyRoot);
     expect(resolved?.args?.[0]).toContain('runEntrypoint.ts');
     expect(resolved?.args?.[1]).toContain('agentRunBridge.ts');
+  });
+
+  it('resolves an explicit Aby execution provider without legacy runtime fields', () => {
+    const abyRoot = createFakeAbyRoot(root);
+    const resolver = createBridgeRuntimeResolver({
+      rootDir: root,
+      env: { OPENSLACK_ABY_ROOT: abyRoot },
+    });
+
+    const resolved = resolver.resolve({
+      agentId: 'aby',
+      source: 'test',
+      runtimeProvider: 'aby',
+      provider: 'anthropic',
+    });
+
+    expect(resolved?.abyRoot).toBe(abyRoot);
+    expect(resolved?.command).toBe('bun');
   });
 
   it('loads .openslack.local agent-runtime config and filters unsafe env keys', () => {

@@ -12,8 +12,10 @@ source: Phase AR — Agent Runtime Hardening
 Phase AR upgrades OpenSlack's Agent Conversation MVP into a runnable, auditable,
 and governable Agent Runtime. The core goal is to replace the "No agent launcher
 configured" stub with a fully instrumented local agent launcher that produces
-structured results, records transcripts, enforces permissions, and feeds the
-collaboration event pipeline.
+structured results from an explicitly configured execution provider, records
+transcripts, enforces permissions, and feeds the collaboration event pipeline.
+An unconfigured launcher fails with `RUNTIME_NOT_CONFIGURED`; the local adapter
+is a test fixture and is never selected by production defaults.
 
 ## Problem Statement
 
@@ -46,14 +48,15 @@ Agents are parsed, resolved, and displayed — but never executed.
 
 A new cross-cutting package (not a new product module) that provides:
 
-| File             | Purpose                                                                                         |
-| ---------------- | ----------------------------------------------------------------------------------------------- |
-| `types.ts`       | `AgentRunRequest`, `AgentRunState`, `AgentRunResult`, `AgentPermissionProfile`, `AgentRunEvent` |
-| `run-store.ts`   | File-based run storage under `.openslack.local/agents/runs/<runId>/`                            |
-| `transcript.ts`  | Append-only JSONL transcript store                                                              |
-| `recorder.ts`    | Run lifecycle recorder: start/progress/complete/fail                                            |
-| `launcher.ts`    | `createOpenSlackAgentLauncher()` factory                                                        |
-| `permissions.ts` | `buildPermissionProfile()`, `isActionAllowed()`, `enforceToolScope()`                           |
+| File                   | Purpose                                                                                         |
+| ---------------------- | ----------------------------------------------------------------------------------------------- |
+| `types.ts`             | `AgentRunRequest`, `AgentRunState`, `AgentRunResult`, `AgentPermissionProfile`, `AgentRunEvent` |
+| `run-store.ts`         | File-based run storage under `.openslack.local/agents/runs/<runId>/`                            |
+| `transcript.ts`        | Append-only JSONL transcript store                                                              |
+| `recorder.ts`          | Run lifecycle recorder: start/progress/complete/fail                                            |
+| `launcher.ts`          | `createOpenSlackAgentLauncher()` factory                                                        |
+| `provider-registry.ts` | Instance-scoped execution-provider registration and resolution                                  |
+| `permissions.ts`       | `buildPermissionProfile()`, `isActionAllowed()`, `enforceToolScope()`                           |
 
 ### Storage Layout
 
@@ -70,14 +73,14 @@ A new cross-cutting package (not a new product module) that provides:
 1. Resolve agent type → ResolvedAgentConfig
 2. Check required MCP servers → AgentUnavailableError if missing
 3. Build permission profile → check hardcoded denylists
-4. Create worktree if isolation=worktree or implementer agent
-5. Create run state in store (status: pending)
-6. Emit 'start' transcript event
-7. Execute agent (local adapter or LLM)
-8. Record tool calls as transcript events
-9. Emit 'complete' or 'fail' transcript event
-10. Update run state
-11. Cleanup worktree
+4. Resolve execution provider independently from model vendor and transport
+5. If unresolved, persist a direct terminal `failed + RUNTIME_NOT_CONFIGURED` run
+6. Only after provider validation, create a worktree when required
+7. Create running state and emit the `start` transcript event
+8. Execute the registered provider adapter
+9. Record tool calls as transcript events
+10. Emit `complete` or `fail` and update run state
+11. Cleanup or preserve the worktree according to dirty-state evidence
 ```
 
 ### Integration Points
@@ -91,8 +94,8 @@ A new cross-cutting package (not a new product module) that provides:
 
 ## Acceptance Criteria
 
-- [ ] `workflow agent(prompt,{agentType})` runs without external launcher injection
-- [ ] Each agent run produces `run.json` + `transcript.jsonl` + `metadata.json`
+- [x] `workflow agent(prompt,{agentType})` fails closed unless its execution provider is configured
+- [x] Each started or configuration-rejected agent run produces redacted local evidence
 - [ ] Conversation thread shows subagent result via `agent_response`/`tool_event`
 - [ ] TUI shows `AgentRunDetailView` with status/model/tools/permissions
 - [ ] Tool allowlist/denylist enforced at runtime

@@ -77,13 +77,16 @@ describe('createAnthropicCompatSandbox', () => {
       expect(result).toEqual({ ok: true })
     })
 
-    it('uses default launcher when no custom launcher provided', async () => {
-      const rt = makeRuntime()
-      const sandbox = createAnthropicCompatSandbox(rt)
-      const result = await sandbox.agent('prompt', { label: 'test', phase: 'Scan' })
-      expect(result).toBeDefined()
-    })
-  })
+    it('fails closed when no custom launcher or execution provider is configured', async () => {
+      const rt = makeRuntime();
+      const sandbox = createAnthropicCompatSandbox(rt);
+      await expect(sandbox.agent('prompt', { label: 'test', phase: 'Scan' })).rejects.toMatchObject(
+        {
+          code: 'RUNTIME_NOT_CONFIGURED',
+        },
+      );
+    });
+  });
 
   describe('parallel', () => {
     it('delegates parallel calls to runtime', async () => {

@@ -69,8 +69,23 @@ export default function AgentRuntimeDiagnosticsView({
         Box,
         { flexDirection: 'column' },
         React.createElement(ThemedText, { colorTheme: 'foreground' }, `Status: ${model.status}`),
-        React.createElement(ThemedText, { colorTheme: 'foreground' }, `Source: ${model.configSource}`),
-        React.createElement(ThemedText, { colorTheme: 'foreground' }, `Root: ${compact(model.root)}`),
+        model.readiness
+          ? React.createElement(
+              ThemedText,
+              { colorTheme: 'foreground' },
+              `Readiness: ${model.readiness}`,
+            )
+          : null,
+        React.createElement(
+          ThemedText,
+          { colorTheme: 'foreground' },
+          `Source: ${model.configSource}`,
+        ),
+        React.createElement(
+          ThemedText,
+          { colorTheme: 'foreground' },
+          `Root: ${compact(model.root)}`,
+        ),
         React.createElement(ThemedText, { colorTheme: 'foreground' }, `Command: ${model.command}`),
         React.createElement(
           ThemedText,

@@ -1,5 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createRunStore } from '../run-store.js';
@@ -157,5 +165,80 @@ describe('createRunStore', () => {
     const state = store.createRun(request);
 
     expect(state.worktreePath).toBe('/tmp/wt-123');
+  });
+
+  it('persists a rejected run directly in its terminal failed state', () => {
+    const store = createRunStore(root);
+    const state = store.createFailedRun(makeRequest(), {
+      failureCode: 'RUNTIME_NOT_CONFIGURED',
+      errorSummary: 'Agent runtime is not configured.',
+    });
+
+    expect(state).toMatchObject({
+      status: 'failed',
+      failureCode: 'RUNTIME_NOT_CONFIGURED',
+      errorSummary: 'Agent runtime is not configured.',
+    });
+    expect(state.completedAt).toBeDefined();
+    expect(store.getRun(state.runId)).toEqual(state);
+  });
+
+  it('does not persist prompt-bearing resolved config fields', () => {
+    const store = createRunStore(root);
+    store.createRun(
+      makeRequest({
+        prompt: 'TOP_LEVEL_PROMPT_SENTINEL',
+        resolvedConfig: {
+          agentId: 'test-agent',
+          source: 'test',
+          prompt: 'RESOLVED_PROMPT_SENTINEL',
+          initialPrompt: 'INITIAL_PROMPT_SENTINEL',
+          criticalSystemReminder: 'REMINDER_SENTINEL',
+        },
+      }),
+    );
+
+    const metadataPath = join(
+      root,
+      '.openslack.local',
+      'agents/runs',
+      'RUN-20260101-TEST1234',
+      'metadata.json',
+    );
+    const raw = readFileSync(metadataPath, 'utf-8');
+    expect(raw).not.toContain('TOP_LEVEL_PROMPT_SENTINEL');
+    expect(raw).not.toContain('RESOLVED_PROMPT_SENTINEL');
+    expect(raw).not.toContain('INITIAL_PROMPT_SENTINEL');
+    expect(raw).not.toContain('REMINDER_SENTINEL');
+  });
+
+  it('secret-scans state and metadata before creating a run directory', () => {
+    const store = createRunStore(root);
+    const request = makeRequest();
+    request.permissionProfile.allowedTools = ['ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ'];
+
+    expect(() => store.createRun(request)).toThrow(/Refusing to persist/);
+    expect(existsSync(join(root, '.openslack.local', 'agents/runs', 'RUN-20260101-TEST1234'))).toBe(
+      false,
+    );
+  });
+
+  it('sweeps only stale atomic-write temp files when the store starts', () => {
+    const runDir = join(root, '.openslack.local', 'agents/runs', 'RUN-20260101-ORPHAN');
+    mkdirSync(runDir, { recursive: true });
+    const stale = join(runDir, 'run.json.crashed.tmp');
+    const recent = join(runDir, 'metadata.json.active.tmp');
+    const unrelated = join(runDir, 'notes.tmp');
+    writeFileSync(stale, 'stale', 'utf-8');
+    writeFileSync(recent, 'recent', 'utf-8');
+    writeFileSync(unrelated, 'unrelated', 'utf-8');
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    utimesSync(stale, old, old);
+
+    createRunStore(root);
+
+    expect(existsSync(stale)).toBe(false);
+    expect(existsSync(recent)).toBe(true);
+    expect(existsSync(unrelated)).toBe(true);
   });
 });

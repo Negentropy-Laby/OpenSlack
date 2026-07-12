@@ -1,8 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { doctorCommands } from '../commands/doctor.js';
 
-const mockListAbyRuntimeAgents = vi.fn();
-const mockDiagnoseAbyRuntime = vi.fn();
+const mockDiagnoseAgentRuntime = vi.fn();
 const LLM_ENV_KEYS = [
   'OPENSLACK_LLM_PROVIDER',
   'OPENSLACK_LLM_API_KEY',
@@ -37,8 +36,7 @@ vi.mock('@openslack/operator', async () => {
 });
 
 vi.mock('@openslack/agent-runtime', () => ({
-  listAbyRuntimeAgents: () => mockListAbyRuntimeAgents(),
-  diagnoseAbyRuntime: (options: unknown) => mockDiagnoseAbyRuntime(options),
+  diagnoseAgentRuntime: (options: unknown) => mockDiagnoseAgentRuntime(options),
 }));
 
 async function runDoctor(): Promise<string> {
@@ -64,10 +62,11 @@ describe('doctor command agent runtime aggregation', () => {
   beforeEach(() => {
     savedLlmEnv = new Map(LLM_ENV_KEYS.map((key) => [key, process.env[key]]));
     vi.clearAllMocks();
-    mockListAbyRuntimeAgents.mockReturnValue([]);
-    mockDiagnoseAbyRuntime.mockReturnValue({
+    mockDiagnoseAgentRuntime.mockReturnValue({
       status: 'PASS',
+      readiness: 'ready',
       remediations: ['ok'],
+      providers: { aby: {} },
     });
   });
 
@@ -83,22 +82,23 @@ describe('doctor command agent runtime aggregation', () => {
     vi.restoreAllMocks();
   });
 
-  it('does not fail when no registered agent requires Aby', async () => {
+  it('checks overall execution-provider readiness even without an Aby agent entry', async () => {
     const output = await runDoctor();
 
-    expect(output).toContain('[WARN] Agent Runtime / Aby: Aby runtime not required');
-    expect(mockDiagnoseAbyRuntime).not.toHaveBeenCalled();
+    expect(output).toContain('[PASS] Agent Runtime: ready: aby');
+    expect(mockDiagnoseAgentRuntime).toHaveBeenCalled();
   });
 
-  it('fails when a registered Aby agent has failing runtime diagnostics', async () => {
-    mockListAbyRuntimeAgents.mockReturnValue([{ agentId: 'anthropic_architect_aby' }]);
-    mockDiagnoseAbyRuntime.mockReturnValue({
+  it('fails when the overall runtime is not configured', async () => {
+    mockDiagnoseAgentRuntime.mockReturnValue({
       status: 'FAIL',
+      readiness: 'not_configured',
       remediations: ['Set OPENSLACK_ABY_ROOT.'],
+      providers: { aby: {} },
     });
 
     await expect(runDoctor()).rejects.toThrow('process.exit');
-    expect(mockDiagnoseAbyRuntime).toHaveBeenCalled();
+    expect(mockDiagnoseAgentRuntime).toHaveBeenCalled();
   });
 
   it('warns when OpenAI-compatible LLM routing is missing a model', async () => {

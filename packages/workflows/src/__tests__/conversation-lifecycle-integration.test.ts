@@ -126,7 +126,9 @@ describe('conversation lifecycle integration', () => {
 
     expect(events[1].type).toBe('agent.conversation.failed');
     expect(events[1].agentId).toBe('failing-agent');
-    expect(events[1].error).toBe('Agent crashed: OOM');
+    expect(events[1].error).toBe(
+      'Agent execution failed. Inspect runtime diagnostics for details.',
+    );
   });
 
   it('executeRun does not emit events when agentEventEmitter is not provided', async () => {

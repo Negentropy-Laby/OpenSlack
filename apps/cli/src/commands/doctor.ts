@@ -135,30 +135,22 @@ export function doctorCommands(dependencies: DoctorCommandDependencies = {}): Co
         checks.push({ name: 'Module registry', state: 'FAIL', detail: `Error: ${(e as Error).message}` });
       }
 
-      // Agent runtime / Aby readiness check. This is a configuration-only
+      // Overall execution-provider readiness. This is a configuration-only
       // diagnostic; it never launches the external runtime.
       try {
-        const { listAbyRuntimeAgents, diagnoseAbyRuntime } = await import('@openslack/agent-runtime');
-        const abyAgents = listAbyRuntimeAgents(root);
-        if (abyAgents.length === 0) {
-          checks.push({
-            name: 'Agent Runtime / Aby',
-            state: 'WARN',
-            detail: 'Aby runtime not required by registered agents',
-          });
-        } else {
-          const report = diagnoseAbyRuntime({ rootDir: root, env: process.env });
-          checks.push({
-            name: 'Agent Runtime / Aby',
-            state: report.status === 'PASS' ? 'PASS' : 'FAIL',
-            detail: report.status === 'PASS'
-              ? `Configured for ${abyAgents.map((agent) => agent.agentId).join(', ')}`
-              : report.remediations.join(' '),
-          });
-        }
+        const { diagnoseAgentRuntime } = await import('@openslack/agent-runtime');
+        const report = diagnoseAgentRuntime({ rootDir: root, env: process.env });
+        checks.push({
+          name: 'Agent Runtime',
+          state: report.status === 'PASS' ? 'PASS' : 'FAIL',
+          detail:
+            report.status === 'PASS'
+              ? `ready: ${Object.keys(report.providers).join(', ')}`
+              : `${report.readiness}: ${report.remediations.join(' ')}`,
+        });
       } catch (e) {
         checks.push({
-          name: 'Agent Runtime / Aby',
+          name: 'Agent Runtime',
           state: 'FAIL',
           detail: `Error: ${(e as Error).message}`,
         });

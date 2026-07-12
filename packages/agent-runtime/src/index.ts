@@ -1,5 +1,6 @@
 export type {
   AgentRunStatus,
+  AgentRunFailureCode,
   AgentPermissionProfile,
   ResolvedAgentConfig,
   AgentRunRequest,
@@ -9,10 +10,19 @@ export type {
   WorktreeHandoff,
 } from './types.js';
 
-export { AgentUnavailableError, PermissionDeniedError } from './types.js';
+export {
+  AgentUnavailableError,
+  PermissionDeniedError,
+  RuntimeNotConfiguredError,
+  RuntimeMisconfiguredError,
+  AgentExecutionFailedError,
+  getAgentRunFailureCode,
+  getAgentRunFailureSummary,
+} from './types.js';
 
 export type { AgentRunStore } from './run-store.js';
-export { createRunStore, generateRunId } from './run-store.js';
+export { createRunStore, generateRunId, sweepOrphanRunTempFiles } from './run-store.js';
+export type { SweepOrphanRunTempOptions } from './run-store.js';
 
 export { appendTranscriptEvent, readTranscript } from './transcript.js';
 
@@ -24,13 +34,23 @@ export {
   SUBAGENT_ALWAYS_FORBIDDEN,
 } from './permissions.js';
 
-export type { LauncherOptions } from './launcher.js';
+export type { AgentLaunchOptions, LauncherOptions } from './launcher.js';
 export { createOpenSlackAgentLauncher } from './launcher.js';
 
 export type { AgentExecutionAdapter, AdapterExecutionContext, AdapterExecutionResult } from './adapter.js';
 export { LocalExecutionAdapter, ToolGuard } from './adapter.js';
 
-export type { ExternalCommandAdapterOptions, ExternalCommandResult } from './external-command-adapter.js';
+export type {
+  ProviderRegistration,
+  ProviderResolution,
+  ProviderTransport,
+} from './provider-registry.js';
+export { ProviderRegistry, ProviderRegistryError, inferProviderId } from './provider-registry.js';
+
+export type {
+  ExternalCommandAdapterOptions,
+  ExternalCommandResult,
+} from './external-command-adapter.js';
 export { ExternalCommandAdapter } from './external-command-adapter.js';
 
 export type { RunRecorder } from './recorder.js';
@@ -119,12 +139,22 @@ export type {
   AgentRuntimeDoctorCheckStatus,
   AgentRuntimeDoctorProvider,
   AgentRuntimeDoctorStatus,
+  AgentRuntimeReadiness,
+  AgentRuntimeReadinessReport,
+  AgentRuntimeProviderDiagnostic,
+  AgentRuntimeProviderReport,
   AgentRuntimeEnvAudit,
   AbyRuntimeConfigSource,
   AbyRuntimeDoctorReport,
+  CommandAvailabilityCheck,
+  DiagnoseAgentRuntimeOptions,
   DiagnoseAbyRuntimeOptions,
 } from './agent-runtime-doctor.js';
-export { diagnoseAbyRuntime } from './agent-runtime-doctor.js';
+export {
+  clearCommandAvailabilityCache,
+  diagnoseAbyRuntime,
+  diagnoseAgentRuntime,
+} from './agent-runtime-doctor.js';
 
 export type { BridgeEnvAudit } from './bridge-env.js';
 export {

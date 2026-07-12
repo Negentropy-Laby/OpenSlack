@@ -29,9 +29,8 @@ describe('createBridgeAdapter', () => {
     expect(adapter.adapterId).toBe('local');
   });
 
-  it('returns LocalExecutionAdapter as default', () => {
-    const adapter = createBridgeAdapter();
-    expect(adapter).toBeInstanceOf(LocalExecutionAdapter);
+  it('has no implicit local adapter default', () => {
+    expect(() => createBridgeAdapter()).toThrow(/bridgeMode is required/);
   });
 
   it('returns ExternalCommandAdapter for external-command mode', () => {
@@ -154,6 +153,7 @@ describe('Launcher bridgeMode integration', () => {
     const launcher = createOpenSlackAgentLauncher({
       runStore: store,
       rootDir: root,
+      adapter: new FakeBridgeAdapter(),
       bridgeMode: 'fake',
     });
 
@@ -186,18 +186,22 @@ describe('Launcher bridgeMode integration', () => {
     expect(result.data).toBeDefined();
   });
 
-  it('defaults to local adapter when no bridgeMode or adapter', async () => {
+  it('fails closed when no bridgeMode, adapter, or provider is configured', async () => {
     const store = createRunStore(root);
     const launcher = createOpenSlackAgentLauncher({
       runStore: store,
       rootDir: root,
     });
 
-    const result = await launcher('test', {
-      label: 'test',
-      phase: 'test',
+    await expect(
+      launcher('test', {
+        label: 'test',
+        phase: 'test',
+      }),
+    ).rejects.toMatchObject({ code: 'RUNTIME_NOT_CONFIGURED' });
+    expect(store.listRuns()[0]).toMatchObject({
+      status: 'failed',
+      failureCode: 'RUNTIME_NOT_CONFIGURED',
     });
-
-    expect(result.data).toBeDefined();
   });
 });

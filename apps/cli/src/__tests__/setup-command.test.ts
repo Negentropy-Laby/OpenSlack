@@ -68,6 +68,15 @@ vi.mock('@openslack/collaboration', () => ({
   recordEvent: vi.fn(),
 }));
 
+vi.mock('@openslack/agent-runtime', () => ({
+  diagnoseAgentRuntime: vi.fn(() => ({
+    status: 'FAIL',
+    readiness: 'not_configured',
+    remediations: ['Configure an agent runtime provider.'],
+    providers: { aby: {} },
+  })),
+}));
+
 const defaultFindings = [
   { id: 'repo-root', title: 'Workspace root', status: 'ok', detail: '/repo' },
   { id: 'git-remote', title: 'Git remote', status: 'ok', detail: 'origin configured' },

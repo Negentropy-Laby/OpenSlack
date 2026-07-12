@@ -910,22 +910,23 @@ export function renderPlainAgentRuntimeDiagnostics(
   vm: AgentRuntimeDiagnosticsViewModel,
   width: number = MAX_WIDTH,
 ): string {
-  const lines: string[] = []
-  lines.push(separator('=', width))
-  lines.push(wrap(`Agent Runtime / ${vm.provider}`, width))
-  lines.push(separator('=', width))
-  lines.push(wrap(`Status: ${statusLabel(vm.status)} ${vm.status}`, width))
-  lines.push(wrap(`Config source: ${vm.configSource}`, width))
-  lines.push(wrap(`Config path: ${vm.configPath}`, width))
-  lines.push(wrap(`Aby root: ${vm.root}`, width))
-  lines.push(wrap(`Command: ${vm.command}`, width))
-  lines.push(wrap(`Args: ${vm.args.length > 0 ? vm.args.join(' ') : 'not recorded'}`, width))
-  lines.push(wrap(`Timeout: ${vm.timeoutMs}`, width))
-  lines.push('')
-  lines.push(wrap(`Safe env allowed: ${vm.safeEnvAllowed.join(', ') || 'none'}`, width))
-  lines.push(wrap(`Safe env rejected: ${vm.safeEnvRejected.join(', ') || 'none'}`, width))
-  lines.push('')
-  lines.push('Checks:')
+  const lines: string[] = [];
+  lines.push(separator('=', width));
+  lines.push(wrap(`Agent Runtime / ${vm.provider}`, width));
+  lines.push(separator('=', width));
+  lines.push(wrap(`Status: ${statusLabel(vm.status)} ${vm.status}`, width));
+  if (vm.readiness) lines.push(wrap(`Readiness: ${vm.readiness}`, width));
+  lines.push(wrap(`Config source: ${vm.configSource}`, width));
+  lines.push(wrap(`Config path: ${vm.configPath}`, width));
+  lines.push(wrap(`Aby root: ${vm.root}`, width));
+  lines.push(wrap(`Command: ${vm.command}`, width));
+  lines.push(wrap(`Args: ${vm.args.length > 0 ? vm.args.join(' ') : 'not recorded'}`, width));
+  lines.push(wrap(`Timeout: ${vm.timeoutMs}`, width));
+  lines.push('');
+  lines.push(wrap(`Safe env allowed: ${vm.safeEnvAllowed.join(', ') || 'none'}`, width));
+  lines.push(wrap(`Safe env rejected: ${vm.safeEnvRejected.join(', ') || 'none'}`, width));
+  lines.push('');
+  lines.push('Checks:');
   for (const check of vm.checks) {
     lines.push(wrapIndent(`  ${statusLabel(check.status)} ${check.name}: ${check.detail}`, 4, width))
   }

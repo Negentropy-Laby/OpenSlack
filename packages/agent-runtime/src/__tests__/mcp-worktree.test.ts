@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
-import { join } from 'node:path'
-import { tmpdir } from 'node:os'
-import { createOpenSlackAgentLauncher, createRunStore } from '../index.js'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { createOpenSlackAgentLauncher, createRunStore, LocalExecutionAdapter } from '../index.js';
 
 function makeTempRoot(): string {
   return mkdtempSync(join(tmpdir(), 'agent-mcp-wt-test-'))
@@ -45,7 +45,8 @@ describe('MCP availability check', () => {
       runStore: store,
       rootDir: root,
       availableMcpServers: ['github', 'slack'],
-    })
+      adapter: new LocalExecutionAdapter(),
+    });
 
     const result = await launcher('do something', {
       label: 'worker',
@@ -66,7 +67,8 @@ describe('MCP availability check', () => {
       runStore: store,
       rootDir: root,
       availableMcpServers: ['github'],
-    })
+      adapter: new LocalExecutionAdapter(),
+    });
 
     await expect(
       launcher('do something', {
@@ -79,6 +81,13 @@ describe('MCP availability check', () => {
         },
       }),
     ).rejects.toThrow(/Agent unavailable/)
+
+    expect(store.listRuns()).toEqual([
+      expect.objectContaining({
+        status: 'failed',
+        failureCode: 'PROVIDER_UNAVAILABLE',
+      }),
+    ])
   })
 
   it('allows agent with no required MCP servers regardless of availability', async () => {
@@ -87,7 +96,8 @@ describe('MCP availability check', () => {
       runStore: store,
       rootDir: root,
       availableMcpServers: [],
-    })
+      adapter: new LocalExecutionAdapter(),
+    });
 
     const result = await launcher('do something', {
       label: 'worker',
@@ -119,7 +129,8 @@ describe('Worktree isolation', () => {
     const launcher = createOpenSlackAgentLauncher({
       runStore: store,
       rootDir: root,
-    })
+      adapter: new LocalExecutionAdapter(),
+    });
 
     await launcher('implement this feature', {
       label: 'implementer',
@@ -142,7 +153,8 @@ describe('Worktree isolation', () => {
     const launcher = createOpenSlackAgentLauncher({
       runStore: store,
       rootDir: root,
-    })
+      adapter: new LocalExecutionAdapter(),
+    });
 
     await launcher('make changes', {
       label: 'worker',
@@ -164,7 +176,8 @@ describe('Worktree isolation', () => {
     const launcher = createOpenSlackAgentLauncher({
       runStore: store,
       rootDir: root,
-    })
+      adapter: new LocalExecutionAdapter(),
+    });
 
     await launcher('review this PR', {
       label: 'reviewer',

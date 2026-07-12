@@ -9,6 +9,7 @@ const mockGetAgentRuntimeMcpStatus = vi.fn();
 const passReport = {
   provider: 'aby' as const,
   status: 'PASS' as const,
+  readiness: 'ready' as const,
   configSource: 'OPENSLACK_ABY_ROOT' as const,
   configPath: '/repo/.openslack.local/agent-runtime.json',
   root: '/aby',
@@ -32,6 +33,7 @@ describe('agent-runtime command', () => {
       provider: 'aby',
       mode: 'write',
       status: 'PASS',
+      readiness: 'ready',
       root: '/aby',
       resolvedRoot: '/aby',
       configPath: '/repo/.openslack.local/agent-runtime.json',
@@ -85,6 +87,7 @@ describe('agent-runtime command', () => {
 
     expect(output).toContain('Provider: aby');
     expect(output).toContain('Status: PASS');
+    expect(output).toContain('Readiness: ready');
     expect(output).toContain('Safe env allowed: AGENT_RUN_SAFE_MODE');
     expect(output).toContain('Safe env rejected: OPENSLACK_PRIVATE_KEY');
     expect(output).not.toContain('secret');
@@ -94,6 +97,7 @@ describe('agent-runtime command', () => {
     const output = renderAbyRuntimeDoctorReport({
       ...passReport,
       status: 'FAIL',
+      readiness: 'misconfigured',
       checks: [
         { name: 'agentRunBridge.ts', status: 'FAIL' as const, detail: 'Missing bridge' },
         { name: 'safe-env', status: 'FAIL' as const, detail: 'Rejected unsafe keys: OPENSLACK_PRIVATE_KEY' },
@@ -151,6 +155,7 @@ describe('agent-runtime command', () => {
     logSpy.mockRestore();
     const parsed = JSON.parse(logs.join('\n'));
     expect(parsed.provider).toBe('aby');
+    expect(parsed.readiness).toBe('ready');
     expect(parsed.safeEnv.allowedKeys).toEqual(['AGENT_RUN_BRIDGE_RUNNER']);
     expect(parsed.remediations).toEqual(['Aby bridge runtime is configured and ready.']);
     expect(JSON.stringify(parsed)).not.toContain('secret');
@@ -176,6 +181,7 @@ describe('agent-runtime command', () => {
     );
     expect(logs.join('\n')).toContain('Agent Runtime Setup');
     expect(logs.join('\n')).toContain('Config written: yes');
+    expect(logs.join('\n')).toContain('Readiness: ready');
     logSpy.mockRestore();
   });
 
@@ -251,6 +257,7 @@ describe('agent-runtime command', () => {
     mockDiagnoseAbyRuntime.mockReturnValue({
       ...passReport,
       status: 'FAIL',
+      readiness: 'not_configured',
       checks: [{ name: 'config-source', status: 'FAIL', detail: 'No Aby root configured' }],
       remediations: ['Set OPENSLACK_ABY_ROOT.'],
       remediation: 'Set OPENSLACK_ABY_ROOT.',

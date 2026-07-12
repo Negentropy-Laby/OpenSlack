@@ -334,6 +334,7 @@ describe('resolveAgentType', () => {
       expect(result!.source).toBe('openslack-registry');
       expect(result!.runtime).toBe('aby_assistant');
       expect(result!.provider).toBe('aby');
+      expect(result!.runtimeProvider).toBe('aby');
       expect(result!.bridgeMode).toBe('process');
     } finally {
       cleanup(root);
@@ -362,6 +363,7 @@ describe('resolveAgentType', () => {
       const result = resolveAgentType('local-agent', root);
       expect(result).not.toBeNull();
       expect(result!.bridgeMode).toBeUndefined();
+      expect(result!.runtimeProvider).toBeUndefined();
     } finally {
       cleanup(root);
     }

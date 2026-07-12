@@ -10,6 +10,7 @@ import {
 import type { PlainFinding } from '@openslack/runtime';
 import { describeLLMRoutingConfig } from '@openslack/operator';
 import { recordEvent } from '@openslack/collaboration';
+import { diagnoseAgentRuntime } from '@openslack/agent-runtime';
 
 export function readStrictOption(source: unknown): boolean {
   if (!source || typeof source !== 'object') return false;
@@ -99,6 +100,19 @@ export function setupCommands(): Command {
         detail: `Genesis validation failed: ${(err as Error).message}`.slice(0, 200),
       });
     }
+
+    const runtimeReport = diagnoseAgentRuntime({ rootDir: root, env: process.env });
+    results.push({
+      step: 'Agent Runtime',
+      passed: runtimeReport.readiness === 'ready',
+      detail:
+        runtimeReport.readiness === 'ready'
+          ? 'Execution provider ready'
+          : `${runtimeReport.readiness}: ${runtimeReport.remediations[0] ?? 'Run openslack agent-runtime doctor --provider aby'}`,
+      // Guided setup remains usable without an external provider; --strict
+      // promotes this explicit readiness warning to a non-zero exit.
+      warn: runtimeReport.readiness !== 'ready',
+    });
 
     // LLM routing status
     {

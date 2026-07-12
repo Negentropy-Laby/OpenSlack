@@ -7,6 +7,7 @@ import {
   createRunStore,
   ToolGuard,
   PermissionDeniedError,
+  LocalExecutionAdapter,
 } from '../index.js';
 import type {
   AgentExecutionAdapter,
@@ -239,6 +240,7 @@ describe('ToolGuard in adapter execution', () => {
     const launcher = createOpenSlackAgentLauncher({
       runStore: store,
       rootDir: root,
+      adapter: new LocalExecutionAdapter(),
     });
 
     // plan mode — only Read, Grep, Glob, Find allowed

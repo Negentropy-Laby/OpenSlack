@@ -1,9 +1,25 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { scanValue } from '@openslack/collaboration';
-import type { AgentRunRequest, AgentRunState, AgentRunStatus } from './types.js';
+import type {
+  AgentRunFailureCode,
+  AgentRunRequest,
+  AgentRunState,
+  AgentRunStatus,
+} from './types.js';
 
 const RUNS_DIR_NAME = 'agents/runs';
+const ORPHAN_TEMP_MAX_AGE_MS = 60 * 60 * 1000;
+const RUN_TEMP_FILE_RE = /^(?:run|metadata)\.json\..+\.tmp$/;
 
 export const RUN_ID_RE = /^RUN-[A-Z0-9-]+$/;
 
@@ -43,61 +59,170 @@ export function generateRunId(): string {
 
 export interface AgentRunStore {
   createRun(request: AgentRunRequest): AgentRunState;
+  createFailedRun(
+    request: AgentRunRequest,
+    failure: { failureCode: AgentRunFailureCode; errorSummary: string },
+  ): AgentRunState;
   updateRun(runId: string, patch: Partial<AgentRunState>): AgentRunState;
   getRun(runId: string): AgentRunState | null;
   listRuns(options?: { agentId?: string; status?: AgentRunStatus }): AgentRunState[];
 }
 
+export interface SweepOrphanRunTempOptions {
+  olderThanMs?: number;
+  nowMs?: number;
+}
+
+/** Remove stale atomic-write temp files without touching live or unrelated files. */
+export function sweepOrphanRunTempFiles(
+  rootDir?: string,
+  options: SweepOrphanRunTempOptions = {},
+): number {
+  const baseDir = getRunsBaseDir(rootDir);
+  if (!existsSync(baseDir)) return 0;
+
+  const cutoff = (options.nowMs ?? Date.now()) -
+    (options.olderThanMs ?? ORPHAN_TEMP_MAX_AGE_MS);
+  let removed = 0;
+  const runEntries = (() => {
+    try {
+      return readdirSync(baseDir, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+  })();
+  for (const runEntry of runEntries) {
+    if (!runEntry.isDirectory() || !RUN_ID_RE.test(runEntry.name)) continue;
+    const runDir = join(baseDir, runEntry.name);
+    const fileEntries = (() => {
+      try {
+        return readdirSync(runDir, { withFileTypes: true });
+      } catch {
+        return [];
+      }
+    })();
+    for (const fileEntry of fileEntries) {
+      if (!fileEntry.isFile() || !RUN_TEMP_FILE_RE.test(fileEntry.name)) continue;
+      const path = join(runDir, fileEntry.name);
+      try {
+        if (statSync(path).mtimeMs > cutoff) continue;
+        unlinkSync(path);
+        removed += 1;
+      } catch {
+        // Best effort: a concurrent writer or cleanup may own this file.
+      }
+    }
+  }
+  return removed;
+}
+
 export function createRunStore(rootDir?: string): AgentRunStore {
   const baseDir = getRunsBaseDir(rootDir);
+  sweepOrphanRunTempFiles(rootDir);
+
+  function buildState(request: AgentRunRequest): AgentRunState {
+    const now = new Date().toISOString();
+    return {
+      runId: request.runId,
+      status: 'pending',
+      agentId: request.agentId,
+      model: request.resolvedConfig.model,
+      startedAt: now,
+      tokensUsed: 0,
+      tokensRemaining: request.budget?.tokens ?? null,
+      toolCalls: 0,
+      worktreePath: request.worktreePath,
+      transcriptPath: join(getRunDir(request.runId, rootDir), 'transcript.jsonl'),
+    };
+  }
+
+  function buildMetadata(request: AgentRunRequest): Record<string, unknown> {
+    const persistedResolvedConfig = { ...request.resolvedConfig };
+    delete persistedResolvedConfig.prompt;
+    delete persistedResolvedConfig.initialPrompt;
+    delete persistedResolvedConfig.criticalSystemReminder;
+    return {
+      runId: request.runId,
+      agentId: request.agentId,
+      resolvedConfig: persistedResolvedConfig,
+      permissionProfile: request.permissionProfile,
+      budget: request.budget,
+      correlationId: request.correlationId,
+      threadId: request.threadId,
+      worktreePath: request.worktreePath,
+    };
+  }
+
+  function persistNewRun(request: AgentRunRequest, state: AgentRunState): AgentRunState {
+    const metadata = buildMetadata(request);
+    const stateScan = scanValue(state, 'runState');
+    if (stateScan.found) {
+      throw new Error(
+        `Run state contains ${stateScan.name} at ${stateScan.path}. Refusing to persist.`,
+      );
+    }
+    const metadataScan = scanValue(metadata, 'metadata');
+    if (metadataScan.found) {
+      throw new Error(
+        `Run metadata contains ${metadataScan.name} at ${metadataScan.path}. Refusing to persist.`,
+      );
+    }
+
+    const runDir = getRunDir(request.runId, rootDir);
+    ensureDir(runDir);
+    const statePath = getRunMetaPath(request.runId, rootDir);
+    const metadataPath = getRunRequestPath(request.runId, rootDir);
+    const nonce = `${process.pid}-${Math.random().toString(36).slice(2)}`;
+    const stateTempPath = `${statePath}.${nonce}.tmp`;
+    const metadataTempPath = `${metadataPath}.${nonce}.tmp`;
+    let metadataPublished = false;
+    let statePublished = false;
+    try {
+      writeFileSync(metadataTempPath, JSON.stringify(metadata, null, 2), {
+        encoding: 'utf-8',
+        flag: 'wx',
+      });
+      writeFileSync(stateTempPath, JSON.stringify(state, null, 2), {
+        encoding: 'utf-8',
+        flag: 'wx',
+      });
+      // run.json is the observable commit marker. Publish it only after the
+      // request metadata is durable at its final path.
+      renameSync(metadataTempPath, metadataPath);
+      metadataPublished = true;
+      renameSync(stateTempPath, statePath);
+      statePublished = true;
+    } catch (error) {
+      removeIfPresent(metadataTempPath);
+      removeIfPresent(stateTempPath);
+      if (metadataPublished && !statePublished) removeIfPresent(metadataPath);
+      throw error;
+    }
+    return state;
+  }
 
   return {
     createRun(request: AgentRunRequest): AgentRunState {
       const runId = request.runId || generateRunId();
       validateRunId(runId);
+      const normalizedRequest = { ...request, runId };
+      return persistNewRun(normalizedRequest, buildState(normalizedRequest));
+    },
 
+    createFailedRun(request, failure): AgentRunState {
+      const runId = request.runId || generateRunId();
+      validateRunId(runId);
+      const normalizedRequest = { ...request, runId };
       const now = new Date().toISOString();
       const state: AgentRunState = {
-        runId,
-        status: 'pending',
-        agentId: request.agentId,
-        model: request.resolvedConfig.model,
-        startedAt: now,
-        tokensUsed: 0,
-        tokensRemaining: request.budget?.tokens ?? null,
-        toolCalls: 0,
-        worktreePath: request.worktreePath,
-        transcriptPath: join(getRunDir(runId, rootDir), 'transcript.jsonl'),
+        ...buildState(normalizedRequest),
+        status: 'failed',
+        completedAt: now,
+        failureCode: failure.failureCode,
+        errorSummary: failure.errorSummary,
+        error: failure.errorSummary,
       };
-
-      const runDir = getRunDir(runId, rootDir);
-      ensureDir(runDir);
-
-      writeFileSync(getRunMetaPath(runId, rootDir), JSON.stringify(state, null, 2), 'utf-8');
-
-      // Store metadata (request without the full prompt for size)
-      const metadata = {
-        runId: request.runId,
-        agentId: request.agentId,
-        resolvedConfig: request.resolvedConfig,
-        permissionProfile: request.permissionProfile,
-        budget: request.budget,
-        correlationId: request.correlationId,
-        threadId: request.threadId,
-        worktreePath: request.worktreePath,
-      };
-
-      // Secret-scan metadata before persisting
-      const scan = scanValue(metadata, 'metadata');
-      if (scan.found) {
-        throw new Error(
-          `Run metadata contains ${scan.name} at ${scan.path}. Refusing to persist.`,
-        );
-      }
-
-      writeFileSync(getRunRequestPath(runId, rootDir), JSON.stringify(metadata, null, 2), 'utf-8');
-
-      return state;
+      return persistNewRun(normalizedRequest, state);
     },
 
     updateRun(runId: string, patch: Partial<AgentRunState>): AgentRunState {
@@ -172,4 +297,12 @@ export function createRunStore(rootDir?: string): AgentRunStore {
       return runs.sort((a, b) => b.startedAt.localeCompare(a.startedAt));
     },
   };
+}
+
+function removeIfPresent(path: string): void {
+  try {
+    if (existsSync(path)) unlinkSync(path);
+  } catch {
+    // Best effort only; a directory without run.json remains invisible.
+  }
 }

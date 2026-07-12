@@ -10,6 +10,7 @@ function report(overrides: Partial<AbyRuntimeDoctorReport> = {}): AbyRuntimeDoct
   return {
     provider: 'aby',
     status: 'FAIL',
+    readiness: 'not_configured',
     configSource: 'none',
     configPath: '/repo/.openslack.local/agent-runtime.json',
     root: undefined,
@@ -31,6 +32,7 @@ describe('agent runtime diagnostics view model', () => {
 
     expect(vm.provider).toBe('aby');
     expect(vm.status).toBe('FAIL');
+    expect(vm.readiness).toBe('not_configured');
     expect(vm.root).toBe('not configured');
     expect(vm.lastSmokeRun).toBeUndefined();
   });
@@ -56,6 +58,7 @@ describe('agent runtime diagnostics view model', () => {
     const vm = mapAbyRuntimeDoctorToViewModel(
       report({
         status: 'PASS',
+        readiness: 'ready',
         configSource: 'OPENSLACK_ABY_ROOT',
         root: '/aby',
         resolvedRoot: '/aby',

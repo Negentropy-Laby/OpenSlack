@@ -4,6 +4,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import type {
   AgentRuntimeDoctorCheck,
   AgentRuntimeDoctorCheckStatus,
+  AgentRuntimeReadiness,
   AbyRuntimeDoctorReport,
   DiagnoseAbyRuntimeOptions,
 } from './agent-runtime-doctor.js';
@@ -42,6 +43,7 @@ export interface AbyRuntimeSetupReport {
   provider: 'aby';
   mode: AbyRuntimeSetupMode;
   status: AbyRuntimeSetupStatus;
+  readiness: AgentRuntimeReadiness;
   root: string;
   resolvedRoot: string;
   configPath: string;
@@ -135,10 +137,24 @@ export function setupAbyRuntime(options: SetupAbyRuntimeOptions): AbyRuntimeSetu
     });
   }
 
+  const readiness: AgentRuntimeReadiness =
+    doctor?.readiness ??
+    (!root
+      ? 'not_configured'
+      : checks.some((check) => check.name === 'command' && check.status === 'FAIL') &&
+          checks.every((check) => check.name === 'command' || check.status !== 'FAIL')
+        ? 'unavailable'
+        : status === 'FAIL'
+          ? 'misconfigured'
+          : wroteConfig
+            ? 'ready'
+            : 'not_configured');
+
   return {
     provider: 'aby',
     mode,
     status: doctor?.status ?? status,
+    readiness,
     root,
     resolvedRoot,
     configPath,

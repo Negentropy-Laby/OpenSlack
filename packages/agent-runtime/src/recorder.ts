@@ -1,14 +1,16 @@
-import type { AgentRunState, AgentRunRequest } from './types.js';
+import type { AgentRunFailureCode, AgentRunState, AgentRunRequest } from './types.js';
+import { getAgentRunFailureCode, getAgentRunFailureSummary } from './types.js';
 import { appendTranscriptEvent } from './transcript.js';
 import type { AgentRunStore } from './run-store.js';
 
 export interface RunRecorder {
   start(request: AgentRunRequest): AgentRunState;
+  reject(request: AgentRunRequest, error: Error, failureCode?: AgentRunFailureCode): AgentRunState;
   progress(runId: string, data: Record<string, unknown>): void;
   toolCall(runId: string, toolName: string, input?: unknown): void;
   toolResult(runId: string, toolName: string, output?: unknown): void;
   complete(runId: string, result: unknown, tokenUsage?: number): AgentRunState;
-  fail(runId: string, error: Error): AgentRunState;
+  fail(runId: string, error: Error, failureCode?: AgentRunFailureCode): AgentRunState;
   cancel(runId: string): AgentRunState;
 }
 
@@ -27,6 +29,7 @@ export function createRunRecorder(store: AgentRunStore, rootDir?: string): RunRe
             agentId: request.agentId,
             model: request.resolvedConfig.model,
             runtime: request.resolvedConfig.runtime,
+            runtimeProvider: request.resolvedConfig.runtimeProvider,
             provider: request.resolvedConfig.provider,
             bridgeMode: request.resolvedConfig.bridgeMode,
             permissionMode: request.permissionProfile.permissionMode,
@@ -39,6 +42,25 @@ export function createRunRecorder(store: AgentRunStore, rootDir?: string): RunRe
       );
 
       return updated;
+    },
+
+    reject(
+      request: AgentRunRequest,
+      error: Error,
+      failureCode?: AgentRunFailureCode,
+    ): AgentRunState {
+      const code = failureCode ?? getAgentRunFailureCode(error);
+      const errorSummary = getAgentRunFailureSummary(error, code);
+      appendTranscriptEvent(
+        request.runId,
+        {
+          timestamp: new Date().toISOString(),
+          type: 'fail',
+          data: { failureCode: code, errorSummary },
+        },
+        rootDir,
+      );
+      return store.createFailedRun(request, { failureCode: code, errorSummary });
     },
 
     progress(runId: string, data: Record<string, unknown>): void {
@@ -111,22 +133,8 @@ export function createRunRecorder(store: AgentRunStore, rootDir?: string): RunRe
       return store.updateRun(runId, patch);
     },
 
-    fail(runId: string, error: Error): AgentRunState {
-      appendTranscriptEvent(
-        runId,
-        {
-          timestamp: new Date().toISOString(),
-          type: 'fail',
-          data: { error: error.message },
-        },
-        rootDir,
-      );
-
-      return store.updateRun(runId, {
-        status: 'failed',
-        completedAt: new Date().toISOString(),
-        error: error.message,
-      });
+    fail(runId: string, error: Error, failureCode?: AgentRunFailureCode): AgentRunState {
+      return recordFailure(runId, error, failureCode);
     },
 
     cancel(runId: string): AgentRunState {
@@ -146,4 +154,29 @@ export function createRunRecorder(store: AgentRunStore, rootDir?: string): RunRe
       });
     },
   };
+
+  function recordFailure(
+    runId: string,
+    error: Error,
+    failureCode: AgentRunFailureCode = getAgentRunFailureCode(error),
+  ): AgentRunState {
+    const errorSummary = getAgentRunFailureSummary(error, failureCode);
+    appendTranscriptEvent(
+      runId,
+      {
+        timestamp: new Date().toISOString(),
+        type: 'fail',
+        data: { failureCode, errorSummary },
+      },
+      rootDir,
+    );
+
+    return store.updateRun(runId, {
+      status: 'failed',
+      completedAt: new Date().toISOString(),
+      failureCode,
+      errorSummary,
+      error: errorSummary,
+    });
+  }
 }

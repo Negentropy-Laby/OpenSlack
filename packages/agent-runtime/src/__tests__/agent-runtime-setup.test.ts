@@ -44,6 +44,7 @@ describe('setupAbyRuntime', () => {
     });
 
     expect(report.status).toBe('PASS');
+    expect(report.readiness).toBe('not_configured');
     expect(report.mode).toBe('dry-run');
     expect(report.wroteConfig).toBe(false);
     expect(existsSync(join(root, '.openslack.local', 'agent-runtime.json'))).toBe(false);
@@ -61,6 +62,7 @@ describe('setupAbyRuntime', () => {
       diagnose: () => ({
         provider: 'aby',
         status: 'PASS',
+        readiness: 'ready',
         configSource: '.openslack.local/agent-runtime.json',
         configPath: join(root, '.openslack.local', 'agent-runtime.json'),
         root: abyRoot,
@@ -76,6 +78,7 @@ describe('setupAbyRuntime', () => {
 
     const configPath = join(root, '.openslack.local', 'agent-runtime.json');
     expect(report.status).toBe('PASS');
+    expect(report.readiness).toBe('ready');
     expect(report.wroteConfig).toBe(true);
     expect(JSON.parse(readFileSync(configPath, 'utf-8'))).toEqual({
       aby: { root: abyRoot, command: 'bun', timeoutMs: 120000 },
@@ -92,6 +95,7 @@ describe('setupAbyRuntime', () => {
     });
 
     expect(report.status).toBe('FAIL');
+    expect(report.readiness).toBe('misconfigured');
     expect(report.checks.find((check) => check.name === 'agentRunBridge.ts')?.status).toBe('FAIL');
     expect(report.checks.find((check) => check.name === 'command')?.status).toBe('FAIL');
     expect(report.wroteConfig).toBe(false);

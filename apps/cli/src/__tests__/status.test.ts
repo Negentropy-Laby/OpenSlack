@@ -68,6 +68,17 @@ vi.mock('@openslack/collaboration', () => ({
   buildDashboardProjection: () => mockBuildDashboardProjection(),
 }));
 
+const mockDiagnoseAgentRuntime = vi.fn((_options?: unknown) => ({
+  status: 'FAIL',
+  readiness: 'not_configured',
+  remediations: ['Configure an agent runtime provider.'],
+  providers: { aby: {} },
+}));
+
+vi.mock('@openslack/agent-runtime', () => ({
+  diagnoseAgentRuntime: (options: unknown) => mockDiagnoseAgentRuntime(options),
+}));
+
 vi.mock('node:child_process', () => ({
   execSync: vi.fn((command: string) => {
     if (command.includes('rev-list --count')) return '100';
@@ -118,6 +129,13 @@ describe('status command', () => {
     const logs = await runStatus();
     const output = logs.join('\n');
     expect(output).toContain('Needs Attention:');
+  });
+
+  it('reports agent runtime readiness separately from module status', async () => {
+    const logs = await runStatus();
+    const output = logs.join('\n');
+    expect(output).toContain('Agent Runtime: not_configured');
+    expect(output).toContain('Configure an agent runtime provider.');
   });
 
   it('renders attention item with priority label', async () => {

@@ -47,6 +47,12 @@ interface AgentRunState {
   tokensRemaining: number | null;
   toolCalls: number;
   lastTool?: string;
+  failureCode?:
+    | 'RUNTIME_NOT_CONFIGURED'
+    | 'RUNTIME_MISCONFIGURED'
+    | 'PROVIDER_UNAVAILABLE'
+    | 'EXECUTION_FAILED';
+  errorSummary?: string;
   error?: string;
   worktreePath?: string;
   transcriptPath: string;
@@ -81,14 +87,20 @@ interface AgentPermissionProfile {
 ```
 
 The launcher is injected into `WorkflowRuntime` as the default `AgentLauncher`.
-If a custom launcher is provided via `RuntimeOptions.agentLauncher`, it overrides
-the default.
+It has no fixture fallback: a missing execution provider creates a terminal
+failed run and throws `RuntimeNotConfiguredError`. Tests may inject a custom
+launcher or `LocalExecutionAdapter` explicitly.
+
+`ResolvedAgentConfig.runtimeProvider` selects execution. `provider` remains model
+vendor metadata, while `bridgeMode` describes transport. `ProviderRegistry` is
+instance-scoped and rejects duplicate provider IDs.
 
 ## Recorder Protocol
 
 `createRunRecorder(store, rootDir)` produces a `RunRecorder` with these methods:
 
 - `start(request)` — creates run, writes `start` event, returns state
+- `reject(request, error)` — creates a terminal failed run without a running transition
 - `progress(runId, data)` — appends `progress` event
 - `toolCall(runId, toolName, input)` — appends `tool_call` event, increments toolCalls
 - `toolResult(runId, toolName, output)` — appends `tool_result` event
@@ -132,6 +144,8 @@ Phase 1 (current): Check and declare only.
 
 - `AgentUnavailableError(missingMcpServers)` — agent cannot run due to missing MCP
 - `PermissionDeniedError(action, reason)` — action blocked by permission profile
+- `RuntimeNotConfiguredError` — no execution provider is selected or registered
+- `RuntimeMisconfiguredError` — a selected provider has invalid local configuration
 
 ## Testing
 

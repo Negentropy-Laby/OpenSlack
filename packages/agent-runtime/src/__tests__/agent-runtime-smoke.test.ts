@@ -73,6 +73,7 @@ describe('runAbyRuntimeSmoke', () => {
       diagnose: () => ({
         provider: 'aby',
         status: 'FAIL',
+        readiness: 'not_configured',
         configSource: 'none',
         configPath: join(root, '.openslack.local', 'agent-runtime.json'),
         args: [],

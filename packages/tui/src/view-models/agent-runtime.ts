@@ -20,6 +20,7 @@ export interface AgentRuntimeSmokeSummaryViewModel {
 export interface AgentRuntimeDiagnosticsViewModel {
   provider: string;
   status: 'PASS' | 'FAIL';
+  readiness?: 'not_configured' | 'misconfigured' | 'unavailable' | 'ready';
   configSource: string;
   configPath: string;
   root: string;
@@ -40,6 +41,7 @@ export function mapAbyRuntimeDoctorToViewModel(
   return {
     provider: report.provider,
     status: report.status,
+    readiness: report.readiness,
     configSource: report.configSource,
     configPath: report.configPath,
     root: report.resolvedRoot ?? report.root ?? 'not configured',

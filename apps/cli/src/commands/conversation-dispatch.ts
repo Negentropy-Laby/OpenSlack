@@ -42,7 +42,12 @@ export async function dispatchConversationAgentMessage(input: {
   agentId: string;
   prompt: string;
   originalText?: string;
-}): Promise<{ dispatched: boolean; runId?: string; responseText: string }> {
+}): Promise<{
+  dispatched: boolean;
+  runId?: string;
+  failureCode?: 'RUNTIME_NOT_CONFIGURED' | 'RUNTIME_MISCONFIGURED';
+  responseText: string;
+}> {
   const { rootDir, threadId, authorId, agentId, prompt } = input;
   const originalText = input.originalText ?? `@${agentId} ${prompt}`;
 
@@ -80,14 +85,29 @@ export async function dispatchConversationAgentMessage(input: {
   const store = createRunStore(rootDir);
   const launcher = createOpenSlackAgentLauncher({ runStore: store, rootDir });
 
-  const runResult = await launcher(prompt, {
-    label: agentId,
-    phase: 'conversation',
-    agentType: agentId,
-    resolvedAgentConfig: resolvedConfig,
-    correlationId: threadId,
-    threadId,
-  });
+  let runResult;
+  try {
+    runResult = await launcher(prompt, {
+      label: agentId,
+      phase: 'conversation',
+      agentType: agentId,
+      resolvedAgentConfig: resolvedConfig,
+      correlationId: threadId,
+      threadId,
+    });
+  } catch (error) {
+    const code = readRuntimeFailureCode(error);
+    if (!code) throw error;
+
+    const runId = readRunId(error);
+    if (runId) linkRunToThread(threadId, runId, rootDir);
+    return {
+      dispatched: false,
+      runId,
+      failureCode: code,
+      responseText: `[${code}] ${safeRuntimeFailureMessage(code)}`,
+    };
+  }
 
   const responseText =
     typeof runResult.data === 'string'
@@ -114,4 +134,26 @@ export async function dispatchConversationAgentMessage(input: {
     runId: runResult.runId,
     responseText,
   };
+}
+
+function safeRuntimeFailureMessage(
+  code: 'RUNTIME_NOT_CONFIGURED' | 'RUNTIME_MISCONFIGURED',
+): string {
+  return code === 'RUNTIME_NOT_CONFIGURED'
+    ? 'Agent runtime is not configured. Configure an execution provider before retrying.'
+    : 'Agent runtime configuration is invalid. Run openslack agent-runtime doctor for details.';
+}
+
+function readRuntimeFailureCode(
+  error: unknown,
+): 'RUNTIME_NOT_CONFIGURED' | 'RUNTIME_MISCONFIGURED' | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  const code = (error as { code?: unknown }).code;
+  return code === 'RUNTIME_NOT_CONFIGURED' || code === 'RUNTIME_MISCONFIGURED' ? code : undefined;
+}
+
+function readRunId(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object') return undefined;
+  const runId = (error as { runId?: unknown }).runId;
+  return typeof runId === 'string' ? runId : undefined;
 }
