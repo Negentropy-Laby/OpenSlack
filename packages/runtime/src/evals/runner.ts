@@ -20,7 +20,25 @@ function findRepoRoot(): string {
   return process.cwd();
 }
 
-function evaluateAssertion(evalCase: EvalCase, assertion: { description: string; check: string }): { passed: boolean; detail: string } {
+type AssertionResult = { passed: boolean; detail: string };
+type AllowedCommandHandler = (root: string) => AssertionResult;
+
+function validateWorkspaceCommand(root: string): AssertionResult {
+  const result = validateWorkspace(root);
+  return {
+    passed: result.valid,
+    detail: `workspace validate: ${result.valid ? 'PASS' : result.errors.map((e) => e.message).join('; ')}`,
+  };
+}
+
+// Eval suites are Green/auto-merge eligible data. Never execute their command strings;
+// every supported command must map to a reviewed in-process handler.
+const ALLOWED_COMMANDS: ReadonlyMap<string, AllowedCommandHandler> = new Map([
+  ['openslack workspace validate', validateWorkspaceCommand],
+  ['bun run openslack workspace validate', validateWorkspaceCommand],
+]);
+
+function evaluateAssertion(evalCase: EvalCase, assertion: { description: string; check: string }): AssertionResult {
   const root = findRepoRoot();
   const check = assertion.check.trim();
 
@@ -39,15 +57,8 @@ function evaluateAssertion(evalCase: EvalCase, assertion: { description: string;
     if (cmdMatch) {
       const cmd = cmdMatch[1].trim();
 
-      // In-process dispatch for known openslack commands
-      if (cmd === 'openslack workspace validate') {
-        const result = validateWorkspace(root);
-        return { passed: result.valid, detail: `workspace validate: ${result.valid ? 'PASS' : result.errors.map((e) => e.message).join('; ')}` };
-      }
-      if (cmd === 'bun run openslack workspace validate') {
-        const result = validateWorkspace(root);
-        return { passed: result.valid, detail: `workspace validate: ${result.valid ? 'PASS' : result.errors.map((e) => e.message).join('; ')}` };
-      }
+      const handler = ALLOWED_COMMANDS.get(cmd);
+      if (handler) return handler(root);
 
       return { passed: false, detail: 'unsupported command assertion' };
     }
