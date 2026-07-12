@@ -30,7 +30,7 @@ OpenSlack uses three distinct authentication mechanisms for different purposes:
 
 Do **not** grant: Administration, Secrets, Members, Workflows write.
 
-2. Install on `wsman/OpenSlack` (selected repository only).
+2. Install on `Negentropy-Laby/OpenSlack` (selected repository only).
 
 3. Store these values as environment variables / GitHub Actions secrets:
 
@@ -43,7 +43,12 @@ GITHUB_OWNER=Negentropy-Laby
 GITHUB_REPO=OpenSlack
 ```
 
-4. The `@openslack/github` `getClient()` function auto-detects `OPENSLACK_GITHUB_APP_ID` and uses the App installation token. No further manual steps required. Tokens are generated and refreshed automatically.
+4. The `@openslack/github` client first honors a complete
+   `OPENSLACK_GITHUB_APP_*` environment configuration. When those variables are
+   absent, an initialized workspace reads the non-secret
+   `.openslack.local/github-app.json` metadata and resolves its
+   `privateKeyRef` only inside the credential-store consumer callback. Tokens
+   are generated and refreshed automatically.
 
 ### Windows local bot wrapper
 
@@ -71,12 +76,28 @@ or points to a different installation, the wrapper lists the GitHub App's
 installations and uses the one matching `GITHUB_OWNER` (default:
 `Negentropy-Laby`).
 
-Direct `bun run openslack ...` commands do not read
-`.openslack.local/github-app.pem` and do not reuse the human `gh` CLI keyring.
-The PEM is intentionally loaded only by wrapper scripts or by an explicit
-environment variable. For `pr doctor`, missing live credentials produce
-`AUTH_REQUIRED`; use the wrapper for live bot evidence or pass `--dry-run` for
-an explicit `NOT_EVALUATED` simulation report.
+Direct `bun run openslack ...` commands and installed release commands never
+read `.openslack.local/github-app.pem` and do not reuse the human `gh` CLI
+keyring. They can use a completed App import/Manifest setup through
+`github-app.json` plus its OS-keychain reference. The raw PEM path remains a
+source-checkout compatibility input for the wrapper only. A partial environment
+configuration never mixes with the local keychain configuration; it fails
+closed. For `pr doctor`, missing live credentials produce `AUTH_REQUIRED`; use
+the imported keychain configuration, the wrapper, or an explicit `--dry-run`
+simulation as appropriate.
+
+The Manifest conversion happens before GitHub creates an installation, so its
+initial local config intentionally contains `installationId: null`. After an
+organization administrator installs the App and verifies the installation ID,
+bind that non-secret identifier preview-first:
+
+```bash
+openslack github app bind-installation --installation-id <id>
+openslack github app bind-installation --installation-id <id> --apply
+```
+
+Binding is idempotent for the same ID and refuses to replace a different
+installation.
 
 Use this runtime bot credential path for PR creation whenever the work is
 OpenSlack-authored or delegated to an agent or automation. Do not create those
@@ -109,6 +130,18 @@ askpass children. Delivery rejects multiple or mismatched push URLs, binds the
 Git target to the API owner/repository, verifies local/remote/PR head SHAs again
 before querying checks by the synchronized SHA, and returns `AWAITING_GATES`;
 PRMS remains the owner of review, approval, readiness, and merge.
+
+In an initialized workspace, `delivery doctor`, `delivery probe`, and
+`delivery publish` all resolve the same `.openslack.local/github-app.json` and
+keychain reference. The private key is used only to create the short-lived App
+JWT; it is not copied into Git child environments, argv, diagnostics, delivery
+evidence, or the installation-token cache.
+
+Agent linked worktrees reuse the primary workspace's gitignored App config only
+when both roots are registered by the same `git worktree list` and the primary
+root contains `openslack.yaml`. A forged or unregistered `.git` indirection is
+not trusted for cross-workspace credential lookup and falls back to the current
+workspace, where missing credentials fail closed.
 
 The existing bot-authenticated wrapper scripts remain compatibility entrypoints
 for operator environments. Their PR-create arguments are mapped directly to the
@@ -355,9 +388,27 @@ export GITHUB_TOKEN=ghp_xxxxxxxxxxxxx
 
 The provider falls back to this when `OPENSLACK_GITHUB_APP_ID` is not set.
 
-## Human Login: OAuth / gh CLI
+## GitHub App Manifest callback
 
-`apps/auth-callback/` provides a local OAuth callback server (`http://127.0.0.1:8200/callback`) for human login. This is **not** used by the agent runtime.
+`openslack github app create --org <organization> --apply` starts the packaged
+App Manifest callback surface. It binds only to `127.0.0.1` (or explicit `::1`),
+uses a cryptographic, expiring, single-use state, and exchanges GitHub's
+temporary manifest code through a bounded request. The private key, webhook
+secret, and client secret are written through `CredentialStore`; local config
+contains references only. The backend must support atomic create-only writes;
+preflight refuses unavailable or occupied destinations before showing the
+external registration form. A rollback deletion failure writes a reference-only
+reconciliation receipt under the gitignored local state root.
+
+The callback does not implement human OAuth, does not accept an `access_token`
+query, and never writes a PAT or installation token to a plaintext file.
+`apps/auth-callback/` is the thin HTTP transport for this product flow.
+
+Normal workspace setup and doctor commands resolve the explicit
+`WorkspaceContext` and call package diagnostics in-process. They do not require
+the monorepo CLI source entry, Genesis script, golden suite, or product module
+registry. Those maintenance checks remain available only in an OpenSlack source
+checkout.
 
 `scripts/setup-gh.sh` installs `gh` CLI on any platform for developer convenience.
 
@@ -390,7 +441,7 @@ data.
 
 ## Project v2 Configuration (one-time human admin)
 
-1. Create Project v2 "OpenSlack Evolution Board" on `wsman/OpenSlack`
+1. Create Project v2 "OpenSlack Evolution Board" on `Negentropy-Laby/OpenSlack`
 2. Add 14 standard fields (see `.openslack/integrations/github.yaml`)
 3. Run `openslack github project-sync-fields --write` to populate field IDs
 4. Verify: `openslack github doctor --strict`

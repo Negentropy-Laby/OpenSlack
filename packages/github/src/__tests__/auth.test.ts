@@ -1,6 +1,10 @@
 import { generateKeyPairSync } from 'node:crypto';
 import { EventEmitter } from 'node:events';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CredentialStore, MemoryKeychainBackend } from '@openslack/credentials';
 
 const requestMock = vi.hoisted(() => vi.fn());
 
@@ -8,6 +12,7 @@ vi.mock('node:https', () => ({ request: requestMock }));
 
 import { clearTokenCache, getAppInstallationToken, requireAppInstallationToken } from '../auth.js';
 import { boundedJsonPost } from '../bounded-json-post.js';
+import { getClient } from '../client.js';
 
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const PRIVATE_KEY = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
@@ -17,6 +22,7 @@ const TOKEN_ENV_KEYS = [
   'OPENSLACK_GITHUB_APP_PRIVATE_KEY',
 ] as const;
 const originalEnv = new Map<string, string | undefined>();
+const roots: string[] = [];
 
 interface MockResponseOptions {
   statusCode?: number;
@@ -81,6 +87,7 @@ afterEach(() => {
     else process.env[key] = value;
   }
   originalEnv.clear();
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
 describe('GitHub App installation token response handling', () => {
@@ -191,7 +198,99 @@ describe('GitHub App installation token cache', () => {
     expect((await requireAppInstallationToken()).token).toBe('current-token');
     expect(requestMock).toHaveBeenCalledTimes(2);
   });
+
+  it('loads ordinary-workspace App metadata and resolves only its keychain reference', async () => {
+    for (const key of TOKEN_ENV_KEYS) delete process.env[key];
+    const root = createWorkspace();
+    const nested = join(root, 'project', 'nested');
+    mkdirSync(nested, { recursive: true });
+    const backend = new MemoryKeychainBackend();
+    const store = new CredentialStore([backend]);
+    store.putIfAbsent('keychain:openslack/test-app', PRIVATE_KEY);
+    installResponse({ chunks: [JSON.stringify(tokenResponse('local-installation-token'))] });
+
+    const client = await getClient({
+      cwd: nested,
+      repoFullName: 'acme/project',
+      auth: 'app',
+      credentialStore: store,
+    });
+
+    expect(client).toMatchObject({
+      authMode: 'github_app_installation',
+      appSlug: 'local-app',
+      isDryRun: false,
+    });
+    await expect(
+      getClient({
+        cwd: nested,
+        repoFullName: 'acme/project',
+        auth: 'app',
+        credentialStore: store,
+      }),
+    ).resolves.toMatchObject({ tokenExpiresAt: client.tokenExpiresAt });
+    expect(JSON.stringify(requestMock.mock.calls)).not.toContain(PRIVATE_KEY);
+    expect(requestMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('redacts credential backend failures and never mixes partial environment config', async () => {
+    const root = createWorkspace();
+    const withSecret = vi.fn(() => {
+      throw new Error('backend failed with private-key-canary');
+    });
+    process.env.OPENSLACK_GITHUB_APP_ID = '123';
+    delete process.env.OPENSLACK_GITHUB_APP_INSTALLATION_ID;
+    delete process.env.OPENSLACK_GITHUB_APP_PRIVATE_KEY;
+
+    const partial = requireAppInstallationToken({
+      localStateRoot: join(root, '.openslack.local'),
+      credentialStore: { withSecret },
+    });
+    await expect(partial).rejects.toMatchObject({ code: 'APP_CONFIG_INVALID' });
+    expect(withSecret).not.toHaveBeenCalled();
+
+    delete process.env.OPENSLACK_GITHUB_APP_ID;
+    const unavailable = requireAppInstallationToken({
+      localStateRoot: join(root, '.openslack.local'),
+      credentialStore: { withSecret },
+    });
+    await expect(unavailable).rejects.toMatchObject({
+      code: 'APP_CONFIG_MISSING',
+      message: 'GitHub App private-key credential is unavailable.',
+    });
+    await unavailable.catch((error: unknown) => {
+      expect(error instanceof Error ? error.message : String(error)).not.toContain(
+        'private-key-canary',
+      );
+    });
+  });
 });
+
+function createWorkspace(): string {
+  const root = mkdtempSync(join(tmpdir(), 'openslack-app-auth-'));
+  roots.push(root);
+  const localStateRoot = join(root, '.openslack.local');
+  mkdirSync(localStateRoot, { recursive: true });
+  writeFileSync(
+    join(root, 'openslack.yaml'),
+    'schema: openslack.workspace.v1\ncanonical_remote:\n  provider: github\n  owner: acme\n  repo: project\n  default_branch: main\n',
+  );
+  writeFileSync(
+    join(localStateRoot, 'github-app.json'),
+    `${JSON.stringify(
+      {
+        schema: 'openslack.github_app_local.v1',
+        appId: '123',
+        installationId: '456',
+        appSlug: 'local-app',
+        privateKeyRef: 'keychain:openslack/test-app',
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  return root;
+}
 
 interface TokenResponse {
   token: string;

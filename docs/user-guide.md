@@ -4,25 +4,61 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 
 ## Start With User Goals
 
-| If you want to...                                | Start with                                                                     | Notes                                                                              |
-| ------------------------------------------------ | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| Verify a fresh checkout                          | `openslack setup`                                                              | Runs workspace, golden, GitHub, genesis, and agent-runtime readiness checks.       |
-| Get guided setup with prompts                    | `openslack setup interactive`                                                  | Walks fixable items step by step; supports `--format plain`                        |
-| Run CI-style setup checks                        | `openslack setup --strict`                                                     | Treats warnings as failures. Use this for release or PR validation.                |
-| Check GitHub readiness without changing anything | `openslack setup github`                                                       | Read-only by default. Use `--apply` only for explicit repairs.                     |
-| Ask OpenSlack what to do                         | `openslack ask "检查系统状态"`                                                 | Uses LLM-first routing when configured; otherwise uses the keyword router.         |
-| Preview a task before creating an Issue          | `openslack task create --title "..." --path "docs/**" --preview`               | Preview is the safe first step. Add `--create-issue` only when ready.              |
-| Let an agent pick up ready work                  | `openslack agent tick --agent-id <id> --source github-issues`                  | Requires a registered and bootstrapped agent identity.                             |
-| Diagnose an Aby external runtime                 | `openslack agent-runtime doctor --provider aby`                                | Checks local bridge configuration without launching a task.                        |
-| Configure an Aby external runtime                | `openslack agent-runtime setup aby --root <path> --write`                      | Writes local gitignored bridge config after validation.                            |
-| Configure the built-in model runtime             | `openslack agent-runtime setup openai-compatible ...`                          | Preview-first; writes only endpoint, model, limits, and a credential reference.    |
-| Diagnose why a PR cannot merge                   | `openslack pr doctor <n>`                                                      | Shows blocker owner, evidence, and next action.                                    |
-| See team state across events and PRs             | `openslack collaboration dashboard`                                            | Projection-only; does not create dashboard-specific state.                         |
-| Record a handoff or decision                     | `openslack collaboration handoff ...` / `openslack collaboration decision ...` | Creates auditable collaboration objects.                                           |
-| Keep the org profile in sync                     | `openslack collaboration workflow profile-sync check`                          | Profile Sync Robot checks and previews are read-only; `run` requires confirmation. |
-| Start a conversation with an agent               | `openslack conversation start --title "..."`                                   | Creates a typed thread with JSONL persistence and secret scanning.                 |
+| If you want to...                                | Start with                                                                     | Notes                                                                                          |
+| ------------------------------------------------ | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| Verify a fresh checkout                          | `openslack setup`                                                              | Runs workspace, golden, GitHub, genesis, and agent-runtime readiness checks.                   |
+| Initialize an ordinary Git repository            | `openslack init --root <repo> --repo <owner/name>`                             | Preview-first; add `--apply` only after reviewing the file plan.                               |
+| Get guided setup with prompts                    | `openslack setup interactive`                                                  | Walks fixable items step by step; supports `--format plain`                                    |
+| Start/resume the durable onboarding ledger       | `openslack setup onboarding --start`                                           | Start once; rerun without `--start` to resume. Existing receipts are never overwritten.       |
+| Run CI-style setup checks                        | `openslack setup --strict`                                                     | Treats warnings as failures. Use this for release or PR validation.                            |
+| Check GitHub readiness without changing anything | `openslack setup github`                                                       | Read-only by default. Use `--apply` only for explicit repairs.                                 |
+| Preview importing an owned GitHub App key        | `openslack github app import ...`                                              | Preview does not read the PEM; `--apply` requires a writable keychain backend.                 |
+| Create an organization-owned GitHub App          | `openslack github app create --org <org>`                                      | Preview-first Manifest flow; `--apply` starts a loopback-only callback.                        |
+| Ask OpenSlack what to do                         | `openslack ask "检查系统状态"`                                                 | Uses LLM-first routing when configured; otherwise uses the keyword router.                     |
+| Preview a task before creating an Issue          | `openslack task create --title "..." --path "docs/**" --preview`               | Preview is the safe first step. Add `--create-issue` only when ready.                          |
+| Let an agent pick up ready work                  | `openslack agent tick --agent-id <id> --source github-issues`                  | Requires a registered and bootstrapped agent identity.                                         |
+| Diagnose an Aby external runtime                 | `openslack agent-runtime doctor --provider aby`                                | Checks local bridge configuration without launching a task.                                    |
+| Configure an Aby external runtime                | `openslack agent-runtime setup aby --root <path> --write`                      | Writes local gitignored bridge config after validation.                                        |
+| Configure the built-in model runtime             | `openslack agent-runtime setup openai-compatible ...`                          | Preview-first; writes only endpoint, model, limits, and a credential reference.                |
+| Diagnose why a PR cannot merge                   | `openslack pr doctor <n>`                                                      | Shows blocker owner, evidence, and next action.                                                |
+| See team state across events and PRs             | `openslack collaboration dashboard`                                            | Projection-only; does not create dashboard-specific state.                                     |
+| Record a handoff or decision                     | `openslack collaboration handoff ...` / `openslack collaboration decision ...` | Creates auditable collaboration objects.                                                       |
+| Keep the org profile in sync                     | `openslack collaboration workflow profile-sync check`                          | Profile Sync Robot checks and previews are read-only; `run` requires confirmation.             |
+| Start a conversation with an agent               | `openslack conversation start --title "..."`                                   | Creates a typed thread with JSONL persistence and secret scanning.                             |
 
 ## Common Workflows
+
+### 0. Resume-safe standalone onboarding
+
+Start the local ledger once, then begin the recommended step before performing
+its preview/apply commands:
+
+```bash
+openslack setup onboarding --start
+openslack setup onboarding begin
+```
+
+If the process or terminal stops after intent is recorded, the step becomes
+`needs_reconcile`. Verify the external state before continuing. Record a safe,
+redacted receipt when the operation succeeded:
+
+```bash
+openslack setup onboarding reconcile-complete workspace \
+  --summary "Workspace initialized" \
+  --evidence-ref workspace://openslack.yaml
+```
+
+Only when verification proves that the interrupted mutation did not occur may
+the step return to pending:
+
+```bash
+openslack setup onboarding reconcile-retry github_app
+```
+
+The ledger guides workspace initialization, provider configuration, GitHub App
+creation/import, installation permissions, author/reviewer identity separation,
+runtime smoke, and the temporary delivery ref probe. It stores intent and safe
+references under gitignored local state; it does not store credentials.
 
 ### 1. Start using OpenSlack on a new checkout
 
@@ -248,6 +284,105 @@ approval on stale PR checks.
 | `openslack setup interactive --format tui`       | Read-only setup report TUI with readiness classification                                      |
 
 ## Workspace
+
+Initialize a normal workspace without copying the OpenSlack source tree into the
+target repository:
+
+```bash
+openslack init --root ../my-product --repo acme/my-product
+# Review the create/append/conflict plan, then:
+openslack init --root ../my-product --repo acme/my-product --apply
+```
+
+The command creates only missing files, appends `.openslack.local/` to the
+existing `.gitignore`, rejects conflicting content and symlink/path escapes, and
+revalidates the preview immediately before applying. Generated provider config
+contains only a credential reference, never a secret. Re-running the same command
+is idempotent.
+
+`WorkspaceContext` keeps installed product assets, checked-in project state, and
+gitignored local state as separate roots. The current embedded asset set covers
+the minimal agent, provider, and workflow templates. Normal `setup`, setup smoke,
+interactive validation, setup reports, and multi-module `doctor` now execute
+package APIs against `workspaceRoot`; they do not spawn
+`apps/cli/src/index.ts` or require the OpenSlack source tree. Golden, Genesis,
+and product module-registry checks run only when `sourceCheckout` is true.
+
+### Import an organization-owned GitHub App
+
+To create a new organization-owned App from the governed manifest, preview the
+owner, callback, permissions, and credential destinations first:
+
+```bash
+openslack github app create --org acme
+openslack github app create --org acme --apply
+```
+
+The preview derives the App homepage from the workspace's canonical GitHub
+remote, falling back to the target organization page when no repository can be
+resolved. Use `--homepage-url <https-url>` to override it. Until an explicit
+`--webhook-url` is supplied, the inactive webhook uses the same target URL only
+to satisfy GitHub's manifest contract; OpenSlack does not enable delivery.
+
+The apply command starts an HTTP server bound only to `127.0.0.1`, then directs
+the browser through GitHub's App Manifest form. The callback uses a 256-bit,
+short-lived, single-use state. GitHub's conversion response is bounded and its
+private key, webhook secret, and client secret are committed transactionally to
+distinct, workspace-derived `keychain:` references using create-only writes.
+Preflight refuses an unavailable backend, an existing config, or an occupied
+reference before GitHub creates the App. No OAuth/PAT token or plaintext secret
+file is accepted. After creation, install the App on the selected repository
+and bind the installation ID before running doctor:
+
+```bash
+openslack github app bind-installation --installation-id <id>
+openslack github app bind-installation --installation-id <id> --apply
+openslack github doctor
+```
+
+The binding command changes only non-secret local metadata, is preview-first,
+is idempotent for the same ID, and refuses to replace a different installation.
+
+If the App already exists, use the manual import flow below.
+
+After initializing the workspace, preview a manual import without reading the
+private-key file:
+
+```bash
+openslack github app import \
+  --source /path/to/app.pem \
+  --app-id 123 \
+  --installation-id 456 \
+  --slug acme-openslack \
+  --key-ref keychain:openslack/acme-openslack
+```
+
+Add `--apply` only after reviewing the plan. PEM content is read only during the
+explicit apply, passed directly to the selected credential backend, zeroed from
+the import buffer, and never written to workspace config. The local config stores
+only the `keychain:` reference. `--delete-source` is optional and best-effort;
+failure produces a manual cleanup warning rather than claiming secure deletion.
+
+After import, ordinary installed commands automatically use that non-secret
+local config. Confirm the selected repository and effective installation
+permissions before the first write:
+
+```bash
+openslack delivery doctor --repo acme/project --require-issues-write
+openslack delivery probe --repo acme/project
+```
+
+The probe is preview-only until `--apply` is supplied. A complete
+`OPENSLACK_GITHUB_APP_*` environment configuration remains supported and takes
+precedence; partial environment configuration fails closed instead of mixing
+environment IDs with a keychain private key.
+
+The default writable backend is the pinned native `@napi-rs/keyring` adapter:
+Windows uses Credential Manager and Linux uses Secret Service. Missing native
+bindings or an unavailable OS service fail closed before external App creation;
+CI/headless setups may continue to use read-only `env:` references. OpenSlack
+does not fall back to plaintext, encrypted files, PowerShell, or `secret-tool`.
+See `docs/developer/keychain-packaging.md` for the artifact contract.
 
 | Command | Purpose |
 |---------|---------|

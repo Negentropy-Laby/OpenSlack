@@ -3,10 +3,20 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "scripts": {
-    "start": "node --import tsx src/index.ts"
+  "main": "./dist/server.js",
+  "types": "./dist/server.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    }
   },
   "dependencies": {
-    "@openslack/github": "workspace:*"
+    "@openslack/credentials": "workspace:*",
+    "@openslack/github": "workspace:*",
+    "@openslack/workspace": "workspace:*"
+  },
+  "scripts": {
+    "start": "node --import tsx src/index.ts"
   }
 }

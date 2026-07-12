@@ -120,7 +120,7 @@ const { issueNumber, url } = await createTaskIssue(
   '## Task\n...',
   ['openslack:task', 'openslack:ready', 'risk:low', 'agent-type:codex'],
 );
-// → Issue #42: https://github.com/wsman/OpenSlack/issues/42
+// → Issue #42: https://github.com/Negentropy-Laby/OpenSlack/issues/42
 ```
 
 ### `queryReadyIssueTasks(options?)`
@@ -233,7 +233,7 @@ openslack agent tick --agent-id anthropic_architect_aby --source github-issues
 # → Action: claimed, Task: #<n>, Claim: refs/heads/openslack/claims/issue-<n>
 
 # 4. Verify claim ref exists on GitHub
-# → https://github.com/wsman/OpenSlack/tree/openslack/claims
+# → https://github.com/Negentropy-Laby/OpenSlack/tree/openslack/claims
 
 # 5. Verify issue labels changed
 # → openslack:ready removed, openslack:claimed added

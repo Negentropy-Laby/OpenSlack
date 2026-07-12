@@ -2,10 +2,18 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
-import { buildSetupReport, detectGenesisShell, renderSetupReport, getNextSteps } from '../setup-report.js';
+import {
+  buildSetupReport,
+  detectGenesisShell,
+  renderSetupReport,
+  getNextSteps,
+} from '../setup-report.js';
 
 function makeRoot(): string {
-  const root = join(tmpdir(), `openslack-setup-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const root = join(
+    tmpdir(),
+    `openslack-setup-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
   mkdirSync(join(root, '.github'), { recursive: true });
   mkdirSync(join(root, '.openslack'), { recursive: true });
   mkdirSync(join(root, 'scripts'), { recursive: true });
@@ -23,6 +31,9 @@ describe('setup report', () => {
       expect(report.dryRun).toBe(true);
       expect(report.findings.some((f) => f.status === 'ok')).toBe(true);
       expect(report.findings.some((f) => f.status === 'requires_github_admin')).toBe(true);
+      expect(report.findings.find((f) => f.id === 'source-maintenance')).toMatchObject({
+        status: 'informational',
+      });
       expect(renderSetupReport(report)).toContain('OpenSlack Setup Report');
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -78,11 +89,10 @@ describe('getNextSteps', () => {
     expect(doctorStep).toBeDefined();
   });
 
-  it('all commands start with bun run openslack', () => {
+  it('all commands use the installed openslack entrypoint', () => {
     const steps = getNextSteps();
     for (const step of steps) {
-      expect(step.command).toMatch(/^bun run openslack /);
+      expect(step.command).toMatch(/^openslack /);
     }
   });
 });
-

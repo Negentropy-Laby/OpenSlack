@@ -23,7 +23,7 @@ supersedes:
 | PR Review & Merge Steward | 1.14 | ACTIVE | Phase 2C chat report and action confirmation active. Supports status/review/recommend/doctor/queue/merge/watch, review/doctor comments, governance audit, operational decision summaries, deadlock detection, Red Zone author-risk preflight, and chat-friendly PR summaries with confirm-merge flow. Workflow artifact governance is bound to deterministic base/head tree evidence and a single current-head human approval carrying Workflow-Trust. |
 | Collaboration Layer | 2D/2E | ACTIVE | Agent Runtime includes the governed OpenAI-compatible Chat Completions provider and repository tool plane with worktree containment, permission enforcement, budget and response limits, redaction, schema-before-complete, and provider-neutral setup/doctor/smoke UX. Full 2D/2E Collaboration Layer active with typed workflow template preview/execute and dashboard with filters (--owner, --module, --risk, --blocker, --type). Workflow engine with JS module discovery, preview, dry-run, execute, resume, trust levels, and inspect (HTML/JSON/Markdown). Dynamic Workflow Parity v1 active with Operator workflow recommendation/ultracode draft trigger, dynamic workflow draft generation, pattern registry (classify-and-act, fanout-synthesize, adversarial-verification, generate-filter, tournament, loop-until-done, model-router), workflow policy config, run listing/control evidence, save/export-skill, budget/model/isolation metadata, and helper APIs on ctx.workflow. Dynamic Workflow UX Closure active with workflow start aggregation, catalog preview, progress evidence model, TUI workflow home and run drilldown, save-run to project/user/Claude project, and budget/routing visibility across draft/run evidence. Event model, activity feed, digest, handoff, decision, and room views with agent display name resolution. Authz-gated chat cards for handoffs, decisions, tasks, workflows, and plans. Agent registry v1 to v2 migration command. TUI dashboard and room views via --format tui. Workflow artifact PRs use one current-head human Workflow-Trust review, deterministic tree evidence, and one Governance Issue only for new/core artifacts; legacy proposal/review publishers remain available but are not merge gates. Run audit, improvement, split with native sub-issue linking and linear dependency fallback, workflow-aware PRMS blocking, and post-merge governance finalization remain active. Profile Sync Robot active with config-driven check/preview/run, idempotent branch naming, failure issue creation, profile_sync.failed event, watch-daemon auto-pr trigger (manual/watch/auto-pr modes), dedupe queue/worker, TUI profile workbench with 6 actions, PRMS profile-sync governance gate (BLOCKED_PROFILE_SYNC_GATE), and buildProfileSyncStatus finalizer. Agent Conversations active with typed thread model (7 message kinds), JSONL persistence, secret scanning on messages and metadata, agent type resolution with Claude Code subagent compatibility, workbench ask/action audit trail, and conversation commands (start/list/show/send/summarize/archive). Agent Runtime (@openslack/agent-runtime) active with launcher, permission profiles, run store, transcript recording, an instance-scoped provider registry, fail-closed runtime gating, test-only local adapter injection, process bridge diagnostics, Aby external runtime doctor/setup/smoke, worktree isolation, fail-closed metadata validation, MCP descriptor status UX, and redacted bridge stderr summaries. Lifecycle events (started/completed/failed) are wired through executeRun/executeResume via agentEventEmitter bridge into collaboration recordEvent, with activity feed and room integration. TUI AgentRun detail view with bridge/MCP observability timeline and Agent Runtime diagnostics view. Negentropy-Lab slot integration surface is planned as an external scenario-pack.extension contribution; OpenSlack exports workflow, PRMS, profile-sync evidence, and projection data without owning Negentropy-Lab AuthorityState. |
 
-## Packages (14 active)
+## Packages (15 active)
 
 - @openslack/kernel
 - @openslack/workspace
@@ -35,6 +35,7 @@ supersedes:
 - @openslack/operator
 - @openslack/chat-gateway
 - @openslack/tui
+- @openslack/credentials
 - @openslack/pr
 - @openslack/collaboration
 - @openslack/workflows
@@ -44,6 +45,7 @@ supersedes:
 
 - openslack self
 - openslack workspace
+- openslack init
 - openslack github
 - openslack agent
 - openslack task
@@ -108,9 +110,9 @@ supersedes:
 
 ## Test Suite
 
-3516 passing Vitest tests across 264 passing files. No failures recorded.
+3560 passing Vitest tests across 277 passing files. No failures recorded.
 
-Module-attributed coverage: 3717 tests across 364 module test files (packages shared across modules are counted per module).
+Module-attributed coverage: 3769 tests across 378 module test files (packages shared across modules are counted per module).
 
 Note: The Vitest line is the raw passing count recorded in .openslack/modules.yaml. The module-attributed coverage line is the per-module sum from .openslack/modules.yaml, where each test file is counted once per module that claims it. Use module counts for coverage tracking; use raw bun run test output for CI verification, including skipped tests.
 

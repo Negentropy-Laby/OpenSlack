@@ -1,6 +1,6 @@
 schema: openslack.modules.v1
-vitest_tests: 3516
-vitest_files: 264
+vitest_tests: 3560
+vitest_files: 277
 modules:
   - id: self_evolution
     name: Self-Evolution Kernel
@@ -9,12 +9,13 @@ modules:
     cli:
       - openslack self
       - openslack workspace
+      - openslack init
     packages:
       - "@openslack/kernel"
       - "@openslack/workspace"
       - "@openslack/runtime"
-    tests: 170
-    test_files: 25
+    tests: 177
+    test_files: 27
     golden_evals: 7
 
   - id: github_task_loop
@@ -31,8 +32,8 @@ modules:
       - "@openslack/runtime"
       - "@openslack/core"
       - "@openslack/delivery"
-    tests: 446
-    test_files: 57
+    tests: 469
+    test_files: 61
     notes: "GitHub Issues task loop active with typed task creation, dry-run repair, Phase 4 watch daemon, and installation-scoped GitHub delivery. Delivery publishes HEAD and a draft PR through the same GitHub App token, disables host credentials and hooks, synchronizes remote/PR SHAs, and returns AWAITING_GATES evidence for PRMS. Read-only installation-scope diagnostics and a preview-first temporary-ref push/delete probe verify selected-repository access and contents write capability before first delivery."
 
   - id: operator
@@ -50,8 +51,9 @@ modules:
       - "@openslack/operator"
       - "@openslack/chat-gateway"
       - "@openslack/tui"
-    tests: 835
-    test_files: 91
+      - "@openslack/credentials"
+    tests: 857
+    test_files: 99
     notes: Structured planner active. Webhook and Slack chat adapters active with actor mapping. PRMS chat cards and action confirmation active. Typed tool registry, LLM-first intent routing with deterministic keyword fallback, setup report, and 24h pending plan store active. Session-based conversation memory with multi-turn context resolution and progressive clarification. Doctor --format plain for non-technical output. Conversation-first TUI workbench with Ask OpenSlack, Operator recommendation cards, workflow draft-first cards, profile sync recommendations, and subagent mention dispatch. TUI setup report view and PR doctor view via --format tui.
 
   - id: pr_review_merge

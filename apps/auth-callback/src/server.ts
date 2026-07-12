@@ -1,206 +1,221 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import type { CredentialStore } from '@openslack/credentials';
+import { createDefaultCredentialStore } from '@openslack/credentials';
 import {
-  boundedJsonPost,
-  BoundedJsonPostError,
-  type BoundedJsonPostFailureCode,
-} from '@openslack/github/bounded-json-post';
+  completeGitHubAppManifest,
+  createGitHubAppManifestSession,
+  defaultGitHubAppManifestRefs,
+  preflightGitHubAppManifest,
+  type GitHubAppManifestInput,
+} from '@openslack/github';
+import { resolveWorkspaceContext } from '@openslack/workspace';
 
-const PORT = parseInt(process.env.AUTH_PORT || '8200', 10);
 const CALLBACK_PATH = '/callback';
-const BIND_HOST = process.env.AUTH_HOST || '127.0.0.1'; // GitHub recommends 127.0.0.1 for native apps
+const DEFAULT_PORT = 8200;
+const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 
-// Generate a random OAuth state to prevent CSRF
-const EXPECTED_STATE = process.env.GH_OAUTH_STATE || createOAuthState();
-
-function findRepoRoot(): string {
-  let dir = process.cwd();
-  for (let i = 0; i < 10; i++) {
-    if (existsSync(join(dir, 'openslack.yaml'))) return dir;
-    const parent = join(dir, '..');
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return process.cwd();
+export interface AuthServerOptions {
+  host?: string;
+  port?: number;
+  timeoutMs?: number;
+  workspaceRoot?: string;
+  organization?: string;
+  appName?: string;
+  homepageUrl?: string;
+  webhookUrl?: string;
+  privateKeyRef?: string;
+  webhookSecretRef?: string;
+  clientSecretRef?: string;
+  credentialStore?: CredentialStore;
+  exchangeCode?: (code: string) => Promise<unknown>;
 }
 
-function sendResponse(res: ServerResponse, code: number, body: string): void {
-  res.writeHead(code, {
-    'Content-Type': 'text/html; charset=utf-8',
-    'Cache-Control': 'no-store',
-    'Referrer-Policy': 'no-referrer',
-    'X-Content-Type-Options': 'nosniff',
+export interface AuthServerResult {
+  status: 'completed' | 'timed_out';
+  appId?: string;
+  appSlug?: string;
+  configPath?: string;
+}
+
+export function startAuthServer(options: AuthServerOptions = {}): Promise<AuthServerResult> {
+  const host = options.host ?? '127.0.0.1';
+  assertLoopbackHost(host);
+  const port = options.port ?? DEFAULT_PORT;
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+    throw new Error('GitHub App Manifest callback port is invalid.');
+  }
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const callbackUrl = `http://${host === '::1' ? '[::1]' : host}:${port}${CALLBACK_PATH}`;
+  const context = resolveWorkspaceContext({
+    workspaceRoot: options.workspaceRoot ?? process.cwd(),
   });
-  res.end(
-    `<!DOCTYPE html><html><body style="font-family:monospace;padding:2em;text-align:center"><h2>OpenSlack Auth</h2><p>${body}</p></body></html>`,
-  );
-}
-
-export type OAuthCallbackResult =
-  | { accepted: true; code: string }
-  | { accepted: false; message: string };
-
-export type OAuthTokenExchangeResult =
-  | { ok: true; token: string }
-  | {
-      ok: false;
-      code:
-        | 'OAUTH_TOKEN_HTTP_ERROR'
-        | 'OAUTH_TOKEN_INVALID_JSON'
-        | 'OAUTH_TOKEN_INVALID_RESPONSE'
-        | 'OAUTH_TOKEN_NETWORK_ERROR'
-        | 'OAUTH_TOKEN_RESPONSE_TOO_LARGE'
-        | 'OAUTH_TOKEN_TIMEOUT';
-    };
-
-export function createOAuthState(): string {
-  return randomBytes(32).toString('base64url');
-}
-
-export function oauthStatesMatch(receivedState: string | null, expectedState: string): boolean {
-  if (!receivedState || !expectedState) return false;
-
-  const receivedDigest = createHash('sha256').update(receivedState).digest();
-  const expectedDigest = createHash('sha256').update(expectedState).digest();
-  return timingSafeEqual(receivedDigest, expectedDigest);
-}
-
-function oauthTokenFailureCode(
-  code: BoundedJsonPostFailureCode,
-): Exclude<OAuthTokenExchangeResult, { ok: true }>['code'] {
-  const codes: Record<
-    BoundedJsonPostFailureCode,
-    Exclude<OAuthTokenExchangeResult, { ok: true }>['code']
-  > = {
-    HTTP_ERROR: 'OAUTH_TOKEN_HTTP_ERROR',
-    INVALID_JSON: 'OAUTH_TOKEN_INVALID_JSON',
-    INVALID_RESPONSE: 'OAUTH_TOKEN_INVALID_RESPONSE',
-    NETWORK_ERROR: 'OAUTH_TOKEN_NETWORK_ERROR',
-    RESPONSE_TOO_LARGE: 'OAUTH_TOKEN_RESPONSE_TOO_LARGE',
-    TIMEOUT: 'OAUTH_TOKEN_TIMEOUT',
+  const defaultRefs = defaultGitHubAppManifestRefs(context.workspaceRoot);
+  const input: GitHubAppManifestInput = {
+    localStateRoot: context.localStateRoot,
+    callbackUrl,
+    appName: options.appName ?? 'OpenSlack Agent Operator',
+    organization: options.organization,
+    homepageUrl: options.homepageUrl,
+    webhookUrl: options.webhookUrl,
+    privateKeyRef: options.privateKeyRef ?? defaultRefs.privateKeyRef,
+    webhookSecretRef: options.webhookSecretRef ?? defaultRefs.webhookSecretRef,
+    clientSecretRef: options.clientSecretRef ?? defaultRefs.clientSecretRef,
   };
-  return codes[code];
-}
+  const credentialStore = options.credentialStore ?? createDefaultCredentialStore(process.env);
+  preflightGitHubAppManifest(input, credentialStore);
+  const session = createGitHubAppManifestSession(input, { ttlMs: timeoutMs });
 
-export function parseOAuthCallback(url: URL, expectedState: string): OAuthCallbackResult {
-  const state = url.searchParams.get('state');
-  if (!oauthStatesMatch(state, expectedState)) {
-    return { accepted: false, message: 'Invalid OAuth state parameter.' };
-  }
-
-  // Tokens in URLs leak through browser history, referrers, and intermediary logs.
-  if (url.searchParams.has('access_token')) {
-    return { accepted: false, message: 'OAuth token query parameters are not accepted.' };
-  }
-
-  const code = url.searchParams.get('code');
-  if (!code) {
-    return { accepted: false, message: 'No authorization code received.' };
-  }
-
-  return { accepted: true, code };
-}
-
-export async function exchangeCodeForToken(code: string): Promise<OAuthTokenExchangeResult> {
-  const body = new URLSearchParams({
-    client_id: process.env.GH_CLIENT_ID || '',
-    client_secret: process.env.GH_CLIENT_SECRET || '',
-    code,
-  }).toString();
-
-  try {
-    const response = await boundedJsonPost({
-      url: 'https://github.com/login/oauth/access_token',
-      body,
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Accept: 'application/json',
-      },
-    });
-
-    // boundedJsonPost validates only a top-level object; validate the OAuth token contract here.
-    if (typeof response.access_token !== 'string' || response.access_token.trim().length === 0) {
-      return { ok: false, code: 'OAUTH_TOKEN_INVALID_RESPONSE' };
-    }
-
-    return { ok: true, token: response.access_token.trim() };
-  } catch (error) {
-    return {
-      ok: false,
-      code:
-        error instanceof BoundedJsonPostError
-          ? oauthTokenFailureCode(error.code)
-          : 'OAUTH_TOKEN_NETWORK_ERROR',
-    };
-  }
-}
-
-export function startAuthServer(): Promise<void> {
   return new Promise((resolve, reject) => {
-    const root = findRepoRoot();
-    let captured = false;
-
+    let phase: 'waiting' | 'processing' | 'terminal' = 'waiting';
     const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
-      const url = new URL(req.url || '/', `http://localhost:${PORT}`);
-
-      if (url.pathname === CALLBACK_PATH && !captured) {
-        const callback = parseOAuthCallback(url, EXPECTED_STATE);
-        if (!callback.accepted) {
-          sendResponse(res, 400, callback.message);
-          return;
-        }
-
-        console.log('[Auth] Got OAuth code, exchanging for token...');
-        const exchange = await exchangeCodeForToken(callback.code);
-        if (exchange.ok) {
-          captured = true;
-          const tokenDir = join(root, '.openslack.local');
-          mkdirSync(tokenDir, { recursive: true });
-          writeFileSync(join(tokenDir, 'github-token'), exchange.token, 'utf-8');
-          console.log(`[Auth] Token saved to ${join(tokenDir, 'github-token')}`);
-          console.log(`[Auth] Run: gh auth login --with-token < ${join(tokenDir, 'github-token')}`);
-          sendResponse(res, 200, 'Token captured. You can close this window.');
-          server.close(() => resolve());
-          return;
-        }
-
-        console.error(`[Auth] OAuth code exchange failed (${exchange.code}).`);
-        sendResponse(res, 502, 'OAuth authorization code exchange failed safely.');
+      if (!isExpectedHost(req.headers.host, host, port)) {
+        sendHtml(res, 421, renderMessage('Invalid loopback Host header.'));
+        return;
+      }
+      const url = new URL(req.url ?? '/', callbackUrl);
+      if (req.method === 'GET' && url.pathname === '/') {
+        sendHtml(
+          res,
+          200,
+          renderRegistrationPage(session.actionUrl, session.state, session.manifest),
+        );
+        return;
+      }
+      if (req.method !== 'GET' || url.pathname !== CALLBACK_PATH) {
+        sendHtml(res, 404, renderMessage('Not found.'));
         return;
       }
 
-      sendResponse(res, 400, 'No authorization code received.');
+      // Tokens in URLs leak through browser history, referrers, and intermediary logs.
+      // Reject the parameter even when a valid Manifest callback code is also present.
+      if (url.searchParams.has('access_token')) {
+        sendHtml(res, 400, renderMessage('Token query parameters are not accepted.'));
+        return;
+      }
+
+      const state = url.searchParams.get('state') ?? '';
+      const code = url.searchParams.get('code') ?? '';
+      if (!/^[A-Za-z0-9_-]{16,256}$/.test(code)) {
+        sendHtml(res, 400, renderMessage('GitHub App Manifest callback code is invalid.'));
+        return;
+      }
+      try {
+        session.consume(state);
+      } catch (error) {
+        sendHtml(res, 400, renderMessage(safeErrorMessage(error)));
+        return;
+      }
+      phase = 'processing';
+      clearTimeout(timeout);
+
+      try {
+        const result = await completeGitHubAppManifest(input, code, {
+          credentialStore,
+          exchangeCode: options.exchangeCode,
+        });
+        phase = 'terminal';
+        sendHtml(
+          res,
+          200,
+          renderMessage(
+            'GitHub App credentials were stored by reference. You can close this window.',
+          ),
+        );
+        server.close(() =>
+          resolve({
+            status: 'completed',
+            appId: result.appId,
+            appSlug: result.appSlug,
+            configPath: result.configPath,
+          }),
+        );
+      } catch (error) {
+        phase = 'terminal';
+        const safe = new Error(safeErrorMessage(error));
+        sendHtml(res, 502, renderMessage(safe.message));
+        server.close(() => reject(safe));
+      }
     });
 
-    server.listen(PORT, BIND_HOST, () => {
-      console.log(`[Auth] Listening on http://${BIND_HOST}:${PORT}${CALLBACK_PATH}`);
-      console.log(`[Auth] OAuth state: ${EXPECTED_STATE}`);
-      console.log('[Auth] Waiting for GitHub OAuth redirect...');
-      console.log(`[Auth] Redirect URI: http://${BIND_HOST}:${PORT}/callback`);
-      console.log('');
-      console.log('Use this URL to authorize your own OAuth App:');
+    server.listen(port, host, () => {
       console.log(
-        `  https://github.com/login/oauth/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=http://${BIND_HOST}:${PORT}/callback&scope=repo,read:project,project&state=${EXPECTED_STATE}`,
+        `[Auth] GitHub App Manifest setup: http://${host === '::1' ? '[::1]' : host}:${port}/`,
       );
-      console.log('');
-      console.log('NOT for capturing GitHub CLI (gh) tokens.');
+      console.log(
+        `[Auth] Callback is loopback-only and expires at ${new Date(session.expiresAt).toISOString()}.`,
+      );
+      console.log('[Auth] No OAuth or installation token will be accepted or written to disk.');
     });
 
-    server.on('error', (err: Error) => {
-      if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
-        console.error(`[Auth] Port ${PORT} already in use.`);
-      }
-      reject(err);
+    server.on('error', (_error: Error) => {
+      phase = 'terminal';
+      clearTimeout(timeout);
+      reject(new Error('GitHub App Manifest callback server could not start.'));
     });
 
-    // Auto-shutdown after 2 minutes if no callback received
-    setTimeout(() => {
-      if (!captured) {
-        console.log('[Auth] Timeout — no callback received after 2 minutes.');
-        server.close(() => resolve());
-      }
-    }, 120000);
+    const timeout = setTimeout(() => {
+      if (phase !== 'waiting') return;
+      phase = 'terminal';
+      server.close(() => resolve({ status: 'timed_out' }));
+    }, timeoutMs);
+    timeout.unref();
   });
+}
+
+export function assertLoopbackHost(host: string): void {
+  if (host !== '127.0.0.1' && host !== '::1') {
+    throw new Error('GitHub App Manifest callback must bind to 127.0.0.1 or ::1.');
+  }
+}
+
+export function isExpectedHost(header: string | undefined, host: string, port: number): boolean {
+  const expected = host === '::1' ? `[::1]:${port}` : `${host}:${port}`;
+  return header === expected;
+}
+
+function renderRegistrationPage(actionUrl: string, state: string, manifest: object): string {
+  return page(`
+    <h2>OpenSlack GitHub App setup</h2>
+    <p>Review the requested repository permissions on GitHub before creating the App.</p>
+    <form action="${escapeHtml(`${actionUrl}?state=${encodeURIComponent(state)}`)}" method="post">
+      <input type="hidden" name="manifest" value="${escapeHtml(JSON.stringify(manifest))}">
+      <button type="submit">Create GitHub App</button>
+    </form>
+  `);
+}
+
+function renderMessage(message: string): string {
+  return page(`<h2>OpenSlack GitHub App setup</h2><p>${escapeHtml(message)}</p>`);
+}
+
+function page(body: string): string {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>OpenSlack GitHub App setup</title></head><body style="font-family:system-ui;padding:2rem;max-width:48rem;margin:auto">${body}</body></html>`;
+}
+
+function sendHtml(res: ServerResponse, status: number, body: string): void {
+  res.writeHead(status, {
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'Content-Security-Policy':
+      "default-src 'none'; style-src 'unsafe-inline'; form-action https://github.com; base-uri 'none'; frame-ancestors 'none'",
+    'Referrer-Policy': 'no-referrer',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  res.end(body);
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function safeErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message.startsWith('GitHub App Manifest')) {
+    return error.message;
+  }
+  return 'GitHub App Manifest setup failed safely. Run openslack doctor for remediation.';
 }

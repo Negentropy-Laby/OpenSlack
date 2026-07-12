@@ -1,4 +1,7 @@
-import { describe, it, expect, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { executeResume } from '../../execute.js'
 import { RunStore } from '../../run-store.js'
 import type { RunStoreFs, RunMeta } from '../../run-store.js'
@@ -85,6 +88,16 @@ async function initPausedRun(
 }
 
 describe('executeResume integration', () => {
+  let executionRoot: string
+
+  beforeEach(() => {
+    executionRoot = mkdtempSync(join(tmpdir(), 'openslack-workflow-resume-'))
+  })
+
+  afterEach(() => {
+    rmSync(executionRoot, { recursive: true, force: true })
+  })
+
   it('executes the workflow run function', async () => {
     const runFn = vi.fn(async (ctx: WorkflowRuntime) => {
       ctx.phase('Scan')
@@ -98,6 +111,7 @@ describe('executeResume integration', () => {
       runId: 'run-resume-001',
       manifest: TEST_MANIFEST,
       onConfirm: async () => true,
+      rootDir: executionRoot,
     })
     expect(result.status).toBe('complete')
     expect(runFn).toHaveBeenCalledTimes(1)
@@ -106,7 +120,12 @@ describe('executeResume integration', () => {
   it('throws when workflow has no run function', async () => {
     const workflow = { meta: TEST_MANIFEST }
     await expect(
-      executeResume(workflow, { runId: 'run-001', manifest: TEST_MANIFEST, onConfirm: async () => true }),
+      executeResume(workflow, {
+        runId: 'run-001',
+        manifest: TEST_MANIFEST,
+        onConfirm: async () => true,
+        rootDir: executionRoot,
+      }),
     ).rejects.toThrow('no run function')
   })
 
@@ -121,6 +140,7 @@ describe('executeResume integration', () => {
       manifest: TEST_MANIFEST,
       args: { key: 'value' },
       onConfirm: async () => true,
+      rootDir: executionRoot,
     })
     expect(result.receivedArgs).toEqual({ key: 'value' })
   })
@@ -142,6 +162,7 @@ describe('executeResume integration', () => {
       manifest: TEST_MANIFEST,
       agentLauncher: launcher,
       onConfirm: async () => true,
+      rootDir: executionRoot,
     })
     const agentResult = result.agentResult as { resumed: boolean }
     expect(agentResult).toEqual({ resumed: true })
@@ -160,6 +181,7 @@ describe('executeResume integration', () => {
       runId: 'run-resume-001',
       manifest: TEST_MANIFEST,
       onConfirm,
+      rootDir: executionRoot,
     })
     expect(result.status).toBe('complete')
     expect(onConfirm).toHaveBeenCalledTimes(1)
@@ -179,6 +201,7 @@ describe('executeResume integration', () => {
         runId: 'run-resume-001',
         manifest: TEST_MANIFEST,
         onConfirm,
+        rootDir: executionRoot,
       }),
     ).rejects.toThrow('Execute denied')
   })

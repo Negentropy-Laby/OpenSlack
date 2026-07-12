@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setupCommands } from '../commands/setup.js';
-import { execFileSync as actualExecFileSync } from 'node:child_process';
+import { execFileSync as actualExecFileSync, execSync as actualExecSync } from 'node:child_process';
 
 vi.mock('node:child_process', () => ({
   execSync: vi.fn((command: string) => {
@@ -21,17 +21,48 @@ vi.mock('node:readline', () => ({
   })),
 }));
 
-const mockRecommendNextActions = vi.fn<(ctx?: unknown) => Array<{ priority: number; title: string; action: string; command?: string }>>(() => [
-  { priority: 6, title: 'All clear', action: 'No actions needed.', command: 'openslack ask "what next?"' },
+const mockRecommendNextActions = vi.fn<
+  (ctx?: unknown) => Array<{ priority: number; title: string; action: string; command?: string }>
+>(() => [
+  {
+    priority: 6,
+    title: 'All clear',
+    action: 'No actions needed.',
+    command: 'openslack ask "what next?"',
+  },
 ]);
-const mockRenderFindingsPlain = vi.fn<(findings?: unknown) => string>(() => 'OK: Workspace root\n  /repo');
+const mockRenderFindingsPlain = vi.fn<(findings?: unknown) => string>(
+  () => 'OK: Workspace root\n  /repo',
+);
 const mockBuildSetupReport = vi.fn<(opts?: unknown) => Promise<unknown>>();
-const mockGetNextSteps = vi.fn<() => Array<{ label: string; command: string; description: string }>>(() => [
-  { label: 'Check your workspace status', command: 'bun run openslack status', description: 'Show current workspace state, modules, and health' },
-  { label: 'Review your PRs', command: 'bun run openslack pr list', description: 'List open pull requests and their status' },
-  { label: 'See the team dashboard', command: 'bun run openslack collaboration dashboard', description: 'View team activity, events, and collaboration metrics' },
-  { label: 'Get a role-specific guide', command: 'bun run openslack guide operator', description: 'Show the operator role guide with common workflows' },
-  { label: 'Run diagnostics', command: 'bun run openslack doctor', description: 'Run a full diagnostic check on your workspace' },
+const mockGetNextSteps = vi.fn<
+  () => Array<{ label: string; command: string; description: string }>
+>(() => [
+  {
+    label: 'Check your workspace status',
+    command: 'bun run openslack status',
+    description: 'Show current workspace state, modules, and health',
+  },
+  {
+    label: 'Review your PRs',
+    command: 'bun run openslack pr list',
+    description: 'List open pull requests and their status',
+  },
+  {
+    label: 'See the team dashboard',
+    command: 'bun run openslack collaboration dashboard',
+    description: 'View team activity, events, and collaboration metrics',
+  },
+  {
+    label: 'Get a role-specific guide',
+    command: 'bun run openslack guide operator',
+    description: 'Show the operator role guide with common workflows',
+  },
+  {
+    label: 'Run diagnostics',
+    command: 'bun run openslack doctor',
+    description: 'Run a full diagnostic check on your workspace',
+  },
 ]);
 const LLM_ENV_KEYS = [
   'OPENSLACK_LLM_PROVIDER',
@@ -53,12 +84,23 @@ vi.mock('@openslack/runtime', () => ({
   recommendNextActions: (ctx: unknown) => mockRecommendNextActions(ctx),
   renderFindingsPlain: (findings: unknown) => mockRenderFindingsPlain(findings),
   getNextSteps: () => mockGetNextSteps(),
+  runGoldenEval: vi.fn(() =>
+    Array.from({ length: 7 }, (_, index) => ({ caseId: `case-${index}`, passed: true })),
+  ),
 }));
 
+vi.mock('@openslack/github', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@openslack/github')>();
+  return {
+    ...actual,
+    getClient: vi.fn(async () => ({ isDryRun: true, authMode: 'dry_run' })),
+  };
+});
+
 vi.mock('@openslack/operator', async () => {
-  const actual = await vi.importActual<typeof import('../../../../packages/operator/src/llm-config.js')>(
-    '../../../../packages/operator/src/llm-config.js',
-  );
+  const actual = await vi.importActual<
+    typeof import('../../../../packages/operator/src/llm-config.js')
+  >('../../../../packages/operator/src/llm-config.js');
   return {
     describeLLMRoutingConfig: actual.describeLLMRoutingConfig,
   };
@@ -81,8 +123,19 @@ const defaultFindings = [
   { id: 'repo-root', title: 'Workspace root', status: 'ok', detail: '/repo' },
   { id: 'git-remote', title: 'Git remote', status: 'ok', detail: 'origin configured' },
   { id: 'github-auth', title: 'GitHub auth', status: 'ok', detail: 'token set' },
-  { id: 'github-labels', title: 'OpenSlack labels', status: 'fixable_by_command', detail: 'Can be repaired', command: 'openslack github repair labels --apply' },
-  { id: 'branch-protection', title: 'Branch protection', status: 'requires_github_admin', detail: 'Check settings' },
+  {
+    id: 'github-labels',
+    title: 'OpenSlack labels',
+    status: 'fixable_by_command',
+    detail: 'Can be repaired',
+    command: 'openslack github repair labels --apply',
+  },
+  {
+    id: 'branch-protection',
+    title: 'Branch protection',
+    status: 'requires_github_admin',
+    detail: 'Check settings',
+  },
 ];
 
 async function runInteractive(args: string[]): Promise<string[]> {
@@ -164,9 +217,9 @@ describe('setup interactive', () => {
     expect(logs.join('\n')).toContain('almost ready');
   });
 
-  it('runs validation steps via execFileSync', async () => {
+  it('runs validation steps in-process without a source CLI child', async () => {
     await runInteractive([]);
-    expect(vi.mocked(actualExecFileSync)).toHaveBeenCalled();
+    expect(vi.mocked(actualExecFileSync)).not.toHaveBeenCalled();
   });
 
   it('prints next steps from recommendNextActions', async () => {
@@ -231,5 +284,42 @@ describe('setup interactive', () => {
 
     expect(output).toContain('⚠ Intent Routing: misconfigured');
     expect(output).not.toContain('model: default');
+  });
+
+  it('runs normal-workspace setup without source CLI, golden, or Genesis assumptions', async () => {
+    const logs: string[] = [];
+    const runGolden = vi.fn(() => []);
+    const command = setupCommands({
+      resolveContext: () =>
+        ({
+          productHome: '/product',
+          workspaceRoot: '/ordinary-repo',
+          projectStateRoot: '/ordinary-repo/.openslack',
+          localStateRoot: '/ordinary-repo/.openslack.local',
+          sourceCheckout: false,
+          assetResolver: { readText: vi.fn() },
+        }) as never,
+      validate: vi.fn(() => ({ valid: true, errors: [] })),
+      runGolden,
+      getGitHubClient: vi.fn(async () => ({ isDryRun: true, authMode: 'dry_run' }) as never),
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit');
+    });
+    try {
+      await expect(command.parseAsync(['node', 'openslack'], { from: 'node' })).rejects.toThrow(
+        'process.exit',
+      );
+    } finally {
+      logSpy.mockRestore();
+      exitSpy.mockRestore();
+    }
+    expect(logs.join('\n')).toContain('[PASS] Source maintenance');
+    expect(runGolden).not.toHaveBeenCalled();
+    expect(vi.mocked(actualExecFileSync)).not.toHaveBeenCalled();
+    expect(vi.mocked(actualExecSync)).not.toHaveBeenCalled();
   });
 });

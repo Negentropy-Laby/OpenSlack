@@ -1,6 +1,6 @@
 # Branch Protection Ruleset
 
-> Target: `wsman/OpenSlack` repository, `main` branch
+> Target: `Negentropy-Laby/OpenSlack` repository, `main` branch
 > Required action: Human admin with GitHub Settings access
 > Automation path: None (GitHub App token lacks `Administration` permission by design)
 

@@ -22,3 +22,20 @@ export type { MigrationResult } from './registry-migrate.js';
 // Subagent Parser
 export { parseSubagentMarkdown, discoverSubagents, resolveSubagent } from './subagent-parser.js';
 
+// Installed product / workspace path contract
+export {
+  createEmbeddedAssetResolver,
+  findWorkspaceRoot,
+  resolveWorkspaceContext,
+  WorkspaceContextError,
+} from './workspace-context.js';
+export type {
+  AssetResolver,
+  ProductAssetId,
+  ResolveWorkspaceContextOptions,
+  WorkspaceContext,
+} from './workspace-context.js';
+
+// Idempotent ordinary-repository initialization
+export { applyWorkspaceInit, planWorkspaceInit, renderWorkspaceInitPlan } from './init.js';
+export type { WorkspaceInitInput, WorkspaceInitOperation, WorkspaceInitPlan } from './init.js';

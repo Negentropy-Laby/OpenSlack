@@ -2,9 +2,18 @@ import { Command } from 'commander';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
-import { getClient, queryReadyItems } from '@openslack/github';
+import {
+  bindGitHubAppInstallation,
+  defaultGitHubAppManifestRefs,
+  getClient,
+  queryReadyItems,
+  readGitHubAppLocalConfig,
+  resolveGitHubRepoTarget,
+} from '@openslack/github';
 import { recordEvent as _recordEvent } from '@openslack/collaboration';
 import type { RecordEventFn } from '@openslack/github';
+import { createDefaultCredentialStore, type CredentialStore } from '@openslack/credentials';
+import { resolveWorkspaceContext } from '@openslack/workspace';
 const recordEvent = _recordEvent as unknown as RecordEventFn;
 import { buildAutoClaimFn } from './watch-auto-claim.js';
 
@@ -28,7 +37,9 @@ function hasRemote(): boolean {
   }
 }
 
-function renderRepairResults(results: Array<{ fixed: boolean; planned?: boolean; detail: string; issueNumber?: number }>): void {
+function renderRepairResults(
+  results: Array<{ fixed: boolean; planned?: boolean; detail: string; issueNumber?: number }>,
+): void {
   if (results.length === 0) {
     console.log('No repair actions found.');
     return;
@@ -40,7 +51,11 @@ function renderRepairResults(results: Array<{ fixed: boolean; planned?: boolean;
   }
 }
 
-function recordGithubRepair(scope: string, results: Array<{ fixed: boolean; planned?: boolean }>, applied: boolean): void {
+function recordGithubRepair(
+  scope: string,
+  results: Array<{ fixed: boolean; planned?: boolean }>,
+  applied: boolean,
+): void {
   try {
     const failed = results.some((r) => !r.fixed && !r.planned);
     recordEvent({
@@ -59,8 +74,164 @@ function recordGithubRepair(scope: string, results: Array<{ fixed: boolean; plan
   }
 }
 
-export function githubCommands(): Command {
+export interface GitHubCommandDependencies {
+  credentialStore?: CredentialStore;
+  startAppManifestServer?: (options: {
+    workspaceRoot: string;
+    organization: string;
+    appName?: string;
+    port?: number;
+    homepageUrl?: string;
+    webhookUrl?: string;
+    credentialStore?: CredentialStore;
+  }) => Promise<{ status: 'completed' | 'timed_out'; appId?: string; appSlug?: string }>;
+}
+
+export function githubCommands(dependencies: GitHubCommandDependencies = {}): Command {
   const cmd = new Command('github').description('GitHub integration commands');
+
+  const app = cmd.command('app').description('Configure an organization-owned GitHub App');
+  app
+    .command('create')
+    .description('Preview or start the loopback GitHub App Manifest flow')
+    .requiredOption('--org <organization>', 'Organization that will own the GitHub App')
+    .option('--name <name>', 'GitHub App name', 'OpenSlack Agent Operator')
+    .option('--port <number>', 'Loopback callback port', '8200')
+    .option('--homepage-url <https-url>', 'GitHub App homepage; defaults to target repository')
+    .option('--webhook-url <https-url>', 'Webhook URL; delivery is disabled initially')
+    .option('--apply', 'Start the loopback server after preview')
+    .action(async (options) => {
+      try {
+        const port = Number.parseInt(String(options.port), 10);
+        if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+          throw new Error('GitHub App Manifest callback port is invalid.');
+        }
+        const organization = String(options.org);
+        const appName = String(options.name);
+        const root = findRepoRoot();
+        const homepageUrl = options.homepageUrl
+          ? String(options.homepageUrl)
+          : resolveManifestHomepage(root, organization);
+        const refs = defaultGitHubAppManifestRefs(root);
+        console.log('GitHub App Manifest preview');
+        console.log(`- Owner: ${organization}`);
+        console.log(`- App: ${appName}`);
+        console.log(`- Homepage: ${homepageUrl}`);
+        console.log(`- Callback: http://127.0.0.1:${port}/callback`);
+        console.log(
+          '- Permissions: metadata:read, contents:write, issues:write, pull_requests:write, workflows:write',
+        );
+        console.log(`- Private key: ${refs.privateKeyRef}`);
+        console.log(`- Webhook secret: ${refs.webhookSecretRef}`);
+        console.log(`- Client secret: ${refs.clientSecretRef}`);
+        if (!options.apply) {
+          console.log('No server was started and no credential was written. Re-run with --apply.');
+          return;
+        }
+        const start =
+          dependencies.startAppManifestServer ??
+          (await import('@openslack/auth-callback')).startAuthServer;
+        const result = await start({
+          workspaceRoot: root,
+          organization,
+          appName,
+          port,
+          homepageUrl,
+          webhookUrl: options.webhookUrl ? String(options.webhookUrl) : undefined,
+          credentialStore:
+            dependencies.credentialStore ?? createDefaultCredentialStore(process.env),
+        });
+        if (result.status === 'timed_out') {
+          throw new Error('GitHub App Manifest setup timed out without changing credentials.');
+        }
+        console.log(`GitHub App created: ${result.appSlug} (${result.appId})`);
+        console.log(
+          'Install the App on the selected repository, then run openslack github doctor.',
+        );
+      } catch (error) {
+        console.error(
+          error instanceof Error && error.message.startsWith('GitHub App Manifest')
+            ? error.message
+            : 'GitHub App Manifest setup failed safely.',
+        );
+        process.exitCode = 1;
+      }
+    });
+  app
+    .command('import')
+    .description('Preview or import an existing App private key into the configured keychain')
+    .requiredOption('--source <path>', 'Existing PEM source path; never pass PEM content in argv')
+    .requiredOption('--app-id <id>', 'GitHub App ID')
+    .requiredOption('--installation-id <id>', 'GitHub App installation ID')
+    .requiredOption('--slug <slug>', 'GitHub App slug')
+    .requiredOption('--key-ref <keychain:service/account>', 'Writable keychain reference')
+    .option('--delete-source', 'Best-effort source deletion after successful storage')
+    .option('--apply', 'Read and import the source after preview')
+    .action(async (options) => {
+      try {
+        const root = findRepoRoot();
+        const context = resolveWorkspaceContext({ workspaceRoot: root });
+        const { applyGitHubAppImport, planGitHubAppImport } = await import('@openslack/github');
+        const plan = planGitHubAppImport({
+          localStateRoot: context.localStateRoot,
+          sourcePath: String(options.source),
+          appId: String(options.appId),
+          installationId: String(options.installationId),
+          appSlug: String(options.slug),
+          privateKeyRef: String(options.keyRef),
+          deleteSource: Boolean(options.deleteSource),
+        });
+        console.log('GitHub App import preview');
+        for (const line of plan.summary) console.log(`- ${line}`);
+        if (!options.apply) {
+          console.log('No credential was read or written. Re-run with --apply after reviewing.');
+          return;
+        }
+        const result = applyGitHubAppImport(plan, {
+          credentialStore:
+            dependencies.credentialStore ?? createDefaultCredentialStore(process.env),
+        });
+        console.log(`GitHub App reference stored: ${result.privateKeyRef}`);
+        console.log(`Local config: ${result.configPath}`);
+        for (const warning of result.warnings) console.log(`[WARN] ${warning}`);
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : 'GitHub App import failed.');
+        process.exitCode = 1;
+      }
+    });
+
+  app
+    .command('bind-installation')
+    .description('Bind a completed App Manifest setup to its installation ID')
+    .requiredOption('--installation-id <id>', 'GitHub App installation ID')
+    .option('--apply', 'Write the non-secret installation ID to local config')
+    .action((options) => {
+      try {
+        const root = findRepoRoot();
+        const context = resolveWorkspaceContext({ workspaceRoot: root });
+        const installationId = String(options.installationId);
+        const config = readGitHubAppLocalConfig(context.localStateRoot);
+        if (!config) throw new Error('GitHub App local configuration is missing.');
+        console.log('GitHub App installation binding preview');
+        console.log(`- App: ${config.appSlug} (${config.appId})`);
+        console.log(`- Installation ID: ${installationId}`);
+        if (!options.apply) {
+          console.log('No local config was changed. Re-run with --apply after verification.');
+          return;
+        }
+        const result = bindGitHubAppInstallation(context.localStateRoot, installationId);
+        console.log(
+          result.changed
+            ? 'GitHub App installation binding saved.'
+            : 'GitHub App installation binding already matches.',
+        );
+      } catch (error) {
+        console.error(
+          error instanceof Error ? error.message : 'GitHub App installation binding failed.',
+        );
+        process.exitCode = 1;
+      }
+    });
 
   cmd
     .command('doctor')
@@ -72,49 +243,113 @@ export function githubCommands(): Command {
       // Auth tier check
       let client;
       try {
-        client = await getClient();
+        client = await getClient({
+          cwd: root,
+          credentialStore: dependencies.credentialStore,
+        });
       } catch {
         client = { authMode: 'dry_run' as const, isDryRun: true, tokenExpiresAt: undefined };
       }
-      const authTier = client.authMode === 'github_app_installation' ? 'GitHub App Installation Token' :
-        client.authMode === 'token' ? 'PAT / GITHUB_TOKEN' : 'Dry-run (no credentials)';
+      const authTier =
+        client.authMode === 'github_app_installation'
+          ? 'GitHub App Installation Token'
+          : client.authMode === 'token'
+            ? 'PAT / GITHUB_TOKEN'
+            : 'Dry-run (no credentials)';
       checks.push({
         name: 'Auth tier',
         passed: client.authMode !== 'dry_run',
         detail: `${authTier}${client?.tokenExpiresAt ? ` (expires: ${client.tokenExpiresAt})` : ''}`,
       });
 
+      try {
+        const context = resolveWorkspaceContext({ workspaceRoot: root });
+        const localConfig = readGitHubAppLocalConfig(context.localStateRoot);
+        if (localConfig) {
+          checks.push({
+            name: 'GitHub App local config',
+            passed: true,
+            detail: `${localConfig.appSlug} (${localConfig.appId}); private key reference configured`,
+          });
+          checks.push({
+            name: 'Local installation binding',
+            passed: localConfig.installationId !== null,
+            detail:
+              localConfig.installationId === null
+                ? 'Not bound — run github app bind-installation after installing the App'
+                : `Installation ${localConfig.installationId}`,
+          });
+        }
+      } catch {
+        checks.push({
+          name: 'GitHub App local config',
+          passed: false,
+          detail: 'Invalid local App metadata; no credential value was read',
+        });
+      }
+
       const appId = process.env.OPENSLACK_GITHUB_APP_ID;
       const installId = process.env.OPENSLACK_GITHUB_APP_INSTALLATION_ID;
       const hasPrivateKey = !!process.env.OPENSLACK_GITHUB_APP_PRIVATE_KEY;
       if (appId || installId || hasPrivateKey) {
         checks.push({ name: 'GitHub App ID', passed: !!appId, detail: appId || 'Not set' });
-        checks.push({ name: 'Installation ID', passed: !!installId, detail: installId || 'Not set' });
-        checks.push({ name: 'Private key', passed: hasPrivateKey, detail: hasPrivateKey ? 'Set (masked)' : 'Not set' });
+        checks.push({
+          name: 'Installation ID',
+          passed: !!installId,
+          detail: installId || 'Not set',
+        });
+        checks.push({
+          name: 'Private key',
+          passed: hasPrivateKey,
+          detail: hasPrivateKey ? 'Set (masked)' : 'Not set',
+        });
       }
 
       // Remote check
-      checks.push({ name: 'Git remote', passed: hasRemote(), detail: hasRemote() ? 'origin configured' : 'No remote' });
+      checks.push({
+        name: 'Git remote',
+        passed: hasRemote(),
+        detail: hasRemote() ? 'origin configured' : 'No remote',
+      });
 
       // Integration config check
       const githubYaml = join(root, '.openslack', 'integrations', 'github.yaml');
       if (existsSync(githubYaml)) {
         const raw = readFileSync(githubYaml, 'utf-8');
-        const hasNodeId = raw.includes('node_id:') && !raw.includes('node_id: ""') && !raw.includes('node_id: \'\'');
-        checks.push({ name: 'Project v2 (optional)', passed: true, detail: hasNodeId ? 'Configured' : 'Not configured — Project v2 is optional (issues-first default)' });
+        const hasNodeId =
+          raw.includes('node_id:') && !raw.includes('node_id: ""') && !raw.includes("node_id: ''");
+        checks.push({
+          name: 'Project v2 (optional)',
+          passed: true,
+          detail: hasNodeId
+            ? 'Configured'
+            : 'Not configured — Project v2 is optional (issues-first default)',
+        });
         checks.push({ name: 'Integration YAML', passed: true, detail: githubYaml });
       } else {
-        checks.push({ name: 'Integration YAML', passed: false, detail: 'Missing: .openslack/integrations/github.yaml' });
+        checks.push({
+          name: 'Integration YAML',
+          passed: false,
+          detail: 'Missing: .openslack/integrations/github.yaml',
+        });
       }
 
       // CODEOWNERS check
       const codeowners = join(root, '.github', 'CODEOWNERS');
-      checks.push({ name: 'CODEOWNERS', passed: existsSync(codeowners), detail: existsSync(codeowners) ? 'Exists' : 'Missing' });
+      checks.push({
+        name: 'CODEOWNERS',
+        passed: existsSync(codeowners),
+        detail: existsSync(codeowners) ? 'Exists' : 'Missing',
+      });
 
       // Branch protection (best-effort check)
       try {
         execSync('git branch --show-current', { stdio: 'pipe' });
-        checks.push({ name: 'Branch protection', passed: true, detail: 'Cannot verify remotely — check GitHub Settings > Rules' });
+        checks.push({
+          name: 'Branch protection',
+          passed: true,
+          detail: 'Cannot verify remotely — check GitHub Settings > Rules',
+        });
       } catch {
         checks.push({ name: 'Branch protection', passed: false, detail: 'Cannot verify' });
       }
@@ -139,7 +374,9 @@ export function githubCommands(): Command {
         console.log('Set GITHUB_TOKEN to run for real.');
         return;
       }
-      console.log('Project inspect: Project v2 is optional. To configure, create a project on GitHub then run:');
+      console.log(
+        'Project inspect: Project v2 is optional. To configure, create a project on GitHub then run:',
+      );
       console.log('  openslack setup github    # guided setup');
     });
 
@@ -171,7 +408,9 @@ export function githubCommands(): Command {
         const match = raw.match(/node_id:\s*["']?([^"'\n]+)["']?/);
         const nodeId = match?.[1]?.trim();
         if (!nodeId || nodeId === '') {
-          console.error('Project node_id is empty. Configure it in .openslack/integrations/github.yaml');
+          console.error(
+            'Project node_id is empty. Configure it in .openslack/integrations/github.yaml',
+          );
           process.exit(1);
         }
         const items = await queryReadyItems(nodeId);
@@ -217,7 +456,8 @@ export function githubCommands(): Command {
         const results = await repairLabels({ dryRun: !options.apply });
         renderRepairResults(results);
         recordGithubRepair('labels', results, Boolean(options.apply));
-        if (!options.apply) console.log('\nDry-run only. Re-run with --apply to mutate GitHub labels.');
+        if (!options.apply)
+          console.log('\nDry-run only. Re-run with --apply to mutate GitHub labels.');
       } catch (e) {
         console.error(`Repair labels failed: ${(e as Error).message}`);
         process.exit(1);
@@ -234,7 +474,8 @@ export function githubCommands(): Command {
         const results = await repairExpiredClaims({ dryRun: !options.apply });
         renderRepairResults(results);
         recordGithubRepair('claims', results, Boolean(options.apply));
-        if (!options.apply) console.log('\nDry-run only. Re-run with --apply to mutate claim refs and labels.');
+        if (!options.apply)
+          console.log('\nDry-run only. Re-run with --apply to mutate claim refs and labels.');
       } catch (e) {
         console.error(`Repair claims failed: ${(e as Error).message}`);
         process.exit(1);
@@ -256,7 +497,8 @@ export function githubCommands(): Command {
         console.log('--- Claims ---');
         renderRepairResults(claimResults);
         recordGithubRepair('claims', claimResults, Boolean(options.apply));
-        if (!options.apply) console.log('\nDry-run only. Re-run with --apply to mutate GitHub state.');
+        if (!options.apply)
+          console.log('\nDry-run only. Re-run with --apply to mutate GitHub state.');
       } catch (e) {
         console.error(`Repair all failed: ${(e as Error).message}`);
         process.exit(1);
@@ -274,7 +516,8 @@ export function githubCommands(): Command {
       const results = await repairLabels({ dryRun: !options.apply });
       renderRepairResults(results);
       recordGithubRepair('labels', results, Boolean(options.apply));
-      if (!options.apply) console.log('\nDry-run only. Re-run with --apply to mutate GitHub labels.');
+      if (!options.apply)
+        console.log('\nDry-run only. Re-run with --apply to mutate GitHub labels.');
     });
 
   repair
@@ -286,7 +529,8 @@ export function githubCommands(): Command {
       const results = await repairExpiredClaims({ dryRun: !options.apply });
       renderRepairResults(results);
       recordGithubRepair('claims', results, Boolean(options.apply));
-      if (!options.apply) console.log('\nDry-run only. Re-run with --apply to mutate claim refs and labels.');
+      if (!options.apply)
+        console.log('\nDry-run only. Re-run with --apply to mutate claim refs and labels.');
     });
 
   repair
@@ -303,7 +547,8 @@ export function githubCommands(): Command {
       const claimResults = await repairExpiredClaims({ dryRun: !options.apply });
       renderRepairResults(claimResults);
       recordGithubRepair('claims', claimResults, Boolean(options.apply));
-      if (!options.apply) console.log('\nDry-run only. Re-run with --apply to mutate GitHub state.');
+      if (!options.apply)
+        console.log('\nDry-run only. Re-run with --apply to mutate GitHub state.');
     });
 
   cmd.addCommand(repair);
@@ -336,7 +581,14 @@ export function githubCommands(): Command {
       const autoClaimFn = hasAutoClaim ? buildAutoClaimFn(process.cwd()) : undefined;
 
       if (options.poll) {
-        const daemon = new WatchDaemon(result.config!, '', undefined, sinkOptions, autoClaimFn, recordEvent);
+        const daemon = new WatchDaemon(
+          result.config!,
+          '',
+          undefined,
+          sinkOptions,
+          autoClaimFn,
+          recordEvent,
+        );
         const intervalSeconds = parseInt(options.pollInterval ?? '300', 10);
 
         const shutdown = async () => {
@@ -348,14 +600,23 @@ export function githubCommands(): Command {
         process.on('SIGTERM', shutdown);
 
         await daemon.startPolling(intervalSeconds);
-        console.log(`Polling ${result.config!.repositories.length} repo(s) every ${intervalSeconds}s. Press Ctrl+C to stop.`);
+        console.log(
+          `Polling ${result.config!.repositories.length} repo(s) every ${intervalSeconds}s. Press Ctrl+C to stop.`,
+        );
       } else {
         const secret = process.env.OPENSLACK_GITHUB_WEBHOOK_SECRET;
         if (!secret) {
           console.error('Missing OPENSLACK_GITHUB_WEBHOOK_SECRET environment variable');
           process.exit(1);
         }
-        const daemon = new WatchDaemon(result.config!, secret, undefined, sinkOptions, autoClaimFn, recordEvent);
+        const daemon = new WatchDaemon(
+          result.config!,
+          secret,
+          undefined,
+          sinkOptions,
+          autoClaimFn,
+          recordEvent,
+        );
         const port = parseInt(process.env.OPENSLACK_GITHUB_WATCH_PORT ?? '3100', 10);
 
         const shutdown = async () => {
@@ -367,7 +628,9 @@ export function githubCommands(): Command {
         process.on('SIGTERM', shutdown);
 
         await daemon.start(port);
-        console.log(`Watching ${result.config!.repositories.length} repo(s). Press Ctrl+C to stop.`);
+        console.log(
+          `Watching ${result.config!.repositories.length} repo(s). Press Ctrl+C to stop.`,
+        );
       }
     });
 
@@ -379,40 +642,55 @@ export function githubCommands(): Command {
     .requiredOption('--repo <repo>', 'Repository name')
     .requiredOption('--issue-number <n>', 'Issue number')
     .requiredOption('--action <action>', 'Issue action (opened, reopened, labeled)')
-    .action(async (options: { config: string; owner: string; repo: string; issueNumber: string; action: string }) => {
-      const { loadGitHubWatchConfig, WatchDaemon } = await import('@openslack/github');
-      const { recordEvent: _rec } = await import('@openslack/collaboration');
-      const recordEvent = _rec as unknown as import('@openslack/github').RecordEventFn;
-      type NormalizedIssueEvent = import('@openslack/github').NormalizedIssueEvent;
-      const result = loadGitHubWatchConfig(options.config);
-      if (!result.valid) {
-        console.error('Invalid watch config:');
-        for (const err of result.errors) console.error(`  ${err}`);
-        process.exit(1);
-      }
-      const hasAutoClaim = result.config!.repositories.some((r) => r.auto_claim?.enabled);
-      const autoClaimFn = hasAutoClaim ? buildAutoClaimFn(process.cwd()) : undefined;
-      const daemon = new WatchDaemon(result.config!, '', undefined, undefined, autoClaimFn, recordEvent);
-      const event: NormalizedIssueEvent = {
-        action: options.action,
-        owner: options.owner,
-        repo: options.repo,
-        issueNumber: parseInt(options.issueNumber, 10),
-        title: '(manual test)',
-        url: `https://github.com/${options.owner}/${options.repo}/issues/${options.issueNumber}`,
-        labels: [],
-        body: '',
-        senderLogin: 'cli',
-        deliveryId: '',
-        updatedAt: new Date().toISOString(),
-      };
-      const collabEvent = await daemon.once(event);
-      if (collabEvent) {
-        console.log(`Event recorded: ${collabEvent.id} (${collabEvent.type})`);
-      } else {
-        console.log('No event recorded (filtered or duplicate).');
-      }
-    });
+    .action(
+      async (options: {
+        config: string;
+        owner: string;
+        repo: string;
+        issueNumber: string;
+        action: string;
+      }) => {
+        const { loadGitHubWatchConfig, WatchDaemon } = await import('@openslack/github');
+        const { recordEvent: _rec } = await import('@openslack/collaboration');
+        const recordEvent = _rec as unknown as import('@openslack/github').RecordEventFn;
+        type NormalizedIssueEvent = import('@openslack/github').NormalizedIssueEvent;
+        const result = loadGitHubWatchConfig(options.config);
+        if (!result.valid) {
+          console.error('Invalid watch config:');
+          for (const err of result.errors) console.error(`  ${err}`);
+          process.exit(1);
+        }
+        const hasAutoClaim = result.config!.repositories.some((r) => r.auto_claim?.enabled);
+        const autoClaimFn = hasAutoClaim ? buildAutoClaimFn(process.cwd()) : undefined;
+        const daemon = new WatchDaemon(
+          result.config!,
+          '',
+          undefined,
+          undefined,
+          autoClaimFn,
+          recordEvent,
+        );
+        const event: NormalizedIssueEvent = {
+          action: options.action,
+          owner: options.owner,
+          repo: options.repo,
+          issueNumber: parseInt(options.issueNumber, 10),
+          title: '(manual test)',
+          url: `https://github.com/${options.owner}/${options.repo}/issues/${options.issueNumber}`,
+          labels: [],
+          body: '',
+          senderLogin: 'cli',
+          deliveryId: '',
+          updatedAt: new Date().toISOString(),
+        };
+        const collabEvent = await daemon.once(event);
+        if (collabEvent) {
+          console.log(`Event recorded: ${collabEvent.id} (${collabEvent.type})`);
+        } else {
+          console.log('No event recorded (filtered or duplicate).');
+        }
+      },
+    );
 
   watch
     .command('poll')
@@ -434,9 +712,18 @@ export function githubCommands(): Command {
       };
       const hasAutoClaim = result.config!.repositories.some((r) => r.auto_claim?.enabled);
       const autoClaimFn = hasAutoClaim ? buildAutoClaimFn(process.cwd()) : undefined;
-      const daemon = new WatchDaemon(result.config!, '', undefined, sinkOptions, autoClaimFn, recordEvent);
+      const daemon = new WatchDaemon(
+        result.config!,
+        '',
+        undefined,
+        sinkOptions,
+        autoClaimFn,
+        recordEvent,
+      );
       const pollResult = await daemon.pollAll();
-      console.log(`Polled ${pollResult.reposPolled} repo(s), dispatched ${pollResult.eventsDispatched} event(s)`);
+      console.log(
+        `Polled ${pollResult.reposPolled} repo(s), dispatched ${pollResult.eventsDispatched} event(s)`,
+      );
       if (pollResult.errors.length > 0) {
         for (const err of pollResult.errors) console.error(`  Error: ${err}`);
       }
@@ -460,7 +747,9 @@ export function githubCommands(): Command {
       if (Object.keys(cursors).length > 0) {
         console.log('\nPoll Cursors:');
         for (const [repo, cursor] of Object.entries(cursors)) {
-          console.log(`  ${repo}: lastSeenAt=${cursor.lastSeenAt}, lastIssueNumber=${cursor.lastIssueNumber}`);
+          console.log(
+            `  ${repo}: lastSeenAt=${cursor.lastSeenAt}, lastIssueNumber=${cursor.lastIssueNumber}`,
+          );
         }
       }
     });
@@ -474,14 +763,28 @@ export function githubCommands(): Command {
       try {
         const { queryReadyIssueTasks, getClient } = await import('@openslack/github');
         const client = await getClient();
-        if (client.isDryRun) { console.log('[DRY RUN] Would compute metrics'); return; }
+        if (client.isDryRun) {
+          console.log('[DRY RUN] Would compute metrics');
+          return;
+        }
         const ready = await queryReadyIssueTasks();
         console.log(`Ready: ${ready.length}`);
-        console.log('(Full metrics: claimed/running/review/done counts require label-based search.)');
+        console.log(
+          '(Full metrics: claimed/running/review/done counts require label-based search.)',
+        );
       } catch (e) {
         console.error(`Metrics failed: ${(e as Error).message}`);
       }
     });
 
   return cmd;
+}
+
+function resolveManifestHomepage(root: string, organization: string): string {
+  try {
+    const target = resolveGitHubRepoTarget({ cwd: root });
+    return `https://github.com/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}`;
+  } catch {
+    return `https://github.com/${encodeURIComponent(organization)}`;
+  }
 }

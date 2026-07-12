@@ -1,6 +1,18 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect } from 'vitest';
 import { parseClaimMetadata, renderClaimComment, resolveClaimOwnerFromComments } from '../claims.js';
 import type { ClaimMetadata } from '../claims.js';
+
+let originalAuthMode: string | undefined;
+
+beforeEach(() => {
+  originalAuthMode = process.env.OPENSLACK_GITHUB_AUTH_MODE;
+  process.env.OPENSLACK_GITHUB_AUTH_MODE = 'dry-run';
+});
+
+afterEach(() => {
+  if (originalAuthMode === undefined) delete process.env.OPENSLACK_GITHUB_AUTH_MODE;
+  else process.env.OPENSLACK_GITHUB_AUTH_MODE = originalAuthMode;
+});
 
 function makeMetadata(): ClaimMetadata {
   return {

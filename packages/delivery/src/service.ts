@@ -1,6 +1,7 @@
 import {
   clearTokenCache,
   requireAppInstallationToken,
+  resolveGitHubAppLocalStateRoot,
   type GitHubAppInstallationToken,
 } from '@openslack/github';
 import { DeliveryError } from './errors.js';
@@ -37,13 +38,11 @@ export interface GitHubDeliveryServiceOptions {
 }
 
 export class GitHubDeliveryService {
-  private readonly tokenProvider: DeliveryTokenProvider;
   private readonly gitPublisher: GitBranchPublisher;
   private readonly now: () => Date;
   private readonly sleep: (milliseconds: number) => Promise<void>;
 
   constructor(private readonly options: GitHubDeliveryServiceOptions = {}) {
-    this.tokenProvider = options.tokenProvider ?? defaultTokenProvider();
     this.gitPublisher = options.gitPublisher ?? new GitAskPassPublisher();
     this.now = options.now ?? (() => new Date());
     this.sleep =
@@ -57,7 +56,10 @@ export class GitHubDeliveryService {
     const remote = input.remote ?? 'origin';
     const timeoutMs = input.timeoutMs ?? 30_000;
     let history: DeliveryState[] = ['PREPARED'];
-    let token = await this.acquireToken(false);
+    const tokenProvider =
+      this.options.tokenProvider ??
+      defaultTokenProvider(resolveGitHubAppLocalStateRoot(input.rootDir));
+    let token = await this.acquireToken(tokenProvider, false);
     const installationId = token.installationId;
     let permissions = diagnoseDeliveryPermissions(token.permissions, input.requireIssuesWrite);
     assertDeliveryPermissions(permissions);
@@ -71,8 +73,8 @@ export class GitHubDeliveryService {
         );
       }
       authenticationRefreshUsed = true;
-      this.tokenProvider.invalidate('authentication_failed');
-      token = await this.acquireToken(true);
+      tokenProvider.invalidate('authentication_failed');
+      token = await this.acquireToken(tokenProvider, true);
       if (token.installationId !== installationId) {
         throw new DeliveryError(
           'DELIVERY_AUTH_REQUIRED',
@@ -309,9 +311,12 @@ export class GitHubDeliveryService {
     };
   }
 
-  private async acquireToken(forceRefresh: boolean): Promise<DeliveryToken> {
+  private async acquireToken(
+    tokenProvider: DeliveryTokenProvider,
+    forceRefresh: boolean,
+  ): Promise<DeliveryToken> {
     try {
-      return await this.tokenProvider.acquire({ forceRefresh });
+      return await tokenProvider.acquire({ forceRefresh });
     } catch (error) {
       if (error instanceof DeliveryError) throw error;
       throw new DeliveryError(
@@ -448,7 +453,7 @@ function classifyDeliveryApiFailure(error: unknown): {
   };
 }
 
-function defaultTokenProvider(): DeliveryTokenProvider {
+function defaultTokenProvider(localStateRoot: string | undefined): DeliveryTokenProvider {
   return {
     async acquire(options) {
       const forwarded = readForwardedInstallationToken();
@@ -463,7 +468,7 @@ function defaultTokenProvider(): DeliveryTokenProvider {
         return forwarded;
       }
       if (options?.forceRefresh) clearTokenCache();
-      return mapToken(await requireAppInstallationToken());
+      return mapToken(await requireAppInstallationToken({ localStateRoot }));
     },
     invalidate() {
       clearTokenCache();

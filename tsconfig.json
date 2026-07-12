@@ -4,6 +4,7 @@
     { "path": "packages/kernel" },
     { "path": "packages/workspace" },
     { "path": "packages/core" },
+    { "path": "packages/credentials" },
     { "path": "packages/runtime" },
     { "path": "packages/github" },
     { "path": "packages/pr" },

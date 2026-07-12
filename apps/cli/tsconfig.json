@@ -6,6 +6,8 @@
   },
   "include": ["src"],
   "references": [
+    { "path": "../auth-callback" },
+    { "path": "../../packages/credentials" },
     { "path": "../../packages/core" },
     { "path": "../../packages/kernel" },
     { "path": "../../packages/workspace" },

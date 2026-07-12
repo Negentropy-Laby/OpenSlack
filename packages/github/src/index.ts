@@ -7,6 +7,7 @@ export {
   createInstallationClient,
   getAuthenticatedIdentity,
   resolveGitHubRepoTarget,
+  resolveGitHubAppLocalStateRoot,
   parseGitHubRepoSpec,
   GitHubAuthRequiredError,
   GitHubRepoRequiredError,
@@ -20,13 +21,42 @@ export type {
   GitHubRepoTarget,
 } from './client.js';
 export { getAppInstallationToken, requireAppInstallationToken, clearTokenCache, GitHubAppTokenError } from './auth.js';
-export type { GitHubAppInstallationToken } from './auth.js';
+export type { GitHubAppInstallationToken, GitHubAppInstallationTokenOptions } from './auth.js';
+export {
+  readGitHubAppLocalConfig,
+  bindGitHubAppInstallation,
+  GitHubAppLocalConfigError,
+} from './app-local-config.js';
+export type { GitHubAppLocalConfig } from './app-local-config.js';
 export { inspectInstallationRepositoryAccess } from './installation-access.js';
 export type {
   GitHubInstallationAccessDependencies,
   GitHubInstallationRepositoryAccess,
   InstallationRepositoryPage,
 } from './installation-access.js';
+export { applyGitHubAppImport, planGitHubAppImport } from './app-import.js';
+export type {
+  GitHubAppImportDependencies,
+  GitHubAppImportInput,
+  GitHubAppImportPlan,
+  GitHubAppImportResult,
+} from './app-import.js';
+export {
+  completeGitHubAppManifest,
+  createGitHubAppManifestSession,
+  defaultGitHubAppManifestRefs,
+  exchangeGitHubAppManifestCode,
+  preflightGitHubAppManifest,
+} from './app-manifest.js';
+export type {
+  GitHubAppManifestConversion,
+  GitHubAppManifestDefinition,
+  GitHubAppManifestDependencies,
+  GitHubAppManifestExchangeOptions,
+  GitHubAppManifestInput,
+  GitHubAppManifestResult,
+  GitHubAppManifestSession,
+} from './app-manifest.js';
 export { createTaskIssue, queryReadyIssueTasks } from './issue-tasks.js';
 export type { IssueTask } from './issue-tasks.js';
 export { claimIssueTask, releaseIssueClaim, moveIssueToReview, heartbeatIssueClaim, expireIssueClaim, releaseIssueClaimWithOwner } from './claims.js';

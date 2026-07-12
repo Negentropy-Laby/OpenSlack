@@ -13,6 +13,20 @@ export type { PRProposalInput, PRProposalResult } from './propose.js';
 export { createWorktree, cleanupWorktree, checkDirty } from './worktree.js';
 export { buildSetupReport, detectGenesisShell, findRepoRoot, renderSetupReport, getNextSteps } from './setup-report.js';
 export type { SetupFinding, SetupFindingStatus, SetupReport, SetupNextStep } from './setup-report.js';
+export {
+  OnboardingStateError,
+  OnboardingStore,
+  getOnboardingStepGuide,
+  ONBOARDING_STEP_GUIDES,
+} from './onboarding-store.js';
+export type {
+  OnboardingReceipt,
+  OnboardingState,
+  OnboardingStepId,
+  OnboardingStepState,
+  OnboardingStepStatus,
+  OnboardingStepGuide,
+} from './onboarding-store.js';
 export { repairWorktrees, renderWorktreeRepair } from './repair.js';
 export type { WorktreeRepairItem, WorktreeRepairResult } from './repair.js';
 export type { WorktreeResult } from './worktree.js';

@@ -1,7 +1,7 @@
 schema: openslack.github_integration.v1
 
 github:
-  owner: "wsman"
+  owner: "Negentropy-Laby"
   repo: "OpenSlack"
   default_branch: "main"
 

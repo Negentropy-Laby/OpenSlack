@@ -83,6 +83,7 @@ See [Advanced Setup](#advanced-setup) for development mode, production builds, a
 | Goal | Command |
 |------|---------|
 | First local health check | `bun run openslack setup` |
+| Initialize an ordinary Git repository | `bun run openslack init --root <repo> --repo <owner/name>` |
 | Check status without guessing modules | `bun run openslack status` |
 | Ask in natural language | `bun run openslack ask "检查系统状态"` |
 | Create a task preview | `bun run openslack task create --title "Fix docs" --path "docs/**" --preview` |
@@ -106,6 +107,7 @@ OpenSlack/
 ├── packages/                # Active packages; see docs/status/current.md
 │   ├── kernel/              # Zone classifier, merge decision, policy engine
 │   ├── workspace/           # Validation, indexing, schemas
+│   ├── credentials/         # Typed env/native OS keychain references and fail-closed backends
 │   ├── core/                # ClaimBroker with file-locked persistence
 │   ├── runtime/             # Self-evolution ops, golden evals, agent tick, worktree, PR proposal
 │   ├── github/              # App auth, Issues task loop, task creation, claims, lifecycle, repair

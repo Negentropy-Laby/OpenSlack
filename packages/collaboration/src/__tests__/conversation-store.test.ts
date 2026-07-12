@@ -384,23 +384,30 @@ describe('conversation-store', () => {
     const t = createThread({ title: 'Project', memoryPolicy: 'project' });
     appendMessage(t.id, { kind: 'user_message', threadId: t.id, authorId: 'u1', text: 'Hi' });
 
-    await new Promise((r) => setTimeout(r, 10));
+    const metaPath = join(tmpDir, '.openslack.local', 'conversations', t.id, 'thread.json');
+    const meta = JSON.parse(readFileSync(metaPath, 'utf-8')) as { updatedAt: string };
+    meta.updatedAt = new Date(Date.now() - 60_000).toISOString();
+    writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf-8');
 
-    // 5ms TTL would prune a 'local' thread but 'project' gets 7x multiplier (35ms)
-    const removed = pruneExpiredThreads(5);
+    // A 30-second TTL would prune a local thread, but project gets a 7x multiplier.
+    const removed = pruneExpiredThreads(30_000);
     expect(removed).toBe(0);
     expect(getThread(t.id)).not.toBeNull();
   });
 
-  it('applies shorter TTL for none memoryPolicy threads', async () => {
+  it('applies shorter TTL for none memoryPolicy threads', () => {
     const t = createThread({ title: 'None', memoryPolicy: 'none' });
     appendMessage(t.id, { kind: 'user_message', threadId: t.id, authorId: 'u1', text: 'Hi' });
 
-    await new Promise((r) => setTimeout(r, 10));
+    const metaPath = join(tmpDir, '.openslack.local', 'conversations', t.id, 'thread.json');
+    const meta = JSON.parse(readFileSync(metaPath, 'utf-8')) as { updatedAt: string };
+    meta.updatedAt = new Date(Date.now() - 60_000).toISOString();
+    writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf-8');
 
-    // 100ms TTL, 'none' gets half (50ms) — thread is 10ms old, should survive
-    const removed = pruneExpiredThreads(100);
-    expect(removed).toBe(0);
+    // A 100-second local TTL would keep this thread, but none gets half (50 seconds).
+    const removed = pruneExpiredThreads(100_000);
+    expect(removed).toBe(1);
+    expect(getThread(t.id)).toBeNull();
   });
 
   // --- R5: memoryPolicy read failure throws ---
