@@ -1,8 +1,7 @@
 import type { PRReviewReport, PRReviewState, PRReviewPolicy } from './types.js';
 import { filterValidApprovals, isBotUser } from './approvals.js';
 import { detectDeadlock } from './deadlock.js';
-import { evaluateWorkflowGate } from './workflow-gate.js';
-import { isCoreWorkflowArtifactPath } from './workflow-gate.js';
+import { evaluateWorkflowGate, isCoreWorkflowArtifactPath } from './workflow-gate.js';
 import { evaluateProfileSyncGate } from './profile-sync-gate.js';
 
 export function diagnosePR(
@@ -27,7 +26,7 @@ export function diagnosePR(
     codeowners,
   });
 
-  const validApprovers = filterValidApprovals(report.reviews, report.author);
+  const validApprovers = filterValidApprovals(report.reviews, report.author, report.headSha);
 
   // 1. Draft PR
   if (report.draft) {

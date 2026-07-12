@@ -131,6 +131,14 @@ describe('diagnosePR', () => {
     });
     const result = diagnosePR(report, DEFAULT_POLICY, []);
     expect(result.decision).toBe('READY_TO_MERGE');
+
+    const stale = diagnosePR(makeReport({
+      riskZone: 'yellow',
+      headSha: 'current-head',
+      changedFiles: ['apps/cli/src/index.ts'],
+      reviews: [{ user: 'alice', state: 'APPROVED', commitOid: 'old-head' }],
+    }), DEFAULT_POLICY, []);
+    expect(stale.decision).toBe('NEEDS_HUMAN_APPROVAL');
   });
 
   it('uses one current-head approval as both workflow trust and merge approval', () => {
@@ -219,6 +227,7 @@ describe('generateDoctorReport', () => {
     const md = generateDoctorReport(report, []);
     expect(md).toContain('⏭️');
     expect(md).toContain('on-pr-merged');
+    expect(md).toContain('| Checks | pass |');
     expect(md).not.toContain('❌');
   });
 });

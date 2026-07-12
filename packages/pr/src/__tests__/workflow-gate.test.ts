@@ -3,6 +3,7 @@ import {
   createWorkflowEvidence,
   evaluateWorkflowGate,
   isWorkflowArtifactPath,
+  NoWorkflowArtifactChangeError,
 } from '../workflow-gate.js';
 import type { PRReviewEvidence, WorkflowTreeEntry } from '../types.js';
 
@@ -139,6 +140,12 @@ describe('workflow tree evidence', () => {
 
     expect(first.evidenceHash).toBe(second.evidenceHash);
     expect(first.modifiedFiles).toEqual(['templates/workflows/a.yaml']);
+    expect(() => createWorkflowEvidence({
+      baseSha: BASE_SHA,
+      headSha: HEAD_SHA,
+      baseTree: [entry('templates/workflows/a.yaml', 'same')],
+      headTree: [entry('templates/workflows/a.yaml', 'same')],
+    })).toThrow(NoWorkflowArtifactChangeError);
   });
 
   it('records added, modified, deleted, renamed, and binary blobs by Git identity', () => {

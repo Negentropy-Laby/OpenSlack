@@ -24,10 +24,7 @@ if ! command -v bun &> /dev/null; then
   exit 1
 fi
 repo_root="$(cd "${script_dir}/.." && pwd)"
-export OPENSLACK_GITHUB_APP_ID="${OPENSLACK_GITHUB_APP_ID:-3728623}"
-export OPENSLACK_GITHUB_APP_INSTALLATION_ID="${OPENSLACK_GITHUB_APP_INSTALLATION_ID:-135500236}"
-if [[ -z "${OPENSLACK_GITHUB_APP_PRIVATE_KEY:-}" ]]; then
-  export OPENSLACK_GITHUB_APP_PRIVATE_KEY="$(<"${repo_root}/.openslack.local/github-app.pem")"
-fi
+token="$(cd "$repo_root" && node scripts/bot-gh-token.js)"
 unset GITHUB_TOKEN GH_TOKEN 2>/dev/null || true
-(cd "$repo_root" && bun run openslack pr workflow-governance "$pr_number")
+(cd "$repo_root" && OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN="$token" \
+  bun run openslack pr workflow-governance "$pr_number")

@@ -133,18 +133,21 @@ describe('fetchPRDetails', () => {
         state: 'APPROVED',
         body: 'self approval',
         submittedAt: '2026-06-01T14:00:00Z',
+        commitOid: 'head-sha',
       },
       {
         user: { login: 'github-actions[bot]' },
         state: 'APPROVED',
         body: 'bot approval',
         submittedAt: '2026-06-01T14:01:00Z',
+        commitOid: 'head-sha',
       },
       {
         user: { login: 'alice' },
         state: 'APPROVED',
         body: 'human approval',
         submittedAt: '2026-06-01T14:02:00Z',
+        commitOid: 'head-sha',
       },
     ]);
 

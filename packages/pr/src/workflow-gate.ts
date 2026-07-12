@@ -23,6 +23,15 @@ const CORE_WORKFLOW_ARTIFACTS = new Set([
   'packages/workflows/src/pattern-registry.ts',
 ]);
 
+export class NoWorkflowArtifactChangeError extends Error {
+  readonly code = 'NO_WORKFLOW_ARTIFACT_CHANGE';
+
+  constructor() {
+    super('Workflow evidence requested without an artifact tree change.');
+    this.name = 'NoWorkflowArtifactChangeError';
+  }
+}
+
 function normalizePath(path: string): string {
   return path.replaceAll('\\', '/').replace(/^\.\//, '');
 }
@@ -104,7 +113,7 @@ export function createWorkflowEvidence(input: {
   deletedFiles.sort(comparePaths);
   const artifactFiles = [...addedFiles, ...modifiedFiles, ...deletedFiles].sort(comparePaths);
   if (artifactFiles.length === 0) {
-    throw new Error('Workflow evidence requested without an artifact tree change.');
+    throw new NoWorkflowArtifactChangeError();
   }
 
   const payload = [

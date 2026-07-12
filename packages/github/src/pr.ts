@@ -793,10 +793,9 @@ export async function getRepositoryTree(
         ? [{ path: entry.path, mode: entry.mode, type: entry.type, sha: entry.sha }]
         : []);
   } catch (error) {
-    if (options?.strictEvidence) {
-      strictEvidenceUnavailable('fetch repository tree', client, undefined, error);
-    }
-    return [];
+    // Workflow evidence must never be synthesized from placeholder empty trees.
+    // Unlike generic PR metadata, a missing tree changes the trust decision.
+    strictEvidenceUnavailable('fetch repository tree', client, undefined, error);
   }
 }
 

@@ -27,7 +27,7 @@ function latestReviewsByReviewer(reviews: PRReview[]): PRReview[] {
   const latest = new Map<string, { review: PRReview; index: number }>();
 
   reviews.forEach((review, index) => {
-    const key = review.user.login;
+    const key = review.user.login.toLowerCase();
     const current = latest.get(key);
     if (!current) {
       latest.set(key, { review, index });
@@ -85,8 +85,9 @@ export async function fetchPRDetails(
   const author = pr?.user.login || 'unknown';
   const humanApprovals = latestReviews
     .filter((review) => review.state === 'APPROVED')
-    .filter((review) => review.user.login !== author)
+    .filter((review) => review.user.login.toLowerCase() !== author.toLowerCase())
     .filter((review) => !isBotUser(review.user.login))
+    .filter((review) => Boolean(pr?.head.sha) && review.commitOid === pr?.head.sha)
     .map((review) => ({ user: review.user.login }));
 
   return {

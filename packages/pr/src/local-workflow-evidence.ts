@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { createWorkflowEvidence } from './workflow-gate.js';
+import { createWorkflowEvidence, NoWorkflowArtifactChangeError } from './workflow-gate.js';
 import type { WorkflowEvidence, WorkflowTreeEntry } from './types.js';
 
 export function parseGitLsTree(output: Buffer | string): WorkflowTreeEntry[] {
@@ -49,7 +49,7 @@ export function computeLocalWorkflowEvidence(
       headTree,
     });
   } catch (error) {
-    if (error instanceof Error && error.message.includes('without an artifact tree change')) {
+    if (error instanceof NoWorkflowArtifactChangeError) {
       return undefined;
     }
     throw error;

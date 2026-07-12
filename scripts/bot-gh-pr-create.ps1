@@ -39,21 +39,19 @@ if (-not (Get-Command bun -ErrorAction SilentlyContinue)) {
 }
 
 $repoRoot = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')
-if ([string]::IsNullOrWhiteSpace($env:OPENSLACK_GITHUB_APP_ID)) {
-    $env:OPENSLACK_GITHUB_APP_ID = '3728623'
-}
-if ([string]::IsNullOrWhiteSpace($env:OPENSLACK_GITHUB_APP_INSTALLATION_ID)) {
-    $env:OPENSLACK_GITHUB_APP_INSTALLATION_ID = '135500236'
-}
-if ([string]::IsNullOrWhiteSpace($env:OPENSLACK_GITHUB_APP_PRIVATE_KEY)) {
-    $env:OPENSLACK_GITHUB_APP_PRIVATE_KEY = Get-Content -Raw -LiteralPath (Join-Path $repoRoot '.openslack.local/github-app.pem')
+$token = (& node (Join-Path $repoRoot 'scripts/bot-gh-token.js')) -join "`n"
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($token)) {
+    Write-Error 'Could not create a short-lived GitHub App installation token for workflow governance.'
+    exit 1
 }
 Remove-Item Env:GITHUB_TOKEN -ErrorAction SilentlyContinue
 Remove-Item Env:GH_TOKEN -ErrorAction SilentlyContinue
+$env:OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN = $token
 Push-Location $repoRoot
 try {
     & bun run openslack pr workflow-governance $prNumber
     exit $LASTEXITCODE
 } finally {
+    Remove-Item Env:OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN -ErrorAction SilentlyContinue
     Pop-Location
 }

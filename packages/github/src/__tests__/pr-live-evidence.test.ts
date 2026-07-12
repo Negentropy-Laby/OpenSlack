@@ -278,7 +278,7 @@ describe('strict PR live evidence', () => {
     await expect(listPRFiles(138)).resolves.toEqual([]);
   });
 
-  it('returns complete Git tree identity evidence and rejects truncated strict evidence', async () => {
+  it('returns complete Git tree identity evidence and rejects truncated evidence in every mode', async () => {
     const getTree = vi.fn()
       .mockResolvedValueOnce({
         data: {
@@ -295,7 +295,7 @@ describe('strict PR live evidence', () => {
     await expect(getRepositoryTree('head', { strictEvidence: true })).resolves.toEqual([
       { path: 'templates/workflows/feature.yaml', mode: '100644', type: 'blob', sha: 'blob-sha' },
     ]);
-    await expect(getRepositoryTree('truncated', { strictEvidence: true })).rejects.toBeInstanceOf(
+    await expect(getRepositoryTree('truncated')).rejects.toBeInstanceOf(
       GitHubEvidenceUnavailableError,
     );
   });

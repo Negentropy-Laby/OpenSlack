@@ -14,6 +14,7 @@ export {
   evaluateWorkflowGate,
   isCoreWorkflowArtifactPath,
   isWorkflowArtifactPath,
+  NoWorkflowArtifactChangeError,
   touchesWorkflowFiles,
 } from './workflow-gate.js';
 export { evaluateProfileSyncGate } from './profile-sync-gate.js';

@@ -391,6 +391,19 @@ if (this.mode === 'execute' && !this.confirmed) {
 In CLI, this is `--yes` flag. In TUI, this is a modal dialog. In chat,
 this is a reaction-based confirmation.
 
+## Bot Delivery Credential Boundary
+
+The bot PR wrappers resolve `appId` and `installationId` from explicit
+`OPENSLACK_GITHUB_APP_*` settings or the non-secret local
+`.openslack.local/github-app.json` import record. They do not contain
+organization-specific ID defaults.
+
+The private key is read only by `scripts/bot-gh-token.js` to mint a short-lived
+installation token. The subsequent `openslack pr workflow-governance` child
+receives only that token through `OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN`; it
+does not receive the PEM. The token is neither persisted nor forwarded through
+`GITHUB_TOKEN`, `GH_TOKEN`, command arguments, Git configuration, or logs.
+
 ## Failure Modes
 
 ### Schema Validation Failure

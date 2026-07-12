@@ -23,15 +23,17 @@ describe('isBotUser', () => {
 describe('filterValidApprovals', () => {
   it('includes APPROVED reviews from other humans', () => {
     const reviews = [
-      { user: 'wsman', state: 'APPROVED' },
-      { user: 'alice', state: 'APPROVED' },
+      { user: 'wsman', state: 'APPROVED', commitOid: 'old-head' },
+      { user: 'alice', state: 'APPROVED', commitOid: 'current-head' },
     ];
     expect(filterValidApprovals(reviews, 'bob')).toEqual(['wsman', 'alice']);
+    expect(filterValidApprovals(reviews, 'bob', 'current-head')).toEqual(['alice']);
   });
 
   it('excludes the author', () => {
     const reviews = [{ user: 'wsman', state: 'APPROVED' }];
     expect(filterValidApprovals(reviews, 'wsman')).toEqual([]);
+    expect(filterValidApprovals(reviews, 'WSMAN')).toEqual([]);
   });
 
   it('excludes non-APPROVED states', () => {

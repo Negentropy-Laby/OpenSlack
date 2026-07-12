@@ -170,6 +170,17 @@ export async function getClient(options: GitHubClientOptions = {}): Promise<GitH
 
   // Tier 1: GitHub App installation token (primary runtime credential)
   if (auth === 'auto' || auth === 'app') {
+    const forwardedAppToken = process.env.OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN?.trim();
+    if (forwardedAppToken) {
+      return {
+        owner,
+        repo,
+        octokit: createOctokit(forwardedAppToken),
+        authMode: 'github_app_installation',
+        isDryRun: false,
+      };
+    }
+
     let appToken = null;
     try {
       appToken = await getAppInstallationToken();
