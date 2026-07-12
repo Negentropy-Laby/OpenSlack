@@ -9,7 +9,13 @@ export interface RunRecorder {
   progress(runId: string, data: Record<string, unknown>): void;
   toolCall(runId: string, toolName: string, input?: unknown): void;
   toolResult(runId: string, toolName: string, output?: unknown): void;
-  complete(runId: string, result: unknown, tokenUsage?: number): AgentRunState;
+  chargeUsage(runId: string, tokenUsage: number): AgentRunState;
+  complete(
+    runId: string,
+    result: unknown,
+    tokenUsage?: number,
+    tokenUsageAlreadyCharged?: boolean,
+  ): AgentRunState;
   fail(runId: string, error: Error, failureCode?: AgentRunFailureCode): AgentRunState;
   cancel(runId: string): AgentRunState;
 }
@@ -107,7 +113,24 @@ export function createRunRecorder(store: AgentRunStore, rootDir?: string): RunRe
       );
     },
 
-    complete(runId: string, result: unknown, tokenUsage?: number): AgentRunState {
+    chargeUsage(runId: string, tokenUsage: number): AgentRunState {
+      if (!Number.isInteger(tokenUsage) || tokenUsage < 0) {
+        throw new Error('Provider token usage must be a non-negative integer.');
+      }
+      const state = store.getRun(runId);
+      if (!state) throw new Error(`Run not found: ${runId}`);
+      return store.updateRun(runId, {
+        tokensUsed: state.tokensUsed + tokenUsage,
+        tokensRemaining: state.tokensRemaining === null ? null : state.tokensRemaining - tokenUsage,
+      });
+    },
+
+    complete(
+      runId: string,
+      result: unknown,
+      tokenUsage?: number,
+      tokenUsageAlreadyCharged = false,
+    ): AgentRunState {
       appendTranscriptEvent(
         runId,
         {
@@ -123,7 +146,7 @@ export function createRunRecorder(store: AgentRunStore, rootDir?: string): RunRe
         status: 'completed',
         completedAt: new Date().toISOString(),
       };
-      if (tokenUsage !== undefined && state) {
+      if (tokenUsage !== undefined && state && !tokenUsageAlreadyCharged) {
         patch.tokensUsed = state.tokensUsed + tokenUsage;
         if (state.tokensRemaining !== null) {
           patch.tokensRemaining = state.tokensRemaining - tokenUsage;

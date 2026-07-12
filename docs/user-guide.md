@@ -15,6 +15,7 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 | Let an agent pick up ready work                  | `openslack agent tick --agent-id <id> --source github-issues`                  | Requires a registered and bootstrapped agent identity.                             |
 | Diagnose an Aby external runtime                 | `openslack agent-runtime doctor --provider aby`                                | Checks local bridge configuration without launching a task.                        |
 | Configure an Aby external runtime                | `openslack agent-runtime setup aby --root <path> --write`                      | Writes local gitignored bridge config after validation.                            |
+| Configure the built-in model runtime             | `openslack agent-runtime setup openai-compatible ...`                          | Preview-first; writes only endpoint, model, limits, and a credential reference.    |
 | Diagnose why a PR cannot merge                   | `openslack pr doctor <n>`                                                      | Shows blocker owner, evidence, and next action.                                    |
 | See team state across events and PRs             | `openslack collaboration dashboard`                                            | Projection-only; does not create dashboard-specific state.                         |
 | Record a handoff or decision                     | `openslack collaboration handoff ...` / `openslack collaboration decision ...` | Creates auditable collaboration objects.                                           |
@@ -145,6 +146,7 @@ bun run openslack agent hire --agent-id <id>    # Generate onboarding package
 bun run openslack agent bootstrap --agent-id <id>  # Verify readiness
 bun run openslack agent tick --agent-id <id> --source github-issues  # Claim work
 bun run openslack agent-runtime doctor --provider aby  # Diagnose Aby bridge config
+bun run openslack agent-runtime doctor --provider openai-compatible  # Diagnose built-in provider
 ```
 
 ### Repository Admin
@@ -280,10 +282,15 @@ approval on stale PR checks.
 | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `openslack agent-runtime setup aby --root <path> --dry-run`           | Preview the local Aby bridge configuration without writing it                                                       |
 | `openslack agent-runtime setup aby --root <path> --write`             | Validate and write `.openslack.local/agent-runtime.json`                                                            |
+| `openslack agent-runtime setup openai-compatible --base-url <url> --model <model> --credential-ref env:<NAME>` | Preview non-secret built-in provider configuration |
+| `openslack agent-runtime setup openai-compatible --base-url <url> --model <model> --credential-ref env:<NAME> --write` | Merge the non-secret provider config into `.openslack.local/agent-runtime.json` |
 | `openslack agent-runtime doctor --provider aby`                       | Diagnose runtime readiness as `not_configured`, `misconfigured`, `unavailable`, or `ready` without launching a task |
+| `openslack agent-runtime doctor --provider openai-compatible` | Validate config and credential reference, then probe the compatible `/models` endpoint |
+| `openslack agent-runtime doctor --provider openai-compatible --format json` | Emit redacted structured diagnostics for scripting |
 | `openslack agent-runtime doctor --provider aby --format json`         | Emit redacted structured diagnostics for scripting                                                                  |
 | `openslack agent-runtime smoke --provider aby`                        | Run a read-only bridge smoke through the existing launcher                                                          |
 | `openslack agent-runtime smoke --provider aby --agent <agentId>`      | Smoke a specific Aby-backed agent id                                                                                |
+| `openslack agent-runtime smoke --provider openai-compatible` | Execute one governed, read-only Chat Completions smoke and persist terminal run evidence |
 | `openslack agent-runtime mcp status --provider aby --agent <agentId>` | Show required/available MCP descriptor status for an agent                                                          |
 | `openslack agent-runtime mcp status --provider aby --run <runId>`     | Show MCP tool evidence from a run transcript                                                                        |
 
@@ -291,6 +298,16 @@ Aby is a configurable external provider, not a bundled OpenSlack backend. See
 `docs/guides/aby-integration.md` for setup and smoke-test steps.
 Agent calls fail with `RUNTIME_NOT_CONFIGURED` until an execution provider is
 selected and ready; OpenSlack never substitutes placeholder output.
+
+The built-in `openai-compatible` provider uses Chat Completions tool calls and
+exposes only `repo.read`, `repo.search`, `repo.apply_patch`, and `repo.diff` after
+permission filtering. It never exposes an unrestricted shell. Write-capable runs
+are isolated in disposable Git worktrees; dirty worktrees are preserved as
+recoverable handoffs. `plan` and `strict` are read-only, and provider-driven Red
+Zone writes are always rejected. This intentionally changes the legacy
+`strict` behavior: callers that require repository writes must explicitly select
+`default` or `acceptEdits`. See `docs/guides/openai-compatible-runtime.md` for the
+configuration and agent-registry contract.
 
 ## Task
 

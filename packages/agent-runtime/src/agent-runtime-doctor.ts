@@ -4,6 +4,10 @@ import { isAbsolute, join, resolve } from 'node:path';
 import type { BridgeRuntimeResolverOptions } from './bridge-runtime-resolver.js';
 import { loadAbyBridgeRuntimeConfig } from './bridge-runtime-resolver.js';
 import { auditBridgeEnv } from './bridge-env.js';
+import {
+  loadOpenAICompatibleRuntimeConfig,
+  resolveRuntimeCredential,
+} from './openai-compatible-runtime.js';
 
 export type AgentRuntimeDoctorProvider = string;
 export type AgentRuntimeDoctorStatus = 'PASS' | 'FAIL';
@@ -50,9 +54,7 @@ export interface DiagnoseAbyRuntimeOptions extends BridgeRuntimeResolverOptions 
   checkCommand?: CommandAvailabilityCheck;
 }
 
-export type CommandAvailabilityCheck = (
-  command: string,
-) => { available: boolean; detail: string };
+export type CommandAvailabilityCheck = (command: string) => { available: boolean; detail: string };
 
 export interface AgentRuntimeProviderReport {
   provider: AgentRuntimeDoctorProvider;
@@ -73,7 +75,7 @@ export interface DiagnoseAgentRuntimeOptions extends DiagnoseAbyRuntimeOptions {
 export interface AgentRuntimeReadinessReport {
   status: AgentRuntimeDoctorStatus;
   readiness: AgentRuntimeReadiness;
-  providers: Record<string, AgentRuntimeProviderReport> & { aby: AbyRuntimeDoctorReport };
+  providers: Record<string, AgentRuntimeProviderReport>;
   remediations: string[];
 }
 
@@ -82,9 +84,13 @@ export function diagnoseAgentRuntime(
   options: DiagnoseAgentRuntimeOptions = {},
 ): AgentRuntimeReadinessReport {
   const aby = diagnoseAbyRuntime(options);
-  const providers: Record<string, AgentRuntimeProviderReport> & { aby: AbyRuntimeDoctorReport } = {
-    aby,
-  };
+  const openAICompatible = diagnoseOpenAICompatibleConfiguration(options);
+  const providers: Record<string, AgentRuntimeProviderReport> = {};
+  if (aby.readiness !== 'not_configured') providers.aby = aby;
+  if (openAICompatible.readiness !== 'not_configured') {
+    providers['openai-compatible'] = openAICompatible;
+  }
+  if (Object.keys(providers).length === 0) providers.aby = aby;
   for (const diagnostic of options.providerDiagnostics ?? []) {
     const id = diagnostic.id.trim().toLowerCase();
     if (!id || providers[id]) {
@@ -100,9 +106,8 @@ export function diagnoseAgentRuntime(
     status: readiness === 'ready' ? 'PASS' : 'FAIL',
     readiness,
     providers,
-    remediations: readiness === 'ready'
-      ? []
-      : [...new Set(reports.flatMap((report) => report.remediations))],
+    remediations:
+      readiness === 'ready' ? [] : [...new Set(reports.flatMap((report) => report.remediations))],
   };
 }
 
@@ -111,6 +116,41 @@ function aggregateReadiness(reports: AgentRuntimeProviderReport[]): AgentRuntime
   if (reports.some((report) => report.readiness === 'unavailable')) return 'unavailable';
   if (reports.some((report) => report.readiness === 'misconfigured')) return 'misconfigured';
   return 'not_configured';
+}
+
+function diagnoseOpenAICompatibleConfiguration(
+  options: DiagnoseAbyRuntimeOptions,
+): AgentRuntimeProviderReport {
+  const env = options.env ?? process.env;
+  try {
+    const config = loadOpenAICompatibleRuntimeConfig({
+      rootDir: options.rootDir,
+      configPath: options.configPath,
+      env,
+    });
+    if (!config) {
+      return {
+        provider: 'openai-compatible',
+        status: 'FAIL',
+        readiness: 'not_configured',
+        remediations: ['Configure an execution provider before starting agent work.'],
+      };
+    }
+    resolveRuntimeCredential(config.credentialRef, env);
+    return {
+      provider: 'openai-compatible',
+      status: 'PASS',
+      readiness: 'ready',
+      remediations: [],
+    };
+  } catch {
+    return {
+      provider: 'openai-compatible',
+      status: 'FAIL',
+      readiness: 'misconfigured',
+      remediations: ['Fix the OpenAI-compatible runtime config and its credential reference.'],
+    };
+  }
 }
 
 export function diagnoseAbyRuntime(
@@ -162,9 +202,7 @@ export function diagnoseAbyRuntime(
   checks.push({
     name: 'config-source',
     status: configSource === 'none' ? 'FAIL' : 'PASS',
-    detail: configSource === 'none'
-      ? 'No Aby root configured'
-      : `Using ${configSource}`,
+    detail: configSource === 'none' ? 'No Aby root configured' : `Using ${configSource}`,
   });
   const commandCheck =
     configSource === 'none'
@@ -210,9 +248,10 @@ export function diagnoseAbyRuntime(
   checks.push({
     name: 'safe-env',
     status: envAudit.rejectedKeys.length === 0 ? 'PASS' : 'FAIL',
-    detail: envAudit.rejectedKeys.length === 0
-      ? `Allowed keys: ${envAudit.allowedKeys.join(', ') || '(none)'}`
-      : `Rejected unsafe keys: ${envAudit.rejectedKeys.join(', ')}`,
+    detail:
+      envAudit.rejectedKeys.length === 0
+        ? `Allowed keys: ${envAudit.allowedKeys.join(', ') || '(none)'}`
+        : `Rejected unsafe keys: ${envAudit.rejectedKeys.join(', ')}`,
   });
 
   const structuralFailures = checks.some(

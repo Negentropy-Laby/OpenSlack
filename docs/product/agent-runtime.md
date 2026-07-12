@@ -48,15 +48,17 @@ Agents are parsed, resolved, and displayed — but never executed.
 
 A new cross-cutting package (not a new product module) that provides:
 
-| File                   | Purpose                                                                                         |
-| ---------------------- | ----------------------------------------------------------------------------------------------- |
-| `types.ts`             | `AgentRunRequest`, `AgentRunState`, `AgentRunResult`, `AgentPermissionProfile`, `AgentRunEvent` |
-| `run-store.ts`         | File-based run storage under `.openslack.local/agents/runs/<runId>/`                            |
-| `transcript.ts`        | Append-only JSONL transcript store                                                              |
-| `recorder.ts`          | Run lifecycle recorder: start/progress/complete/fail                                            |
-| `launcher.ts`          | `createOpenSlackAgentLauncher()` factory                                                        |
-| `provider-registry.ts` | Instance-scoped execution-provider registration and resolution                                  |
-| `permissions.ts`       | `buildPermissionProfile()`, `isActionAllowed()`, `enforceToolScope()`                           |
+| File                           | Purpose                                                                                         |
+| ------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `types.ts`                     | `AgentRunRequest`, `AgentRunState`, `AgentRunResult`, `AgentPermissionProfile`, `AgentRunEvent` |
+| `run-store.ts`                 | File-based run storage under `.openslack.local/agents/runs/<runId>/`                            |
+| `transcript.ts`                | Append-only JSONL transcript store                                                              |
+| `recorder.ts`                  | Run lifecycle recorder: start/progress/complete/fail                                            |
+| `launcher.ts`                  | `createOpenSlackAgentLauncher()` factory                                                        |
+| `provider-registry.ts`         | Instance-scoped execution-provider registration and resolution                                  |
+| `permissions.ts`               | `buildPermissionProfile()`, `isActionAllowed()`, `enforceToolScope()`                           |
+| `tool-executor.ts`             | Worktree-scoped read/search/exact-patch/diff tool plane                                         |
+| `openai-compatible-runtime.ts` | Bounded Chat Completions provider and non-secret config loader                                  |
 
 ### Storage Layout
 
@@ -78,9 +80,11 @@ A new cross-cutting package (not a new product module) that provides:
 6. Only after provider validation, create a worktree when required
 7. Create running state and emit the `start` transcript event
 8. Execute the registered provider adapter
-9. Record tool calls as transcript events
-10. Emit `complete` or `fail` and update run state
-11. Cleanup or preserve the worktree according to dirty-state evidence
+9. Parse tool arguments, enforce ToolGuard/path/size limits, execute, and redact
+10. Charge provider usage after every response and enforce independent limits
+11. Validate structured output before completion
+12. Emit `complete` or typed `fail` and update run state
+13. Cleanup or preserve the worktree according to dirty-state evidence
 ```
 
 ### Integration Points
@@ -98,8 +102,8 @@ A new cross-cutting package (not a new product module) that provides:
 - [x] Each started or configuration-rejected agent run produces redacted local evidence
 - [ ] Conversation thread shows subagent result via `agent_response`/`tool_event`
 - [ ] TUI shows `AgentRunDetailView` with status/model/tools/permissions
-- [ ] Tool allowlist/denylist enforced at runtime
+- [x] Tool allowlist/denylist enforced before every built-in provider tool execution
 - [ ] `bypassPermissions` blocked (fail closed)
-- [ ] `isolation=worktree` enforced for implementer agents
+- [x] `isolation=worktree` enforced for implementer and built-in write-capable agents
 - [ ] Agent run events appear in activity/digest/room via collaboration layer
 - [ ] PR approval, merge, secret access, ruleset bypass always denied to subagents

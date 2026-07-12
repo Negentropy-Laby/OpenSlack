@@ -112,7 +112,7 @@ OpenSlack/
 │   ├── pr/                  # PR Review & Merge Steward (fetch, classify, readiness, report)
 │   ├── operator/            # Structured planner and intent router
 │   ├── chat-gateway/        # Webhook / Slack projection frontend
-│   ├── agent-runtime/       # Agent runs, bridge adapters, transcript, permissions, Aby provider diagnostics
+│   ├── agent-runtime/       # Governed tool plane, OpenAI-compatible/Aby providers, runs and evidence
 │   ├── collaboration/       # Activity, digest, dashboard, handoff, decision, room views
 │   ├── tui/                  # Ink TUI views, layout primitives, terminal workbench
 │   └── workflows/           # Workflow engine: load, validate, execute, checkpoint, resume

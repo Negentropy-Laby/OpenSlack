@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
 import {
+  AgentBudgetExceededError,
   AgentRunRestartRequestedError,
   generateRunId,
   getAgentRunFailureSummary,
+  redactSensitiveText,
 } from '@openslack/agent-runtime';
 import type {
   AgentOptions,
@@ -124,7 +126,9 @@ async function persistReplayInput(options: {
     agentRunId: options.agentRunId,
     prompt: options.prompt,
     options: sanitizeAgentOptions(options.options),
-    resolvedAgentConfig: options.resolvedAgent ?? options.options.resolvedAgentConfig,
+    resolvedAgentConfig: sanitizeResolvedAgentConfig(
+      options.resolvedAgent ?? options.options.resolvedAgentConfig,
+    ),
     phase: options.options.phase,
     label: options.options.label,
     cacheKey: options.cacheKey,
@@ -162,10 +166,21 @@ function sanitizeAgentOptions(options: AgentOptions): Record<string, unknown> {
     model,
     agentType,
     resolvedAgentId,
-    resolvedAgentConfig,
+    resolvedAgentConfig: sanitizeResolvedAgentConfig(resolvedAgentConfig),
     agentRunId,
     bridgeMode,
   };
+}
+
+function sanitizeResolvedAgentConfig(
+  config: ResolvedAgentConfig | undefined | null,
+): ResolvedAgentConfig | undefined {
+  if (!config) return undefined;
+  const safe = { ...config };
+  delete safe.prompt;
+  delete safe.initialPrompt;
+  delete safe.criticalSystemReminder;
+  return safe;
 }
 
 async function applyCostAndBudgetPolicy(options: {
@@ -190,7 +205,8 @@ async function applyCostAndBudgetPolicy(options: {
   }
 
   const policy = options.budgetPolicy;
-  const tokenBudget = policy?.tokenBudget ??
+  const tokenBudget =
+    policy?.tokenBudget ??
     (options.budget.tokensRemaining === null
       ? null
       : options.budget.tokensUsed + options.budget.tokensRemaining);
@@ -198,7 +214,8 @@ async function applyCostAndBudgetPolicy(options: {
 
   const percent = options.budget.tokensUsed / tokenBudget;
   const threshold = getBudgetWarningThreshold(costConfig);
-  const exceeded = options.budget.tokensUsed >= tokenBudget ||
+  const exceeded =
+    options.budget.tokensUsed >= tokenBudget ||
     (options.budget.tokensRemaining !== null && options.budget.tokensRemaining <= 0);
 
   if (percent >= threshold) {
@@ -243,11 +260,15 @@ async function applyCostAndBudgetPolicy(options: {
   );
 }
 
-async function hasApprovedBudgetOverride(runStore: RunStore | undefined, runId: string): Promise<boolean> {
+async function hasApprovedBudgetOverride(
+  runStore: RunStore | undefined,
+  runId: string,
+): Promise<boolean> {
   if (!runStore) return false;
   const approvals = await runStore.loadPendingApprovals(runId).catch(() => []);
-  return approvals.some((approval) =>
-    approval.operation === 'workflow.budget.exceeded' && approval.status === 'approved'
+  return approvals.some(
+    (approval) =>
+      approval.operation === 'workflow.budget.exceeded' && approval.status === 'approved',
   );
 }
 
@@ -350,17 +371,22 @@ export async function executeAgentCall<T>(
 
   // 3. Budget check
   if (config.budget.tokensRemaining !== null && config.budget.tokensRemaining <= 0) {
-    throw new Error('Budget exhausted: no tokens remaining');
+    throw new AgentBudgetExceededError();
   }
 
   // 4. Provider preflight. Production launchers validate before cache lookup so
   // stale fixture/cache data cannot make an unconfigured runtime look ready.
+  const providerPrompt = redactSensitiveText(prompt).value;
   let agentRunId = config.agentRunId ?? generateRunId();
-  let launchOptions = { ...options, agentRunId };
+  let launchOptions: AgentOptions = {
+    ...options,
+    budget: resolveLaunchBudget(options.budget, config.budget.tokensRemaining),
+    agentRunId,
+  };
   const agentId = config.resolvedAgent?.agentId ?? options.agentType ?? options.label;
   const shouldEmit = config.mode === 'execute' && config.eventEmitter;
   try {
-    await config.launcher.preflight?.(prompt, launchOptions);
+    await config.launcher.preflight?.(providerPrompt, launchOptions);
   } catch (error) {
     if (shouldEmit) {
       config.eventEmitter!({
@@ -380,6 +406,13 @@ export async function executeAgentCall<T>(
   // 5. Cache lookup
   const cached = await config.cache.load(config.runId, config.cacheKey);
   if (cached !== null) {
+    if (options.schema) {
+      const violations = validateAgainstSchema(cached.data, options.schema);
+      if (violations.length > 0) {
+        config.log(`Cached schema validation failed for ${options.label}`);
+        throw new SchemaValidationError(options.label, violations);
+      }
+    }
     return cached.data as T;
   }
 
@@ -401,7 +434,7 @@ export async function executeAgentCall<T>(
   let replayAvailable = true;
   let replayUnavailableReason: string | undefined;
   let attempt = 0;
-  let launchPrompt = prompt;
+  let launchPrompt = providerPrompt;
 
   while (true) {
     const replayResult = await persistReplayInput({
@@ -460,6 +493,7 @@ export async function executeAgentCall<T>(
         };
         continue;
       }
+      chargeFailedAgentUsage(config.budget, err);
       if (shouldEmit) {
         config.eventEmitter!({
           type: 'agent.conversation.failed',
@@ -480,6 +514,28 @@ export async function executeAgentCall<T>(
     throw new Error('Agent launcher did not produce a result.');
   }
 
+  // 6. Schema validation
+  if (options.schema) {
+    const violations = validateAgainstSchema(result.data, options.schema);
+    if (violations.length > 0) {
+      config.log(`Schema validation failed for ${options.label}`);
+      const error = new SchemaValidationError(options.label, violations);
+      if (shouldEmit) {
+        config.eventEmitter!({
+          type: 'agent.conversation.failed',
+          agentId,
+          label: options.label,
+          phase: options.phase,
+          runId: config.runId,
+          agentRunId: result.runId ?? agentRunId,
+          resolvedAgentId: config.resolvedAgent?.agentId,
+          error: getAgentRunFailureSummary(error),
+        });
+      }
+      throw error;
+    }
+  }
+
   if (shouldEmit) {
     config.eventEmitter!({
       type: 'agent.conversation.completed',
@@ -490,15 +546,6 @@ export async function executeAgentCall<T>(
       agentRunId: result.runId ?? agentRunId,
       resolvedAgentId: config.resolvedAgent?.agentId,
     });
-  }
-
-  // 6. Schema validation
-  if (options.schema) {
-    const violations = validateAgainstSchema(result.data, options.schema);
-    if (violations.length > 0) {
-      config.log(`Schema validation failed for ${options.label}`);
-      throw new SchemaValidationError(options.label, violations);
-    }
   }
 
   // 7. Update budget and persist result evidence
@@ -513,8 +560,8 @@ export async function executeAgentCall<T>(
       isolation: options.isolation,
       agentType: options.agentType,
       bridgeMode: options.bridgeMode,
-      promptSummary: summarizePrompt(prompt),
-      promptHash: hashPrompt(prompt),
+      promptSummary: summarizePrompt(providerPrompt),
+      promptHash: hashPrompt(providerPrompt),
       startedAt,
       completedAt: new Date().toISOString(),
       tokenUsage: usage,
@@ -567,3 +614,28 @@ export function computeAgentCacheKey(
 }
 
 export { validateAgainstSchema };
+
+function resolveLaunchBudget(
+  requested: AgentOptions['budget'],
+  workflowRemaining: number | null,
+): AgentOptions['budget'] {
+  const requestedTokens = requested?.tokens;
+  const tokens =
+    workflowRemaining === null
+      ? requestedTokens
+      : requestedTokens === undefined
+        ? workflowRemaining
+        : Math.min(requestedTokens, workflowRemaining);
+  return tokens === undefined ? undefined : { tokens, costUsd: requested?.costUsd };
+}
+
+function chargeFailedAgentUsage(budget: BudgetState, error: unknown): void {
+  const usage =
+    error && typeof error === 'object' && 'tokenUsage' in error
+      ? (error as { tokenUsage?: unknown }).tokenUsage
+      : undefined;
+  if (typeof usage !== 'number' || !Number.isInteger(usage) || usage <= 0) return;
+  budget.tokensUsed += usage;
+  if (budget.tokensRemaining !== null) budget.tokensRemaining -= usage;
+  budget.agentCalls += 1;
+}

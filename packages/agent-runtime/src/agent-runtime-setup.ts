@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { isAbsolute, join, resolve } from 'node:path';
 import type {
   AgentRuntimeDoctorCheck,
   AgentRuntimeDoctorCheckStatus,
@@ -10,6 +10,7 @@ import type {
 } from './agent-runtime-doctor.js';
 import { diagnoseAbyRuntime } from './agent-runtime-doctor.js';
 import { auditBridgeEnv } from './bridge-env.js';
+import { readRuntimeConfigForMerge, writeRuntimeConfigAtomic } from './runtime-config-file.js';
 
 export type AbyRuntimeSetupStatus = 'PASS' | 'FAIL';
 export type AbyRuntimeSetupMode = 'dry-run' | 'write';
@@ -66,8 +67,7 @@ export function setupAbyRuntime(options: SetupAbyRuntimeOptions): AbyRuntimeSetu
   const resolvedRoot = root ? (isAbsolute(root) ? resolve(root) : resolve(rootDir, root)) : rootDir;
   const command = options.command ?? 'bun';
   const timeoutMs = options.timeoutMs ?? 120_000;
-  const configPath =
-    options.configPath ?? join(rootDir, '.openslack.local', 'agent-runtime.json');
+  const configPath = options.configPath ?? join(rootDir, '.openslack.local', 'agent-runtime.json');
   const envAudit = auditBridgeEnv(options.bridgeEnv);
   const runEntrypoint = join(resolvedRoot, 'src', 'sidecar', 'entrypoints', 'runEntrypoint.ts');
   const agentRunBridge = join(resolvedRoot, 'src', 'sidecar', 'entrypoints', 'agentRunBridge.ts');
@@ -100,13 +100,14 @@ export function setupAbyRuntime(options: SetupAbyRuntimeOptions): AbyRuntimeSetu
     {
       name: 'safe-env',
       status: envAudit.rejectedKeys.length === 0 ? 'PASS' : 'FAIL',
-      detail: envAudit.rejectedKeys.length === 0
-        ? `Allowed keys: ${envAudit.allowedKeys.join(', ') || '(none)'}`
-        : `Rejected unsafe keys: ${envAudit.rejectedKeys.join(', ')}`,
+      detail:
+        envAudit.rejectedKeys.length === 0
+          ? `Allowed keys: ${envAudit.allowedKeys.join(', ') || '(none)'}`
+          : `Rejected unsafe keys: ${envAudit.rejectedKeys.join(', ')}`,
     },
   ];
 
-  const status: AbyRuntimeSetupStatus = checks.some((check) => check.status === 'FAIL')
+  let status: AbyRuntimeSetupStatus = checks.some((check) => check.status === 'FAIL')
     ? 'FAIL'
     : 'PASS';
   const mode: AbyRuntimeSetupMode = options.write ? 'write' : 'dry-run';
@@ -115,18 +116,25 @@ export function setupAbyRuntime(options: SetupAbyRuntimeOptions): AbyRuntimeSetu
   let doctor: AbyRuntimeDoctorReport | undefined;
 
   if (options.write && status === 'PASS') {
-    mkdirSync(dirname(configPath), { recursive: true });
-    writeFileSync(
-      configPath,
-      `${JSON.stringify(buildWritableConfig(root, command, timeoutMs, envAudit.safeEnv), null, 2)}\n`,
-      'utf-8',
-    );
-    wroteConfig = true;
-    doctor = (options.diagnose ?? diagnoseAbyRuntime)({
-      rootDir,
-      env: options.env ?? process.env,
-      configPath,
-    });
+    try {
+      const existing = readRuntimeConfigForMerge(configPath);
+      writeRuntimeConfigAtomic(configPath, {
+        ...existing,
+        ...buildWritableConfig(root, command, timeoutMs, envAudit.safeEnv),
+      });
+      wroteConfig = true;
+      doctor = (options.diagnose ?? diagnoseAbyRuntime)({
+        rootDir,
+        env: options.env ?? process.env,
+        configPath,
+      });
+    } catch {
+      checks.push({
+        name: 'write',
+        status: 'FAIL',
+        detail: 'Existing runtime config could not be safely merged.',
+      });
+    }
   }
 
   if (doctor) {
@@ -136,6 +144,7 @@ export function setupAbyRuntime(options: SetupAbyRuntimeOptions): AbyRuntimeSetu
       detail: `Aby runtime doctor ${doctor.status}`,
     });
   }
+  status = checks.some((check) => check.status === 'FAIL') ? 'FAIL' : 'PASS';
 
   const readiness: AgentRuntimeReadiness =
     doctor?.readiness ??
@@ -215,7 +224,9 @@ function remediationForSetup(checks: AgentRuntimeDoctorCheck[], wroteConfig: boo
   const failed = checks.filter((check) => check.status === 'FAIL');
   if (failed.length === 0) {
     return wroteConfig
-      ? ['Configuration written. Run openslack agent-runtime doctor --provider aby to verify again.']
+      ? [
+          'Configuration written. Run openslack agent-runtime doctor --provider aby to verify again.',
+        ]
       : ['Dry run passed. Re-run with --write to save .openslack.local/agent-runtime.json.'];
   }
 

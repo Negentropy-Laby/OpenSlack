@@ -32,6 +32,7 @@ describe('Dirty-state-aware worktree cleanup', () => {
     mockCreateWorktree.mockReset();
 
     // Default: createWorktree succeeds
+    mkdirSync(join(root, '.worktrees', 'fake-wt'), { recursive: true });
     mockCreateWorktree.mockReturnValue({
       success: true,
       worktreePath: join(root, '.worktrees', 'fake-wt'),
@@ -47,7 +48,11 @@ describe('Dirty-state-aware worktree cleanup', () => {
   });
 
   afterEach(() => {
-    try { rmSync(root, { recursive: true, force: true }); } catch { /* ignore */ }
+    try {
+      rmSync(root, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
   });
 
   it('cleans up clean worktree', async () => {
@@ -115,14 +120,20 @@ describe('Dirty-state-aware worktree cleanup', () => {
     const run = store.listRuns()[0];
     const transcript = readTranscript(run.runId, root);
     const preservedEvent = transcript.find(
-      (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'worktree_dirty_preserved',
+      (e) =>
+        e.type === 'progress' &&
+        (e.data as Record<string, unknown>).step === 'worktree_dirty_preserved',
     );
 
     expect(preservedEvent).toBeDefined();
     expect((preservedEvent!.data as Record<string, unknown>).worktreePath).toBeDefined();
     // branchName should come from createWorktree result, not reconstructed
-    expect((preservedEvent!.data as Record<string, unknown>).branchName).toBe('agent/test/run-1/RUN-FAKE');
-    expect((preservedEvent!.data as Record<string, unknown>).reason).toContain('Uncommitted changes');
+    expect((preservedEvent!.data as Record<string, unknown>).branchName).toBe(
+      'agent/test/run-1/RUN-FAKE',
+    );
+    expect((preservedEvent!.data as Record<string, unknown>).reason).toContain(
+      'Uncommitted changes',
+    );
 
     // Run state should have worktreeHandoff for recovery
     const refreshedRun = store.getRun(run.runId);
@@ -167,7 +178,9 @@ describe('Dirty-state-aware worktree cleanup', () => {
     const run = store.listRuns()[0];
     const transcript = readTranscript(run.runId, root);
     const failedCheckEvent = transcript.find(
-      (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'worktree_dirty_check_failed',
+      (e) =>
+        e.type === 'progress' &&
+        (e.data as Record<string, unknown>).step === 'worktree_dirty_check_failed',
     );
 
     expect(failedCheckEvent).toBeDefined();
@@ -206,11 +219,15 @@ describe('Dirty-state-aware worktree cleanup', () => {
     // Transcript should contain worktree_cleanup_failed event
     const transcript = readTranscript(runs[0].runId, root);
     const cleanupFailedEvent = transcript.find(
-      (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'worktree_cleanup_failed',
+      (e) =>
+        e.type === 'progress' &&
+        (e.data as Record<string, unknown>).step === 'worktree_cleanup_failed',
     );
 
     expect(cleanupFailedEvent).toBeDefined();
-    expect((cleanupFailedEvent!.data as Record<string, unknown>).error).toContain('worktree removal failed');
+    expect((cleanupFailedEvent!.data as Record<string, unknown>).error).toContain(
+      'worktree removal failed',
+    );
   });
 
   it('does not check dirty state when no worktree was created', async () => {
@@ -254,20 +271,20 @@ describe('Dirty-state-aware worktree cleanup', () => {
         "import { stdin, stdout } from 'node:process';",
         "let buffer = '';",
         "stdin.setEncoding('utf8');",
-        "function envelope(input, kind, payload) {",
+        'function envelope(input, kind, payload) {',
         "  return JSON.stringify({ protocolVersion: input.protocolVersion, sessionId: input.sessionId, correlationId: input.correlationId, timestamp: new Date().toISOString(), kind, payload }) + '\\n';",
-        "}",
+        '}',
         "stdin.on('data', chunk => {",
-        "  buffer += chunk;",
+        '  buffer += chunk;',
         "  const lines = buffer.split('\\n');",
         "  buffer = lines.pop() ?? '';",
-        "  for (const line of lines) {",
-        "    if (!line.trim()) continue;",
-        "    const input = JSON.parse(line);",
+        '  for (const line of lines) {',
+        '    if (!line.trim()) continue;',
+        '    const input = JSON.parse(line);',
         "    if (input.kind === 'handshake_request') stdout.write(envelope(input, 'handshake_response', { accepted: true }));",
         "    if (input.kind === 'run_request') stdout.write(envelope(input, 'complete', { data: { cwd: process.cwd(), worktreePath: input.payload.worktreePath } }));",
-        "  }",
-        "});",
+        '  }',
+        '});',
       ].join('\n'),
       'utf-8',
     );

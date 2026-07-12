@@ -10,6 +10,12 @@ import type {
   SetupAbyRuntimeOptions,
   RunAbyRuntimeSmokeOptions,
   AgentRuntimeMcpStatusOptions,
+  DiagnoseOpenAICompatibleRuntimeOptions,
+  OpenAICompatibleRuntimeDoctorReport,
+  OpenAICompatibleRuntimeSetupReport,
+  OpenAICompatibleRuntimeSmokeReport,
+  SetupOpenAICompatibleRuntimeOptions,
+  RunOpenAICompatibleRuntimeSmokeOptions,
 } from '@openslack/agent-runtime';
 
 interface AgentRuntimeCommandDependencies {
@@ -17,6 +23,15 @@ interface AgentRuntimeCommandDependencies {
   setupAbyRuntime?: (options: SetupAbyRuntimeOptions) => AbyRuntimeSetupReport;
   runAbyRuntimeSmoke?: (options: RunAbyRuntimeSmokeOptions) => Promise<AbyRuntimeSmokeReport>;
   getAgentRuntimeMcpStatus?: (options: AgentRuntimeMcpStatusOptions) => AgentRuntimeMcpStatusReport;
+  diagnoseOpenAICompatibleRuntime?: (
+    options: DiagnoseOpenAICompatibleRuntimeOptions,
+  ) => Promise<OpenAICompatibleRuntimeDoctorReport>;
+  setupOpenAICompatibleRuntime?: (
+    options: SetupOpenAICompatibleRuntimeOptions,
+  ) => OpenAICompatibleRuntimeSetupReport;
+  runOpenAICompatibleRuntimeSmoke?: (
+    options: RunOpenAICompatibleRuntimeSmokeOptions,
+  ) => Promise<OpenAICompatibleRuntimeSmokeReport>;
 }
 
 type DoctorFormat = 'plain' | 'json' | 'tui';
@@ -32,9 +47,7 @@ function findRepoRoot(): string {
   return process.cwd();
 }
 
-export function agentRuntimeCommands(
-  dependencies: AgentRuntimeCommandDependencies = {},
-): Command {
+export function agentRuntimeCommands(dependencies: AgentRuntimeCommandDependencies = {}): Command {
   const cmd = new Command('agent-runtime').description('Agent runtime diagnostics');
 
   cmd
@@ -46,29 +59,38 @@ export function agentRuntimeCommands(
       const provider = normalizeProvider(options.provider);
       const format = normalizeDoctorFormat(options.format);
       const rootDir = findRepoRoot();
-      const diagnoseAbyRuntime =
-        dependencies.diagnoseAbyRuntime ??
-        (await import('@openslack/agent-runtime')).diagnoseAbyRuntime;
-      const report = diagnoseAbyRuntime({ rootDir, env: process.env });
-
-      if (format === 'json') {
-        console.log(renderAbyRuntimeDoctorJson(report));
-      } else if (format === 'tui') {
-        const { mapAbyRuntimeDoctorToViewModel, renderAgentRuntimeDiagnosticsTui } =
-          await import('@openslack/tui');
-        await renderAgentRuntimeDiagnosticsTui(
-          mapAbyRuntimeDoctorToViewModel(report, { rootDir }),
-        );
-      } else {
-        console.log(renderAbyRuntimeDoctorReport(report));
+      if (provider === 'aby') {
+        const diagnoseAbyRuntime =
+          dependencies.diagnoseAbyRuntime ??
+          (await import('@openslack/agent-runtime')).diagnoseAbyRuntime;
+        const report = diagnoseAbyRuntime({ rootDir, env: process.env });
+        if (format === 'json') {
+          console.log(renderAbyRuntimeDoctorJson(report));
+        } else if (format === 'tui') {
+          const { mapAbyRuntimeDoctorToViewModel, renderAgentRuntimeDiagnosticsTui } =
+            await import('@openslack/tui');
+          await renderAgentRuntimeDiagnosticsTui(
+            mapAbyRuntimeDoctorToViewModel(report, { rootDir }),
+          );
+        } else {
+          console.log(renderAbyRuntimeDoctorReport(report));
+        }
+        if (report.status === 'FAIL') process.exit(1);
+        return;
       }
-
-      if (provider !== 'aby' || report.status === 'FAIL') process.exit(1);
+      const diagnoseOpenAICompatibleRuntime =
+        dependencies.diagnoseOpenAICompatibleRuntime ??
+        (await import('@openslack/agent-runtime')).diagnoseOpenAICompatibleRuntime;
+      const report = await diagnoseOpenAICompatibleRuntime({ rootDir, env: process.env });
+      console.log(
+        format === 'json'
+          ? JSON.stringify(report, null, 2)
+          : renderOpenAICompatibleRuntimeDoctorReport(report),
+      );
+      if (report.status === 'FAIL') process.exit(1);
     });
 
-  const setup = cmd
-    .command('setup')
-    .description('Configure external agent runtime providers');
+  const setup = cmd.command('setup').description('Configure external agent runtime providers');
 
   setup
     .command('aby')
@@ -87,8 +109,7 @@ export function agentRuntimeCommands(
       }
 
       const setupAbyRuntime =
-        dependencies.setupAbyRuntime ??
-        (await import('@openslack/agent-runtime')).setupAbyRuntime;
+        dependencies.setupAbyRuntime ?? (await import('@openslack/agent-runtime')).setupAbyRuntime;
       const report = setupAbyRuntime({
         rootDir,
         root: String(options.root),
@@ -101,22 +122,78 @@ export function agentRuntimeCommands(
       if (report.status === 'FAIL') process.exit(1);
     });
 
+  setup
+    .command('openai-compatible')
+    .description('Configure an OpenAI-compatible governed runtime')
+    .requiredOption('--base-url <url>', 'Chat Completions API base URL')
+    .requiredOption('--model <model>', 'Model identifier')
+    .requiredOption(
+      '--credential-ref <ref>',
+      'Credential reference, for example env:OPENSLACK_LLM_API_KEY',
+    )
+    .option('--timeout-ms <ms>', 'Whole-run wall-clock timeout in milliseconds', '60000')
+    .option('--max-turns <count>', 'Maximum provider turns', '8')
+    .option('--max-tool-calls <count>', 'Maximum governed tool calls', '24')
+    .option('--max-output-tokens <count>', 'Maximum requested output tokens per turn', '4096')
+    .option('--max-response-bytes <bytes>', 'Maximum provider response bytes', '2097152')
+    .option('--max-tool-result-bytes <bytes>', 'Maximum serialized tool result bytes', '262144')
+    .option('--dry-run', 'Preview the config without writing it')
+    .option('--write', 'Write non-secret provider config')
+    .action(async (options) => {
+      const write = Boolean(options.write);
+      if (options.dryRun && write) {
+        console.error('Choose either --dry-run or --write, not both.');
+        process.exit(1);
+      }
+      const setupOpenAICompatibleRuntime =
+        dependencies.setupOpenAICompatibleRuntime ??
+        (await import('@openslack/agent-runtime')).setupOpenAICompatibleRuntime;
+      const report = setupOpenAICompatibleRuntime({
+        rootDir: findRepoRoot(),
+        baseUrl: String(options.baseUrl),
+        model: String(options.model),
+        credentialRef: String(options.credentialRef),
+        timeoutMs: parseInteger(options.timeoutMs),
+        maxTurns: parseInteger(options.maxTurns),
+        maxToolCalls: parseInteger(options.maxToolCalls),
+        maxOutputTokens: parseInteger(options.maxOutputTokens),
+        maxResponseBytes: parseInteger(options.maxResponseBytes),
+        maxToolResultBytes: parseInteger(options.maxToolResultBytes),
+        env: process.env,
+        write,
+      });
+      console.log(renderOpenAICompatibleRuntimeSetupReport(report));
+      if (report.status === 'FAIL') process.exit(1);
+    });
+
   cmd
     .command('smoke')
     .description('Run a read-only external runtime bridge smoke test')
     .option('--provider <provider>', 'Runtime provider to smoke test', 'aby')
     .option('--agent <agentId>', 'Agent id to run', 'anthropic_architect_aby')
     .action(async (options) => {
-      normalizeProvider(options.provider);
-      const runAbyRuntimeSmoke =
-        dependencies.runAbyRuntimeSmoke ??
-        (await import('@openslack/agent-runtime')).runAbyRuntimeSmoke;
-      const report = await runAbyRuntimeSmoke({
+      const provider = normalizeProvider(options.provider);
+      if (provider === 'aby') {
+        const runAbyRuntimeSmoke =
+          dependencies.runAbyRuntimeSmoke ??
+          (await import('@openslack/agent-runtime')).runAbyRuntimeSmoke;
+        const report = await runAbyRuntimeSmoke({
+          rootDir: findRepoRoot(),
+          env: process.env,
+          agentId: String(options.agent ?? 'anthropic_architect_aby'),
+        });
+        console.log(renderAbyRuntimeSmokeReport(report));
+        if (report.status === 'FAIL') process.exit(1);
+        return;
+      }
+      const runOpenAICompatibleRuntimeSmoke =
+        dependencies.runOpenAICompatibleRuntimeSmoke ??
+        (await import('@openslack/agent-runtime')).runOpenAICompatibleRuntimeSmoke;
+      const report = await runOpenAICompatibleRuntimeSmoke({
         rootDir: findRepoRoot(),
         env: process.env,
-        agentId: String(options.agent ?? 'anthropic_architect_aby'),
       });
-      console.log(renderAbyRuntimeSmokeReport(report));
+      console.log(renderOpenAICompatibleRuntimeSmokeReport(report));
       if (report.status === 'FAIL') process.exit(1);
     });
 
@@ -132,7 +209,10 @@ export function agentRuntimeCommands(
     .option('--run <runId>', 'Run id to inspect')
     .option('--available <servers>', 'Comma-separated available server override')
     .action(async (options) => {
-      normalizeProvider(options.provider);
+      if (normalizeProvider(options.provider) !== 'aby') {
+        console.error('MCP descriptor status is available only for the Aby bridge provider.');
+        process.exit(1);
+      }
       const agentId = readString(options.agent);
       const runId = readString(options.run);
       if (!agentId && !runId) {
@@ -300,13 +380,13 @@ export function renderAgentRuntimeMcpStatusReport(report: AgentRuntimeMcpStatusR
   return lines.join('\n');
 }
 
-function normalizeProvider(provider: unknown): 'aby' {
+function normalizeProvider(provider: unknown): 'aby' | 'openai-compatible' {
   const value = String(provider ?? 'aby').toLowerCase();
-  if (value !== 'aby') {
+  if (value !== 'aby' && value !== 'openai-compatible' && value !== 'openai') {
     console.error(`Unsupported agent runtime provider: ${String(provider)}`);
     process.exit(1);
   }
-  return 'aby';
+  return value === 'openai' ? 'openai-compatible' : value;
 }
 
 function normalizeDoctorFormat(format: unknown): DoctorFormat {
@@ -344,5 +424,81 @@ function readString(value: unknown): string | undefined {
 function readCsv(value: unknown): string[] | undefined {
   const raw = readString(value);
   if (!raw) return undefined;
-  return raw.split(',').map((item) => item.trim()).filter(Boolean);
+  return raw
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function parseInteger(value: unknown): number {
+  const text = String(value).trim();
+  return /^(?:0|[1-9]\d*)$/.test(text) ? Number(text) : Number.NaN;
+}
+
+export function renderOpenAICompatibleRuntimeDoctorReport(
+  report: OpenAICompatibleRuntimeDoctorReport,
+): string {
+  return [
+    'Agent Runtime Doctor',
+    `Provider: ${report.provider}`,
+    `Status: ${report.status}`,
+    `Readiness: ${report.readiness}`,
+    `Config source: ${report.configSource}`,
+    `Config path: ${report.configPath}`,
+    `Base URL: ${report.baseUrl ?? '(not configured)'}`,
+    `Model: ${report.model ?? '(not configured)'}`,
+    `Credential ref: ${report.credentialRef ?? '(not configured)'}`,
+    '',
+    'Checks:',
+    ...report.checks.map((check) => `  [${check.status}] ${check.name}: ${check.detail}`),
+    '',
+    'Remediation:',
+    ...(report.remediations.length > 0
+      ? report.remediations.map((line) => `  - ${line}`)
+      : ['  - None. Run agent-runtime smoke for live execution evidence.']),
+  ].join('\n');
+}
+
+export function renderOpenAICompatibleRuntimeSetupReport(
+  report: OpenAICompatibleRuntimeSetupReport,
+): string {
+  return [
+    'Agent Runtime Setup',
+    `Provider: ${report.provider}`,
+    `Mode: ${report.mode}`,
+    `Status: ${report.status}`,
+    `Readiness: ${report.readiness}`,
+    `Config path: ${report.configPath}`,
+    `Config written: ${report.wroteConfig ? 'yes' : 'no'}`,
+    '',
+    'Config preview:',
+    JSON.stringify(report.configPreview, null, 2),
+    '',
+    'Checks:',
+    ...report.checks.map((check) => `  [${check.status}] ${check.name}: ${check.detail}`),
+    '',
+    'Remediation:',
+    ...report.remediations.map((line) => `  - ${line}`),
+  ].join('\n');
+}
+
+export function renderOpenAICompatibleRuntimeSmokeReport(
+  report: OpenAICompatibleRuntimeSmokeReport,
+): string {
+  return [
+    'OpenAI-compatible Runtime Smoke',
+    `Provider: ${report.provider}`,
+    `Status: ${report.status}`,
+    `Run ID: ${report.runId ?? '(not started)'}`,
+    `Terminal reason: ${report.terminalReason}`,
+    ...(report.failureCode ? [`Failure code: ${report.failureCode}`] : []),
+    '',
+    'Checks:',
+    ...report.checks.map((check) => `  [${check.status}] ${check.name}: ${check.detail}`),
+    '',
+    'Evidence:',
+    `  run.json: ${report.evidence.runJson ?? '(not recorded)'}`,
+    `  metadata.json: ${report.evidence.metadataJson ?? '(not recorded)'}`,
+    `  transcript.jsonl: ${report.evidence.transcriptJsonl ?? '(not recorded)'}`,
+  ].join('\n');
 }

@@ -30,10 +30,33 @@ export const SUBAGENT_ALWAYS_FORBIDDEN = new Set([
  * before applying allowlist/denylist.
  */
 const MODE_BASELINES: Record<string, string[]> = {
-  plan: ['Read', 'Grep', 'Glob', 'Find'],
-  acceptEdits: ['Read', 'Grep', 'Glob', 'Find', 'Edit', 'Write'],
-  default: ['Read', 'Grep', 'Glob', 'Find', 'Edit', 'Write', 'Bash'],
-  strict: ['Read', 'Grep', 'Glob', 'Find', 'Edit', 'Write', 'Bash'],
+  plan: ['Read', 'Grep', 'Glob', 'Find', 'repo.read', 'repo.search', 'repo.diff'],
+  acceptEdits: [
+    'Read',
+    'Grep',
+    'Glob',
+    'Find',
+    'Edit',
+    'Write',
+    'repo.read',
+    'repo.search',
+    'repo.diff',
+    'repo.apply_patch',
+  ],
+  default: [
+    'Read',
+    'Grep',
+    'Glob',
+    'Find',
+    'Edit',
+    'Write',
+    'Bash',
+    'repo.read',
+    'repo.search',
+    'repo.diff',
+    'repo.apply_patch',
+  ],
+  strict: ['Read', 'Grep', 'Glob', 'Find', 'repo.read', 'repo.search', 'repo.diff'],
 };
 
 /**
@@ -78,7 +101,7 @@ export function buildPermissionProfile(
     canReadSecrets: false,
     canBypassRulesets: false,
     acceptEdits: effectiveMode === 'acceptEdits',
-    isReadOnly: effectiveMode === 'plan',
+    isReadOnly: effectiveMode === 'plan' || effectiveMode === 'strict',
   };
 }
 

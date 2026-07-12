@@ -6,6 +6,8 @@ import {
   createOpenSlackAgentLauncher,
   createRunStore,
   ExternalCommandAdapter,
+  RepositoryToolExecutor,
+  type AgentPermissionProfile,
 } from '../index.js';
 import { readTranscript } from '../transcript.js';
 import { buildPermissionProfile } from '../permissions.js';
@@ -18,7 +20,11 @@ function makeTempRoot(): string {
 }
 
 function cleanup(root: string) {
-  try { rmSync(root, { recursive: true, force: true }); } catch { /* ignore */ }
+  try {
+    rmSync(root, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
 }
 
 // Use node -e for cross-platform command execution in tests
@@ -26,6 +32,19 @@ function cleanup(root: string) {
 // process.execPath on Windows may contain spaces (e.g. C:\Program Files\nodejs\node.exe)
 // which bun's spawn with shell:false cannot resolve.
 const NODE = 'bun';
+
+function createToolPlane(
+  rootPath: string,
+  profile: AgentPermissionProfile,
+  recorder: ReturnType<typeof createRunRecorder>,
+  runId: string,
+) {
+  const toolGuard = new ToolGuard(profile, recorder, runId);
+  return {
+    toolGuard,
+    toolExecutor: new RepositoryToolExecutor({ rootPath, toolGuard, recorder, runId }),
+  };
+}
 
 describe('ExternalCommandAdapter', () => {
   let root: string;
@@ -75,7 +94,7 @@ describe('ExternalCommandAdapter', () => {
       permissionProfile: profile,
       recorder,
       runState: state,
-      toolGuard: new ToolGuard(profile, recorder, runId),
+      ...createToolPlane(root, profile, recorder, runId),
     });
 
     expect(result.data.status).toBe('ok');
@@ -115,7 +134,7 @@ describe('ExternalCommandAdapter', () => {
         permissionProfile: profile,
         recorder,
         runState: state,
-        toolGuard: new ToolGuard(profile, recorder, runId),
+        ...createToolPlane(root, profile, recorder, runId),
       }),
     ).rejects.toThrow(/exited with code 1/);
   });
@@ -154,7 +173,7 @@ describe('ExternalCommandAdapter', () => {
         permissionProfile: profile,
         recorder,
         runState: state,
-        toolGuard: new ToolGuard(profile, recorder, runId),
+        ...createToolPlane(root, profile, recorder, runId),
       }),
     ).rejects.toThrow(/Permission denied/);
 
@@ -200,14 +219,16 @@ describe('ExternalCommandAdapter', () => {
         permissionProfile: profile,
         recorder,
         runState: state,
-        toolGuard: new ToolGuard(profile, recorder, runId),
+        ...createToolPlane(root, profile, recorder, runId),
       }),
     ).rejects.toThrow(/timed out/);
 
     // Transcript should have timeout info
     const transcript = readTranscript(runId, root);
     const failedEvent = transcript.find(
-      (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'external_command_failed',
+      (e) =>
+        e.type === 'progress' &&
+        (e.data as Record<string, unknown>).step === 'external_command_failed',
     );
     expect(failedEvent).toBeDefined();
   }, 10000); // Allow up to 10s for this test
@@ -271,12 +292,16 @@ describe('ExternalCommandAdapter', () => {
     const transcript = readTranscript(run.runId, root);
 
     const startEvent = transcript.find(
-      (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'external_command_start',
+      (e) =>
+        e.type === 'progress' &&
+        (e.data as Record<string, unknown>).step === 'external_command_start',
     );
     expect(startEvent).toBeDefined();
 
     const completeEvent = transcript.find(
-      (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'external_command_complete',
+      (e) =>
+        e.type === 'progress' &&
+        (e.data as Record<string, unknown>).step === 'external_command_complete',
     );
     expect(completeEvent).toBeDefined();
     expect((completeEvent!.data as Record<string, unknown>).exitCode).toBe(0);
@@ -286,7 +311,10 @@ describe('ExternalCommandAdapter', () => {
     // Command that echoes back the prompt env var
     const adapter = new ExternalCommandAdapter({
       command: NODE,
-      args: ['-e', 'console.log(JSON.stringify({prompt: process.env.OPENSLACK_AGENT_PROMPT, agentId: process.env.OPENSLACK_AGENT_ID}))'],
+      args: [
+        '-e',
+        'console.log(JSON.stringify({prompt: process.env.OPENSLACK_AGENT_PROMPT, agentId: process.env.OPENSLACK_AGENT_ID}))',
+      ],
       timeoutMs: 5000,
     });
 

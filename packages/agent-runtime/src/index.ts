@@ -16,6 +16,12 @@ export {
   RuntimeNotConfiguredError,
   RuntimeMisconfiguredError,
   AgentExecutionFailedError,
+  ProviderUnavailableError,
+  ProviderTimeoutError,
+  ProviderInvalidResponseError,
+  ToolArgumentInvalidError,
+  AgentBudgetExceededError,
+  AgentLimitExceededError,
   getAgentRunFailureCode,
   getAgentRunFailureSummary,
 } from './types.js';
@@ -34,11 +40,64 @@ export {
   SUBAGENT_ALWAYS_FORBIDDEN,
 } from './permissions.js';
 
-export type { AgentLaunchOptions, LauncherOptions } from './launcher.js';
+export type {
+  AgentLaunchOptions,
+  LauncherOptions,
+  OpenAICompatibleRuntimeHostOptions,
+} from './launcher.js';
 export { createOpenSlackAgentLauncher } from './launcher.js';
 
-export type { AgentExecutionAdapter, AdapterExecutionContext, AdapterExecutionResult } from './adapter.js';
+export type {
+  AgentExecutionAdapter,
+  AdapterExecutionContext,
+  AdapterExecutionResult,
+} from './adapter.js';
 export { LocalExecutionAdapter, ToolGuard } from './adapter.js';
+
+export type {
+  RepositoryToolName,
+  RepositoryToolDefinition,
+  ToolExecutionResult,
+  ToolExecutionControl,
+  ToolExecutor,
+  RepositoryToolExecutorOptions,
+} from './tool-executor.js';
+export { RepositoryToolExecutor } from './tool-executor.js';
+export {
+  isSensitiveRepositoryPath,
+  redactSensitiveText,
+  redactSensitiveValue,
+} from './sensitive-data.js';
+
+export type {
+  OpenAICompatibleRuntimeConfig,
+  OpenAICompatibleRuntimeOptions,
+  OpenAICompatibleAdapterOptions,
+} from './openai-compatible-runtime.js';
+export type { AgentResultSchema } from './schema-validation.js';
+export {
+  AgentResultSchemaError,
+  assertAgentResultSchema,
+  validateAgentResultSchema,
+} from './schema-validation.js';
+export type {
+  DiagnoseOpenAICompatibleRuntimeOptions,
+  OpenAICompatibleRuntimeDoctorReport,
+  SetupOpenAICompatibleRuntimeOptions,
+  OpenAICompatibleRuntimeSetupReport,
+  RunOpenAICompatibleRuntimeSmokeOptions,
+  OpenAICompatibleRuntimeSmokeReport,
+} from './openai-compatible-diagnostics.js';
+export {
+  diagnoseOpenAICompatibleRuntime,
+  setupOpenAICompatibleRuntime,
+  runOpenAICompatibleRuntimeSmoke,
+} from './openai-compatible-diagnostics.js';
+export {
+  loadOpenAICompatibleRuntimeConfig,
+  OpenAICompatibleExecutionAdapter,
+  resolveRuntimeCredential,
+} from './openai-compatible-runtime.js';
 
 export type {
   ProviderRegistration,
@@ -56,7 +115,11 @@ export { ExternalCommandAdapter } from './external-command-adapter.js';
 export type { RunRecorder } from './recorder.js';
 export { createRunRecorder } from './recorder.js';
 
-export type { ActiveAgentRunControl, AgentRunCancelResult, AgentRunRestartResult } from './control.js';
+export type {
+  ActiveAgentRunControl,
+  AgentRunCancelResult,
+  AgentRunRestartResult,
+} from './control.js';
 export {
   AgentRunCancelledError,
   AgentRunRestartRequestedError,
@@ -90,11 +153,7 @@ export { buildAgentRunBridgeRequestPayload } from './agent-run-bridge-request.js
 
 // Bridge adapter (AR-2.5B)
 export type { BridgeProcessAdapterOptions, FakeBridgeAdapterOptions } from './bridge-adapter.js';
-export {
-  BridgeProcessAdapter,
-  FakeBridgeAdapter,
-  BridgeAdapterError,
-} from './bridge-adapter.js';
+export { BridgeProcessAdapter, FakeBridgeAdapter, BridgeAdapterError } from './bridge-adapter.js';
 
 // Bridge lifecycle (AR-2.5C)
 export type { BridgeSessionSummary } from './types.js';
@@ -164,9 +223,7 @@ export {
   isSafeBridgeEnvKey,
 } from './bridge-env.js';
 
-export type {
-  AgentRuntimeRegistryEntry,
-} from './agent-runtime-registry.js';
+export type { AgentRuntimeRegistryEntry } from './agent-runtime-registry.js';
 export {
   findAgentRuntimeRegistryEntry,
   listAgentRuntimeRegistryEntries,
