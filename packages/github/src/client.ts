@@ -223,6 +223,8 @@ export async function getClient(options: GitHubClientOptions = {}): Promise<GitH
     }
 
     if (auth === 'app') {
+      // App mode is identity-strict even when requireLive is false. Callers that
+      // want a non-live client must request dry-run explicitly.
       throw new GitHubAuthRequiredError(
         `AUTH_REQUIRED: GitHub App credentials are required for ${owner}/${repo}. Use scripts/openslack-bot.ps1 or set OPENSLACK_GITHUB_APP_* environment variables.`,
       );

@@ -312,7 +312,8 @@ export class GitHubDeliveryService {
   private async acquireToken(forceRefresh: boolean): Promise<DeliveryToken> {
     try {
       return await this.tokenProvider.acquire({ forceRefresh });
-    } catch {
+    } catch (error) {
+      if (error instanceof DeliveryError) throw error;
       throw new DeliveryError(
         'DELIVERY_AUTH_REQUIRED',
         'GitHub App installation token is unavailable.',
@@ -412,7 +413,39 @@ function isExactHead(
 
 function safeDeliveryFailure(error: unknown, message: string): DeliveryError {
   if (error instanceof DeliveryError) return error;
-  return new DeliveryError('DELIVERY_PR_FAILED', message, true);
+  const classification = classifyDeliveryApiFailure(error);
+  return new DeliveryError('DELIVERY_PR_FAILED', message, classification.retryable, {
+    cause: new Error(classification.safeCause),
+  });
+}
+
+function classifyDeliveryApiFailure(error: unknown): {
+  retryable: boolean;
+  safeCause: string;
+} {
+  if (!error || typeof error !== 'object') {
+    return { retryable: false, safeCause: 'GitHub API failure (unknown).' };
+  }
+  const candidate = error as { status?: unknown; code?: unknown };
+  if (typeof candidate.status === 'number') {
+    return {
+      retryable: candidate.status === 408 || candidate.status === 429 || candidate.status >= 500,
+      safeCause: `GitHub API failure (HTTP ${candidate.status}).`,
+    };
+  }
+  const code = typeof candidate.code === 'string' ? candidate.code : null;
+  const retryableCodes = new Set([
+    'ECONNRESET',
+    'ECONNREFUSED',
+    'EAI_AGAIN',
+    'ENETDOWN',
+    'ENETUNREACH',
+    'ETIMEDOUT',
+  ]);
+  return {
+    retryable: code !== null && retryableCodes.has(code),
+    safeCause: code ? `GitHub API transport failure (${code}).` : 'GitHub API failure (unknown).',
+  };
 }
 
 function defaultTokenProvider(): DeliveryTokenProvider {
@@ -441,7 +474,24 @@ function defaultTokenProvider(): DeliveryTokenProvider {
 function readForwardedInstallationToken(): DeliveryToken | null {
   const value = process.env.OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN?.trim();
   const installationId = process.env.OPENSLACK_GITHUB_APP_INSTALLATION_ID?.trim();
-  if (!value || !installationId) return null;
+  const expiresAt = process.env.OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN_EXPIRES_AT?.trim();
+  const hasForwardedCredential = Boolean(value || installationId || expiresAt);
+  if (!hasForwardedCredential) return null;
+  if (!value || !installationId || !expiresAt) {
+    throw new DeliveryError(
+      'DELIVERY_AUTH_REQUIRED',
+      'Forwarded GitHub App credentials are incomplete.',
+      false,
+    );
+  }
+  const expiry = Date.parse(expiresAt);
+  if (Number.isNaN(expiry) || expiry <= Date.now()) {
+    throw new DeliveryError(
+      'DELIVERY_AUTH_REQUIRED',
+      'Forwarded GitHub App installation token expiry is invalid or expired.',
+      false,
+    );
+  }
 
   let permissions: Record<string, string> = {};
   const rawPermissions = process.env.OPENSLACK_GITHUB_APP_INSTALLATION_PERMISSIONS;
@@ -467,9 +517,7 @@ function readForwardedInstallationToken(): DeliveryToken | null {
   return {
     value,
     installationId,
-    expiresAt:
-      process.env.OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN_EXPIRES_AT ??
-      new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    expiresAt,
     permissions,
   };
 }

@@ -132,6 +132,17 @@ describe('GitHub client repository and auth resolution', () => {
     );
   });
 
+  it('fails closed for explicit app auth even when requireLive is false', async () => {
+    process.env.GH_TOKEN = 'human-token-must-not-be-used';
+    await expect(
+      getClient({
+        repoFullName: 'Negentropy-Laby/OpenSlack',
+        auth: 'app',
+        requireLive: false,
+      }),
+    ).rejects.toBeInstanceOf(GitHubAuthRequiredError);
+  });
+
   it('returns explicit dry-run client only when dry-run auth is requested', async () => {
     const client = await getClient({
       repoFullName: 'Negentropy-Laby/OpenSlack',

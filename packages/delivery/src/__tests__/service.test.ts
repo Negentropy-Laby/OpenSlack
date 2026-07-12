@@ -196,6 +196,55 @@ describe('GitHubDeliveryService', () => {
     expect(api.listChecks).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { status: 404, retryable: false },
+    { status: 422, retryable: false },
+    { status: 429, retryable: true },
+    { status: 503, retryable: true },
+  ])(
+    'classifies HTTP $status failures without exposing response data',
+    async ({ status, retryable }) => {
+      const api = githubApi();
+      api.findOpenPullRequests.mockRejectedValueOnce({
+        status,
+        response: { data: { message: `github-api-secret-canary-${status}` } },
+      });
+
+      const failure = await createService({ api })
+        .publish(baseInput)
+        .catch((error: unknown) => error);
+
+      expect(failure).toMatchObject({ code: 'DELIVERY_PR_FAILED', retryable });
+      expect((failure as Error & { cause?: Error }).cause?.message).toBe(
+        `GitHub API failure (HTTP ${status}).`,
+      );
+      expect(JSON.stringify(failure)).not.toContain('github-api-secret-canary');
+    },
+  );
+
+  it('marks allowlisted transport failures retryable and unknown failures terminal', async () => {
+    const retryableApi = githubApi();
+    retryableApi.findOpenPullRequests.mockRejectedValueOnce({
+      code: 'ETIMEDOUT',
+      message: 'transport-secret-canary',
+    });
+    const retryable = await createService({ api: retryableApi })
+      .publish(baseInput)
+      .catch((error: unknown) => error);
+    expect(retryable).toMatchObject({ code: 'DELIVERY_PR_FAILED', retryable: true });
+    expect((retryable as Error & { cause?: Error }).cause?.message).toBe(
+      'GitHub API transport failure (ETIMEDOUT).',
+    );
+
+    const terminalApi = githubApi();
+    terminalApi.findOpenPullRequests.mockRejectedValueOnce(new Error('unknown-secret-canary'));
+    const terminal = await createService({ api: terminalApi })
+      .publish(baseInput)
+      .catch((error: unknown) => error);
+    expect(terminal).toMatchObject({ code: 'DELIVERY_PR_FAILED', retryable: false });
+    expect(JSON.stringify(terminal)).not.toContain('unknown-secret-canary');
+  });
+
   it('fails before querying checks when the remote ref drifts after PR synchronization', async () => {
     const api = githubApi();
     const publisher = gitPublisher();

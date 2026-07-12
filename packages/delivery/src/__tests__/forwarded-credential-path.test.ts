@@ -83,6 +83,34 @@ describe('forwarded delivery credentials', () => {
     ).rejects.toMatchObject({ code: 'DELIVERY_AUTH_REQUIRED' });
     expect(publisher.push).not.toHaveBeenCalled();
   });
+
+  it.each([
+    { name: 'missing', expiresAt: undefined },
+    { name: 'invalid', expiresAt: 'not-a-date' },
+    { name: 'expired', expiresAt: '2020-01-01T00:00:00.000Z' },
+  ])('rejects $name forwarded expiry before Git mutation', async ({ expiresAt }) => {
+    setForwardedCredentials();
+    if (expiresAt === undefined)
+      delete process.env.OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN_EXPIRES_AT;
+    else process.env.OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN_EXPIRES_AT = expiresAt;
+    const publisher = gitPublisher();
+    const service = new GitHubDeliveryService({
+      gitPublisher: publisher,
+      githubApiFactory: () => githubApi(),
+    });
+
+    await expect(
+      service.publish({
+        rootDir: '/repo',
+        owner: 'acme',
+        repo: 'project',
+        branch: 'agent/topic',
+        title: 'github: publish branch',
+        body: 'body',
+      }),
+    ).rejects.toMatchObject({ code: 'DELIVERY_AUTH_REQUIRED', retryable: false });
+    expect(publisher.push).not.toHaveBeenCalled();
+  });
 });
 
 function setForwardedCredentials(): void {

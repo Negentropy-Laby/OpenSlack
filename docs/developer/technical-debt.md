@@ -132,7 +132,7 @@
 
 ### CLOSED: P0-6 — Workspace PR creation
 
-**Resolution:** `proposeWorkspacePR()` does git add/commit/push + createDraftPR() via GitHub provider. Graceful fallback when no remote.
+**Resolution:** `proposeWorkspacePR()` verifies declared paths against both the staged index and resulting commit, then delegates push, draft PR publication, and exact-head synchronization to `@openslack/delivery`. Missing credentials/remotes or any delivery failure now return `success: false`; the former PR-body-only graceful fallback was removed by the P0-3 fail-closed delivery contract.
 **Closed:** 2026-05-16.
 
 ### CLOSED: P0-7 — GitHub Provider

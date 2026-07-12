@@ -77,30 +77,7 @@ function getInstallationToken(appId, installationId, privateKey) {
             }
             try {
               const data = JSON.parse(Buffer.concat(chunks, byteLength).toString('utf8'));
-              if (typeof data.token !== 'string' || data.token.trim().length === 0) {
-                reject(new Error('GitHub App token response was invalid.'));
-                return;
-              }
-              const expiresAt =
-                typeof data.expires_at === 'string' && !Number.isNaN(Date.parse(data.expires_at))
-                  ? data.expires_at
-                  : new Date(Date.now() + 50 * 60 * 1000).toISOString();
-              const permissions =
-                data.permissions &&
-                typeof data.permissions === 'object' &&
-                !Array.isArray(data.permissions)
-                  ? Object.fromEntries(
-                      Object.entries(data.permissions).filter(
-                        (entry) => typeof entry[1] === 'string',
-                      ),
-                    )
-                  : {};
-              resolve({
-                value: data.token,
-                expiresAt,
-                installationId: String(installationId),
-                permissions,
-              });
+              resolve(parseInstallationTokenResponse(data, installationId));
             } catch {
               reject(new Error('GitHub App token response was invalid.'));
             }
@@ -118,6 +95,34 @@ function getInstallationToken(appId, installationId, privateKey) {
     timeout.unref();
     req.end();
   });
+}
+
+function parseInstallationTokenResponse(data, installationId, now = Date.now()) {
+  if (
+    !data ||
+    typeof data !== 'object' ||
+    typeof data.token !== 'string' ||
+    data.token.trim().length === 0 ||
+    typeof data.expires_at !== 'string'
+  ) {
+    throw new Error('GitHub App token response was invalid.');
+  }
+  const expiry = Date.parse(data.expires_at);
+  if (Number.isNaN(expiry) || expiry <= now) {
+    throw new Error('GitHub App token response expiry was invalid.');
+  }
+  const permissions =
+    data.permissions && typeof data.permissions === 'object' && !Array.isArray(data.permissions)
+      ? Object.fromEntries(
+          Object.entries(data.permissions).filter((entry) => typeof entry[1] === 'string'),
+        )
+      : {};
+  return {
+    value: data.token,
+    expiresAt: data.expires_at,
+    installationId: String(installationId),
+    permissions,
+  };
 }
 
 async function acquireConfiguredInstallationCredentials() {
@@ -155,6 +160,7 @@ async function main() {
 module.exports = {
   acquireConfiguredInstallationCredentials,
   acquireConfiguredInstallationToken,
+  parseInstallationTokenResponse,
 };
 
 if (require.main === module) {

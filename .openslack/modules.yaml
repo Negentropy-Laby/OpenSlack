@@ -1,5 +1,5 @@
 schema: openslack.modules.v1
-vitest_tests: 3506
+vitest_tests: 3516
 vitest_files: 264
 modules:
   - id: self_evolution
@@ -31,7 +31,7 @@ modules:
       - "@openslack/runtime"
       - "@openslack/core"
       - "@openslack/delivery"
-    tests: 437
+    tests: 446
     test_files: 57
     notes: "GitHub Issues task loop active with typed task creation, dry-run repair, Phase 4 watch daemon, and installation-scoped GitHub delivery. Delivery publishes HEAD and a draft PR through the same GitHub App token, disables host credentials and hooks, synchronizes remote/PR SHAs, and returns AWAITING_GATES evidence for PRMS. Read-only installation-scope diagnostics and a preview-first temporary-ref push/delete probe verify selected-repository access and contents write capability before first delivery."
 
@@ -50,7 +50,7 @@ modules:
       - "@openslack/operator"
       - "@openslack/chat-gateway"
       - "@openslack/tui"
-    tests: 834
+    tests: 835
     test_files: 91
     notes: Structured planner active. Webhook and Slack chat adapters active with actor mapping. PRMS chat cards and action confirmation active. Typed tool registry, LLM-first intent routing with deterministic keyword fallback, setup report, and 24h pending plan store active. Session-based conversation memory with multi-turn context resolution and progressive clarification. Doctor --format plain for non-technical output. Conversation-first TUI workbench with Ask OpenSlack, Operator recommendation cards, workflow draft-first cards, profile sync recommendations, and subagent mention dispatch. TUI setup report view and PR doctor view via --format tui.
 
@@ -65,7 +65,7 @@ modules:
       - "@openslack/pr"
       - "@openslack/github"
       - "@openslack/kernel"
-    tests: 470
+    tests: 471
     test_files: 45
     notes: Phase 2C chat report and action confirmation active. Supports status/review/recommend/doctor/queue/merge/watch, review/doctor comments, governance audit, operational decision summaries, deadlock detection, Red Zone author-risk preflight, and chat-friendly PR summaries with confirm-merge flow. Workflow artifact governance is bound to deterministic base/head tree evidence and a single current-head human approval carrying Workflow-Trust.
 
@@ -126,7 +126,7 @@ modules:
       - "@openslack/tui"
       - "@openslack/github"
       - "@openslack/agent-runtime"
-    tests: 1794
+    tests: 1795
     test_files: 146
     notes: >-
       Agent Runtime includes the governed OpenAI-compatible Chat Completions provider and repository tool plane with worktree containment, permission enforcement, budget and response limits, redaction, schema-before-complete, and provider-neutral setup/doctor/smoke UX.

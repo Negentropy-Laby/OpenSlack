@@ -25,6 +25,36 @@ describe('bot-auth wrapper scripts', () => {
     expect(tokenScript).toContain('acquireConfiguredInstallationToken');
     expect(tokenScript).not.toContain('3728623');
     expect(tokenScript).not.toContain('135500236');
+    expect(tokenScript).not.toContain('50 * 60 * 1000');
+  });
+
+  it('requires a valid endpoint-provided installation token expiry', () => {
+    const require = createRequire(import.meta.url);
+    const tokenModule = require(scriptPath('bot-gh-token.js')) as {
+      parseInstallationTokenResponse(
+        data: unknown,
+        installationId: string,
+        now?: number,
+      ): { value: string; expiresAt: string; installationId: string };
+    };
+    const expiresAt = '2030-01-01T00:00:00.000Z';
+    expect(
+      tokenModule.parseInstallationTokenResponse(
+        { token: 'token-canary', expires_at: expiresAt },
+        '456',
+        Date.parse('2029-01-01T00:00:00.000Z'),
+      ),
+    ).toMatchObject({ value: 'token-canary', expiresAt, installationId: '456' });
+    expect(() =>
+      tokenModule.parseInstallationTokenResponse({ token: 'token-canary' }, '456'),
+    ).toThrow('response was invalid');
+    expect(() =>
+      tokenModule.parseInstallationTokenResponse(
+        { token: 'token-canary', expires_at: '2020-01-01T00:00:00.000Z' },
+        '456',
+        Date.parse('2029-01-01T00:00:00.000Z'),
+      ),
+    ).toThrow('expiry was invalid');
   });
 
   it('PR creation wrappers delegate to the package-backed delivery path', () => {

@@ -134,12 +134,14 @@ powershell -ExecutionPolicy Bypass -File scripts\bot-gh.ps1 pr edit 117 --body "
 
 #### How the wrappers work
 
-For `pr create`, the wrappers load the configured App key only into the child
-OpenSlack process and delegate to `openslack delivery publish`. Delivery obtains
-one short-lived installation token, pushes through child-only askpass, creates or
-updates the exact-head draft PR through the API, and verifies the synchronized
-head SHA. `GITHUB_TOKEN` and `GH_TOKEN` are removed before delegation, so the
-operation cannot silently fall back to a human identity.
+For `pr create`, the wrapper launcher loads the configured App key, exchanges it
+for one short-lived installation token, and delegates to `openslack delivery
+publish` with only that token, its required expiry, installation ID, and
+non-secret permission evidence. The child never receives the App key. Delivery
+pushes through child-only askpass, creates or updates the exact-head draft PR
+through the API, and verifies the synchronized head SHA. `GITHUB_TOKEN` and
+`GH_TOKEN` are excluded, so the operation cannot silently fall back to a human
+identity. Missing or expired forwarded-token evidence fails before Git mutation.
 
 Before the first publication to a repository, use:
 
@@ -162,9 +164,15 @@ adapter. It obtains the installation token in memory, removes human-token and Ap
 key variables from the `gh` child, sets child-only `GH_TOKEN`, and forwards the
 command. `scripts/bot-gh-token.js` is an internal exchange module; direct token
 output is disabled so shell variables, xtrace, and transcripts cannot capture it.
-The compatibility adapter permits only `pr edit` and `pr comment`, rejects token
-display/auth/extension commands before credential loading, and disables child
-pager, editor, browser, and interactive prompt processes.
+The compatibility adapter permits only `pr edit`, `pr comment`, and `pr ready`,
+rejects token display/auth/extension commands before credential loading, and
+disables child pager, editor, browser, and interactive prompt processes.
+
+`proposeWorkspacePR()` is also fail-closed: staging, commit, App delivery, and
+exact-head verification are one required contract. A missing remote, missing App
+credential, rejected push, or failed PR publication returns `success: false`; a
+PR body without a synchronized branch and PR is never reported as a successful
+proposal.
 
 #### Troubleshooting
 

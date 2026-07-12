@@ -326,7 +326,9 @@ configuration and agent-registry contract.
 with `contents:write`, `pull_requests:write`, and `workflows:write`, disables host credential helpers
 and repository hooks for the push child, and returns `AWAITING_GATES` only after
 the remote branch SHA matches the PR head SHA. An empty initial check rollup is
-reported as `empty`, never as passed.
+reported as `empty`, never as passed. Publication is fail-closed: commit, push,
+PR creation/update, and exact-head synchronization must all succeed. A generated
+PR body is not a successful fallback when remote delivery fails.
 
 ```bash
 openslack delivery publish \
