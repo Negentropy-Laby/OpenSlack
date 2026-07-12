@@ -18,6 +18,9 @@ powershell -ExecutionPolicy Bypass -File scripts\bot-gh.ps1 pr edit 117 --body "
 
 .EXAMPLE
 powershell -ExecutionPolicy Bypass -File scripts\bot-gh.ps1 pr comment 117 --body "..."
+
+.EXAMPLE
+powershell -ExecutionPolicy Bypass -File scripts\bot-gh.ps1 pr ready 117
 #>
 
 [CmdletBinding(PositionalBinding = $false)]

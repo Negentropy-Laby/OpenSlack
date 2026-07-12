@@ -4,6 +4,7 @@
 # Usage: ./scripts/bot-gh.sh pr create --title "..." --body "..."
 # Usage: ./scripts/bot-gh.sh pr edit 117 --body "..."
 # Usage: ./scripts/bot-gh.sh pr comment 117 --body "..."
+# Usage: ./scripts/bot-gh.sh pr ready 117
 #
 # `pr create` delegates to the package-backed delivery command so branch push
 # and PR creation use one installation identity. Other commands retain the
