@@ -114,7 +114,12 @@ function tokenProvider(): DeliveryTokenProvider {
       value: TOKEN,
       expiresAt: '2026-07-11T01:00:00.000Z',
       installationId: '456',
-      permissions: { contents: 'write', pull_requests: 'write', issues: 'write' },
+      permissions: {
+        contents: 'write',
+        pull_requests: 'write',
+        workflows: 'write',
+        issues: 'write',
+      },
     })),
     invalidate: vi.fn(),
   };

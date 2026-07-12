@@ -36,6 +36,12 @@ describe('delivery probe commands', () => {
           actual: 'write',
           status: 'PASS' as const,
         },
+        {
+          capability: 'workflows' as const,
+          required: 'write' as const,
+          actual: 'write',
+          status: 'PASS' as const,
+        },
       ],
       evidenceTimestamp: '2026-07-11T00:00:00.000Z',
     }));
@@ -76,6 +82,12 @@ describe('delivery probe commands', () => {
         },
         {
           capability: 'pull_requests' as const,
+          required: 'write' as const,
+          actual: 'write',
+          status: 'PASS' as const,
+        },
+        {
+          capability: 'workflows' as const,
           required: 'write' as const,
           actual: 'write',
           status: 'PASS' as const,

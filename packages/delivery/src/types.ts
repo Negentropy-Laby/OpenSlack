@@ -19,7 +19,7 @@ export interface DeliveryTokenProvider {
 }
 
 export interface DeliveryPermissionCheck {
-  capability: 'contents' | 'pull_requests' | 'issues';
+  capability: 'contents' | 'pull_requests' | 'issues' | 'workflows';
   required: 'write';
   actual: string | null;
   status: 'PASS' | 'FAIL' | 'WARN';

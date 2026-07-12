@@ -5,7 +5,11 @@ export function diagnoseDeliveryPermissions(
   permissions: Readonly<Record<string, string>>,
   requireIssuesWrite = false,
 ): DeliveryPermissionCheck[] {
-  const required: DeliveryPermissionCheck['capability'][] = ['contents', 'pull_requests'];
+  const required: DeliveryPermissionCheck['capability'][] = [
+    'contents',
+    'pull_requests',
+    'workflows',
+  ];
   if (requireIssuesWrite) required.push('issues');
   return required.map((capability) => {
     const actual = permissions[capability] ?? null;

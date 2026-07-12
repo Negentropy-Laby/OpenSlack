@@ -132,13 +132,13 @@ describe('GitHubDeliveryService', () => {
       value: 'initial-token',
       expiresAt: '2026-07-11T01:00:00.000Z',
       installationId: 'test-installation',
-      permissions: { contents: 'write', pull_requests: 'write' },
+      permissions: { contents: 'write', pull_requests: 'write', workflows: 'write' },
     });
     tokenProvider.acquire.mockResolvedValueOnce({
       value: 'refreshed-token',
       expiresAt: '2026-07-11T02:00:00.000Z',
       installationId: 'test-installation',
-      permissions: { contents: 'read', pull_requests: 'write' },
+      permissions: { contents: 'read', pull_requests: 'write', workflows: 'write' },
     });
     await expect(
       createService({ publisher, tokenProvider }).publish(baseInput),
@@ -241,6 +241,7 @@ function tokens(
   permissions: Readonly<Record<string, string>> = {
     contents: 'write',
     pull_requests: 'write',
+    workflows: 'write',
   },
 ) {
   return {
