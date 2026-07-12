@@ -46,6 +46,7 @@ describe('GitHub App Manifest session', () => {
       contents: 'write',
       issues: 'write',
       pull_requests: 'write',
+      workflows: 'write',
     });
     expect(() =>
       createGitHubAppManifestSession({

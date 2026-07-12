@@ -37,6 +37,7 @@ export interface GitHubAppManifestDefinition {
     contents: 'write';
     issues: 'write';
     pull_requests: 'write';
+    workflows: 'write';
   };
   default_events: ['issues', 'pull_request', 'push'];
 }
@@ -281,6 +282,7 @@ function buildManifest(input: GitHubAppManifestInput): GitHubAppManifestDefiniti
       contents: 'write',
       issues: 'write',
       pull_requests: 'write',
+      workflows: 'write',
     },
     default_events: ['issues', 'pull_request', 'push'],
   };

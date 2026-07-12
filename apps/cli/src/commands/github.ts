@@ -112,7 +112,7 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
         console.log(`- App: ${appName}`);
         console.log(`- Callback: http://127.0.0.1:${port}/callback`);
         console.log(
-          '- Permissions: metadata:read, contents:write, issues:write, pull_requests:write',
+          '- Permissions: metadata:read, contents:write, issues:write, pull_requests:write, workflows:write',
         );
         console.log(`- Private key: ${refs.privateKeyRef}`);
         console.log(`- Webhook secret: ${refs.webhookSecretRef}`);
