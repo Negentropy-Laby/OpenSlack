@@ -115,9 +115,13 @@ describe('OpenAI-compatible agent runtime', () => {
 
   it('runs a governed multi-turn tool loop with wire-name mapping and usage charging', async () => {
     const requests: Array<Record<string, unknown>> = [];
+    const { context, store } = createContext(root, { tokens: 40 });
     const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
       requests.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
       if (requests.length === 1) {
+        // A future runtime host may refresh this object after chargeUsage. The
+        // adapter must continue from its immutable launch-time budget snapshot.
+        context.runState.tokensRemaining = 30;
         return jsonResponse({
           choices: [
             {
@@ -141,7 +145,6 @@ describe('OpenAI-compatible agent runtime', () => {
         usage: { total_tokens: 7 },
       });
     }) as unknown as typeof fetch;
-    const { context, store } = createContext(root, { tokens: 40 });
     const result = await adapter(fetchImpl).execute<{ summary: string }>(context);
 
     expect(result.data).toEqual({ summary: 'done' });

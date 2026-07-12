@@ -171,6 +171,10 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
     let tokenUsage = 0;
     let toolCalls = 0;
     const startedAt = Date.now();
+    // AgentRunState is the immutable launch-time budget snapshot for this
+    // execution. Recorder chargeUsage persists fresh states, so all per-turn
+    // calculations use this captured value plus the local usage accumulator.
+    const initialTokensRemaining = context.runState.tokensRemaining;
 
     for (let turn = 0; turn < this.options.maxTurns; turn += 1) {
       throwIfAborted(context.signal);
@@ -178,9 +182,9 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
         throw new ProviderTimeoutError();
       }
       const remaining =
-        context.runState.tokensRemaining === null
+        initialTokensRemaining === null
           ? this.options.maxOutputTokens
-          : context.runState.tokensRemaining - tokenUsage;
+          : initialTokensRemaining - tokenUsage;
       if (remaining <= 0) throw new AgentBudgetExceededError();
       const maxTokens = Math.min(this.options.maxOutputTokens, remaining);
       const response = await fetchWithTimeout(
@@ -244,10 +248,7 @@ export class OpenAICompatibleExecutionAdapter implements AgentExecutionAdapter {
       const used = readUsage(body.usage);
       tokenUsage += used;
       context.recorder.chargeUsage(context.runId, used);
-      if (
-        context.runState.tokensRemaining !== null &&
-        tokenUsage > context.runState.tokensRemaining
-      ) {
+      if (initialTokensRemaining !== null && tokenUsage > initialTokensRemaining) {
         throw new AgentBudgetExceededError();
       }
       const providerChoice = body.choices?.[0];
