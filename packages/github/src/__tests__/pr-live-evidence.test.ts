@@ -12,6 +12,7 @@ import {
   GitHubEvidenceUnavailableError,
   getPRChecks,
   getPRReviews,
+  getRepositoryTree,
   listPRFiles,
 } from '../pr.js';
 
@@ -61,6 +62,7 @@ describe('strict PR live evidence', () => {
                     state: 'APPROVED',
                     body: 'Approved',
                     submittedAt: '2026-06-01T14:32:04Z',
+                    commit: { oid: '63029b4' },
                   },
                 ],
                 pageInfo: { hasNextPage: false, endCursor: null },
@@ -144,6 +146,7 @@ describe('strict PR live evidence', () => {
         state: 'APPROVED',
         body: 'Approved',
         submittedAt: '2026-06-01T14:32:04Z',
+        commitOid: '63029b4',
       },
     ]);
     await expect(getPRChecks(138, { strictEvidence: true })).resolves.toEqual([
@@ -161,7 +164,10 @@ describe('strict PR live evidence', () => {
         data: Array.from({ length: 100 }, (_, index) => ({ filename: `packages/a/file-${index}.ts` })),
       })
       .mockResolvedValueOnce({
-        data: [{ filename: 'packages/b/final.ts' }],
+        data: [{
+          filename: 'packages/b/final.ts',
+          previous_filename: 'packages/a/renamed.ts',
+        }],
       });
     const listReviews = vi.fn()
       .mockResolvedValueOnce({
@@ -178,6 +184,7 @@ describe('strict PR live evidence', () => {
           state: 'APPROVED',
           body: 'approved',
           submitted_at: '2026-06-01T14:32:04Z',
+          commit_id: '63029b4',
         }],
       });
     const listForRef = vi.fn()
@@ -229,8 +236,15 @@ describe('strict PR live evidence', () => {
       graphql: vi.fn(),
     });
 
-    await expect(listPRFiles(138, { strictEvidence: true })).resolves.toHaveLength(101);
-    await expect(getPRReviews(138, { strictEvidence: true })).resolves.toHaveLength(101);
+    const files = await listPRFiles(138, { strictEvidence: true });
+    expect(files).toHaveLength(102);
+    expect(files).toEqual(expect.arrayContaining([
+      'packages/b/final.ts',
+      'packages/a/renamed.ts',
+    ]));
+    const reviews = await getPRReviews(138, { strictEvidence: true });
+    expect(reviews).toHaveLength(101);
+    expect(reviews.at(-1)).toMatchObject({ commitOid: '63029b4' });
     await expect(getPRChecks(138, { strictEvidence: true })).resolves.toHaveLength(101);
     expect(listFiles).toHaveBeenNthCalledWith(1, expect.objectContaining({ per_page: 100, page: 1 }));
     expect(listFiles).toHaveBeenNthCalledWith(2, expect.objectContaining({ per_page: 100, page: 2 }));
@@ -262,5 +276,27 @@ describe('strict PR live evidence', () => {
     });
 
     await expect(listPRFiles(138)).resolves.toEqual([]);
+  });
+
+  it('returns complete Git tree identity evidence and rejects truncated evidence in every mode', async () => {
+    const getTree = vi.fn()
+      .mockResolvedValueOnce({
+        data: {
+          truncated: false,
+          tree: [
+            { path: 'templates/workflows/feature.yaml', mode: '100644', type: 'blob', sha: 'blob-sha' },
+            { path: null, mode: '100644', type: 'blob', sha: 'ignored' },
+          ],
+        },
+      })
+      .mockResolvedValueOnce({ data: { truncated: true, tree: [] } });
+    makeClient({ git: { getTree } });
+
+    await expect(getRepositoryTree('head', { strictEvidence: true })).resolves.toEqual([
+      { path: 'templates/workflows/feature.yaml', mode: '100644', type: 'blob', sha: 'blob-sha' },
+    ]);
+    await expect(getRepositoryTree('truncated')).rejects.toBeInstanceOf(
+      GitHubEvidenceUnavailableError,
+    );
   });
 });

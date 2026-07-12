@@ -29,7 +29,7 @@ export async function mergeIfReady(
   // Reuse Phase 1.14A diagnostic pipeline
   const { fetchPRDetails } = await import('./fetch.js');
   const { classifyPRReport } = await import('./classify.js');
-  const report = await fetchPRDetails(prNumber);
+  const report = await fetchPRDetails(prNumber, { requireLive: true, strictEvidence: true });
   const classified = classifyPRReport(report);
 
   const codeownersContent = await getCODEOWNERS(classified.baseRef);

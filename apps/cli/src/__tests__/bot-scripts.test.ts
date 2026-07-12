@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const repoRoot = resolve(process.cwd())
@@ -15,6 +15,13 @@ describe('bot-auth wrapper scripts', () => {
 
   it('bot-gh-pr-create.sh exists', () => {
     expect(existsSync(scriptPath('bot-gh-pr-create.sh'))).toBe(true)
+    const script = readFileSync(scriptPath('bot-gh-pr-create.sh'), 'utf8')
+    expect(script).toContain('pr workflow-governance')
+    expect(script).toContain('OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN')
+    expect(script).not.toContain('OPENSLACK_GITHUB_APP_PRIVATE_KEY')
+    expect(script).not.toContain('3728623')
+    expect(script).not.toContain('135500236')
+    expect(script).not.toContain('GITHUB_TOKEN="$token"')
   })
 
   it('bot-gh.ps1 exists', () => {
@@ -23,9 +30,21 @@ describe('bot-auth wrapper scripts', () => {
 
   it('bot-gh-pr-create.ps1 exists', () => {
     expect(existsSync(scriptPath('bot-gh-pr-create.ps1'))).toBe(true)
+    const script = readFileSync(scriptPath('bot-gh-pr-create.ps1'), 'utf8')
+    expect(script).toContain('pr workflow-governance')
+    expect(script).toContain('OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN')
+    expect(script).not.toContain('OPENSLACK_GITHUB_APP_PRIVATE_KEY')
+    expect(script).not.toContain('3728623')
+    expect(script).not.toContain('135500236')
+    expect(script).not.toContain('$env:GITHUB_TOKEN = $token')
   })
 
   it('bot-gh-token.js exists', () => {
     expect(existsSync(scriptPath('bot-gh-token.js'))).toBe(true)
+    const script = readFileSync(scriptPath('bot-gh-token.js'), 'utf8')
+    expect(script).toContain('.openslack.local')
+    expect(script).toContain('github-app.json')
+    expect(script).not.toContain('3728623')
+    expect(script).not.toContain('135500236')
   })
 })

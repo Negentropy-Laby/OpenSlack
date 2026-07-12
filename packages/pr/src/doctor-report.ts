@@ -6,7 +6,8 @@ export function generateDoctorReport(
   report: PRReviewReport,
   codeowners: string[],
 ): string {
-  const validApprovers = filterValidApprovals(report.reviews, report.author);
+  const validApprovers = filterValidApprovals(report.reviews, report.author, report.headSha);
+  const validApproverSet = new Set(validApprovers);
   const totalReviews = report.reviews.length;
   const botApprovals = report.reviews.filter(
     (r) => r.state === 'APPROVED' && isBotUser(r.user),
@@ -15,7 +16,10 @@ export function generateDoctorReport(
   const checkSummary =
     report.checks.length === 0
       ? 'none'
-      : report.checks.every((c) => c.conclusion === 'success')
+      : report.checks.every(
+          (c) => c.status === 'completed'
+            && (c.conclusion === 'success' || c.conclusion === 'neutral' || c.conclusion === 'skipped'),
+        )
         ? 'pass'
         : report.checks.some(
             (c) => c.conclusion && c.conclusion !== 'success' && c.conclusion !== 'neutral' && c.conclusion !== 'skipped',
@@ -63,7 +67,7 @@ export function generateDoctorReport(
     '',
     ...(report.reviews.length > 0
       ? report.reviews.map((r) => {
-          const valid = r.state === 'APPROVED' && r.user !== report.author && !isBotUser(r.user);
+          const valid = validApproverSet.has(r.user);
           return `- ${valid ? '✅' : '⚠️'} @${r.user}: ${r.state}${valid ? ' (valid)' : ''}`;
         })
       : ['No reviews yet.']),

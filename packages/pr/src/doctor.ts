@@ -1,7 +1,7 @@
 import type { PRReviewReport, PRReviewState, PRReviewPolicy } from './types.js';
 import { filterValidApprovals, isBotUser } from './approvals.js';
 import { detectDeadlock } from './deadlock.js';
-import { evaluateWorkflowGate } from './workflow-gate.js';
+import { evaluateWorkflowGate, isCoreWorkflowArtifactPath } from './workflow-gate.js';
 import { evaluateProfileSyncGate } from './profile-sync-gate.js';
 
 export function diagnosePR(
@@ -14,9 +14,19 @@ export function diagnosePR(
   let recommendation = report.recommendation;
 
   // Initialize workflow gate as N/A; will be re-evaluated after basic checks
-  const workflowGate = evaluateWorkflowGate(report.changedFiles, report.body ?? '');
+  const workflowGate = evaluateWorkflowGate({
+    changedFiles: report.changedFiles,
+    body: report.body ?? '',
+    author: report.author,
+    baseSha: report.baseSha,
+    headSha: report.headSha,
+    reviews: report.reviews,
+    workflowEvidence: report.workflowEvidence,
+    governanceIssue: report.workflowGovernanceIssue,
+    codeowners,
+  });
 
-  const validApprovers = filterValidApprovals(report.reviews, report.author);
+  const validApprovers = filterValidApprovals(report.reviews, report.author, report.headSha);
 
   // 1. Draft PR
   if (report.draft) {
@@ -50,7 +60,14 @@ export function diagnosePR(
       .join(', ');
     decision = 'BLOCKED_WORKFLOW_GATE';
     reason = `Workflow gate failed. Missing: ${failedCriteria}`;
-    recommendation = 'Link workflow proposal/review issues, include workflow hash, and record trust decision in the PR body.';
+    if (workflowGate.criteria.some((criterion) => criterion.name === 'Current-head evidence' && criterion.status === 'FAIL')) {
+      recommendation = `Refresh live base/head workflow evidence for PR #${report.prNumber}; do not approve stale or unavailable evidence.`;
+    } else if (workflowGate.criteria.some((criterion) => criterion.name === 'Governance issue' && criterion.status === 'FAIL')) {
+      recommendation = `Run openslack pr workflow-governance ${report.prNumber} with GitHub App authentication.`;
+    } else {
+      const trust = workflowGate.artifactFiles?.some(isCoreWorkflowArtifactPath) ? 'core' : 'trusted';
+      recommendation = `Run gh pr review ${report.prNumber} --approve --body "Workflow-Trust: ${trust}" as an authorized human on the current head.`;
+    }
     return { ...report, decision, reason, recommendation, workflowGate };
   }
 

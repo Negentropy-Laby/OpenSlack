@@ -42,6 +42,9 @@ const hoisted = vi.hoisted(() => {
     mockFetchPRDetails: vi.fn(),
     mockGetCODEOWNERS: vi.fn(),
     mockCommentOnPR: vi.fn(),
+    mockPublishWorkflowGovernance: vi.fn(),
+    mockFindWorkflowGovernanceIssue: vi.fn(),
+    mockUpdatePRBody: vi.fn(),
     MockGitHubAuthRequiredError,
     MockGitHubEvidenceUnavailableError,
   };
@@ -51,6 +54,9 @@ vi.mock('@openslack/github', () => ({
   getClient: (...args: unknown[]) => hoisted.mockGetClient(...args),
   getCODEOWNERS: (...args: unknown[]) => hoisted.mockGetCODEOWNERS(...args),
   commentOnPR: (...args: unknown[]) => hoisted.mockCommentOnPR(...args),
+  publishWorkflowGovernance: (...args: unknown[]) => hoisted.mockPublishWorkflowGovernance(...args),
+  findWorkflowGovernanceIssue: (...args: unknown[]) => hoisted.mockFindWorkflowGovernanceIssue(...args),
+  updatePRBody: (...args: unknown[]) => hoisted.mockUpdatePRBody(...args),
   GitHubAuthRequiredError: hoisted.MockGitHubAuthRequiredError,
   GitHubEvidenceUnavailableError: hoisted.MockGitHubEvidenceUnavailableError,
 }));
@@ -75,6 +81,8 @@ vi.mock('@openslack/pr', () => ({
   buildPRQueue: vi.fn(),
   renderPRQueue: vi.fn(),
   summarizePRDecision: () => ({ evidence: ['Checks: pass'] }),
+  isCoreWorkflowArtifactPath: (path: string) => path.includes('/builtins/'),
+  computeLocalWorkflowEvidence: vi.fn(),
 }));
 
 vi.mock('@openslack/collaboration', () => ({
@@ -228,5 +236,63 @@ describe('pr doctor command live evidence gate', () => {
     expect(out).not.toContain('NEEDS_HUMAN_APPROVAL');
     expect(hoisted.mockGetCODEOWNERS).not.toHaveBeenCalled();
     errorSpy.mockRestore();
+  });
+});
+
+describe('pr workflow-governance command', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.exitCode = undefined;
+  });
+
+  it('requires bot authentication before creating governance state', async () => {
+    hoisted.mockGetClient.mockResolvedValue({ authMode: 'token', isDryRun: false });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await runPrCommand(['workflow-governance', '42']);
+
+    expect(process.exitCode).toBe(1);
+    expect(errorSpy.mock.calls.flat().join('\n')).toContain('BOT_AUTH_REQUIRED');
+    expect(hoisted.mockPublishWorkflowGovernance).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it('creates and links one issue for a new artifact', async () => {
+    hoisted.mockGetClient.mockResolvedValue({
+      authMode: 'github_app_installation',
+      isDryRun: false,
+    });
+    hoisted.mockFetchPRDetails.mockResolvedValue(makeReport({
+      body: 'Summary',
+      workflowEvidence: {
+        schema: 'openslack.workflow-evidence.v1',
+        baseSha: 'base',
+        headSha: 'head',
+        evidenceHash: 'sha256:evidence',
+        artifactFiles: ['templates/workflows/new.yaml'],
+        addedFiles: ['templates/workflows/new.yaml'],
+        modifiedFiles: [],
+        deletedFiles: [],
+        changeKind: 'added',
+      },
+    }));
+    hoisted.mockPublishWorkflowGovernance.mockResolvedValue({ issueNumber: 177, url: 'issue-url' });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runPrCommand(['workflow-governance', '42']);
+
+    expect(hoisted.mockFetchPRDetails).toHaveBeenCalledWith(42, {
+      requireLive: true,
+      strictEvidence: true,
+    });
+    expect(hoisted.mockPublishWorkflowGovernance).toHaveBeenCalledWith(expect.objectContaining({
+      prNumber: 42,
+      evidenceHash: 'sha256:evidence',
+    }));
+    expect(hoisted.mockUpdatePRBody).toHaveBeenCalledWith(
+      42,
+      expect.stringContaining('Workflow governance #177'),
+    );
+    logSpy.mockRestore();
   });
 });

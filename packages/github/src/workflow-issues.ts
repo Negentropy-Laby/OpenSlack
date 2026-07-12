@@ -35,6 +35,50 @@ export interface WorkflowRunStatusShape {
   pendingApprovals?: Array<{ id: string; operation: string; detail: string; status: string }>
 }
 
+export interface WorkflowGovernanceIssue {
+  schema: 'openslack.workflow_governance.v1'
+  prNumber: number
+  artifactFiles: string[]
+  changeKind: 'added' | 'modified' | 'deleted' | 'mixed'
+  baseSha: string
+  headSha: string
+  evidenceHash: string
+  requestedBy: string
+}
+
+export function renderWorkflowGovernanceBody(issue: WorkflowGovernanceIssue): string {
+  const lines = [
+    `## Workflow Governance: PR #${issue.prNumber}`,
+    '',
+    '```openslack-workflow-governance',
+    `schema: ${JSON.stringify(issue.schema)}`,
+    `pr: ${issue.prNumber}`,
+    `change_kind: ${JSON.stringify(issue.changeKind)}`,
+    `base_sha: ${JSON.stringify(issue.baseSha)}`,
+    `head_sha: ${JSON.stringify(issue.headSha)}`,
+    `evidence_hash: ${JSON.stringify(issue.evidenceHash)}`,
+    `requested_by: ${JSON.stringify(issue.requestedBy)}`,
+    'artifact_files:',
+    ...issue.artifactFiles.map((path) => `  - ${JSON.stringify(path)}`),
+    '```',
+    '',
+    '### Human decision',
+    '',
+    'Record the decision once on the current PR head:',
+    '',
+    '```text',
+    'Workflow-Trust: trusted|untrusted|core',
+    '```',
+    '',
+    'The post-merge finalizer appends the reviewer, reviewed commit, trust level, and verified evidence hash.',
+  ]
+  return lines.join('\n')
+}
+
+export function workflowGovernanceLabels(): string[] {
+  return ['workflow:governance']
+}
+
 // ── Workflow Proposal Issue ───────────────────────────────────────────────────
 
 export interface WorkflowProposalIssue {
@@ -318,6 +362,7 @@ export function workflowPhaseLabels(): string[] {
 // ── Label Definitions ─────────────────────────────────────────────────────────
 
 export const WORKFLOW_LABEL_DEFINITIONS: Array<{ name: string; color: string; description: string }> = [
+  { name: 'workflow:governance', color: 'b60205', description: 'Workflow artifact governance evidence' },
   { name: 'workflow:proposal', color: '0366d6', description: 'Workflow proposal issue' },
   { name: 'workflow:review', color: 'd73a4a', description: 'Workflow security review' },
   { name: 'workflow:run', color: '28a745', description: 'Workflow run audit log' },
@@ -326,6 +371,7 @@ export const WORKFLOW_LABEL_DEFINITIONS: Array<{ name: string; color: string; de
   { name: 'workflow:phase', color: '8bc34a', description: 'Individual workflow phase' },
   { name: 'workflow:trusted', color: '28a745', description: 'Trusted workflow' },
   { name: 'workflow:untrusted', color: 'd73a4a', description: 'Untrusted workflow' },
+  { name: 'workflow:core', color: '5319e7', description: 'Core workflow governed by CODEOWNERS' },
   { name: 'workflow:claude-ambient', color: '0366d6', description: 'Claude ambient DSL workflow' },
   { name: 'workflow:openslack-native', color: '6f42c1', description: 'OpenSlack native workflow' },
   { name: 'workflow:paused', color: 'ffd54f', description: 'Workflow run paused' },

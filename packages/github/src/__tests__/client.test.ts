@@ -19,6 +19,7 @@ const ENV_KEYS = [
   'OPENSLACK_GITHUB_APP_ID',
   'OPENSLACK_GITHUB_APP_INSTALLATION_ID',
   'OPENSLACK_GITHUB_APP_PRIVATE_KEY',
+  'OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN',
 ] as const;
 
 const originalEnv = new Map<string, string | undefined>();
@@ -129,5 +130,18 @@ describe('GitHub client repository and auth resolution', () => {
     expect(client.authMode).toBe('dry_run');
     expect(client.owner).toBe('Negentropy-Laby');
     expect(client.repo).toBe('OpenSlack');
+  });
+
+  it('treats a forwarded short-lived installation token as GitHub App auth', async () => {
+    process.env.OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN = 'installation-token-canary';
+
+    const client = await getClient({
+      repoFullName: 'Negentropy-Laby/OpenSlack',
+      auth: 'app',
+      requireLive: true,
+    });
+
+    expect(client.authMode).toBe('github_app_installation');
+    expect(client.isDryRun).toBe(false);
   });
 });

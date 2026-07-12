@@ -1,7 +1,7 @@
 export { createIssue, addIssueToProject, queryReadyItems, updateProjectField } from './issues.js';
 export type { ReadyTask, ProjectItemResult } from './issues.js';
-export { createDraftPR, commentOnPR, getPR, listOpenPRs, listPRFiles, getPRChecks, getPRReviews, getPRFilePatches, getCODEOWNERS, mergePR, GitHubEvidenceUnavailableError } from './pr.js';
-export type { CreatePRResult, PRDetail, OpenPRSummary, PRFilePatch, PRCheckRun, PRReview, MergePRResult } from './pr.js';
+export { createDraftPR, commentOnPR, updatePRBody, getPR, listOpenPRs, listPRFiles, getPRChecks, getPRReviews, getPRFilePatches, getRepositoryTree, getCODEOWNERS, mergePR, GitHubEvidenceUnavailableError } from './pr.js';
+export type { CreatePRResult, PRDetail, OpenPRSummary, PRFilePatch, PRCheckRun, PRReview, GitTreeEntry, MergePRResult } from './pr.js';
 export {
   getClient,
   getAuthenticatedIdentity,
@@ -51,6 +51,8 @@ export type { PollResult, GitHubApiIssue } from './watch-poller.js';
 export { normalizePollIssue } from './poll-normalizer.js';
 export {
   publishWorkflowProposal,
+  publishWorkflowGovernance,
+  findWorkflowGovernanceIssue,
   publishWorkflowReviewRequest,
   publishWorkflowRunAudit,
   appendWorkflowRunPhaseComment,
@@ -67,6 +69,7 @@ export {
 export type { FinalizeWorkflowPROpts, WorkflowLifecycleQueryResult } from './workflow-lifecycle.js';
 export {
   renderWorkflowProposalBody,
+  renderWorkflowGovernanceBody,
   renderWorkflowReviewBody,
   renderWorkflowRunBody,
   renderWorkflowRunPhaseComment,
@@ -74,6 +77,7 @@ export {
   renderWorkflowSplitBody,
   renderWorkflowPhaseSubIssueBody,
   workflowProposalLabels,
+  workflowGovernanceLabels,
   workflowReviewLabels,
   workflowRunLabels,
   workflowImprovementLabels,
@@ -86,6 +90,7 @@ export type {
   WorkflowModuleShape,
   WorkflowRunStatusShape,
   WorkflowProposalIssue,
+  WorkflowGovernanceIssue,
   WorkflowReviewIssue,
   WorkflowRunIssue,
   WorkflowImprovementIssue,

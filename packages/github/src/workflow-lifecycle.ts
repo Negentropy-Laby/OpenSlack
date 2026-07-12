@@ -2,11 +2,14 @@ import { getClient } from './client.js'
 import type { Octokit } from '@octokit/rest'
 
 export interface FinalizeWorkflowPROpts {
+  governanceIssue?: number
   proposalIssue?: number
   reviewIssue?: number
   phaseIssues?: number[]
   workflowHash?: string
   trustDecision?: 'trusted' | 'untrusted' | 'core'
+  trustReviewer?: string
+  trustReviewCommitOid?: string
 }
 
 export async function finalizeWorkflowPR(
@@ -27,6 +30,45 @@ export async function finalizeWorkflowPR(
   if (client.isDryRun) {
     console.log(`[DRY RUN] Would finalize workflow PR #${prNumber}`)
     return { closedIssues, commentedIssues, updatedLabels, errors }
+  }
+
+  if (opts.governanceIssue) {
+    try {
+      const lines = [
+        '## Workflow Governance Completed',
+        '',
+        `Merged via PR #${prNumber}.`,
+        opts.workflowHash ? `- **Evidence Hash**: ${opts.workflowHash}` : undefined,
+        opts.trustDecision ? `- **Trust Decision**: ${opts.trustDecision}` : undefined,
+        opts.trustReviewer ? `- **Reviewer**: @${opts.trustReviewer}` : undefined,
+        opts.trustReviewCommitOid ? `- **Reviewed Commit**: ${opts.trustReviewCommitOid}` : undefined,
+      ].filter((line): line is string => line !== undefined)
+      await client.octokit.issues.createComment({
+        owner: client.owner,
+        repo: client.repo,
+        issue_number: opts.governanceIssue,
+        body: lines.join('\n'),
+      })
+      const labels = ['lifecycle:accepted', `workflow:${opts.trustDecision ?? 'untrusted'}`]
+      await client.octokit.issues.addLabels({
+        owner: client.owner,
+        repo: client.repo,
+        issue_number: opts.governanceIssue,
+        labels,
+      })
+      await client.octokit.issues.update({
+        owner: client.owner,
+        repo: client.repo,
+        issue_number: opts.governanceIssue,
+        state: 'closed',
+        state_reason: 'completed',
+      })
+      commentedIssues.push(opts.governanceIssue)
+      updatedLabels.push(opts.governanceIssue)
+      closedIssues.push(opts.governanceIssue)
+    } catch (err) {
+      errors.push(`Failed to finalize governance issue #${opts.governanceIssue}: ${(err as Error).message}`)
+    }
   }
 
   // Close proposal issue
