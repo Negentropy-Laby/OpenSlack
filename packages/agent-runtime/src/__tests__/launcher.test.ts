@@ -167,6 +167,46 @@ describe('createOpenSlackAgentLauncher', () => {
     expect(persisted).not.toContain('sk-sensitive');
   });
 
+  it('fails closed with a typed safe result when provider execution fails', async () => {
+    const store = createRunStore(root);
+    const canary = 'provider-execution-secret-canary';
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      adapter: {
+        adapterId: 'failing-provider',
+        async execute() {
+          throw new Error(`upstream failed with ${canary}`);
+        },
+      },
+    });
+
+    let failure: unknown;
+    try {
+      await launcher('execute safely', {
+        label: 'failing-agent',
+        phase: 'execute',
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toMatchObject({
+      code: 'EXECUTION_FAILED',
+      runId: expect.stringMatching(/^RUN-/),
+      message: 'Agent execution failed. Inspect runtime diagnostics for details.',
+    });
+    const run = store.listRuns()[0];
+    expect(run).toMatchObject({
+      status: 'failed',
+      failureCode: 'EXECUTION_FAILED',
+      errorSummary: 'Agent execution failed. Inspect runtime diagnostics for details.',
+    });
+    const evidence = JSON.stringify({ failure, run, transcript: readTranscript(run.runId, root) });
+    expect(evidence).not.toContain(canary);
+    expect(readTranscript(run.runId, root).some((event) => event.type === 'complete')).toBe(false);
+  });
+
   it('creates a run record', async () => {
     const store = createRunStore(root);
     const launcher = createOpenSlackAgentLauncher({

@@ -169,12 +169,16 @@ describe('Custom adapter injection', () => {
         label: 'worker',
         phase: 'execute',
       }),
-    ).rejects.toThrow('adapter execution failed');
+    ).rejects.toMatchObject({
+      code: 'EXECUTION_FAILED',
+      message: 'Agent execution failed. Inspect runtime diagnostics for details.',
+    });
 
     const runs = store.listRuns();
     expect(runs.length).toBe(1);
     expect(runs[0].status).toBe('failed');
     expect(runs[0].error).toBe('Agent execution failed. Inspect runtime diagnostics for details.');
+    expect(JSON.stringify(runs[0])).not.toContain('adapter execution failed');
   });
 
   it('custom adapter can use recorder for transcript events', async () => {

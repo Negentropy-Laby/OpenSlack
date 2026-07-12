@@ -167,6 +167,16 @@ export class RuntimeMisconfiguredError extends Error {
   }
 }
 
+export class AgentExecutionFailedError extends Error {
+  readonly runId: string;
+
+  constructor(readonly code: AgentRunFailureCode, runId: string) {
+    super(getAgentRunFailureSummary(undefined, code));
+    this.name = 'AgentExecutionFailedError';
+    this.runId = runId;
+  }
+}
+
 export function getAgentRunFailureCode(error: unknown): AgentRunFailureCode {
   if (error instanceof RuntimeNotConfiguredError) return error.code;
   if (error instanceof RuntimeMisconfiguredError) return error.code;

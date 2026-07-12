@@ -4,6 +4,9 @@ import {
   AgentUnavailableError,
   RuntimeMisconfiguredError,
   RuntimeNotConfiguredError,
+  AgentExecutionFailedError,
+  getAgentRunFailureCode,
+  getAgentRunFailureSummary,
 } from './types.js';
 import {
   AgentRunCancelledError,
@@ -288,16 +291,23 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
           ? err
           : new AgentRunCancelledError(runId, reason);
       }
-      recorder.fail(runId, err instanceof Error ? err : new Error(String(err)));
+      if (err instanceof PermissionDeniedError) {
+        recorder.fail(runId, err, 'EXECUTION_FAILED');
+        throw err;
+      }
+      const failureCode = getAgentRunFailureCode(err);
+      const executionError = new AgentExecutionFailedError(failureCode, runId);
+      recorder.fail(runId, executionError, failureCode);
       if (runAdapter.bridgeContract) {
         recorder.progress(runId, {
           step: 'bridge_lifecycle_complete',
           runId,
           status: 'failed',
-          error: err instanceof Error ? err.message : String(err),
+          failureCode,
+          errorSummary: getAgentRunFailureSummary(executionError, failureCode),
         });
       }
-      throw err;
+      throw executionError;
     } finally {
       unregisterControl();
       // Dirty-state-aware worktree cleanup: preserve worktrees with
@@ -442,9 +452,11 @@ function normalizeRuntimeResolutionError(
     return error;
   }
   if (error instanceof BridgeRuntimeConfigError) {
-    return new RuntimeMisconfiguredError(error.message);
+    return new RuntimeMisconfiguredError(
+      'Agent runtime bridge configuration is invalid. Run openslack agent-runtime doctor for details.',
+    );
   }
   return new RuntimeMisconfiguredError(
-    `Agent runtime configuration could not be resolved: ${error instanceof Error ? error.message : String(error)}`,
+    'Agent runtime configuration could not be resolved. Run openslack agent-runtime doctor for details.',
   );
 }

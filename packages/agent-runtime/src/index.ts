@@ -15,6 +15,7 @@ export {
   PermissionDeniedError,
   RuntimeNotConfiguredError,
   RuntimeMisconfiguredError,
+  AgentExecutionFailedError,
   getAgentRunFailureCode,
   getAgentRunFailureSummary,
 } from './types.js';
