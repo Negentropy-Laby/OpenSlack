@@ -17,6 +17,11 @@ describe('github app create command', () => {
     const previous = process.cwd();
     try {
       execFileSync('git', ['init'], { cwd: root, stdio: 'ignore' });
+      execFileSync(
+        'git',
+        ['remote', 'add', 'origin', 'git@github.com:acme/standalone-workspace.git'],
+        { cwd: root, stdio: 'ignore' },
+      );
       writeFileSync(
         join(root, 'openslack.yaml'),
         'schema: openslack.workspace.v1\nworkspace:\n  state_root: .openslack\n',
@@ -38,6 +43,7 @@ describe('github app create command', () => {
           workspaceRoot: root,
           organization: 'acme',
           port: 8200,
+          homepageUrl: 'https://github.com/acme/standalone-workspace',
         }),
       );
     } finally {

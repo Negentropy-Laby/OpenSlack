@@ -41,6 +41,11 @@ describe('GitHub App Manifest session', () => {
       createGitHubAppManifestSession({ ...input(), callbackUrl: 'http://0.0.0.0:8200/callback' }),
     ).toThrow(/loopback/);
     const session = createGitHubAppManifestSession(input());
+    expect(session.manifest.url).toBe('https://github.com/Negentropy-Laby');
+    expect(session.manifest.hook_attributes).toEqual({
+      url: 'https://github.com/Negentropy-Laby',
+      active: false,
+    });
     expect(session.manifest.default_permissions).toEqual({
       metadata: 'read',
       contents: 'write',

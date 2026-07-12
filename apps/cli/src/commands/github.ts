@@ -8,6 +8,7 @@ import {
   getClient,
   queryReadyItems,
   readGitHubAppLocalConfig,
+  resolveGitHubRepoTarget,
 } from '@openslack/github';
 import { recordEvent as _recordEvent } from '@openslack/collaboration';
 import type { RecordEventFn } from '@openslack/github';
@@ -80,6 +81,7 @@ export interface GitHubCommandDependencies {
     organization: string;
     appName?: string;
     port?: number;
+    homepageUrl?: string;
     webhookUrl?: string;
     credentialStore?: CredentialStore;
   }) => Promise<{ status: 'completed' | 'timed_out'; appId?: string; appSlug?: string }>;
@@ -95,6 +97,7 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
     .requiredOption('--org <organization>', 'Organization that will own the GitHub App')
     .option('--name <name>', 'GitHub App name', 'OpenSlack Agent Operator')
     .option('--port <number>', 'Loopback callback port', '8200')
+    .option('--homepage-url <https-url>', 'GitHub App homepage; defaults to target repository')
     .option('--webhook-url <https-url>', 'Webhook URL; delivery is disabled initially')
     .option('--apply', 'Start the loopback server after preview')
     .action(async (options) => {
@@ -106,10 +109,14 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
         const organization = String(options.org);
         const appName = String(options.name);
         const root = findRepoRoot();
+        const homepageUrl = options.homepageUrl
+          ? String(options.homepageUrl)
+          : resolveManifestHomepage(root, organization);
         const refs = defaultGitHubAppManifestRefs(root);
         console.log('GitHub App Manifest preview');
         console.log(`- Owner: ${organization}`);
         console.log(`- App: ${appName}`);
+        console.log(`- Homepage: ${homepageUrl}`);
         console.log(`- Callback: http://127.0.0.1:${port}/callback`);
         console.log(
           '- Permissions: metadata:read, contents:write, issues:write, pull_requests:write, workflows:write',
@@ -129,6 +136,7 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
           organization,
           appName,
           port,
+          homepageUrl,
           webhookUrl: options.webhookUrl ? String(options.webhookUrl) : undefined,
           credentialStore:
             dependencies.credentialStore ?? createDefaultCredentialStore(process.env),
@@ -770,4 +778,13 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
     });
 
   return cmd;
+}
+
+function resolveManifestHomepage(root: string, organization: string): string {
+  try {
+    const target = resolveGitHubRepoTarget({ cwd: root });
+    return `https://github.com/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}`;
+  } catch {
+    return `https://github.com/${encodeURIComponent(organization)}`;
+  }
 }

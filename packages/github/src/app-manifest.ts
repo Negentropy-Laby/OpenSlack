@@ -267,11 +267,15 @@ export async function exchangeGitHubAppManifestCode(
 }
 
 function buildManifest(input: GitHubAppManifestInput): GitHubAppManifestDefinition {
+  const homepageUrl = input.homepageUrl ?? defaultGitHubHomepage(input.organization);
   return {
     name: input.appName,
-    url: input.homepageUrl ?? 'https://github.com/Negentropy-Laby/OpenSlack',
+    url: homepageUrl,
     hook_attributes: {
-      url: input.webhookUrl ?? 'https://github.com/Negentropy-Laby/OpenSlack',
+      // GitHub requires a webhook URL whenever hook_attributes is present,
+      // even when delivery is inactive. Use the target homepage rather than a
+      // product-repository constant until the operator supplies an endpoint.
+      url: input.webhookUrl ?? homepageUrl,
       active: false,
     },
     redirect_url: input.callbackUrl,
@@ -286,6 +290,12 @@ function buildManifest(input: GitHubAppManifestInput): GitHubAppManifestDefiniti
     },
     default_events: ['issues', 'pull_request', 'push'],
   };
+}
+
+function defaultGitHubHomepage(organization?: string): string {
+  return organization
+    ? `https://github.com/${encodeURIComponent(organization)}`
+    : 'https://github.com';
 }
 
 function validateManifestInput(input: GitHubAppManifestInput): void {

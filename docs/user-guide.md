@@ -318,6 +318,12 @@ openslack github app create --org acme
 openslack github app create --org acme --apply
 ```
 
+The preview derives the App homepage from the workspace's canonical GitHub
+remote, falling back to the target organization page when no repository can be
+resolved. Use `--homepage-url <https-url>` to override it. Until an explicit
+`--webhook-url` is supplied, the inactive webhook uses the same target URL only
+to satisfy GitHub's manifest contract; OpenSlack does not enable delivery.
+
 The apply command starts an HTTP server bound only to `127.0.0.1`, then directs
 the browser through GitHub's App Manifest form. The callback uses a 256-bit,
 short-lived, single-use state. GitHub's conversion response is bounded and its

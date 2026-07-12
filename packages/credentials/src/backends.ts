@@ -142,12 +142,20 @@ export class NativeKeychainBackend implements CredentialBackend {
           ) {
             return encoded.subarray(WINDOWS_UTF8_SECRET_PREFIX.length).toString('utf-8');
           }
+
+          // Only fall back for the ASCII UTF-16LE shape produced by legacy
+          // setPassword() entries. A setSecret() entry with a missing or corrupt
+          // OpenSlack envelope must fail closed instead of being decoded as a
+          // garbled password and then treated as a valid credential.
+          const legacyPassword = entry.getPassword();
+          if (legacyPassword === null || !isLegacyWindowsPassword(encoded, legacyPassword)) {
+            throw backendUnavailable();
+          }
+          return legacyPassword;
         } finally {
           encoded.fill(0);
           rawSecret.fill(0);
         }
-        // Entries created before the UTF-8 envelope used setPassword(), which
-        // stores UTF-16 bytes on Windows. Keep those references readable.
       }
       return entry.getPassword();
     } catch {
@@ -274,6 +282,23 @@ function backendUnavailable(): CredentialStoreError {
 // written by OpenSlack use setSecret() with an explicit UTF-8 envelope.
 const WINDOWS_CREDENTIAL_BLOB_MAX_BYTES = 5 * 512;
 const WINDOWS_UTF8_SECRET_PREFIX = Buffer.from('openslack.credential.utf8.v1\0', 'utf-8');
+
+function isLegacyWindowsPassword(encoded: Buffer, password: string): boolean {
+  if (encoded.length === 0 || encoded.length % 2 !== 0 || password.length === 0) return false;
+  const expected = Buffer.from(password, 'utf16le');
+  try {
+    if (!encoded.equals(expected)) return false;
+    // OpenSlack's legacy GitHub credentials were ASCII PEM/token strings. This
+    // discriminator prevents arbitrary setSecret() bytes from entering the
+    // legacy path while preserving those existing entries.
+    for (let index = 1; index < encoded.length; index += 2) {
+      if (encoded[index] !== 0) return false;
+    }
+    return true;
+  } finally {
+    expected.fill(0);
+  }
+}
 
 function loadNativeEntryFactory(): NativeKeychainBackendOptions['entryFactory'] {
   try {

@@ -28,7 +28,7 @@ describe('OnboardingStore', () => {
     );
   });
 
-  it('fails closed on corrupt state and rejects secret-shaped receipts', () => {
+  it('fails closed on corrupt state and rejects secret material in receipts', () => {
     const store = createStore();
     writeFileSync(store.path, '{bad json', 'utf-8');
     expect(() => store.load()).toThrowError(
@@ -40,10 +40,25 @@ describe('OnboardingStore', () => {
     state = receiptStore.begin(state, 'workspace');
     expect(() =>
       receiptStore.complete(state, 'workspace', {
-        summary: 'stored private key',
+        summary: 'token=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ',
         evidenceRefs: [],
       }),
     ).toThrowError(expect.objectContaining({ code: 'ONBOARDING_STEP_INVALID' }));
+  });
+
+  it('allows credential terminology and reference-only evidence in audit receipts', () => {
+    const store = createStore();
+    let state = store.create('session-safe-receipt');
+    state = store.begin(state, 'github_app');
+    state = store.complete(state, 'github_app', {
+      summary: 'Stored GitHub App token reference; webhook secret configured',
+      evidenceRefs: ['keychain:openslack/app-webhook-secret'],
+    });
+
+    expect(state.steps.find((step) => step.id === 'github_app')?.receipt).toEqual({
+      summary: 'Stored GitHub App token reference; webhook secret configured',
+      evidenceRefs: ['keychain:openslack/app-webhook-secret'],
+    });
   });
 
   it('refuses to replace receipts and requires reconciliation before retry', () => {
@@ -61,7 +76,9 @@ describe('OnboardingStore', () => {
 
     state = store.reconcile(state, 'github_app', 'retry');
     expect(state.steps.find((step) => step.id === 'github_app')?.status).toBe('pending');
-    expect(store.begin(state, 'github_app').steps.find((step) => step.id === 'github_app')).toMatchObject({
+    expect(
+      store.begin(state, 'github_app').steps.find((step) => step.id === 'github_app'),
+    ).toMatchObject({
       status: 'running',
       attempt: 2,
     });

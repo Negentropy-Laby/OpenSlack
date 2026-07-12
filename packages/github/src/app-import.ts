@@ -76,6 +76,9 @@ export function applyGitHubAppImport(
     secret.fill(0);
     throw new Error('GitHub App private-key source has an invalid size.');
   }
+  // Buffer zeroing below limits the lifetime of the mutable source bytes. The
+  // decoded JavaScript string is immutable and cannot be zeroed, so keep it
+  // function-local and pass it only to the credential backend before returning.
   const value = secret.toString('utf-8');
   if (!/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(value)) {
     secret.fill(0);

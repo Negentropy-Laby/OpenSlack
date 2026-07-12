@@ -150,6 +150,36 @@ describe('credential references and store', () => {
     }
   });
 
+  it('fails closed when a Windows setSecret entry has an invalid UTF-8 envelope', () => {
+    const original = Uint8Array.from(Buffer.from('corrupt-unversioned-secret-bytes', 'utf-8'));
+    let overwritten = false;
+    const backend = new NativeKeychainBackend({
+      platform: 'win32',
+      entryFactory: () => ({
+        getPassword: () => 'garbled-password-view',
+        setPassword: () => undefined,
+        getSecret: () => Uint8Array.from(original),
+        setSecret: () => {
+          overwritten = true;
+        },
+        deleteCredential: () => false,
+      }),
+    });
+    const store = new CredentialStore([backend]);
+
+    expect(() => store.has('keychain:openslack/corrupt-entry')).toThrowError(
+      expect.objectContaining<Partial<CredentialStoreError>>({
+        code: 'CREDENTIAL_BACKEND_UNAVAILABLE',
+      }),
+    );
+    expect(() => store.putIfAbsent('keychain:openslack/corrupt-entry', 'replacement')).toThrowError(
+      expect.objectContaining<Partial<CredentialStoreError>>({
+        code: 'CREDENTIAL_BACKEND_UNAVAILABLE',
+      }),
+    );
+    expect(overwritten).toBe(false);
+  });
+
   it('reports Windows secrets that exceed the native credential blob capacity', () => {
     const backend = new NativeKeychainBackend({
       platform: 'win32',

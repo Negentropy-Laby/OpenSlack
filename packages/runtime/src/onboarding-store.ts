@@ -334,8 +334,10 @@ function assertSafeReceipt(receipt: OnboardingReceipt): void {
     !receipt.summary ||
     receipt.summary.length > 500 ||
     !Array.isArray(receipt.evidenceRefs) ||
-    receipt.evidenceRefs.some((ref) => typeof ref !== 'string' || ref.length > 500) ||
-    /private.?key|secret|token/i.test(JSON.stringify(receipt))
+    receipt.evidenceRefs.some(
+      (ref) => typeof ref !== 'string' || ref.length > 500 || containsReceiptSecret(ref),
+    ) ||
+    containsReceiptSecret(receipt.summary)
   ) {
     throw new OnboardingStateError(
       'ONBOARDING_STEP_INVALID',
@@ -343,6 +345,21 @@ function assertSafeReceipt(receipt: OnboardingReceipt): void {
     );
   }
 }
+
+function containsReceiptSecret(value: string): boolean {
+  return RECEIPT_SECRET_PATTERNS.some((pattern) => pattern.test(value));
+}
+
+// Receipt prose may safely name credential concepts and references, for example
+// "token reference configured" or keychain:openslack/app-webhook-secret. Reject
+// secret material and assignments instead of forcing audit summaries to be vague.
+const RECEIPT_SECRET_PATTERNS = [
+  /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/i,
+  /\b(?:sk-[A-Za-z0-9_-]{12,}|github_pat_[A-Za-z0-9_]{12,}|gh[pousr]_[A-Za-z0-9_]{12,}|xox[a-z]-[A-Za-z0-9-]{12,}|AKIA[0-9A-Z]{16})\b/i,
+  /\b(?:private.?key|secret|token|password|credential)\b\s*[:=]\s*(?!(?:env|keychain):|\[redacted\])\S+/i,
+  /(?:access_token|client_secret|private_key)\s*=\s*[^&\s]+/i,
+  /https?:\/\/[^/\s:@]+:[^/\s@]+@/i,
+];
 
 const STEP_IDS: OnboardingStepId[] = [
   'workspace',
@@ -391,7 +408,8 @@ export const ONBOARDING_STEP_GUIDES: Readonly<Record<OnboardingStepId, Onboardin
     title: 'Verify author and approval identities',
     objective: 'Keep bot PR authorship separate from the human reviewer/CODEOWNER.',
     commands: ['openslack setup run', 'openslack doctor'],
-    verification: 'Review CODEOWNERS guidance; apply any Red-zone change through a human-approved PR.',
+    verification:
+      'Review CODEOWNERS guidance; apply any Red-zone change through a human-approved PR.',
   },
   runtime_smoke: {
     id: 'runtime_smoke',
