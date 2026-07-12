@@ -1,6 +1,5 @@
 import { existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { execSync } from 'node:child_process';
 import { classifyPaths, classifySelfEvolutionPR } from '@openslack/kernel';
 import { createRollbackTask } from '../self/ops/rollback.js';
 import { computeFitnessScore } from '../self/ops/scorecard.js';
@@ -35,7 +34,7 @@ function evaluateAssertion(evalCase: EvalCase, assertion: { description: string;
       return { passed: exists, detail: `${filePath}: ${exists ? 'exists' : 'not found'}` };
     }
 
-    // command(cmd) — run shell command, with in-process dispatch for known openslack commands
+    // command(cmd) — dispatch only explicitly supported in-process commands
     const cmdMatch = check.match(/^command\((.+)\)$/);
     if (cmdMatch) {
       const cmd = cmdMatch[1].trim();
@@ -50,13 +49,7 @@ function evaluateAssertion(evalCase: EvalCase, assertion: { description: string;
         return { passed: result.valid, detail: `workspace validate: ${result.valid ? 'PASS' : result.errors.map((e) => e.message).join('; ')}` };
       }
 
-      // Generic shell command
-      try {
-        execSync(cmd, { cwd: root, stdio: 'pipe', timeout: 30000 });
-        return { passed: true, detail: `command "${cmd}" succeeded` };
-      } catch (e) {
-        return { passed: false, detail: `command "${cmd}" failed: ${(e as Error).message.slice(0, 200)}` };
-      }
+      return { passed: false, detail: 'unsupported command assertion' };
     }
 
     // Zone-based assertions using changed_paths from setup
