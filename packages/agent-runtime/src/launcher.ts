@@ -350,6 +350,10 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
           ? err
           : new AgentRunCancelledError(runId, reason);
       }
+      if (err instanceof PermissionDeniedError) {
+        recorder.fail(runId, err, 'TOOL_DENIED');
+        throw err;
+      }
       const failureCode = getAgentRunFailureCode(err);
       const executionError = new AgentExecutionFailedError(failureCode, runId);
       recorder.fail(runId, executionError, failureCode);
