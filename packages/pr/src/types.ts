@@ -29,10 +29,55 @@ export interface WorkflowGateCriterion {
   detail?: string;
 }
 
+export type WorkflowTrustDecision = 'untrusted' | 'trusted' | 'core';
+export type WorkflowArtifactChangeKind = 'added' | 'modified' | 'deleted' | 'mixed';
+
+export interface WorkflowTreeEntry {
+  path: string;
+  mode: string;
+  type: string;
+  sha: string;
+}
+
+export interface WorkflowEvidence {
+  schema: 'openslack.workflow-evidence.v1';
+  baseSha: string;
+  headSha: string;
+  evidenceHash: string;
+  artifactFiles: string[];
+  addedFiles: string[];
+  modifiedFiles: string[];
+  deletedFiles: string[];
+  changeKind: WorkflowArtifactChangeKind;
+}
+
+export interface PRReviewEvidence {
+  user: string;
+  state: string;
+  body?: string;
+  submittedAt?: string;
+  commitOid?: string;
+}
+
+export interface WorkflowGovernanceIssueEvidence {
+  issueNumber: number;
+  prNumber: number;
+  author: string;
+  body: string;
+}
+
 export interface WorkflowGateResult {
   touchedWorkflowFiles: boolean;
   overall: 'PASS' | 'FAIL' | 'N/A';
   criteria: WorkflowGateCriterion[];
+  artifactFiles?: string[];
+  changeKind?: WorkflowArtifactChangeKind;
+  evidenceHash?: string;
+  trustDecision?: WorkflowTrustDecision;
+  trustReviewer?: string;
+  trustReviewCommitOid?: string;
+  trustSource?: 'human-review';
+  governanceIssue?: number;
 }
 
 export interface ProfileSyncGateCriterion {
@@ -54,11 +99,13 @@ export interface PRReviewReport {
   state: string;
   draft: boolean;
   baseRef: string;
+  baseSha?: string;
+  headSha?: string;
   riskZone: RiskZone;
   changedFiles: string[];
   filePatches?: Array<{ filename: string; patch: string }>;
   checks: Array<{ name: string; status: string; conclusion: string | null }>;
-  reviews: Array<{ user: string; state: string }>;
+  reviews: PRReviewEvidence[];
   humanApprovals: Array<{ user: string }>;
   decision: PRReviewState;
   reason: string;
@@ -66,6 +113,8 @@ export interface PRReviewReport {
   mergeable: boolean;
   body?: string;
   headRef?: string;
+  workflowEvidence?: WorkflowEvidence;
+  workflowGovernanceIssue?: WorkflowGovernanceIssueEvidence;
   workflowGate?: WorkflowGateResult;
   profileSyncGate?: ProfileSyncGateResult;
 }

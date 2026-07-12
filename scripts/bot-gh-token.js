@@ -10,9 +10,16 @@ const https = require("node:https");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const APP_ID = process.env.OPENSLACK_GITHUB_APP_ID || "3728623";
-const INSTALLATION_ID =
-  process.env.OPENSLACK_GITHUB_APP_INSTALLATION_ID || "135500236";
+function readLocalConfig() {
+  const configPath = path.resolve(
+    __dirname,
+    "..",
+    ".openslack.local",
+    "github-app.json",
+  );
+  if (!fs.existsSync(configPath)) return {};
+  return JSON.parse(fs.readFileSync(configPath, "utf8"));
+}
 
 function b64url(input) {
   return Buffer.from(input)
@@ -69,6 +76,17 @@ function getInstallationToken(appId, installationId, privateKey) {
 }
 
 async function main() {
+  const localConfig = readLocalConfig();
+  const appId = process.env.OPENSLACK_GITHUB_APP_ID || localConfig.appId;
+  const installationId =
+    process.env.OPENSLACK_GITHUB_APP_INSTALLATION_ID ||
+    localConfig.installationId;
+  if (!appId || !installationId) {
+    throw new Error(
+      "Missing GitHub App IDs. Set OPENSLACK_GITHUB_APP_ID and OPENSLACK_GITHUB_APP_INSTALLATION_ID or import .openslack.local/github-app.json",
+    );
+  }
+
   let privateKey = process.env.OPENSLACK_GITHUB_APP_PRIVATE_KEY;
   if (!privateKey) {
     const pemPath = path.resolve(
@@ -84,7 +102,7 @@ async function main() {
     throw new Error("No valid PEM private key found");
   }
 
-  const token = await getInstallationToken(APP_ID, INSTALLATION_ID, privateKey);
+  const token = await getInstallationToken(appId, installationId, privateKey);
   process.stdout.write(token);
 }
 

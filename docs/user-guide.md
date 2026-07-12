@@ -335,6 +335,8 @@ selected and ready; OpenSlack never substitutes placeholder output.
 | `openslack pr doctor <n> --dry-run` | Show the simulated diagnosis plan only; no governance decision is produced |
 | `openslack pr doctor <n> --format tui` | Interactive PR doctor view (q/Esc to exit) |
 | `openslack pr doctor <n> --comment` | Post doctor report as PR comment |
+| `openslack pr workflow-evidence --base <sha> --head <sha>` | Compute deterministic evidence for governed workflow artifacts |
+| `openslack pr workflow-governance <n>` | Bot-create the single Governance Issue required for a new or core artifact |
 | `openslack pr queue` | Show open PRs sorted by readiness and blocker owner |
 | `openslack pr watch <n>` | Poll PR status until ready or timeout |
 | `openslack pr merge <n>` | Merge PR after all gates pass |
@@ -356,6 +358,21 @@ powershell -ExecutionPolicy Bypass -File scripts\openslack-bot.ps1 pr doctor <n>
 Posting doctor reports with `--comment` is a PR mutation and requires GitHub App
 bot authentication. Token or human-authenticated diagnosis may be used for
 read-only evidence only.
+
+Workflow Trust is evaluated only for tracked workflow artifacts, not for the
+workflow engine, tests, or fixtures. One current-head human review records both
+merge approval and the trust decision:
+
+```bash
+gh pr review <n> --approve --body "Workflow-Trust: trusted"
+```
+
+Use `untrusted` to retain read-only runtime restrictions. `core` is limited to
+builtins/catalog/pattern artifacts and requires a CODEOWNER review. New or core
+artifacts also require one bot-created `Workflow governance #N`; existing
+non-core artifact updates use the PR itself as the governance record. Evidence
+hashes are computed from base/head Git trees and never need to be copied into
+the PR body manually.
 
 For local bot-authenticated PRMS diagnosis or Merge Steward execution, use the
 fixed GitHub App wrapper pipeline instead of reading credentials manually:

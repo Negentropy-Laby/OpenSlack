@@ -30,6 +30,20 @@ compromised or malicious.
 
 ## Trust Levels
 
+Repository trust decisions are bound to the reviewed PR head. For changes to
+tracked workflow artifacts, a valid non-author human approval must contain one
+line:
+
+```text
+Workflow-Trust: untrusted|trusted|core
+```
+
+PRMS rejects bot/app reviews, stale-head approvals, duplicate or conflicting
+markers, and tree evidence that does not match the current base/head pair.
+Engine code, tests, and fixtures use normal PRMS approval and do not require a
+workflow trust marker. This merge evidence does not automatically modify a
+machine-local `.openslack/workflow-trust.yaml` store.
+
 ### Level 0: Untrusted
 
 Applies to workflows loaded from legacy Anthropic paths
@@ -376,6 +390,19 @@ if (this.mode === 'execute' && !this.confirmed) {
 
 In CLI, this is `--yes` flag. In TUI, this is a modal dialog. In chat,
 this is a reaction-based confirmation.
+
+## Bot Delivery Credential Boundary
+
+The bot PR wrappers resolve `appId` and `installationId` from explicit
+`OPENSLACK_GITHUB_APP_*` settings or the non-secret local
+`.openslack.local/github-app.json` import record. They do not contain
+organization-specific ID defaults.
+
+The private key is read only by `scripts/bot-gh-token.js` to mint a short-lived
+installation token. The subsequent `openslack pr workflow-governance` child
+receives only that token through `OPENSLACK_GITHUB_APP_INSTALLATION_TOKEN`; it
+does not receive the PEM. The token is neither persisted nor forwarded through
+`GITHUB_TOKEN`, `GH_TOKEN`, command arguments, Git configuration, or logs.
 
 ## Failure Modes
 

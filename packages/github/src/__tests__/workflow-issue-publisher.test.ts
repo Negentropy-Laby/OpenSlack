@@ -13,6 +13,8 @@ import { getClient } from '../client.js'
 import { createTaskIssue } from '../issue-tasks.js'
 import {
   publishWorkflowProposal,
+  publishWorkflowGovernance,
+  findWorkflowGovernanceIssue,
   publishWorkflowReviewRequest,
   publishWorkflowRunAudit,
   publishWorkflowSplit,
@@ -49,6 +51,65 @@ describe('workflow issue publishers', () => {
       ...overrides,
     }
   }
+
+  it('creates a single workflow governance issue', async () => {
+    mockCreateTaskIssue.mockResolvedValue({ issueNumber: 176, url: 'https://github.com/test/176', nodeId: 'node_176' })
+    const result = await publishWorkflowGovernance({
+      schema: 'openslack.workflow_governance.v1',
+      prNumber: 176,
+      artifactFiles: ['packages/workflows/src/builtins/new.ts'],
+      changeKind: 'added',
+      baseSha: 'base',
+      headSha: 'head',
+      evidenceHash: 'sha256:evidence',
+      requestedBy: 'openslack-agent-operator',
+    })
+
+    expect(result.issueNumber).toBe(176)
+    expect(mockCreateTaskIssue).toHaveBeenCalledWith(
+      '[Workflow Governance] PR #176',
+      expect.stringContaining('evidence_hash: "sha256:evidence"'),
+      ['workflow:governance'],
+    )
+  })
+
+  it('finds an existing governance issue for idempotent PR preparation', async () => {
+    const listForRepo = vi.fn()
+      .mockResolvedValueOnce({
+        data: Array.from({ length: 100 }, (_, index) => ({
+          number: index + 1,
+          title: `[Workflow Governance] PR #${index}`,
+          html_url: `issue-${index}`,
+        })),
+      })
+      .mockResolvedValueOnce({
+        data: [
+          {
+            number: 177,
+            title: '[Workflow Governance] PR #176',
+            html_url: 'issue-url',
+            user: { login: 'openslack-agent-operator[bot]' },
+          },
+        ],
+      })
+    mockGetClient.mockResolvedValue({
+      owner: 'org',
+      repo: 'repo',
+      isDryRun: false,
+      octokit: {
+        issues: {
+          listForRepo,
+        },
+      },
+    } as never)
+
+    await expect(findWorkflowGovernanceIssue(176)).resolves.toEqual({
+      issueNumber: 177,
+      url: 'issue-url',
+      author: 'openslack-agent-operator[bot]',
+    })
+    expect(listForRepo).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 2 }))
+  })
 
   describe('publishWorkflowProposal', () => {
     it('creates a proposal issue with correct labels', async () => {
@@ -319,7 +380,7 @@ describe('workflow issue publishers', () => {
       const result = await bootstrapWorkflowLabels()
 
       expect(result.created.length).toBeGreaterThan(0)
-      expect(mockOctokit.issues.createLabel).toHaveBeenCalledTimes(31)
+      expect(mockOctokit.issues.createLabel).toHaveBeenCalledTimes(33)
     })
 
     it('skips existing labels', async () => {
@@ -339,7 +400,7 @@ describe('workflow issue publishers', () => {
       const result = await bootstrapWorkflowLabels()
 
       expect(result.created).toHaveLength(0)
-      expect(result.existing.length).toBe(31)
+      expect(result.existing.length).toBe(33)
     })
 
     it('works in dry-run mode', async () => {
@@ -353,7 +414,7 @@ describe('workflow issue publishers', () => {
 
       const result = await bootstrapWorkflowLabels()
 
-      expect(result.created.length).toBe(31)
+      expect(result.created.length).toBe(33)
       expect(result.existing).toHaveLength(0)
     })
   })

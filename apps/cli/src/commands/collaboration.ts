@@ -81,7 +81,14 @@ import {
   publishWorkflowSplit,
   bootstrapWorkflowLabels,
   finalizeWorkflowPR,
+  getCODEOWNERS,
 } from '@openslack/github';
+import {
+  evaluateWorkflowGate,
+  fetchPRDetails,
+  parseCODEOWNERS,
+  resolveCodeowners,
+} from '@openslack/pr';
 
 type AgentAuthOptions = {
   principal?: import('@openslack/kernel').AgentPrincipal;
@@ -1803,7 +1810,7 @@ export function collaborationCommands(): Command {
 
   workflow
     .command('publish <name>')
-    .description('Publish a workflow as a GitHub proposal issue')
+    .description('[deprecated PR gate] Publish a historical workflow proposal issue')
     .option('--as-issue', 'Create a GitHub issue for the workflow proposal', true)
     .option('--label <label>', 'Additional labels (can be used multiple times)', (value: string, previous: string[]) => [...previous, value], [])
     .action(async (name: string, options: { asIssue: boolean; label: string[] }) => {
@@ -1831,7 +1838,7 @@ export function collaborationCommands(): Command {
 
   workflow
     .command('review-request <name>')
-    .description('Create a security review issue for a workflow')
+    .description('[deprecated PR gate] Create a historical workflow review issue')
     .action(async (name: string) => {
       const found = await findJsWorkflow(name)
       if (!found) {
@@ -2011,12 +2018,13 @@ export function collaborationCommands(): Command {
   workflow
     .command('finalize-pr <prNumber>')
     .description('Finalize workflow lifecycle after a PR is merged')
+    .option('--governance-issue <number>', 'Workflow governance issue to close')
     .option('--proposal-issue <number>', 'Workflow proposal issue to close')
     .option('--review-issue <number>', 'Workflow review issue to comment on')
     .option('--phase-issues <numbers>', 'Comma-separated phase issue numbers to close')
     .option('--hash <hash>', 'Workflow hash to record')
     .option('--trust <level>', 'Trust decision: trusted, untrusted, or core')
-    .action(async (prNumber: string, options: { proposalIssue?: string; reviewIssue?: string; phaseIssues?: string; hash?: string; trust?: string }) => {
+    .action(async (prNumber: string, options: { governanceIssue?: string; proposalIssue?: string; reviewIssue?: string; phaseIssues?: string; hash?: string; trust?: string }) => {
       const pr = parseInt(prNumber, 10)
       if (!Number.isFinite(pr) || pr <= 0) {
         console.log(`Invalid PR number: "${prNumber}". Must be a positive integer.`)
@@ -2025,21 +2033,67 @@ export function collaborationCommands(): Command {
 
       const proposalIssue = options.proposalIssue ? parseInt(options.proposalIssue, 10) : undefined
       const reviewIssue = options.reviewIssue ? parseInt(options.reviewIssue, 10) : undefined
+      let governanceIssue = options.governanceIssue ? parseInt(options.governanceIssue, 10) : undefined
       const phaseIssues = options.phaseIssues
         ? options.phaseIssues.split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => Number.isFinite(n))
         : undefined
 
-      const validTrust = options.trust === 'trusted' || options.trust === 'untrusted' || options.trust === 'core'
+      let validTrust = options.trust === 'trusted' || options.trust === 'untrusted' || options.trust === 'core'
         ? options.trust
         : undefined
+      let workflowHash = options.hash
+      let trustReviewer: string | undefined
+      let trustReviewCommitOid: string | undefined
+
+      const report = await fetchPRDetails(pr, { requireLive: true, strictEvidence: true })
+      if (report.workflowEvidence) {
+        const codeownersContent = await getCODEOWNERS(report.baseRef)
+        const entries = codeownersContent ? parseCODEOWNERS(codeownersContent) : []
+        const codeowners = resolveCodeowners(report.workflowEvidence.artifactFiles, entries)
+        const gate = evaluateWorkflowGate({
+          changedFiles: report.changedFiles,
+          body: report.body ?? '',
+          author: report.author,
+          baseSha: report.baseSha,
+          headSha: report.headSha,
+          reviews: report.reviews,
+          workflowEvidence: report.workflowEvidence,
+          governanceIssue: report.workflowGovernanceIssue,
+          codeowners,
+        })
+        if (gate.overall !== 'PASS') {
+          console.log(`Cannot finalize workflow governance for PR #${pr}: gate is ${gate.overall}.`)
+          process.exit(1)
+        }
+        if (options.hash && options.hash !== gate.evidenceHash) {
+          console.log('Cannot override the repository-derived workflow evidence hash.')
+          process.exit(1)
+        }
+        if (options.trust && options.trust !== gate.trustDecision) {
+          console.log('Cannot override the current-head human Workflow-Trust review.')
+          process.exit(1)
+        }
+        if (options.governanceIssue && Number(options.governanceIssue) !== gate.governanceIssue) {
+          console.log('Cannot override the governance issue bound to this workflow artifact change.')
+          process.exit(1)
+        }
+        governanceIssue = gate.governanceIssue
+        workflowHash = gate.evidenceHash
+        validTrust = gate.trustDecision
+        trustReviewer = gate.trustReviewer
+        trustReviewCommitOid = gate.trustReviewCommitOid
+      }
 
       try {
         const result = await finalizeWorkflowPR(pr, {
+          governanceIssue,
           proposalIssue,
           reviewIssue,
           phaseIssues,
-          workflowHash: options.hash,
+          workflowHash,
           trustDecision: validTrust as 'trusted' | 'untrusted' | 'core' | undefined,
+          trustReviewer,
+          trustReviewCommitOid,
         })
 
         console.log(`Workflow PR finalize complete for #${pr}:`)

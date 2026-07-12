@@ -1,8 +1,10 @@
 import { getClient } from './client.js'
+import type { GitHubClientOptions } from './client.js'
 import { createTaskIssue } from './issue-tasks.js'
 import type {
   WorkflowModuleShape,
   WorkflowRunStatusShape,
+  WorkflowGovernanceIssue,
   WorkflowProposalIssue,
   WorkflowReviewIssue,
   WorkflowRunIssue,
@@ -23,6 +25,8 @@ import {
   workflowImprovementLabels,
   workflowSplitLabels,
   workflowPhaseLabels,
+  renderWorkflowGovernanceBody,
+  workflowGovernanceLabels,
 } from './workflow-issues.js'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -68,6 +72,46 @@ function inferFormat(module: WorkflowModuleShape): string {
 }
 
 // ── Publish Workflow Proposal ─────────────────────────────────────────────────
+
+export async function publishWorkflowGovernance(
+  governance: WorkflowGovernanceIssue,
+): Promise<{ issueNumber: number; url: string }> {
+  const title = `[Workflow Governance] PR #${governance.prNumber}`
+  const body = renderWorkflowGovernanceBody(governance)
+  const result = await createTaskIssue(title, body, workflowGovernanceLabels())
+  return { issueNumber: result.issueNumber, url: result.url }
+}
+
+export async function findWorkflowGovernanceIssue(
+  prNumber: number,
+  options?: GitHubClientOptions,
+): Promise<{ issueNumber: number; url: string; body?: string; author?: string } | undefined> {
+  const client = await getClient(options)
+  if (client.isDryRun) return undefined
+  const title = `[Workflow Governance] PR #${prNumber}`
+  for (let page = 1; ; page += 1) {
+    const { data } = await client.octokit.issues.listForRepo({
+      owner: client.owner,
+      repo: client.repo,
+      labels: 'workflow:governance',
+      state: 'all',
+      per_page: 100,
+      page,
+    })
+    const issue = data.find((candidate) => !candidate.pull_request && candidate.title === title)
+    if (issue) {
+      return {
+        issueNumber: issue.number,
+        url: issue.html_url,
+        ...(issue.body ? { body: issue.body } : {}),
+        ...(issue.user?.login ? { author: issue.user.login } : {}),
+      }
+    }
+    if (data.length < 100) return undefined
+  }
+}
+
+// ── Legacy proposal/review publishers (not PR merge gates) ────────────────────
 
 export async function publishWorkflowProposal(
   workflow: WorkflowModuleShape,

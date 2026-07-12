@@ -130,8 +130,8 @@ function normalizeGraphQLState(value: string | null | undefined): string {
 async function listPRFilesRest(
   client: Awaited<ReturnType<typeof getClient>>,
   prNumber: number,
-): Promise<Array<{ filename: string; patch?: string }>> {
-  const files: Array<{ filename: string; patch?: string }> = [];
+): Promise<Array<{ filename: string; previous_filename?: string; patch?: string }>> {
+  const files: Array<{ filename: string; previous_filename?: string; patch?: string }> = [];
   for (let page = 1; ; page += 1) {
     const { data } = await client.octokit.pulls.listFiles({
       owner: client.owner,
@@ -154,12 +154,14 @@ async function listPRReviewsRest(
   state: string;
   body?: string | null;
   submitted_at?: string | null;
+  commit_id?: string | null;
 }>> {
   const reviews: Array<{
     user?: { login?: string | null } | null;
     state: string;
     body?: string | null;
     submitted_at?: string | null;
+    commit_id?: string | null;
   }> = [];
   for (let page = 1; ; page += 1) {
     const { data } = await client.octokit.pulls.listReviews({
@@ -308,6 +310,14 @@ export interface PRReview {
   state: string;
   body: string;
   submittedAt?: string;
+  commitOid?: string;
+}
+
+export interface GitTreeEntry {
+  path: string;
+  mode: string;
+  type: string;
+  sha: string;
 }
 
 interface GraphQLPullRequestResponse {
@@ -352,6 +362,7 @@ interface GraphQLReviewsResponse {
           state: string;
           body?: string | null;
           submittedAt?: string | null;
+          commit?: { oid?: string | null } | null;
         } | null> | null;
         pageInfo: { hasNextPage: boolean; endCursor?: string | null };
       } | null;
@@ -500,6 +511,7 @@ async function getPRReviewsGraphQL(
                   state
                   body
                   submittedAt
+                  commit { oid }
                 }
                 pageInfo { hasNextPage endCursor }
               }
@@ -516,6 +528,7 @@ async function getPRReviewsGraphQL(
         state: node?.state ?? 'UNKNOWN',
         body: node?.body || '',
         submittedAt: node?.submittedAt ?? undefined,
+        commitOid: node?.commit?.oid ?? undefined,
       });
     }
     after = connection?.pageInfo.hasNextPage ? connection.pageInfo.endCursor ?? null : null;
@@ -653,7 +666,9 @@ export async function listPRFiles(prNumber: number, options?: GitHubClientOption
   }
   try {
     const data = await withRetry('list pull request files', () => listPRFilesRest(client, prNumber));
-    return data.map((f) => f.filename);
+    return [...new Set(data.flatMap((file) => [file.filename, file.previous_filename].filter(
+      (path): path is string => typeof path === 'string' && path.length > 0,
+    )))];
   } catch (error) {
     try {
       return await listPRFilesGraphQL(client, prNumber);
@@ -736,6 +751,7 @@ export async function getPRReviews(prNumber: number, options?: GitHubClientOptio
       state: r.state,
       body: r.body || '',
       submittedAt: r.submitted_at ?? undefined,
+      commitOid: r.commit_id ?? undefined,
     }));
   } catch (error) {
     try {
@@ -749,6 +765,37 @@ export async function getPRReviews(prNumber: number, options?: GitHubClientOptio
       strictEvidenceUnavailable('fetch pull request reviews', client, prNumber, error);
     }
     return [];
+  }
+}
+
+export async function getRepositoryTree(
+  treeSha: string,
+  options?: GitHubClientOptions,
+): Promise<GitTreeEntry[]> {
+  const client = await getClient(options);
+  if (client.isDryRun) {
+    console.log(`[DRY RUN] Would fetch recursive Git tree ${treeSha}`);
+    return [];
+  }
+  try {
+    const { data } = await withRetry('fetch repository tree', () =>
+      client.octokit.git.getTree({
+        owner: client.owner,
+        repo: client.repo,
+        tree_sha: treeSha,
+        recursive: 'true',
+      }));
+    if (data.truncated) {
+      throw new Error(`Recursive Git tree ${treeSha} was truncated.`);
+    }
+    return data.tree.flatMap((entry) =>
+      entry.path && entry.mode && entry.type && entry.sha
+        ? [{ path: entry.path, mode: entry.mode, type: entry.type, sha: entry.sha }]
+        : []);
+  } catch (error) {
+    // Workflow evidence must never be synthesized from placeholder empty trees.
+    // Unlike generic PR metadata, a missing tree changes the trust decision.
+    strictEvidenceUnavailable('fetch repository tree', client, undefined, error);
   }
 }
 
@@ -767,6 +814,24 @@ export async function commentOnPR(
     owner: client.owner,
     repo: client.repo,
     issue_number: prNumber,
+    body,
+  });
+}
+
+export async function updatePRBody(
+  prNumber: number,
+  body: string,
+  options?: GitHubClientOptions,
+): Promise<void> {
+  const client = await getClient(options);
+  if (client.isDryRun) {
+    console.log(`[DRY RUN] Would update PR #${prNumber} body`);
+    return;
+  }
+  await client.octokit.pulls.update({
+    owner: client.owner,
+    repo: client.repo,
+    pull_number: prNumber,
     body,
   });
 }
