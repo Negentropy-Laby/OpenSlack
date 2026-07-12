@@ -6,6 +6,8 @@ const hoisted = vi.hoisted(() => ({
   mockGetPRChecks: vi.fn(),
   mockGetPRReviews: vi.fn(),
   mockGetPRFilePatches: vi.fn(),
+  mockGetRepositoryTree: vi.fn(),
+  mockFindWorkflowGovernanceIssue: vi.fn(),
 }));
 
 vi.mock('@openslack/github', () => ({
@@ -14,6 +16,8 @@ vi.mock('@openslack/github', () => ({
   getPRChecks: (...args: unknown[]) => hoisted.mockGetPRChecks(...args),
   getPRReviews: (...args: unknown[]) => hoisted.mockGetPRReviews(...args),
   getPRFilePatches: (...args: unknown[]) => hoisted.mockGetPRFilePatches(...args),
+  getRepositoryTree: (...args: unknown[]) => hoisted.mockGetRepositoryTree(...args),
+  findWorkflowGovernanceIssue: (...args: unknown[]) => hoisted.mockFindWorkflowGovernanceIssue(...args),
 }));
 
 import { fetchPRDetails } from '../fetch.js';
@@ -52,9 +56,11 @@ describe('fetchPRDetails', () => {
         state: 'APPROVED',
         body: 'approved',
         submittedAt: '2026-06-01T14:32:04Z',
+        commitOid: 'head-sha',
       },
     ]);
     hoisted.mockGetPRFilePatches.mockResolvedValue([]);
+    hoisted.mockFindWorkflowGovernanceIssue.mockResolvedValue(undefined);
   });
 
   it('builds ready evidence from complete live data', async () => {
@@ -62,7 +68,13 @@ describe('fetchPRDetails', () => {
 
     expect(report.state).toBe('open');
     expect(report.checks).toEqual([{ name: 'validate', status: 'completed', conclusion: 'success' }]);
-    expect(report.reviews).toEqual([{ user: 'wsman', state: 'APPROVED' }]);
+    expect(report.reviews).toEqual([{
+      user: 'wsman',
+      state: 'APPROVED',
+      body: 'approved',
+      submittedAt: '2026-06-01T14:32:04Z',
+      commitOid: 'head-sha',
+    }]);
     expect(report.humanApprovals).toEqual([{ user: 'wsman' }]);
     expect(hoisted.mockGetPRFilePatches).not.toHaveBeenCalled();
   });
@@ -74,26 +86,41 @@ describe('fetchPRDetails', () => {
         state: 'APPROVED',
         body: 'approved',
         submittedAt: '2026-06-01T14:00:00Z',
+        commitOid: 'head-sha',
       },
       {
         user: { login: 'wsman' },
         state: 'CHANGES_REQUESTED',
         body: 'needs work',
         submittedAt: '2026-06-01T14:05:00Z',
+        commitOid: 'head-sha',
       },
       {
         user: { login: 'alice' },
         state: 'APPROVED',
         body: 'approved',
         submittedAt: '2026-06-01T14:06:00Z',
+        commitOid: 'head-sha',
       },
     ]);
 
     const report = await fetchPRDetails(138, { strictEvidence: true });
 
     expect(report.reviews).toEqual([
-      { user: 'wsman', state: 'CHANGES_REQUESTED' },
-      { user: 'alice', state: 'APPROVED' },
+      {
+        user: 'wsman',
+        state: 'CHANGES_REQUESTED',
+        body: 'needs work',
+        submittedAt: '2026-06-01T14:05:00Z',
+        commitOid: 'head-sha',
+      },
+      {
+        user: 'alice',
+        state: 'APPROVED',
+        body: 'approved',
+        submittedAt: '2026-06-01T14:06:00Z',
+        commitOid: 'head-sha',
+      },
     ]);
     expect(report.humanApprovals).toEqual([{ user: 'alice' }]);
   });
@@ -145,5 +172,32 @@ describe('fetchPRDetails', () => {
 
     expect(hoisted.mockGetPRFilePatches).toHaveBeenCalledWith(138, { strictEvidence: true });
     expect(report.filePatches).toEqual([{ filename: 'profile/README.md', patch: '@@ marker patch' }]);
+  });
+
+  it('binds a new workflow artifact to its governance issue evidence', async () => {
+    const path = 'templates/workflows/new.yaml';
+    hoisted.mockListPRFiles.mockResolvedValue([path]);
+    hoisted.mockGetRepositoryTree
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ path, mode: '100644', type: 'blob', sha: 'new' }]);
+    hoisted.mockFindWorkflowGovernanceIssue.mockResolvedValue({
+      issueNumber: 177,
+      url: 'issue-url',
+      body: 'governance evidence',
+      author: 'openslack-agent-operator[bot]',
+    });
+
+    const report = await fetchPRDetails(138, { strictEvidence: true });
+
+    expect(report.workflowEvidence?.addedFiles).toEqual([path]);
+    expect(report.workflowGovernanceIssue).toEqual({
+      issueNumber: 177,
+      prNumber: 138,
+      author: 'openslack-agent-operator[bot]',
+      body: 'governance evidence',
+    });
+    expect(hoisted.mockFindWorkflowGovernanceIssue).toHaveBeenCalledWith(138, {
+      strictEvidence: true,
+    });
   });
 });

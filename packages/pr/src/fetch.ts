@@ -1,23 +1,30 @@
-import { getPR, listPRFiles, getPRChecks, getPRReviews, getPRFilePatches } from '@openslack/github';
-import type { GitHubClientOptions } from '@openslack/github';
-import type { PRReviewReport } from './types.js';
+import {
+  getPR,
+  listPRFiles,
+  getPRChecks,
+  getPRReviews,
+  getPRFilePatches,
+  getRepositoryTree,
+  findWorkflowGovernanceIssue,
+} from '@openslack/github';
+import type { GitHubClientOptions, PRReview } from '@openslack/github';
+import type { PRReviewReport, WorkflowEvidence } from './types.js';
 import { isBotUser } from './approvals.js';
+import {
+  createWorkflowEvidence,
+  isCoreWorkflowArtifactPath,
+  touchesWorkflowFiles,
+} from './workflow-gate.js';
 
-function isProfileSyncCandidate(
-  files: string[],
-  headRef: string,
-  body: string,
-): boolean {
+function isProfileSyncCandidate(files: string[], headRef: string, body: string): boolean {
   return headRef.startsWith('openslack/profile-sync/')
     || body.includes('```openslack-profile-sync-metadata')
     || body.includes('profile: sync latest')
     || files.includes('profile/README.md');
 }
 
-function latestReviewsByReviewer(
-  reviews: Array<{ user: { login: string }; state: string; body: string; submittedAt?: string }>,
-): Array<{ user: { login: string }; state: string; body: string; submittedAt?: string }> {
-  const latest = new Map<string, { review: typeof reviews[number]; index: number }>();
+function latestReviewsByReviewer(reviews: PRReview[]): PRReview[] {
+  const latest = new Map<string, { review: PRReview; index: number }>();
 
   reviews.forEach((review, index) => {
     const key = review.user.login;
@@ -36,9 +43,7 @@ function latestReviewsByReviewer(
       ? index >= current.index
       : false;
 
-    if (newerByTime || newerByOrder) {
-      latest.set(key, { review, index });
-    }
+    if (newerByTime || newerByOrder) latest.set(key, { review, index });
   });
 
   return [...latest.values()].map((entry) => entry.review);
@@ -55,19 +60,34 @@ export async function fetchPRDetails(
     getPRReviews(prNumber, options),
   ]);
   const latestReviews = latestReviewsByReviewer(reviews);
-  const shouldFetchPatches = pr
-    ? isProfileSyncCandidate(files, pr.head.ref, pr.body)
-    : false;
-  const filePatches = shouldFetchPatches
-    ? await getPRFilePatches(prNumber, options)
-    : [];
+  const shouldFetchPatches = pr ? isProfileSyncCandidate(files, pr.head.ref, pr.body) : false;
+  const filePatches = shouldFetchPatches ? await getPRFilePatches(prNumber, options) : [];
+  let workflowEvidence: WorkflowEvidence | undefined;
+  if (pr && touchesWorkflowFiles(files)) {
+    const [baseTree, headTree] = await Promise.all([
+      getRepositoryTree(pr.base.sha, options),
+      getRepositoryTree(pr.head.sha, options),
+    ]);
+    workflowEvidence = createWorkflowEvidence({
+      baseSha: pr.base.sha,
+      headSha: pr.head.sha,
+      baseTree,
+      headTree,
+    });
+  }
+  const governanceRequired = workflowEvidence !== undefined
+    && (workflowEvidence.addedFiles.length > 0
+      || workflowEvidence.artifactFiles.some(isCoreWorkflowArtifactPath));
+  const workflowGovernanceIssue = governanceRequired
+    ? await findWorkflowGovernanceIssue(prNumber, options)
+    : undefined;
 
   const author = pr?.user.login || 'unknown';
   const humanApprovals = latestReviews
-    .filter((r) => r.state === 'APPROVED')
-    .filter((r) => r.user.login !== author)
-    .filter((r) => !isBotUser(r.user.login))
-    .map((r) => ({ user: r.user.login }));
+    .filter((review) => review.state === 'APPROVED')
+    .filter((review) => review.user.login !== author)
+    .filter((review) => !isBotUser(review.user.login))
+    .map((review) => ({ user: review.user.login }));
 
   return {
     prNumber,
@@ -76,17 +96,38 @@ export async function fetchPRDetails(
     state: pr?.state || 'unknown',
     draft: pr?.draft ?? false,
     baseRef: pr?.base.ref || 'main',
+    baseSha: pr?.base.sha,
     headRef: pr?.head.ref || '',
+    headSha: pr?.head.sha,
     riskZone: 'green',
     changedFiles: files,
     filePatches,
-    checks: checks.map((c) => ({ name: c.name, status: c.status, conclusion: c.conclusion })),
-    reviews: latestReviews.map((r) => ({ user: r.user.login, state: r.state })),
+    checks: checks.map((check) => ({
+      name: check.name,
+      status: check.status,
+      conclusion: check.conclusion,
+    })),
+    reviews: latestReviews.map((review) => ({
+      user: review.user.login,
+      state: review.state,
+      body: review.body,
+      submittedAt: review.submittedAt,
+      commitOid: review.commitOid,
+    })),
     humanApprovals,
     decision: 'DISCOVERED',
     reason: 'Initial fetch complete. Awaiting classification.',
     recommendation: 'Run classification to determine risk zone and next steps.',
     mergeable: pr?.mergeable ?? false,
     body: pr?.body ?? '',
+    workflowEvidence,
+    workflowGovernanceIssue: workflowGovernanceIssue?.body && workflowGovernanceIssue.author
+      ? {
+          issueNumber: workflowGovernanceIssue.issueNumber,
+          prNumber,
+          author: workflowGovernanceIssue.author,
+          body: workflowGovernanceIssue.body,
+        }
+      : undefined,
   };
 }

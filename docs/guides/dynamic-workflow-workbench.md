@@ -129,6 +129,12 @@ bun run openslack collaboration workflow review-request <workflow-name>
 bun run openslack collaboration workflow split <workflow-name> --issue <parentIssue>
 ```
 
+`publish` and `review-request` remain available for historical lifecycle
+records, but their separate proposal/review Issues are deprecated as PR merge
+gates. Governed artifact PRs use one current-head human review containing
+`Workflow-Trust: untrusted|trusted|core`; new or core artifacts use the single
+Governance Issue created by `openslack pr workflow-governance <pr>`.
+
 The TUI Workflow Home and workflow detail screen expose these as visible
 Publish actions so operators do not need to discover them through nested menus.
 

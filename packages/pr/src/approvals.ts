@@ -6,7 +6,9 @@ const KNOWN_BOTS = new Set([
 ]);
 
 export function isBotUser(user: string): boolean {
-  return user.endsWith('[bot]') || KNOWN_BOTS.has(user.toLowerCase());
+  return user.endsWith('[bot]')
+    || user.toLowerCase().startsWith('app/')
+    || KNOWN_BOTS.has(user.toLowerCase());
 }
 
 export function filterValidApprovals(

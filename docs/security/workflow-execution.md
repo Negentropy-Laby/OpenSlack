@@ -30,6 +30,20 @@ compromised or malicious.
 
 ## Trust Levels
 
+Repository trust decisions are bound to the reviewed PR head. For changes to
+tracked workflow artifacts, a valid non-author human approval must contain one
+line:
+
+```text
+Workflow-Trust: untrusted|trusted|core
+```
+
+PRMS rejects bot/app reviews, stale-head approvals, duplicate or conflicting
+markers, and tree evidence that does not match the current base/head pair.
+Engine code, tests, and fixtures use normal PRMS approval and do not require a
+workflow trust marker. This merge evidence does not automatically modify a
+machine-local `.openslack/workflow-trust.yaml` store.
+
 ### Level 0: Untrusted
 
 Applies to workflows loaded from legacy Anthropic paths

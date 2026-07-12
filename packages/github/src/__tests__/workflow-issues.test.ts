@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   renderWorkflowProposalBody,
+  renderWorkflowGovernanceBody,
   renderWorkflowReviewBody,
   renderWorkflowRunBody,
   renderWorkflowRunPhaseComment,
@@ -17,6 +18,7 @@ import {
 } from '../workflow-issues.js'
 import type {
   WorkflowProposalIssue,
+  WorkflowGovernanceIssue,
   WorkflowReviewIssue,
   WorkflowRunIssue,
   WorkflowImprovementIssue,
@@ -24,6 +26,24 @@ import type {
 } from '../workflow-issues.js'
 
 describe('workflow issue renderers', () => {
+  it('renders one governance record bound to PR head and evidence hash', () => {
+    const governance: WorkflowGovernanceIssue = {
+      schema: 'openslack.workflow_governance.v1',
+      prNumber: 176,
+      artifactFiles: ['templates/workflows/new.yaml'],
+      changeKind: 'added',
+      baseSha: 'base',
+      headSha: 'head',
+      evidenceHash: 'sha256:evidence',
+      requestedBy: 'openslack-agent-operator',
+    }
+    const body = renderWorkflowGovernanceBody(governance)
+    expect(body).toContain('## Workflow Governance: PR #176')
+    expect(body).toContain('head_sha: "head"')
+    expect(body).toContain('evidence_hash: "sha256:evidence"')
+    expect(body).toContain('Workflow-Trust: trusted|untrusted|core')
+  })
+
   describe('renderWorkflowProposalBody', () => {
     it('renders a proposal with all fields', () => {
       const proposal: WorkflowProposalIssue = {
@@ -252,7 +272,7 @@ describe('workflow issue renderers', () => {
       expect(names).toContain('risk:high')
       expect(names).toContain('mode:execute')
       expect(names).toContain('result:completed')
-      expect(names).toHaveLength(31)
+      expect(names).toHaveLength(33)
     })
 
     it('every label has a 6-character hex color', () => {

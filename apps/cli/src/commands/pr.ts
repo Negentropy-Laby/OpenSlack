@@ -1,7 +1,16 @@
 import { Command } from 'commander';
 import { renderFindingsPlain } from '@openslack/runtime';
 import type { PlainFinding } from '@openslack/runtime';
-import { getCODEOWNERS, commentOnPR, getClient, GitHubAuthRequiredError, GitHubEvidenceUnavailableError } from '@openslack/github';
+import {
+  getCODEOWNERS,
+  commentOnPR,
+  getClient,
+  GitHubAuthRequiredError,
+  GitHubEvidenceUnavailableError,
+  publishWorkflowGovernance,
+  findWorkflowGovernanceIssue,
+  updatePRBody,
+} from '@openslack/github';
 import {
   fetchPRDetails,
   classifyPRReport,
@@ -16,6 +25,8 @@ import {
   watchPR,
   buildPRQueue,
   renderPRQueue,
+  isCoreWorkflowArtifactPath,
+  computeLocalWorkflowEvidence,
 } from '@openslack/pr';
 import type { PRReviewReport } from '@openslack/pr';
 import { recordEvent } from '@openslack/collaboration';
@@ -121,6 +132,84 @@ export function prCommands(): Command {
         console.log(`Reason: ${ready.reason}`);
         console.log(`Recommendation: ${ready.recommendation}`);
       }
+    });
+
+  cmd
+    .command('workflow-evidence')
+    .description('Compute deterministic workflow artifact evidence from two Git revisions')
+    .requiredOption('--base <sha>', 'Base Git revision')
+    .requiredOption('--head <sha>', 'Head Git revision')
+    .option('--format <format>', 'Output format: text or json', 'text')
+    .action((options: { base: string; head: string; format: string }) => {
+      const evidence = computeLocalWorkflowEvidence(options.base, options.head);
+      if (options.format === 'json') {
+        console.log(JSON.stringify(evidence ?? { schema: 'openslack.workflow-evidence.v1', artifactFiles: [] }));
+        return;
+      }
+      if (!evidence) {
+        console.log('Workflow artifacts: none');
+        return;
+      }
+      console.log(`Workflow evidence: ${evidence.evidenceHash}`);
+      console.log(`Base: ${evidence.baseSha}`);
+      console.log(`Head: ${evidence.headSha}`);
+      console.log(`Change: ${evidence.changeKind}`);
+      for (const path of evidence.artifactFiles) console.log(`- ${path}`);
+    });
+
+  cmd
+    .command('workflow-governance <number>')
+    .description('Create the single governance issue required for a new or core workflow artifact')
+    .action(async (number: string) => {
+      const prNumber = parseInt(number, 10);
+      if (!Number.isFinite(prNumber) || prNumber <= 0) {
+        console.error(`Invalid PR number: ${number}`);
+        process.exitCode = 1;
+        return;
+      }
+      const client = await getClient();
+      if (client.authMode !== 'github_app_installation') {
+        console.error('BOT_AUTH_REQUIRED: workflow governance issues must be created by the configured GitHub App.');
+        process.exitCode = 1;
+        return;
+      }
+      const report = await fetchPRDetails(prNumber, { requireLive: true, strictEvidence: true });
+      if (report.changedFiles.length === 0) {
+        console.error(`PR #${prNumber} has no indexed changed files yet; retry workflow governance preparation.`);
+        process.exitCode = 1;
+        return;
+      }
+      const evidence = report.workflowEvidence;
+      if (!evidence) {
+        console.log(`PR #${prNumber} does not modify governed workflow artifacts.`);
+        return;
+      }
+      const required = evidence.addedFiles.length > 0
+        || evidence.artifactFiles.some(isCoreWorkflowArtifactPath);
+      if (!required) {
+        console.log(`PR #${prNumber} updates existing non-core artifacts; the PR is the governance record.`);
+        return;
+      }
+      const existing = report.body?.match(/workflow\s+governance\s+#(\d+)/i);
+      if (existing) {
+        console.log(`Workflow governance #${existing[1]} is already linked.`);
+        return;
+      }
+      const created = await findWorkflowGovernanceIssue(prNumber)
+        ?? await publishWorkflowGovernance({
+          schema: 'openslack.workflow_governance.v1',
+          prNumber,
+          artifactFiles: evidence.artifactFiles,
+          changeKind: evidence.changeKind,
+          baseSha: evidence.baseSha,
+          headSha: evidence.headSha,
+          evidenceHash: evidence.evidenceHash,
+          requestedBy: 'openslack-agent-operator',
+        });
+      const body = `${report.body?.trimEnd() ?? ''}\n\n## Workflow governance\n\n- Workflow governance #${created.issueNumber}\n`;
+      await updatePRBody(prNumber, body);
+      console.log(`Workflow governance issue created: #${created.issueNumber}`);
+      console.log(`PR #${prNumber} body updated with the governance link.`);
     });
 
   cmd
@@ -266,7 +355,7 @@ export function prCommands(): Command {
               .map((c) => `${c.name}: ${c.status}`)
               .join('; '),
             nextAction: diagnosed.workflowGate.overall === 'FAIL'
-              ? 'Link proposal/review issues, add hash and trust decision to PR body'
+              ? `Approve the current head with: gh pr review ${prNumber} --approve --body "Workflow-Trust: trusted"`
               : undefined,
           });
         }

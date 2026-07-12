@@ -9,14 +9,34 @@ export { detectDeadlock } from './deadlock.js';
 export { assessPRAuthorRisk } from './author-risk.js';
 export { diagnosePR } from './doctor.js';
 export { generateDoctorReport } from './doctor-report.js';
-export { evaluateWorkflowGate, touchesWorkflowFiles } from './workflow-gate.js';
+export {
+  createWorkflowEvidence,
+  evaluateWorkflowGate,
+  isCoreWorkflowArtifactPath,
+  isWorkflowArtifactPath,
+  touchesWorkflowFiles,
+} from './workflow-gate.js';
 export { evaluateProfileSyncGate } from './profile-sync-gate.js';
 export { summarizePRForChat, formatPRChatSummary } from './chat-report.js';
 export { summarizePRDecision, renderPRDecisionSummary, buildPRQueue, renderPRQueue } from './decision-summary.js';
 export { mergeIfReady } from './merge.js';
 export { postReviewComment } from './comment.js';
 export { watchPR } from './watch.js';
-export type { PRReviewReport, PRReviewState, PRReviewPolicy, WorkflowGateResult, ProfileSyncGateResult } from './types.js';
+export type {
+  PRReviewEvidence,
+  PRReviewPolicy,
+  PRReviewReport,
+  PRReviewState,
+  ProfileSyncGateResult,
+  WorkflowArtifactChangeKind,
+  WorkflowEvidence,
+  WorkflowGateResult,
+  WorkflowGovernanceIssueEvidence,
+  WorkflowTreeEntry,
+  WorkflowTrustDecision,
+} from './types.js';
+export type { EvaluateWorkflowGateInput } from './workflow-gate.js';
+export { computeLocalWorkflowEvidence, parseGitLsTree } from './local-workflow-evidence.js';
 export type { PRChatSummary } from './chat-report.js';
 export type { PRBlockerCategory, PRDecisionOwner, PRDecisionSummary, PRQueueItem } from './decision-summary.js';
 export type { CodeownersEntry } from './codeowners.js';

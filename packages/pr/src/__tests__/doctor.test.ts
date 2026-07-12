@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { diagnosePR } from '../doctor.js';
 import { generateDoctorReport } from '../doctor-report.js';
+import { createWorkflowEvidence } from '../workflow-gate.js';
 import type { PRReviewReport, PRReviewPolicy } from '../types.js';
 
 function makeReport(overrides: Partial<PRReviewReport> = {}): PRReviewReport {
@@ -130,6 +131,56 @@ describe('diagnosePR', () => {
     });
     const result = diagnosePR(report, DEFAULT_POLICY, []);
     expect(result.decision).toBe('READY_TO_MERGE');
+  });
+
+  it('uses one current-head approval as both workflow trust and merge approval', () => {
+    const path = 'templates/workflows/feature.yaml';
+    const workflowEvidence = createWorkflowEvidence({
+      baseSha: 'base',
+      headSha: 'head',
+      baseTree: [{ path, mode: '100644', type: 'blob', sha: 'old' }],
+      headTree: [{ path, mode: '100644', type: 'blob', sha: 'new' }],
+    });
+    const report = makeReport({
+      riskZone: 'yellow',
+      changedFiles: [path],
+      baseSha: 'base',
+      headSha: 'head',
+      workflowEvidence,
+      reviews: [{
+        user: 'alice',
+        state: 'APPROVED',
+        body: 'Workflow-Trust: trusted',
+        commitOid: 'head',
+      }],
+    });
+
+    expect(diagnosePR(report, DEFAULT_POLICY, []).decision).toBe('READY_TO_MERGE');
+  });
+
+  it('blocks an artifact when the approval targets an older head', () => {
+    const path = 'templates/workflows/feature.yaml';
+    const workflowEvidence = createWorkflowEvidence({
+      baseSha: 'base',
+      headSha: 'head',
+      baseTree: [{ path, mode: '100644', type: 'blob', sha: 'old' }],
+      headTree: [{ path, mode: '100644', type: 'blob', sha: 'new' }],
+    });
+    const report = makeReport({
+      riskZone: 'yellow',
+      changedFiles: [path],
+      baseSha: 'base',
+      headSha: 'head',
+      workflowEvidence,
+      reviews: [{
+        user: 'alice',
+        state: 'APPROVED',
+        body: 'Workflow-Trust: trusted',
+        commitOid: 'old-head',
+      }],
+    });
+
+    expect(diagnosePR(report, DEFAULT_POLICY, []).decision).toBe('BLOCKED_WORKFLOW_GATE');
   });
 
   it('allows red zone with CODEOWNER approval', () => {

@@ -46,6 +46,21 @@ jobs:
           ZONE=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('riskZone','unknown'))")
           echo "risk_zone=$ZONE" >> $GITHUB_OUTPUT
 
+      - name: Compute workflow artifact evidence
+        run: |
+          EVIDENCE=$(bun run --silent openslack pr workflow-evidence \
+            --base "origin/${{ github.base_ref }}" \
+            --head "${{ github.sha }}" \
+            --format json)
+          echo "$EVIDENCE"
+          {
+            echo "### Workflow artifact evidence"
+            echo
+            echo '```json'
+            echo "$EVIDENCE"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Comment PR with classification
         # actions/github-script v8.0.0
         uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
