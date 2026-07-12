@@ -314,10 +314,15 @@ describe('createRuntime', () => {
 
     it('prms.classify returns categorized paths', async () => {
       const rt = makeRuntime()
-      const result = await rt.openslack.prms.classify(['src/a.ts', 'src/b.ts'])
-      expect(result.green).toEqual(['src/a.ts', 'src/b.ts'])
-      expect(result.yellow).toEqual([])
-      expect(result.red).toEqual([])
+      const result = await rt.openslack.prms.classify([
+        'docs/guide.md',
+        'src/a.ts',
+        '.github/workflows/ci.yml',
+        '.env',
+      ])
+      expect(result.green).toEqual(['docs/guide.md'])
+      expect(result.yellow).toEqual(['src/a.ts'])
+      expect(result.red).toEqual(['.github/workflows/ci.yml', '.env'])
     })
 
     it('prms.doctor returns a valid result', async () => {
@@ -435,7 +440,7 @@ describe('createRuntime', () => {
     it('allows prms.classify in preview mode', async () => {
       const rt = makeRuntime({ mode: 'preview' })
       const result = await rt.openslack.prms.classify(['src/a.ts'])
-      expect(result.green).toEqual(['src/a.ts'])
+      expect(result.yellow).toEqual(['src/a.ts'])
     })
 
     it('allows prms.doctor in preview mode', async () => {
@@ -536,7 +541,7 @@ describe('createRuntime', () => {
     it('allows read operations in dry-run mode', async () => {
       const rt = makeRuntime({ mode: 'dry-run' })
       const classified = await rt.openslack.prms.classify(['a.ts'])
-      expect(classified.green).toEqual(['a.ts'])
+      expect(classified.yellow).toEqual(['a.ts'])
       const doctor = await rt.openslack.prms.doctor(1)
       expect(doctor.status).toBeDefined()
     })

@@ -19,6 +19,7 @@ import { runPipeline, runMultiStagePipeline } from './pipeline-runner.js';
 import type { PipelineCacheStore } from './pipeline-runner.js';
 import { resolveAgentType } from './agent-resolver.js';
 import type { RunStore } from './run-store.js';
+import { classifyPathGroups } from './risk-classification.js';
 
 /**
  * Maximum nesting depth for ctx.workflow() calls.
@@ -583,7 +584,7 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
       prms: {
         async classify(paths: string[]) {
           runtime.log(`openslack.prms.classify called with ${paths.length} paths`);
-          return { green: paths, yellow: [], red: [] };
+          return classifyPathGroups(paths);
         },
         async doctor(prNumber: number): Promise<PrmsDoctorResult> {
           runtime.log(`openslack.prms.doctor called for PR #${prNumber}`);

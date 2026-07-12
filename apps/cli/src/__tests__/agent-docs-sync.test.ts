@@ -70,4 +70,11 @@ describe('cross-document sync', () => {
     expect(body.length).toBeGreaterThan(0)
     expect(body).toContain('REVIEW_REQUIRED')
   })
+
+  it('merged document describes fail-safe risk defaults and canonical Red paths', () => {
+    const body = extractSectionBody(agentsMd, 'Risk Zones')
+    expect(body).toContain('any unmatched path')
+    expect(body).toContain('`AGENTS.md`, `CLAUDE.md`')
+    expect(body).toContain('Only explicitly listed Green paths')
+  })
 })

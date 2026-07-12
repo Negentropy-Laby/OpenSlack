@@ -492,12 +492,25 @@ Agents must treat vague consent, silence, prior approvals, or missing PR numbers
 
 ## Risk Zones
 
-| Zone | Paths | Automation |
-|------|-------|------------|
-| Green | `docs/**`, `templates/**`, `.openslack/tasks/**`, `.openslack/self/scorecards/**`, `.openslack/self/experiments/**` | Auto-merge eligible after checks. |
-| Yellow | `apps/**`, `packages/core/**`, `packages/workspace/**`, `packages/runtime/**`, `packages/github/**`, `packages/pr/**`, `.openslack/self/eval_suites/**` | Requires independent agent review / PRMS gates. |
-| Red | `.github/**`, `.openslack/policies/**`, `.openslack/agents/registry/**`, `.openslack/agents/prompts/**`, `.openslack/self/constitution.md`, `.openslack/self/invariants.yaml`, `packages/kernel/src/**` | Human approval required. |
-| Black | `.env`, `*.pem`, `*.key`, `secrets/**`, `credentials/**`, private tokens, production credentials | Never allowed. |
+- **Green**
+  - Paths: `docs/**`, `templates/**`, `.openslack/tasks/**`, `.openslack/audit/**`,
+    `.openslack/self/scorecards/**`, `.openslack/self/experiments/**`
+  - Automation: auto-merge eligible after checks. Only explicitly listed Green paths qualify.
+- **Yellow**
+  - Paths: `apps/**`, `packages/core/**`, `packages/workspace/**`, `packages/runtime/**`,
+    `packages/github/**`, `packages/pr/**`, `packages/operator/**`, `packages/chat-gateway/**`,
+    `packages/collaboration/**`, `packages/agent-runtime/**`, `packages/tui/**`,
+    `packages/workflows/**`, `.openslack/self/eval_suites/**`, and any unmatched path
+  - Automation: requires independent agent review and PRMS gates.
+- **Red**
+  - Paths: `AGENTS.md`, `CLAUDE.md`, `.github/**`, `.openslack/policies/**`,
+    `.openslack/agents/registry/**`, `.openslack/agents/prompts/**`,
+    `.openslack/self/constitution.md`, `.openslack/self/invariants.yaml`, `packages/kernel/src/**`
+  - Automation: human approval required.
+- **Black**
+  - Paths: `.env`, `*.pem`, `*.key`, `secrets/**`, `credentials/**`, private tokens, production
+    credentials
+  - Automation: never allowed.
 
 Use:
 

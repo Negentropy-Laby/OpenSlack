@@ -1,5 +1,21 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
+import { parse } from 'yaml';
+import type { RiskZone } from '../types.js';
+import { DEFAULT_RISK_ZONE, ZONE_PATTERNS } from '../zone-policy.js';
 import { classifyPaths } from '../zones.js';
+
+interface SelfEvolutionPolicyFile {
+  zones: {
+    fallback_zone: RiskZone;
+    green: { paths: string[] };
+    yellow: { paths: string[] };
+    red: { paths: string[] };
+    black: { paths: string[] };
+  };
+}
+
+const POLICY_PATH = new URL('../../../../.openslack/policies/self_evolution.yaml', import.meta.url);
 
 describe('classifyPaths', () => {
   it('classifies docs changes as green', () => {
@@ -14,6 +30,12 @@ describe('classifyPaths', () => {
     expect(classifyPaths(['.openslack/tasks/open/TASK-001.yaml'])).toBe('green');
   });
 
+  it('classifies every explicit generated-state allowlist as green', () => {
+    expect(classifyPaths(['.openslack/audit/pr-42.yaml'])).toBe('green');
+    expect(classifyPaths(['.openslack/self/scorecards/2026/07/report.yaml'])).toBe('green');
+    expect(classifyPaths(['.openslack/self/experiments/EXP-001.yaml'])).toBe('green');
+  });
+
   it('classifies package core changes as yellow', () => {
     expect(classifyPaths(['packages/core/src/claim-broker.ts'])).toBe('yellow');
   });
@@ -24,6 +46,19 @@ describe('classifyPaths', () => {
 
   it('classifies runtime package changes as yellow', () => {
     expect(classifyPaths(['packages/runtime/src/evals/runner.ts'])).toBe('yellow');
+  });
+
+  it('classifies agent runtime package changes as yellow', () => {
+    expect(classifyPaths(['packages/agent-runtime/src/launcher.ts'])).toBe('yellow');
+    expect(classifyPaths(['packages/agent-runtime/package.json'])).toBe('yellow');
+  });
+
+  it('classifies TUI package changes as yellow', () => {
+    expect(classifyPaths(['packages/tui/src/views/HomeView.tsx'])).toBe('yellow');
+  });
+
+  it('classifies workflow package changes as yellow', () => {
+    expect(classifyPaths(['packages/workflows/src/runtime.ts'])).toBe('yellow');
   });
 
   it('classifies operator package changes as yellow', () => {
@@ -44,6 +79,11 @@ describe('classifyPaths', () => {
 
   it('classifies agent registry changes as red', () => {
     expect(classifyPaths(['.openslack/agents/registry/codex_agent.yaml'])).toBe('red');
+  });
+
+  it('classifies canonical agent instructions as red', () => {
+    expect(classifyPaths(['AGENTS.md'])).toBe('red');
+    expect(classifyPaths(['CLAUDE.md'])).toBe('red');
   });
 
   it('classifies constitution.md change as red', () => {
@@ -80,5 +120,32 @@ describe('classifyPaths', () => {
 
   it('returns red for yellow + red mixed', () => {
     expect(classifyPaths(['packages/core/src/foo.ts', '.github/workflows/test.yml'])).toBe('red');
+  });
+
+  it('defaults unmatched paths to yellow', () => {
+    expect(classifyPaths(['package.json'])).toBe('yellow');
+    expect(classifyPaths(['packages/future-provider/src/index.ts'])).toBe('yellow');
+    expect(classifyPaths(['packages/future-provider/package.json'])).toBe('yellow');
+  });
+
+  it('does not let an explicit green path hide an unmatched path', () => {
+    expect(classifyPaths(['docs/readme.md', 'new-root-config.yaml'])).toBe('yellow');
+  });
+
+  it('fails safe to yellow for an empty path set', () => {
+    expect(classifyPaths([])).toBe('yellow');
+  });
+});
+
+describe('risk zone policy synchronization', () => {
+  it('keeps the declarative YAML policy aligned with the runtime classifier', () => {
+    const policy = parse(readFileSync(POLICY_PATH, 'utf8')) as SelfEvolutionPolicyFile;
+
+    expect(policy.zones.fallback_zone).toBe(DEFAULT_RISK_ZONE);
+    for (const zone of ['green', 'yellow', 'red', 'black'] as const) {
+      const runtimeDefinition = ZONE_PATTERNS.find((definition) => definition.zone === zone);
+      expect(runtimeDefinition, `runtime definition for ${zone}`).toBeDefined();
+      expect(policy.zones[zone].paths).toEqual(runtimeDefinition?.globs);
+    }
   });
 });

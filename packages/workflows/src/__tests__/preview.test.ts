@@ -220,7 +220,7 @@ describe('executePreview', () => {
 
       const result = await executePreview(workflow, { manifest: testManifest })
       const classified = result.classified as { green: string[]; yellow: string[]; red: string[] }
-      expect(classified.green).toEqual(['src/a.ts'])
+      expect(classified.yellow).toEqual(['src/a.ts'])
     })
 
     it('blocks openslack.prms.requestMerge in preview', async () => {

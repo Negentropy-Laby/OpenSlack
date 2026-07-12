@@ -1,12 +1,17 @@
 schema: openslack.self_evolution_policy.v1
 
 zones:
+  # Only explicit Green paths are auto-merge eligible. Any unmatched path
+  # defaults to Yellow in the kernel classifier.
+  fallback_zone: yellow
+
   green:
     auto_merge_allowed: true
     paths:
       - docs/**
       - templates/**
       - .openslack/tasks/**
+      - .openslack/audit/**
       - .openslack/self/scorecards/**
       - .openslack/self/experiments/**
 
@@ -17,13 +22,16 @@ zones:
     paths:
       - apps/**
       - packages/core/**
-      - packages/workspace-engine/**
-      - packages/github-provider/**
-      - packages/agent-runtime/**
+      - packages/workspace/**
+      - packages/runtime/**
+      - packages/github/**
+      - packages/pr/**
+      - packages/operator/**
       - packages/chat-gateway/**
-      - packages/git-sync/**
-      - packages/evals/**
-      - packages/self-evolution/src/ops/**
+      - packages/collaboration/**
+      - packages/agent-runtime/**
+      - packages/tui/**
+      - packages/workflows/**
       - .openslack/self/eval_suites/**
 
   red:
@@ -32,14 +40,15 @@ zones:
     requires_independent_agent_review: true
     requires_security_review: true
     paths:
+      - AGENTS.md
+      - CLAUDE.md
       - .github/**
       - .openslack/policies/**
       - .openslack/agents/registry/**
       - .openslack/agents/prompts/**
       - .openslack/self/constitution.md
       - .openslack/self/invariants.yaml
-      - packages/policy/src/**
-      - packages/self-evolution/src/core/**
+      - packages/kernel/src/**
 
   black:
     push_allowed: false
@@ -51,8 +60,6 @@ zones:
       - credentials/**
       - private/**
       - production-tokens/**
-      - secrets/**
-      - credentials/**
 
 agent_rules:
   no_self_prompt_edit: true

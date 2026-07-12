@@ -202,6 +202,13 @@ export type { DryRunOptions, DryRunResult, ExecuteRunOptions, SimulatedEffect } 
 export { createOpenSlackAPI } from './openslack-api.js'
 export type { OpenSlackAPIOptions } from './openslack-api.js'
 
+// ── Risk Classification ─────────────────────────────────────────────────────
+export { classifyPathGroups, classifyPathGroupsExact } from './risk-classification.js'
+export type {
+  ClassifiedPathGroups,
+  ExactClassifiedPathGroups,
+} from './risk-classification.js'
+
 // ── Redaction ────────────────────────────────────────────────────────────────
 export {
   stripSourceCode,
