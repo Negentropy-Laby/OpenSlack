@@ -1,8 +1,12 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { diagnoseAbyRuntime } from '../index.js';
+import {
+  clearCommandAvailabilityCache,
+  diagnoseAbyRuntime,
+  diagnoseAgentRuntime,
+} from '../index.js';
 
 function makeTempRoot(): string {
   return mkdtempSync(join(tmpdir(), 'agent-runtime-doctor-test-'));
@@ -35,6 +39,7 @@ describe('diagnoseAbyRuntime', () => {
   });
 
   afterEach(() => {
+    clearCommandAvailabilityCache();
     cleanup(root);
   });
 
@@ -125,6 +130,45 @@ describe('diagnoseAbyRuntime', () => {
       status: 'FAIL',
     });
     expect(report.remediation).toContain('Install the configured bridge command');
+  });
+
+  it('caches identical command probes for the process lifetime', () => {
+    const abyRoot = createFakeAbyRoot(root);
+    const checkCommand = vi.fn(() => ({ available: true, detail: 'bun test-version' }));
+    const options = {
+      rootDir: root,
+      env: { OPENSLACK_ABY_ROOT: abyRoot },
+      checkCommand,
+    };
+
+    expect(diagnoseAbyRuntime(options).readiness).toBe('ready');
+    expect(diagnoseAbyRuntime(options).readiness).toBe('ready');
+    expect(checkCommand).toHaveBeenCalledOnce();
+  });
+
+  it('aggregates additional provider diagnostics without hardcoding their IDs', () => {
+    const report = diagnoseAgentRuntime({
+      rootDir: root,
+      env: {},
+      providerDiagnostics: [
+        {
+          id: 'openai-compatible',
+          diagnose: () => ({
+            provider: 'openai-compatible',
+            status: 'PASS',
+            readiness: 'ready',
+            remediations: [],
+          }),
+        },
+      ],
+    });
+
+    expect(report.status).toBe('PASS');
+    expect(report.readiness).toBe('ready');
+    expect(report.providers['openai-compatible']).toMatchObject({
+      provider: 'openai-compatible',
+      readiness: 'ready',
+    });
   });
 
   it('reports remediation for every failed check', () => {

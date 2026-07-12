@@ -5,7 +5,7 @@ import type { BridgeRuntimeResolverOptions } from './bridge-runtime-resolver.js'
 import { loadAbyBridgeRuntimeConfig } from './bridge-runtime-resolver.js';
 import { auditBridgeEnv } from './bridge-env.js';
 
-export type AgentRuntimeDoctorProvider = 'aby';
+export type AgentRuntimeDoctorProvider = string;
 export type AgentRuntimeDoctorStatus = 'PASS' | 'FAIL';
 export type AgentRuntimeDoctorCheckStatus = 'PASS' | 'FAIL' | 'WARN';
 export type AgentRuntimeReadiness = 'not_configured' | 'misconfigured' | 'unavailable' | 'ready';
@@ -47,27 +47,70 @@ export interface AbyRuntimeDoctorReport {
 }
 
 export interface DiagnoseAbyRuntimeOptions extends BridgeRuntimeResolverOptions {
-  checkCommand?: (command: string) => { available: boolean; detail: string };
+  checkCommand?: CommandAvailabilityCheck;
+}
+
+export type CommandAvailabilityCheck = (
+  command: string,
+) => { available: boolean; detail: string };
+
+export interface AgentRuntimeProviderReport {
+  provider: AgentRuntimeDoctorProvider;
+  status: AgentRuntimeDoctorStatus;
+  readiness: AgentRuntimeReadiness;
+  remediations: string[];
+}
+
+export interface AgentRuntimeProviderDiagnostic {
+  id: string;
+  diagnose(): AgentRuntimeProviderReport;
+}
+
+export interface DiagnoseAgentRuntimeOptions extends DiagnoseAbyRuntimeOptions {
+  providerDiagnostics?: readonly AgentRuntimeProviderDiagnostic[];
 }
 
 export interface AgentRuntimeReadinessReport {
   status: AgentRuntimeDoctorStatus;
   readiness: AgentRuntimeReadiness;
-  providers: { aby: AbyRuntimeDoctorReport };
+  providers: Record<string, AgentRuntimeProviderReport> & { aby: AbyRuntimeDoctorReport };
   remediations: string[];
 }
 
 /** Overall execution-provider readiness used by product setup/status/doctor. */
 export function diagnoseAgentRuntime(
-  options: DiagnoseAbyRuntimeOptions = {},
+  options: DiagnoseAgentRuntimeOptions = {},
 ): AgentRuntimeReadinessReport {
   const aby = diagnoseAbyRuntime(options);
-  return {
-    status: aby.status,
-    readiness: aby.readiness,
-    providers: { aby },
-    remediations: aby.remediations,
+  const providers: Record<string, AgentRuntimeProviderReport> & { aby: AbyRuntimeDoctorReport } = {
+    aby,
   };
+  for (const diagnostic of options.providerDiagnostics ?? []) {
+    const id = diagnostic.id.trim().toLowerCase();
+    if (!id || providers[id]) {
+      throw new Error(`Invalid or duplicate runtime diagnostic provider: ${diagnostic.id}`);
+    }
+    const report = diagnostic.diagnose();
+    providers[id] = { ...report, provider: id };
+  }
+
+  const reports = Object.values(providers);
+  const readiness = aggregateReadiness(reports);
+  return {
+    status: readiness === 'ready' ? 'PASS' : 'FAIL',
+    readiness,
+    providers,
+    remediations: readiness === 'ready'
+      ? []
+      : [...new Set(reports.flatMap((report) => report.remediations))],
+  };
+}
+
+function aggregateReadiness(reports: AgentRuntimeProviderReport[]): AgentRuntimeReadiness {
+  if (reports.some((report) => report.readiness === 'ready')) return 'ready';
+  if (reports.some((report) => report.readiness === 'unavailable')) return 'unavailable';
+  if (reports.some((report) => report.readiness === 'misconfigured')) return 'misconfigured';
+  return 'not_configured';
 }
 
 export function diagnoseAbyRuntime(
@@ -126,7 +169,7 @@ export function diagnoseAbyRuntime(
   const commandCheck =
     configSource === 'none'
       ? { available: false, detail: 'Not checked because runtime is not configured' }
-      : (options.checkCommand ?? checkCommandAvailability)(command);
+      : cachedCommandAvailability(command, options.checkCommand ?? checkCommandAvailability);
   checks.push({
     name: 'command-available',
     status: configSource === 'none' ? 'WARN' : commandCheck.available ? 'PASS' : 'FAIL',
@@ -241,6 +284,31 @@ function readString(value: unknown): string | undefined {
 function resolveConfiguredPath(pathValue: string, rootDir?: string): string {
   if (isAbsolute(pathValue)) return resolve(pathValue);
   return resolve(rootDir ?? process.cwd(), pathValue);
+}
+
+let commandAvailabilityCaches = new WeakMap<
+  CommandAvailabilityCheck,
+  Map<string, ReturnType<CommandAvailabilityCheck>>
+>();
+
+function cachedCommandAvailability(
+  command: string,
+  check: CommandAvailabilityCheck,
+): ReturnType<CommandAvailabilityCheck> {
+  let cache = commandAvailabilityCaches.get(check);
+  if (!cache) {
+    cache = new Map();
+    commandAvailabilityCaches.set(check, cache);
+  }
+  const cached = cache.get(command);
+  if (cached) return cached;
+  const result = check(command);
+  cache.set(command, result);
+  return result;
+}
+
+export function clearCommandAvailabilityCache(): void {
+  commandAvailabilityCaches = new WeakMap();
 }
 
 function checkCommandAvailability(command: string): { available: boolean; detail: string } {

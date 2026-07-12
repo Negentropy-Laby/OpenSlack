@@ -4,6 +4,7 @@ import {
   readdirSync,
   readFileSync,
   renameSync,
+  statSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -17,6 +18,8 @@ import type {
 } from './types.js';
 
 const RUNS_DIR_NAME = 'agents/runs';
+const ORPHAN_TEMP_MAX_AGE_MS = 60 * 60 * 1000;
+const RUN_TEMP_FILE_RE = /^(?:run|metadata)\.json\..+\.tmp$/;
 
 export const RUN_ID_RE = /^RUN-[A-Z0-9-]+$/;
 
@@ -65,8 +68,57 @@ export interface AgentRunStore {
   listRuns(options?: { agentId?: string; status?: AgentRunStatus }): AgentRunState[];
 }
 
+export interface SweepOrphanRunTempOptions {
+  olderThanMs?: number;
+  nowMs?: number;
+}
+
+/** Remove stale atomic-write temp files without touching live or unrelated files. */
+export function sweepOrphanRunTempFiles(
+  rootDir?: string,
+  options: SweepOrphanRunTempOptions = {},
+): number {
+  const baseDir = getRunsBaseDir(rootDir);
+  if (!existsSync(baseDir)) return 0;
+
+  const cutoff = (options.nowMs ?? Date.now()) -
+    (options.olderThanMs ?? ORPHAN_TEMP_MAX_AGE_MS);
+  let removed = 0;
+  const runEntries = (() => {
+    try {
+      return readdirSync(baseDir, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+  })();
+  for (const runEntry of runEntries) {
+    if (!runEntry.isDirectory() || !RUN_ID_RE.test(runEntry.name)) continue;
+    const runDir = join(baseDir, runEntry.name);
+    const fileEntries = (() => {
+      try {
+        return readdirSync(runDir, { withFileTypes: true });
+      } catch {
+        return [];
+      }
+    })();
+    for (const fileEntry of fileEntries) {
+      if (!fileEntry.isFile() || !RUN_TEMP_FILE_RE.test(fileEntry.name)) continue;
+      const path = join(runDir, fileEntry.name);
+      try {
+        if (statSync(path).mtimeMs > cutoff) continue;
+        unlinkSync(path);
+        removed += 1;
+      } catch {
+        // Best effort: a concurrent writer or cleanup may own this file.
+      }
+    }
+  }
+  return removed;
+}
+
 export function createRunStore(rootDir?: string): AgentRunStore {
   const baseDir = getRunsBaseDir(rootDir);
+  sweepOrphanRunTempFiles(rootDir);
 
   function buildState(request: AgentRunRequest): AgentRunState {
     const now = new Date().toISOString();

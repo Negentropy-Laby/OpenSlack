@@ -1,5 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createRunStore } from '../run-store.js';
@@ -213,5 +221,24 @@ describe('createRunStore', () => {
     expect(existsSync(join(root, '.openslack.local', 'agents/runs', 'RUN-20260101-TEST1234'))).toBe(
       false,
     );
+  });
+
+  it('sweeps only stale atomic-write temp files when the store starts', () => {
+    const runDir = join(root, '.openslack.local', 'agents/runs', 'RUN-20260101-ORPHAN');
+    mkdirSync(runDir, { recursive: true });
+    const stale = join(runDir, 'run.json.crashed.tmp');
+    const recent = join(runDir, 'metadata.json.active.tmp');
+    const unrelated = join(runDir, 'notes.tmp');
+    writeFileSync(stale, 'stale', 'utf-8');
+    writeFileSync(recent, 'recent', 'utf-8');
+    writeFileSync(unrelated, 'unrelated', 'utf-8');
+    const old = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    utimesSync(stale, old, old);
+
+    createRunStore(root);
+
+    expect(existsSync(stale)).toBe(false);
+    expect(existsSync(recent)).toBe(true);
+    expect(existsSync(unrelated)).toBe(true);
   });
 });

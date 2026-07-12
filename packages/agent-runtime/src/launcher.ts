@@ -55,6 +55,21 @@ export interface LauncherOptions {
   bridgeRuntimeResolver?: BridgeRuntimeResolver;
 }
 
+export interface AgentLaunchOptions {
+  label: string;
+  phase: string;
+  schema?: unknown;
+  isolation?: 'none' | 'worktree';
+  budget?: { tokens: number; costUsd: number };
+  model?: string;
+  agentType?: string;
+  resolvedAgentId?: string;
+  resolvedAgentConfig?: ResolvedAgentConfig;
+  agentRunId?: string;
+  correlationId?: string;
+  threadId?: string;
+}
+
 /**
  * Create an OpenSlack agent launcher.
  *
@@ -98,7 +113,10 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       : providerRegistry.resolve(resolvedConfig);
   }
 
-  function validatePrerequisites(resolvedConfig: ResolvedAgentConfig) {
+  function validatePrerequisites(
+    resolvedConfig: ResolvedAgentConfig,
+    permissionProfile = buildPermissionProfile(resolvedConfig),
+  ) {
     if (resolvedConfig.requiredMcpServers && resolvedConfig.requiredMcpServers.length > 0) {
       const missing = resolvedConfig.requiredMcpServers.filter(
         (name) => !availableMcpServers.includes(name),
@@ -106,7 +124,6 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       if (missing.length > 0) throw new AgentUnavailableError(missing);
     }
 
-    const permissionProfile = buildPermissionProfile(resolvedConfig);
     const { valid, violations } = validatePermissionProfile(permissionProfile);
     if (!valid) {
       throw new PermissionDeniedError('profile.validation', violations.join('; '));
@@ -114,34 +131,23 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
     return permissionProfile;
   }
 
-  const launchAgent = async function launchAgent<T>(
+  function prepareAndValidate(
     prompt: string,
-    agentOptions: {
-      label: string;
-      phase: string;
-      schema?: unknown;
-      isolation?: 'none' | 'worktree';
-      budget?: { tokens: number; costUsd: number };
-      model?: string;
-      agentType?: string;
-      resolvedAgentId?: string;
-      resolvedAgentConfig?: ResolvedAgentConfig;
-      agentRunId?: string;
-      correlationId?: string;
-      threadId?: string;
-    },
-  ): Promise<{ data: T; tokenUsage?: number; runId: string }> {
+    agentOptions: AgentLaunchOptions,
+  ): {
+    resolvedConfig: ResolvedAgentConfig;
+    runId: string;
+    permissionProfile: ReturnType<typeof buildPermissionProfile>;
+    request: AgentRunRequest;
+    providerResolution: ProviderResolution;
+  } {
     const resolvedConfig = agentOptions.resolvedAgentConfig ?? {
       agentId: agentOptions.agentType ?? agentOptions.label,
       source: 'runtime',
       model: agentOptions.model ?? model,
     };
     const runId = agentOptions.agentRunId ?? generateRunId();
-
-    // Build the safe request envelope first. Provider resolution intentionally
-    // precedes MCP/profile checks so those checks cannot mask a missing runtime.
     const permissionProfile = buildPermissionProfile(resolvedConfig);
-
     const request: AgentRunRequest = {
       runId,
       agentId: resolvedConfig.agentId,
@@ -153,8 +159,6 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       threadId: agentOptions.threadId,
     };
 
-    // Resolve and validate the runtime before any worktree or process side
-    // effect. Rejections are persisted directly as terminal failed runs.
     let providerResolution: ProviderResolution;
     try {
       providerResolution = resolveProvider(resolvedConfig);
@@ -165,7 +169,28 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
       throw runtimeError;
     }
 
-    validatePrerequisites(resolvedConfig);
+    try {
+      validatePrerequisites(resolvedConfig, permissionProfile);
+    } catch (error) {
+      const rejection = error instanceof Error ? error : new Error('Runtime prerequisite failed.');
+      const failureCode = error instanceof AgentUnavailableError
+        ? 'PROVIDER_UNAVAILABLE'
+        : error instanceof PermissionDeniedError
+          ? 'RUNTIME_MISCONFIGURED'
+          : getAgentRunFailureCode(error);
+      recorder.reject(request, rejection, failureCode);
+      throw error;
+    }
+
+    return { resolvedConfig, runId, permissionProfile, request, providerResolution };
+  }
+
+  const launchAgent = async function launchAgent<T>(
+    prompt: string,
+    agentOptions: AgentLaunchOptions,
+  ): Promise<{ data: T; tokenUsage?: number; runId: string }> {
+    const { resolvedConfig, runId, permissionProfile, request, providerResolution } =
+      prepareAndValidate(prompt, agentOptions);
 
     // Enforce worktree isolation for implementer agents and write-capable
     // Aby bridge agents.
@@ -367,33 +392,7 @@ export function createOpenSlackAgentLauncher(options: LauncherOptions) {
     prompt: string,
     agentOptions: Parameters<typeof launchAgent>[1],
   ): Promise<void> => {
-    const resolvedConfig = agentOptions.resolvedAgentConfig ?? {
-      agentId: agentOptions.agentType ?? agentOptions.label,
-      source: 'runtime',
-      model: agentOptions.model ?? model,
-    };
-    const runId = agentOptions.agentRunId ?? generateRunId();
-    const permissionProfile = buildPermissionProfile(resolvedConfig);
-    const request: AgentRunRequest = {
-      runId,
-      agentId: resolvedConfig.agentId,
-      prompt,
-      resolvedConfig,
-      permissionProfile,
-      budget: agentOptions.budget,
-      correlationId: agentOptions.correlationId,
-      threadId: agentOptions.threadId,
-    };
-
-    try {
-      resolveProvider(resolvedConfig);
-    } catch (error) {
-      const runtimeError = normalizeRuntimeResolutionError(error);
-      runtimeError.runId = runId;
-      recorder.reject(request, runtimeError);
-      throw runtimeError;
-    }
-    validatePrerequisites(resolvedConfig);
+    prepareAndValidate(prompt, agentOptions);
   };
 
   return launchAgent;

@@ -134,6 +134,34 @@ describe('createOpenSlackAgentLauncher', () => {
     ]);
   });
 
+  it('uses the shared preparation path to audit preflight prerequisite failures', async () => {
+    const store = createRunStore(root);
+    const launcher = createOpenSlackAgentLauncher({
+      runStore: store,
+      rootDir: root,
+      availableMcpServers: [],
+      adapter: new LocalExecutionAdapter(),
+    });
+
+    await expect(
+      launcher.preflight('review this', {
+        label: 'reviewer',
+        phase: 'review',
+        agentRunId: 'RUN-20260101-PREFLIGHT',
+        resolvedAgentConfig: {
+          agentId: 'reviewer',
+          source: 'test',
+          requiredMcpServers: ['github'],
+        },
+      }),
+    ).rejects.toThrow(/Agent unavailable/);
+
+    expect(store.getRun('RUN-20260101-PREFLIGHT')).toMatchObject({
+      status: 'failed',
+      failureCode: 'PROVIDER_UNAVAILABLE',
+    });
+  });
+
   it('persists an allowlisted summary instead of raw provider errors', async () => {
     const store = createRunStore(root);
     const launcher = createOpenSlackAgentLauncher({

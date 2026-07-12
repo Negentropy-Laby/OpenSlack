@@ -81,6 +81,13 @@ describe('MCP availability check', () => {
         },
       }),
     ).rejects.toThrow(/Agent unavailable/)
+
+    expect(store.listRuns()).toEqual([
+      expect.objectContaining({
+        status: 'failed',
+        failureCode: 'PROVIDER_UNAVAILABLE',
+      }),
+    ])
   })
 
   it('allows agent with no required MCP servers regardless of availability', async () => {
