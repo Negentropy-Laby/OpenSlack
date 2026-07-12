@@ -34,6 +34,8 @@ describe('bot-auth wrapper scripts', () => {
     expect(compat).not.toContain('3728623');
     expect(compat).not.toContain('135500236');
     expect(compat).not.toContain('OPENSLACK_GITHUB_APP_PRIVATE_KEY =');
+    expect(compat).not.toContain('{ ...process.env }');
+    expect(compat).toContain('createChildEnvironment');
     expect(readFileSync(scriptPath('bot-gh-pr-create.sh'), 'utf8')).toContain(
       'bot-delivery-compat.js',
     );

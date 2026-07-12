@@ -42,10 +42,7 @@ async function main(args = process.argv.slice(2)) {
     return 2;
   }
 
-  const env = { ...process.env };
-  delete env.GITHUB_TOKEN;
-  delete env.GH_TOKEN;
-  delete env.OPENSLACK_GITHUB_APP_PRIVATE_KEY;
+  const env = createChildEnvironment();
   let credentials;
   try {
     credentials = await acquireConfiguredInstallationCredentials();
@@ -72,5 +69,35 @@ async function main(args = process.argv.slice(2)) {
 }
 
 module.exports = { mapCreateArgs };
+
+function createChildEnvironment() {
+  const env = {};
+  for (const key of [
+    'PATH',
+    'Path',
+    'PATHEXT',
+    'SystemRoot',
+    'WINDIR',
+    'COMSPEC',
+    'TEMP',
+    'TMP',
+    'TMPDIR',
+    'HOME',
+    'USERPROFILE',
+    'LANG',
+    'LC_ALL',
+    'HTTP_PROXY',
+    'HTTPS_PROXY',
+    'NO_PROXY',
+    'http_proxy',
+    'https_proxy',
+    'no_proxy',
+    'SSL_CERT_FILE',
+    'SSL_CERT_DIR',
+  ]) {
+    if (process.env[key] !== undefined) env[key] = process.env[key];
+  }
+  return env;
+}
 
 if (require.main === module) void main().then((status) => process.exit(status));

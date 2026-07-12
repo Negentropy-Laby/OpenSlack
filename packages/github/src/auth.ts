@@ -1,8 +1,5 @@
 import { createSign } from 'node:crypto';
-import {
-  boundedJsonPost,
-  BoundedJsonPostError,
-} from './bounded-json-post.js';
+import { boundedJsonPost, BoundedJsonPostError } from './bounded-json-post.js';
 
 export interface GitHubAppInstallationToken {
   token: string;

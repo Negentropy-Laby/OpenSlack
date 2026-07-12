@@ -70,7 +70,9 @@ function getInstallationToken(appId, installationId, privateKey) {
         res.on('end', () => {
           finish(() => {
             if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
-              reject(new Error(`GitHub App token request failed with HTTP ${res.statusCode ?? 0}.`));
+              reject(
+                new Error(`GitHub App token request failed with HTTP ${res.statusCode ?? 0}.`),
+              );
               return;
             }
             try {
@@ -84,9 +86,13 @@ function getInstallationToken(appId, installationId, privateKey) {
                   ? data.expires_at
                   : new Date(Date.now() + 50 * 60 * 1000).toISOString();
               const permissions =
-                data.permissions && typeof data.permissions === 'object' && !Array.isArray(data.permissions)
+                data.permissions &&
+                typeof data.permissions === 'object' &&
+                !Array.isArray(data.permissions)
                   ? Object.fromEntries(
-                      Object.entries(data.permissions).filter((entry) => typeof entry[1] === 'string'),
+                      Object.entries(data.permissions).filter(
+                        (entry) => typeof entry[1] === 'string',
+                      ),
                     )
                   : {};
               resolve({

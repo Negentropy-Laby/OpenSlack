@@ -6,11 +6,7 @@ const requestMock = vi.hoisted(() => vi.fn());
 
 vi.mock('node:https', () => ({ request: requestMock }));
 
-import {
-  clearTokenCache,
-  getAppInstallationToken,
-  requireAppInstallationToken,
-} from '../auth.js';
+import { clearTokenCache, getAppInstallationToken, requireAppInstallationToken } from '../auth.js';
 import { boundedJsonPost } from '../bounded-json-post.js';
 
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
