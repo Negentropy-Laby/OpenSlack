@@ -4,11 +4,11 @@
 
 OpenSlack uses three distinct authentication mechanisms for different purposes:
 
-| Tier | Method | Purpose | Zero-Manual? |
-|------|--------|---------|-------------|
-| **Runtime (Primary)** | GitHub App installation token | Agent creates issues, updates Project fields, pushes branches, creates PRs | Yes (jwt + api exchange) |
-| **Dev/Local Fallback** | Fine-grained PAT or `GITHUB_TOKEN` | Local development, debugging, single-human testing | No (manual token creation) |
-| **Human Login** | OAuth App / gh CLI OAuth | Human identity verification, web console login, admin operations | No (browser required) |
+| Tier                   | Method                             | Purpose                                                                    | Zero-Manual?               |
+| ---------------------- | ---------------------------------- | -------------------------------------------------------------------------- | -------------------------- |
+| **Runtime (Primary)**  | GitHub App installation token      | Agent creates issues, updates Project fields, pushes branches, creates PRs | Yes (jwt + api exchange)   |
+| **Dev/Local Fallback** | Fine-grained PAT or `GITHUB_TOKEN` | Local development, debugging, single-human testing                         | No (manual token creation) |
+| **Human Login**        | OAuth App / gh CLI OAuth           | Human identity verification, web console login, admin operations           | No (browser required)      |
 
 **The runtime tier is the only path that can achieve "fully automated, zero manual steps."** OAuth device flow and PAT creation both require browser interaction and cannot serve as the primary agent automation credential.
 
@@ -18,15 +18,15 @@ OpenSlack uses three distinct authentication mechanisms for different purposes:
 
 1. Create a GitHub App named **OpenSlack Agent Operator** with these permissions:
 
-| Permission | Level | Used for |
-|-----------|-------|----------|
-| Contents | Read & Write | Push agent branches, read repo |
-| Issues | Read & Write | Create EVOL issues, write comments |
-| Pull requests | Read & Write | Create draft PRs, PR comments |
-| Projects | Read & Write | Query Project v2, add items, update fields |
-| Actions | Read | Read workflow status |
-| Checks | Read & Write | Future: write validation checks |
-| Metadata | Read | Required default |
+| Permission    | Level        | Used for                                   |
+| ------------- | ------------ | ------------------------------------------ |
+| Contents      | Read & Write | Push agent branches, read repo             |
+| Issues        | Read & Write | Create EVOL issues, write comments         |
+| Pull requests | Read & Write | Create draft PRs, PR comments              |
+| Projects      | Read & Write | Query Project v2, add items, update fields |
+| Actions       | Read         | Read workflow status                       |
+| Checks        | Read & Write | Future: write validation checks            |
+| Metadata      | Read         | Required default                           |
 
 Do **not** grant: Administration, Secrets, Members, Workflows write.
 
@@ -93,7 +93,26 @@ or require a different independent human approval.
 
 Agents and automation must **never** call `gh pr create` directly. The `gh` CLI defaults to the human OAuth identity, which creates a self-review deadlock.
 
-Instead, use the bot-authenticated wrapper scripts:
+The canonical product path is now package-backed delivery:
+
+```bash
+openslack delivery publish --branch <branch> --base main \
+  --title "runtime: deliver change" --body-file pr-body.md
+```
+
+`@openslack/delivery` obtains one installation token lease and uses it for both
+Git push and Pull Request API calls. Git runs with `credential.helper=` and an
+empty `core.hooksPath`; its child environment is allowlisted, global/system Git
+configuration and trace output are disabled, and human token, SSH, and App-key
+variables are excluded. The token exists only in the push and remote-verification
+askpass children. Delivery rejects multiple or mismatched push URLs, binds the
+Git target to the API owner/repository, verifies local/remote/PR head SHAs again
+before querying checks by the synchronized SHA, and returns `AWAITING_GATES`;
+PRMS remains the owner of review, approval, readiness, and merge.
+
+The existing bot-authenticated wrapper scripts remain compatibility entrypoints
+for operator environments. Their PR-create arguments are mapped directly to the
+same package-backed command:
 
 ```bash
 # Bash / Git Bash / WSL — create PR as bot
@@ -115,19 +134,53 @@ powershell -ExecutionPolicy Bypass -File scripts\bot-gh.ps1 pr edit 117 --body "
 
 #### How the wrappers work
 
-1. **Generate token**: Call `scripts/bot-gh-token.js` to sign a JWT and exchange it for a short-lived GitHub App installation token.
-2. **Prevent fallback**: Remove `GITHUB_TOKEN` from the environment so the `gh` CLI cannot silently fall back to a human PAT.
-3. **Set bot auth**: Inject the installation token into `GH_TOKEN` so `gh` authenticates as the bot.
-4. **Forward arguments**: Pass all remaining arguments to `gh`.
-5. **Verify identity** (PR creation only): After `gh pr create` succeeds, check that the PR author matches the bot. If not, exit with an error.
+For `pr create`, the wrapper launcher loads the configured App key, exchanges it
+for one short-lived installation token, and delegates to `openslack delivery
+publish` with only that token, its required expiry, installation ID, and
+non-secret permission evidence. The child never receives the App key. Delivery
+pushes through child-only askpass, creates or updates the exact-head draft PR
+through the API, and verifies the synchronized head SHA. `GITHUB_TOKEN` and
+`GH_TOKEN` are excluded, so the operation cannot silently fall back to a human
+identity. Missing or expired forwarded-token evidence fails before Git mutation.
+
+Before the first publication to a repository, use:
+
+```bash
+openslack delivery doctor --repo OWNER/REPO
+openslack delivery probe --repo OWNER/REPO --apply
+```
+
+The doctor calls the installation-scoped repository-list endpoint and checks
+`contents:write`, `pull_requests:write`, and `workflows:write`; public read access is not accepted
+as evidence that a selected repository is installed. The probe uses the same
+allowlisted askpass environment as delivery, pushes a unique
+`openslack/probes/write-*` ref, verifies its SHA, and deletes it in cleanup. A
+cleanup failure is a typed error with an exact `openslack delivery cleanup-ref`
+command. That command is preview-first and rejects every ref outside the probe
+namespace.
+
+For other supported `gh` commands, the generic wrappers launch a narrow Node
+adapter. It obtains the installation token in memory, removes human-token and App
+key variables from the `gh` child, sets child-only `GH_TOKEN`, and forwards the
+command. `scripts/bot-gh-token.js` is an internal exchange module; direct token
+output is disabled so shell variables, xtrace, and transcripts cannot capture it.
+The compatibility adapter permits only `pr edit`, `pr comment`, and `pr ready`,
+rejects token display/auth/extension commands before credential loading, and
+disables child pager, editor, browser, and interactive prompt processes.
+
+`proposeWorkspacePR()` is also fail-closed: staging, commit, App delivery, and
+exact-head verification are one required contract. A missing remote, missing App
+credential, rejected push, or failed PR publication returns `success: false`; a
+PR body without a synchronized branch and PR is never reported as a successful
+proposal.
 
 #### Troubleshooting
 
-| Problem | Cause | Fix |
-|---------|-------|-----|
-| "No GitHub App private key found" | PEM missing | Place `.openslack.local/github-app.pem` or set `OPENSLACK_GITHUB_APP_PRIVATE_KEY` |
-| "Failed to generate installation token" | PEM invalid or App ID wrong | Verify PEM content and `OPENSLACK_GITHUB_APP_ID` / `OPENSLACK_GITHUB_APP_INSTALLATION_ID` |
-| PR created under human identity | `GITHUB_TOKEN` was set and not removed | Use the wrapper — it removes `GITHUB_TOKEN` automatically |
+| Problem                                 | Cause                                  | Fix                                                                                       |
+| --------------------------------------- | -------------------------------------- | ----------------------------------------------------------------------------------------- |
+| "No GitHub App private key found"       | PEM missing                            | Place `.openslack.local/github-app.pem` or set `OPENSLACK_GITHUB_APP_PRIVATE_KEY`         |
+| "Failed to generate installation token" | PEM invalid or App ID wrong            | Verify PEM content and `OPENSLACK_GITHUB_APP_ID` / `OPENSLACK_GITHUB_APP_INSTALLATION_ID` |
+| PR created under human identity         | `GITHUB_TOKEN` was set and not removed | Use the wrapper — it removes `GITHUB_TOKEN` automatically                                 |
 
 ### PRMS bot merge pipeline
 
@@ -324,16 +377,16 @@ data.
 
 ## Environment Variables
 
-| Variable | Required | Default |
-|----------|----------|---------|
-| `GITHUB_OWNER` | No | `wsman` |
-| `GITHUB_REPO` | No | `OpenSlack` |
-| `GITHUB_TOKEN` | No (PAT fallback) | — |
-| `OPENSLACK_GITHUB_AUTH_MODE` | No | auto-detect |
-| `OPENSLACK_GITHUB_APP_ID` | No | — |
-| `OPENSLACK_GITHUB_APP_INSTALLATION_ID` | No | — |
-| `OPENSLACK_GITHUB_APP_PRIVATE_KEY` | No | PEM content |
-| `OPENSLACK_GITHUB_APP_PRIVATE_KEY_PATH` | No | Used by `scripts/openslack-bot.ps1` only |
+| Variable                                | Required          | Default                                  |
+| --------------------------------------- | ----------------- | ---------------------------------------- |
+| `GITHUB_OWNER`                          | No                | `wsman`                                  |
+| `GITHUB_REPO`                           | No                | `OpenSlack`                              |
+| `GITHUB_TOKEN`                          | No (PAT fallback) | —                                        |
+| `OPENSLACK_GITHUB_AUTH_MODE`            | No                | auto-detect                              |
+| `OPENSLACK_GITHUB_APP_ID`               | No                | —                                        |
+| `OPENSLACK_GITHUB_APP_INSTALLATION_ID`  | No                | —                                        |
+| `OPENSLACK_GITHUB_APP_PRIVATE_KEY`      | No                | PEM content                              |
+| `OPENSLACK_GITHUB_APP_PRIVATE_KEY_PATH` | No                | Used by `scripts/openslack-bot.ps1` only |
 
 ## Project v2 Configuration (one-time human admin)
 

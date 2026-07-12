@@ -27,7 +27,9 @@ The GitHub Issues-First Autonomous Task Loop enables OpenSlack agents to discove
 │  openslack task checkout → git worktree add -b HEAD             │
 │  ↓                                                               │
 │  SUBMIT PR                                                       │
-│  openslack task sync → git commit → push → createDraftPR()       │
+│  openslack task sync → git commit → GitHubDeliveryService       │
+│  → PUSHED → PR_CREATED/UPDATED → HEAD_SYNCHRONIZED              │
+│  → AWAITING_GATES (PRMS owns readiness and merge)               │
 │  → moveIssueToReview() → labels: running → review                │
 │  ↓                                                               │
 │  COMPLETE                                                        │

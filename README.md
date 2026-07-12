@@ -109,6 +109,7 @@ OpenSlack/
 │   ├── core/                # ClaimBroker with file-locked persistence
 │   ├── runtime/             # Self-evolution ops, golden evals, agent tick, worktree, PR proposal
 │   ├── github/              # App auth, Issues task loop, task creation, claims, lifecycle, repair
+│   ├── delivery/            # Bot-authenticated branch/PR publication and SHA synchronization
 │   ├── pr/                  # PR Review & Merge Steward (fetch, classify, readiness, report)
 │   ├── operator/            # Structured planner and intent router
 │   ├── chat-gateway/        # Webhook / Slack projection frontend
@@ -153,7 +154,7 @@ The autonomous execution core. Agents discover, claim, and complete tasks throug
 - **Create:** `task create --title "..."` previews or creates schema-valid task Issues
 - **Discover:** `agent tick --source github-issues` queries GitHub for ready issues
 - **Claim:** Atomic `refs/heads/openslack/claims/issue-{n}` git refs prevent duplicate claims
-- **Execute:** Worktree isolation → git commit → push → draft PR
+- **Execute:** Worktree isolation → git commit → governed delivery → synchronized draft PR
 - **Complete:** PR merged → claim ref deleted → issue → done
 
 See: [`docs/developer/github-issues-loop.md`](docs/developer/github-issues-loop.md)

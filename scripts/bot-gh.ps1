@@ -6,10 +6,9 @@ Run any `gh` command with GitHub App bot authentication.
 Generates a GitHub App installation token and runs `gh` with bot authentication.
 This prevents the gh CLI from using the human OAuth identity by default.
 
-All arguments are forwarded to `gh`.
-
-For `gh pr create`, this wrapper verifies the PR author is the bot after creation.
-If the identity is wrong, it exits with an error.
+`pr create` delegates to the package-backed delivery command so branch push and
+PR creation use one installation identity. Other arguments are forwarded to
+bot-authenticated `gh`.
 
 .EXAMPLE
 powershell -ExecutionPolicy Bypass -File scripts\bot-gh.ps1 pr create --title "feat: add new feature" --body "..."
@@ -19,6 +18,9 @@ powershell -ExecutionPolicy Bypass -File scripts\bot-gh.ps1 pr edit 117 --body "
 
 .EXAMPLE
 powershell -ExecutionPolicy Bypass -File scripts\bot-gh.ps1 pr comment 117 --body "..."
+
+.EXAMPLE
+powershell -ExecutionPolicy Bypass -File scripts\bot-gh.ps1 pr ready 117
 #>
 
 [CmdletBinding(PositionalBinding = $false)]
@@ -31,6 +33,12 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')
+
+if ($GhArgs.Count -ge 2 -and $GhArgs[0] -eq 'pr' -and $GhArgs[1] -eq 'create') {
+    $deliveryArgs = if ($GhArgs.Count -gt 2) { $GhArgs[2..($GhArgs.Count - 1)] } else { @() }
+    & node (Join-Path $PSScriptRoot 'bot-delivery-compat.js') @deliveryArgs
+    exit $LASTEXITCODE
+}
 
 # --- Pre-flight checks ---
 
@@ -57,45 +65,7 @@ No GitHub App private key found.
     exit 1
 }
 
-# --- Generate bot token ---
-
-$tokenOutput = (& node (Join-Path $repoRoot 'scripts/bot-gh-token.js')) -join "`n"
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($tokenOutput)) {
-    Write-Error "Failed to generate GitHub App installation token."
-    exit 1
-}
-
-# --- Prevent human PAT fallback ---
-# Remove GITHUB_TOKEN so gh cannot silently fall back to a human PAT.
-if (Test-Path Env:GITHUB_TOKEN) {
-    Remove-Item Env:GITHUB_TOKEN
-}
-
-# --- Execute gh with bot auth ---
-
-$env:GH_TOKEN = $tokenOutput
-& gh @GhArgs
-$ghExit = $LASTEXITCODE
-
-# --- Post-creation guardrail for `gh pr create` ---
-if ($ghExit -eq 0 -and $GhArgs.Count -ge 2 -and $GhArgs[0] -eq 'pr' -and $GhArgs[1] -eq 'create') {
-    Start-Sleep -Seconds 2
-    try {
-        $prNumber = (& gh pr view --json number --jq '.number') 2>$null
-        if ($prNumber) {
-            $author = (& gh pr view $prNumber --json author --jq '.author.login') 2>$null
-            if ($author -and $author -ne 'openslack-agent-operator' -and $author -ne 'openslack-agent-operator[bot]' -and $author -ne 'app/openslack-agent-operator') {
-                Write-Error @"
-PR #$prNumber was created under identity '$author' instead of the bot.
-  Close this PR and recreate it using the bot-auth wrapper.
-  See AGENTS.md 'Bot-Authenticated PR Creation' for details.
-"@
-                exit 1
-            }
-        }
-    } catch {
-        # Verification failed non-fatally; the PR was still created.
-    }
-}
-
-exit $ghExit
+# The Node launcher keeps the installation token in memory and injects it only
+# into the gh child environment. PowerShell variables never receive it.
+& node (Join-Path $PSScriptRoot 'bot-gh-command.js') @GhArgs
+exit $LASTEXITCODE

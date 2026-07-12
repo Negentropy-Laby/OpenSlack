@@ -12,6 +12,7 @@
     { "path": "packages/collaboration" },
     { "path": "packages/workflows" },
     { "path": "packages/agent-runtime" },
+    { "path": "packages/delivery" },
     { "path": "packages/tui" },
     { "path": "apps/cli" },
     { "path": "apps/auth-callback" }

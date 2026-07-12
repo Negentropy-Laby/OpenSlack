@@ -1,5 +1,5 @@
 {
-  "name": "@openslack/runtime",
+  "name": "@openslack/delivery",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -17,12 +17,6 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@openslack/workspace": "workspace:*",
-    "@openslack/core": "workspace:*",
-    "@openslack/github": "workspace:*",
-    "@openslack/delivery": "workspace:*",
-    "@openslack/kernel": "workspace:*",
-    "@openslack/pr": "workspace:*",
-    "yaml": "^2.7.0"
+    "@openslack/github": "workspace:*"
   }
 }

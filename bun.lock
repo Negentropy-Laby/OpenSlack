@@ -33,6 +33,7 @@
         "@openslack/agent-runtime": "workspace:*",
         "@openslack/chat-gateway": "workspace:*",
         "@openslack/collaboration": "workspace:*",
+        "@openslack/delivery": "workspace:*",
         "@openslack/github": "workspace:*",
         "@openslack/kernel": "workspace:*",
         "@openslack/operator": "workspace:*",
@@ -82,6 +83,13 @@
       "name": "@openslack/core",
       "version": "0.1.0",
     },
+    "packages/delivery": {
+      "name": "@openslack/delivery",
+      "version": "0.1.0",
+      "dependencies": {
+        "@openslack/github": "workspace:*",
+      },
+    },
     "packages/github": {
       "name": "@openslack/github",
       "version": "0.1.0",
@@ -123,6 +131,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@openslack/core": "workspace:*",
+        "@openslack/delivery": "workspace:*",
         "@openslack/github": "workspace:*",
         "@openslack/kernel": "workspace:*",
         "@openslack/pr": "workspace:*",
@@ -311,6 +320,8 @@
     "@openslack/collaboration": ["@openslack/collaboration@workspace:packages/collaboration"],
 
     "@openslack/core": ["@openslack/core@workspace:packages/core"],
+
+    "@openslack/delivery": ["@openslack/delivery@workspace:packages/delivery"],
 
     "@openslack/github": ["@openslack/github@workspace:packages/github"],
 

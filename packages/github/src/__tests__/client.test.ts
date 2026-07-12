@@ -16,6 +16,7 @@ const ENV_KEYS = [
   'GITHUB_REPO',
   'GITHUB_TOKEN',
   'GH_TOKEN',
+  'OPENSLACK_GITHUB_AUTH_MODE',
   'OPENSLACK_GITHUB_APP_ID',
   'OPENSLACK_GITHUB_APP_INSTALLATION_ID',
   'OPENSLACK_GITHUB_APP_PRIVATE_KEY',
@@ -94,10 +95,14 @@ describe('GitHub client repository and auth resolution', () => {
     const dir = mkdtempSync(join(tmpdir(), 'openslack-gh-client-'));
     try {
       execFileSync('git', ['init'], { cwd: dir, stdio: 'ignore' });
-      execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/Negentropy-Laby/OpenSlack.git'], {
-        cwd: dir,
-        stdio: 'ignore',
-      });
+      execFileSync(
+        'git',
+        ['remote', 'add', 'origin', 'https://github.com/Negentropy-Laby/OpenSlack.git'],
+        {
+          cwd: dir,
+          stdio: 'ignore',
+        },
+      );
 
       expect(resolveGitHubRepoTarget({ cwd: dir })).toEqual({
         owner: 'Negentropy-Laby',
@@ -115,6 +120,25 @@ describe('GitHub client repository and auth resolution', () => {
         repoFullName: 'Negentropy-Laby/OpenSlack',
         auth: 'auto',
         requireLive: true,
+      }),
+    ).rejects.toBeInstanceOf(GitHubAuthRequiredError);
+  });
+
+  it('fails closed in configured app-only mode instead of using a human token', async () => {
+    process.env.OPENSLACK_GITHUB_AUTH_MODE = 'app';
+    process.env.GH_TOKEN = 'human-token-must-not-be-used';
+    await expect(getClient({ repoFullName: 'Negentropy-Laby/OpenSlack' })).rejects.toBeInstanceOf(
+      GitHubAuthRequiredError,
+    );
+  });
+
+  it('fails closed for explicit app auth even when requireLive is false', async () => {
+    process.env.GH_TOKEN = 'human-token-must-not-be-used';
+    await expect(
+      getClient({
+        repoFullName: 'Negentropy-Laby/OpenSlack',
+        auth: 'app',
+        requireLive: false,
       }),
     ).rejects.toBeInstanceOf(GitHubAuthRequiredError);
   });

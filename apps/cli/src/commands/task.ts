@@ -1,7 +1,15 @@
 import { Command } from 'commander';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { createWorktree, cleanupWorktree, checkDirty, proposeWorkspacePR, repairWorktrees, renderWorktreeRepair, resolveAgentPrincipal } from '@openslack/runtime';
+import {
+  createWorktree,
+  cleanupWorktree,
+  checkDirty,
+  proposeWorkspacePR,
+  repairWorktrees,
+  renderWorktreeRepair,
+  resolveAgentPrincipal,
+} from '@openslack/runtime';
 import { recordEvent } from '@openslack/collaboration';
 
 function findRepoRoot(): string {
@@ -17,7 +25,10 @@ function findRepoRoot(): string {
 
 function splitList(value: string | undefined): string[] | undefined {
   if (!value) return undefined;
-  return value.split(',').map((item) => item.trim()).filter(Boolean);
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function collect(value: string, previous: string[]): string[] {
@@ -30,7 +41,11 @@ export function taskCommands(): Command {
   cmd
     .command('create')
     .description('Preview or create a valid GitHub Issue task')
-    .option('--template <kind>', 'Task template: bugfix, docs, test-fix, refactor, review, investigation', 'investigation')
+    .option(
+      '--template <kind>',
+      'Task template: bugfix, docs, test-fix, refactor, review, investigation',
+      'investigation',
+    )
     .requiredOption('--title <title>', 'Issue title')
     .option('--description <text>', 'Issue description')
     .option('--agent-type <type>', 'Required agent type', 'codex')
@@ -42,89 +57,102 @@ export function taskCommands(): Command {
     .option('--capability <name>', 'Required capability; can be repeated', collect, [])
     .option('--capabilities <items>', 'Comma-separated required capabilities')
     .option('--success <item>', 'Success criterion; can be repeated', collect, [])
-    .option('--human-approval <items>', 'Comma-separated human approval requirements, e.g. red_zone_change')
+    .option(
+      '--human-approval <items>',
+      'Comma-separated human approval requirements, e.g. red_zone_change',
+    )
     .option('--preview', 'Preview only; this is the default')
     .option('--create-issue', 'Create the GitHub Issue after validation')
-    .action(async (options: {
-      template: string;
-      title: string;
-      description?: string;
-      agentType: string;
-      priority?: string;
-      risk?: string;
-      path: string[];
-      paths?: string;
-      forbiddenPath: string[];
-      capability: string[];
-      capabilities?: string;
-      success: string[];
-      humanApproval?: string;
-      createIssue?: boolean;
-    }) => {
-      const { previewTaskCreation, createTaskFromPreview } = await import('@openslack/github');
-      const allowedPaths = [...options.path, ...(splitList(options.paths) ?? [])];
-      const requiredCapabilities = [...options.capability, ...(splitList(options.capabilities) ?? [])];
-      const preview = previewTaskCreation({
-        template: options.template as never,
-        title: options.title,
-        description: options.description,
-        agentType: options.agentType,
-        priority: options.priority as never,
-        riskLevel: options.risk as never,
-        allowedPaths: allowedPaths.length > 0 ? allowedPaths : undefined,
-        forbiddenPaths: options.forbiddenPath.length > 0 ? options.forbiddenPath : undefined,
-        requiredCapabilities: requiredCapabilities.length > 0 ? requiredCapabilities : undefined,
-        successCriteria: options.success.length > 0 ? options.success : undefined,
-        humanApprovalRequiredFor: splitList(options.humanApproval) as never,
-      });
-
-      console.log('Task Issue Preview');
-      console.log('==================');
-      console.log(`Title: ${preview.issueTitle}`);
-      console.log(`Risk zone: ${preview.riskZone}`);
-      console.log(`Labels: ${preview.labels.join(', ')}`);
-      console.log(`Agent matching: ${preview.agentMatchingHint}`);
-      console.log('');
-      console.log(preview.body);
-
-      if (preview.errors.length > 0) {
-        console.log('');
-        console.log('Errors:');
-        for (const error of preview.errors) console.log(`  - ${error}`);
-        process.exit(1);
-      }
-
-      if (!options.createIssue) {
-        console.log('');
-        console.log('Preview only. Re-run with --create-issue to create the GitHub Issue.');
-        return;
-      }
-
-      const result = await createTaskFromPreview(preview);
-      if (!result.created) {
-        console.error('Task issue was not created.');
-        process.exit(1);
-      }
-
-      try {
-        recordEvent({
-          type: 'task.created',
-          actor: { id: 'cli', kind: 'system', provider: 'cli' },
-          object: { kind: 'issue', id: String(result.issueNumber ?? 0), url: result.url },
-          source: { kind: 'github', ref: 'task.create' },
-          summary: `Task issue created: ${result.issueTitle}`,
-          visibility: 'local',
-          redacted: false,
-          containsSensitiveData: false,
-          risk: result.riskZone === 'red' || result.riskZone === 'black' ? 'high' : result.riskZone === 'yellow' ? 'medium' : 'low',
+    .action(
+      async (options: {
+        template: string;
+        title: string;
+        description?: string;
+        agentType: string;
+        priority?: string;
+        risk?: string;
+        path: string[];
+        paths?: string;
+        forbiddenPath: string[];
+        capability: string[];
+        capabilities?: string;
+        success: string[];
+        humanApproval?: string;
+        createIssue?: boolean;
+      }) => {
+        const { previewTaskCreation, createTaskFromPreview } = await import('@openslack/github');
+        const allowedPaths = [...options.path, ...(splitList(options.paths) ?? [])];
+        const requiredCapabilities = [
+          ...options.capability,
+          ...(splitList(options.capabilities) ?? []),
+        ];
+        const preview = previewTaskCreation({
+          template: options.template as never,
+          title: options.title,
+          description: options.description,
+          agentType: options.agentType,
+          priority: options.priority as never,
+          riskLevel: options.risk as never,
+          allowedPaths: allowedPaths.length > 0 ? allowedPaths : undefined,
+          forbiddenPaths: options.forbiddenPath.length > 0 ? options.forbiddenPath : undefined,
+          requiredCapabilities: requiredCapabilities.length > 0 ? requiredCapabilities : undefined,
+          successCriteria: options.success.length > 0 ? options.success : undefined,
+          humanApprovalRequiredFor: splitList(options.humanApproval) as never,
         });
-      } catch {
-        // best-effort event recording
-      }
 
-      console.log('');
-      console.log(`Created issue #${result.issueNumber}: ${result.url}`);
-    });
+        console.log('Task Issue Preview');
+        console.log('==================');
+        console.log(`Title: ${preview.issueTitle}`);
+        console.log(`Risk zone: ${preview.riskZone}`);
+        console.log(`Labels: ${preview.labels.join(', ')}`);
+        console.log(`Agent matching: ${preview.agentMatchingHint}`);
+        console.log('');
+        console.log(preview.body);
+
+        if (preview.errors.length > 0) {
+          console.log('');
+          console.log('Errors:');
+          for (const error of preview.errors) console.log(`  - ${error}`);
+          process.exit(1);
+        }
+
+        if (!options.createIssue) {
+          console.log('');
+          console.log('Preview only. Re-run with --create-issue to create the GitHub Issue.');
+          return;
+        }
+
+        const result = await createTaskFromPreview(preview);
+        if (!result.created) {
+          console.error('Task issue was not created.');
+          process.exit(1);
+        }
+
+        try {
+          recordEvent({
+            type: 'task.created',
+            actor: { id: 'cli', kind: 'system', provider: 'cli' },
+            object: { kind: 'issue', id: String(result.issueNumber ?? 0), url: result.url },
+            source: { kind: 'github', ref: 'task.create' },
+            summary: `Task issue created: ${result.issueTitle}`,
+            visibility: 'local',
+            redacted: false,
+            containsSensitiveData: false,
+            risk:
+              result.riskZone === 'red' || result.riskZone === 'black'
+                ? 'high'
+                : result.riskZone === 'yellow'
+                  ? 'medium'
+                  : 'low',
+          });
+        } catch {
+          // best-effort event recording
+        }
+
+        console.log('');
+        console.log(`Created issue #${result.issueNumber}: ${result.url}`);
+      },
+    );
 
   cmd
     .command('checkout')
@@ -134,7 +162,8 @@ export function taskCommands(): Command {
     .requiredOption('--agent-id <id>', 'Agent ID')
     .option('--run-id <id>', 'Run ID')
     .action((options) => {
-      const taskId = options.taskId || (options.issueNumber ? `ISSUE-${options.issueNumber}` : undefined);
+      const taskId =
+        options.taskId || (options.issueNumber ? `ISSUE-${options.issueNumber}` : undefined);
       const runId = options.runId || `RUN-${Date.now()}`;
       if (!taskId) {
         console.error('Either --task-id or --issue-number is required.');
@@ -207,8 +236,21 @@ export function taskCommands(): Command {
       }
       const { principal, snapshot } = resolved;
 
-      const result = await proposeWorkspacePR({ agentId: options.agentId, taskId: options.taskId, runId: options.runId, changedPaths: paths, description: options.description, principal, snapshot });
-      if (!result.success) { console.error('PR proposal failed:'); for (const err of result.errors) console.error(`  - ${err}`); process.exit(1); }
+      const result = await proposeWorkspacePR({
+        agentId: options.agentId,
+        taskId: options.taskId,
+        runId: options.runId,
+        changedPaths: paths,
+        description: options.description,
+        principal,
+        snapshot,
+        rootDir: root,
+      });
+      if (!result.success) {
+        console.error('PR proposal failed:');
+        for (const err of result.errors) console.error(`  - ${err}`);
+        process.exit(1);
+      }
       console.log(`Branch: ${result.branchName}`);
       console.log(`Risk zone: ${result.riskZone.toUpperCase()}`);
       if (result.prUrl) {
@@ -219,7 +261,9 @@ export function taskCommands(): Command {
             const { moveIssueToReview } = await import('@openslack/github');
             await moveIssueToReview(parseInt(options.issueNumber, 10), result.prUrl);
             console.log(`Issue #${options.issueNumber} → review`);
-          } catch { /* best-effort */ }
+          } catch {
+            /* best-effort */
+          }
         }
       }
       console.log(result.prBody);

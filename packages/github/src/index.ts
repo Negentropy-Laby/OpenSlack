@@ -4,6 +4,7 @@ export { createDraftPR, commentOnPR, updatePRBody, getPR, listOpenPRs, listPRFil
 export type { CreatePRResult, PRDetail, OpenPRSummary, PRFilePatch, PRCheckRun, PRReview, GitTreeEntry, MergePRResult } from './pr.js';
 export {
   getClient,
+  createInstallationClient,
   getAuthenticatedIdentity,
   resolveGitHubRepoTarget,
   parseGitHubRepoSpec,
@@ -18,7 +19,14 @@ export type {
   GitHubIdentity,
   GitHubRepoTarget,
 } from './client.js';
-export { getAppInstallationToken, clearTokenCache } from './auth.js';
+export { getAppInstallationToken, requireAppInstallationToken, clearTokenCache, GitHubAppTokenError } from './auth.js';
+export type { GitHubAppInstallationToken } from './auth.js';
+export { inspectInstallationRepositoryAccess } from './installation-access.js';
+export type {
+  GitHubInstallationAccessDependencies,
+  GitHubInstallationRepositoryAccess,
+  InstallationRepositoryPage,
+} from './installation-access.js';
 export { createTaskIssue, queryReadyIssueTasks } from './issue-tasks.js';
 export type { IssueTask } from './issue-tasks.js';
 export { claimIssueTask, releaseIssueClaim, moveIssueToReview, heartbeatIssueClaim, expireIssueClaim, releaseIssueClaimWithOwner } from './claims.js';

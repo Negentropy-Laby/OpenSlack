@@ -4,6 +4,7 @@ import { workspaceCommands } from './commands/workspace.js';
 import { selfCommands } from './commands/self.js';
 import { agentCommands } from './commands/agent.js';
 import { agentRuntimeCommands } from './commands/agent-runtime.js';
+import { deliveryCommands } from './commands/delivery.js';
 import { taskCommands } from './commands/task.js';
 import { githubCommands } from './commands/github.js';
 import { operatorCommands } from './commands/operator.js';
@@ -21,10 +22,7 @@ import { tuiCommands } from './commands/tui.js';
 
 const program = new Command();
 
-program
-  .name('openslack')
-  .description('OpenSlack — Agent Company OS CLI')
-  .version('0.1.0');
+program.name('openslack').description('OpenSlack — Agent Company OS CLI').version('0.1.0');
 
 // Top-level ask alias (reuses operator ask directly)
 program.addCommand(buildAskCommand());
@@ -34,6 +32,7 @@ program.addCommand(workspaceCommands());
 program.addCommand(selfCommands());
 program.addCommand(agentCommands());
 program.addCommand(agentRuntimeCommands());
+program.addCommand(deliveryCommands());
 program.addCommand(taskCommands());
 program.addCommand(githubCommands());
 program.addCommand(prCommands());
