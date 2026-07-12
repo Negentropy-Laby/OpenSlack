@@ -1,8 +1,9 @@
 import { createSign } from 'node:crypto';
-import { request as httpsRequest } from 'node:https';
-
-const TOKEN_RESPONSE_MAX_BYTES = 64 * 1024;
-const TOKEN_REQUEST_TIMEOUT_MS = 10_000;
+import {
+  boundedJsonPost,
+  BoundedJsonPostError,
+  type BoundedJsonPostFailureCode,
+} from './bounded-json-post.js';
 
 type GitHubAppTokenFailureCode =
   | 'APP_TOKEN_HTTP_ERROR'
@@ -12,13 +13,6 @@ type GitHubAppTokenFailureCode =
   | 'APP_TOKEN_RESPONSE_TOO_LARGE'
   | 'APP_TOKEN_TIMEOUT'
   | 'APP_TOKEN_UNKNOWN_ERROR';
-
-class GitHubAppTokenEndpointError extends Error {
-  constructor(readonly code: GitHubAppTokenFailureCode) {
-    super(code);
-    this.name = 'GitHubAppTokenEndpointError';
-  }
-}
 
 interface TokenCache {
   token: string;
@@ -51,94 +45,16 @@ function createJwt(appId: string, privateKey: string): string {
   return `${header}.${payload}.${signature}`;
 }
 
-async function postJson(
-  url: string,
-  body: Record<string, unknown>,
-  headers: Record<string, string>,
-): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    const urlObj = new URL(url);
-    const data = JSON.stringify(body);
-    let settled = false;
-    const requestState: { timeout?: ReturnType<typeof setTimeout> } = {};
-
-    const rejectSafe = (code: GitHubAppTokenFailureCode): void => {
-      if (settled) return;
-      settled = true;
-      if (requestState.timeout) clearTimeout(requestState.timeout);
-      reject(new GitHubAppTokenEndpointError(code));
-    };
-
-    const resolveSafe = (value: Record<string, unknown>): void => {
-      if (settled) return;
-      settled = true;
-      if (requestState.timeout) clearTimeout(requestState.timeout);
-      resolve(value);
-    };
-
-    const req = httpsRequest(
-      {
-        hostname: urlObj.hostname,
-        path: urlObj.pathname + urlObj.search,
-        method: 'POST',
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(data),
-          Accept: 'application/vnd.github.v3+json',
-          'User-Agent': 'openslack-github-provider',
-        },
-      },
-      (res) => {
-        let responseData = '';
-        let responseBytes = 0;
-        let responseTooLarge = false;
-
-        res.on('data', (chunk: Buffer | string) => {
-          if (settled || responseTooLarge) return;
-          const text = chunk.toString();
-          responseBytes += Buffer.byteLength(text);
-          if (responseBytes > TOKEN_RESPONSE_MAX_BYTES) {
-            responseTooLarge = true;
-            responseData = '';
-            return;
-          }
-          responseData += text;
-        });
-        res.on('end', () => {
-          if (responseTooLarge) {
-            rejectSafe('APP_TOKEN_RESPONSE_TOO_LARGE');
-            return;
-          }
-          if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
-            rejectSafe('APP_TOKEN_HTTP_ERROR');
-            return;
-          }
-
-          let parsed: unknown;
-          try {
-            parsed = JSON.parse(responseData);
-          } catch {
-            rejectSafe('APP_TOKEN_INVALID_JSON');
-            return;
-          }
-          if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-            rejectSafe('APP_TOKEN_INVALID_RESPONSE');
-            return;
-          }
-          resolveSafe(parsed as Record<string, unknown>);
-        });
-      },
-    );
-    requestState.timeout = setTimeout(() => {
-      rejectSafe('APP_TOKEN_TIMEOUT');
-      req.destroy();
-    }, TOKEN_REQUEST_TIMEOUT_MS);
-    requestState.timeout.unref();
-    req.on('error', () => rejectSafe('APP_TOKEN_NETWORK_ERROR'));
-    req.write(data);
-    req.end();
-  });
+function appTokenFailureCode(code: BoundedJsonPostFailureCode): GitHubAppTokenFailureCode {
+  const codes: Record<BoundedJsonPostFailureCode, GitHubAppTokenFailureCode> = {
+    HTTP_ERROR: 'APP_TOKEN_HTTP_ERROR',
+    INVALID_JSON: 'APP_TOKEN_INVALID_JSON',
+    INVALID_RESPONSE: 'APP_TOKEN_INVALID_RESPONSE',
+    NETWORK_ERROR: 'APP_TOKEN_NETWORK_ERROR',
+    RESPONSE_TOO_LARGE: 'APP_TOKEN_RESPONSE_TOO_LARGE',
+    TIMEOUT: 'APP_TOKEN_TIMEOUT',
+  };
+  return codes[code];
 }
 
 function reportTokenFailure(code: GitHubAppTokenFailureCode): void {
@@ -169,14 +85,18 @@ export async function getAppInstallationToken(): Promise<{
 
   try {
     const jwt = createJwt(appId, privateKey);
-    const response = await postJson(
-      `https://api.github.com/app/installations/${installationId}/access_tokens`,
-      {},
-      {
+    const response = await boundedJsonPost({
+      url: `https://api.github.com/app/installations/${installationId}/access_tokens`,
+      body: '{}',
+      headers: {
         Authorization: `Bearer ${jwt}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/vnd.github.v3+json',
+        'User-Agent': 'openslack-github-provider',
       },
-    );
+    });
 
+    // boundedJsonPost validates only a top-level object; validate the token contract here.
     if (
       typeof response.token !== 'string' ||
       response.token.trim().length === 0 ||
@@ -199,7 +119,9 @@ export async function getAppInstallationToken(): Promise<{
     };
   } catch (error) {
     reportTokenFailure(
-      error instanceof GitHubAppTokenEndpointError ? error.code : 'APP_TOKEN_UNKNOWN_ERROR',
+      error instanceof BoundedJsonPostError
+        ? appTokenFailureCode(error.code)
+        : 'APP_TOKEN_UNKNOWN_ERROR',
     );
     return null;
   }

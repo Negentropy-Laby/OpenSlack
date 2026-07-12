@@ -1,18 +1,19 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { request } from 'node:https';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import {
+  boundedJsonPost,
+  BoundedJsonPostError,
+  type BoundedJsonPostFailureCode,
+} from '@openslack/github/bounded-json-post';
 
 const PORT = parseInt(process.env.AUTH_PORT || '8200', 10);
 const CALLBACK_PATH = '/callback';
 const BIND_HOST = process.env.AUTH_HOST || '127.0.0.1'; // GitHub recommends 127.0.0.1 for native apps
-const TOKEN_RESPONSE_MAX_BYTES = 64 * 1024;
-const TOKEN_REQUEST_TIMEOUT_MS = 10_000;
 
 // Generate a random OAuth state to prevent CSRF
-const EXPECTED_STATE =
-  process.env.GH_OAUTH_STATE ||
-  `openslack-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+const EXPECTED_STATE = process.env.GH_OAUTH_STATE || createOAuthState();
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -54,9 +55,38 @@ export type OAuthTokenExchangeResult =
         | 'OAUTH_TOKEN_TIMEOUT';
     };
 
+export function createOAuthState(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+export function oauthStatesMatch(receivedState: string | null, expectedState: string): boolean {
+  if (!receivedState || !expectedState) return false;
+
+  const receivedDigest = createHash('sha256').update(receivedState).digest();
+  const expectedDigest = createHash('sha256').update(expectedState).digest();
+  return timingSafeEqual(receivedDigest, expectedDigest);
+}
+
+function oauthTokenFailureCode(
+  code: BoundedJsonPostFailureCode,
+): Exclude<OAuthTokenExchangeResult, { ok: true }>['code'] {
+  const codes: Record<
+    BoundedJsonPostFailureCode,
+    Exclude<OAuthTokenExchangeResult, { ok: true }>['code']
+  > = {
+    HTTP_ERROR: 'OAUTH_TOKEN_HTTP_ERROR',
+    INVALID_JSON: 'OAUTH_TOKEN_INVALID_JSON',
+    INVALID_RESPONSE: 'OAUTH_TOKEN_INVALID_RESPONSE',
+    NETWORK_ERROR: 'OAUTH_TOKEN_NETWORK_ERROR',
+    RESPONSE_TOO_LARGE: 'OAUTH_TOKEN_RESPONSE_TOO_LARGE',
+    TIMEOUT: 'OAUTH_TOKEN_TIMEOUT',
+  };
+  return codes[code];
+}
+
 export function parseOAuthCallback(url: URL, expectedState: string): OAuthCallbackResult {
   const state = url.searchParams.get('state');
-  if (!state || state !== expectedState) {
+  if (!oauthStatesMatch(state, expectedState)) {
     return { accepted: false, message: 'Invalid OAuth state parameter.' };
   }
 
@@ -73,86 +103,38 @@ export function parseOAuthCallback(url: URL, expectedState: string): OAuthCallba
   return { accepted: true, code };
 }
 
-export function exchangeCodeForToken(code: string): Promise<OAuthTokenExchangeResult> {
-  return new Promise((resolve) => {
-    const body = `client_id=${encodeURIComponent(process.env.GH_CLIENT_ID || '')}&client_secret=${encodeURIComponent(process.env.GH_CLIENT_SECRET || '')}&code=${encodeURIComponent(code)}`;
-    let settled = false;
+export async function exchangeCodeForToken(code: string): Promise<OAuthTokenExchangeResult> {
+  const body = new URLSearchParams({
+    client_id: process.env.GH_CLIENT_ID || '',
+    client_secret: process.env.GH_CLIENT_SECRET || '',
+    code,
+  }).toString();
 
-    const finish = (result: OAuthTokenExchangeResult): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      resolve(result);
+  try {
+    const response = await boundedJsonPost({
+      url: 'https://github.com/login/oauth/access_token',
+      body,
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Accept: 'application/json',
+      },
+    });
+
+    // boundedJsonPost validates only a top-level object; validate the OAuth token contract here.
+    if (typeof response.access_token !== 'string' || response.access_token.trim().length === 0) {
+      return { ok: false, code: 'OAUTH_TOKEN_INVALID_RESPONSE' };
+    }
+
+    return { ok: true, token: response.access_token.trim() };
+  } catch (error) {
+    return {
+      ok: false,
+      code:
+        error instanceof BoundedJsonPostError
+          ? oauthTokenFailureCode(error.code)
+          : 'OAUTH_TOKEN_NETWORK_ERROR',
     };
-
-    const req = request(
-      {
-        hostname: 'github.com',
-        path: '/login/oauth/access_token',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Accept: 'application/json',
-        },
-      },
-      (incoming) => {
-        let data = '';
-        let responseBytes = 0;
-        let responseTooLarge = false;
-
-        incoming.on('data', (chunk: Buffer | string) => {
-          if (settled || responseTooLarge) return;
-          const text = chunk.toString();
-          responseBytes += Buffer.byteLength(text);
-          if (responseBytes > TOKEN_RESPONSE_MAX_BYTES) {
-            responseTooLarge = true;
-            data = '';
-            return;
-          }
-          data += text;
-        });
-        incoming.on('end', () => {
-          if (responseTooLarge) {
-            finish({ ok: false, code: 'OAUTH_TOKEN_RESPONSE_TOO_LARGE' });
-            return;
-          }
-          if (!incoming.statusCode || incoming.statusCode < 200 || incoming.statusCode >= 300) {
-            finish({ ok: false, code: 'OAUTH_TOKEN_HTTP_ERROR' });
-            return;
-          }
-
-          let parsed: unknown;
-          try {
-            parsed = JSON.parse(data);
-          } catch {
-            finish({ ok: false, code: 'OAUTH_TOKEN_INVALID_JSON' });
-            return;
-          }
-
-          if (
-            !parsed ||
-            typeof parsed !== 'object' ||
-            Array.isArray(parsed) ||
-            typeof (parsed as { access_token?: unknown }).access_token !== 'string' ||
-            (parsed as { access_token: string }).access_token.trim().length === 0
-          ) {
-            finish({ ok: false, code: 'OAUTH_TOKEN_INVALID_RESPONSE' });
-            return;
-          }
-
-          finish({ ok: true, token: (parsed as { access_token: string }).access_token.trim() });
-        });
-      },
-    );
-    const timeout = setTimeout(() => {
-      finish({ ok: false, code: 'OAUTH_TOKEN_TIMEOUT' });
-      req.destroy();
-    }, TOKEN_REQUEST_TIMEOUT_MS);
-    timeout.unref();
-    req.on('error', () => finish({ ok: false, code: 'OAUTH_TOKEN_NETWORK_ERROR' }));
-    req.write(body);
-    req.end();
-  });
+  }
 }
 
 export function startAuthServer(): Promise<void> {

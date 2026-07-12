@@ -19,6 +19,9 @@
     "apps/auth-callback": {
       "name": "@openslack/auth-callback",
       "version": "0.1.0",
+      "dependencies": {
+        "@openslack/github": "workspace:*",
+      },
     },
     "apps/cli": {
       "name": "@openslack/cli",

@@ -7,6 +7,7 @@ const requestMock = vi.hoisted(() => vi.fn());
 vi.mock('node:https', () => ({ request: requestMock }));
 
 import { clearTokenCache, getAppInstallationToken } from '../auth.js';
+import { boundedJsonPost } from '../bounded-json-post.js';
 
 const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const PRIVATE_KEY = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
@@ -22,6 +23,7 @@ interface MockResponseOptions {
   statusCode?: number;
   chunks?: Array<string | Buffer>;
   networkError?: Error;
+  responseError?: Error;
   neverRespond?: boolean;
 }
 
@@ -44,9 +46,14 @@ function installResponse(options: MockResponseOptions = {}): { destroy: ReturnTy
 
           const response = Object.assign(new EventEmitter(), {
             statusCode: options.statusCode ?? 201,
+            resume: vi.fn(),
           });
           callback(response);
           queueMicrotask(() => {
+            if (options.responseError) {
+              response.emit('error', options.responseError);
+              return;
+            }
             for (const chunk of options.chunks ?? []) response.emit('data', chunk);
             response.emit('end');
           });
@@ -84,6 +91,30 @@ afterEach(() => {
 });
 
 describe('GitHub App installation token response handling', () => {
+  it('counts raw response bytes exactly across a split UTF-8 sequence', async () => {
+    const payload = Buffer.from(JSON.stringify({ value: 'split-😀-sequence' }));
+    const emojiStart = payload.indexOf(Buffer.from('😀'));
+    const chunks = [payload.subarray(0, emojiStart + 1), payload.subarray(emojiStart + 1)];
+    installResponse({ chunks });
+
+    await expect(
+      boundedJsonPost({
+        url: 'https://api.github.com/test',
+        body: '{}',
+        maxResponseBytes: payload.byteLength,
+      }),
+    ).resolves.toEqual({ value: 'split-😀-sequence' });
+
+    installResponse({ chunks });
+    await expect(
+      boundedJsonPost({
+        url: 'https://api.github.com/test',
+        body: '{}',
+        maxResponseBytes: payload.byteLength - 1,
+      }),
+    ).rejects.toMatchObject({ code: 'RESPONSE_TOO_LARGE' });
+  });
+
   it('accepts a bounded, successful token response', async () => {
     installResponse({
       chunks: [
@@ -104,9 +135,13 @@ describe('GitHub App installation token response handling', () => {
 
   it('does not log an HTTP error response body', async () => {
     const canary = 'http-response-secret-canary';
-    installResponse({ statusCode: 403, chunks: [JSON.stringify({ message: canary })] });
+    const { destroy } = installResponse({
+      statusCode: 403,
+      chunks: [JSON.stringify({ message: canary })],
+    });
 
     await expect(getAppInstallationToken()).resolves.toBeNull();
+    expect(destroy).toHaveBeenCalledOnce();
     expect(loggedErrors()).toContain('APP_TOKEN_HTTP_ERROR');
     expect(loggedErrors()).not.toContain(canary);
   });
@@ -150,6 +185,15 @@ describe('GitHub App installation token response handling', () => {
   it('does not log network error messages', async () => {
     const canary = 'network-error-secret-canary';
     installResponse({ networkError: new Error(canary) });
+
+    await expect(getAppInstallationToken()).resolves.toBeNull();
+    expect(loggedErrors()).toContain('APP_TOKEN_NETWORK_ERROR');
+    expect(loggedErrors()).not.toContain(canary);
+  });
+
+  it('maps response-stream failures to the same fixed network error', async () => {
+    const canary = 'response-stream-error-secret-canary';
+    installResponse({ responseError: new Error(canary) });
 
     await expect(getAppInstallationToken()).resolves.toBeNull();
     expect(loggedErrors()).toContain('APP_TOKEN_NETWORK_ERROR');

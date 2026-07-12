@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./bounded-json-post": {
+      "types": "./dist/bounded-json-post.d.ts",
+      "import": "./dist/bounded-json-post.js"
     }
   },
   "scripts": {

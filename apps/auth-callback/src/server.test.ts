@@ -5,7 +5,12 @@ const requestMock = vi.hoisted(() => vi.fn());
 
 vi.mock('node:https', () => ({ request: requestMock }));
 
-import { exchangeCodeForToken, parseOAuthCallback } from './server.js';
+import {
+  createOAuthState,
+  exchangeCodeForToken,
+  oauthStatesMatch,
+  parseOAuthCallback,
+} from './server.js';
 
 const EXPECTED_STATE = 'expected-state';
 
@@ -35,6 +40,7 @@ function installResponse(options: MockResponseOptions = {}): { destroy: ReturnTy
 
           const response = Object.assign(new EventEmitter(), {
             statusCode: options.statusCode ?? 200,
+            resume: vi.fn(),
           });
           callback(response);
           queueMicrotask(() => {
@@ -50,6 +56,17 @@ function installResponse(options: MockResponseOptions = {}): { destroy: ReturnTy
 }
 
 describe('OAuth callback parsing', () => {
+  it('creates cryptographically random URL-safe states and compares them safely', () => {
+    const first = createOAuthState();
+    const second = createOAuthState();
+
+    expect(first).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(second).not.toBe(first);
+    expect(oauthStatesMatch(first, first)).toBe(true);
+    expect(oauthStatesMatch(second, first)).toBe(false);
+    expect(oauthStatesMatch(null, first)).toBe(false);
+  });
+
   it('rejects access tokens supplied in the URL without reflecting them', () => {
     const tokenCanary = 'query-token-canary';
     const result = parseOAuthCallback(
