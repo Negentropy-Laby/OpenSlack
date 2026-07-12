@@ -1,9 +1,9 @@
 schema: openslack.github_integration.v1
 
 github:
-  owner: 'Negentropy-Laby'
-  repo: 'OpenSlack'
-  default_branch: 'main'
+  owner: "Negentropy-Laby"
+  repo: "OpenSlack"
+  default_branch: "main"
 
 # Primary task queue: GitHub Issues + labels + deterministic claim refs.
 # Project v2 is optional projection (not required for autonomous loop).
@@ -13,35 +13,35 @@ task_queue:
 
 github_issues:
   labels:
-    task: 'openslack:task'
-    ready: 'openslack:ready'
-    claimed: 'openslack:claimed'
-    running: 'openslack:running'
-    review: 'openslack:review'
-    done: 'openslack:done'
-    blocked: 'openslack:blocked'
+    task: "openslack:task"
+    ready: "openslack:ready"
+    claimed: "openslack:claimed"
+    running: "openslack:running"
+    review: "openslack:review"
+    done: "openslack:done"
+    blocked: "openslack:blocked"
   risk_labels:
-    low: 'risk:low'
-    medium: 'risk:medium'
-    high: 'risk:high'
-    critical: 'risk:critical'
+    low: "risk:low"
+    medium: "risk:medium"
+    high: "risk:high"
+    critical: "risk:critical"
   agent_type_labels:
-    codex: 'agent-type:codex'
-    reviewer: 'agent-type:reviewer'
-    sync: 'agent-type:sync'
-    memory: 'agent-type:memory'
+    codex: "agent-type:codex"
+    reviewer: "agent-type:reviewer"
+    sync: "agent-type:sync"
+    memory: "agent-type:memory"
 
 claim_lock:
   type: git_ref
-  ref_prefix: 'refs/heads/openslack/claims'
-  ref_format: 'refs/heads/openslack/claims/issue-{issueNumber}'
+  ref_prefix: "refs/heads/openslack/claims"
+  ref_format: "refs/heads/openslack/claims/issue-{issueNumber}"
   ttl_minutes: 60
 
 project:
   enabled: false
   number: 1
-  node_id: ''
-  title: 'OpenSlack Evolution Board'
+  node_id: ""
+  title: "OpenSlack Evolution Board"
 
 authentication:
   primary: github_app_installation_token
@@ -50,4 +50,4 @@ authentication:
     - OPENSLACK_GITHUB_APP_INSTALLATION_ID
     - OPENSLACK_GITHUB_APP_PRIVATE_KEY
   fallback: GITHUB_TOKEN
-  dry_run_mode: 'Log intent when no credentials'
+  dry_run_mode: "Log intent when no credentials"

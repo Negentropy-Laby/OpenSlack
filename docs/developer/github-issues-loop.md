@@ -70,15 +70,15 @@ Calling `releaseIssueClaim(issueNumber)` deletes the claim ref and moves the iss
 
 ## Issue Label Lifecycle
 
-| Label               | State                    | Claim Ref                               | Notes                                         |
-| ------------------- | ------------------------ | --------------------------------------- | --------------------------------------------- |
-| `openslack:task`    | Marked as OpenSlack task | N/A                                     | Always present on task issues                 |
-| `openslack:ready`   | Available for claim      | None                                    | Agent can attempt claim                       |
-| `openslack:claimed` | Claimed by agent         | `refs/heads/openslack/claims/issue-{n}` | Claim ref is authoritative                    |
-| `openslack:running` | Agent working            | Claim ref exists                        | Set manually by agent after worktree creation |
-| `openslack:review`  | PR submitted             | Claim ref exists                        | Set by `moveIssueToReview()`                  |
-| `openslack:done`    | Completed                | Claim ref deleted                       | Set by `releaseIssueClaim()`                  |
-| `openslack:blocked` | Needs human              | Claim ref may exist                     | Set manually when agent cannot proceed        |
+| Label | State | Claim Ref | Notes |
+|-------|-------|-----------|-------|
+| `openslack:task` | Marked as OpenSlack task | N/A | Always present on task issues |
+| `openslack:ready` | Available for claim | None | Agent can attempt claim |
+| `openslack:claimed` | Claimed by agent | `refs/heads/openslack/claims/issue-{n}` | Claim ref is authoritative |
+| `openslack:running` | Agent working | Claim ref exists | Set manually by agent after worktree creation |
+| `openslack:review` | PR submitted | Claim ref exists | Set by `moveIssueToReview()` |
+| `openslack:done` | Completed | Claim ref deleted | Set by `releaseIssueClaim()` |
+| `openslack:blocked` | Needs human | Claim ref may exist | Set manually when agent cannot proceed |
 
 Labels are best-effort — they are a projection of the claim ref state, not the authoritative source. If labels and refs disagree, the ref wins. The `openslack github repair claims` command reconciles label state from ref state (dry-run by default, `--apply` to mutate).
 
@@ -193,23 +193,23 @@ Uses the three-tier auth model from `docs/developer/github-automation.md`:
 
 Created once (idempotent) via REST API:
 
-| Label                 | Color    | Purpose          |
-| --------------------- | -------- | ---------------- |
-| `openslack:task`      | `1f6feb` | OpenSlack task   |
-| `openslack:ready`     | `2da44e` | Ready for claim  |
-| `openslack:claimed`   | `fbca04` | Claimed by agent |
-| `openslack:running`   | `d29922` | Agent working    |
-| `openslack:review`    | `8250df` | PR submitted     |
-| `openslack:done`      | `6e7781` | Completed        |
-| `openslack:blocked`   | `cf222e` | Blocked          |
-| `risk:low`            | `2da44e` |                  |
-| `risk:medium`         | `fbca04` |                  |
-| `risk:high`           | `d29922` |                  |
-| `risk:critical`       | `cf222e` |                  |
-| `agent-type:codex`    | `0969da` |                  |
-| `agent-type:reviewer` | `0969da` |                  |
-| `agent-type:sync`     | `0969da` |                  |
-| `agent-type:memory`   | `0969da` |                  |
+| Label | Color | Purpose |
+|-------|-------|---------|
+| `openslack:task` | `1f6feb` | OpenSlack task |
+| `openslack:ready` | `2da44e` | Ready for claim |
+| `openslack:claimed` | `fbca04` | Claimed by agent |
+| `openslack:running` | `d29922` | Agent working |
+| `openslack:review` | `8250df` | PR submitted |
+| `openslack:done` | `6e7781` | Completed |
+| `openslack:blocked` | `cf222e` | Blocked |
+| `risk:low` | `2da44e` | |
+| `risk:medium` | `fbca04` | |
+| `risk:high` | `d29922` | |
+| `risk:critical` | `cf222e` | |
+| `agent-type:codex` | `0969da` | |
+| `agent-type:reviewer` | `0969da` | |
+| `agent-type:sync` | `0969da` | |
+| `agent-type:memory` | `0969da` | |
 
 ## E2E Verification
 
@@ -255,7 +255,6 @@ console.log('Claim released');
 ```bash
 node -e "parseIssueTaskManifest(body)"  # uses openslack-task code fence + JSON Schema
 ```
-
 - Required fields: `task_id` (TASK-YYYY-NNNNNN), `agent_type`, `risk_level` (low/medium/high/critical)
 - Red Zone detection: `allowed_paths` hitting `.github/`, `.openslack/policies/`, etc. requires `human_approval_required_for: [red_zone_change]`
 - Path conflict detection: intersecting allowed/forbidden paths
@@ -283,4 +282,3 @@ filterRedZonePaths(changedPaths)  # identifies Red Zone crossing (.github/, kern
 repairLabels()  # idempotently creates 7 openslack:state labels
 repairExpiredClaims()  # lists refs, checks expiry, deletes stale, resets labels
 `
-```

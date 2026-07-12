@@ -8,9 +8,13 @@ export function resolveTestBunExecutable(): string {
   if (explicit && existsSync(explicit)) return explicit;
 
   const npmExecPath = process.env.NPM_EXECPATH ?? process.env.npm_execpath;
-  if (npmExecPath && /^bunx(?:\.exe)?$/i.test(basename(npmExecPath))) {
-    const sibling = join(dirname(npmExecPath), process.platform === 'win32' ? 'bun.exe' : 'bun');
-    if (existsSync(sibling)) return sibling;
+  if (npmExecPath) {
+    const executable = basename(npmExecPath);
+    if (/^bun(?:\.exe)?$/i.test(executable) && existsSync(npmExecPath)) return npmExecPath;
+    if (/^bunx(?:\.exe)?$/i.test(executable)) {
+      const sibling = join(dirname(npmExecPath), process.platform === 'win32' ? 'bun.exe' : 'bun');
+      if (existsSync(sibling)) return sibling;
+    }
   }
 
   return 'bun';

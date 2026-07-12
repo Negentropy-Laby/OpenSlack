@@ -9,7 +9,6 @@
 AGENTS.md constitutional rule #1: **"No direct push to main. All changes go through PRs."**
 
 Without branch protection, any collaborator with write access can push directly to `main`, bypassing:
-
 - PR review
 - CI checks (classify, validate, canary)
 - Zone classification (Red/Black zone gating)
@@ -18,31 +17,29 @@ Without branch protection, any collaborator with write access can push directly 
 ## Required Ruleset Configuration
 
 ### Target
-
 - **Branch target:** `main`
 - **Apply to:** Default branch only
 
 ### Rules
 
-| Rule                                                       | Setting     | Rationale                        |
-| ---------------------------------------------------------- | ----------- | -------------------------------- |
-| **Require a pull request before merging**                  | ✅ Enabled  | Constitutional requirement       |
-| **Require approvals**                                      | 1           | Minimum independent review       |
-| **Dismiss stale PR approvals when new commits are pushed** | ✅ Enabled  | Prevent approval farming         |
-| **Require review from CODEOWNERS**                         | ✅ Enabled  | Human gate for protected paths   |
-| **Require status checks to pass**                          | ✅ Enabled  | CI is the quality gate           |
-| **Status checks:**                                         |             |                                  |
-| → `classify`                                               | Required    | OSEK zone classifier             |
-| → `validate`                                               | Required    | Full validation suite            |
-| → `canary`                                                 | Required    | Canary bootstrap + eval          |
-| **Block force pushes**                                     | ✅ Enabled  | Prevent history rewriting        |
-| **Require linear history**                                 | ❌ Disabled | Merge commits are acceptable     |
-| **Require signed commits**                                 | ❌ Disabled | Not all agents use GPG signing   |
-| **Require conversation resolution before merging**         | ✅ Enabled  | Ensure all review threads closed |
-| **Require deployments to succeed**                         | ❌ Disabled | No deployment pipeline yet       |
+| Rule | Setting | Rationale |
+|------|---------|-----------|
+| **Require a pull request before merging** | ✅ Enabled | Constitutional requirement |
+| **Require approvals** | 1 | Minimum independent review |
+| **Dismiss stale PR approvals when new commits are pushed** | ✅ Enabled | Prevent approval farming |
+| **Require review from CODEOWNERS** | ✅ Enabled | Human gate for protected paths |
+| **Require status checks to pass** | ✅ Enabled | CI is the quality gate |
+| **Status checks:** | | |
+| → `classify` | Required | OSEK zone classifier |
+| → `validate` | Required | Full validation suite |
+| → `canary` | Required | Canary bootstrap + eval |
+| **Block force pushes** | ✅ Enabled | Prevent history rewriting |
+| **Require linear history** | ❌ Disabled | Merge commits are acceptable |
+| **Require signed commits** | ❌ Disabled | Not all agents use GPG signing |
+| **Require conversation resolution before merging** | ✅ Enabled | Ensure all review threads closed |
+| **Require deployments to succeed** | ❌ Disabled | No deployment pipeline yet |
 
 ### Bypass
-
 - **Bypass list:** Empty
 - **Do not allow bypassing the above settings** | ✅ Enabled
 
