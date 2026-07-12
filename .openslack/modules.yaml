@@ -1,6 +1,6 @@
 schema: openslack.modules.v1
-vitest_tests: 3421
-vitest_files: 252
+vitest_tests: 3505
+vitest_files: 264
 modules:
   - id: self_evolution
     name: Self-Evolution Kernel
@@ -31,8 +31,8 @@ modules:
       - "@openslack/runtime"
       - "@openslack/core"
       - "@openslack/delivery"
-    tests: 435
-    test_files: 56
+    tests: 437
+    test_files: 57
     notes: "GitHub Issues task loop active with typed task creation, dry-run repair, Phase 4 watch daemon, and installation-scoped GitHub delivery. Delivery publishes HEAD and a draft PR through the same GitHub App token, disables host credentials and hooks, synchronizes remote/PR SHAs, and returns AWAITING_GATES evidence for PRMS. Read-only installation-scope diagnostics and a preview-first temporary-ref push/delete probe verify selected-repository access and contents write capability before first delivery."
 
   - id: operator
