@@ -1,5 +1,18 @@
-import { createSign, randomUUID } from 'node:crypto';
-import { request as httpsRequest } from 'node:https';
+import { createSign } from 'node:crypto';
+import {
+  boundedJsonPost,
+  BoundedJsonPostError,
+  type BoundedJsonPostFailureCode,
+} from './bounded-json-post.js';
+
+type GitHubAppTokenFailureCode =
+  | 'APP_TOKEN_HTTP_ERROR'
+  | 'APP_TOKEN_INVALID_JSON'
+  | 'APP_TOKEN_INVALID_RESPONSE'
+  | 'APP_TOKEN_NETWORK_ERROR'
+  | 'APP_TOKEN_RESPONSE_TOO_LARGE'
+  | 'APP_TOKEN_TIMEOUT'
+  | 'APP_TOKEN_UNKNOWN_ERROR';
 
 interface TokenCache {
   token: string;
@@ -32,42 +45,27 @@ function createJwt(appId: string, privateKey: string): string {
   return `${header}.${payload}.${signature}`;
 }
 
-async function postJson(url: string, body: Record<string, unknown>, headers: Record<string, string>): Promise<Record<string, unknown>> {
-  return new Promise((resolve, reject) => {
-    const urlObj = new URL(url);
-    const data = JSON.stringify(body);
-    const req = httpsRequest(
-      {
-        hostname: urlObj.hostname,
-        path: urlObj.pathname + urlObj.search,
-        method: 'POST',
-        headers: {
-          ...headers,
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(data),
-          'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'openslack-github-provider',
-        },
-      },
-      (res) => {
-        let responseData = '';
-        res.on('data', (chunk: Buffer) => { responseData += chunk.toString(); });
-        res.on('end', () => {
-          try {
-            resolve(JSON.parse(responseData));
-          } catch {
-            reject(new Error(`Failed to parse response: ${responseData.slice(0, 200)}`));
-          }
-        });
-      },
-    );
-    req.on('error', reject);
-    req.write(data);
-    req.end();
-  });
+function appTokenFailureCode(code: BoundedJsonPostFailureCode): GitHubAppTokenFailureCode {
+  const codes: Record<BoundedJsonPostFailureCode, GitHubAppTokenFailureCode> = {
+    HTTP_ERROR: 'APP_TOKEN_HTTP_ERROR',
+    INVALID_JSON: 'APP_TOKEN_INVALID_JSON',
+    INVALID_RESPONSE: 'APP_TOKEN_INVALID_RESPONSE',
+    NETWORK_ERROR: 'APP_TOKEN_NETWORK_ERROR',
+    RESPONSE_TOO_LARGE: 'APP_TOKEN_RESPONSE_TOO_LARGE',
+    TIMEOUT: 'APP_TOKEN_TIMEOUT',
+  };
+  return codes[code];
 }
 
-export async function getAppInstallationToken(): Promise<{ token: string; expiresAt: string; tokenType: string } | null> {
+function reportTokenFailure(code: GitHubAppTokenFailureCode): void {
+  console.error(`[GitHub App] Installation token unavailable (${code}).`);
+}
+
+export async function getAppInstallationToken(): Promise<{
+  token: string;
+  expiresAt: string;
+  tokenType: string;
+} | null> {
   const appId = process.env.OPENSLACK_GITHUB_APP_ID;
   const installationId = process.env.OPENSLACK_GITHUB_APP_INSTALLATION_ID;
   const privateKey = process.env.OPENSLACK_GITHUB_APP_PRIVATE_KEY;
@@ -87,16 +85,25 @@ export async function getAppInstallationToken(): Promise<{ token: string; expire
 
   try {
     const jwt = createJwt(appId, privateKey);
-    const response = await postJson(
-      `https://api.github.com/app/installations/${installationId}/access_tokens`,
-      {},
-      {
+    const response = await boundedJsonPost({
+      url: `https://api.github.com/app/installations/${installationId}/access_tokens`,
+      body: '{}',
+      headers: {
         Authorization: `Bearer ${jwt}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/vnd.github.v3+json',
+        'User-Agent': 'openslack-github-provider',
       },
-    );
+    });
 
-    if (!response.token) {
-      console.error('[GitHub App] Token endpoint returned no token:', JSON.stringify(response));
+    // boundedJsonPost validates only a top-level object; validate the token contract here.
+    if (
+      typeof response.token !== 'string' ||
+      response.token.trim().length === 0 ||
+      typeof response.expires_at !== 'string' ||
+      Number.isNaN(Date.parse(response.expires_at))
+    ) {
+      reportTokenFailure('APP_TOKEN_INVALID_RESPONSE');
       return null;
     }
 
@@ -110,8 +117,12 @@ export async function getAppInstallationToken(): Promise<{ token: string; expire
       expiresAt: cachedToken.expiresAt.toISOString(),
       tokenType: 'installation',
     };
-  } catch (err) {
-    console.error(`[GitHub App] Failed to get installation token: ${(err as Error).message}`);
+  } catch (error) {
+    reportTokenFailure(
+      error instanceof BoundedJsonPostError
+        ? appTokenFailureCode(error.code)
+        : 'APP_TOKEN_UNKNOWN_ERROR',
+    );
     return null;
   }
 }
