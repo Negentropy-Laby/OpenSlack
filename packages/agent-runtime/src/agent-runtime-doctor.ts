@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { isAbsolute, join, resolve } from 'node:path';
+import type { CredentialStore } from '@openslack/credentials';
 import type { BridgeRuntimeResolverOptions } from './bridge-runtime-resolver.js';
 import { loadAbyBridgeRuntimeConfig } from './bridge-runtime-resolver.js';
 import { auditBridgeEnv } from './bridge-env.js';
@@ -70,6 +71,7 @@ export interface AgentRuntimeProviderDiagnostic {
 
 export interface DiagnoseAgentRuntimeOptions extends DiagnoseAbyRuntimeOptions {
   providerDiagnostics?: readonly AgentRuntimeProviderDiagnostic[];
+  credentialStore?: CredentialStore;
 }
 
 export interface AgentRuntimeReadinessReport {
@@ -122,7 +124,7 @@ function aggregateReadiness(reports: AgentRuntimeProviderReport[]): AgentRuntime
 }
 
 function diagnoseOpenAICompatibleConfiguration(
-  options: DiagnoseAbyRuntimeOptions,
+  options: DiagnoseAgentRuntimeOptions,
 ): AgentRuntimeProviderReport {
   const env = options.env ?? process.env;
   try {
@@ -142,7 +144,7 @@ function diagnoseOpenAICompatibleConfiguration(
         ],
       };
     }
-    resolveRuntimeCredential(config.credentialRef, env);
+    resolveRuntimeCredential(config.credentialRef, env, options.credentialStore);
     return {
       provider: 'openai-compatible',
       status: 'PASS',

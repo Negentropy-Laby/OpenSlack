@@ -419,8 +419,10 @@ See `docs/developer/keychain-packaging.md` for the artifact contract.
 | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `openslack agent-runtime setup aby --root <path> --dry-run`           | Preview the local Aby bridge configuration without writing it                                                       |
 | `openslack agent-runtime setup aby --root <path> --write`             | Validate and write `.openslack.local/agent-runtime.json`                                                            |
-| `openslack agent-runtime setup openai-compatible --base-url <url> --model <model> --credential-ref env:<NAME>` | Preview non-secret built-in provider configuration |
-| `openslack agent-runtime setup openai-compatible --base-url <url> --model <model> --credential-ref env:<NAME> --write` | Merge the non-secret provider config into `.openslack.local/agent-runtime.json` |
+| `openslack agent-runtime credential import --source <file> --credential-ref keychain:<service>/<account>` | Preview a read-free native-keychain credential import |
+| `openslack agent-runtime credential import --source <file> --credential-ref keychain:<service>/<account> --write` | Atomically import a provider credential without replacing an existing value |
+| `openslack agent-runtime setup openai-compatible --base-url <url> --model <model> --credential-ref <env:NAME\|keychain:SERVICE/ACCOUNT>` | Preview non-secret built-in provider configuration |
+| `openslack agent-runtime setup openai-compatible --base-url <url> --model <model> --credential-ref <env:NAME\|keychain:SERVICE/ACCOUNT> --write` | Merge the non-secret provider config into `.openslack.local/agent-runtime.json` |
 | `openslack agent-runtime doctor --provider aby`                       | Diagnose runtime readiness as `not_configured`, `misconfigured`, `unavailable`, or `ready` without launching a task |
 | `openslack agent-runtime doctor --provider openai-compatible` | Validate config and credential reference, then probe the compatible `/models` endpoint |
 | `openslack agent-runtime doctor --provider openai-compatible --format json` | Emit redacted structured diagnostics for scripting |

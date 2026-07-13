@@ -93,6 +93,18 @@ export {
   setupOpenAICompatibleRuntime,
   runOpenAICompatibleRuntimeSmoke,
 } from './openai-compatible-diagnostics.js';
+export type {
+  AgentRuntimeCredentialImportErrorCode,
+  AgentRuntimeCredentialImportInput,
+  AgentRuntimeCredentialImportPlan,
+  AgentRuntimeCredentialImportResult,
+  AgentRuntimeCredentialImportDependencies,
+} from './credential-import.js';
+export {
+  AgentRuntimeCredentialImportError,
+  planAgentRuntimeCredentialImport,
+  applyAgentRuntimeCredentialImport,
+} from './credential-import.js';
 export {
   loadOpenAICompatibleRuntimeConfig,
   OpenAICompatibleExecutionAdapter,

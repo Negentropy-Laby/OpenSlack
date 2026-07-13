@@ -16,6 +16,9 @@ import type {
   OpenAICompatibleRuntimeSmokeReport,
   SetupOpenAICompatibleRuntimeOptions,
   RunOpenAICompatibleRuntimeSmokeOptions,
+  AgentRuntimeCredentialImportInput,
+  AgentRuntimeCredentialImportPlan,
+  AgentRuntimeCredentialImportResult,
 } from '@openslack/agent-runtime';
 
 interface AgentRuntimeCommandDependencies {
@@ -32,6 +35,12 @@ interface AgentRuntimeCommandDependencies {
   runOpenAICompatibleRuntimeSmoke?: (
     options: RunOpenAICompatibleRuntimeSmokeOptions,
   ) => Promise<OpenAICompatibleRuntimeSmokeReport>;
+  planAgentRuntimeCredentialImport?: (
+    input: AgentRuntimeCredentialImportInput,
+  ) => AgentRuntimeCredentialImportPlan;
+  applyAgentRuntimeCredentialImport?: (
+    plan: AgentRuntimeCredentialImportPlan,
+  ) => AgentRuntimeCredentialImportResult;
 }
 
 type DoctorFormat = 'plain' | 'json' | 'tui';
@@ -122,6 +131,47 @@ export function agentRuntimeCommands(dependencies: AgentRuntimeCommandDependenci
       if (report.status === 'FAIL') process.exit(1);
     });
 
+  const credential = cmd
+    .command('credential')
+    .description('Manage agent-runtime credential references');
+
+  credential
+    .command('import')
+    .description('Preview or import a credential source into the native keychain')
+    .requiredOption('--source <path>', 'Credential source file')
+    .requiredOption(
+      '--credential-ref <ref>',
+      'Destination keychain:SERVICE/ACCOUNT credential reference',
+    )
+    .option('--delete-source', 'Delete the source file after a successful keychain write')
+    .option('--write', 'Commit the credential to the native keychain')
+    .action(async (options) => {
+      try {
+        const runtime = await import('@openslack/agent-runtime');
+        const planCredentialImport =
+          dependencies.planAgentRuntimeCredentialImport ?? runtime.planAgentRuntimeCredentialImport;
+        const plan = planCredentialImport({
+          sourcePath: String(options.source),
+          credentialRef: String(options.credentialRef),
+          deleteSource: Boolean(options.deleteSource),
+        });
+        if (!options.write) {
+          console.log(renderAgentRuntimeCredentialImportPlan(plan));
+          return;
+        }
+        const applyCredentialImport =
+          dependencies.applyAgentRuntimeCredentialImport ??
+          runtime.applyAgentRuntimeCredentialImport;
+        const result = applyCredentialImport(plan);
+        console.log(renderAgentRuntimeCredentialImportResult(result));
+      } catch {
+        console.error(
+          'Agent runtime credential import failed safely; no existing credential was replaced.',
+        );
+        process.exit(1);
+      }
+    });
+
   setup
     .command('openai-compatible')
     .description('Configure an OpenAI-compatible governed runtime')
@@ -129,7 +179,7 @@ export function agentRuntimeCommands(dependencies: AgentRuntimeCommandDependenci
     .requiredOption('--model <model>', 'Model identifier')
     .requiredOption(
       '--credential-ref <ref>',
-      'Credential reference, for example env:OPENSLACK_LLM_API_KEY',
+      'Credential reference, for example env:OPENSLACK_LLM_API_KEY or keychain:openslack/openai',
     )
     .option('--timeout-ms <ms>', 'Whole-run wall-clock timeout in milliseconds', '60000')
     .option('--max-turns <count>', 'Maximum provider turns', '8')
@@ -500,5 +550,37 @@ export function renderOpenAICompatibleRuntimeSmokeReport(
     `  run.json: ${report.evidence.runJson ?? '(not recorded)'}`,
     `  metadata.json: ${report.evidence.metadataJson ?? '(not recorded)'}`,
     `  transcript.jsonl: ${report.evidence.transcriptJsonl ?? '(not recorded)'}`,
+  ].join('\n');
+}
+
+export function renderAgentRuntimeCredentialImportPlan(
+  plan: AgentRuntimeCredentialImportPlan,
+): string {
+  return [
+    'Agent Runtime Credential Import',
+    'Mode: dry-run',
+    `Credential ref: ${plan.credentialRef}`,
+    `Source: ${plan.sourcePath}`,
+    'Secret read: no',
+    '',
+    'Planned actions:',
+    ...plan.summary.map((line) => `  - ${line}`),
+    '',
+    'Next: re-run with --write after reviewing this preview.',
+  ].join('\n');
+}
+
+export function renderAgentRuntimeCredentialImportResult(
+  result: AgentRuntimeCredentialImportResult,
+): string {
+  return [
+    'Agent Runtime Credential Import',
+    'Mode: write',
+    `Status: ${result.status}`,
+    `Credential ref: ${result.credentialRef}`,
+    `Source deleted: ${result.sourceDeleted ? 'yes' : 'no'}`,
+    '',
+    'Warnings:',
+    ...(result.warnings.length > 0 ? result.warnings.map((line) => `  - ${line}`) : ['  - None.']),
   ].join('\n');
 }

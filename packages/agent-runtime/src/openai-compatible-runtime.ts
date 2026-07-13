@@ -1,6 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { createDefaultCredentialStore, type CredentialStore } from '@openslack/credentials';
+import {
+  createDefaultCredentialStore,
+  parseSecretReference,
+  type CredentialStore,
+} from '@openslack/credentials';
 import {
   AgentBudgetExceededError,
   AgentLimitExceededError,
@@ -35,6 +39,7 @@ export interface OpenAICompatibleRuntimeOptions {
   rootDir?: string;
   configPath?: string;
   env?: NodeJS.ProcessEnv;
+  credentialStore?: CredentialStore;
 }
 
 export interface OpenAICompatibleAdapterOptions extends OpenAICompatibleRuntimeConfig {
@@ -86,16 +91,24 @@ export function loadOpenAICompatibleRuntimeConfig(
     readString(env.OPENSLACK_LLM_BASE_URL) ??
     'https://api.openai.com/v1';
   const model = readString(fileConfig?.model) ?? readString(env.OPENSLACK_LLM_MODEL);
-  const credentialRef =
+  const rawCredentialRef =
     readString(fileConfig?.credentialRef) ??
     (readString(env.OPENSLACK_LLM_API_KEY) ? 'env:OPENSLACK_LLM_API_KEY' : undefined);
   if (!model)
     throw new RuntimeMisconfiguredError('OpenAI-compatible runtime model is not configured.');
   if (model.length > 200)
     throw new RuntimeMisconfiguredError('OpenAI-compatible runtime model is invalid.');
-  if (!credentialRef) {
+  if (!rawCredentialRef) {
     throw new RuntimeMisconfiguredError(
       'OpenAI-compatible runtime credentialRef is not configured.',
+    );
+  }
+  let credentialRef: string;
+  try {
+    credentialRef = parseSecretReference(rawCredentialRef).canonical;
+  } catch {
+    throw new RuntimeMisconfiguredError(
+      'OpenAI-compatible runtime credentialRef must use env: or keychain: syntax.',
     );
   }
   validateBaseUrl(baseUrl);
