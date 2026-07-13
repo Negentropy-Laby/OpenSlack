@@ -90,7 +90,10 @@ export function diagnoseAgentRuntime(
   if (openAICompatible.readiness !== 'not_configured') {
     providers['openai-compatible'] = openAICompatible;
   }
-  if (Object.keys(providers).length === 0) providers.aby = aby;
+  if (Object.keys(providers).length === 0 && !options.providerDiagnostics?.length) {
+    providers['openai-compatible'] = openAICompatible;
+    providers.aby = aby;
+  }
   for (const diagnostic of options.providerDiagnostics ?? []) {
     const id = diagnostic.id.trim().toLowerCase();
     if (!id || providers[id]) {
@@ -133,7 +136,10 @@ function diagnoseOpenAICompatibleConfiguration(
         provider: 'openai-compatible',
         status: 'FAIL',
         readiness: 'not_configured',
-        remediations: ['Configure an execution provider before starting agent work.'],
+        remediations: [
+          'Configure the built-in provider with: openslack agent-runtime setup openai-compatible --base-url <url> --model <model> --credential-ref <env:NAME|keychain:SERVICE/ACCOUNT> --write.',
+          'Aby is optional; configure it only when you intentionally use an external Aby bridge.',
+        ],
       };
     }
     resolveRuntimeCredential(config.credentialRef, env);

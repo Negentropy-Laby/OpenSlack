@@ -178,17 +178,18 @@ function withAskPassEnvironment<T>(
   const helperDir = mkdtempSync(join(tmpdir(), 'openslack-askpass-'));
   const hooksDir = join(helperDir, 'disabled-hooks');
   mkdirSync(hooksDir, { recursive: true });
-  const askpassPath = join(helperDir, 'askpass.js');
+  const askpassPath = join(helperDir, 'askpass.sh');
   const globalConfigPath = join(helperDir, 'empty-gitconfig');
   writeFileSync(globalConfigPath, '', { encoding: 'utf-8', flag: 'wx' });
   writeFileSync(
     askpassPath,
     [
-      '#!/usr/bin/env node',
-      "const prompt = String(process.argv[2] ?? '').toLowerCase();",
-      "if (prompt.includes('username')) process.stdout.write('x-access-token');",
-      "else if (prompt.includes('password')) process.stdout.write(String(process.env.OPENSLACK_GIT_ASKPASS_TOKEN ?? ''));",
-      'else process.exitCode = 1;',
+      '#!/bin/sh',
+      'case "$1" in',
+      '  *[Uu][Ss][Ee][Rr][Nn][Aa][Mm][Ee]*) printf %s x-access-token ;;',
+      '  *[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]*) printf %s "$OPENSLACK_GIT_ASKPASS_TOKEN" ;;',
+      '  *) exit 1 ;;',
+      'esac',
     ].join('\n'),
     { encoding: 'utf-8', flag: 'wx' },
   );

@@ -2,11 +2,13 @@ import type { SecretReference } from './reference.js';
 import type { CredentialBackend, CredentialBackendStatus } from './store.js';
 import { CredentialStoreError } from './store.js';
 import { createHash } from 'node:crypto';
-import { mkdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
 import type { Entry as KeyringEntry } from '@napi-rs/keyring';
+
+let nativeLoadDetail = 'not attempted';
 
 export interface NativeKeychainEntry {
   getPassword(): string | null;
@@ -83,7 +85,7 @@ export class NativeKeychainBackend implements CredentialBackend {
       writable: this.entryFactory !== undefined,
       detail:
         this.entryFactory === undefined
-          ? `native OS keyring binding unavailable (${this.platform})`
+          ? `native OS keyring binding unavailable (${this.platform}; ${nativeLoadDetail})`
           : `native OS keyring (${this.platform})`,
     };
   }
@@ -302,10 +304,41 @@ function isLegacyWindowsPassword(encoded: Buffer, password: string): boolean {
 
 function loadNativeEntryFactory(): NativeKeychainBackendOptions['entryFactory'] {
   try {
-    const require = createRequire(import.meta.url);
-    const keyring = require('@napi-rs/keyring') as { Entry: typeof KeyringEntry };
+    const sourceRequire = createRequire(import.meta.url);
+    const keyring = sourceRequire('@napi-rs/keyring') as { Entry: typeof KeyringEntry };
+    nativeLoadDetail = 'source package';
     return (service, account) => new keyring.Entry(service, account);
   } catch {
+    nativeLoadDetail = 'source package unavailable';
+    // A compiled release archive resolves the external N-API package below.
+  }
+
+  const executableRoot = dirname(process.execPath);
+  const bindingName = packagedBindingName(process.platform, process.arch);
+  if (!bindingName) {
+    nativeLoadDetail = 'unsupported release target';
     return undefined;
   }
+  const packagedBinding = join(executableRoot, 'native', bindingName);
+  if (!existsSync(packagedBinding)) {
+    nativeLoadDetail = `missing packaged ${bindingName}`;
+    return undefined;
+  }
+  try {
+    // The archive includes the exact target binding beside the executable. Load
+    // it directly so resolution cannot fall back to a host package manager.
+    const packagedRequire = createRequire(join(executableRoot, 'openslack-native-loader.cjs'));
+    const keyring = packagedRequire(packagedBinding) as { Entry: typeof KeyringEntry };
+    nativeLoadDetail = `packaged ${bindingName}`;
+    return (service, account) => new keyring.Entry(service, account);
+  } catch {
+    nativeLoadDetail = `failed to load packaged ${bindingName}`;
+    return undefined;
+  }
+}
+
+function packagedBindingName(platform: NodeJS.Platform, arch: string): string | undefined {
+  if (platform === 'win32' && arch === 'x64') return 'keyring.win32-x64-msvc.node';
+  if (platform === 'linux' && arch === 'x64') return 'keyring.linux-x64-gnu.node';
+  return undefined;
 }

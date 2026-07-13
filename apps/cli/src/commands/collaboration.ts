@@ -1,7 +1,6 @@
 import { Command } from 'commander';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import {
   readEvents, filterEvents, renderActivityFeed, buildDigest, renderDigest,
@@ -62,6 +61,7 @@ import {
   saveWorkflow,
   saveWorkflowRunScript,
   exportWorkflowSkill,
+  resolveBuiltinTemplatesDir,
 } from '@openslack/workflows';
 import { recommendWorkflowForQuery } from '@openslack/operator';
 import type {
@@ -245,7 +245,9 @@ async function markRunFailedIfActive(store: RunStore, runId: string): Promise<vo
 }
 
 function resolveBuiltinTemplatePath(id: string): string | undefined {
-  const builtinPath = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', 'templates', 'workflows', `${id}.yaml`);
+  const builtinDir = resolveBuiltinTemplatesDir();
+  if (!builtinDir) return undefined;
+  const builtinPath = join(builtinDir, `${id}.yaml`);
   return existsSync(builtinPath) ? builtinPath : undefined;
 }
 
@@ -264,7 +266,8 @@ interface BuiltinTemplateSummary {
 }
 
 function listBuiltinTemplates(): BuiltinTemplateSummary[] {
-  const dir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', 'templates', 'workflows');
+  const dir = resolveBuiltinTemplatesDir();
+  if (!dir) return [];
   if (!existsSync(dir)) return [];
   const files = readdirSync(dir).filter((f) => f.endsWith('.yaml'));
   const templates: BuiltinTemplateSummary[] = [];
@@ -796,8 +799,8 @@ export function collaborationCommands(): Command {
     .description('List all available workflows (YAML templates and JS modules)')
     .action(async () => {
       // Gather YAML templates
-      const yamlDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', 'templates', 'workflows');
-      const yamlWorkflows = await discoverYamlTemplates(yamlDir);
+      const yamlDir = resolveBuiltinTemplatesDir();
+      const yamlWorkflows = yamlDir ? await discoverYamlTemplates(yamlDir) : [];
 
       // Gather JS/TS workflow modules
       const root = findRepoRoot();

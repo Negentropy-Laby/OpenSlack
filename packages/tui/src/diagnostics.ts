@@ -130,7 +130,7 @@ export function diagnoseTui(stdout?: { isTTY?: boolean; columns?: number; rows?:
     detail: isTTY
       ? 'Output is a TTY device'
       : 'Output is not a TTY (piped or redirected)',
-    fallback: 'Run in an interactive terminal. For CI, use: bun run openslack status --format standard',
+    fallback: 'Run in an interactive terminal. For CI, use: openslack status --format standard',
   })
 
   // 2. Terminal dimensions
@@ -145,7 +145,7 @@ export function diagnoseTui(stdout?: { isTTY?: boolean; columns?: number; rows?:
     detail: columns > 0 && rows > 0
       ? `${columns} x ${rows} (minimum: ${MIN_COLUMNS} x ${MIN_ROWS})`
       : 'Dimensions unknown (non-TTY)',
-    fallback: `Resize terminal to at least ${MIN_COLUMNS} x ${MIN_ROWS}. For narrow terminals: bun run openslack status --format standard`,
+    fallback: `Resize terminal to at least ${MIN_COLUMNS} x ${MIN_ROWS}. For narrow terminals: openslack status --format standard`,
   })
 
   // 3. TERM variable
@@ -163,7 +163,7 @@ export function diagnoseTui(stdout?: { isTTY?: boolean; columns?: number; rows?:
     label: 'NO_COLOR',
     status: noColor ? 'fail' : 'pass',
     detail: noColor ? 'NO_COLOR is set — color output disabled' : 'Not set (colors enabled)',
-    fallback: 'Unset NO_COLOR for TUI mode, or use: bun run openslack status --format standard',
+    fallback: 'Unset NO_COLOR for TUI mode, or use: openslack status --format standard',
   })
 
   // 5. CI environment
@@ -172,7 +172,7 @@ export function diagnoseTui(stdout?: { isTTY?: boolean; columns?: number; rows?:
     label: 'CI',
     status: isCI ? 'warn' : 'pass',
     detail: isCI ? 'Running in CI environment' : 'Not in CI',
-    fallback: 'CI terminals do not support interactive TUI. Use: bun run openslack status --format standard',
+    fallback: 'CI terminals do not support interactive TUI. Use: openslack status --format standard',
   })
 
   // 6. Unicode support
@@ -181,7 +181,7 @@ export function diagnoseTui(stdout?: { isTTY?: boolean; columns?: number; rows?:
     label: 'Unicode',
     status: unicode ? 'pass' : 'warn',
     detail: unicode ? 'Unicode/wide characters supported' : 'Unicode support uncertain',
-    fallback: 'Use a modern terminal with Unicode support, or: bun run openslack status --format standard',
+    fallback: 'Use a modern terminal with Unicode support, or: openslack status --format standard',
   })
 
   // 7. Color support
@@ -190,7 +190,7 @@ export function diagnoseTui(stdout?: { isTTY?: boolean; columns?: number; rows?:
     label: 'Color',
     status: colorLevel === 'mono' ? 'warn' : 'pass',
     detail: `Color depth: ${colorLevel}`,
-    fallback: 'Set COLORTERM=truecolor for best results, or: bun run openslack status --format standard',
+    fallback: 'Set COLORTERM=truecolor for best results, or: openslack status --format standard',
   })
 
   // 8. Alt screen support
@@ -266,9 +266,9 @@ export function renderDiagnosticsPlain(report: TuiDiagnosticReport): string {
   if (report.recommendedMode === 'plain') {
     lines.push('')
     lines.push('TUI is not available. Use these commands instead:')
-    lines.push('  bun run openslack status --format standard')
-    lines.push('  bun run openslack doctor')
-    lines.push('  bun run openslack pr list')
+    lines.push('  openslack status --format standard')
+    lines.push('  openslack doctor')
+    lines.push('  openslack pr list')
   }
 
   return lines.join('\n')

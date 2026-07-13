@@ -28,8 +28,7 @@ export function tuiCommands(): Command {
 
         // Resolve repo root
         const { existsSync } = await import('node:fs');
-        const { join, dirname } = await import('node:path');
-        const { fileURLToPath } = await import('node:url');
+        const { join } = await import('node:path');
         let dir = process.cwd();
         for (let i = 0; i < 10; i++) {
           if (existsSync(join(dir, 'openslack.yaml'))) break;
@@ -105,11 +104,11 @@ export function tuiCommands(): Command {
 
         // Pre-fetch workflow gallery data
         try {
-          const { discoverJsWorkflows, discoverYamlTemplates, TrustStore, listWorkflowPatterns } = await import('@openslack/workflows');
+          const { discoverJsWorkflows, discoverYamlTemplates, resolveBuiltinTemplatesDir, TrustStore, listWorkflowPatterns } = await import('@openslack/workflows');
           const trustStore = new TrustStore({ rootDir: root });
           const jsWorkflows = await discoverJsWorkflows(root);
-          const yamlDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', 'templates', 'workflows');
-          const yamlWorkflows = await discoverYamlTemplates(yamlDir);
+          const yamlDir = resolveBuiltinTemplatesDir();
+          const yamlWorkflows = yamlDir ? await discoverYamlTemplates(yamlDir) : [];
 
           const workflows = [
             ...yamlWorkflows.map(w => ({

@@ -1,9 +1,11 @@
 import { readdir, readFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
 import { parseManifest, validateManifest, computeManifestHash } from './manifest.js'
+import { getEmbeddedBuiltin, listEmbeddedBuiltins } from './embedded-builtins.js'
 import type {
   WorkflowMeta,
   WorkflowFormat,
@@ -24,6 +26,14 @@ export const DISCOVERY_PATHS = [
  * Built-in workflows shipped with @openslack/workflows.
  */
 const BUILTINS_DIR = join(import.meta.dirname, 'builtins')
+
+export function resolveBuiltinTemplatesDir(): string | undefined {
+  const candidates = [
+    resolve(import.meta.dirname, '..', '..', '..', 'templates', 'workflows'),
+    join(dirname(process.execPath), 'assets', 'workflows'),
+  ]
+  return candidates.find((candidate) => existsSync(candidate))
+}
 
 /**
  * Map a discovery directory to its WorkflowSource label.
@@ -99,6 +109,13 @@ export async function discoverWorkflows(
   }
 
   // Also discover built-in workflows
+  for (const builtin of listEmbeddedBuiltins()) {
+    if (seen.has(builtin.name)) continue
+    seen.add(builtin.name)
+    results.push({ name: builtin.name, path: builtin.path, source: 'builtin' })
+  }
+
+  // Source checkouts may contain additional development-only built-ins.
   try {
     const entries = await readdir(BUILTINS_DIR)
     for (const entry of entries) {
@@ -121,6 +138,19 @@ export async function discoverWorkflows(
  * For claude-ambient workflows, returns source without importing.
  */
 export async function loadWorkflow(filePath: string): Promise<WorkflowModule> {
+  const embedded = getEmbeddedBuiltin(filePath)
+  if (embedded) {
+    const errors = validateManifest(embedded.meta)
+    if (errors.length > 0) {
+      throw new Error(`Invalid embedded workflow manifest in ${filePath}:\n${errors.join('\n')}`)
+    }
+    return {
+      ...embedded,
+      format: detectFormat(embedded as unknown as Record<string, unknown>),
+      hash: computeManifestHash(embedded.meta),
+    }
+  }
+
   // Step 1: Read file and compute hash
   const source = await readFile(filePath, 'utf-8')
   const hash = computeFileHash(source)
@@ -714,14 +744,23 @@ export async function discoverJsWorkflows(
     let meta: WorkflowMeta
     let sourceText: string
     try {
-      sourceText = await readFile(filePath, 'utf-8')
-      meta = analyzeStaticMeta(sourceText)
+      const embedded = getEmbeddedBuiltin(filePath)
+      if (embedded) {
+        meta = embedded.meta
+        sourceText = ''
+      } else {
+        sourceText = await readFile(filePath, 'utf-8')
+        meta = analyzeStaticMeta(sourceText)
+      }
     } catch {
       // Skip modules that fail static analysis
       continue
     }
 
-    const format = detectFormatFromSource(sourceText)
+    const embedded = getEmbeddedBuiltin(filePath)
+    const format = embedded
+      ? detectFormat(embedded as unknown as Record<string, unknown>)
+      : detectFormatFromSource(sourceText)
     const ext = filePath.endsWith('.ts') ? '.ts' : filePath.endsWith('.mjs') ? '.mjs' : '.js'
     results.push({
       name,

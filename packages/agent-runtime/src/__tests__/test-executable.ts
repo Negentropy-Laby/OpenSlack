@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, delimiter, dirname, join } from 'node:path';
 
 export function resolveTestBunExecutable(): string {
   if (/^bun(?:\.exe)?$/i.test(basename(process.execPath))) return process.execPath;
@@ -14,6 +14,20 @@ export function resolveTestBunExecutable(): string {
     if (/^bunx(?:\.exe)?$/i.test(executable)) {
       const sibling = join(dirname(npmExecPath), process.platform === 'win32' ? 'bun.exe' : 'bun');
       if (existsSync(sibling)) return sibling;
+    }
+  }
+
+  for (const directory of (process.env.PATH ?? '').split(delimiter)) {
+    if (!directory) continue;
+    const candidates =
+      process.platform === 'win32'
+        ? [
+            join(directory, 'bun.exe'),
+            join(directory, 'node_modules', 'bun', 'bin', 'bun.exe'),
+          ]
+        : [join(directory, 'bun')];
+    for (const candidate of candidates) {
+      if (existsSync(candidate)) return candidate;
     }
   }
 

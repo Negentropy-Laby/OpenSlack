@@ -10,15 +10,25 @@ import {
 } from 'node:fs';
 import { dirname } from 'node:path';
 
+export const AGENT_RUNTIME_CONFIG_SCHEMA = 'openslack.agent_runtime.v1';
+
 export function readRuntimeConfigForMerge(path: string): Record<string, unknown> {
-  if (!existsSync(path)) return {};
+  if (!existsSync(path)) return { schema: AGENT_RUNTIME_CONFIG_SCHEMA };
   const parsed = JSON.parse(readFileSync(path, 'utf-8')) as unknown;
   const record = readRecord(parsed);
   if (!record || containsRawSecretField(record)) throw new Error('unsafe runtime config');
+  if (record.schema !== AGENT_RUNTIME_CONFIG_SCHEMA) {
+    throw new Error(
+      'runtime config schema migration required; run openslack setup migrate-state --apply',
+    );
+  }
   return record;
 }
 
 export function writeRuntimeConfigAtomic(path: string, value: Record<string, unknown>): void {
+  if (value.schema !== AGENT_RUNTIME_CONFIG_SCHEMA) {
+    throw new Error('runtime config must use openslack.agent_runtime.v1');
+  }
   mkdirSync(dirname(path), { recursive: true });
   const temp = `${path}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
   const existingMode = existsSync(path) ? lstatSync(path).mode : undefined;

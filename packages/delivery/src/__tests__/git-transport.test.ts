@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -23,9 +23,13 @@ describe('GitAskPassPublisher', () => {
   it('keeps the token out of argv and parent env while disabling credentials and hooks', () => {
     const token = 'delivery-canary-token';
     const calls: Array<{ args: readonly string[]; env?: NodeJS.ProcessEnv }> = [];
+    let askpassSource = '';
     const spawn = vi.fn(
       (_command: string, args: readonly string[], options: { env?: NodeJS.ProcessEnv }) => {
         calls.push({ args, env: options.env });
+        if (args.includes('push') && options.env?.GIT_ASKPASS) {
+          askpassSource = readFileSync(options.env.GIT_ASKPASS, 'utf-8');
+        }
         if (args[0] === 'remote') return result('https://github.com/acme/repo.git\n');
         if (args[0] === 'rev-parse') return result(`${'a'.repeat(40)}\n`);
         if (args.includes('ls-remote')) return result(`${'a'.repeat(40)}\trefs/heads/topic\n`);
@@ -63,6 +67,9 @@ describe('GitAskPassPublisher', () => {
     expect(push.env?.GH_TOKEN).toBeUndefined();
     expect(push.env?.OPENSLACK_GITHUB_APP_PRIVATE_KEY).toBeUndefined();
     expect(push.env?.OPENSLACK_GIT_ASKPASS_TOKEN).toBe(token);
+    expect(askpassSource).toMatch(/^#!\/bin\/sh/);
+    expect(askpassSource).not.toContain('node');
+    expect(askpassSource).not.toContain(token);
     expect(remoteRead.args).toContain('credential.helper=');
     expect(remoteRead.env?.GITHUB_TOKEN).toBeUndefined();
     expect(remoteRead.env?.GH_TOKEN).toBeUndefined();
