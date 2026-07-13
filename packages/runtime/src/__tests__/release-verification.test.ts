@@ -5,7 +5,15 @@ import {
   generateKeyPairSync,
   sign,
 } from 'node:crypto';
-import { mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -177,6 +185,53 @@ describe('self-contained release verification', () => {
       expect(output).toContain(result.keyId!);
     }
   });
+
+  it('renders a signed release without a trust root as self-asserted', () => {
+    signFixture(root, manifestPath, privateKey, publicKey);
+    const result = verifyReleaseArtifacts(manifestPath);
+    expect(result.signature).toEqual({ status: 'signed', trusted: false });
+    expect(renderReleaseVerification(result)).toContain('self-asserted Ed25519 signature');
+    expect(renderReleaseVerification(result)).not.toContain('unsigned development candidate');
+  });
+
+  it('rejects a symlinked asset before following its target', () => {
+    const manifest = readManifest(manifestPath);
+    const archivePath = join(root, manifest.archive.file);
+    const backingPath = join(root, 'matching-archive-bytes');
+    writeFileSync(backingPath, readFileSync(archivePath));
+    unlinkSync(archivePath);
+    try {
+      symlinkSync(backingPath, archivePath, 'file');
+    } catch (error) {
+      if (process.platform !== 'win32' || !isErrno(error, 'EPERM')) throw error;
+      // Windows without Developer Mode cannot create file symlinks. A junction
+      // is still a reparse-point symlink according to lstat and exercises the
+      // same fail-closed branch without requiring elevated privileges.
+      const backingDirectory = join(root, 'matching-archive-junction');
+      mkdirSync(backingDirectory);
+      symlinkSync(backingDirectory, archivePath, 'junction');
+    }
+
+    expect(() => verifyReleaseArtifacts(manifestPath)).toThrow(
+      `Release asset is not a regular file: ${manifest.archive.file}`,
+    );
+  });
+
+  it('rejects duplicate archive subjects in provenance', () => {
+    const manifest = readManifest(manifestPath);
+    const provenancePath = join(root, manifest.provenance.file);
+    const provenance = JSON.parse(readFileSync(provenancePath, 'utf-8')) as {
+      subject: Array<{ name: string; digest: { sha256: string } }>;
+    };
+    provenance.subject.push(structuredClone(provenance.subject[0]!));
+    writeFileSync(provenancePath, JSON.stringify(provenance));
+    manifest.provenance.sha256 = sha256File(provenancePath);
+    writeFileSync(manifestPath, JSON.stringify(manifest));
+
+    expect(() => verifyReleaseArtifacts(manifestPath)).toThrow(
+      'Provenance subject does not match the release archive.',
+    );
+  });
 });
 
 function createFixture(root: string): string {
@@ -265,4 +320,8 @@ function readManifest(path: string): FixtureManifest {
 
 function sha256File(path: string): string {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
+function isErrno(error: unknown, code: string): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error && error.code === code;
 }

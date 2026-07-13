@@ -9,6 +9,10 @@ const LEGACY_UNSIGNED_SIGNATURE_SENTINEL = 'operator-required';
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const COMMIT_PATTERN = /^[a-f0-9]{40,64}$/;
 const SAFE_ASSET_NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+// Keep this fail-closed allowlist aligned with the hosted release build matrix
+// in scripts/release/lib.ts. A new target is not trusted until both surfaces
+// explicitly support it.
+const SUPPORTED_RELEASE_TARGETS = new Set(['windows-x64', 'linux-x64']);
 
 export interface ProvenanceSignatureEnvelope {
   schema: 'openslack.provenance_signature.v1';
@@ -118,12 +122,15 @@ export function verifyReleaseArtifacts(
     ['provenance', manifest.provenance],
   ];
   assertUniqueArtifactNames(baseReferences.map(([, reference]) => reference));
-  const assets = baseReferences.map(([role, reference]) =>
-    verifyArtifactReference(directory, role, reference),
+  const archiveAsset = verifyArtifactReference(directory, 'archive', manifest.archive);
+  const sbomAsset = verifyArtifactReference(directory, 'sbom', manifest.sbom);
+  const verifiedProvenance = readVerifiedArtifactReference(
+    directory,
+    'provenance',
+    manifest.provenance,
   );
-
-  const provenancePath = join(directory, manifest.provenance.file);
-  const provenanceBytes = readFileSync(provenancePath);
+  const assets = [archiveAsset, sbomAsset, verifiedProvenance.asset];
+  const provenanceBytes = verifiedProvenance.bytes;
   const provenance = parseJsonBytes<ProvenanceStatement>(
     provenanceBytes,
     'Release provenance is invalid JSON.',
@@ -139,9 +146,9 @@ export function verifyReleaseArtifacts(
     ) {
       throw new Error('Release manifest contains invalid provenance signature metadata.');
     }
-    const signatureAsset = verifyArtifactReference(directory, 'signature', signature);
-    const envelope = parseJsonFile<ProvenanceSignatureEnvelope>(
-      join(directory, signature.file),
+    const verifiedSignature = readVerifiedArtifactReference(directory, 'signature', signature);
+    const envelope = parseJsonBytes<ProvenanceSignatureEnvelope>(
+      verifiedSignature.bytes,
       'Provenance signature envelope is invalid JSON.',
     );
     if (envelope.keyId !== signature.keyId || envelope.algorithm !== signature.algorithm) {
@@ -164,7 +171,7 @@ export function verifyReleaseArtifacts(
       target: manifest.target,
       keyId: verified.keyId,
       signature: { status: 'signed', trusted: verified.trusted },
-      assets: [...assets, signatureAsset],
+      assets: [...assets, verifiedSignature.asset],
     };
   }
 
@@ -197,9 +204,12 @@ export function renderReleaseVerification(
   format: 'plain' | 'json' = 'plain',
 ): string {
   if (format === 'json') return JSON.stringify(result, null, 2);
-  const signature = result.signature.trusted
-    ? `trusted Ed25519 signature ${result.keyId}`
-    : 'unsigned development candidate';
+  const signature =
+    result.signature.status === 'unsigned'
+      ? 'unsigned development candidate'
+      : result.signature.trusted
+        ? `trusted Ed25519 signature ${result.keyId}`
+        : `self-asserted Ed25519 signature ${result.keyId}`;
   return [
     `PASS: OpenSlack v${result.version} ${result.target} (${result.commit})`,
     `Channel: ${result.channel}`,
@@ -280,7 +290,7 @@ function validateManifestIdentity(manifest: ReleaseManifest): void {
     !COMMIT_PATTERN.test(manifest.commit) ||
     typeof manifest.channel !== 'string' ||
     manifest.channel.length === 0 ||
-    (manifest.target !== 'windows-x64' && manifest.target !== 'linux-x64')
+    !SUPPORTED_RELEASE_TARGETS.has(manifest.target)
   ) {
     throw new Error('Release manifest identity metadata is invalid.');
   }
@@ -335,6 +345,14 @@ function verifyArtifactReference(
   role: ReleaseVerificationAssetRole,
   item: ArtifactReference,
 ): ReleaseVerificationAsset {
+  return readVerifiedArtifactReference(directory, role, item).asset;
+}
+
+function readVerifiedArtifactReference(
+  directory: string,
+  role: ReleaseVerificationAssetRole,
+  item: ArtifactReference,
+): { asset: ReleaseVerificationAsset; bytes: Buffer } {
   if (
     !item ||
     typeof item.file !== 'string' ||
@@ -352,10 +370,11 @@ function verifyArtifactReference(
   if (!stat.isFile() || stat.isSymbolicLink()) {
     throw new Error(`Release asset is not a regular file: ${item.file}`);
   }
-  if (sha256File(path) !== item.sha256) {
+  const bytes = readFileSync(path);
+  if (sha256(bytes) !== item.sha256) {
     throw new Error(`Release checksum mismatch: ${item.file}`);
   }
-  return { role, file: item.file, sha256: item.sha256 };
+  return { asset: { role, file: item.file, sha256: item.sha256 }, bytes };
 }
 
 function assertUniqueArtifactNames(references: ArtifactReference[]): void {
@@ -388,10 +407,6 @@ function assertEd25519(key: KeyObject): void {
 
 function sha256(payload: Buffer): string {
   return createHash('sha256').update(payload).digest('hex');
-}
-
-function sha256File(path: string): string {
-  return sha256(readFileSync(path));
 }
 
 function isCanonicalBase64(value: unknown): value is string {

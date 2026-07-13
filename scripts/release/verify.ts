@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   verifyReleaseArtifacts,
+  type ReleaseVerificationAsset,
+  type ReleaseVerificationAssetRole,
   type VerifyReleaseArtifactsOptions,
 } from '../../packages/runtime/src/release-verification.js';
 import { hasArg, parseArg } from './lib.js';
@@ -21,10 +23,19 @@ export function verifyRelease(manifestInput: string, options: VerifyReleaseOptio
       : result.signature.trusted
         ? `SIGNED/TRUSTED ${result.keyId}`
         : `SIGNED/SELF-ASSERTED ${result.keyId}`;
-  const archive = result.assets.find((asset) => asset.role === 'archive')!;
-  const sbom = result.assets.find((asset) => asset.role === 'sbom')!;
-  const provenance = result.assets.find((asset) => asset.role === 'provenance')!;
+  const archive = requireVerifiedAsset(result.assets, 'archive');
+  const sbom = requireVerifiedAsset(result.assets, 'sbom');
+  const provenance = requireVerifiedAsset(result.assets, 'provenance');
   return `PASS: ${archive.file}, ${sbom.file}, and ${provenance.file} match the release manifest. Provenance: ${signatureStatus}.`;
+}
+
+function requireVerifiedAsset(
+  assets: ReleaseVerificationAsset[],
+  role: ReleaseVerificationAssetRole,
+): ReleaseVerificationAsset {
+  const asset = assets.find((candidate) => candidate.role === role);
+  if (!asset) throw new Error(`Release verification result is missing the ${role} asset.`);
+  return asset;
 }
 
 if (import.meta.main) {
