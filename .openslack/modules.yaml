@@ -199,5 +199,4 @@ deferredWork:
     evidenceRefs:
       - commit:3b8f7ba2ebc5665efe6b56db0f76da3bd74f556a
       - repo:docs/status/deferred/negentropy-sidecar.md
-      - branch:agent/negentropy-sidecar-v1
     notes: Local source evidence is preserved on its deferred branch and excluded from standalone P0 completion.

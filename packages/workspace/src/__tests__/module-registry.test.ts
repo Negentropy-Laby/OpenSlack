@@ -301,6 +301,29 @@ describe('validateModules', () => {
         error.includes('branch evidence does not resolve'),
       ),
     ).toBe(true);
+
+    const localOnlyBranchLocator = {
+      ...validRegistry,
+      deferredWork: [
+        {
+          id: 'local-only-branch',
+          name: 'Local-only branch',
+          status: 'deferred',
+          maturity: 'local_ready',
+          countedTowardStandalone: false,
+          branch: 'agent/not-published',
+          evidenceRefs: [
+            `commit:${execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf-8' }).trim()}`,
+            'repo:packages/workspace/src/__tests__/module-registry.test.ts',
+          ],
+        },
+      ],
+    } as ModulesRegistry;
+    expect(
+      validateModules(localOnlyBranchLocator, { rootPath: process.cwd() }).errors.some((error) =>
+        error.includes('branch evidence does not resolve'),
+      ),
+    ).toBe(false);
   });
 
   it('accepts a tested product revision followed only by evidence and status commits', () => {

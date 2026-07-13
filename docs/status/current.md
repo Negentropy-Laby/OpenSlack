@@ -36,7 +36,7 @@ standalone P0 completion.
 
 | Work | Status | Maturity | Counts Toward Standalone | Branch | Evidence | Notes |
 |------|--------|----------|--------------------------|--------|----------|-------|
-| Negentropy-Lab Sidecar Integration | DEFERRED | LOCAL_READY | NO | agent/negentropy-sidecar-v1 | commit:3b8f7ba2ebc5665efe6b56db0f76da3bd74f556a<br>repo:docs/status/deferred/negentropy-sidecar.md<br>branch:agent/negentropy-sidecar-v1 | Local source evidence is preserved on its deferred branch and excluded from standalone P0 completion. |
+| Negentropy-Lab Sidecar Integration | DEFERRED | LOCAL_READY | NO | agent/negentropy-sidecar-v1 | commit:3b8f7ba2ebc5665efe6b56db0f76da3bd74f556a<br>repo:docs/status/deferred/negentropy-sidecar.md | Local source evidence is preserved on its deferred branch and excluded from standalone P0 completion. |
 
 ## Packages (15 active)
 
