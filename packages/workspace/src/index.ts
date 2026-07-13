@@ -23,6 +23,7 @@ export type {
   DeferredWorkItem,
   ModuleLifecycleStatus,
   ModuleMaturity,
+  LiveEvidenceV1,
   ModulesRegistry,
   ModulesRegistryV1,
   ModulesRegistryV2,

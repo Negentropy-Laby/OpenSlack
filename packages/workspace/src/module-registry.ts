@@ -85,6 +85,19 @@ export interface ModulesRegistry extends ModulesRegistryV2 {
   sourceSchema?: 'openslack.modules.v1' | 'openslack.modules.v2';
 }
 
+export interface LiveEvidenceV1 {
+  schema: 'openslack.live_evidence.v1';
+  ownerId: string;
+  testedCommit: string;
+  outcome: 'pass' | 'fail';
+  environment: string;
+  observedAt: string;
+  expiresAt: string;
+  correlationId: string;
+  revision: string;
+  evidenceRefs: string[];
+}
+
 export interface RegistryValidationResult {
   valid: boolean;
   errors: string[];
@@ -575,21 +588,28 @@ function validateStructuredLiveEvidence(
           encoding: 'utf-8',
           stdio: ['ignore', 'pipe', 'ignore'],
         });
-        const evidence = JSON.parse(content) as Record<string, unknown>;
+        const evidence = JSON.parse(content) as Partial<LiveEvidenceV1>;
         const observedAt = Date.parse(String(evidence.observedAt ?? ''));
         const expiresAt = Date.parse(String(evidence.expiresAt ?? ''));
         const testedCommit = String(evidence.testedCommit ?? '');
+        const revision = String(evidence.revision ?? '');
         if (
           evidence.schema !== 'openslack.live_evidence.v1' ||
           evidence.ownerId !== ownerId ||
           evidence.outcome !== 'pass' ||
-          typeof evidence.environment !== 'string' ||
-          evidence.environment.trim().length === 0 ||
+          !isBoundedEvidenceText(evidence.environment) ||
+          !isBoundedEvidenceText(evidence.correlationId) ||
+          !isRedactedEvidenceRefs(evidence.evidenceRefs) ||
           !/^[a-f0-9]{7,40}$/i.test(testedCommit) ||
+          !/^[a-f0-9]{7,40}$/i.test(revision) ||
           !Number.isFinite(observedAt) ||
           !Number.isFinite(expiresAt)
         ) {
           rejectionReasons.add('schema or required fields are invalid');
+          continue;
+        }
+        if (revision !== testedCommit) {
+          rejectionReasons.add('evidence revision does not match the tested product revision');
           continue;
         }
         const now = Date.now();
@@ -637,6 +657,30 @@ function validateStructuredLiveEvidence(
       errors.push(`${label} has invalid live evidence: ${reference} (${detail})`);
     }
   }
+}
+
+function isBoundedEvidenceText(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.trim().length > 0 &&
+    value.length <= 512 &&
+    !/[\u0000-\u001f\u007f]/.test(value)
+  );
+}
+
+function isRedactedEvidenceRefs(value: unknown): value is string[] {
+  if (!Array.isArray(value) || value.length === 0) return false;
+  return value.every(
+    (reference) =>
+      isBoundedEvidenceText(reference) &&
+      !/(?:sk-[A-Za-z0-9]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----)/.test(
+        reference,
+      ) &&
+      !/(?:access[_-]?token|api[_-]?key|password|secret|credential)\s*[:=]\s*\S+/i.test(
+        reference,
+      ) &&
+      !/:\/\/[^/\s:@]+:[^@\s]+@/.test(reference),
+  );
 }
 
 function productPathsChangedSinceTestedCommit(testedCommit: string, rootPath: string): string[] {

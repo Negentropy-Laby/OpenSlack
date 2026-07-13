@@ -1,5 +1,5 @@
 schema: openslack.modules.v2
-vitest_tests: 3618
+vitest_tests: 3619
 vitest_files: 283
 modules:
   - id: self_evolution
@@ -23,7 +23,7 @@ modules:
       - "@openslack/kernel"
       - "@openslack/workspace"
       - "@openslack/runtime"
-    tests: 190
+    tests: 191
     test_files: 27
     golden_evals: 7
 

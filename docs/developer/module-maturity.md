@@ -54,10 +54,13 @@ Live and production claims also require a committed
 `repo:.openslack/evidence/live/<id>.json` record with schema
 `openslack.live_evidence.v1`. The record must name the owner module/component,
 tested commit, passing outcome, external environment, observation time, and
-expiry time. `observedAt` may be at most five minutes ahead of the verifier's
-clock and may not precede the tested commit time by more than the same five-minute
-clock-skew allowance. The record must still be unexpired, and its validity window
-may not exceed 30 days.
+expiry time. It must also carry a correlation ID, a revision equal to the tested
+product commit, and at least one redacted evidence reference. Empty trace fields,
+revision mismatches, credential-shaped evidence references, control characters,
+and fields longer than 512 characters fail closed. `observedAt` may be at most
+five minutes ahead of the verifier's clock and may not precede the tested commit
+time by more than the same five-minute clock-skew allowance. The record must
+still be unexpired, and its validity window may not exceed 30 days.
 
 `testedCommit` identifies the product revision that actually passed the live or
 clean-machine run. It must be an ancestor of both the declared evidence commit

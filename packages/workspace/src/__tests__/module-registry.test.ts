@@ -362,6 +362,39 @@ describe('validateModules', () => {
     );
   });
 
+  it('requires revision-bound trace metadata and redacted live evidence references', () => {
+    const revisionMismatch = createLiveEvidenceFixture({ revision: '0'.repeat(40) });
+    const mismatchResult = validateModules(revisionMismatch.registry, {
+      rootPath: revisionMismatch.root,
+    });
+    expect(mismatchResult.errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('revision does not match the tested product revision'),
+      ]),
+    );
+
+    const missingTrace = createLiveEvidenceFixture({
+      correlationId: '',
+      evidenceRefs: [],
+    });
+    const missingTraceResult = validateModules(missingTrace.registry, {
+      rootPath: missingTrace.root,
+    });
+    expect(missingTraceResult.errors).toEqual(
+      expect.arrayContaining([expect.stringContaining('schema or required fields are invalid')]),
+    );
+
+    const rawCredential = createLiveEvidenceFixture({
+      evidenceRefs: ['credential=https://operator:secret-canary@example.invalid'],
+    });
+    const rawCredentialResult = validateModules(rawCredential.registry, {
+      rootPath: rawCredential.root,
+    });
+    expect(rawCredentialResult.errors).toEqual(
+      expect.arrayContaining([expect.stringContaining('schema or required fields are invalid')]),
+    );
+  });
+
   it('verifies tracked repository paths and current-history commit evidence', () => {
     const head = execFileSync('git', ['rev-parse', 'HEAD'], {
       cwd: process.cwd(),
@@ -449,6 +482,9 @@ interface LiveEvidenceFixtureOptions {
   observedAtOffsetFromTestedCommitMs?: number;
   expiresAt?: number;
   productChangeAfterEvidence?: boolean;
+  revision?: string;
+  correlationId?: string;
+  evidenceRefs?: string[];
 }
 
 function createLiveEvidenceFixture(options: LiveEvidenceFixtureOptions = {}) {
@@ -483,6 +519,9 @@ function createLiveEvidenceFixture(options: LiveEvidenceFixtureOptions = {}) {
         environment: 'clean-test-host',
         observedAt: new Date(observedAt).toISOString(),
         expiresAt: new Date(expiresAt).toISOString(),
+        correlationId: options.correlationId ?? 'corr-module-clean-host',
+        revision: options.revision ?? testedCommit,
+        evidenceRefs: options.evidenceRefs ?? ['audit:clean-host/module-pass'],
       },
       null,
       2,
