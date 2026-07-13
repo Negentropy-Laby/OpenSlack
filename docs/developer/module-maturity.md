@@ -54,8 +54,29 @@ Live and production claims also require a committed
 `repo:.openslack/evidence/live/<id>.json` record with schema
 `openslack.live_evidence.v1`. The record must name the owner module/component,
 tested commit, passing outcome, external environment, observation time, and
-expiry time. Expired records and ordinary implementation commits cannot promote
-a module to live maturity.
+expiry time. `observedAt` may be at most five minutes ahead of the verifier's
+clock and may not precede the tested commit time by more than the same five-minute
+clock-skew allowance. The record must still be unexpired, and its validity window
+may not exceed 30 days.
+
+`testedCommit` identifies the product revision that actually passed the live or
+clean-machine run. It must be an ancestor of both the declared evidence commit
+that contains the record and the current `HEAD`. Every path changed between the
+tested revision and `HEAD` must be evidence/status metadata from this strict
+allowlist:
+
+```text
+.openslack/evidence/live/*.json
+.openslack/modules.yaml
+docs/status/current.md
+```
+
+This permits the evidence record, registry promotion, and generated status to be
+committed after the tested run without creating a commit-hash cycle. Any later
+code, workflow, policy, build, or ordinary documentation change makes that live
+evidence stale and requires a new run against the new product revision. Expired,
+future-dated, overlong, stale-code, and ordinary implementation evidence cannot
+promote a module to live maturity.
 
 Component maturity caps its owning module. For example, a locally ready Agent
 Runtime component prevents the Collaboration Layer from claiming live or

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,6 +13,14 @@ import {
 } from '../module-registry.js';
 import type { ModulesRegistry, RawModulesRegistry } from '../module-registry.js';
 
+const liveEvidenceRoots: string[] = [];
+
+afterEach(() => {
+  for (const root of liveEvidenceRoots.splice(0)) {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 const validRegistry: ModulesRegistry = {
   schema: 'openslack.modules.v2',
   modules: [
@@ -23,7 +31,10 @@ const validRegistry: ModulesRegistry = {
       maturity: 'local_ready',
       operatorConfigured: false,
       externalBlockers: ['live_test_pending'],
-      evidenceRefs: ['commit:1234567', 'test:packages/workspace/src/__tests__/module-registry.test.ts'],
+      evidenceRefs: [
+        'commit:1234567',
+        'test:packages/workspace/src/__tests__/module-registry.test.ts',
+      ],
       phase: '1.0',
       cli: ['openslack test'],
       packages: ['@openslack/test'],
@@ -38,7 +49,10 @@ const validRegistry: ModulesRegistry = {
       maturity: 'implemented',
       operatorConfigured: false,
       externalBlockers: [],
-      evidenceRefs: ['commit:1234567', 'test:packages/workspace/src/__tests__/module-registry.test.ts'],
+      evidenceRefs: [
+        'commit:1234567',
+        'test:packages/workspace/src/__tests__/module-registry.test.ts',
+      ],
       phase: '1.1',
       tests: 5,
       test_files: 1,
@@ -289,6 +303,65 @@ describe('validateModules', () => {
     ).toBe(true);
   });
 
+  it('accepts a tested product revision followed only by evidence and status commits', () => {
+    const fixture = createLiveEvidenceFixture();
+    const result = validateModules(fixture.registry, { rootPath: fixture.root });
+
+    expect(result.valid).toBe(true);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('rejects stale live evidence when product code changes after the tested revision', () => {
+    const fixture = createLiveEvidenceFixture({ productChangeAfterEvidence: true });
+    const result = validateModules(fixture.registry, { rootPath: fixture.root });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('tested commit is stale; product paths changed: src/product.ts'),
+      ]),
+    );
+  });
+
+  it('rejects future-dated and overlong live-evidence validity windows', () => {
+    const futureObservedAt = Date.now() + 10 * 60 * 1000;
+    const futureFixture = createLiveEvidenceFixture({
+      observedAt: futureObservedAt,
+      expiresAt: futureObservedAt + 24 * 60 * 60 * 1000,
+    });
+    const futureResult = validateModules(futureFixture.registry, {
+      rootPath: futureFixture.root,
+    });
+    expect(futureResult.errors).toEqual(
+      expect.arrayContaining([expect.stringContaining('exceeds the allowed clock skew')]),
+    );
+
+    const observedAt = Date.now() - 60 * 1000;
+    const overlongFixture = createLiveEvidenceFixture({
+      observedAt,
+      expiresAt: observedAt + 31 * 24 * 60 * 60 * 1000,
+    });
+    const overlongResult = validateModules(overlongFixture.registry, {
+      rootPath: overlongFixture.root,
+    });
+    expect(overlongResult.errors).toEqual(
+      expect.arrayContaining([expect.stringContaining('validity exceeds 30 days')]),
+    );
+  });
+
+  it('rejects an observation that predates the tested commit beyond clock skew', () => {
+    const fixture = createLiveEvidenceFixture({
+      observedAtOffsetFromTestedCommitMs: -10 * 60 * 1000,
+    });
+    const result = validateModules(fixture.registry, { rootPath: fixture.root });
+
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('observation predates the tested commit beyond allowed clock skew'),
+      ]),
+    );
+  });
+
   it('verifies tracked repository paths and current-history commit evidence', () => {
     const head = execFileSync('git', ['rev-parse', 'HEAD'], {
       cwd: process.cwd(),
@@ -369,6 +442,92 @@ function moduleFixture(overrides: Partial<ModulesRegistry['modules'][number]> = 
     phase: '1.0',
     ...overrides,
   };
+}
+
+interface LiveEvidenceFixtureOptions {
+  observedAt?: number;
+  observedAtOffsetFromTestedCommitMs?: number;
+  expiresAt?: number;
+  productChangeAfterEvidence?: boolean;
+}
+
+function createLiveEvidenceFixture(options: LiveEvidenceFixtureOptions = {}) {
+  const root = mkdtempSync(join(tmpdir(), 'openslack-live-evidence-'));
+  liveEvidenceRoots.push(root);
+  git(root, ['init']);
+  git(root, ['config', 'user.name', 'OpenSlack Test']);
+  git(root, ['config', 'user.email', 'openslack-test@example.invalid']);
+
+  mkdirSync(join(root, 'src'), { recursive: true });
+  mkdirSync(join(root, 'test'), { recursive: true });
+  writeFileSync(join(root, 'src', 'product.ts'), 'export const product = 1;\n', 'utf-8');
+  writeFileSync(join(root, 'test', 'product.test.ts'), 'product revision test\n', 'utf-8');
+  git(root, ['add', '.']);
+  git(root, ['commit', '-m', 'test product revision']);
+  const testedCommit = git(root, ['rev-parse', 'HEAD']);
+  const testedCommitTime = Number(git(root, ['show', '-s', '--format=%ct', testedCommit])) * 1000;
+
+  const observedAt =
+    options.observedAt ?? testedCommitTime + (options.observedAtOffsetFromTestedCommitMs ?? 1000);
+  const expiresAt = options.expiresAt ?? observedAt + 24 * 60 * 60 * 1000;
+  mkdirSync(join(root, '.openslack', 'evidence', 'live'), { recursive: true });
+  mkdirSync(join(root, 'docs', 'status'), { recursive: true });
+  writeFileSync(
+    join(root, '.openslack', 'evidence', 'live', 'module.json'),
+    `${JSON.stringify(
+      {
+        schema: 'openslack.live_evidence.v1',
+        ownerId: 'module',
+        testedCommit,
+        outcome: 'pass',
+        environment: 'clean-test-host',
+        observedAt: new Date(observedAt).toISOString(),
+        expiresAt: new Date(expiresAt).toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+    'utf-8',
+  );
+  writeFileSync(
+    join(root, '.openslack', 'modules.yaml'),
+    'schema: openslack.modules.v2\n',
+    'utf-8',
+  );
+  writeFileSync(join(root, 'docs', 'status', 'current.md'), '# Generated status\n', 'utf-8');
+  git(root, ['add', '.']);
+  git(root, ['commit', '-m', 'record live evidence']);
+  const evidenceCommit = git(root, ['rev-parse', 'HEAD']);
+
+  if (options.productChangeAfterEvidence) {
+    writeFileSync(join(root, 'src', 'product.ts'), 'export const product = 2;\n', 'utf-8');
+    git(root, ['add', 'src/product.ts']);
+    git(root, ['commit', '-m', 'change product after live test']);
+  }
+
+  const registry: ModulesRegistry = {
+    schema: 'openslack.modules.v2',
+    modules: [
+      moduleFixture({
+        maturity: 'live_verified',
+        operatorConfigured: true,
+        evidenceRefs: [
+          `commit:${evidenceCommit}`,
+          'test:test/product.test.ts',
+          'repo:.openslack/evidence/live/module.json',
+        ],
+      }),
+    ],
+  };
+  return { root, registry };
+}
+
+function git(root: string, args: string[]): string {
+  return execFileSync('git', args, {
+    cwd: root,
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  }).trim();
 }
 
 describe('getTotalTests', () => {

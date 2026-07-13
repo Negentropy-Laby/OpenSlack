@@ -116,6 +116,8 @@ const MATURITY_RANK: Record<ModuleMaturity, number> = {
   live_verified: 3,
   production_ready: 4,
 };
+const LIVE_EVIDENCE_CLOCK_SKEW_MS = 5 * 60 * 1000;
+const LIVE_EVIDENCE_MAX_VALIDITY_MS = 30 * 24 * 60 * 60 * 1000;
 
 export function readModules(rootPath: string): ModulesRegistry {
   const yamlPath = join(rootPath, '.openslack', 'modules.yaml');
@@ -519,7 +521,7 @@ function validateUniqueIds(items: unknown[], label: string, errors: string[]): v
 }
 
 function isLiveEvidenceReference(reference: string): boolean {
-  return reference.startsWith('repo:.openslack/evidence/live/') && reference.endsWith('.json');
+  return /^repo:\.openslack\/evidence\/live\/[^/]+\.json$/.test(reference);
 }
 
 function validateEvidencePathsAtDeclaredCommits(
@@ -565,6 +567,7 @@ function validateStructuredLiveEvidence(
     const path = normalize(reference.slice('repo:'.length));
     const gitPath = path.replace(/\\/g, '/');
     let accepted = false;
+    const rejectionReasons = new Set<string>();
     for (const commit of commits) {
       try {
         const content = execFileSync('git', ['show', `${commit}:${gitPath}`], {
@@ -581,27 +584,101 @@ function validateStructuredLiveEvidence(
           evidence.ownerId !== ownerId ||
           evidence.outcome !== 'pass' ||
           typeof evidence.environment !== 'string' ||
-          evidence.environment.length === 0 ||
+          evidence.environment.trim().length === 0 ||
           !/^[a-f0-9]{7,40}$/i.test(testedCommit) ||
           !Number.isFinite(observedAt) ||
-          !Number.isFinite(expiresAt) ||
-          expiresAt < observedAt ||
-          expiresAt < Date.now()
+          !Number.isFinite(expiresAt)
         ) {
+          rejectionReasons.add('schema or required fields are invalid');
           continue;
         }
-        execFileSync('git', ['merge-base', '--is-ancestor', testedCommit, 'HEAD'], {
-          cwd: rootPath,
-          stdio: 'ignore',
-        });
+        const now = Date.now();
+        if (observedAt > now + LIVE_EVIDENCE_CLOCK_SKEW_MS) {
+          rejectionReasons.add('observation time exceeds the allowed clock skew');
+          continue;
+        }
+        const testedCommitTime = commitTimestamp(testedCommit, rootPath);
+        if (observedAt + LIVE_EVIDENCE_CLOCK_SKEW_MS < testedCommitTime) {
+          rejectionReasons.add('observation predates the tested commit beyond allowed clock skew');
+          continue;
+        }
+        if (expiresAt <= observedAt || expiresAt <= now) {
+          rejectionReasons.add('evidence is expired or has an invalid expiry time');
+          continue;
+        }
+        if (expiresAt - observedAt > LIVE_EVIDENCE_MAX_VALIDITY_MS) {
+          rejectionReasons.add('evidence validity exceeds 30 days');
+          continue;
+        }
+        try {
+          execFileSync('git', ['merge-base', '--is-ancestor', testedCommit, commit], {
+            cwd: rootPath,
+            stdio: 'ignore',
+          });
+        } catch {
+          rejectionReasons.add('declared evidence commit predates the tested commit');
+          continue;
+        }
+        const changedProductPaths = productPathsChangedSinceTestedCommit(testedCommit, rootPath);
+        if (changedProductPaths.length > 0) {
+          rejectionReasons.add(
+            `tested commit is stale; product paths changed: ${changedProductPaths.join(', ')}`,
+          );
+          continue;
+        }
         accepted = true;
         break;
       } catch {
-        // Try the next declared evidence commit.
+        rejectionReasons.add('evidence commit or tested commit is not in current history');
       }
     }
     if (!accepted) {
-      errors.push(`${label} has invalid, expired, or uncommitted live evidence: ${reference}`);
+      const detail = [...rejectionReasons].join('; ') || 'no declared evidence commit contains it';
+      errors.push(`${label} has invalid live evidence: ${reference} (${detail})`);
     }
   }
+}
+
+function productPathsChangedSinceTestedCommit(testedCommit: string, rootPath: string): string[] {
+  execFileSync('git', ['cat-file', '-e', `${testedCommit}^{commit}`], {
+    cwd: rootPath,
+    stdio: 'ignore',
+  });
+  execFileSync('git', ['merge-base', '--is-ancestor', testedCommit, 'HEAD'], {
+    cwd: rootPath,
+    stdio: 'ignore',
+  });
+  const changedPaths = execFileSync(
+    'git',
+    ['diff', '--name-only', '--diff-filter=ACDMRTUXB', testedCommit, 'HEAD', '--'],
+    {
+      cwd: rootPath,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    },
+  )
+    .split(/\r?\n/)
+    .map((path) => path.trim())
+    .filter(Boolean);
+  return changedPaths.filter((path) => !isLiveEvidenceMetadataPath(path));
+}
+
+function commitTimestamp(commit: string, rootPath: string): number {
+  const seconds = Number(
+    execFileSync('git', ['show', '-s', '--format=%ct', commit], {
+      cwd: rootPath,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim(),
+  );
+  if (!Number.isFinite(seconds)) throw new Error('Commit timestamp is invalid.');
+  return seconds * 1000;
+}
+
+function isLiveEvidenceMetadataPath(path: string): boolean {
+  return (
+    path === '.openslack/modules.yaml' ||
+    path === 'docs/status/current.md' ||
+    /^\.openslack\/evidence\/live\/[^/]+\.json$/.test(path)
+  );
 }
