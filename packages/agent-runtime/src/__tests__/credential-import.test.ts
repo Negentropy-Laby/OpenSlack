@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   CredentialStore,
   MemoryKeychainBackend,
@@ -229,6 +232,31 @@ describe('agent-runtime credential import', () => {
         }),
       );
       expect(source.every((byte) => byte === 0)).toBe(true);
+    }
+  });
+
+  it('rejects oversized and non-regular sources before allocating their contents', () => {
+    const root = mkdtempSync(join(tmpdir(), 'openslack-credential-import-'));
+    const oversized = join(root, 'oversized.txt');
+    writeFileSync(oversized, Buffer.alloc(64 * 1024 + 1, 0x61));
+    const store = new CredentialStore([new MemoryKeychainBackend()]);
+    try {
+      for (const sourcePath of [oversized, root]) {
+        const plan = planAgentRuntimeCredentialImport({
+          sourcePath,
+          credentialRef: CREDENTIAL_REF,
+        });
+        expect(() =>
+          applyAgentRuntimeCredentialImport(plan, { credentialStore: store }),
+        ).toThrowError(
+          expect.objectContaining<Partial<AgentRuntimeCredentialImportError>>({
+            code: 'CREDENTIAL_IMPORT_SOURCE_INVALID',
+          }),
+        );
+      }
+      expect(store.has(CREDENTIAL_REF)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

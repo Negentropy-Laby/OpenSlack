@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { Command } from 'commander';
+import { AgentRuntimeCredentialImportError } from '@openslack/agent-runtime';
 import type {
   AbyRuntimeDoctorReport,
   AbyRuntimeSetupReport,
@@ -164,11 +165,14 @@ export function agentRuntimeCommands(dependencies: AgentRuntimeCommandDependenci
           runtime.applyAgentRuntimeCredentialImport;
         const result = applyCredentialImport(plan);
         console.log(renderAgentRuntimeCredentialImportResult(result));
-      } catch {
+      } catch (error) {
         console.error(
-          'Agent runtime credential import failed safely; no existing credential was replaced.',
+          error instanceof AgentRuntimeCredentialImportError
+            ? `${error.code}: ${error.message}`
+            : 'Agent runtime credential import failed safely; no existing credential was replaced.',
         );
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
     });
 

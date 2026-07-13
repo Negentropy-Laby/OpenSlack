@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
+import { AgentRuntimeCredentialImportError } from '@openslack/agent-runtime';
 import { agentRuntimeCommands, renderAbyRuntimeDoctorReport } from '../commands/agent-runtime.js';
 
 const mockDiagnoseAbyRuntime = vi.fn();
@@ -36,6 +37,7 @@ const passReport = {
 describe('agent-runtime command', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.exitCode = undefined;
     mockDiagnoseAbyRuntime.mockReturnValue(passReport);
     mockSetupAbyRuntime.mockReturnValue({
       provider: 'aby',
@@ -150,6 +152,7 @@ describe('agent-runtime command', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    process.exitCode = undefined;
   });
 
   it('renders Aby doctor reports without env values', () => {
@@ -386,9 +389,6 @@ describe('agent-runtime command', () => {
 
   it('fails a credential import with a fixed non-leaking CLI error', async () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
-      throw new Error('process.exit');
-    });
     mockApplyAgentRuntimeCredentialImport.mockImplementation(() => {
       throw new Error('credential-secret-canary');
     });
@@ -397,27 +397,57 @@ describe('agent-runtime command', () => {
       applyAgentRuntimeCredentialImport: (plan) => mockApplyAgentRuntimeCredentialImport(plan),
     });
 
-    await expect(
-      cmd.parseAsync(
-        [
-          'node',
-          'openslack agent-runtime',
-          'credential',
-          'import',
-          '--source',
-          '/tmp/openai-credential.txt',
-          '--credential-ref',
-          'keychain:openslack/openai-compatible-test',
-          '--write',
-        ],
-        { from: 'node' },
-      ),
-    ).rejects.toThrow('process.exit');
+    await cmd.parseAsync(
+      [
+        'node',
+        'openslack agent-runtime',
+        'credential',
+        'import',
+        '--source',
+        '/tmp/openai-credential.txt',
+        '--credential-ref',
+        'keychain:openslack/openai-compatible-test',
+        '--write',
+      ],
+      { from: 'node' },
+    );
     expect(errorSpy).toHaveBeenCalledWith(
       'Agent runtime credential import failed safely; no existing credential was replaced.',
     );
     expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('credential-secret-canary');
-    exitSpy.mockRestore();
+    expect(process.exitCode).toBe(1);
+    errorSpy.mockRestore();
+  });
+
+  it('surfaces typed credential-import failures without exposing unexpected errors', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockApplyAgentRuntimeCredentialImport.mockImplementation(() => {
+      throw new AgentRuntimeCredentialImportError('CREDENTIAL_IMPORT_ALREADY_EXISTS');
+    });
+    const cmd = agentRuntimeCommands({
+      planAgentRuntimeCredentialImport: (input) => mockPlanAgentRuntimeCredentialImport(input),
+      applyAgentRuntimeCredentialImport: (plan) => mockApplyAgentRuntimeCredentialImport(plan),
+    });
+
+    await cmd.parseAsync(
+      [
+        'node',
+        'openslack agent-runtime',
+        'credential',
+        'import',
+        '--source',
+        '/tmp/openai-credential.txt',
+        '--credential-ref',
+        'keychain:openslack/openai-compatible-test',
+        '--write',
+      ],
+      { from: 'node' },
+    );
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      'CREDENTIAL_IMPORT_ALREADY_EXISTS: Credential reference already exists; no value was replaced.',
+    );
+    expect(process.exitCode).toBe(1);
     errorSpy.mockRestore();
   });
 

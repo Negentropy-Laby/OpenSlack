@@ -57,6 +57,8 @@ Add `--delete-source` only when you want OpenSlack to attempt source cleanup
 after a successful keychain write. Deletion is best-effort; a failure produces
 an explicit manual-cleanup warning and does not claim that the source was
 removed. The preview reads neither the source file nor the keychain.
+When applying an import, OpenSlack removes one conventional trailing `LF` or
+`CRLF` from the source value before storing it; all other bytes are preserved.
 
 Then use the same reference in setup:
 

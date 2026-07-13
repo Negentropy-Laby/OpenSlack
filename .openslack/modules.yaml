@@ -1,5 +1,5 @@
 schema: openslack.modules.v2
-vitest_tests: 3653
+vitest_tests: 3655
 vitest_files: 286
 modules:
   - id: self_evolution
@@ -80,7 +80,7 @@ modules:
       - "@openslack/chat-gateway"
       - "@openslack/tui"
       - "@openslack/credentials"
-    tests: 870
+    tests: 871
     test_files: 100
     notes: Structured planner active. Webhook and Slack chat adapters active with actor mapping. PRMS chat cards and action confirmation active. Typed tool registry, LLM-first intent routing with deterministic keyword fallback, setup report, and 24h pending plan store active. Session-based conversation memory with multi-turn context resolution and progressive clarification. Doctor --format plain for non-technical output. Conversation-first TUI workbench with Ask OpenSlack, Operator recommendation cards, workflow draft-first cards, profile sync recommendations, and subagent mention dispatch. TUI setup report view and PR doctor view via --format tui. Versioned Windows x64 and Linux x64 archive builds embed the CLI, workflow assets, native keychain binding, build metadata, SBOM, checksums, and provenance; native build and unpacked smoke are enforced by the release matrix. The installed CLI verifies stable release artifacts and trusted signatures without a source checkout, Bun, or Node.js. Agent Runtime credentials can be previewed and imported atomically into the native keychain without writing secret values to workspace configuration.
 
@@ -174,7 +174,7 @@ modules:
       - "@openslack/tui"
       - "@openslack/github"
       - "@openslack/agent-runtime"
-    tests: 1812
+    tests: 1813
     test_files: 147
     components:
       - id: agent_runtime
