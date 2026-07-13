@@ -77,7 +77,7 @@ describe('resolveCodeowners', () => {
     expect(owners).toContain('@wsman');
   });
 
-  it('assigns the repository owner to every core workflow artifact', () => {
+  it('assigns the repository owner to canonical instructions and every core workflow artifact', () => {
     const content = readFileSync(
       new URL('../../../../.github/CODEOWNERS', import.meta.url),
       'utf8',
@@ -85,6 +85,8 @@ describe('resolveCodeowners', () => {
     const repositoryEntries = parseCODEOWNERS(content);
 
     expect(resolveCodeowners([
+      'AGENTS.md',
+      'CLAUDE.md',
       'packages/workflows/src/builtins/profile-sync.ts',
       'packages/workflows/src/workflow-catalog.ts',
       'packages/workflows/src/pattern-registry.ts',

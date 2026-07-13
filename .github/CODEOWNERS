@@ -1,4 +1,6 @@
 # Red Zone paths — human approval required for any change
+AGENTS.md                                       @wsman
+CLAUDE.md                                       @wsman
 .github/**                                     @wsman
 .openslack/policies/**                         @wsman
 .openslack/agents/registry/**                  @wsman
