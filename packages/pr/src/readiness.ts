@@ -43,7 +43,8 @@ export function checkMergeReadiness(
     return { ...report, decision, reason, recommendation };
   }
 
-  // Red zone human approval gate
+  // Red zone human approval gate. This lightweight pre-check does not load
+  // immutable CODEOWNERS; diagnosePR enforces assigned-owner membership.
   if (policy.red_zone_human_required && report.riskZone === 'red') {
     if (report.humanApprovals.length === 0) {
       decision = 'NEEDS_HUMAN_APPROVAL';

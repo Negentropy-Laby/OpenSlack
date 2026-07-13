@@ -205,6 +205,19 @@ describe('diagnosePR', () => {
     const noMatchingOwners = diagnosePR(report, DEFAULT_POLICY, []);
     expect(noMatchingOwners.decision).toBe('READY_TO_MERGE');
     expect(noMatchingOwners.reason).toContain('Independent human approval satisfied');
+
+    const staleNoMatchingOwners = diagnosePR({
+      ...report,
+      headSha: 'current-head',
+      reviews: [{ user: 'alice', state: 'APPROVED', commitOid: 'old-head' }],
+    }, DEFAULT_POLICY, []);
+    expect(staleNoMatchingOwners.decision).toBe('NEEDS_HUMAN_APPROVAL');
+
+    const botNoMatchingOwners = diagnosePR({
+      ...report,
+      reviews: [{ user: 'dependabot[bot]', state: 'APPROVED' }],
+    }, DEFAULT_POLICY, []);
+    expect(botNoMatchingOwners.decision).toBe('BOT_APPROVAL_IGNORED');
   });
 
   it('allows red zone when policy does not require human approval', () => {

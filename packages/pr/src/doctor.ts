@@ -163,7 +163,8 @@ export function diagnosePR(
   // 12. Missing CODEOWNER approval for Red Zone when the immutable base
   // actually assigns one. An empty owner set must not create an impossible
   // approval requirement; the independent human gate above remains mandatory.
-  if (policy.red_zone_human_required && report.riskZone === 'red' && codeowners.length > 0) {
+  const hasAssignedCodeowners = codeowners.length > 0;
+  if (policy.red_zone_human_required && report.riskZone === 'red' && hasAssignedCodeowners) {
     const codeownerApprovals = validApprovers.filter((approver) =>
       codeowners.some((owner) => owner.replace('@', '') === approver),
     );
@@ -183,7 +184,7 @@ export function diagnosePR(
   } else if (report.riskZone === 'red') {
     decision = 'READY_TO_MERGE';
     reason =
-      codeowners.length > 0
+      hasAssignedCodeowners
         ? 'Red Zone. CODEOWNER approval satisfied. All checks passed.'
         : 'Red Zone. Independent human approval satisfied; no matching CODEOWNERS entries. All checks passed.';
     recommendation = 'Ready to merge.';
