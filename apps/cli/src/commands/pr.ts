@@ -2,7 +2,6 @@ import { Command } from 'commander';
 import { renderFindingsPlain } from '@openslack/runtime';
 import type { PlainFinding } from '@openslack/runtime';
 import {
-  getCODEOWNERS,
   commentOnPR,
   getClient,
   GitHubAuthRequiredError,
@@ -19,8 +18,8 @@ import {
   generateDoctorReport,
   loadPRReviewPolicy,
   diagnosePR,
-  parseCODEOWNERS,
-  resolveCodeowners,
+  loadPRCodeownerEvidence,
+  PRCodeownerEvidenceUnavailableError,
   postReviewComment,
   watchPR,
   buildPRQueue,
@@ -262,12 +261,13 @@ export function prCommands(): Command {
           return;
         }
         const classified = classifyPRReport(report);
-        const codeownersContent = await getCODEOWNERS(classified.baseRef, clientOptions);
-        const codeownersEntries = codeownersContent ? parseCODEOWNERS(codeownersContent) : [];
-        codeowners = resolveCodeowners(classified.changedFiles, codeownersEntries);
+        ({ owners: codeowners } = await loadPRCodeownerEvidence(classified, clientOptions));
         report = classified;
       } catch (error) {
-        if (error instanceof GitHubEvidenceUnavailableError) {
+        if (
+          error instanceof GitHubEvidenceUnavailableError ||
+          error instanceof PRCodeownerEvidenceUnavailableError
+        ) {
           console.error(renderEvidenceUnavailableMessage(client, error));
           process.exitCode = 1;
           return;

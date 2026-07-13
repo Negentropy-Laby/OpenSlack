@@ -40,9 +40,23 @@ Workflow-Trust: untrusted|trusted|core
 
 PRMS rejects bot/app reviews, stale-head approvals, duplicate or conflicting
 markers, and tree evidence that does not match the current base/head pair.
+CODEOWNER evidence is loaded from the PR's immutable base commit SHA and is
+resolved against the complete PR changed-file set. It is never reinterpreted
+from a later value of the mutable base branch.
+Live PRMS doctor, watch, queue, merge, and finalizer operations require a
+readable CODEOWNERS file at that base commit. A missing file is unavailable
+governance evidence and fails closed; it is never treated as an empty owner set.
 Engine code, tests, and fixtures use normal PRMS approval and do not require a
 workflow trust marker. This merge evidence does not automatically modify a
 machine-local `.openslack/workflow-trust.yaml` store.
+
+Core artifacts (`builtins`, the workflow catalog, and the pattern registry)
+have explicit repository CODEOWNERS so a core-only PR has an authorized human
+review path. New or core artifacts use one bot-created Workflow Governance
+Issue. That Issue remains open until the post-merge finalizer records the
+reviewer, reviewed commit, trust decision, and evidence hash, applies the
+accepted/core labels, and closes it. Do not close a Governance Issue manually;
+a partial or failed finalizer write must leave it open for a safe retry.
 
 ### Level 0: Untrusted
 

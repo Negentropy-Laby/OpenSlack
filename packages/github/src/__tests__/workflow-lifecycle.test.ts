@@ -47,4 +47,26 @@ describe('finalizeWorkflowPR governance evidence', () => {
       state: 'closed',
     }))
   })
+
+  it.each([
+    ['comment', createComment],
+    ['label', addLabels],
+    ['close', update],
+  ])('keeps the governance issue open and reports a %s write failure', async (_step, operation) => {
+    operation.mockRejectedValueOnce(new Error('write failed'))
+
+    const result = await finalizeWorkflowPR(185, {
+      governanceIssue: 186,
+      workflowHash: 'sha256:evidence',
+      trustDecision: 'core',
+      trustReviewer: 'wsman',
+      trustReviewCommitOid: 'head-sha',
+    })
+
+    expect(result.closedIssues).toEqual([])
+    expect(result.errors).toEqual([
+      'Failed to finalize governance issue #186: write failed',
+    ])
+    if (operation !== update) expect(update).not.toHaveBeenCalled()
+  })
 })

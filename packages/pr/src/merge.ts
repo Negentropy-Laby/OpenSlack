@@ -3,8 +3,7 @@ import type { PRReviewReport, PRReviewPolicy, PRReviewState } from './types.js';
 import type { AgentPrincipal, AgentPermissionSnapshot } from '@openslack/kernel';
 import { authorizeAgentAction } from '@openslack/kernel';
 import { diagnosePR } from './doctor.js';
-import { parseCODEOWNERS, resolveCodeowners } from './codeowners.js';
-import { getCODEOWNERS } from '@openslack/github';
+import { loadPRCodeownerEvidence } from './codeowners.js';
 
 export interface MergeStewardResult {
   merged: boolean;
@@ -32,9 +31,10 @@ export async function mergeIfReady(
   const report = await fetchPRDetails(prNumber, { requireLive: true, strictEvidence: true });
   const classified = classifyPRReport(report);
 
-  const codeownersContent = await getCODEOWNERS(classified.baseRef);
-  const codeownersEntries = codeownersContent ? parseCODEOWNERS(codeownersContent) : [];
-  const codeowners = resolveCodeowners(classified.changedFiles, codeownersEntries);
+  const { owners: codeowners } = await loadPRCodeownerEvidence(classified, {
+    requireLive: true,
+    strictEvidence: true,
+  });
 
   const diagnosed = diagnosePR(classified, policy, codeowners);
 

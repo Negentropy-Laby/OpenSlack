@@ -272,4 +272,64 @@ describe('human workflow trust review', () => {
       reviews: [review('owner', 'Workflow-Trust: core')],
     }).overall).toBe('PASS');
   });
+
+  it('accepts the PR #185 evidence shape using PR-level CODEOWNER evidence', () => {
+    const path = 'packages/workflows/src/builtins/profile-sync.ts';
+    const workflowEvidence = modifiedEvidence(path);
+    const issue = governanceIssue(workflowEvidence, 186);
+    issue.prNumber = 185;
+    issue.body = issue.body.replaceAll('pr: 176', 'pr: 185');
+
+    const result = evaluateWorkflowGate({
+      changedFiles: [
+        '.github/workflows/openslack-release.yml',
+        path,
+      ],
+      body: 'Workflow governance #186',
+      author: 'openslack-agent-operator[bot]',
+      baseSha: BASE_SHA,
+      headSha: HEAD_SHA,
+      reviews: [review('wsman', 'Workflow-Trust: core')],
+      workflowEvidence,
+      governanceIssue: issue,
+      codeowners: ['@wsman'],
+    });
+
+    expect(result).toMatchObject({
+      overall: 'PASS',
+      trustDecision: 'core',
+      trustReviewer: 'wsman',
+      trustReviewCommitOid: HEAD_SHA,
+      evidenceHash: workflowEvidence.evidenceHash,
+      governanceIssue: 186,
+    });
+  });
+
+  it('rejects a governance issue with the wrong evidence hash or issue binding', () => {
+    const path = 'packages/workflows/src/builtins/profile-sync.ts';
+    const workflowEvidence = modifiedEvidence(path);
+    const issue = governanceIssue(workflowEvidence, 186);
+    const common = {
+      changedFiles: [path],
+      body: 'Workflow governance #186',
+      author: 'openslack-agent-operator[bot]',
+      baseSha: BASE_SHA,
+      headSha: HEAD_SHA,
+      reviews: [review('owner', 'Workflow-Trust: core')],
+      workflowEvidence,
+      codeowners: ['@owner'],
+    };
+
+    expect(evaluateWorkflowGate({
+      ...common,
+      governanceIssue: {
+        ...issue,
+        body: issue.body.replace(workflowEvidence.evidenceHash, 'sha256:wrong'),
+      },
+    }).overall).toBe('FAIL');
+    expect(evaluateWorkflowGate({
+      ...common,
+      governanceIssue: { ...issue, issueNumber: 187 },
+    }).overall).toBe('FAIL');
+  });
 });

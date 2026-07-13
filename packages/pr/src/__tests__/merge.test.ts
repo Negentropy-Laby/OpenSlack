@@ -4,7 +4,7 @@ import type { PRReviewReport, PRReviewPolicy } from '../types.js';
 import type { AgentPermissionSnapshot } from '@openslack/kernel';
 
 vi.mock('@openslack/github', () => ({
-  getCODEOWNERS: vi.fn(() => Promise.resolve(null)),
+  getCODEOWNERS: vi.fn(() => Promise.resolve('# no matching owners')),
   mergePR: vi.fn(() => Promise.resolve({ merged: true, sha: 'abc123', message: 'Merged' })),
 }));
 
@@ -31,6 +31,7 @@ function makeReport(overrides: Partial<PRReviewReport> = {}): PRReviewReport {
     state: 'open',
     draft: false,
     baseRef: 'main',
+    baseSha: 'base-sha',
     riskZone: 'green',
     changedFiles: [],
     checks: [{ name: 'ci', status: 'completed', conclusion: 'success' }],

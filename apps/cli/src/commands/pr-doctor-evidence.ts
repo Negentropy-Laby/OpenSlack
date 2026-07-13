@@ -1,5 +1,11 @@
 import type { GitHubAuthPreference, GitHubClient, GitHubClientOptions } from '@openslack/github';
-import type { GitHubEvidenceUnavailableError } from '@openslack/github';
+
+export interface PRDoctorEvidenceUnavailableError {
+  message: string;
+  operation: string;
+  prNumber?: number;
+  status?: number;
+}
 
 const AUTH_CHOICES: GitHubAuthPreference[] = ['auto', 'app', 'token', 'dry-run'];
 
@@ -67,7 +73,7 @@ export function renderAuthRequiredMessage(prNumber: number, error: Error): strin
 
 export function renderEvidenceUnavailableMessage(
   client: GitHubClient,
-  error: GitHubEvidenceUnavailableError,
+  error: PRDoctorEvidenceUnavailableError,
 ): string {
   return [
     error.message,
