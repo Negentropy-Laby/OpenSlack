@@ -567,6 +567,15 @@ non-core artifact updates use the PR itself as the governance record. Evidence
 hashes are computed from base/head Git trees and never need to be copied into
 the PR body manually.
 
+PRMS loads CODEOWNERS from the PR's immutable base commit SHA and resolves them
+against the complete changed-file set, so later base-branch changes cannot
+rewrite the approval evidence for an existing PR. Core workflow paths have
+explicit CODEOWNERS and therefore do not deadlock when they are the only files
+in a PR. After merge, run `openslack collaboration workflow finalize-pr <n>` to
+write the reviewer, reviewed commit, trust decision, and evidence hash to the
+linked Governance Issue. Do not close that Issue manually; the finalizer closes
+it only after its comment and labels have been written successfully.
+
 For local bot-authenticated PRMS diagnosis or Merge Steward execution, use the
 fixed GitHub App wrapper pipeline instead of reading credentials manually:
 

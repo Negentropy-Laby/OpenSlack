@@ -1,7 +1,6 @@
-import type { PRReviewReport, PRReviewPolicy } from '@openslack/pr'
-import { fetchPRDetails, classifyPRReport, diagnosePR, loadPRReviewPolicy, mergeIfReady } from '@openslack/pr'
-import { parseCODEOWNERS, resolveCodeowners } from '@openslack/pr'
-import { getCODEOWNERS, listOpenPRs } from '@openslack/github'
+import type { PRCodeownerEvidence, PRReviewReport, PRReviewPolicy } from '@openslack/pr'
+import { fetchPRDetails, classifyPRReport, diagnosePR, loadPRCodeownerEvidence, loadPRReviewPolicy, mergeIfReady } from '@openslack/pr'
+import { listOpenPRs } from '@openslack/github'
 import { recordEvent as collabRecordEvent, createHandoff as collabCreateHandoff, recordDecision as collabRecordDecision } from '@openslack/collaboration'
 import type { PrmsDoctorResult } from './types.js'
 import { classifyPathGroups } from './risk-classification.js'
@@ -33,8 +32,8 @@ export interface OpenSlackAPIOptions {
   _mergeIfReady?: (prNumber: number, policy: PRReviewPolicy, options?: Record<string, unknown>) => Promise<MergeStewardCallResult>
   /** Override listOpenPRs for testing */
   _listOpenPRs?: (limit?: number) => Promise<Array<{ number: number; title: string; status: string }>>
-  /** Override getCODEOWNERS for testing */
-  _getCODEOWNERS?: (ref: string) => Promise<string | null>
+  /** Override immutable PR CODEOWNER evidence loading for testing */
+  _loadPRCodeownerEvidence?: (report: PRReviewReport) => Promise<PRCodeownerEvidence>
   /** Override collaboration recordEvent for testing */
   _recordEvent?: (event: unknown) => unknown
   /** Override collaboration createHandoff for testing */
@@ -69,8 +68,8 @@ export function createOpenSlackAPI(options: OpenSlackAPIOptions = {}) {
     (options._mergeIfReady as typeof doMergeIfReady) ?? (mergeIfReady as typeof doMergeIfReady)
   const doListOpenPRs: (limit?: number) => Promise<Array<{ number: number; title: string; author?: string; draft?: boolean; updatedAt?: string; url?: string; status?: string }>> =
     (options._listOpenPRs as typeof doListOpenPRs) ?? (listOpenPRs as typeof doListOpenPRs)
-  const doGetCODEOWNERS: (ref: string) => Promise<string | null> =
-    options._getCODEOWNERS ?? getCODEOWNERS
+  const doLoadPRCodeownerEvidence: (report: PRReviewReport) => Promise<PRCodeownerEvidence> =
+    options._loadPRCodeownerEvidence ?? loadPRCodeownerEvidence
   const doRecordEvent: (event: unknown) => unknown =
     options._recordEvent ?? ((event: unknown) => { collabRecordEvent(event as Parameters<typeof collabRecordEvent>[0]) })
   const doCreateHandoff: (details: unknown) => unknown =
@@ -126,16 +125,7 @@ export function createOpenSlackAPI(options: OpenSlackAPIOptions = {}) {
           const classified = classifyPRReport(report)
           const policy = doLoadPolicy()
 
-          const codeownersContent = classified.baseRef
-            ? await doGetCODEOWNERS(classified.baseRef)
-            : null
-          const codeownersEntries = codeownersContent
-            ? parseCODEOWNERS(codeownersContent)
-            : []
-          const codeowners = resolveCodeowners(
-            classified.changedFiles,
-            codeownersEntries,
-          )
+          const { owners: codeowners } = await doLoadPRCodeownerEvidence(classified)
 
           const diagnosed = doDiagnosePR(classified, policy, codeowners)
 

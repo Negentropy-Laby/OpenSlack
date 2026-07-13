@@ -6,3 +6,8 @@
 .openslack/self/constitution.md                 @wsman
 .openslack/self/invariants.yaml                 @wsman
 packages/kernel/src/**                         @wsman
+
+# Core workflow artifacts — Workflow-Trust: core requires a CODEOWNER review
+packages/workflows/src/builtins/**             @wsman
+packages/workflows/src/workflow-catalog.ts     @wsman
+packages/workflows/src/pattern-registry.ts     @wsman

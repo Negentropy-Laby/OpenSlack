@@ -3,7 +3,12 @@ export { classifyPRReport } from './classify.js';
 export { checkMergeReadiness } from './readiness.js';
 export { generateReviewReport } from './report.js';
 export { loadPRReviewPolicy } from './policy.js';
-export { parseCODEOWNERS, resolveCodeowners } from './codeowners.js';
+export {
+  loadPRCodeownerEvidence,
+  parseCODEOWNERS,
+  PRCodeownerEvidenceUnavailableError,
+  resolveCodeowners,
+} from './codeowners.js';
 export { filterValidApprovals, isBotUser } from './approvals.js';
 export { detectDeadlock } from './deadlock.js';
 export { assessPRAuthorRisk } from './author-risk.js';
@@ -40,7 +45,7 @@ export type { EvaluateWorkflowGateInput } from './workflow-gate.js';
 export { computeLocalWorkflowEvidence, parseGitLsTree } from './local-workflow-evidence.js';
 export type { PRChatSummary } from './chat-report.js';
 export type { PRBlockerCategory, PRDecisionOwner, PRDecisionSummary, PRQueueItem } from './decision-summary.js';
-export type { CodeownersEntry } from './codeowners.js';
+export type { CodeownersEntry, PRCodeownerEvidence } from './codeowners.js';
 export type { DeadlockResult } from './deadlock.js';
 export type { PRAuthorRiskInput, PRAuthorRiskPreflight, PRAuthorRiskStatus } from './author-risk.js';
 export type { MergeStewardResult } from './merge.js';

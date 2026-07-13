@@ -1,5 +1,18 @@
-import { describe, it, expect } from 'vitest';
-import { parseCODEOWNERS, resolveCodeowners } from '../codeowners.js';
+import { readFileSync } from 'node:fs';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
+
+const hoisted = vi.hoisted(() => ({ getCODEOWNERS: vi.fn() }));
+vi.mock('@openslack/github', () => ({
+  getCODEOWNERS: (...args: unknown[]) => hoisted.getCODEOWNERS(...args),
+}));
+
+import {
+  loadPRCodeownerEvidence,
+  parseCODEOWNERS,
+  PRCodeownerEvidenceUnavailableError,
+  resolveCodeowners,
+} from '../codeowners.js';
+import type { PRReviewReport } from '../types.js';
 
 const SAMPLE_CODEOWNERS = `
 # Red Zone paths
@@ -60,5 +73,106 @@ describe('resolveCodeowners', () => {
   it('matches globstar patterns', () => {
     const owners = resolveCodeowners(['packages/kernel/src/zones.ts'], entries);
     expect(owners).toContain('@wsman');
+  });
+
+  it('assigns the repository owner to every core workflow artifact', () => {
+    const content = readFileSync(
+      new URL('../../../../.github/CODEOWNERS', import.meta.url),
+      'utf8',
+    );
+    const repositoryEntries = parseCODEOWNERS(content);
+
+    expect(resolveCodeowners([
+      'packages/workflows/src/builtins/profile-sync.ts',
+      'packages/workflows/src/workflow-catalog.ts',
+      'packages/workflows/src/pattern-registry.ts',
+    ], repositoryEntries)).toEqual(['@wsman']);
+  });
+});
+
+function report(overrides: Partial<PRReviewReport> = {}): PRReviewReport {
+  return {
+    prNumber: 185,
+    title: 'release: add native signed release artifacts',
+    author: 'openslack-agent-operator[bot]',
+    state: 'closed',
+    draft: false,
+    baseRef: 'main',
+    baseSha: 'immutable-base-sha',
+    headSha: 'reviewed-head-sha',
+    riskZone: 'red',
+    changedFiles: [
+      '.github/workflows/openslack-release.yml',
+      'packages/workflows/src/builtins/profile-sync.ts',
+    ],
+    checks: [],
+    reviews: [],
+    humanApprovals: [],
+    decision: 'ANALYZED',
+    reason: '',
+    recommendation: '',
+    mergeable: true,
+    ...overrides,
+  };
+}
+
+describe('loadPRCodeownerEvidence', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    hoisted.getCODEOWNERS.mockResolvedValue([
+      '.github/** @wsman',
+      'packages/workflows/src/builtins/** @workflow-owner',
+    ].join('\n'));
+  });
+
+  it('loads CODEOWNERS from baseSha and resolves the complete PR file set', async () => {
+    const evidence = await loadPRCodeownerEvidence(report({ baseRef: 'moved-main' }), {
+      owner: 'Negentropy-Laby',
+      repo: 'OpenSlack',
+    });
+
+    expect(hoisted.getCODEOWNERS).toHaveBeenCalledWith('immutable-base-sha', {
+      owner: 'Negentropy-Laby',
+      repo: 'OpenSlack',
+      strictEvidence: true,
+    });
+    expect(evidence).toMatchObject({
+      ref: 'immutable-base-sha',
+      owners: ['@wsman', '@workflow-owner'],
+    });
+  });
+
+  it('is unaffected when the mutable base branch later points elsewhere', async () => {
+    await loadPRCodeownerEvidence(report({ baseRef: 'main-after-drift' }));
+    expect(hoisted.getCODEOWNERS).toHaveBeenCalledWith('immutable-base-sha', {
+      strictEvidence: true,
+    });
+  });
+
+  it('fails closed when baseSha or CODEOWNERS evidence is unavailable', async () => {
+    await expect(loadPRCodeownerEvidence(report({ baseSha: undefined })))
+      .rejects.toBeInstanceOf(PRCodeownerEvidenceUnavailableError);
+    expect(hoisted.getCODEOWNERS).not.toHaveBeenCalled();
+
+    hoisted.getCODEOWNERS.mockResolvedValueOnce(null);
+    await expect(loadPRCodeownerEvidence(report()))
+      .rejects.toThrow('CODEOWNERS could not be loaded from immutable-base-sha');
+  });
+
+  it('is the only CODEOWNERS loading path used by PRMS consumers', () => {
+    const callSites = [
+      '../../../../packages/pr/src/watch.ts',
+      '../../../../packages/pr/src/merge.ts',
+      '../../../../packages/pr/src/decision-summary.ts',
+      '../../../../apps/cli/src/commands/pr.ts',
+      '../../../../apps/cli/src/commands/collaboration.ts',
+      '../../../../packages/workflows/src/openslack-api.ts',
+    ];
+
+    for (const path of callSites) {
+      const source = readFileSync(new URL(path, import.meta.url), 'utf8');
+      expect(source, path).toContain('loadPRCodeownerEvidence');
+      expect(source, path).not.toContain('getCODEOWNERS(');
+    }
   });
 });

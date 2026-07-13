@@ -1,8 +1,7 @@
-import { getCODEOWNERS } from '@openslack/github';
 import { fetchPRDetails } from './fetch.js';
 import { classifyPRReport } from './classify.js';
 import { loadPRReviewPolicy } from './policy.js';
-import { parseCODEOWNERS, resolveCodeowners } from './codeowners.js';
+import { loadPRCodeownerEvidence } from './codeowners.js';
 import { diagnosePR } from './doctor.js';
 import type { PRReviewState } from './types.js';
 
@@ -41,9 +40,7 @@ export async function watchPR(
     const report = await fetchPRDetails(prNumber);
     const classified = classifyPRReport(report);
 
-    const codeownersContent = await getCODEOWNERS(classified.baseRef);
-    const codeownersEntries = codeownersContent ? parseCODEOWNERS(codeownersContent) : [];
-    const codeowners = resolveCodeowners(classified.changedFiles, codeownersEntries);
+    const { owners: codeowners } = await loadPRCodeownerEvidence(classified);
 
     const diagnosed = diagnosePR(classified, policy, codeowners);
     lastDecision = diagnosed.decision;

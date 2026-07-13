@@ -26,6 +26,7 @@ function stubPRReport(overrides: Partial<PRReviewReport> = {}): PRReviewReport {
     state: 'open',
     draft: false,
     baseRef: 'main',
+    baseSha: 'base-sha',
     riskZone: 'green',
     changedFiles: ['docs/readme.md'],
     checks: [{ name: 'ci', status: 'completed', conclusion: 'success' }],
@@ -62,7 +63,7 @@ describe('PRMS integration', () => {
         riskZone: 'green',
       }),
       _loadPRReviewPolicy: () => defaultPolicy,
-      _getCODEOWNERS: async () => null,
+      _loadPRCodeownerEvidence: async () => ({ ref: 'base-sha', owners: [], entries: [] }),
       _mergeIfReady: mergeFn,
     })
 
@@ -106,7 +107,7 @@ describe('PRMS integration', () => {
         riskZone: 'yellow',
       }),
       _loadPRReviewPolicy: () => defaultPolicy,
-      _getCODEOWNERS: async () => null,
+      _loadPRCodeownerEvidence: async () => ({ ref: 'base-sha', owners: [], entries: [] }),
       _mergeIfReady: mergeFn,
     })
 
@@ -134,7 +135,11 @@ describe('PRMS integration', () => {
         riskZone: 'red',
       }),
       _loadPRReviewPolicy: () => defaultPolicy,
-      _getCODEOWNERS: async () => '# CODEOWNERS\n* @admin\n',
+      _loadPRCodeownerEvidence: async () => ({
+        ref: 'base-sha',
+        owners: ['@admin'],
+        entries: [{ pattern: '*', owners: ['@admin'] }],
+      }),
     })
 
     const doctorResult: PrmsDoctorResult = await api.prms.doctor(1)
@@ -159,7 +164,11 @@ describe('PRMS integration', () => {
         riskZone: 'red',
       }),
       _loadPRReviewPolicy: () => defaultPolicy,
-      _getCODEOWNERS: async () => '.github/ @admin\n',
+      _loadPRCodeownerEvidence: async () => ({
+        ref: 'base-sha',
+        owners: ['@admin'],
+        entries: [{ pattern: '.github/**', owners: ['@admin'] }],
+      }),
     })
 
     const doctorResult: PrmsDoctorResult = await api.prms.doctor(1)
@@ -225,7 +234,7 @@ describe('PRMS integration', () => {
         riskZone: 'black',
       }),
       _loadPRReviewPolicy: () => defaultPolicy,
-      _getCODEOWNERS: async () => null,
+      _loadPRCodeownerEvidence: async () => ({ ref: 'base-sha', owners: [], entries: [] }),
     })
 
     const doctorResult: PrmsDoctorResult = await api.prms.doctor(1)

@@ -22,6 +22,7 @@ function stubPRReport(overrides: Partial<PRReviewReport> = {}): PRReviewReport {
     state: 'open',
     draft: false,
     baseRef: 'main',
+    baseSha: 'base-sha',
     riskZone: 'green',
     changedFiles: ['docs/readme.md'],
     checks: [{ name: 'ci', status: 'completed', conclusion: 'success' }],
@@ -99,7 +100,7 @@ describe('createOpenSlackAPI', () => {
           riskZone: 'green',
         }),
         _loadPRReviewPolicy: () => defaultPolicy,
-        _getCODEOWNERS: async () => null,
+        _loadPRCodeownerEvidence: async () => ({ ref: 'base-sha', owners: [], entries: [] }),
       })
 
       const result: PrmsDoctorResult = await api.prms.doctor(1)
@@ -122,7 +123,7 @@ describe('createOpenSlackAPI', () => {
           riskZone: 'yellow',
         }),
         _loadPRReviewPolicy: () => defaultPolicy,
-        _getCODEOWNERS: async () => null,
+        _loadPRCodeownerEvidence: async () => ({ ref: 'base-sha', owners: [], entries: [] }),
       })
 
       const result: PrmsDoctorResult = await api.prms.doctor(2)
@@ -153,7 +154,7 @@ describe('createOpenSlackAPI', () => {
           riskZone: 'green',
         }),
         _loadPRReviewPolicy: () => defaultPolicy,
-        _getCODEOWNERS: async () => null,
+        _loadPRCodeownerEvidence: async () => ({ ref: 'base-sha', owners: [], entries: [] }),
       })
 
       const result: PrmsDoctorResult = await api.prms.doctor(1)

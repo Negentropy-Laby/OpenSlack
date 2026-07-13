@@ -41,6 +41,7 @@ const hoisted = vi.hoisted(() => {
     mockGetClient: vi.fn(),
     mockFetchPRDetails: vi.fn(),
     mockGetCODEOWNERS: vi.fn(),
+    mockLoadPRCodeownerEvidence: vi.fn(),
     mockCommentOnPR: vi.fn(),
     mockPublishWorkflowGovernance: vi.fn(),
     mockFindWorkflowGovernanceIssue: vi.fn(),
@@ -74,6 +75,7 @@ vi.mock('@openslack/pr', () => ({
     black_zone_never_merge: true,
   }),
   diagnosePR: (report: unknown) => report,
+  loadPRCodeownerEvidence: (...args: unknown[]) => hoisted.mockLoadPRCodeownerEvidence(...args),
   parseCODEOWNERS: () => [],
   resolveCodeowners: () => [],
   postReviewComment: vi.fn(),
@@ -99,6 +101,7 @@ function makeReport(overrides: Record<string, unknown> = {}) {
     state: 'open',
     draft: false,
     baseRef: 'main',
+    baseSha: 'base-sha',
     headRef: 'feature',
     riskZone: 'green',
     changedFiles: ['docs/example.md'],
@@ -124,6 +127,11 @@ describe('pr doctor command live evidence gate', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.exitCode = undefined;
+    hoisted.mockLoadPRCodeownerEvidence.mockResolvedValue({
+      ref: 'base-sha',
+      owners: [],
+      entries: [],
+    });
   });
 
   it('fails closed when live GitHub credentials are missing', async () => {
@@ -185,6 +193,15 @@ describe('pr doctor command live evidence gate', () => {
       requireLive: true,
       strictEvidence: true,
     });
+    expect(hoisted.mockLoadPRCodeownerEvidence).toHaveBeenCalledWith(
+      expect.objectContaining({ baseSha: 'base-sha' }),
+      {
+        repoFullName: 'Negentropy-Laby/OpenSlack',
+        auth: 'token',
+        requireLive: true,
+        strictEvidence: true,
+      },
+    );
     expect(logSpy.mock.calls.flat().join('\n')).toContain('GitHub evidence: LIVE');
     logSpy.mockRestore();
   });
@@ -234,7 +251,7 @@ describe('pr doctor command live evidence gate', () => {
     expect(out).toContain('GitHub evidence: LIVE');
     expect(out).toContain('Operation: fetch pull request reviews');
     expect(out).not.toContain('NEEDS_HUMAN_APPROVAL');
-    expect(hoisted.mockGetCODEOWNERS).not.toHaveBeenCalled();
+    expect(hoisted.mockLoadPRCodeownerEvidence).not.toHaveBeenCalled();
     errorSpy.mockRestore();
   });
 });

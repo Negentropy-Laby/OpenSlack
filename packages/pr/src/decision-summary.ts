@@ -1,11 +1,11 @@
-import { getCODEOWNERS, listOpenPRs } from '@openslack/github';
+import { listOpenPRs } from '@openslack/github';
 import type { PRReviewReport, PRReviewState } from './types.js';
 import { filterValidApprovals, isBotUser } from './approvals.js';
 import { classifyPRReport } from './classify.js';
 import { diagnosePR } from './doctor.js';
 import { loadPRReviewPolicy } from './policy.js';
 import { fetchPRDetails } from './fetch.js';
-import { parseCODEOWNERS, resolveCodeowners } from './codeowners.js';
+import { loadPRCodeownerEvidence } from './codeowners.js';
 
 export type PRBlockerCategory =
   | 'none'
@@ -150,9 +150,7 @@ async function diagnoseForQueue(prNumber: number): Promise<PRQueueItem> {
   const report = await fetchPRDetails(prNumber);
   const classified = classifyPRReport(report);
   const policy = loadPRReviewPolicy();
-  const codeownersContent = await getCODEOWNERS(classified.baseRef);
-  const entries = codeownersContent ? parseCODEOWNERS(codeownersContent) : [];
-  const codeowners = resolveCodeowners(classified.changedFiles, entries);
+  const { owners: codeowners } = await loadPRCodeownerEvidence(classified);
   const diagnosed = diagnosePR(classified, policy, codeowners);
   return {
     ...summarizePRDecision(diagnosed, codeowners),

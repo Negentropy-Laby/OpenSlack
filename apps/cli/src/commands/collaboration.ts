@@ -81,13 +81,11 @@ import {
   publishWorkflowSplit,
   bootstrapWorkflowLabels,
   finalizeWorkflowPR,
-  getCODEOWNERS,
 } from '@openslack/github';
 import {
   evaluateWorkflowGate,
   fetchPRDetails,
-  parseCODEOWNERS,
-  resolveCodeowners,
+  loadPRCodeownerEvidence,
 } from '@openslack/pr';
 
 type AgentAuthOptions = {
@@ -2050,9 +2048,10 @@ export function collaborationCommands(): Command {
 
       const report = await fetchPRDetails(pr, { requireLive: true, strictEvidence: true })
       if (report.workflowEvidence) {
-        const codeownersContent = await getCODEOWNERS(report.baseRef)
-        const entries = codeownersContent ? parseCODEOWNERS(codeownersContent) : []
-        const codeowners = resolveCodeowners(report.workflowEvidence.artifactFiles, entries)
+        const { owners: codeowners } = await loadPRCodeownerEvidence(report, {
+          requireLive: true,
+          strictEvidence: true,
+        })
         const gate = evaluateWorkflowGate({
           changedFiles: report.changedFiles,
           body: report.body ?? '',
@@ -2066,25 +2065,33 @@ export function collaborationCommands(): Command {
         })
         if (gate.overall !== 'PASS') {
           console.log(`Cannot finalize workflow governance for PR #${pr}: gate is ${gate.overall}.`)
-          process.exit(1)
+          process.exitCode = 1
+          return
         }
         if (options.hash && options.hash !== gate.evidenceHash) {
           console.log('Cannot override the repository-derived workflow evidence hash.')
-          process.exit(1)
+          process.exitCode = 1
+          return
         }
         if (options.trust && options.trust !== gate.trustDecision) {
           console.log('Cannot override the current-head human Workflow-Trust review.')
-          process.exit(1)
+          process.exitCode = 1
+          return
         }
         if (options.governanceIssue && Number(options.governanceIssue) !== gate.governanceIssue) {
           console.log('Cannot override the governance issue bound to this workflow artifact change.')
-          process.exit(1)
+          process.exitCode = 1
+          return
         }
         governanceIssue = gate.governanceIssue
         workflowHash = gate.evidenceHash
         validTrust = gate.trustDecision
         trustReviewer = gate.trustReviewer
         trustReviewCommitOid = gate.trustReviewCommitOid
+      } else if (options.governanceIssue) {
+        console.log(`Cannot finalize workflow governance for PR #${pr}: repository-derived workflow evidence is unavailable.`)
+        process.exitCode = 1
+        return
       }
 
       try {
@@ -2099,14 +2106,17 @@ export function collaborationCommands(): Command {
           trustReviewCommitOid,
         })
 
+        if (result.errors.length > 0) {
+          console.log(`Failed to finalize workflow PR #${pr}:`)
+          for (const err of result.errors) console.log(`    - ${err}`)
+          process.exitCode = 1
+          return
+        }
+
         console.log(`Workflow PR finalize complete for #${pr}:`)
         console.log(`  Closed issues: ${result.closedIssues.length > 0 ? result.closedIssues.join(', ') : 'none'}`)
         console.log(`  Commented issues: ${result.commentedIssues.length > 0 ? result.commentedIssues.join(', ') : 'none'}`)
         console.log(`  Updated labels: ${result.updatedLabels.length > 0 ? result.updatedLabels.join(', ') : 'none'}`)
-        if (result.errors.length > 0) {
-          console.log('  Errors:')
-          for (const err of result.errors) console.log(`    - ${err}`)
-        }
       } catch (err) {
         console.log(`Failed to finalize workflow PR:`)
         console.log(`  ${(err as Error).message}`)
