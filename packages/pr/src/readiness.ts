@@ -47,8 +47,8 @@ export function checkMergeReadiness(
   if (policy.red_zone_human_required && report.riskZone === 'red') {
     if (report.humanApprovals.length === 0) {
       decision = 'NEEDS_HUMAN_APPROVAL';
-      reason = 'Red Zone requires CODEOWNERS human approval. No approving review found.';
-      recommendation = 'Request review from CODEOWNERS (@wsman) and wait for approval.';
+      reason = 'Red Zone requires independent human approval. No approving review found.';
+      recommendation = 'Request an authorized human review and wait for approval.';
       return { ...report, decision, reason, recommendation };
     }
     decision = 'HUMAN_APPROVED';

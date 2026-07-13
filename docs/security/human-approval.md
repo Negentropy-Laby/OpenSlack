@@ -98,5 +98,10 @@ The agent should treat anything less specific as clarification, not approval.
 
 ## CODEOWNER Gate
 
-For Red Zone PRs, the GitHub review must come from a valid human CODEOWNER who is not the PR author. Bot or app approvals are ignored even if they were triggered by a human instruction.
-
+Red Zone PRs always require a valid current-head human approval from someone who
+is not the PR author. When the PR's immutable base assigns one or more matching
+CODEOWNERS, the approving human must be one of those owners. When no CODEOWNERS
+entry matches the changed files, an independent authorized human approval
+satisfies the Red Zone approval gate; an empty owner set must not create an
+impossible approval requirement. Bot or app approvals remain invalid, and
+GitHub branch protection or ruleset requirements remain authoritative.

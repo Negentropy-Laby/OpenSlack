@@ -191,7 +191,7 @@ describe('diagnosePR', () => {
     expect(diagnosePR(report, DEFAULT_POLICY, []).decision).toBe('BLOCKED_WORKFLOW_GATE');
   });
 
-  it('allows red zone with CODEOWNER approval', () => {
+  it('allows red zone with CODEOWNER approval or an independent human when no owners match', () => {
     const report = makeReport({
       author: 'bob',
       riskZone: 'red',
@@ -200,6 +200,11 @@ describe('diagnosePR', () => {
     });
     const result = diagnosePR(report, DEFAULT_POLICY, ['@wsman', '@alice']);
     expect(result.decision).toBe('READY_TO_MERGE');
+    expect(result.reason).toContain('CODEOWNER approval satisfied');
+
+    const noMatchingOwners = diagnosePR(report, DEFAULT_POLICY, []);
+    expect(noMatchingOwners.decision).toBe('READY_TO_MERGE');
+    expect(noMatchingOwners.reason).toContain('Independent human approval satisfied');
   });
 
   it('allows red zone when policy does not require human approval', () => {
