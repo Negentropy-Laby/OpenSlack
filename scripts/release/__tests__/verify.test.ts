@@ -80,6 +80,11 @@ describe('release manifest verification', () => {
 
   it('keeps legacy unsigned archive-only provenance readable', () => {
     removeSbomSubjectAndRefresh(root, manifestPath);
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as {
+      provenance: Record<string, unknown>;
+    };
+    manifest.provenance.signature = 'operator-required';
+    writeFileSync(manifestPath, JSON.stringify(manifest));
     expect(verifyRelease(manifestPath)).toContain('UNSIGNED');
   });
 

@@ -3,6 +3,10 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { hasArg, parseArg, sha256File } from './lib.js';
 import { verifyProvenanceSignature, type ProvenanceSignatureEnvelope } from './signature.js';
 
+// Accepted only when reading pre-structured-signature v1 manifests. New builds
+// always emit an explicit signed/unsigned object and never write this sentinel.
+const LEGACY_UNSIGNED_SIGNATURE_SENTINEL = 'operator-required';
+
 export interface VerifyReleaseOptions {
   requireSignature?: boolean;
   trustedPublicKey?: string;
@@ -116,7 +120,7 @@ export function verifyRelease(manifestInput: string, options: VerifyReleaseOptio
     if (options.requireSignature) {
       throw new Error('A trusted provenance signature is required for this release.');
     }
-  } else if (signature !== undefined && signature !== 'operator-required') {
+  } else if (signature !== undefined && signature !== LEGACY_UNSIGNED_SIGNATURE_SENTINEL) {
     throw new Error('Release manifest contains invalid provenance signature metadata.');
   } else if (options.requireSignature) {
     throw new Error('A trusted provenance signature is required for this release.');
