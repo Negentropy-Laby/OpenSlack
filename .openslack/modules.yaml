@@ -1,6 +1,6 @@
 schema: openslack.modules.v1
-vitest_tests: 3600
-vitest_files: 282
+vitest_tests: 3603
+vitest_files: 283
 modules:
   - id: self_evolution
     name: Self-Evolution Kernel
@@ -52,7 +52,7 @@ modules:
       - "@openslack/chat-gateway"
       - "@openslack/tui"
       - "@openslack/credentials"
-    tests: 861
+    tests: 862
     test_files: 99
     notes: Structured planner active. Webhook and Slack chat adapters active with actor mapping. PRMS chat cards and action confirmation active. Typed tool registry, LLM-first intent routing with deterministic keyword fallback, setup report, and 24h pending plan store active. Session-based conversation memory with multi-turn context resolution and progressive clarification. Doctor --format plain for non-technical output. Conversation-first TUI workbench with Ask OpenSlack, Operator recommendation cards, workflow draft-first cards, profile sync recommendations, and subagent mention dispatch. TUI setup report view and PR doctor view via --format tui. Versioned Windows x64 and Linux x64 archive builds embed the CLI, workflow assets, native keychain binding, build metadata, SBOM, checksums, and provenance; native build and unpacked smoke are enforced by the release matrix.
 
@@ -67,8 +67,8 @@ modules:
       - "@openslack/pr"
       - "@openslack/github"
       - "@openslack/kernel"
-    tests: 481
-    test_files: 45
+    tests: 483
+    test_files: 46
     notes: Phase 2C chat report and action confirmation active. Supports status/review/recommend/doctor/queue/merge/watch, review/doctor comments, governance audit, operational decision summaries, deadlock detection, Red Zone author-risk preflight, and chat-friendly PR summaries with confirm-merge flow. Workflow artifact governance is bound to deterministic base/head tree evidence and a single current-head human approval carrying Workflow-Trust.
 
   - id: collaboration

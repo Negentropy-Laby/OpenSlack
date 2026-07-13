@@ -1,4 +1,6 @@
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, it, expect, vi } from 'vitest';
 
 const hoisted = vi.hoisted(() => ({ getCODEOWNERS: vi.fn() }));
@@ -160,19 +162,25 @@ describe('loadPRCodeownerEvidence', () => {
   });
 
   it('is the only CODEOWNERS loading path used by PRMS consumers', () => {
-    const callSites = [
-      '../../../../packages/pr/src/watch.ts',
-      '../../../../packages/pr/src/merge.ts',
-      '../../../../packages/pr/src/decision-summary.ts',
-      '../../../../apps/cli/src/commands/pr.ts',
-      '../../../../apps/cli/src/commands/collaboration.ts',
-      '../../../../packages/workflows/src/openslack-api.ts',
-    ];
+    const repositoryRoot = fileURLToPath(new URL('../../../../', import.meta.url));
+    const trackedSourceFiles = execFileSync('git', ['ls-files', 'packages', 'apps'], {
+      cwd: repositoryRoot,
+      encoding: 'utf8',
+    })
+      .split(/\r?\n/)
+      .filter((path) => /\.(?:[cm]?[jt]sx?)$/.test(path))
+      .filter((path) => !path.includes('/__tests__/'));
+    const allowedDefinitions = new Set([
+      'packages/github/src/index.ts',
+      'packages/github/src/pr.ts',
+      'packages/pr/src/codeowners.ts',
+    ]);
 
-    for (const path of callSites) {
-      const source = readFileSync(new URL(path, import.meta.url), 'utf8');
-      expect(source, path).toContain('loadPRCodeownerEvidence');
-      expect(source, path).not.toContain('getCODEOWNERS(');
-    }
+    const bypasses = trackedSourceFiles.filter((path) => {
+      if (allowedDefinitions.has(path)) return false;
+      return /\bgetCODEOWNERS\b/.test(readFileSync(`${repositoryRoot}/${path}`, 'utf8'));
+    });
+
+    expect(bypasses).toEqual([]);
   });
 });

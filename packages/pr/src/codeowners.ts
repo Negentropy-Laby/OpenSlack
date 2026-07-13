@@ -16,10 +16,13 @@ export interface PRCodeownerEvidence {
 
 export class PRCodeownerEvidenceUnavailableError extends Error {
   readonly code = 'PR_CODEOWNER_EVIDENCE_UNAVAILABLE';
+  readonly operation = 'load immutable PR CODEOWNERS';
+  readonly prNumber?: number;
 
-  constructor(message: string) {
+  constructor(message: string, prNumber?: number) {
     super(`PR_CODEOWNER_EVIDENCE_UNAVAILABLE: ${message}`);
     this.name = 'PRCodeownerEvidenceUnavailableError';
+    this.prNumber = prNumber;
   }
 }
 
@@ -77,6 +80,7 @@ export async function loadPRCodeownerEvidence(
   if (!report.baseSha?.trim()) {
     throw new PRCodeownerEvidenceUnavailableError(
       `PR #${report.prNumber} is missing its immutable base SHA.`,
+      report.prNumber,
     );
   }
 
@@ -88,6 +92,7 @@ export async function loadPRCodeownerEvidence(
   if (content === null) {
     throw new PRCodeownerEvidenceUnavailableError(
       `CODEOWNERS could not be loaded from ${ref}.`,
+      report.prNumber,
     );
   }
 

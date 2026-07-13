@@ -43,6 +43,9 @@ markers, and tree evidence that does not match the current base/head pair.
 CODEOWNER evidence is loaded from the PR's immutable base commit SHA and is
 resolved against the complete PR changed-file set. It is never reinterpreted
 from a later value of the mutable base branch.
+Live PRMS doctor, watch, queue, merge, and finalizer operations require a
+readable CODEOWNERS file at that base commit. A missing file is unavailable
+governance evidence and fails closed; it is never treated as an empty owner set.
 Engine code, tests, and fixtures use normal PRMS approval and do not require a
 workflow trust marker. This merge evidence does not automatically modify a
 machine-local `.openslack/workflow-trust.yaml` store.

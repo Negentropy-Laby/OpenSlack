@@ -19,6 +19,7 @@ import {
   loadPRReviewPolicy,
   diagnosePR,
   loadPRCodeownerEvidence,
+  PRCodeownerEvidenceUnavailableError,
   postReviewComment,
   watchPR,
   buildPRQueue,
@@ -263,7 +264,10 @@ export function prCommands(): Command {
         ({ owners: codeowners } = await loadPRCodeownerEvidence(classified, clientOptions));
         report = classified;
       } catch (error) {
-        if (error instanceof GitHubEvidenceUnavailableError) {
+        if (
+          error instanceof GitHubEvidenceUnavailableError ||
+          error instanceof PRCodeownerEvidenceUnavailableError
+        ) {
           console.error(renderEvidenceUnavailableMessage(client, error));
           process.exitCode = 1;
           return;

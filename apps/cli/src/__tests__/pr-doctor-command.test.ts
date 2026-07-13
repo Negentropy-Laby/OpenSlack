@@ -36,6 +36,17 @@ const hoisted = vi.hoisted(() => {
       this.causeMessage = input.causeMessage;
     }
   }
+  class MockPRCodeownerEvidenceUnavailableError extends Error {
+    readonly code = 'PR_CODEOWNER_EVIDENCE_UNAVAILABLE';
+    readonly operation = 'load immutable PR CODEOWNERS';
+    readonly prNumber?: number;
+
+    constructor(message: string, prNumber?: number) {
+      super(`PR_CODEOWNER_EVIDENCE_UNAVAILABLE: ${message}`);
+      this.name = 'PRCodeownerEvidenceUnavailableError';
+      this.prNumber = prNumber;
+    }
+  }
 
   return {
     mockGetClient: vi.fn(),
@@ -48,6 +59,7 @@ const hoisted = vi.hoisted(() => {
     mockUpdatePRBody: vi.fn(),
     MockGitHubAuthRequiredError,
     MockGitHubEvidenceUnavailableError,
+    MockPRCodeownerEvidenceUnavailableError,
   };
 });
 
@@ -76,6 +88,7 @@ vi.mock('@openslack/pr', () => ({
   }),
   diagnosePR: (report: unknown) => report,
   loadPRCodeownerEvidence: (...args: unknown[]) => hoisted.mockLoadPRCodeownerEvidence(...args),
+  PRCodeownerEvidenceUnavailableError: hoisted.MockPRCodeownerEvidenceUnavailableError,
   parseCODEOWNERS: () => [],
   resolveCodeowners: () => [],
   postReviewComment: vi.fn(),
@@ -252,6 +265,35 @@ describe('pr doctor command live evidence gate', () => {
     expect(out).toContain('Operation: fetch pull request reviews');
     expect(out).not.toContain('NEEDS_HUMAN_APPROVAL');
     expect(hoisted.mockLoadPRCodeownerEvidence).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  it('renders missing immutable CODEOWNERS evidence without an unhandled exception', async () => {
+    hoisted.mockGetClient.mockResolvedValue({
+      owner: 'third-party',
+      repo: 'project',
+      authMode: 'github_app_installation',
+      isDryRun: false,
+      octokit: {},
+    });
+    hoisted.mockFetchPRDetails.mockResolvedValue(makeReport());
+    hoisted.mockLoadPRCodeownerEvidence.mockRejectedValue(
+      new hoisted.MockPRCodeownerEvidenceUnavailableError(
+        'CODEOWNERS could not be loaded from base-sha.',
+        42,
+      ),
+    );
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(runPrCommand(['doctor', '42', '--auth', 'app'])).resolves.toBeUndefined();
+
+    const out = errorSpy.mock.calls.flat().join('\n');
+    expect(process.exitCode).toBe(1);
+    expect(out).toContain('PR_CODEOWNER_EVIDENCE_UNAVAILABLE');
+    expect(out).toContain('GitHub evidence: LIVE');
+    expect(out).toContain('Operation: load immutable PR CODEOWNERS');
+    expect(out).toContain('PR: #42');
+    expect(out).not.toContain('READY_TO_MERGE');
     errorSpy.mockRestore();
   });
 });
