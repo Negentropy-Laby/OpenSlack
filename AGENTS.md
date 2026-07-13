@@ -53,7 +53,7 @@ bun run openslack pr doctor <PR_NUMBER>
 
 ## Product Modules
 
-OpenSlack v0.1 RC is organized around four user-facing modules.
+OpenSlack v0.1 RC is organized around five user-facing modules.
 
 ### Module 01 — Self-Evolution Kernel
 

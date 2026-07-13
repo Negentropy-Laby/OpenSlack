@@ -8,8 +8,30 @@ export type { WorkspaceConfig, ValidationResult, ValidationError } from './types
 export { schemas, workspaceSchema, agentRegistrySchema, agentRegistryV2Schema, evolutionTaskSchema, taskSchema, leaseSchema, runRecordSchema } from './schemas/index.js';
 
 // Module Registry
-export { readModules, validateModules, getModuleById, getTotalTests, getTotalTestFiles } from './module-registry.js';
-export type { ProductModule, ModulesRegistry, RegistryValidationResult } from './module-registry.js';
+export {
+  readModules,
+  readProductModules,
+  migrateModulesRegistry,
+  validateModules,
+  getModuleById,
+  getTotalTests,
+  getTotalTestFiles,
+} from './module-registry.js';
+export type {
+  ProductModule,
+  ProductComponent,
+  DeferredWorkItem,
+  ModuleLifecycleStatus,
+  ModuleMaturity,
+  LiveEvidenceV1,
+  ModulesRegistry,
+  ModulesRegistryV1,
+  ModulesRegistryV2,
+  ProductModuleV1,
+  RawModulesRegistry,
+  RegistryValidationResult,
+  RegistryValidationOptions,
+} from './module-registry.js';
 
 // Agent Registry Parser
 export { parseAgentRegistry } from './agent-registry-parser.js';

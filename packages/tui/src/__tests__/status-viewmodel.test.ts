@@ -1,15 +1,15 @@
 import { describe, it, expect } from 'vitest'
 import { mapStatusToViewModel } from '../view-models/status.js'
 
-function makeData(overrides?: Partial<Parameters<typeof mapStatusToViewModel>[0]>): Parameters<typeof mapStatusToViewModel>[0] {
+function makeData(
+  overrides?: Partial<Parameters<typeof mapStatusToViewModel>[0]>,
+): Parameters<typeof mapStatusToViewModel>[0] {
   return {
+    mode: 'SOURCE_CHECKOUT',
     commit: 'abc1234',
     commitSubject: 'feat: add new module',
-    modules: [
-      { name: 'runtime', status: 'ACTIVE', tests: 100 },
-      { name: 'kernel', status: 'ACTIVE' },
-      { name: 'tui', status: 'ACTIVE', tests: 50 },
-    ],
+    modules: [statusModule('runtime', 100), statusModule('kernel'), statusModule('tui', 50)],
+    deferredWork: [],
     gitHub: {
       available: true,
       tasksReady: 3,
@@ -24,13 +24,17 @@ function makeData(overrides?: Partial<Parameters<typeof mapStatusToViewModel>[0]
       { title: 'Review PR #42', action: 'Check the PR', command: 'openslack pr doctor 42' },
     ],
     attentionItems: [
-      { type: 'pr', description: '2 PRs blocked', action: 'Check what is blocking', priority: 'medium' },
+      {
+        type: 'pr',
+        description: '2 PRs blocked',
+        action: 'Check what is blocking',
+        priority: 'medium',
+      },
     ],
     nextAction: 'Review PR #42',
     ...overrides,
   }
 }
-
 describe('mapStatusToViewModel', () => {
   it('maps a complete status data', () => {
     const model = mapStatusToViewModel(makeData())
@@ -122,7 +126,7 @@ describe('mapStatusToViewModel', () => {
     const model = mapStatusToViewModel(makeData({
       commit: 'abc\x1b[31m1234',
       commitSubject: 'evil\x1b[32m subject',
-      modules: [{ name: 'bad\x1b[33m module', status: 'ACTIVE' }],
+      modules: [statusModule('bad\x1b[33m module')],
       recommendations: [{ title: 'rec\x1b[31m title', action: 'act' }],
       attentionItems: [{ type: 'pr', description: 'desc\x1b[31mription', action: 'act', priority: 'high' }],
       nextAction: 'next\x1b[31m action',
@@ -137,8 +141,25 @@ describe('mapStatusToViewModel', () => {
 
   it('handles modules without tests field (undefined)', () => {
     const model = mapStatusToViewModel(makeData({
-      modules: [{ name: 'newmod', status: 'PLANNED' }],
+      modules: [statusModule('newmod', undefined, 'PLANNED', 'PLANNED')],
     }))
     expect(model.modules[0].tests).toBeNull()
   })
 })
+function statusModule(
+  name: string,
+  tests?: number,
+  lifecycle = 'ACTIVE',
+  maturity = 'LOCAL_READY',
+) {
+  return {
+    name,
+    lifecycle,
+    maturity,
+    operatorConfigured: false,
+    externalBlockers: maturity === 'LOCAL_READY' ? ['live_smoke_pending'] : [],
+    evidenceRefs: ['test:status.test.ts'],
+    tests,
+    components: [],
+  }
+}

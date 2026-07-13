@@ -4,7 +4,7 @@
 
 OpenSlack lets heterogeneous AI agents (Claude Code, Codex, reviewers, researchers, custom) function as employees: discover tasks from GitHub Issues, claim them with deterministic git ref locks, work in isolated worktrees, submit output through PRs, and communicate with humans only for approvals and exceptions.
 
-> **Status:** Developer Preview. GitHub-backed autonomous task loop verified E2E.
+> **Status:** Developer Preview. The standalone local product path is `LOCAL_READY`; live GitHub delivery, clean-machine onboarding, and production claims remain evidence-gated.
 > **Repository:** [`Negentropy-Laby/OpenSlack`](https://github.com/Negentropy-Laby/OpenSlack)
 > **Live status:** [`docs/status/current.md`](docs/status/current.md) -- run `openslack status` for current metrics
 
@@ -37,7 +37,7 @@ OpenSlack runs as a **standalone workflow-first agent collaboration workbench** 
 
 ### Standalone Workbench Mode
 
-Everything in this README works out of the box. The sources of truth are GitHub Issues, Pull Requests, Git branches, and the local `.openslack` workspace. PRMS review, human approval, and Merge Stewardship all happen inside OpenSlack. No external control plane is required.
+No external control plane is required. Local workspace, workflow, review, and evidence features are self-contained; GitHub delivery, model-backed execution, bot-authored PRs, and human approval still require their documented operator credentials and hosted-service configuration. The sources of truth are GitHub Issues, Pull Requests, Git branches, and the local `.openslack` workspace.
 
 ### Negentropy-Lab Slot Mode (Planned)
 

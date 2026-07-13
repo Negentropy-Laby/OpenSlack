@@ -14,7 +14,7 @@ export function tuiCommands(): Command {
     )
     .action(async () => {
       try {
-        const { isTuiSupported, renderPlain, renderPlainHome, mapDashboardToViewModel } = await import('@openslack/tui');
+        const { isTuiSupported, renderPlainHome, mapDashboardToViewModel } = await import('@openslack/tui');
         if (!isTuiSupported()) {
           // Fall back to plain-text renderer for unsupported terminals
           const { mapHomeToViewModel } = await import('@openslack/tui');
@@ -26,17 +26,10 @@ export function tuiCommands(): Command {
         const { renderShellTui, mapStatusToViewModel, mapPrQueueToViewModel, mapWorkflowGalleryToViewModel, mapApprovalCenterToViewModel, mapWorkflowLifecycleToViewModel, mapAbyRuntimeDoctorToViewModel, mapWorkflowRunsToViewModel } = await import('@openslack/tui');
         const data: import('@openslack/tui').ShellViewData = { rootDir: process.cwd() };
 
-        // Resolve repo root
-        const { existsSync } = await import('node:fs');
+        const { resolveWorkspaceContext } = await import('@openslack/workspace');
+        const context = resolveWorkspaceContext();
+        const root = context.workspaceRoot;
         const { join } = await import('node:path');
-        let dir = process.cwd();
-        for (let i = 0; i < 10; i++) {
-          if (existsSync(join(dir, 'openslack.yaml'))) break;
-          const parent = join(dir, '..');
-          if (parent === dir) break;
-          dir = parent;
-        }
-        const root = dir;
         if (process.cwd() !== root) {
           process.chdir(root);
         }
@@ -62,13 +55,17 @@ export function tuiCommands(): Command {
         // Pre-fetch status data
         try {
           const { execSync } = await import('node:child_process');
-          const { readModules, getTotalTests, getTotalTestFiles } = await import('@openslack/workspace');
+          const { readProductModules, validateModules } = await import('@openslack/workspace');
+          const { mapProductRegistryToStatusTuiFields } = await import('./status.js');
 
-          const registry = readModules(root);
-          const totalTests = getTotalTests(registry);
-          const totalTestFiles = getTotalTestFiles(registry);
-          const vitestTests = registry.vitest_tests ?? totalTests;
-          const vitestFiles = registry.vitest_files ?? totalTestFiles;
+          const registry = readProductModules(context);
+          const validation = validateModules(registry, {
+            rootPath: context.sourceCheckout ? root : undefined,
+          });
+          if (!validation.valid) {
+            throw new Error(`product module metadata is invalid: ${validation.errors.join('; ')}`);
+          }
+          const productStatus = mapProductRegistryToStatusTuiFields(registry);
 
           let commit = 'unknown';
           let commitSubject = 'unknown';
@@ -78,11 +75,11 @@ export function tuiCommands(): Command {
           } catch {}
 
           data.status = mapStatusToViewModel({
+            mode: context.sourceCheckout ? 'SOURCE_CHECKOUT' : 'WORKSPACE',
             commit,
             commitSubject,
-            modules: registry.modules.map(m => ({ name: m.name, status: m.status.toUpperCase(), tests: m.tests })),
+            ...productStatus,
             gitHub: { available: false, tasksReady: 0, tasksClaimed: 0, tasksBlocked: 0, prsOpen: 0, prsBlocked: 0, prsReady: 0 },
-            testSuite: { totalTests: vitestTests, totalFiles: vitestFiles },
             recommendations: [],
             attentionItems: [],
             nextAction: 'Run openslack status for full report',

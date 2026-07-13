@@ -1,13 +1,38 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { statusCommands } from '../commands/status.js';
+import { mapProductRegistryToStatusTuiFields, statusCommands } from '../commands/status.js';
 import type { AttentionItem } from '@openslack/runtime';
+import type { ModulesRegistry } from '@openslack/workspace';
 
-const mockReadModules = vi.fn(() => ({
-  schema: 'openslack.modules.v1',
+const mockReadModules = vi.fn((): ModulesRegistry => ({
+  schema: 'openslack.modules.v2',
+  sourceSchema: 'openslack.modules.v2',
   modules: [
-    { name: 'runtime', phase: '1', status: 'active', tests: 42, packages: ['@openslack/runtime'] },
-    { name: 'collaboration', phase: '2', status: 'active', tests: 30, packages: ['@openslack/collaboration'] },
+    {
+      id: 'runtime',
+      name: 'runtime',
+      phase: '1',
+      status: 'active',
+      maturity: 'local_ready',
+      operatorConfigured: false,
+      externalBlockers: ['clean_machine_smoke_pending'],
+      evidenceRefs: ['test:packages/runtime/src/__tests__'],
+      tests: 42,
+      packages: ['@openslack/runtime'],
+    },
+    {
+      id: 'collaboration',
+      name: 'collaboration',
+      phase: '2',
+      status: 'active',
+      maturity: 'implemented',
+      operatorConfigured: false,
+      externalBlockers: [],
+      evidenceRefs: ['test:packages/collaboration/src/__tests__'],
+      tests: 30,
+      packages: ['@openslack/collaboration'],
+    },
   ],
+  deferredWork: [],
 }));
 const mockValidateModules = vi.fn(() => ({ valid: true, errors: [] }));
 const mockGetTotalTests = vi.fn(() => 72);
@@ -15,13 +40,35 @@ const mockGetTotalTestFiles = vi.fn(() => 12);
 
 vi.mock('@openslack/workspace', () => ({
   readModules: () => mockReadModules(),
+  readProductModules: () => mockReadModules(),
+  resolveWorkspaceContext: () => ({
+    productHome: '/product',
+    workspaceRoot: '/repo',
+    projectStateRoot: '/repo/.openslack',
+    localStateRoot: '/repo/.openslack.local',
+    sourceCheckout: true,
+    assetResolver: { readText: () => '' },
+    config: {
+      canonical_remote: {
+        provider: 'github',
+        owner: 'acme',
+        repo: 'product',
+        default_branch: 'main',
+      },
+    },
+  }),
   validateModules: () => mockValidateModules(),
   getTotalTests: () => mockGetTotalTests(),
   getTotalTestFiles: () => mockGetTotalTestFiles(),
 }));
 
 const mockRecommendNextActions = vi.fn(() => [
-  { priority: 3, title: '2 PRs blocked', action: 'Check what is blocking.', command: 'openslack pr doctor <n>' },
+  {
+    priority: 3,
+    title: '2 PRs blocked',
+    action: 'Check what is blocking.',
+    command: 'openslack pr doctor <n>',
+  },
 ]);
 const mockBuildSetupReport = vi.fn(() =>
   Promise.resolve({
@@ -37,10 +84,17 @@ const mockBuildSetupReport = vi.fn(() =>
 
 const mockGetAttentionItems = vi.fn<() => Promise<AttentionItem[]>>(() =>
   Promise.resolve([
-    { type: 'pr', description: '2 PRs blocked', action: 'Check what is blocking the PR.', priority: 'medium' },
+    {
+      type: 'pr',
+      description: '2 PRs blocked',
+      action: 'Check what is blocking the PR.',
+      priority: 'medium',
+    },
   ]),
 );
-const mockGetNextAction = vi.fn<(items: AttentionItem[]) => string>(() => '2 PRs blocked: Check what is blocking the PR.');
+const mockGetNextAction = vi.fn<(items: AttentionItem[]) => string>(
+  () => '2 PRs blocked: Check what is blocking the PR.',
+);
 
 vi.mock('@openslack/runtime', () => ({
   recommendNextActions: () => mockRecommendNextActions(),
@@ -79,6 +133,11 @@ vi.mock('@openslack/agent-runtime', () => ({
   diagnoseAgentRuntime: (options: unknown) => mockDiagnoseAgentRuntime(options),
 }));
 
+const mockExecFileSync = vi.fn((file: string) => {
+  if (file === 'gh') return '[]';
+  return '';
+});
+
 vi.mock('node:child_process', () => ({
   execSync: vi.fn((command: string) => {
     if (command.includes('rev-list --count')) return '100';
@@ -89,6 +148,7 @@ vi.mock('node:child_process', () => ({
     }
     return '';
   }),
+  execFileSync: (...args: unknown[]) => mockExecFileSync(...(args as [string])),
 }));
 
 vi.mock('node:fs', () => ({
@@ -138,6 +198,25 @@ describe('status command', () => {
     expect(output).toContain('Configure an agent runtime provider.');
   });
 
+  it('renders lifecycle, maturity, operator configuration, blockers, and evidence independently', async () => {
+    const mapped = mapProductRegistryToStatusTuiFields(mockReadModules());
+    expect(mapped.modules[0]).toMatchObject({
+      name: 'runtime',
+      lifecycle: 'ACTIVE',
+      maturity: 'LOCAL_READY',
+      operatorConfigured: false,
+    });
+    expect(mapped.testSuite).toEqual({ totalTests: 72, totalFiles: 12 });
+
+    const logs = await runStatus();
+    const output = logs.join('\n');
+    expect(output).toContain(
+      'Lifecycle: ACTIVE | Maturity: LOCAL_READY | Declared operator baseline: NOT_CONFIGURED',
+    );
+    expect(output).toContain('External blockers: clean_machine_smoke_pending');
+    expect(output).toContain('Evidence: test:packages/runtime/src/__tests__');
+  });
+
   it('renders attention item with priority label', async () => {
     const logs = await runStatus();
     const output = logs.join('\n');
@@ -171,6 +250,11 @@ describe('status command', () => {
   it('calls getAttentionItems with context derived from setup and dashboard', async () => {
     await runStatus();
     expect(mockGetAttentionItems).toHaveBeenCalled();
+    expect(mockExecFileSync).toHaveBeenCalledWith(
+      'gh',
+      expect.arrayContaining(['--repo', 'acme/product']),
+      expect.objectContaining({ cwd: '/repo' }),
+    );
   });
 
   it('calls getNextAction with the attention items', async () => {

@@ -10,13 +10,11 @@ function makeModel(overrides?: Partial<StatusViewModel>): StatusViewModel {
   return {
     title: 'OpenSlack Status',
     version: 'v0.1 Developer Preview',
+    mode: 'SOURCE_CHECKOUT',
     commit: 'abc1234',
     commitSubject: 'feat: add status TUI',
-    modules: [
-      { name: 'runtime', status: 'ACTIVE', tests: 100 },
-      { name: 'kernel', status: 'ACTIVE', tests: null },
-      { name: 'tui', status: 'ACTIVE', tests: 50 },
-    ],
+    modules: [statusModule('runtime', 100), statusModule('kernel', null), statusModule('tui', 50)],
+    deferredWork: [],
     gitHub: {
       available: true,
       tasksReady: 3,
@@ -31,10 +29,28 @@ function makeModel(overrides?: Partial<StatusViewModel>): StatusViewModel {
       { title: 'Review PR #42', action: 'Check the PR', command: 'openslack pr doctor 42' },
     ],
     attentionItems: [
-      { type: 'pr', description: '2 PRs blocked', action: 'Check what is blocking', priority: 'medium' },
+      {
+        type: 'pr',
+        description: '2 PRs blocked',
+        action: 'Check what is blocking',
+        priority: 'medium',
+      },
     ],
     nextAction: 'Review PR #42',
     ...overrides,
+  }
+}
+
+function statusModule(name: string, tests: number | null) {
+  return {
+    name,
+    lifecycle: 'ACTIVE',
+    maturity: 'LOCAL_READY',
+    operatorConfigured: false,
+    externalBlockers: ['live_smoke_pending'],
+    evidenceRefs: ['test:StatusView.test.tsx'],
+    tests,
+    components: [],
   }
 }
 
@@ -83,6 +99,9 @@ describe('StatusView', () => {
     expect(output).toContain('runtime')
     expect(output).toContain('kernel')
     expect(output).toContain('tui')
+    expect(output).toContain('Declared operator baseline')
+    expect(output).toContain('External blockers')
+    expect(output).toContain('Evidence')
   })
 
   it('renders GitHub section when available', async () => {

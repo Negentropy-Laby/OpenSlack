@@ -154,7 +154,7 @@ export function doctorCommands(dependencies: DoctorCommandDependencies = {}): Co
       if (context.sourceCheckout) {
         try {
           const registry = readModules(root);
-          const validation = validateModules(registry);
+          const validation = validateModules(registry, { rootPath: root });
           checks.push({
             name: 'Module registry',
             state: validation.valid ? 'PASS' : 'FAIL',

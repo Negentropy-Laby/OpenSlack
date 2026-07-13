@@ -62,9 +62,14 @@ if (dirty && !hasArg('--allow-dirty')) {
   );
 }
 
+// Never package maturity claims that fail canonical schema, evidence, or
+// deterministic generated-status verification in the source checkout.
+run(process.execPath, ['apps/cli/src/index.ts', 'status', 'verify'], { cwd: root });
+
 rmSync(bundleDir, { recursive: true, force: true });
 mkdirSync(join(bundleDir, 'native'), { recursive: true });
 mkdirSync(join(bundleDir, 'assets', 'workflows'), { recursive: true });
+mkdirSync(join(bundleDir, 'assets', 'product'), { recursive: true });
 mkdirSync(join(bundleDir, 'LICENSES'), { recursive: true });
 
 run(process.execPath, ['run', 'build'], { cwd: root });
@@ -111,6 +116,10 @@ for (const file of readdirSync(join(root, 'templates', 'workflows'))) {
     );
   }
 }
+copyFileSync(
+  join(root, '.openslack', 'modules.yaml'),
+  join(bundleDir, 'assets', 'product', 'modules.yaml'),
+);
 for (const file of ['install-openslack.md', 'manual-upgrade-rollback.md']) {
   copyFileSync(join(root, 'docs', 'guides', file), join(bundleDir, file));
 }
