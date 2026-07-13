@@ -148,7 +148,8 @@ describe('release manifest verification', () => {
     (field) => {
       signFixtureProvenance(root, manifestPath, privateKey, publicKey);
       const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as Record<string, unknown>;
-      manifest[field] = 'tampered';
+      manifest[field] =
+        field === 'commit' ? 'b'.repeat(40) : field === 'target' ? 'linux-x64' : 'tampered';
       writeFileSync(manifestPath, JSON.stringify(manifest));
       expect(() =>
         verifyRelease(manifestPath, { requireSignature: true, trustedPublicKey: publicKey }),
