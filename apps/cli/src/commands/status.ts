@@ -10,7 +10,7 @@ import {
   getTotalTests,
   getTotalTestFiles,
 } from '@openslack/workspace';
-import type { WorkspaceContext } from '@openslack/workspace';
+import type { ModulesRegistry, WorkspaceContext } from '@openslack/workspace';
 import type { StatusTuiData } from '@openslack/tui';
 import { recommendNextActions } from '@openslack/runtime';
 import { getAttentionItems, getNextAction } from '@openslack/runtime';
@@ -390,9 +390,41 @@ async function showStatusDashboard(context: WorkspaceContext): Promise<void> {
   }
 }
 
-async function buildStatusTuiData(
-  context: WorkspaceContext,
-): Promise<StatusTuiData> {
+export function mapProductRegistryToStatusTuiFields(
+  registry: ModulesRegistry,
+): Pick<StatusTuiData, 'modules' | 'deferredWork' | 'testSuite'> {
+  return {
+    modules: registry.modules.map((module) => ({
+      name: module.name,
+      lifecycle: module.status.toUpperCase(),
+      maturity: module.maturity.toUpperCase(),
+      operatorConfigured: module.operatorConfigured,
+      externalBlockers: module.externalBlockers,
+      evidenceRefs: module.evidenceRefs,
+      tests: module.tests,
+      components: module.components?.map((component) => ({
+        name: component.name,
+        maturity: component.maturity.toUpperCase(),
+        operatorConfigured: component.operatorConfigured,
+        externalBlockers: component.externalBlockers,
+        evidenceRefs: component.evidenceRefs,
+      })),
+    })),
+    deferredWork: (registry.deferredWork ?? []).map((item) => ({
+      name: item.name,
+      maturity: item.maturity.toUpperCase(),
+      branch: item.branch,
+      evidenceRefs: item.evidenceRefs,
+      countedTowardStandalone: false,
+    })),
+    testSuite: {
+      totalTests: registry.vitest_tests ?? getTotalTests(registry),
+      totalFiles: registry.vitest_files ?? getTotalTestFiles(registry),
+    },
+  };
+}
+
+async function buildStatusTuiData(context: WorkspaceContext): Promise<StatusTuiData> {
   const root = context.workspaceRoot;
   const registry = readProductModules(context);
   const validation = validateModules(registry, {
@@ -403,8 +435,7 @@ async function buildStatusTuiData(
   }
 
   const gitInfo = getGitInfo(root);
-  const totalTests = getTotalTests(registry);
-  const totalTestFiles = getTotalTestFiles(registry);
+  const productStatus = mapProductRegistryToStatusTuiFields(registry);
   const ops = getGitHubOps(context);
   const setupReport = await buildSetupReport({ dryRun: true });
   const dashboard = buildDashboardProjection();
@@ -431,29 +462,7 @@ async function buildStatusTuiData(
     mode: context.sourceCheckout ? 'SOURCE_CHECKOUT' : 'WORKSPACE',
     commit: gitInfo.latestCommit,
     commitSubject: gitInfo.latestSubject,
-    modules: registry.modules.map((module) => ({
-      name: module.name,
-      lifecycle: module.status.toUpperCase(),
-      maturity: module.maturity.toUpperCase(),
-      operatorConfigured: module.operatorConfigured,
-      externalBlockers: module.externalBlockers,
-      evidenceRefs: module.evidenceRefs,
-      tests: module.tests,
-      components: module.components?.map((component) => ({
-        name: component.name,
-        maturity: component.maturity.toUpperCase(),
-        operatorConfigured: component.operatorConfigured,
-        externalBlockers: component.externalBlockers,
-        evidenceRefs: component.evidenceRefs,
-      })),
-    })),
-    deferredWork: (registry.deferredWork ?? []).map((item) => ({
-      name: item.name,
-      maturity: item.maturity.toUpperCase(),
-      branch: item.branch,
-      evidenceRefs: item.evidenceRefs,
-      countedTowardStandalone: false,
-    })),
+    ...productStatus,
     gitHub: {
       available: ops.available,
       tasksReady: ops.ready,
@@ -462,10 +471,6 @@ async function buildStatusTuiData(
       prsOpen: ops.openPRs,
       prsBlocked: ops.blockedPRs,
       prsReady: ops.readyPRs,
-    },
-    testSuite: {
-      totalTests: registry.vitest_tests ?? totalTests,
-      totalFiles: registry.vitest_files ?? totalTestFiles,
     },
     recommendations: recommendations.map((recommendation) => ({
       title: recommendation.title,

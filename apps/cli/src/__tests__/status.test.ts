@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { statusCommands } from '../commands/status.js';
+import { mapProductRegistryToStatusTuiFields, statusCommands } from '../commands/status.js';
 import type { AttentionItem } from '@openslack/runtime';
+import type { ModulesRegistry } from '@openslack/workspace';
 
-const mockReadModules = vi.fn(() => ({
+const mockReadModules = vi.fn((): ModulesRegistry => ({
   schema: 'openslack.modules.v2',
   sourceSchema: 'openslack.modules.v2',
   modules: [
@@ -198,6 +199,15 @@ describe('status command', () => {
   });
 
   it('renders lifecycle, maturity, operator configuration, blockers, and evidence independently', async () => {
+    const mapped = mapProductRegistryToStatusTuiFields(mockReadModules());
+    expect(mapped.modules[0]).toMatchObject({
+      name: 'runtime',
+      lifecycle: 'ACTIVE',
+      maturity: 'LOCAL_READY',
+      operatorConfigured: false,
+    });
+    expect(mapped.testSuite).toEqual({ totalTests: 72, totalFiles: 12 });
+
     const logs = await runStatus();
     const output = logs.join('\n');
     expect(output).toContain(

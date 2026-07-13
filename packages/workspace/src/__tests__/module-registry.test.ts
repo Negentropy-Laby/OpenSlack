@@ -416,6 +416,7 @@ describe('validateModules', () => {
     expect(rawCredentialResult.errors).toEqual(
       expect.arrayContaining([expect.stringContaining('schema or required fields are invalid')]),
     );
+
   });
 
   it('verifies tracked repository paths and current-history commit evidence', () => {
@@ -431,6 +432,7 @@ describe('validateModules', () => {
           evidenceRefs: [
             `commit:${head}`,
             'test:packages/workspace/src/__tests__/module-registry.test.ts',
+            'test:packages/workspace/src/__tests__',
           ],
         }),
       ],
@@ -439,7 +441,15 @@ describe('validateModules', () => {
     expect(result.valid).toBe(true);
   });
 
-  it('rejects missing repository evidence paths', () => {
+  it('rejects malformed or missing repository evidence', () => {
+    const invalidJson = createLiveEvidenceFixture({ invalidJson: true });
+    const invalidJsonResult = validateModules(invalidJson.registry, {
+      rootPath: invalidJson.root,
+    });
+    expect(invalidJsonResult.errors).toEqual(
+      expect.arrayContaining([expect.stringContaining('evidence JSON is invalid')]),
+    );
+
     const registry = {
       ...validRegistry,
       modules: [moduleFixture({ evidenceRefs: ['test:not/a/tracked-test.ts'] })],
@@ -447,6 +457,18 @@ describe('validateModules', () => {
     const result = validateModules(registry, { rootPath: process.cwd() });
     expect(result.valid).toBe(false);
     expect(result.errors.some((error) => error.includes('path is missing'))).toBe(true);
+
+    for (const path of ['../outside.ts', '..\\outside.ts']) {
+      const traversal = {
+        ...validRegistry,
+        modules: [moduleFixture({ evidenceRefs: [`test:${path}`] })],
+      } as ModulesRegistry;
+      expect(
+        validateModules(traversal, { rootPath: process.cwd() }).errors.some((error) =>
+          error.includes('unsafe repository evidence path'),
+        ),
+      ).toBe(true);
+    }
   });
 });
 
@@ -508,6 +530,7 @@ interface LiveEvidenceFixtureOptions {
   revision?: string;
   correlationId?: string;
   evidenceRefs?: string[];
+  invalidJson?: boolean;
 }
 
 function createLiveEvidenceFixture(options: LiveEvidenceFixtureOptions = {}) {
@@ -533,22 +556,24 @@ function createLiveEvidenceFixture(options: LiveEvidenceFixtureOptions = {}) {
   mkdirSync(join(root, 'docs', 'status'), { recursive: true });
   writeFileSync(
     join(root, '.openslack', 'evidence', 'live', 'module.json'),
-    `${JSON.stringify(
-      {
-        schema: 'openslack.live_evidence.v1',
-        ownerId: 'module',
-        testedCommit,
-        outcome: 'pass',
-        environment: 'clean-test-host',
-        observedAt: new Date(observedAt).toISOString(),
-        expiresAt: new Date(expiresAt).toISOString(),
-        correlationId: options.correlationId ?? 'corr-module-clean-host',
-        revision: options.revision ?? testedCommit,
-        evidenceRefs: options.evidenceRefs ?? ['audit:clean-host/module-pass'],
-      },
-      null,
-      2,
-    )}\n`,
+    options.invalidJson
+      ? '{invalid-json\n'
+      : `${JSON.stringify(
+          {
+            schema: 'openslack.live_evidence.v1',
+            ownerId: 'module',
+            testedCommit,
+            outcome: 'pass',
+            environment: 'clean-test-host',
+            observedAt: new Date(observedAt).toISOString(),
+            expiresAt: new Date(expiresAt).toISOString(),
+            correlationId: options.correlationId ?? 'corr-module-clean-host',
+            revision: options.revision ?? testedCommit,
+            evidenceRefs: options.evidenceRefs ?? ['audit:clean-host/module-pass'],
+          },
+          null,
+          2,
+        )}\n`,
     'utf-8',
   );
   writeFileSync(

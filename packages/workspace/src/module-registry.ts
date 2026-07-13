@@ -1,6 +1,6 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { isAbsolute, join, normalize } from 'node:path';
+import { isAbsolute, join, posix } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import type { WorkspaceContext } from './workspace-context.js';
 
@@ -172,6 +172,180 @@ export interface RegistryValidationOptions {
   rootPath?: string;
 }
 
+interface RegistryValidationContext extends RegistryValidationOptions {
+  gitEvidence?: GitEvidenceInspector;
+}
+
+class GitEvidenceInspector {
+  private trackedPaths?: Set<string>;
+  private branchRefs?: Set<string>;
+  private readonly commitHistory = new Map<string, boolean>();
+  private readonly commitTrees = new Map<string, Set<string>>();
+  private readonly ancestorPairs = new Map<string, boolean>();
+  private readonly commitTimes = new Map<string, number>();
+  private readonly productChanges = new Map<string, string[]>();
+  private readonly fileContents = new Map<string, string>();
+
+  constructor(readonly rootPath: string) {}
+
+  isCommitInHeadHistory(commit: string): boolean {
+    const cached = this.commitHistory.get(commit);
+    if (cached !== undefined) return cached;
+    let valid = false;
+    try {
+      execFileSync('git', ['cat-file', '-e', `${commit}^{commit}`], {
+        cwd: this.rootPath,
+        stdio: 'ignore',
+      });
+      execFileSync('git', ['merge-base', '--is-ancestor', commit, 'HEAD'], {
+        cwd: this.rootPath,
+        stdio: 'ignore',
+      });
+      valid = true;
+    } catch {
+      valid = false;
+    }
+    this.commitHistory.set(commit, valid);
+    return valid;
+  }
+
+  isTrackedPath(path: string): boolean {
+    if (!this.trackedPaths) {
+      try {
+        const output = execFileSync('git', ['ls-files', '-z'], {
+          cwd: this.rootPath,
+          encoding: 'utf-8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+          maxBuffer: 16 * 1024 * 1024,
+        });
+        this.trackedPaths = new Set(output.split('\0').filter(Boolean));
+      } catch {
+        this.trackedPaths = new Set();
+      }
+    }
+    return hasGitTreePath(this.trackedPaths, path);
+  }
+
+  hasPathAtCommit(commit: string, path: string): boolean {
+    let tree = this.commitTrees.get(commit);
+    if (!tree) {
+      const output = execFileSync('git', ['ls-tree', '-r', '-z', '--name-only', commit], {
+        cwd: this.rootPath,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        maxBuffer: 16 * 1024 * 1024,
+      });
+      tree = new Set(output.split('\0').filter(Boolean));
+      this.commitTrees.set(commit, tree);
+    }
+    return hasGitTreePath(tree, path);
+  }
+
+  branchExists(branch: string): boolean {
+    if (!this.branchRefs) {
+      try {
+        const output = execFileSync(
+          'git',
+          ['for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/remotes/origin'],
+          {
+            cwd: this.rootPath,
+            encoding: 'utf-8',
+            stdio: ['ignore', 'pipe', 'ignore'],
+          },
+        );
+        this.branchRefs = new Set(output.split(/\r?\n/).filter(Boolean));
+      } catch {
+        this.branchRefs = new Set();
+      }
+    }
+    const refs = branch.startsWith('refs/')
+      ? [branch]
+      : [`refs/heads/${branch}`, `refs/remotes/origin/${branch}`];
+    return refs.some((ref) => this.branchRefs?.has(ref));
+  }
+
+  readFileAtCommit(commit: string, path: string): string {
+    const key = `${commit}\0${path}`;
+    const cached = this.fileContents.get(key);
+    if (cached !== undefined) return cached;
+    const content = execFileSync('git', ['show', `${commit}:${path}`], {
+      cwd: this.rootPath,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    this.fileContents.set(key, content);
+    return content;
+  }
+
+  isAncestor(ancestor: string, descendant: string): boolean {
+    const key = `${ancestor}\0${descendant}`;
+    const cached = this.ancestorPairs.get(key);
+    if (cached !== undefined) return cached;
+    let valid = false;
+    try {
+      execFileSync('git', ['merge-base', '--is-ancestor', ancestor, descendant], {
+        cwd: this.rootPath,
+        stdio: 'ignore',
+      });
+      valid = true;
+    } catch {
+      valid = false;
+    }
+    this.ancestorPairs.set(key, valid);
+    return valid;
+  }
+
+  commitTimestamp(commit: string): number {
+    const cached = this.commitTimes.get(commit);
+    if (cached !== undefined) return cached;
+    const seconds = Number(
+      execFileSync('git', ['show', '-s', '--format=%ct', commit], {
+        cwd: this.rootPath,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim(),
+    );
+    if (!Number.isFinite(seconds)) throw new Error('Commit timestamp is invalid.');
+    const timestamp = seconds * 1000;
+    this.commitTimes.set(commit, timestamp);
+    return timestamp;
+  }
+
+  productPathsChangedSince(testedCommit: string): string[] {
+    const cached = this.productChanges.get(testedCommit);
+    if (cached !== undefined) return cached;
+    if (!this.isCommitInHeadHistory(testedCommit)) {
+      throw new Error('Tested commit is not an ancestor of current HEAD.');
+    }
+    const changedPaths = execFileSync(
+      'git',
+      ['diff', '--name-only', '--diff-filter=ACDMRTUXB', testedCommit, 'HEAD', '--'],
+      {
+        cwd: this.rootPath,
+        encoding: 'utf-8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        maxBuffer: 16 * 1024 * 1024,
+      },
+    )
+      .split(/\r?\n/)
+      .map((path) => path.trim())
+      .filter(Boolean)
+      .filter((path) => !isLiveEvidenceMetadataPath(path));
+    this.productChanges.set(testedCommit, changedPaths);
+    return changedPaths;
+  }
+}
+
+function hasGitTreePath(paths: Set<string>, path: string): boolean {
+  if (paths.has(path)) return true;
+  const directoryPrefix = path.endsWith('/') ? path : `${path}/`;
+  for (const candidate of paths) {
+    if (candidate.startsWith(directoryPrefix)) return true;
+  }
+  return false;
+}
+
 export function validateModules(
   registry: RawModulesRegistry,
   options: RegistryValidationOptions = {},
@@ -185,6 +359,10 @@ export function validateModules(
   }
   const normalized = migrateModulesRegistry(registry);
   const errors: string[] = [];
+  const context: RegistryValidationContext = {
+    ...options,
+    gitEvidence: options.rootPath ? new GitEvidenceInspector(options.rootPath) : undefined,
+  };
 
   if (normalized.schema !== 'openslack.modules.v2') {
     errors.push(`Unsupported normalized registry schema: ${normalized.schema}`);
@@ -205,7 +383,7 @@ export function validateModules(
     if (!LIFECYCLE_VALUES.has(mod.status)) {
       errors.push(`Module "${mod.id}" has invalid lifecycle status: ${String(mod.status)}`);
     }
-    validateMaturityOwner(mod, `Module "${mod.id}"`, errors, options, mod.id);
+    validateMaturityOwner(mod, `Module "${mod.id}"`, errors, context, mod.id);
     validateCount(mod.tests, `Module "${mod.id}" tests`, errors);
     validateCount(mod.test_files, `Module "${mod.id}" test_files`, errors);
     validateCount(mod.golden_evals, `Module "${mod.id}" golden_evals`, errors);
@@ -226,7 +404,7 @@ export function validateModules(
           component,
           `Component "${component.id}"`,
           errors,
-          options,
+          context,
           component.id,
         );
         if (
@@ -275,12 +453,7 @@ export function validateModules(
         errors.push(`Deferred work "${item.id}" evidenceRefs must be non-empty strings`);
       } else {
         for (const reference of item.evidenceRefs) {
-          validateEvidenceReference(
-            reference,
-            `Deferred work "${item.id}"`,
-            errors,
-            options.rootPath,
-          );
+          validateEvidenceReference(reference, `Deferred work "${item.id}"`, errors, context);
         }
         const branchEvidence = item.evidenceRefs
           .filter((reference) => reference.startsWith('branch:'))
@@ -304,12 +477,12 @@ export function validateModules(
             `Deferred work "${item.id}" cannot claim ${item.maturity} without test or repository evidence`,
           );
         }
-        if (item.maturity !== 'planned' && options.rootPath) {
+        if (item.maturity !== 'planned' && context.gitEvidence) {
           validateEvidencePathsAtDeclaredCommits(
             item.evidenceRefs,
             `Deferred work "${item.id}"`,
             errors,
-            options.rootPath,
+            context.gitEvidence,
           );
         }
       }
@@ -366,7 +539,7 @@ function validateMaturityOwner(
   owner: MaturityOwner,
   label: string,
   errors: string[],
-  options: RegistryValidationOptions,
+  context: RegistryValidationContext,
   ownerId: string,
 ): void {
   if (!MATURITY_VALUES.has(owner.maturity)) {
@@ -384,7 +557,7 @@ function validateMaturityOwner(
   const evidenceRefs = Array.isArray(owner.evidenceRefs) ? owner.evidenceRefs : [];
   const externalBlockers = Array.isArray(owner.externalBlockers) ? owner.externalBlockers : [];
   for (const reference of evidenceRefs) {
-    validateEvidenceReference(reference, label, errors, options.rootPath);
+    validateEvidenceReference(reference, label, errors, context);
   }
   if (owner.maturity !== 'planned' && evidenceRefs.length === 0) {
     errors.push(`${label} cannot claim ${owner.maturity} without evidenceRefs`);
@@ -401,8 +574,8 @@ function validateMaturityOwner(
   ) {
     errors.push(`${label} cannot claim ${owner.maturity} without test or repository evidence`);
   }
-  if (owner.maturity !== 'planned' && options.rootPath) {
-    validateEvidencePathsAtDeclaredCommits(evidenceRefs, label, errors, options.rootPath);
+  if (owner.maturity !== 'planned' && context.gitEvidence) {
+    validateEvidencePathsAtDeclaredCommits(evidenceRefs, label, errors, context.gitEvidence);
   }
   if (
     (owner.maturity === 'live_verified' || owner.maturity === 'production_ready') &&
@@ -414,8 +587,8 @@ function validateMaturityOwner(
     if (!evidenceRefs.some(isLiveEvidenceReference)) {
       errors.push(`${label} cannot claim ${owner.maturity} without structured live evidence`);
     }
-    if (options.rootPath) {
-      validateStructuredLiveEvidence(ownerId, evidenceRefs, label, errors, options.rootPath);
+    if (context.gitEvidence) {
+      validateStructuredLiveEvidence(ownerId, evidenceRefs, label, errors, context.gitEvidence);
     }
   }
   if (
@@ -430,7 +603,7 @@ function validateEvidenceReference(
   reference: string,
   label: string,
   errors: string[],
-  rootPath?: string,
+  context: RegistryValidationContext,
 ): void {
   const [kind, value] = reference.split(/:(.*)/s, 2);
   if (!value || !['commit', 'test', 'repo', 'branch'].includes(kind)) {
@@ -442,19 +615,8 @@ function validateEvidenceReference(
       errors.push(`${label} has invalid commit evidence reference: ${reference}`);
       return;
     }
-    if (rootPath) {
-      try {
-        execFileSync('git', ['cat-file', '-e', `${value}^{commit}`], {
-          cwd: rootPath,
-          stdio: 'ignore',
-        });
-        execFileSync('git', ['merge-base', '--is-ancestor', value, 'HEAD'], {
-          cwd: rootPath,
-          stdio: 'ignore',
-        });
-      } catch {
-        errors.push(`${label} commit evidence is not an ancestor of current HEAD: ${reference}`);
-      }
+    if (context.gitEvidence && !context.gitEvidence.isCommitInHeadHistory(value)) {
+      errors.push(`${label} commit evidence is not an ancestor of current HEAD: ${reference}`);
     }
     return;
   }
@@ -463,50 +625,40 @@ function validateEvidenceReference(
       errors.push(`${label} has invalid branch evidence reference: ${reference}`);
       return;
     }
-    if (rootPath) {
-      const refs = value.startsWith('refs/')
-        ? [value]
-        : [`refs/heads/${value}`, `refs/remotes/origin/${value}`];
-      const exists = refs.some((ref) => {
-        try {
-          execFileSync('git', ['show-ref', '--verify', '--quiet', ref], {
-            cwd: rootPath,
-            stdio: 'ignore',
-          });
-          return true;
-        } catch {
-          return false;
-        }
-      });
-      if (!exists) errors.push(`${label} branch evidence does not resolve: ${reference}`);
+    if (context.gitEvidence && !context.gitEvidence.branchExists(value)) {
+      errors.push(`${label} branch evidence does not resolve: ${reference}`);
     }
     return;
   }
-  const normalized = normalize(value);
-  if (
-    isAbsolute(value) ||
-    normalized === '..' ||
-    normalized.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`)
-  ) {
+  const gitPath = normalizeEvidencePath(value);
+  if (!gitPath) {
     errors.push(`${label} has unsafe repository evidence path: ${reference}`);
     return;
   }
-  if (rootPath && !existsSync(join(rootPath, normalized))) {
+  if (context.rootPath && !existsSync(join(context.rootPath, gitPath))) {
     errors.push(`${label} repository evidence path is missing: ${reference}`);
     return;
   }
-  if (rootPath) {
-    try {
-      const tracked = execFileSync('git', ['ls-files', '--', normalized], {
-        cwd: rootPath,
-        encoding: 'utf-8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      }).trim();
-      if (!tracked) throw new Error('untracked');
-    } catch {
-      errors.push(`${label} repository evidence is not committed: ${reference}`);
-    }
+  if (context.gitEvidence && !context.gitEvidence.isTrackedPath(gitPath)) {
+    errors.push(`${label} repository evidence is not committed: ${reference}`);
   }
+}
+
+function normalizeEvidencePath(value: string): string | undefined {
+  if (/[\u0000\r\n]/.test(value)) return undefined;
+  const slashPath = value.replace(/\\/g, '/');
+  const normalized = posix.normalize(slashPath);
+  if (
+    isAbsolute(value) ||
+    posix.isAbsolute(normalized) ||
+    /^[A-Za-z]:\//.test(slashPath) ||
+    slashPath.startsWith('//') ||
+    normalized === '..' ||
+    normalized.startsWith('../')
+  ) {
+    return undefined;
+  }
+  return normalized.replace(/^\.\//, '');
 }
 
 function isStringArray(value: unknown): value is string[] {
@@ -541,21 +693,17 @@ function validateEvidencePathsAtDeclaredCommits(
   evidenceRefs: string[],
   label: string,
   errors: string[],
-  rootPath: string,
+  gitEvidence: GitEvidenceInspector,
 ): void {
   const commits = evidenceRefs
     .filter((reference) => reference.startsWith('commit:'))
     .map((reference) => reference.slice('commit:'.length));
   for (const reference of evidenceRefs.filter((item) => /^(test|repo):/.test(item))) {
-    const path = normalize(reference.slice(reference.indexOf(':') + 1));
-    const gitPath = path.replace(/\\/g, '/');
+    const gitPath = normalizeEvidencePath(reference.slice(reference.indexOf(':') + 1));
+    if (!gitPath) continue;
     const committed = commits.some((commit) => {
       try {
-        execFileSync('git', ['cat-file', '-e', `${commit}:${gitPath}`], {
-          cwd: rootPath,
-          stdio: 'ignore',
-        });
-        return true;
+        return gitEvidence.hasPathAtCommit(commit, gitPath);
       } catch {
         return false;
       }
@@ -571,24 +719,32 @@ function validateStructuredLiveEvidence(
   evidenceRefs: string[],
   label: string,
   errors: string[],
-  rootPath: string,
+  gitEvidence: GitEvidenceInspector,
 ): void {
   const commits = evidenceRefs
     .filter((reference) => reference.startsWith('commit:'))
     .map((reference) => reference.slice('commit:'.length));
   for (const reference of evidenceRefs.filter(isLiveEvidenceReference)) {
-    const path = normalize(reference.slice('repo:'.length));
-    const gitPath = path.replace(/\\/g, '/');
+    const gitPath = normalizeEvidencePath(reference.slice('repo:'.length));
+    if (!gitPath) continue;
     let accepted = false;
     const rejectionReasons = new Set<string>();
     for (const commit of commits) {
+      let content: string;
       try {
-        const content = execFileSync('git', ['show', `${commit}:${gitPath}`], {
-          cwd: rootPath,
-          encoding: 'utf-8',
-          stdio: ['ignore', 'pipe', 'ignore'],
-        });
-        const evidence = JSON.parse(content) as Partial<LiveEvidenceV1>;
+        content = gitEvidence.readFileAtCommit(commit, gitPath);
+      } catch {
+        rejectionReasons.add('evidence path is not present at the declared commit');
+        continue;
+      }
+      let evidence: Partial<LiveEvidenceV1>;
+      try {
+        evidence = JSON.parse(content) as Partial<LiveEvidenceV1>;
+      } catch {
+        rejectionReasons.add('evidence JSON is invalid');
+        continue;
+      }
+      try {
         const observedAt = Date.parse(String(evidence.observedAt ?? ''));
         const expiresAt = Date.parse(String(evidence.expiresAt ?? ''));
         const testedCommit = String(evidence.testedCommit ?? '');
@@ -617,7 +773,13 @@ function validateStructuredLiveEvidence(
           rejectionReasons.add('observation time exceeds the allowed clock skew');
           continue;
         }
-        const testedCommitTime = commitTimestamp(testedCommit, rootPath);
+        let testedCommitTime: number;
+        try {
+          testedCommitTime = gitEvidence.commitTimestamp(testedCommit);
+        } catch {
+          rejectionReasons.add('tested commit timestamp is unavailable');
+          continue;
+        }
         if (observedAt + LIVE_EVIDENCE_CLOCK_SKEW_MS < testedCommitTime) {
           rejectionReasons.add('observation predates the tested commit beyond allowed clock skew');
           continue;
@@ -630,16 +792,17 @@ function validateStructuredLiveEvidence(
           rejectionReasons.add('evidence validity exceeds 30 days');
           continue;
         }
-        try {
-          execFileSync('git', ['merge-base', '--is-ancestor', testedCommit, commit], {
-            cwd: rootPath,
-            stdio: 'ignore',
-          });
-        } catch {
+        if (!gitEvidence.isAncestor(testedCommit, commit)) {
           rejectionReasons.add('declared evidence commit predates the tested commit');
           continue;
         }
-        const changedProductPaths = productPathsChangedSinceTestedCommit(testedCommit, rootPath);
+        let changedProductPaths: string[];
+        try {
+          changedProductPaths = gitEvidence.productPathsChangedSince(testedCommit);
+        } catch {
+          rejectionReasons.add('tested commit cannot be compared with current product paths');
+          continue;
+        }
         if (changedProductPaths.length > 0) {
           rejectionReasons.add(
             `tested commit is stale; product paths changed: ${changedProductPaths.join(', ')}`,
@@ -649,7 +812,7 @@ function validateStructuredLiveEvidence(
         accepted = true;
         break;
       } catch {
-        rejectionReasons.add('evidence commit or tested commit is not in current history');
+        rejectionReasons.add('live evidence validation failed unexpectedly');
       }
     }
     if (!accepted) {
@@ -681,42 +844,6 @@ function isRedactedEvidenceRefs(value: unknown): value is string[] {
       ) &&
       !/:\/\/[^/\s:@]+:[^@\s]+@/.test(reference),
   );
-}
-
-function productPathsChangedSinceTestedCommit(testedCommit: string, rootPath: string): string[] {
-  execFileSync('git', ['cat-file', '-e', `${testedCommit}^{commit}`], {
-    cwd: rootPath,
-    stdio: 'ignore',
-  });
-  execFileSync('git', ['merge-base', '--is-ancestor', testedCommit, 'HEAD'], {
-    cwd: rootPath,
-    stdio: 'ignore',
-  });
-  const changedPaths = execFileSync(
-    'git',
-    ['diff', '--name-only', '--diff-filter=ACDMRTUXB', testedCommit, 'HEAD', '--'],
-    {
-      cwd: rootPath,
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    },
-  )
-    .split(/\r?\n/)
-    .map((path) => path.trim())
-    .filter(Boolean);
-  return changedPaths.filter((path) => !isLiveEvidenceMetadataPath(path));
-}
-
-function commitTimestamp(commit: string, rootPath: string): number {
-  const seconds = Number(
-    execFileSync('git', ['show', '-s', '--format=%ct', commit], {
-      cwd: rootPath,
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim(),
-  );
-  if (!Number.isFinite(seconds)) throw new Error('Commit timestamp is invalid.');
-  return seconds * 1000;
 }
 
 function isLiveEvidenceMetadataPath(path: string): boolean {

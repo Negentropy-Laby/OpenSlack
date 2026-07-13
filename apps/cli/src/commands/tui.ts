@@ -55,7 +55,8 @@ export function tuiCommands(): Command {
         // Pre-fetch status data
         try {
           const { execSync } = await import('node:child_process');
-          const { readProductModules, validateModules, getTotalTests, getTotalTestFiles } = await import('@openslack/workspace');
+          const { readProductModules, validateModules } = await import('@openslack/workspace');
+          const { mapProductRegistryToStatusTuiFields } = await import('./status.js');
 
           const registry = readProductModules(context);
           const validation = validateModules(registry, {
@@ -64,10 +65,7 @@ export function tuiCommands(): Command {
           if (!validation.valid) {
             throw new Error(`product module metadata is invalid: ${validation.errors.join('; ')}`);
           }
-          const totalTests = getTotalTests(registry);
-          const totalTestFiles = getTotalTestFiles(registry);
-          const vitestTests = registry.vitest_tests ?? totalTests;
-          const vitestFiles = registry.vitest_files ?? totalTestFiles;
+          const productStatus = mapProductRegistryToStatusTuiFields(registry);
 
           let commit = 'unknown';
           let commitSubject = 'unknown';
@@ -80,31 +78,8 @@ export function tuiCommands(): Command {
             mode: context.sourceCheckout ? 'SOURCE_CHECKOUT' : 'WORKSPACE',
             commit,
             commitSubject,
-            modules: registry.modules.map(m => ({
-              name: m.name,
-              lifecycle: m.status.toUpperCase(),
-              maturity: m.maturity.toUpperCase(),
-              operatorConfigured: m.operatorConfigured,
-              externalBlockers: m.externalBlockers,
-              evidenceRefs: m.evidenceRefs,
-              tests: m.tests,
-              components: m.components?.map(component => ({
-                name: component.name,
-                maturity: component.maturity.toUpperCase(),
-                operatorConfigured: component.operatorConfigured,
-                externalBlockers: component.externalBlockers,
-                evidenceRefs: component.evidenceRefs,
-              })),
-            })),
-            deferredWork: (registry.deferredWork ?? []).map(item => ({
-              name: item.name,
-              maturity: item.maturity.toUpperCase(),
-              branch: item.branch,
-              evidenceRefs: item.evidenceRefs,
-              countedTowardStandalone: false,
-            })),
+            ...productStatus,
             gitHub: { available: false, tasksReady: 0, tasksClaimed: 0, tasksBlocked: 0, prsOpen: 0, prsBlocked: 0, prsReady: 0 },
-            testSuite: { totalTests: vitestTests, totalFiles: vitestFiles },
             recommendations: [],
             attentionItems: [],
             nextAction: 'Run openslack status for full report',

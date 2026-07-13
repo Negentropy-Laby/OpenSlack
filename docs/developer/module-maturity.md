@@ -101,6 +101,9 @@ used, must resolve and match that field. A local-only branch remains solely in
 the locator field until it is published; it must not be presented as portable
 evidence. The durable Sidecar evidence is its ancestor-bound committed ledger
 path; branch metadata cannot promote a normal module or component by itself.
+For deferred work, that commit is a ledger anchor showing where the deferral was
+recorded, not an audited readiness proof; this pattern must not be reused to
+promote a standalone module or component.
 
 Run these checks after changing the registry or evidence:
 
