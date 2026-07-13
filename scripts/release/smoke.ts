@@ -1,4 +1,5 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { generateKeyPairSync } from 'node:crypto';
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { findExecutable, parseArg, run, type ReleaseTarget, TARGETS } from './lib.js';
@@ -8,6 +9,16 @@ export interface ArtifactSmokeResult {
   version: string;
   commit: string;
   checks: string[];
+}
+
+export interface ReleaseVerifierSmokeInput {
+  archivePath: string;
+  archiveName: string;
+  bundleName: string;
+  manifestPath: string;
+  target: ReleaseTarget;
+  expectedSigned: boolean;
+  trustedPublicKey?: string;
 }
 
 export function smokeBundle(bundleDir: string, target: ReleaseTarget): ArtifactSmokeResult {
@@ -138,6 +149,105 @@ export function initializeSmokeRepository(
     run(git, ['rev-parse', '--show-toplevel'], { cwd: workspace, env }).stdout.trim(),
   );
   return { root, env };
+}
+
+/**
+ * Execute the release verifier from a freshly extracted archive. Signed builds
+ * must verify successfully; unsigned PR/dev builds must prove that the same
+ * installed command fails closed rather than accepting an unsigned candidate.
+ */
+export function smokeReleaseVerifierFromArchive(
+  input: ReleaseVerifierSmokeInput,
+): 'trusted-signature-verified' | 'unsigned-release-rejected' {
+  const extractionRoot = mkdtempSync(join(tmpdir(), 'openslack-verifier-smoke-'));
+  try {
+    if (input.expectedSigned && !input.trustedPublicKey) {
+      throw new Error('Signed release verifier smoke requires the trusted public key.');
+    }
+    copyFileSync(input.archivePath, join(extractionRoot, input.archiveName));
+    run('tar', ['-xf', input.archiveName], { cwd: extractionRoot });
+    const executable = join(extractionRoot, input.bundleName, TARGETS[input.target].executable);
+    const publicKey = input.trustedPublicKey ?? createDisposablePublicKey();
+    const publicKeyPath = join(extractionRoot, 'trusted-release-public.pem');
+    writeFileSync(publicKeyPath, publicKey, { encoding: 'utf-8', mode: 0o600 });
+    const result = run(
+      executable,
+      [
+        'self',
+        'release',
+        'verify',
+        '--manifest',
+        input.manifestPath,
+        '--trusted-public-key',
+        publicKeyPath,
+        '--format',
+        'json',
+      ],
+      {
+        cwd: extractionRoot,
+        env: artifactEnvironment(dirname(findExecutable('git'))),
+        allowFailure: true,
+      },
+    );
+    const stdout = String(result.stdout ?? '');
+    const output = `${stdout}\n${String(result.stderr ?? '')}`;
+    if (output.includes(publicKey)) {
+      throw new Error('Packaged release verifier exposed trusted public key material.');
+    }
+
+    if (!input.expectedSigned) {
+      if (result.status === 0 || !output.includes('trusted provenance signature is required')) {
+        throw new Error('Packaged release verifier did not reject an unsigned release.');
+      }
+      return 'unsigned-release-rejected';
+    }
+
+    if (result.error || result.status !== 0) {
+      throw new Error('Packaged release verifier rejected a trusted signed release.');
+    }
+    const parsed = JSON.parse(stdout) as {
+      schema?: string;
+      status?: string;
+      verified?: boolean;
+      version?: string;
+      commit?: string;
+      channel?: string;
+      target?: string;
+      keyId?: string | null;
+      signature?: { status?: string; trusted?: boolean };
+      assets?: Array<{ role?: string }>;
+    };
+    const manifest = JSON.parse(readFileSync(input.manifestPath, 'utf-8')) as {
+      version?: string;
+      commit?: string;
+      channel?: string;
+      target?: string;
+    };
+    if (
+      parsed.schema !== 'openslack.release_verification.v1' ||
+      parsed.status !== 'verified' ||
+      parsed.verified !== true ||
+      parsed.version !== manifest.version ||
+      parsed.commit !== manifest.commit ||
+      parsed.channel !== manifest.channel ||
+      parsed.target !== manifest.target ||
+      parsed.target !== input.target ||
+      typeof parsed.keyId !== 'string' ||
+      parsed.signature?.status !== 'signed' ||
+      parsed.signature.trusted !== true ||
+      parsed.assets?.map((asset) => asset.role).join(',') !== 'archive,sbom,provenance,signature'
+    ) {
+      throw new Error('Packaged release verifier returned invalid structured evidence.');
+    }
+    return 'trusted-signature-verified';
+  } finally {
+    rmSync(extractionRoot, { recursive: true, force: true });
+  }
+}
+
+function createDisposablePublicKey(): string {
+  const { publicKey } = generateKeyPairSync('ed25519');
+  return publicKey.export({ type: 'spki', format: 'pem' }).toString();
 }
 
 function artifactEnvironment(gitDir: string): NodeJS.ProcessEnv {

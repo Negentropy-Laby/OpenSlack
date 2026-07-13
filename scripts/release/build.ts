@@ -24,7 +24,7 @@ import {
 } from './lib.js';
 import { buildCycloneDxSbom } from './sbom.js';
 import { consumeReleaseSigningEnvironment, createProvenanceSignature } from './signature.js';
-import { smokeBundle, type ArtifactSmokeResult } from './smoke.js';
+import { smokeBundle, smokeReleaseVerifierFromArchive, type ArtifactSmokeResult } from './smoke.js';
 
 // This must run before the first Git/build/smoke child process. Never allow the
 // signing private key to flow into inherited child environments.
@@ -254,6 +254,16 @@ const manifest = {
 };
 writeJson(manifestPath, manifest);
 
+const releaseVerifierSmoke = smokeReleaseVerifierFromArchive({
+  archivePath,
+  archiveName,
+  bundleName,
+  manifestPath,
+  target,
+  expectedSigned: requireSignature,
+  trustedPublicKey: releaseSigningEnvironment.trustedPublicKey,
+});
+
 const checksumFiles = [archiveName, sbomName, manifestName, provenanceName];
 if (signatureName) checksumFiles.push(signatureName);
 const checksums = checksumFiles
@@ -262,7 +272,15 @@ const checksums = checksumFiles
 writeFileSync(join(releaseRoot, `${bundleName}.SHA256SUMS`), `${checksums}\n`, 'utf-8');
 console.log(
   JSON.stringify(
-    { releaseRoot, bundleDir, archivePath, manifestPath, smoke, archiveSmoke },
+    {
+      releaseRoot,
+      bundleDir,
+      archivePath,
+      manifestPath,
+      smoke,
+      archiveSmoke,
+      releaseVerifierSmoke,
+    },
     null,
     2,
   ),

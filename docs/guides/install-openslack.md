@@ -28,16 +28,22 @@ sha256sum openslack-v0.1.0-linux-x64.tar.gz
 
 The result must equal both `SHA256SUMS` and the archive digest in the release
 manifest. The signed provenance subjects bind both the archive and its SBOM.
-From a trusted OpenSlack source checkout, verify the signature against the
-release public key obtained from the organization's pinned, out-of-band trust
-channel:
+Extract the downloaded CLI first, then use that installed executable to verify
+the original archive and sidecars against the release public key obtained from
+the organization's pinned, out-of-band trust channel. This command does not
+require an OpenSlack source checkout, Bun, or Node.js:
 
 ```bash
-bun scripts/release/verify.ts \
+openslack self release verify \
   --manifest openslack-v0.1.0-linux-x64.release-manifest.json \
-  --require-signature \
-  --public-key /trusted/path/openslack-release-public.pem
+  --trusted-public-key /trusted/path/openslack-release-public.pem \
+  --format plain
 ```
+
+Use `--format json` for the stable `openslack.release_verification.v1` result.
+The command verifies the archive, SBOM, provenance, detached signature, key ID,
+version, commit, channel, target, and required provenance subjects. It always
+requires a trusted signature; unsigned PR/development candidates are rejected.
 
 The `.sig` envelope contains a public key for inspection, but that embedded key
 is self-asserted and is not a substitute for the trusted public key. Signing

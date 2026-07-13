@@ -72,9 +72,10 @@ else
   echo "PASS"
 fi
 
-# 5. Git repository exists
+# 5. Git repository exists. Linked worktrees use a .git file rather than a
+# directory, so ask Git instead of inspecting the filesystem shape.
 echo -n "[5/5] git repository ... "
-if [ -d "$ROOT/.git" ]; then
+if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "PASS"
 else
   echo "FAIL (not a git repository)"

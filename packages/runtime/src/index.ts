@@ -70,3 +70,19 @@ export type { CreateRollbackTaskOptions, RollbackTaskResult, ExpireRollbackTasks
 export { runEvalSuite, runGoldenEval, generateScorecard } from './evals/runner.js';
 export { loadGoldenSuite } from './evals/suites/golden.js';
 export type { EvalCase, EvalSuite, EvalResult, EvalAssertion, EvalSetup, EvalScenario } from './evals/types.js';
+
+// Self-contained release verification
+export {
+  releaseKeyId,
+  renderReleaseVerification,
+  verifyProvenanceSignature,
+  verifyReleaseArtifacts,
+} from './release-verification.js';
+export type {
+  ProvenanceSignatureEnvelope,
+  ReleaseVerificationAsset,
+  ReleaseVerificationAssetRole,
+  ReleaseVerificationResult,
+  VerifiedProvenanceSignature,
+  VerifyReleaseArtifactsOptions,
+} from './release-verification.js';

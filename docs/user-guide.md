@@ -403,6 +403,7 @@ See `docs/developer/keychain-packaging.md` for the artifact contract.
 | `openslack self review --pr <n>` | Review PR for merge eligibility |
 | `openslack self scorecard --experiment <id>` | Compute fitness score |
 | `openslack self monitor --experiment <id>` | Post-merge regression check |
+| `openslack self release verify --manifest <file> --trusted-public-key <public.pem>` | Verify a downloaded stable release without a source checkout or Bun |
 
 ## Agent
 
