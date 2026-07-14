@@ -122,7 +122,8 @@ export function verifyReleaseArtifacts(
     ['provenance', manifest.provenance],
   ];
   assertUniqueArtifactNames(baseReferences.map(([, reference]) => reference));
-  const archiveAsset = verifyArtifactReference(directory, 'archive', manifest.archive);
+  const verifiedArchive = readVerifiedArtifactReference(directory, 'archive', manifest.archive);
+  const archiveAsset = verifiedArchive.asset;
   const sbomAsset = verifyArtifactReference(directory, 'sbom', manifest.sbom);
   const verifiedProvenance = readVerifiedArtifactReference(
     directory,
@@ -161,6 +162,7 @@ export function verifyReleaseArtifacts(
       options.requireSignature === true,
     );
     validateSignedBuildParameters(manifest, provenance);
+    validateArchiveContainer(manifest, verifiedArchive.bytes);
     return {
       schema: 'openslack.release_verification.v1',
       status: 'verified',
@@ -185,6 +187,7 @@ export function verifyReleaseArtifacts(
   if (options.requireSignature) {
     throw new Error('A trusted provenance signature is required for this release.');
   }
+  validateArchiveContainer(manifest, verifiedArchive.bytes);
   return {
     schema: 'openslack.release_verification.v1',
     status: 'verified',
@@ -338,6 +341,28 @@ function validateSignedBuildParameters(
       throw new Error(`Signed provenance build parameter does not match manifest: ${field}`);
     }
   }
+}
+
+function validateArchiveContainer(manifest: ReleaseManifest, bytes: Buffer): void {
+  const valid =
+    manifest.target === 'windows-x64'
+      ? manifest.archive.file.endsWith('.zip') && hasZipSignature(bytes)
+      : manifest.archive.file.endsWith('.tar.gz') && hasPrefix(bytes, [0x1f, 0x8b, 0x08]);
+  if (!valid) {
+    throw new Error(`Release archive format does not match target ${manifest.target}.`);
+  }
+}
+
+function hasZipSignature(bytes: Buffer): boolean {
+  return [
+    [0x50, 0x4b, 0x03, 0x04],
+    [0x50, 0x4b, 0x05, 0x06],
+    [0x50, 0x4b, 0x07, 0x08],
+  ].some((signature) => hasPrefix(bytes, signature));
+}
+
+function hasPrefix(bytes: Buffer, prefix: number[]): boolean {
+  return bytes.length >= prefix.length && prefix.every((value, index) => bytes[index] === value);
 }
 
 function verifyArtifactReference(

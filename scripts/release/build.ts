@@ -25,6 +25,7 @@ import {
 import { buildCycloneDxSbom } from './sbom.js';
 import { consumeReleaseSigningEnvironment, createProvenanceSignature } from './signature.js';
 import { smokeBundle, smokeReleaseVerifierFromArchive, type ArtifactSmokeResult } from './smoke.js';
+import { createReleaseArchive, extractReleaseArchive } from './archive.js';
 
 // This must run before the first Git/build/smoke child process. Never allow the
 // signing private key to flow into inherited child environments.
@@ -148,24 +149,12 @@ mkdirSync(releaseRoot, { recursive: true });
 const archiveName = `${bundleName}${definition.archiveExtension}`;
 const archivePath = join(releaseRoot, archiveName);
 rmSync(archivePath, { force: true });
-// Use a relative archive name with cwd=releaseRoot: MSYS/GNU tar (Git Bash, e.g.
-// the release workflow's `shell: bash` on windows-2022) misparses absolute `D:\`
-// paths as `host:path`; bsdtar handles them, and a relative name is portable
-// across both.
-if (target === 'windows-x64') {
-  run('tar', ['-a', '-cf', archiveName, bundleName], { cwd: releaseRoot });
-} else {
-  run('tar', ['-czf', archiveName, bundleName], { cwd: releaseRoot });
-}
+createReleaseArchive(bundleDir, archivePath, target);
 
 const extractionRoot = mkdtempSync(join(tmpdir(), 'openslack-release-extract-'));
 let archiveSmoke: ArtifactSmokeResult;
 try {
-  // MSYS/GNU tar also fails to resolve Windows-native `-C` temp paths, so copy the
-  // archive into the temp dir and extract by relative name with cwd=extractionRoot.
-  // No absolute path is passed to tar, keeping this portable across GNU tar/bsdtar.
-  copyFileSync(archivePath, join(extractionRoot, archiveName));
-  run('tar', ['-xf', archiveName], { cwd: extractionRoot });
+  extractReleaseArchive(archivePath, extractionRoot, target);
   archiveSmoke = smokeBundle(join(extractionRoot, bundleName), target);
 } finally {
   rmSync(extractionRoot, { recursive: true, force: true });
@@ -256,7 +245,6 @@ writeJson(manifestPath, manifest);
 
 const releaseVerifierSmoke = smokeReleaseVerifierFromArchive({
   archivePath,
-  archiveName,
   bundleName,
   manifestPath,
   target,

@@ -1,8 +1,9 @@
 import { generateKeyPairSync } from 'node:crypto';
-import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { findExecutable, parseArg, run, type ReleaseTarget, TARGETS } from './lib.js';
+import { extractReleaseArchive } from './archive.js';
 
 export interface ArtifactSmokeResult {
   target: ReleaseTarget;
@@ -13,7 +14,6 @@ export interface ArtifactSmokeResult {
 
 export interface ReleaseVerifierSmokeInput {
   archivePath: string;
-  archiveName: string;
   bundleName: string;
   manifestPath: string;
   target: ReleaseTarget;
@@ -164,8 +164,7 @@ export function smokeReleaseVerifierFromArchive(
     if (input.expectedSigned && !input.trustedPublicKey) {
       throw new Error('Signed release verifier smoke requires the trusted public key.');
     }
-    copyFileSync(input.archivePath, join(extractionRoot, input.archiveName));
-    run('tar', ['-xf', input.archiveName], { cwd: extractionRoot });
+    extractReleaseArchive(input.archivePath, extractionRoot, input.target);
     const executable = join(extractionRoot, input.bundleName, TARGETS[input.target].executable);
     const publicKey = input.trustedPublicKey ?? createDisposablePublicKey();
     const publicKeyPath = join(extractionRoot, 'trusted-release-public.pem');

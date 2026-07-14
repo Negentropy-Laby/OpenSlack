@@ -9,6 +9,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  renameSync,
   rmSync,
   symlinkSync,
   unlinkSync,
@@ -232,13 +233,37 @@ describe('self-contained release verification', () => {
       'Provenance subject does not match the release archive.',
     );
   });
+
+  it('rejects gzip bytes masquerading as a Windows ZIP even when hashes agree', () => {
+    const manifest = readManifest(manifestPath);
+    const previousName = manifest.archive.file;
+    const zipName = 'openslack-v0.1.0-windows-x64.zip';
+    renameSync(join(root, previousName), join(root, zipName));
+    manifest.target = 'windows-x64';
+    manifest.archive.file = zipName;
+
+    const provenancePath = join(root, manifest.provenance.file);
+    const provenance = JSON.parse(readFileSync(provenancePath, 'utf-8')) as {
+      subject: Array<{ name: string; digest: { sha256: string } }>;
+      predicate: { buildDefinition: { externalParameters: { target: string } } };
+    };
+    provenance.subject.find((subject) => subject.name === previousName)!.name = zipName;
+    provenance.predicate.buildDefinition.externalParameters.target = 'windows-x64';
+    writeFileSync(provenancePath, JSON.stringify(provenance));
+    manifest.provenance.sha256 = sha256File(provenancePath);
+    writeFileSync(manifestPath, JSON.stringify(manifest));
+
+    expect(() => verifyReleaseArtifacts(manifestPath)).toThrow(
+      'Release archive format does not match target windows-x64.',
+    );
+  });
 });
 
 function createFixture(root: string): string {
   const archivePath = join(root, 'openslack-v0.1.0-linux-x64.tar.gz');
   const sbomPath = join(root, 'openslack-v0.1.0-linux-x64.sbom.cdx.json');
   const provenancePath = join(root, 'openslack-v0.1.0-linux-x64.provenance.intoto.json');
-  writeFileSync(archivePath, 'archive');
+  writeFileSync(archivePath, Buffer.from([0x1f, 0x8b, 0x08, 0x00]));
   writeFileSync(sbomPath, '{"bomFormat":"CycloneDX"}');
   const identity = {
     version: '0.1.0',
