@@ -2,13 +2,14 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CredentialStore, MemoryKeychainBackend } from '@openslack/credentials';
 import {
   diagnoseOpenAICompatibleRuntime,
   runOpenAICompatibleRuntimeSmoke,
   setupOpenAICompatibleRuntime,
 } from '../index.js';
 
-function providerConfig(root: string): string {
+function providerConfig(root: string, credentialRef = 'env:TEST_RUNTIME_KEY'): string {
   const dir = join(root, '.openslack.local');
   mkdirSync(dir, { recursive: true });
   const path = join(dir, 'agent-runtime.json');
@@ -20,7 +21,7 @@ function providerConfig(root: string): string {
         'openai-compatible': {
           baseUrl: 'https://example.test/v1',
           model: 'test-model',
-          credentialRef: 'env:TEST_RUNTIME_KEY',
+          credentialRef,
         },
       },
     }),
@@ -114,6 +115,78 @@ describe('OpenAI-compatible runtime diagnostics', () => {
     expect(repeated).toMatchObject({ status: 'PASS', wroteConfig: true, readiness: 'ready' });
   });
 
+  it('accepts env and keychain references with identical setup validation', () => {
+    const envPreview = setupOpenAICompatibleRuntime({
+      rootDir: root,
+      baseUrl: 'https://example.test/v1',
+      model: 'test-model',
+      credentialRef: 'env:TEST_RUNTIME_KEY',
+    });
+    const keychainPreview = setupOpenAICompatibleRuntime({
+      rootDir: root,
+      baseUrl: 'https://example.test/v1',
+      model: 'test-model',
+      credentialRef: 'keychain:openslack/openai-compatible-test',
+    });
+
+    expect(envPreview.checks.find((check) => check.name === 'credential-ref')).toMatchObject({
+      status: 'PASS',
+      detail: 'env:TEST_RUNTIME_KEY',
+    });
+    expect(keychainPreview.checks.find((check) => check.name === 'credential-ref')).toMatchObject({
+      status: 'PASS',
+      detail: 'keychain:openslack/openai-compatible-test',
+    });
+    expect(keychainPreview).toMatchObject({ mode: 'dry-run', wroteConfig: false });
+  });
+
+  it('resolves a keychain credential in setup, doctor, and a restarted process', async () => {
+    const backend = new MemoryKeychainBackend();
+    const firstProcess = new CredentialStore([backend]);
+    firstProcess.putIfAbsent(
+      'keychain:openslack/openai-compatible-test',
+      'keychain-transport-canary',
+    );
+
+    const written = setupOpenAICompatibleRuntime({
+      rootDir: root,
+      baseUrl: 'https://example.test/v1',
+      model: 'test-model',
+      credentialRef: 'keychain:openslack/openai-compatible-test',
+      credentialStore: firstProcess,
+      write: true,
+    });
+    expect(written).toMatchObject({ status: 'PASS', wroteConfig: true, readiness: 'ready' });
+
+    const restartedProcess = new CredentialStore([backend]);
+    const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      expect(init?.headers).toEqual({ authorization: 'Bearer keychain-transport-canary' });
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const report = await diagnoseOpenAICompatibleRuntime({
+      rootDir: root,
+      credentialStore: restartedProcess,
+      fetchImpl,
+    });
+
+    expect(report).toMatchObject({ status: 'PASS', readiness: 'ready' });
+    expect(JSON.stringify(report)).not.toContain('keychain-transport-canary');
+  });
+
+  it('uses credential-reference-neutral remediation for a missing keychain value', async () => {
+    providerConfig(root, 'keychain:openslack/missing-runtime-key');
+    const report = await diagnoseOpenAICompatibleRuntime({
+      rootDir: root,
+      credentialStore: new CredentialStore([new MemoryKeychainBackend()]),
+    });
+
+    expect(report).toMatchObject({ status: 'FAIL', readiness: 'misconfigured' });
+    expect(report.remediations).toEqual([
+      'Make the configured credential reference available through its env or native keychain backend.',
+    ]);
+    expect(JSON.stringify(report)).not.toContain('Set the environment variable');
+  });
+
   it('rejects raw credentials and invalid limits without writing', () => {
     const invalid = setupOpenAICompatibleRuntime({
       rootDir: root,
@@ -148,6 +221,33 @@ describe('OpenAI-compatible runtime diagnostics', () => {
     expect(report).toMatchObject({ status: 'PASS', terminalReason: 'completed' });
     expect(report.evidence.runJson && existsSync(report.evidence.runJson)).toBe(true);
     expect(JSON.stringify(report)).not.toContain('transport-only-test-value');
+  });
+
+  it('runs the live protocol through an injected keychain credential store', async () => {
+    providerConfig(root, 'keychain:openslack/openai-compatible-smoke');
+    const credentialStore = new CredentialStore([new MemoryKeychainBackend()]);
+    credentialStore.putIfAbsent(
+      'keychain:openslack/openai-compatible-smoke',
+      'keychain-smoke-canary',
+    );
+    const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      expect(init?.headers).toMatchObject({ authorization: 'Bearer keychain-smoke-canary' });
+      return new Response(
+        JSON.stringify({
+          choices: [{ message: { content: '{"summary":"connected"}' } }],
+          usage: { total_tokens: 4 },
+        }),
+        { status: 200 },
+      );
+    }) as unknown as typeof fetch;
+
+    const report = await runOpenAICompatibleRuntimeSmoke({
+      rootDir: root,
+      credentialStore,
+      fetchImpl,
+    });
+    expect(report).toMatchObject({ status: 'PASS', terminalReason: 'completed' });
+    expect(JSON.stringify(report)).not.toContain('keychain-smoke-canary');
   });
 
   it('returns typed terminal smoke evidence for an invalid provider response', async () => {

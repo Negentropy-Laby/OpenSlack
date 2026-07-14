@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { parseSecretReference, type CredentialStore } from '@openslack/credentials';
 import type {
   AgentRuntimeDoctorCheck,
   AgentRuntimeDoctorStatus,
@@ -24,6 +25,7 @@ export interface DiagnoseOpenAICompatibleRuntimeOptions {
   env?: NodeJS.ProcessEnv;
   fetchImpl?: typeof fetch;
   probeEndpoint?: boolean;
+  credentialStore?: CredentialStore;
 }
 
 export interface OpenAICompatibleRuntimeDoctorReport {
@@ -81,7 +83,7 @@ export async function diagnoseOpenAICompatibleRuntime(
   ];
   let credential: string;
   try {
-    credential = resolveRuntimeCredential(config.credentialRef, env);
+    credential = resolveRuntimeCredential(config.credentialRef, env, options.credentialStore);
     checks.push({
       name: 'credential-resolution',
       status: 'PASS',
@@ -94,7 +96,7 @@ export async function diagnoseOpenAICompatibleRuntime(
       detail: 'Credential reference does not resolve.',
     });
     return reportFromChecks(config, configPath, configSource, 'misconfigured', checks, [
-      `Set the environment variable named by ${config.credentialRef}.`,
+      'Make the configured credential reference available through its env or native keychain backend.',
     ]);
   }
 
@@ -143,6 +145,7 @@ export interface SetupOpenAICompatibleRuntimeOptions {
   maxToolResultBytes?: number;
   write?: boolean;
   env?: NodeJS.ProcessEnv;
+  credentialStore?: CredentialStore;
 }
 
 export interface OpenAICompatibleRuntimeSetupReport {
@@ -205,7 +208,11 @@ export function setupOpenAICompatibleRuntime(
         env: options.env ?? process.env,
       });
       if (!loaded) throw new Error('config unavailable');
-      resolveRuntimeCredential(loaded.credentialRef, options.env ?? process.env);
+      resolveRuntimeCredential(
+        loaded.credentialRef,
+        options.env ?? process.env,
+        options.credentialStore,
+      );
       readiness = 'ready';
     } catch {
       readiness = 'misconfigured';
@@ -225,7 +232,7 @@ export function setupOpenAICompatibleRuntime(
         ? ['Fix the failed non-secret configuration checks and rerun setup.']
         : wroteConfig && readiness !== 'ready'
           ? [
-              'Configuration written. Set the referenced credential environment variable, then run agent-runtime doctor.',
+              'Configuration written. Make the referenced credential available, then run agent-runtime doctor.',
             ]
           : wroteConfig
             ? ['Configuration and credential reference are ready. Run agent-runtime smoke.']
@@ -239,6 +246,7 @@ export interface RunOpenAICompatibleRuntimeSmokeOptions {
   env?: NodeJS.ProcessEnv;
   fetchImpl?: typeof fetch;
   prompt?: string;
+  credentialStore?: CredentialStore;
 }
 
 export interface OpenAICompatibleRuntimeSmokeReport {
@@ -279,6 +287,7 @@ export async function runOpenAICompatibleRuntimeSmoke(
       configPath: options.configPath,
       env: options.env,
       fetchImpl: options.fetchImpl,
+      credentialStore: options.credentialStore,
     },
   });
   let runId: string | undefined;
@@ -490,13 +499,18 @@ function validateSetupConfig(config: Record<string, unknown>): AgentRuntimeDocto
     detail: modelValid ? String(config.model) : 'Model is required.',
   });
   const credentialRef = typeof config.credentialRef === 'string' ? config.credentialRef : '';
-  const credentialValid = /^env:[A-Z][A-Z0-9_]*$/.test(credentialRef);
+  let canonicalCredentialRef: string | undefined;
+  try {
+    canonicalCredentialRef = parseSecretReference(credentialRef).canonical;
+  } catch {
+    canonicalCredentialRef = undefined;
+  }
   checks.push({
     name: 'credential-ref',
-    status: credentialValid ? 'PASS' : 'FAIL',
-    detail: credentialValid
-      ? credentialRef
-      : 'Use an env:NAME credential reference; raw credentials are forbidden.',
+    status: canonicalCredentialRef ? 'PASS' : 'FAIL',
+    detail:
+      canonicalCredentialRef ??
+      'Use an env:NAME or keychain:SERVICE/ACCOUNT reference; raw credentials are forbidden.',
   });
   const limits: Array<[string, number, number]> = [
     ['timeoutMs', 100, 600_000],

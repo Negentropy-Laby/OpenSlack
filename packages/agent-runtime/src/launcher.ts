@@ -497,7 +497,11 @@ function createDefaultProviderRegistry(
         transport: 'in-process',
         adapter: new OpenAICompatibleExecutionAdapter({
           ...config,
-          apiKey: resolveRuntimeCredential(config.credentialRef, env),
+          apiKey: resolveRuntimeCredential(
+            config.credentialRef,
+            env,
+            openAICompatible?.credentialStore,
+          ),
           fetchImpl: openAICompatible?.fetchImpl,
         }),
       };

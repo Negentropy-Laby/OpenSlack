@@ -12,8 +12,8 @@ Negentropy-Lab checkout. The model endpoint remains an external dependency.
 
 ## 1. Preview non-secret configuration
 
-Choose an environment-variable name for the credential. Do not pass the
-credential value on the command line or place it in project configuration.
+Choose an `env:` or `keychain:` credential reference. Do not pass the credential
+value on the command line or place it in project configuration.
 
 ```bash
 bun run openslack agent-runtime setup openai-compatible \
@@ -38,10 +38,41 @@ credential reference, timeout, and safety limits. It is local and gitignored.
 
 ## 2. Supply the credential at runtime
 
-Set the environment variable named by `credentialRef` in the operator-owned
-process environment. OpenSlack resolves it only at the HTTP transport boundary;
-the value is not copied into run metadata, transcripts, configuration previews,
-or diagnostics.
+For an `env:` reference, set the named environment variable in the
+operator-owned process environment. For a native keychain reference, preview a
+source-file import before applying it:
+
+```bash
+bun run openslack agent-runtime credential import \
+  --source /operator-owned/path/provider-key.txt \
+  --credential-ref keychain:openslack/openai-compatible
+
+bun run openslack agent-runtime credential import \
+  --source /operator-owned/path/provider-key.txt \
+  --credential-ref keychain:openslack/openai-compatible \
+  --write
+```
+
+Add `--delete-source` only when you want OpenSlack to attempt source cleanup
+after a successful keychain write. Deletion is best-effort; a failure produces
+an explicit manual-cleanup warning and does not claim that the source was
+removed. The preview reads neither the source file nor the keychain.
+When applying an import, OpenSlack removes one conventional trailing `LF` or
+`CRLF` from the source value before storing it; all other bytes are preserved.
+
+Then use the same reference in setup:
+
+```bash
+bun run openslack agent-runtime setup openai-compatible \
+  --base-url https://provider.example/v1 \
+  --model example-model \
+  --credential-ref keychain:openslack/openai-compatible \
+  --write
+```
+
+OpenSlack resolves either reference only at the HTTP transport boundary; the
+value is not copied into run metadata, transcripts, configuration previews,
+logs, or diagnostics.
 
 ## 3. Select the provider for an agent
 
