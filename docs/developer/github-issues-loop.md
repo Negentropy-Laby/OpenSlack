@@ -30,10 +30,10 @@ The GitHub Issues-First Autonomous Task Loop enables OpenSlack agents to discove
 │  openslack task sync → git commit → GitHubDeliveryService       │
 │  → PUSHED → PR_CREATED/UPDATED → HEAD_SYNCHRONIZED              │
 │  → AWAITING_GATES (PRMS owns readiness and merge)               │
-│  → moveIssueToReview() → labels: running → review                │
+│  → reviewClaim() → verify owner/ref/PR → review                 │
 │  ↓                                                               │
 │  COMPLETE                                                        │
-│  PR merged → releaseIssueClaim() → labels: review → done         │
+│  PR merged → completeClaim() → verify PR/ref/done postconditions │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -60,13 +60,17 @@ ref: refs/heads/openslack/claims/issue-{issueNumber}
 
 Labels are not atomic. Two agents can simultaneously read label state, both see "ready", and both attempt to claim. Git ref creation is a server-side atomic operation — the first agent to create the ref wins, all others get HTTP 422.
 
-### Release Protocol
+### Completion Protocol
 
 ```
 DELETE /repos/{owner}/{repo}/git/refs/heads/openslack/claims/issue-{issueNumber}
 ```
 
-Calling `releaseIssueClaim(issueNumber)` deletes the claim ref and moves the issue label to `openslack:done`.
+`completeClaim({ issueNumber, agentId, prUrl })` verifies structured ownership,
+exact PR evidence, and the linked PR's merged state before any completion
+mutation. It then removes the claim ref, writes `openslack:done`, and re-reads
+GitHub to prove both final postconditions. A 404 is idempotent success only when
+the final Issue state is already complete.
 
 ## Issue Label Lifecycle
 
@@ -76,11 +80,17 @@ Calling `releaseIssueClaim(issueNumber)` deletes the claim ref and moves the iss
 | `openslack:ready` | Available for claim | None | Agent can attempt claim |
 | `openslack:claimed` | Claimed by agent | `refs/heads/openslack/claims/issue-{n}` | Claim ref is authoritative |
 | `openslack:running` | Agent working | Claim ref exists | Set manually by agent after worktree creation |
-| `openslack:review` | PR submitted | Claim ref exists | Set by `moveIssueToReview()` |
-| `openslack:done` | Completed | Claim ref deleted | Set by `releaseIssueClaim()` |
+| `openslack:review` | PR submitted | Claim ref exists | Set and verified by `reviewClaim()` |
+| `openslack:done` | Completed | Claim ref deleted | Set and verified by `completeClaim()` |
 | `openslack:blocked` | Needs human | Claim ref may exist | Set manually when agent cannot proceed |
 
-Labels are best-effort — they are a projection of the claim ref state, not the authoritative source. If labels and refs disagree, the ref wins. The `openslack github repair claims` command reconciles label state from ref state (dry-run by default, `--apply` to mutate).
+Initial claim labels remain a repairable projection of the atomic claim ref.
+Heartbeat, review, and completion commands are stricter: they never report
+success until their required ref, owner, comment, label, and PR postconditions
+have been re-read from GitHub. Partial mutations return a fixed error code and
+one idempotent recovery command. The `openslack github repair claims` command
+still reconciles stale projection state (dry-run by default, `--apply` to
+mutate).
 
 ## Task Manifest
 
@@ -155,13 +165,12 @@ if (result.claimStatus === 'granted') {
 }
 ```
 
-### `releaseIssueClaim(issueNumber)`
+### Strict Claim lifecycle
 
-Deletes claim ref and moves issue to done.
-
-### `moveIssueToReview(issueNumber, prUrl)`
-
-Updates issue labels to `openslack:review` and posts PR link comment.
+`heartbeatClaim`, `reviewClaim`, and `completeClaim` return
+`openslack.claim_lifecycle.v1`. They require a live GitHub client, structured
+claim/heartbeat ownership, and verified remote postconditions. Raw transport
+errors are replaced with fixed, non-secret error codes.
 
 ## CLI Usage
 
@@ -179,6 +188,18 @@ openslack task sync \
   --run-id RUN-2026-000001 \
   --paths "packages/core/src/fix.ts" \
   --issue-number 1
+
+# Recover a published PR whose Issue review transition was interrupted
+openslack github claim review \
+  --issue-number 1 \
+  --agent-id codex_developer \
+  --pr-url https://github.com/owner/repo/pull/42
+
+# Complete only after merge/review evidence exists
+openslack github claim complete \
+  --issue-number 1 \
+  --agent-id codex_developer \
+  --pr-url https://github.com/owner/repo/pull/42
 ```
 
 ## Authentication
@@ -238,12 +259,11 @@ openslack agent tick --agent-id anthropic_architect_aby --source github-issues
 # 5. Verify issue labels changed
 # → openslack:ready removed, openslack:claimed added
 
-# 6. Release claim
-node --import tsx -e "
-import { releaseIssueClaim } from './packages/github/src/claims.js';
-await releaseIssueClaim(<n>);
-console.log('Claim released');
-"
+# 6. Complete claim through the verified CLI contract
+openslack github claim complete \
+  --issue-number <n> \
+  --agent-id <agent-id> \
+  --pr-url https://github.com/owner/repo/pull/<n>
 
 # 7. Verify claim ref deleted and issue → done
 ```
@@ -259,12 +279,13 @@ node -e "parseIssueTaskManifest(body)"  # uses openslack-task code fence + JSON 
 - Red Zone detection: `allowed_paths` hitting `.github/`, `.openslack/policies/`, etc. requires `human_approval_required_for: [red_zone_change]`
 - Path conflict detection: intersecting allowed/forbidden paths
 
-### Heartbeat + Expiry (`claims.ts`)
+### Heartbeat + Expiry (`claim-lifecycle.ts`, `claims.ts`)
 
 ```bash
-heartbeatIssueClaim(42, 'agent-x', 60)  # extends lease by 60 min
+heartbeatClaim({ issueNumber: 42, agentId: 'agent-x', ttlMinutes: 60 })
+reviewClaim({ issueNumber: 42, agentId: 'agent-x', prUrl })
+completeClaim({ issueNumber: 42, agentId: 'agent-x', prUrl })
 expireIssueClaim(42)  # deletes ref, resets to ready
-releaseIssueClaimWithOwner({ issueNumber: 42, agentId: 'agent-x' })  # ownership check
 ```
 
 ### Task Filtering (`task-filter.ts`)

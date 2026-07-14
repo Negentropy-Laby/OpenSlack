@@ -13,6 +13,7 @@ export interface PRProposalInput {
   agentId: string;
   taskId: string;
   runId: string;
+  issueNumber?: number;
   changedPaths: string[];
   description?: string;
   principal?: AgentPrincipal;
@@ -34,6 +35,47 @@ export interface PRProposalResult {
   delivery?: GitHubDeliveryResult;
 }
 
+export interface TaskLinkMetadata {
+  schema: 'openslack.task_link.v1';
+  issue_number: number;
+  agent_id: string;
+  task_id: string;
+  run_id: string;
+  claim_ref: string;
+}
+
+const TASK_LINK_AGENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
+
+export function renderTaskLinkMetadata(metadata: TaskLinkMetadata): string {
+  return `<!-- openslack-task-link\n${JSON.stringify(metadata, null, 2)}\n-->`;
+}
+
+export function parseTaskLinkMetadata(body: string | null | undefined): TaskLinkMetadata | null {
+  if (!body) return null;
+  const match = body.match(/<!--\s*openslack-task-link\s*([\s\S]*?)-->/);
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[1].trim()) as Partial<TaskLinkMetadata>;
+    if (
+      parsed.schema !== 'openslack.task_link.v1' ||
+      !Number.isSafeInteger(parsed.issue_number) ||
+      (parsed.issue_number ?? 0) <= 0 ||
+      typeof parsed.agent_id !== 'string' ||
+      !TASK_LINK_AGENT_ID_PATTERN.test(parsed.agent_id) ||
+      typeof parsed.task_id !== 'string' ||
+      parsed.task_id.length === 0 ||
+      typeof parsed.run_id !== 'string' ||
+      parsed.run_id.length === 0 ||
+      parsed.claim_ref !== `refs/heads/openslack/claims/issue-${parsed.issue_number}`
+    ) {
+      return null;
+    }
+    return parsed as TaskLinkMetadata;
+  } catch {
+    return null;
+  }
+}
+
 function loadLocalCodeowners(root: string, changedPaths: string[]): string[] {
   const codeownersPath = join(root, '.github', 'CODEOWNERS');
   if (!existsSync(codeownersPath)) return [];
@@ -48,11 +90,28 @@ export async function proposeWorkspacePR(input: PRProposalInput): Promise<PRProp
     errors.push('No changed paths provided');
     return { success: false, prBody: '', branchName: '', riskZone: 'unknown', errors };
   }
+  if (
+    input.issueNumber !== undefined &&
+    (!Number.isSafeInteger(input.issueNumber) || input.issueNumber <= 0)
+  ) {
+    errors.push('Issue number must be a positive integer');
+    return { success: false, prBody: '', branchName: '', riskZone: 'unknown', errors };
+  }
 
   const riskZone = classifyPaths(input.changedPaths);
   const blackViolations = input.changedPaths.filter((p) => classifyPaths([p]) === 'black');
   const redViolations = input.changedPaths.filter((p) => classifyPaths([p]) === 'red');
   const branchName = `agent/${input.agentId}/${input.taskId}/${input.runId}`;
+  const taskLink = input.issueNumber
+    ? renderTaskLinkMetadata({
+        schema: 'openslack.task_link.v1',
+        issue_number: input.issueNumber,
+        agent_id: input.agentId,
+        task_id: input.taskId,
+        run_id: input.runId,
+        claim_ref: `refs/heads/openslack/claims/issue-${input.issueNumber}`,
+      })
+    : '';
 
   // Authorization gate — if snapshot provided, enforce
   if (input.snapshot) {
@@ -80,6 +139,9 @@ export async function proposeWorkspacePR(input: PRProposalInput): Promise<PRProp
 - **Task ID:** ${input.taskId}
 - **Agent ID:** ${input.agentId}
 - **Run ID:** ${input.runId}
+${input.issueNumber ? `- **Issue:** #${input.issueNumber}` : ''}
+
+${taskLink}
 
 ### Risk
 - **Zone:** ${riskZone.toUpperCase()}

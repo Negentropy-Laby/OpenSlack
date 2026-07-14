@@ -4,12 +4,17 @@ import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import {
   bindGitHubAppInstallation,
+  completeClaim,
   defaultGitHubAppManifestRefs,
   getClient,
+  heartbeatClaim,
   queryReadyItems,
   readGitHubAppLocalConfig,
+  renderClaimLifecycleResult,
   resolveGitHubRepoTarget,
+  reviewClaim,
 } from '@openslack/github';
+import type { ClaimLifecycleResult } from '@openslack/github';
 import { recordEvent as _recordEvent } from '@openslack/collaboration';
 import type { RecordEventFn } from '@openslack/github';
 import { createDefaultCredentialStore, type CredentialStore } from '@openslack/credentials';
@@ -71,6 +76,20 @@ function recordGithubRepair(
     });
   } catch {
     // best-effort event recording
+  }
+}
+
+function positiveInteger(value: string): number | null {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function printClaimLifecycleResult(result: ClaimLifecycleResult): void {
+  const output = renderClaimLifecycleResult(result);
+  if (result.outcome === 'completed') console.log(output);
+  else {
+    console.error(output);
+    process.exitCode = 1;
   }
 }
 
@@ -427,22 +446,105 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
       }
     });
 
+  const claim = new Command('claim').description(
+    'Manage claim heartbeat, review, and completion with verified postconditions',
+  );
+
+  claim
+    .command('heartbeat')
+    .description('Extend a claim lease after verifying the ref and owner')
+    .requiredOption('--issue-number <n>', 'Issue number')
+    .requiredOption('--agent-id <id>', 'Claim owner agent ID')
+    .option('--ttl-minutes <n>', 'Lease extension in minutes (1-120)', '60')
+    .action(async (options: { issueNumber: string; agentId: string; ttlMinutes: string }) => {
+      const issueNumber = positiveInteger(options.issueNumber);
+      const ttlMinutes = positiveInteger(options.ttlMinutes);
+      if (!issueNumber || !ttlMinutes || ttlMinutes > 120) {
+        console.error('CLAIM_INVALID_INPUT: issue number and TTL must be valid positive integers.');
+        process.exitCode = 1;
+        return;
+      }
+      try {
+        printClaimLifecycleResult(
+          await heartbeatClaim({ issueNumber, agentId: options.agentId, ttlMinutes }),
+        );
+      } catch {
+        console.error('CLAIM_API_UNAVAILABLE: claim heartbeat failed safely.');
+        process.exitCode = 1;
+      }
+    });
+
+  claim
+    .command('review')
+    .description('Move a claimed Issue to review and verify its PR evidence')
+    .requiredOption('--issue-number <n>', 'Issue number')
+    .requiredOption('--agent-id <id>', 'Claim owner agent ID')
+    .requiredOption('--pr-url <url>', 'Canonical GitHub pull request URL')
+    .action(async (options: { issueNumber: string; agentId: string; prUrl: string }) => {
+      const issueNumber = positiveInteger(options.issueNumber);
+      if (!issueNumber) {
+        console.error('CLAIM_INVALID_INPUT: issue number must be a positive integer.');
+        process.exitCode = 1;
+        return;
+      }
+      try {
+        printClaimLifecycleResult(
+          await reviewClaim({ issueNumber, agentId: options.agentId, prUrl: options.prUrl }),
+        );
+      } catch {
+        console.error('CLAIM_API_UNAVAILABLE: claim review transition failed safely.');
+        process.exitCode = 1;
+      }
+    });
+
+  claim
+    .command('complete')
+    .description('Complete a claimed Issue and verify its final state')
+    .requiredOption('--issue-number <n>', 'Issue number')
+    .requiredOption('--agent-id <id>', 'Claim owner agent ID')
+    .requiredOption('--pr-url <url>', 'Canonical GitHub pull request URL')
+    .action(async (options: { issueNumber: string; agentId: string; prUrl: string }) => {
+      const issueNumber = positiveInteger(options.issueNumber);
+      if (!issueNumber) {
+        console.error('CLAIM_INVALID_INPUT: issue number must be a positive integer.');
+        process.exitCode = 1;
+        return;
+      }
+      try {
+        printClaimLifecycleResult(
+          await completeClaim({ issueNumber, agentId: options.agentId, prUrl: options.prUrl }),
+        );
+      } catch {
+        console.error('CLAIM_API_UNAVAILABLE: claim completion failed safely.');
+        process.exitCode = 1;
+      }
+    });
+
+  cmd.addCommand(claim);
+
   cmd
     .command('issue-done')
-    .description('Mark an issue as done and release its claim')
+    .description('Deprecated compatibility alias for github claim complete')
     .requiredOption('--issue-number <n>', 'Issue number')
-    .option('--pr-url <url>', 'PR URL for the completion record')
-    .action(async (options) => {
+    .requiredOption('--agent-id <id>', 'Claim owner agent ID')
+    .requiredOption('--pr-url <url>', 'Canonical GitHub pull request URL')
+    .action(async (options: { issueNumber: string; agentId: string; prUrl: string }) => {
+      const issueNumber = positiveInteger(options.issueNumber);
+      if (!issueNumber) {
+        console.error('CLAIM_INVALID_INPUT: issue number must be a positive integer.');
+        process.exitCode = 1;
+        return;
+      }
       try {
-        const { releaseIssueClaim } = await import('@openslack/github');
-        await releaseIssueClaim(parseInt(options.issueNumber, 10));
-        console.log(`Issue #${options.issueNumber}: claim released, labels → done`);
-        if (options.prUrl) {
-          console.log(`  PR: ${options.prUrl}`);
-        }
-      } catch (e) {
-        console.error(`Issue done failed: ${(e as Error).message}`);
-        process.exit(1);
+        console.warn(
+          'Deprecated: use `openslack github claim complete --issue-number <n> --agent-id <id> --pr-url <url>`.',
+        );
+        printClaimLifecycleResult(
+          await completeClaim({ issueNumber, agentId: options.agentId, prUrl: options.prUrl }),
+        );
+      } catch {
+        console.error('CLAIM_API_UNAVAILABLE: claim completion failed safely.');
+        process.exitCode = 1;
       }
     });
 

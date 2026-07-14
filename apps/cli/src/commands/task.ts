@@ -11,6 +11,7 @@ import {
   resolveAgentPrincipal,
 } from '@openslack/runtime';
 import { recordEvent } from '@openslack/collaboration';
+import { renderClaimLifecycleResult, reviewClaim } from '@openslack/github';
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -227,6 +228,12 @@ export function taskCommands(): Command {
     .action(async (options) => {
       const root = findRepoRoot();
       const paths = options.paths.split(',').map((p: string) => p.trim());
+      const issueNumber = options.issueNumber ? Number(options.issueNumber) : undefined;
+      if (issueNumber !== undefined && (!Number.isSafeInteger(issueNumber) || issueNumber <= 0)) {
+        console.error('CLAIM_INVALID_INPUT: issue number must be a positive integer.');
+        process.exitCode = 1;
+        return;
+      }
 
       // Resolve agent principal — fail closed
       const resolved = resolveAgentPrincipal({ root, agentId: options.agentId, provider: 'cli' });
@@ -240,6 +247,7 @@ export function taskCommands(): Command {
         agentId: options.agentId,
         taskId: options.taskId,
         runId: options.runId,
+        issueNumber,
         changedPaths: paths,
         description: options.description,
         principal,
@@ -256,13 +264,22 @@ export function taskCommands(): Command {
       if (result.prUrl) {
         console.log(`PR URL: ${result.prUrl}`);
         // Move linked issue to review
-        if (options.issueNumber) {
-          try {
-            const { moveIssueToReview } = await import('@openslack/github');
-            await moveIssueToReview(parseInt(options.issueNumber, 10), result.prUrl);
-            console.log(`Issue #${options.issueNumber} → review`);
-          } catch {
-            /* best-effort */
+        if (issueNumber) {
+          const lifecycle = await reviewClaim({
+            issueNumber,
+            agentId: options.agentId,
+            prUrl: result.prUrl,
+          });
+          console.log(renderClaimLifecycleResult(lifecycle));
+          if (lifecycle.outcome !== 'completed') {
+            console.error(
+              `${lifecycle.errorCode ?? 'CLAIM_PARTIAL_STATE'}: PR publication succeeded, but the Issue review transition is incomplete.`,
+            );
+            if (lifecycle.recoveryCommand) {
+              console.error(`Recovery: ${lifecycle.recoveryCommand}`);
+            }
+            process.exitCode = 1;
+            return;
           }
         }
       }

@@ -296,12 +296,12 @@ export const REGISTERED_ACTIONS: Record<RegisteredActionId, RegisteredAction> = 
   'github.issue_done': {
     id: 'github.issue_done',
     description: 'Mark issue done',
-    inputSchema: { issueNumber: { type: 'number', required: true } },
+    inputSchema: { issueNumber: { type: 'number', required: true }, agentId: { type: 'string', required: true }, prUrl: { type: 'string', required: true } },
     riskLevel: 'medium',
     sideEffects: true,
     confirmationRequired: true,
-    build: (input, id) => ({ id, actionId: 'github.issue_done', input, tool: 'openslack-cli', command: 'github', args: ['issue-done', '--issue-number', str(input.issueNumber)], description: `Mark issue #${input.issueNumber} as done`, confirmationRequired: true }),
-    match: (step) => variable('github', ['issue-done', '--issue-number'], 3)(step) && numArg(step.args, 2),
+    build: (input, id) => ({ id, actionId: 'github.issue_done', input, tool: 'openslack-cli', command: 'github', args: ['issue-done', '--issue-number', str(input.issueNumber), '--agent-id', str(input.agentId), '--pr-url', str(input.prUrl)], description: `Mark issue #${input.issueNumber} as done`, confirmationRequired: true }),
+    match: (step) => variable('github', ['issue-done', '--issue-number'], 7)(step) && numArg(step.args, 2),
   },
   'github.repair.labels.preview': {
     id: 'github.repair.labels.preview',

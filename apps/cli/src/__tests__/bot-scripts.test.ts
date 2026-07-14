@@ -114,6 +114,20 @@ describe('bot-auth wrapper scripts', () => {
     expect(wrapper.isAllowedCommand(['auth', 'token'])).toBe(false);
   });
 
+  it('completes merged task Issues from structured claim evidence without a human token fallback', () => {
+    const workflow = readFileSync(
+      resolve(repoRoot, '.github', 'workflows', 'openslack-issue-done.yml'),
+      'utf8',
+    );
+    expect(workflow).toContain('openslack-task-link');
+    expect(workflow).toContain("taskLink.schema !== 'openslack.task_link.v1'");
+    expect(workflow).toContain('--agent-id');
+    expect(workflow).toContain('GITHUB_TOKEN: ${{ github.token }}');
+    expect(workflow).toMatch(/permissions:\s*\n\s*contents: write/);
+    expect(workflow).not.toContain('OPENSLACK_GITHUB_TOKEN');
+    expect(workflow).not.toContain('Issue:\\s*#?');
+  });
+
   it('maps historical PR creation flags without invoking GitHub or credentials', () => {
     const require = createRequire(import.meta.url);
     const compatibility = require(scriptPath('bot-delivery-compat.js')) as {

@@ -469,6 +469,13 @@ reported as `empty`, never as passed. Publication is fail-closed: commit, push,
 PR creation/update, and exact-head synchronization must all succeed. A generated
 PR body is not a successful fallback when remote delivery fails.
 
+When `--issue-number` is supplied, the PR body also carries a structured
+`openslack.task_link.v1` marker. After delivery, `task sync` verifies the claim
+owner and the Issue review label/comment postconditions. If that transition is
+interrupted after the PR exists, the command exits non-zero and prints only the
+idempotent `openslack github claim review ...` recovery command; retrying never
+creates a second PR.
+
 ```bash
 openslack delivery publish \
   --branch agent/topic \
@@ -515,7 +522,15 @@ normal delivery or product branches.
 | `openslack github repair-claims` | Compatibility alias for claim repair; default is dry-run |
 | `openslack github repair-all` | Compatibility alias for all GitHub repairs; default is dry-run |
 | `openslack github metrics` | Task loop metrics |
-| `openslack github issue-done --issue-number <n>` | Release claim + mark done |
+| `openslack github claim heartbeat --issue-number <n> --agent-id <id> --ttl-minutes <1..120>` | Extend and verify a claim lease |
+| `openslack github claim review --issue-number <n> --agent-id <id> --pr-url <url>` | Verify the owner and move a claimed Issue to review |
+| `openslack github claim complete --issue-number <n> --agent-id <id> --pr-url <url>` | Complete a merged Issue and verify claim-ref removal |
+| `openslack github issue-done --issue-number <n> --agent-id <id> --pr-url <url>` | Deprecated strict alias for `claim complete` |
+
+Claim lifecycle commands require live GitHub evidence and return
+`openslack.claim_lifecycle.v1`. They fail closed on missing/conflicting owner
+markers or unverifiable ref, comment, label, PR, and completion postconditions;
+transport failures are reported with fixed, secret-safe codes.
 
 ## PR Review & Merge Steward (PRMS)
 
