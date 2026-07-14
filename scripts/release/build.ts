@@ -1,6 +1,7 @@
 import {
   chmodSync,
   copyFileSync,
+  cpSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -142,7 +143,19 @@ const buildInfo = {
 };
 writeJson(join(bundleDir, 'build-info.json'), buildInfo);
 
-const smoke = smokeBundle(bundleDir, target);
+// Exercise a disposable copy so the archive input has never been executed.
+// Windows security tooling may retain a short-lived handle to an executable
+// after its process exits, which makes Compress-Archive fail on the original
+// bundle even though spawnSync has already returned.
+const smokeRoot = mkdtempSync(join(tmpdir(), 'openslack-bundle-smoke-'));
+let smoke: ArtifactSmokeResult;
+try {
+  const smokeBundleDir = join(smokeRoot, bundleName);
+  cpSync(bundleDir, smokeBundleDir, { recursive: true, errorOnExist: true });
+  smoke = smokeBundle(smokeBundleDir, target);
+} finally {
+  rmSync(smokeRoot, { recursive: true, force: true });
+}
 writeJson(join(bundleDir, 'smoke-report.json'), smoke);
 
 mkdirSync(releaseRoot, { recursive: true });

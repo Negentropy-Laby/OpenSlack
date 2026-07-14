@@ -56,4 +56,12 @@ describe('release archive creation', () => {
     expect(source).toContain('Expand-Archive -LiteralPath');
     expect(source).not.toContain("run('tar', ['-a'");
   });
+
+  it('smokes a disposable bundle copy before archiving the untouched input', () => {
+    const source = readFileSync(resolve(import.meta.dirname, '..', 'build.ts'), 'utf-8');
+    expect(source).toContain("mkdtempSync(join(tmpdir(), 'openslack-bundle-smoke-'))");
+    expect(source).toContain('cpSync(bundleDir, smokeBundleDir');
+    expect(source).toContain('smokeBundle(smokeBundleDir, target)');
+    expect(source).not.toContain('smokeBundle(bundleDir, target)');
+  });
 });
