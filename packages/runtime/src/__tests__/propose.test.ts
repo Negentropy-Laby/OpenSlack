@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
-import { proposeWorkspacePR } from '../propose.js';
+import { parseTaskLinkMetadata, proposeWorkspacePR, renderTaskLinkMetadata } from '../propose.js';
 import type { AgentPermissionSnapshot } from '@openslack/kernel';
 
 function makeSnapshot(actionVerdict: 'allow' | 'ask' | 'deny'): AgentPermissionSnapshot {
@@ -27,6 +27,45 @@ function makeSnapshot(actionVerdict: 'allow' | 'ask' | 'deny'): AgentPermissionS
 }
 
 describe('proposeWorkspacePR authorization', () => {
+  it('round-trips the structured task-link marker', () => {
+    const body = renderTaskLinkMetadata({
+      schema: 'openslack.task_link.v1',
+      issue_number: 42,
+      agent_id: 'test-agent',
+      task_id: 'TASK-42',
+      run_id: 'RUN-42',
+      claim_ref: 'refs/heads/openslack/claims/issue-42',
+    });
+    expect(parseTaskLinkMetadata(body)).toEqual({
+      schema: 'openslack.task_link.v1',
+      issue_number: 42,
+      agent_id: 'test-agent',
+      task_id: 'TASK-42',
+      run_id: 'RUN-42',
+      claim_ref: 'refs/heads/openslack/claims/issue-42',
+    });
+  });
+
+  it('rejects malformed task-link metadata', () => {
+    expect(
+      parseTaskLinkMetadata(
+        '<!-- openslack-task-link {"schema":"openslack.task_link.v1","issue_number":"42"} -->',
+      ),
+    ).toBeNull();
+    expect(
+      parseTaskLinkMetadata(
+        renderTaskLinkMetadata({
+          schema: 'openslack.task_link.v1',
+          issue_number: 42,
+          agent_id: 'test-agent',
+          task_id: 'TASK-42',
+          run_id: 'RUN-42',
+          claim_ref: 'refs/heads/openslack/claims/issue-99',
+        }),
+      ),
+    ).toBeNull();
+  });
+
   it('blocks when agent authorization requires confirmation', async () => {
     const result = await proposeWorkspacePR({
       agentId: 'test_agent',
@@ -92,6 +131,7 @@ describe('proposeWorkspacePR authorization', () => {
         agentId: 'test-agent',
         taskId: 'TASK-7',
         runId: 'RUN-7',
+        issueNumber: 42,
         changedPaths: ['work.txt'],
         rootDir: root,
         deliveryService: { publish },
@@ -100,6 +140,12 @@ describe('proposeWorkspacePR authorization', () => {
         success: true,
         prUrl: 'https://github.com/acme/project/pull/7',
         delivery: { state: 'AWAITING_GATES' },
+      });
+      expect(result.prBody).toContain('<!-- openslack-task-link');
+      expect(parseTaskLinkMetadata(result.prBody)).toMatchObject({
+        issue_number: 42,
+        agent_id: 'test-agent',
+        claim_ref: 'refs/heads/openslack/claims/issue-42',
       });
       expect(publish).toHaveBeenCalledWith(
         expect.objectContaining({ rootDir: root, owner: 'acme', repo: 'project' }),

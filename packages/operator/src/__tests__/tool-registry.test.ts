@@ -30,6 +30,25 @@ describe('tool registry', () => {
     expect(isRegisteredStep(step)).toBe(true);
   });
 
+  it('requires owner and PR evidence for the deprecated issue completion action', () => {
+    expect(() => createRegisteredStep('github.issue_done', { issueNumber: 42 }, 's1')).toThrow('agentId');
+
+    const step = createRegisteredStep(
+      'github.issue_done',
+      { issueNumber: 42, agentId: 'agent-one', prUrl: 'https://github.com/acme/repo/pull/7' },
+      's1',
+    );
+    expect(step.args).toEqual([
+      'issue-done',
+      '--issue-number',
+      '42',
+      '--agent-id',
+      'agent-one',
+      '--pr-url',
+      'https://github.com/acme/repo/pull/7',
+    ]);
+  });
+
   it('enforces the compound plan step limit', () => {
     const calls = Array.from({ length: LLM_PLANNER_MAX_TOOL_STEPS + 1 }, () => ({
       actionId: 'status.show',

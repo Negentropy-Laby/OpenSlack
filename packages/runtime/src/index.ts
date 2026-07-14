@@ -8,11 +8,22 @@ export type { TickResult } from './tick.js';
 export { generateRuntimeIdentity, loadRuntimeIdentity, resolveAgentPrincipal } from './identity.js';
 
 // Re-exports from git-sync (backward compat)
-export { proposeWorkspacePR } from './propose.js';
-export type { PRProposalInput, PRProposalResult } from './propose.js';
+export { parseTaskLinkMetadata, proposeWorkspacePR, renderTaskLinkMetadata } from './propose.js';
+export type { PRProposalInput, PRProposalResult, TaskLinkMetadata } from './propose.js';
 export { createWorktree, cleanupWorktree, checkDirty } from './worktree.js';
-export { buildSetupReport, detectGenesisShell, findRepoRoot, renderSetupReport, getNextSteps } from './setup-report.js';
-export type { SetupFinding, SetupFindingStatus, SetupReport, SetupNextStep } from './setup-report.js';
+export {
+  buildSetupReport,
+  detectGenesisShell,
+  findRepoRoot,
+  renderSetupReport,
+  getNextSteps,
+} from './setup-report.js';
+export type {
+  SetupFinding,
+  SetupFindingStatus,
+  SetupReport,
+  SetupNextStep,
+} from './setup-report.js';
 export {
   OnboardingStateError,
   OnboardingStore,
@@ -64,12 +75,23 @@ export {
   ROLLBACK_TTL_DAYS,
   ROLLBACK_RATE_LIMIT_MS,
 } from './self/ops/rollback.js';
-export type { CreateRollbackTaskOptions, RollbackTaskResult, ExpireRollbackTasksResult } from './self/ops/rollback.js';
+export type {
+  CreateRollbackTaskOptions,
+  RollbackTaskResult,
+  ExpireRollbackTasksResult,
+} from './self/ops/rollback.js';
 
 // Golden Evals (moved from workspace to runtime to break circular dependency)
 export { runEvalSuite, runGoldenEval, generateScorecard } from './evals/runner.js';
 export { loadGoldenSuite } from './evals/suites/golden.js';
-export type { EvalCase, EvalSuite, EvalResult, EvalAssertion, EvalSetup, EvalScenario } from './evals/types.js';
+export type {
+  EvalCase,
+  EvalSuite,
+  EvalResult,
+  EvalAssertion,
+  EvalSetup,
+  EvalScenario,
+} from './evals/types.js';
 
 // Self-contained release verification
 export {

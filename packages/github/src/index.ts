@@ -59,8 +59,28 @@ export type {
 } from './app-manifest.js';
 export { createTaskIssue, queryReadyIssueTasks } from './issue-tasks.js';
 export type { IssueTask } from './issue-tasks.js';
-export { claimIssueTask, releaseIssueClaim, moveIssueToReview, heartbeatIssueClaim, expireIssueClaim, releaseIssueClaimWithOwner } from './claims.js';
-export type { IssueClaimResult, HeartbeatResult, ReleaseInput } from './claims.js';
+export { claimIssueTask, expireIssueClaim } from './claims.js';
+export type { IssueClaimResult } from './claims.js';
+export {
+  completeClaim,
+  heartbeatClaim,
+  parseClaimReviewMetadata,
+  parseHeartbeatMetadata,
+  renderClaimLifecycleResult,
+  reviewClaim,
+} from './claim-lifecycle.js';
+export type {
+  ClaimLifecycleDependencies,
+  ClaimLifecycleErrorCode,
+  ClaimLifecycleOperation,
+  ClaimLifecycleOutcome,
+  ClaimLifecyclePostcondition,
+  ClaimLifecyclePostconditionName,
+  ClaimLifecycleResult,
+  CompleteClaimInput,
+  HeartbeatClaimInput,
+  ReviewClaimInput,
+} from './claim-lifecycle.js';
 export { markIssueRunning, markIssueBlocked, markIssueDone } from './lifecycle.js';
 export { filterByCapability, filterByRisk, filterByPath, filterRedZonePaths, riskLevelToZone, runAutoClaimGates } from './task-filter.js';
 export type { FilterResult, AutoClaimGateResult } from './task-filter.js';
