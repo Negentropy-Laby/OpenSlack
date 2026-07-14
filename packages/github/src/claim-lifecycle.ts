@@ -88,7 +88,9 @@ const DEFAULT_DEPENDENCIES: ClaimLifecycleDependencies = {
 };
 
 const AGENT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$/;
-const CLAIM_COMMENT_LIMIT = 100;
+const CLAIM_COMMENT_PAGE_SIZE = 100;
+const CLAIM_COMMENT_MAX_PAGES = 10;
+const HEARTBEAT_RETRY_DEDUP_WINDOW_MS = 60_000;
 
 class ClaimLifecycleFailure extends Error {
   constructor(readonly code: ClaimLifecycleErrorCode) {
@@ -203,15 +205,21 @@ function statusOf(error: unknown): number | undefined {
 }
 
 async function listClaimComments(client: GitHubClient, issueNumber: number) {
-  const response = await client.octokit.issues.listComments({
-    owner: client.owner,
-    repo: client.repo,
-    issue_number: issueNumber,
-    sort: 'created',
-    direction: 'desc',
-    per_page: CLAIM_COMMENT_LIMIT,
-  });
-  return response.data;
+  const comments = [];
+  for (let page = 1; page <= CLAIM_COMMENT_MAX_PAGES; page += 1) {
+    const response = await client.octokit.issues.listComments({
+      owner: client.owner,
+      repo: client.repo,
+      issue_number: issueNumber,
+      sort: 'created',
+      direction: 'desc',
+      per_page: CLAIM_COMMENT_PAGE_SIZE,
+      page,
+    });
+    comments.push(...response.data);
+    if (response.data.length < CLAIM_COMMENT_PAGE_SIZE) return comments;
+  }
+  throw new ClaimLifecycleFailure('CLAIM_API_UNAVAILABLE');
 }
 
 function resolveStrictOwner(
@@ -219,7 +227,8 @@ function resolveStrictOwner(
   issueNumber: number,
   claimRef: string,
 ): string {
-  const owners = new Set<string>();
+  const claimOwners = new Set<string>();
+  const heartbeatOwners = new Set<string>();
   for (const comment of comments) {
     const claim = parseClaimMetadata(comment.body);
     if (
@@ -227,7 +236,7 @@ function resolveStrictOwner(
       claim.claim_ref === claimRef &&
       AGENT_ID_PATTERN.test(claim.agent_id)
     ) {
-      owners.add(claim.agent_id);
+      claimOwners.add(claim.agent_id);
     }
     const heartbeat = parseHeartbeatMetadata(comment.body);
     if (
@@ -235,9 +244,13 @@ function resolveStrictOwner(
       heartbeat.claim_ref === claimRef &&
       AGENT_ID_PATTERN.test(heartbeat.agent_id)
     ) {
-      owners.add(heartbeat.agent_id);
+      heartbeatOwners.add(heartbeat.agent_id);
     }
   }
+  // The original claim marker is authoritative. Heartbeats preserve owner
+  // continuity only for legacy/truncated histories where no claim marker is
+  // available; a conflicting heartbeat cannot override a real claim.
+  const owners = claimOwners.size > 0 ? claimOwners : heartbeatOwners;
   if (owners.size === 0) throw new ClaimLifecycleFailure('CLAIM_OWNER_MISSING');
   if (owners.size !== 1) throw new ClaimLifecycleFailure('CLAIM_OWNER_MISMATCH');
   return [...owners][0];
@@ -304,6 +317,40 @@ function reviewEvidencePresent(
   });
 }
 
+function findRecentMatchingHeartbeat(
+  comments: Array<{ body?: string | null }>,
+  input: HeartbeatClaimInput,
+  claimRef: string,
+  ttlMinutes: number,
+  now: Date,
+): HeartbeatMetadata | undefined {
+  const nowMs = now.getTime();
+  const expectedLeaseMs = ttlMinutes * 60_000;
+  for (const comment of comments) {
+    const metadata = parseHeartbeatMetadata(comment.body);
+    if (
+      metadata?.issue_number !== input.issueNumber ||
+      metadata.agent_id !== input.agentId ||
+      metadata.claim_ref !== claimRef
+    ) {
+      continue;
+    }
+    const heartbeatMs = Date.parse(metadata.heartbeat_at);
+    const expiresMs = Date.parse(metadata.expires_at);
+    if (
+      Number.isFinite(heartbeatMs) &&
+      Number.isFinite(expiresMs) &&
+      nowMs >= heartbeatMs &&
+      nowMs - heartbeatMs <= HEARTBEAT_RETRY_DEDUP_WINDOW_MS &&
+      expiresMs - heartbeatMs === expectedLeaseMs &&
+      expiresMs > nowMs
+    ) {
+      return metadata;
+    }
+  }
+  return undefined;
+}
+
 function recoveryCommand(operation: ClaimLifecycleOperation, input: ReviewClaimInput): string {
   return `openslack github claim ${operation} --issue-number ${input.issueNumber} --agent-id ${input.agentId} --pr-url ${input.prUrl}`;
 }
@@ -364,6 +411,30 @@ export async function heartbeatClaim(
     requireMatchingOwner(owner, input.agentId);
 
     const now = dependencies.now();
+    const existingHeartbeat = findRecentMatchingHeartbeat(
+      comments,
+      input,
+      claimRef,
+      ttlMinutes,
+      now,
+    );
+    if (existingHeartbeat) {
+      return {
+        schema: 'openslack.claim_lifecycle.v1',
+        operation: 'heartbeat',
+        outcome: 'completed',
+        issueNumber: input.issueNumber,
+        claimRef,
+        agentId: input.agentId,
+        owner,
+        expiresAt: existingHeartbeat.expires_at,
+        postconditions: [
+          { name: 'claim_ref_present', satisfied: true },
+          { name: 'owner_matches', satisfied: true },
+          { name: 'heartbeat_recorded', satisfied: true },
+        ],
+      };
+    }
     const expiresAt = new Date(now.getTime() + ttlMinutes * 60_000).toISOString();
     const body = renderHeartbeatMetadata({
       schema: 'openslack.heartbeat.v1',
@@ -458,6 +529,7 @@ export async function reviewClaim(
     const comments = await listClaimComments(client, input.issueNumber);
     owner = resolveStrictOwner(comments, input.issueNumber, claimRef);
     requireMatchingOwner(owner, input.agentId);
+    const reviewAlreadyRecorded = reviewEvidencePresent(comments, input, claimRef, prUrl);
 
     let mutationFailed = false;
     for (const label of [
@@ -484,21 +556,27 @@ export async function reviewClaim(
         issue_number: input.issueNumber,
         labels: ['openslack:review'],
       });
-      await client.octokit.issues.createComment({
-        owner: client.owner,
-        repo: client.repo,
-        issue_number: input.issueNumber,
-        body: renderClaimReviewMetadata({
-          schema: 'openslack.claim_review.v1',
-          issue_number: input.issueNumber,
-          agent_id: input.agentId,
-          claim_ref: claimRef,
-          pr_url: prUrl,
-          reviewed_at: dependencies.now().toISOString(),
-        }),
-      });
     } catch {
       mutationFailed = true;
+    }
+    if (!reviewAlreadyRecorded) {
+      try {
+        await client.octokit.issues.createComment({
+          owner: client.owner,
+          repo: client.repo,
+          issue_number: input.issueNumber,
+          body: renderClaimReviewMetadata({
+            schema: 'openslack.claim_review.v1',
+            issue_number: input.issueNumber,
+            agent_id: input.agentId,
+            claim_ref: claimRef,
+            pr_url: prUrl,
+            reviewed_at: dependencies.now().toISOString(),
+          }),
+        });
+      } catch {
+        mutationFailed = true;
+      }
     }
 
     let labels: Set<string>;

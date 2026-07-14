@@ -123,6 +123,12 @@ describe('bot-auth wrapper scripts', () => {
     expect(workflow).toContain("taskLink.schema !== 'openslack.task_link.v1'");
     expect(workflow).toContain('--agent-id');
     expect(workflow).toContain('GITHUB_TOKEN: ${{ github.token }}');
+    expect(workflow).toContain('OPENSLACK_ISSUE_NUMBER: ${{ steps.extract.outputs.issue_number }}');
+    expect(workflow).toContain('OPENSLACK_AGENT_ID: ${{ steps.extract.outputs.agent_id }}');
+    expect(workflow).toContain('OPENSLACK_PR_URL: ${{ github.event.pull_request.html_url }}');
+    expect(workflow).toContain('--issue-number "$OPENSLACK_ISSUE_NUMBER"');
+    expect(workflow).toContain('--agent-id "$OPENSLACK_AGENT_ID"');
+    expect(workflow).not.toContain('--agent-id "${{ steps.extract.outputs.agent_id }}"');
     expect(workflow).toMatch(/permissions:\s*\n\s*contents: write/);
     expect(workflow).not.toContain('OPENSLACK_GITHUB_TOKEN');
     expect(workflow).not.toContain('Issue:\\s*#?');

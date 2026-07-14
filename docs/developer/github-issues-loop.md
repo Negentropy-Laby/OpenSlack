@@ -202,6 +202,10 @@ openslack github claim complete \
   --pr-url https://github.com/owner/repo/pull/42
 ```
 
+The strict claim lifecycle currently accepts canonical `https://github.com/.../pull/<n>`
+URLs only. GitHub Enterprise Server hosts are outside the v0.1.0 support boundary and fail closed
+with `CLAIM_INVALID_INPUT`.
+
 ## Authentication
 
 Uses the three-tier auth model from `docs/developer/github-automation.md`:

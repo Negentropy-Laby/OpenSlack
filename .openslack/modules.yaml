@@ -1,5 +1,5 @@
 schema: openslack.modules.v2
-vitest_tests: 3682
+vitest_tests: 3688
 vitest_files: 289
 modules:
   - id: self_evolution
@@ -50,7 +50,7 @@ modules:
       - "@openslack/runtime"
       - "@openslack/core"
       - "@openslack/delivery"
-    tests: 507
+    tests: 513
     test_files: 63
     notes: "GitHub Issues task loop active with typed task creation, dry-run repair, Phase 4 watch daemon, installation-scoped GitHub delivery, and strict claim heartbeat/review/complete transitions. Claim lifecycle operations verify structured owner evidence and postconditions, fail closed on partial GitHub state, and provide an idempotent recovery command without republishing a PR. Delivery publishes HEAD and a draft PR through the same GitHub App token, disables host credentials and hooks, synchronizes remote/PR SHAs, and returns AWAITING_GATES evidence for PRMS. Read-only installation-scope diagnostics and a preview-first temporary-ref push/delete probe verify selected-repository access and contents write capability before first delivery."
 

@@ -67,8 +67,11 @@ jobs:
         if: steps.extract.outputs.issue_number != ''
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          OPENSLACK_ISSUE_NUMBER: ${{ steps.extract.outputs.issue_number }}
+          OPENSLACK_AGENT_ID: ${{ steps.extract.outputs.agent_id }}
+          OPENSLACK_PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
           bun run openslack github issue-done \
-            --issue-number "${{ steps.extract.outputs.issue_number }}" \
-            --agent-id "${{ steps.extract.outputs.agent_id }}" \
-            --pr-url "${{ github.event.pull_request.html_url }}"
+            --issue-number "$OPENSLACK_ISSUE_NUMBER" \
+            --agent-id "$OPENSLACK_AGENT_ID" \
+            --pr-url "$OPENSLACK_PR_URL"
