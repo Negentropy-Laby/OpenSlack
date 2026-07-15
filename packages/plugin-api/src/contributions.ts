@@ -1,16 +1,19 @@
 import type { BundledPluginCapability } from './capabilities.js';
 import type {
-  ActivationEvidence,
+  BundledActivationEvidence,
   HostPlanStep,
   JsonPrimitive,
   MaybePromise,
   PluginIdentity,
 } from './policy.js';
 
-export const DECLARATIVE_CONTRIBUTION_KINDS = ['action_alias', 'workflow_alias'] as const;
+export const DECLARATIVE_CONTRIBUTION_KINDS = Object.freeze([
+  'action_alias',
+  'workflow_alias',
+] as const);
 export type DeclarativeContributionKind = (typeof DECLARATIVE_CONTRIBUTION_KINDS)[number];
 
-export const INPUT_DEFINITION_TYPES = ['string', 'number', 'boolean'] as const;
+export const INPUT_DEFINITION_TYPES = Object.freeze(['string', 'number', 'boolean'] as const);
 export type PluginInputType = (typeof INPUT_DEFINITION_TYPES)[number];
 
 export interface PluginInputDefinitionV1 {
@@ -56,9 +59,8 @@ export interface DeclarativeWorkflowAliasV1 extends DeclarativeContributionBaseV
 export type DeclarativeContributionV1 = DeclarativeActionAliasV1 | DeclarativeWorkflowAliasV1;
 
 export interface BundledPluginContext {
-  readonly plugin: PluginIdentity;
   readonly effectiveCapabilities: readonly BundledPluginCapability[];
-  readonly activationEvidence: ActivationEvidence;
+  readonly activationEvidence: BundledActivationEvidence;
 }
 
 export interface BundledActionContribution<TPlanStep = HostPlanStep> {

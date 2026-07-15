@@ -9,8 +9,11 @@ import type {
   PluginManifestV1,
 } from '@openslack/plugin-api';
 
+type NoExtraProperties<TShape, TValue extends TShape> = TValue &
+  Record<Exclude<keyof TValue, keyof TShape>, never>;
+
 export function defineManifest<const TManifest extends PluginManifestV1>(
-  manifest: TManifest,
+  manifest: NoExtraProperties<PluginManifestV1, TManifest>,
 ): TManifest {
   return manifest;
 }
@@ -26,13 +29,13 @@ export function defineBundledPlugin<
 }
 
 export function defineActionAlias<const TAlias extends DeclarativeActionAliasV1>(
-  alias: TAlias,
+  alias: NoExtraProperties<DeclarativeActionAliasV1, TAlias>,
 ): TAlias {
   return alias;
 }
 
 export function defineWorkflowAlias<const TAlias extends DeclarativeWorkflowAliasV1>(
-  alias: TAlias,
+  alias: NoExtraProperties<DeclarativeWorkflowAliasV1, TAlias>,
 ): TAlias {
   return alias;
 }
@@ -53,10 +56,15 @@ export function defineBundledWorkflow<
   return contribution;
 }
 
-export function definePrmsBlocker<
-  TPrmsReport = unknown,
-  const TContribution extends BundledPrmsBlockerContribution<TPrmsReport> =
-    BundledPrmsBlockerContribution<TPrmsReport>,
->(contribution: TContribution): TContribution {
-  return contribution;
+export function definePrmsBlocker<TPrmsReport = unknown>(
+  contribution: BundledPrmsBlockerContribution<TPrmsReport>,
+): BundledPrmsBlockerContribution<TPrmsReport> {
+  return {
+    kind: 'prms_blocker',
+    id: contribution.id,
+    async evaluate(report, context) {
+      const result = await contribution.evaluate(report, context);
+      return { blockers: result.blockers };
+    },
+  };
 }

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DECLARATIVE_PLUGIN_CAPABILITIES,
+  PLUGIN_GATE_MODES,
+  PLUGIN_LIFECYCLE_TRANSITIONS,
+  declarativeCapabilityValues,
+} from '../index.js';
+import {
   PluginManifestValidationError,
   assertPluginManifestV1,
   isPluginManifestV1,
@@ -73,5 +79,52 @@ describe('validatePluginManifest', () => {
     const valid = fixtures.find((fixture) => fixture.valid)!.value;
     expect(() => assertPluginManifestV1(valid)).not.toThrow();
     expect(() => assertPluginManifestV1({})).toThrow(PluginManifestValidationError);
+  });
+
+  it('keeps exported allowlists and lifecycle transitions immutable at runtime', () => {
+    expect(() =>
+      (DECLARATIVE_PLUGIN_CAPABILITIES as unknown as string[]).push('github.pull_requests.approve'),
+    ).toThrow(TypeError);
+    expect(() => (PLUGIN_GATE_MODES as unknown as string[]).push('AUTO')).toThrow(TypeError);
+    expect(() =>
+      (PLUGIN_LIFECYCLE_TRANSITIONS.removed as unknown as string[]).push('activated'),
+    ).toThrow(TypeError);
+    expect(Object.isFrozen(PLUGIN_LIFECYCLE_TRANSITIONS)).toBe(true);
+
+    const capabilityCopy = declarativeCapabilityValues() as string[];
+    capabilityCopy.push('caller-local-value');
+    expect(DECLARATIVE_PLUGIN_CAPABILITIES).not.toContain('caller-local-value');
+  });
+
+  it('rejects hidden, accessor, cyclic, and sparse non-JSON authoring values', () => {
+    const valid = fixtures.find((fixture) => fixture.valid)!.value;
+
+    const hiddenEntry = structuredClone(valid) as Record<PropertyKey, unknown>;
+    Object.defineProperty(hiddenEntry, 'entry', { value: './evil.js' });
+    expect(validatePluginManifest(hiddenEntry).valid).toBe(false);
+
+    const symbolEntry = structuredClone(valid) as Record<PropertyKey, unknown>;
+    symbolEntry[Symbol('entry')] = () => undefined;
+    expect(validatePluginManifest(symbolEntry).valid).toBe(false);
+
+    let getterAccessed = false;
+    const accessor = structuredClone(valid) as Record<PropertyKey, unknown>;
+    Object.defineProperty(accessor, 'name', {
+      enumerable: true,
+      get: () => {
+        getterAccessed = true;
+        return 'Accessor';
+      },
+    });
+    expect(validatePluginManifest(accessor).valid).toBe(false);
+    expect(getterAccessed).toBe(false);
+
+    const sparse = structuredClone(valid) as { contributes: unknown };
+    sparse.contributes = new Array(1);
+    expect(validatePluginManifest(sparse).valid).toBe(false);
+
+    const cyclic = structuredClone(valid) as Record<string, unknown>;
+    cyclic.description = cyclic;
+    expect(validatePluginManifest(cyclic).valid).toBe(false);
   });
 });

@@ -15,6 +15,7 @@ import {
   FORBIDDEN_MAPPING_FIELD_NAMES,
   HOST_REFERENCE_PATTERN_SOURCE,
   MANIFEST_SEMVER_PATTERN_SOURCE,
+  OPENSLACK_VERSION_RANGE_PATTERN_SOURCE,
   PLUGIN_GATE_MODES,
   PLUGIN_ID_PATTERN_SOURCE,
   PLUGIN_MANIFEST_SCHEMA,
@@ -95,8 +96,12 @@ const FIELD_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
 const PLUGIN_ID_PATTERN = new RegExp(`^${PLUGIN_ID_PATTERN_SOURCE}$`);
 const HOST_REFERENCE_PATTERN = new RegExp(`^${HOST_REFERENCE_PATTERN_SOURCE}$`);
 const MANIFEST_SEMVER_PATTERN = new RegExp(`^${MANIFEST_SEMVER_PATTERN_SOURCE}$`);
+const OPENSLACK_VERSION_RANGE_PATTERN = new RegExp(`^${OPENSLACK_VERSION_RANGE_PATTERN_SOURCE}$`);
 const FORBIDDEN_FIELDS = new Set<string>(FORBIDDEN_MAPPING_FIELD_NAMES);
 const RESERVED_IDS = new Set<string>(RESERVED_PLUGIN_IDS);
+const CONTRIBUTION_KINDS = new Set<unknown>(DECLARATIVE_CONTRIBUTION_KINDS);
+const INPUT_TYPES = new Set<unknown>(INPUT_DEFINITION_TYPES);
+const GATE_MODES = new Set<unknown>(PLUGIN_GATE_MODES);
 const EXECUTABLE_FIELD_NAMES = new Set([
   'entry',
   'main',
@@ -158,6 +163,82 @@ function pointer(parent: string, segment: string | number): string {
   return `${parent}/${escaped}`;
 }
 
+interface JsonValueIssue {
+  readonly path: string;
+  readonly message: string;
+}
+
+function inspectJsonValue(
+  value: unknown,
+  path: string,
+  activeObjects: WeakSet<object>,
+): JsonValueIssue | undefined {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return undefined;
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? undefined : { path, message: 'JSON numbers must be finite.' };
+  }
+  if (typeof value !== 'object') {
+    return { path, message: `Value of type ${typeof value} is not valid JSON.` };
+  }
+  if (activeObjects.has(value)) {
+    return { path, message: 'Cyclic values are not valid JSON.' };
+  }
+  activeObjects.add(value);
+  try {
+    const keys = Reflect.ownKeys(value);
+    if (Array.isArray(value)) {
+      const allowedKeys = new Set<string>(['length']);
+      for (let index = 0; index < value.length; index += 1) {
+        const key = String(index);
+        allowedKeys.add(key);
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) {
+          return {
+            path: pointer(path, index),
+            message: 'JSON arrays must be dense and contain enumerable data properties.',
+          };
+        }
+        const issue = inspectJsonValue(descriptor.value, pointer(path, index), activeObjects);
+        if (issue) return issue;
+      }
+      for (const key of keys) {
+        if (typeof key === 'symbol') {
+          return { path, message: 'Symbol-keyed properties are not valid JSON.' };
+        }
+        if (!allowedKeys.has(key)) {
+          return {
+            path: pointer(path, key),
+            message: 'JSON arrays cannot contain named properties.',
+          };
+        }
+      }
+      return undefined;
+    }
+    if (!isRecord(value)) {
+      return { path, message: 'Expected a plain JSON object.' };
+    }
+    for (const key of keys) {
+      if (typeof key === 'symbol') {
+        return { path, message: 'Symbol-keyed properties are not valid JSON.' };
+      }
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) {
+        return {
+          path: pointer(path, key),
+          message: 'JSON objects must contain enumerable data properties, not accessors.',
+        };
+      }
+      const issue = inspectJsonValue(descriptor.value, pointer(path, key), activeObjects);
+      if (issue) return issue;
+    }
+    return undefined;
+  } catch {
+    return { path, message: 'Value could not be inspected as plain JSON.' };
+  } finally {
+    activeObjects.delete(value);
+  }
+}
+
 function addFinding(
   findings: ManifestValidationFinding[],
   code: ManifestValidationCode,
@@ -208,9 +289,10 @@ function checkString(
     return false;
   }
   const min = options.min ?? 1;
+  const codePointLength = Array.from(value).length;
   if (
-    value.length < min ||
-    value.length > options.max ||
+    codePointLength < min ||
+    codePointLength > options.max ||
     (options.pattern && !options.pattern.test(value))
   ) {
     addFinding(
@@ -269,7 +351,7 @@ function validateInputDefinition(
     return false;
   }
   checkExactFields(value, ['type', 'required', 'description'], ['type'], path, findings);
-  if (!(INPUT_DEFINITION_TYPES as readonly unknown[]).includes(value.type)) {
+  if (!INPUT_TYPES.has(value.type)) {
     addFinding(
       findings,
       'PLUGIN_MANIFEST_FIELD_TYPE_INVALID',
@@ -414,7 +496,7 @@ function validateContribution(
     return false;
   }
   checkExactFields(value, CONTRIBUTION_FIELDS, ['kind', 'id', 'target'], path, findings);
-  if (!(DECLARATIVE_CONTRIBUTION_KINDS as readonly unknown[]).includes(value.kind)) {
+  if (!CONTRIBUTION_KINDS.has(value.kind)) {
     addFinding(
       findings,
       'PLUGIN_MANIFEST_CONTRIBUTION_INVALID',
@@ -490,6 +572,7 @@ function validateRequires(
   checkExactFields(value, ['openslack'], ['openslack'], path, findings);
   checkString(value.openslack, pointer(path, 'openslack'), findings, {
     max: 128,
+    pattern: OPENSLACK_VERSION_RANGE_PATTERN,
     code: 'PLUGIN_MANIFEST_VERSION_RANGE_INVALID',
   });
   return true;
@@ -505,7 +588,7 @@ function validateGate(
     return false;
   }
   checkExactFields(value, ['mode', 'gateId'], ['mode', 'gateId'], path, findings);
-  if (!(PLUGIN_GATE_MODES as readonly unknown[]).includes(value.mode)) {
+  if (!GATE_MODES.has(value.mode)) {
     addFinding(
       findings,
       'PLUGIN_MANIFEST_FIELD_TYPE_INVALID',
@@ -617,6 +700,21 @@ export function validatePluginManifest(value: unknown): PluginManifestValidation
     };
   }
 
+  const jsonIssue = inspectJsonValue(value, '', new WeakSet<object>());
+  if (jsonIssue) {
+    return {
+      valid: false,
+      findings: [
+        {
+          severity: 'error',
+          code: 'PLUGIN_MANIFEST_FIELD_TYPE_INVALID',
+          path: jsonIssue.path,
+          message: jsonIssue.message,
+        },
+      ],
+    };
+  }
+
   checkExactFields(value, ROOT_FIELDS, REQUIRED_ROOT_FIELDS, '', findings);
   if (value.schema !== PLUGIN_MANIFEST_SCHEMA) {
     addFinding(
@@ -713,5 +811,5 @@ export function assertPluginManifestV1(value: unknown): asserts value is PluginM
 }
 
 export function declarativeCapabilityValues(): readonly DeclarativePluginCapability[] {
-  return DECLARATIVE_PLUGIN_CAPABILITIES;
+  return [...DECLARATIVE_PLUGIN_CAPABILITIES];
 }

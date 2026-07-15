@@ -1,0 +1,16 @@
+{
+  "schema": "openslack.plugin.v1",
+  "id": "invalid-semver",
+  "version": "1.0.0-01",
+  "name": "Invalid semantic version",
+  "requires": { "openslack": ">=0.2.0" },
+  "gate": { "mode": "SHADOW", "gateId": "host.read-only" },
+  "capabilities": ["host.actions.read"],
+  "contributes": [
+    {
+      "kind": "action_alias",
+      "id": "status",
+      "target": { "kind": "host_action", "id": "status.show" }
+    }
+  ]
+}

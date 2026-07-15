@@ -10,6 +10,7 @@ const FIXTURES = [
   ['valid/action-alias.json', true],
   ['valid/workflow-alias.json', true],
   ['valid/mixed-aliases.json', true],
+  ['valid/unicode-boundary.json', true],
   ['invalid/provider-kind.json', false],
   ['invalid/executable-entry.json', false],
   ['invalid/approval-capability.json', false],
@@ -25,6 +26,8 @@ const FIXTURES = [
   ['invalid/unknown-target-field.json', false],
   ['invalid/duplicate-capability.json', false],
   ['invalid/gate-bypass.json', false],
+  ['invalid/invalid-semver.json', false],
+  ['invalid/invalid-range.json', false],
 ] as const;
 
 export function loadManifestFixtureCases(): ManifestFixtureCase[] {

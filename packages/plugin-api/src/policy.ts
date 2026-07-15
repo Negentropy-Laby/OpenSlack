@@ -1,4 +1,8 @@
-import type { PluginCapability } from './capabilities.js';
+import type {
+  BundledPluginCapability,
+  DeclarativePluginCapability,
+  PluginCapability,
+} from './capabilities.js';
 
 export type MaybePromise<T> = T | Promise<T>;
 export type PluginProviderKind = 'built-in' | 'bundled' | 'workspace' | 'plugin';
@@ -59,6 +63,19 @@ export type ActivationEvidence =
       };
     });
 
+export type BuiltInActivationEvidence = Extract<
+  ActivationEvidence,
+  { readonly providerKind: 'built-in' }
+>;
+export type BundledActivationEvidence = Extract<
+  ActivationEvidence,
+  { readonly providerKind: 'bundled' }
+>;
+export type DeclarativeActivationEvidence = Extract<
+  ActivationEvidence,
+  { readonly providerKind: 'workspace' | 'plugin' }
+>;
+
 export interface CanonicalActionPolicyFacts {
   readonly id: string;
   readonly sideEffects: boolean;
@@ -72,11 +89,15 @@ export interface HostPlanStep {
   readonly input: Readonly<Record<string, JsonValue>>;
 }
 
-export interface ActivationAuthorizationRequest {
-  readonly plugin: PluginIdentity;
-  readonly requestedCapabilities: readonly PluginCapability[];
-  readonly evidence: ActivationEvidence;
-}
+export type ActivationAuthorizationRequest =
+  | {
+      readonly requestedCapabilities: readonly DeclarativePluginCapability[];
+      readonly evidence: DeclarativeActivationEvidence;
+    }
+  | {
+      readonly requestedCapabilities: readonly BundledPluginCapability[];
+      readonly evidence: BuiltInActivationEvidence | BundledActivationEvidence;
+    };
 
 export type ActivationAuthorizationDecision =
   | {
@@ -94,20 +115,26 @@ export type ActivationAuthorizationDecision =
       readonly evidenceRefs: readonly string[];
     };
 
-export interface ActionAuthorizationRequest {
-  readonly plugin: PluginIdentity;
-  readonly providerKind: PluginProviderKind;
+interface ActionAuthorizationRequestBase {
   readonly contributedActionId: string;
   readonly target: CanonicalActionPolicyFacts;
-  readonly effectiveCapabilities: readonly PluginCapability[];
-  readonly evidence: ActivationEvidence;
 }
 
-export interface PlanStepValidationRequest<
-  TPlanStep = HostPlanStep,
-> extends ActionAuthorizationRequest {
+export type ActionAuthorizationRequest = ActionAuthorizationRequestBase &
+  (
+    | {
+        readonly effectiveCapabilities: readonly DeclarativePluginCapability[];
+        readonly evidence: DeclarativeActivationEvidence;
+      }
+    | {
+        readonly effectiveCapabilities: readonly BundledPluginCapability[];
+        readonly evidence: BuiltInActivationEvidence | BundledActivationEvidence;
+      }
+  );
+
+export type PlanStepValidationRequest<TPlanStep = HostPlanStep> = ActionAuthorizationRequest & {
   readonly step: Readonly<TPlanStep>;
-}
+};
 
 export type HostPolicyDecision =
   | {
@@ -138,7 +165,8 @@ export interface PluginAuditEvent {
   readonly occurredAt: string;
   readonly summary: string;
   readonly evidenceRefs: readonly string[];
-  readonly metadata?: Readonly<Record<string, JsonValue>>;
+  /** Host-produced, bounded facts only. The host must redact values before persistence. */
+  readonly metadata?: Readonly<Record<string, JsonPrimitive>>;
 }
 
 export interface HostPolicyPort<TPlanStep = HostPlanStep> {

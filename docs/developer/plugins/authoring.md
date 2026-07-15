@@ -36,9 +36,10 @@ if (!result.valid) {
 }
 ```
 
-`defineManifest` is intentionally an identity helper. It preserves literal types but does
-not validate, register, authorize, or activate anything. Use `validatePluginManifest` or
-`assertPluginManifestV1` for contract feedback.
+`defineManifest` is intentionally an identity helper. It preserves literal types and rejects
+extra root fields for inline TypeScript objects, but it does not perform runtime or deep
+exactness validation, register, authorize, or activate anything. Use
+`validatePluginManifest` or `assertPluginManifestV1` for contract feedback.
 
 For standalone JSON authoring, validate against the exported
 `@openslack/plugin-api/plugin-manifest.schema.json` schema. Contract tests compile that
@@ -51,16 +52,19 @@ runtime validator.
 `definePrmsBlocker` describe code that an OpenSlack application explicitly imports at its
 composition root. They are not auto-discovery APIs and make no sandbox claim.
 
-Bundled PRMS extensions can return only append-only blockers. Their return type cannot
-represent PASS, approval counts, mergeability, or merge authorization. Bundled action plan
-steps still require host validation and authorization.
+Bundled PRMS extensions expose only append-only blockers. The SDK rebuilds their result as
+`{ blockers }`, and the public return type cannot represent PASS, approval counts,
+mergeability, or merge authorization. The Red host must independently whitelist and validate
+that result at runtime. Bundled action plan steps still require host validation and
+authorization.
 
 ## Author checklist
 
 - Keep workspace/installed manifests declarative; never add an executable entry field.
 - Request only the minimum capability set.
 - Treat `SHADOW` and `ENFORCE` as requests subject to host policy.
-- Use bounded constants or declared input pass-through mappings only.
+- Use bounded constants or bounded input pass-through names only; the host must verify each
+  name against the declaration and target schema.
 - Do not infer activation or safety certification from validator success.
 - Add every accepted and rejected contract case to the shared JSON fixture corpus.
 

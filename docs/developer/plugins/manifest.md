@@ -14,16 +14,21 @@ Every object is closed. Unknown fields are rejected, including fields that attem
 declare an executable entrypoint, provider kind, lifecycle state, activation evidence,
 approval, identity, or policy authority.
 
-| Field                 | Meaning                                                              |
-| --------------------- | -------------------------------------------------------------------- |
-| `schema`              | Exactly `openslack.plugin.v1`                                        |
-| `id`                  | Lowercase kebab-case local identity outside host-reserved namespaces |
-| `version`             | Plugin version                                                       |
-| `name`, `description` | Bounded display metadata                                             |
-| `requires.openslack`  | Requested OpenSlack version range; compatibility remains host-owned  |
-| `gate`                | Requested host gate (`SHADOW` or `ENFORCE`) and host-owned gate ID   |
-| `capabilities`        | Requested capabilities from the closed declarative allowlist         |
-| `contributes`         | Declarative aliases only                                             |
+| Field                 | Meaning                                                                            |
+| --------------------- | ---------------------------------------------------------------------------------- |
+| `schema`              | Exactly `openslack.plugin.v1`                                                      |
+| `id`                  | Lowercase kebab-case local identity outside host-reserved namespaces               |
+| `version`             | Plugin version                                                                     |
+| `name`, `description` | Bounded display metadata                                                           |
+| `requires.openslack`  | Simple comparator range such as `>=0.2.0 <1.0.0`; compatibility remains host-owned |
+| `gate`                | Requested host gate (`SHADOW` or `ENFORCE`) and host-owned gate ID                 |
+| `capabilities`        | Requested capabilities from the closed declarative allowlist                       |
+| `contributes`         | Declarative aliases only                                                           |
+
+Manifest `version` follows SemVer 2.0, including the numeric prerelease leading-zero rule.
+The v1 OpenSlack range grammar is intentionally smaller than npm ranges: it accepts exact,
+`^`, `~`, `>`, `>=`, `<`, `<=`, or `=` core SemVer tokens joined by spaces. It does not accept
+wildcards, `||`, hyphen ranges, prerelease versions, or build metadata.
 
 Example:
 
@@ -58,15 +63,16 @@ Workspace and installed manifests may contribute only:
 - `action_alias`, targeting an existing host action;
 - `workflow_alias`, targeting an existing pre-registered host workflow.
 
-Input mappings accept only finite string, number, or boolean constants and pass-through
-references to declared inputs. Raw commands, argv, shells, templates, filesystem paths,
+Input mappings accept only finite string, number, or boolean constants and syntactically
+bounded pass-through input names. Raw commands, argv, shells, templates, filesystem paths,
 module names, URLs, risk metadata, and confirmation flags are forbidden. `pr.merge` is
 explicitly forbidden as an action-alias target.
 
 The authoring validator cannot decide whether a referenced action is actually read-only,
-whether a workflow exists, or whether mapped fields belong to the target schema. The Red
-plugin host independently resolves those facts and applies the current capability and risk
-policy before registration and again before execution.
+whether a workflow exists, whether a pass-through name is declared, or whether mapped fields
+belong to the target schema. Standard JSON Schema cannot express the cross-property name
+relationship, so the Red plugin host independently resolves those facts and applies the
+current capability and risk policy before registration and again before execution.
 
 ## Trust ownership
 

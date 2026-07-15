@@ -1,4 +1,4 @@
-export const PLUGIN_LIFECYCLE_STATES = [
+export const PLUGIN_LIFECYCLE_STATES = Object.freeze([
   'discovered',
   'integrity_verified',
   'validated',
@@ -8,23 +8,25 @@ export const PLUGIN_LIFECYCLE_STATES = [
   'disabled',
   'deprecated',
   'removed',
-] as const;
+] as const);
 
 export type PluginLifecycleState = (typeof PLUGIN_LIFECYCLE_STATES)[number];
 
 export const PLUGIN_LIFECYCLE_TRANSITIONS: Readonly<
   Record<PluginLifecycleState, readonly PluginLifecycleState[]>
 > = {
-  discovered: ['integrity_verified', 'disabled', 'removed'],
-  integrity_verified: ['validated', 'disabled', 'removed'],
-  validated: ['registered', 'disabled', 'removed'],
-  registered: ['activated', 'disabled', 'deprecated', 'removed'],
-  activated: ['degraded', 'disabled', 'deprecated'],
-  degraded: ['activated', 'disabled', 'deprecated'],
-  disabled: ['registered', 'deprecated', 'removed'],
-  deprecated: ['disabled', 'removed'],
-  removed: [],
+  discovered: Object.freeze(['integrity_verified', 'disabled', 'removed']),
+  integrity_verified: Object.freeze(['validated', 'disabled', 'removed']),
+  validated: Object.freeze(['registered', 'disabled', 'removed']),
+  registered: Object.freeze(['activated', 'disabled', 'deprecated', 'removed']),
+  activated: Object.freeze(['degraded', 'disabled', 'deprecated']),
+  degraded: Object.freeze(['activated', 'disabled', 'deprecated']),
+  disabled: Object.freeze(['registered', 'deprecated', 'removed']),
+  deprecated: Object.freeze(['disabled', 'removed']),
+  removed: Object.freeze([]),
 };
+
+Object.freeze(PLUGIN_LIFECYCLE_TRANSITIONS);
 
 export interface PluginLifecycleSnapshot {
   readonly pluginId: string;

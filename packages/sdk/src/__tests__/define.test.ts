@@ -1,10 +1,5 @@
 import { describe, expect, expectTypeOf, it } from 'vitest';
-import type {
-  BlockingFinding,
-  BundledPluginContext,
-  HostPlanStep,
-  PluginManifestV1,
-} from '@openslack/plugin-api';
+import type { BundledPluginContext, HostPlanStep, PluginManifestV1 } from '@openslack/plugin-api';
 import {
   defineActionAlias,
   defineBundledAction,
@@ -38,6 +33,10 @@ describe('@openslack/sdk authoring helpers', () => {
     expect(second).not.toBe(first);
     expect(first).toEqual(second);
     expectTypeOf(first).toMatchTypeOf<PluginManifestV1>();
+    if (false) {
+      // @ts-expect-error Executable root fields are not part of the manifest authoring shape.
+      defineManifest({ ...input, entry: './evil.js' });
+    }
   });
 
   it('preserves declarative descriptor identity', () => {
@@ -68,10 +67,13 @@ describe('@openslack/sdk authoring helpers', () => {
     const blocker = definePrmsBlocker<{ blocked: boolean }>({
       kind: 'prms_blocker',
       id: 'extra-blocker',
-      evaluate: (report, _context): { blockers: BlockingFinding[] } => ({
+      evaluate: (report, _context) => ({
         blockers: report.blocked
           ? [{ kind: 'blocker', code: 'BUNDLED_BLOCKER', summary: 'Blocked by fixture.' }]
           : [],
+        outcome: 'PASS' as const,
+        approvalCount: 99,
+        mergeable: true,
       }),
     });
     const plugin = defineBundledPlugin({
@@ -86,6 +88,9 @@ describe('@openslack/sdk authoring helpers', () => {
     });
     expect(plugin.providerKind).toBe('bundled');
     expect(plugin.contributions).toEqual([action, blocker]);
+    expectTypeOf<
+      BundledPluginContext['activationEvidence']['providerKind']
+    >().toEqualTypeOf<'bundled'>();
     const context = {} as BundledPluginContext;
     await expect(action.buildPlanStep({}, context)).resolves.toMatchObject({
       actionId: 'status.show',
@@ -93,5 +98,10 @@ describe('@openslack/sdk authoring helpers', () => {
     expect(await blocker.evaluate({ blocked: true }, context)).toEqual({
       blockers: [{ kind: 'blocker', code: 'BUNDLED_BLOCKER', summary: 'Blocked by fixture.' }],
     });
+    if (false) {
+      const result = await blocker.evaluate({ blocked: true }, context);
+      // @ts-expect-error Blocker results cannot represent an approval or PASS outcome.
+      expect(result.outcome).toBeUndefined();
+    }
   });
 });

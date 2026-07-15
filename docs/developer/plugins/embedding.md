@@ -7,7 +7,8 @@ OpenSlack an embeddable plugin host.
 
 - `@openslack/plugin-api`: manifest types, strict JSON Schema, authoring validator,
   lifecycle vocabulary, host policy ports, and host-derived activation-evidence types;
-- `@openslack/sdk`: type-preserving authoring helpers and type re-exports;
+- `@openslack/sdk`: type-preserving manifest/descriptor helpers, blockers-only PRMS result
+  normalization, and type re-exports;
 - reviewed bundled descriptor types for code explicitly imported by an application
   composition root.
 
@@ -30,6 +31,9 @@ The separately governed Red host stage owns:
    risk-ceiling checks;
 5. instance-scoped registration, lifecycle transitions, audit events, and action-time
    authorization.
+
+Audit metadata is limited to host-produced scalar facts. The host must bound and redact every
+value before persistence; plugin-returned objects and prose are not audit metadata.
 
 The host receives policy through `HostPolicyPort`; `plugin-api` does not import the kernel,
 GitHub clients, credentials, or PRMS implementations. Requested capabilities become
