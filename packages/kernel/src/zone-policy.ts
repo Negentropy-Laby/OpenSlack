@@ -7,6 +7,15 @@ export interface ZonePatternDefinition {
 
 export const DEFAULT_RISK_ZONE: RiskZone = 'yellow';
 
+export const PLUGIN_TRUST_RED_PATHS = [
+  '.openslack/plugins/**',
+  '.openslack/plugins.lock',
+  // Deliberately protects package metadata, exports, and build wiring in addition to src/**.
+  'packages/plugin-host/**',
+] as const;
+
+const [PLUGIN_CONFIG_GLOB, PLUGIN_LOCK_PATH, PLUGIN_HOST_GLOB] = PLUGIN_TRUST_RED_PATHS;
+
 export const ZONE_PATTERNS: readonly ZonePatternDefinition[] = [
   {
     zone: 'black',
@@ -29,12 +38,12 @@ export const ZONE_PATTERNS: readonly ZonePatternDefinition[] = [
       '.openslack/policies/**',
       '.openslack/agents/registry/**',
       '.openslack/agents/prompts/**',
-      '.openslack/plugins/**',
-      '.openslack/plugins.lock',
+      PLUGIN_CONFIG_GLOB,
+      PLUGIN_LOCK_PATH,
       '.openslack/self/constitution.md',
       '.openslack/self/invariants.yaml',
       'packages/kernel/src/**',
-      'packages/plugin-host/**',
+      PLUGIN_HOST_GLOB,
     ],
   },
   {

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { parse } from 'yaml';
 import type { RiskZone } from '../types.js';
-import { DEFAULT_RISK_ZONE, ZONE_PATTERNS } from '../zone-policy.js';
+import { DEFAULT_RISK_ZONE, PLUGIN_TRUST_RED_PATHS, ZONE_PATTERNS } from '../zone-policy.js';
 import { classifyPaths } from '../zones.js';
 
 interface SelfEvolutionPolicyFile {
@@ -15,7 +15,21 @@ interface SelfEvolutionPolicyFile {
   };
 }
 
+interface ConstitutionalPathsPolicyFile {
+  governance_paths: string[];
+  execution_paths: string[];
+}
+
 const POLICY_PATH = new URL('../../../../.openslack/policies/self_evolution.yaml', import.meta.url);
+const CONSTITUTIONAL_PATHS_POLICY = new URL(
+  '../../../../.openslack/policies/constitutional_paths.yaml',
+  import.meta.url,
+);
+const CODEOWNERS_PATH = new URL('../../../../.github/CODEOWNERS', import.meta.url);
+const PLUGIN_TRUST_MIRROR_DOCS = [
+  new URL('../../../../docs/security/self-evolution-guardrails.md', import.meta.url),
+  new URL('../../../../docs/developer/branch-protection.md', import.meta.url),
+] as const;
 
 describe('classifyPaths', () => {
   it('classifies docs changes as green', () => {
@@ -171,6 +185,37 @@ describe('risk zone policy synchronization', () => {
       const runtimeDefinition = ZONE_PATTERNS.find((definition) => definition.zone === zone);
       expect(runtimeDefinition, `runtime definition for ${zone}`).toBeDefined();
       expect(policy.zones[zone].paths).toEqual(runtimeDefinition?.globs);
+    }
+  });
+
+  it('keeps every plugin trust path in the runtime, governance, CODEOWNERS, and docs mirrors', () => {
+    const redRuntimePaths = ZONE_PATTERNS.find((definition) => definition.zone === 'red')?.globs;
+    const selfEvolutionPolicy = parse(readFileSync(POLICY_PATH, 'utf8')) as SelfEvolutionPolicyFile;
+    const constitutionalPathsPolicy = parse(
+      readFileSync(CONSTITUTIONAL_PATHS_POLICY, 'utf8'),
+    ) as ConstitutionalPathsPolicyFile;
+    const constitutionalPluginPaths = [
+      ...constitutionalPathsPolicy.governance_paths,
+      ...constitutionalPathsPolicy.execution_paths,
+    ];
+    const codeownerPatterns = readFileSync(CODEOWNERS_PATH, 'utf8')
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0 && !line.startsWith('#'))
+      .map((line) => line.split(/\s+/u)[0]);
+
+    expect(redRuntimePaths).toEqual(expect.arrayContaining([...PLUGIN_TRUST_RED_PATHS]));
+    expect(selfEvolutionPolicy.zones.red.paths).toEqual(
+      expect.arrayContaining([...PLUGIN_TRUST_RED_PATHS]),
+    );
+    expect(constitutionalPluginPaths).toEqual(expect.arrayContaining([...PLUGIN_TRUST_RED_PATHS]));
+    expect(codeownerPatterns).toEqual(expect.arrayContaining([...PLUGIN_TRUST_RED_PATHS]));
+
+    for (const docPath of PLUGIN_TRUST_MIRROR_DOCS) {
+      const content = readFileSync(docPath, 'utf8');
+      for (const pluginPath of PLUGIN_TRUST_RED_PATHS) {
+        expect(content, `${docPath.pathname}: ${pluginPath}`).toContain(pluginPath);
+      }
     }
   });
 });
