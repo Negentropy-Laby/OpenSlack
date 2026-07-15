@@ -21,7 +21,7 @@ describe('release manifest verification', () => {
     const archive = join(root, 'openslack.zip');
     const sbom = join(root, 'openslack.sbom.cdx.json');
     const provenance = join(root, 'openslack.provenance.intoto.json');
-    writeFileSync(archive, 'archive');
+    writeFileSync(archive, Buffer.from([0x50, 0x4b, 0x03, 0x04]));
     writeFileSync(sbom, '{"bomFormat":"CycloneDX"}');
     const archiveHash = sha256(archive);
     const sbomHash = sha256(sbom);
@@ -185,6 +185,30 @@ describe('release manifest verification', () => {
     writeFileSync(manifestPath, JSON.stringify(manifest));
     expect(() => verifyRelease(manifestPath)).toThrow(
       'Provenance subject does not match the release archive',
+    );
+  });
+
+  it('rejects a tar payload carrying a Windows ZIP filename', () => {
+    const archivePath = join(root, 'openslack.zip');
+    writeFileSync(archivePath, 'openslack-v0.1.0\0tar-payload');
+    const archiveHash = sha256(archivePath);
+    const provenancePath = join(root, 'openslack.provenance.intoto.json');
+    const provenance = JSON.parse(readFileSync(provenancePath, 'utf-8')) as {
+      subject: Array<{ name: string; digest: { sha256: string } }>;
+    };
+    provenance.subject.find((subject) => subject.name === 'openslack.zip')!.digest.sha256 =
+      archiveHash;
+    writeFileSync(provenancePath, JSON.stringify(provenance));
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as {
+      archive: { sha256: string };
+      provenance: { sha256: string };
+    };
+    manifest.archive.sha256 = archiveHash;
+    manifest.provenance.sha256 = sha256(provenancePath);
+    writeFileSync(manifestPath, JSON.stringify(manifest));
+
+    expect(() => verifyRelease(manifestPath)).toThrow(
+      'observed openslack.zip with magic 6f 70 65 6e',
     );
   });
 });

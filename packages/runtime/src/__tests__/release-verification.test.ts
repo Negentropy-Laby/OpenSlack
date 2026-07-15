@@ -232,13 +232,79 @@ describe('self-contained release verification', () => {
       'Provenance subject does not match the release archive.',
     );
   });
+
+  it('accepts a standards-compliant Windows ZIP container', () => {
+    // End-of-central-directory for a valid empty ZIP archive.
+    const emptyZip = Buffer.alloc(22);
+    Buffer.from([0x50, 0x4b, 0x05, 0x06]).copy(emptyZip);
+    rewriteFixtureAsWindowsArchive(root, manifestPath, emptyZip);
+    signFixture(root, manifestPath, privateKey, publicKey);
+
+    const result = verifyReleaseArtifacts(manifestPath, {
+      requireSignature: true,
+      trustedPublicKey: publicKey,
+    });
+
+    expect(result).toMatchObject({
+      status: 'verified',
+      target: 'windows-x64',
+      signature: { status: 'signed', trusted: true },
+    });
+    expect(result.assets[0]).toMatchObject({
+      role: 'archive',
+      file: 'openslack-v0.1.0-windows-x64.zip',
+    });
+  });
+
+  it('rejects gzip bytes masquerading as a Windows ZIP even when hashes agree', () => {
+    const manifest = readManifest(manifestPath);
+    rewriteFixtureAsWindowsArchive(
+      root,
+      manifestPath,
+      readFileSync(join(root, manifest.archive.file)),
+    );
+
+    expect(() => verifyReleaseArtifacts(manifestPath)).toThrow(
+      'observed openslack-v0.1.0-windows-x64.zip with gzip magic 1f 8b 08',
+    );
+  });
 });
+
+function rewriteFixtureAsWindowsArchive(
+  root: string,
+  manifestPath: string,
+  archiveBytes: Buffer,
+): void {
+  const manifest = readManifest(manifestPath);
+  const previousName = manifest.archive.file;
+  const zipName = 'openslack-v0.1.0-windows-x64.zip';
+  const previousPath = join(root, previousName);
+  const zipPath = join(root, zipName);
+  if (previousPath !== zipPath) unlinkSync(previousPath);
+  writeFileSync(zipPath, archiveBytes);
+  manifest.target = 'windows-x64';
+  manifest.archive = { file: zipName, sha256: sha256File(zipPath) };
+
+  const provenancePath = join(root, manifest.provenance.file);
+  const provenance = JSON.parse(readFileSync(provenancePath, 'utf-8')) as {
+    subject: Array<{ name: string; digest: { sha256: string } }>;
+    predicate: { buildDefinition: { externalParameters: { target: string } } };
+  };
+  const archiveSubject = provenance.subject.find((subject) => subject.name === previousName);
+  if (!archiveSubject) throw new Error('Fixture archive subject is missing.');
+  archiveSubject.name = zipName;
+  archiveSubject.digest.sha256 = manifest.archive.sha256;
+  provenance.predicate.buildDefinition.externalParameters.target = 'windows-x64';
+  writeFileSync(provenancePath, JSON.stringify(provenance));
+  manifest.provenance.sha256 = sha256File(provenancePath);
+  writeFileSync(manifestPath, JSON.stringify(manifest));
+}
 
 function createFixture(root: string): string {
   const archivePath = join(root, 'openslack-v0.1.0-linux-x64.tar.gz');
   const sbomPath = join(root, 'openslack-v0.1.0-linux-x64.sbom.cdx.json');
   const provenancePath = join(root, 'openslack-v0.1.0-linux-x64.provenance.intoto.json');
-  writeFileSync(archivePath, 'archive');
+  writeFileSync(archivePath, Buffer.from([0x1f, 0x8b, 0x08, 0x00]));
   writeFileSync(sbomPath, '{"bomFormat":"CycloneDX"}');
   const identity = {
     version: '0.1.0',

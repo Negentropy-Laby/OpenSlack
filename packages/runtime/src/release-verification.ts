@@ -122,7 +122,8 @@ export function verifyReleaseArtifacts(
     ['provenance', manifest.provenance],
   ];
   assertUniqueArtifactNames(baseReferences.map(([, reference]) => reference));
-  const archiveAsset = verifyArtifactReference(directory, 'archive', manifest.archive);
+  const verifiedArchive = readVerifiedArtifactReference(directory, 'archive', manifest.archive);
+  const archiveAsset = verifiedArchive.asset;
   const sbomAsset = verifyArtifactReference(directory, 'sbom', manifest.sbom);
   const verifiedProvenance = readVerifiedArtifactReference(
     directory,
@@ -161,6 +162,7 @@ export function verifyReleaseArtifacts(
       options.requireSignature === true,
     );
     validateSignedBuildParameters(manifest, provenance);
+    validateArchiveContainer(manifest, verifiedArchive.bytes);
     return {
       schema: 'openslack.release_verification.v1',
       status: 'verified',
@@ -185,6 +187,7 @@ export function verifyReleaseArtifacts(
   if (options.requireSignature) {
     throw new Error('A trusted provenance signature is required for this release.');
   }
+  validateArchiveContainer(manifest, verifiedArchive.bytes);
   return {
     schema: 'openslack.release_verification.v1',
     status: 'verified',
@@ -338,6 +341,50 @@ function validateSignedBuildParameters(
       throw new Error(`Signed provenance build parameter does not match manifest: ${field}`);
     }
   }
+}
+
+function validateArchiveContainer(manifest: ReleaseManifest, bytes: Buffer): void {
+  const expected =
+    manifest.target === 'windows-x64'
+      ? { suffix: '.zip', format: 'ZIP', signature: hasZipSignature(bytes) }
+      : {
+          suffix: '.tar.gz',
+          format: 'gzip-compressed tar',
+          signature: hasPrefix(bytes, [0x1f, 0x8b, 0x08]),
+        };
+  const valid = manifest.archive.file.endsWith(expected.suffix) && expected.signature;
+  if (!valid) {
+    throw new Error(
+      `Release archive format does not match target ${manifest.target}. ` +
+        `Expected ${expected.suffix} with ${expected.format} signature; ` +
+        `observed ${manifest.archive.file} with ${describeArchiveMagic(bytes)}.`,
+    );
+  }
+}
+
+function describeArchiveMagic(bytes: Buffer): string {
+  if (hasZipSignature(bytes)) return `ZIP magic ${formatMagic(bytes, 4)}`;
+  if (hasPrefix(bytes, [0x1f, 0x8b, 0x08])) return `gzip magic ${formatMagic(bytes, 3)}`;
+  if (bytes.length === 0) return 'an empty payload';
+  return `magic ${formatMagic(bytes, Math.min(4, bytes.length))}`;
+}
+
+function formatMagic(bytes: Buffer, length: number): string {
+  return [...bytes.subarray(0, length)]
+    .map((value) => value.toString(16).padStart(2, '0'))
+    .join(' ');
+}
+
+function hasZipSignature(bytes: Buffer): boolean {
+  return [
+    [0x50, 0x4b, 0x03, 0x04],
+    [0x50, 0x4b, 0x05, 0x06],
+    [0x50, 0x4b, 0x07, 0x08],
+  ].some((signature) => hasPrefix(bytes, signature));
+}
+
+function hasPrefix(bytes: Buffer, prefix: number[]): boolean {
+  return bytes.length >= prefix.length && prefix.every((value, index) => bytes[index] === value);
 }
 
 function verifyArtifactReference(

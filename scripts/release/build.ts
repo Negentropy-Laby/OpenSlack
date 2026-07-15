@@ -1,6 +1,7 @@
 import {
   chmodSync,
   copyFileSync,
+  cpSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -25,6 +26,7 @@ import {
 import { buildCycloneDxSbom } from './sbom.js';
 import { consumeReleaseSigningEnvironment, createProvenanceSignature } from './signature.js';
 import { smokeBundle, smokeReleaseVerifierFromArchive, type ArtifactSmokeResult } from './smoke.js';
+import { createReleaseArchive, extractReleaseArchive } from './archive.js';
 
 // This must run before the first Git/build/smoke child process. Never allow the
 // signing private key to flow into inherited child environments.
@@ -141,31 +143,33 @@ const buildInfo = {
 };
 writeJson(join(bundleDir, 'build-info.json'), buildInfo);
 
-const smoke = smokeBundle(bundleDir, target);
+// Exercise a disposable copy so the archive input has never been executed.
+// Windows security tooling may retain a short-lived handle to an executable
+// after its process exits, which makes Compress-Archive fail on the original
+// bundle even though spawnSync has already returned.
+const smokeRoot = mkdtempSync(join(tmpdir(), 'openslack-bundle-smoke-'));
+let smoke: ArtifactSmokeResult;
+try {
+  // Invariant guard: archive.test.ts intentionally pins this disposable-copy
+  // flow because executing bundleDir directly can reintroduce Windows locks.
+  const smokeBundleDir = join(smokeRoot, bundleName);
+  cpSync(bundleDir, smokeBundleDir, { recursive: true, errorOnExist: true });
+  smoke = smokeBundle(smokeBundleDir, target);
+} finally {
+  rmSync(smokeRoot, { recursive: true, force: true });
+}
 writeJson(join(bundleDir, 'smoke-report.json'), smoke);
 
 mkdirSync(releaseRoot, { recursive: true });
 const archiveName = `${bundleName}${definition.archiveExtension}`;
 const archivePath = join(releaseRoot, archiveName);
 rmSync(archivePath, { force: true });
-// Use a relative archive name with cwd=releaseRoot: MSYS/GNU tar (Git Bash, e.g.
-// the release workflow's `shell: bash` on windows-2022) misparses absolute `D:\`
-// paths as `host:path`; bsdtar handles them, and a relative name is portable
-// across both.
-if (target === 'windows-x64') {
-  run('tar', ['-a', '-cf', archiveName, bundleName], { cwd: releaseRoot });
-} else {
-  run('tar', ['-czf', archiveName, bundleName], { cwd: releaseRoot });
-}
+createReleaseArchive(bundleDir, archivePath, target);
 
 const extractionRoot = mkdtempSync(join(tmpdir(), 'openslack-release-extract-'));
 let archiveSmoke: ArtifactSmokeResult;
 try {
-  // MSYS/GNU tar also fails to resolve Windows-native `-C` temp paths, so copy the
-  // archive into the temp dir and extract by relative name with cwd=extractionRoot.
-  // No absolute path is passed to tar, keeping this portable across GNU tar/bsdtar.
-  copyFileSync(archivePath, join(extractionRoot, archiveName));
-  run('tar', ['-xf', archiveName], { cwd: extractionRoot });
+  extractReleaseArchive(archivePath, extractionRoot, target);
   archiveSmoke = smokeBundle(join(extractionRoot, bundleName), target);
 } finally {
   rmSync(extractionRoot, { recursive: true, force: true });
@@ -256,7 +260,6 @@ writeJson(manifestPath, manifest);
 
 const releaseVerifierSmoke = smokeReleaseVerifierFromArchive({
   archivePath,
-  archiveName,
   bundleName,
   manifestPath,
   target,
