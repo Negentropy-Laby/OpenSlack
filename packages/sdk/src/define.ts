@@ -2,6 +2,7 @@ import type {
   BundledActionContribution,
   BundledPluginDefinition,
   BundledPrmsBlockerContribution,
+  BundledPrmsBlockerDefinition,
   BundledWorkflowContribution,
   DeclarativeActionAliasV1,
   DeclarativeWorkflowAliasV1,
@@ -57,7 +58,7 @@ export function defineBundledWorkflow<
 }
 
 export function definePrmsBlocker<TPrmsReport = unknown>(
-  contribution: BundledPrmsBlockerContribution<TPrmsReport>,
+  contribution: BundledPrmsBlockerDefinition<TPrmsReport>,
 ): BundledPrmsBlockerContribution<TPrmsReport> {
   return {
     kind: 'prms_blocker',
@@ -66,5 +67,5 @@ export function definePrmsBlocker<TPrmsReport = unknown>(
       const result = await contribution.evaluate(report, context);
       return { blockers: result.blockers };
     },
-  };
+  } as BundledPrmsBlockerContribution<TPrmsReport>;
 }

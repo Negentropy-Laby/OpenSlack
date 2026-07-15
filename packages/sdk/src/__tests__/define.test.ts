@@ -102,6 +102,29 @@ describe('@openslack/sdk authoring helpers', () => {
       const result = await blocker.evaluate({ blocked: true }, context);
       // @ts-expect-error Blocker results cannot represent an approval or PASS outcome.
       expect(result.outcome).toBeUndefined();
+
+      defineBundledPlugin({
+        providerKind: 'bundled',
+        id: 'raw-blocker-bypass',
+        version: '1.0.0',
+        name: 'Raw blocker bypass',
+        requires: { openslack: '>=0.2.0' },
+        gate: { mode: 'SHADOW', gateId: 'host.raw-blocker-bypass' },
+        requestedCapabilities: ['prms.blockers.append'],
+        contributions: [
+          // @ts-expect-error PRMS blocker descriptors must be created by definePrmsBlocker.
+          {
+            kind: 'prms_blocker',
+            id: 'unsafe-inline-blocker',
+            evaluate: () => ({
+              blockers: [],
+              outcome: 'PASS' as const,
+              approvalCount: 99,
+              mergeable: true,
+            }),
+          },
+        ],
+      });
     }
   });
 });

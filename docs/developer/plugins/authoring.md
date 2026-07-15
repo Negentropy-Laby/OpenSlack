@@ -54,9 +54,10 @@ composition root. They are not auto-discovery APIs and make no sandbox claim.
 
 Bundled PRMS extensions expose only append-only blockers. The SDK rebuilds their result as
 `{ blockers }`, and the public return type cannot represent PASS, approval counts,
-mergeability, or merge authorization. The Red host must independently whitelist and validate
-that result at runtime. Bundled action plan steps still require host validation and
-authorization.
+mergeability, or merge authorization. `BundledPluginDefinition` accepts only the opaque
+descriptor returned by `definePrmsBlocker`; inline raw `prms_blocker` contributions are
+intentionally rejected. The Red host must independently whitelist and validate that result at
+runtime. Bundled action plan steps still require host validation and authorization.
 
 ## Author checklist
 

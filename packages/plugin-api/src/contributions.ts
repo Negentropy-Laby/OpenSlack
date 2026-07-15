@@ -85,13 +85,25 @@ export interface BlockingFinding {
   readonly detail?: string;
 }
 
-export interface BundledPrmsBlockerContribution<TPrmsReport = unknown> {
+declare const BUNDLED_PRMS_BLOCKER_DESCRIPTOR: unique symbol;
+
+export interface BundledPrmsBlockerDefinition<TPrmsReport = unknown> {
   readonly kind: 'prms_blocker';
   readonly id: string;
   evaluate(
     report: Readonly<TPrmsReport>,
     context: BundledPluginContext,
   ): MaybePromise<{ readonly blockers: readonly BlockingFinding[] }>;
+}
+
+export interface BundledPrmsBlockerContribution<
+  TPrmsReport = unknown,
+> extends BundledPrmsBlockerDefinition<TPrmsReport> {
+  /**
+   * Opaque authoring brand. Use `definePrmsBlocker` from `@openslack/sdk`
+   * so the public evaluator cannot expose approval or mergeability fields.
+   */
+  readonly [BUNDLED_PRMS_BLOCKER_DESCRIPTOR]: true;
 }
 
 export type BundledContribution<
