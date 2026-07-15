@@ -344,13 +344,35 @@ function validateSignedBuildParameters(
 }
 
 function validateArchiveContainer(manifest: ReleaseManifest, bytes: Buffer): void {
-  const valid =
+  const expected =
     manifest.target === 'windows-x64'
-      ? manifest.archive.file.endsWith('.zip') && hasZipSignature(bytes)
-      : manifest.archive.file.endsWith('.tar.gz') && hasPrefix(bytes, [0x1f, 0x8b, 0x08]);
+      ? { suffix: '.zip', format: 'ZIP', signature: hasZipSignature(bytes) }
+      : {
+          suffix: '.tar.gz',
+          format: 'gzip-compressed tar',
+          signature: hasPrefix(bytes, [0x1f, 0x8b, 0x08]),
+        };
+  const valid = manifest.archive.file.endsWith(expected.suffix) && expected.signature;
   if (!valid) {
-    throw new Error(`Release archive format does not match target ${manifest.target}.`);
+    throw new Error(
+      `Release archive format does not match target ${manifest.target}. ` +
+        `Expected ${expected.suffix} with ${expected.format} signature; ` +
+        `observed ${manifest.archive.file} with ${describeArchiveMagic(bytes)}.`,
+    );
   }
+}
+
+function describeArchiveMagic(bytes: Buffer): string {
+  if (hasZipSignature(bytes)) return `ZIP magic ${formatMagic(bytes, 4)}`;
+  if (hasPrefix(bytes, [0x1f, 0x8b, 0x08])) return `gzip magic ${formatMagic(bytes, 3)}`;
+  if (bytes.length === 0) return 'an empty payload';
+  return `magic ${formatMagic(bytes, Math.min(4, bytes.length))}`;
+}
+
+function formatMagic(bytes: Buffer, length: number): string {
+  return [...bytes.subarray(0, length)]
+    .map((value) => value.toString(16).padStart(2, '0'))
+    .join(' ');
 }
 
 function hasZipSignature(bytes: Buffer): boolean {

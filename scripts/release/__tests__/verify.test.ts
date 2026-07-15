@@ -208,7 +208,7 @@ describe('release manifest verification', () => {
     writeFileSync(manifestPath, JSON.stringify(manifest));
 
     expect(() => verifyRelease(manifestPath)).toThrow(
-      'Release archive format does not match target windows-x64',
+      'observed openslack.zip with magic 6f 70 65 6e',
     );
   });
 });

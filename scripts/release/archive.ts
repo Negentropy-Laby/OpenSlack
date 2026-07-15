@@ -6,6 +6,9 @@ const WINDOWS_ARCHIVE_SOURCE_ENV = 'OPENSLACK_RELEASE_ARCHIVE_SOURCE';
 const WINDOWS_ARCHIVE_PATH_ENV = 'OPENSLACK_RELEASE_ARCHIVE_PATH';
 const WINDOWS_EXTRACTION_ROOT_ENV = 'OPENSLACK_RELEASE_EXTRACTION_ROOT';
 
+// Invariant guard: archive.test.ts intentionally pins these native cmdlet
+// names and literal-path arguments so a refactor cannot restore suffix-based
+// `tar -a` inference on Windows.
 const COMPRESS_ARCHIVE_COMMAND = [
   "$ErrorActionPreference = 'Stop'",
   "$ProgressPreference = 'SilentlyContinue'",
@@ -22,6 +25,9 @@ const EXPAND_ARCHIVE_COMMAND = [
  * Create the target's declared archive format using an independent native
  * implementation. In particular, never ask GNU tar to infer ZIP from a .zip
  * suffix: it silently creates an uncompressed tar archive on Git Bash hosts.
+ * Windows PowerShell 5.1 Compress-Archive is a deliberate v0.1.x tradeoff: it
+ * is standards-compliant for this small, regular-file-only bundle, but it is
+ * unsuitable once release inputs approach 2 GB or require symlink semantics.
  */
 export function createReleaseArchive(
   bundleDirInput: string,

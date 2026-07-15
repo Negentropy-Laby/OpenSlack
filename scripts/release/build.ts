@@ -150,6 +150,8 @@ writeJson(join(bundleDir, 'build-info.json'), buildInfo);
 const smokeRoot = mkdtempSync(join(tmpdir(), 'openslack-bundle-smoke-'));
 let smoke: ArtifactSmokeResult;
 try {
+  // Invariant guard: archive.test.ts intentionally pins this disposable-copy
+  // flow because executing bundleDir directly can reintroduce Windows locks.
   const smokeBundleDir = join(smokeRoot, bundleName);
   cpSync(bundleDir, smokeBundleDir, { recursive: true, errorOnExist: true });
   smoke = smokeBundle(smokeBundleDir, target);
