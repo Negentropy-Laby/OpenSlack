@@ -48,6 +48,27 @@ openslack github watch status
 Do not introduce a generic top-level `openslack daemon` command until the
 service monitors more than GitHub Issues/PRs.
 
+## P3 PR And Check Rollout Boundary
+
+P3-PR1 adds the strict repository-event contract, normalizers, configuration
+allowlist, and hardened webhook ingestion. It does not by itself make every
+new event available to a deployed GitHub App installation.
+
+- `pull_request.*` can use the App's existing `pull_request` subscription.
+- `pull_request_review.*`, `check_run.completed`, and
+  `check_suite.completed` require the manifest subscriptions and
+  `checks: read` permission scheduled for P3-PR3.
+- Existing GitHub App installations must be reauthorized after those manifest
+  permissions are deployed. P3-PR3 also owns setup and doctor diagnostics for
+  detecting missing subscriptions or stale installation permissions.
+
+P3-PR1 also retains the existing check-then-record `WatchDedupeStore`. Do not
+enable high-volume review or check event processing as a production-complete
+path until P3-PR2 lands the atomic queue, per-route idempotency, bounded
+retention and attempts, backoff, compaction, and restart recovery. This keeps
+the current PR focused on the event contract and raw webhook trust boundary
+without hiding the delivery durability prerequisite.
+
 ## Runtime Architecture
 
 ```mermaid
@@ -268,4 +289,3 @@ Acceptance:
 - Do not auto-approve PRs.
 - Do not bypass PRMS, CODEOWNERS, branch protection, or agent authorization.
 - Do not introduce dashboard-only state.
-

@@ -14,9 +14,7 @@ export interface GitHubWatchRoute {
   name?: string;
 }
 
-export interface GitHubWatchEventList extends Array<GitHubWatchEventKey> {
-  includes(searchElement: string, fromIndex?: number): boolean;
-}
+export type GitHubWatchEventList = GitHubWatchEventKey[];
 
 export interface GitHubWatchRepo {
   owner: string;

@@ -12,6 +12,8 @@ import {
 } from '../watch-daemon.js';
 import type { GitHubWatchConfig } from '../watch-config.js';
 import type { NormalizedIssueEvent } from '../issue-normalizer.js';
+import type { NormalizedPushEvent } from '../push-normalizer.js';
+import { githubWebhookEventKey } from '../repository-event.js';
 import { WatchDedupeStore } from '../watch-dedupe.js';
 import { WatchCursorStore } from '../watch-cursor.js';
 
@@ -1043,8 +1045,49 @@ describe('WatchDaemon polling', () => {
     // Direct once() call would record task.blocked, but pollAll() pre-filters
     // Simulate pollAll's filter: check repoConfig.events before calling once()
     const repoConfig = labeledOnlyConfig.repositories[0];
-    const eventKey = `issues.${event.action}`;
+    const eventKey = githubWebhookEventKey('issues', event.action);
+    expect(eventKey).toBe('issues.opened');
+    if (!eventKey) throw new Error('Expected a mapped issue event key');
     expect(repoConfig.events.includes(eventKey)).toBe(false);
+  });
+
+  it('uses the same 12-character push SHA in collaboration object identities', async () => {
+    const after = '0123456789abcdef0123456789abcdef01234567';
+    const recordFn = vi.fn(mockRecordEvent);
+    const daemon = new WatchDaemon(
+      config,
+      '',
+      new WatchDedupeStore(tempDir),
+      undefined,
+      undefined,
+      recordFn,
+    );
+    const event: NormalizedPushEvent = {
+      ref: 'refs/heads/main',
+      owner: 'Negentropy-Laby',
+      repo: 'OpenSlack',
+      before: 'f'.repeat(40),
+      after,
+      pusher: 'pusher',
+      deliveryId: 'push-sha-display-length',
+      commits: [
+        {
+          id: after,
+          message: 'Update watched content',
+          added: ['posts/update.md'],
+          modified: [],
+          removed: [],
+          timestamp: '2026-07-16T00:00:00Z',
+        },
+      ],
+    };
+
+    const result = await daemon.handlePushEvent(event);
+
+    expect(result?.object).toEqual({
+      kind: 'push',
+      id: `Negentropy-Laby/OpenSlack@${after.slice(0, 12)}`,
+    });
   });
 });
 

@@ -52,6 +52,12 @@ export type RecordEventFn = (event: unknown) => CollaborationEventRecord;
 
 export type AutoClaimFn = (event: NormalizedIssueEvent, agentIds: string[]) => Promise<void>;
 
+const GITHUB_SHA_DISPLAY_LENGTH = 12;
+
+function abbreviateGitHubSha(sha: string): string {
+  return sha.slice(0, GITHUB_SHA_DISPLAY_LENGTH);
+}
+
 function jsonResponse(res: ServerResponse, status: number, data: Record<string, unknown>): void {
   res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(data));
@@ -126,7 +132,7 @@ function notificationSubject(payload: NotificationPayload): string {
     case 'review':
       return `${payload.repo}#${payload.pullRequestNumber}`;
     case 'push':
-      return `${payload.repo}@${payload.after.slice(0, 12)}`;
+      return `${payload.repo}@${abbreviateGitHubSha(payload.after)}`;
     case 'check':
       return `${payload.repo} check ${payload.checkId}`;
   }
@@ -370,8 +376,8 @@ export class WatchDaemon {
 
       for (const issue of pollResult.issues) {
         const normalized = normalizePollIssue(issue, repoConfig.owner, repoConfig.repo);
-        const eventKey = `issues.${normalized.action}`;
-        if (!repoConfig.events.includes(eventKey)) continue;
+        const eventKey = githubWebhookEventKey('issues', normalized.action);
+        if (!eventKey || !repoConfig.events.includes(eventKey)) continue;
         const event = await this.once(normalized, 'github.watch.poll');
         if (event) result.eventsDispatched++;
       }
@@ -604,7 +610,7 @@ export class WatchDaemon {
           actor: { id: 'github-watch', kind: 'github', provider: 'github' },
           object: {
             kind: 'push',
-            id: `${event.owner}/${event.repo}@${event.after.substring(0, 7)}`,
+            id: `${event.owner}/${event.repo}@${abbreviateGitHubSha(event.after)}`,
           },
           source: { kind: 'github', ref: 'github.watch.webhook' },
           summary: hasPostChanges

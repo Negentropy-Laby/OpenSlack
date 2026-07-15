@@ -1,5 +1,5 @@
 schema: openslack.modules.v2
-vitest_tests: 3776
+vitest_tests: 3777
 vitest_files: 294
 modules:
   - id: self_evolution
@@ -50,7 +50,7 @@ modules:
       - "@openslack/runtime"
       - "@openslack/core"
       - "@openslack/delivery"
-    tests: 596
+    tests: 597
     test_files: 67
     notes: "GitHub Issues task loop active with typed task creation, dry-run repair, Phase 4 watch daemon, installation-scoped GitHub delivery, and strict claim heartbeat/review/complete transitions. Claim lifecycle operations verify structured owner evidence and postconditions, fail closed on partial GitHub state, and provide an idempotent recovery command without republishing a PR. Delivery publishes HEAD and a draft PR through the same GitHub App token, disables host credentials and hooks, synchronizes remote/PR SHAs, and returns AWAITING_GATES evidence for PRMS. Read-only installation-scope diagnostics and a preview-first temporary-ref push/delete probe verify selected-repository access and contents write capability before first delivery."
 
@@ -103,7 +103,7 @@ modules:
       - "@openslack/pr"
       - "@openslack/github"
       - "@openslack/kernel"
-    tests: 584
+    tests: 585
     test_files: 51
     notes: Phase 2C chat report and action confirmation active. Supports status/review/recommend/doctor/queue/merge/watch, review/doctor comments, governance audit, operational decision summaries, deadlock detection, Red Zone author-risk preflight, and chat-friendly PR summaries with confirm-merge flow. Workflow artifact governance is bound to deterministic base/head tree evidence and a single current-head human approval carrying Workflow-Trust.
 
@@ -174,7 +174,7 @@ modules:
       - "@openslack/tui"
       - "@openslack/github"
       - "@openslack/agent-runtime"
-    tests: 1914
+    tests: 1915
     test_files: 152
     components:
       - id: agent_runtime
