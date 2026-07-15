@@ -15,6 +15,14 @@ describe('verifyGitHubWebhookSignature', () => {
     expect(verifyGitHubWebhookSignature(payload, signature, secret)).toBe(true);
   });
 
+  it('verifies the exact raw bytes without UTF-8 replacement', () => {
+    const raw = Buffer.from([0xff, 0x00, 0x7b, 0x7d]);
+    const signature = `sha256=${createHmac('sha256', secret).update(raw).digest('hex')}`;
+
+    expect(verifyGitHubWebhookSignature(raw, signature, secret)).toBe(true);
+    expect(verifyGitHubWebhookSignature(raw.toString('utf8'), signature, secret)).toBe(false);
+  });
+
   it('rejects an invalid signature', () => {
     expect(verifyGitHubWebhookSignature(payload, 'sha256=badsignature', secret)).toBe(false);
   });

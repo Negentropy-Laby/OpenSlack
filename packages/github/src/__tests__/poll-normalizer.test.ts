@@ -27,6 +27,9 @@ describe('normalizePollIssue', () => {
     expect(result.senderLogin).toBe('contributor');
     expect(result.deliveryId).toBe('');
     expect(result.updatedAt).toBe('2026-05-25T10:00:00Z');
+    expect(result.source).toBe('poll');
+    expect(result.eventKey).toBe('issues.opened');
+    expect(result.repository.canonicalFullName).toBe('owner/repo');
   });
 
   it('extracts labels from string labels', () => {
@@ -60,7 +63,10 @@ describe('normalizePollIssue', () => {
   });
 
   it('skips labels without a name property', () => {
-    const issue: GitHubApiIssue = { ...baseIssue, labels: [{ id: 123 } as unknown as { name?: string }] };
+    const issue: GitHubApiIssue = {
+      ...baseIssue,
+      labels: [{ id: 123 } as unknown as { name?: string }],
+    };
     const result = normalizePollIssue(issue, 'owner', 'repo');
     expect(result.labels).toEqual([]);
   });

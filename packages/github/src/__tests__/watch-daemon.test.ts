@@ -4,9 +4,16 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHmac } from 'node:crypto';
 import { request } from 'node:http';
-import { WatchDaemon, createNotificationPayload, formatConsoleNotification } from '../watch-daemon.js';
+import { connect } from 'node:net';
+import {
+  WatchDaemon,
+  createNotificationPayload,
+  formatConsoleNotification,
+} from '../watch-daemon.js';
 import type { GitHubWatchConfig } from '../watch-config.js';
 import type { NormalizedIssueEvent } from '../issue-normalizer.js';
+import type { NormalizedPushEvent } from '../push-normalizer.js';
+import { githubWebhookEventKey } from '../repository-event.js';
 import { WatchDedupeStore } from '../watch-dedupe.js';
 import { WatchCursorStore } from '../watch-cursor.js';
 
@@ -14,7 +21,11 @@ function mockRecordEvent(event: unknown) {
   return {
     id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     type: (event as Record<string, unknown>).type as string,
-    actor: (event as Record<string, unknown>).actor as { id: string; kind: string; provider: string },
+    actor: (event as Record<string, unknown>).actor as {
+      id: string;
+      kind: string;
+      provider: string;
+    },
     object: (event as Record<string, unknown>).object as { kind: string; id: string; url?: string },
     source: (event as Record<string, unknown>).source as { kind: string; ref: string },
     summary: (event as Record<string, unknown>).summary as string,
@@ -38,12 +49,14 @@ afterEach(() => {
 
 const config: GitHubWatchConfig = {
   schema: 'openslack.github_watch.v1',
-  repositories: [{
-    owner: 'Negentropy-Laby',
-    repo: 'OpenSlack',
-    events: ['issues.opened', 'issues.reopened', 'issues.labeled'],
-    labels: { include: ['openslack:task'] },
-  }],
+  repositories: [
+    {
+      owner: 'Negentropy-Laby',
+      repo: 'OpenSlack',
+      events: ['issues.opened', 'issues.reopened', 'issues.labeled'],
+      labels: { include: ['openslack:task'] },
+    },
+  ],
 };
 
 function signPayload(payload: string): string {
@@ -70,28 +83,154 @@ function makeIssuePayload(overrides: Record<string, unknown> = {}): string {
   });
 }
 
-function sendRequest(port: number, body: string, headers: Record<string, string> = {}): Promise<{ status: number; body: Record<string, unknown> }> {
-  return new Promise((resolve, reject) => {
-    const req = request({
-      hostname: '127.0.0.1',
-      port,
-      path: '/github/webhook',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body),
-        ...headers,
+function makeRepositoryEventPayload(eventName: string, action: string): string {
+  const repository = {
+    name: 'openslack',
+    full_name: 'negentropy-laby/openslack',
+    owner: { login: 'negentropy-laby' },
+  };
+  const common = { action, repository, sender: { login: 'observer' } };
+  if (eventName === 'pull_request') {
+    return JSON.stringify({
+      ...common,
+      pull_request: {
+        number: 42,
+        title: 'Repository event contract',
+        html_url: 'https://github.com/Negentropy-Laby/OpenSlack/pull/42',
+        state: action === 'closed' ? 'closed' : 'open',
+        draft: false,
+        merged: false,
+        updated_at: '2026-07-15T10:00:00Z',
+        user: { login: 'contributor' },
+        head: { sha: 'head-sha-42' },
+        base: { sha: 'base-sha-42' },
       },
-    }, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        resolve({ status: res.statusCode ?? 0, body: JSON.parse(data) });
-      });
     });
+  }
+  if (eventName === 'pull_request_review') {
+    return JSON.stringify({
+      ...common,
+      pull_request: {
+        number: 42,
+        title: 'Repository event contract',
+        html_url: 'https://github.com/Negentropy-Laby/OpenSlack/pull/42',
+        head: { sha: 'head-sha-42' },
+      },
+      review: {
+        id: 9001,
+        state: 'approved',
+        html_url: 'https://github.com/Negentropy-Laby/OpenSlack/pull/42#pullrequestreview-9001',
+        user: { login: 'reviewer' },
+        commit_id: 'head-sha-42',
+        submitted_at: '2026-07-15T10:05:00Z',
+        body: 'untrusted review prose',
+      },
+    });
+  }
+  if (eventName === 'check_run') {
+    return JSON.stringify({
+      ...common,
+      check_run: {
+        id: 7001,
+        name: 'test',
+        html_url: 'https://github.com/Negentropy-Laby/OpenSlack/actions/runs/7001',
+        status: 'completed',
+        conclusion: 'success',
+        head_sha: 'head-sha-42',
+        completed_at: '2026-07-15T10:10:00Z',
+        pull_requests: [{ number: 42 }],
+      },
+    });
+  }
+  return JSON.stringify({
+    ...common,
+    check_suite: {
+      id: 8001,
+      status: 'completed',
+      conclusion: 'success',
+      head_sha: 'head-sha-42',
+      head_branch: 'github/pr-event-contract',
+      updated_at: '2026-07-15T10:11:00Z',
+      pull_requests: [{ number: 42 }],
+    },
+  });
+}
+
+function sendRequest(
+  port: number,
+  body: string | Buffer,
+  headers: Record<string, string> = {},
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  return new Promise((resolve, reject) => {
+    const req = request(
+      {
+        hostname: '127.0.0.1',
+        port,
+        path: '/github/webhook',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+          ...headers,
+        },
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        res.on('end', () => {
+          resolve({ status: res.statusCode ?? 0, body: JSON.parse(data) });
+        });
+      },
+    );
     req.on('error', reject);
     req.write(body);
     req.end();
+  });
+}
+
+function sendSlowChunkedRequest(port: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let response = '';
+    let settled = false;
+    const socket = connect({ host: '127.0.0.1', port });
+    socket.setEncoding('utf8');
+
+    const finish = (error?: Error): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (!socket.destroyed) socket.destroy();
+      if (error) reject(error);
+      else resolve(response);
+    };
+    const timer = setTimeout(() => {
+      finish(new Error('Timed out waiting for the webhook server to close the slow request'));
+    }, 1_000);
+
+    socket.once('connect', () => {
+      socket.write(
+        [
+          'POST /github/webhook HTTP/1.1',
+          `Host: 127.0.0.1:${port}`,
+          'Content-Type: application/json',
+          'Transfer-Encoding: chunked',
+          'Connection: keep-alive',
+          '',
+          '',
+        ].join('\r\n'),
+      );
+      socket.write('1\r\n{\r\n');
+    });
+    socket.on('data', (chunk: string) => {
+      response += chunk;
+    });
+    socket.once('error', (error) => {
+      if (response.includes('HTTP/1.1 408')) finish();
+      else finish(error);
+    });
+    socket.once('close', () => finish());
   });
 }
 
@@ -119,7 +258,14 @@ describe('WatchDaemon', () => {
   });
 
   it('rejects invalid signature with 401', async () => {
-    const daemon = new WatchDaemon(config, secret, new WatchDedupeStore(tempDir), undefined, undefined, mockRecordEvent);
+    const daemon = new WatchDaemon(
+      config,
+      secret,
+      new WatchDedupeStore(tempDir),
+      undefined,
+      undefined,
+      mockRecordEvent,
+    );
     const port = 3101 + Math.floor(Math.random() * 1000);
     await daemon.start(port);
 
@@ -135,8 +281,321 @@ describe('WatchDaemon', () => {
     }
   });
 
+  it('rejects an oversized body with 413 before JSON parsing', async () => {
+    const daemon = new WatchDaemon(
+      config,
+      secret,
+      new WatchDedupeStore(tempDir),
+      undefined,
+      undefined,
+      mockRecordEvent,
+      { maxBytes: 64, timeoutMs: 100 },
+    );
+    const port = 3101 + Math.floor(Math.random() * 1000);
+    await daemon.start(port);
+
+    try {
+      const body = makeIssuePayload();
+      const result = await sendRequest(port, body, {
+        'x-hub-signature-256': signPayload(body),
+        'x-github-event': 'issues',
+      });
+      expect(result.status).toBe(413);
+      expect(result.body.code).toBe('BODY_TOO_LARGE');
+    } finally {
+      await daemon.stop();
+    }
+  });
+
+  it('closes a slow chunked request after the bounded body-read timeout', async () => {
+    const daemon = new WatchDaemon(
+      config,
+      secret,
+      new WatchDedupeStore(tempDir),
+      undefined,
+      undefined,
+      mockRecordEvent,
+      { maxBytes: 64, timeoutMs: 30 },
+    );
+    const port = 3101 + Math.floor(Math.random() * 1000);
+    await daemon.start(port);
+
+    try {
+      const response = await sendSlowChunkedRequest(port);
+      expect(response).toContain('HTTP/1.1 408 Request Timeout');
+      expect(response.toLowerCase()).toContain('connection: close');
+      expect(response).toContain('BODY_READ_TIMEOUT');
+    } finally {
+      await daemon.stop();
+    }
+  });
+
+  it('rejects malformed signed JSON with 400', async () => {
+    const daemon = new WatchDaemon(config, secret, new WatchDedupeStore(tempDir));
+    const port = 3101 + Math.floor(Math.random() * 1000);
+    await daemon.start(port);
+
+    try {
+      const body = '{';
+      const result = await sendRequest(port, body, {
+        'x-hub-signature-256': signPayload(body),
+        'x-github-event': 'issues',
+      });
+      expect(result.status).toBe(400);
+      expect(result.body.error).toBe('Invalid JSON');
+    } finally {
+      await daemon.stop();
+    }
+  });
+
+  it('rejects invalid UTF-8 even when the exact bytes are signed', async () => {
+    const daemon = new WatchDaemon(config, secret, new WatchDedupeStore(tempDir));
+    const port = 3101 + Math.floor(Math.random() * 1000);
+    await daemon.start(port);
+
+    try {
+      const body = Buffer.from([0x7b, 0xff, 0x7d]);
+      const signature = `sha256=${createHmac('sha256', secret).update(body).digest('hex')}`;
+      const result = await sendRequest(port, body, {
+        'x-hub-signature-256': signature,
+        'x-github-event': 'issues',
+      });
+      expect(result.status).toBe(400);
+      expect(result.body.error).toBe('Invalid JSON');
+    } finally {
+      await daemon.stop();
+    }
+  });
+
+  it('ignores an unknown signed event with 202', async () => {
+    const dedupe = new WatchDedupeStore(tempDir);
+    const daemon = new WatchDaemon(config, secret, dedupe);
+    const port = 3101 + Math.floor(Math.random() * 1000);
+    await daemon.start(port);
+
+    try {
+      const body = makeIssuePayload();
+      const result = await sendRequest(port, body, {
+        'x-hub-signature-256': signPayload(body),
+        'x-github-event': 'deployment',
+      });
+      expect(result.status).toBe(202);
+      expect(result.body.ignored).toContain('event type');
+      expect(dedupe.getStats().count).toBe(0);
+    } finally {
+      await daemon.stop();
+    }
+  });
+
+  it.each([
+    ['pull_request', 'opened', 'pull_request.opened'],
+    ['pull_request', 'synchronize', 'pull_request.synchronize'],
+    ['pull_request', 'reopened', 'pull_request.reopened'],
+    ['pull_request', 'closed', 'pull_request.closed'],
+    ['pull_request', 'ready_for_review', 'pull_request.ready_for_review'],
+    ['pull_request_review', 'submitted', 'pull_request_review.submitted'],
+    ['pull_request_review', 'dismissed', 'pull_request_review.dismissed'],
+    ['check_run', 'completed', 'check_run.completed'],
+    ['check_suite', 'completed', 'check_suite.completed'],
+  ] as const)(
+    'accepts signed %s.%s observations without auto-claim',
+    async (eventName, action, expectedEventKey) => {
+      const claimFn = vi.fn().mockResolvedValue(undefined);
+      const eventConfig: GitHubWatchConfig = {
+        schema: 'openslack.github_watch.v1',
+        repositories: [
+          {
+            owner: 'Negentropy-Laby',
+            repo: 'OpenSlack',
+            events: [expectedEventKey],
+            auto_claim: { enabled: true, agent_ids: ['must-not-run'] },
+          },
+        ],
+      };
+      const dedupe = new WatchDedupeStore(tempDir);
+      const daemon = new WatchDaemon(
+        eventConfig,
+        secret,
+        dedupe,
+        undefined,
+        claimFn,
+        mockRecordEvent,
+      );
+      const port = 3101 + Math.floor(Math.random() * 1000);
+      await daemon.start(port);
+      try {
+        const body = makeRepositoryEventPayload(eventName, action);
+        const result = await sendRequest(port, body, {
+          'x-hub-signature-256': signPayload(body),
+          'x-github-event': eventName,
+          'x-github-delivery': `delivery-${eventName}-${action}`,
+        });
+        expect(result).toMatchObject({
+          status: 200,
+          body: { ok: true, event_key: expectedEventKey },
+        });
+        expect(claimFn).not.toHaveBeenCalled();
+        expect(dedupe.getStats().count).toBe(1);
+      } finally {
+        await daemon.stop();
+      }
+    },
+  );
+
+  it('ignores an unknown action without mutating delivery state', async () => {
+    const dedupe = new WatchDedupeStore(tempDir);
+    const eventConfig: GitHubWatchConfig = {
+      schema: 'openslack.github_watch.v1',
+      repositories: [
+        {
+          owner: 'Negentropy-Laby',
+          repo: 'OpenSlack',
+          events: ['pull_request.opened'],
+        },
+      ],
+    };
+    const daemon = new WatchDaemon(eventConfig, secret, dedupe);
+    const port = 3101 + Math.floor(Math.random() * 1000);
+    await daemon.start(port);
+    try {
+      const body = makeRepositoryEventPayload('pull_request', 'edited');
+      const result = await sendRequest(port, body, {
+        'x-hub-signature-256': signPayload(body),
+        'x-github-event': 'pull_request',
+        'x-github-delivery': 'unknown-action',
+      });
+      expect(result.status).toBe(202);
+      expect(result.body.ignored).toContain('action edited');
+      expect(dedupe.getStats().count).toBe(0);
+    } finally {
+      await daemon.stop();
+    }
+  });
+
+  it('treats an approved review webhook as informational notification only', async () => {
+    const recordFn = vi.fn(mockRecordEvent);
+    const claimFn = vi.fn().mockResolvedValue(undefined);
+    const reviewConfig: GitHubWatchConfig = {
+      schema: 'openslack.github_watch.v1',
+      repositories: [
+        {
+          owner: 'Negentropy-Laby',
+          repo: 'OpenSlack',
+          events: ['pull_request_review.submitted'],
+          auto_claim: { enabled: true, agent_ids: ['must-not-run'] },
+        },
+      ],
+    };
+    const daemon = new WatchDaemon(
+      reviewConfig,
+      secret,
+      new WatchDedupeStore(tempDir),
+      undefined,
+      claimFn,
+      recordFn,
+    );
+    const port = 3101 + Math.floor(Math.random() * 1000);
+    await daemon.start(port);
+    try {
+      const body = makeRepositoryEventPayload('pull_request_review', 'submitted');
+      const result = await sendRequest(port, body, {
+        'x-hub-signature-256': signPayload(body),
+        'x-github-event': 'pull_request_review',
+        'x-github-delivery': 'approved-review-is-observation',
+      });
+      expect(result.status).toBe(200);
+      expect(claimFn).not.toHaveBeenCalled();
+      expect(recordFn).toHaveBeenCalledTimes(1);
+      const recorded = recordFn.mock.calls[0]![0] as Record<string, unknown>;
+      expect(recorded.type).toBe('notification.sent');
+      expect(recorded.metadata).toMatchObject({
+        objectKind: 'review',
+        eventKey: 'pull_request_review.submitted',
+        informational: true,
+      });
+      expect(String(recorded.type)).not.toMatch(/approv|merge|pr\.review/u);
+    } finally {
+      await daemon.stop();
+    }
+  });
+
+  it('rejects malformed payloads for a known action without mutating delivery state', async () => {
+    const dedupe = new WatchDedupeStore(tempDir);
+    const eventConfig: GitHubWatchConfig = {
+      schema: 'openslack.github_watch.v1',
+      repositories: [
+        {
+          owner: 'Negentropy-Laby',
+          repo: 'OpenSlack',
+          events: ['pull_request.opened'],
+        },
+      ],
+    };
+    const daemon = new WatchDaemon(eventConfig, secret, dedupe);
+    const port = 3101 + Math.floor(Math.random() * 1000);
+    await daemon.start(port);
+    try {
+      const body = JSON.stringify({ action: 'opened', repository: {} });
+      const result = await sendRequest(port, body, {
+        'x-hub-signature-256': signPayload(body),
+        'x-github-event': 'pull_request',
+        'x-github-delivery': 'malformed-pr',
+      });
+      expect(result.status).toBe(400);
+      expect(dedupe.getStats().count).toBe(0);
+    } finally {
+      await daemon.stop();
+    }
+  });
+
+  it('ignores a normalized PR from an unconfigured repository without state mutation', async () => {
+    const dedupe = new WatchDedupeStore(tempDir);
+    const eventConfig: GitHubWatchConfig = {
+      schema: 'openslack.github_watch.v1',
+      repositories: [
+        {
+          owner: 'Negentropy-Laby',
+          repo: 'OpenSlack',
+          events: ['pull_request.opened'],
+        },
+      ],
+    };
+    const daemon = new WatchDaemon(eventConfig, secret, dedupe);
+    const port = 3101 + Math.floor(Math.random() * 1000);
+    await daemon.start(port);
+    try {
+      const parsed = JSON.parse(makeRepositoryEventPayload('pull_request', 'opened')) as Record<
+        string,
+        unknown
+      >;
+      parsed.repository = {
+        name: 'OtherRepo',
+        full_name: 'OtherOrg/OtherRepo',
+        owner: { login: 'OtherOrg' },
+      };
+      const body = JSON.stringify(parsed);
+      const result = await sendRequest(port, body, {
+        'x-hub-signature-256': signPayload(body),
+        'x-github-event': 'pull_request',
+        'x-github-delivery': 'unconfigured-pr-repository',
+      });
+      expect(result.status).toBe(202);
+      expect(result.body.ignored).toContain('repo not in allowlist');
+      expect(dedupe.getStats().count).toBe(0);
+    } finally {
+      await daemon.stop();
+    }
+  });
+
   it('ignores non-issues events with 202', async () => {
-    const daemon = new WatchDaemon(config, secret, new WatchDedupeStore(tempDir), undefined, undefined, mockRecordEvent);
+    const daemon = new WatchDaemon(
+      config,
+      secret,
+      new WatchDedupeStore(tempDir),
+      undefined,
+      undefined,
+      mockRecordEvent,
+    );
     const port = 3101 + Math.floor(Math.random() * 1000);
     await daemon.start(port);
 
@@ -154,7 +613,8 @@ describe('WatchDaemon', () => {
   });
 
   it('ignores repos not in allowlist with 202', async () => {
-    const daemon = new WatchDaemon(config, secret, new WatchDedupeStore(tempDir), undefined, undefined, mockRecordEvent);
+    const dedupe = new WatchDedupeStore(tempDir);
+    const daemon = new WatchDaemon(config, secret, dedupe, undefined, undefined, mockRecordEvent);
     const port = 3101 + Math.floor(Math.random() * 1000);
     await daemon.start(port);
 
@@ -170,6 +630,7 @@ describe('WatchDaemon', () => {
       });
       expect(result.status).toBe(202);
       expect(result.body.ignored).toContain('not in allowlist');
+      expect(dedupe.getStats().count).toBe(0);
     } finally {
       await daemon.stop();
     }
@@ -262,7 +723,15 @@ describe('WatchDaemon', () => {
         },
       ],
     };
-    const daemon = new WatchDaemon(multiRepoConfig, secret, new WatchDedupeStore(tempDir), undefined, undefined, mockRecordEvent);
+    const dedupe = new WatchDedupeStore(tempDir);
+    const daemon = new WatchDaemon(
+      multiRepoConfig,
+      secret,
+      dedupe,
+      undefined,
+      undefined,
+      mockRecordEvent,
+    );
     const port = 3101 + Math.floor(Math.random() * 1000);
     await daemon.start(port);
 
@@ -277,6 +746,7 @@ describe('WatchDaemon', () => {
       });
       expect(result.status).toBe(202);
       expect(result.body.ignored).toContain('not watched for');
+      expect(dedupe.getStats().count).toBe(0);
     } finally {
       await daemon.stop();
     }
@@ -306,13 +776,21 @@ describe('notification formatting', () => {
 
   it('formats console notification', () => {
     const payload: ReturnType<typeof createNotificationPayload> = {
+      schema: 'openslack.github_watch_notification.v1',
       type: 'openslack.issue.detected',
+      objectKind: 'issue',
+      eventKey: 'issues.opened',
+      eventStableKey:
+        'github:issues.opened:negentropy-laby/openslack:issue:42:2026-05-25T10:00:00Z',
       repo: 'Negentropy-Laby/OpenSlack',
+      objectId: 'negentropy-laby/openslack#42',
       issueNumber: 42,
       title: 'Test',
       url: 'https://github.com/Negentropy-Laby/OpenSlack/issues/42',
       labels: ['openslack:task'],
       nextAction: 'openslack agent tick',
+      informational: false,
+      observedAt: '2026-05-25T10:00:00Z',
     };
     const text = formatConsoleNotification(payload);
     expect(text).toContain('GitHub Watch');
@@ -324,13 +802,15 @@ describe('WatchDaemon sink dispatch', () => {
   it('dispatches to console sink via routes config', async () => {
     const routeConfig: GitHubWatchConfig = {
       schema: 'openslack.github_watch.v1',
-      repositories: [{
-        owner: 'Negentropy-Laby',
-        repo: 'OpenSlack',
-        events: ['issues.opened'],
-        labels: { include: ['openslack:task'] },
-        routes: [{ sink: 'console' as const }],
-      }],
+      repositories: [
+        {
+          owner: 'Negentropy-Laby',
+          repo: 'OpenSlack',
+          events: ['issues.opened'],
+          labels: { include: ['openslack:task'] },
+          routes: [{ sink: 'console' as const }],
+        },
+      ],
     };
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const dedupe = new WatchDedupeStore(tempDir);
@@ -359,13 +839,15 @@ describe('WatchDaemon sink dispatch', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const routeConfig: GitHubWatchConfig = {
       schema: 'openslack.github_watch.v1',
-      repositories: [{
-        owner: 'Negentropy-Laby',
-        repo: 'OpenSlack',
-        events: ['issues.opened'],
-        labels: { include: ['openslack:task'] },
-        routes: [{ sink: 'slack' as const, channel: '#test' }],
-      }],
+      repositories: [
+        {
+          owner: 'Negentropy-Laby',
+          repo: 'OpenSlack',
+          events: ['issues.opened'],
+          labels: { include: ['openslack:task'] },
+          routes: [{ sink: 'slack' as const, channel: '#test' }],
+        },
+      ],
     };
     const dedupe = new WatchDedupeStore(tempDir);
     const daemon = new WatchDaemon(routeConfig, '', dedupe, undefined, undefined, mockRecordEvent);
@@ -394,18 +876,27 @@ describe('WatchDaemon sink dispatch', () => {
 
     const routeConfig: GitHubWatchConfig = {
       schema: 'openslack.github_watch.v1',
-      repositories: [{
-        owner: 'Negentropy-Laby',
-        repo: 'OpenSlack',
-        events: ['issues.opened'],
-        labels: { include: ['openslack:task'] },
-        routes: [{ sink: 'webhook' as const }],
-      }],
+      repositories: [
+        {
+          owner: 'Negentropy-Laby',
+          repo: 'OpenSlack',
+          events: ['issues.opened'],
+          labels: { include: ['openslack:task'] },
+          routes: [{ sink: 'webhook' as const }],
+        },
+      ],
     };
     const dedupe = new WatchDedupeStore(tempDir);
-    const daemon = new WatchDaemon(routeConfig, '', dedupe, {
-      webhookUrl: 'https://broken.example.com/hook',
-    }, undefined, mockRecordEvent);
+    const daemon = new WatchDaemon(
+      routeConfig,
+      '',
+      dedupe,
+      {
+        webhookUrl: 'https://broken.example.com/hook',
+      },
+      undefined,
+      mockRecordEvent,
+    );
     const event: NormalizedIssueEvent = {
       action: 'opened',
       owner: 'Negentropy-Laby',
@@ -428,7 +919,7 @@ describe('WatchDaemon sink dispatch', () => {
 
 describe('WatchDaemon polling', () => {
   it('pollAll() returns dry-run error without credentials', async () => {
-    const getClient = await import('@openslack/github').then(m => m.getClient);
+    const getClient = await import('@openslack/github').then((m) => m.getClient);
     // getClient in test env returns isDryRun when no GITHUB_TOKEN is set
     const dedupe = new WatchDedupeStore(tempDir);
     const daemon = new WatchDaemon(config, '', dedupe, undefined, undefined, mockRecordEvent);
@@ -520,15 +1011,24 @@ describe('WatchDaemon polling', () => {
   it('skips events when repo does not subscribe to the polled action', async () => {
     const labeledOnlyConfig: GitHubWatchConfig = {
       schema: 'openslack.github_watch.v1',
-      repositories: [{
-        owner: 'Negentropy-Laby',
-        repo: 'OpenSlack',
-        events: ['issues.labeled'],
-        labels: { include: ['openslack:task'] },
-      }],
+      repositories: [
+        {
+          owner: 'Negentropy-Laby',
+          repo: 'OpenSlack',
+          events: ['issues.labeled'],
+          labels: { include: ['openslack:task'] },
+        },
+      ],
     };
     const dedupe = new WatchDedupeStore(tempDir);
-    const daemon = new WatchDaemon(labeledOnlyConfig, '', dedupe, undefined, undefined, mockRecordEvent);
+    const daemon = new WatchDaemon(
+      labeledOnlyConfig,
+      '',
+      dedupe,
+      undefined,
+      undefined,
+      mockRecordEvent,
+    );
     const event: NormalizedIssueEvent = {
       action: 'opened',
       owner: 'Negentropy-Laby',
@@ -545,8 +1045,51 @@ describe('WatchDaemon polling', () => {
     // Direct once() call would record task.blocked, but pollAll() pre-filters
     // Simulate pollAll's filter: check repoConfig.events before calling once()
     const repoConfig = labeledOnlyConfig.repositories[0];
-    const eventKey = `issues.${event.action}`;
+    const eventKey = githubWebhookEventKey('issues', event.action);
+    expect(eventKey).toBe('issues.opened');
+    if (!eventKey) throw new Error('Expected a mapped issue event key');
     expect(repoConfig.events.includes(eventKey)).toBe(false);
+  });
+});
+
+describe('WatchDaemon push events', () => {
+  it('uses the full push SHA in persistent collaboration object identities', async () => {
+    const after = '0123456789abcdef0123456789abcdef01234567';
+    const recordFn = vi.fn(mockRecordEvent);
+    const daemon = new WatchDaemon(
+      config,
+      '',
+      new WatchDedupeStore(tempDir),
+      undefined,
+      undefined,
+      recordFn,
+    );
+    const event: NormalizedPushEvent = {
+      ref: 'refs/heads/main',
+      owner: 'Negentropy-Laby',
+      repo: 'OpenSlack',
+      before: 'f'.repeat(40),
+      after,
+      pusher: 'pusher',
+      deliveryId: 'push-sha-display-length',
+      commits: [
+        {
+          id: after,
+          message: 'Update watched content',
+          added: ['posts/update.md'],
+          modified: [],
+          removed: [],
+          timestamp: '2026-07-16T00:00:00Z',
+        },
+      ],
+    };
+
+    const result = await daemon.handlePushEvent(event);
+
+    expect(result?.object).toEqual({
+      kind: 'push',
+      id: `Negentropy-Laby/OpenSlack@${after}`,
+    });
   });
 });
 
@@ -575,16 +1118,25 @@ describe('WatchDaemon auto-claim', () => {
   it('does not call autoClaimFn when no autoClaimFn provided', async () => {
     const autoClaimConfig: GitHubWatchConfig = {
       schema: 'openslack.github_watch.v1',
-      repositories: [{
-        owner: 'Negentropy-Laby',
-        repo: 'OpenSlack',
-        events: ['issues.opened'],
-        labels: { include: ['openslack:task'] },
-        auto_claim: { enabled: true, agent_ids: ['test-agent'] },
-      }],
+      repositories: [
+        {
+          owner: 'Negentropy-Laby',
+          repo: 'OpenSlack',
+          events: ['issues.opened'],
+          labels: { include: ['openslack:task'] },
+          auto_claim: { enabled: true, agent_ids: ['test-agent'] },
+        },
+      ],
     };
     const dedupe = new WatchDedupeStore(tempDir);
-    const daemon = new WatchDaemon(autoClaimConfig, '', dedupe, undefined, undefined, mockRecordEvent);
+    const daemon = new WatchDaemon(
+      autoClaimConfig,
+      '',
+      dedupe,
+      undefined,
+      undefined,
+      mockRecordEvent,
+    );
     const event: NormalizedIssueEvent = {
       action: 'opened',
       owner: 'Negentropy-Laby',
@@ -607,16 +1159,25 @@ describe('WatchDaemon auto-claim', () => {
     const claimFn = vi.fn().mockResolvedValue(undefined);
     const autoClaimConfig: GitHubWatchConfig = {
       schema: 'openslack.github_watch.v1',
-      repositories: [{
-        owner: 'Negentropy-Laby',
-        repo: 'OpenSlack',
-        events: ['issues.opened'],
-        labels: { include: ['openslack:task'] },
-        auto_claim: { enabled: true, agent_ids: ['agent-a', 'agent-b'] },
-      }],
+      repositories: [
+        {
+          owner: 'Negentropy-Laby',
+          repo: 'OpenSlack',
+          events: ['issues.opened'],
+          labels: { include: ['openslack:task'] },
+          auto_claim: { enabled: true, agent_ids: ['agent-a', 'agent-b'] },
+        },
+      ],
     };
     const dedupe = new WatchDedupeStore(tempDir);
-    const daemon = new WatchDaemon(autoClaimConfig, '', dedupe, undefined, claimFn, mockRecordEvent);
+    const daemon = new WatchDaemon(
+      autoClaimConfig,
+      '',
+      dedupe,
+      undefined,
+      claimFn,
+      mockRecordEvent,
+    );
     const event: NormalizedIssueEvent = {
       action: 'opened',
       owner: 'Negentropy-Laby',
@@ -639,16 +1200,25 @@ describe('WatchDaemon auto-claim', () => {
     const claimFn = vi.fn().mockResolvedValue(undefined);
     const autoClaimConfig: GitHubWatchConfig = {
       schema: 'openslack.github_watch.v1',
-      repositories: [{
-        owner: 'Negentropy-Laby',
-        repo: 'OpenSlack',
-        events: ['issues.opened'],
-        labels: { include: ['openslack:task'] },
-        auto_claim: { enabled: true },
-      }],
+      repositories: [
+        {
+          owner: 'Negentropy-Laby',
+          repo: 'OpenSlack',
+          events: ['issues.opened'],
+          labels: { include: ['openslack:task'] },
+          auto_claim: { enabled: true },
+        },
+      ],
     };
     const dedupe = new WatchDedupeStore(tempDir);
-    const daemon = new WatchDaemon(autoClaimConfig, '', dedupe, undefined, claimFn, mockRecordEvent);
+    const daemon = new WatchDaemon(
+      autoClaimConfig,
+      '',
+      dedupe,
+      undefined,
+      claimFn,
+      mockRecordEvent,
+    );
     const event: NormalizedIssueEvent = {
       action: 'opened',
       owner: 'Negentropy-Laby',
@@ -670,16 +1240,25 @@ describe('WatchDaemon auto-claim', () => {
     const claimFn = vi.fn().mockRejectedValue(new Error('identity not found'));
     const autoClaimConfig: GitHubWatchConfig = {
       schema: 'openslack.github_watch.v1',
-      repositories: [{
-        owner: 'Negentropy-Laby',
-        repo: 'OpenSlack',
-        events: ['issues.opened'],
-        labels: { include: ['openslack:task'] },
-        auto_claim: { enabled: true, agent_ids: ['broken-agent'] },
-      }],
+      repositories: [
+        {
+          owner: 'Negentropy-Laby',
+          repo: 'OpenSlack',
+          events: ['issues.opened'],
+          labels: { include: ['openslack:task'] },
+          auto_claim: { enabled: true, agent_ids: ['broken-agent'] },
+        },
+      ],
     };
     const dedupe = new WatchDedupeStore(tempDir);
-    const daemon = new WatchDaemon(autoClaimConfig, '', dedupe, undefined, claimFn, mockRecordEvent);
+    const daemon = new WatchDaemon(
+      autoClaimConfig,
+      '',
+      dedupe,
+      undefined,
+      claimFn,
+      mockRecordEvent,
+    );
     const event: NormalizedIssueEvent = {
       action: 'opened',
       owner: 'Negentropy-Laby',

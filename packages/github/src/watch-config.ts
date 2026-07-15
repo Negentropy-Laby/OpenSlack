@@ -1,5 +1,12 @@
 import { parse as parseYaml } from 'yaml';
 import { readFileSync } from 'node:fs';
+import {
+  GITHUB_WATCH_EVENT_KEYS,
+  canonicalWatchRouteKey,
+  canonicalizeRepositoryName,
+  isGitHubWatchEventKey,
+  type GitHubWatchEventKey,
+} from './repository-event.js';
 
 export interface GitHubWatchRoute {
   sink: 'console' | 'slack' | 'webhook';
@@ -7,10 +14,12 @@ export interface GitHubWatchRoute {
   name?: string;
 }
 
+export type GitHubWatchEventList = GitHubWatchEventKey[];
+
 export interface GitHubWatchRepo {
   owner: string;
   repo: string;
-  events: string[];
+  events: GitHubWatchEventList;
   labels?: { include?: string[]; exclude?: string[] };
   routes?: GitHubWatchRoute[];
   auto_claim?: { enabled: boolean; agent_ids?: string[] };
@@ -27,7 +36,6 @@ export interface WatchConfigParseResult {
   errors: string[];
 }
 
-const VALID_EVENTS = new Set(['issues.opened', 'issues.reopened', 'issues.labeled', 'push']);
 const VALID_SINKS = new Set(['console', 'slack', 'webhook']);
 
 export function parseGitHubWatchConfig(yaml: string): WatchConfigParseResult {
@@ -56,6 +64,7 @@ export function parseGitHubWatchConfig(yaml: string): WatchConfigParseResult {
   }
 
   const repositories: GitHubWatchRepo[] = [];
+  const repositoryKeys = new Set<string>();
   for (let i = 0; i < m.repositories.length; i++) {
     const entry = m.repositories[i];
     if (!entry || typeof entry !== 'object') {
@@ -71,13 +80,28 @@ export function parseGitHubWatchConfig(yaml: string): WatchConfigParseResult {
       errors.push(`repositories[${i}].repo is required`);
     }
 
-    const events: string[] = [];
+    const repository =
+      typeof r.owner === 'string' && typeof r.repo === 'string'
+        ? canonicalizeRepositoryName(r.owner, r.repo)
+        : null;
+    if (typeof r.owner === 'string' && typeof r.repo === 'string' && !repository) {
+      errors.push(`repositories[${i}]: owner/repo must be valid GitHub repository name segments`);
+    } else if (repository) {
+      if (repositoryKeys.has(repository.canonicalFullName)) {
+        errors.push(`repositories[${i}]: duplicate repository "${repository.fullName}"`);
+      }
+      repositoryKeys.add(repository.canonicalFullName);
+    }
+
+    const events: GitHubWatchEventList = [];
     if (Array.isArray(r.events)) {
       for (const ev of r.events) {
-        if (typeof ev === 'string' && VALID_EVENTS.has(ev)) {
+        if (isGitHubWatchEventKey(ev)) {
           events.push(ev);
         } else {
-          errors.push(`repositories[${i}].events: invalid event "${String(ev)}". Must be one of: ${[...VALID_EVENTS].join(', ')}`);
+          errors.push(
+            `repositories[${i}].events: invalid event "${String(ev)}". Must be one of: ${GITHUB_WATCH_EVENT_KEYS.join(', ')}`,
+          );
         }
       }
     } else {
@@ -91,12 +115,17 @@ export function parseGitHubWatchConfig(yaml: string): WatchConfigParseResult {
     if (r.labels && typeof r.labels === 'object') {
       const lb = r.labels as Record<string, unknown>;
       labels = {
-        include: Array.isArray(lb.include) ? lb.include.filter((s: unknown) => typeof s === 'string') : undefined,
-        exclude: Array.isArray(lb.exclude) ? lb.exclude.filter((s: unknown) => typeof s === 'string') : undefined,
+        include: Array.isArray(lb.include)
+          ? lb.include.filter((s: unknown) => typeof s === 'string')
+          : undefined,
+        exclude: Array.isArray(lb.exclude)
+          ? lb.exclude.filter((s: unknown) => typeof s === 'string')
+          : undefined,
       };
     }
 
     const routes: GitHubWatchRoute[] = [];
+    const routeKeys = new Set<string>();
     if (Array.isArray(r.routes)) {
       for (const route of r.routes) {
         if (!route || typeof route !== 'object') continue;
@@ -105,11 +134,21 @@ export function parseGitHubWatchConfig(yaml: string): WatchConfigParseResult {
           errors.push(`repositories[${i}].routes: invalid sink "${String(rt.sink)}"`);
           continue;
         }
-        routes.push({
+        const parsedRoute: GitHubWatchRoute = {
           sink: rt.sink as GitHubWatchRoute['sink'],
-          channel: typeof rt.channel === 'string' ? rt.channel : undefined,
-          name: typeof rt.name === 'string' ? rt.name : undefined,
-        });
+          channel:
+            typeof rt.channel === 'string' && rt.channel.trim() ? rt.channel.trim() : undefined,
+          name: typeof rt.name === 'string' && rt.name.trim() ? rt.name.trim() : undefined,
+        };
+        const routeKey = repository ? canonicalWatchRouteKey(repository, parsedRoute) : null;
+        if (routeKey && routeKeys.has(routeKey)) {
+          errors.push(
+            `repositories[${i}].routes: duplicate canonical route for sink "${parsedRoute.sink}"`,
+          );
+          continue;
+        }
+        if (routeKey) routeKeys.add(routeKey);
+        routes.push(parsedRoute);
       }
     }
 
@@ -118,13 +157,15 @@ export function parseGitHubWatchConfig(yaml: string): WatchConfigParseResult {
       const ac = r.auto_claim as Record<string, unknown>;
       autoClaim = {
         enabled: ac.enabled === true,
-        agent_ids: Array.isArray(ac.agent_ids) ? ac.agent_ids.filter((s: unknown) => typeof s === 'string') : undefined,
+        agent_ids: Array.isArray(ac.agent_ids)
+          ? ac.agent_ids.filter((s: unknown) => typeof s === 'string')
+          : undefined,
       };
     }
 
     repositories.push({
-      owner: typeof r.owner === 'string' ? r.owner : '',
-      repo: typeof r.repo === 'string' ? r.repo : '',
+      owner: repository?.owner ?? (typeof r.owner === 'string' ? r.owner : ''),
+      repo: repository?.repo ?? (typeof r.repo === 'string' ? r.repo : ''),
       events,
       labels,
       routes: routes.length > 0 ? routes : undefined,

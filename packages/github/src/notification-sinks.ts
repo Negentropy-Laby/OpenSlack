@@ -1,5 +1,5 @@
 import type { GitHubWatchRoute } from './watch-config.js';
-import type { NotificationPayload } from './watch-daemon.js';
+import { formatNotification, type NotificationPayload } from './notification-payload.js';
 
 export interface SinkResult {
   ok: boolean;
@@ -15,14 +15,7 @@ export class ConsoleSink implements NotificationSink {
   readonly name = 'console';
 
   async send(payload: NotificationPayload, _route: GitHubWatchRoute): Promise<SinkResult> {
-    const lines = [
-      `[GitHub Watch] New issue detected`,
-      `  ${payload.repo}#${payload.issueNumber}: ${payload.title}`,
-      `  ${payload.url}`,
-      `  Labels: ${payload.labels.join(', ') || '(none)'}`,
-      `  Next: ${payload.nextAction}`,
-    ];
-    console.log(lines.join('\n'));
+    console.log(formatNotification(payload));
     return { ok: true };
   }
 }
@@ -40,12 +33,12 @@ export class SlackSink implements NotificationSink {
     if (!channel) {
       return { ok: false, error: 'Slack route missing channel' };
     }
-    const text = `[GitHub Watch] ${payload.repo}#${payload.issueNumber}: ${payload.title}\n${payload.url}\nLabels: ${payload.labels.join(', ')}\nNext: ${payload.nextAction}`;
+    const text = formatNotification(payload);
     try {
       const resp = await fetch('https://slack.com/api/chat.postMessage', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.botToken}`,
+          Authorization: `Bearer ${this.botToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ channel, text }),
@@ -53,7 +46,7 @@ export class SlackSink implements NotificationSink {
       if (!resp.ok) {
         return { ok: false, error: `Slack API HTTP ${resp.status}` };
       }
-      const data = await resp.json() as { ok?: boolean; error?: string };
+      const data = (await resp.json()) as { ok?: boolean; error?: string };
       if (!data.ok) {
         return { ok: false, error: `Slack API error: ${data.error ?? 'unknown'}` };
       }

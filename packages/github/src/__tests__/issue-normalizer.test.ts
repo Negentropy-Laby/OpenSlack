@@ -39,6 +39,14 @@ describe('normalizeIssueEvent', () => {
     expect(result!.title).toBe('Fix failing setup');
     expect(result!.labels).toEqual(['openslack:task', 'openslack:ready']);
     expect(result!.deliveryId).toBe('abc-123-def');
+    expect(result).toMatchObject({
+      kind: 'issue',
+      eventKey: 'issues.opened',
+      source: 'webhook',
+      metadata: { informational: false, senderLogin: 'contributor' },
+      repository: { canonicalFullName: 'negentropy-laby/openslack' },
+      object: { kind: 'issue', id: 'negentropy-laby/openslack#42', number: 42 },
+    });
   });
 
   it('normalizes an issues.reopened payload', () => {
@@ -64,11 +72,15 @@ describe('normalizeIssueEvent', () => {
   });
 
   it('returns null for missing issue', () => {
-    expect(normalizeIssueEvent({ action: 'opened', repository: basePayload.repository }, baseHeaders)).toBeNull();
+    expect(
+      normalizeIssueEvent({ action: 'opened', repository: basePayload.repository }, baseHeaders),
+    ).toBeNull();
   });
 
   it('returns null for missing repository', () => {
-    expect(normalizeIssueEvent({ action: 'opened', issue: basePayload.issue }, baseHeaders)).toBeNull();
+    expect(
+      normalizeIssueEvent({ action: 'opened', issue: basePayload.issue }, baseHeaders),
+    ).toBeNull();
   });
 });
 
@@ -115,7 +127,9 @@ describe('matchesRepoConfig', () => {
   });
 
   it('rejects when exclude label is present', () => {
-    expect(matchesRepoConfig({ ...baseEvent, labels: ['openslack:task', 'blocked'] }, repoConfig)).toBe(false);
+    expect(
+      matchesRepoConfig({ ...baseEvent, labels: ['openslack:task', 'blocked'] }, repoConfig),
+    ).toBe(false);
   });
 
   it('matches when no label filters configured', () => {
