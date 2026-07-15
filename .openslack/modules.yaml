@@ -1,6 +1,6 @@
 schema: openslack.modules.v2
-vitest_tests: 3688
-vitest_files: 289
+vitest_tests: 3699
+vitest_files: 290
 modules:
   - id: self_evolution
     name: Self-Evolution Kernel
@@ -23,7 +23,7 @@ modules:
       - "@openslack/kernel"
       - "@openslack/workspace"
       - "@openslack/runtime"
-    tests: 208
+    tests: 213
     test_files: 28
     golden_evals: 7
     notes: Stable release verification is available from the installed CLI and requires an out-of-band trusted Ed25519 public key; archive, SBOM, provenance, signature, identity fields, and subjects are verified without a source checkout or Bun.

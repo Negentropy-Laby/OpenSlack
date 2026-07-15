@@ -57,6 +57,9 @@ Create `CODEOWNERS` at repository root before enabling "Require review from CODE
 .openslack/self/constitution.md @wsman
 .openslack/self/invariants.yaml @wsman
 packages/kernel/src/**      @wsman
+packages/plugin-host/**     @wsman
+.openslack/plugins/**       @wsman
+.openslack/plugins.lock     @wsman
 ```
 
 ## Verification Steps

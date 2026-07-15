@@ -13,6 +13,8 @@ constitutional_paths:
 governance_paths:
   - ".openslack/agents/registry/**"
   - ".openslack/agents/prompts/**"
+  - ".openslack/plugins/**"
+  - ".openslack/plugins.lock"
   - ".openslack/policies/risk.yaml"
   - ".openslack/policies/approvals.yaml"
   - ".openslack/policies/workspace_write_permissions.yaml"
@@ -22,6 +24,7 @@ governance_paths:
 execution_paths:
   - "packages/policy/src/**"
   - "packages/self-evolution/src/core/**"
+  - "packages/plugin-host/**"
 
 amendment_process:
   requires: "human_approval"
