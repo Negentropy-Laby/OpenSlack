@@ -3,6 +3,7 @@
   "references": [
     { "path": "packages/kernel" },
     { "path": "packages/plugin-api" },
+    { "path": "packages/plugin-host" },
     { "path": "packages/sdk" },
     { "path": "packages/workspace" },
     { "path": "packages/core" },

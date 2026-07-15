@@ -66,6 +66,11 @@ export interface BundledPluginContext {
 export interface BundledActionContribution<TPlanStep = HostPlanStep> {
   readonly kind: 'bundled_action';
   readonly id: string;
+  /** Host-owned action identity resolved and sealed before the builder can run. */
+  readonly target: {
+    readonly kind: 'host_action';
+    readonly id: string;
+  };
   buildPlanStep(
     input: Readonly<Record<string, Exclude<JsonPrimitive, null>>>,
     context: BundledPluginContext,
