@@ -65,9 +65,14 @@ new event available to a deployed GitHub App installation.
 P3-PR1 also retains the existing check-then-record `WatchDedupeStore`. Do not
 enable high-volume review or check event processing as a production-complete
 path until P3-PR2 lands the atomic queue, per-route idempotency, bounded
-retention and attempts, backoff, compaction, and restart recovery. This keeps
-the current PR focused on the event contract and raw webhook trust boundary
-without hiding the delivery durability prerequisite.
+retention and attempts, backoff, compaction, and restart recovery.
+
+PR, review, and check notifications in P3-PR1 are webhook observations, not
+authoritative readiness, approval, or check state. Any workflow that may act
+on them must wait for P3-PR2's repository-scoped live-state refresh and must
+fail closed when installation scope is missing, mismatched, or unavailable.
+This keeps the current PR focused on the event contract and raw webhook trust
+boundary without hiding its delivery durability and live-state prerequisites.
 
 ## Runtime Architecture
 

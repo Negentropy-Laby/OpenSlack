@@ -1050,8 +1050,10 @@ describe('WatchDaemon polling', () => {
     if (!eventKey) throw new Error('Expected a mapped issue event key');
     expect(repoConfig.events.includes(eventKey)).toBe(false);
   });
+});
 
-  it('uses the same 12-character push SHA in collaboration object identities', async () => {
+describe('WatchDaemon push events', () => {
+  it('uses the full push SHA in persistent collaboration object identities', async () => {
     const after = '0123456789abcdef0123456789abcdef01234567';
     const recordFn = vi.fn(mockRecordEvent);
     const daemon = new WatchDaemon(
@@ -1086,7 +1088,7 @@ describe('WatchDaemon polling', () => {
 
     expect(result?.object).toEqual({
       kind: 'push',
-      id: `Negentropy-Laby/OpenSlack@${after.slice(0, 12)}`,
+      id: `Negentropy-Laby/OpenSlack@${after}`,
     });
   });
 });

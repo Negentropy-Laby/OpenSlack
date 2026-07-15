@@ -610,7 +610,7 @@ export class WatchDaemon {
           actor: { id: 'github-watch', kind: 'github', provider: 'github' },
           object: {
             kind: 'push',
-            id: `${event.owner}/${event.repo}@${abbreviateGitHubSha(event.after)}`,
+            id: `${event.owner}/${event.repo}@${event.after}`,
           },
           source: { kind: 'github', ref: 'github.watch.webhook' },
           summary: hasPostChanges
