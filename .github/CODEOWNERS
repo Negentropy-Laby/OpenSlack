@@ -5,9 +5,12 @@ CLAUDE.md                                       @wsman
 .openslack/policies/**                         @wsman
 .openslack/agents/registry/**                  @wsman
 .openslack/agents/prompts/**                   @wsman
+.openslack/plugins/**                          @wsman
+.openslack/plugins.lock                        @wsman
 .openslack/self/constitution.md                 @wsman
 .openslack/self/invariants.yaml                 @wsman
 packages/kernel/src/**                         @wsman
+packages/plugin-host/**                        @wsman
 
 # Core workflow artifacts — Workflow-Trust: core requires a CODEOWNER review
 packages/workflows/src/builtins/**             @wsman

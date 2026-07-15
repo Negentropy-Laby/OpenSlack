@@ -81,6 +81,21 @@ describe('classifyPaths', () => {
     expect(classifyPaths(['.openslack/agents/registry/codex_agent.yaml'])).toBe('red');
   });
 
+  it('classifies plugin host implementation paths as red without requiring the path to exist', () => {
+    expect(classifyPaths(['packages/plugin-host/package.json'])).toBe('red');
+    expect(classifyPaths(['packages/plugin-host/src/runtime.ts'])).toBe('red');
+    expect(classifyPaths(['packages/plugin-host/src/future/not-yet-created.ts'])).toBe('red');
+  });
+
+  it('classifies plugin manifests and configuration as red', () => {
+    expect(classifyPaths(['.openslack/plugins/github-watch/plugin.json'])).toBe('red');
+    expect(classifyPaths(['.openslack/plugins/github-watch/config.yaml'])).toBe('red');
+  });
+
+  it('classifies the plugin lockfile as red', () => {
+    expect(classifyPaths(['.openslack/plugins.lock'])).toBe('red');
+  });
+
   it('classifies canonical agent instructions as red', () => {
     expect(classifyPaths(['AGENTS.md'])).toBe('red');
     expect(classifyPaths(['CLAUDE.md'])).toBe('red');
@@ -120,6 +135,16 @@ describe('classifyPaths', () => {
 
   it('returns red for yellow + red mixed', () => {
     expect(classifyPaths(['packages/core/src/foo.ts', '.github/workflows/test.yml'])).toBe('red');
+  });
+
+  it('returns the maximum plugin risk for mixed green, yellow, and red paths', () => {
+    expect(
+      classifyPaths([
+        'docs/plugins.md',
+        'packages/operator/src/planner.ts',
+        '.openslack/plugins/github-watch/plugin.json',
+      ]),
+    ).toBe('red');
   });
 
   it('defaults unmatched paths to yellow', () => {

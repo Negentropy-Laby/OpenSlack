@@ -29,9 +29,12 @@ export const ZONE_PATTERNS: readonly ZonePatternDefinition[] = [
       '.openslack/policies/**',
       '.openslack/agents/registry/**',
       '.openslack/agents/prompts/**',
+      '.openslack/plugins/**',
+      '.openslack/plugins.lock',
       '.openslack/self/constitution.md',
       '.openslack/self/invariants.yaml',
       'packages/kernel/src/**',
+      'packages/plugin-host/**',
     ],
   },
   {

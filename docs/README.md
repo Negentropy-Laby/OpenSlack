@@ -32,7 +32,7 @@ Use this page when you know what you want to do, but not which document owns it.
 | Aby external runtime setup | `guides/aby-integration.md`, `developer/aby-bridge-integration-plan.md`, `developer/mcp-runtime-lifecycle.md` |
 | Embed OpenSlack into Negentropy-Lab as an external scenario-pack slot | `product/negentropy-lab-integration.md`, `guides/embed-openslack-in-negentropy-lab.md`, `developer/negentropy-slot-adapter.md`, `security/negentropy-slot-boundary.md` |
 | Maintain the GitHub profile README with Profile Sync | `product/profile-sync.md`, `user-guide.md` |
-| Self-evolution, risk zones, and rollback | `product/phase-1.md`, `developer/self-evolution-kernel.md`, `security/self-evolution-guardrails.md` |
+| Self-evolution, risk zones, plugin trust, and rollback | `product/phase-1.md`, `developer/self-evolution-kernel.md`, `security/self-evolution-guardrails.md`, `security/plugin-trust-model.md` |
 | PR review, human approval, and merge governance | `product/module-04-pr-review-merge-steward.md`, `security/human-approval.md`, `user-guide.md` |
 | Collaboration events, handoffs, decisions, rooms, and workflows | `product/collaboration-layer.md`, `developer/collaboration-events.md`, `security/collaboration-audit.md` |
 | Dynamic workflow recommendation, pattern library, drafts, and policy | `guides/dynamic-workflow-workbench.md`, `product/dynamic-workflows.md`, `product/agent-work-units.md` |

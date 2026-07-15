@@ -2,6 +2,8 @@
 
 This document defines the hard security boundary between OpenSlack and Negentropy-Lab when OpenSlack contributes to the `scenario-pack.extension` slot as an external provider. OpenSlack remains a GitHub-agent workbench; Negentropy-Lab remains the authority owner and control plane. The slot starts in `SHADOW` mode and never escalates to `ENFORCE` without a human-governed decision.
 
+The external `SlotContribution` contract is not OpenSlack's internal plugin execution contract. A dedicated adapter projects OpenSlack evidence into the upstream slot schema; `PluginHost` does not load or execute the contribution, and the adapter is not an internal plugin loader. See [Plugin Trust Model](plugin-trust-model.md) for the separate OpenSlack-owned contract.
+
 ## Hard Rules
 
 1. **OpenSlack does not own `AuthorityState`.** Authority state, truth triad ownership, and policy governance remain in Negentropy-Lab.
