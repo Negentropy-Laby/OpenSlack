@@ -1,0 +1,23 @@
+{
+  "schema": "openslack.plugin.v1",
+  "id": "issue-observer",
+  "version": "1.0.0",
+  "name": "Issue observer",
+  "description": "Adds a read-only alias for host PR status.",
+  "requires": { "openslack": ">=0.2.0 <1.0.0" },
+  "gate": { "mode": "SHADOW", "gateId": "host.read-only" },
+  "capabilities": ["host.actions.read", "github.pull_requests.read"],
+  "contributes": [
+    {
+      "kind": "action_alias",
+      "id": "show-pr",
+      "target": { "kind": "host_action", "id": "pr.status" },
+      "inputs": {
+        "prNumber": { "type": "number", "required": true }
+      },
+      "inputMapping": {
+        "prNumber": { "kind": "input", "name": "prNumber" }
+      }
+    }
+  ]
+}

@@ -1,0 +1,297 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/plugin-manifest-v1.schema.json",
+  "title": "OpenSlack Plugin Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "version",
+    "name",
+    "requires",
+    "gate",
+    "capabilities",
+    "contributes"
+  ],
+  "properties": {
+    "schema": { "const": "openslack.plugin.v1" },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^(?!openslack(?:-|$)|built-in$|plugin$|workspace$|external$|negentropy$)[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+    },
+    "version": {
+      "type": "string",
+      "maxLength": 128,
+      "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$"
+    },
+    "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "description": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "requires": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["openslack"],
+      "properties": {
+        "openslack": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^(?:\\^|~|>=|<=|>|<|=)?(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:[ ]+(?:\\^|~|>=|<=|>|<|=)?(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*))*$"
+        }
+      }
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "gateId"],
+      "properties": {
+        "mode": { "enum": ["SHADOW", "ENFORCE"] },
+        "gateId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+        }
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "host.actions.read",
+          "host.workflows.read",
+          "workspace.read",
+          "github.issues.read",
+          "github.pull_requests.read",
+          "github.checks.read",
+          "collaboration.read"
+        ]
+      }
+    },
+    "contributes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "oneOf": [{ "$ref": "#/$defs/actionAlias" }, { "$ref": "#/$defs/workflowAlias" }]
+      }
+    }
+  },
+  "$defs": {
+    "localId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+    },
+    "hostReference": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$"
+    },
+    "inputDefinition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["string", "number", "boolean"] },
+        "required": { "type": "boolean" },
+        "description": { "type": "string", "minLength": 1, "maxLength": 240 }
+      }
+    },
+    "inputDefinitions": {
+      "type": "object",
+      "maxProperties": 32,
+      "propertyNames": {
+        "allOf": [
+          {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$"
+          },
+          {
+            "not": {
+              "enum": [
+                "__proto__",
+                "prototype",
+                "constructor",
+                "toString",
+                "command",
+                "argv",
+                "args",
+                "shell",
+                "exec",
+                "spawn",
+                "template",
+                "path",
+                "file",
+                "module",
+                "url",
+                "risk",
+                "riskLevel",
+                "riskZone",
+                "confirmationRequired"
+              ]
+            }
+          }
+        ]
+      },
+      "additionalProperties": { "$ref": "#/$defs/inputDefinition" }
+    },
+    "constantBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "value"],
+      "properties": {
+        "kind": { "const": "constant" },
+        "value": {
+          "anyOf": [{ "type": "string" }, { "type": "number" }, { "type": "boolean" }]
+        }
+      }
+    },
+    "inputBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "name"],
+      "properties": {
+        "kind": { "const": "input" },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$",
+          "not": {
+            "enum": [
+              "__proto__",
+              "prototype",
+              "constructor",
+              "toString",
+              "command",
+              "argv",
+              "args",
+              "shell",
+              "exec",
+              "spawn",
+              "template",
+              "path",
+              "file",
+              "module",
+              "url",
+              "risk",
+              "riskLevel",
+              "riskZone",
+              "confirmationRequired"
+            ]
+          }
+        }
+      }
+    },
+    "inputMapping": {
+      "type": "object",
+      "maxProperties": 32,
+      "propertyNames": { "$ref": "#/$defs/inputBinding/properties/name" },
+      "additionalProperties": {
+        "oneOf": [{ "$ref": "#/$defs/constantBinding" }, { "$ref": "#/$defs/inputBinding" }]
+      }
+    },
+    "actionAlias": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "target"],
+      "properties": {
+        "kind": { "const": "action_alias" },
+        "id": { "$ref": "#/$defs/localId" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "inputs": { "$ref": "#/$defs/inputDefinitions" },
+        "inputMapping": { "$ref": "#/$defs/inputMapping" },
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id"],
+          "properties": {
+            "kind": { "const": "host_action" },
+            "id": {
+              "allOf": [{ "$ref": "#/$defs/hostReference" }, { "not": { "const": "pr.merge" } }]
+            }
+          }
+        }
+      }
+    },
+    "workflowAlias": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id", "target"],
+      "properties": {
+        "kind": { "const": "workflow_alias" },
+        "id": { "$ref": "#/$defs/localId" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "inputs": { "$ref": "#/$defs/inputDefinitions" },
+        "inputMapping": { "$ref": "#/$defs/inputMapping" },
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "id"],
+          "properties": {
+            "kind": { "const": "host_workflow" },
+            "id": { "$ref": "#/$defs/hostReference" }
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "contributes": {
+            "type": "array",
+            "contains": {
+              "type": "object",
+              "required": ["kind"],
+              "properties": { "kind": { "const": "action_alias" } }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "contains": { "const": "host.actions.read" }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "contributes": {
+            "type": "array",
+            "contains": {
+              "type": "object",
+              "required": ["kind"],
+              "properties": { "kind": { "const": "workflow_alias" } }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "capabilities": {
+            "type": "array",
+            "contains": { "const": "host.workflows.read" }
+          }
+        }
+      }
+    }
+  ]
+}

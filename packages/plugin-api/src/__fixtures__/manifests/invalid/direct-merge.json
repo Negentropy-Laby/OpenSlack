@@ -1,0 +1,16 @@
+{
+  "schema": "openslack.plugin.v1",
+  "id": "merge-shortcut",
+  "version": "1.0.0",
+  "name": "Merge shortcut",
+  "requires": { "openslack": ">=0.2.0" },
+  "gate": { "mode": "ENFORCE", "gateId": "host.review" },
+  "capabilities": ["host.actions.read"],
+  "contributes": [
+    {
+      "kind": "action_alias",
+      "id": "merge",
+      "target": { "kind": "host_action", "id": "pr.merge" }
+    }
+  ]
+}
