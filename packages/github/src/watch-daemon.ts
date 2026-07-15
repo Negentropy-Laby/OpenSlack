@@ -1,13 +1,38 @@
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http';
 import type { GitHubWatchConfig, GitHubWatchRoute } from './watch-config.js';
 import { verifyGitHubWebhookSignature } from './webhook-verify.js';
-import { normalizeIssueEvent, matchesRepoConfig, type NormalizedIssueEvent } from './issue-normalizer.js';
+import {
+  normalizeIssueEvent,
+  matchesRepoConfig,
+  type NormalizedIssueEvent,
+} from './issue-normalizer.js';
 import { WatchDedupeStore } from './watch-dedupe.js';
 import { createSinks, type NotificationSink } from './notification-sinks.js';
 import { WatchCursorStore, type RepoCursor } from './watch-cursor.js';
 import { pollRepoIssues } from './watch-poller.js';
 import { normalizePollIssue } from './poll-normalizer.js';
 import { getClient } from './client.js';
+import {
+  readWebhookBody,
+  WebhookBodyReadError,
+  type WebhookBodyReadOptions,
+} from './webhook-body.js';
+import {
+  createNotificationPayload,
+  formatNotification,
+  type NotificationPayload,
+} from './notification-payload.js';
+import { normalizeRepositoryEvent } from './repository-normalizer.js';
+import {
+  githubWebhookEventKey,
+  isGitHubWebhookEventName,
+  repositoriesMatch,
+  repositoryEventStableKey,
+  type RepositoryEvent,
+} from './repository-event.js';
+
+export { createNotificationPayload } from './notification-payload.js';
+export type { NotificationPayload } from './notification-payload.js';
 
 export interface CollaborationEventRecord {
   id: string;
@@ -25,56 +50,32 @@ export interface CollaborationEventRecord {
 
 export type RecordEventFn = (event: unknown) => CollaborationEventRecord;
 
-export interface NotificationPayload {
-  type: string;
-  repo: string;
-  issueNumber: number;
-  title: string;
-  url: string;
-  labels: string[];
-  nextAction: string;
-}
-
-export type AutoClaimFn = (
-  event: NormalizedIssueEvent,
-  agentIds: string[],
-) => Promise<void>;
-
-function readBody(req: IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    let body = '';
-    req.on('data', (chunk: string | Buffer) => { body += chunk; });
-    req.on('end', () => resolve(body));
-    req.on('error', reject);
-  });
-}
+export type AutoClaimFn = (event: NormalizedIssueEvent, agentIds: string[]) => Promise<void>;
 
 function jsonResponse(res: ServerResponse, status: number, data: Record<string, unknown>): void {
   res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(data));
 }
 
-export function createNotificationPayload(event: NormalizedIssueEvent): NotificationPayload {
-  return {
-    type: 'openslack.issue.detected',
-    repo: `${event.owner}/${event.repo}`,
-    issueNumber: event.issueNumber,
-    title: event.title,
-    url: event.url,
-    labels: event.labels,
-    nextAction: `openslack agent tick --agent-id <id> --source github-issues`,
-  };
+function closingJsonResponse(
+  req: IncomingMessage,
+  res: ServerResponse,
+  status: number,
+  data: Record<string, unknown>,
+): void {
+  res.shouldKeepAlive = false;
+  res.once('finish', () => {
+    if (!req.destroyed) req.destroy();
+  });
+  res.writeHead(status, {
+    'Content-Type': 'application/json',
+    Connection: 'close',
+  });
+  res.end(JSON.stringify(data));
 }
 
 export function formatConsoleNotification(payload: NotificationPayload): string {
-  const lines: string[] = [
-    `[GitHub Watch] New issue detected`,
-    `  ${payload.repo}#${payload.issueNumber}: ${payload.title}`,
-    `  ${payload.url}`,
-    `  Labels: ${payload.labels.join(', ') || '(none)'}`,
-    `  Next: ${payload.nextAction}`,
-  ];
-  return lines.join('\n');
+  return formatNotification(payload);
 }
 
 function recordNotificationEvent(
@@ -86,21 +87,63 @@ function recordNotificationEvent(
 ): void {
   if (!recordFn) return;
   try {
+    const subject = notificationSubject(payload);
     recordFn({
       type: success ? 'notification.sent' : 'notification.failed',
       actor: { id: 'github-watch', kind: 'github', provider: 'github' },
-      object: { kind: 'issue', id: `${payload.repo}#${payload.issueNumber}`, url: payload.url },
+      object: {
+        kind: notificationCollaborationObjectKind(payload),
+        id: payload.objectId,
+        url: payload.url,
+      },
       source: { kind: 'github', ref: 'github.watch.notification' },
       summary: success
-        ? `Notification sent via ${route.sink} for ${payload.repo}#${payload.issueNumber}`
-        : `Notification failed via ${route.sink} for ${payload.repo}#${payload.issueNumber}: ${error ?? 'unknown'}`,
+        ? `Notification sent via ${route.sink} for ${subject}`
+        : `Notification failed via ${route.sink} for ${subject}: ${error ?? 'unknown'}`,
       visibility: 'local',
       redacted: false,
       containsSensitiveData: false,
-      metadata: { sink: route.sink, channel: route.channel, error },
+      metadata: {
+        sink: route.sink,
+        channel: route.channel,
+        error,
+        objectKind: payload.objectKind,
+        eventKey: payload.eventKey,
+        eventStableKey: payload.eventStableKey,
+        informational: payload.informational,
+      },
     });
   } catch {
     // best-effort event recording
+  }
+}
+
+function notificationSubject(payload: NotificationPayload): string {
+  switch (payload.objectKind) {
+    case 'issue':
+      return `${payload.repo}#${payload.issueNumber}`;
+    case 'pull_request':
+    case 'review':
+      return `${payload.repo}#${payload.pullRequestNumber}`;
+    case 'push':
+      return `${payload.repo}@${payload.after.slice(0, 12)}`;
+    case 'check':
+      return `${payload.repo} check ${payload.checkId}`;
+  }
+}
+
+function notificationCollaborationObjectKind(
+  payload: NotificationPayload,
+): 'issue' | 'pr' | 'workspace' {
+  switch (payload.objectKind) {
+    case 'issue':
+      return 'issue';
+    case 'pull_request':
+    case 'review':
+      return 'pr';
+    case 'push':
+    case 'check':
+      return 'workspace';
   }
 }
 
@@ -112,6 +155,7 @@ export class WatchDaemon {
   private cursorStore: WatchCursorStore;
   private autoClaimFn: AutoClaimFn | null;
   private recordEventFn: RecordEventFn | null;
+  private webhookBodyReadOptions: WebhookBodyReadOptions;
   private server: Server | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private profileSyncWorker: import('./profile-sync-worker.js').ProfileSyncWorker | null = null;
@@ -123,6 +167,7 @@ export class WatchDaemon {
     sinkOptions?: { slackBotToken?: string; webhookUrl?: string },
     autoClaimFn?: AutoClaimFn,
     recordEventFn?: RecordEventFn,
+    webhookBodyReadOptions: WebhookBodyReadOptions = {},
   ) {
     this.config = config;
     this.secret = secret;
@@ -131,6 +176,7 @@ export class WatchDaemon {
     this.cursorStore = new WatchCursorStore();
     this.autoClaimFn = autoClaimFn ?? null;
     this.recordEventFn = recordEventFn ?? null;
+    this.webhookBodyReadOptions = webhookBodyReadOptions;
   }
 
   async start(port: number): Promise<void> {
@@ -176,10 +222,11 @@ export class WatchDaemon {
     });
   }
 
-  async once(event: NormalizedIssueEvent, sourceRef: string = 'github.watch.webhook'): Promise<CollaborationEventRecord | null> {
-    const repoConfig = this.config.repositories.find(
-      (r) => r.owner === event.owner && r.repo === event.repo,
-    );
+  async once(
+    event: NormalizedIssueEvent,
+    sourceRef: string = 'github.watch.webhook',
+  ): Promise<CollaborationEventRecord | null> {
+    const repoConfig = this.config.repositories.find((r) => repositoriesMatch(event, r));
     if (!repoConfig) return null;
 
     const matches = matchesRepoConfig(event, repoConfig);
@@ -201,7 +248,11 @@ export class WatchDaemon {
         collabEvent = this.recordEventFn({
           type: eventType,
           actor: { id: 'github-watch', kind: 'github', provider: 'github' },
-          object: { kind: 'issue', id: `${event.owner}/${event.repo}#${event.issueNumber}`, url: event.url },
+          object: {
+            kind: 'issue',
+            id: `${event.owner}/${event.repo}#${event.issueNumber}`,
+            url: event.url,
+          },
           source: { kind: 'github', ref: sourceRef },
           summary,
           visibility: 'local',
@@ -221,20 +272,7 @@ export class WatchDaemon {
     if (matches) {
       const payload = createNotificationPayload(event);
       const routes = repoConfig.routes ?? [{ sink: 'console' as const }];
-      for (const route of routes) {
-        const sink = this.sinks.get(route.sink);
-        if (!sink) {
-          console.warn(`No sink configured for: ${route.sink}`);
-          recordNotificationEvent(this.recordEventFn, false, route, payload, `No sink configured: ${route.sink}`);
-          continue;
-        }
-        try {
-          const result = await sink.send(payload, route);
-          recordNotificationEvent(this.recordEventFn, result.ok, route, payload, result.error);
-        } catch (err) {
-          recordNotificationEvent(this.recordEventFn, false, route, payload, (err as Error).message);
-        }
-      }
+      await this.dispatchNotification(payload, routes);
     }
 
     if (matches && repoConfig.auto_claim?.enabled && this.autoClaimFn) {
@@ -243,12 +281,63 @@ export class WatchDaemon {
         try {
           await this.autoClaimFn(event, agentIds);
         } catch (err) {
-          console.error(`[Auto-Claim] Error for ${event.owner}/${event.repo}#${event.issueNumber}: ${(err as Error).message}`);
+          console.error(
+            `[Auto-Claim] Error for ${event.owner}/${event.repo}#${event.issueNumber}: ${(err as Error).message}`,
+          );
         }
       }
     }
 
     return collabEvent;
+  }
+
+  async observeRepositoryEvent(
+    event: Exclude<RepositoryEvent, { kind: 'issue' | 'push' }>,
+    repoConfig: GitHubWatchConfig['repositories'][number],
+  ): Promise<boolean> {
+    const stableKey = repositoryEventStableKey(event);
+    if (event.deliveryId && this.dedupe.isDuplicate(event.deliveryId)) return false;
+    if (this.dedupe.isDuplicateByStableKey(stableKey)) return false;
+
+    // P3-PR2 replaces this check-then-record compatibility store with an atomic,
+    // lease-backed delivery queue. PR1 keeps the old delivery semantics while
+    // establishing the event and projection contracts.
+    this.dedupe.record(event.deliveryId || undefined, stableKey);
+    const payload = createNotificationPayload(event);
+    await this.dispatchNotification(payload, repoConfig.routes ?? [{ sink: 'console' as const }]);
+    return true;
+  }
+
+  private async dispatchNotification(
+    payload: NotificationPayload,
+    routes: GitHubWatchRoute[],
+  ): Promise<void> {
+    for (const route of routes) {
+      const sink = this.sinks.get(route.sink);
+      if (!sink) {
+        console.warn(`No sink configured for: ${route.sink}`);
+        recordNotificationEvent(
+          this.recordEventFn,
+          false,
+          route,
+          payload,
+          `No sink configured: ${route.sink}`,
+        );
+        continue;
+      }
+      try {
+        const result = await sink.send(payload, route);
+        recordNotificationEvent(this.recordEventFn, result.ok, route, payload, result.error);
+      } catch (error) {
+        recordNotificationEvent(
+          this.recordEventFn,
+          false,
+          route,
+          payload,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    }
   }
 
   async pollAll(): Promise<{ reposPolled: number; eventsDispatched: number; errors: string[] }> {
@@ -265,8 +354,7 @@ export class WatchDaemon {
       result.reposPolled++;
 
       const cursor = this.cursorStore.getCursor(repoKey);
-      const since = cursor?.lastSeenAt
-        ?? new Date(Date.now() - 5 * 60_000).toISOString();
+      const since = cursor?.lastSeenAt ?? new Date(Date.now() - 5 * 60_000).toISOString();
 
       const pollResult = await pollRepoIssues(
         client.octokit,
@@ -296,13 +384,17 @@ export class WatchDaemon {
 
   async startPolling(intervalSeconds: number = 300): Promise<void> {
     const firstResult = await this.pollAll();
-    console.log(`[Poll] Initial poll complete: ${firstResult.reposPolled} repos, ${firstResult.eventsDispatched} events`);
+    console.log(
+      `[Poll] Initial poll complete: ${firstResult.reposPolled} repos, ${firstResult.eventsDispatched} events`,
+    );
 
     this.pollTimer = setInterval(async () => {
       try {
         const pollResult = await this.pollAll();
         if (pollResult.eventsDispatched > 0 || pollResult.errors.length > 0) {
-          console.log(`[Poll] ${pollResult.reposPolled} repos, ${pollResult.eventsDispatched} events${pollResult.errors.length > 0 ? `, ${pollResult.errors.length} errors` : ''}`);
+          console.log(
+            `[Poll] ${pollResult.reposPolled} repos, ${pollResult.eventsDispatched} events${pollResult.errors.length > 0 ? `, ${pollResult.errors.length} errors` : ''}`,
+          );
         }
       } catch (err) {
         console.error(`[Poll] Error: ${(err as Error).message}`);
@@ -323,29 +415,58 @@ export class WatchDaemon {
       return;
     }
 
-    const body = await readBody(req);
     const headers: Record<string, string | undefined> = {};
     for (const key of Object.keys(req.headers)) {
       headers[key] = req.headers[key] as string | undefined;
     }
 
+    let rawBody: Buffer;
+    try {
+      rawBody = await readWebhookBody(req, this.webhookBodyReadOptions);
+    } catch (error) {
+      if (error instanceof WebhookBodyReadError) {
+        closingJsonResponse(req, res, error.statusCode, {
+          error: error.message,
+          code: error.code,
+        });
+      } else {
+        closingJsonResponse(req, res, 400, { error: 'Could not read webhook body' });
+      }
+      return;
+    }
+
     const signature = headers['x-hub-signature-256'];
-    if (!verifyGitHubWebhookSignature(body, signature, this.secret)) {
+    if (!verifyGitHubWebhookSignature(rawBody, signature, this.secret)) {
       jsonResponse(res, 401, { error: 'Invalid signature' });
       return;
     }
 
     const gitHubEvent = headers['x-github-event'];
-    if (gitHubEvent !== 'issues' && gitHubEvent !== 'push') {
+    if (!isGitHubWebhookEventName(gitHubEvent)) {
       jsonResponse(res, 202, { ok: true, ignored: `event type: ${gitHubEvent}` });
       return;
     }
 
     let payload: unknown;
     try {
+      const body = new TextDecoder('utf-8', { fatal: true }).decode(rawBody);
       payload = JSON.parse(body);
     } catch {
       jsonResponse(res, 400, { error: 'Invalid JSON' });
+      return;
+    }
+
+    const root =
+      payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+        ? (payload as Record<string, unknown>)
+        : null;
+    const action = typeof root?.action === 'string' ? root.action : undefined;
+    const eventKey = githubWebhookEventKey(gitHubEvent, action);
+    if (!eventKey) {
+      jsonResponse(res, 202, {
+        ok: true,
+        ignored: `action ${action ?? '(missing)'} for ${gitHubEvent}`,
+      });
       return;
     }
 
@@ -356,17 +477,20 @@ export class WatchDaemon {
         return;
       }
 
-      const repoConfig = this.config.repositories.find(
-        (r) => r.owner === normalized.owner && r.repo === normalized.repo,
-      );
+      const repoConfig = this.config.repositories.find((r) => repositoriesMatch(normalized, r));
       if (!repoConfig) {
-        jsonResponse(res, 202, { ok: true, ignored: `repo not in allowlist: ${normalized.owner}/${normalized.repo}` });
+        jsonResponse(res, 202, {
+          ok: true,
+          ignored: `repo not in allowlist: ${normalized.owner}/${normalized.repo}`,
+        });
         return;
       }
 
-      const eventKey = `issues.${normalized.action}`;
       if (!repoConfig.events.includes(eventKey)) {
-        jsonResponse(res, 202, { ok: true, ignored: `action ${normalized.action} not watched for ${normalized.owner}/${normalized.repo}` });
+        jsonResponse(res, 202, {
+          ok: true,
+          ignored: `action ${normalized.action} not watched for ${normalized.owner}/${normalized.repo}`,
+        });
         return;
       }
 
@@ -380,23 +504,27 @@ export class WatchDaemon {
     }
 
     if (gitHubEvent === 'push') {
-      const { normalizePushEvent, matchesPushRepoConfig } = await import('./push-normalizer.js');
+      const { normalizePushEvent } = await import('./push-normalizer.js');
       const normalized = normalizePushEvent(payload, headers);
       if (!normalized) {
         jsonResponse(res, 202, { ok: true, ignored: 'no relevant commits' });
         return;
       }
 
-      const repoConfig = this.config.repositories.find(
-        (r) => r.owner === normalized.owner && r.repo === normalized.repo,
-      );
+      const repoConfig = this.config.repositories.find((r) => repositoriesMatch(normalized, r));
       if (!repoConfig) {
-        jsonResponse(res, 202, { ok: true, ignored: `repo not in allowlist: ${normalized.owner}/${normalized.repo}` });
+        jsonResponse(res, 202, {
+          ok: true,
+          ignored: `repo not in allowlist: ${normalized.owner}/${normalized.repo}`,
+        });
         return;
       }
 
       if (!repoConfig.events.includes('push')) {
-        jsonResponse(res, 202, { ok: true, ignored: `push not watched for ${normalized.owner}/${normalized.repo}` });
+        jsonResponse(res, 202, {
+          ok: true,
+          ignored: `push not watched for ${normalized.owner}/${normalized.repo}`,
+        });
         return;
       }
 
@@ -408,9 +536,44 @@ export class WatchDaemon {
       }
       return;
     }
+
+    const normalized = normalizeRepositoryEvent(gitHubEvent, payload, headers);
+    if (!normalized || normalized.kind === 'issue' || normalized.kind === 'push') {
+      jsonResponse(res, 400, { error: `Could not normalize ${gitHubEvent} event` });
+      return;
+    }
+
+    const repoConfig = this.config.repositories.find((repository) =>
+      repositoriesMatch(normalized.repository, repository),
+    );
+    if (!repoConfig) {
+      jsonResponse(res, 202, {
+        ok: true,
+        ignored: `repo not in allowlist: ${normalized.repository.fullName}`,
+      });
+      return;
+    }
+    if (!repoConfig.events.includes(normalized.eventKey)) {
+      jsonResponse(res, 202, {
+        ok: true,
+        ignored: `${normalized.eventKey} not watched for ${normalized.repository.fullName}`,
+      });
+      return;
+    }
+
+    const dispatched = await this.observeRepositoryEvent(normalized, repoConfig);
+    jsonResponse(
+      res,
+      200,
+      dispatched
+        ? { ok: true, event_key: normalized.eventKey }
+        : { ok: true, ignored: 'duplicate or filtered' },
+    );
   }
 
-  async handlePushEvent(event: import('./push-normalizer.js').NormalizedPushEvent): Promise<CollaborationEventRecord | null> {
+  async handlePushEvent(
+    event: import('./push-normalizer.js').NormalizedPushEvent,
+  ): Promise<CollaborationEventRecord | null> {
     const stableKey = this.dedupe.buildPushStableKey(event);
 
     if (event.deliveryId && this.dedupe.isDuplicate(event.deliveryId)) return null;
@@ -439,7 +602,10 @@ export class WatchDaemon {
         collabEvent = this.recordEventFn({
           type: hasPostChanges && configMatches ? 'profile_sync.triggered' : 'push.detected',
           actor: { id: 'github-watch', kind: 'github', provider: 'github' },
-          object: { kind: 'push', id: `${event.owner}/${event.repo}@${event.after.substring(0, 7)}` },
+          object: {
+            kind: 'push',
+            id: `${event.owner}/${event.repo}@${event.after.substring(0, 7)}`,
+          },
           source: { kind: 'github', ref: 'github.watch.webhook' },
           summary: hasPostChanges
             ? `Push to ${event.owner}/${event.repo} contains whitepaper changes (${event.commits.length} commit(s))`
@@ -472,7 +638,9 @@ export class WatchDaemon {
 
     // Mode: watch — record triggered + console notification
     if (psConfig.mode === 'watch') {
-      console.log(`[Profile Sync Watch] Push to ${pushRepo} detected ${event.commits.length} post change(s). Run 'openslack collaboration workflow profile-sync run' to create PR.`);
+      console.log(
+        `[Profile Sync Watch] Push to ${pushRepo} detected ${event.commits.length} post change(s). Run 'openslack collaboration workflow profile-sync run' to create PR.`,
+      );
       return collabEvent;
     }
 

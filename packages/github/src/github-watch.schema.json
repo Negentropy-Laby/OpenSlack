@@ -19,7 +19,21 @@
             "type": "array",
             "items": {
               "type": "string",
-              "enum": ["issues.opened", "issues.reopened", "issues.labeled"]
+              "enum": [
+                "issues.opened",
+                "issues.reopened",
+                "issues.labeled",
+                "push",
+                "pull_request.opened",
+                "pull_request.synchronize",
+                "pull_request.reopened",
+                "pull_request.closed",
+                "pull_request.ready_for_review",
+                "pull_request_review.submitted",
+                "pull_request_review.dismissed",
+                "check_run.completed",
+                "check_suite.completed"
+              ]
             },
             "minItems": 1
           },

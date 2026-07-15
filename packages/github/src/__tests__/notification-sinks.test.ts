@@ -4,13 +4,20 @@ import type { NotificationPayload } from '../watch-daemon.js';
 import type { GitHubWatchRoute } from '../watch-config.js';
 
 const testPayload: NotificationPayload = {
+  schema: 'openslack.github_watch_notification.v1',
   type: 'openslack.issue.detected',
+  objectKind: 'issue',
+  eventKey: 'issues.opened',
+  eventStableKey: 'github:issues.opened:negentropy-laby/openslack:issue:42:2026-05-25T10:00:00Z',
   repo: 'Negentropy-Laby/OpenSlack',
+  objectId: 'negentropy-laby/openslack#42',
   issueNumber: 42,
   title: 'Fix failing setup',
   url: 'https://github.com/Negentropy-Laby/OpenSlack/issues/42',
   labels: ['openslack:task'],
   nextAction: 'openslack agent tick --agent-id test',
+  informational: false,
+  observedAt: '2026-05-25T10:00:00Z',
 };
 
 const consoleRoute: GitHubWatchRoute = { sink: 'console' };
@@ -177,7 +184,10 @@ describe('createSinks', () => {
   });
 
   it('includes all sinks when all options provided', () => {
-    const sinks = createSinks({ slackBotToken: 'xoxb-test', webhookUrl: 'https://example.com/hook' });
+    const sinks = createSinks({
+      slackBotToken: 'xoxb-test',
+      webhookUrl: 'https://example.com/hook',
+    });
     expect(sinks.has('console')).toBe(true);
     expect(sinks.has('slack')).toBe(true);
     expect(sinks.has('webhook')).toBe(true);

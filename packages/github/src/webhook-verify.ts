@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 export function verifyGitHubWebhookSignature(
-  payload: string,
+  payload: string | Uint8Array,
   signatureHeader: string | undefined,
   secret: string,
 ): boolean {

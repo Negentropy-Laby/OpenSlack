@@ -1,10 +1,10 @@
-import { describe, it, expect } from 'vitest'
-import { normalizePushEvent, matchesPushRepoConfig } from '../push-normalizer.js'
+import { describe, it, expect } from 'vitest';
+import { normalizePushEvent, matchesPushRepoConfig } from '../push-normalizer.js';
 
 function makePushPayload(overrides?: {
-  ref?: string
-  commits?: Array<Record<string, unknown>>
-  repository?: Record<string, unknown>
+  ref?: string;
+  commits?: Array<Record<string, unknown>>;
+  repository?: Record<string, unknown>;
 }): Record<string, unknown> {
   return {
     ref: overrides?.ref ?? 'refs/heads/main',
@@ -25,15 +25,15 @@ function makePushPayload(overrides?: {
       name: 'whitepapers',
       owner: { login: 'Negentropy-Laby' },
     },
-  }
+  };
 }
 
 describe('normalizePushEvent', () => {
   it('returns null for non-branch refs', () => {
-    const payload = makePushPayload({ ref: 'refs/tags/v1.0.0' })
-    const result = normalizePushEvent(payload, { 'x-github-delivery': 'del-1' })
-    expect(result).toBeNull()
-  })
+    const payload = makePushPayload({ ref: 'refs/tags/v1.0.0' });
+    const result = normalizePushEvent(payload, { 'x-github-delivery': 'del-1' });
+    expect(result).toBeNull();
+  });
 
   it('returns null when no commits touch posts/', () => {
     const payload = makePushPayload({
@@ -47,22 +47,29 @@ describe('normalizePushEvent', () => {
           timestamp: '2026-05-30T12:00:00Z',
         },
       ],
-    })
-    const result = normalizePushEvent(payload, { 'x-github-delivery': 'del-1' })
-    expect(result).toBeNull()
-  })
+    });
+    const result = normalizePushEvent(payload, { 'x-github-delivery': 'del-1' });
+    expect(result).toBeNull();
+  });
 
   it('extracts push with posts changes', () => {
-    const payload = makePushPayload()
-    const result = normalizePushEvent(payload, { 'x-github-delivery': 'del-1' })
-    expect(result).not.toBeNull()
-    expect(result!.owner).toBe('Negentropy-Laby')
-    expect(result!.repo).toBe('whitepapers')
-    expect(result!.ref).toBe('refs/heads/main')
-    expect(result!.after).toBe('def456')
-    expect(result!.commits).toHaveLength(1)
-    expect(result!.commits[0]!.added).toContain('posts/article.md')
-  })
+    const payload = makePushPayload();
+    const result = normalizePushEvent(payload, { 'x-github-delivery': 'del-1' });
+    expect(result).not.toBeNull();
+    expect(result!.owner).toBe('Negentropy-Laby');
+    expect(result!.repo).toBe('whitepapers');
+    expect(result!.ref).toBe('refs/heads/main');
+    expect(result!.after).toBe('def456');
+    expect(result!.commits).toHaveLength(1);
+    expect(result!.commits[0]!.added).toContain('posts/article.md');
+    expect(result).toMatchObject({
+      kind: 'push',
+      eventKey: 'push',
+      source: 'webhook',
+      repository: { canonicalFullName: 'negentropy-laby/whitepapers' },
+      object: { kind: 'push', id: 'negentropy-laby/whitepapers@def456' },
+    });
+  });
 
   it('filters commits to only those touching posts/', () => {
     const payload = makePushPayload({
@@ -84,18 +91,18 @@ describe('normalizePushEvent', () => {
           timestamp: '2026-05-30T12:00:00Z',
         },
       ],
-    })
-    const result = normalizePushEvent(payload, { 'x-github-delivery': 'del-1' })
-    expect(result).not.toBeNull()
-    expect(result!.commits).toHaveLength(1)
-    expect(result!.commits[0]!.id).toBe('c1')
-  })
+    });
+    const result = normalizePushEvent(payload, { 'x-github-delivery': 'del-1' });
+    expect(result).not.toBeNull();
+    expect(result!.commits).toHaveLength(1);
+    expect(result!.commits[0]!.id).toBe('c1');
+  });
 
   it('returns null for invalid payload', () => {
-    expect(normalizePushEvent(null, {})).toBeNull()
-    expect(normalizePushEvent({}, {})).toBeNull()
-    expect(normalizePushEvent('string', {})).toBeNull()
-  })
+    expect(normalizePushEvent(null, {})).toBeNull();
+    expect(normalizePushEvent({}, {})).toBeNull();
+    expect(normalizePushEvent('string', {})).toBeNull();
+  });
 
   it('handles modified and removed posts paths', () => {
     const payload = makePushPayload({
@@ -117,41 +124,41 @@ describe('normalizePushEvent', () => {
           timestamp: '2026-05-30T12:00:00Z',
         },
       ],
-    })
-    const result = normalizePushEvent(payload, { 'x-github-delivery': 'del-1' })
-    expect(result).not.toBeNull()
-    expect(result!.commits).toHaveLength(2)
-  })
-})
+    });
+    const result = normalizePushEvent(payload, { 'x-github-delivery': 'del-1' });
+    expect(result).not.toBeNull();
+    expect(result!.commits).toHaveLength(2);
+  });
+});
 
 describe('matchesPushRepoConfig', () => {
   it('matches when owner, repo, and event align', () => {
-    const event = normalizePushEvent(makePushPayload(), { 'x-github-delivery': 'del-1' })!
+    const event = normalizePushEvent(makePushPayload(), { 'x-github-delivery': 'del-1' })!;
     const result = matchesPushRepoConfig(event, {
       owner: 'Negentropy-Laby',
       repo: 'whitepapers',
       events: ['push'],
-    })
-    expect(result).toBe(true)
-  })
+    });
+    expect(result).toBe(true);
+  });
 
   it('rejects when event is not push', () => {
-    const event = normalizePushEvent(makePushPayload(), { 'x-github-delivery': 'del-1' })!
+    const event = normalizePushEvent(makePushPayload(), { 'x-github-delivery': 'del-1' })!;
     const result = matchesPushRepoConfig(event, {
       owner: 'Negentropy-Laby',
       repo: 'whitepapers',
       events: ['issues.opened'],
-    })
-    expect(result).toBe(false)
-  })
+    });
+    expect(result).toBe(false);
+  });
 
   it('rejects when repo does not match', () => {
-    const event = normalizePushEvent(makePushPayload(), { 'x-github-delivery': 'del-1' })!
+    const event = normalizePushEvent(makePushPayload(), { 'x-github-delivery': 'del-1' })!;
     const result = matchesPushRepoConfig(event, {
       owner: 'Negentropy-Laby',
       repo: 'other-repo',
       events: ['push'],
-    })
-    expect(result).toBe(false)
-  })
-})
+    });
+    expect(result).toBe(false);
+  });
+});

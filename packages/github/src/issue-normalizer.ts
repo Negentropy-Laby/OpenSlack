@@ -1,4 +1,11 @@
 import type { GitHubWatchRepo } from './watch-config.js';
+import {
+  githubWebhookEventKey,
+  repositoriesMatch,
+  repositoryIdentityFromPayload,
+  type IssueAction,
+  type IssueRepositoryEvent,
+} from './repository-event.js';
 
 export interface NormalizedIssueEvent {
   action: string;
@@ -14,10 +21,12 @@ export interface NormalizedIssueEvent {
   updatedAt: string;
 }
 
+export type NormalizedIssueRepositoryEvent = NormalizedIssueEvent & IssueRepositoryEvent;
+
 export function normalizeIssueEvent(
   payload: unknown,
   headers: Record<string, string | undefined>,
-): NormalizedIssueEvent | null {
+): NormalizedIssueRepositoryEvent | null {
   if (!payload || typeof payload !== 'object') return null;
 
   const p = payload as Record<string, unknown>;
@@ -28,21 +37,27 @@ export function normalizeIssueEvent(
   if (!repo || typeof repo !== 'object') return null;
 
   const i = issue as Record<string, unknown>;
-  const r = repo as Record<string, unknown>;
+  const rawAction = typeof p.action === 'string' ? p.action : '';
+  const action = rawAction as IssueAction;
+  const eventKey = githubWebhookEventKey('issues', action);
+  if (!eventKey || !eventKey.startsWith('issues.')) return null;
 
-  const action = typeof p.action === 'string' ? p.action : '';
-  if (!['opened', 'reopened', 'labeled', 'unlabeled', 'closed', 'edited'].includes(action)) return null;
-
-  const owner = typeof (r as Record<string, unknown>).owner === 'object'
-    ? ((r as Record<string, unknown>).owner as Record<string, unknown>)?.login
-    : undefined;
-  const ownerLogin = typeof owner === 'string' ? owner : '';
-  const repoName = typeof r.name === 'string' ? r.name : '';
-  const issueNumber = typeof i.number === 'number' ? i.number : 0;
-  const title = typeof i.title === 'string' ? i.title : '';
-  const url = typeof i.html_url === 'string' ? i.html_url : '';
+  const repository = repositoryIdentityFromPayload(p);
+  if (!repository) return null;
+  const ownerLogin = repository.owner;
+  const repoName = repository.repo;
+  const issueNumber =
+    typeof i.number === 'number' && Number.isSafeInteger(i.number) && i.number > 0
+      ? i.number
+      : null;
+  const title = typeof i.title === 'string' && i.title.length > 0 ? i.title : null;
+  const url = typeof i.html_url === 'string' && i.html_url.length > 0 ? i.html_url : null;
   const body = typeof i.body === 'string' ? i.body : '';
-  const updatedAt = typeof i.updated_at === 'string' ? i.updated_at : new Date().toISOString();
+  const updatedAt =
+    typeof i.updated_at === 'string' && Number.isFinite(Date.parse(i.updated_at))
+      ? i.updated_at
+      : null;
+  if (issueNumber === null || !title || !url || !updatedAt) return null;
 
   const labels: string[] = [];
   if (Array.isArray(i.labels)) {
@@ -56,15 +71,27 @@ export function normalizeIssueEvent(
     }
   }
 
-  const sender = p.sender && typeof p.sender === 'object'
-    ? (p.sender as Record<string, unknown>).login
-    : undefined;
+  const sender =
+    p.sender && typeof p.sender === 'object'
+      ? (p.sender as Record<string, unknown>).login
+      : undefined;
   const senderLogin = typeof sender === 'string' ? sender : '';
 
   const deliveryId = headers['x-github-delivery'] ?? '';
 
   return {
+    kind: 'issue',
+    eventKey: eventKey as IssueRepositoryEvent['eventKey'],
     action,
+    repository,
+    object: {
+      kind: 'issue',
+      id: `${repository.canonicalFullName}#${issueNumber}`,
+      number: issueNumber,
+    },
+    source: 'webhook',
+    observedAt: updatedAt,
+    metadata: { informational: false, senderLogin },
     owner: ownerLogin,
     repo: repoName,
     issueNumber,
@@ -78,10 +105,14 @@ export function normalizeIssueEvent(
   };
 }
 
-export function matchesRepoConfig(event: NormalizedIssueEvent, repoConfig: GitHubWatchRepo): boolean {
-  if (event.owner !== repoConfig.owner || event.repo !== repoConfig.repo) return false;
+export function matchesRepoConfig(
+  event: NormalizedIssueEvent,
+  repoConfig: GitHubWatchRepo,
+): boolean {
+  if (!repositoriesMatch(event, repoConfig)) return false;
 
-  const eventKey = `issues.${event.action}`;
+  const eventKey = githubWebhookEventKey('issues', event.action);
+  if (!eventKey) return false;
   if (!repoConfig.events.includes(eventKey)) return false;
 
   if (repoConfig.labels) {
