@@ -1,6 +1,10 @@
 # Plugin Trust Model
 
-This document defines the normative trust boundary for the planned OpenSlack plugin system. It records the security decisions that must hold before plugin discovery, registration, or public embedding is implemented. It is a design contract, not evidence that the plugin runtime is already available.
+This document defines the normative trust boundary for the OpenSlack plugin system. The private
+Red host and integrity loader implement the v1 declarative discovery, registration, and activation
+boundary; public embedding and executable third-party plugins remain future work. The claims below
+are security invariants, while implementation evidence lives in `packages/plugin-host` and its
+adversarial tests.
 
 The central rule is that auto-discovered third-party plugins are declarative only. A workspace or installed manifest cannot supply executable code, widen policy, create approval authority, or bypass the independently enforced rules of the Red host.
 
@@ -30,7 +34,9 @@ Provider labels are not descriptive metadata alone. They determine discovery, ex
 
 No provider label, gate mode, or manifest field can turn a declarative descriptor into executable code. A future executable third-party runtime requires a separate ADR, threat model, cross-platform containment prototype, adversarial tests, and Red approval. It is outside this v1 contract.
 
-Trusted bundled code runs in-process because it was explicitly imported and reviewed. This trust decision is not a sandbox claim.
+Trusted bundled code runs in-process because it was explicitly imported and reviewed. Reviewed
+definitions and their evidence enter only through constructor-owned composition data; the public
+host has no late bundled-registration or rebind method. This trust decision is not a sandbox claim.
 
 ## A3 — Strict JSON Manifest, No Source-Code Extraction
 
@@ -91,7 +97,12 @@ Trusted, explicitly imported bundled PRMS extensions may return only additional 
 evaluate(report) -> { blockers: BlockingFinding[] }
 ```
 
-They cannot return `PASS`, approval counts, mergeability, or an authorization decision. The host computes approval from current GitHub review state using `filterValidApprovals` and combines extension blockers using logical-AND, fail-closed semantics.
+They cannot return `PASS`, authority-bearing blocker codes, approval counts, mergeability, or an
+authorization decision. Each evaluator receives a fresh, deeply frozen, bounded plain-data
+projection rather than the caller's PRMS report, so one evaluator cannot mutate another
+evaluator's view. Projection, evaluation, timeout, and result-validation failures become
+host-generated blockers. The host computes approval from current GitHub review state using
+`filterValidApprovals` and combines extension blockers using logical-AND, fail-closed semantics.
 
 Auto-discovered `workspace` and `plugin` manifests cannot contribute an evaluator, predicate DSL, approval source, or PRMS gate implementation in v1. They may only declare that activation is subject to a named, host-owned gate.
 
@@ -107,7 +118,15 @@ plugin:<plugin-id>:<action-id>
 
 A declarative action may reference only an existing, side-effect-free host action with a bounded input mapping. A mapping may contain validated constants and pass-through fields already present in the target action schema. It cannot provide raw `command`, arbitrary argv, shell or template strings, file/module/URL paths, risk metadata, or `confirmationRequired`.
 
-Trusted bundled actions may provide functions, but every emitted `PlanStep` is revalidated against the registered definition and current host policy.
+Trusted bundled actions may provide functions, but each declares a fixed host action target that is
+resolved from the constructor-owned catalog. The host authorizes that sealed target before invoking
+the builder, requires its effective capability, and rejects any emitted `PlanStep` that changes the
+target. Every resulting step is then revalidated against current host policy.
+
+`SHADOW` mode never invokes bundled activation/deactivation hooks, action builders, or PRMS
+evaluators. In `ENFORCE`, host-owned deadlines bound asynchronous hooks, builders, and evaluators;
+timeout is a denial/failure, not permission to retry after possible side effects. These deadlines do
+not provide process isolation or preempt synchronous non-yielding code.
 
 | Contribution                                                 |      `built-in` or reviewed `bundled` | `workspace` or installed manifest |
 | ------------------------------------------------------------ | ------------------------------------: | --------------------------------: |

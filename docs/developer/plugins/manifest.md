@@ -82,5 +82,6 @@ source integrity. Those values are derived by the host. A successful schema or r
 validation result means only that the document satisfies the authoring contract.
 
 Raw-byte concerns such as UTF-8/BOM handling, duplicate JSON keys, size limits, realpath
-containment, symlink rejection, exact-buffer hashing, and lock comparison belong to the Red
-host/integrity loader. They are not claims made by this authoring validator.
+containment, symlink rejection, exact-buffer hashing, and lock comparison belong to
+`@openslack/plugin-host`. They are implemented there and remain deliberately outside the
+authoring validator's trust claims.
