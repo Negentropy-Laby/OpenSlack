@@ -56,8 +56,10 @@ Bundled PRMS extensions expose only append-only blockers. The SDK rebuilds their
 `{ blockers }`, and the public return type cannot represent PASS, approval counts,
 mergeability, or merge authorization. `BundledPluginDefinition` accepts only the opaque
 descriptor returned by `definePrmsBlocker`; inline raw `prms_blocker` contributions are
-intentionally rejected. The Red host must independently whitelist and validate that result at
-runtime. Bundled action plan steps still require host validation and authorization.
+intentionally rejected. `defineBundledPlugin` also rewraps every blocker descriptor, so object
+spreading cannot replace the evaluator and recover extra result fields. The Red host must
+independently whitelist and validate that result at runtime. Bundled action plan steps still
+require host validation and authorization.
 
 ## Author checklist
 

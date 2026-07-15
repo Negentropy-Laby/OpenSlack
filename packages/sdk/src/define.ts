@@ -13,6 +13,20 @@ import type {
 type NoExtraProperties<TShape, TValue extends TShape> = TValue &
   Record<Exclude<keyof TValue, keyof TShape>, never>;
 
+type NormalizeBundledContribution<TContribution> =
+  TContribution extends BundledPrmsBlockerDefinition<infer TPrmsReport>
+    ? BundledPrmsBlockerContribution<TPrmsReport>
+    : TContribution;
+
+type DefinedBundledPlugin<TPlugin extends BundledPluginDefinition<unknown, unknown, unknown>> =
+  Omit<TPlugin, 'contributions'> & {
+    readonly contributions: {
+      readonly [TIndex in keyof TPlugin['contributions']]: NormalizeBundledContribution<
+        TPlugin['contributions'][TIndex]
+      >;
+    };
+  };
+
 export function defineManifest<const TManifest extends PluginManifestV1>(
   manifest: NoExtraProperties<PluginManifestV1, TManifest>,
 ): TManifest {
@@ -25,8 +39,15 @@ export function defineBundledPlugin<
   TPrmsReport = unknown,
   const TPlugin extends BundledPluginDefinition<TPlanStep, TWorkflow, TPrmsReport> =
     BundledPluginDefinition<TPlanStep, TWorkflow, TPrmsReport>,
->(plugin: TPlugin): TPlugin {
-  return plugin;
+>(plugin: TPlugin): DefinedBundledPlugin<TPlugin> {
+  const contributions = plugin.contributions.map((contribution) =>
+    contribution.kind === 'prms_blocker' ? definePrmsBlocker(contribution) : contribution,
+  );
+
+  return {
+    ...plugin,
+    contributions: Object.freeze(contributions),
+  } as DefinedBundledPlugin<TPlugin>;
 }
 
 export function defineActionAlias<const TAlias extends DeclarativeActionAliasV1>(

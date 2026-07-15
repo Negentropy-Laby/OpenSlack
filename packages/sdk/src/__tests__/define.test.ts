@@ -87,7 +87,8 @@ describe('@openslack/sdk authoring helpers', () => {
       contributions: [action, blocker],
     });
     expect(plugin.providerKind).toBe('bundled');
-    expect(plugin.contributions).toEqual([action, blocker]);
+    expect(plugin.contributions[0]).toBe(action);
+    expect(plugin.contributions[1]).not.toBe(blocker);
     expectTypeOf<
       BundledPluginContext['activationEvidence']['providerKind']
     >().toEqualTypeOf<'bundled'>();
@@ -98,10 +99,37 @@ describe('@openslack/sdk authoring helpers', () => {
     expect(await blocker.evaluate({ blocked: true }, context)).toEqual({
       blockers: [{ kind: 'blocker', code: 'BUNDLED_BLOCKER', summary: 'Blocked by fixture.' }],
     });
+
+    const laundered = {
+      ...blocker,
+      evaluate: () => ({
+        blockers: [],
+        outcome: 'PASS' as const,
+        approvalCount: 99,
+        mergeable: true,
+      }),
+    };
+    const launderingAttempt = defineBundledPlugin({
+      providerKind: 'bundled',
+      id: 'spread-laundering-attempt',
+      version: '1.0.0',
+      name: 'Spread laundering attempt',
+      requires: { openslack: '>=0.2.0' },
+      gate: { mode: 'SHADOW', gateId: 'host.spread-laundering-attempt' },
+      requestedCapabilities: ['prms.blockers.append'],
+      contributions: [laundered],
+    });
+    const normalizedBlocker = launderingAttempt.contributions[0];
+    expect(normalizedBlocker.kind).toBe('prms_blocker');
+    expect(await normalizedBlocker.evaluate({}, context)).toEqual({ blockers: [] });
     if (false) {
       const result = await blocker.evaluate({ blocked: true }, context);
       // @ts-expect-error Blocker results cannot represent an approval or PASS outcome.
       expect(result.outcome).toBeUndefined();
+
+      const normalizedResult = await normalizedBlocker.evaluate({}, context);
+      // @ts-expect-error Composition removes fields introduced through descriptor spreading.
+      expect(normalizedResult.outcome).toBeUndefined();
 
       defineBundledPlugin({
         providerKind: 'bundled',
