@@ -106,6 +106,8 @@ OpenSlack/
 ├── .openslack/              # Workspace state (policies, constitution, evals, tasks)
 ├── packages/                # Active packages; see docs/status/current.md
 │   ├── kernel/              # Zone classifier, merge decision, policy engine
+│   ├── plugin-api/          # Private declarative plugin contract, schema, and host policy ports
+│   ├── sdk/                 # Private authoring helpers for manifests and reviewed bundled code
 │   ├── workspace/           # Validation, indexing, schemas
 │   ├── credentials/         # Typed env/native OS keychain references and fail-closed backends
 │   ├── core/                # ClaimBroker with file-locked persistence
@@ -124,6 +126,11 @@ OpenSlack/
 ├── scripts/                 # genesis-validate.sh, genesis-rollback.sh, setup-gh.sh
 └── docs/                    # Full acceptance, developer, security documentation
 ```
+
+The plugin packages are an internal authoring preview. They remain `private: true` and do not
+provide dynamic loading or a public embedding runtime. Workspace and installed manifests are
+declarative only; the governed host and integrity loader are a separate roadmap stage. See
+[`docs/developer/plugins/embedding.md`](docs/developer/plugins/embedding.md).
 
 ### Negentropy-Lab Slot Integration (Planned)
 
@@ -333,6 +340,7 @@ output_contract:
 | Documentation home | [`docs/README.md`](docs/README.md) |
 | Current status, modules, commands, and test counts | [`docs/status/current.md`](docs/status/current.md) |
 | Complete CLI reference | [`docs/user-guide.md`](docs/user-guide.md) |
+| Plugin manifest contract and private authoring preview | [`docs/developer/plugins/manifest.md`](docs/developer/plugins/manifest.md), [`docs/developer/plugins/authoring.md`](docs/developer/plugins/authoring.md), [`docs/developer/plugins/embedding.md`](docs/developer/plugins/embedding.md) |
 | Product documentation map | [`docs/product/openslack-product-current.md`](docs/product/openslack-product-current.md) |
 | Product UX roadmap and remaining productization work | [`docs/product/user-experience-roadmap.md`](docs/product/user-experience-roadmap.md) |
 | Self-evolution architecture | [`docs/product/phase-1.md`](docs/product/phase-1.md), [`docs/developer/self-evolution-kernel.md`](docs/developer/self-evolution-kernel.md) |

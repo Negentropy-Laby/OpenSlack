@@ -1,0 +1,24 @@
+{
+  "schema": "openslack.plugin.v1",
+  "id": "team-dashboard",
+  "version": "0.1.0",
+  "name": "Team dashboard",
+  "requires": { "openslack": ">=0.2.0" },
+  "gate": { "mode": "SHADOW", "gateId": "team.observer" },
+  "capabilities": ["host.actions.read", "host.workflows.read", "collaboration.read"],
+  "contributes": [
+    {
+      "kind": "action_alias",
+      "id": "fixed-pr-status",
+      "target": { "kind": "host_action", "id": "pr.status" },
+      "inputMapping": {
+        "prNumber": { "kind": "constant", "value": 42 }
+      }
+    },
+    {
+      "kind": "workflow_alias",
+      "id": "daily-digest",
+      "target": { "kind": "host_workflow", "id": "collaboration.digest" }
+    }
+  ]
+}

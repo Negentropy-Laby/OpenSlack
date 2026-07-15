@@ -1,0 +1,16 @@
+{
+  "schema": "openslack.plugin.v1",
+  "id": "approval-source",
+  "version": "1.0.0",
+  "name": "Approval source",
+  "requires": { "openslack": ">=0.2.0" },
+  "gate": { "mode": "ENFORCE", "gateId": "host.review" },
+  "capabilities": ["github.pull_requests.approve"],
+  "contributes": [
+    {
+      "kind": "action_alias",
+      "id": "review",
+      "target": { "kind": "host_action", "id": "pr.review" }
+    }
+  ]
+}

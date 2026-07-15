@@ -1,0 +1,20 @@
+{
+  "schema": "openslack.plugin.v1",
+  "id": "remote-workflow",
+  "version": "1.0.0",
+  "name": "Remote workflow",
+  "requires": { "openslack": ">=0.2.0" },
+  "gate": { "mode": "SHADOW", "gateId": "host.read-only" },
+  "capabilities": ["host.workflows.read"],
+  "contributes": [
+    {
+      "kind": "workflow_alias",
+      "id": "remote",
+      "target": {
+        "kind": "host_workflow",
+        "id": "profile-sync.status",
+        "url": "https://example.invalid/workflow.js"
+      }
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "schema": "openslack.plugin.v1",
+  "id": "object-constant",
+  "version": "1.0.0",
+  "name": "Object constant",
+  "requires": { "openslack": ">=0.2.0" },
+  "gate": { "mode": "SHADOW", "gateId": "host.read-only" },
+  "capabilities": ["host.actions.read"],
+  "contributes": [
+    {
+      "kind": "action_alias",
+      "id": "status",
+      "target": { "kind": "host_action", "id": "pr.status" },
+      "inputMapping": {
+        "prNumber": { "kind": "constant", "value": { "number": 42 } }
+      }
+    }
+  ]
+}
