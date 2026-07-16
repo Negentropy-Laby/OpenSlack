@@ -1,6 +1,8 @@
 import { resolveIntent } from './llm.js';
 import { planActions } from './planner.js';
 import { formatPlan } from './summarizer.js';
+import type { LLMPlannerProviderRegistryPort } from './llm.js';
+import type { ActionRegistryPort } from './tool-registry.js';
 import type { ActionPlan, PlanStep, RiskLevel } from './types.js';
 
 export interface ConversationActionCard {
@@ -23,6 +25,11 @@ export interface TuiAskPlan {
   cards: ConversationActionCard[];
   llmSource?: 'keyword' | 'llm' | 'keyword-fallback';
   fallbackReason?: string;
+}
+
+export interface TuiAskPlanOptions {
+  readonly actionRegistry?: ActionRegistryPort;
+  readonly llmProviderRegistry?: LLMPlannerProviderRegistryPort;
 }
 
 export interface TuiAskResult {
@@ -227,9 +234,17 @@ function cardsForPlan(plan: ActionPlan, originalText: string): ConversationActio
   ];
 }
 
-export async function buildTuiAskPlan(text: string): Promise<TuiAskPlan> {
-  const { intent, source, fallbackReason } = await resolveIntent(text);
-  const plan = planActions(intent);
+export async function buildTuiAskPlan(
+  text: string,
+  options: TuiAskPlanOptions = {},
+): Promise<TuiAskPlan> {
+  const { intent, source, fallbackReason } = await resolveIntent(text, {
+    ...(options.actionRegistry === undefined ? {} : { actionRegistry: options.actionRegistry }),
+    ...(options.llmProviderRegistry === undefined
+      ? {}
+      : { providerRegistry: options.llmProviderRegistry }),
+  });
+  const plan = planActions(intent, options.actionRegistry);
   const message = formatPlan(plan);
   return {
     message,

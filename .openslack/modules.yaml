@@ -1,6 +1,6 @@
 schema: openslack.modules.v2
-vitest_tests: 4063
-vitest_files: 312
+vitest_tests: 4084
+vitest_files: 316
 modules:
   - id: self_evolution
     name: Self-Evolution Kernel
@@ -94,9 +94,9 @@ modules:
       - "@openslack/chat-gateway"
       - "@openslack/tui"
       - "@openslack/credentials"
-    tests: 892
-    test_files: 102
-    notes: Structured planner active. Webhook and Slack chat adapters active with actor mapping. PRMS chat cards and action confirmation active. The typed Operator action registry is instance-scoped, preserves the closed 30-action built-in default, accepts explicit planner/executor injection, and canonical-revalidates frozen PlanSteps at execution. LLM-first intent routing with deterministic keyword fallback, setup report, and 24h pending plan store active. Session-based conversation memory with multi-turn context resolution and progressive clarification. Doctor --format plain for non-technical output. Conversation-first TUI workbench with Ask OpenSlack, Operator recommendation cards, workflow draft-first cards, profile sync recommendations, and subagent mention dispatch. TUI setup report view and PR doctor view via --format tui. Versioned Windows x64 and Linux x64 archive builds embed the CLI, workflow assets, native keychain binding, build metadata, SBOM, checksums, and provenance; native build and unpacked smoke are enforced by the release matrix. The installed CLI verifies stable release artifacts and trusted signatures without a source checkout, Bun, or Node.js. Agent Runtime credentials can be previewed and imported atomically into the native keychain without writing secret values to workspace configuration.
+    tests: 913
+    test_files: 106
+    notes: Structured planner active. Webhook and Slack chat adapters active with actor mapping. PRMS chat cards and action confirmation active. The typed Operator action registry is instance-scoped, preserves the closed 30-action built-in default, accepts explicit planner/executor injection, and canonical-revalidates frozen PlanSteps at execution. The CLI application composition root constructs one sealed PluginHost and instance-scoped Operator action, LLM-provider, and conversation-store bindings per process. Its host target catalog exposes only the audited bounded github.metrics returned-item count under the exact github.issues.read capability; all other built-ins and all plugin authority remain fail-closed until complete behavior contracts, a kernel/PRMS policy, and a durable audit sink are explicitly composed. LLM-first intent routing with deterministic keyword fallback, setup report, and 24h pending plan store active. Session-based conversation memory with multi-turn context resolution and progressive clarification. Doctor --format plain for non-technical output. Conversation-first TUI workbench with Ask OpenSlack, Operator recommendation cards, workflow draft-first cards, profile sync recommendations, and subagent mention dispatch. TUI setup report view and PR doctor view via --format tui. Versioned Windows x64 and Linux x64 archive builds embed the CLI, workflow assets, native keychain binding, build metadata, SBOM, checksums, and provenance; native build and unpacked smoke are enforced by the release matrix. The installed CLI verifies stable release artifacts and trusted signatures without a source checkout, Bun, or Node.js. Agent Runtime credentials can be previewed and imported atomically into the native keychain without writing secret values to workspace configuration.
 
   - id: pr_review_merge
     name: PR Review & Merge Steward

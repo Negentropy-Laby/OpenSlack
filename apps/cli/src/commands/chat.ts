@@ -1,8 +1,9 @@
 import { Command } from 'commander';
 import { WebhookAdapter, SlackAdapter, routeMessage } from '@openslack/chat-gateway';
 import type { GatewayConfig } from '@openslack/chat-gateway';
+import type { OperatorApplicationContext } from '../boot/context.js';
 
-export function chatCommands(): Command {
+export function chatCommands(operatorContext?: OperatorApplicationContext): Command {
   const cmd = new Command('chat').description('OpenSlack Chat Gateway');
 
   cmd
@@ -32,7 +33,7 @@ export function chatCommands(): Command {
               channel: message.channel.id,
             }),
             signature: undefined,
-          });
+          }, operatorContext);
 
           console.log(`[${message.id}] ${message.user.id}: ${message.text}`);
           if (result.text) {
@@ -66,7 +67,7 @@ export function chatCommands(): Command {
               channel: message.channel.id,
             }),
             signature: undefined,
-          });
+          }, operatorContext);
 
           console.log(`[${message.id}] ${message.user.id}: ${message.text}`);
           if (result.text) {

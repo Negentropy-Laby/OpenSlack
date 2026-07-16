@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { versionCommand } from '../commands/version.js';
 
 describe('version command', () => {
@@ -7,9 +8,12 @@ describe('version command', () => {
     try {
       await versionCommand().parseAsync(['node', 'version', '--format', 'json'], { from: 'node' });
       const parsed = JSON.parse(String(log.mock.calls[0]?.[0])) as Record<string, unknown>;
+      const packageManifest = JSON.parse(
+        readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+      ) as { version: string };
       expect(parsed).toMatchObject({
         schema: 'openslack.build_info.v1',
-        version: '0.1.0',
+        version: packageManifest.version,
         channel: 'source',
         artifactFormat: 'source',
         workspaceSchemaCompatibility: { min: 1, max: 1 },

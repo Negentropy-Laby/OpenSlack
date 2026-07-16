@@ -32,42 +32,120 @@ export interface ConversationDetailView {
 export interface ConversationStoreAdapter {
   listThreads(options?: ConversationListOptions): ConversationListItem[];
   getThread(threadId: string): ConversationDetailView | null;
-  appendMessage(threadId: string, authorId: string, text: string): { messageId: string; threadId: string };
+  appendMessage(
+    threadId: string,
+    authorId: string,
+    text: string,
+  ): { messageId: string; threadId: string };
 }
 
-let storeAdapter: ConversationStoreAdapter | null = null;
+/**
+ * Instance-scoped binding between Operator conversation actions and a store.
+ *
+ * A binding may be wired exactly once. Application composition roots should
+ * create one binding per host instance so independently composed hosts cannot
+ * replace or observe each other's conversation adapters.
+ */
+export interface ConversationStoreBindingPort {
+  bind(adapter: ConversationStoreAdapter): void;
+  list(options?: ConversationListOptions): ConversationListItem[];
+  show(threadId: string): ConversationDetailView | null;
+  send(threadId: string, text: string, authorId: string): { messageId: string; threadId: string };
+}
+
+interface ConversationStoreBindingState {
+  readonly binding: ConversationStoreBindingPort;
+  resetForTests(): void;
+}
+
+const ALREADY_REGISTERED_ERROR =
+  'Conversation store adapter already registered. Call resetConversationStoreAdapter() first (test-only).';
+const NOT_REGISTERED_ERROR =
+  'Conversation store adapter not registered. Call registerConversationStoreAdapter first.';
+const INSTANCE_ALREADY_BOUND_ERROR =
+  'Conversation store binding is already bound. Create a new binding for another adapter.';
+const INSTANCE_NOT_BOUND_ERROR =
+  'Conversation store binding is not bound. Call bind(adapter) first.';
+
+function createConversationStoreBindingInternal(errors: {
+  readonly alreadyBound: string;
+  readonly notBound: string;
+}): ConversationStoreBindingState {
+  let storeAdapter: ConversationStoreAdapter | undefined;
+  let isBound = false;
+
+  function getAdapter(): ConversationStoreAdapter {
+    if (!isBound || !storeAdapter) {
+      throw new Error(errors.notBound);
+    }
+    return storeAdapter;
+  }
+
+  const binding: ConversationStoreBindingPort = Object.freeze({
+    bind(adapter: ConversationStoreAdapter): void {
+      if (isBound) {
+        throw new Error(errors.alreadyBound);
+      }
+      storeAdapter = adapter;
+      isBound = true;
+    },
+    list(options?: ConversationListOptions): ConversationListItem[] {
+      return getAdapter().listThreads(options);
+    },
+    show(threadId: string): ConversationDetailView | null {
+      return getAdapter().getThread(threadId);
+    },
+    send(
+      threadId: string,
+      text: string,
+      authorId: string,
+    ): { messageId: string; threadId: string } {
+      return getAdapter().appendMessage(threadId, authorId, text);
+    },
+  });
+
+  return Object.freeze({
+    binding,
+    resetForTests(): void {
+      storeAdapter = undefined;
+      isBound = false;
+    },
+  });
+}
+
+/** Create an isolated, single-bind conversation-store port. */
+export function createConversationStoreBinding(): ConversationStoreBindingPort {
+  return createConversationStoreBindingInternal({
+    alreadyBound: INSTANCE_ALREADY_BOUND_ERROR,
+    notBound: INSTANCE_NOT_BOUND_ERROR,
+  }).binding;
+}
+
+const defaultConversationStoreBindingState = createConversationStoreBindingInternal({
+  alreadyBound: ALREADY_REGISTERED_ERROR,
+  notBound: NOT_REGISTERED_ERROR,
+});
+const defaultConversationStoreBinding = defaultConversationStoreBindingState.binding;
 
 export function registerConversationStoreAdapter(adapter: ConversationStoreAdapter): void {
-  if (storeAdapter !== null) {
-    throw new Error('Conversation store adapter already registered. Call resetConversationStoreAdapter() first (test-only).');
-  }
-  storeAdapter = adapter;
+  defaultConversationStoreBinding.bind(adapter);
 }
 
 export function resetConversationStoreAdapter(): void {
   if (process.env.NODE_ENV !== 'test') {
     throw new Error('resetConversationStoreAdapter is only available in test environments');
   }
-  storeAdapter = null;
-}
-
-function getAdapter(): ConversationStoreAdapter {
-  if (!storeAdapter) {
-    throw new Error('Conversation store adapter not registered. Call registerConversationStoreAdapter first.');
-  }
-  return storeAdapter;
+  defaultConversationStoreBindingState.resetForTests();
 }
 
 export function listConversationsForOperator(
   options?: ConversationListOptions,
 ): ConversationListItem[] {
-  return getAdapter().listThreads(options);
+  return defaultConversationStoreBinding.list(options);
 }
 
-export function showConversationForOperator(
-  threadId: string,
-): ConversationDetailView | null {
-  return getAdapter().getThread(threadId);
+export function showConversationForOperator(threadId: string): ConversationDetailView | null {
+  return defaultConversationStoreBinding.show(threadId);
 }
 
 export function sendConversationMessage(
@@ -75,5 +153,5 @@ export function sendConversationMessage(
   text: string,
   authorId: string,
 ): { messageId: string; threadId: string } {
-  return getAdapter().appendMessage(threadId, authorId, text);
+  return defaultConversationStoreBinding.send(threadId, text, authorId);
 }

@@ -10,6 +10,7 @@ import {
 } from '@openslack/workspace';
 import { getClient } from '@openslack/github';
 import { describeLLMRoutingConfig } from '@openslack/operator';
+import type { LLMPlannerProviderRegistryPort } from '@openslack/operator';
 import { NativeKeychainBackend } from '@openslack/credentials';
 import { detectGenesisShell, renderFindingsPlain, runGoldenEval } from '@openslack/runtime';
 import type { PlainFinding } from '@openslack/runtime';
@@ -24,6 +25,7 @@ interface CheckResult {
 
 interface DoctorCommandDependencies {
   execSync?: typeof execSync;
+  llmProviderRegistry?: LLMPlannerProviderRegistryPort;
 }
 
 export function doctorCommands(dependencies: DoctorCommandDependencies = {}): Command {
@@ -265,6 +267,7 @@ export function doctorCommands(dependencies: DoctorCommandDependencies = {}): Co
       {
         const llmConfig = describeLLMRoutingConfig(
           process.env as Record<string, string | undefined>,
+          dependencies.llmProviderRegistry,
         );
         const detail =
           llmConfig.mode === 'keyword-only'

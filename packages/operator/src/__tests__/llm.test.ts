@@ -6,11 +6,17 @@ import {
   createOpenAICompatiblePlannerProvider,
   resolveIntent,
   clearLLMPlannerProviders,
+  createActionRegistry,
+  getLLMPlannerProvider,
+  getRegisteredAction,
+  registerLLMPlannerProvider,
   type LLMPlannerProvider,
 } from '../index.js';
+import { createLLMPlannerProviderRegistry, getConfiguredLLMPlannerProvider } from '../llm.js';
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  clearLLMPlannerProviders();
 });
 
 describe('resolveIntent', () => {
@@ -50,7 +56,9 @@ describe('resolveIntent', () => {
     const provider: LLMPlannerProvider = {
       id: 'test',
       async classifyAndPlan() {
-        return { intent: { kind: 'shell.run', slots: { command: 'rm -rf .' }, confidence: 1 } as never };
+        return {
+          intent: { kind: 'shell.run', slots: { command: 'rm -rf .' }, confidence: 1 } as never,
+        };
       },
     };
 
@@ -66,25 +74,50 @@ describe('resolveIntent', () => {
     expect(LLM_PLANNER_MAX_RETRIES).toBe(1);
   });
 
+  it('uses the 30 built-in actions in request order by default', async () => {
+    let actionIds: string[] = [];
+    const provider: LLMPlannerProvider = {
+      id: 'capture-builtins',
+      async classifyAndPlan(request) {
+        actionIds = request.actions.map((action) => action.id);
+        return { intent: { kind: 'status', slots: {}, confidence: 1 } };
+      },
+    };
+
+    await resolveIntent('check status', { provider });
+
+    expect(actionIds).toHaveLength(30);
+    expect(actionIds[0]).toBe('status.show');
+    expect(actionIds.at(-1)).toBe('conversation.archive');
+  });
+
   it('sends a parseable JSON example without trailing commas in the system prompt', async () => {
     let systemPrompt = '';
-    vi.stubGlobal('fetch', vi.fn(async (_url: unknown, init: unknown) => {
-      const bodyText = (init as { body?: unknown }).body;
-      expect(typeof bodyText).toBe('string');
-      const requestBody = JSON.parse(bodyText as string) as {
-        messages: Array<{ role: string; content: string }>;
-      };
-      systemPrompt = requestBody.messages.find((message) => message.role === 'system')?.content ?? '';
-      return new Response(JSON.stringify({
-        choices: [
-          {
-            message: {
-              content: JSON.stringify({ intent: { kind: 'status', slots: {}, confidence: 0.9 } }),
-            },
-          },
-        ],
-      }));
-    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: unknown, init: unknown) => {
+        const bodyText = (init as { body?: unknown }).body;
+        expect(typeof bodyText).toBe('string');
+        const requestBody = JSON.parse(bodyText as string) as {
+          messages: Array<{ role: string; content: string }>;
+        };
+        systemPrompt =
+          requestBody.messages.find((message) => message.role === 'system')?.content ?? '';
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    intent: { kind: 'status', slots: {}, confidence: 0.9 },
+                  }),
+                },
+              },
+            ],
+          }),
+        );
+      }),
+    );
     const provider = createOpenAICompatiblePlannerProvider({
       id: 'openai-compatible',
       apiKey: 'sk-test',
@@ -95,14 +128,110 @@ describe('resolveIntent', () => {
       query: 'check status',
       maxToolSteps: 1,
       maxReplans: 0,
-      actions: [],
+      actions: [
+        {
+          id: 'plugin:fixture:inspect',
+          description: 'Inspect fixture state',
+          inputSchema: {},
+        },
+      ],
     });
 
-    const example = systemPrompt.match(/Return JSON matching this structure:\n([\s\S]*?)\n\nSupport both/)?.[1];
+    const example = systemPrompt.match(
+      /Return JSON matching this structure:\n([\s\S]*?)\n\nSupport both/,
+    )?.[1];
     expect(result.intent?.kind).toBe('status');
     expect(example).toBeDefined();
     expect(() => JSON.parse(example ?? '')).not.toThrow();
     expect(example).not.toContain('"confidence": 0.9,');
+    expect(systemPrompt).toContain('plugin:fixture:inspect: Inspect fixture state');
+    expect(systemPrompt).not.toContain('status.show: Show product dashboard');
+  });
+});
+
+describe('LLM planner provider registries', () => {
+  it('isolates two instances and preserves Map.set replacement semantics', () => {
+    const first = createLLMPlannerProviderRegistry();
+    const second = createLLMPlannerProviderRegistry();
+    const original: LLMPlannerProvider = {
+      id: 'local',
+      async classifyAndPlan() {
+        return { intent: { kind: 'status', slots: {}, confidence: 1 } };
+      },
+    };
+    const replacement: LLMPlannerProvider = {
+      id: 'local',
+      async classifyAndPlan() {
+        return { intent: { kind: 'doctor', slots: {}, confidence: 1 } };
+      },
+    };
+
+    first.register(original);
+    expect(first.get('local')).toBe(original);
+    expect(second.get('local')).toBeUndefined();
+
+    first.register(replacement);
+    expect(first.get('local')).toBe(replacement);
+    expect(second.get('local')).toBeUndefined();
+
+    second.register(original);
+    first.clear();
+    expect(first.get('local')).toBeUndefined();
+    expect(second.get('local')).toBe(original);
+  });
+
+  it('keeps the legacy registration API on an overwrite-compatible default registry', () => {
+    const original: LLMPlannerProvider = {
+      id: 'legacy',
+      async classifyAndPlan() {
+        return { intent: { kind: 'status', slots: {}, confidence: 1 } };
+      },
+    };
+    const replacement: LLMPlannerProvider = {
+      id: 'legacy',
+      async classifyAndPlan() {
+        return { intent: { kind: 'doctor', slots: {}, confidence: 1 } };
+      },
+    };
+
+    registerLLMPlannerProvider(original);
+    expect(getLLMPlannerProvider('legacy')).toBe(original);
+    registerLLMPlannerProvider(replacement);
+    expect(getLLMPlannerProvider('legacy')).toBe(replacement);
+    clearLLMPlannerProviders();
+    expect(getLLMPlannerProvider('legacy')).toBeUndefined();
+  });
+
+  it('resolves a configured provider and actions from explicit isolated registries', async () => {
+    const savedProvider = process.env.OPENSLACK_LLM_PROVIDER;
+    const providerRegistry = createLLMPlannerProviderRegistry();
+    const statusAction = getRegisteredAction('status.show');
+    expect(statusAction).toBeDefined();
+    const actionRegistry = createActionRegistry([statusAction!]);
+    let actionIds: string[] = [];
+    const isolatedProvider: LLMPlannerProvider = {
+      id: 'isolated',
+      async classifyAndPlan(request) {
+        actionIds = request.actions.map((action) => action.id);
+        return { intent: { kind: 'status', slots: {}, confidence: 1 } };
+      },
+    };
+    providerRegistry.register(isolatedProvider);
+    process.env.OPENSLACK_LLM_PROVIDER = 'isolated';
+
+    try {
+      expect(getConfiguredLLMPlannerProvider(providerRegistry)).toBe(isolatedProvider);
+      const result = await resolveIntent('check status', {
+        providerRegistry,
+        actionRegistry,
+      });
+
+      expect(result.source).toBe('llm');
+      expect(actionIds).toEqual(['status.show']);
+    } finally {
+      if (savedProvider === undefined) delete process.env.OPENSLACK_LLM_PROVIDER;
+      else process.env.OPENSLACK_LLM_PROVIDER = savedProvider;
+    }
   });
 });
 

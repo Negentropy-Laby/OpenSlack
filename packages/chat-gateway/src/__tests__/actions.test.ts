@@ -3,6 +3,10 @@ import { handleAction } from '../actions.js';
 import { createPendingPlan, deletePendingPlan, loadPendingPlan } from '../plan-store.js';
 import { routeMessage } from '../router.js';
 import type { ChatMessage, GatewayConfig } from '../types.js';
+import {
+  BUILTIN_ACTION_REGISTRY,
+  createLLMPlannerProviderRegistry,
+} from '@openslack/operator';
 
 const createdPlans: string[] = [];
 
@@ -34,6 +38,7 @@ afterEach(() => {
   for (const planId of createdPlans.splice(0)) {
     deletePendingPlan(planId);
   }
+  delete process.env.OPENSLACK_LLM_PROVIDER;
 });
 
 describe('chat action pending-plan authorization', () => {
@@ -94,5 +99,29 @@ describe('chat action pending-plan authorization', () => {
 
     expect(response.text).toContain('requires a mapped chat user with write permission');
     expect(loadPendingPlan(plan.planId)).not.toBeNull();
+  });
+
+  it('routes intent planning through the supplied application provider registry', async () => {
+    const providers = createLLMPlannerProviderRegistry([
+      {
+        id: 'chat-context-only',
+        async classifyAndPlan() {
+          return { intent: { kind: 'pr_status', slots: {}, confidence: 1 } };
+        },
+      },
+    ]);
+    process.env.OPENSLACK_LLM_PROVIDER = 'chat-context-only';
+
+    const response = await routeMessage(
+      makeMessage('use the isolated chat planner'),
+      { readOnlyByDefault: true },
+      { payload: '{}' },
+      {
+        actionRegistry: BUILTIN_ACTION_REGISTRY,
+        llmProviderRegistry: providers,
+      },
+    );
+
+    expect(response.text).toContain('Pull request number to check status');
   });
 });

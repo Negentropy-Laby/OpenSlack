@@ -1,7 +1,12 @@
 import { parseIntent } from './intent.js';
 import type { Intent, IntentKind } from './types.js';
 import { KNOWN_INTENTS } from './intent-kinds.js';
-import { listRegisteredActions, type RegisteredActionCall } from './tool-registry.js';
+import {
+  BUILTIN_ACTION_REGISTRY,
+  listRegisteredActions,
+  type ActionRegistryPort,
+  type RegisteredActionCall,
+} from './tool-registry.js';
 
 export const LLM_PLANNER_MAX_TOOL_STEPS = 6;
 export const LLM_PLANNER_MAX_REPLANS = 2;
@@ -30,13 +35,50 @@ export interface LLMPlannerProvider {
   classifyAndPlan(request: LLMPlannerRequest, signal?: AbortSignal): Promise<LLMPlannerResponse>;
 }
 
+/**
+ * Instance-scoped provider lookup owned by an application composition root.
+ * Implementations intentionally preserve the legacy Map.set overwrite
+ * semantics so replacing a provider with the same id remains deterministic.
+ */
+export interface LLMPlannerProviderRegistryPort {
+  register(provider: LLMPlannerProvider): void;
+  clear(): void;
+  get(id: string): LLMPlannerProvider | undefined;
+}
+
 export interface ResolvedIntent {
   intent: Intent;
   source: 'keyword' | 'llm' | 'keyword-fallback';
   fallbackReason?: string;
 }
 
-const providers = new Map<string, LLMPlannerProvider>();
+class InstanceLLMPlannerProviderRegistry implements LLMPlannerProviderRegistryPort {
+  readonly #providers = new Map<string, LLMPlannerProvider>();
+
+  constructor(initialProviders: readonly LLMPlannerProvider[]) {
+    for (const provider of initialProviders) this.register(provider);
+  }
+
+  register(provider: LLMPlannerProvider): void {
+    this.#providers.set(provider.id, provider);
+  }
+
+  clear(): void {
+    this.#providers.clear();
+  }
+
+  get(id: string): LLMPlannerProvider | undefined {
+    return this.#providers.get(id);
+  }
+}
+
+export function createLLMPlannerProviderRegistry(
+  initialProviders: readonly LLMPlannerProvider[] = [],
+): LLMPlannerProviderRegistryPort {
+  return new InstanceLLMPlannerProviderRegistry(initialProviders);
+}
+
+const COMPATIBILITY_LLM_PLANNER_PROVIDER_REGISTRY = createLLMPlannerProviderRegistry();
 
 function isIntentKind(value: unknown): value is IntentKind {
   return typeof value === 'string' && KNOWN_INTENTS.includes(value as IntentKind);
@@ -51,12 +93,12 @@ function normalizeIntent(value: unknown): Intent | undefined {
   return { kind: candidate.kind, slots: slots as Intent['slots'], confidence };
 }
 
-function buildLLMRequest(query: string): LLMPlannerRequest {
+function buildLLMRequest(query: string, actionRegistry: ActionRegistryPort): LLMPlannerRequest {
   return {
     query,
     maxToolSteps: LLM_PLANNER_MAX_TOOL_STEPS,
     maxReplans: LLM_PLANNER_MAX_REPLANS,
-    actions: listRegisteredActions().map((action) => ({
+    actions: listRegisteredActions(actionRegistry).map((action) => ({
       id: action.id,
       description: action.description,
       inputSchema: action.inputSchema,
@@ -64,16 +106,16 @@ function buildLLMRequest(query: string): LLMPlannerRequest {
   };
 }
 
-function buildSystemPrompt(): string {
+function buildSystemPrompt(actions: LLMPlannerRequest['actions']): string {
   const intentList = KNOWN_INTENTS.filter(k => k !== 'unknown').join(', ');
-  const actions = listRegisteredActions().map(a => `  - ${a.id}: ${a.description}`).join('\n');
+  const actionList = actions.map(a => `  - ${a.id}: ${a.description}`).join('\n');
   return [
     'You are the OpenSlack intent classifier. Classify the user request into exactly one intent kind.',
     '',
     `Available intents: ${intentList}`,
     '',
     'Registered actions:',
-    actions,
+    actionList,
     '',
     'Extract these slots when present:',
     '  - prNumber: number from "PR #N" or "pull request #N"',
@@ -120,18 +162,20 @@ function getTimeoutMs(): number {
 }
 
 export function registerLLMPlannerProvider(provider: LLMPlannerProvider): void {
-  providers.set(provider.id, provider);
+  COMPATIBILITY_LLM_PLANNER_PROVIDER_REGISTRY.register(provider);
 }
 
 export function clearLLMPlannerProviders(): void {
-  providers.clear();
+  COMPATIBILITY_LLM_PLANNER_PROVIDER_REGISTRY.clear();
 }
 
 export function getLLMPlannerProvider(id: string): LLMPlannerProvider | undefined {
-  return providers.get(id);
+  return COMPATIBILITY_LLM_PLANNER_PROVIDER_REGISTRY.get(id);
 }
 
-export function getConfiguredLLMPlannerProvider(): LLMPlannerProvider | undefined {
+export function getConfiguredLLMPlannerProvider(
+  providerRegistry: LLMPlannerProviderRegistryPort = COMPATIBILITY_LLM_PLANNER_PROVIDER_REGISTRY,
+): LLMPlannerProvider | undefined {
   const provider = process.env.OPENSLACK_LLM_PROVIDER;
   if (!provider) return undefined;
   if (provider === 'openai' || provider === 'openai-compatible') {
@@ -142,18 +186,23 @@ export function getConfiguredLLMPlannerProvider(): LLMPlannerProvider | undefine
       baseUrl: process.env.OPENSLACK_LLM_BASE_URL,
     });
   }
-  return getLLMPlannerProvider(provider);
+  return providerRegistry.get(provider);
 }
 
 export async function resolveIntent(
   text: string,
-  options: { provider?: LLMPlannerProvider; confidenceThreshold?: number } = {},
+  options: {
+    provider?: LLMPlannerProvider;
+    providerRegistry?: LLMPlannerProviderRegistryPort;
+    actionRegistry?: ActionRegistryPort;
+    confidenceThreshold?: number;
+  } = {},
 ): Promise<ResolvedIntent> {
   // 1. ALWAYS run keyword parser first — serves as fallback and slot source
   const parsed = parseIntent(text);
 
   // 2. Try to get provider
-  const provider = options.provider ?? getConfiguredLLMPlannerProvider();
+  const provider = options.provider ?? getConfiguredLLMPlannerProvider(options.providerRegistry);
   if (!provider) {
     return { intent: parsed, source: 'keyword' };
   }
@@ -167,7 +216,10 @@ export async function resolveIntent(
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const response = await provider.classifyAndPlan(buildLLMRequest(text), controller.signal);
+      const response = await provider.classifyAndPlan(
+        buildLLMRequest(text, options.actionRegistry ?? BUILTIN_ACTION_REGISTRY),
+        controller.signal,
+      );
       clearTimeout(timer);
 
       const intent = normalizeIntent(response.intent);
@@ -239,7 +291,7 @@ export function createOpenAICompatiblePlannerProvider(options: {
           messages: [
             {
               role: 'system',
-              content: buildSystemPrompt(),
+              content: buildSystemPrompt(request.actions),
             },
             {
               role: 'user',

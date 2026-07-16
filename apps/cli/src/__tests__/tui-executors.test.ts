@@ -16,6 +16,7 @@ import {
 import type { ApprovalExecutionParams } from '../commands/tui-executors.js'
 import { TrustStore } from '@openslack/workflows'
 import * as operator from '@openslack/operator'
+import type { ActionRegistryPort } from '@openslack/operator'
 import * as collaboration from '@openslack/collaboration'
 import * as pr from '@openslack/pr'
 import * as github from '@openslack/github'
@@ -762,6 +763,36 @@ describe('conversation-first workbench ask handlers', () => {
       }),
     ]))
   })
+
+  it('routes workbench planning through the supplied application registries', async () => {
+    const createStep = vi.fn((...args: Parameters<ActionRegistryPort['createStep']>) =>
+      operator.BUILTIN_ACTION_REGISTRY.createStep(...args),
+    );
+    const actionRegistry = {
+      list: () => operator.BUILTIN_ACTION_REGISTRY.list(),
+      get: (actionId: string) => operator.BUILTIN_ACTION_REGISTRY.get(actionId),
+      createStep,
+      revalidateStep: (value: unknown) =>
+        operator.BUILTIN_ACTION_REGISTRY.revalidateStep(value),
+      buildPlanSteps: (...args: Parameters<ActionRegistryPort['buildPlanSteps']>) =>
+        operator.BUILTIN_ACTION_REGISTRY.buildPlanSteps(...args),
+    } satisfies ActionRegistryPort;
+
+    const result = await submitWorkbenchAskFromTui(
+      'check status',
+      tempRoot,
+      'tui-user',
+      undefined,
+      {
+        actionRegistry,
+        llmProviderRegistry: operator.createLLMPlannerProviderRegistry(),
+      },
+    );
+
+    expect(result.status).toBe('planned');
+    expect(result.cards).toContainEqual(expect.objectContaining({ route: 'status' }));
+    expect(createStep).toHaveBeenCalledWith('status.show', {}, 's1');
+  });
 
   it('does not create a workbench thread for empty input', async () => {
     const result = await submitWorkbenchAskFromTui('   ', tempRoot, 'tui-user')

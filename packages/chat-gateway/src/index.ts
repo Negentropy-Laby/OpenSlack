@@ -24,4 +24,4 @@ export type {
   ActorMapping,
   GatewayConfig,
 } from './types.js';
-export type { RouteContext } from './router.js';
+export type { ChatOperatorContext, RouteContext } from './router.js';

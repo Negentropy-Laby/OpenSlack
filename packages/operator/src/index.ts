@@ -6,6 +6,7 @@ export {
   getLLMPlannerProvider,
   getConfiguredLLMPlannerProvider,
   createOpenAICompatiblePlannerProvider,
+  createLLMPlannerProviderRegistry,
   LLM_PLANNER_MAX_TOOL_STEPS,
   LLM_PLANNER_MAX_REPLANS,
   LLM_PLANNER_MAX_RETRIES,
@@ -66,6 +67,7 @@ export type {
 } from './types.js';
 export type {
   LLMPlannerProvider,
+  LLMPlannerProviderRegistryPort,
   LLMPlannerRequest,
   LLMPlannerResponse,
   ResolvedIntent,
@@ -87,17 +89,24 @@ export type {
 export type { PendingPlan, PlanApprovalState } from './plan-store.js';
 export type { ConversationTurn, Conversation } from './conversation-store.js';
 export type { ContextResolution } from './context-resolver.js';
-export type { ConversationActionCard, TuiAskPlan, TuiAskResult } from './tui-ask.js';
+export type {
+  ConversationActionCard,
+  TuiAskPlan,
+  TuiAskPlanOptions,
+  TuiAskResult,
+} from './tui-ask.js';
 export { getRoleGuide, listRoles, renderGuide } from './guides.js';
 export type { RoleGuide, RoleGuideSection } from './guides.js';
 export {
   registerConversationStoreAdapter,
+  createConversationStoreBinding,
   listConversationsForOperator,
   showConversationForOperator,
   sendConversationMessage,
 } from './conversation-bridge.js';
 export type {
   ConversationStoreAdapter,
+  ConversationStoreBindingPort,
   ConversationListOptions,
   ConversationListItem,
   ConversationDetailView,

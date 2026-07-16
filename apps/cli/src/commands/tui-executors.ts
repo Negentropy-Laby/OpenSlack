@@ -1,5 +1,6 @@
 import type { ConversationActionCard, TuiActionResult, TuiAskResult } from '@openslack/tui'
 import type { WorkflowRunControlAction, WorkflowRunControlTarget } from '@openslack/workflows'
+import type { ActionRegistryPort, LLMPlannerProviderRegistryPort } from '@openslack/operator'
 import { join } from 'node:path'
 import {
   dispatchConversationAgentMessage,
@@ -42,6 +43,11 @@ export interface TuiActionHandlers {
   submitWorkbenchAsk?: (input: string, threadId?: string) => Promise<TuiAskResult>
   recordWorkbenchAction?: (threadId: string, card: ConversationActionCard, message: string) => Promise<TuiActionResult>
   profileSync?: ProfileActionHandlers
+}
+
+export interface TuiOperatorContext {
+  readonly actionRegistry: ActionRegistryPort
+  readonly llmProviderRegistry: LLMPlannerProviderRegistryPort
 }
 
 // ── executeApproval ────────────────────────────────────────────────────────────
@@ -780,6 +786,7 @@ export async function submitWorkbenchAskFromTui(
   root: string,
   actorId: string = 'tui-user',
   threadId?: string,
+  operatorContext?: TuiOperatorContext,
 ): Promise<TuiAskResult> {
   const text = input.trim()
   if (!text) {
@@ -835,7 +842,10 @@ export async function submitWorkbenchAskFromTui(
   const planMessageIndex = (getThread(thread.id, root)?.messages.length ?? 0) + 1
 
   const { buildTuiAskPlan } = await import('@openslack/operator')
-  const planned = await buildTuiAskPlan(text)
+  const planned = await buildTuiAskPlan(text, {
+    actionRegistry: operatorContext?.actionRegistry,
+    llmProviderRegistry: operatorContext?.llmProviderRegistry,
+  })
   const planMessage = planned.fallbackReason
     ? `⚠ ${planned.fallbackReason}\n\n${planned.message}`
     : planned.message;
@@ -895,7 +905,11 @@ export async function recordWorkbenchActionFromTui(
   }
 }
 
-export function createActionHandlers(root: string, actorId: string = 'tui-user'): TuiActionHandlers {
+export function createActionHandlers(
+  root: string,
+  actorId: string = 'tui-user',
+  operatorContext?: TuiOperatorContext,
+): TuiActionHandlers {
   return {
     executeApproval: (params, isApprove) => executeApproval(params, isApprove, root, actorId),
     executeTrustChange: (name, from, to) => executeTrustChange(name, from, to, root),
@@ -908,7 +922,8 @@ export function createActionHandlers(root: string, actorId: string = 'tui-user')
     requestWorkflowReview: (name) => requestWorkflowReview(name, root, actorId),
     splitWorkflowIntoIssues: (name, parentIssue) => splitWorkflowIntoIssues(name, parentIssue, root),
     finalizeWorkflowPr: (name, prNumber) => finalizeWorkflowPr(name, prNumber, root),
-    submitWorkbenchAsk: (input, threadId) => submitWorkbenchAskFromTui(input, root, actorId, threadId),
+    submitWorkbenchAsk: (input, threadId) =>
+      submitWorkbenchAskFromTui(input, root, actorId, threadId, operatorContext),
     recordWorkbenchAction: (threadId, card, message) => recordWorkbenchActionFromTui(threadId, card, message, root, actorId),
     profileSync: createProfileSyncHandlers(root),
   }

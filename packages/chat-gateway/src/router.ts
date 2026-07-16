@@ -1,5 +1,13 @@
-import { resolveIntent, planActions, executePlan } from '@openslack/operator';
-import type { ExecutionResult } from '@openslack/operator';
+import {
+  BUILTIN_ACTION_REGISTRY,
+  resolveIntent,
+  planActions,
+  executePlan,
+} from '@openslack/operator';
+import type {
+  ActionRegistryPort,
+  LLMPlannerProviderRegistryPort,
+} from '@openslack/operator';
 import type { ChatMessage, ChatResponse, GatewayConfig } from './types.js';
 import { verifyRequestSignature, mapActor, canExecuteSideEffects, buildDefaultActor, loadActorMappings } from './authz.js';
 import { formatPlanAsMarkdown, formatResultAsMarkdown, formatError } from './formatter.js';
@@ -18,11 +26,18 @@ export interface RouteContext {
   payload: string;
 }
 
+export interface ChatOperatorContext {
+  readonly actionRegistry?: ActionRegistryPort;
+  readonly llmProviderRegistry?: LLMPlannerProviderRegistryPort;
+}
+
 export async function routeMessage(
   message: ChatMessage,
   config: GatewayConfig,
   context: RouteContext,
+  operatorContext: ChatOperatorContext = {},
 ): Promise<ChatResponse> {
+  const actionRegistry = operatorContext.actionRegistry ?? BUILTIN_ACTION_REGISTRY;
   try {
     recordEvent({
       type: 'chat.message.received',
@@ -95,7 +110,7 @@ export async function routeMessage(
       };
     }
 
-    const actionResult = await handleAction(message);
+    const actionResult = await handleAction(message, actionRegistry);
     if (actionResult) {
       markProcessed(message.id, message.text, message.user.id, message.channel.id);
       return actionResult;
@@ -103,7 +118,12 @@ export async function routeMessage(
   }
 
   // 4. Resolve intent (keyword-first, optional LLM fallback)
-  const { intent, fallbackReason } = await resolveIntent(message.text);
+  const { intent, fallbackReason } = await resolveIntent(message.text, {
+    actionRegistry,
+    ...(operatorContext.llmProviderRegistry === undefined
+      ? {}
+      : { providerRegistry: operatorContext.llmProviderRegistry }),
+  });
   const fallbackPrefix = fallbackReason ? `⚠️ ${fallbackReason}\n\n` : '';
 
   if (intent.kind === 'unknown') {
@@ -113,7 +133,7 @@ export async function routeMessage(
   }
 
   // 5. Plan actions
-  const plan = planActions(intent);
+  const plan = planActions(intent, actionRegistry);
 
   // 6. Handle missing params
   if (plan.missingParams.length > 0) {
@@ -191,7 +211,7 @@ export async function routeMessage(
   }
 
   // 9. Execute
-  const result = await executePlan(plan, { dryRun: false, ...agentAuth });
+  const result = await executePlan(plan, { dryRun: false, ...agentAuth }, actionRegistry);
   markProcessed(message.id, message.text, message.user.id, message.channel.id);
 
   return { text: fallbackPrefix + formatResultAsMarkdown(result).text };

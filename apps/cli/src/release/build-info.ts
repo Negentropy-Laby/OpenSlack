@@ -20,7 +20,7 @@ export function getBuildInfo(): OpenSlackBuildInfo {
   const bunRuntime = (globalThis as { Bun?: { version?: string } }).Bun?.version;
   return {
     schema: 'openslack.build_info.v1',
-    version: injected('__OPENSLACK_BUILD_VERSION__', () => __OPENSLACK_BUILD_VERSION__) ?? '0.1.0',
+    version: injected('__OPENSLACK_BUILD_VERSION__', () => __OPENSLACK_BUILD_VERSION__) ?? '0.1.1',
     commit: injected('__OPENSLACK_BUILD_COMMIT__', () => __OPENSLACK_BUILD_COMMIT__) ?? 'development',
     channel: injected('__OPENSLACK_BUILD_CHANNEL__', () => __OPENSLACK_BUILD_CHANNEL__) ?? 'source',
     target:

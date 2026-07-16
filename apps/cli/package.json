@@ -21,6 +21,8 @@
     "@openslack/github": "workspace:*",
     "@openslack/pr": "workspace:*",
     "@openslack/operator": "workspace:*",
+    "@openslack/plugin-api": "workspace:*",
+    "@openslack/plugin-host": "workspace:*",
     "@openslack/chat-gateway": "workspace:*",
     "@openslack/collaboration": "workspace:*",
     "@openslack/workflows": "workspace:*",

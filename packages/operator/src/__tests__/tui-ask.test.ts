@@ -1,6 +1,12 @@
-import { describe, expect, it, afterEach } from 'vitest';
+import { describe, expect, it, afterEach, vi } from 'vitest';
 import { buildTuiAskPlan } from '../tui-ask.js';
-import { registerLLMPlannerProvider, clearLLMPlannerProviders } from '../llm.js';
+import {
+  registerLLMPlannerProvider,
+  clearLLMPlannerProviders,
+  createLLMPlannerProviderRegistry,
+} from '../llm.js';
+import { BUILTIN_ACTION_REGISTRY } from '../tool-registry.js';
+import type { ActionRegistryPort } from '../tool-registry.js';
 
 describe('buildTuiAskPlan', () => {
   it('maps broad PR checks to a PR queue route card', async () => {
@@ -98,5 +104,43 @@ describe('buildTuiAskPlan LLM integration', () => {
     expect(plan.fallbackReason).toBeTruthy();
     expect(plan.fallbackReason).toContain('LLM');
     expect(plan.cards.length).toBeGreaterThan(0);
+  });
+
+  it('uses only the explicitly supplied provider and action registries', async () => {
+    registerLLMPlannerProvider({
+      id: 'isolated-tui',
+      async classifyAndPlan() {
+        return { intent: { kind: 'doctor', slots: {}, confidence: 1 } };
+      },
+    });
+    const providers = createLLMPlannerProviderRegistry([
+      {
+        id: 'isolated-tui',
+        async classifyAndPlan() {
+          return { intent: { kind: 'status', slots: {}, confidence: 1 } };
+        },
+      },
+    ]);
+    const createStep = vi.fn((...args: Parameters<ActionRegistryPort['createStep']>) =>
+      BUILTIN_ACTION_REGISTRY.createStep(...args),
+    );
+    const actions = {
+      list: () => BUILTIN_ACTION_REGISTRY.list(),
+      get: (actionId: string) => BUILTIN_ACTION_REGISTRY.get(actionId),
+      createStep,
+      revalidateStep: (value: unknown) => BUILTIN_ACTION_REGISTRY.revalidateStep(value),
+      buildPlanSteps: (...args: Parameters<ActionRegistryPort['buildPlanSteps']>) =>
+        BUILTIN_ACTION_REGISTRY.buildPlanSteps(...args),
+    } satisfies ActionRegistryPort;
+    process.env.OPENSLACK_LLM_PROVIDER = 'isolated-tui';
+
+    const plan = await buildTuiAskPlan('route through the isolated graph', {
+      actionRegistry: actions,
+      llmProviderRegistry: providers,
+    });
+
+    expect(plan.llmSource).toBe('llm');
+    expect(plan.plan.intent.kind).toBe('status');
+    expect(createStep).toHaveBeenCalledWith('status.show', {}, 's1');
   });
 });
