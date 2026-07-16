@@ -27,7 +27,11 @@ export {
   resumePendingPlan,
 } from './plan-store.js';
 export {
+  BUILTIN_ACTION_REGISTRY,
   REGISTERED_ACTIONS,
+  REGISTERED_ACTION_IDS,
+  createActionRegistry,
+  isPluginActionId,
   listRegisteredActions,
   getRegisteredAction,
   createRegisteredStep,
@@ -70,6 +74,10 @@ export { describeLLMRoutingConfig } from './llm-config.js';
 export type { LLMConfigStatus } from './llm-config.js';
 export { KNOWN_INTENTS } from './intent-kinds.js';
 export type {
+  ActionId,
+  ActionRegistryPort,
+  PlanStepRevalidation,
+  PluginActionId,
   RegisteredAction,
   RegisteredActionCall,
   RegisteredActionId,

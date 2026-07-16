@@ -1,6 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { planActions } from '../planner.js';
 import { parseIntent } from '../intent.js';
+import {
+  BUILTIN_ACTION_REGISTRY,
+  type ActionRegistryPort,
+} from '../tool-registry.js';
 
 describe('planActions', () => {
   it('plans status with no confirmation needed', () => {
@@ -36,6 +40,28 @@ describe('planActions', () => {
     expect(plan.riskLevel).toBe('high');
     expect(plan.requiresConfirmation).toBe(true);
     expect(plan.sideEffects).toBe(true);
+  });
+
+  it('uses an explicit action registry without changing built-in planning', () => {
+    const intent = parseIntent('merge PR #12');
+    const createStep = vi.fn(BUILTIN_ACTION_REGISTRY.createStep.bind(BUILTIN_ACTION_REGISTRY));
+    const registry: ActionRegistryPort = {
+      list: () => BUILTIN_ACTION_REGISTRY.list(),
+      get: (actionId) => BUILTIN_ACTION_REGISTRY.get(actionId),
+      createStep,
+      revalidateStep: (step) => BUILTIN_ACTION_REGISTRY.revalidateStep(step),
+      buildPlanSteps: (goal, intentKind, calls) =>
+        BUILTIN_ACTION_REGISTRY.buildPlanSteps(goal, intentKind, calls),
+    };
+
+    const baseline = planActions(intent);
+    const explicit = planActions(intent, registry);
+
+    expect(explicit).toEqual(baseline);
+    expect(createStep.mock.calls.map(([actionId]) => actionId)).toEqual([
+      'pr.doctor',
+      'pr.merge',
+    ]);
   });
 
   it('identifies missing params for sync', () => {

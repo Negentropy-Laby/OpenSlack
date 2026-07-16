@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import type { ActionPlan, PlanStep, StepResult, ExecutionResult, ExecutionOptions } from './types.js';
-import { isRegisteredStep } from './tool-registry.js';
+import { BUILTIN_ACTION_REGISTRY, type ActionRegistryPort } from './tool-registry.js';
 import type { AgentPrincipal } from '@openslack/kernel';
 import { authorizeAgentAction, classifyPaths } from '@openslack/kernel';
 import type { AgentPermissionSnapshot, RiskZone } from '@openslack/kernel';
@@ -87,9 +87,31 @@ function getStepRiskZone(changedPaths: string[]): RiskZone | undefined {
   return undefined;
 }
 
+function rejectedStep(
+  planId: string,
+  results: StepResult[],
+  invalid: { readonly stepId: string; readonly actionId?: string; readonly reason: string },
+): ExecutionResult {
+  const action = invalid.actionId ?? 'unknown';
+  results.push({
+    stepId: invalid.stepId,
+    status: 'failed',
+    output: `Unregistered or non-canonical OpenSlack action: ${action}. ${invalid.reason}`,
+    exitCode: 1,
+  });
+  return {
+    planId,
+    status: 'failed',
+    steps: results,
+    summary: `Rejected unregistered action "${action}"`,
+    nextActions: ['Use a canonical step from the current registered action'],
+  };
+}
+
 export async function executePlan(
   plan: ActionPlan,
   options: ExecutionOptions & { principal?: AgentPrincipal; snapshot?: AgentPermissionSnapshot } = {},
+  registry: ActionRegistryPort = BUILTIN_ACTION_REGISTRY,
 ): Promise<ExecutionResult> {
   const planId = generatePlanId();
   const root = findRepoRoot();
@@ -106,21 +128,21 @@ export async function executePlan(
     };
   }
 
+  const plannedSteps = [...plan.steps];
+  const preflightSteps: PlanStep[] = [];
+  // Validate the complete plan before any authorization callback or command can
+  // run. Revalidation may rebuild steps; registered builders are pure by contract.
+  for (const plannedStep of plannedSteps) {
+    const validation = registry.revalidateStep(plannedStep);
+    if (!validation.valid) return rejectedStep(planId, results, validation);
+    preflightSteps.push(validation.step);
+  }
+
   if (options.dryRun) {
-    const invalid = plan.steps.find((step) => !isRegisteredStep(step));
-    if (invalid) {
-      return {
-        planId,
-        status: 'failed',
-        steps: [{ stepId: invalid.id, status: 'failed', output: `Unregistered OpenSlack action: ${invalid.actionId || invalid.command}` }],
-        summary: `Rejected unregistered action "${invalid.actionId || invalid.command}"`,
-        nextActions: ['Use a registered OpenSlack action'],
-      };
-    }
     return {
       planId,
       status: 'success',
-      steps: plan.steps.map((s) => ({
+      steps: preflightSteps.map((s) => ({
         stepId: s.id,
         status: 'skipped' as const,
         output: `[dry-run] ${s.description}`,
@@ -130,23 +152,12 @@ export async function executePlan(
     };
   }
 
-  for (const step of plan.steps) {
-    if (!isRegisteredStep(step)) {
-      const result = {
-        stepId: step.id,
-        status: 'failed' as const,
-        output: `Unregistered OpenSlack action: ${step.actionId || step.command}`,
-        exitCode: 1,
-      };
-      results.push(result);
-      return {
-        planId,
-        status: 'failed',
-        steps: results,
-        summary: `Rejected unregistered action "${step.actionId || step.command}"`,
-        nextActions: ['Use a registered OpenSlack action'],
-      };
-    }
+  for (const plannedStep of plannedSteps) {
+    // Re-check at the per-step authority boundary instead of relying only on the
+    // earlier whole-plan snapshot.
+    const validation = registry.revalidateStep(plannedStep);
+    if (!validation.valid) return rejectedStep(planId, results, validation);
+    let step = validation.step;
 
     // Per-step authorization gate
     let authorizationConfirmed = false;
@@ -223,6 +234,12 @@ export async function executePlan(
     }
 
     options.onStepStart?.(step);
+
+    // Re-check through the supplied registry after the callback; a compliant
+    // ActionRegistryPort must reject any lifecycle-callback drift.
+    const finalValidation = registry.revalidateStep(step);
+    if (!finalValidation.valid) return rejectedStep(planId, results, finalValidation);
+    step = finalValidation.step;
 
     let result: StepResult;
     if (step.tool === 'openslack-cli') {
