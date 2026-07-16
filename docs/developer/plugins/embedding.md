@@ -37,6 +37,12 @@ confirmation flag, and declared outputs. Callbacks receive a frozen canonical co
 LLM-produced, or caller-produced step fields therefore cannot become execution authority merely
 by resembling a registered command.
 
+An action `build` or `match` function supplied by a trusted composition root must be
+synchronous, deterministic, and side-effect-free. It must not perform I/O or read time/random
+state. Whole-plan preflight, per-step authorization boundaries, and post-callback validation may
+invoke it more than once. External effects belong only in the canonical execution target after
+authorization, never in action-definition construction or matching.
+
 Constructing an action definition remains a trusted composition-root operation. A validated
 workspace or installed manifest cannot call `createActionRegistry()`, supply builder functions,
 or register raw command/argv. Translating governed declarative aliases into Operator actions is

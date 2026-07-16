@@ -88,6 +88,8 @@ describe('tool registry', () => {
     expect(isPluginActionId(pluginId)).toBe(true);
     expect(isPluginActionId('plugin:reader:status:extra')).toBe(false);
     expect(isPluginActionId('plugin:openslack:status')).toBe(false);
+    expect(isPluginActionId('plugin:read\ner:status')).toBe(false);
+    expect(isPluginActionId('plugin:reader:sta\rtus')).toBe(false);
     expect(builtInId).toBe(pluginId);
   });
 

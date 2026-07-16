@@ -54,7 +54,16 @@ export interface RegisteredAction<TActionId extends ActionId = ActionId> {
   readonly riskLevel: RiskLevel;
   readonly sideEffects: boolean;
   readonly confirmationRequired: boolean;
+  /**
+   * Synchronous, deterministic, side-effect-free object construction. Registry
+   * validation may invoke this function more than once before any execution
+   * authority is used; it must not perform I/O or read time/random state.
+   */
   readonly build: (input: ToolInput, stepId: string) => PlanStep;
+  /**
+   * Synchronous, deterministic, side-effect-free validation of canonical output;
+   * it must not perform I/O or read time/random state.
+   */
   readonly match: (step: PlanStep) => boolean;
 }
 
@@ -439,7 +448,8 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
 };
 
 const BUILT_IN_ACTION_ID_SET = new Set<string>(REGISTERED_ACTION_IDS);
-const PLUGIN_ACTION_SEGMENT_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+const PLUGIN_ACTION_ID_PATTERN =
+  /^plugin:([a-z][a-z0-9]*(?:-[a-z0-9]+)*):([a-z][a-z0-9]*(?:-[a-z0-9]+)*)$/;
 // Keep the host action schema compatible with plugin-api's bounded field-name grammar.
 // Declarative-manifest forbidden names are rejected by the governed host before adaptation;
 // this registry also supports explicitly imported, trusted bundled definitions.
@@ -452,32 +462,33 @@ const RESERVED_PLUGIN_IDS = new Set([
   'external',
   'negentropy',
 ]);
-const PLAN_STEP_KEYS = new Set([
-  'id',
-  'actionId',
-  'input',
-  'tool',
-  'command',
-  'args',
-  'description',
-  'confirmationRequired',
-  'produces',
-]);
+// `satisfies Record<keyof PlanStep, true>` makes a PlanStep type change fail
+// typecheck until the closed runtime allowlist is reviewed and updated.
+const PLAN_STEP_KEY_MAP = Object.freeze({
+  id: true,
+  actionId: true,
+  input: true,
+  tool: true,
+  command: true,
+  args: true,
+  description: true,
+  confirmationRequired: true,
+  produces: true,
+} as const satisfies Record<keyof PlanStep, true>);
+const PLAN_STEP_KEYS: ReadonlySet<string> = new Set(Object.keys(PLAN_STEP_KEY_MAP));
 
 function isRegisteredActionId(value: string): value is RegisteredActionId {
   return BUILT_IN_ACTION_ID_SET.has(value);
 }
 
 export function isPluginActionId(value: string): value is PluginActionId {
-  const match = /^plugin:([^:]+):([^:]+)$/.exec(value);
+  const match = PLUGIN_ACTION_ID_PATTERN.exec(value);
   if (!match) return false;
   const pluginId = match[1]!;
   const localId = match[2]!;
   return (
     pluginId.length <= 64 &&
     localId.length <= 64 &&
-    PLUGIN_ACTION_SEGMENT_PATTERN.test(pluginId) &&
-    PLUGIN_ACTION_SEGMENT_PATTERN.test(localId) &&
     !pluginId.startsWith('openslack-') &&
     !RESERVED_PLUGIN_IDS.has(pluginId)
   );

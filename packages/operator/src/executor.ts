@@ -130,6 +130,8 @@ export async function executePlan(
 
   const plannedSteps = [...plan.steps];
   const preflightSteps: PlanStep[] = [];
+  // Validate the complete plan before any authorization callback or command can
+  // run. Revalidation may rebuild steps; registered builders are pure by contract.
   for (const plannedStep of plannedSteps) {
     const validation = registry.revalidateStep(plannedStep);
     if (!validation.valid) return rejectedStep(planId, results, validation);
@@ -151,6 +153,8 @@ export async function executePlan(
   }
 
   for (const plannedStep of plannedSteps) {
+    // Re-check at the per-step authority boundary instead of relying only on the
+    // earlier whole-plan snapshot.
     const validation = registry.revalidateStep(plannedStep);
     if (!validation.valid) return rejectedStep(planId, results, validation);
     let step = validation.step;
@@ -231,6 +235,8 @@ export async function executePlan(
 
     options.onStepStart?.(step);
 
+    // Re-check through the supplied registry after the callback; a compliant
+    // ActionRegistryPort must reject any lifecycle-callback drift.
     const finalValidation = registry.revalidateStep(step);
     if (!finalValidation.valid) return rejectedStep(planId, results, finalValidation);
     step = finalValidation.step;
