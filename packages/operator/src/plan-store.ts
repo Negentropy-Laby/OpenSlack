@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from 'node:path';
 import type { ActionPlan, Intent } from './types.js';
 import { planActions } from './planner.js';
+import { BUILTIN_ACTION_REGISTRY, type ActionRegistryPort } from './tool-registry.js';
 
 export type PlanApprovalState = 'pending' | 'approved' | 'cancelled' | 'executed' | 'expired';
 
@@ -100,6 +101,7 @@ export function resumePendingPlan(
   planId: string,
   slotUpdates: Record<string, string | number | string[]>,
   root = process.cwd(),
+  registry: ActionRegistryPort = BUILTIN_ACTION_REGISTRY,
 ): PendingPlan | null {
   const pending = loadPendingPlan(planId, root);
   if (!pending || pending.state !== 'pending') return null;
@@ -110,7 +112,7 @@ export function resumePendingPlan(
       ...slotUpdates,
     },
   };
-  const plan = planActions(intent);
+  const plan = planActions(intent, registry);
   const updated: PendingPlan = {
     ...pending,
     plan,
@@ -120,4 +122,3 @@ export function resumePendingPlan(
   writeFileSync(getPlanPath(planId, root), JSON.stringify(updated, null, 2), 'utf-8');
   return updated;
 }
-

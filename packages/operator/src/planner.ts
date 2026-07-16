@@ -1,20 +1,20 @@
 import type { Intent, ActionPlan, PlanStep, MissingParam } from './types.js';
 import { identifyMissingParams } from './clarify.js';
 import { assessRisk, hasSideEffects } from './risk.js';
-import { createRegisteredStep } from './tool-registry.js';
+import { BUILTIN_ACTION_REGISTRY, type ActionRegistryPort } from './tool-registry.js';
 import { recommendWorkflowForQuery } from './workflow-recommendation.js';
 import { KNOWN_INTENTS } from './intent-kinds.js';
 
 const ALLOWLISTED_INTENTS = new Set(KNOWN_INTENTS.filter(k => k !== 'unknown'));
 
-function buildSteps(intent: Intent): PlanStep[] {
+function buildSteps(intent: Intent, registry: ActionRegistryPort): PlanStep[] {
   const prNumber = intent.slots.prNumber as number | undefined;
   const issueNumber = intent.slots.issueNumber as number | undefined;
   const agentId = intent.slots.agentId as string | undefined;
   const paths = intent.slots.paths as string | undefined;
   const title = intent.slots.title as string | undefined;
   const step = (actionId: string, input: Record<string, string | number | boolean | undefined> = {}, id = 's1') =>
-    createRegisteredStep(actionId, input, id);
+    registry.createStep(actionId, input, id);
 
   switch (intent.kind) {
     case 'workflow_recommended':
@@ -133,7 +133,10 @@ function buildGoal(intent: Intent): string {
   }
 }
 
-export function planActions(intent: Intent): ActionPlan {
+export function planActions(
+  intent: Intent,
+  registry: ActionRegistryPort = BUILTIN_ACTION_REGISTRY,
+): ActionPlan {
   // Security: block unallowlisted intents
   if (intent.kind !== 'unknown' && !ALLOWLISTED_INTENTS.has(intent.kind)) {
     return {
@@ -148,7 +151,7 @@ export function planActions(intent: Intent): ActionPlan {
   }
 
   const missing = identifyMissingParams(intent);
-  const steps = missing.length === 0 ? buildSteps(intent) : [];
+  const steps = missing.length === 0 ? buildSteps(intent, registry) : [];
   const risk = assessRisk(intent);
   const workflowRecommendation =
     intent.kind === 'workflow_recommended' || intent.kind === 'workflow_not_needed' || intent.kind === 'workflow_draft_required'

@@ -1,8 +1,15 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { executePlan } from '../executor.js';
 import { planActions } from '../planner.js';
 import { parseIntent } from '../intent.js';
-import type { ActionPlan } from '../types.js';
+import {
+  createActionRegistry,
+  createRegisteredStep,
+  listRegisteredActions,
+  type PluginActionId,
+  type RegisteredAction,
+} from '../tool-registry.js';
+import type { ActionPlan, PlanStep } from '../types.js';
 import type { AgentPermissionSnapshot } from '@openslack/kernel';
 
 function makeSnapshot(overrides: Partial<AgentPermissionSnapshot['permissions']> = {}): AgentPermissionSnapshot {
@@ -26,6 +33,41 @@ function makeSnapshot(overrides: Partial<AgentPermissionSnapshot['permissions']>
   };
 }
 
+function makePlan(step: PlanStep, overrides: Partial<ActionPlan> = {}): ActionPlan {
+  return {
+    goal: 'Test execution',
+    intent: { kind: 'status', slots: {}, confidence: 1 },
+    steps: [step],
+    riskLevel: 'none',
+    missingParams: [],
+    requiresConfirmation: step.confirmationRequired,
+    sideEffects: step.confirmationRequired,
+    ...overrides,
+  };
+}
+
+function pluginPackageAction(id: PluginActionId): RegisteredAction<PluginActionId> {
+  return {
+    id,
+    description: 'Test package action',
+    inputSchema: {},
+    riskLevel: 'none',
+    sideEffects: false,
+    confirmationRequired: false,
+    build: (input, stepId) => ({
+      id: stepId,
+      actionId: id,
+      input,
+      tool: 'package-api',
+      command: 'test-package-action',
+      args: [],
+      description: 'Test package action',
+      confirmationRequired: false,
+    }),
+    match: (step) => step.command === 'test-package-action' && step.args.length === 0,
+  };
+}
+
 describe('executePlan', () => {
   it('blocks when missing params', async () => {
     const intent = parseIntent('sync issue #12');
@@ -46,17 +88,7 @@ describe('executePlan', () => {
   });
 
   it('cancels when confirmStep returns false', async () => {
-    const plan: ActionPlan = {
-      goal: 'Test cancellation',
-      intent: { kind: 'status', slots: {}, confidence: 1 },
-      steps: [
-        { id: 's1', tool: 'openslack-cli', command: 'status', args: [], description: 'Check status', confirmationRequired: true },
-      ],
-      riskLevel: 'none',
-      missingParams: [],
-      requiresConfirmation: true,
-      sideEffects: false,
-    };
+    const plan = makePlan(createRegisteredStep('pr.merge', { prNumber: 198 }, 's1'));
     const result = await executePlan(plan, {
       confirmStep: async () => false,
     });
@@ -92,17 +124,7 @@ describe('executePlan', () => {
   });
 
   it('blocks ask authorization when no confirmation callback is available', async () => {
-    const plan: ActionPlan = {
-      goal: 'Ask authorization',
-      intent: { kind: 'status', slots: {}, confidence: 1 },
-      steps: [
-        { id: 's1', actionId: 'status.show', input: {}, tool: 'openslack-cli', command: 'status', args: [], description: 'Check status', confirmationRequired: false },
-      ],
-      riskLevel: 'none',
-      missingParams: [],
-      requiresConfirmation: false,
-      sideEffects: false,
-    };
+    const plan = makePlan(createRegisteredStep('status.show', {}, 's1'));
 
     const result = await executePlan(plan, {
       snapshot: makeSnapshot({ actions: { 'status.show': 'ask' } }),
@@ -114,17 +136,7 @@ describe('executePlan', () => {
   });
 
   it('cancels ask authorization when confirmation is rejected', async () => {
-    const plan: ActionPlan = {
-      goal: 'Ask authorization',
-      intent: { kind: 'status', slots: {}, confidence: 1 },
-      steps: [
-        { id: 's1', actionId: 'status.show', input: {}, tool: 'openslack-cli', command: 'status', args: [], description: 'Check status', confirmationRequired: false },
-      ],
-      riskLevel: 'none',
-      missingParams: [],
-      requiresConfirmation: false,
-      sideEffects: false,
-    };
+    const plan = makePlan(createRegisteredStep('status.show', {}, 's1'));
 
     const result = await executePlan(plan, {
       snapshot: makeSnapshot({ actions: { 'status.show': 'ask' } }),
@@ -137,22 +149,17 @@ describe('executePlan', () => {
   });
 
   it('continues to execution after ask authorization is accepted', async () => {
-    const plan: ActionPlan = {
-      goal: 'Ask authorization',
-      intent: { kind: 'status', slots: {}, confidence: 1 },
-      steps: [
-        { id: 's1', actionId: 'status.show', input: {}, tool: 'package-api', command: 'status', args: [], description: 'Check status', confirmationRequired: false },
-      ],
-      riskLevel: 'none',
-      missingParams: [],
-      requiresConfirmation: false,
-      sideEffects: false,
-    };
+    const pluginId: PluginActionId = 'plugin:test:package-status';
+    const registry = createActionRegistry([
+      ...listRegisteredActions(),
+      pluginPackageAction(pluginId),
+    ]);
+    const plan = makePlan(registry.createStep(pluginId, {}, 's1'));
 
     const result = await executePlan(plan, {
-      snapshot: makeSnapshot({ actions: { 'status.show': 'ask' } }),
+      snapshot: makeSnapshot({ actions: { [pluginId]: 'ask' } }),
       confirmStep: async () => true,
-    });
+    }, registry);
 
     expect(result.status).toBe('failed');
     expect(result.summary).toContain('Failed at step');
@@ -161,26 +168,16 @@ describe('executePlan', () => {
 
 
   it('passes changed paths and derived risk to authorization', async () => {
-    const plan: ActionPlan = {
+    const plan = makePlan(createRegisteredStep('task.sync', {
+      issueNumber: 12,
+      agentId: 'test_agent',
+      paths: 'packages/kernel/src/index.ts',
+    }, 's1'), {
       goal: 'Sync protected path',
       intent: { kind: 'sync_task', slots: {}, confidence: 1 },
-      steps: [
-        {
-          id: 's1',
-          actionId: 'task.sync',
-          input: { issueNumber: 12, agentId: 'test_agent', paths: 'packages/kernel/src/index.ts' },
-          tool: 'openslack-cli',
-          command: 'task',
-          args: ['sync', '--issue-number', '12', '--agent-id', 'test_agent', '--paths', 'packages/kernel/src/index.ts'],
-          description: 'Sync protected path',
-          confirmationRequired: true,
-        },
-      ],
       riskLevel: 'medium',
-      missingParams: [],
-      requiresConfirmation: true,
       sideEffects: true,
-    };
+    });
 
     const result = await executePlan(plan, {
       snapshot: makeSnapshot({ actions: { 'task.sync': 'allow' }, max_risk_zone: 'yellow' }),
@@ -188,5 +185,101 @@ describe('executePlan', () => {
 
     expect(result.status).toBe('failed');
     expect(result.summary).toContain('Action requires "red" zone');
+  });
+
+  it('rejects an actionless known command before authorization or callbacks', async () => {
+    const onStepStart = vi.fn();
+    const canonical = createRegisteredStep('status.show', {}, 's1');
+    const plan = makePlan({ ...canonical, actionId: undefined, input: undefined });
+
+    const result = await executePlan(plan, {
+      snapshot: makeSnapshot(),
+      onStepStart,
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.summary).toContain('Rejected unregistered action');
+    expect(onStepStart).not.toHaveBeenCalled();
+  });
+
+  it('rejects split input/args authority before authorization or confirmation', async () => {
+    const confirmStep = vi.fn(async () => true);
+    const onStepStart = vi.fn();
+    const canonical = createRegisteredStep('task.sync', {
+      issueNumber: 12,
+      agentId: 'test_agent',
+      paths: 'docs/README.md',
+    }, 's1');
+    const plan = makePlan({
+      ...canonical,
+      args: canonical.args.map((arg) => arg === 'docs/README.md'
+        ? 'packages/kernel/src/index.ts'
+        : arg),
+    });
+
+    const result = await executePlan(plan, {
+      snapshot: makeSnapshot({ actions: { 'task.sync': 'allow' } }),
+      confirmStep,
+      onStepStart,
+    });
+
+    expect(result.status).toBe('failed');
+    expect(result.summary).toContain('Rejected unregistered action');
+    expect(confirmStep).not.toHaveBeenCalled();
+    expect(onStepStart).not.toHaveBeenCalled();
+  });
+
+  it('passes an immutable canonical step to confirmation callbacks', async () => {
+    const plan = makePlan(createRegisteredStep('pr.merge', { prNumber: 198 }, 's1'));
+    const confirmStep = vi.fn(async (step: PlanStep) => {
+      expect(Object.isFrozen(step)).toBe(true);
+      expect(Object.isFrozen(step.args)).toBe(true);
+      expect(Object.isFrozen(step.input)).toBe(true);
+      expect(Reflect.set(step, 'confirmationRequired', false)).toBe(false);
+      expect(Reflect.set(step.args, '0', 'status')).toBe(false);
+      return false;
+    });
+
+    const result = await executePlan(plan, { confirmStep });
+
+    expect(result.status).toBe('cancelled');
+    expect(confirmStep).toHaveBeenCalledOnce();
+  });
+
+  it('passes immutable canonical steps to lifecycle callbacks', async () => {
+    const pluginId: PluginActionId = 'plugin:test:immutable-step';
+    const registry = createActionRegistry([
+      ...listRegisteredActions(),
+      pluginPackageAction(pluginId),
+    ]);
+    const plan = makePlan(registry.createStep(pluginId, {}, 's1'));
+    const onStepStart = vi.fn((step: PlanStep) => {
+      expect(Object.isFrozen(step)).toBe(true);
+      expect(Reflect.set(step, 'tool', 'openslack-cli')).toBe(false);
+      expect(Reflect.set(step.args, '0', '--bypass')).toBe(false);
+    });
+
+    const result = await executePlan(plan, { onStepStart }, registry);
+
+    expect(result.status).toBe('failed');
+    expect(result.steps[0].output).toContain('Unsupported tool: package-api');
+    expect(onStepStart).toHaveBeenCalledOnce();
+  });
+
+  it('uses only the explicitly supplied registry instance for execution', async () => {
+    const pluginId: PluginActionId = 'plugin:test:isolated-execution';
+    const registryA = createActionRegistry([
+      ...listRegisteredActions(),
+      pluginPackageAction(pluginId),
+    ]);
+    const registryB = createActionRegistry(listRegisteredActions());
+    const plan = makePlan(registryA.createStep(pluginId, {}, 's1'));
+
+    const accepted = await executePlan(plan, { dryRun: true }, registryA);
+    const isolated = await executePlan(plan, { dryRun: true }, registryB);
+
+    expect(accepted.status).toBe('success');
+    expect(isolated.status).toBe('failed');
+    expect(isolated.summary).toContain('Rejected unregistered action');
   });
 });
