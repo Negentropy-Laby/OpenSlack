@@ -18,13 +18,17 @@ They do not yet make OpenSlack a public, installable embedding platform.
 - the CLI composition root: one sealed `PluginHost`, Operator action registry, LLM-provider
   registry, and conversation-store binding per application process, with one audited bounded
   GitHub Issues metric target and a fail-closed catalog for every other built-in;
+- an internal `self plugin run` proof route that can load locked workspace aliases before seal,
+  accepts only composition-injected activation evidence, preserves `SHADOW` as visibility-only,
+  and canonicalizes `ENFORCE` plans through the existing Operator registry;
 - reviewed bundled descriptor types for code explicitly imported by an application
   composition root.
 
-These packages are private monorepo packages. The composition root does not yet activate or
-route plugin contributions into Operator actions. There is still no dynamic CLI/TUI registry,
-directory watcher, npm package scan, public consumer release, or auto-discovered code execution
-path in this stage.
+These packages are private monorepo packages. The proof route is not implicit plugin authority:
+the stock composition still denies activation and required audit writes until a trusted embedder
+injects policy, durable audit persistence, and matching activation evidence. There is still no
+dynamic CLI/TUI registry, directory watcher, npm package scan, public consumer release, or
+auto-discovered code execution path in this stage.
 
 ## CLI composition root
 
@@ -52,7 +56,39 @@ never calls action builders, matchers, or executors. The resulting host is seale
 P2-PR2 deliberately supplies no implicit plugin authority. Unless an embedding application
 injects a `HostPolicyPort` with a durable audit sink, activation, action authorization, and plan
 validation deny, while required audit attempts fail closed. Declarative activation and routing
-remain a later governed stage.
+remain explicit composition decisions.
+
+## Declarative proof route
+
+`openslack self plugin run <plugin-id> <action-id>` is nested under the existing `self` command;
+it does not add a top-level Commander registry or dynamically register plugin IDs as Operator
+actions. Only this run path asks the composition root to load the fixed workspace lock before
+sealing its one host instance. Ordinary commands retain the synchronous sealed-host path and do
+not scan plugin directories.
+
+The route resolves activation evidence only through a trusted composition callback. There is no
+CLI flag for approval, actor identity, evidence JSON, raw input, command, argv, path, URL, or
+module code. After host activation and authorization:
+
+- `SHADOW` returns canonical contribution and target identities with `executable: false`; no
+  Operator executor is called;
+- `ENFORCE` returns a minimal host step, whose scalar input is validated and used to rebuild the
+  existing target action through the same instance-scoped `ActionRegistryPort`;
+- `executePlan()` revalidates that canonical Operator step again before the audited target runs.
+
+Because this proof command has no interactive confirmation channel, the bridge also rejects any
+canonical target that has side effects, requires confirmation, or has a risk level other than
+`none`, even if a future host catalog were to expose such a target.
+
+Host authorization and planning form a snapshot for this read-only proof. The host's execution
+lease ends when `planAction()` returns, so a later deactivation does not cancel an already planned
+`none`-risk Operator step. A strong revocation barrier covering downstream execution would require
+a separate Red `plugin-host` contract and is not claimed by this Yellow route.
+
+The proof fixtures live only under CLI tests. The workspace fixture is copied into a temporary
+canonical `.openslack/plugins/` layout and locked with the production serializer; no real Red
+workspace plugin path is changed by P2-PR3. The reviewed bundled fixture enters only through the
+`PluginHost` constructor and targets the same audited `github.metrics` behavior.
 
 ## Operator action port
 

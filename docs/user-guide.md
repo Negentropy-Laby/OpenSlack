@@ -404,6 +404,16 @@ See `docs/developer/keychain-packaging.md` for the artifact contract.
 | `openslack self scorecard --experiment <id>` | Compute fitness score |
 | `openslack self monitor --experiment <id>` | Post-merge regression check |
 | `openslack self release verify --manifest <file> --trusted-public-key <public.pem>` | Verify a downloaded stable release without a source checkout or Bun |
+| `openslack self plugin run <plugin-id> <action-id>` | Run the private governed plugin proof route with composition-injected policy and activation evidence |
+
+The plugin proof route accepts only registered plugin and action identities; it does not accept
+raw commands, evidence files, approval flags, or arbitrary JSON input. A `SHADOW` contribution is
+reported as visible and is never executed. An `ENFORCE` contribution can route only to a
+pre-audited host target, and its minimal host step is rebuilt through the same canonical Operator
+action registry before execution. Targets with side effects, required confirmation, or non-`none`
+risk are rejected because this proof command has no interactive confirmation channel. The stock
+CLI does not grant activation authority or provide a durable plugin audit sink, so unconfigured
+runs fail closed.
 
 ## Agent
 

@@ -135,6 +135,12 @@ public npm embedding runtime, dynamic CLI registry, or sandbox. See
 [`docs/developer/plugins/host.md`](docs/developer/plugins/host.md) and
 [`docs/developer/plugins/embedding.md`](docs/developer/plugins/embedding.md).
 
+The nested `openslack self plugin run <plugin-id> <action-id>` command is an internal,
+injection-driven proof route. It loads locked workspace manifests only for that route, requires
+composition-owned activation evidence and policy, keeps `SHADOW` actions non-executable, and
+rebuilds `ENFORCE` plans through the existing canonical Operator registry. The stock CLI supplies
+no implicit activation authority, so an unconfigured route fails closed.
+
 ### Negentropy-Lab Slot Integration (Planned)
 
 OpenSlack can contribute to the Negentropy-Lab slot platform as an external `scenario-pack.extension` contribution. The integration surface is one-way, evidence-only, and projection-only:
