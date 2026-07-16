@@ -207,6 +207,101 @@ describe('RepositoryToolExecutor', () => {
     expect(JSON.stringify(readTranscript(runId, root))).not.toContain(fakeJsonKey);
   });
 
+  it('preserves source expressions without leaking source literals through results or transcripts', async () => {
+    const fakeToken = `sk-${'c'.repeat(24)}`;
+    const fakePassword = 'source-only-password-value';
+    writeFileSync(
+      join(root, 'example.ts'),
+      [
+        'const secret = getSecret();',
+        `const password = "${fakePassword}";`,
+        `const token = "${fakeToken}";`,
+        '',
+      ].join('\n'),
+      'utf-8',
+    );
+    const { executor, runId } = createExecutor(root);
+
+    const result = await executor.execute('repo.read', { path: 'example.ts' });
+    const content = String(result.data.content);
+    const transcript = JSON.stringify(readTranscript(runId, root));
+
+    expect(content).toContain('const secret = getSecret();');
+    expect(content).toContain('const password = "[redacted]";');
+    expect(content).toContain('const token = "[redacted]";');
+    expect(content).not.toContain(fakePassword);
+    expect(content).not.toContain(fakeToken);
+    expect(transcript).toContain('getSecret()');
+    expect(transcript).not.toContain(fakePassword);
+    expect(transcript).not.toContain(fakeToken);
+
+    const search = await executor.execute('repo.search', {
+      path: 'example.ts',
+      query: 'secret',
+    });
+    expect(search.data.matches).toEqual([
+      expect.objectContaining({ text: 'const secret = getSecret();' }),
+    ]);
+
+    const literalSearch = await executor.execute('repo.search', {
+      path: 'example.ts',
+      query: fakePassword,
+    });
+    expect(literalSearch.data.matches).toEqual([
+      expect.objectContaining({ text: 'const password = "[redacted]";' }),
+    ]);
+  });
+
+  it('falls back to conservative redaction for non-source, invalid UTF-8, and binary reads', async () => {
+    writeFileSync(join(root, 'settings.yaml'), 'secret = getSecret()\n', 'utf-8');
+    writeFileSync(
+      join(root, 'invalid.ts'),
+      Buffer.concat([Buffer.from('const secret = getSecret();'), Buffer.from([0xff])]),
+    );
+    writeFileSync(
+      join(root, 'binary.ts'),
+      Buffer.concat([Buffer.from('const secret = getSecret();'), Buffer.from([0])]),
+    );
+    const { executor } = createExecutor(root);
+
+    const nonSource = await executor.execute('repo.read', { path: 'settings.yaml' });
+    const invalid = await executor.execute('repo.read', { path: 'invalid.ts' });
+    const binary = await executor.execute('repo.read', { path: 'binary.ts' });
+
+    expect(nonSource.data.content).toBe('secret = [redacted]\n');
+    expect(String(invalid.data.content)).toContain('secret = [redacted]');
+    expect(String(binary.data.content)).toContain('secret = [redacted]');
+  });
+
+  it('projects mixed-file diffs without distorting source expressions', async () => {
+    const fakePassword = 'diff-password-value';
+    writeFileSync(
+      join(root, 'source.ts'),
+      'const secret = before();\nconst password = "before";\n',
+    );
+    writeFileSync(join(root, 'settings.yaml'), 'password: before\n');
+    git(root, ['add', 'source.ts', 'settings.yaml']);
+    writeFileSync(
+      join(root, 'source.ts'),
+      `const secret = getSecret();\nconst password = "${fakePassword}";\n`,
+    );
+    writeFileSync(join(root, 'settings.yaml'), 'password: config-value\n');
+    const { executor, runId } = createExecutor(root);
+
+    const result = await executor.execute('repo.diff', {});
+    const diff = String(result.data.diff);
+    const transcript = JSON.stringify(readTranscript(runId, root));
+
+    expect(diff).toContain('+const secret = getSecret();');
+    expect(diff).toContain('+const password = "[redacted]";');
+    expect(diff).toContain('+password: [redacted]');
+    expect(diff).not.toContain(fakePassword);
+    expect(diff).not.toContain('config-value');
+    expect(transcript).toContain('getSecret()');
+    expect(transcript).not.toContain(fakePassword);
+    expect(transcript).not.toContain('config-value');
+  });
+
   it('rejects binary edits and non-unique replacements', async () => {
     writeFileSync(join(root, 'binary.bin'), Buffer.from([1, 0, 2]));
     writeFileSync(join(root, 'repeat.txt'), 'same same', 'utf-8');

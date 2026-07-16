@@ -23,6 +23,7 @@ import {
   ToolArgumentInvalidError,
 } from './types.js';
 import {
+  isSourceCodeRepositoryPath,
   isSensitiveRepositoryPath,
   redactSensitiveText,
   redactSensitiveValue,
@@ -173,7 +174,7 @@ export class RepositoryToolExecutor implements ToolExecutor {
         break;
     }
 
-    const safeResult = redactSensitiveValue(result) as ToolExecutionResult;
+    const safeResult = redactRepositoryToolResult(toolName as RepositoryToolName, result);
     const boundedResult = boundToolResult(safeResult, control.maxResultBytes);
     this.options.recorder.toolResult(this.options.runId, toolName, boundedResult);
     return boundedResult;
@@ -188,11 +189,18 @@ export class RepositoryToolExecutor implements ToolExecutor {
     }
     const raw = readFilePrefix(path, this.maxReadBytes, control);
     const truncated = stat.size > this.maxReadBytes;
+    const decoded = decodeRepositoryText(raw);
+    const context =
+      decoded.validUtf8 &&
+      !decoded.containsNull &&
+      isSourceCodeRepositoryPath(normalizeRelative(relativePath))
+        ? 'source-code'
+        : 'generic';
     return {
       ok: true,
       data: {
         path: normalizeRelative(relativePath),
-        content: redactSensitiveText(truncateUtf8(raw, this.maxReadBytes).value).value,
+        content: redactSensitiveText(decoded.value, { context }).value,
         bytes: stat.size,
       },
       truncated,
@@ -217,12 +225,20 @@ export class RepositoryToolExecutor implements ToolExecutor {
       if (filesScanned >= this.maxSearchFiles || matches.length >= this.maxSearchMatches) break;
       filesScanned += 1;
       let text: string;
+      let projectionContext: 'generic' | 'source-code' = 'generic';
       try {
         const stat = lstatSync(filePath);
         if (!stat.isFile() || stat.size > this.maxReadBytes) continue;
         const raw = readFilePrefix(filePath, this.maxReadBytes, control);
         if (raw.includes(0)) continue;
-        text = raw.toString('utf-8');
+        const decoded = decodeRepositoryText(raw);
+        text = decoded.value;
+        projectionContext =
+          decoded.validUtf8 &&
+          !decoded.containsNull &&
+          isSourceCodeRepositoryPath(normalizeRelative(relative(this.rootPath, filePath)))
+            ? 'source-code'
+            : 'generic';
       } catch {
         continue;
       }
@@ -232,7 +248,9 @@ export class RepositoryToolExecutor implements ToolExecutor {
         matches.push({
           path: normalizeRelative(relative(this.rootPath, filePath)),
           line: index + 1,
-          text: redactSensitiveText(lines[index].slice(0, 500)).value,
+          text: redactSensitiveText(lines[index].slice(0, 500), {
+            context: projectionContext,
+          }).value,
         });
         if (matches.length >= this.maxSearchMatches) break;
       }
@@ -375,7 +393,9 @@ export class RepositoryToolExecutor implements ToolExecutor {
     return {
       ok: true,
       data: {
-        diff: redactSensitiveText(truncateUtf8(Buffer.from(output), this.maxDiffBytes).value).value,
+        diff: redactSensitiveText(truncateUtf8(Buffer.from(output), this.maxDiffBytes).value, {
+          context: 'diff',
+        }).value,
         untrackedFiles,
       },
       truncated: bufferExceeded || Buffer.byteLength(output) > this.maxDiffBytes,
@@ -580,6 +600,27 @@ function truncateUtf8(input: Buffer, maxBytes: number): { value: string; truncat
   return { value: input.subarray(0, maxBytes).toString('utf-8'), truncated: true };
 }
 
+function decodeRepositoryText(input: Buffer): {
+  value: string;
+  validUtf8: boolean;
+  containsNull: boolean;
+} {
+  const containsNull = input.includes(0);
+  try {
+    return {
+      value: new TextDecoder('utf-8', { fatal: true }).decode(input),
+      validUtf8: true,
+      containsNull,
+    };
+  } catch {
+    return {
+      value: input.toString('utf-8'),
+      validUtf8: false,
+      containsNull,
+    };
+  }
+}
+
 function readFilePrefix(path: string, maxBytes: number, control: ToolExecutionControl): Buffer {
   const handle = openSync(path, 'r');
   try {
@@ -643,4 +684,60 @@ function redactToolInput(
     oldTextBytes: typeof input.oldText === 'string' ? Buffer.byteLength(input.oldText) : undefined,
     newTextBytes: typeof input.newText === 'string' ? Buffer.byteLength(input.newText) : undefined,
   };
+}
+
+function redactRepositoryToolResult(
+  toolName: RepositoryToolName,
+  result: ToolExecutionResult,
+): ToolExecutionResult {
+  if (toolName === 'repo.read') {
+    const path = String(result.data.path ?? '');
+    return {
+      ...result,
+      data: {
+        ...result.data,
+        path: redactSensitiveText(path).value,
+        content: redactSensitiveText(String(result.data.content ?? ''), {
+          context: isSourceCodeRepositoryPath(path) ? 'source-code' : 'generic',
+        }).value,
+      },
+    };
+  }
+  if (toolName === 'repo.search') {
+    const matches = Array.isArray(result.data.matches)
+      ? result.data.matches.map((value) => {
+          const match =
+            value && typeof value === 'object' && !Array.isArray(value)
+              ? (value as Record<string, unknown>)
+              : {};
+          const path = String(match.path ?? '');
+          return {
+            ...match,
+            path: redactSensitiveText(path).value,
+            text: redactSensitiveText(String(match.text ?? ''), {
+              context: isSourceCodeRepositoryPath(path) ? 'source-code' : 'generic',
+            }).value,
+          };
+        })
+      : [];
+    return {
+      ...result,
+      data: {
+        ...result.data,
+        query: redactSensitiveText(String(result.data.query ?? '')).value,
+        matches,
+      },
+    };
+  }
+  if (toolName === 'repo.diff') {
+    return {
+      ...result,
+      data: {
+        ...result.data,
+        diff: redactSensitiveText(String(result.data.diff ?? ''), { context: 'diff' }).value,
+        untrackedFiles: redactSensitiveValue(result.data.untrackedFiles),
+      },
+    };
+  }
+  return redactSensitiveValue(result) as ToolExecutionResult;
 }

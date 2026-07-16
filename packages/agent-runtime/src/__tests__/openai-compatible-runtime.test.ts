@@ -178,6 +178,70 @@ describe('OpenAI-compatible agent runtime', () => {
     expect(requestBody).toContain('[redacted-token]');
   });
 
+  it('reuses context-aware source projections without leaking literals to the provider or transcript', async () => {
+    const fakeToken = `sk-${'p'.repeat(24)}`;
+    const fakePassword = 'provider-source-password';
+    writeFileSync(
+      join(root, 'source.ts'),
+      [
+        'const secret = getSecret();',
+        `const password = "${fakePassword}";`,
+        `const token = "${fakeToken}";`,
+        '',
+      ].join('\n'),
+      'utf-8',
+    );
+    const requests: string[] = [];
+    let turn = 0;
+    const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      requests.push(String(init?.body));
+      turn += 1;
+      return turn === 1
+        ? jsonResponse({
+            choices: [
+              {
+                message: {
+                  content: null,
+                  tool_calls: [
+                    {
+                      id: 'read-source',
+                      type: 'function',
+                      function: { name: 'repo_read', arguments: '{"path":"source.ts"}' },
+                    },
+                  ],
+                },
+              },
+            ],
+            usage: { total_tokens: 2 },
+          })
+        : jsonResponse({
+            choices: [{ message: { content: '{"summary":"safe"}' } }],
+            usage: { total_tokens: 2 },
+          });
+    }) as unknown as typeof fetch;
+    const { context } = createContext(root);
+
+    await adapter(fetchImpl).execute(context);
+
+    expect(requests).toHaveLength(2);
+    const secondRequest = JSON.parse(requests[1]) as {
+      messages: Array<{ role: string; content: string }>;
+    };
+    const toolMessage = secondRequest.messages.find((message) => message.role === 'tool');
+    const toolResult = JSON.parse(toolMessage!.content) as {
+      data: { content: string };
+    };
+    expect(toolResult.data.content).toContain('const secret = getSecret();');
+    expect(toolResult.data.content).toContain('const password = "[redacted]";');
+    expect(toolResult.data.content).toContain('const token = "[redacted]";');
+    expect(requests[1]).not.toContain(fakePassword);
+    expect(requests[1]).not.toContain(fakeToken);
+    const transcript = JSON.stringify(readTranscript(context.runId, root));
+    expect(transcript).toContain('getSecret()');
+    expect(transcript).not.toContain(fakePassword);
+    expect(transcript).not.toContain(fakeToken);
+  });
+
   it('fails closed on missing usage and still charges usage that exceeds the token budget', async () => {
     const missingUsage = vi.fn(async () =>
       jsonResponse({
