@@ -116,6 +116,10 @@ function buildCanonicalPlan(
     return routingFail('PLUGIN_ACTION_BRIDGE_INVALID');
   }
 
+  // This rebuild is an intentional authority boundary, not a shortcut around
+  // the host step: PluginHost governs the contribution and fixed target, while
+  // the Operator registry remains the sole owner of executable command shape.
+  // executePlan will canonical-revalidate the rebuilt step again.
   let step;
   try {
     step = registry.createStep(targetActionId, toToolInput(hostStep.input), hostStep.id);

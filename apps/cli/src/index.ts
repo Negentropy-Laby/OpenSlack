@@ -38,6 +38,10 @@ const contextOptions = {
   workspaceRoot: findWorkspaceRoot() ?? process.cwd(),
   openslackVersion: buildInfo.version,
 };
+// The proof route needs its locked workspace manifests before Commander can
+// invoke the command, so dispatch is deliberately exact and fail-safe here:
+// alternate argv shapes fall back to the sealed no-load context. Commander (or
+// a future async command-context hook) should eventually own this selection.
 const pluginRunArguments = process.argv.slice(5);
 const workspacePluginRunRequested =
   process.argv[2] === 'self' &&
@@ -50,6 +54,7 @@ if (workspacePluginRunRequested) {
   try {
     applicationContext = await createWorkspacePluginOpenSlackCliContext(contextOptions);
   } catch {
+    // Loader findings may contain local paths or untrusted manifest details.
     console.error(`Plugin action failed: ${PLUGIN_ACTION_WORKSPACE_LOAD_FAILED}.`);
     process.exit(1);
   }
