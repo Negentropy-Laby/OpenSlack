@@ -124,11 +124,13 @@ export interface LoadPluginManifestOptions {
   readonly maxBytes?: number;
   /** A caller may lower, but never raise, the built-in strict-JSON ceilings. */
   readonly strictJsonLimits?: Partial<StrictJsonLimits>;
-  /** @internal Deterministic race seam. Production hosts must leave this unset. */
-  readonly __testHooks?: {
-    readonly afterBoundedRead?: () => void | Promise<void>;
-  };
 }
+
+interface LoadPluginManifestTestHooks {
+  readonly afterBoundedRead?: () => void | Promise<void>;
+}
+
+const NO_LOAD_PLUGIN_MANIFEST_TEST_HOOKS: LoadPluginManifestTestHooks = Object.freeze({});
 
 export interface LoadedPluginManifest {
   readonly providerKind: PluginProviderKind;
@@ -564,9 +566,10 @@ function deepFreezeJson<T extends JsonValue>(value: T): T {
   return Object.freeze(value);
 }
 
-export async function loadPluginManifest(
+async function loadPluginManifestInternal(
   source: PluginManifestSource,
   options: LoadPluginManifestOptions,
+  testHooks: LoadPluginManifestTestHooks,
 ): Promise<LoadedPluginManifest> {
   const resolved = resolveManifestSource(source);
   const maxBytes = resolveMaxBytes(options.maxBytes);
@@ -602,7 +605,7 @@ export async function loadPluginManifest(
     initialPathStat,
     maxBytes,
   );
-  await options.__testHooks?.afterBoundedRead?.();
+  await testHooks.afterBoundedRead?.();
 
   const finalPathStat = await assertNoLinksInPath(resolved.inspectionRoot, resolved.candidatePath);
   let finalRootRealPath: string;
@@ -665,4 +668,20 @@ export async function loadPluginManifest(
     manifestSha256: createHash('sha256').update(bytes).digest('hex'),
     sizeBytes: bytes.length,
   });
+}
+
+export async function loadPluginManifest(
+  source: PluginManifestSource,
+  options: LoadPluginManifestOptions,
+): Promise<LoadedPluginManifest> {
+  return loadPluginManifestInternal(source, options, NO_LOAD_PLUGIN_MANIFEST_TEST_HOOKS);
+}
+
+/** @internal Test-only deterministic race seam; intentionally absent from the package root. */
+export async function loadPluginManifestForTest(
+  source: PluginManifestSource,
+  options: LoadPluginManifestOptions,
+  testHooks: LoadPluginManifestTestHooks,
+): Promise<LoadedPluginManifest> {
+  return loadPluginManifestInternal(source, options, testHooks);
 }

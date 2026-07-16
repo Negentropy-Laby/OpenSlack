@@ -29,6 +29,16 @@ fixed source entrypoint
   -> atomic registry commit
 ```
 
+On Windows, Node does not expose an effective `O_NOFOLLOW` open flag. The host therefore relies on
+the surrounding defenses there: component-wise no-link checks and realpath containment before the
+open, descriptor-versus-path identity checks after the open, and a second fstat/lstat/realpath
+identity check after the bounded read. Any mismatch fails closed instead of accepting the bytes.
+
+This preview supports local filesystems with stable file identity and timestamp metadata. Network
+mounts or filesystems that rewrite `mtime`/`ctime` during an otherwise unchanged read can be
+rejected as `PLUGIN_MANIFEST_FILE_CHANGED`; manifests should be staged onto a supported local
+filesystem before loading rather than weakening the identity check.
+
 The lock serializer owns a deterministic v1 byte format: closed identity/integrity fields,
 ASCII code-unit tuple ordering, two-space JSON indentation, LF line endings, and one trailing LF.
 It never records approvers, actors, effective capabilities, or activation decisions. Lock updates

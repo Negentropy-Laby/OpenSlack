@@ -40,6 +40,13 @@ describe('parseStrictJsonBytes', () => {
       nil: null,
       list: [1, 2],
     });
+    expect(Object.getOwnPropertyDescriptor(value, 'text')).toMatchObject({
+      enumerable: true,
+      configurable: false,
+      writable: false,
+    });
+    expect(Reflect.set(value, 'text', 'mutated')).toBe(false);
+    expect(value.text).toBe('line\na');
   });
 
   it.each([

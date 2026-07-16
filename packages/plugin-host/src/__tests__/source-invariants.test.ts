@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
+import * as pluginHostPublicApi from '../index.js';
+import type { LoadPluginManifestOptions } from '../index.js';
 
 const SOURCE_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const EXCLUDED_DIRECTORIES = new Set(['__fixtures__', '__tests__']);
@@ -79,6 +81,17 @@ function isForbiddenNodeModule(specifier: string): boolean {
 }
 
 describe('plugin-host production source invariants', () => {
+  it('does not expose deterministic I/O race hooks from the package root', () => {
+    const publicLoadOptionsHaveTestHooks: '__testHooks' extends keyof LoadPluginManifestOptions
+      ? true
+      : false = false;
+
+    expect(publicLoadOptionsHaveTestHooks).toBe(false);
+    expect(Object.hasOwn(pluginHostPublicApi, 'loadPluginManifestForTest')).toBe(false);
+    expect(Object.hasOwn(pluginHostPublicApi, 'readPluginLockForTest')).toBe(false);
+    expect(Object.hasOwn(pluginHostPublicApi, 'writePluginLockAtomicForTest')).toBe(false);
+  });
+
   it('contains production sources and excludes tests and fixtures from the scan', async () => {
     const files = await productionSourceFiles();
     const relativeFiles = files.map(relativeSourcePath);

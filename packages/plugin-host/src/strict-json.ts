@@ -129,7 +129,7 @@ class StrictJsonParser {
         value: this.parseValue(depth + 1),
         enumerable: true,
         configurable: false,
-        writable: true,
+        writable: false,
       });
       this.skipWhitespace();
       if (this.consume('}')) return object;

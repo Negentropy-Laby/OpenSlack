@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   isCanonicalPluginSourceRef,
   loadPluginManifest,
+  loadPluginManifestForTest,
   PluginManifestLoadError,
   PLUGIN_MANIFEST_MAX_BYTES,
   type PluginManifestSource,
@@ -492,15 +493,16 @@ describe('loadPluginManifest', () => {
   it('deterministically detects a path replacement after the bounded descriptor read', async () => {
     const { workspaceRoot, manifestPath } = await createWorkspacePlugin();
     await expectLoadError(
-      loadPluginManifest(workspaceSource(workspaceRoot), {
-        validateManifest: permissiveValidator,
-        __testHooks: {
+      loadPluginManifestForTest(
+        workspaceSource(workspaceRoot),
+        { validateManifest: permissiveValidator },
+        {
           afterBoundedRead: async () => {
             await rm(manifestPath);
             await writeFile(manifestPath, manifestBytes());
           },
         },
-      }),
+      ),
       'PLUGIN_MANIFEST_FILE_CHANGED',
     );
   });
