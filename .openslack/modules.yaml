@@ -1,6 +1,6 @@
 schema: openslack.modules.v2
-vitest_tests: 3836
-vitest_files: 297
+vitest_tests: 4049
+vitest_files: 312
 modules:
   - id: self_evolution
     name: Self-Evolution Kernel
@@ -13,6 +13,12 @@ modules:
     evidenceRefs:
       - commit:0015b3be26dbe613b941acb515f8e5ac2e2a6319
       - test:packages/plugin-api/src/__tests__/schema-parity.test.ts
+      - commit:6ba8b8240a2e898af70fffa5cd4d5e0c5ca89889
+      - test:packages/plugin-host/src/__tests__/host.test.ts
+      - test:packages/plugin-host/src/__tests__/installed-host.test.ts
+      - test:packages/plugin-host/src/__tests__/loader.test.ts
+      - test:packages/plugin-host/src/__tests__/lock.test.ts
+      - test:packages/plugin-host/src/__tests__/source-invariants.test.ts
       - test:packages/sdk/src/__tests__/define.test.ts
       - commit:ae04404ddb548da8019754561c11a357ae2b794f
       - test:packages/kernel/src/self/core/__tests__/classify-pr.test.ts
@@ -25,13 +31,14 @@ modules:
     packages:
       - "@openslack/kernel"
       - "@openslack/plugin-api"
+      - "@openslack/plugin-host"
       - "@openslack/sdk"
       - "@openslack/workspace"
       - "@openslack/runtime"
-    tests: 272
-    test_files: 31
+    tests: 485
+    test_files: 46
     golden_evals: 7
-    notes: Stable release verification is available from the installed CLI and requires an out-of-band trusted Ed25519 public key; archive, SBOM, provenance, signature, identity fields, and subjects are verified without a source checkout or Bun. The private plugin authoring preview now provides a zero-runtime-dependency manifest contract, strict schema/runtime fixture parity, host policy ports, and typed SDK helpers. It does not provide dynamic loading, activation authority, or a public embedding runtime; those remain gated on the separate Red host and integrity-loader stage.
+    notes: Stable release verification is available from the installed CLI and requires an out-of-band trusted Ed25519 public key; archive, SBOM, provenance, signature, identity fields, and subjects are verified without a source checkout or Bun. The private plugin preview now provides a zero-runtime-dependency manifest contract, typed SDK helpers, and an instance-scoped Red host with strict exact-byte loading, deterministic integrity lock, independent capability/target policy, atomic per-kind registries, required audit writes, and blockers-only bundled PRMS normalization. Workspace and installed plugins remain declarative and non-executable; public npm embedding and dynamic product-surface registration remain later roadmap stages.
 
   - id: github_task_loop
     name: GitHub Issues Task Loop

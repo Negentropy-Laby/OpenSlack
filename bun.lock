@@ -134,6 +134,13 @@
       "name": "@openslack/plugin-api",
       "version": "0.1.1",
     },
+    "packages/plugin-host": {
+      "name": "@openslack/plugin-host",
+      "version": "0.1.1",
+      "dependencies": {
+        "@openslack/plugin-api": "workspace:*",
+      },
+    },
     "packages/pr": {
       "name": "@openslack/pr",
       "version": "0.1.1",
@@ -383,6 +390,8 @@
     "@openslack/operator": ["@openslack/operator@workspace:packages/operator"],
 
     "@openslack/plugin-api": ["@openslack/plugin-api@workspace:packages/plugin-api"],
+
+    "@openslack/plugin-host": ["@openslack/plugin-host@workspace:packages/plugin-host"],
 
     "@openslack/pr": ["@openslack/pr@workspace:packages/pr"],
 

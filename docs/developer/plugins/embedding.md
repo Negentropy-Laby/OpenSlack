@@ -1,7 +1,7 @@
 # Plugin Embedding Boundary
 
-The current packages establish portable types and authoring helpers; they do not yet make
-OpenSlack an embeddable plugin host.
+The current packages establish portable types, authoring helpers, and a private governed host.
+They do not yet make OpenSlack a public, installable embedding platform.
 
 ## Available now
 
@@ -9,12 +9,15 @@ OpenSlack an embeddable plugin host.
   lifecycle vocabulary, host policy ports, and host-derived activation-evidence types;
 - `@openslack/sdk`: type-preserving manifest/descriptor helpers, blockers-only PRMS result
   normalization, and type re-exports;
+- `@openslack/plugin-host`: exact-byte manifest and lock loading, Red-local validation,
+  instance-scoped registries and lifecycle, host-policy authorization, required audit writes,
+  and blockers-only PRMS normalization;
 - reviewed bundled descriptor types for code explicitly imported by an application
   composition root.
 
-These packages are private monorepo packages. There is no dynamic command registry, plugin
-directory watcher, package scan, integrity lock loader, activation service, or public npm
-consumer path in this stage.
+These packages are private monorepo packages. There is still no dynamic CLI/Operator/TUI
+registry, directory watcher, npm package scan, public consumer release, or auto-discovered code
+execution path in this stage.
 
 ## Not an execution API
 
@@ -22,7 +25,7 @@ OpenSlack v1 deliberately does not execute auto-discovered third-party code. A `
 or installed `plugin` provider is a standalone `plugin.json` document with declarative
 aliases only. The authoring validator neither reads files nor establishes trust.
 
-The separately governed Red host stage owns:
+The governed Red host implements:
 
 1. bounded exact-byte reads and strict JSON parsing;
 2. realpath containment, regular-file checks, and symlink/path-escape rejection;
@@ -42,7 +45,7 @@ evidence remain host-derived current-state facts.
 
 ## Product claim
 
-Until the public plugin host has a portable dependency closure and passes a clean external
-consumer runtime test, describe this surface as a **private plugin authoring preview**. Do
-not claim public embedding, dynamic third-party plugins, sandboxing, or activation based on
-these packages alone.
+Until the public packages have a portable dependency closure and pass a clean external consumer
+runtime test, describe this surface as a **private plugin host and authoring preview**. Do not
+claim public embedding, executable third-party plugins, sandboxing, or dynamic product-surface
+registration based on these packages alone.

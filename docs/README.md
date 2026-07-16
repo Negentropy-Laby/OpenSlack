@@ -18,7 +18,7 @@ Use this page when you know what you want to do, but not which document owns it.
 | Find product and module design docs | `product/openslack-product-current.md` |
 | Understand the planned Negentropy-Lab slot integration and boundary | `product/negentropy-lab-integration.md`, `security/negentropy-slot-boundary.md`, `developer/negentropy-slot-adapter.md`, `guides/embed-openslack-in-negentropy-lab.md` |
 | Learn how Profile Sync renders a GitHub profile projection | `product/profile-sync.md` |
-| Understand the private plugin authoring contract and embedding boundary | `developer/plugins/manifest.md`, `developer/plugins/authoring.md`, `developer/plugins/embedding.md` |
+| Understand the private plugin contract, Red host, and embedding boundary | `developer/plugins/manifest.md`, `developer/plugins/authoring.md`, `developer/plugins/host.md`, `developer/plugins/embedding.md` |
 
 ## Common Workflows
 
@@ -34,7 +34,7 @@ Use this page when you know what you want to do, but not which document owns it.
 | Embed OpenSlack into Negentropy-Lab as an external scenario-pack slot | `product/negentropy-lab-integration.md`, `guides/embed-openslack-in-negentropy-lab.md`, `developer/negentropy-slot-adapter.md`, `security/negentropy-slot-boundary.md` |
 | Maintain the GitHub profile README with Profile Sync | `product/profile-sync.md`, `user-guide.md` |
 | Self-evolution, risk zones, plugin trust, and rollback | `product/phase-1.md`, `developer/self-evolution-kernel.md`, `security/self-evolution-guardrails.md`, `security/plugin-trust-model.md` |
-| Author declarative plugin manifests or reviewed bundled descriptors | `developer/plugins/manifest.md`, `developer/plugins/authoring.md`, `developer/plugins/embedding.md` |
+| Author and host declarative manifests or reviewed bundled descriptors | `developer/plugins/manifest.md`, `developer/plugins/authoring.md`, `developer/plugins/host.md`, `developer/plugins/embedding.md` |
 | PR review, human approval, and merge governance | `product/module-04-pr-review-merge-steward.md`, `security/human-approval.md`, `user-guide.md` |
 | Collaboration events, handoffs, decisions, rooms, and workflows | `product/collaboration-layer.md`, `developer/collaboration-events.md`, `security/collaboration-audit.md` |
 | Dynamic workflow recommendation, pattern library, drafts, and policy | `guides/dynamic-workflow-workbench.md`, `product/dynamic-workflows.md`, `product/agent-work-units.md` |

@@ -58,6 +58,7 @@ describe('@openslack/sdk authoring helpers', () => {
     const action = defineBundledAction({
       kind: 'bundled_action',
       id: 'status-plan',
+      target: { kind: 'host_action', id: 'status.show' },
       buildPlanStep: async (_input, _context): Promise<HostPlanStep> => ({
         id: 'step-1',
         actionId: 'status.show',
@@ -88,6 +89,7 @@ describe('@openslack/sdk authoring helpers', () => {
     });
     expect(plugin.providerKind).toBe('bundled');
     expect(plugin.contributions[0]).toBe(action);
+    expect(action.target).toEqual({ kind: 'host_action', id: 'status.show' });
     expect(plugin.contributions[1]).not.toBe(blocker);
     expectTypeOf<
       BundledPluginContext['activationEvidence']['providerKind']
