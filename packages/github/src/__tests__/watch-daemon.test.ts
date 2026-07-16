@@ -9,6 +9,7 @@ import {
   WatchDaemon,
   createNotificationPayload,
   formatConsoleNotification,
+  type WatchDaemonDependencies,
 } from '../watch-daemon.js';
 import type { GitHubWatchConfig } from '../watch-config.js';
 import type { NormalizedIssueEvent } from '../issue-normalizer.js';
@@ -38,6 +39,62 @@ function mockRecordEvent(event: unknown) {
 
 let tempDir: string;
 const secret = 'test-webhook-secret';
+
+const liveStateDependencies: WatchDaemonDependencies = {
+  refreshLiveState: async (event) => {
+    const pullRequestNumber =
+      event.kind === 'pull_request' || event.kind === 'pull_request_review'
+        ? event.pullRequestNumber
+        : event.kind === 'check_run' || event.kind === 'check_suite'
+          ? event.pullRequestNumbers[0]
+          : undefined;
+    return {
+      schema: 'openslack.repository_live_state.v1',
+      repository: event.repository,
+      fetchedAt: '2026-07-15T10:12:00.000Z',
+      ...('headSha' in event ? { triggerHeadSha: event.headSha } : {}),
+      pullRequests:
+        pullRequestNumber === undefined
+          ? []
+          : [
+              {
+                pullRequestNumber,
+                title: 'Repository event contract',
+                url: `https://github.com/${event.repository.fullName}/pull/${pullRequestNumber}`,
+                state: 'open',
+                draft: false,
+                merged: false,
+                headSha: 'head-sha-42',
+                baseSha: 'base-sha-42',
+                updatedAt: '2026-07-15T10:11:00.000Z',
+                reviews: {
+                  total: 1,
+                  approvedObserved: 1,
+                  changesRequestedObserved: 0,
+                  commentedObserved: 0,
+                  dismissedObserved: 0,
+                  otherObserved: 0,
+                  informational: true,
+                  authoritativeApproval: false,
+                },
+                checks: {
+                  total: 1,
+                  pending: 0,
+                  successful: 1,
+                  failed: 0,
+                  neutral: 0,
+                  runs: [],
+                },
+              },
+            ],
+      authority: {
+        humanApproval: 'not_evaluated',
+        mergeReadiness: 'not_evaluated',
+      },
+      informational: true,
+    };
+  },
+};
 
 beforeEach(() => {
   tempDir = mkdtempSync(join(tmpdir(), 'openslack-watch-'));
@@ -80,6 +137,30 @@ function makeIssuePayload(overrides: Record<string, unknown> = {}): string {
     },
     sender: { login: 'bot' },
     ...overrides,
+  });
+}
+
+function makePushPayload(): string {
+  return JSON.stringify({
+    ref: 'refs/heads/main',
+    before: 'a'.repeat(40),
+    after: 'b'.repeat(40),
+    repository: {
+      name: 'OpenSlack',
+      full_name: 'Negentropy-Laby/OpenSlack',
+      owner: { login: 'Negentropy-Laby' },
+    },
+    pusher: { name: 'push-bot' },
+    commits: [
+      {
+        id: 'b'.repeat(40),
+        message: 'Update watched content',
+        added: ['posts/update.md'],
+        modified: [],
+        removed: [],
+        timestamp: '2026-07-17T00:00:00Z',
+      },
+    ],
   });
 }
 
@@ -234,6 +315,14 @@ function sendSlowChunkedRequest(port: number): Promise<string> {
   });
 }
 
+async function waitFor(predicate: () => boolean, timeoutMs = 1_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error('Timed out waiting for test condition');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 describe('WatchDaemon', () => {
   it('handles a valid webhook and returns event_id', async () => {
     const dedupe = new WatchDedupeStore(tempDir);
@@ -252,6 +341,40 @@ describe('WatchDaemon', () => {
       expect(result.status).toBe(200);
       expect(result.body.ok).toBe(true);
       expect(result.body.event_id).toBeDefined();
+    } finally {
+      await daemon.stop();
+    }
+  });
+
+  it('acknowledges a durably enqueued push even without collaboration recording', async () => {
+    const pushConfig: GitHubWatchConfig = {
+      schema: 'openslack.github_watch.v1',
+      repositories: [
+        {
+          owner: 'Negentropy-Laby',
+          repo: 'OpenSlack',
+          events: ['push'],
+        },
+      ],
+    };
+    const daemon = new WatchDaemon(pushConfig, secret, new WatchDedupeStore(tempDir));
+    const port = 3101 + Math.floor(Math.random() * 1000);
+    await daemon.start(port);
+
+    try {
+      const body = makePushPayload();
+      const result = await sendRequest(port, body, {
+        'x-hub-signature-256': signPayload(body),
+        'x-github-event': 'push',
+        'x-github-delivery': 'push-delivery-1',
+      });
+
+      expect(result.status).toBe(200);
+      expect(result.body).toMatchObject({
+        ok: true,
+        delivery_id: expect.any(String),
+      });
+      expect(result.body).not.toHaveProperty('ignored');
     } finally {
       await daemon.stop();
     }
@@ -420,6 +543,8 @@ describe('WatchDaemon', () => {
         undefined,
         claimFn,
         mockRecordEvent,
+        {},
+        liveStateDependencies,
       );
       const port = 3101 + Math.floor(Math.random() * 1000);
       await daemon.start(port);
@@ -493,6 +618,8 @@ describe('WatchDaemon', () => {
       undefined,
       claimFn,
       recordFn,
+      {},
+      liveStateDependencies,
     );
     const port = 3101 + Math.floor(Math.random() * 1000);
     await daemon.start(port);
@@ -658,6 +785,72 @@ describe('WatchDaemon', () => {
       expect(second.status).toBe(200);
       expect(second.body.ignored).toBe('duplicate or filtered');
     } finally {
+      await daemon.stop();
+    }
+  });
+
+  it('acknowledges a durable enqueue without waiting for a slow notification sink', async () => {
+    let releaseSink: (() => void) | undefined;
+    const sinkSend = vi.fn(
+      () =>
+        new Promise<{ ok: true; outcome: 'delivered' }>((resolve) => {
+          releaseSink = () => resolve({ ok: true, outcome: 'delivered' });
+        }),
+    );
+    const dedupe = new WatchDedupeStore(tempDir);
+    const daemon = new WatchDaemon(
+      config,
+      secret,
+      dedupe,
+      undefined,
+      undefined,
+      mockRecordEvent,
+      {},
+      {
+        sinks: new Map([
+          [
+            'console',
+            {
+              name: 'console',
+              send: sinkSend,
+            },
+          ],
+        ]),
+      },
+    );
+    const port = 3101 + Math.floor(Math.random() * 1000);
+    await daemon.start(port);
+    try {
+      const body = makeIssuePayload();
+      const headers = {
+        'x-hub-signature-256': signPayload(body),
+        'x-github-event': 'issues',
+        'x-github-delivery': 'durable-before-sink',
+      };
+      const responses = await Promise.race([
+        Promise.all([sendRequest(port, body, headers), sendRequest(port, body, headers)]),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Webhook ACK waited for sink')), 250),
+        ),
+      ]);
+      expect(responses.every((response) => response.status === 200)).toBe(true);
+      expect(responses).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            body: expect.objectContaining({ event_id: expect.any(String) }),
+          }),
+          expect.objectContaining({
+            body: { ok: true, ignored: 'duplicate or filtered' },
+          }),
+        ]),
+      );
+      expect(dedupe.getStats()).toMatchObject({ count: 1, processing: 1 });
+      expect(sinkSend).toHaveBeenCalledTimes(1);
+
+      releaseSink?.();
+      await waitFor(() => dedupe.getStats().completed === 1);
+    } finally {
+      releaseSink?.();
       await daemon.stop();
     }
   });
@@ -1193,7 +1386,15 @@ describe('WatchDaemon auto-claim', () => {
     };
     await daemon.once(event);
     expect(claimFn).toHaveBeenCalledTimes(1);
-    expect(claimFn).toHaveBeenCalledWith(event, ['agent-a', 'agent-b']);
+    expect(claimFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ...event,
+        kind: 'issue',
+        eventKey: 'issues.opened',
+        metadata: expect.objectContaining({ informational: false }),
+      }),
+      ['agent-a', 'agent-b'],
+    );
   });
 
   it('does not call autoClaimFn when enabled but agent_ids is empty', async () => {

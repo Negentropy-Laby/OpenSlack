@@ -3,12 +3,12 @@
 Status: Phase 1, 2, 3, and 4 implemented.
 
 This document defines the daemon for monitoring selected GitHub
-repositories and pushing near-real-time issue notifications into OpenSlack
+repositories and pushing near-real-time repository-event notifications into OpenSlack
 surfaces.
 
 The daemon is not a new source of truth. GitHub, Git, `.openslack`, and
 Collaboration events remain the authoritative state. The daemon only observes,
-deduplicates, records events, and notifies configured sinks.
+durably queues, records, refreshes, and notifies configured sinks.
 
 ## User Value
 
@@ -50,9 +50,9 @@ service monitors more than GitHub Issues/PRs.
 
 ## P3 PR And Check Rollout Boundary
 
-P3-PR1 adds the strict repository-event contract, normalizers, configuration
-allowlist, and hardened webhook ingestion. It does not by itself make every
-new event available to a deployed GitHub App installation.
+P3-PR1 added the strict repository-event contract, normalizers, configuration
+allowlist, and hardened webhook ingestion. P3-PR2 now routes every accepted
+event through a durable local delivery queue before acknowledgement.
 
 - `pull_request.*` can use the App's existing `pull_request` subscription.
 - `pull_request_review.*`, `check_run.completed`, and
@@ -62,17 +62,28 @@ new event available to a deployed GitHub App installation.
   permissions are deployed. P3-PR3 also owns setup and doctor diagnostics for
   detecting missing subscriptions or stale installation permissions.
 
-P3-PR1 also retains the existing check-then-record `WatchDedupeStore`. Do not
-enable high-volume review or check event processing as a production-complete
-path until P3-PR2 lands the atomic queue, per-route idempotency, bounded
-retention and attempts, backoff, compaction, and restart recovery.
+The P3-PR2 delivery contract is:
 
-PR, review, and check notifications in P3-PR1 are webhook observations, not
-authoritative readiness, approval, or check state. Any workflow that may act
-on them must wait for P3-PR2's repository-scoped live-state refresh and must
-fail closed when installation scope is missing, mismatched, or unavailable.
-This keeps the current PR focused on the event contract and raw webhook trust
-boundary without hiding its delivery durability and live-state prerequisites.
+- `claimAndEnqueue` performs dedupe and durable enqueue under one exclusive
+  local-state lock;
+- delivery and route states are `pending`, `processing`, `retryable`,
+  `completed`, or `failed`;
+- processing leases recover after restart;
+- attempts, exponential backoff, retention, state bytes, and record count are
+  bounded;
+- each route has a stable idempotency key and its own completion ledger;
+- the guarantee is at-least-once processing with idempotent effects, not
+  crash-proof exactly-once delivery.
+
+PR, review, and check events resolve a live client for the repository named by
+the normalized event. The daemon proves that the locked credential context can
+access that exact repository before fetching current PR, review, and check
+state. A mismatched or out-of-scope repository produces a fixed diagnostic and
+no sink dispatch; the daemon never retries against the workspace repository.
+
+Live review observations remain informational. Neither webhook
+`review.state=approved` nor the refreshed review summary creates human approval,
+merge readiness, or PRMS authority.
 
 ## Runtime Architecture
 
@@ -82,13 +93,15 @@ flowchart LR
   GitHub -->|"poll fallback"| Poller["Issue poller"]
   Receiver --> Normalizer["Issue event normalizer"]
   Poller --> Normalizer
-  Normalizer --> Dedupe["Dedupe and cursor store"]
-  Dedupe --> Events["Collaboration events"]
-  Dedupe --> Notify["Notification sinks"]
+  Normalizer --> Queue["Atomic durable delivery queue"]
+  Queue --> Router["Lease-backed delivery router"]
+  Router --> Live["Repository-scoped live refresh"]
+  Router --> Events["Collaboration events"]
+  Router --> Notify["Notification sinks"]
   Notify --> Slack["Slack"]
   Notify --> Webhook["Outbound webhook"]
   Notify --> Console["Console/log"]
-  Dedupe --> Agent["Optional agent tick"]
+  Queue --> Agent["Issue-only optional agent tick"]
 ```
 
 ## Configuration
@@ -130,6 +143,18 @@ OPENSLACK_DAEMON_WEBHOOK_URL=...
 
 Local daemon runtime state belongs under `.openslack.local/daemon/`.
 
+The delivery ledger is stored in:
+
+```text
+.openslack.local/daemon/delivery-state.v1.json
+```
+
+The file contains only the whitelist `PersistableRepositoryEvent`, canonical
+route identity, attempts, leases, fixed diagnostics, and idempotency keys. It
+does not store raw webhook bodies, Issue/review prose, sender handles,
+credentials, or outbound webhook URLs. A legacy `dedupe.jsonl` file is imported
+as bounded completed tombstones during migration and is no longer written.
+
 ## Event Model
 
 First implementation can map matching task Issues to existing task events:
@@ -156,7 +181,7 @@ Every event should include:
 - notification sink result
 - next action command, if known
 
-## Dedupe And Cursor Strategy
+## Durable Delivery And Cursor Strategy
 
 Webhook and polling may observe the same Issue. The daemon must be idempotent.
 
@@ -164,11 +189,18 @@ Use these keys in order:
 
 1. GitHub webhook delivery id: `X-GitHub-Delivery`.
 2. Stable issue action key:
-   `github:issue:<owner>/<repo>#<number>:<action>:<updated_at>`.
-3. Poll cursor per repository: `lastSeenAt`, `lastIssueNumber`, and last
+   `github:issues.<action>:<canonical-owner>/<canonical-repo>:issue:<number>:<updated_at>`.
+3. Canonical route identity plus the event stable key for each sink effect.
+4. Poll cursor per repository: `lastSeenAt`, `lastIssueNumber`, and last
    processed idempotency key.
 
-Cursor state is local runtime state and must not be committed.
+The queue accepts or rejects duplicates atomically. A successful route is
+marked completed immediately and is not resent when another route retries. If
+a process exits after a remote sink accepts a message but before the local
+completion write, the same idempotency key is reused after lease recovery.
+
+Cursor state is local runtime state and must not be committed. Poll cursors
+advance only after observations are durably enqueued or confirmed duplicate.
 
 ## Notification Sinks
 
@@ -178,6 +210,16 @@ Initial sinks:
 - `slack`: posts to configured Slack channel using the existing Slack bot token
   model.
 - `webhook`: posts JSON to an outbound webhook URL.
+
+Every sink receives a stable delivery context:
+
+- Slack receives the route idempotency key as `client_msg_id`.
+- Outbound webhooks receive `Idempotency-Key` and
+  `X-OpenSlack-Idempotency-Key`.
+- Console output includes the same key for replay diagnosis.
+
+Sink network errors, timeouts, HTTP 408/429, and 5xx responses are retryable.
+Permanent configuration or other 4xx failures terminate only that route.
 
 Notification payload:
 
@@ -268,6 +310,8 @@ Acceptance:
 - Missing identity, denied permission, or empty `agent_ids` blocks auto-claim
   without crashing the daemon.
 - Auto-claim failures do not prevent notification dispatch.
+- Auto-claim work is constructed only for the normalized `issue` variant. PR,
+  review, check, and push events cannot enter this path.
 
 Acceptance:
 
@@ -275,6 +319,23 @@ Acceptance:
 - Denied `task.claim` permission blocks auto-claim.
 - Black Zone or critical-risk tasks are not auto-claimed (enforced by
   `authorizeAgentAction`).
+
+### P3-PR2: Durable Repository Event Delivery (Implemented)
+
+- Atomic durable enqueue replaces check-then-record dedupe for Issue, push,
+  PR, review, and check observations.
+- Route-level leases, completion, retry, failure, and stable idempotency are
+  persisted with bounded retention and compaction.
+- Webhook acknowledgement waits for the durable write, not the remote sink.
+- Expired processing leases are recovered after restart.
+- PR/review/check notifications refresh current state through an explicitly
+  repository-bound live client.
+- Out-of-scope repository access fails closed with a diagnostic.
+- Review state remains informational and cannot create approval or merge
+  authority.
+
+P3-PR3 still owns GitHub App manifest subscriptions, `checks: read`, setup
+doctor diagnostics, and existing-installation reauthorization guidance.
 
 ## Test Plan
 

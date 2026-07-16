@@ -113,7 +113,7 @@ OpenSlack/
 │   ├── credentials/         # Typed env/native OS keychain references and fail-closed backends
 │   ├── core/                # ClaimBroker with file-locked persistence
 │   ├── runtime/             # Self-evolution ops, golden evals, agent tick, worktree, PR proposal
-│   ├── github/              # App auth, Issues task loop, task creation, claims, lifecycle, repair
+│   ├── github/              # App auth, durable repository watch, Issues, PR/check observations
 │   ├── delivery/            # Bot-authenticated branch/PR publication and SHA synchronization
 │   ├── pr/                  # PR Review & Merge Steward (fetch, classify, readiness, report)
 │   ├── operator/            # Structured planner and intent router
@@ -170,6 +170,8 @@ See: [`docs/product/phase-1.md`](docs/product/phase-1.md)
 The autonomous execution core. Agents discover, claim, and complete tasks through GitHub Issues — no Project v2, no OAuth, no browser.
 
 - **Create:** `task create --title "..."` previews or creates schema-valid task Issues
+- **Observe:** `github watch start` durably routes configured Issue, push, PR,
+  review, and check observations with repository-scoped live refresh
 - **Discover:** `agent tick --source github-issues` queries GitHub for ready issues
 - **Claim:** Atomic `refs/heads/openslack/claims/issue-{n}` git refs prevent duplicate claims
 - **Execute:** Worktree isolation → git commit → governed delivery → synchronized draft PR
@@ -354,7 +356,7 @@ output_contract:
 | Product UX roadmap and remaining productization work | [`docs/product/user-experience-roadmap.md`](docs/product/user-experience-roadmap.md) |
 | Self-evolution architecture | [`docs/product/phase-1.md`](docs/product/phase-1.md), [`docs/developer/self-evolution-kernel.md`](docs/developer/self-evolution-kernel.md) |
 | GitHub Issues task loop | [`docs/developer/github-issues-loop.md`](docs/developer/github-issues-loop.md) |
-| GitHub watch daemon and realtime Issue notifications | [`docs/developer/github-watch-daemon.md`](docs/developer/github-watch-daemon.md) |
+| GitHub watch daemon and durable repository-event notifications | [`docs/developer/github-watch-daemon.md`](docs/developer/github-watch-daemon.md) |
 | PR review and merge governance | [`docs/product/module-04-pr-review-merge-steward.md`](docs/product/module-04-pr-review-merge-steward.md) |
 | Collaboration, handoff, decision, room, workflow views | [`docs/product/collaboration-layer.md`](docs/product/collaboration-layer.md), [`docs/developer/collaboration-events.md`](docs/developer/collaboration-events.md) |
 | Agent Conversations and subagent runtime | [`docs/product/agent-conversations.md`](docs/product/agent-conversations.md), [`docs/developer/subagent-runtime.md`](docs/developer/subagent-runtime.md) |
