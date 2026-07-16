@@ -33,6 +33,7 @@
     "yaml": "^2.7.0"
   },
   "devDependencies": {
+    "@openslack/sdk": "workspace:*",
     "@types/node": "^22.0.0"
   }
 }

@@ -2,12 +2,23 @@ import { Command } from 'commander';
 import { classifySelfEvolutionPR } from '@openslack/kernel';
 import { observeHealth, triageObservations, validatePR, reviewPR, computeFitnessScore, monitorPostMerge, runGoldenEval, generateScorecard } from '@openslack/runtime';
 import { validateWorkspace } from '@openslack/workspace';
+import type { PluginActionRunnerPort } from '../boot/plugin-action-runner.js';
+import { selfPluginCommands } from './self-plugin.js';
 import { selfReleaseCommands } from './self-release.js';
 
-export function selfCommands(): Command {
+const unavailablePluginRunner = Object.freeze({
+  async run(): Promise<never> {
+    throw new Error('Plugin action runner is unavailable.');
+  },
+}) satisfies PluginActionRunnerPort;
+
+export function selfCommands(
+  pluginRunner: PluginActionRunnerPort = unavailablePluginRunner,
+): Command {
   const cmd = new Command('self').description('Self-evolution commands');
 
   cmd.addCommand(selfReleaseCommands());
+  cmd.addCommand(selfPluginCommands(pluginRunner));
 
   cmd
     .command('init')

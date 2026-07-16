@@ -68,6 +68,7 @@ describe('OpenSlack CLI composition context', () => {
     contextA.operator.llmProviderRegistry.register(plannerProvider('context-only'));
 
     expect(contextA.pluginHost).not.toBe(contextB.pluginHost);
+    expect(contextA.pluginActions).not.toBe(contextB.pluginActions);
     expect(contextA.operator.actionRegistry).not.toBe(contextB.operator.actionRegistry);
     expect(contextA.operator.llmProviderRegistry.get('context-only')).toBeDefined();
     expect(contextB.operator.llmProviderRegistry.get('context-only')).toBeUndefined();

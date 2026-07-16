@@ -69,6 +69,25 @@ host.seal();
 await host.activate('repository-observer', activationEvidence);
 ```
 
+The CLI's P2-PR3 proof path preserves that order without exposing an unsealed host:
+
+```text
+self plugin run
+  -> construct one host with explicitly reviewed bundled registrations
+  -> load the fixed workspace lock, when present
+  -> seal
+  -> resolve composition-injected activation evidence
+  -> activate and authorize
+  -> SHADOW: report visibility only
+  -> ENFORCE: rebuild the minimal host step through the canonical Operator registry
+```
+
+Ordinary CLI commands use the no-load sealed composition path. The proof command does not accept
+approval state, evidence files, raw commands, arbitrary input JSON, or executable manifest code.
+Its activation and plan authorization are snapshot semantics for the current read-only target:
+deactivation after `planAction()` does not cancel a downstream Operator step. Extending the host
+lease across target execution is a separate Red boundary change, not part of P2-PR3.
+
 Workspace and installed loads re-check the sealed state immediately before their synchronous
 registry commit, so an in-flight read cannot register after `seal()`. Lifecycle operations and
 action/PRMS execution are also mutually exclusive per plugin; concurrent activation,

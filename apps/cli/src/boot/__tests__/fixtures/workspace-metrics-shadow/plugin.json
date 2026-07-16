@@ -1,0 +1,25 @@
+{
+  "schema": "openslack.plugin.v1",
+  "id": "metrics-shadow",
+  "version": "1.0.0",
+  "name": "Workspace metrics shadow fixture",
+  "description": "A declarative proof alias for the audited read-only metrics target.",
+  "requires": {
+    "openslack": ">=0.1.1 <1.0.0"
+  },
+  "gate": {
+    "mode": "SHADOW",
+    "gateId": "host.read-only"
+  },
+  "capabilities": ["host.actions.read", "github.issues.read"],
+  "contributes": [
+    {
+      "kind": "action_alias",
+      "id": "ready-count",
+      "target": {
+        "kind": "host_action",
+        "id": "github.metrics"
+      }
+    }
+  ]
+}

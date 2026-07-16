@@ -21,7 +21,11 @@ import { conversationCommands } from './commands/conversation.js';
 import { guideCommands } from './commands/guide.js';
 import { tuiCommands } from './commands/tui.js';
 import { versionCommand } from './commands/version.js';
-import { createOpenSlackCliContext } from './boot/context.js';
+import {
+  createOpenSlackCliContext,
+  createWorkspacePluginOpenSlackCliContext,
+} from './boot/context.js';
+import { PLUGIN_ACTION_WORKSPACE_LOAD_FAILED } from './boot/plugin-action-runner.js';
 import { getBuildInfo } from './release/build-info.js';
 import { findWorkspaceRoot, resolveWorkspaceContext } from '@openslack/workspace';
 import {
@@ -30,10 +34,33 @@ import {
 } from '@openslack/runtime';
 
 const buildInfo = getBuildInfo();
-const applicationContext = createOpenSlackCliContext({
+const contextOptions = {
   workspaceRoot: findWorkspaceRoot() ?? process.cwd(),
   openslackVersion: buildInfo.version,
-});
+};
+// The proof route needs its locked workspace manifests before Commander can
+// invoke the command, so dispatch is deliberately exact and fail-safe here:
+// alternate argv shapes fall back to the sealed no-load context. Commander (or
+// a future async command-context hook) should eventually own this selection.
+const pluginRunArguments = process.argv.slice(5);
+const workspacePluginRunRequested =
+  process.argv[2] === 'self' &&
+  process.argv[3] === 'plugin' &&
+  process.argv[4] === 'run' &&
+  pluginRunArguments.length === 2 &&
+  pluginRunArguments.every((argument) => !argument.startsWith('-'));
+let applicationContext;
+if (workspacePluginRunRequested) {
+  try {
+    applicationContext = await createWorkspacePluginOpenSlackCliContext(contextOptions);
+  } catch {
+    // Loader findings may contain local paths or untrusted manifest details.
+    console.error(`Plugin action failed: ${PLUGIN_ACTION_WORKSPACE_LOAD_FAILED}.`);
+    process.exit(1);
+  }
+} else {
+  applicationContext = createOpenSlackCliContext(contextOptions);
+}
 const program = new Command();
 
 program
@@ -47,7 +74,7 @@ program.addCommand(versionCommand());
 
 // Command groups
 program.addCommand(workspaceCommands());
-program.addCommand(selfCommands());
+program.addCommand(selfCommands(applicationContext.pluginActions));
 program.addCommand(agentCommands());
 program.addCommand(agentRuntimeCommands());
 program.addCommand(initCommand());
