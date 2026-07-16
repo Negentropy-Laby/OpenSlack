@@ -23,12 +23,16 @@ const testPayload: NotificationPayload = {
 const consoleRoute: GitHubWatchRoute = { sink: 'console' };
 const slackRoute: GitHubWatchRoute = { sink: 'slack', channel: '#test' };
 const webhookRoute: GitHubWatchRoute = { sink: 'webhook' };
+const deliveryContext = {
+  idempotencyKey: 'openslack-watch-v1:test-idempotency-key',
+  attempt: 2,
+};
 
 describe('ConsoleSink', () => {
   it('logs notification and returns ok', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const sink = new ConsoleSink();
-    const result = await sink.send(testPayload, consoleRoute);
+    const result = await sink.send(testPayload, consoleRoute, deliveryContext);
     expect(result.ok).toBe(true);
     expect(logSpy).toHaveBeenCalled();
     const output = logSpy.mock.calls[0][0] as string;
@@ -47,7 +51,7 @@ describe('SlackSink', () => {
     vi.stubGlobal('fetch', mockFetch);
 
     const sink = new SlackSink('xoxb-test-token');
-    const result = await sink.send(testPayload, slackRoute);
+    const result = await sink.send(testPayload, slackRoute, deliveryContext);
 
     expect(result.ok).toBe(true);
     expect(mockFetch).toHaveBeenCalledWith(
@@ -63,6 +67,7 @@ describe('SlackSink', () => {
     const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string);
     expect(body.channel).toBe('#test');
     expect(body.text).toContain('Negentropy-Laby/OpenSlack#42');
+    expect(body.client_msg_id).toBe(deliveryContext.idempotencyKey);
     vi.restoreAllMocks();
   });
 
@@ -74,9 +79,12 @@ describe('SlackSink', () => {
     vi.stubGlobal('fetch', mockFetch);
 
     const sink = new SlackSink('xoxb-test-token');
-    const result = await sink.send(testPayload, slackRoute);
+    const result = await sink.send(testPayload, slackRoute, deliveryContext);
     expect(result.ok).toBe(false);
-    expect(result.error).toContain('500');
+    expect(result).toMatchObject({
+      outcome: 'retryable',
+      code: 'SLACK_HTTP_ERROR_500',
+    });
     vi.restoreAllMocks();
   });
 
@@ -88,7 +96,7 @@ describe('SlackSink', () => {
     vi.stubGlobal('fetch', mockFetch);
 
     const sink = new SlackSink('xoxb-test-token');
-    const result = await sink.send(testPayload, slackRoute);
+    const result = await sink.send(testPayload, slackRoute, deliveryContext);
     expect(result.ok).toBe(false);
     expect(result.error).toContain('channel_not_found');
     vi.restoreAllMocks();
@@ -99,15 +107,18 @@ describe('SlackSink', () => {
     vi.stubGlobal('fetch', mockFetch);
 
     const sink = new SlackSink('xoxb-test-token');
-    const result = await sink.send(testPayload, slackRoute);
+    const result = await sink.send(testPayload, slackRoute, deliveryContext);
     expect(result.ok).toBe(false);
-    expect(result.error).toContain('ECONNREFUSED');
+    expect(result).toMatchObject({
+      outcome: 'retryable',
+      code: 'SLACK_NETWORK_ERROR',
+    });
     vi.restoreAllMocks();
   });
 
   it('returns error when route has no channel', async () => {
     const sink = new SlackSink('xoxb-test-token');
-    const result = await sink.send(testPayload, { sink: 'slack' });
+    const result = await sink.send(testPayload, { sink: 'slack' }, deliveryContext);
     expect(result.ok).toBe(false);
     expect(result.error).toContain('channel');
   });
@@ -119,7 +130,7 @@ describe('WebhookSink', () => {
     vi.stubGlobal('fetch', mockFetch);
 
     const sink = new WebhookSink('https://example.com/hook');
-    const result = await sink.send(testPayload, webhookRoute);
+    const result = await sink.send(testPayload, webhookRoute, deliveryContext);
 
     expect(result.ok).toBe(true);
     expect(mockFetch).toHaveBeenCalledWith(
@@ -128,6 +139,8 @@ describe('WebhookSink', () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Idempotency-Key': deliveryContext.idempotencyKey,
+          'X-OpenSlack-Idempotency-Key': deliveryContext.idempotencyKey,
           'X-OpenSlack-Notification': 'v1',
         },
       }),
@@ -143,9 +156,12 @@ describe('WebhookSink', () => {
     vi.stubGlobal('fetch', mockFetch);
 
     const sink = new WebhookSink('https://example.com/hook');
-    const result = await sink.send(testPayload, webhookRoute);
+    const result = await sink.send(testPayload, webhookRoute, deliveryContext);
     expect(result.ok).toBe(false);
-    expect(result.error).toContain('502');
+    expect(result).toMatchObject({
+      outcome: 'retryable',
+      code: 'WEBHOOK_HTTP_ERROR_502',
+    });
     vi.restoreAllMocks();
   });
 
@@ -154,9 +170,12 @@ describe('WebhookSink', () => {
     vi.stubGlobal('fetch', mockFetch);
 
     const sink = new WebhookSink('https://example.com/hook');
-    const result = await sink.send(testPayload, webhookRoute);
+    const result = await sink.send(testPayload, webhookRoute, deliveryContext);
     expect(result.ok).toBe(false);
-    expect(result.error).toContain('timeout');
+    expect(result).toMatchObject({
+      outcome: 'retryable',
+      code: 'WEBHOOK_NETWORK_ERROR',
+    });
     vi.restoreAllMocks();
   });
 });

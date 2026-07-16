@@ -837,12 +837,23 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
     .command('status')
     .description('Show watch daemon status')
     .action(async () => {
-      const { WatchDedupeStore, WatchCursorStore } = await import('@openslack/github');
-      const store = new WatchDedupeStore();
+      const { WatchDeliveryQueue, WatchCursorStore } = await import('@openslack/github');
+      const store = new WatchDeliveryQueue();
       const stats = store.getStats();
       console.log('GitHub Watch Daemon Status');
       console.log('══════════════════════════');
-      console.log(`Processed events: ${stats.count}`);
+      console.log(`Delivery records: ${stats.count}`);
+      console.log(`  Pending: ${stats.pending}`);
+      console.log(`  Processing: ${stats.processing}`);
+      console.log(`  Retryable: ${stats.retryable}`);
+      console.log(`  Completed: ${stats.completed}`);
+      console.log(`  Failed: ${stats.failed}`);
+      console.log(`  Active leases: ${stats.activeLeases}`);
+      if (stats.nextRetryAt) console.log(`Next retry: ${stats.nextRetryAt}`);
+      if (stats.oldestPendingAt) console.log(`Oldest pending: ${stats.oldestPendingAt}`);
+      if (stats.lastFailure) {
+        console.log(`Last failure: ${stats.lastFailure.code} (${stats.lastFailure.recordedAt})`);
+      }
       if (stats.lastTimestamp) console.log(`Last event: ${stats.lastTimestamp}`);
       else console.log('No events processed yet.');
 

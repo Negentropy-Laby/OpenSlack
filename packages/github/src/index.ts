@@ -182,9 +182,61 @@ export type { NormalizedIssueEvent, NormalizedIssueRepositoryEvent } from './iss
 export { normalizePushEvent, matchesPushRepoConfig } from './push-normalizer.js';
 export type { NormalizedPushEvent, NormalizedPushRepositoryEvent } from './push-normalizer.js';
 export { WatchDedupeStore } from './watch-dedupe.js';
+export {
+  DEFAULT_WATCH_DELIVERY_POLICY,
+  WatchDeliveryQueue,
+  WatchDeliveryQueueError,
+} from './watch-delivery-queue.js';
+export type {
+  ClaimAndEnqueueResult,
+  ClaimedWatchDelivery,
+  WatchDeliveryDiagnostic,
+  WatchDeliveryLease,
+  WatchDeliveryPolicy,
+  WatchDeliveryQueueOptions,
+  WatchDeliveryRecord,
+  WatchDeliveryState,
+  WatchDeliveryStats,
+  WatchRouteDelivery,
+} from './watch-delivery-queue.js';
+export { WatchDeliveryRouter } from './watch-delivery-router.js';
+export type {
+  WatchDeliveryDrainResult,
+  WatchDeliveryRecordEventFn,
+  WatchDeliveryRouterOptions,
+} from './watch-delivery-router.js';
+export { RepositoryAuthorityResolver } from './repository-authority.js';
+export type {
+  RepositoryAuthorityDiagnostic,
+  RepositoryAuthorityDiagnosticCode,
+  RepositoryAuthorityResolverOptions,
+  RepositoryClientResolution,
+} from './repository-authority.js';
+export {
+  fetchRepositoryEventLiveState,
+  RepositoryLiveStateError,
+} from './repository-live-state.js';
+export type {
+  RepositoryCheckRunSnapshot,
+  RepositoryCheckStateSummary,
+  RepositoryLiveStateOptions,
+  RepositoryLiveStateProjection,
+  RepositoryPullRequestLiveState,
+  RepositoryReviewStateSummary,
+} from './repository-live-state.js';
 export { WatchDaemon, formatConsoleNotification } from './watch-daemon.js';
-export type { AutoClaimFn, RecordEventFn, CollaborationEventRecord } from './watch-daemon.js';
-export { createNotificationPayload, formatNotification } from './notification-payload.js';
+export type {
+  AutoClaimFn,
+  RecordEventFn,
+  CollaborationEventRecord,
+  WatchDaemonDependencies,
+} from './watch-daemon.js';
+export {
+  attachRepositoryLiveState,
+  createNotificationPayload,
+  createPersistedNotificationPayload,
+  formatNotification,
+} from './notification-payload.js';
 export type {
   CheckNotificationPayload,
   IssueNotificationPayload,
@@ -201,7 +253,11 @@ export {
 } from './webhook-body.js';
 export type { WebhookBodyReadErrorCode, WebhookBodyReadOptions } from './webhook-body.js';
 export { createSinks, ConsoleSink, SlackSink, WebhookSink } from './notification-sinks.js';
-export type { NotificationSink, SinkResult } from './notification-sinks.js';
+export type {
+  NotificationDeliveryContext,
+  NotificationSink,
+  SinkResult,
+} from './notification-sinks.js';
 export { WatchCursorStore } from './watch-cursor.js';
 export type { RepoCursor, DaemonState } from './watch-cursor.js';
 export { pollRepoIssues } from './watch-poller.js';

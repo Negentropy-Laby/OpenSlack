@@ -64,7 +64,9 @@ describe('WatchDedupeStore', () => {
   it('builds stable key from event', () => {
     const store = new WatchDedupeStore(tempDir);
     const key = store.buildStableKey(baseEvent);
-    expect(key).toBe('github:issue:Negentropy-Laby/OpenSlack#42:opened:2026-05-25T10:00:00Z');
+    expect(key).toBe(
+      'github:issues.opened:negentropy-laby/openslack:issue:42:2026-05-25T10:00:00Z',
+    );
   });
 
   it('reports stats', () => {
