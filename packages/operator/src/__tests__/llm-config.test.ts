@@ -4,6 +4,7 @@ import {
   describeLLMRoutingConfig,
   registerLLMPlannerProvider,
 } from '../index.js';
+import { createLLMPlannerProviderRegistry } from '../llm.js';
 
 afterEach(() => {
   clearLLMPlannerProviders();
@@ -59,10 +60,7 @@ describe('describeLLMRoutingConfig', () => {
     });
 
     expect(result.mode).toBe('misconfigured');
-    expect(result.issues).toEqual([
-      'OPENSLACK_LLM_API_KEY not set',
-      'OPENSLACK_LLM_MODEL not set',
-    ]);
+    expect(result.issues).toEqual(['OPENSLACK_LLM_API_KEY not set', 'OPENSLACK_LLM_MODEL not set']);
   });
 
   it('returns llm-first for a registered custom provider without OpenAI credentials', () => {
@@ -90,6 +88,30 @@ describe('describeLLMRoutingConfig', () => {
 
     expect(result.mode).toBe('misconfigured');
     expect(result.issues).toEqual(['LLM provider not registered: missing-provider']);
+  });
+
+  it('uses an explicit provider registry without leaking compatibility registrations', () => {
+    registerLLMPlannerProvider({
+      id: 'compat-only',
+      async classifyAndPlan() {
+        return { intent: { kind: 'status', slots: {}, confidence: 1 } };
+      },
+    });
+    const isolatedRegistry = createLLMPlannerProviderRegistry();
+
+    const isolated = describeLLMRoutingConfig(
+      {
+        OPENSLACK_LLM_PROVIDER: 'compat-only',
+      },
+      isolatedRegistry,
+    );
+    const legacy = describeLLMRoutingConfig({
+      OPENSLACK_LLM_PROVIDER: 'compat-only',
+    });
+
+    expect(isolated.mode).toBe('misconfigured');
+    expect(isolated.issues).toEqual(['LLM provider not registered: compat-only']);
+    expect(legacy.mode).toBe('llm-first');
   });
 
   it('never exposes API key value in output', () => {

@@ -3,7 +3,10 @@
  *
  * SECURITY: This module must NEVER include the API key value in its output.
  */
-import { getLLMPlannerProvider } from './llm.js';
+import {
+  getLLMPlannerProvider,
+  type LLMPlannerProviderRegistryPort,
+} from './llm.js';
 
 export interface LLMConfigStatus {
   mode: 'llm-first' | 'keyword-only' | 'misconfigured';
@@ -26,6 +29,7 @@ function isBuiltInProvider(provider: string): boolean {
  */
 export function describeLLMRoutingConfig(
   env: Record<string, string | undefined>,
+  providerRegistry?: LLMPlannerProviderRegistryPort,
 ): LLMConfigStatus {
   const provider = env.OPENSLACK_LLM_PROVIDER;
   const apiKey = env.OPENSLACK_LLM_API_KEY;
@@ -44,7 +48,9 @@ export function describeLLMRoutingConfig(
       if (!hasModel) {
         issues.push('OPENSLACK_LLM_MODEL not set');
       }
-    } else if (!getLLMPlannerProvider(provider)) {
+    } else if (
+      !(providerRegistry ? providerRegistry.get(provider) : getLLMPlannerProvider(provider))
+    ) {
       issues.push(`LLM provider not registered: ${provider}`);
     }
 

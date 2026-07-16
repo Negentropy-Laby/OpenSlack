@@ -21,6 +21,7 @@ import { conversationCommands } from './commands/conversation.js';
 import { guideCommands } from './commands/guide.js';
 import { tuiCommands } from './commands/tui.js';
 import { versionCommand } from './commands/version.js';
+import { createOpenSlackCliContext } from './boot/context.js';
 import { getBuildInfo } from './release/build-info.js';
 import { findWorkspaceRoot, resolveWorkspaceContext } from '@openslack/workspace';
 import {
@@ -28,15 +29,20 @@ import {
   LocalStateCompatibilityError,
 } from '@openslack/runtime';
 
+const buildInfo = getBuildInfo();
+const applicationContext = createOpenSlackCliContext({
+  workspaceRoot: findWorkspaceRoot() ?? process.cwd(),
+  openslackVersion: buildInfo.version,
+});
 const program = new Command();
 
 program
   .name('openslack')
   .description('OpenSlack — Agent Company OS CLI')
-  .version(getBuildInfo().version);
+  .version(buildInfo.version);
 
 // Top-level ask alias (reuses operator ask directly)
-program.addCommand(buildAskCommand());
+program.addCommand(buildAskCommand(applicationContext.operator));
 program.addCommand(versionCommand());
 
 // Command groups
@@ -49,16 +55,20 @@ program.addCommand(deliveryCommands());
 program.addCommand(taskCommands());
 program.addCommand(githubCommands());
 program.addCommand(prCommands());
-program.addCommand(operatorCommands());
+program.addCommand(operatorCommands(applicationContext.operator));
 program.addCommand(statusCommands());
-program.addCommand(doctorCommands());
+program.addCommand(
+  doctorCommands({ llmProviderRegistry: applicationContext.operator.llmProviderRegistry }),
+);
 program.addCommand(governanceCommands());
-program.addCommand(setupCommands());
-program.addCommand(chatCommands());
+program.addCommand(
+  setupCommands({ llmProviderRegistry: applicationContext.operator.llmProviderRegistry }),
+);
+program.addCommand(chatCommands(applicationContext.operator));
 program.addCommand(collaborationCommands());
 program.addCommand(conversationCommands());
 program.addCommand(guideCommands());
-program.addCommand(tuiCommands());
+program.addCommand(tuiCommands(applicationContext.operator));
 
 if (enforceStartupStateCompatibility(process.argv)) program.parse(process.argv);
 

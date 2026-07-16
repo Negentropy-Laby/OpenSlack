@@ -23,8 +23,13 @@ import {
   extractSlotsFromMessage,
   mergeDefinedSlots,
   MAX_CLARIFICATION_ROUNDS,
+  BUILTIN_ACTION_REGISTRY,
 } from '@openslack/operator';
-import type { PlanStep } from '@openslack/operator';
+import type {
+  ActionRegistryPort,
+  LLMPlannerProviderRegistryPort,
+  PlanStep,
+} from '@openslack/operator';
 import { recordEvent } from '@openslack/collaboration';
 import { resolveAgentPrincipal } from '@openslack/runtime';
 
@@ -65,6 +70,11 @@ type AgentAuthOptions = {
   snapshot?: import('@openslack/kernel').AgentPermissionSnapshot;
 };
 
+export interface OperatorCommandContext {
+  readonly actionRegistry?: ActionRegistryPort;
+  readonly llmProviderRegistry?: LLMPlannerProviderRegistryPort;
+}
+
 function resolveAgentAuthOptions(agentId: string | undefined): AgentAuthOptions {
   if (!agentId) return {};
   const root = findRepoRoot();
@@ -79,6 +89,7 @@ function resolveAgentAuthOptions(agentId: string | undefined): AgentAuthOptions 
 async function runAsk(
   query: string,
   options: { plan?: boolean; agentId?: string; session?: string; effort?: string },
+  runtime: OperatorCommandContext = {},
 ): Promise<void> {
   const ultracodeEffort = options.effort === 'ultracode';
   const sessionId = options.session || generateSessionId();
@@ -96,7 +107,13 @@ async function runAsk(
   const pendingPlans = listPendingPlans(root);
   const lastPending = pendingPlans.find((p) => p.state === 'pending');
 
-  let { intent } = await resolveIntent(query);
+  const actionRegistry = runtime.actionRegistry ?? BUILTIN_ACTION_REGISTRY;
+  let { intent } = await resolveIntent(query, {
+    actionRegistry,
+    ...(runtime.llmProviderRegistry === undefined
+      ? {}
+      : { providerRegistry: runtime.llmProviderRegistry }),
+  });
   if (ultracodeEffort && !/\bultracode\b/i.test(query)) {
     intent = { kind: 'workflow_draft_required', slots: { query }, confidence: 0.95 };
   }
@@ -119,7 +136,7 @@ async function runAsk(
           else if (sr.status === 'skipped') console.log(`  ⊘ ${step.id} skipped`);
           else console.log(`  ✗ ${step.id} failed`);
         },
-      });
+      }, actionRegistry);
 
       if (result.status === 'success') updatePendingPlanState(lastPending.planId, 'executed', root);
       appendTurn(sessionId, { role: 'assistant', content: summarizeResults(result), intent, timestamp: new Date().toISOString() }, root);
@@ -160,7 +177,7 @@ async function runAsk(
   // Append user turn with resolved intent
   appendTurn(sessionId, { role: 'user', content: query, intent, timestamp: new Date().toISOString() }, root);
 
-  const plan = planActions(intent);
+  const plan = planActions(intent, actionRegistry);
 
   if (plan.workflowRecommendation?.decision === 'workflow_draft_required' && !options.plan) {
     try {
@@ -297,7 +314,7 @@ async function runAsk(
         console.log(`  ✗ ${step.id} failed`);
       }
     },
-  });
+  }, actionRegistry);
 
   if (pendingPlanId && result.status === 'success') {
     updatePendingPlanState(pendingPlanId, 'executed', root);
@@ -310,7 +327,7 @@ async function runAsk(
   console.log('');
 }
 
-export function buildAskCommand(): Command {
+export function buildAskCommand(context: OperatorCommandContext = {}): Command {
   const ask = new Command('ask')
     .description('Ask the Operator Agent to perform a task (natural language)')
     .argument('<query...>', 'What do you want to do?')
@@ -319,7 +336,7 @@ export function buildAskCommand(): Command {
     .option('--session <id>', 'Session ID for conversation continuity')
     .option('--effort <level>', 'Reasoning/workflow effort level; use ultracode to create a dynamic workflow draft')
     .action(async (queryParts: string[], options: { plan?: boolean; agentId?: string; session?: string; effort?: string }) => {
-      await runAsk(queryParts.join(' '), options);
+      await runAsk(queryParts.join(' '), options, context);
     });
 
   const planCmd = new Command('plan').description('Manage pending Operator plans');
@@ -373,7 +390,12 @@ export function buildAskCommand(): Command {
     .description('Update a pending plan with clarification values')
     .option('--set <key=value>', 'Slot update, can be repeated', (value, previous: string[]) => [...previous, value], [])
     .action((planId: string, options: { set: string[] }) => {
-      const pending = resumePendingPlan(planId, parseSetOptions(options.set));
+      const pending = resumePendingPlan(
+        planId,
+        parseSetOptions(options.set),
+        undefined,
+        context.actionRegistry ?? BUILTIN_ACTION_REGISTRY,
+      );
       if (!pending) {
         console.error(`Plan not found, expired, or not pending: ${planId}`);
         process.exit(1);
@@ -406,7 +428,11 @@ export function buildAskCommand(): Command {
       }
       updatePendingPlanState(planId, 'approved');
       const authOptions = resolveAgentAuthOptions(options.agentId);
-      const result = await executePlan(pending.plan, { ...authOptions, confirmStep: async () => true });
+      const result = await executePlan(
+        pending.plan,
+        { ...authOptions, confirmStep: async () => true },
+        context.actionRegistry ?? BUILTIN_ACTION_REGISTRY,
+      );
       if (result.status === 'success') updatePendingPlanState(planId, 'executed');
       console.log(summarizeResults(result));
       if (result.status !== 'success') process.exit(1);
@@ -458,8 +484,8 @@ export function buildAskCommand(): Command {
   return ask;
 }
 
-export function operatorCommands(): Command {
+export function operatorCommands(context: OperatorCommandContext = {}): Command {
   const cmd = new Command('operator').description('OpenSlack Operator Agent');
-  cmd.addCommand(buildAskCommand());
+  cmd.addCommand(buildAskCommand(context));
   return cmd;
 }

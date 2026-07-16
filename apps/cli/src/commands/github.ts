@@ -95,6 +95,8 @@ function printClaimLifecycleResult(result: ClaimLifecycleResult): void {
 
 export interface GitHubCommandDependencies {
   credentialStore?: CredentialStore;
+  getMetricsClient?: () => Promise<{ isDryRun: boolean }>;
+  queryReadyMetrics?: () => Promise<readonly unknown[]>;
   startAppManifestServer?: (options: {
     workspaceRoot: string;
     organization: string;
@@ -863,19 +865,26 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
     .description('Show OpenSlack task loop metrics')
     .action(async () => {
       try {
-        const { queryReadyIssueTasks, getClient } = await import('@openslack/github');
-        const client = await getClient();
+        const getMetricsClient = dependencies.getMetricsClient ?? getClient;
+        const queryReadyMetrics =
+          dependencies.queryReadyMetrics ??
+          (async () => {
+            const { queryReadyIssueTasks } = await import('@openslack/github');
+            return queryReadyIssueTasks();
+          });
+        const client = await getMetricsClient();
         if (client.isDryRun) {
           console.log('[DRY RUN] Would compute metrics');
           return;
         }
-        const ready = await queryReadyIssueTasks();
+        const ready = await queryReadyMetrics();
         console.log(`Ready: ${ready.length}`);
         console.log(
           '(Full metrics: claimed/running/review/done counts require label-based search.)',
         );
-      } catch (e) {
-        console.error(`Metrics failed: ${(e as Error).message}`);
+      } catch {
+        console.error('Metrics failed: task-loop metrics are unavailable.');
+        process.exitCode = 1;
       }
     });
 

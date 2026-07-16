@@ -16,6 +16,7 @@ import {
 } from '@openslack/runtime';
 import type { OnboardingState, OnboardingStepId, PlainFinding } from '@openslack/runtime';
 import { describeLLMRoutingConfig } from '@openslack/operator';
+import type { LLMPlannerProviderRegistryPort } from '@openslack/operator';
 import { recordEvent } from '@openslack/collaboration';
 import { diagnoseAgentRuntime } from '@openslack/agent-runtime';
 import { resolveWorkspaceContext, validateWorkspace } from '@openslack/workspace';
@@ -35,6 +36,7 @@ export interface SetupCommandDependencies {
   validate?: typeof validateWorkspace;
   runGolden?: typeof runGoldenEval;
   getGitHubClient?: typeof getClient;
+  llmProviderRegistry?: LLMPlannerProviderRegistryPort;
 }
 
 function readStrictFromCommander(args: unknown[], command: Command): boolean {
@@ -284,7 +286,10 @@ export function setupCommands(dependencies: SetupCommandDependencies = {}): Comm
 
     // LLM routing status
     {
-      const llmConfig = describeLLMRoutingConfig(process.env as Record<string, string | undefined>);
+      const llmConfig = describeLLMRoutingConfig(
+        process.env as Record<string, string | undefined>,
+        dependencies.llmProviderRegistry,
+      );
       const detail =
         llmConfig.mode === 'keyword-only'
           ? 'Keyword router active. Configure OPENSLACK_LLM_PROVIDER to enable LLM-first routing.'
@@ -445,7 +450,10 @@ export function setupCommands(dependencies: SetupCommandDependencies = {}): Comm
 
     // LLM routing status
     {
-      const llmConfig = describeLLMRoutingConfig(process.env as Record<string, string | undefined>);
+      const llmConfig = describeLLMRoutingConfig(
+        process.env as Record<string, string | undefined>,
+        dependencies.llmProviderRegistry,
+      );
       const detail =
         llmConfig.mode === 'keyword-only'
           ? 'Keyword router active. Configure OPENSLACK_LLM_PROVIDER to enable LLM-first routing.'

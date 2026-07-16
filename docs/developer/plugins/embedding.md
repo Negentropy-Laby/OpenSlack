@@ -15,13 +15,44 @@ They do not yet make OpenSlack a public, installable embedding platform.
 - `@openslack/operator`: an instance-scoped action-registry port with the existing 30-action
   registry as its compatibility default, plus canonical execution-time `PlanStep`
   revalidation;
+- the CLI composition root: one sealed `PluginHost`, Operator action registry, LLM-provider
+  registry, and conversation-store binding per application process, with one audited bounded
+  GitHub Issues metric target and a fail-closed catalog for every other built-in;
 - reviewed bundled descriptor types for code explicitly imported by an application
   composition root.
 
-These packages are private monorepo packages. There is still no application composition root
-that connects plugin-host contributions to Operator actions, no dynamic CLI/TUI registry,
+These packages are private monorepo packages. The composition root does not yet activate or
+route plugin contributions into Operator actions. There is still no dynamic CLI/TUI registry,
 directory watcher, npm package scan, public consumer release, or auto-discovered code execution
 path in this stage.
+
+## CLI composition root
+
+`createOpenSlackCliContext()` owns the application graph instead of mutating process-global
+registries. The top-level `ask` command, nested `operator ask`, TUI workbench, Chat Gateway,
+setup report, and doctor report receive the same context instance. Intent resolution, planning,
+clarification resume, confirmation, and execution in those entrypoints use its explicit
+registries. Constructing a second context creates
+independent action, LLM-provider, conversation-store, and host instances. The pre-existing
+collaboration workflow loader deliberately retains its compatibility-default registry during P2;
+the roadmap explicitly excludes migrating that loader in this stage.
+
+The Operator-to-host adapter is metadata-only. It does not infer disclosure safety from risk or
+side-effect metadata: each exposed target requires a complete capability, behavior, and output
+contract audit. P2-PR2 exposes only `github.metrics`, which performs the existing bounded ready
+GitHub Issues query and emits only the returned item count under the exact `github.issues.read`
+capability. Its failure path emits fixed diagnostic prose and returns a failed exit status. A
+declarative alias must still request `host.actions.read` to contribute the alias itself.
+`status.show` reads GitHub, workspace,
+Agent Runtime, and collaboration state; PR reports can contain paths; conversation actions can
+contain user content; and evaluation actions can write scorecards. Those actions remain outside
+the catalog. The adapter also drops authority-like IDs and fields that the Red host forbids. It
+never calls action builders, matchers, or executors. The resulting host is sealed at boot.
+
+P2-PR2 deliberately supplies no implicit plugin authority. Unless an embedding application
+injects a `HostPolicyPort` with a durable audit sink, activation, action authorization, and plan
+validation deny, while required audit attempts fail closed. Declarative activation and routing
+remain a later governed stage.
 
 ## Operator action port
 

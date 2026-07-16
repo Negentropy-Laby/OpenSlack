@@ -42,6 +42,8 @@
         "@openslack/github": "workspace:*",
         "@openslack/kernel": "workspace:*",
         "@openslack/operator": "workspace:*",
+        "@openslack/plugin-api": "workspace:*",
+        "@openslack/plugin-host": "workspace:*",
         "@openslack/pr": "workspace:*",
         "@openslack/runtime": "workspace:*",
         "@openslack/tui": "workspace:*",

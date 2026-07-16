@@ -1,4 +1,5 @@
-import { planActions, executePlan } from '@openslack/operator';
+import { BUILTIN_ACTION_REGISTRY, planActions, executePlan } from '@openslack/operator';
+import type { ActionRegistryPort } from '@openslack/operator';
 import type { ChatMessage, ChatResponse } from './types.js';
 import { loadPendingPlan, validatePlan, deletePendingPlan, isActionAllowed } from './plan-store.js';
 import { formatResultAsMarkdown, formatError } from './formatter.js';
@@ -21,14 +22,17 @@ function parseActionText(text: string): { action: string; value: string } | null
   return { action: match[1], value: match[2] };
 }
 
-async function runPRDoctor(prNumber: string): Promise<{ output: string; status: 'success' | 'failed' }> {
+async function runPRDoctor(
+  prNumber: string,
+  registry: ActionRegistryPort,
+): Promise<{ output: string; status: 'success' | 'failed' }> {
   const plan = planActions({
     kind: 'pr_doctor',
     slots: { prNumber: Number(prNumber) },
     confidence: 1,
-  });
+  }, registry);
 
-  const result = await executePlan(plan, { dryRun: false });
+  const result = await executePlan(plan, { dryRun: false }, registry);
   const stepResult = result.steps[0];
   return {
     output: stepResult?.output || result.summary,
@@ -45,18 +49,27 @@ function resolveActionAgentAuth(agentId: string | undefined, provider: 'slack' |
   return { principal: resolved.principal, snapshot: resolved.snapshot };
 }
 
-async function runPRMerge(prNumber: string, agentId: string | undefined, provider: 'slack' | 'webhook'): Promise<{ output: string; status: 'success' | 'failed' }> {
+async function runPRMerge(
+  prNumber: string,
+  agentId: string | undefined,
+  provider: 'slack' | 'webhook',
+  registry: ActionRegistryPort,
+): Promise<{ output: string; status: 'success' | 'failed' }> {
   const plan = planActions({
     kind: 'pr_merge',
     slots: { prNumber: Number(prNumber) },
     confidence: 1,
-  });
+  }, registry);
 
-  const result = await executePlan(plan, {
-    dryRun: false,
-    ...resolveActionAgentAuth(agentId, provider),
-    confirmStep: async () => true, // Already confirmed via plan store
-  });
+  const result = await executePlan(
+    plan,
+    {
+      dryRun: false,
+      ...resolveActionAgentAuth(agentId, provider),
+      confirmStep: async () => true, // Already confirmed via plan store
+    },
+    registry,
+  );
   const stepResult = result.steps.find((s) => s.stepId === 's2');
   return {
     output: stepResult?.output || result.summary,
@@ -64,14 +77,17 @@ async function runPRMerge(prNumber: string, agentId: string | undefined, provide
   };
 }
 
-async function runPRWatch(prNumber: string): Promise<{ output: string; status: 'success' | 'failed' }> {
+async function runPRWatch(
+  prNumber: string,
+  registry: ActionRegistryPort,
+): Promise<{ output: string; status: 'success' | 'failed' }> {
   const plan = planActions({
     kind: 'pr_watch',
     slots: { prNumber: Number(prNumber) },
     confidence: 1,
-  });
+  }, registry);
 
-  const result = await executePlan(plan, { dryRun: false });
+  const result = await executePlan(plan, { dryRun: false }, registry);
   const stepResult = result.steps[0];
   return {
     output: stepResult?.output || result.summary,
@@ -83,8 +99,11 @@ function isReadyToMerge(doctorOutput: string): boolean {
   return doctorOutput.includes('READY_TO_MERGE') || doctorOutput.includes('Ready to merge');
 }
 
-async function handleShowDoctor(prNumber: string): Promise<ChatResponse> {
-  const { output, status } = await runPRDoctor(prNumber);
+async function handleShowDoctor(
+  prNumber: string,
+  registry: ActionRegistryPort,
+): Promise<ChatResponse> {
+  const { output, status } = await runPRDoctor(prNumber, registry);
 
   if (status !== 'success') {
     return formatError(`Failed to run PR doctor: ${output}`);
@@ -93,8 +112,11 @@ async function handleShowDoctor(prNumber: string): Promise<ChatResponse> {
   return { text: `*PR #${prNumber} Doctor Report*\n\n${output.slice(0, 1500)}${output.length > 1500 ? '...' : ''}` };
 }
 
-async function handleWatchPR(prNumber: string): Promise<ChatResponse> {
-  const { output, status } = await runPRWatch(prNumber);
+async function handleWatchPR(
+  prNumber: string,
+  registry: ActionRegistryPort,
+): Promise<ChatResponse> {
+  const { output, status } = await runPRWatch(prNumber, registry);
 
   if (status !== 'success') {
     return formatError(`Failed to watch PR: ${output}`);
@@ -103,7 +125,11 @@ async function handleWatchPR(prNumber: string): Promise<ChatResponse> {
   return { text: `*Watching PR #${prNumber}*\n\n${output.slice(0, 1500)}${output.length > 1500 ? '...' : ''}` };
 }
 
-async function handleConfirmMerge(planId: string, message: ChatMessage): Promise<ChatResponse> {
+async function handleConfirmMerge(
+  planId: string,
+  message: ChatMessage,
+  registry: ActionRegistryPort,
+): Promise<ChatResponse> {
   const plan = loadPendingPlan(planId);
   if (!plan) {
     return formatError('Plan not found or already expired. Please request again.');
@@ -142,7 +168,7 @@ async function handleConfirmMerge(planId: string, message: ChatMessage): Promise
   // Step 1: Re-run PR doctor before merge
   const prNumber = plan.value;
   const provider = message.channel.type === 'webhook' ? 'webhook' : 'slack';
-  const { output: doctorOutput, status: doctorStatus } = await runPRDoctor(prNumber);
+  const { output: doctorOutput, status: doctorStatus } = await runPRDoctor(prNumber, registry);
 
   if (doctorStatus !== 'success') {
     deletePendingPlan(planId);
@@ -176,7 +202,7 @@ async function handleConfirmMerge(planId: string, message: ChatMessage): Promise
   let mergeOutput: string;
   let mergeStatus: 'success' | 'failed';
   try {
-    const result = await runPRMerge(prNumber, plan.agentId, provider);
+    const result = await runPRMerge(prNumber, plan.agentId, provider, registry);
     mergeOutput = result.output;
     mergeStatus = result.status;
   } catch (err) {
@@ -414,7 +440,10 @@ async function handleApprovePlan(planId: string, message: ChatMessage): Promise<
   return { text: `Plan ${planId} confirmed in chat. Chat confirmation does not execute this plan; run the CLI approval command shown by the Operator to execute it.` };
 }
 
-export async function handleAction(message: ChatMessage): Promise<ChatResponse | null> {
+export async function handleAction(
+  message: ChatMessage,
+  registry: ActionRegistryPort = BUILTIN_ACTION_REGISTRY,
+): Promise<ChatResponse | null> {
   const parsed = parseActionText(message.text);
   if (!parsed) return null;
 
@@ -422,11 +451,11 @@ export async function handleAction(message: ChatMessage): Promise<ChatResponse |
 
   switch (action) {
     case 'show_doctor':
-      return handleShowDoctor(value);
+      return handleShowDoctor(value, registry);
     case 'watch_pr':
-      return handleWatchPR(value);
+      return handleWatchPR(value, registry);
     case 'confirm_merge':
-      return handleConfirmMerge(value, message);
+      return handleConfirmMerge(value, message, registry);
     case 'cancel':
       return handleCancel(value, message);
     case 'accept_handoff':

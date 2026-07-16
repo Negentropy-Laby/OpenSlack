@@ -1,6 +1,7 @@
 import { Command } from 'commander';
+import type { OperatorApplicationContext } from '../boot/context.js';
 
-export function tuiCommands(): Command {
+export function tuiCommands(operatorContext?: OperatorApplicationContext): Command {
   return new Command('tui')
     .description('Launch the interactive TUI workbench')
     .addCommand(
@@ -557,7 +558,7 @@ export function tuiCommands(): Command {
         // Inject action handlers (side-effect execution stays in CLI layer)
         try {
           const { createActionHandlers } = await import('./tui-executors.js');
-          data.actionHandlers = createActionHandlers(root, actorId);
+          data.actionHandlers = createActionHandlers(root, actorId, operatorContext);
         } catch {
           // Action handlers unavailable — TUI will show CLI fallbacks
         }
