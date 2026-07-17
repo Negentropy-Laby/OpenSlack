@@ -1,6 +1,6 @@
 {
   "name": "@openslack/cli",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "bin": {
@@ -19,6 +19,7 @@
     "@openslack/kernel": "workspace:*",
     "@openslack/runtime": "workspace:*",
     "@openslack/github": "workspace:*",
+    "@openslack/integration-negentropy": "workspace:*",
     "@openslack/pr": "workspace:*",
     "@openslack/operator": "workspace:*",
     "@openslack/plugin-api": "workspace:*",

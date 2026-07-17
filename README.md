@@ -1,6 +1,6 @@
 # OpenSlack
 
-**OpenSlack — workflow-first agent collaboration workbench for GitHub-native human-agent teams. Runs standalone, with a planned Negentropy-Lab external slot-compatible scenario/workflow surface.**
+**OpenSlack — workflow-first agent collaboration workbench for GitHub-native human-agent teams. Runs standalone, with a governed Negentropy-Lab external slot-preview surface.**
 
 OpenSlack lets heterogeneous AI agents (Claude Code, Codex, reviewers, researchers, custom) function as employees: discover tasks from GitHub Issues, claim them with deterministic git ref locks, work in isolated worktrees, submit output through PRs, and communicate with humans only for approvals and exceptions.
 
@@ -24,7 +24,7 @@ bun run openslack status         # Module health, test counts, GitHub ops
 Workflow --> Agent Work --> PRMS Review --> Human Approval --> Merge --> Collaboration Memory --> Evidence Projection
 ```
 
-Preview the work, let agents execute it, review the PR, confirm governed actions, and keep the collaboration record. **Evidence Projection** is the integration boundary where external authority systems such as Negentropy-Lab may absorb OpenSlack outputs as read-only audit data; the slot-level export into Negentropy-Lab's `scenario-pack.extension` is planned and not active today.
+Preview the work, let agents execute it, review the PR, confirm governed actions, and keep the collaboration record. **Evidence Projection** is the integration boundary where external authority systems such as Negentropy-Lab may absorb OpenSlack outputs as read-only audit data. OpenSlack can now produce and diagnose an unsigned `scenario-pack.extension` preview, but only a trusted Negentropy receipt and matching live diagnostics can verify registration state.
 
 See the step-by-step guides: [`docs/guides/core-workflows.md`](docs/guides/core-workflows.md)
 and [`docs/guides/dynamic-workflow-workbench.md`](docs/guides/dynamic-workflow-workbench.md)
@@ -33,15 +33,15 @@ and [`docs/guides/dynamic-workflow-workbench.md`](docs/guides/dynamic-workflow-w
 
 ## Two Integration Modes
 
-OpenSlack runs as a **standalone workflow-first agent collaboration workbench** for GitHub-native human-agent teams. It also exposes a planned **Negentropy-Lab external slot-compatible scenario/workflow surface** without changing its standalone behavior.
+OpenSlack runs as a **standalone workflow-first agent collaboration workbench** for GitHub-native human-agent teams. It also exposes a governed **Negentropy-Lab external SHADOW slot-preview surface** without changing its standalone behavior.
 
 ### Standalone Workbench Mode
 
 No external control plane is required. Local workspace, workflow, review, and evidence features are self-contained; GitHub delivery, model-backed execution, bot-authored PRs, and human approval still require their documented operator credentials and hosted-service configuration. The sources of truth are GitHub Issues, Pull Requests, Git branches, and the local `.openslack` workspace.
 
-### Negentropy-Lab Slot Mode (Planned)
+### Negentropy-Lab Slot Preview
 
-In the future, OpenSlack can contribute to the `scenario-pack.extension` slot on a Negentropy-Lab control plane as an external provider:
+OpenSlack can prepare a `scenario-pack.extension` contribution for a Negentropy-Lab control plane as an external provider:
 
 - `layer: L5`, `defaultGateMode: SHADOW`, `sealed: false`, `allowExternal: true` on the slot definition.
 - The OpenSlack contribution would set `providerKind: external` and `gate.mode: SHADOW`.
@@ -49,7 +49,10 @@ In the future, OpenSlack can contribute to the `scenario-pack.extension` slot on
 - OpenSlack **never owns `AuthorityState`**, never receives a writer handle, and never calls `proposeMutation` or `authorityWriterHandle`.
 - All GitHub-side mutations remain ordinary GitHub Issues/PR mutations; any Negentropy-Lab authority mutation would be a governed action request processed by Negentropy-Lab itself.
 
-The `openslack integration negentropy ...` commands are planned and not implemented yet. See [`docs/product/negentropy-lab-integration.md`](docs/product/negentropy-lab-integration.md).
+Use `openslack collaboration integration negentropy export-slot --format json`,
+`doctor`, and `status`. Exported previews are always
+`readiness: NOT_REGISTERABLE`; OpenSlack neither signs nor registers them. See
+[`docs/product/negentropy-lab-integration.md`](docs/product/negentropy-lab-integration.md).
 
 ---
 
@@ -84,6 +87,7 @@ See [Advanced Setup](#advanced-setup) for development mode, production builds, a
 |------|---------|
 | First local health check | `bun run openslack setup` |
 | Initialize an ordinary Git repository | `bun run openslack init --root <repo> --repo <owner/name>` |
+| Preview a guided sidecar attach | `bun run openslack setup attach --repo <owner/name>` |
 | Check status without guessing modules | `bun run openslack status` |
 | Ask in natural language | `bun run openslack ask "检查系统状态"` |
 | Create a task preview | `bun run openslack task create --title "Fix docs" --path "docs/**" --preview` |
@@ -92,6 +96,7 @@ See [Advanced Setup](#advanced-setup) for development mode, production builds, a
 | Start a conversation thread | `bun run openslack conversation start --title "Review PR #42"` |
 | Launch the conversation-first workbench | `bun run openslack tui` |
 | Maintain organization profile | `bun run openslack collaboration workflow profile-sync status` |
+| Export a Negentropy SHADOW preview | `bun run openslack collaboration integration negentropy export-slot --format json` |
 | Find the full CLI reference | [`docs/user-guide.md`](docs/user-guide.md) |
 
 Mutation-oriented commands default to preview or require explicit confirmation flags where possible. Chat confirmations are never GitHub approvals, and PR merges still require PRMS and GitHub governance gates.
@@ -106,10 +111,10 @@ OpenSlack/
 ├── .openslack/              # Workspace state (policies, constitution, evals, tasks)
 ├── packages/                # Active packages; see docs/status/current.md
 │   ├── kernel/              # Zone classifier, merge decision, policy engine
-│   ├── plugin-api/          # Private declarative plugin contract, schema, and host policy ports
+│   ├── plugin-api/          # Public declarative plugin contract, schema, and host policy ports
 │   ├── plugin-host/         # Red integrity loader, lock, policy gates, and instance registries
 │   ├── plugin-testkit/      # Deterministic G1-G17 manifest/lock authoring diagnostics
-│   ├── sdk/                 # Private authoring helpers for manifests and reviewed bundled code
+│   ├── sdk/                 # Public authoring helpers for manifests and reviewed bundled code
 │   ├── workspace/           # Validation, indexing, schemas
 │   ├── credentials/         # Typed env/native OS keychain references and fail-closed backends
 │   ├── core/                # ClaimBroker with file-locked persistence
@@ -121,6 +126,7 @@ OpenSlack/
 │   ├── chat-gateway/        # Webhook / Slack projection frontend
 │   ├── agent-runtime/       # Governed tool plane, OpenAI-compatible/Aby providers, runs and evidence
 │   ├── collaboration/       # Activity, digest, dashboard, handoff, decision, room views
+│   ├── integration-negentropy/ # Private SHADOW preview and verification bridge
 │   ├── tui/                  # Ink TUI views, layout primitives, terminal workbench
 │   └── workflows/           # Workflow engine: load, validate, execute, checkpoint, resume
 ├── apps/cli/                # User command surface and module command groups
@@ -129,10 +135,12 @@ OpenSlack/
 └── docs/                    # Full acceptance, developer, security documentation
 ```
 
-The plugin packages remain a private preview. `@openslack/plugin-host` now provides the Red,
+The public embedding surface consists of `@openslack/plugin-api`,
+`@openslack/plugin-host`, `@openslack/sdk`, and `@openslack/plugin-testkit`.
+`@openslack/plugin-host` provides the Red,
 instance-scoped integrity and activation boundary for declarative workspace/installed manifests
-and explicitly imported reviewed bundles. It never executes auto-discovered code and is not yet a
-public npm embedding runtime, dynamic CLI registry, or sandbox. See
+and explicitly imported reviewed bundles. It never executes auto-discovered code and is not a
+general executable-plugin loader, dynamic CLI registry, or sandbox. See
 [`docs/developer/plugins/host.md`](docs/developer/plugins/host.md) and
 [`docs/developer/plugins/embedding.md`](docs/developer/plugins/embedding.md).
 
@@ -148,7 +156,7 @@ composition-owned activation evidence and policy, keeps `SHADOW` actions non-exe
 rebuilds `ENFORCE` plans through the existing canonical Operator registry. The stock CLI supplies
 no implicit activation authority, so an unconfigured route fails closed.
 
-### Negentropy-Lab Slot Integration (Planned)
+### Negentropy-Lab Slot Preview Integration
 
 OpenSlack can contribute to the Negentropy-Lab slot platform as an external `scenario-pack.extension` contribution. The integration surface is one-way, evidence-only, and projection-only:
 
@@ -157,7 +165,7 @@ OpenSlack can contribute to the Negentropy-Lab slot platform as an external `sce
 - Profile-sync projection payloads (`openslack collaboration workflow profile-sync status`)
 - Collaboration event/activity summaries (projection-only, from `.openslack.local/collaboration/events.jsonl`)
 
-OpenSlack **never owns `AuthorityState`**, never receives a writer handle, and never calls `proposeMutation` or `authorityWriterHandle`. The contribution would start with `gate.mode: SHADOW` and remain an external, non-authority-writing contribution. Planned commands: `openslack integration negentropy export-slot`, `openslack integration negentropy doctor`, and `openslack integration negentropy status`.
+OpenSlack **never owns `AuthorityState`**, never receives a writer handle, and never calls `proposeMutation` or `authorityWriterHandle`. The contribution is fixed to `gate.mode: SHADOW` and remains external and projection-only. Commands: `openslack collaboration integration negentropy export-slot --format json`, `doctor`, and `status`.
 
 ## Modules
 
@@ -194,6 +202,7 @@ The human-facing entry point. Natural language queries route through a structure
 - **TUI Ask:** `openslack tui` — opens on `Ask OpenSlack:`. Natural language produces Operator recommendations and safe action cards; `@agent-id prompt` dispatches through the conversation subagent path
 - **Chat:** `openslack chat start --adapter webhook|slack` — chat gateway for Slack/HTTP projections
 - **Setup:** `openslack setup` — one-step workspace validation + health check
+- **Attach:** `openslack setup attach --repo owner/name` — preview-first transactional attachment for read-only monitoring or full-agent sidecar mode
 - **Setup GitHub:** `openslack setup github` — read-only setup report plus GitHub App permission, event, and repository-scope diagnostics; `--apply` required for repairs
 - **Plan Memory:** `openslack ask plan ...` — inspect, resume, approve, or cancel 24h pending plans
 - **Planner:** Structured pipeline (`parseIntent/resolveIntent → planActions → executePlan`) with typed tool registry, allowlisted actions, risk gates, and confirmation for high-risk actions
@@ -209,6 +218,7 @@ The agent-assisted PR gatekeeper. Reviews PRs, classifies risk, checks merge rea
 - **Recommend:** `openslack pr recommend 10` → next action (approve? merge? wait?)
 - **Doctor:** `openslack pr doctor 10` → 11-gate governance diagnosis (deadlock, checks, approvals)
 - **Queue:** `openslack pr queue` → open PRs sorted by readiness and blocker owner
+- **Repository projection:** `openslack pr queue --repo org/one --repo org/two` → bounded, cached multi-repository PR/check visibility without making approval or merge claims
 - **Merge:** `openslack pr merge 10` → execute merge only after all gates pass
 - **Policy:** No auto-approval. No self-review. Red Zone requires an explicit human decision recorded through the required human GitHub identity. Black Zone blocked.
 
@@ -232,7 +242,7 @@ The projection and coordination layer. It makes tasks, PRs, handoffs, decisions,
 
 See: [`docs/product/collaboration-layer.md`](docs/product/collaboration-layer.md), [`docs/product/agent-conversations.md`](docs/product/agent-conversations.md), [`docs/product/dynamic-workflows.md`](docs/product/dynamic-workflows.md), [`docs/product/dynamic-workflow-ux-closure.md`](docs/product/dynamic-workflow-ux-closure.md)
 
-### Cross-Cutting Integration: Negentropy-Lab Slot Surface (Planned)
+### Cross-Cutting Integration: Negentropy-Lab Slot Preview
 
 Target slot: `scenario-pack.extension` on Negentropy-Lab.
 
@@ -250,7 +260,13 @@ Target slot: `scenario-pack.extension` on Negentropy-Lab.
 - Writer handles or direct mutation routes (`authorityWriterHandle`, `proposeMutation`)
 - Negentropy-Lab transport/runtime internals
 
-OpenSlack remains a standalone GitHub-agent workbench; the planned Negentropy-Lab slot contribution would be an external, `gate.mode: SHADOW`, projection-only contribution. See [`docs/product/negentropy-lab-integration.md`](docs/product/negentropy-lab-integration.md), [`docs/developer/negentropy-slot-adapter.md`](docs/developer/negentropy-slot-adapter.md), and [`docs/security/negentropy-slot-boundary.md`](docs/security/negentropy-slot-boundary.md).
+OpenSlack remains a standalone GitHub-agent workbench. Its preview contribution is external,
+`gate.mode: SHADOW`, opt-in, projection-only, and `NOT_REGISTERABLE` until an external signer and
+Negentropy administrator act. `doctor` reports `VERIFIED_BY_NEGENTROPY` only after the saved
+completed receipt agrees with the live HTTPS contribution and diagnostics. See
+[`docs/product/negentropy-lab-integration.md`](docs/product/negentropy-lab-integration.md),
+[`docs/developer/negentropy-slot-adapter.md`](docs/developer/negentropy-slot-adapter.md), and
+[`docs/security/negentropy-slot-boundary.md`](docs/security/negentropy-slot-boundary.md).
 
 ## Advanced Setup
 

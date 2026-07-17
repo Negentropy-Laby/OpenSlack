@@ -1,6 +1,6 @@
 # Negentropy-Lab Slot Boundary
 
-This document defines the hard security boundary between OpenSlack and Negentropy-Lab when OpenSlack contributes to the `scenario-pack.extension` slot as an external provider. OpenSlack remains a GitHub-agent workbench; Negentropy-Lab remains the authority owner and control plane. The slot starts in `SHADOW` mode and never escalates to `ENFORCE` without a human-governed decision.
+This document defines the hard security boundary between OpenSlack and Negentropy-Lab when OpenSlack contributes to the `scenario-pack.extension` slot as an external provider. OpenSlack remains a GitHub-agent workbench; Negentropy-Lab remains the authority owner and control plane. The OpenSlack v1 artifact is fixed to `SHADOW` and OpenSlack never escalates it to `ENFORCE`.
 
 The external `SlotContribution` contract is not OpenSlack's internal plugin execution contract. A dedicated adapter projects OpenSlack evidence into the upstream slot schema; `PluginHost` does not load or execute the contribution, and the adapter is not an internal plugin loader. See [Plugin Trust Model](plugin-trust-model.md) for the separate OpenSlack-owned contract.
 
@@ -11,7 +11,7 @@ The external `SlotContribution` contract is not OpenSlack's internal plugin exec
 3. **OpenSlack never calls `proposeMutation` directly.** Any mutation of Negentropy-Lab authority state must be initiated by Negentropy-Lab itself, not by OpenSlack code.
 4. **GitHub-side mutations stay in GitHub.** OpenSlack may create, update, or close GitHub Issues and Pull Requests as part of its normal workflow. It must not translate those GitHub mutations into direct Negentropy-Lab state mutations.
 5. **Negentropy-Lab absorbs output only as evidence, projection, or governed request.** OpenSlack may export workflow run evidence, PRMS reports, profile-sync projections, collaboration event summaries, and explicit governed-action requests. Negentropy-Lab ingests these as read-only inputs and decides what to do with them.
-6. **The slot starts in `SHADOW`.** The external `scenario-pack.extension` contribution begins with `gate.mode: SHADOW` and remains there until a governed activation decision raises it.
+6. **The OpenSlack artifact remains in `SHADOW`.** The external `scenario-pack.extension` contribution uses `gate.mode: SHADOW`; OpenSlack cannot emit an ENFORCE artifact or claim that Negentropy activated it.
 
 ## Authority State Boundary
 
@@ -48,7 +48,10 @@ The target slot is defined with `defaultGateMode: SHADOW`. The OpenSlack contrib
 - OpenSlack continues to operate as a standalone GitHub workbench.
 - No OpenSlack workflow can trigger an authority-side enforcement action.
 
-A transition to `ENFORCE` requires a governed, human-approved activation step in Negentropy-Lab and is not initiated by OpenSlack.
+Any Negentropy-side lifecycle action remains a governed Negentropy decision and
+is not initiated or inferred by OpenSlack. The OpenSlack v1 contribution
+artifact itself remains SHADOW even when live Negentropy diagnostics report a
+lifecycle state.
 
 ## Human Approval Gate
 

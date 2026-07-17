@@ -31,7 +31,7 @@ current-state document.
 | Review and merge PRs | `docs/product/module-04-pr-review-merge-steward.md`, `docs/user-guide.md` | `openslack pr doctor`, `openslack pr queue`, `openslack pr merge` |
 | Run agent workflows | `docs/product/workflow-modules.md`, `docs/developer/workflow-runtime.md`, `docs/security/workflow-execution.md` | `openslack collaboration workflow preview`, `openslack collaboration workflow run`, `openslack collaboration workflow resume` |
 | Coordinate humans and agents | `docs/product/collaboration-layer.md`, `docs/developer/collaboration-events.md` | `openslack collaboration dashboard`, `handoff`, `decision`, `room`, `workflow` |
-| Integrate with Negentropy-Lab | `docs/product/negentropy-lab-integration.md`, `docs/guides/embed-openslack-in-negentropy-lab.md`, `docs/security/negentropy-slot-boundary.md` | `openslack integration negentropy export-slot` (Planned), `openslack integration negentropy doctor` (Planned), `openslack integration negentropy status` (Planned) |
+| Prepare and verify a Negentropy-Lab projection | `docs/product/negentropy-lab-integration.md`, `docs/guides/embed-openslack-in-negentropy-lab.md`, `docs/security/negentropy-slot-boundary.md` | `openslack collaboration integration negentropy export-slot`, `doctor`, `status` |
 | Maintain profile projection | `docs/product/profile-sync.md`, `docs/product/collaboration-layer.md` | `openslack collaboration workflow profile-sync status` |
 | Onboard or authorize agents | `docs/developer/agent-registry-schema.md`, `docs/developer/new-agent-onboarding.md` | `openslack agent hire`, `openslack agent bootstrap` |
 | Understand guardrails | `AGENTS.md`, `docs/security/self-evolution-guardrails.md`, `docs/security/collaboration-audit.md` | `openslack self classify-pr`, `openslack governance audit` |
@@ -47,7 +47,7 @@ current-state document.
 | PR Review & Merge Steward | `docs/product/module-04-pr-review-merge-steward.md` |
 | Collaboration Layer | `docs/product/collaboration-layer.md`, `docs/developer/collaboration-events.md` |
 | Workflow Engine | `docs/product/workflow-modules.md`, `docs/developer/workflow-runtime.md`, `docs/security/workflow-execution.md` |
-| Negentropy-Lab Slot Integration (Planned) | `docs/product/negentropy-lab-integration.md`, `docs/developer/negentropy-slot-adapter.md`, `docs/security/negentropy-slot-boundary.md` |
+| Negentropy-Lab Slot Preview | `docs/product/negentropy-lab-integration.md`, `docs/developer/negentropy-slot-adapter.md`, `docs/security/negentropy-slot-boundary.md` |
 | Profile Sync | `docs/product/profile-sync.md` |
 
 ## Product Reviews

@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "resolveJsonModule": true
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    { "path": "../collaboration" },
+    { "path": "../pr" },
+    { "path": "../workflows" }
+  ]
+}

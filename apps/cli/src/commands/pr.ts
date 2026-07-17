@@ -6,6 +6,9 @@ import {
   getClient,
   GitHubAuthRequiredError,
   GitHubEvidenceUnavailableError,
+  canonicalizeRepositoryName,
+  loadGitHubWatchConfig,
+  parseGitHubRepoSpec,
   publishWorkflowGovernance,
   findWorkflowGovernanceIssue,
   updatePRBody,
@@ -23,7 +26,9 @@ import {
   postReviewComment,
   watchPR,
   buildPRQueue,
+  buildRepositoryPRProjection,
   renderPRQueue,
+  renderRepositoryPRProjection,
   isCoreWorkflowArtifactPath,
   computeLocalWorkflowEvidence,
 } from '@openslack/pr';
@@ -44,21 +49,100 @@ export function prCommands(): Command {
     .command('queue')
     .description('Show open PRs grouped by readiness and blocker owner')
     .option('--limit <n>', 'Maximum open PRs to inspect', '20')
+    .option('--repo <owner/name>', 'Project a GitHub repository; can be repeated', collectRepository, [])
+    .option('--all', 'Project all repositories in the GitHub Watch config')
+    .option('--concurrency <n>', 'Maximum concurrent GitHub projection requests', '4')
+    .option('--api-budget <n>', 'Maximum GitHub projection API requests', '100')
+    .option('--cache-ttl <seconds>', 'Projection cache TTL in seconds', '60')
+    .option('--config <path>', 'GitHub Watch config path', '.openslack/monitors/github-watch.yaml')
     .option('--format <format>', 'Output format: standard or tui', 'standard')
-    .action(async (options: { limit: string; format: string }) => {
+    .action(async (options: {
+      limit: string;
+      repo: string[];
+      all?: boolean;
+      concurrency: string;
+      apiBudget: string;
+      cacheTtl: string;
+      config: string;
+      format: string;
+    }) => {
       const limit = parseInt(options.limit, 10);
-      const items = await buildPRQueue(Number.isFinite(limit) ? limit : 20);
-
-      if (options.format === 'tui') {
-        try {
-          const { renderPrQueueTui } = await import('@openslack/tui');
-          await renderPrQueueTui(items);
-        } catch (error) {
-          console.error('TUI unavailable. Falling back to standard output.');
+      const multiRepositoryMode = options.all === true || options.repo.length > 0;
+      if (!multiRepositoryMode) {
+        const items = await buildPRQueue(Number.isFinite(limit) ? limit : 20);
+        if (options.format === 'tui') {
+          try {
+            const { renderPrQueueTui } = await import('@openslack/tui');
+            await renderPrQueueTui(items);
+          } catch {
+            console.error('TUI unavailable. Falling back to standard output.');
+            console.log(renderPRQueue(items));
+          }
+        } else {
           console.log(renderPRQueue(items));
         }
+        return;
+      }
+
+      if (options.all && options.repo.length > 0) {
+        console.error('Invalid options: --repo and --all are mutually exclusive.');
+        process.exitCode = 1;
+        return;
+      }
+
+      const repositories: Array<{ owner: string; repo: string }> = [];
+      if (options.all) {
+        const watchConfig = loadGitHubWatchConfig(options.config);
+        if (!watchConfig.valid || !watchConfig.config) {
+          console.error(`GitHub Watch config is invalid: ${watchConfig.errors.join('; ')}`);
+          process.exitCode = 1;
+          return;
+        }
+        repositories.push(
+          ...watchConfig.config.repositories.map((repository) => ({
+            owner: repository.owner,
+            repo: repository.repo,
+          })),
+        );
       } else {
-        console.log(renderPRQueue(items));
+        for (const value of options.repo) {
+          const parsed = parseGitHubRepoSpec(value);
+          const normalized = parsed
+            ? canonicalizeRepositoryName(parsed.owner, parsed.repo)
+            : null;
+          if (!normalized) {
+            console.error(`Invalid GitHub repository "${value}". Expected owner/name.`);
+            process.exitCode = 1;
+            return;
+          }
+          repositories.push({ owner: normalized.owner, repo: normalized.repo });
+        }
+      }
+
+      try {
+        const projection = await buildRepositoryPRProjection({
+          repositories,
+          workspaceRoot: process.cwd(),
+          limit: parseProjectionInteger(options.limit, 'limit'),
+          concurrency: parseProjectionInteger(options.concurrency, 'concurrency'),
+          apiBudget: parseProjectionInteger(options.apiBudget, 'api-budget'),
+          cacheTtlSeconds: parseProjectionInteger(options.cacheTtl, 'cache-ttl'),
+        });
+        if (options.format === 'tui') {
+          try {
+            const { renderRepositoryPrProjectionTui } = await import('@openslack/tui');
+            await renderRepositoryPrProjectionTui(projection);
+          } catch {
+            console.error('TUI unavailable. Falling back to standard output.');
+            console.log(renderRepositoryPRProjection(projection));
+          }
+        } else {
+          console.log(renderRepositoryPRProjection(projection));
+        }
+        if (projection.partial) process.exitCode = 2;
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
+        process.exitCode = 1;
       }
     });
 
@@ -519,4 +603,19 @@ export function prCommands(): Command {
     });
 
   return cmd;
+}
+
+function collectRepository(value: string, previous: string[]): string[] {
+  return [...previous, value];
+}
+
+function parseProjectionInteger(value: string, option: string): number {
+  if (!/^\d+$/.test(value)) {
+    throw new TypeError(`--${option} must be a non-negative integer.`);
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new TypeError(`--${option} is outside the supported integer range.`);
+  }
+  return parsed;
 }

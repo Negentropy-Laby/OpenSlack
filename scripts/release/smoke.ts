@@ -70,7 +70,7 @@ export function smokeBundle(bundleDir: string, target: ReleaseTarget): ArtifactS
     checks.push('workspace-init-validate');
 
     const status = run(executable, ['status'], { cwd: workspaceRoot, env }).stdout;
-    if (!status.includes('Maturity: LOCAL_READY') || !status.includes('Deferred (excluded)')) {
+    if (!status.includes('Lifecycle: ACTIVE | Maturity: LOCAL_READY')) {
       throw new Error('Packaged product maturity metadata was not rendered.');
     }
     checks.push('product-maturity-status');

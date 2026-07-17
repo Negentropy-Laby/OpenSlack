@@ -1,276 +1,114 @@
 # Negentropy-Lab Slot Adapter
 
-This document is the developer guide for the planned OpenSlack contribution to
-the Negentropy-Lab slot platform. OpenSlack remains a standalone GitHub-native
-agent workbench; this adapter describes the **design-target** external slot
-surface, not a currently mounted integration.
+`@openslack/integration-negentropy` is a private OpenSlack package that projects
+structured OpenSlack evidence into the upstream
+`negentropy.slot-contribution.v1` artifact contract. It is not an OpenSlack
+plugin, does not run third-party code, and does not share authority with
+`PluginHost`.
 
-All `openslack integration negentropy ...` commands described here are
-**Planned** and are not implemented yet. The real, current evidence sources are
-the existing `openslack collaboration ...`, `openslack pr ...`, and
-`openslack collaboration workflow profile-sync ...` commands listed in each
-section.
+## Schema pin
 
-For the product framing, see [`docs/product/negentropy-lab-integration.md`](../product/negentropy-lab-integration.md).
-For the hard security rules, see [`docs/security/negentropy-slot-boundary.md`](../security/negentropy-slot-boundary.md).
+The package records an immutable upstream repository, merge commit, schema path,
+version, and SHA-256. The exact schema bytes are bundled in source, staged into
+the compiled package, and copied into release assets. Runtime export fails
+closed if the bytes or `$id` do not match the pin.
 
----
-
-## Target Slot
-
-OpenSlack targets the `scenario-pack.extension` slot on the Negentropy-Lab
-control plane. This slot lives at layer L5, which is reserved for scenario /
-workflow / representative modules that do not mutate authority state directly.
-
-| Field | Value | Source of truth |
-|-------|-------|-----------------|
-| `slotId` | `scenario-pack.extension` | `server/slots/definitions/scenario-pack-definitions.ts` |
-| `kind` | `scenario-pack` | Slot definition |
-| `layer` | `L5` | Layer taxonomy: Scenario / Workflow / Representative Modules |
-| `sealed` | `false` | External contributions are allowed |
-| `allowExternal` | `true` | OpenSlack contributes as an external provider |
-| `providerKind` | `external` | Provider kinds: `built-in`, `bundled`, `workspace`, `external`, `plugin` |
-| `defaultGateMode` (definition) | `SHADOW` | Field on `SlotDefinition` |
-| `gate.mode` (contribution) | `SHADOW` | Field on `SlotManifest` / `SlotContribution` |
-
-The `defaultGateMode: SHADOW` on the slot definition means newly contributed
-scenario packs start in observation mode. A contribution must explicitly set
-`gate.mode: SHADOW` in its manifest and request a promotion path if it later
-needs `ENFORCE`.
-
----
-
-## Contribution Manifest Sketch
-
-The planned OpenSlack contribution is a `SlotContribution` with a `SlotManifest`
-that satisfies the real Negentropy-Lab manifest fields. The sketch below is
-limited to fields verified in the slot/contribution contract; route, realtime
-room, and lifecycle object shapes are intentionally omitted until the adapter is
-implemented against the real Negentropy-Lab source. No writer handle is included;
-the contribution is projection-only.
-
-```typescript
-const openslackContribution: SlotContribution = {
-  manifest: {
-    contributionId: "openslack-scenario-pack.v0",
-    slotId: "scenario-pack.extension",
-    name: "OpenSlack Scenario Pack",
-    version: "0.1.0-rc",
-    providerKind: "external",
-    providerId: "Negentropy-Laby/OpenSlack",
-    layer: "L5",
-    kind: "scenario-pack",
-    requiredPlatformCapabilities: ["github-webhook", "event-store-read"],
-    permission: {
-      // No authority writer handle; forbidden by slot policy.
-      forbiddenApiMethods: ["authorityWriterHandle", "proposeMutation"]
-    },
-    gate: {
-      mode: "SHADOW" // "OFF" | "SHADOW" | "ENFORCE"
-    },
-    evidenceRefs: [
-      "openslack:evidence:workflow-run-json",
-      "openslack:evidence:prms-report",
-      "openslack:evidence:profile-sync-status",
-      "openslack:evidence:collaboration-events"
-    ],
-    signature: "<external-signature>",
-    docPath: "memory_bank/t1_axioms/integrations/openslack-scenario-pack.md",
-    skuKey: "openslack-external-scenario-pack",
-    metadata: {
-      owner: "OpenSlack",
-      sourceRepo: "Negentropy-Laby/OpenSlack",
-      trustTier: "external-shadow"
-    }
-  },
-  metadata: {
-    description:
-      "OpenSlack exports workflow, PRMS, profile-sync, and collaboration evidence to Negentropy-Lab as a read-only scenario-pack contribution."
-  }
-};
-```
-
-The `permission.forbiddenApiMethods` array is required by the
-`scenario-pack.extension` slot policy and explicitly blocks the two methods
-that could mutate authority state: `authorityWriterHandle` and
+The schema contract excludes function-valued lifecycle callbacks from the JSON
+artifact and closes objects with `additionalProperties: false`. Its
+`scenario-pack.extension` condition requires external/L5/scenario-pack/SHADOW/
+opt-in and forbids routes, realtime rooms, `authorityWriterHandle`, and
 `proposeMutation`.
 
-The `evidenceRefs` entries name planned evidence contracts only. Concrete route
-schemas, realtime rooms, lifecycle hooks, and signature verification details must
-be generated from the adapter implementation and validated against Negentropy-Lab
-before they are documented as literal API shapes.
+## Evidence projection
 
----
+The adapter calls package APIs rather than parsing terminal output:
 
-## Evidence Export Contract
+- `listWorkflowRuns({ rootDir })`;
+- `readEvents(rootDir)`;
+- `loadPRReviewPolicy(rootDir)`;
+- `buildProfileSyncStatus({ rootDir })`.
 
-The adapter exports four evidence bundles. These are the **planned adapter
-schema**, not the current CLI output for every source. Some current sources
-(`pr status`, `profile-sync status`) are text-oriented; the JSON shapes below are
-the contract the adapter would produce when Negentropy-Lab consumes OpenSlack
-evidence.
+Only counts, status distributions, bounded policy booleans, timestamps, and
+canonical hashes are exported. Collaboration prose, actor identity, source
+references, review text, and credentials are not included.
 
-### 1. Workflow Run JSON
-
-Real current source:
+## Preview artifact
 
 ```bash
-openslack collaboration workflow runs show <runId> --detail progress --format json
+openslack collaboration integration negentropy export-slot --format json
 ```
 
-Planned adapter schema:
+The command emits an `openslack.negentropy.slot-preview.v1` envelope containing:
 
-```json
-{
-  "evidenceKind": "workflow-run",
-  "runId": "run-20260708-001",
-  "workflowName": "golden-eval-suite",
-  "startedAt": "2026-07-08T12:00:00Z",
-  "status": "completed",
-  "phases": [
-    {
-      "name": "classify",
-      "status": "passed",
-      "agent": "openslack-agent-operator[bot]",
-      "transcriptRef": "openslack:transcript:run-20260708-001:phase-0"
-    }
-  ],
-  "outputs": {
-    "summary": "All golden evals passed.",
-    "budget": { "tokens": 12000, "maxAgents": 3 }
-  },
-  "correlationId": "corr-openslack-20260708-001"
-}
+- the immutable schema pin;
+- generation time;
+- `readiness: NOT_REGISTERABLE`;
+- the unsigned contribution's canonical SHA-256;
+- the schema-valid contribution.
+
+The preview is atomically saved to
+`.openslack.local/integrations/negentropy/slot-preview.json`. External code must
+not treat this preview as a registration request.
+
+## Configuration and external artifacts
+
+Optional configuration:
+
+```yaml
+# .openslack/integrations/negentropy.yaml
+endpoint: https://negentropy.example/api/authority
+keyId: negentropy:production
+maxEvidenceAgeHours: 168
 ```
 
-### 2. PRMS Report Payload
+The endpoint must be HTTPS with no credentials, query, or fragment. Unit tests
+may explicitly allow loopback HTTP; the CLI cannot.
 
-Real current sources:
-
-```bash
-openslack pr status <n>
-openslack pr doctor <n>
-```
-
-Planned adapter schema (JSON projection of the text report):
-
-```json
-{
-  "evidenceKind": "prms-report",
-  "prNumber": 42,
-  "headSha": "abc123",
-  "reviewDecision": "REVIEW_REQUIRED",
-  "mergeStateStatus": "BLOCKED",
-  "gates": [
-    { "gate": "human-approval", "state": "missing" },
-    { "gate": "checks", "state": "pass" },
-    { "gate": "review-threads", "state": "pass" }
-  ],
-  "riskZone": "green",
-  "recommendation": "READY_TO_MERGE_AFTER_APPROVAL",
-  "exportedAt": "2026-07-08T12:05:00Z"
-}
-```
-
-### 3. Profile-Sync Status Payload
-
-Real current source:
-
-```bash
-openslack collaboration workflow profile-sync status
-```
-
-Planned adapter schema (JSON projection of the text status):
-
-```json
-{
-  "evidenceKind": "profile-sync-status",
-  "sourceRepo": "Negentropy-Laby/whitepapers",
-  "sourcePath": "posts",
-  "targetRepo": "Negentropy-Laby/.github",
-  "targetPath": "profile/README.md",
-  "markers": ["latest-insights"],
-  "lastSyncAt": "2026-07-08T06:00:00Z",
-  "state": "synced",
-  "pendingPrUrl": null,
-  "projectionNote": "The rendered profile README is a projection of the whitepapers source; Negentropy-Lab may absorb this event as audit evidence."
-}
-```
-
-### 4. Collaboration Event JSONL Summary
-
-Real current source: `openslack collaboration activity` and `openslack collaboration digest` produce projection-only views; the adapter would export the underlying JSONL event store as a summary.
-
-```jsonl
-{"eventType": "handoff.created", "id": "handoff-1", "roomId": "pr:42", "timestamp": "2026-07-08T11:00:00Z", "agent": "openslack-agent-operator[bot]"}
-{"eventType": "decision.recorded", "id": "decision-1", "roomId": "pr:42", "timestamp": "2026-07-08T11:05:00Z", "decision": "proceed-after-review"}
-{"eventType": "workflow.run.completed", "runId": "run-20260708-001", "timestamp": "2026-07-08T12:00:00Z"}
-```
-
----
-
-## Activation Lifecycle
-
-A Negentropy-Lab slot contribution moves through nine `SlotLifecycleState`
-values. The OpenSlack adapter maps each state to an operational condition.
-
-| State | Meaning for OpenSlack adapter | Trigger / Gate |
-|-------|-------------------------------|----------------|
-| `discovered` | OpenSlack repo declares intent to contribute to `scenario-pack.extension` | Source doc published (`docs/developer/negentropy-slot-adapter.md`) |
-| `registered` | Contribution manifest is POSTed to `/api/authority/slot-contributions` | Requires bot-authenticated PR and human approval if policy requires it |
-| `validated` | Negentropy-Lab validates manifest schema, forbidden methods, and signature | Manifest passes `SlotRegistry` validation rules |
-| `installed` | Evidence routes are wired and OpenSlack is authorized to push evidence | Bot credential + route handshake complete |
-| `activated` | Contribution is live in `SHADOW` mode; evidence flows, no enforcement | `gate.mode: SHADOW` and all health checks green |
-| `degraded` | Evidence export is stale, GitHub credentials are missing, or `status verify` failed | See Diagnostics / Degraded Triggers below |
-| `disabled` | Operator or governance disables the contribution | Manual governance action or policy violation |
-| `deprecated` | A newer contribution supersedes this one | New version registered and promoted |
-| `removed` | Contribution is withdrawn and evidence routes are torn down | Explicit removal or retirement |
-
-OpenSlack never moves itself to `activated`. Promotion from `installed` to
-`activated` (and later from `SHADOW` to `ENFORCE`) is a Negentropy-Lab control-plane
-decision that requires external authorization.
-
----
-
-## Diagnostics and Degraded Triggers
-
-The adapter exposes diagnostics at the planned Negentropy-Lab endpoint:
+External files use these default paths:
 
 ```text
-GET /api/authority/slot-contributions/:contributionId/diagnostics
+.openslack.local/integrations/negentropy/signature.json
+.openslack.local/integrations/negentropy/registration-response.json
 ```
 
-OpenSlack would populate the diagnostics payload from the following local health
-signals.
+The signature envelope contains only schema ID, canonical artifact hash,
+`ed25519`, key ID, and a bounded base64 signature. OpenSlack validates structure
+and binding but neither reads nor creates a private key.
 
-| Trigger | Diagnostic state | Recovery action |
-|---------|------------------|-----------------|
-| GitHub App credentials missing or expired | `degraded` | Re-run bot credential setup; `openslack doctor` (real) |
-| `openslack status verify` failed | `degraded` | Regenerate `docs/status/current.md` from `.openslack/modules.yaml` (real) |
-| Evidence export timestamp older than threshold | `degraded` | Re-run the evidence source command or scheduled export |
-| PRMS unavailable or `pr doctor` returns non-READY | `degraded` | Resolve PRMS gates and re-export report |
-| Slot contribution manifest invalid | `disabled` | Fix manifest and re-register |
-| Forbidden API method called | `removed` | Governance review; adapter must be fixed |
+## Verification
 
-Planned diagnostic commands for operators:
+```bash
+openslack collaboration integration negentropy doctor --format plain|json
+openslack collaboration integration negentropy status --format plain|json
+```
 
-| Command | Status | Purpose |
-|---------|--------|---------|
-| `openslack integration negentropy export-slot` | **Planned** | Build and emit the `SlotContribution` manifest for registration |
-| `openslack integration negentropy doctor` | **Planned** | Run local health checks and report diagnostic state |
-| `openslack integration negentropy status` | **Planned** | Show the contribution's lifecycle state and last evidence export timestamp |
+Stable findings cover the schema pin, preview, freshness, signature attachment,
+receipt, and live endpoint. A receipt is coherent only if admission completed,
+the identities match, and its signed contribution has the same unsigned
+canonical hash.
 
----
+The final live check reads:
 
-## Boundary Summary
+```text
+GET <endpoint>/slot-contributions
+GET <endpoint>/slot-contributions/<contributionId>/diagnostics
+```
 
-- OpenSlack does **not** own `AuthorityState`.
-- OpenSlack receives **no** writer handle.
-- OpenSlack **never** calls `proposeMutation` or `authorityWriterHandle`.
-- All GitHub-side mutations remain ordinary GitHub Issue / PR mutations.
-- Negentropy-Lab absorbs OpenSlack output only as evidence, projection, or a
-  governed action request.
-- The contribution starts and remains in `SHADOW` until an explicit promotion path
-  is approved.
+Requests have a timeout, reject redirects, accept JSON only, and bound declared
+and streamed response bytes. No `Authorization` header is added. The live
+contribution, diagnostic identity, canonical hash, and lifecycle must all agree
+with the receipt.
 
-These rules are expanded in [`docs/security/negentropy-slot-boundary.md`](../security/negentropy-slot-boundary.md).
+The state machine is closed to `UNSIGNED_PREVIEW`,
+`SIGNATURE_ATTACHED_UNVERIFIED`, and `VERIFIED_BY_NEGENTROPY`. Only the final
+state may display the lifecycle returned by Negentropy. The adapter cannot
+declare activation or promote the gate.
+
+## Release staging
+
+`bun run schema:stage` copies the exact source schema bytes into the compiled
+package. `bun run build`, `typecheck`, and release build all invoke this step so
+TypeScript JSON normalization cannot change the pinned byte hash.
+
+See [Negentropy-Lab Slot Boundary](../security/negentropy-slot-boundary.md) for
+the non-negotiable authority rules.

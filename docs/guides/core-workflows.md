@@ -195,16 +195,18 @@ Preview shows the diff of what would change. Run applies the projection update. 
 
 **Path:** OpenSlack contributes to the `scenario-pack.extension` slot (layer L5, `defaultGateMode: SHADOW`) as an `external` provider. The contribution gate starts in `SHADOW` mode, so Negentropy-Lab can observe exported evidence before any enforcement. OpenSlack never receives a writer handle, never calls `proposeMutation`, and never owns Negentropy-Lab authority state.
 
-**Commands:** (Planned — not implemented yet)
+**Commands:**
 
 ```bash
-# Planned — not implemented yet
-openslack integration negentropy export-slot
-openslack integration negentropy doctor
-openslack integration negentropy status
+openslack collaboration integration negentropy export-slot --format json
+openslack collaboration integration negentropy doctor --format plain
+openslack collaboration integration negentropy status --format json
 ```
 
-For current evidence inspection, use the existing collaboration and PRMS commands:
+The export remains `NOT_REGISTERABLE` until external signing and Negentropy
+administrator registration. `VERIFIED_BY_NEGENTROPY` requires a matching
+completed receipt and live HTTPS contribution/diagnostics. For source evidence
+inspection, use:
 
 ```bash
 openslack collaboration workflow runs list
@@ -226,4 +228,4 @@ Workflow --> Agent Work --> PRMS Review --> Human Approval --> Merge --> Collabo
 
 Preview the work, let agents execute it, review the PR, confirm governed actions, keep the collaboration record, maintain the organization profile, and export the resulting evidence as a projection for external authority systems.
 
-Each step feeds the next: a workflow spawns agent work, the agent submits a PR, PRMS reviews it, a human approves and merges, the collaboration layer records the outcome, profile sync keeps the public-facing README projection current, and **Evidence Projection** becomes the integration boundary where Negentropy-Lab may absorb those outputs as audit data. The slot-level export into Negentropy-Lab's `scenario-pack.extension` is planned and not active today; existing collaboration and PRMS commands already expose the evidence that would be exported.
+Each step feeds the next: a workflow spawns agent work, the agent submits a PR, PRMS reviews it, a human approves and merges, the collaboration layer records the outcome, profile sync keeps the public-facing README projection current, and **Evidence Projection** becomes the integration boundary where Negentropy-Lab may absorb those outputs as audit data. The implemented slot preview remains unsigned and `NOT_REGISTERABLE` until external signing and Negentropy administrator registration.

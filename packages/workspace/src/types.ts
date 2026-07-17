@@ -19,6 +19,10 @@ export interface WorkspaceConfig {
     source_roots: string[];
     protected_roots: string[];
   };
+  sidecar?: {
+    attach_mode: 'read-only-monitor' | 'full-agent';
+    auto_claim: false;
+  };
   self_evolution?: {
     enabled: boolean;
     module: string;

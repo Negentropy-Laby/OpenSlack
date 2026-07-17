@@ -61,3 +61,20 @@ export type {
 // Idempotent ordinary-repository initialization
 export { applyWorkspaceInit, planWorkspaceInit, renderWorkspaceInitPlan } from './init.js';
 export type { WorkspaceInitInput, WorkspaceInitOperation, WorkspaceInitPlan } from './init.js';
+
+// Transactional ordinary-repository sidecar attachment
+export {
+  applyWorkspaceAttach,
+  planWorkspaceAttach,
+  renderWorkspaceAttachPlan,
+} from './attach.js';
+export type {
+  WorkspaceAttachApplyOptions,
+  WorkspaceAttachInput,
+  WorkspaceAttachMode,
+  WorkspaceAttachOperation,
+  WorkspaceAttachOperationAction,
+  WorkspaceAttachPlan,
+  WorkspaceAttachResult,
+  WorkspaceAttachRollbackData,
+} from './attach.js';

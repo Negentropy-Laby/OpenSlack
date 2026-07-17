@@ -94,6 +94,12 @@ export type { WorkflowPreviewViewModel, WorkflowPreviewStepViewModel } from './v
 export { renderPrQueueTui } from './views/render-pr-queue.js';
 export type { PrQueueInputItem, PrQueueViewModel } from './view-models/pr-queue.js';
 export { mapPrQueueToViewModel } from './view-models/pr-queue.js';
+export { renderRepositoryPrProjectionTui } from './views/render-repository-pr-projection.js';
+export type {
+  RepositoryPrProjectionInput,
+  RepositoryPrProjectionViewModel,
+} from './view-models/repository-pr-projection.js';
+export { mapRepositoryPrProjectionToViewModel } from './view-models/repository-pr-projection.js';
 export { renderStatusTui } from './views/render-status.js';
 export type { StatusTuiData } from './views/render-status.js';
 export type { StatusViewModel } from './view-models/status.js';

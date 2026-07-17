@@ -1,6 +1,6 @@
 {
   "name": "openslack",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
   "description": "OpenSlack — local-first, Git-backed operating system for AI agents",
   "workspaces": [
@@ -8,17 +8,21 @@
     "apps/*"
   ],
   "scripts": {
-    "typecheck": "tsc --build && tsc --noEmit -p scripts/release/tsconfig.json",
+    "typecheck": "tsc --build && bun run schema:stage && tsc --noEmit -p scripts/release/tsconfig.json && tsc --noEmit -p scripts/public-pack/tsconfig.json && tsc --noEmit -p scripts/live-capstone/tsconfig.json",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "pretest": "git worktree prune",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build": "tsc --build",
+    "build": "tsc --build && bun run schema:stage",
+    "schema:stage": "bun scripts/release/stage-negentropy-schema.ts",
     "release:build": "bun scripts/release/build.ts",
     "release:verify": "bun scripts/release/verify.ts",
     "release:smoke": "bun scripts/release/smoke.ts",
+    "public:pack": "bun run build && bun scripts/public-pack/index.ts pack",
+    "public:verify": "bun run build && bun scripts/public-pack/index.ts verify",
+    "live:capstone": "bun scripts/live-capstone/index.ts",
     "openslack": "node --import tsx apps/cli/src/index.ts",
     "clean": "rimraf packages/*/dist apps/*/dist packages/*/tsconfig.tsbuildinfo apps/*/tsconfig.tsbuildinfo"
   },

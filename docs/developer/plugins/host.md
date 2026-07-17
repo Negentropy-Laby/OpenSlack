@@ -56,7 +56,7 @@ const host = new PluginHost({
   policy,
   binding: {
     compositionId: 'openslack.desktop',
-    openslackVersion: '0.1.1',
+    openslackVersion: '0.2.0',
     gateIds: ['host.read-only'],
     targets: { actions: readOnlyActionFacts, workflows: readOnlyWorkflowFacts },
   },

@@ -1,8 +1,9 @@
-# Plugin Authoring Preview
+# Plugin Authoring
 
 `@openslack/plugin-api` provides a zero-runtime-dependency contract, and `@openslack/sdk`
-adds type-preserving authoring helpers without a host or kernel dependency. Both packages
-remain `private: true`; they are not yet installable as public npm packages.
+adds type-preserving authoring helpers without a host or kernel dependency. They
+form part of the public 0.2.0 package surface. Registry installation is available
+only after the externally governed npm release completes.
 
 ## Declarative manifests
 

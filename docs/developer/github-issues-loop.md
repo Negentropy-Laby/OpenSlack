@@ -203,7 +203,7 @@ openslack github claim complete \
 ```
 
 The strict claim lifecycle currently accepts canonical `https://github.com/.../pull/<n>`
-URLs only. GitHub Enterprise Server hosts are outside the v0.1.0 support boundary and fail closed
+URLs only. GitHub Enterprise Server hosts are outside the v0.2.0 support boundary and fail closed
 with `CLAIM_INVALID_INPUT`.
 
 ## Authentication

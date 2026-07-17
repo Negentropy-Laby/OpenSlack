@@ -21,8 +21,8 @@ const DEFAULT_POLICY: PRReviewPolicy = {
   black_zone_never_merge: true,
 };
 
-export function loadPRReviewPolicy(): PRReviewPolicy {
-  const root = findRepoRoot();
+export function loadPRReviewPolicy(rootDir?: string): PRReviewPolicy {
+  const root = rootDir ?? findRepoRoot();
   const policyPath = join(root, '.openslack', 'policies', 'pr_review.yaml');
   if (!existsSync(policyPath)) {
     return DEFAULT_POLICY;

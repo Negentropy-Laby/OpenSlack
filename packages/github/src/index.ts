@@ -247,6 +247,15 @@ export type {
   WatchDaemonDependencies,
 } from './watch-daemon.js';
 export {
+  startWorkspaceWatchDaemon,
+  WorkspaceWatchDaemonStartError,
+} from './workspace-watch.js';
+export type {
+  StartWorkspaceWatchDaemonOptions,
+  WorkspaceWatchDaemonHandle,
+  WorkspaceWatchDaemonMode,
+} from './workspace-watch.js';
+export {
   attachRepositoryLiveState,
   createNotificationPayload,
   createPersistedNotificationPayload,

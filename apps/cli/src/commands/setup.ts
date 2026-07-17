@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { execSync, execFileSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import { basename, join, resolve } from 'node:path';
 import {
   buildSetupReport,
   detectGenesisShell,
@@ -19,11 +20,20 @@ import { describeLLMRoutingConfig } from '@openslack/operator';
 import type { LLMPlannerProviderRegistryPort } from '@openslack/operator';
 import { recordEvent } from '@openslack/collaboration';
 import { diagnoseAgentRuntime } from '@openslack/agent-runtime';
-import { resolveWorkspaceContext, validateWorkspace } from '@openslack/workspace';
+import {
+  applyWorkspaceAttach,
+  planWorkspaceAttach,
+  renderWorkspaceAttachPlan,
+  resolveWorkspaceContext,
+  validateWorkspace,
+} from '@openslack/workspace';
 import {
   diagnoseGitHubAppInstallation,
   getClient,
+  resolveGitHubRepoTarget,
+  startWorkspaceWatchDaemon,
   type GitHubAppInstallationDiagnosticReport,
+  type RecordEventFn,
 } from '@openslack/github';
 import {
   formatGitHubAppInstallationDiagnosticFailure,
@@ -46,10 +56,22 @@ export interface SetupCommandDependencies {
   getGitHubClient?: typeof getClient;
   diagnoseAppInstallation?: typeof diagnoseGitHubAppInstallation;
   llmProviderRegistry?: LLMPlannerProviderRegistryPort;
+  planAttach?: typeof planWorkspaceAttach;
+  applyAttach?: typeof applyWorkspaceAttach;
+  startWatch?: typeof startWorkspaceWatchDaemon;
 }
 
 function readStrictFromCommander(args: unknown[], command: Command): boolean {
   return readStrictOption(command) || args.some((arg) => readStrictOption(arg));
+}
+
+function optionalPositiveInteger(value: string | undefined): number | undefined {
+  if (value === undefined || value.trim() === '') return undefined;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new Error('GitHub Watch numeric environment configuration is invalid.');
+  }
+  return parsed;
 }
 
 function renderOnboardingState(store: OnboardingStore, state: OnboardingState): void {
@@ -78,6 +100,105 @@ export function setupCommands(dependencies: SetupCommandDependencies = {}): Comm
   const runGolden = dependencies.runGolden ?? runGoldenEval;
   const getGitHubClient = dependencies.getGitHubClient ?? getClient;
   const cmd = new Command('setup').description('One-step OpenSlack setup wizard');
+
+  cmd
+    .command('attach')
+    .description('Preview or transactionally attach OpenSlack to an ordinary GitHub repository')
+    .requiredOption('--repo <owner/name>', 'Canonical GitHub repository')
+    .option(
+      '--mode <mode>',
+      'Attach mode: read-only-monitor or full-agent',
+      'read-only-monitor',
+    )
+    .option('--apply', 'Commit the previewed workspace transaction')
+    .option('--start-watch', 'Start the foreground watch daemon after a successful apply')
+    .action(
+      async (options: {
+        repo: string;
+        mode: string;
+        apply?: boolean;
+        startWatch?: boolean;
+      }) => {
+        let committed = false;
+        try {
+          if (options.startWatch && !options.apply) {
+            throw new Error('--start-watch requires --apply.');
+          }
+          if (options.mode !== 'read-only-monitor' && options.mode !== 'full-agent') {
+            throw new Error('--mode must be read-only-monitor or full-agent.');
+          }
+          const targetRoot = resolve(process.cwd());
+          const repository = resolveGitHubRepoTarget({
+            cwd: targetRoot,
+            repoFullName: options.repo,
+          });
+          const plan = (dependencies.planAttach ?? planWorkspaceAttach)({
+            targetRoot,
+            owner: repository.owner,
+            repo: repository.repo,
+            mode: options.mode,
+            name: basename(targetRoot),
+          });
+          console.log(renderWorkspaceAttachPlan(plan));
+          if (!plan.applicable) {
+            process.exitCode = 1;
+            return;
+          }
+          if (!options.apply) return;
+
+          const result = (dependencies.applyAttach ?? applyWorkspaceAttach)(plan);
+          committed = true;
+          console.log(
+            result.changed
+              ? `Workspace attach committed and validated (${result.changedPaths.length} file(s)).`
+              : 'Workspace attach already matches; validation passed.',
+          );
+          if (result.recoveredTransaction) {
+            console.log('Recovered prior attach transaction state before applying.');
+          }
+          if (result.journalCleanupDeferred) {
+            console.log(
+              'Workspace attach is committed; journal cleanup was deferred and will be retried on the next apply.',
+            );
+          }
+          if (!options.startWatch) return;
+
+          const port = optionalPositiveInteger(process.env.OPENSLACK_GITHUB_WATCH_PORT);
+          const pollIntervalSeconds = optionalPositiveInteger(
+            process.env.OPENSLACK_GITHUB_WATCH_POLL_INTERVAL,
+          );
+          const handle = await (dependencies.startWatch ?? startWorkspaceWatchDaemon)({
+            configPath: join(targetRoot, '.openslack', 'monitors', 'github-watch.yaml'),
+            webhookSecret: process.env.OPENSLACK_GITHUB_WEBHOOK_SECRET,
+            port,
+            pollIntervalSeconds,
+            sinkOptions: {
+              slackBotToken: process.env.OPENSLACK_SLACK_BOT_TOKEN,
+              webhookUrl: process.env.OPENSLACK_DAEMON_WEBHOOK_URL,
+            },
+            recordEvent: recordEvent as unknown as RecordEventFn,
+          });
+          const shutdown = async () => {
+            await handle.stop();
+          };
+          process.once('SIGINT', () => void shutdown());
+          process.once('SIGTERM', () => void shutdown());
+          console.log(
+            handle.mode === 'webhook'
+              ? `Foreground GitHub Watch daemon started on port ${handle.port} for ${handle.repositories} repository.`
+              : `Foreground GitHub Watch polling started every ${handle.pollIntervalSeconds}s for ${handle.repositories} repository.`,
+          );
+        } catch (error) {
+          console.error(error instanceof Error ? error.message : 'Workspace attach failed.');
+          if (committed) {
+            console.error(
+              'The validated workspace configuration remains committed; daemon startup failure does not roll it back.',
+            );
+          }
+          process.exitCode = 1;
+        }
+      },
+    );
 
   const onboarding = cmd
     .command('onboarding')
