@@ -74,7 +74,12 @@ program.addCommand(versionCommand());
 
 // Command groups
 program.addCommand(workspaceCommands());
-program.addCommand(selfCommands(applicationContext.pluginActions));
+program.addCommand(
+  selfCommands(applicationContext.pluginActions, {
+    ...contextOptions,
+    workingDirectory: process.cwd(),
+  }),
+);
 program.addCommand(agentCommands());
 program.addCommand(agentRuntimeCommands());
 program.addCommand(initCommand());

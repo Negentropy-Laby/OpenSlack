@@ -1,0 +1,16 @@
+{
+  "schema": "openslack.plugin.v1",
+  "id": "version-mismatch",
+  "version": "1.0.0",
+  "name": "Version fixture",
+  "requires": { "openslack": ">=9.0.0 <10.0.0" },
+  "gate": { "mode": "SHADOW", "gateId": "host.read-only" },
+  "capabilities": ["host.actions.read"],
+  "contributes": [
+    {
+      "kind": "action_alias",
+      "id": "status",
+      "target": { "kind": "host_action", "id": "github.metrics" }
+    }
+  ]
+}

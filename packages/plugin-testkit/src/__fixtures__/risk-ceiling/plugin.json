@@ -1,0 +1,16 @@
+{
+  "schema": "openslack.plugin.v1",
+  "id": "risk-ceiling",
+  "version": "1.0.0",
+  "name": "Risk fixture",
+  "requires": { "openslack": ">=0.1.0 <1.0.0" },
+  "gate": { "mode": "SHADOW", "gateId": "host.read-only" },
+  "capabilities": ["host.actions.read"],
+  "contributes": [
+    {
+      "kind": "action_alias",
+      "id": "update",
+      "target": { "kind": "host_action", "id": "github.issue.update" }
+    }
+  ]
+}

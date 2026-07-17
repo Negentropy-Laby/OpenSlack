@@ -3,6 +3,7 @@ import { classifySelfEvolutionPR } from '@openslack/kernel';
 import { observeHealth, triageObservations, validatePR, reviewPR, computeFitnessScore, monitorPostMerge, runGoldenEval, generateScorecard } from '@openslack/runtime';
 import { validateWorkspace } from '@openslack/workspace';
 import type { PluginActionRunnerPort } from '../boot/plugin-action-runner.js';
+import type { CheckPluginOptions } from '@openslack/plugin-testkit';
 import { selfPluginCommands } from './self-plugin.js';
 import { selfReleaseCommands } from './self-release.js';
 
@@ -14,11 +15,12 @@ const unavailablePluginRunner = Object.freeze({
 
 export function selfCommands(
   pluginRunner: PluginActionRunnerPort = unavailablePluginRunner,
+  pluginCheckOptions?: CheckPluginOptions,
 ): Command {
   const cmd = new Command('self').description('Self-evolution commands');
 
   cmd.addCommand(selfReleaseCommands());
-  cmd.addCommand(selfPluginCommands(pluginRunner));
+  cmd.addCommand(selfPluginCommands(pluginRunner, pluginCheckOptions));
 
   cmd
     .command('init')

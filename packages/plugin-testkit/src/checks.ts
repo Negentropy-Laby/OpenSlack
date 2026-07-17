@@ -1,0 +1,41 @@
+export const PLUGIN_CHECK_IDS = Object.freeze([
+  'G1',
+  'G2',
+  'G3',
+  'G4',
+  'G5',
+  'G6',
+  'G7',
+  'G8',
+  'G9',
+  'G10',
+  'G11',
+  'G12',
+  'G13',
+  'G14',
+  'G15',
+  'G16',
+  'G17',
+] as const);
+
+export type PluginCheckId = (typeof PLUGIN_CHECK_IDS)[number];
+
+export const PLUGIN_CHECK_TITLES = Object.freeze({
+  G1: 'Manifest source selection',
+  G2: 'Trust-root containment',
+  G3: 'Symlink and regular-file safety',
+  G4: 'Bounded stable-byte read',
+  G5: 'Fatal UTF-8 decoding',
+  G6: 'Strict duplicate-free JSON',
+  G7: 'Manifest schema and exact fields',
+  G8: 'Declarative-only contract',
+  G9: 'Plugin identity and reserved namespaces',
+  G10: 'Canonical plugin version',
+  G11: 'OpenSlack version compatibility',
+  G12: 'Requested gate contract',
+  G13: 'Capability allowlist and coherence',
+  G14: 'Contribution identity and collision safety',
+  G15: 'Authority and mutation risk ceiling',
+  G16: 'Scalar input mapping boundary',
+  G17: 'Lock identity and byte integrity',
+} satisfies Readonly<Record<PluginCheckId, string>>);

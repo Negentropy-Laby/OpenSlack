@@ -25,7 +25,84 @@ async function runSelfPlugin(
 }
 
 describe('self plugin command', () => {
-  it('adds only the nested self -> plugin -> run command and renders SHADOW visibility', async () => {
+  it('emits a JSON-only registration preflight report with all G1-G17 checks', async () => {
+    const runner: PluginActionRunnerPort = {
+      run: vi.fn(async () => {
+        throw new Error('not used');
+      }),
+    };
+    const fixture = fileURLToPath(
+      new URL('../../../../packages/plugin-testkit/src/__fixtures__/valid/', import.meta.url),
+    );
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    try {
+      process.exitCode = undefined;
+      await selfCommands(runner, {
+        workspaceRoot: process.cwd(),
+        openslackVersion: '0.1.1',
+      }).parseAsync(['node', 'self', 'plugin', 'check', fixture, '--format', 'json'], {
+        from: 'node',
+      });
+
+      expect(error).not.toHaveBeenCalled();
+      expect(log).toHaveBeenCalledTimes(1);
+      const report = JSON.parse(String(log.mock.calls[0]?.[0])) as {
+        readiness: string;
+        checks: Array<{ id: string }>;
+      };
+      expect(report.readiness).toBe('READY_TO_REGISTER');
+      expect(report.checks.map((check) => check.id)).toEqual(
+        Array.from({ length: 17 }, (_, index) => `G${index + 1}`),
+      );
+      expect(process.exitCode).toBeUndefined();
+    } finally {
+      process.exitCode = previousExitCode;
+      error.mockRestore();
+      log.mockRestore();
+    }
+  });
+
+  it('returns exit 1 and a stable blocking code for an executable manifest', async () => {
+    const runner: PluginActionRunnerPort = {
+      run: vi.fn(async () => {
+        throw new Error('not used');
+      }),
+    };
+    const fixture = fileURLToPath(
+      new URL(
+        '../../../../packages/plugin-testkit/src/__fixtures__/executable-entry/',
+        import.meta.url,
+      ),
+    );
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const previousExitCode = process.exitCode;
+    try {
+      process.exitCode = undefined;
+      await selfCommands(runner, {
+        workspaceRoot: process.cwd(),
+        openslackVersion: '0.1.1',
+      }).parseAsync(['node', 'self', 'plugin', 'check', fixture, '--format', 'json'], {
+        from: 'node',
+      });
+
+      const report = JSON.parse(String(log.mock.calls[0]?.[0])) as {
+        readiness: string;
+        findings: Array<{ code: string }>;
+      };
+      expect(report.readiness).toBe('BLOCKED');
+      expect(report.findings.map((finding) => finding.code)).toContain(
+        'PLUGIN_MANIFEST_EXECUTABLE_FIELD_FORBIDDEN',
+      );
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = previousExitCode;
+      log.mockRestore();
+    }
+  });
+
+  it('adds the nested check and run commands and renders SHADOW visibility', async () => {
     const runner: PluginActionRunnerPort = {
       run: vi.fn(
         async (): Promise<PluginActionRunResult> => ({
@@ -40,7 +117,7 @@ describe('self plugin command', () => {
     try {
       const self = selfCommands(runner);
       const plugin = self.commands.find((command) => command.name() === 'plugin');
-      expect(plugin?.commands.map((command) => command.name())).toEqual(['run']);
+      expect(plugin?.commands.map((command) => command.name())).toEqual(['check', 'run']);
 
       await self.parseAsync(['node', 'self', 'plugin', 'run', 'metrics-shadow', 'ready-count'], {
         from: 'node',
