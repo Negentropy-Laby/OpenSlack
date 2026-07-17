@@ -2,6 +2,7 @@ import { lstatSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node
 import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { parseSecretReference } from '@openslack/credentials';
+import { isGitHubAppSlug } from './app-slug.js';
 
 export interface GitHubAppLocalConfig {
   schema: 'openslack.github_app_local.v1';
@@ -57,8 +58,7 @@ export function readGitHubAppLocalConfig(
       candidate.installationId === null ||
       (typeof candidate.installationId === 'string' && /^\d+$/.test(candidate.installationId))
     ) ||
-    typeof candidate.appSlug !== 'string' ||
-    !/^[A-Za-z0-9][A-Za-z0-9-]{0,99}$/.test(candidate.appSlug) ||
+    !isGitHubAppSlug(candidate.appSlug) ||
     typeof candidate.privateKeyRef !== 'string'
   ) {
     throw new GitHubAppLocalConfigError();

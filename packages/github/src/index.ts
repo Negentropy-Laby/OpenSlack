@@ -62,6 +62,19 @@ export type {
   GitHubInstallationRepositoryAccess,
   InstallationRepositoryPage,
 } from './installation-access.js';
+export {
+  diagnoseGitHubAppInstallation,
+  GITHUB_APP_INSTALLATION_DIAGNOSTIC_CODES,
+  GitHubAppInstallationDiagnosticError,
+} from './app-installation-diagnostics.js';
+export type {
+  GitHubAppInstallationDiagnosticCode,
+  GitHubAppInstallationDiagnosticDependencies,
+  GitHubAppInstallationDiagnosticInput,
+  GitHubAppInstallationDiagnosticReport,
+  GitHubAppInstallationSource,
+  GitHubAppPermissionDifference,
+} from './app-installation-diagnostics.js';
 export { applyGitHubAppImport, planGitHubAppImport } from './app-import.js';
 export type {
   GitHubAppImportDependencies,
@@ -74,6 +87,8 @@ export {
   createGitHubAppManifestSession,
   defaultGitHubAppManifestRefs,
   exchangeGitHubAppManifestCode,
+  GITHUB_APP_DEFAULT_EVENTS,
+  GITHUB_APP_DEFAULT_PERMISSIONS,
   preflightGitHubAppManifest,
 } from './app-manifest.js';
 export type {

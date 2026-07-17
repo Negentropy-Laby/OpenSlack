@@ -99,6 +99,25 @@ openslack github app bind-installation --installation-id <id> --apply
 Binding is idempotent for the same ID and refuses to replace a different
 installation.
 
+The governed manifest requests `checks:read` and subscribes to `issues`,
+`pull_request`, `pull_request_review`, `push`, `check_run`, and `check_suite`.
+After adding permissions, GitHub leaves an existing installation on its
+previous permission set until an installation owner accepts the update.
+Run either command to compare the installed contract:
+
+```bash
+openslack setup github
+openslack github doctor
+```
+
+The diagnostic uses an App JWT only for installation metadata and an
+installation token only for target-repository accessibility. It emits
+`APP_REAUTHORIZATION_REQUIRED`, `APP_EVENT_SUBSCRIPTION_MISSING`,
+`APP_REPOSITORY_SCOPE_MISSING`, or `APP_INSTALLATION_READY`, together with
+expected/actual/missing values. If administrator action is required, the
+diagnostic supplies GitHub's installation management URL but never changes the
+installation itself.
+
 Use this runtime bot credential path for PR creation whenever the work is
 OpenSlack-authored or delegated to an agent or automation. Do not create those
 PRs with a human `gh` login or human PAT, even when the commits themselves are

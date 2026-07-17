@@ -2,6 +2,7 @@ import { createSign } from 'node:crypto';
 import { createDefaultCredentialStore, type CredentialStore } from '@openslack/credentials';
 import { boundedJsonPost, BoundedJsonPostError } from './bounded-json-post.js';
 import { GitHubAppLocalConfigError, readGitHubAppLocalConfig } from './app-local-config.js';
+import { isGitHubAppSlug } from './app-slug.js';
 
 export interface GitHubAppInstallationToken {
   token: string;
@@ -19,6 +20,14 @@ export interface GitHubAppInstallationTokenOptions {
   credentialStore?: Pick<CredentialStore, 'withSecret'>;
 }
 
+/** Internal App-auth context for endpoints that require a JWT rather than an installation token. */
+export interface GitHubAppJwtContext {
+  jwt: string;
+  appId: string;
+  installationId: string;
+  appSlug?: string;
+}
+
 interface TokenCache {
   identityKey: string;
   value: GitHubAppInstallationToken;
@@ -27,10 +36,7 @@ interface TokenCache {
 
 export class GitHubAppTokenError extends Error {
   readonly code:
-    | 'APP_CONFIG_MISSING'
-    | 'APP_CONFIG_INVALID'
-    | 'APP_TOKEN_REQUEST_FAILED'
-    | 'APP_TOKEN_INVALID';
+    'APP_CONFIG_MISSING' | 'APP_CONFIG_INVALID' | 'APP_TOKEN_REQUEST_FAILED' | 'APP_TOKEN_INVALID';
 
   constructor(code: GitHubAppTokenError['code'], message: string) {
     super(message);
@@ -65,6 +71,35 @@ function createJwt(appId: string, privateKey: string): string {
   const signature = base64urlEncode(sign.sign(privateKey));
 
   return `${header}.${payload}.${signature}`;
+}
+
+/**
+ * Resolves the same fail-closed credential source used for installation tokens,
+ * signs a short-lived App JWT, and never returns the private key.
+ *
+ * This is intentionally not re-exported from the package root. Package-owned
+ * diagnostics use it for App-only REST endpoints.
+ */
+export function createGitHubAppJwtContext(
+  options: GitHubAppInstallationTokenOptions = {},
+): GitHubAppJwtContext {
+  const source = resolveAppCredentialSource(options);
+  let jwt: string;
+  try {
+    jwt = source.withPrivateKey((privateKey) => createJwt(source.appId, privateKey));
+  } catch (error) {
+    if (error instanceof GitHubAppTokenError) throw error;
+    throw new GitHubAppTokenError(
+      'APP_TOKEN_INVALID',
+      'GitHub App private-key credential is unavailable or invalid.',
+    );
+  }
+  return {
+    jwt,
+    appId: source.appId,
+    installationId: source.installationId,
+    appSlug: source.appSlug,
+  };
 }
 
 export async function requireAppInstallationToken(
@@ -288,5 +323,5 @@ function resolveAppCredentialSource(
 }
 
 function validAppSlug(value: string | undefined): string | undefined {
-  return value && /^[A-Za-z0-9][A-Za-z0-9-]{0,99}$/.test(value) ? value : undefined;
+  return isGitHubAppSlug(value) ? value : undefined;
 }

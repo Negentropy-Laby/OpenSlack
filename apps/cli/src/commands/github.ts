@@ -6,6 +6,7 @@ import {
   bindGitHubAppInstallation,
   completeClaim,
   defaultGitHubAppManifestRefs,
+  diagnoseGitHubAppInstallation,
   getClient,
   heartbeatClaim,
   queryReadyItems,
@@ -14,11 +15,18 @@ import {
   resolveGitHubRepoTarget,
   reviewClaim,
 } from '@openslack/github';
-import type { ClaimLifecycleResult } from '@openslack/github';
+import type {
+  ClaimLifecycleResult,
+  GitHubAppInstallationDiagnosticReport,
+} from '@openslack/github';
 import { recordEvent as _recordEvent } from '@openslack/collaboration';
 import type { RecordEventFn } from '@openslack/github';
 import { createDefaultCredentialStore, type CredentialStore } from '@openslack/credentials';
 import { resolveWorkspaceContext } from '@openslack/workspace';
+import {
+  formatGitHubAppInstallationDiagnosticFailure,
+  renderGitHubAppInstallationDiagnostic,
+} from './github-app-diagnostic.js';
 const recordEvent = _recordEvent as unknown as RecordEventFn;
 import { buildAutoClaimFn } from './watch-auto-claim.js';
 
@@ -97,6 +105,8 @@ export interface GitHubCommandDependencies {
   credentialStore?: CredentialStore;
   getMetricsClient?: () => Promise<{ isDryRun: boolean }>;
   queryReadyMetrics?: () => Promise<readonly unknown[]>;
+  getDoctorClient?: typeof getClient;
+  diagnoseAppInstallation?: typeof diagnoseGitHubAppInstallation;
   startAppManifestServer?: (options: {
     workspaceRoot: string;
     organization: string;
@@ -110,6 +120,7 @@ export interface GitHubCommandDependencies {
 
 export function githubCommands(dependencies: GitHubCommandDependencies = {}): Command {
   const cmd = new Command('github').description('GitHub integration commands');
+  const getDoctorClient = dependencies.getDoctorClient ?? getClient;
 
   const app = cmd.command('app').description('Configure an organization-owned GitHub App');
   app
@@ -140,7 +151,10 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
         console.log(`- Homepage: ${homepageUrl}`);
         console.log(`- Callback: http://127.0.0.1:${port}/callback`);
         console.log(
-          '- Permissions: metadata:read, contents:write, issues:write, pull_requests:write, workflows:write',
+          '- Permissions: metadata:read, contents:write, issues:write, pull_requests:write, workflows:write, checks:read',
+        );
+        console.log(
+          '- Events: issues, pull_request, pull_request_review, push, check_run, check_suite',
         );
         console.log(`- Private key: ${refs.privateKeyRef}`);
         console.log(`- Webhook secret: ${refs.webhookSecretRef}`);
@@ -260,11 +274,12 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
     .action(async () => {
       const root = findRepoRoot();
       const checks: Array<{ name: string; passed: boolean; detail: string }> = [];
+      let appDiagnostic: GitHubAppInstallationDiagnosticReport | null = null;
 
       // Auth tier check
       let client;
       try {
-        client = await getClient({
+        client = await getDoctorClient({
           cwd: root,
           credentialStore: dependencies.credentialStore,
         });
@@ -282,6 +297,31 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
         passed: client.authMode !== 'dry_run',
         detail: `${authTier}${client?.tokenExpiresAt ? ` (expires: ${client.tokenExpiresAt})` : ''}`,
       });
+
+      if (client.authMode === 'github_app_installation') {
+        try {
+          const context = resolveWorkspaceContext({ workspaceRoot: root });
+          appDiagnostic = await (
+            dependencies.diagnoseAppInstallation ?? diagnoseGitHubAppInstallation
+          )({
+            owner: client.owner,
+            repo: client.repo,
+            localStateRoot: context.localStateRoot,
+            credentialStore: dependencies.credentialStore,
+          });
+          checks.push({
+            name: 'GitHub App installation',
+            passed: appDiagnostic.ready,
+            detail: appDiagnostic.codes.join(', '),
+          });
+        } catch (error) {
+          checks.push({
+            name: 'GitHub App installation',
+            passed: false,
+            detail: formatGitHubAppInstallationDiagnosticFailure(error),
+          });
+        }
+      }
 
       try {
         const context = resolveWorkspaceContext({ workspaceRoot: root });
@@ -381,6 +421,10 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
         const icon = c.passed ? 'PASS' : 'FAIL';
         console.log(`[${icon}] ${c.name}: ${c.detail}`);
         if (!c.passed) allPassed = false;
+      }
+      if (appDiagnostic) {
+        console.log('');
+        console.log(renderGitHubAppInstallationDiagnostic(appDiagnostic));
       }
       if (!allPassed) process.exit(1);
     });

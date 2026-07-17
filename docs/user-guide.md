@@ -12,7 +12,7 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 | Get guided setup with prompts                    | `openslack setup interactive`                                                  | Walks fixable items step by step; supports `--format plain`                                    |
 | Start/resume the durable onboarding ledger       | `openslack setup onboarding --start`                                           | Start once; rerun without `--start` to resume. Existing receipts are never overwritten.       |
 | Run CI-style setup checks                        | `openslack setup --strict`                                                     | Treats warnings as failures. Use this for release or PR validation.                            |
-| Check GitHub readiness without changing anything | `openslack setup github`                                                       | Read-only by default. Use `--apply` only for explicit repairs.                                 |
+| Check GitHub readiness without changing anything | `openslack setup github`                                                       | Reports auth, App permissions/events, and repository scope. Use `--apply` only for explicit repairs. |
 | Preview importing an owned GitHub App key        | `openslack github app import ...`                                              | Preview does not read the PEM; `--apply` requires a writable keychain backend.                 |
 | Create an organization-owned GitHub App          | `openslack github app create --org <org>`                                      | Preview-first Manifest flow; `--apply` starts a loopback-only callback.                        |
 | Ask OpenSlack what to do                         | `openslack ask "检查系统状态"`                                                 | Uses LLM-first routing when configured; otherwise uses the keyword router.                     |
@@ -279,7 +279,7 @@ approval on stale PR checks.
 | `openslack setup run --strict`                   | Run the full checklist with CI-style strict warning handling                                  |
 | `openslack setup smoke`                          | Run read-only smoke checks with GitHub setup warnings non-blocking                            |
 | `openslack setup smoke --strict`                 | Run smoke checks and fail on warnings                                                         |
-| `openslack setup github`                         | Read-only setup report for GitHub auth, labels, CODEOWNERS, rulesets, and local prerequisites |
+| `openslack setup github`                         | Read-only setup report for GitHub auth, App permissions/events/repository scope, labels, CODEOWNERS, rulesets, and local prerequisites |
 | `openslack setup github --repair-labels`         | Preview required OpenSlack label repair                                                       |
 | `openslack setup github --repair-labels --apply` | Apply required OpenSlack label repair                                                         |
 | `openslack setup interactive --format tui`       | Read-only setup report TUI with readiness classification                                      |
@@ -343,6 +343,28 @@ openslack github doctor
 
 The binding command changes only non-secret local metadata, is preview-first,
 is idempotent for the same ID, and refuses to replace a different installation.
+
+The default App contract includes `checks:read` and the `issues`,
+`pull_request`, `pull_request_review`, `push`, `check_run`, and `check_suite`
+subscriptions. Existing installations do not automatically gain newly
+requested permissions. `openslack setup github` and `openslack github doctor`
+use an App JWT to read the installation's accepted permissions, subscriptions,
+repository selection, and management URL, then use an installation token only
+to prove that the configured repository is accessible.
+
+Both commands print expected, actual, and missing values with stable readiness
+codes:
+
+```text
+APP_REAUTHORIZATION_REQUIRED
+APP_EVENT_SUBSCRIPTION_MISSING
+APP_REPOSITORY_SCOPE_MISSING
+APP_INSTALLATION_READY
+```
+
+When administrator action is required, OpenSlack prints the installation
+`html_url` and the missing contract. It does not accept permissions, change
+subscriptions, or expand repository access on the administrator's behalf.
 
 If the App already exists, use the manual import flow below.
 
@@ -530,7 +552,7 @@ normal delivery or product branches.
 
 | Command | Purpose |
 |---------|---------|
-| `openslack github doctor` | Check GitHub setup |
+| `openslack github doctor` | Check GitHub auth, App installation permissions/events, repository scope, and workspace setup |
 | `openslack github repair labels` | Preview required label repair |
 | `openslack github repair labels --apply` | Apply required label repair |
 | `openslack github repair claims` | Preview stale claim repair |

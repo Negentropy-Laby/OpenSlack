@@ -36,7 +36,7 @@ describe('GitHub App Manifest session', () => {
     expect(() => expired.consume(expired.state, 1_011)).toThrow(/expired/);
   });
 
-  it('only accepts a loopback callback and emits the required write permissions', () => {
+  it('only accepts a loopback callback and emits the required observer permissions and events', () => {
     expect(() =>
       createGitHubAppManifestSession({ ...input(), callbackUrl: 'http://0.0.0.0:8200/callback' }),
     ).toThrow(/loopback/);
@@ -52,7 +52,16 @@ describe('GitHub App Manifest session', () => {
       issues: 'write',
       pull_requests: 'write',
       workflows: 'write',
+      checks: 'read',
     });
+    expect(session.manifest.default_events).toEqual([
+      'issues',
+      'pull_request',
+      'pull_request_review',
+      'push',
+      'check_run',
+      'check_suite',
+    ]);
     expect(() =>
       createGitHubAppManifestSession({
         ...input(),

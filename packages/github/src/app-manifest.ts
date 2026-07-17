@@ -8,10 +8,29 @@ import {
 import { existsSync, linkSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { parseSecretReference, type CredentialStore } from '@openslack/credentials';
+import { isGitHubAppSlug } from './app-slug.js';
 
 const DEFAULT_SESSION_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_EXCHANGE_TIMEOUT_MS = 10_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 1024 * 1024;
+
+export const GITHUB_APP_DEFAULT_PERMISSIONS = Object.freeze({
+  metadata: 'read',
+  contents: 'write',
+  issues: 'write',
+  pull_requests: 'write',
+  workflows: 'write',
+  checks: 'read',
+} as const);
+
+export const GITHUB_APP_DEFAULT_EVENTS = Object.freeze([
+  'issues',
+  'pull_request',
+  'pull_request_review',
+  'push',
+  'check_run',
+  'check_suite',
+] as const);
 
 export interface GitHubAppManifestInput {
   localStateRoot: string;
@@ -38,8 +57,16 @@ export interface GitHubAppManifestDefinition {
     issues: 'write';
     pull_requests: 'write';
     workflows: 'write';
+    checks: 'read';
   };
-  default_events: ['issues', 'pull_request', 'push'];
+  default_events: [
+    'issues',
+    'pull_request',
+    'pull_request_review',
+    'push',
+    'check_run',
+    'check_suite',
+  ];
 }
 
 export interface GitHubAppManifestSession {
@@ -281,14 +308,8 @@ function buildManifest(input: GitHubAppManifestInput): GitHubAppManifestDefiniti
     redirect_url: input.callbackUrl,
     description: 'OpenSlack agent-native GitHub work orchestration',
     public: false,
-    default_permissions: {
-      metadata: 'read',
-      contents: 'write',
-      issues: 'write',
-      pull_requests: 'write',
-      workflows: 'write',
-    },
-    default_events: ['issues', 'pull_request', 'push'],
+    default_permissions: { ...GITHUB_APP_DEFAULT_PERMISSIONS },
+    default_events: [...GITHUB_APP_DEFAULT_EVENTS],
   };
 }
 
@@ -355,8 +376,7 @@ function parseConversion(value: unknown): GitHubAppManifestConversion {
   if (
     !Number.isSafeInteger(candidate.id) ||
     (candidate.id as number) <= 0 ||
-    typeof candidate.slug !== 'string' ||
-    !/^[A-Za-z0-9][A-Za-z0-9-]{0,99}$/.test(candidate.slug) ||
+    !isGitHubAppSlug(candidate.slug) ||
     typeof candidate.client_id !== 'string' ||
     !/^[A-Za-z0-9._-]{3,128}$/.test(candidate.client_id) ||
     typeof candidate.client_secret !== 'string' ||

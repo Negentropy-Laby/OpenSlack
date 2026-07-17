@@ -194,7 +194,7 @@ The human-facing entry point. Natural language queries route through a structure
 - **TUI Ask:** `openslack tui` — opens on `Ask OpenSlack:`. Natural language produces Operator recommendations and safe action cards; `@agent-id prompt` dispatches through the conversation subagent path
 - **Chat:** `openslack chat start --adapter webhook|slack` — chat gateway for Slack/HTTP projections
 - **Setup:** `openslack setup` — one-step workspace validation + health check
-- **Setup GitHub:** `openslack setup github` — read-only setup report; `--apply` required for repairs
+- **Setup GitHub:** `openslack setup github` — read-only setup report plus GitHub App permission, event, and repository-scope diagnostics; `--apply` required for repairs
 - **Plan Memory:** `openslack ask plan ...` — inspect, resume, approve, or cancel 24h pending plans
 - **Planner:** Structured pipeline (`parseIntent/resolveIntent → planActions → executePlan`) with typed tool registry, allowlisted actions, risk gates, and confirmation for high-risk actions
 
@@ -308,6 +308,13 @@ run commands through the bot-auth wrapper:
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/openslack-bot.ps1 setup github
 ```
+
+The governed App manifest requests `checks:read` and subscribes to Issue, push,
+pull-request, pull-request-review, check-run, and check-suite events. Existing
+installations may require an organization administrator to accept the updated
+permissions. `openslack setup github` and `openslack github doctor` report the
+expected and actual contract, missing items, repository access, and the
+installation management URL; they never change installation settings.
 
 ## Task Lifecycle
 

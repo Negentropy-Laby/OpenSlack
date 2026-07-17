@@ -56,11 +56,13 @@ event through a durable local delivery queue before acknowledgement.
 
 - `pull_request.*` can use the App's existing `pull_request` subscription.
 - `pull_request_review.*`, `check_run.completed`, and
-  `check_suite.completed` require the manifest subscriptions and
-  `checks: read` permission scheduled for P3-PR3.
+  `check_suite.completed` use the manifest's `pull_request_review`,
+  `check_run`, and `check_suite` subscriptions plus `checks: read`.
 - Existing GitHub App installations must be reauthorized after those manifest
-  permissions are deployed. P3-PR3 also owns setup and doctor diagnostics for
-  detecting missing subscriptions or stale installation permissions.
+  permissions are deployed. Setup and doctor compare expected and accepted
+  permissions/events, verify repository scope with an installation token, and
+  print the installation management URL without attempting administrator
+  changes.
 
 The P3-PR2 delivery contract is:
 
@@ -334,8 +336,16 @@ Acceptance:
 - Review state remains informational and cannot create approval or merge
   authority.
 
-P3-PR3 still owns GitHub App manifest subscriptions, `checks: read`, setup
-doctor diagnostics, and existing-installation reauthorization guidance.
+### P3-PR3: GitHub App Readiness Diagnostics (Implemented)
+
+- The App manifest subscribes to pull-request review, check-run, and
+  check-suite events and requests `checks: read`.
+- App-JWT inspection reports accepted installation permissions, events,
+  repository selection, suspension state, and the GitHub management URL.
+- Installation-token inspection is limited to proving target-repository
+  accessibility.
+- Setup and doctor emit stable ready, reauthorization, event-subscription, and
+  repository-scope codes. Administrator changes remain external.
 
 ## Test Plan
 
