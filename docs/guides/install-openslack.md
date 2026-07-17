@@ -17,13 +17,13 @@ treated as published releases.
 Windows PowerShell:
 
 ```powershell
-Get-FileHash .\openslack-v0.1.1-windows-x64.zip -Algorithm SHA256
+Get-FileHash .\openslack-v0.2.0-windows-x64.zip -Algorithm SHA256
 ```
 
 Linux:
 
 ```bash
-sha256sum openslack-v0.1.1-linux-x64.tar.gz
+sha256sum openslack-v0.2.0-linux-x64.tar.gz
 ```
 
 The result must equal both `SHA256SUMS` and the archive digest in the release
@@ -35,7 +35,7 @@ require an OpenSlack source checkout, Bun, or Node.js:
 
 ```bash
 openslack self release verify \
-  --manifest openslack-v0.1.1-linux-x64.release-manifest.json \
+  --manifest openslack-v0.2.0-linux-x64.release-manifest.json \
   --trusted-public-key /trusted/path/openslack-release-public.pem \
   --format plain
 ```
@@ -63,7 +63,7 @@ Do not copy only the executable: native keychain support intentionally makes P0
 a one-download archive, not a single physical file.
 
 ```text
-openslack-v0.1.1-<target>/
+openslack-v0.2.0-<target>/
 ├── openslack[.exe]
 ├── native/
 ├── assets/workflows/

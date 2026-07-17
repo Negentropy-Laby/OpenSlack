@@ -90,13 +90,15 @@ commands, but blocks generation and execution.
 
 OpenSlack dynamic workflow runs can be exported to Negentropy-Lab as
 evidence-bearing `scenario-pack.extension` slot contributions. In that mode,
-OpenSlack contributes workflow run summaries, phase transcripts, agent
-attribution, and budget evidence; it does not mutate Negentropy-Lab
+OpenSlack contributes bounded run counts, status distributions, timestamps, and
+canonical evidence hashes; it does not export phase transcripts or agent
+attribution and does not mutate Negentropy-Lab
 `AuthorityState` or obtain a writer handle.
 
 Current workflow evidence is inspectable through the existing run commands
-listed in this document. The slot contribution and export path is planned; it
-is not yet an active integration.
+listed in this document. The schema-pinned preview is exported through
+`openslack collaboration integration negentropy export-slot`; it remains
+SHADOW, projection-only, and `NOT_REGISTERABLE`.
 
 ## Security Boundary
 

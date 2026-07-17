@@ -33,7 +33,7 @@ and [`docs/guides/dynamic-workflow-workbench.md`](docs/guides/dynamic-workflow-w
 
 ## Two Integration Modes
 
-OpenSlack runs as a **standalone workflow-first agent collaboration workbench** for GitHub-native human-agent teams. It also exposes a planned **Negentropy-Lab external slot-compatible scenario/workflow surface** without changing its standalone behavior.
+OpenSlack runs as a **standalone workflow-first agent collaboration workbench** for GitHub-native human-agent teams. It also exposes a governed **Negentropy-Lab external SHADOW slot-preview surface** without changing its standalone behavior.
 
 ### Standalone Workbench Mode
 

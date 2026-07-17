@@ -94,13 +94,11 @@ infer maturity.
 
 Work that is intentionally outside the standalone product baseline belongs in
 `deferredWork`. Deferred items must set `countedTowardStandalone: false` and
-cannot claim maturity above `local_ready`. The Negentropy-Lab sidecar is tracked
-this way until its separate branch is governed and merged. The `branch` field is
-a locator, not maturity evidence. A deferred `branch:` evidence reference, when
+cannot claim maturity above `local_ready`. The `branch` field is a locator, not
+maturity evidence. A deferred `branch:` evidence reference, when
 used, must resolve and match that field. A local-only branch remains solely in
 the locator field until it is published; it must not be presented as portable
-evidence. The durable Sidecar evidence is its ancestor-bound committed ledger
-path; branch metadata cannot promote a normal module or component by itself.
+evidence. Branch metadata cannot promote a normal module or component by itself.
 For deferred work, that commit is a ledger anchor showing where the deferral was
 recorded, not an audited readiness proof; this pattern must not be reused to
 promote a standalone module or component.
