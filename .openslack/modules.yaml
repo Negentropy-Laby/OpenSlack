@@ -1,5 +1,5 @@
 schema: openslack.modules.v2
-vitest_tests: 4168
+vitest_tests: 4170
 vitest_files: 325
 modules:
   - id: self_evolution
@@ -195,7 +195,7 @@ modules:
       - "@openslack/tui"
       - "@openslack/github"
       - "@openslack/agent-runtime"
-    tests: 1970
+    tests: 1972
     test_files: 157
     components:
       - id: agent_runtime

@@ -9,7 +9,8 @@ const ALWAYS_REDACTIONS: TextRedaction[] = [
     replacement: '[redacted-private-key]',
   },
   {
-    pattern: /(https?:\/\/[^\s/:@]+:)[^\s/@]+@/gi,
+    pattern:
+      /((?:https?|postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|rediss|amqp|amqps|ftp|sftp):\/\/[^\s/:@]+:)[^\s/@]+@/gi,
     replacement: '$1[redacted]@',
   },
   {
@@ -164,6 +165,16 @@ export function redactSensitiveText(
   return { value, redacted: value !== input };
 }
 
+/**
+ * Recheck only context-independent credential shapes after a repository field
+ * has already been projected. This avoids re-deriving source/diff context while
+ * retaining a final hard-secret backstop before recording or provider reuse.
+ */
+export function redactProjectedSensitiveText(input: string): SensitiveTextProjection {
+  const value = applyRedactions(input, ALWAYS_REDACTIONS);
+  return { value, redacted: value !== input };
+}
+
 export function isSourceCodeRepositoryPath(path: string): boolean {
   const normalized = path.replace(/\\/g, '/').toLowerCase();
   const basename = normalized.split('/').at(-1) ?? '';
@@ -175,6 +186,7 @@ function redactSensitiveDiff(input: string): string {
   let currentPath: string | undefined;
   let inPrivateKey = false;
   let inSensitiveTemplate = false;
+  let awaitingTargetHeader = false;
   const segments = input.match(/[^\r\n]*(?:\r\n|\n|$)/g) ?? [];
   return segments
     .filter((segment, index) => segment.length > 0 || index === segments.length - 1)
@@ -185,10 +197,19 @@ function redactSensitiveDiff(input: string): string {
       const diffHeader = /^diff --git a\/(.+?) b\/(.+)$/.exec(line);
       if (diffHeader) {
         currentPath = diffHeader[2];
+        inPrivateKey = false;
         inSensitiveTemplate = false;
+        awaitingTargetHeader = true;
       }
       const targetHeader = /^\+\+\+ b\/(.+)$/.exec(line);
-      if (targetHeader) currentPath = targetHeader[1];
+      if (targetHeader && (awaitingTargetHeader || currentPath === undefined)) {
+        currentPath = targetHeader[1];
+        inPrivateKey = false;
+        inSensitiveTemplate = false;
+        awaitingTargetHeader = false;
+      } else if (/^@@(?:\s|$)/.test(line)) {
+        awaitingTargetHeader = false;
+      }
 
       if (/^[ +\-]*-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/.test(line)) {
         inPrivateKey = true;
