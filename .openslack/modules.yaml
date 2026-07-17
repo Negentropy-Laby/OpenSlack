@@ -1,6 +1,6 @@
 schema: openslack.modules.v2
-vitest_tests: 4201
-vitest_files: 327
+vitest_tests: 4220
+vitest_files: 330
 modules:
   - id: self_evolution
     name: Self-Evolution Kernel
@@ -96,6 +96,9 @@ modules:
       - commit:d065a8ddf7dab9a6018ff8f8f3c8702dcf6e176b
       - test:apps/cli/src/__tests__/github-app-diagnostic-command.test.ts
       - test:apps/cli/src/__tests__/setup-command.test.ts
+      - commit:0a1a57b453dca5248658fa077db5efbe07527c66
+      - test:apps/cli/src/__tests__/pr-queue-projection-command.test.ts
+      - test:packages/tui/src/__tests__/repository-pr-projection-viewmodel.test.ts
     phase: "2A/2B/2C"
     cli:
       - openslack ask
@@ -110,8 +113,8 @@ modules:
       - "@openslack/chat-gateway"
       - "@openslack/tui"
       - "@openslack/credentials"
-    tests: 931
-    test_files: 109
+    tests: 938
+    test_files: 111
     notes: Structured planner active. Webhook and Slack chat adapters active with actor mapping. PRMS chat cards and action confirmation active. The typed Operator action registry is instance-scoped, preserves the closed 30-action built-in default, accepts explicit planner/executor injection, and canonical-revalidates frozen PlanSteps at execution. The CLI application composition root constructs one sealed PluginHost and instance-scoped Operator action, LLM-provider, conversation-store, and plugin-action bindings per process. Its host target catalog exposes only the audited bounded github.metrics returned-item count under the exact github.issues.read capability; SHADOW plugin actions remain visibility-only, while ENFORCE proof plans are rebuilt through the same canonical registry before execution. All other built-ins and all unconfigured plugin authority remain fail-closed until complete behavior contracts, policy, activation evidence, and a durable audit sink are explicitly composed. LLM-first intent routing with deterministic keyword fallback, setup report, and 24h pending plan store active. Session-based conversation memory with multi-turn context resolution and progressive clarification. Doctor --format plain for non-technical output. Conversation-first TUI workbench with Ask OpenSlack, Operator recommendation cards, workflow draft-first cards, profile sync recommendations, and subagent mention dispatch. TUI setup report view and PR doctor view via --format tui. Versioned Windows x64 and Linux x64 archive builds embed the CLI, workflow assets, native keychain binding, build metadata, SBOM, checksums, and provenance; native build and unpacked smoke are enforced by the release matrix. The installed CLI verifies stable release artifacts and trusted signatures without a source checkout, Bun, or Node.js. Agent Runtime credentials can be previewed and imported atomically into the native keychain without writing secret values to workspace configuration.
 
   - id: pr_review_merge
@@ -125,7 +128,9 @@ modules:
       - commit:ae04404ddb548da8019754561c11a357ae2b794f
       - test:packages/pr/src/__tests__/doctor.test.ts
       - test:packages/pr/src/__tests__/merge.test.ts
-    phase: "1.14"
+      - commit:0a1a57b453dca5248658fa077db5efbe07527c66
+      - test:packages/pr/src/__tests__/repository-projection.test.ts
+    phase: "1.15"
     cli:
       - openslack pr
       - openslack governance
@@ -133,9 +138,9 @@ modules:
       - "@openslack/pr"
       - "@openslack/github"
       - "@openslack/kernel"
-    tests: 644
-    test_files: 56
-    notes: Phase 2C chat report and action confirmation active. Supports status/review/recommend/doctor/queue/merge/watch, review/doctor comments, governance audit, operational decision summaries, deadlock detection, Red Zone author-risk preflight, and chat-friendly PR summaries with confirm-merge flow. Repository-event notifications refresh current PR/review/check observations from an explicitly repository-bound live client, but the projection stamps human approval and merge readiness as not evaluated; webhook or live review state never becomes PRMS authority. Workflow artifact governance is bound to deterministic base/head tree evidence and a single current-head human approval carrying Workflow-Trust.
+    tests: 656
+    test_files: 57
+    notes: Phase 2C chat report and action confirmation active. Supports status/review/recommend/doctor/queue/merge/watch, review/doctor comments, governance audit, operational decision summaries, deadlock detection, Red Zone author-risk preflight, and chat-friendly PR summaries with confirm-merge flow. The queue now has a separate bounded multi-repository projection mode with repeatable explicit repositories or the configured GitHub Watch repository set, a global concurrency/API budget, atomic display-only cache and independent cursor, and informational synthetic PR-state/check-summary changes. Cached and synthetic projection state never enters doctor, approval, merge, Workflow Trust, or governance. Repository-event notifications refresh current PR/review/check observations from an explicitly repository-bound live client, but the projection stamps human approval and merge readiness as not evaluated; webhook or live review state never becomes PRMS authority. Workflow artifact governance is bound to deterministic base/head tree evidence and a single current-head human approval carrying Workflow-Trust.
 
   - id: collaboration
     name: Collaboration Layer
@@ -149,6 +154,8 @@ modules:
       - commit:ae04404ddb548da8019754561c11a357ae2b794f
       - test:packages/agent-runtime/src/__tests__/openai-compatible-runtime.test.ts
       - test:packages/collaboration/src/__tests__/conversation-workflow-integration.test.ts
+      - commit:0a1a57b453dca5248658fa077db5efbe07527c66
+      - test:packages/tui/src/__tests__/repository-pr-projection-viewmodel.test.ts
     phase: "2D/2E"
     cli:
       - openslack collaboration activity
@@ -204,8 +211,8 @@ modules:
       - "@openslack/tui"
       - "@openslack/github"
       - "@openslack/agent-runtime"
-    tests: 1986
-    test_files: 158
+    tests: 1987
+    test_files: 159
     components:
       - id: agent_runtime
         name: Agent Runtime
