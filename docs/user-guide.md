@@ -8,6 +8,7 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 | ------------------------------------------------ | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
 | Verify a fresh checkout                          | `openslack setup`                                                              | Runs workspace, golden, GitHub, genesis, and agent-runtime readiness checks.                   |
 | Initialize an ordinary Git repository            | `openslack init --root <repo> --repo <owner/name>`                             | Preview-first; add `--apply` only after reviewing the file plan.                               |
+| Attach OpenSlack to an ordinary repository       | `openslack setup attach --repo <owner/name>`                                   | Transactional preview; add `--apply`, and optionally select `--mode`.                           |
 | Inspect the installed release                    | `openslack version --format json`                                               | Shows version, commit, channel, target, runtime, and supported state/workspace schemas.         |
 | Get guided setup with prompts                    | `openslack setup interactive`                                                  | Walks fixable items step by step; supports `--format plain`                                    |
 | Start/resume the durable onboarding ledger       | `openslack setup onboarding --start`                                           | Start once; rerun without `--start` to resume. Existing receipts are never overwritten.       |
@@ -285,6 +286,18 @@ approval on stale PR checks.
 | `openslack setup github --repair-labels`         | Preview required OpenSlack label repair                                                       |
 | `openslack setup github --repair-labels --apply` | Apply required OpenSlack label repair                                                         |
 | `openslack setup interactive --format tui`       | Read-only setup report TUI with readiness classification                                      |
+| `openslack setup attach --repo owner/name`        | Preview a transactional read-only-monitor attach without writing                              |
+| `openslack setup attach --repo owner/name --mode full-agent --apply` | Commit the full-agent workspace attachment atomically                         |
+| `openslack setup attach --repo owner/name --mode full-agent --apply --start-watch` | Commit, validate, then start the typed watcher in the foreground       |
+
+`setup attach` supports only `read-only-monitor` and `full-agent`. The read-only
+mode configures Issue/PR/review/check observation and a console route without
+creating an executable agent, provider, workflow, or automatic claim. Full-agent
+mode adds the agent registry, provider template, and first workflow, while generated
+agents always retain `can_approve=false` and `can_merge=false`. Apply is protected by
+a workspace lock, before-hash checks, an atomic journal, exact rollback, and
+post-validation; repeated application is idempotent. `--start-watch` requires
+`--apply` and runs only after the transaction has committed and validated.
 
 ## Workspace
 
@@ -954,24 +967,30 @@ permission profiles, trust levels, PRMS gates, or human approval.
 
 ## Negentropy-Lab Integration
 
-OpenSlack runs as a standalone workflow-first agent collaboration workbench. A planned
-Negentropy-Lab integration would export OpenSlack evidence and projections as an external
-`scenario-pack.extension` slot contribution without OpenSlack ever owning Negentropy-Lab
-`AuthorityState`.
-
-The commands below inspect the evidence that a future slot contribution would export.
-Commands marked **Planned** are not implemented in this docs-only change.
+OpenSlack runs as a standalone workbench and can export a schema-pinned, external
+`scenario-pack.extension` preview. The preview is fixed to L5, SHADOW, opt-in, and
+projection-only. It never contains a writer handle or mutation route, and OpenSlack
+never owns Negentropy-Lab `AuthorityState`.
 
 | Capability | Command | Status |
 |------------|---------|--------|
 | Standalone check | `openslack status` | Real |
-| Export slot contribution | `openslack integration negentropy export-slot` | **Planned** |
-| Diagnose slot integration | `openslack integration negentropy doctor` | **Planned** |
-| Show slot integration status | `openslack integration negentropy status` | **Planned** |
+| Export unsigned preview | `openslack collaboration integration negentropy export-slot --format json` | Real |
+| Diagnose schema/signature/receipt/live endpoint | `openslack collaboration integration negentropy doctor --format plain\|json` | Real |
+| Show bounded integration state | `openslack collaboration integration negentropy status --format plain\|json` | Real |
 | Inspect workflow evidence | `openslack collaboration workflow runs show <runId> --detail progress --format json` | Real |
 | Inspect workflow run bundle | `openslack collaboration inspect <runId> --format json` | Real |
 | Inspect PR evidence | `openslack pr status <n>` / `openslack pr doctor <n>` | Real |
 | Profile projection status | `openslack collaboration workflow profile-sync status` | Real |
 
-**Planned** commands are design targets for a future `openslack integration` command
-group. They are not available in the current release.
+The preview is saved under
+`.openslack.local/integrations/negentropy/slot-preview.json` with
+`readiness: NOT_REGISTERABLE`. Optional endpoint configuration belongs in
+`.openslack/integrations/negentropy.yaml`; signatures and registration responses
+are supplied externally under `.openslack.local/integrations/negentropy/`.
+OpenSlack validates signature structure and artifact binding but does not read or
+generate a private key. The only states are `UNSIGNED_PREVIEW`,
+`SIGNATURE_ATTACHED_UNVERIFIED`, and `VERIFIED_BY_NEGENTROPY`. The final state
+requires a completed Negentropy receipt and matching live HTTPS contribution and
+diagnostics; OpenSlack cannot claim activation or switch the contribution to
+ENFORCE.

@@ -195,16 +195,18 @@ Preview shows the diff of what would change. Run applies the projection update. 
 
 **Path:** OpenSlack contributes to the `scenario-pack.extension` slot (layer L5, `defaultGateMode: SHADOW`) as an `external` provider. The contribution gate starts in `SHADOW` mode, so Negentropy-Lab can observe exported evidence before any enforcement. OpenSlack never receives a writer handle, never calls `proposeMutation`, and never owns Negentropy-Lab authority state.
 
-**Commands:** (Planned — not implemented yet)
+**Commands:**
 
 ```bash
-# Planned — not implemented yet
-openslack integration negentropy export-slot
-openslack integration negentropy doctor
-openslack integration negentropy status
+openslack collaboration integration negentropy export-slot --format json
+openslack collaboration integration negentropy doctor --format plain
+openslack collaboration integration negentropy status --format json
 ```
 
-For current evidence inspection, use the existing collaboration and PRMS commands:
+The export remains `NOT_REGISTERABLE` until external signing and Negentropy
+administrator registration. `VERIFIED_BY_NEGENTROPY` requires a matching
+completed receipt and live HTTPS contribution/diagnostics. For source evidence
+inspection, use:
 
 ```bash
 openslack collaboration workflow runs list

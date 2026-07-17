@@ -1,5 +1,4 @@
 import { readEvents, filterEvents } from './events.js';
-import type { CollaborationEvent } from './types.js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -16,6 +15,7 @@ export interface ProfileSyncStatus {
 }
 
 export interface ProfileSyncStatusOptions {
+  rootDir?: string;
   targetRepo?: string;
   targetPath?: string;
   marker?: string;
@@ -24,7 +24,7 @@ export interface ProfileSyncStatusOptions {
 // ── Status Builder ────────────────────────────────────────────────────────────
 
 export function buildProfileSyncStatus(options?: ProfileSyncStatusOptions): ProfileSyncStatus {
-  const events = readEvents();
+  const events = readEvents(options?.rootDir);
 
   const completedEvents = filterEvents(events, { type: 'profile_sync.completed' });
   const failedEvents = filterEvents(events, { type: 'profile_sync.failed' });

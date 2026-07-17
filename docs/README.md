@@ -16,9 +16,10 @@ Use this page when you know what you want to do, but not which document owns it.
 | Understand lifecycle, maturity, blockers, and evidence rules | `developer/module-maturity.md` |
 | Understand repository rules for contributors and agents | `../AGENTS.md` |
 | Find product and module design docs | `product/openslack-product-current.md` |
-| Understand the planned Negentropy-Lab slot integration and boundary | `product/negentropy-lab-integration.md`, `security/negentropy-slot-boundary.md`, `developer/negentropy-slot-adapter.md`, `guides/embed-openslack-in-negentropy-lab.md` |
+| Understand the Negentropy-Lab slot preview and boundary | `product/negentropy-lab-integration.md`, `security/negentropy-slot-boundary.md`, `developer/negentropy-slot-adapter.md`, `guides/embed-openslack-in-negentropy-lab.md` |
 | Learn how Profile Sync renders a GitHub profile projection | `product/profile-sync.md` |
-| Understand the private plugin contract, testkit, Red host, and embedding boundary | `developer/plugins/manifest.md`, `developer/plugins/authoring.md`, `developer/plugins/testkit.md`, `developer/plugins/host.md`, `developer/plugins/embedding.md` |
+| Understand the public plugin contract, testkit, Red host, and embedding boundary | `developer/plugins/manifest.md`, `developer/plugins/authoring.md`, `developer/plugins/testkit.md`, `developer/plugins/host.md`, `developer/plugins/embedding.md` |
+| Run the secret-free Windows/Linux production capstone | `developer/live-capstone.md` |
 
 ## Common Workflows
 

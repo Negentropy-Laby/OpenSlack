@@ -1,7 +1,8 @@
 # Plugin Embedding Boundary
 
-The current packages establish portable types, authoring helpers, and a private governed host.
-They do not yet make OpenSlack a public, installable embedding platform.
+OpenSlack 0.2.0 defines a portable public package surface for declarative plugin
+contracts, authoring, governed hosting, and conformance testing. It does not make
+workspace plugins executable or create a dynamic CLI/TUI extension platform.
 
 ## Available now
 
@@ -12,6 +13,8 @@ They do not yet make OpenSlack a public, installable embedding platform.
 - `@openslack/plugin-host`: exact-byte manifest and lock loading, Red-local validation,
   instance-scoped registries and lifecycle, host-policy authorization, required audit writes,
   and blockers-only PRMS normalization;
+- `@openslack/plugin-testkit`: deterministic G1-G17 authoring diagnostics and
+  integrity checks that never substitute for Host authorization;
 - `@openslack/operator`: an instance-scoped action-registry port with the existing 30-action
   registry as its compatibility default, plus canonical execution-time `PlanStep`
   revalidation;
@@ -24,10 +27,14 @@ They do not yet make OpenSlack a public, installable embedding platform.
 - reviewed bundled descriptor types for code explicitly imported by an application
   composition root.
 
-These packages are private monorepo packages. The proof route is not implicit plugin authority:
+The four public packages (`plugin-api`, `plugin-host`, `sdk`, and
+`plugin-testkit`) have explicit exports, declarations, Node engines, Apache-2.0
+metadata, exact-version staged dependencies, and a clean-consumer pack
+verification path. Registry publication remains an external release operation.
+The proof route is not implicit plugin authority:
 the stock composition still denies activation and required audit writes until a trusted embedder
 injects policy, durable audit persistence, and matching activation evidence. There is still no
-dynamic CLI/TUI registry, directory watcher, npm package scan, public consumer release, or
+dynamic CLI/TUI registry, directory watcher, npm package scan, or
 auto-discovered code execution path in this stage.
 
 ## CLI composition root
@@ -141,7 +148,9 @@ evidence remain host-derived current-state facts.
 
 ## Product claim
 
-Until the public packages have a portable dependency closure and pass a clean external consumer
-runtime test, describe this surface as a **private plugin host and authoring preview**. Do not
-claim public embedding, executable third-party plugins, sandboxing, or dynamic product-surface
-registration based on these packages alone.
+Describe this as a **public declarative embedding contract with a governed
+host**. The pack verifier proves ESM imports, declarations, a TypeScript
+consumer, and isolated hosts with distinct policy adapters on clean Windows and
+Linux consumers. Do not claim executable third-party plugins, sandboxing,
+dynamic product-surface registration, or npm availability until the
+corresponding external release evidence exists.

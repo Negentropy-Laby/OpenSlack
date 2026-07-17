@@ -19,7 +19,7 @@
     },
     "apps/auth-callback": {
       "name": "@openslack/auth-callback",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "dependencies": {
         "@openslack/credentials": "workspace:*",
         "@openslack/github": "workspace:*",
@@ -28,7 +28,7 @@
     },
     "apps/cli": {
       "name": "@openslack/cli",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "bin": {
         "openslack": "./dist/index.js",
       },
@@ -40,6 +40,7 @@
         "@openslack/credentials": "workspace:*",
         "@openslack/delivery": "workspace:*",
         "@openslack/github": "workspace:*",
+        "@openslack/integration-negentropy": "workspace:*",
         "@openslack/kernel": "workspace:*",
         "@openslack/operator": "workspace:*",
         "@openslack/plugin-api": "workspace:*",
@@ -60,7 +61,7 @@
     },
     "packages/agent-runtime": {
       "name": "@openslack/agent-runtime",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "dependencies": {
         "@openslack/collaboration": "workspace:*",
         "@openslack/credentials": "workspace:*",
@@ -72,7 +73,7 @@
     },
     "packages/chat-gateway": {
       "name": "@openslack/chat-gateway",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "dependencies": {
         "@openslack/collaboration": "workspace:*",
         "@openslack/operator": "workspace:*",
@@ -82,7 +83,7 @@
     },
     "packages/collaboration": {
       "name": "@openslack/collaboration",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "dependencies": {
         "@openslack/kernel": "workspace:*",
         "@openslack/operator": "workspace:*",
@@ -91,25 +92,25 @@
     },
     "packages/core": {
       "name": "@openslack/core",
-      "version": "0.1.1",
+      "version": "0.2.0",
     },
     "packages/credentials": {
       "name": "@openslack/credentials",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "dependencies": {
         "@napi-rs/keyring": "1.3.0",
       },
     },
     "packages/delivery": {
       "name": "@openslack/delivery",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "dependencies": {
         "@openslack/github": "workspace:*",
       },
     },
     "packages/github": {
       "name": "@openslack/github",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "dependencies": {
         "@octokit/rest": "^21.0.0",
         "@openslack/credentials": "workspace:*",
@@ -117,9 +118,19 @@
         "yaml": "^2.7.0",
       },
     },
+    "packages/integration-negentropy": {
+      "name": "@openslack/integration-negentropy",
+      "version": "0.2.0",
+      "dependencies": {
+        "@openslack/collaboration": "workspace:*",
+        "@openslack/pr": "workspace:*",
+        "@openslack/workflows": "workspace:*",
+        "yaml": "^2.7.0",
+      },
+    },
     "packages/kernel": {
       "name": "@openslack/kernel",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "dependencies": {
         "@openslack/core": "workspace:*",
         "yaml": "^2.7.0",
@@ -127,7 +138,7 @@
     },
     "packages/operator": {
       "name": "@openslack/operator",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "dependencies": {
         "@openslack/core": "workspace:*",
         "@openslack/kernel": "workspace:*",
@@ -136,18 +147,18 @@
     },
     "packages/plugin-api": {
       "name": "@openslack/plugin-api",
-      "version": "0.1.1",
+      "version": "0.2.0",
     },
     "packages/plugin-host": {
       "name": "@openslack/plugin-host",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "dependencies": {
         "@openslack/plugin-api": "workspace:*",
       },
     },
     "packages/plugin-testkit": {
       "name": "@openslack/plugin-testkit",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "dependencies": {
         "@openslack/plugin-api": "workspace:*",
       },
@@ -158,7 +169,7 @@
     },
     "packages/pr": {
       "name": "@openslack/pr",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "dependencies": {
         "@openslack/core": "workspace:*",
         "@openslack/github": "workspace:*",
@@ -168,7 +179,7 @@
     },
     "packages/runtime": {
       "name": "@openslack/runtime",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "dependencies": {
         "@openslack/core": "workspace:*",
         "@openslack/delivery": "workspace:*",
@@ -181,14 +192,14 @@
     },
     "packages/sdk": {
       "name": "@openslack/sdk",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "dependencies": {
         "@openslack/plugin-api": "workspace:*",
       },
     },
     "packages/tui": {
       "name": "@openslack/tui",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "dependencies": {
         "@alcalzone/ansi-tokenize": "^0.3.0",
         "@openslack/agent-runtime": "workspace:*",
@@ -221,7 +232,7 @@
     },
     "packages/workflows": {
       "name": "@openslack/workflows",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "dependencies": {
         "@openslack/agent-runtime": "workspace:*",
         "@openslack/collaboration": "workspace:*",
@@ -236,7 +247,7 @@
     },
     "packages/workspace": {
       "name": "@openslack/workspace",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "dependencies": {
         "@openslack/core": "workspace:*",
         "@openslack/kernel": "workspace:*",
@@ -399,6 +410,8 @@
     "@openslack/delivery": ["@openslack/delivery@workspace:packages/delivery"],
 
     "@openslack/github": ["@openslack/github@workspace:packages/github"],
+
+    "@openslack/integration-negentropy": ["@openslack/integration-negentropy@workspace:packages/integration-negentropy"],
 
     "@openslack/kernel": ["@openslack/kernel@workspace:packages/kernel"],
 

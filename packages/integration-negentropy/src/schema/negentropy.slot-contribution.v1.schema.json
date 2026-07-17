@@ -1,0 +1,459 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.negentropy.dev/slots/negentropy.slot-contribution.v1.schema.json",
+  "title": "Negentropy Slot Contribution Artifact v1",
+  "description": "Function-free JSON artifact accepted by POST /slot-contributions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifest"
+  ],
+  "properties": {
+    "manifest": {
+      "$ref": "#/$defs/slotManifest"
+    },
+    "routes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/routeContribution"
+      }
+    },
+    "realtimeRooms": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/realtimeRoomContribution"
+      }
+    },
+    "metadata": {
+      "$ref": "#/$defs/metadata"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "manifest": {
+            "properties": {
+              "slotId": {
+                "const": "scenario-pack.extension"
+              }
+            },
+            "required": [
+              "slotId"
+            ]
+          }
+        },
+        "required": [
+          "manifest"
+        ]
+      },
+      "then": {
+        "properties": {
+          "manifest": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/slotManifest"
+              },
+              {
+                "properties": {
+                  "providerKind": {
+                    "const": "external"
+                  },
+                  "layer": {
+                    "const": "L5"
+                  },
+                  "kind": {
+                    "const": "scenario-pack"
+                  },
+                  "permission": {
+                    "allOf": [
+                      {
+                        "$ref": "#/$defs/slotPermission"
+                      },
+                      {
+                        "required": [
+                          "forbiddenApiMethods"
+                        ],
+                        "properties": {
+                          "allowedApiMethods": {
+                            "not": {
+                              "contains": {
+                                "enum": [
+                                  "authorityWriterHandle",
+                                  "proposeMutation"
+                                ]
+                              }
+                            }
+                          },
+                          "forbiddenApiMethods": {
+                            "allOf": [
+                              {
+                                "contains": {
+                                  "const": "authorityWriterHandle"
+                                }
+                              },
+                              {
+                                "contains": {
+                                  "const": "proposeMutation"
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "gate": {
+                    "allOf": [
+                      {
+                        "$ref": "#/$defs/slotGate"
+                      },
+                      {
+                        "properties": {
+                          "mode": {
+                            "const": "SHADOW"
+                          },
+                          "activationMode": {
+                            "const": "opt-in"
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "routes": false,
+          "realtimeRooms": false
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "stringArray": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/nonEmptyString"
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "platformCapability": {
+      "type": "string",
+      "enum": [
+        "platform.domain-snapshot",
+        "platform.projection-query",
+        "platform.changefeed-query",
+        "platform.mutation-proposal",
+        "platform.capability-invocation",
+        "platform.controlled-summary-absorb",
+        "platform.swarm-control"
+      ]
+    },
+    "platformCapabilities": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/platformCapability"
+      }
+    },
+    "slotPermission": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "platformCapabilities": {
+          "$ref": "#/$defs/platformCapabilities"
+        },
+        "slotCapabilities": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "allowedApiMethods": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "forbiddenApiMethods": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "sealed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "slotGate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "activationMode"
+      ],
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "OFF",
+            "SHADOW",
+            "ENFORCE"
+          ]
+        },
+        "priority": {
+          "type": "number"
+        },
+        "activationMode": {
+          "type": "string",
+          "enum": [
+            "always-on",
+            "opt-in",
+            "feature-gated"
+          ]
+        },
+        "featureKey": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "sealed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "slotManifestSignature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value"
+      ],
+      "properties": {
+        "algorithm": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "keyId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "value": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    },
+    "slotManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contributionId",
+        "slotId",
+        "name",
+        "version",
+        "providerKind",
+        "providerId",
+        "layer",
+        "kind",
+        "permission",
+        "gate"
+      ],
+      "properties": {
+        "contributionId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "slotId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "name": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "version": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "providerKind": {
+          "type": "string",
+          "enum": [
+            "built-in",
+            "bundled",
+            "workspace",
+            "external",
+            "plugin"
+          ]
+        },
+        "providerId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "layer": {
+          "type": "string",
+          "enum": [
+            "L0",
+            "L1",
+            "L2",
+            "L3",
+            "L4",
+            "L5",
+            "L6"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "runtime-service",
+            "capability-provider",
+            "product-module",
+            "policy-provider",
+            "writeback-mapper",
+            "projection-view",
+            "route",
+            "realtime-room",
+            "evidence-anchor",
+            "scenario-pack",
+            "plugin",
+            "sdk-subpath",
+            "worker",
+            "skill",
+            "workflow-bundle",
+            "business-model",
+            "app-module",
+            "agent-discovery-provider",
+            "agent-invocation-adapter",
+            "agent-command-policy"
+          ]
+        },
+        "requiredPlatformCapabilities": {
+          "$ref": "#/$defs/platformCapabilities"
+        },
+        "permission": {
+          "$ref": "#/$defs/slotPermission"
+        },
+        "gate": {
+          "$ref": "#/$defs/slotGate"
+        },
+        "evidenceRefs": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "signature": {
+          "$ref": "#/$defs/slotManifestSignature"
+        },
+        "docPath": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "skuKey": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      }
+    },
+    "routeContribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "method",
+        "path",
+        "installerId",
+        "boundary"
+      ],
+      "properties": {
+        "method": {
+          "type": "string",
+          "enum": [
+            "GET",
+            "POST",
+            "PUT",
+            "PATCH",
+            "DELETE"
+          ]
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^/"
+        },
+        "installerId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "ownerModuleSlotId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "boundary": {
+          "type": "string",
+          "enum": [
+            "read-only",
+            "mutation",
+            "governed-mutation",
+            "workflow",
+            "admin"
+          ]
+        },
+        "requiredPlatformCapabilities": {
+          "$ref": "#/$defs/platformCapabilities"
+        },
+        "permission": {
+          "$ref": "#/$defs/slotPermission"
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      }
+    },
+    "realtimeRoomContribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "roomName",
+        "readOnly"
+      ],
+      "properties": {
+        "roomName": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "ownerModuleSlotId": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "scopeKeys": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "readOnly": {
+          "type": "boolean"
+        },
+        "governedMessages": {
+          "$ref": "#/$defs/stringArray"
+        },
+        "stateSchema": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "metadata": {
+          "$ref": "#/$defs/metadata"
+        }
+      }
+    },
+    "lifecycleState": {
+      "type": "string",
+      "enum": [
+        "discovered",
+        "registered",
+        "validated",
+        "installed",
+        "activated",
+        "degraded",
+        "disabled",
+        "deprecated",
+        "removed"
+      ]
+    },
+    "lifecycleResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ok"
+      ],
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "code": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "note": {
+          "$ref": "#/$defs/nonEmptyString"
+        }
+      }
+    }
+  }
+}

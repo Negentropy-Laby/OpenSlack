@@ -26,16 +26,16 @@ const ALL_EVENT_TYPES: CollaborationEventType[] = [
   'agent.conversation.started', 'agent.conversation.completed', 'agent.conversation.failed',
 ];
 
-function getEventsDir(): string {
-  const dir = join(process.cwd(), '.openslack.local', 'collaboration');
+function getEventsDir(rootDir = process.cwd()): string {
+  const dir = join(rootDir, '.openslack.local', 'collaboration');
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
   return dir;
 }
 
-function getEventsPath(): string {
-  return join(getEventsDir(), 'events.jsonl');
+function getEventsPath(rootDir = process.cwd()): string {
+  return join(getEventsDir(rootDir), 'events.jsonl');
 }
 
 function generateEventId(): string {
@@ -155,8 +155,8 @@ export function recordEvent(partial: Omit<CollaborationEvent, 'id' | 'timestamp'
   return event;
 }
 
-export function readEvents(): CollaborationEvent[] {
-  const path = getEventsPath();
+export function readEvents(rootDir = process.cwd()): CollaborationEvent[] {
+  const path = getEventsPath(rootDir);
   if (!existsSync(path)) return [];
 
   const raw = readFileSync(path, 'utf-8');

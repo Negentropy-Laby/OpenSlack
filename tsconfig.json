@@ -15,6 +15,7 @@
     { "path": "packages/operator" },
     { "path": "packages/chat-gateway" },
     { "path": "packages/collaboration" },
+    { "path": "packages/integration-negentropy" },
     { "path": "packages/workflows" },
     { "path": "packages/agent-runtime" },
     { "path": "packages/delivery" },

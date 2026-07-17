@@ -1,0 +1,41 @@
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import type { NegentropySchemaPin } from './types.js';
+
+export const NEGENTROPY_SCHEMA_PIN = Object.freeze({
+  repository: 'wsman/Negentropy-Lab',
+  commit: '7bb01b9d1af2bf8c552234bdfefc87a5b34ed02d',
+  path: 'packages/core/src/slots/schema/negentropy.slot-contribution.v1.schema.json',
+  sha256: 'd3220080e1200391f9d5c0b2e74df1306540d57ff922d0da4156b32675efffa2',
+  version: 'negentropy.slot-contribution.v1',
+} as const satisfies NegentropySchemaPin);
+
+export class NegentropySchemaPinError extends Error {
+  readonly code = 'NEGENTROPY_SCHEMA_PIN_MISMATCH';
+}
+
+export function bundledNegentropySchemaBytes(): Buffer {
+  const local = new URL('./schema/negentropy.slot-contribution.v1.schema.json', import.meta.url);
+  if (existsSync(local)) return readFileSync(local);
+  const installed = join(
+    dirname(process.execPath),
+    'assets',
+    'product',
+    'negentropy.slot-contribution.v1.schema.json',
+  );
+  return readFileSync(installed);
+}
+
+export function verifyNegentropySchemaPin(bytes = bundledNegentropySchemaBytes()): void {
+  const actual = createHash('sha256').update(bytes).digest('hex');
+  if (actual !== NEGENTROPY_SCHEMA_PIN.sha256) {
+    throw new NegentropySchemaPinError(
+      `Pinned Negentropy schema hash mismatch: expected ${NEGENTROPY_SCHEMA_PIN.sha256}, received ${actual}.`,
+    );
+  }
+  const schema = JSON.parse(bytes.toString('utf8')) as Record<string, unknown>;
+  if (schema.$id !== 'https://schemas.negentropy.dev/slots/negentropy.slot-contribution.v1.schema.json') {
+    throw new NegentropySchemaPinError('Pinned Negentropy schema identity is invalid.');
+  }
+}

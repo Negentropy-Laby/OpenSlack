@@ -87,6 +87,11 @@ import {
   fetchPRDetails,
   loadPRCodeownerEvidence,
 } from '@openslack/pr';
+import {
+  diagnoseNegentropyIntegration,
+  exportNegentropySlotPreview,
+  renderNegentropyIntegrationReport,
+} from '@openslack/integration-negentropy';
 
 type AgentAuthOptions = {
   principal?: import('@openslack/kernel').AgentPrincipal;
@@ -286,6 +291,62 @@ function listBuiltinTemplates(): BuiltinTemplateSummary[] {
 
 export function collaborationCommands(): Command {
   const cmd = new Command('collaboration').description('OpenSlack Collaboration Layer');
+
+  const integration = new Command('integration').description('External collaboration integrations');
+  const negentropy = new Command('negentropy').description(
+    'Projection-only Negentropy-Lab slot bridge',
+  );
+
+  negentropy
+    .command('export-slot')
+    .description('Export an unsigned SHADOW scenario-pack contribution preview')
+    .option('--format <format>', 'Output format: json', 'json')
+    .action(async (options: { format: string }) => {
+      if (options.format !== 'json') {
+        console.error('Negentropy slot export supports only --format json.');
+        process.exitCode = 1;
+        return;
+      }
+      const preview = await exportNegentropySlotPreview({ workspaceRoot: findRepoRoot() });
+      console.log(JSON.stringify(preview, null, 2));
+    });
+
+  negentropy
+    .command('doctor')
+    .description('Verify schema, evidence, signature, receipt, and live endpoint')
+    .option('--format <format>', 'Output format: plain or json', 'plain')
+    .action(async (options: { format: string }) => {
+      const report = await diagnoseNegentropyIntegration({ workspaceRoot: findRepoRoot() });
+      if (options.format === 'json') console.log(JSON.stringify(report, null, 2));
+      else if (options.format === 'plain') console.log(renderNegentropyIntegrationReport(report));
+      else {
+        console.error('Negentropy doctor format must be plain or json.');
+        process.exitCode = 1;
+        return;
+      }
+      if (report.findings.some((finding) => finding.status === 'FAIL')) process.exitCode = 1;
+    });
+
+  negentropy
+    .command('status')
+    .description('Show the three-state Negentropy integration status')
+    .option('--format <format>', 'Output format: plain or json', 'plain')
+    .action(async (options: { format: string }) => {
+      const report = await diagnoseNegentropyIntegration({ workspaceRoot: findRepoRoot() });
+      if (options.format === 'json') console.log(JSON.stringify(report, null, 2));
+      else if (options.format === 'plain') {
+        console.log(`Negentropy integration: ${report.state}`);
+        if (report.negentropyLifecycle) {
+          console.log(`Negentropy-reported lifecycle: ${report.negentropyLifecycle}`);
+        }
+      } else {
+        console.error('Negentropy status format must be plain or json.');
+        process.exitCode = 1;
+      }
+    });
+
+  integration.addCommand(negentropy);
+  cmd.addCommand(integration);
 
   cmd
     .command('dashboard')

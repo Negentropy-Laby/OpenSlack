@@ -1,9 +1,7 @@
 import {
   copyFileSync,
   mkdirSync,
-  readFileSync,
   readdirSync,
-  rmSync,
   writeFileSync,
 } from 'node:fs';
 import { spawnSync } from 'node:child_process';

@@ -19,6 +19,7 @@
     "@openslack/kernel": "workspace:*",
     "@openslack/runtime": "workspace:*",
     "@openslack/github": "workspace:*",
+    "@openslack/integration-negentropy": "workspace:*",
     "@openslack/pr": "workspace:*",
     "@openslack/operator": "workspace:*",
     "@openslack/plugin-api": "workspace:*",

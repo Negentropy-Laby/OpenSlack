@@ -1,0 +1,25 @@
+{
+  "name": "@openslack/integration-negentropy",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@openslack/collaboration": "workspace:*",
+    "@openslack/pr": "workspace:*",
+    "@openslack/workflows": "workspace:*",
+    "yaml": "^2.7.0"
+  }
+}
