@@ -25,6 +25,7 @@ import {
 import {
   isSourceCodeRepositoryPath,
   isSensitiveRepositoryPath,
+  redactProjectedSensitiveText,
   redactSensitiveText,
   redactSensitiveValue,
 } from './sensitive-data.js';
@@ -190,16 +191,15 @@ export class RepositoryToolExecutor implements ToolExecutor {
     const raw = readFilePrefix(path, this.maxReadBytes, control);
     const truncated = stat.size > this.maxReadBytes;
     const decoded = decodeRepositoryText(raw);
+    const normalizedPath = normalizeRelative(relativePath);
     const context =
-      decoded.validUtf8 &&
-      !decoded.containsNull &&
-      isSourceCodeRepositoryPath(normalizeRelative(relativePath))
+      decoded.validUtf8 && !decoded.containsNull && isSourceCodeRepositoryPath(normalizedPath)
         ? 'source-code'
         : 'generic';
     return {
       ok: true,
       data: {
-        path: normalizeRelative(relativePath),
+        path: normalizedPath,
         content: redactSensitiveText(decoded.value, { context }).value,
         bytes: stat.size,
       },
@@ -230,13 +230,12 @@ export class RepositoryToolExecutor implements ToolExecutor {
         const stat = lstatSync(filePath);
         if (!stat.isFile() || stat.size > this.maxReadBytes) continue;
         const raw = readFilePrefix(filePath, this.maxReadBytes, control);
-        if (raw.includes(0)) continue;
         const decoded = decodeRepositoryText(raw);
+        if (decoded.containsNull) continue;
         text = decoded.value;
+        const normalizedPath = normalizeRelative(relative(this.rootPath, filePath));
         projectionContext =
-          decoded.validUtf8 &&
-          !decoded.containsNull &&
-          isSourceCodeRepositoryPath(normalizeRelative(relative(this.rootPath, filePath)))
+          decoded.validUtf8 && isSourceCodeRepositoryPath(normalizedPath)
             ? 'source-code'
             : 'generic';
       } catch {
@@ -691,15 +690,12 @@ function redactRepositoryToolResult(
   result: ToolExecutionResult,
 ): ToolExecutionResult {
   if (toolName === 'repo.read') {
-    const path = String(result.data.path ?? '');
+    const { content, ...metadata } = result.data;
     return {
       ...result,
       data: {
-        ...result.data,
-        path: redactSensitiveText(path).value,
-        content: redactSensitiveText(String(result.data.content ?? ''), {
-          context: isSourceCodeRepositoryPath(path) ? 'source-code' : 'generic',
-        }).value,
+        ...(redactSensitiveValue(metadata) as Record<string, unknown>),
+        content: redactProjectedSensitiveText(String(content ?? '')).value,
       },
     };
   }
@@ -710,13 +706,10 @@ function redactRepositoryToolResult(
             value && typeof value === 'object' && !Array.isArray(value)
               ? (value as Record<string, unknown>)
               : {};
-          const path = String(match.path ?? '');
+          const { text, ...metadata } = match;
           return {
-            ...match,
-            path: redactSensitiveText(path).value,
-            text: redactSensitiveText(String(match.text ?? ''), {
-              context: isSourceCodeRepositoryPath(path) ? 'source-code' : 'generic',
-            }).value,
+            ...(redactSensitiveValue(metadata) as Record<string, unknown>),
+            text: redactProjectedSensitiveText(String(text ?? '')).value,
           };
         })
       : [];
@@ -730,12 +723,12 @@ function redactRepositoryToolResult(
     };
   }
   if (toolName === 'repo.diff') {
+    const { diff, ...metadata } = result.data;
     return {
       ...result,
       data: {
-        ...result.data,
-        diff: redactSensitiveText(String(result.data.diff ?? ''), { context: 'diff' }).value,
-        untrackedFiles: redactSensitiveValue(result.data.untrackedFiles),
+        ...(redactSensitiveValue(metadata) as Record<string, unknown>),
+        diff: redactProjectedSensitiveText(String(diff ?? '')).value,
       },
     };
   }
