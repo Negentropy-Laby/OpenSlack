@@ -34,6 +34,12 @@ describe('github app create command', () => {
       expect(log).toHaveBeenCalledWith(
         'No server was started and no credential was written. Re-run with --apply.',
       );
+      expect(log).toHaveBeenCalledWith(
+        '- Permissions: metadata:read, contents:write, issues:write, pull_requests:write, workflows:write, checks:read',
+      );
+      expect(log).toHaveBeenCalledWith(
+        '- Events: issues, pull_request, pull_request_review, push, check_run, check_suite',
+      );
 
       await githubCommands({ startAppManifestServer: start }).parseAsync([...args, '--apply'], {
         from: 'node',

@@ -20,7 +20,12 @@ import type { LLMPlannerProviderRegistryPort } from '@openslack/operator';
 import { recordEvent } from '@openslack/collaboration';
 import { diagnoseAgentRuntime } from '@openslack/agent-runtime';
 import { resolveWorkspaceContext, validateWorkspace } from '@openslack/workspace';
-import { getClient } from '@openslack/github';
+import {
+  diagnoseGitHubAppInstallation,
+  getClient,
+  type GitHubAppInstallationDiagnosticReport,
+} from '@openslack/github';
+import { renderGitHubAppInstallationDiagnostic } from './github-app-diagnostic.js';
 
 export function readStrictOption(source: unknown): boolean {
   if (!source || typeof source !== 'object') return false;
@@ -36,6 +41,7 @@ export interface SetupCommandDependencies {
   validate?: typeof validateWorkspace;
   runGolden?: typeof runGoldenEval;
   getGitHubClient?: typeof getClient;
+  diagnoseAppInstallation?: typeof diagnoseGitHubAppInstallation;
   llmProviderRegistry?: LLMPlannerProviderRegistryPort;
 }
 
@@ -53,7 +59,9 @@ function renderOnboardingState(store: OnboardingStore, state: OnboardingState): 
   }
   console.log(`Next: ${next.id} (${next.status})`);
   if (next.status === 'needs_reconcile') {
-    console.log('Verify the interrupted operation before choosing reconcile-complete or reconcile-retry.');
+    console.log(
+      'Verify the interrupted operation before choosing reconcile-complete or reconcile-retry.',
+    );
     return;
   }
   const guide = getOnboardingStepGuide(next.id);
@@ -113,7 +121,9 @@ export function setupCommands(dependencies: SetupCommandDependencies = {}): Comm
           `If verification proves no mutation occurred: openslack setup onboarding reconcile-retry ${selected.id}`,
         );
         const running = next.steps.find((step) => step.id === selected.id);
-        console.log(`Ledger status: ${running?.status ?? 'unknown'} (attempt ${running?.attempt ?? 0})`);
+        console.log(
+          `Ledger status: ${running?.status ?? 'unknown'} (attempt ${running?.attempt ?? 0})`,
+        );
       } catch (error) {
         console.error(error instanceof Error ? error.message : 'Onboarding step failed.');
         process.exitCode = 1;
@@ -129,7 +139,8 @@ export function setupCommands(dependencies: SetupCommandDependencies = {}): Comm
       console.log('Local state compatibility');
       if (report.checks.length === 0) console.log('[PASS] No versioned local state files yet.');
       for (const check of report.checks) {
-        const label = check.status === 'incompatible' ? 'FAIL' : check.status === 'legacy' ? 'WARN' : 'PASS';
+        const label =
+          check.status === 'incompatible' ? 'FAIL' : check.status === 'legacy' ? 'WARN' : 'PASS';
         console.log(`[${label}] ${check.file}: ${check.detail}`);
       }
       if (!report.compatible) process.exitCode = 1;
@@ -358,6 +369,32 @@ export function setupCommands(dependencies: SetupCommandDependencies = {}): Comm
     .action(async (options: { apply?: boolean; repairLabels?: boolean }) => {
       const report = await buildSetupReport({ dryRun: !options.apply });
       console.log(renderSetupReport(report));
+      const context = resolveContext();
+      let appDiagnostic: GitHubAppInstallationDiagnosticReport | null = null;
+      try {
+        const client = await getGitHubClient({
+          cwd: context.workspaceRoot,
+          localStateRoot: context.localStateRoot,
+        });
+        if (client.authMode === 'github_app_installation') {
+          appDiagnostic = await (
+            dependencies.diagnoseAppInstallation ?? diagnoseGitHubAppInstallation
+          )({
+            owner: client.owner,
+            repo: client.repo,
+            localStateRoot: context.localStateRoot,
+          });
+          console.log('');
+          console.log(renderGitHubAppInstallationDiagnostic(appDiagnostic));
+          if (!appDiagnostic.ready) process.exitCode = 1;
+        }
+      } catch {
+        console.log('');
+        console.log(
+          '[FAIL] APP_INSTALLATION_DIAGNOSTIC_FAILED — App JWT installation inspection failed safely',
+        );
+        process.exitCode = 1;
+      }
 
       if (options.repairLabels) {
         const { repairLabels } = await import('@openslack/github');

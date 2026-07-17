@@ -13,6 +13,24 @@ const DEFAULT_SESSION_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_EXCHANGE_TIMEOUT_MS = 10_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 1024 * 1024;
 
+export const GITHUB_APP_DEFAULT_PERMISSIONS = Object.freeze({
+  metadata: 'read',
+  contents: 'write',
+  issues: 'write',
+  pull_requests: 'write',
+  workflows: 'write',
+  checks: 'read',
+} as const);
+
+export const GITHUB_APP_DEFAULT_EVENTS = Object.freeze([
+  'issues',
+  'pull_request',
+  'pull_request_review',
+  'push',
+  'check_run',
+  'check_suite',
+] as const);
+
 export interface GitHubAppManifestInput {
   localStateRoot: string;
   callbackUrl: string;
@@ -38,8 +56,16 @@ export interface GitHubAppManifestDefinition {
     issues: 'write';
     pull_requests: 'write';
     workflows: 'write';
+    checks: 'read';
   };
-  default_events: ['issues', 'pull_request', 'push'];
+  default_events: [
+    'issues',
+    'pull_request',
+    'pull_request_review',
+    'push',
+    'check_run',
+    'check_suite',
+  ];
 }
 
 export interface GitHubAppManifestSession {
@@ -281,14 +307,8 @@ function buildManifest(input: GitHubAppManifestInput): GitHubAppManifestDefiniti
     redirect_url: input.callbackUrl,
     description: 'OpenSlack agent-native GitHub work orchestration',
     public: false,
-    default_permissions: {
-      metadata: 'read',
-      contents: 'write',
-      issues: 'write',
-      pull_requests: 'write',
-      workflows: 'write',
-    },
-    default_events: ['issues', 'pull_request', 'push'],
+    default_permissions: { ...GITHUB_APP_DEFAULT_PERMISSIONS },
+    default_events: [...GITHUB_APP_DEFAULT_EVENTS],
   };
 }
 

@@ -322,4 +322,80 @@ describe('setup interactive', () => {
     expect(vi.mocked(actualExecFileSync)).not.toHaveBeenCalled();
     expect(vi.mocked(actualExecSync)).not.toHaveBeenCalled();
   });
+
+  it('renders App permission, event, and repository diffs from setup github', async () => {
+    mockBuildSetupReport.mockResolvedValue({
+      root: '/ordinary-repo',
+      generatedAt: new Date().toISOString(),
+      dryRun: true,
+      findings: [],
+    });
+    const diagnose = vi.fn(async () => ({
+      schema: 'openslack.github_app_installation_diagnostic.v1' as const,
+      ready: false,
+      code: 'APP_REAUTHORIZATION_REQUIRED' as const,
+      codes: ['APP_REAUTHORIZATION_REQUIRED', 'APP_EVENT_SUBSCRIPTION_MISSING'] as const,
+      appId: '123',
+      installationId: '456',
+      appSlug: 'openslack-agent-operator',
+      suspended: false,
+      permissions: {
+        expected: { checks: 'read' },
+        actual: {},
+        missing: [{ name: 'checks', expected: 'read', actual: null }],
+      },
+      events: {
+        expected: ['check_run'],
+        actual: [],
+        missing: ['check_run'],
+      },
+      repository: {
+        fullName: 'acme/project',
+        selection: 'selected' as const,
+        accessible: false,
+        complete: true,
+        totalAccessibleRepositories: 0,
+        pagesScanned: 1,
+      },
+      managementUrl: 'https://github.com/organizations/acme/settings/installations/456',
+      administratorAction:
+        'An installation owner must accept the update. OpenSlack will not change the installation.',
+    }));
+    const command = setupCommands({
+      resolveContext: () =>
+        ({
+          productHome: '/product',
+          workspaceRoot: '/ordinary-repo',
+          projectStateRoot: '/ordinary-repo/.openslack',
+          localStateRoot: '/ordinary-repo/.openslack.local',
+          sourceCheckout: false,
+          assetResolver: { readText: vi.fn() },
+        }) as never,
+      getGitHubClient: vi.fn(async () => ({
+        owner: 'acme',
+        repo: 'project',
+        authMode: 'github_app_installation',
+        isDryRun: false,
+      })) as never,
+      diagnoseAppInstallation: diagnose,
+    });
+    const logs: string[] = [];
+    const log = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+    const previousExitCode = process.exitCode;
+    try {
+      process.exitCode = undefined;
+      await command.parseAsync(['node', 'openslack', 'github'], { from: 'node' });
+      const output = logs.join('\n');
+      expect(output).toContain('[FAIL] APP_REAUTHORIZATION_REQUIRED');
+      expect(output).toContain('Permissions missing: checks:read (actual:none)');
+      expect(output).toContain('Events missing: check_run');
+      expect(output).toContain('Repository missing: acme/project');
+      expect(process.exitCode).toBe(1);
+    } finally {
+      process.exitCode = previousExitCode;
+      log.mockRestore();
+    }
+  });
 });
