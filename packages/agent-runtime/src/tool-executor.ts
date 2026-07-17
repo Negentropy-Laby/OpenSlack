@@ -23,7 +23,9 @@ import {
   ToolArgumentInvalidError,
 } from './types.js';
 import {
+  isSourceCodeRepositoryPath,
   isSensitiveRepositoryPath,
+  redactProjectedSensitiveText,
   redactSensitiveText,
   redactSensitiveValue,
 } from './sensitive-data.js';
@@ -173,7 +175,7 @@ export class RepositoryToolExecutor implements ToolExecutor {
         break;
     }
 
-    const safeResult = redactSensitiveValue(result) as ToolExecutionResult;
+    const safeResult = redactRepositoryToolResult(toolName as RepositoryToolName, result);
     const boundedResult = boundToolResult(safeResult, control.maxResultBytes);
     this.options.recorder.toolResult(this.options.runId, toolName, boundedResult);
     return boundedResult;
@@ -188,11 +190,17 @@ export class RepositoryToolExecutor implements ToolExecutor {
     }
     const raw = readFilePrefix(path, this.maxReadBytes, control);
     const truncated = stat.size > this.maxReadBytes;
+    const decoded = decodeRepositoryText(raw);
+    const normalizedPath = normalizeRelative(relativePath);
+    const context =
+      decoded.validUtf8 && !decoded.containsNull && isSourceCodeRepositoryPath(normalizedPath)
+        ? 'source-code'
+        : 'generic';
     return {
       ok: true,
       data: {
-        path: normalizeRelative(relativePath),
-        content: redactSensitiveText(truncateUtf8(raw, this.maxReadBytes).value).value,
+        path: normalizedPath,
+        content: redactSensitiveText(decoded.value, { context }).value,
         bytes: stat.size,
       },
       truncated,
@@ -217,12 +225,19 @@ export class RepositoryToolExecutor implements ToolExecutor {
       if (filesScanned >= this.maxSearchFiles || matches.length >= this.maxSearchMatches) break;
       filesScanned += 1;
       let text: string;
+      let projectionContext: 'generic' | 'source-code' = 'generic';
       try {
         const stat = lstatSync(filePath);
         if (!stat.isFile() || stat.size > this.maxReadBytes) continue;
         const raw = readFilePrefix(filePath, this.maxReadBytes, control);
-        if (raw.includes(0)) continue;
-        text = raw.toString('utf-8');
+        const decoded = decodeRepositoryText(raw);
+        if (decoded.containsNull) continue;
+        text = decoded.value;
+        const normalizedPath = normalizeRelative(relative(this.rootPath, filePath));
+        projectionContext =
+          decoded.validUtf8 && isSourceCodeRepositoryPath(normalizedPath)
+            ? 'source-code'
+            : 'generic';
       } catch {
         continue;
       }
@@ -232,7 +247,9 @@ export class RepositoryToolExecutor implements ToolExecutor {
         matches.push({
           path: normalizeRelative(relative(this.rootPath, filePath)),
           line: index + 1,
-          text: redactSensitiveText(lines[index].slice(0, 500)).value,
+          text: redactSensitiveText(lines[index].slice(0, 500), {
+            context: projectionContext,
+          }).value,
         });
         if (matches.length >= this.maxSearchMatches) break;
       }
@@ -375,7 +392,9 @@ export class RepositoryToolExecutor implements ToolExecutor {
     return {
       ok: true,
       data: {
-        diff: redactSensitiveText(truncateUtf8(Buffer.from(output), this.maxDiffBytes).value).value,
+        diff: redactSensitiveText(truncateUtf8(Buffer.from(output), this.maxDiffBytes).value, {
+          context: 'diff',
+        }).value,
         untrackedFiles,
       },
       truncated: bufferExceeded || Buffer.byteLength(output) > this.maxDiffBytes,
@@ -580,6 +599,27 @@ function truncateUtf8(input: Buffer, maxBytes: number): { value: string; truncat
   return { value: input.subarray(0, maxBytes).toString('utf-8'), truncated: true };
 }
 
+function decodeRepositoryText(input: Buffer): {
+  value: string;
+  validUtf8: boolean;
+  containsNull: boolean;
+} {
+  const containsNull = input.includes(0);
+  try {
+    return {
+      value: new TextDecoder('utf-8', { fatal: true }).decode(input),
+      validUtf8: true,
+      containsNull,
+    };
+  } catch {
+    return {
+      value: input.toString('utf-8'),
+      validUtf8: false,
+      containsNull,
+    };
+  }
+}
+
 function readFilePrefix(path: string, maxBytes: number, control: ToolExecutionControl): Buffer {
   const handle = openSync(path, 'r');
   try {
@@ -643,4 +683,54 @@ function redactToolInput(
     oldTextBytes: typeof input.oldText === 'string' ? Buffer.byteLength(input.oldText) : undefined,
     newTextBytes: typeof input.newText === 'string' ? Buffer.byteLength(input.newText) : undefined,
   };
+}
+
+function redactRepositoryToolResult(
+  toolName: RepositoryToolName,
+  result: ToolExecutionResult,
+): ToolExecutionResult {
+  if (toolName === 'repo.read') {
+    const { content, ...metadata } = result.data;
+    return {
+      ...result,
+      data: {
+        ...(redactSensitiveValue(metadata) as Record<string, unknown>),
+        content: redactProjectedSensitiveText(String(content ?? '')).value,
+      },
+    };
+  }
+  if (toolName === 'repo.search') {
+    const matches = Array.isArray(result.data.matches)
+      ? result.data.matches.map((value) => {
+          const match =
+            value && typeof value === 'object' && !Array.isArray(value)
+              ? (value as Record<string, unknown>)
+              : {};
+          const { text, ...metadata } = match;
+          return {
+            ...(redactSensitiveValue(metadata) as Record<string, unknown>),
+            text: redactProjectedSensitiveText(String(text ?? '')).value,
+          };
+        })
+      : [];
+    return {
+      ...result,
+      data: {
+        ...result.data,
+        query: redactSensitiveText(String(result.data.query ?? '')).value,
+        matches,
+      },
+    };
+  }
+  if (toolName === 'repo.diff') {
+    const { diff, ...metadata } = result.data;
+    return {
+      ...result,
+      data: {
+        ...(redactSensitiveValue(metadata) as Record<string, unknown>),
+        diff: redactProjectedSensitiveText(String(diff ?? '')).value,
+      },
+    };
+  }
+  return redactSensitiveValue(result) as ToolExecutionResult;
 }

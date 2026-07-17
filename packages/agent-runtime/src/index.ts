@@ -64,9 +64,15 @@ export type {
 } from './tool-executor.js';
 export { RepositoryToolExecutor } from './tool-executor.js';
 export {
+  isSourceCodeRepositoryPath,
   isSensitiveRepositoryPath,
   redactSensitiveText,
   redactSensitiveValue,
+} from './sensitive-data.js';
+export type {
+  SensitiveProjectionContext,
+  SensitiveTextProjection,
+  SensitiveTextProjectionOptions,
 } from './sensitive-data.js';
 
 export type {
