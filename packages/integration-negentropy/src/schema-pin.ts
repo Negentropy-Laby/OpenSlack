@@ -5,7 +5,7 @@ import type { NegentropySchemaPin } from './types.js';
 
 export const NEGENTROPY_SCHEMA_PIN = Object.freeze({
   repository: 'wsman/Negentropy-Lab',
-  commit: '7bb01b9d1af2bf8c552234bdfefc87a5b34ed02d',
+  commit: '989c73a99ad5af94c6cad617bf34e2f400bafa9c',
   path: 'packages/core/src/slots/schema/negentropy.slot-contribution.v1.schema.json',
   sha256: 'd3220080e1200391f9d5c0b2e74df1306540d57ff922d0da4156b32675efffa2',
   version: 'negentropy.slot-contribution.v1',
