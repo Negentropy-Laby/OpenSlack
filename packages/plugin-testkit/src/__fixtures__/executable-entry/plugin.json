@@ -1,0 +1,11 @@
+{
+  "schema": "openslack.plugin.v1",
+  "id": "executable-entry",
+  "version": "1.0.0",
+  "name": "Executable fixture",
+  "requires": { "openslack": ">=0.1.0 <1.0.0" },
+  "gate": { "mode": "SHADOW", "gateId": "host.read-only" },
+  "capabilities": ["host.actions.read"],
+  "contributes": [],
+  "entry": "./index.js"
+}

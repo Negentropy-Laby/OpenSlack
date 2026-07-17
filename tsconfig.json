@@ -4,6 +4,7 @@
     { "path": "packages/kernel" },
     { "path": "packages/plugin-api" },
     { "path": "packages/plugin-host" },
+    { "path": "packages/plugin-testkit" },
     { "path": "packages/sdk" },
     { "path": "packages/workspace" },
     { "path": "packages/core" },

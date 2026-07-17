@@ -404,7 +404,16 @@ See `docs/developer/keychain-packaging.md` for the artifact contract.
 | `openslack self scorecard --experiment <id>` | Compute fitness score |
 | `openslack self monitor --experiment <id>` | Post-merge regression check |
 | `openslack self release verify --manifest <file> --trusted-public-key <public.pem>` | Verify a downloaded stable release without a source checkout or Bun |
+| `openslack self plugin check <path> [--format plain\|json] [--verify-integrity]` | Run the deterministic G1-G17 declarative plugin registration preflight |
 | `openslack self plugin run <plugin-id> <action-id>` | Run the private governed plugin proof route with composition-injected policy and activation evidence |
+
+Plugin checks emit `READY_TO_REGISTER` only when every applicable authoring check
+passes. G17 is skipped unless `--verify-integrity` is supplied; integrity mode
+accepts only canonical workspace plugin paths and compares exact bytes with
+`.openslack/plugins.lock`. A clean report is not authorization or activation
+evidence: the Red Host always reloads and independently authorizes the plugin.
+See `docs/developer/plugins/testkit.md` for the G1-G17 matrix and stable finding
+codes.
 
 The plugin proof route accepts only registered plugin and action identities; it does not accept
 raw commands, evidence files, approval flags, or arbitrary JSON input. A `SHADOW` contribution is

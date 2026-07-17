@@ -17,6 +17,7 @@
     { "path": "../../packages/operator" },
     { "path": "../../packages/plugin-api" },
     { "path": "../../packages/plugin-host" },
+    { "path": "../../packages/plugin-testkit" },
     { "path": "../../packages/sdk" },
     { "path": "../../packages/collaboration" },
     { "path": "../../packages/workflows" },

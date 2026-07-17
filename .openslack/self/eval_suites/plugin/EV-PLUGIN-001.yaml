@@ -1,0 +1,47 @@
+schema: openslack.plugin_eval.v1
+id: EV-PLUGIN-001
+title: Declarative plugin preflight remains fail-closed
+goal: Prove the G1-G17 authoring checks and the non-authoritative Host handoff.
+on_failure: auto_create_evol
+checks:
+  - G1
+  - G2
+  - G3
+  - G4
+  - G5
+  - G6
+  - G7
+  - G8
+  - G9
+  - G10
+  - G11
+  - G12
+  - G13
+  - G14
+  - G15
+  - G16
+  - G17
+scenarios:
+  - fixture: valid
+    readiness: READY_TO_REGISTER
+    finding_codes: []
+  - fixture: approve-action
+    readiness: BLOCKED
+    finding_codes:
+      - PLUGIN_ALIAS_TARGET_FORBIDDEN
+  - fixture: approval-capability
+    readiness: BLOCKED
+    finding_codes:
+      - PLUGIN_MANIFEST_CAPABILITY_INVALID
+  - fixture: direct-merge
+    readiness: BLOCKED
+    finding_codes:
+      - PLUGIN_MANIFEST_SECURITY_FIELD_FORBIDDEN
+  - fixture: executable-entry
+    readiness: BLOCKED
+    finding_codes:
+      - PLUGIN_MANIFEST_EXECUTABLE_FIELD_FORBIDDEN
+  - fixture: version-mismatch
+    readiness: BLOCKED
+    finding_codes:
+      - PLUGIN_HOST_VERSION_INCOMPATIBLE

@@ -44,6 +44,7 @@
         "@openslack/operator": "workspace:*",
         "@openslack/plugin-api": "workspace:*",
         "@openslack/plugin-host": "workspace:*",
+        "@openslack/plugin-testkit": "workspace:*",
         "@openslack/pr": "workspace:*",
         "@openslack/runtime": "workspace:*",
         "@openslack/tui": "workspace:*",
@@ -142,6 +143,17 @@
       "version": "0.1.1",
       "dependencies": {
         "@openslack/plugin-api": "workspace:*",
+      },
+    },
+    "packages/plugin-testkit": {
+      "name": "@openslack/plugin-testkit",
+      "version": "0.1.1",
+      "dependencies": {
+        "@openslack/plugin-api": "workspace:*",
+      },
+      "devDependencies": {
+        "@openslack/plugin-host": "workspace:*",
+        "yaml": "^2.7.0",
       },
     },
     "packages/pr": {
@@ -395,6 +407,8 @@
     "@openslack/plugin-api": ["@openslack/plugin-api@workspace:packages/plugin-api"],
 
     "@openslack/plugin-host": ["@openslack/plugin-host@workspace:packages/plugin-host"],
+
+    "@openslack/plugin-testkit": ["@openslack/plugin-testkit@workspace:packages/plugin-testkit"],
 
     "@openslack/pr": ["@openslack/pr@workspace:packages/pr"],
 

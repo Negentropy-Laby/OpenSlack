@@ -108,6 +108,7 @@ OpenSlack/
 │   ├── kernel/              # Zone classifier, merge decision, policy engine
 │   ├── plugin-api/          # Private declarative plugin contract, schema, and host policy ports
 │   ├── plugin-host/         # Red integrity loader, lock, policy gates, and instance registries
+│   ├── plugin-testkit/      # Deterministic G1-G17 manifest/lock authoring diagnostics
 │   ├── sdk/                 # Private authoring helpers for manifests and reviewed bundled code
 │   ├── workspace/           # Validation, indexing, schemas
 │   ├── credentials/         # Typed env/native OS keychain references and fail-closed backends
@@ -134,6 +135,12 @@ and explicitly imported reviewed bundles. It never executes auto-discovered code
 public npm embedding runtime, dynamic CLI registry, or sandbox. See
 [`docs/developer/plugins/host.md`](docs/developer/plugins/host.md) and
 [`docs/developer/plugins/embedding.md`](docs/developer/plugins/embedding.md).
+
+`openslack self plugin check <path>` now provides deterministic plain or JSON
+registration preflight reports. It validates declarative manifests, compatibility,
+authority ceilings, and optional lock integrity, but never grants activation;
+the Red Host independently repeats all authorization checks. See
+[`docs/developer/plugins/testkit.md`](docs/developer/plugins/testkit.md).
 
 The nested `openslack self plugin run <plugin-id> <action-id>` command is an internal,
 injection-driven proof route. It loads locked workspace manifests only for that route, requires
