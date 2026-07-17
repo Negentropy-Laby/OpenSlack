@@ -57,11 +57,20 @@ describe('release archive creation', () => {
     expect(source).not.toContain("run('tar', ['-a'");
   });
 
-  it('smokes a disposable bundle copy before archiving the untouched input', () => {
+  it('pins portable smoke inputs and uses a disposable bundle copy before archiving', () => {
     const source = readFileSync(resolve(import.meta.dirname, '..', 'build.ts'), 'utf-8');
     expect(source).toContain("mkdtempSync(join(tmpdir(), 'openslack-bundle-smoke-'))");
     expect(source).toContain('cpSync(bundleDir, smokeBundleDir');
     expect(source).toContain('smokeBundle(smokeBundleDir, target)');
     expect(source).not.toContain('smokeBundle(bundleDir, target)');
+
+    const smokeSource = readFileSync(resolve(import.meta.dirname, '..', 'smoke.ts'), 'utf-8');
+    expect(smokeSource).toContain("'Lifecycle: ACTIVE | Maturity: LOCAL_READY'");
+    expect(smokeSource).not.toContain("'Deferred (excluded)'");
+
+    const attributes = readFileSync(resolve(import.meta.dirname, '..', '..', '..', '.gitattributes'));
+    expect(attributes.toString('utf-8')).toContain(
+      'packages/integration-negentropy/src/schema/negentropy.slot-contribution.v1.schema.json text eol=lf',
+    );
   });
 });
