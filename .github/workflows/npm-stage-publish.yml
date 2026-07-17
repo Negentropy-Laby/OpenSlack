@@ -67,7 +67,7 @@ jobs:
         run: |
           set -euo pipefail
           node -e "const [major, minor] = process.versions.node.split('.').map(Number); if (major < 22 || (major === 22 && minor < 14)) process.exit(1)"
-          npm --version | grep -E '^11\.(1[5-9]|[2-9][0-9])\.'
+          test "$(npm --version)" = "11.15.0"
 
       - run: bun install --frozen-lockfile
 

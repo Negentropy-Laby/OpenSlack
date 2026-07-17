@@ -154,7 +154,12 @@ export function setupCommands(dependencies: SetupCommandDependencies = {}): Comm
               : 'Workspace attach already matches; validation passed.',
           );
           if (result.recoveredTransaction) {
-            console.log('Recovered an incomplete prior attach transaction before applying.');
+            console.log('Recovered prior attach transaction state before applying.');
+          }
+          if (result.journalCleanupDeferred) {
+            console.log(
+              'Workspace attach is committed; journal cleanup was deferred and will be retried on the next apply.',
+            );
           }
           if (!options.startWatch) return;
 

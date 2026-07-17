@@ -89,6 +89,7 @@ export interface WorkspaceAttachResult {
   changed: boolean;
   changedPaths: string[];
   recoveredTransaction: boolean;
+  journalCleanupDeferred: boolean;
   validation: ValidationResult;
 }
 
@@ -101,6 +102,7 @@ export interface WorkspaceAttachApplyOptions {
     beforeWrite?: (path: string, completedWrites: number) => void;
     afterWrite?: (path: string, completedWrites: number) => void;
     beforePostValidation?: () => void;
+    beforeJournalCleanup?: () => void;
   };
   validate?: (root: string) => ValidationResult;
 }
@@ -129,6 +131,8 @@ const ATTACH_PROVIDER_PATH = '.openslack/templates/agent-runtime.example.json';
 const ATTACH_WORKFLOW_PATH = '.openslack/workflows/first-task.yaml';
 const ATTACH_WATCH_PATH = '.openslack/monitors/github-watch.yaml';
 const ATTACH_JOURNAL_PATH = '.openslack.local/transactions/attach.rollback.json';
+const ATTACH_COMMITTED_JOURNAL_PATH =
+  '.openslack.local/transactions/attach.committed.json';
 const ATTACH_LOCK_PATH = '.openslack.local/locks/attach.lock';
 const GENERATED_FILE_MODE = 0o644;
 const MAX_JOURNAL_BYTES = 4 * 1024 * 1024;
@@ -282,11 +286,16 @@ export function applyWorkspaceAttach(
   }
   const lockPath = join(plan.targetRoot, ATTACH_LOCK_PATH);
   const journalPath = join(plan.targetRoot, ATTACH_JOURNAL_PATH);
+  const committedJournalPath = join(plan.targetRoot, ATTACH_COMMITTED_JOURNAL_PATH);
   acquireAttachLock(lockPath, plan.transactionId);
   let journalWritten = false;
   let recoveredTransaction = false;
   try {
-    recoveredTransaction = recoverIncompleteAttach(plan.targetRoot, journalPath);
+    recoveredTransaction = recoverIncompleteAttach(
+      plan.targetRoot,
+      journalPath,
+      committedJournalPath,
+    );
     assertRootIdentity(plan);
     for (const operation of plan.operations) assertOperationCurrent(plan.targetRoot, operation);
     const changes = plan.operations.filter(
@@ -302,6 +311,7 @@ export function applyWorkspaceAttach(
         changed: false,
         changedPaths: [],
         recoveredTransaction,
+        journalCleanupDeferred: false,
         validation,
       };
     }
@@ -336,9 +346,16 @@ export function applyWorkspaceAttach(
     }
     options.hooks?.beforePostValidation?.();
     const validation = postValidate(plan, options);
-    rmSync(journalPath, { force: true });
-    syncDirectory(dirname(journalPath));
+    renameSync(journalPath, committedJournalPath);
     journalWritten = false;
+    let journalCleanupDeferred = false;
+    try {
+      syncDirectory(dirname(committedJournalPath));
+      options.hooks?.beforeJournalCleanup?.();
+      removeCommittedJournal(plan.targetRoot, committedJournalPath);
+    } catch {
+      journalCleanupDeferred = true;
+    }
     return {
       schema: 'openslack.workspace_attach_result.v1',
       transactionId: plan.transactionId,
@@ -347,6 +364,7 @@ export function applyWorkspaceAttach(
       changed: true,
       changedPaths: changes.map((operation) => operation.path),
       recoveredTransaction,
+      journalCleanupDeferred,
       validation,
     };
   } catch (error) {
@@ -827,9 +845,20 @@ function postValidate(
   const actualFiles = new Map<string, Buffer>();
   for (const operation of plan.operations) {
     if (operation.action === 'conflict') continue;
-    if (existsSync(join(plan.targetRoot, operation.path))) {
-      actualFiles.set(operation.path, readFileSync(join(plan.targetRoot, operation.path)));
+    const absolute = join(plan.targetRoot, operation.path);
+    if (!existsSync(absolute) || operation.afterSha256 === null) {
+      throw new Error(
+        `Workspace attach post-validation failed: ${operation.path} is missing.`,
+      );
     }
+    assertRegularFileWithoutSymlink(plan.targetRoot, operation.path);
+    const bytes = readFileSync(absolute);
+    if (sha256(bytes) !== operation.afterSha256) {
+      throw new Error(
+        `Workspace attach post-validation failed: ${operation.path} bytes do not match the plan.`,
+      );
+    }
+    actualFiles.set(operation.path, bytes);
   }
   const errors = validateVirtualAttachSnapshot(
     plan.mode,
@@ -935,10 +964,29 @@ function releaseAttachLock(path: string): void {
   rmSync(path, { force: true });
 }
 
-function recoverIncompleteAttach(root: string, journalPath: string): boolean {
-  if (!existsSync(journalPath)) return false;
+function recoverIncompleteAttach(
+  root: string,
+  journalPath: string,
+  committedJournalPath: string,
+): boolean {
+  const hasRollback = existsSync(journalPath);
+  const hasCommitted = existsSync(committedJournalPath);
+  if (hasRollback && hasCommitted) {
+    throw new Error('Workspace attach has conflicting rollback and committed journals.');
+  }
+  if (hasCommitted) {
+    removeCommittedJournal(root, committedJournalPath);
+    return true;
+  }
+  if (!hasRollback) return false;
   restoreJournal(root, journalPath);
   return true;
+}
+
+function removeCommittedJournal(root: string, committedJournalPath: string): void {
+  readJournal(root, committedJournalPath);
+  rmSync(committedJournalPath, { force: true });
+  syncDirectory(dirname(committedJournalPath));
 }
 
 function restoreJournal(root: string, journalPath: string): void {

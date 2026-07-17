@@ -1,5 +1,5 @@
 schema: openslack.modules.v2
-vitest_tests: 4268
+vitest_tests: 4270
 vitest_files: 338
 modules:
   - id: self_evolution
@@ -48,7 +48,7 @@ modules:
       - "@openslack/sdk"
       - "@openslack/workspace"
       - "@openslack/runtime"
-    tests: 538
+    tests: 540
     test_files: 52
     golden_evals: 7
     notes: Stable release verification is available from the installed CLI and requires an out-of-band trusted Ed25519 public key; archive, SBOM, provenance, signature, identity fields, and subjects are verified without a source checkout or Bun. The public 0.2.0 embedding surface is limited to plugin-api, plugin-host, sdk, and plugin-testkit, with Apache-2.0 metadata, exact staged dependency rewriting, canonical tarball manifests, and clean-consumer ESM/declaration/TypeScript/isolated-host verification; registry publication remains externally gated. The declarative contract, typed SDK helpers, deterministic G1-G17 testkit, and instance-scoped Red host keep strict exact-byte loading, deterministic integrity lock, independent capability/target policy, atomic per-kind registries, required audit writes, and blockers-only bundled PRMS normalization. Testkit reports are authoring diagnostics only and always require independent Host reauthorization. Workspace and installed plugins remain declarative and non-executable; dynamic product-surface registration, auto-discovered code, and sandbox claims remain out of scope. The secret-free capstone harness locks evidence to one tested commit, both supported platforms, 11 fixed steps, bounded redacted references, and 30-day freshness without receiving privileged credentials.
@@ -125,7 +125,7 @@ modules:
       - "@openslack/chat-gateway"
       - "@openslack/tui"
       - "@openslack/credentials"
-    tests: 943
+    tests: 945
     test_files: 112
     notes: Structured planner active. Webhook and Slack chat adapters active with actor mapping. PRMS chat cards and action confirmation active. The typed Operator action registry is instance-scoped, preserves the closed 30-action built-in default, accepts explicit planner/executor injection, and canonical-revalidates frozen PlanSteps at execution. The CLI application composition root constructs one sealed PluginHost and instance-scoped Operator action, LLM-provider, conversation-store, and plugin-action bindings per process. Its host target catalog exposes only the audited bounded github.metrics returned-item count under the exact github.issues.read capability; SHADOW plugin actions remain visibility-only, while ENFORCE proof plans are rebuilt through the same canonical registry before execution. All other built-ins and all unconfigured plugin authority remain fail-closed until complete behavior contracts, policy, activation evidence, and a durable audit sink are explicitly composed. Setup attach provides preview-first read-only-monitor and full-agent modes backed by a virtual validation plan, persistent rollback journal, workspace lock, before-hash/realpath/symlink/containment checks, atomic writes, exact byte/mode rollback, crash recovery, and idempotent apply; the foreground watcher starts only after commit and validation. Generated agents cannot approve or merge. LLM-first intent routing with deterministic keyword fallback, setup report, and 24h pending plan store active. Session-based conversation memory with multi-turn context resolution and progressive clarification. Doctor --format plain for non-technical output. Conversation-first TUI workbench with Ask OpenSlack, Operator recommendation cards, workflow draft-first cards, profile sync recommendations, and subagent mention dispatch. TUI setup report view and PR doctor view via --format tui. Versioned Windows x64 and Linux x64 archive builds embed the CLI, workflow assets, native keychain binding, build metadata, SBOM, checksums, and provenance; native build and unpacked smoke are enforced by the release matrix. The installed CLI verifies stable release artifacts and trusted signatures without a source checkout, Bun, or Node.js. Agent Runtime credentials can be previewed and imported atomically into the native keychain without writing secret values to workspace configuration.
 

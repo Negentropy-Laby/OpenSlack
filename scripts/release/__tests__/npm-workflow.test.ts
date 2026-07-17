@@ -17,13 +17,21 @@ const workflow = readFileSync(
 
 describe('npm staged publishing workflow', () => {
   it('uses a protected GitHub-hosted OIDC boundary', () => {
+    expect(workflow).toMatch(/^on:\n  workflow_dispatch:/mu);
+    expect(workflow).not.toMatch(/^  (?:pull_request|push):/mu);
     expect(workflow).toContain('runs-on: ubuntu-24.04');
     expect(workflow).toContain('environment: npm-production');
     expect(workflow).toContain('contents: read');
     expect(workflow).toContain('id-token: write');
     expect(workflow).toContain('node-version: 22.14.0');
     expect(workflow).toContain('npm@11.15.0');
+    expect(workflow).toContain('test "$(npm --version)" = "11.15.0"');
     expect(workflow).toContain('persist-credentials: false');
+    const actions = [...workflow.matchAll(/^\s*-\s+uses:\s+(\S+)$/gmu)].map(
+      (match) => match[1],
+    );
+    expect(actions.length).toBeGreaterThan(0);
+    expect(actions.every((action) => /@[a-f0-9]{40}$/u.test(action ?? ''))).toBe(true);
   });
 
   it('limits the token bootstrap and makes later delivery stage-only', () => {
