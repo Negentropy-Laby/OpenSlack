@@ -1,6 +1,6 @@
 schema: openslack.modules.v2
-vitest_tests: 4140
-vitest_files: 322
+vitest_tests: 4155
+vitest_files: 324
 modules:
   - id: self_evolution
     name: Self-Evolution Kernel
@@ -20,6 +20,10 @@ modules:
       - test:packages/plugin-host/src/__tests__/lock.test.ts
       - test:packages/plugin-host/src/__tests__/source-invariants.test.ts
       - test:packages/sdk/src/__tests__/define.test.ts
+      - commit:0a44aea82f096014646884b27a9f1b091c75f698
+      - test:packages/plugin-testkit/src/__tests__/checker.test.ts
+      - test:packages/plugin-testkit/src/__tests__/eval-contract.test.ts
+      - repo:.openslack/self/eval_suites/plugin/EV-PLUGIN-001.yaml
       - commit:ae04404ddb548da8019754561c11a357ae2b794f
       - test:packages/kernel/src/self/core/__tests__/classify-pr.test.ts
       - repo:.openslack/self/eval_suites/golden
@@ -29,17 +33,19 @@ modules:
       - openslack workspace
       - openslack init
       - openslack self plugin run
+      - openslack self plugin check
     packages:
       - "@openslack/kernel"
       - "@openslack/plugin-api"
       - "@openslack/plugin-host"
+      - "@openslack/plugin-testkit"
       - "@openslack/sdk"
       - "@openslack/workspace"
       - "@openslack/runtime"
-    tests: 485
-    test_files: 46
+    tests: 501
+    test_files: 48
     golden_evals: 7
-    notes: Stable release verification is available from the installed CLI and requires an out-of-band trusted Ed25519 public key; archive, SBOM, provenance, signature, identity fields, and subjects are verified without a source checkout or Bun. The private plugin preview now provides a zero-runtime-dependency manifest contract, typed SDK helpers, and an instance-scoped Red host with strict exact-byte loading, deterministic integrity lock, independent capability/target policy, atomic per-kind registries, required audit writes, and blockers-only bundled PRMS normalization. The nested self plugin run proof loads locked workspace aliases before seal only for that route, keeps SHADOW visibility non-executable, and canonicalizes ENFORCE plans through the existing Operator registry using composition-injected evidence and policy. Workspace and installed plugins remain declarative and non-executable; public npm embedding and dynamic product-surface registration remain later roadmap stages.
+    notes: Stable release verification is available from the installed CLI and requires an out-of-band trusted Ed25519 public key; archive, SBOM, provenance, signature, identity fields, and subjects are verified without a source checkout or Bun. The private plugin preview now provides a zero-runtime-dependency manifest contract, typed SDK helpers, a deterministic G1-G17 manifest/lock testkit, and an instance-scoped Red host with strict exact-byte loading, deterministic integrity lock, independent capability/target policy, atomic per-kind registries, required audit writes, and blockers-only bundled PRMS normalization. Testkit reports are authoring diagnostics only and always require independent Host reauthorization. The nested self plugin run proof loads locked workspace aliases before seal only for that route, keeps SHADOW visibility non-executable, and canonicalizes ENFORCE plans through the existing Operator registry using composition-injected evidence and policy. Workspace and installed plugins remain declarative and non-executable; public npm embedding and dynamic product-surface registration remain later roadmap stages.
 
   - id: github_task_loop
     name: GitHub Issues Task Loop
@@ -95,7 +101,7 @@ modules:
       - "@openslack/chat-gateway"
       - "@openslack/tui"
       - "@openslack/credentials"
-    tests: 924
+    tests: 926
     test_files: 108
     notes: Structured planner active. Webhook and Slack chat adapters active with actor mapping. PRMS chat cards and action confirmation active. The typed Operator action registry is instance-scoped, preserves the closed 30-action built-in default, accepts explicit planner/executor injection, and canonical-revalidates frozen PlanSteps at execution. The CLI application composition root constructs one sealed PluginHost and instance-scoped Operator action, LLM-provider, conversation-store, and plugin-action bindings per process. Its host target catalog exposes only the audited bounded github.metrics returned-item count under the exact github.issues.read capability; SHADOW plugin actions remain visibility-only, while ENFORCE proof plans are rebuilt through the same canonical registry before execution. All other built-ins and all unconfigured plugin authority remain fail-closed until complete behavior contracts, policy, activation evidence, and a durable audit sink are explicitly composed. LLM-first intent routing with deterministic keyword fallback, setup report, and 24h pending plan store active. Session-based conversation memory with multi-turn context resolution and progressive clarification. Doctor --format plain for non-technical output. Conversation-first TUI workbench with Ask OpenSlack, Operator recommendation cards, workflow draft-first cards, profile sync recommendations, and subagent mention dispatch. TUI setup report view and PR doctor view via --format tui. Versioned Windows x64 and Linux x64 archive builds embed the CLI, workflow assets, native keychain binding, build metadata, SBOM, checksums, and provenance; native build and unpacked smoke are enforced by the release matrix. The installed CLI verifies stable release artifacts and trusted signatures without a source checkout, Bun, or Node.js. Agent Runtime credentials can be previewed and imported atomically into the native keychain without writing secret values to workspace configuration.
 
