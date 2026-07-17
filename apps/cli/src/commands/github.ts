@@ -23,7 +23,10 @@ import { recordEvent as _recordEvent } from '@openslack/collaboration';
 import type { RecordEventFn } from '@openslack/github';
 import { createDefaultCredentialStore, type CredentialStore } from '@openslack/credentials';
 import { resolveWorkspaceContext } from '@openslack/workspace';
-import { renderGitHubAppInstallationDiagnostic } from './github-app-diagnostic.js';
+import {
+  formatGitHubAppInstallationDiagnosticFailure,
+  renderGitHubAppInstallationDiagnostic,
+} from './github-app-diagnostic.js';
 const recordEvent = _recordEvent as unknown as RecordEventFn;
 import { buildAutoClaimFn } from './watch-auto-claim.js';
 
@@ -117,6 +120,7 @@ export interface GitHubCommandDependencies {
 
 export function githubCommands(dependencies: GitHubCommandDependencies = {}): Command {
   const cmd = new Command('github').description('GitHub integration commands');
+  const getDoctorClient = dependencies.getDoctorClient ?? getClient;
 
   const app = cmd.command('app').description('Configure an organization-owned GitHub App');
   app
@@ -275,7 +279,7 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
       // Auth tier check
       let client;
       try {
-        client = await (dependencies.getDoctorClient ?? getClient)({
+        client = await getDoctorClient({
           cwd: root,
           credentialStore: dependencies.credentialStore,
         });
@@ -310,12 +314,11 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
             passed: appDiagnostic.ready,
             detail: appDiagnostic.codes.join(', '),
           });
-        } catch {
+        } catch (error) {
           checks.push({
             name: 'GitHub App installation',
             passed: false,
-            detail:
-              'APP_INSTALLATION_DIAGNOSTIC_FAILED — App JWT installation inspection failed safely',
+            detail: formatGitHubAppInstallationDiagnosticFailure(error),
           });
         }
       }

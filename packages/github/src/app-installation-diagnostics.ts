@@ -10,6 +10,7 @@ import {
   inspectInstallationRepositoryAccess,
   type GitHubInstallationRepositoryAccess,
 } from './installation-access.js';
+import { isGitHubAppSlug } from './app-slug.js';
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const DEFAULT_MAX_RESPONSE_BYTES = 1024 * 1024;
@@ -34,7 +35,9 @@ export interface GitHubAppPermissionDifference {
 export interface GitHubAppInstallationDiagnosticReport {
   schema: 'openslack.github_app_installation_diagnostic.v1';
   ready: boolean;
+  /** Primary diagnostic code in deterministic evaluation order. */
   code: GitHubAppInstallationDiagnosticCode;
+  /** Authoritative set of every readiness problem found by this diagnostic. */
   codes: readonly GitHubAppInstallationDiagnosticCode[];
   appId: string;
   installationId: string;
@@ -387,10 +390,7 @@ function parseInstallation(value: unknown): ParsedInstallation {
   if (!isRecord(value)) return invalidResponse();
   const id = numericId(value.id);
   const appId = numericId(value.app_id);
-  const appSlug =
-    typeof value.app_slug === 'string' && /^[A-Za-z0-9][A-Za-z0-9-]{0,99}$/.test(value.app_slug)
-      ? value.app_slug
-      : null;
+  const appSlug = isGitHubAppSlug(value.app_slug) ? value.app_slug : null;
   const permissions = parsePermissions(value.permissions);
   const events = parseEvents(value.events);
   const repositorySelection =

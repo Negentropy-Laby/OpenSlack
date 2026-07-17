@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setupCommands } from '../commands/setup.js';
 import { execFileSync as actualExecFileSync, execSync as actualExecSync } from 'node:child_process';
+import { GitHubAppInstallationDiagnosticError } from '@openslack/github';
 
 vi.mock('node:child_process', () => ({
   execSync: vi.fn((command: string) => {
@@ -392,6 +393,36 @@ describe('setup interactive', () => {
       expect(output).toContain('Permissions missing: checks:read (actual:none)');
       expect(output).toContain('Events missing: check_run');
       expect(output).toContain('Repository missing: acme/project');
+      expect(process.exitCode).toBe(1);
+
+      process.exitCode = undefined;
+      await setupCommands({
+        resolveContext: () =>
+          ({
+            productHome: '/product',
+            workspaceRoot: '/ordinary-repo',
+            projectStateRoot: '/ordinary-repo/.openslack',
+            localStateRoot: '/ordinary-repo/.openslack.local',
+            sourceCheckout: false,
+            assetResolver: { readText: vi.fn() },
+          }) as never,
+        getGitHubClient: vi.fn(async () => ({
+          owner: 'acme',
+          repo: 'project',
+          authMode: 'github_app_installation',
+          isDryRun: false,
+        })) as never,
+        diagnoseAppInstallation: vi.fn(async () => {
+          throw new GitHubAppInstallationDiagnosticError(
+            'APP_INSTALLATION_REQUEST_FAILED',
+            'request included secret-canary',
+          );
+        }),
+      }).parseAsync(['node', 'openslack', 'github'], { from: 'node' });
+
+      const failureOutput = logs.join('\n');
+      expect(failureOutput).toContain('[FAIL] APP_INSTALLATION_REQUEST_FAILED');
+      expect(failureOutput).not.toContain('secret-canary');
       expect(process.exitCode).toBe(1);
     } finally {
       process.exitCode = previousExitCode;

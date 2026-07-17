@@ -25,7 +25,10 @@ import {
   getClient,
   type GitHubAppInstallationDiagnosticReport,
 } from '@openslack/github';
-import { renderGitHubAppInstallationDiagnostic } from './github-app-diagnostic.js';
+import {
+  formatGitHubAppInstallationDiagnosticFailure,
+  renderGitHubAppInstallationDiagnostic,
+} from './github-app-diagnostic.js';
 
 export function readStrictOption(source: unknown): boolean {
   if (!source || typeof source !== 'object') return false;
@@ -388,11 +391,9 @@ export function setupCommands(dependencies: SetupCommandDependencies = {}): Comm
           console.log(renderGitHubAppInstallationDiagnostic(appDiagnostic));
           if (!appDiagnostic.ready) process.exitCode = 1;
         }
-      } catch {
+      } catch (error) {
         console.log('');
-        console.log(
-          '[FAIL] APP_INSTALLATION_DIAGNOSTIC_FAILED — App JWT installation inspection failed safely',
-        );
+        console.log(`[FAIL] ${formatGitHubAppInstallationDiagnosticFailure(error)}`);
         process.exitCode = 1;
       }
 

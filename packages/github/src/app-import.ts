@@ -6,6 +6,7 @@ import {
   parseSecretReference,
   type CredentialStore,
 } from '@openslack/credentials';
+import { isGitHubAppSlug } from './app-slug.js';
 
 export interface GitHubAppImportInput {
   localStateRoot: string;
@@ -151,7 +152,7 @@ function validateImportInput(input: GitHubAppImportInput): void {
   if (!/^\d+$/.test(input.appId) || !/^\d+$/.test(input.installationId)) {
     throw new Error('GitHub App and installation IDs must be decimal identifiers.');
   }
-  if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,99}$/.test(input.appSlug)) {
+  if (!isGitHubAppSlug(input.appSlug)) {
     throw new Error('GitHub App slug is invalid.');
   }
   const reference = parseSecretReference(input.privateKeyRef);

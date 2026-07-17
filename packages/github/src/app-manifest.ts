@@ -8,6 +8,7 @@ import {
 import { existsSync, linkSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { parseSecretReference, type CredentialStore } from '@openslack/credentials';
+import { isGitHubAppSlug } from './app-slug.js';
 
 const DEFAULT_SESSION_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_EXCHANGE_TIMEOUT_MS = 10_000;
@@ -375,8 +376,7 @@ function parseConversion(value: unknown): GitHubAppManifestConversion {
   if (
     !Number.isSafeInteger(candidate.id) ||
     (candidate.id as number) <= 0 ||
-    typeof candidate.slug !== 'string' ||
-    !/^[A-Za-z0-9][A-Za-z0-9-]{0,99}$/.test(candidate.slug) ||
+    !isGitHubAppSlug(candidate.slug) ||
     typeof candidate.client_id !== 'string' ||
     !/^[A-Za-z0-9._-]{3,128}$/.test(candidate.client_id) ||
     typeof candidate.client_secret !== 'string' ||

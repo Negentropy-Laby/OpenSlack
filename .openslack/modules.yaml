@@ -1,5 +1,5 @@
 schema: openslack.modules.v2
-vitest_tests: 4199
+vitest_tests: 4201
 vitest_files: 327
 modules:
   - id: self_evolution
@@ -71,7 +71,7 @@ modules:
       - "@openslack/runtime"
       - "@openslack/core"
       - "@openslack/delivery"
-    tests: 654
+    tests: 656
     test_files: 72
     notes: "GitHub Issues task loop active with typed task creation, dry-run repair, Phase 4 watch daemon, installation-scoped GitHub delivery, and strict claim heartbeat/review/complete transitions. The watch daemon now durably accepts Issue, push, PR, review, and check observations through an atomic lease-backed queue with bounded attempts, exponential backoff, retention, compaction, restart recovery, and per-route idempotency/completion. The governed GitHub App manifest subscribes to Issue, push, pull-request, pull-request-review, check-run, and check-suite events and requests checks read. App-JWT diagnostics compare accepted installation permissions/events against that contract, while installation tokens are used only to prove repository accessibility; setup and doctor report stable reauthorization, subscription, scope, and ready codes with GitHub's management URL but never perform administrator changes. PR/review/check delivery proves access to the event repository and refreshes live state through that explicitly bound client; scope mismatch fails closed without workspace-repository fallback, and review observations remain non-authoritative. Claim lifecycle operations verify structured owner evidence and postconditions, fail closed on partial GitHub state, and provide an idempotent recovery command without republishing a PR. Delivery publishes HEAD and a draft PR through the same GitHub App token, disables host credentials and hooks, synchronizes remote/PR SHAs, and returns AWAITING_GATES evidence for PRMS. Read-only installation-scope diagnostics and a preview-first temporary-ref push/delete probe verify selected-repository access and contents write capability before first delivery."
 
@@ -128,7 +128,7 @@ modules:
       - "@openslack/pr"
       - "@openslack/github"
       - "@openslack/kernel"
-    tests: 642
+    tests: 644
     test_files: 56
     notes: Phase 2C chat report and action confirmation active. Supports status/review/recommend/doctor/queue/merge/watch, review/doctor comments, governance audit, operational decision summaries, deadlock detection, Red Zone author-risk preflight, and chat-friendly PR summaries with confirm-merge flow. Repository-event notifications refresh current PR/review/check observations from an explicitly repository-bound live client, but the projection stamps human approval and merge readiness as not evaluated; webhook or live review state never becomes PRMS authority. Workflow artifact governance is bound to deterministic base/head tree evidence and a single current-head human approval carrying Workflow-Trust.
 
@@ -199,7 +199,7 @@ modules:
       - "@openslack/tui"
       - "@openslack/github"
       - "@openslack/agent-runtime"
-    tests: 1984
+    tests: 1986
     test_files: 158
     components:
       - id: agent_runtime

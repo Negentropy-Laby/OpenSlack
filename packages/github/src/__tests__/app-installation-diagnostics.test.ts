@@ -57,7 +57,7 @@ describe('GitHub App installation diagnostics', () => {
     const report = await diagnoseGitHubAppInstallation(
       { owner: OWNER, repo: REPO },
       {
-        loadInstallation: async () => source(),
+        loadInstallation: async () => source(installation({ repository_selection: 'all' })),
         inspectRepositoryAccess: async () => repositoryAccess(),
       },
     );
@@ -73,7 +73,7 @@ describe('GitHub App installation diagnostics', () => {
       events: { missing: [] },
       repository: {
         fullName: 'acme/project',
-        selection: 'selected',
+        selection: 'all',
         accessible: true,
       },
       managementUrl: MANAGEMENT_URL,
@@ -189,6 +189,7 @@ describe('GitHub App installation diagnostics', () => {
     ['invalid permission value', source(installation({ permissions: { checks: 'owner' } }))],
     ['duplicate event', source(installation({ events: ['issues', 'issues'] }))],
     ['invalid suspension timestamp', source(installation({ suspended_at: 'not-a-date' }))],
+    ['app slug with trailing hyphen', source(installation({ app_slug: 'invalid-' }))],
   ])('rejects %s with a fixed response code', async (_name, invalidSource) => {
     const result = diagnoseGitHubAppInstallation(
       { owner: OWNER, repo: REPO },
@@ -235,6 +236,35 @@ describe('GitHub App installation diagnostics', () => {
     expect(headers.Authorization).toMatch(/^Bearer [A-Za-z0-9_.-]+$/);
     expect(headers.Authorization).not.toContain(privateKeyPem);
     expect(JSON.stringify(report)).not.toContain(headers.Authorization);
+  });
+
+  it('rejects both declared and streamed response overflows with the fixed response code', async () => {
+    const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const privateKeyPem = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
+    const env = {
+      OPENSLACK_GITHUB_APP_ID: '123',
+      OPENSLACK_GITHUB_APP_INSTALLATION_ID: '456',
+      OPENSLACK_GITHUB_APP_PRIVATE_KEY: privateKeyPem,
+    };
+    const responses = [
+      new Response('{}', { status: 200, headers: { 'content-length': '65' } }),
+      new Response('x'.repeat(65), { status: 200 }),
+    ];
+    expect(responses[1]!.headers.get('content-length')).toBeNull();
+
+    for (const response of responses) {
+      const result = diagnoseGitHubAppInstallation(
+        { owner: OWNER, repo: REPO, env },
+        {
+          fetchImpl: vi.fn(async () => response),
+          maxResponseBytes: 64,
+          inspectRepositoryAccess: async () => repositoryAccess(),
+        },
+      );
+      await expect(result).rejects.toMatchObject({
+        code: 'APP_INSTALLATION_RESPONSE_INVALID',
+      });
+    }
   });
 
   it('maps transport and repository-access errors to fixed secret-free diagnostics', async () => {

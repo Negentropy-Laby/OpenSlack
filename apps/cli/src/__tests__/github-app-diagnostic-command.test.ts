@@ -3,11 +3,17 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { GitHubAppInstallationDiagnosticReport } from '@openslack/github';
+import {
+  GitHubAppInstallationDiagnosticError,
+  type GitHubAppInstallationDiagnosticReport,
+} from '@openslack/github';
 import { describe, expect, it, vi } from 'vitest';
 
 import { githubCommands } from '../commands/github.js';
-import { renderGitHubAppInstallationDiagnostic } from '../commands/github-app-diagnostic.js';
+import {
+  formatGitHubAppInstallationDiagnosticFailure,
+  renderGitHubAppInstallationDiagnostic,
+} from '../commands/github-app-diagnostic.js';
 
 function report(ready: boolean): GitHubAppInstallationDiagnosticReport {
   return {
@@ -59,6 +65,22 @@ describe('GitHub App installation diagnostic CLI', () => {
     expect(output).toContain('Repository missing: none');
     expect(output).toContain('Installation management: https://github.com/');
     expect(output).toContain('OpenSlack will not change the installation');
+
+    for (const code of [
+      'APP_INSTALLATION_CONFIG_INVALID',
+      'APP_INSTALLATION_REQUEST_FAILED',
+      'APP_INSTALLATION_RESPONSE_INVALID',
+      'APP_REPOSITORY_ACCESS_CHECK_FAILED',
+    ] as const) {
+      const fixedFailure = formatGitHubAppInstallationDiagnosticFailure(
+        new GitHubAppInstallationDiagnosticError(code, 'response included secret-canary'),
+      );
+      expect(fixedFailure).toContain(code);
+      expect(fixedFailure).not.toContain('secret-canary');
+    }
+    expect(formatGitHubAppInstallationDiagnosticFailure(new Error('secret-canary'))).toBe(
+      'APP_INSTALLATION_DIAGNOSTIC_FAILED — App JWT installation inspection failed safely',
+    );
   });
 
   it('makes github doctor consume the package diagnostic without mutating the installation', async () => {
@@ -117,6 +139,30 @@ describe('GitHub App installation diagnostic CLI', () => {
       expect(output).toContain('Permissions expected: checks:read, metadata:read');
       expect(output).toContain('Events actual: issues, check_run');
       expect(output).toContain('Repository actual: selection=selected, accessible=yes');
+
+      await expect(
+        githubCommands({
+          getDoctorClient: vi.fn(async () => ({
+            owner: 'acme',
+            repo: 'project',
+            authMode: 'github_app_installation',
+            isDryRun: false,
+            tokenExpiresAt: '2026-07-17T05:00:00Z',
+          })) as never,
+          diagnoseAppInstallation: vi.fn(async () => {
+            throw new GitHubAppInstallationDiagnosticError(
+              'APP_INSTALLATION_RESPONSE_INVALID',
+              'response included secret-canary',
+            );
+          }),
+        }).parseAsync(['node', 'openslack', 'doctor'], { from: 'node' }),
+      ).rejects.toThrow('process.exit unexpectedly called with "1"');
+
+      const failureOutput = logs.join('\n');
+      expect(failureOutput).toContain(
+        '[FAIL] GitHub App installation: APP_INSTALLATION_RESPONSE_INVALID',
+      );
+      expect(failureOutput).not.toContain('secret-canary');
     } finally {
       process.chdir(previous);
       process.exitCode = undefined;

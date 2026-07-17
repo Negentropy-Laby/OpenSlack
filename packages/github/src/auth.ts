@@ -2,6 +2,7 @@ import { createSign } from 'node:crypto';
 import { createDefaultCredentialStore, type CredentialStore } from '@openslack/credentials';
 import { boundedJsonPost, BoundedJsonPostError } from './bounded-json-post.js';
 import { GitHubAppLocalConfigError, readGitHubAppLocalConfig } from './app-local-config.js';
+import { isGitHubAppSlug } from './app-slug.js';
 
 export interface GitHubAppInstallationToken {
   token: string;
@@ -322,5 +323,5 @@ function resolveAppCredentialSource(
 }
 
 function validAppSlug(value: string | undefined): string | undefined {
-  return value && /^[A-Za-z0-9][A-Za-z0-9-]{0,99}$/.test(value) ? value : undefined;
+  return isGitHubAppSlug(value) ? value : undefined;
 }

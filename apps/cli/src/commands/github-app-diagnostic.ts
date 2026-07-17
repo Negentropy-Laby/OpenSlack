@@ -1,4 +1,23 @@
-import type { GitHubAppInstallationDiagnosticReport } from '@openslack/github';
+import {
+  GitHubAppInstallationDiagnosticError,
+  type GitHubAppInstallationDiagnosticReport,
+} from '@openslack/github';
+
+export function formatGitHubAppInstallationDiagnosticFailure(error: unknown): string {
+  if (!(error instanceof GitHubAppInstallationDiagnosticError)) {
+    return 'APP_INSTALLATION_DIAGNOSTIC_FAILED — App JWT installation inspection failed safely';
+  }
+  switch (error.code) {
+    case 'APP_INSTALLATION_CONFIG_INVALID':
+      return `${error.code} — GitHub App installation diagnostic configuration is invalid`;
+    case 'APP_INSTALLATION_REQUEST_FAILED':
+      return `${error.code} — GitHub App installation metadata request failed safely`;
+    case 'APP_INSTALLATION_RESPONSE_INVALID':
+      return `${error.code} — GitHub App installation metadata response is invalid`;
+    case 'APP_REPOSITORY_ACCESS_CHECK_FAILED':
+      return `${error.code} — GitHub App repository access check failed safely`;
+  }
+}
 
 export function renderGitHubAppInstallationDiagnostic(
   report: GitHubAppInstallationDiagnosticReport,
