@@ -209,6 +209,7 @@ The agent-assisted PR gatekeeper. Reviews PRs, classifies risk, checks merge rea
 - **Recommend:** `openslack pr recommend 10` → next action (approve? merge? wait?)
 - **Doctor:** `openslack pr doctor 10` → 11-gate governance diagnosis (deadlock, checks, approvals)
 - **Queue:** `openslack pr queue` → open PRs sorted by readiness and blocker owner
+- **Repository projection:** `openslack pr queue --repo org/one --repo org/two` → bounded, cached multi-repository PR/check visibility without making approval or merge claims
 - **Merge:** `openslack pr merge 10` → execute merge only after all gates pass
 - **Policy:** No auto-approval. No self-review. Red Zone requires an explicit human decision recorded through the required human GitHub identity. Black Zone blocked.
 

@@ -172,6 +172,8 @@ bun run openslack pr doctor <n>          # Full governance diagnosis
 bun run openslack pr recommend <n>       # Next action
 bun run openslack pr review <n> --comment  # Post review as PR comment
 bun run openslack pr queue               # All open PRs by readiness
+bun run openslack pr queue --repo org/one --repo org/two  # Projection-only multi-repo queue
+bun run openslack pr queue --all --api-budget 100         # All GitHub Watch repos
 ```
 
 ### Agent Operator
@@ -590,6 +592,9 @@ transport failures are reported with fixed, secret-safe codes.
 | `openslack pr workflow-evidence --base <sha> --head <sha>` | Compute deterministic evidence for governed workflow artifacts |
 | `openslack pr workflow-governance <n>` | Bot-create the single Governance Issue required for a new or core artifact |
 | `openslack pr queue` | Show open PRs sorted by readiness and blocker owner |
+| `openslack pr queue --repo owner/name --repo owner/other` | Project open PR/check summaries for explicit repositories |
+| `openslack pr queue --all` | Project every repository in `.openslack/monitors/github-watch.yaml` |
+| `openslack pr queue --concurrency 4 --api-budget 100 --cache-ttl 60` | Bound projection concurrency, GitHub requests, and local cache freshness |
 | `openslack pr watch <n>` | Poll PR status until ready or timeout |
 | `openslack pr merge <n>` | Merge PR after all gates pass |
 
@@ -598,6 +603,15 @@ is configured, it exits with `AUTH_REQUIRED` instead of producing a dry-run
 governance report. Use `--dry-run` only when you want simulation output; dry-run
 reports are marked `Decision: NOT_EVALUATED` and must not be used for merge
 readiness.
+
+Explicit `--repo` and `--all` queue modes use a separate informational
+repository projection. They cache only display fields under
+`.openslack.local/pr-projection/`, return partial results when the API budget is
+exhausted, and never evaluate human approval or merge readiness. Run
+`openslack pr doctor <n> --repo owner/name` for authoritative PRMS diagnosis.
+`--repo` is repeatable and mutually exclusive with `--all`; `--all` reads the
+configured GitHub Watch repository list rather than enumerating every repository
+accessible to the installation.
 
 Direct `bun run openslack pr doctor <n>` reads explicit environment credentials
 only. It does not read `.openslack.local\github-app.pem` and does not reuse the

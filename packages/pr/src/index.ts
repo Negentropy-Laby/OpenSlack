@@ -25,6 +25,10 @@ export {
 export { evaluateProfileSyncGate } from './profile-sync-gate.js';
 export { summarizePRForChat, formatPRChatSummary } from './chat-report.js';
 export { summarizePRDecision, renderPRDecisionSummary, buildPRQueue, renderPRQueue } from './decision-summary.js';
+export {
+  buildRepositoryPRProjection,
+  renderRepositoryPRProjection,
+} from './repository-projection.js';
 export { mergeIfReady } from './merge.js';
 export { postReviewComment } from './comment.js';
 export { watchPR } from './watch.js';
@@ -45,6 +49,18 @@ export type { EvaluateWorkflowGateInput } from './workflow-gate.js';
 export { computeLocalWorkflowEvidence, parseGitLsTree } from './local-workflow-evidence.js';
 export type { PRChatSummary } from './chat-report.js';
 export type { PRBlockerCategory, PRDecisionOwner, PRDecisionSummary, PRQueueItem } from './decision-summary.js';
+export type {
+  ChecksSummaryProjectionChange,
+  PullRequestStateProjectionChange,
+  RepositoryPRCheckSummary,
+  RepositoryPRProjectionErrorCode,
+  RepositoryPRProjectionItem,
+  RepositoryPRProjectionOptions,
+  RepositoryPRProjectionRepositoryResult,
+  RepositoryPRProjectionResult,
+  RepositoryPRProjectionSource,
+  RepositoryProjectionChange,
+} from './repository-projection.js';
 export type { CodeownersEntry, PRCodeownerEvidence } from './codeowners.js';
 export type { DeadlockResult } from './deadlock.js';
 export type { PRAuthorRiskInput, PRAuthorRiskPreflight, PRAuthorRiskStatus } from './author-risk.js';

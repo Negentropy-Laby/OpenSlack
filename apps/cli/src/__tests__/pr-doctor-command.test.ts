@@ -57,6 +57,8 @@ const hoisted = vi.hoisted(() => {
     mockPublishWorkflowGovernance: vi.fn(),
     mockFindWorkflowGovernanceIssue: vi.fn(),
     mockUpdatePRBody: vi.fn(),
+    mockBuildRepositoryPRProjection: vi.fn(),
+    mockRenderRepositoryPRProjection: vi.fn(),
     MockGitHubAuthRequiredError,
     MockGitHubEvidenceUnavailableError,
     MockPRCodeownerEvidenceUnavailableError,
@@ -70,6 +72,17 @@ vi.mock('@openslack/github', () => ({
   publishWorkflowGovernance: (...args: unknown[]) => hoisted.mockPublishWorkflowGovernance(...args),
   findWorkflowGovernanceIssue: (...args: unknown[]) => hoisted.mockFindWorkflowGovernanceIssue(...args),
   updatePRBody: (...args: unknown[]) => hoisted.mockUpdatePRBody(...args),
+  canonicalizeRepositoryName: (owner: string, repo: string) => ({
+    owner,
+    repo,
+    fullName: `${owner}/${repo}`,
+    canonicalFullName: `${owner}/${repo}`.toLowerCase(),
+  }),
+  loadGitHubWatchConfig: vi.fn(),
+  parseGitHubRepoSpec: (value: string) => {
+    const [owner, repo] = value.split('/');
+    return owner && repo ? { owner, repo } : null;
+  },
   GitHubAuthRequiredError: hoisted.MockGitHubAuthRequiredError,
   GitHubEvidenceUnavailableError: hoisted.MockGitHubEvidenceUnavailableError,
 }));
@@ -94,7 +107,9 @@ vi.mock('@openslack/pr', () => ({
   postReviewComment: vi.fn(),
   watchPR: vi.fn(),
   buildPRQueue: vi.fn(),
+  buildRepositoryPRProjection: (...args: unknown[]) => hoisted.mockBuildRepositoryPRProjection(...args),
   renderPRQueue: vi.fn(),
+  renderRepositoryPRProjection: (...args: unknown[]) => hoisted.mockRenderRepositoryPRProjection(...args),
   summarizePRDecision: () => ({ evidence: ['Checks: pass'] }),
   isCoreWorkflowArtifactPath: (path: string) => path.includes('/builtins/'),
   computeLocalWorkflowEvidence: vi.fn(),
