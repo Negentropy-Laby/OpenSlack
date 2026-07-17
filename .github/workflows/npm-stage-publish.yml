@@ -1,0 +1,107 @@
+name: OpenSlack npm Staged Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Bootstrap 0.2.0 once, then use OIDC stage-only publishing
+        required: true
+        type: choice
+        options:
+          - stage
+          - bootstrap-0.2.0
+      version:
+        description: Exact repository package version
+        required: true
+        default: 0.2.0
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: Verify and submit public packages
+    runs-on: ubuntu-24.04
+    environment: npm-production
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      # actions/checkout v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      # actions/setup-node v6.4.0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 22.14.0
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      # oven-sh/setup-bun v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.14
+
+      - name: Enforce immutable main and requested version
+        shell: bash
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
+          package_version="$(node -p "require('./package.json').version")"
+          test "$REQUESTED_VERSION" = "$package_version"
+          if [[ "${{ inputs.mode }}" = "bootstrap-0.2.0" ]]; then
+            test "$REQUESTED_VERSION" = "0.2.0"
+          fi
+
+      - name: Install required npm CLI
+        run: npm install --global npm@11.15.0
+
+      - name: Verify toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          node -e "const [major, minor] = process.versions.node.split('.').map(Number); if (major < 22 || (major === 22 && minor < 14)) process.exit(1)"
+          npm --version | grep -E '^11\.(1[5-9]|[2-9][0-9])\.'
+
+      - run: bun install --frozen-lockfile
+
+      - name: Build and verify public tarballs
+        run: bun run public:verify
+
+      - name: Bootstrap the four new packages once
+        if: ${{ inputs.mode == 'bootstrap-0.2.0' }}
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_BOOTSTRAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$NODE_AUTH_TOKEN"
+          tarball_root=".openslack.local/public-pack/v0.2.0/current/tarballs"
+          for package in plugin-api plugin-host sdk plugin-testkit; do
+            npm publish "$tarball_root/openslack-${package}-0.2.0.tgz" \
+              --access public \
+              --provenance
+          done
+          for package in plugin-api plugin-host sdk plugin-testkit; do
+            test "$(npm view "@openslack/${package}@0.2.0" version)" = "0.2.0"
+          done
+
+      - name: Submit existing packages to staged publishing with OIDC
+        if: ${{ inputs.mode == 'stage' }}
+        shell: bash
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          tarball_root=".openslack.local/public-pack/v${REQUESTED_VERSION}/current/tarballs"
+          for package in plugin-api plugin-host sdk plugin-testkit; do
+            npm stage publish "$tarball_root/openslack-${package}-${REQUESTED_VERSION}.tgz" \
+              --access public \
+              --provenance
+          done
