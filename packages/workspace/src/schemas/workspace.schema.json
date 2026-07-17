@@ -56,6 +56,21 @@
         }
       }
     },
+    "sidecar": {
+      "type": "object",
+      "required": ["attach_mode", "auto_claim"],
+      "properties": {
+        "attach_mode": {
+          "type": "string",
+          "enum": ["read-only-monitor", "full-agent"]
+        },
+        "auto_claim": {
+          "type": "boolean",
+          "const": false
+        }
+      },
+      "additionalProperties": false
+    },
     "self_evolution": {
       "type": "object",
       "properties": {

@@ -87,6 +87,18 @@ function checkOpenslackYaml(rootPath: string): ValidationError[] {
       errors.push({ severity: 'error', message: 'product config is invalid', path: yamlPath });
     }
   }
+  if (c.sidecar !== undefined) {
+    const sidecar = c.sidecar;
+    if (
+      !sidecar ||
+      typeof sidecar !== 'object' ||
+      ((sidecar as Record<string, unknown>).attach_mode !== 'read-only-monitor' &&
+        (sidecar as Record<string, unknown>).attach_mode !== 'full-agent') ||
+      (sidecar as Record<string, unknown>).auto_claim !== false
+    ) {
+      errors.push({ severity: 'error', message: 'sidecar config is invalid', path: yamlPath });
+    }
+  }
 
   return errors;
 }
