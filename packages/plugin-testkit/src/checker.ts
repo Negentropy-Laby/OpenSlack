@@ -5,13 +5,15 @@ import path from 'node:path';
 
 import {
   isPluginDiagnosticCode,
+  isPluginManifestAuthorityFieldName,
+  isPluginManifestExecutableFieldName,
   validatePluginManifest,
   type PluginDiagnosticCode,
   type PluginDiagnosticFinding,
   type PluginManifestV1,
 } from '@openslack/plugin-api';
 
-import { type PluginCheckId } from './checks.js';
+import { PLUGIN_CHECK_IDS, type PluginCheckId } from './checks.js';
 import {
   createPluginCheckResults,
   PLUGIN_CHECK_REPORT_SCHEMA,
@@ -28,85 +30,134 @@ const FULL_SEMVER =
   /^(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 const PLUGIN_ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const HASH = /^[0-9a-f]{64}$/;
-const AUTHORITY_OR_MUTATION_TARGET =
-  /(?:^|[._-])(?:approve|approved|approval|merge|mergeable|create|delete|update|write|comment|close|reopen|claim|assign|execute|dispatch|publish|push|commit|apply|deliver|mutate)(?:$|[._-])/i;
-const EXECUTABLE_FIELDS = new Set([
-  'entry',
-  'main',
-  'exports',
-  'bin',
-  'executable',
-  'implementation',
-  'handler',
-  'evaluate',
-  'evaluator',
-  'predicate',
-  'callback',
-  'command',
-  'argv',
-  'args',
-  'shell',
-  'exec',
-  'spawn',
-  'template',
-  'path',
-  'file',
-  'module',
-  'url',
-  'activate',
-  'deactivate',
-  'raw',
-  'rawcommand',
-  'raw_command',
-]);
-const AUTHORITY_FIELDS = new Set([
-  '__proto__',
-  'prototype',
-  'constructor',
-  'tostring',
-  'providerkind',
-  'source',
-  'lifecycle',
-  'state',
-  'activationevidence',
+const AUTHORITY_OR_MUTATION_TARGET_TERMS = new Set([
+  'approve',
+  'approved',
   'approval',
   'approvals',
-  'approved',
-  'isapproved',
-  'is_approved',
-  'is-approved',
-  'approvedby',
-  'approvedat',
-  'actor',
-  'identity',
-  'agentidentity',
-  'risk',
-  'risklevel',
-  'riskzone',
-  'confirmationrequired',
-  'effectivecapabilities',
-  'hostallowedcapabilities',
-  'actorallowedcapabilities',
-  'authoritywriterhandle',
-  'authoritystate',
-  'authority_state',
-  'authority-state',
-  'proposemutation',
-  'permission',
-  'permissions',
-  'codeowners',
-  'bypass',
-  'humanapproval',
-  'approvaldecision',
-  'reviewdecision',
+  'approver',
+  'approvers',
+  'merge',
+  'merged',
+  'merges',
+  'merging',
   'mergeable',
+  'create',
+  'created',
+  'creates',
+  'creating',
+  'creator',
+  'creators',
+  'delete',
+  'deleted',
+  'deletes',
+  'deleting',
+  'deleter',
+  'deleters',
+  'update',
+  'updated',
+  'updates',
+  'updating',
+  'updater',
+  'updaters',
+  'write',
+  'writes',
+  'wrote',
+  'written',
+  'writing',
+  'writer',
+  'writers',
+  'comment',
+  'commented',
+  'commenting',
+  'comments',
+  'commenter',
+  'commenters',
+  'close',
+  'closed',
+  'closes',
+  'closing',
+  'reopen',
+  'reopened',
+  'reopening',
+  'reopens',
+  'claim',
+  'claimed',
+  'claiming',
+  'claims',
+  'claimer',
+  'claimers',
+  'assign',
+  'assigned',
+  'assigning',
+  'assigns',
+  'assigner',
+  'assigners',
+  'execute',
+  'executed',
+  'executes',
+  'executing',
+  'executor',
+  'executors',
+  'dispatch',
+  'dispatched',
+  'dispatches',
+  'dispatching',
+  'dispatcher',
+  'dispatchers',
+  'publish',
+  'published',
+  'publishes',
+  'publishing',
+  'publisher',
+  'publishers',
+  'push',
+  'pushed',
+  'pushes',
+  'pushing',
+  'pusher',
+  'pushers',
+  'commit',
+  'commits',
+  'committed',
+  'committing',
+  'committer',
+  'committers',
+  'apply',
+  'applied',
+  'applies',
+  'applying',
+  'deliver',
+  'delivered',
+  'deliveries',
+  'delivering',
+  'delivery',
+  'delivers',
+  'mutate',
+  'mutated',
+  'mutates',
+  'mutating',
+  'mutation',
+  'mutations',
+  'mutator',
+  'mutators',
 ]);
+
+function isAuthorityOrMutationTarget(id: string): boolean {
+  return id
+    .split(/[._-]/)
+    .some((term) => AUTHORITY_OR_MUTATION_TARGET_TERMS.has(term.toLowerCase()));
+}
 
 export interface CheckPluginOptions {
   readonly workspaceRoot: string;
   readonly workingDirectory?: string;
   readonly openslackVersion: string;
   readonly verifyIntegrity?: boolean;
+}
+
+export interface CheckPluginTestHooks {
+  readonly afterManifestRead?: (manifestPath: string) => void | Promise<void>;
 }
 
 interface LoadedBytes {
@@ -229,6 +280,7 @@ function sameIdentity(left: Stats, right: Stats): boolean {
 async function resolveAndReadManifest(
   inputPath: string,
   options: CheckPluginOptions,
+  hooks: CheckPluginTestHooks,
 ): Promise<LoadedBytes> {
   if (inputPath.length === 0 || inputPath.includes('\0')) {
     fail('G1', 'PLUGIN_MANIFEST_SOURCE_INVALID', '', 'Manifest path is empty or contains NUL.');
@@ -304,6 +356,7 @@ async function resolveAndReadManifest(
   if (bytes.length > MANIFEST_MAX_BYTES) {
     fail('G4', 'PLUGIN_MANIFEST_SIZE_EXCEEDED', '', 'Manifest exceeds 256 KiB.');
   }
+  await hooks.afterManifestRead?.(candidatePath);
   const after = await assertSafePath(trustRoot, candidatePath);
   if (!sameIdentity(before, after) || after.size !== bytes.length) {
     fail('G4', 'PLUGIN_MANIFEST_FILE_CHANGED', '', 'Manifest changed while being read.');
@@ -344,8 +397,7 @@ function inspectHardDeniedFields(
   }
   if (typeof value !== 'object' || value === null) return;
   for (const key of Object.keys(value)) {
-    const normalized = key.toLowerCase();
-    if (EXECUTABLE_FIELDS.has(normalized)) {
+    if (isPluginManifestExecutableFieldName(key)) {
       add(
         'G8',
         diagnostic(
@@ -354,7 +406,7 @@ function inspectHardDeniedFields(
           'Executable manifest fields are forbidden.',
         ),
       );
-    } else if (AUTHORITY_FIELDS.has(normalized)) {
+    } else if (isPluginManifestAuthorityFieldName(key)) {
       add(
         'G15',
         diagnostic(
@@ -417,9 +469,9 @@ function compatible(hostVersion: string, range: string): boolean {
 
 function exactFields(value: Record<string, unknown>, expected: readonly string[]): boolean {
   const keys = Object.keys(value).sort();
+  const sortedExpected = [...expected].sort();
   return (
-    keys.length === expected.length &&
-    expected.every((field, index) => keys[index] === [...expected].sort()[index])
+    keys.length === expected.length && sortedExpected.every((field, index) => keys[index] === field)
   );
 }
 
@@ -641,25 +693,7 @@ function sortFindings(
   findingsByCheck: ReadonlyMap<PluginCheckId, readonly PluginDiagnosticFinding[]>,
 ): readonly PluginDiagnosticFinding[] {
   const output: PluginDiagnosticFinding[] = [];
-  for (const checkId of [
-    'G1',
-    'G2',
-    'G3',
-    'G4',
-    'G5',
-    'G6',
-    'G7',
-    'G8',
-    'G9',
-    'G10',
-    'G11',
-    'G12',
-    'G13',
-    'G14',
-    'G15',
-    'G16',
-    'G17',
-  ] as const) {
+  for (const checkId of PLUGIN_CHECK_IDS) {
     output.push(...(findingsByCheck.get(checkId) ?? []));
   }
   return Object.freeze(output);
@@ -668,6 +702,22 @@ function sortFindings(
 export async function checkPlugin(
   inputPath: string,
   options: CheckPluginOptions,
+): Promise<PluginCheckReport> {
+  return checkPluginInternal(inputPath, options, {});
+}
+
+export async function checkPluginWithTestHooks(
+  inputPath: string,
+  options: CheckPluginOptions,
+  hooks: CheckPluginTestHooks,
+): Promise<PluginCheckReport> {
+  return checkPluginInternal(inputPath, options, hooks);
+}
+
+async function checkPluginInternal(
+  inputPath: string,
+  options: CheckPluginOptions,
+  hooks: CheckPluginTestHooks,
 ): Promise<PluginCheckReport> {
   const findingsByCheck = new Map<PluginCheckId, PluginDiagnosticFinding[]>();
   const skipped = new Set<PluginCheckId>();
@@ -679,32 +729,13 @@ export async function checkPlugin(
     }
   };
   const skipAfter = (checkId: PluginCheckId): void => {
-    const order = [
-      'G1',
-      'G2',
-      'G3',
-      'G4',
-      'G5',
-      'G6',
-      'G7',
-      'G8',
-      'G9',
-      'G10',
-      'G11',
-      'G12',
-      'G13',
-      'G14',
-      'G15',
-      'G16',
-      'G17',
-    ] as const;
-    const index = order.indexOf(checkId);
-    order.slice(index + 1).forEach((id) => skipped.add(id));
+    const index = PLUGIN_CHECK_IDS.indexOf(checkId);
+    PLUGIN_CHECK_IDS.slice(index + 1).forEach((id) => skipped.add(id));
   };
 
   let loaded: LoadedBytes;
   try {
-    loaded = await resolveAndReadManifest(inputPath, options);
+    loaded = await resolveAndReadManifest(inputPath, options, hooks);
   } catch (error) {
     if (error instanceof DiagnosticFailure) {
       add(error.checkId, error.finding);
@@ -758,9 +789,7 @@ export async function checkPlugin(
     }
   }
 
-  const manifest: PluginManifestV1 | undefined = validation.valid
-    ? validation.manifest
-    : undefined;
+  const manifest: PluginManifestV1 | undefined = validation.valid ? validation.manifest : undefined;
   if (manifest) {
     if (!FULL_SEMVER.test(manifest.version)) {
       add(
@@ -796,7 +825,7 @@ export async function checkPlugin(
         );
       }
       contributionIds.add(registryId);
-      if (AUTHORITY_OR_MUTATION_TARGET.test(contribution.target.id)) {
+      if (isAuthorityOrMutationTarget(contribution.target.id)) {
         add(
           'G15',
           diagnostic(

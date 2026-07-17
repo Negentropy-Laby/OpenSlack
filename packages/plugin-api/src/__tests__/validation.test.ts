@@ -3,6 +3,8 @@ import {
   DECLARATIVE_PLUGIN_CAPABILITIES,
   PLUGIN_GATE_MODES,
   PLUGIN_LIFECYCLE_TRANSITIONS,
+  PLUGIN_MANIFEST_AUTHORITY_FIELD_NAMES,
+  PLUGIN_MANIFEST_EXECUTABLE_FIELD_NAMES,
   declarativeCapabilityValues,
 } from '../index.js';
 import {
@@ -94,6 +96,32 @@ describe('validatePluginManifest', () => {
     const capabilityCopy = declarativeCapabilityValues() as string[];
     capabilityCopy.push('caller-local-value');
     expect(DECLARATIVE_PLUGIN_CAPABILITIES).not.toContain('caller-local-value');
+  });
+
+  it('classifies every shared manifest deny-list field with its specific diagnostic', () => {
+    const valid = fixtures.find((fixture) => fixture.valid)!.value;
+    for (const [fields, expectedCode] of [
+      [PLUGIN_MANIFEST_EXECUTABLE_FIELD_NAMES, 'PLUGIN_MANIFEST_EXECUTABLE_FIELD_FORBIDDEN'],
+      [PLUGIN_MANIFEST_AUTHORITY_FIELD_NAMES, 'PLUGIN_MANIFEST_SECURITY_FIELD_FORBIDDEN'],
+    ] as const) {
+      for (const field of fields) {
+        const manifest = structuredClone(valid) as Record<string, unknown>;
+        Object.defineProperty(manifest, field, {
+          configurable: true,
+          enumerable: true,
+          value: 'forbidden',
+          writable: true,
+        });
+        const result = validatePluginManifest(manifest);
+        expect(result.valid).toBe(false);
+        expect(result.findings).toContainEqual(
+          expect.objectContaining({
+            code: expectedCode,
+            path: `/${field.replaceAll('~', '~0').replaceAll('/', '~1')}`,
+          }),
+        );
+      }
+    }
   });
 
   it('rejects hidden, accessor, cyclic, and sparse non-JSON authoring values', () => {

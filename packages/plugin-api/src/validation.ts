@@ -22,6 +22,10 @@ import {
   RESERVED_PLUGIN_IDS,
   type PluginManifestV1,
 } from './manifest.js';
+import {
+  isPluginManifestAuthorityFieldName,
+  isPluginManifestExecutableFieldName,
+} from './manifest-security.js';
 
 export const PLUGIN_MANIFEST_V1_JSON_SCHEMA = schemaJson as Readonly<Record<string, unknown>>;
 
@@ -102,52 +106,6 @@ const RESERVED_IDS = new Set<string>(RESERVED_PLUGIN_IDS);
 const CONTRIBUTION_KINDS = new Set<unknown>(DECLARATIVE_CONTRIBUTION_KINDS);
 const INPUT_TYPES = new Set<unknown>(INPUT_DEFINITION_TYPES);
 const GATE_MODES = new Set<unknown>(PLUGIN_GATE_MODES);
-const EXECUTABLE_FIELD_NAMES = new Set([
-  'entry',
-  'main',
-  'executable',
-  'implementation',
-  'handler',
-  'command',
-  'argv',
-  'args',
-  'shell',
-  'exec',
-  'spawn',
-  'template',
-  'path',
-  'file',
-  'module',
-  'url',
-  'activate',
-  'deactivate',
-]);
-const SECURITY_SENSITIVE_FIELD_NAMES = new Set([
-  'providerKind',
-  'source',
-  'lifecycle',
-  'state',
-  'activationEvidence',
-  'approval',
-  'approvals',
-  'approvedBy',
-  'approvedAt',
-  'actor',
-  'identity',
-  'agentIdentity',
-  'risk',
-  'riskLevel',
-  'riskZone',
-  'confirmationRequired',
-  'effectiveCapabilities',
-  'hostAllowedCapabilities',
-  'actorAllowedCapabilities',
-  'authorityWriterHandle',
-  'proposeMutation',
-  'codeowners',
-  'bypass',
-]);
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
   try {
@@ -258,9 +216,9 @@ function checkExactFields(
   const allowedSet = new Set(allowed);
   for (const key of Object.keys(value)) {
     if (!allowedSet.has(key)) {
-      const code: ManifestValidationCode = EXECUTABLE_FIELD_NAMES.has(key)
+      const code: ManifestValidationCode = isPluginManifestExecutableFieldName(key)
         ? 'PLUGIN_MANIFEST_EXECUTABLE_FIELD_FORBIDDEN'
-        : SECURITY_SENSITIVE_FIELD_NAMES.has(key)
+        : isPluginManifestAuthorityFieldName(key)
           ? 'PLUGIN_MANIFEST_SECURITY_FIELD_FORBIDDEN'
           : 'PLUGIN_MANIFEST_FIELD_UNKNOWN';
       addFinding(findings, code, pointer(path, key), `Unknown field "${key}" is not allowed.`);

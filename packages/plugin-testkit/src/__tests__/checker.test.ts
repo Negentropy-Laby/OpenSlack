@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,7 +13,7 @@ import {
 import { PluginHost, PluginHostError, serializePluginLock } from '@openslack/plugin-host';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { checkPlugin } from '../checker.js';
+import { checkPlugin, checkPluginWithTestHooks } from '../checker.js';
 import { PLUGIN_CHECK_IDS } from '../checks.js';
 import { renderPluginCheckPlain } from '../report.js';
 
@@ -28,6 +28,33 @@ afterEach(async () => {
 
 function options(workspaceRoot = fixtures) {
   return { workspaceRoot, openslackVersion: '0.1.1' } as const;
+}
+
+function lockEntry(id = 'fixture') {
+  return {
+    id,
+    version: '1.0.0',
+    providerKind: 'workspace',
+    sourceRef: `.openslack/plugins/${id}/plugin.json`,
+    manifestSha256: '0'.repeat(64),
+    requestedGateMode: 'SHADOW',
+  } as const;
+}
+
+async function createIntegrityFixture(lock: unknown) {
+  const root = await mkdtemp(path.join(tmpdir(), 'openslack-plugin-testkit-lock-'));
+  temporaryRoots.push(root);
+  const pluginRoot = path.join(root, '.openslack', 'plugins', 'fixture');
+  await mkdir(pluginRoot, { recursive: true });
+  await writeFile(
+    path.join(pluginRoot, 'plugin.json'),
+    await readFile(path.join(fixtures, 'valid', 'plugin.json')),
+  );
+  await writeFile(
+    path.join(root, '.openslack', 'plugins.lock'),
+    `${JSON.stringify(lock, null, 2)}\n`,
+  );
+  return { root, pluginRoot };
 }
 
 describe('plugin testkit', () => {
@@ -72,6 +99,52 @@ describe('plugin testkit', () => {
       'PLUGIN_MANIFEST_SOURCE_OUTSIDE_ROOT',
     );
     expect(report.checks.find((check) => check.id === 'G2')?.state).toBe('FAIL');
+  });
+
+  it('rejects a selected symlink or junction at G3', async (context) => {
+    const root = await mkdtemp(path.join(tmpdir(), 'openslack-plugin-testkit-link-root-'));
+    const external = await mkdtemp(path.join(tmpdir(), 'openslack-plugin-testkit-link-target-'));
+    temporaryRoots.push(root, external);
+    await writeFile(
+      path.join(external, 'plugin.json'),
+      await readFile(path.join(fixtures, 'valid', 'plugin.json')),
+    );
+    const selected = path.join(root, 'linked-plugin');
+    try {
+      await symlink(external, selected, process.platform === 'win32' ? 'junction' : 'dir');
+    } catch (error) {
+      context.skip(`Link creation is unavailable: ${String(error)}`);
+      return;
+    }
+
+    const report = await checkPlugin(selected, options(root));
+    expect(report.readiness).toBe('BLOCKED');
+    expect(report.findings.map((finding) => finding.code)).toContain(
+      'PLUGIN_MANIFEST_SOURCE_SYMLINK',
+    );
+    expect(report.checks.find((check) => check.id === 'G3')?.state).toBe('FAIL');
+  });
+
+  it('detects manifest replacement between byte read and identity re-check', async () => {
+    const root = await mkdtemp(path.join(tmpdir(), 'openslack-plugin-testkit-toctou-'));
+    temporaryRoots.push(root);
+    const manifestPath = path.join(root, 'plugin.json');
+    const displacedPath = path.join(root, 'plugin.displaced.json');
+    const bytes = await readFile(path.join(fixtures, 'valid', 'plugin.json'));
+    await writeFile(manifestPath, bytes);
+
+    const report = await checkPluginWithTestHooks(root, options(root), {
+      afterManifestRead: async (candidatePath) => {
+        await rename(candidatePath, displacedPath);
+        await writeFile(candidatePath, bytes);
+      },
+    });
+
+    expect(report.readiness).toBe('BLOCKED');
+    expect(report.findings.map((finding) => finding.code)).toContain(
+      'PLUGIN_MANIFEST_FILE_CHANGED',
+    );
+    expect(report.checks.find((check) => check.id === 'G4')?.state).toBe('FAIL');
   });
 
   it('detects duplicate JSON keys with the same strict code used by the host', async () => {
@@ -173,6 +246,81 @@ describe('plugin testkit', () => {
     expect(verified.readiness).toBe('READY_TO_REGISTER');
     expect(verified.integrityVerified).toBe(true);
     expect(verified.checks.find((check) => check.id === 'G17')?.state).toBe('PASS');
+  });
+
+  it.each(['host.updates', 'host.writer', 'host.creator', 'host.commenter'])(
+    'rejects affixed authority or mutation target %s',
+    async (targetId) => {
+      const root = await mkdtemp(path.join(tmpdir(), 'openslack-plugin-testkit-target-'));
+      temporaryRoots.push(root);
+      const manifest = JSON.parse(
+        await readFile(path.join(fixtures, 'valid', 'plugin.json'), 'utf8'),
+      ) as {
+        contributes: Array<{ target: { id: string } }>;
+      };
+      manifest.contributes[0]!.target.id = targetId;
+      await writeFile(path.join(root, 'plugin.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+
+      const report = await checkPlugin(root, options(root));
+      expect(report.readiness).toBe('BLOCKED');
+      expect(report.findings.map((finding) => finding.code)).toContain(
+        'PLUGIN_ALIAS_TARGET_FORBIDDEN',
+      );
+      expect(report.checks.find((check) => check.id === 'G15')?.state).toBe('FAIL');
+    },
+  );
+
+  it.each([
+    {
+      name: 'missing entry field',
+      code: 'PLUGIN_LOCK_FIELD_REQUIRED',
+      lock: () => {
+        const { version: _version, ...entry } = lockEntry();
+        return { schema: 'openslack.plugins_lock.v1', plugins: [entry] };
+      },
+    },
+    {
+      name: 'unknown entry field',
+      code: 'PLUGIN_LOCK_FIELD_UNKNOWN',
+      lock: () => ({
+        schema: 'openslack.plugins_lock.v1',
+        plugins: [{ ...lockEntry(), unexpected: true }],
+      }),
+    },
+    {
+      name: 'unsafe source ref',
+      code: 'PLUGIN_LOCK_SOURCE_REF_INVALID',
+      lock: () => ({
+        schema: 'openslack.plugins_lock.v1',
+        plugins: [{ ...lockEntry(), sourceRef: '../escape/plugin.json' }],
+      }),
+    },
+    {
+      name: 'duplicate id',
+      code: 'PLUGIN_LOCK_DUPLICATE_ID',
+      lock: () => ({
+        schema: 'openslack.plugins_lock.v1',
+        plugins: [lockEntry(), lockEntry()],
+      }),
+    },
+    {
+      name: 'non-canonical order',
+      code: 'PLUGIN_LOCK_ORDER_INVALID',
+      lock: () => ({
+        schema: 'openslack.plugins_lock.v1',
+        plugins: [lockEntry('zeta'), lockEntry()],
+      }),
+    },
+  ])('reports $code for $name', async ({ code, lock }) => {
+    const { root, pluginRoot } = await createIntegrityFixture(lock());
+    const report = await checkPlugin(pluginRoot, {
+      ...options(root),
+      verifyIntegrity: true,
+    });
+
+    expect(report.readiness).toBe('BLOCKED');
+    expect(report.findings.map((finding) => finding.code)).toContain(code);
+    expect(report.checks.find((check) => check.id === 'G17')?.state).toBe('FAIL');
   });
 });
 

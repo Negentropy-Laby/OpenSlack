@@ -10,6 +10,7 @@ import {
   PluginActionRoutingError,
   type PluginActionRunnerPort,
 } from '../boot/plugin-action-runner.js';
+import { getBuildInfo } from '../release/build-info.js';
 
 function renderFailure(error: unknown): void {
   const code =
@@ -27,11 +28,27 @@ function renderSuccessOutput(output: string): void {
   if (normalized.length > 0) console.log(normalized);
 }
 
+function renderUnexpectedCheckFailure(error: unknown): void {
+  const message =
+    error instanceof Error
+      ? error.message
+          .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+          .trim()
+          .slice(0, 300)
+      : '';
+  console.error(
+    message
+      ? `Plugin check failed: PLUGIN_CHECK_FAILED: ${message}`
+      : 'Plugin check failed: PLUGIN_CHECK_FAILED.',
+  );
+  process.exitCode = 1;
+}
+
 export function selfPluginCommands(
   runner: PluginActionRunnerPort,
   checkOptions: CheckPluginOptions = {
     workspaceRoot: process.cwd(),
-    openslackVersion: '0.1.1',
+    openslackVersion: getBuildInfo().version,
   },
 ): Command {
   const plugin = new Command('plugin').description('Check and run governed plugins');
@@ -60,9 +77,8 @@ export function selfPluginCommands(
               : renderPluginCheckPlain(report),
           );
           if (report.readiness !== 'READY_TO_REGISTER') process.exitCode = 1;
-        } catch {
-          console.error('Plugin check failed: PLUGIN_CHECK_FAILED.');
-          process.exitCode = 1;
+        } catch (error) {
+          renderUnexpectedCheckFailure(error);
         }
       },
     );
