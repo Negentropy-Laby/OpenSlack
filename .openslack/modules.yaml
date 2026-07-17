@@ -60,6 +60,8 @@ modules:
       - test:packages/github/src/__tests__/watch-daemon.test.ts
       - commit:ca3e418b5b338a645e07b2f24f2dd4598b925101
       - test:packages/github/src/__tests__/app-installation-diagnostics.test.ts
+      - commit:d065a8ddf7dab9a6018ff8f8f3c8702dcf6e176b
+      - test:packages/github/src/__tests__/app-installation-diagnostics.test.ts
     phase: "1.7"
     cli:
       - openslack github
@@ -91,6 +93,9 @@ modules:
       - test:scripts/release/__tests__/verify.test.ts
       - commit:ca3e418b5b338a645e07b2f24f2dd4598b925101
       - test:apps/cli/src/__tests__/github-app-diagnostic-command.test.ts
+      - commit:d065a8ddf7dab9a6018ff8f8f3c8702dcf6e176b
+      - test:apps/cli/src/__tests__/github-app-diagnostic-command.test.ts
+      - test:apps/cli/src/__tests__/setup-command.test.ts
     phase: "2A/2B/2C"
     cli:
       - openslack ask
