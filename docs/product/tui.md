@@ -16,11 +16,11 @@ introduce new business logic, or create a new product module.
 
 ## Positioning
 
-| Layer | Role | Source of truth |
-|-------|------|-----------------|
-| CLI (`apps/cli`) | Command surface, format routing | `--format tui` triggers lazy import |
-| TUI (`@openslack/tui`) | Renders interactive views, produces no state | Receives data through view models |
-| Packages | Business logic, projections, governance | Unchanged |
+| Layer                  | Role                                         | Source of truth                     |
+| ---------------------- | -------------------------------------------- | ----------------------------------- |
+| CLI (`apps/cli`)       | Command surface, format routing              | `--format tui` triggers lazy import |
+| TUI (`@openslack/tui`) | Renders interactive views, produces no state | Receives data through view models   |
+| Packages               | Business logic, projections, governance      | Unchanged                           |
 
 TUI is activated only when a user passes `--format tui`. All existing output
 formats (`standard`, `plain`, `json`, `chat`) remain unchanged and are the
@@ -44,12 +44,12 @@ default.
 
 ## Commands Affected
 
-| Command | TUI view | PR |
-|---------|----------|----|
-| `openslack collaboration dashboard --format tui` | DashboardView | #96 |
-| `openslack collaboration room show <ref> --format tui` | RoomView | #97 |
-| `openslack pr doctor <n> --format tui` | DoctorView | #98 |
-| `openslack setup interactive --format tui` | SetupView | #99 |
+| Command                                                | TUI view      | PR  |
+| ------------------------------------------------------ | ------------- | --- |
+| `openslack collaboration dashboard --format tui`       | DashboardView | #96 |
+| `openslack collaboration room show <ref> --format tui` | RoomView      | #97 |
+| `openslack pr doctor <n> --format tui`                 | DoctorView    | #98 |
+| `openslack setup interactive --format tui`             | SetupView     | #99 |
 
 ## Module Registration
 
