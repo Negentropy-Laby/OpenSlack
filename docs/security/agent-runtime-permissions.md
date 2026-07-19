@@ -15,18 +15,18 @@ and hardcoded denylists.
 
 ## Threat Model
 
-| Threat                                             | Mitigation                                                                            | Status      |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------- | ----------- |
-| Subagent escalates privileges beyond declared mode | `buildPermissionProfile()` intersects mode baseline with allowlist                    | Implemented |
-| Subagent accesses tools outside its allowlist      | `isActionAllowed()` checks at launcher level                                          | Implemented |
-| Subagent modifies files without worktree isolation | `isolation=worktree` creates git worktree; implementer agents required                | Implemented |
-| Subagent reads secrets or credentials              | `canReadSecrets: false` hardcoded; `secrets.read` in `SUBAGENT_ALWAYS_FORBIDDEN`      | Implemented |
-| Subagent approves its own PR                       | `canApprovePR: false` hardcoded; `github.pr.approve` in `SUBAGENT_ALWAYS_FORBIDDEN`   | Implemented |
-| Subagent merges without human approval             | `canMerge: false` hardcoded; `github.pr.merge` in `SUBAGENT_ALWAYS_FORBIDDEN`         | Implemented |
-| Subagent bypasses branch protection                | `canBypassRulesets: false` hardcoded; `ruleset.bypass` in `SUBAGENT_ALWAYS_FORBIDDEN` | Implemented |
-| `bypassPermissions` mode grants unlimited access   | Parser rejects `bypassPermissions`; permission builder defaults to `strict`           | Implemented |
-| Corrupted run metadata allows replay               | `getRun()` returns `null` on parse failure                                            | Implemented |
-| Path traversal via runId                           | `RUN_ID_RE` validates format before any filesystem access                             | Implemented |
+| Threat                                             | Mitigation                                                                                           | Status      |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ----------- |
+| Subagent escalates privileges beyond declared mode | `buildPermissionProfile()` intersects mode baseline with allowlist                                   | Implemented |
+| Subagent accesses tools outside its allowlist      | `isActionAllowed()` checks at launcher level                                                         | Implemented |
+| Subagent modifies files without worktree isolation | `isolation=worktree` creates git worktree; implementer agents required                               | Implemented |
+| Subagent reads secrets or credentials              | `canReadSecrets: false` hardcoded; `secrets.read` in `SUBAGENT_ALWAYS_FORBIDDEN`                     | Implemented |
+| Subagent approves its own PR                       | `canApprovePR: false` hardcoded; `github.pr.approve` in `SUBAGENT_ALWAYS_FORBIDDEN`                  | Implemented |
+| Subagent merges without human approval             | `canMerge: false` hardcoded; `github.pr.merge` in `SUBAGENT_ALWAYS_FORBIDDEN`                        | Implemented |
+| Subagent bypasses branch protection                | `canBypassRulesets: false` hardcoded; `ruleset.bypass` in `SUBAGENT_ALWAYS_FORBIDDEN`                | Implemented |
+| `bypassPermissions` mode grants unlimited access   | Parser rejects `bypassPermissions`; permission builder defaults to `strict`                          | Implemented |
+| Corrupted run metadata allows replay               | `getRun()` returns `null` on parse failure                                                           | Implemented |
+| Path traversal via runId                           | `RUN_ID_RE` validates format before any filesystem access                                            | Implemented |
 | Run artifacts contain leaked secrets               | `scanValue()` scans all run metadata and transcript events before persist; refuses write if detected | Implemented |
 
 ## Hardcoded Denylist

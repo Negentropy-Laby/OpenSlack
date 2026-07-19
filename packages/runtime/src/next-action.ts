@@ -27,7 +27,15 @@ export interface AttentionItem {
   priority: 'high' | 'medium' | 'low';
 }
 
-const RUNNABLE_PREFIXES = ['openslack ', 'bun run openslack ', 'bun run ', 'gh ', 'git ', 'bash ', 'wsl '];
+const RUNNABLE_PREFIXES = [
+  'openslack ',
+  'bun run openslack ',
+  'bun run ',
+  'gh ',
+  'git ',
+  'bash ',
+  'wsl ',
+];
 
 function isRunnableCommand(text: string | undefined): text is string {
   if (!text) return false;
@@ -63,9 +71,7 @@ export function recommendNextActions(ctx: NextActionContext): NextActionRecommen
   }
 
   if (ctx.blockers && ctx.blockers.length > 0) {
-    const humanOwned = ctx.blockers.filter(
-      (b) => b.owner && b.owner.startsWith('human'),
-    );
+    const humanOwned = ctx.blockers.filter((b) => b.owner && b.owner.startsWith('human'));
     if (humanOwned.length > 0) {
       const first = humanOwned[0];
       recs.push({
@@ -165,9 +171,7 @@ export async function getAttentionItems(ctx: NextActionContext): Promise<Attenti
 
   // Human-owned blockers.
   if (ctx.blockers && ctx.blockers.length > 0) {
-    const humanOwned = ctx.blockers.filter(
-      (b) => b.owner && b.owner.startsWith('human'),
-    );
+    const humanOwned = ctx.blockers.filter((b) => b.owner && b.owner.startsWith('human'));
     for (const b of humanOwned) {
       items.push({
         type: 'blocker',
@@ -227,9 +231,7 @@ export function getNextAction(items: AttentionItem[]): string {
     return 'All clear — no immediate actions needed.';
   }
 
-  const sorted = [...items].sort(
-    (a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority],
-  );
+  const sorted = [...items].sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]);
   const top = sorted[0];
   return `${top.description}: ${top.action}`;
 }

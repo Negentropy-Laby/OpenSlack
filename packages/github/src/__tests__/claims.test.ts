@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, it, expect } from 'vitest';
-import { parseClaimMetadata, renderClaimComment, resolveClaimOwnerFromComments } from '../claims.js';
+import {
+  parseClaimMetadata,
+  renderClaimComment,
+  resolveClaimOwnerFromComments,
+} from '../claims.js';
 import type { ClaimMetadata } from '../claims.js';
 
 let originalAuthMode: string | undefined;
@@ -61,9 +65,7 @@ describe('claim metadata', () => {
   });
 
   it('falls back to legacy claim owner parsing', () => {
-    const owner = resolveClaimOwnerFromComments([
-      { body: '**Claimed by:** `legacy_agent`' },
-    ]);
+    const owner = resolveClaimOwnerFromComments([{ body: '**Claimed by:** `legacy_agent`' }]);
 
     expect(owner).toEqual({ agentId: 'legacy_agent', structured: false });
   });

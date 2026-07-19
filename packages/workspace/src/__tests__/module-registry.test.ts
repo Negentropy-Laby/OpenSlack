@@ -416,7 +416,6 @@ describe('validateModules', () => {
     expect(rawCredentialResult.errors).toEqual(
       expect.arrayContaining([expect.stringContaining('schema or required fields are invalid')]),
     );
-
   });
 
   it('verifies tracked repository paths and current-history commit evidence', () => {

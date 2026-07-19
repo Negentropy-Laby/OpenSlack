@@ -64,9 +64,10 @@ export async function tickAgent(agentId: string, options: TickOptions = {}): Pro
       agentId,
       action: 'error',
       principal,
-      message: auth.decision === 'ask'
-        ? `Authorization requires confirmation: ${auth.evidence.reason}`
-        : `Authorization denied: ${auth.evidence.reason}`,
+      message:
+        auth.decision === 'ask'
+          ? `Authorization requires confirmation: ${auth.evidence.reason}`
+          : `Authorization denied: ${auth.evidence.reason}`,
     };
   }
 
@@ -84,7 +85,12 @@ export async function tickAgent(agentId: string, options: TickOptions = {}): Pro
 
       const tasks = await queryReadyIssueTasks({ capabilities: typedCapabilities });
       if (tasks.length === 0) {
-        return { agentId, action: 'idle', principal, message: 'No ready issues on GitHub. Idle exit.' };
+        return {
+          agentId,
+          action: 'idle',
+          principal,
+          message: 'No ready issues on GitHub. Idle exit.',
+        };
       }
 
       for (const task of tasks) {
@@ -109,7 +115,12 @@ export async function tickAgent(agentId: string, options: TickOptions = {}): Pro
 
       return { agentId, action: 'idle', principal, message: 'All ready issues already claimed.' };
     } catch (e) {
-      return { agentId, action: 'error', principal, message: `GitHub claim failed: ${(e as Error).message}` };
+      return {
+        agentId,
+        action: 'error',
+        principal,
+        message: `GitHub claim failed: ${(e as Error).message}`,
+      };
     }
   }
 
@@ -122,7 +133,12 @@ export async function tickAgent(agentId: string, options: TickOptions = {}): Pro
   const broker = new FileClaimBroker(root);
   for (const task of openTasks) {
     broker.setTaskReady(task.id);
-    const result = broker.claimTask({ agentId, taskId: task.id, ttlMinutes: 60, capabilities: typedCapabilities });
+    const result = broker.claimTask({
+      agentId,
+      taskId: task.id,
+      ttlMinutes: 60,
+      capabilities: typedCapabilities,
+    });
     if (result.claimStatus === 'granted') {
       return {
         agentId,

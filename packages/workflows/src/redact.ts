@@ -1,4 +1,4 @@
-import type { RunStatus, PhaseCheckpoint } from './types.js'
+import type { RunStatus, PhaseCheckpoint } from './types.js';
 
 // ── Redaction Rules ─────────────────────────────────────────────────────────
 //
@@ -17,13 +17,13 @@ import type { RunStatus, PhaseCheckpoint } from './types.js'
 /**
  * Maximum number of lines allowed in a context snippet (Rule 1).
  */
-const MAX_CONTEXT_LINES = 3
+const MAX_CONTEXT_LINES = 3;
 
 /**
  * Patterns that look like source code blocks (multi-line with braces, semicolons, etc.).
  */
-const CODE_BLOCK_PATTERN = /```[\s\S]*?```/g
-const INLINE_CODE_PATTERN = /`[^`]{50,}`/g
+const CODE_BLOCK_PATTERN = /```[\s\S]*?```/g;
+const INLINE_CODE_PATTERN = /`[^`]{50,}`/g;
 
 /**
  * Patterns for common token/credential formats (Rule 3).
@@ -37,19 +37,20 @@ const TOKEN_PATTERNS = [
   /(?:api[_-]?key|token|secret|password|credential|auth)["\s:=]+([A-Za-z0-9\-._~+/]{20,})/gi,
   // Hex tokens (64+ hex chars on a single line after token-like prefix)
   /(?:token|key|secret|password)["\s:=]+([a-f0-9]{40,})/gi,
-]
+];
 
 /**
  * URL pattern that may contain tokens in query parameters.
  */
-const URL_WITH_QUERY = /https?:\/\/[^\s"'<>]+\?[^\s"'<>]+/g
+const URL_WITH_QUERY = /https?:\/\/[^\s"'<>]+\?[^\s"'<>]+/g;
 
 /**
  * Absolute path patterns for common OS paths (Rule 4).
  */
-const ABSOLUTE_PATH_PATTERN = /(?:[A-Z]:\\|\/)(?:Users|home|tmp|var|etc|opt|Users)[\/\\][^\s"'<>),;\]]+/gi
-const WIN_ABSOLUTE_PATH = /[A-Z]:\\(?:Users|home|tmp)[\/\\][^\s"'<>),;\]]+/gi
-const POSIX_ABSOLUTE_PATH = /\/(?:home|tmp|var|etc|opt|Users)\/[^\s"'<>),;\]]+/gi
+const ABSOLUTE_PATH_PATTERN =
+  /(?:[A-Z]:\\|\/)(?:Users|home|tmp|var|etc|opt|Users)[\/\\][^\s"'<>),;\]]+/gi;
+const WIN_ABSOLUTE_PATH = /[A-Z]:\\(?:Users|home|tmp)[\/\\][^\s"'<>),;\]]+/gi;
+const POSIX_ABSOLUTE_PATH = /\/(?:home|tmp|var|etc|opt|Users)\/[^\s"'<>),;\]]+/gi;
 
 // ── Redaction API ────────────────────────────────────────────────────────────
 
@@ -57,17 +58,17 @@ const POSIX_ABSOLUTE_PATH = /\/(?:home|tmp|var|etc|opt|Users)\/[^\s"'<>),;\]]+/g
  * A single redaction rule application result.
  */
 export interface RedactionEntry {
-  rule: string
-  original: string
-  redacted: string
+  rule: string;
+  original: string;
+  redacted: string;
 }
 
 /**
  * Result of redacting a complete run data object.
  */
 export interface RedactionResult {
-  data: unknown
-  redactions: RedactionEntry[]
+  data: unknown;
+  redactions: RedactionEntry[];
 }
 
 /**
@@ -75,9 +76,9 @@ export interface RedactionResult {
  */
 export interface RedactionOptions {
   /** Repository root to remap absolute paths against. */
-  repoRoot?: string
+  repoRoot?: string;
   /** Custom redaction log for auditing what was changed. */
-  log?: RedactionEntry[]
+  log?: RedactionEntry[];
 }
 
 // ── Individual Rule Functions ────────────────────────────────────────────────
@@ -88,119 +89,119 @@ export interface RedactionOptions {
  */
 export function stripSourceCode(value: string): string {
   // Remove fenced code blocks entirely
-  let result = value.replace(CODE_BLOCK_PATTERN, '[source code redacted]')
+  let result = value.replace(CODE_BLOCK_PATTERN, '[source code redacted]');
 
   // Remove inline code spans that are suspiciously long (likely source code)
-  result = result.replace(INLINE_CODE_PATTERN, '[source code redacted]')
+  result = result.replace(INLINE_CODE_PATTERN, '[source code redacted]');
 
-  return result
+  return result;
 }
 
 /**
  * Rule 1 (supplement): Truncate context snippets to MAX_CONTEXT_LINES.
  */
 export function truncateContext(value: string, maxLines: number = MAX_CONTEXT_LINES): string {
-  const lines = value.split('\n')
-  if (lines.length <= maxLines) return value
-  return lines.slice(0, maxLines).join('\n') + '\n... [truncated]'
+  const lines = value.split('\n');
+  if (lines.length <= maxLines) return value;
+  return lines.slice(0, maxLines).join('\n') + '\n... [truncated]';
 }
 
 /**
  * Rule 2: Strip full agent prompt text, keeping only label, phase, and result summary.
  */
 export function stripPrompt(prompt: string): string {
-  if (!prompt || prompt.length === 0) return prompt
+  if (!prompt || prompt.length === 0) return prompt;
   // If the prompt is short (likely just a label), keep it
-  if (prompt.length <= 80) return prompt
-  return '[prompt redacted]'
+  if (prompt.length <= 80) return prompt;
+  return '[prompt redacted]';
 }
 
 /**
  * Rule 2: Redact agent call details, stripping prompt text while retaining metadata.
  */
 export function redactAgentCall(agentCall: Record<string, unknown>): Record<string, unknown> {
-  const result: Record<string, unknown> = {}
+  const result: Record<string, unknown> = {};
 
   // Retain safe metadata fields
-  const safeFields = ['label', 'phase', 'tokenUsage', 'schemaVersion', 'status', 'cacheKey']
+  const safeFields = ['label', 'phase', 'tokenUsage', 'schemaVersion', 'status', 'cacheKey'];
   for (const field of safeFields) {
     if (field in agentCall) {
-      result[field] = agentCall[field]
+      result[field] = agentCall[field];
     }
   }
 
   // Strip prompt text
   if ('prompt' in agentCall) {
-    result.prompt = stripPrompt(agentCall.prompt as string)
+    result.prompt = stripPrompt(agentCall.prompt as string);
   }
 
   // Strip full prompt text if embedded
   if ('promptText' in agentCall) {
-    result.promptText = '[prompt redacted]'
+    result.promptText = '[prompt redacted]';
   }
 
   // Retain result summary but not full result body if it looks like code
   if ('resultSummary' in agentCall) {
-    result.resultSummary = agentCall.resultSummary
+    result.resultSummary = agentCall.resultSummary;
   }
 
-  return result
+  return result;
 }
 
 /**
  * Rule 3: Strip tokens and credentials from string values.
  */
 export function stripTokensAndCredentials(value: string): string {
-  let result = value
+  let result = value;
 
   // Apply each token pattern
   for (const pattern of TOKEN_PATTERNS) {
     // Reset regex lastIndex for global patterns
-    pattern.lastIndex = 0
-    result = result.replace(pattern, '[token redacted]')
+    pattern.lastIndex = 0;
+    result = result.replace(pattern, '[token redacted]');
   }
 
   // Redact URLs with query parameters (may contain tokens)
   result = result.replace(URL_WITH_QUERY, (match) => {
     try {
-      const url = new URL(match)
+      const url = new URL(match);
       // Keep origin + pathname, strip query and hash
-      return url.origin + url.pathname + '?[query redacted]'
+      return url.origin + url.pathname + '?[query redacted]';
     } catch {
-      return '[url redacted]'
+      return '[url redacted]';
     }
-  })
+  });
 
-  return result
+  return result;
 }
 
 /**
  * Rule 4: Remap absolute paths to repo-root-relative paths.
  */
 export function remapAbsolutePaths(value: string, repoRoot?: string): string {
-  if (!repoRoot) return value
+  if (!repoRoot) return value;
 
   // Normalize separators for comparison
-  const normalizedRoot = repoRoot.replace(/\\/g, '/')
+  const normalizedRoot = repoRoot.replace(/\\/g, '/');
 
   // Handle Windows-style absolute paths
   let result = value.replace(WIN_ABSOLUTE_PATH, (match) => {
-    const normalized = match.replace(/\\/g, '/')
+    const normalized = match.replace(/\\/g, '/');
     if (normalized.startsWith(normalizedRoot)) {
-      return normalized.slice(normalizedRoot.length) || '/'
+      return normalized.slice(normalizedRoot.length) || '/';
     }
-    return '[path redacted]'
-  })
+    return '[path redacted]';
+  });
 
   // Handle POSIX-style absolute paths
   result = result.replace(POSIX_ABSOLUTE_PATH, (match) => {
     if (match.startsWith(normalizedRoot)) {
-      return match.slice(normalizedRoot.length) || '/'
+      return match.slice(normalizedRoot.length) || '/';
     }
-    return '[path redacted]'
-  })
+    return '[path redacted]';
+  });
 
-  return result
+  return result;
 }
 
 /**
@@ -208,7 +209,7 @@ export function remapAbsolutePaths(value: string, repoRoot?: string): string {
  * Only the validation error summary is retained.
  */
 export function redactFailedSchemaOutput(output: unknown, validationError?: string): unknown {
-  if (output === null || output === undefined) return output
+  if (output === null || output === undefined) return output;
 
   // If a validation error is provided, replace the output with just the error summary
   if (validationError) {
@@ -216,10 +217,10 @@ export function redactFailedSchemaOutput(output: unknown, validationError?: stri
       _redacted: true,
       reason: 'Schema validation failed',
       error: validationError,
-    }
+    };
   }
 
-  return output
+  return output;
 }
 
 // ── Composite Redaction ──────────────────────────────────────────────────────
@@ -228,13 +229,13 @@ export function redactFailedSchemaOutput(output: unknown, validationError?: stri
  * Apply all redaction rules to a string value.
  */
 export function redactString(value: string, options?: RedactionOptions): string {
-  if (typeof value !== 'string') return value
+  if (typeof value !== 'string') return value;
 
-  let result = value
-  result = stripSourceCode(result)
-  result = stripTokensAndCredentials(result)
-  result = remapAbsolutePaths(result, options?.repoRoot)
-  return result
+  let result = value;
+  result = stripSourceCode(result);
+  result = stripTokensAndCredentials(result);
+  result = remapAbsolutePaths(result, options?.repoRoot);
+  return result;
 }
 
 /**
@@ -242,25 +243,23 @@ export function redactString(value: string, options?: RedactionOptions): string 
  * Walks objects and arrays, applying string redaction to all string values.
  */
 export function redactDeep(value: unknown, options?: RedactionOptions, path: string = ''): unknown {
-  if (value === null || value === undefined) return value
+  if (value === null || value === undefined) return value;
 
   if (typeof value === 'string') {
-    return redactString(value, options)
+    return redactString(value, options);
   }
 
   if (Array.isArray(value)) {
-    return value.map((item, index) =>
-      redactDeep(item, options, `${path}[${index}]`)
-    )
+    return value.map((item, index) => redactDeep(item, options, `${path}[${index}]`));
   }
 
   if (typeof value === 'object') {
-    const obj = value as Record<string, unknown>
-    const result: Record<string, unknown> = {}
+    const obj = value as Record<string, unknown>;
+    const result: Record<string, unknown> = {};
 
     // Special handling for agent call objects
     if ('prompt' in obj && 'label' in obj && 'phase' in obj) {
-      return redactAgentCall(obj)
+      return redactAgentCall(obj);
     }
 
     // Special handling for failed schema output
@@ -268,32 +267,29 @@ export function redactDeep(value: unknown, options?: RedactionOptions, path: str
       return redactFailedSchemaOutput(
         obj,
         typeof obj.validationError === 'string' ? obj.validationError : undefined,
-      )
+      );
     }
 
     for (const [key, val] of Object.entries(obj)) {
-      result[key] = redactDeep(val, options, path ? `${path}.${key}` : key)
+      result[key] = redactDeep(val, options, path ? `${path}.${key}` : key);
     }
-    return result
+    return result;
   }
 
   // Numbers, booleans, etc. pass through
-  return value
+  return value;
 }
 
 /**
  * Redact a complete run status for safe embedding in HTML artifacts.
  */
-export function redactRunStatus(
-  status: RunStatus,
-  options?: RedactionOptions,
-): RedactionResult {
-  const redactions: RedactionEntry[] = []
+export function redactRunStatus(status: RunStatus, options?: RedactionOptions): RedactionResult {
+  const redactions: RedactionEntry[] = [];
 
   // Deep-redact the status object
-  const data = redactDeep(status, options)
+  const data = redactDeep(status, options);
 
-  return { data, redactions }
+  return { data, redactions };
 }
 
 /**
@@ -303,8 +299,8 @@ export function redactPhaseCheckpoint(
   checkpoint: PhaseCheckpoint,
   options?: RedactionOptions,
 ): RedactionResult {
-  const data = redactDeep(checkpoint, options)
-  return { data, redactions: [] }
+  const data = redactDeep(checkpoint, options);
+  return { data, redactions: [] };
 }
 
 /**
@@ -312,21 +308,21 @@ export function redactPhaseCheckpoint(
  */
 export function redactRunBundle(
   bundle: {
-    status: RunStatus
-    phases: PhaseCheckpoint[]
-    logEntries?: Array<Record<string, unknown>>
-    output?: unknown
+    status: RunStatus;
+    phases: PhaseCheckpoint[];
+    logEntries?: Array<Record<string, unknown>>;
+    output?: unknown;
   },
   options?: RedactionOptions,
 ): RedactionResult {
-  const redactions: RedactionEntry[] = []
+  const redactions: RedactionEntry[] = [];
 
   const data = {
     status: redactDeep(bundle.status, options),
-    phases: bundle.phases.map(p => redactDeep(p, options)),
-    logEntries: bundle.logEntries?.map(e => redactDeep(e, options)),
+    phases: bundle.phases.map((p) => redactDeep(p, options)),
+    logEntries: bundle.logEntries?.map((e) => redactDeep(e, options)),
     output: redactDeep(bundle.output, options),
-  }
+  };
 
-  return { data, redactions }
+  return { data, redactions };
 }

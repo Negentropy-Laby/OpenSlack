@@ -5,7 +5,13 @@ import { validateWorkspace } from '@openslack/workspace';
 
 export interface Observation {
   id: string;
-  type: 'ci_failure' | 'test_failure' | 'validation_failure' | 'missing_file' | 'typecheck_failure' | 'security_finding';
+  type:
+    | 'ci_failure'
+    | 'test_failure'
+    | 'validation_failure'
+    | 'missing_file'
+    | 'typecheck_failure'
+    | 'security_finding';
   source: string;
   severity: 'low' | 'medium' | 'high' | 'critical';
   summary: string;
@@ -32,7 +38,11 @@ function findRepoRoot(): string {
 
 function runTypecheck(root: string): { passed: boolean; output: string } {
   try {
-    const output = execSync('bun run typecheck', { cwd: root, stdio: 'pipe', timeout: 60000 }).toString();
+    const output = execSync('bun run typecheck', {
+      cwd: root,
+      stdio: 'pipe',
+      timeout: 60000,
+    }).toString();
     return { passed: true, output };
   } catch (e) {
     const stderr = (e as { stderr?: Buffer }).stderr?.toString() || (e as Error).message;
@@ -42,7 +52,11 @@ function runTypecheck(root: string): { passed: boolean; output: string } {
 
 function runTests(root: string): { passed: boolean; output: string } {
   try {
-    const output = execSync('npx vitest run --reporter=verbose', { cwd: root, stdio: 'pipe', timeout: 60000 }).toString();
+    const output = execSync('npx vitest run --reporter=verbose', {
+      cwd: root,
+      stdio: 'pipe',
+      timeout: 60000,
+    }).toString();
     return { passed: true, output };
   } catch (e) {
     const execErr = e as { stdout?: Buffer; stderr?: Buffer };
@@ -80,7 +94,10 @@ export function observeHealth(checks?: InjectedChecks): Observation[] {
       source: 'typescript',
       severity: 'high',
       summary: 'TypeScript compilation failed',
-      evidence: tc.output.split('\n').filter((l) => l.includes('error TS')).slice(0, 5),
+      evidence: tc.output
+        .split('\n')
+        .filter((l) => l.includes('error TS'))
+        .slice(0, 5),
       module: 'all',
       timestamp: now,
     });
@@ -95,7 +112,10 @@ export function observeHealth(checks?: InjectedChecks): Observation[] {
       source: 'vitest',
       severity: 'high',
       summary: 'Test suite failed',
-      evidence: testResult.output.split('\n').filter((l) => l.includes('FAIL') || l.includes('failed')).slice(0, 5),
+      evidence: testResult.output
+        .split('\n')
+        .filter((l) => l.includes('FAIL') || l.includes('failed'))
+        .slice(0, 5),
       module: 'all',
       timestamp: now,
     });

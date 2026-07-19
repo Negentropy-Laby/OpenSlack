@@ -16,4 +16,12 @@ export const schemas = {
   runRecord: runRecordSchema,
 } as const;
 
-export { workspaceSchema, agentRegistrySchema, agentRegistryV2Schema, evolutionTaskSchema, taskSchema, leaseSchema, runRecordSchema };
+export {
+  workspaceSchema,
+  agentRegistrySchema,
+  agentRegistryV2Schema,
+  evolutionTaskSchema,
+  taskSchema,
+  leaseSchema,
+  runRecordSchema,
+};

@@ -55,9 +55,10 @@ export async function mergeIfReady(
         merged: false,
         decision: 'BLOCKED_AUTHORIZATION',
         reason: auth.evidence.reason,
-        message: auth.decision === 'ask'
-          ? `Merge requires authorization confirmation: ${auth.evidence.reason}`
-          : `Merge denied: ${auth.evidence.reason}`,
+        message:
+          auth.decision === 'ask'
+            ? `Merge requires authorization confirmation: ${auth.evidence.reason}`
+            : `Merge denied: ${auth.evidence.reason}`,
       };
     }
   }

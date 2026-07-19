@@ -6,33 +6,45 @@ import { tmpdir } from 'node:os';
 
 function createTempWorkspace(config: Record<string, unknown>): string {
   const dir = mkdtempSync(join(tmpdir(), 'openslack-test-'));
-  writeFileSync(join(dir, 'openslack.yaml'), [
-    `schema: openslack.workspace.v1`,
-    `workspace_id: ${config.workspace_id || 'test-workspace'}`,
-    `name: ${config.name || 'Test Workspace'}`,
-    `mode: ${config.mode || 'self_project'}`,
-    `canonical_remote:`,
-    `  provider: github`,
-    `  owner: test-org`,
-    `  repo: test-repo`,
-    `  default_branch: main`,
-    `workspace:`,
-    `  root: "."`,
-    `  state_root: "${config.state_root || '.openslack'}"`,
-    `product:`,
-    `  repo_role: self`,
-    `  source_roots:`,
-    `    - apps`,
-    `  protected_roots:`,
-    `    - .github`,
-    ...(config.extra ? [String(config.extra)] : []),
-  ].join('\n'));
+  writeFileSync(
+    join(dir, 'openslack.yaml'),
+    [
+      `schema: openslack.workspace.v1`,
+      `workspace_id: ${config.workspace_id || 'test-workspace'}`,
+      `name: ${config.name || 'Test Workspace'}`,
+      `mode: ${config.mode || 'self_project'}`,
+      `canonical_remote:`,
+      `  provider: github`,
+      `  owner: test-org`,
+      `  repo: test-repo`,
+      `  default_branch: main`,
+      `workspace:`,
+      `  root: "."`,
+      `  state_root: "${config.state_root || '.openslack'}"`,
+      `product:`,
+      `  repo_role: self`,
+      `  source_roots:`,
+      `    - apps`,
+      `  protected_roots:`,
+      `    - .github`,
+      ...(config.extra ? [String(config.extra)] : []),
+    ].join('\n'),
+  );
   return dir;
 }
 
 function setupStateDir(dir: string, stateRoot = '.openslack'): void {
   const root = join(dir, stateRoot);
-  for (const sub of ['agents/registry', 'agents/prompts', 'policies', 'self', 'tasks', 'leases', 'audit', 'collaboration']) {
+  for (const sub of [
+    'agents/registry',
+    'agents/prompts',
+    'policies',
+    'self',
+    'tasks',
+    'leases',
+    'audit',
+    'collaboration',
+  ]) {
     mkdirSync(join(root, sub), { recursive: true });
   }
   writeFileSync(join(root, 'self', 'constitution.md'), '# Test Constitution\n');

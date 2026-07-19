@@ -13,9 +13,13 @@ export interface IssueTaskManifest {
   required_capabilities?: string[];
   allowed_paths?: string[];
   forbidden_paths?: string[];
-  output_contract?: Array<'draft_pr' | 'issue_comment_summary' | 'workspace_run_record' | 'no_change'>;
+  output_contract?: Array<
+    'draft_pr' | 'issue_comment_summary' | 'workspace_run_record' | 'no_change'
+  >;
   success_criteria?: string[];
-  human_approval_required_for?: Array<'red_zone_change' | 'merge_main' | 'external_message' | 'policy_change'>;
+  human_approval_required_for?: Array<
+    'red_zone_change' | 'merge_main' | 'external_message' | 'policy_change'
+  >;
   lease?: { ttl_minutes: number; heartbeat_minutes: number };
   idempotency_key?: string;
   linked_pr?: number;
@@ -77,7 +81,9 @@ export function parseIssueTaskManifest(body: string): ManifestParseResult {
   }
   const validRisks = ['low', 'medium', 'high', 'critical'];
   if (typeof m.risk_level !== 'string' || !validRisks.includes(m.risk_level)) {
-    errors.push(`risk_level must be one of: ${validRisks.join(', ')}. Got: "${String(m.risk_level)}"`);
+    errors.push(
+      `risk_level must be one of: ${validRisks.join(', ')}. Got: "${String(m.risk_level)}"`,
+    );
   }
 
   // Path conflict check
@@ -85,20 +91,36 @@ export function parseIssueTaskManifest(body: string): ManifestParseResult {
   const forbidden = (Array.isArray(m.forbidden_paths) ? m.forbidden_paths : []) as string[];
   for (const ap of allowed) {
     for (const fp of forbidden) {
-      if (ap === fp || ap.startsWith(fp.replace(/\*\*$/, '')) || fp.startsWith(ap.replace(/\*\*$/, ''))) {
+      if (
+        ap === fp ||
+        ap.startsWith(fp.replace(/\*\*$/, '')) ||
+        fp.startsWith(ap.replace(/\*\*$/, ''))
+      ) {
         errors.push(`Path conflict: allowed_path "${ap}" conflicts with forbidden_path "${fp}"`);
       }
     }
   }
 
   // Red Zone check on allowed_paths
-  const redZonePrefixes = ['.github/', '.openslack/policies/', '.openslack/agents/', '.openslack/self/constitution', '.openslack/self/invariants', 'packages/kernel/src/', 'packages/self-evolution/src/core/'];
+  const redZonePrefixes = [
+    '.github/',
+    '.openslack/policies/',
+    '.openslack/agents/',
+    '.openslack/self/constitution',
+    '.openslack/self/invariants',
+    'packages/kernel/src/',
+    'packages/self-evolution/src/core/',
+  ];
   for (const ap of allowed) {
     for (const rz of redZonePrefixes) {
       if (ap.startsWith(rz.replace(/\/\*\*$/, '')) || ap === rz) {
-        const hasRedZoneApproval = Array.isArray(m.human_approval_required_for) && m.human_approval_required_for.includes('red_zone_change');
+        const hasRedZoneApproval =
+          Array.isArray(m.human_approval_required_for) &&
+          m.human_approval_required_for.includes('red_zone_change');
         if (!hasRedZoneApproval) {
-          errors.push(`Red Zone path "${ap}" requires human_approval_required_for: [red_zone_change]`);
+          errors.push(
+            `Red Zone path "${ap}" requires human_approval_required_for: [red_zone_change]`,
+          );
         }
       }
     }
@@ -119,12 +141,18 @@ export function parseIssueTaskManifest(body: string): ManifestParseResult {
       agent_type: m.agent_type as string,
       risk_level: m.risk_level as IssueTaskManifest['risk_level'],
       priority: m.priority as IssueTaskManifest['priority'],
-      required_capabilities: Array.isArray(m.required_capabilities) ? m.required_capabilities : undefined,
+      required_capabilities: Array.isArray(m.required_capabilities)
+        ? m.required_capabilities
+        : undefined,
       allowed_paths: allowed.length > 0 ? allowed : undefined,
       forbidden_paths: forbidden.length > 0 ? forbidden : undefined,
-      output_contract: Array.isArray(m.output_contract) ? m.output_contract as IssueTaskManifest['output_contract'] : undefined,
+      output_contract: Array.isArray(m.output_contract)
+        ? (m.output_contract as IssueTaskManifest['output_contract'])
+        : undefined,
       success_criteria: Array.isArray(m.success_criteria) ? m.success_criteria : undefined,
-      human_approval_required_for: Array.isArray(m.human_approval_required_for) ? m.human_approval_required_for as IssueTaskManifest['human_approval_required_for'] : undefined,
+      human_approval_required_for: Array.isArray(m.human_approval_required_for)
+        ? (m.human_approval_required_for as IssueTaskManifest['human_approval_required_for'])
+        : undefined,
       lease: m.lease as IssueTaskManifest['lease'],
       idempotency_key: m.idempotency_key as string | undefined,
       linked_pr: m.linked_pr as number | undefined,
@@ -136,9 +164,7 @@ export function parseIssueTaskManifest(body: string): ManifestParseResult {
 export function renderIssueTaskManifest(manifest: IssueTaskManifest): string {
   const lines: string[] = ['```openslack-task'];
   const scalar = (value: string): string =>
-    /^[*[\]{}&!#|>%@`"'?:-]/.test(value) || value.includes(': ')
-      ? JSON.stringify(value)
-      : value;
+    /^[*[\]{}&!#|>%@`"'?:-]/.test(value) || value.includes(': ') ? JSON.stringify(value) : value;
   lines.push(`schema: ${scalar(manifest.schema)}`);
   lines.push(`task_id: ${scalar(manifest.task_id)}`);
   lines.push(`title: ${scalar(manifest.title)}`);

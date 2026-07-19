@@ -43,9 +43,8 @@ export function buildProfileSyncStatus(options?: ProfileSyncStatusOptions): Prof
     return true;
   });
 
-  const lastCompleted = matchingCompleted.length > 0
-    ? matchingCompleted[matchingCompleted.length - 1]
-    : null;
+  const lastCompleted =
+    matchingCompleted.length > 0 ? matchingCompleted[matchingCompleted.length - 1] : null;
 
   // Find last triggered event (for out-of-date check)
   const matchingTriggered = triggeredEvents.filter((e) => {
@@ -53,9 +52,8 @@ export function buildProfileSyncStatus(options?: ProfileSyncStatusOptions): Prof
     if (targetRepo && meta?.targetRepo !== targetRepo) return false;
     return true;
   });
-  const lastTriggered = matchingTriggered.length > 0
-    ? matchingTriggered[matchingTriggered.length - 1]
-    : null;
+  const lastTriggered =
+    matchingTriggered.length > 0 ? matchingTriggered[matchingTriggered.length - 1] : null;
 
   // Find failures
   const failures = failedEvents
@@ -94,9 +92,7 @@ export function buildProfileSyncStatus(options?: ProfileSyncStatusOptions): Prof
     state = wasMerged ? 'synced' : 'pending';
 
     // If there are newer failures after the last sync, show failed
-    const newerFailures = failures.filter((f) =>
-      lastSyncDate ? f.date > lastSyncDate : true,
-    );
+    const newerFailures = failures.filter((f) => (lastSyncDate ? f.date > lastSyncDate : true));
     if (newerFailures.length > 0) {
       state = 'failed';
     }

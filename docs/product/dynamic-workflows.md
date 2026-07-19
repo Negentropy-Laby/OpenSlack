@@ -48,15 +48,15 @@ controller is enabled.
 
 OpenSlack tracks these Dynamic Workflow patterns:
 
-| Pattern | Purpose |
-|---------|---------|
-| classify-and-act | Classify each work item, then route to a branch or action |
-| fanout-synthesize | Run independent workers, then merge results at a barrier |
-| adversarial-verification | Verify candidates with independent verifier agents |
-| generate-filter | Generate many candidates, filter/dedupe, return top results |
-| tournament | Compare alternatives pairwise until a winner emerges |
-| loop-until-done | Repeat bounded iterations until a stop condition is met |
-| model-router | Choose model tier and worktree isolation by task purpose |
+| Pattern                  | Purpose                                                     |
+| ------------------------ | ----------------------------------------------------------- |
+| classify-and-act         | Classify each work item, then route to a branch or action   |
+| fanout-synthesize        | Run independent workers, then merge results at a barrier    |
+| adversarial-verification | Verify candidates with independent verifier agents          |
+| generate-filter          | Generate many candidates, filter/dedupe, return top results |
+| tournament               | Compare alternatives pairwise until a winner emerges        |
+| loop-until-done          | Repeat bounded iterations until a stop condition is met     |
+| model-router             | Choose model tier and worktree isolation by task purpose    |
 
 These patterns are available as registry entries and workflow helper APIs. They
 are evidence-producing helpers, not hidden background automation.

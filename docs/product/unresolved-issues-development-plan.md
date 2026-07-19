@@ -33,13 +33,13 @@ These constraints are not optional:
 
 ## Priority Summary
 
-| Priority | Item | Decision | Target outcome |
-|---|---|---|---|
-| P0 | EVOL rollback backlog loop | Implemented. | Duplicate rollback proposals are deduplicated; `EXP-TEST*` artifacts are skipped; stale proposals use schema-valid `rejected`. |
-| P0 | Author/CODEOWNER deadlock | Implemented without bot approval. | PRMS guidance and workspace PR preflight support bot/agent-authored Red Zone PRs with human CODEOWNER approval. |
-| P1 | Node 24 Actions migration | Implemented. | All workflow actions are Node-24-capable and pinned to full SHAs. |
-| P1 | LLM Planner | Implemented as optional fallback. | `openslack ask` can use typed LLM fallback without weakening execution controls. |
-| P2 | Workflow Templates | Implemented. | Reusable templates instantiate registered actions, handoffs, decisions, waits, and gates. |
+| Priority | Item                       | Decision                          | Target outcome                                                                                                                 |
+| -------- | -------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| P0       | EVOL rollback backlog loop | Implemented.                      | Duplicate rollback proposals are deduplicated; `EXP-TEST*` artifacts are skipped; stale proposals use schema-valid `rejected`. |
+| P0       | Author/CODEOWNER deadlock  | Implemented without bot approval. | PRMS guidance and workspace PR preflight support bot/agent-authored Red Zone PRs with human CODEOWNER approval.                |
+| P1       | Node 24 Actions migration  | Implemented.                      | All workflow actions are Node-24-capable and pinned to full SHAs.                                                              |
+| P1       | LLM Planner                | Implemented as optional fallback. | `openslack ask` can use typed LLM fallback without weakening execution controls.                                               |
+| P2       | Workflow Templates         | Implemented.                      | Reusable templates instantiate registered actions, handoffs, decisions, waits, and gates.                                      |
 
 ## P0-A: EVOL Rollback Backlog Loop
 

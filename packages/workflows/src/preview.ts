@@ -5,22 +5,22 @@ import type {
   RunResult,
   AgentOptions,
   WorkflowFormat,
-} from './types.js'
-import { createRuntime } from './runtime.js'
-import type { RuntimeOptions } from './runtime.js'
-import type { AgentLauncher, AgentCacheStore } from './agent-shim.js'
-import type { PipelineCacheStore } from './pipeline-runner.js'
+} from './types.js';
+import { createRuntime } from './runtime.js';
+import type { RuntimeOptions } from './runtime.js';
+import type { AgentLauncher, AgentCacheStore } from './agent-shim.js';
+import type { PipelineCacheStore } from './pipeline-runner.js';
 
 /**
  * Error thrown when preview execution encounters a disallowed operation.
  */
 export class PreviewModeError extends Error {
-  readonly operation: string
+  readonly operation: string;
 
   constructor(operation: string, detail: string) {
-    super(`Preview mode error: ${operation} — ${detail}`)
-    this.name = 'PreviewModeError'
-    this.operation = operation
+    super(`Preview mode error: ${operation} — ${detail}`);
+    this.name = 'PreviewModeError';
+    this.operation = operation;
   }
 }
 
@@ -29,17 +29,17 @@ export class PreviewModeError extends Error {
  */
 export interface PreviewOptions {
   /** Workflow manifest */
-  manifest: WorkflowMeta
+  manifest: WorkflowMeta;
   /** Workflow arguments */
-  args?: Record<string, unknown>
+  args?: Record<string, unknown>;
   /** Budget limits for preview */
-  budget?: { tokens: number; costUsd: number }
+  budget?: { tokens: number; costUsd: number };
   /** Agent launcher for agent calls */
-  agentLauncher?: AgentLauncher
+  agentLauncher?: AgentLauncher;
   /** Agent cache store */
-  agentCache?: AgentCacheStore
+  agentCache?: AgentCacheStore;
   /** Pipeline cache store */
-  pipelineCache?: PipelineCacheStore
+  pipelineCache?: PipelineCacheStore;
 }
 
 /**
@@ -58,8 +58,8 @@ function createPreviewAgentLauncher(): AgentLauncher {
         message: 'Preview mode: agent call recorded but not executed',
       } as T,
       tokenUsage: 0,
-    }
-  }
+    };
+  };
 }
 
 /**
@@ -76,22 +76,18 @@ function createPreviewAgentLauncher(): AgentLauncher {
  */
 export async function executePreview(
   workflow: {
-    meta: WorkflowMeta
-    preview?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<PreviewResult>
-    run?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<RunResult>
-    format?: WorkflowFormat
-    sourceBody?: string
+    meta: WorkflowMeta;
+    preview?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<PreviewResult>;
+    run?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<RunResult>;
+    format?: WorkflowFormat;
+    sourceBody?: string;
   },
   options: PreviewOptions,
 ): Promise<PreviewResult> {
-  const {
-    manifest,
-    args = {},
-    budget,
-  } = options
+  const { manifest, args = {}, budget } = options;
 
   // Generate a deterministic preview run ID
-  const runId = `preview-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  const runId = `preview-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
   // Create the runtime in preview mode with untrusted permissions
   const runtime = createRuntime({
@@ -107,38 +103,38 @@ export async function executePreview(
     agentLauncher: options.agentLauncher ?? createPreviewAgentLauncher(),
     agentCache: options.agentCache,
     pipelineCache: options.pipelineCache,
-  })
+  });
 
   // Execute the preview function if available, otherwise run
-  let result: PreviewResult
+  let result: PreviewResult;
 
   // Handle claude-ambient workflows: execute sourceBody in sandbox
   if (workflow.format === 'claude-ambient' && workflow.sourceBody) {
-    const { executeAmbientWorkflow } = await import('./ambient-runner.js')
-    const ambientResult = await executeAmbientWorkflow(workflow.sourceBody, runtime, args)
+    const { executeAmbientWorkflow } = await import('./ambient-runner.js');
+    const ambientResult = await executeAmbientWorkflow(workflow.sourceBody, runtime, args);
     result = {
       preview: true,
       runId,
       workflowName: manifest.name,
       ...(typeof ambientResult === 'object' && ambientResult !== null
-        ? ambientResult as Record<string, unknown>
+        ? (ambientResult as Record<string, unknown>)
         : { result: ambientResult }),
       budget: {
         tokensUsed: runtime.budget.tokensUsed,
         tokensRemaining: runtime.budget.tokensRemaining,
         agentCalls: runtime.budget.agentCalls,
       },
-    }
+    };
   } else if (workflow.preview) {
-    result = await workflow.preview(runtime, args)
+    result = await workflow.preview(runtime, args);
   } else if (workflow.run) {
     // Running a workflow's `run` in preview mode — the runtime's preview
     // restrictions will prevent write operations
-    const runResult = await workflow.run(runtime, args)
+    const runResult = await workflow.run(runtime, args);
     result = {
       preview: true,
       ...runResult,
-    }
+    };
   } else {
     // No preview or run function — return basic metadata
     result = {
@@ -146,13 +142,13 @@ export async function executePreview(
       mode: 'preview',
       runId,
       workflowName: manifest.name,
-      phases: manifest.phases.map(p => p.title),
+      phases: manifest.phases.map((p) => p.title),
       budget: {
         tokensUsed: runtime.budget.tokensUsed,
         tokensRemaining: runtime.budget.tokensRemaining,
         agentCalls: runtime.budget.agentCalls,
       },
-    }
+    };
   }
 
   // Ensure the result has the preview flag
@@ -166,5 +162,5 @@ export async function executePreview(
       tokensRemaining: runtime.budget.tokensRemaining,
       agentCalls: runtime.budget.agentCalls,
     },
-  }
+  };
 }
