@@ -1,26 +1,26 @@
 schema: openslack.github_task_contract.v1
 
 github:
-  owner: '{{GITHUB_OWNER}}'
-  repo: '{{GITHUB_REPO}}'
-  project_number: { { PROJECT_NUMBER } }
+  owner: "{{GITHUB_OWNER}}"
+  repo: "{{GITHUB_REPO}}"
+  project_number: {{PROJECT_NUMBER}}
 
 task_board:
-  status_field: 'OpenSlack Status'
-  ready_status: 'Ready'
-  required_agent_type_field: 'Required Agent Type'
-  required_capabilities_field: 'Required Capabilities'
-  risk_level_field: 'Risk Level'
-  claimed_by_field: 'Claimed By'
-  lease_id_field: 'Lease ID'
+  status_field: "OpenSlack Status"
+  ready_status: "Ready"
+  required_agent_type_field: "Required Agent Type"
+  required_capabilities_field: "Required Capabilities"
+  risk_level_field: "Risk Level"
+  claimed_by_field: "Claimed By"
+  lease_id_field: "Lease ID"
 
 query:
-  allowed_statuses: ['Ready']
-  excluded_labels: ['human-only', 'blocked', 'confidential']
-  max_risk_level: '{{MAX_RISK_LEVEL}}'
-  priority_order: ['p0', 'p1', 'p2', 'p3']
+  allowed_statuses: ["Ready"]
+  excluded_labels: ["human-only", "blocked", "confidential"]
+  max_risk_level: "{{MAX_RISK_LEVEL}}"
+  priority_order: ["p0", "p1", "p2", "p3"]
 
 claim:
-  lease_ttl_minutes: { { LEASE_TTL_MINUTES } }
-  heartbeat_interval_minutes: { { HEARTBEAT_INTERVAL } }
-  max_parallel_tasks: { { MAX_PARALLEL_TASKS } }
+  lease_ttl_minutes: {{LEASE_TTL_MINUTES}}
+  heartbeat_interval_minutes: {{HEARTBEAT_INTERVAL}}
+  max_parallel_tasks: {{MAX_PARALLEL_TASKS}}
