@@ -159,17 +159,23 @@ describe('strict PR live evidence', () => {
   });
 
   it('reads all REST pages before returning live evidence', async () => {
-    const listFiles = vi.fn()
+    const listFiles = vi
+      .fn()
       .mockResolvedValueOnce({
-        data: Array.from({ length: 100 }, (_, index) => ({ filename: `packages/a/file-${index}.ts` })),
+        data: Array.from({ length: 100 }, (_, index) => ({
+          filename: `packages/a/file-${index}.ts`,
+        })),
       })
       .mockResolvedValueOnce({
-        data: [{
-          filename: 'packages/b/final.ts',
-          previous_filename: 'packages/a/renamed.ts',
-        }],
+        data: [
+          {
+            filename: 'packages/b/final.ts',
+            previous_filename: 'packages/a/renamed.ts',
+          },
+        ],
       });
-    const listReviews = vi.fn()
+    const listReviews = vi
+      .fn()
       .mockResolvedValueOnce({
         data: Array.from({ length: 100 }, (_, index) => ({
           user: { login: `reviewer-${index}` },
@@ -179,15 +185,18 @@ describe('strict PR live evidence', () => {
         })),
       })
       .mockResolvedValueOnce({
-        data: [{
-          user: { login: 'wsman' },
-          state: 'APPROVED',
-          body: 'approved',
-          submitted_at: '2026-06-01T14:32:04Z',
-          commit_id: '63029b4',
-        }],
+        data: [
+          {
+            user: { login: 'wsman' },
+            state: 'APPROVED',
+            body: 'approved',
+            submitted_at: '2026-06-01T14:32:04Z',
+            commit_id: '63029b4',
+          },
+        ],
       });
-    const listForRef = vi.fn()
+    const listForRef = vi
+      .fn()
       .mockResolvedValueOnce({
         data: {
           check_runs: Array.from({ length: 100 }, (_, index) => ({
@@ -199,11 +208,13 @@ describe('strict PR live evidence', () => {
       })
       .mockResolvedValueOnce({
         data: {
-          check_runs: [{
-            name: 'validate / validate',
-            status: 'completed',
-            conclusion: 'success',
-          }],
+          check_runs: [
+            {
+              name: 'validate / validate',
+              status: 'completed',
+              conclusion: 'success',
+            },
+          ],
         },
       });
 
@@ -238,20 +249,35 @@ describe('strict PR live evidence', () => {
 
     const files = await listPRFiles(138, { strictEvidence: true });
     expect(files).toHaveLength(102);
-    expect(files).toEqual(expect.arrayContaining([
-      'packages/b/final.ts',
-      'packages/a/renamed.ts',
-    ]));
+    expect(files).toEqual(expect.arrayContaining(['packages/b/final.ts', 'packages/a/renamed.ts']));
     const reviews = await getPRReviews(138, { strictEvidence: true });
     expect(reviews).toHaveLength(101);
     expect(reviews.at(-1)).toMatchObject({ commitOid: '63029b4' });
     await expect(getPRChecks(138, { strictEvidence: true })).resolves.toHaveLength(101);
-    expect(listFiles).toHaveBeenNthCalledWith(1, expect.objectContaining({ per_page: 100, page: 1 }));
-    expect(listFiles).toHaveBeenNthCalledWith(2, expect.objectContaining({ per_page: 100, page: 2 }));
-    expect(listReviews).toHaveBeenNthCalledWith(1, expect.objectContaining({ per_page: 100, page: 1 }));
-    expect(listReviews).toHaveBeenNthCalledWith(2, expect.objectContaining({ per_page: 100, page: 2 }));
-    expect(listForRef).toHaveBeenNthCalledWith(1, expect.objectContaining({ per_page: 100, page: 1 }));
-    expect(listForRef).toHaveBeenNthCalledWith(2, expect.objectContaining({ per_page: 100, page: 2 }));
+    expect(listFiles).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ per_page: 100, page: 1 }),
+    );
+    expect(listFiles).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ per_page: 100, page: 2 }),
+    );
+    expect(listReviews).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ per_page: 100, page: 1 }),
+    );
+    expect(listReviews).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ per_page: 100, page: 2 }),
+    );
+    expect(listForRef).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ per_page: 100, page: 1 }),
+    );
+    expect(listForRef).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ per_page: 100, page: 2 }),
+    );
   });
 
   it('throws instead of returning placeholder evidence when REST and GraphQL fail in strict mode', async () => {
@@ -279,12 +305,18 @@ describe('strict PR live evidence', () => {
   });
 
   it('returns complete Git tree identity evidence and rejects truncated evidence in every mode', async () => {
-    const getTree = vi.fn()
+    const getTree = vi
+      .fn()
       .mockResolvedValueOnce({
         data: {
           truncated: false,
           tree: [
-            { path: 'templates/workflows/feature.yaml', mode: '100644', type: 'blob', sha: 'blob-sha' },
+            {
+              path: 'templates/workflows/feature.yaml',
+              mode: '100644',
+              type: 'blob',
+              sha: 'blob-sha',
+            },
             { path: null, mode: '100644', type: 'blob', sha: 'ignored' },
           ],
         },
