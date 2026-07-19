@@ -49,6 +49,7 @@ export interface CollaborationEvent {
 ## Event Type Groups
 
 ### Task Events
+
 - `task.created` — A new task was created
 - `task.claimed` — An agent claimed a task
 - `task.blocked` — A task is blocked
@@ -57,6 +58,7 @@ export interface CollaborationEvent {
 - `task.expired` — A task claim expired
 
 ### PRMS Events
+
 - `pr.opened` — A PR was opened
 - `pr.doctor.ready` — PRMS doctor reported ready to merge
 - `pr.doctor.blocked` — PRMS doctor reported blockers
@@ -69,6 +71,7 @@ export interface CollaborationEvent {
 - `pr.merge.blocked` — Merge was blocked
 
 ### Operator Events
+
 - `operator.intent.parsed` — Intent was extracted from user text
 - `operator.plan.created` — An action plan was generated
 - `operator.plan.blocked` — Plan creation failed
@@ -77,6 +80,7 @@ export interface CollaborationEvent {
 - `operator.execution.failed` — Plan execution failed
 
 ### Chat Events
+
 - `chat.message.received` — A chat message was received
 - `chat.message.duplicate_dropped` — A duplicate message was dropped
 - `chat.plan.confirmation_requested` — User asked to confirm a plan
@@ -85,12 +89,14 @@ export interface CollaborationEvent {
 - `chat.plan.expired` — A plan expired without confirmation
 
 ### Governance Events
+
 - `governance.audit.passed` — Governance audit passed
 - `governance.audit.failed` — Governance audit failed
 - `governance.direct_commit.explained` — A direct commit was explained
 - `governance.direct_commit.unexplained` — An unexplained direct commit was detected
 
 ### Collaboration Object Events
+
 - `handoff.created` — A handoff was created
 - `handoff.accepted` — A handoff was accepted
 - `handoff.closed` — A handoff was closed
@@ -116,6 +122,7 @@ Format: One JSON object per line (JSONL).
 Path: `.openslack/collaboration/`
 
 Subdirectories:
+
 - `handoffs/` — Handoff YAML files
 - `decisions/` — Decision record YAML files
 
@@ -126,6 +133,7 @@ These are first-class workspace objects, committed to Git.
 Path: `.openslack.local/collaboration/`
 
 Subdirectories:
+
 - `digests/` — Regenerable from events
 - `rooms/` — Regenerable from events + objects
 
@@ -133,20 +141,21 @@ Subdirectories:
 
 Every event should reference its source of truth:
 
-| Object kind | Source link example |
-|-------------|---------------------|
-| `issue` | `https://github.com/{owner}/{repo}/issues/{n}` |
-| `pr` | `https://github.com/{owner}/{repo}/pull/{n}` |
-| `plan` | Internal plan ID (`PLAN-2026...`) |
-| `module` | `.openslack/modules.yaml` |
-| `handoff` | `.openslack/collaboration/handoffs/{id}.yaml` |
-| `decision` | `.openslack/collaboration/decisions/{id}.yaml` |
+| Object kind | Source link example                            |
+| ----------- | ---------------------------------------------- |
+| `issue`     | `https://github.com/{owner}/{repo}/issues/{n}` |
+| `pr`        | `https://github.com/{owner}/{repo}/pull/{n}`   |
+| `plan`      | Internal plan ID (`PLAN-2026...`)              |
+| `module`    | `.openslack/modules.yaml`                      |
+| `handoff`   | `.openslack/collaboration/handoffs/{id}.yaml`  |
+| `decision`  | `.openslack/collaboration/decisions/{id}.yaml` |
 
 ## Redaction
 
 Before any event is written, its metadata passes through `sanitizeEvent()`.
 
 Secret patterns detected:
+
 - Slack tokens: `xox[baprs]-...`
 - GitHub tokens: `gh[pousr]_...`
 - Private keys: `-----BEGIN ... PRIVATE KEY-----`
@@ -162,15 +171,18 @@ Safe summaries may be redacted. Raw metadata containing secrets is always reject
 Events are emitted from existing components in three batches:
 
 ### Batch 1: Read-Only / Low-Risk
+
 - `governance audit` → `governance.audit.passed/failed`
 - `@openslack/pr` doctor → `pr.doctor.ready/blocked`
 - `@openslack/operator` planActions → `operator.plan.created`
 
 ### Batch 2: Chat Runtime
+
 - `interaction-store.ts` → `chat.message.received/duplicate_dropped`
 - `plan-store.ts` → `plan.created/confirmed/expired`
 
 ### Batch 3: Side-Effect
+
 - Merge operations → `merge.started/completed/blocked`
 - Task completion → `task.done`
 - Handoff acceptance → `handoff.accepted`
