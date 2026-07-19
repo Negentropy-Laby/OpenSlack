@@ -1,9 +1,4 @@
-import {
-  copyFileSync,
-  mkdirSync,
-  readdirSync,
-  writeFileSync,
-} from 'node:fs';
+import { copyFileSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { relative, resolve, sep } from 'node:path';
 import {
@@ -92,9 +87,13 @@ function createPackSet(destination: string): readonly PublicPackArtifact[] {
     copyFileSync(resolve(root, 'NOTICE'), resolve(stage, 'NOTICE'));
     writeJson(resolve(stage, 'package.json'), staged);
 
-    run(npmCommand(), ['pack', '.', '--pack-destination', tarballRoot, '--json', '--ignore-scripts'], {
-      cwd: stage,
-    });
+    run(
+      npmCommand(),
+      ['pack', '.', '--pack-destination', tarballRoot, '--json', '--ignore-scripts'],
+      {
+        cwd: stage,
+      },
+    );
     const tarballName = `openslack-${safeName}-${PUBLIC_VERSION}.tgz`;
     const tarball = resolve(tarballRoot, tarballName);
     assertFile(tarball);
@@ -126,7 +125,12 @@ function createPackSet(destination: string): readonly PublicPackArtifact[] {
 }
 
 function validateStagedDependencyVersions(manifest: Record<string, unknown>): void {
-  for (const field of ['dependencies', 'optionalDependencies', 'peerDependencies', 'devDependencies']) {
+  for (const field of [
+    'dependencies',
+    'optionalDependencies',
+    'peerDependencies',
+    'devDependencies',
+  ]) {
     const dependencies = manifest[field] as Record<string, unknown> | undefined;
     for (const [name, version] of Object.entries(dependencies ?? {})) {
       if (typeof version === 'string' && version.startsWith('workspace:')) {
@@ -208,14 +212,7 @@ function verifyCleanConsumer(artifacts: readonly PublicPackArtifact[]): void {
 
   run(
     npmCommand(),
-    [
-      'install',
-      '--ignore-scripts',
-      '--no-audit',
-      '--no-fund',
-      '--package-lock=false',
-      '--offline',
-    ],
+    ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--package-lock=false', '--offline'],
     { cwd: consumer },
   );
   assertOnlyExpectedConsumerPackages(consumer);
@@ -355,11 +352,7 @@ function safeChildEnvironment(): NodeJS.ProcessEnv {
   return env;
 }
 
-function run(
-  executable: string,
-  args: readonly string[],
-  options: { readonly cwd: string },
-): void {
+function run(executable: string, args: readonly string[], options: { readonly cwd: string }): void {
   const result = spawnSync(executable, [...args], {
     cwd: options.cwd,
     env: safeChildEnvironment(),

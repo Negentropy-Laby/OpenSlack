@@ -89,13 +89,7 @@ describe('live capstone harness', () => {
   it('does not remove a lock owned by another recorder', () => {
     const root = workspace();
     plan(root);
-    const lock = join(
-      root,
-      '.openslack.local',
-      'capstone',
-      CORRELATION,
-      'record.lock',
-    );
+    const lock = join(root, '.openslack.local', 'capstone', CORRELATION, 'record.lock');
     writeFileSync(lock, 'other-recorder\n', { encoding: 'utf8', flag: 'wx' });
 
     expect(() =>
@@ -199,13 +193,7 @@ describe('live capstone harness', () => {
   it('rejects unknown fields added to a persisted run manifest', () => {
     const root = workspace();
     plan(root);
-    const path = join(
-      root,
-      '.openslack.local',
-      'capstone',
-      CORRELATION,
-      'run.json',
-    );
+    const path = join(root, '.openslack.local', 'capstone', CORRELATION, 'run.json');
     const value = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
     value.rawProviderResponse = { safeLookingButNotAllowed: true };
     writeFileSync(path, `${JSON.stringify(value)}\n`, 'utf8');
