@@ -167,34 +167,36 @@ export async function queryReadyItems(
     },
   );
 
-  return itemsResponse.node.items.nodes.map((item: {
-    id: string;
-    content: { id: string; title: string; number: number; url: string };
-    fieldValues: {
-      nodes: Array<{
-        field: { name: string };
-        name?: string;
-        text?: string;
-      }>;
-    };
-  }) => {
-    const fields: Record<string, string> = {};
-    for (const fv of item.fieldValues.nodes) {
-      if ('name' in fv) fields[fv.field.name] = fv.name || '';
-      if ('text' in fv) fields[fv.field.name] = fv.text || '';
-    }
-    return {
-      issueNodeId: item.content.id,
-      projectItemId: item.id,
-      title: item.content.title,
-      number: item.content.number,
-      url: item.content.url,
-      status: fields['OpenSlack Status'] || 'Ready',
-      riskLevel: fields['Risk Level'] || 'medium',
-      priority: fields['Priority'] || 'p2',
-      requiredAgentType: fields['Required Agent Type'] || '',
-    };
-  });
+  return itemsResponse.node.items.nodes.map(
+    (item: {
+      id: string;
+      content: { id: string; title: string; number: number; url: string };
+      fieldValues: {
+        nodes: Array<{
+          field: { name: string };
+          name?: string;
+          text?: string;
+        }>;
+      };
+    }) => {
+      const fields: Record<string, string> = {};
+      for (const fv of item.fieldValues.nodes) {
+        if ('name' in fv) fields[fv.field.name] = fv.name || '';
+        if ('text' in fv) fields[fv.field.name] = fv.text || '';
+      }
+      return {
+        issueNodeId: item.content.id,
+        projectItemId: item.id,
+        title: item.content.title,
+        number: item.content.number,
+        url: item.content.url,
+        status: fields['OpenSlack Status'] || 'Ready',
+        riskLevel: fields['Risk Level'] || 'medium',
+        priority: fields['Priority'] || 'p2',
+        requiredAgentType: fields['Required Agent Type'] || '',
+      };
+    },
+  );
 }
 
 export async function updateProjectField(
@@ -210,9 +212,8 @@ export async function updateProjectField(
     return;
   }
 
-  const valueInput = fieldType === 'single_select'
-    ? `singleSelectOptionId: "${value}"`
-    : `text: "${value}"`;
+  const valueInput =
+    fieldType === 'single_select' ? `singleSelectOptionId: "${value}"` : `text: "${value}"`;
 
   await client.octokit.graphql(
     `mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!) {

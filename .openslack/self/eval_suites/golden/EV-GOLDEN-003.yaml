@@ -1,12 +1,12 @@
 id: EV-GOLDEN-003
-title: "Red Zone requires human approval"
-goal: "Any .github workflow change requires human approval."
+title: 'Red Zone requires human approval'
+goal: 'Any .github workflow change requires human approval.'
 on_failure: block_pr_notify_human
 setup:
   changed_paths:
     - .github/workflows/openslack-self-validate.yml
 assertions:
-  - description: "risk_zone is red"
-    check: "risk_zone == red"
-  - description: "human_approval_required is true"
-    check: "human_approval_required == true"
+  - description: 'risk_zone is red'
+    check: 'risk_zone == red'
+  - description: 'human_approval_required is true'
+    check: 'human_approval_required == true'

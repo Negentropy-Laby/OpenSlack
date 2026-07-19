@@ -1,38 +1,38 @@
-import type { ProfileSyncConfig } from './profile-sync-config.js'
-import { publishProfileSyncFailure } from './profile-sync-issue-publisher.js'
-import type { ProfileSyncFailureIssue } from './profile-sync-issues.js'
-import { listOpenPRs } from './pr.js'
+import type { ProfileSyncConfig } from './profile-sync-config.js';
+import { publishProfileSyncFailure } from './profile-sync-issue-publisher.js';
+import type { ProfileSyncFailureIssue } from './profile-sync-issues.js';
+import { listOpenPRs } from './pr.js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface ProfileSyncRunOptions {
-  config: ProfileSyncConfig
-  runId?: string
-  sourceSha?: string
-  dryRun?: boolean
+  config: ProfileSyncConfig;
+  runId?: string;
+  sourceSha?: string;
+  dryRun?: boolean;
   /** Optional callback to record collaboration events. Keeps @openslack/github free of @openslack/collaboration dependency. */
   recordEvent?: (event: {
-    type: string
-    actor: { id: string; kind: string; provider: string }
-    object: { kind: string; id: string; url?: string }
-    source: { kind: string; ref: string }
-    summary: string
-    visibility: string
-    redacted: boolean
-    containsSensitiveData: boolean
-    metadata?: Record<string, unknown>
-  }) => Promise<unknown> | unknown
+    type: string;
+    actor: { id: string; kind: string; provider: string };
+    object: { kind: string; id: string; url?: string };
+    source: { kind: string; ref: string };
+    summary: string;
+    visibility: string;
+    redacted: boolean;
+    containsSensitiveData: boolean;
+    metadata?: Record<string, unknown>;
+  }) => Promise<unknown> | unknown;
 }
 
 export interface ProfileSyncRunResult {
-  status: 'completed' | 'failed' | 'skipped'
-  prUrl?: string
-  prNumber?: number
-  branchName?: string
-  issueUrl?: string
-  issueNumber?: number
-  reason?: string
-  error?: string
+  status: 'completed' | 'failed' | 'skipped';
+  prUrl?: string;
+  prNumber?: number;
+  branchName?: string;
+  issueUrl?: string;
+  issueNumber?: number;
+  reason?: string;
+  error?: string;
 }
 
 // ── Run ───────────────────────────────────────────────────────────────────────
@@ -40,10 +40,10 @@ export interface ProfileSyncRunResult {
 export async function runProfileSync(
   options: ProfileSyncRunOptions,
 ): Promise<ProfileSyncRunResult> {
-  const { config, runId = `local-${Date.now()}`, sourceSha = 'unknown' } = options
+  const { config, runId = `local-${Date.now()}`, sourceSha = 'unknown' } = options;
 
-  const source = parseRepoString(config.source.repo)
-  const target = parseRepoString(config.target.repo)
+  const source = parseRepoString(config.source.repo);
+  const target = parseRepoString(config.target.repo);
 
   const {
     readRepoDirectory,
@@ -57,43 +57,55 @@ export async function runProfileSync(
     createBranch,
     commitFileToBranch,
     createProfileSyncPR,
-  } = await import('./profile-sync.js')
+  } = await import('./profile-sync.js');
 
   // ── Phase 1: Collect ────────────────────────────────────────────────────────
-  let entries: Array<{ name: string; path: string; type: string }> = []
+  let entries: Array<{ name: string; path: string; type: string }> = [];
   try {
-    entries = await readRepoDirectory(source.owner, source.repo, config.source.path, config.source.branch)
+    entries = await readRepoDirectory(
+      source.owner,
+      source.repo,
+      config.source.path,
+      config.source.branch,
+    );
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return handleFailure(config, 'collect', `Failed to read source directory: ${msg}`, runId, options.recordEvent, options.dryRun)
+    const msg = err instanceof Error ? err.message : String(err);
+    return handleFailure(
+      config,
+      'collect',
+      `Failed to read source directory: ${msg}`,
+      runId,
+      options.recordEvent,
+      options.dryRun,
+    );
   }
 
-  const mdFiles = entries.filter((e) => e.type === 'file' && e.name.endsWith('.md'))
+  const mdFiles = entries.filter((e) => e.type === 'file' && e.name.endsWith('.md'));
 
   const posts: Array<{
-    title: string
-    date: string
-    tags: string[]
-    summary: string
-    status: string
-    slug: string
-    sourcePath: string
-  }> = []
+    title: string;
+    date: string;
+    tags: string[];
+    summary: string;
+    status: string;
+    slug: string;
+    sourcePath: string;
+  }> = [];
 
   for (const file of mdFiles) {
-    let fileData: { content: string; sha: string } | null = null
+    let fileData: { content: string; sha: string } | null = null;
     try {
-      fileData = await readRepoFile(source.owner, source.repo, file.path, config.source.branch)
+      fileData = await readRepoFile(source.owner, source.repo, file.path, config.source.branch);
     } catch {
-      continue
+      continue;
     }
-    if (!fileData) continue
+    if (!fileData) continue;
 
-    const frontmatter = parseFrontmatter(fileData.content)
-    if (!frontmatter) continue
+    const frontmatter = parseFrontmatter(fileData.content);
+    if (!frontmatter) continue;
 
-    const validation = validatePost(frontmatter)
-    if (!validation.valid) continue
+    const validation = validatePost(frontmatter);
+    if (!validation.valid) continue;
 
     posts.push({
       title: String(frontmatter.title),
@@ -103,40 +115,73 @@ export async function runProfileSync(
       status: String(frontmatter.status ?? 'draft'),
       slug: file.name.replace(/\.md$/, ''),
       sourcePath: file.path,
-    })
+    });
   }
 
   // ── Phase 2: Validate ───────────────────────────────────────────────────────
-  const published = posts.filter((p) => p.status === 'published')
+  const published = posts.filter((p) => p.status === 'published');
   if (published.length === 0) {
-    return handleFailure(config, 'validate', 'No published posts found. Nothing to sync.', runId, options.recordEvent, options.dryRun)
+    return handleFailure(
+      config,
+      'validate',
+      'No published posts found. Nothing to sync.',
+      runId,
+      options.recordEvent,
+      options.dryRun,
+    );
   }
 
   // ── Phase 3: Render ─────────────────────────────────────────────────────────
-  const sorted = sortPostsByDate(published)
-  const selected = sorted.slice(0, config.max_posts)
-  const rendered = renderLatestInsightsSection(selected, config.source.repo)
+  const sorted = sortPostsByDate(published);
+  const selected = sorted.slice(0, config.max_posts);
+  const rendered = renderLatestInsightsSection(selected, config.source.repo);
 
   if (rendered.length > 10240) {
-    return handleFailure(config, 'render', `Rendered section exceeds 10KB limit (${rendered.length} bytes)`, runId, options.recordEvent, options.dryRun)
+    return handleFailure(
+      config,
+      'render',
+      `Rendered section exceeds 10KB limit (${rendered.length} bytes)`,
+      runId,
+      options.recordEvent,
+      options.dryRun,
+    );
   }
 
   // ── Phase 4: Patch ──────────────────────────────────────────────────────────
-  let targetFile: { content: string; sha: string } | null = null
+  let targetFile: { content: string; sha: string } | null = null;
   try {
-    targetFile = await readRepoFile(target.owner, target.repo, config.target.path, config.target.branch)
+    targetFile = await readRepoFile(
+      target.owner,
+      target.repo,
+      config.target.path,
+      config.target.branch,
+    );
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return handleFailure(config, 'patch', `Failed to read target file: ${msg}`, runId, options.recordEvent, options.dryRun)
+    const msg = err instanceof Error ? err.message : String(err);
+    return handleFailure(
+      config,
+      'patch',
+      `Failed to read target file: ${msg}`,
+      runId,
+      options.recordEvent,
+      options.dryRun,
+    );
   }
 
   if (!targetFile) {
-    return handleFailure(config, 'patch', `Target file ${config.target.path} not found in ${config.target.repo}`, runId, options.recordEvent, options.dryRun)
+    return handleFailure(
+      config,
+      'patch',
+      `Target file ${config.target.path} not found in ${config.target.repo}`,
+      runId,
+      options.recordEvent,
+      options.dryRun,
+    );
   }
 
-  let patchedContent: string
+  let patchedContent: string;
   try {
-    patchedContent = patchMarkerSection(targetFile.content, config.target.marker, rendered)
+    patchedContent = patchMarkerSection(targetFile.content, config.target.marker, rendered);
   } catch (err: unknown) {
     if (err instanceof MarkerNotFoundError) {
       return handleFailure(
@@ -147,14 +192,21 @@ export async function runProfileSync(
         runId,
         options.recordEvent,
         options.dryRun,
-      )
+      );
     }
-    const msg = err instanceof Error ? err.message : String(err)
-    return handleFailure(config, 'patch', `Patch failed: ${msg}`, runId, options.recordEvent, options.dryRun)
+    const msg = err instanceof Error ? err.message : String(err);
+    return handleFailure(
+      config,
+      'patch',
+      `Patch failed: ${msg}`,
+      runId,
+      options.recordEvent,
+      options.dryRun,
+    );
   }
 
   // ── Phase 5: PR ─────────────────────────────────────────────────────────────
-  const branchName = buildBranchName(config, sourceSha, runId)
+  const branchName = buildBranchName(config, sourceSha, runId);
 
   // Dry-run: simulate PR creation without side effects
   if (options.dryRun) {
@@ -163,13 +215,17 @@ export async function runProfileSync(
       prUrl: `[DRY-RUN] would create PR from branch ${branchName}`,
       branchName,
       reason: `Dry-run: ${selected.length} posts ready to sync. Would create branch ${branchName} and open PR.`,
-    }
+    };
   }
 
   // Check for existing open profile-sync PRs
-  const existingPR = await findExistingProfileSyncPR(target.owner, target.repo, config.target.marker)
+  const existingPR = await findExistingProfileSyncPR(
+    target.owner,
+    target.repo,
+    config.target.marker,
+  );
   if (existingPR) {
-    const onExisting = config.on_existing_pr ?? 'skip'
+    const onExisting = config.on_existing_pr ?? 'skip';
     if (onExisting === 'skip') {
       return {
         status: 'skipped',
@@ -177,24 +233,29 @@ export async function runProfileSync(
         prUrl: existingPR.url,
         prNumber: existingPR.number,
         branchName: existingPR.branch,
-      }
+      };
     }
     // 'update' and 'create_new' handled below
   }
 
   // If update mode and existing PR, reuse branch
   const actualBranchName =
-    existingPR && config.on_existing_pr === 'update'
-      ? existingPR.branch
-      : branchName
+    existingPR && config.on_existing_pr === 'update' ? existingPR.branch : branchName;
 
   // Skip createBranch when reusing existing branch in update mode
   if (!(existingPR && config.on_existing_pr === 'update')) {
     try {
-      await createBranch(target.owner, target.repo, actualBranchName, config.target.branch)
+      await createBranch(target.owner, target.repo, actualBranchName, config.target.branch);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err)
-      return handleFailure(config, 'pr', `Failed to create branch: ${msg}`, runId, options.recordEvent, options.dryRun)
+      const msg = err instanceof Error ? err.message : String(err);
+      return handleFailure(
+        config,
+        'pr',
+        `Failed to create branch: ${msg}`,
+        runId,
+        options.recordEvent,
+        options.dryRun,
+      );
     }
   }
 
@@ -207,13 +268,20 @@ export async function runProfileSync(
       patchedContent,
       `profile: sync latest ${config.target.marker}`,
       targetFile.sha,
-    )
+    );
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return handleFailure(config, 'pr', `Failed to commit file: ${msg}`, runId, options.recordEvent, options.dryRun)
+    const msg = err instanceof Error ? err.message : String(err);
+    return handleFailure(
+      config,
+      'pr',
+      `Failed to commit file: ${msg}`,
+      runId,
+      options.recordEvent,
+      options.dryRun,
+    );
   }
 
-  const validationSummary = `${posts.length} valid, ${published.length} published, ${selected.length} selected`
+  const validationSummary = `${posts.length} valid, ${published.length} published, ${selected.length} selected`;
   const prBody = [
     '## Profile Sync',
     '',
@@ -242,7 +310,7 @@ export async function runProfileSync(
     '',
     '---',
     '*Generated by OpenSlack `profile-sync` workflow*',
-  ].join('\n')
+  ].join('\n');
 
   // Update mode: reuse existing PR, do not create a new one
   if (existingPR && config.on_existing_pr === 'update') {
@@ -252,7 +320,11 @@ export async function runProfileSync(
         await options.recordEvent({
           type: 'profile_sync.completed',
           actor: { id: 'profile-sync', kind: 'system', provider: 'github' },
-          object: { kind: 'pr', id: `${target.owner}/${target.repo}#${existingPR.number}`, url: existingPR.url },
+          object: {
+            kind: 'pr',
+            id: `${target.owner}/${target.repo}#${existingPR.number}`,
+            url: existingPR.url,
+          },
           source: { kind: 'github', ref: 'profile-sync.run' },
           summary: `Profile sync updated existing PR: ${selected.length} posts synced to ${existingPR.url}`,
           visibility: 'local',
@@ -271,7 +343,7 @@ export async function runProfileSync(
             sourceSha,
             updatedExisting: true,
           },
-        })
+        });
       } catch {
         // best-effort event recording
       }
@@ -283,10 +355,10 @@ export async function runProfileSync(
       prNumber: existingPR.number,
       branchName: actualBranchName,
       reason: `Updated existing PR #${existingPR.number}`,
-    }
+    };
   }
 
-  let prResult: { url: string; number: number }
+  let prResult: { url: string; number: number };
   try {
     prResult = await createProfileSyncPR(
       target.owner,
@@ -295,10 +367,17 @@ export async function runProfileSync(
       `profile: sync latest ${config.target.marker}`,
       prBody,
       config.target.branch,
-    )
+    );
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return handleFailure(config, 'pr', `Failed to create PR: ${msg}`, runId, options.recordEvent, options.dryRun)
+    const msg = err instanceof Error ? err.message : String(err);
+    return handleFailure(
+      config,
+      'pr',
+      `Failed to create PR: ${msg}`,
+      runId,
+      options.recordEvent,
+      options.dryRun,
+    );
   }
 
   // ── Phase 6: Audit ──────────────────────────────────────────────────────────
@@ -307,7 +386,11 @@ export async function runProfileSync(
       await options.recordEvent({
         type: 'profile_sync.completed',
         actor: { id: 'profile-sync', kind: 'system', provider: 'github' },
-        object: { kind: 'pr', id: `${target.owner}/${target.repo}#${prResult.number}`, url: prResult.url },
+        object: {
+          kind: 'pr',
+          id: `${target.owner}/${target.repo}#${prResult.number}`,
+          url: prResult.url,
+        },
         source: { kind: 'github', ref: 'profile-sync.run' },
         summary: `Profile sync completed: ${selected.length} posts synced to ${prResult.url}`,
         visibility: 'local',
@@ -325,7 +408,7 @@ export async function runProfileSync(
           runId,
           sourceSha,
         },
-      })
+      });
     } catch {
       // best-effort event recording
     }
@@ -336,24 +419,24 @@ export async function runProfileSync(
     prUrl: prResult.url,
     prNumber: prResult.number,
     branchName: actualBranchName,
-  }
+  };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function parseRepoString(repoString: string): { owner: string; repo: string } {
-  const parts = repoString.split('/')
+  const parts = repoString.split('/');
   if (parts.length !== 2) {
-    throw new Error(`Invalid repo format: "${repoString}". Expected "owner/repo".`)
+    throw new Error(`Invalid repo format: "${repoString}". Expected "owner/repo".`);
   }
-  return { owner: parts[0], repo: parts[1] }
+  return { owner: parts[0], repo: parts[1] };
 }
 
 function buildBranchName(config: ProfileSyncConfig, sourceSha: string, runId: string): string {
-  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '')
-  const shaShort = sourceSha.slice(0, 7)
-  const runShort = runId.slice(-6)
-  return `openslack/profile-sync/${config.target.marker}-${dateStr}-${shaShort}-${runShort}`
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const shaShort = sourceSha.slice(0, 7);
+  const runShort = runId.slice(-6);
+  return `openslack/profile-sync/${config.target.marker}-${dateStr}-${shaShort}-${runShort}`;
 }
 
 async function findExistingProfileSyncPR(
@@ -362,19 +445,18 @@ async function findExistingProfileSyncPR(
   marker: string,
 ): Promise<{ number: number; url: string; branch: string } | null> {
   try {
-    const openPRs = await listOpenPRs(50, owner, repo)
+    const openPRs = await listOpenPRs(50, owner, repo);
     const existing = openPRs.find(
       (pr) =>
-        pr.title.includes(`profile: sync latest ${marker}`) ||
-        pr.title.includes('Profile Sync'),
-    )
+        pr.title.includes(`profile: sync latest ${marker}`) || pr.title.includes('Profile Sync'),
+    );
     if (existing) {
       // listOpenPRs now returns the real head.ref as branch
-      return { number: existing.number, url: existing.url, branch: existing.branch }
+      return { number: existing.number, url: existing.url, branch: existing.branch };
     }
-    return null
+    return null;
   } catch {
-    return null
+    return null;
   }
 }
 
@@ -386,8 +468,8 @@ async function handleFailure(
   recordEvent?: ProfileSyncRunOptions['recordEvent'],
   dryRun?: boolean,
 ): Promise<ProfileSyncRunResult> {
-  let issueUrl: string | undefined
-  let issueNumber: number | undefined
+  let issueUrl: string | undefined;
+  let issueNumber: number | undefined;
 
   if (config.failure_issue.enabled && !dryRun) {
     try {
@@ -398,10 +480,10 @@ async function handleFailure(
         error,
         phase,
         runId,
-      }
-      const result = await publishProfileSyncFailure(failure)
-      issueUrl = result.url
-      issueNumber = result.issueNumber
+      };
+      const result = await publishProfileSyncFailure(failure);
+      issueUrl = result.url;
+      issueNumber = result.issueNumber;
     } catch {
       // best-effort issue creation
     }
@@ -428,7 +510,7 @@ async function handleFailure(
           issueUrl,
           issueNumber,
         },
-      })
+      });
     } catch {
       // best-effort event recording
     }
@@ -440,5 +522,5 @@ async function handleFailure(
     reason: `${phase}: ${error}`,
     issueUrl,
     issueNumber,
-  }
+  };
 }

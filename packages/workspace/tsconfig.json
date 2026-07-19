@@ -6,8 +6,5 @@
     "resolveJsonModule": true
   },
   "include": ["src/**/*.ts", "src/**/*.json"],
-  "references": [
-    { "path": "../core" },
-    { "path": "../kernel" }
-  ]
+  "references": [{ "path": "../core" }, { "path": "../kernel" }]
 }

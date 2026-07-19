@@ -4,29 +4,29 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 
 ## Start With User Goals
 
-| If you want to...                                | Start with                                                                     | Notes                                                                                          |
-| ------------------------------------------------ | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| Verify a fresh checkout                          | `openslack setup`                                                              | Runs workspace, golden, GitHub, genesis, and agent-runtime readiness checks.                   |
-| Initialize an ordinary Git repository            | `openslack init --root <repo> --repo <owner/name>`                             | Preview-first; add `--apply` only after reviewing the file plan.                               |
-| Attach OpenSlack to an ordinary repository       | `openslack setup attach --repo <owner/name>`                                   | Transactional preview; add `--apply`, and optionally select `--mode`.                           |
-| Inspect the installed release                    | `openslack version --format json`                                               | Shows version, commit, channel, target, runtime, and supported state/workspace schemas.         |
-| Get guided setup with prompts                    | `openslack setup interactive`                                                  | Walks fixable items step by step; supports `--format plain`                                    |
-| Start/resume the durable onboarding ledger       | `openslack setup onboarding --start`                                           | Start once; rerun without `--start` to resume. Existing receipts are never overwritten.       |
-| Run CI-style setup checks                        | `openslack setup --strict`                                                     | Treats warnings as failures. Use this for release or PR validation.                            |
+| If you want to...                                | Start with                                                                     | Notes                                                                                                |
+| ------------------------------------------------ | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| Verify a fresh checkout                          | `openslack setup`                                                              | Runs workspace, golden, GitHub, genesis, and agent-runtime readiness checks.                         |
+| Initialize an ordinary Git repository            | `openslack init --root <repo> --repo <owner/name>`                             | Preview-first; add `--apply` only after reviewing the file plan.                                     |
+| Attach OpenSlack to an ordinary repository       | `openslack setup attach --repo <owner/name>`                                   | Transactional preview; add `--apply`, and optionally select `--mode`.                                |
+| Inspect the installed release                    | `openslack version --format json`                                              | Shows version, commit, channel, target, runtime, and supported state/workspace schemas.              |
+| Get guided setup with prompts                    | `openslack setup interactive`                                                  | Walks fixable items step by step; supports `--format plain`                                          |
+| Start/resume the durable onboarding ledger       | `openslack setup onboarding --start`                                           | Start once; rerun without `--start` to resume. Existing receipts are never overwritten.              |
+| Run CI-style setup checks                        | `openslack setup --strict`                                                     | Treats warnings as failures. Use this for release or PR validation.                                  |
 | Check GitHub readiness without changing anything | `openslack setup github`                                                       | Reports auth, App permissions/events, and repository scope. Use `--apply` only for explicit repairs. |
-| Preview importing an owned GitHub App key        | `openslack github app import ...`                                              | Preview does not read the PEM; `--apply` requires a writable keychain backend.                 |
-| Create an organization-owned GitHub App          | `openslack github app create --org <org>`                                      | Preview-first Manifest flow; `--apply` starts a loopback-only callback.                        |
-| Ask OpenSlack what to do                         | `openslack ask "检查系统状态"`                                                 | Uses LLM-first routing when configured; otherwise uses the keyword router.                     |
-| Preview a task before creating an Issue          | `openslack task create --title "..." --path "docs/**" --preview`               | Preview is the safe first step. Add `--create-issue` only when ready.                          |
-| Let an agent pick up ready work                  | `openslack agent tick --agent-id <id> --source github-issues`                  | Requires a registered and bootstrapped agent identity.                                         |
-| Diagnose an Aby external runtime                 | `openslack agent-runtime doctor --provider aby`                                | Checks local bridge configuration without launching a task.                                    |
-| Configure an Aby external runtime                | `openslack agent-runtime setup aby --root <path> --write`                      | Writes local gitignored bridge config after validation.                                        |
-| Configure the built-in model runtime             | `openslack agent-runtime setup openai-compatible ...`                          | Preview-first; writes only endpoint, model, limits, and a credential reference.                |
-| Diagnose why a PR cannot merge                   | `openslack pr doctor <n>`                                                      | Shows blocker owner, evidence, and next action.                                                |
-| See team state across events and PRs             | `openslack collaboration dashboard`                                            | Projection-only; does not create dashboard-specific state.                                     |
-| Record a handoff or decision                     | `openslack collaboration handoff ...` / `openslack collaboration decision ...` | Creates auditable collaboration objects.                                                       |
-| Keep the org profile in sync                     | `openslack collaboration workflow profile-sync check`                          | Profile Sync Robot checks and previews are read-only; `run` requires confirmation.             |
-| Start a conversation with an agent               | `openslack conversation start --title "..."`                                   | Creates a typed thread with JSONL persistence and secret scanning.                             |
+| Preview importing an owned GitHub App key        | `openslack github app import ...`                                              | Preview does not read the PEM; `--apply` requires a writable keychain backend.                       |
+| Create an organization-owned GitHub App          | `openslack github app create --org <org>`                                      | Preview-first Manifest flow; `--apply` starts a loopback-only callback.                              |
+| Ask OpenSlack what to do                         | `openslack ask "检查系统状态"`                                                 | Uses LLM-first routing when configured; otherwise uses the keyword router.                           |
+| Preview a task before creating an Issue          | `openslack task create --title "..." --path "docs/**" --preview`               | Preview is the safe first step. Add `--create-issue` only when ready.                                |
+| Let an agent pick up ready work                  | `openslack agent tick --agent-id <id> --source github-issues`                  | Requires a registered and bootstrapped agent identity.                                               |
+| Diagnose an Aby external runtime                 | `openslack agent-runtime doctor --provider aby`                                | Checks local bridge configuration without launching a task.                                          |
+| Configure an Aby external runtime                | `openslack agent-runtime setup aby --root <path> --write`                      | Writes local gitignored bridge config after validation.                                              |
+| Configure the built-in model runtime             | `openslack agent-runtime setup openai-compatible ...`                          | Preview-first; writes only endpoint, model, limits, and a credential reference.                      |
+| Diagnose why a PR cannot merge                   | `openslack pr doctor <n>`                                                      | Shows blocker owner, evidence, and next action.                                                      |
+| See team state across events and PRs             | `openslack collaboration dashboard`                                            | Projection-only; does not create dashboard-specific state.                                           |
+| Record a handoff or decision                     | `openslack collaboration handoff ...` / `openslack collaboration decision ...` | Creates auditable collaboration objects.                                                             |
+| Keep the org profile in sync                     | `openslack collaboration workflow profile-sync check`                          | Profile Sync Robot checks and previews are read-only; `run` requires confirmation.                   |
+| Start a conversation with an agent               | `openslack conversation start --title "..."`                                   | Creates a typed thread with JSONL persistence and secret scanning.                                   |
 
 ## Common Workflows
 
@@ -204,12 +204,12 @@ bun run openslack status generate && bun run openslack status verify  # Sync doc
 
 Several commands support a `--format` option:
 
-| Format | When to use | Example |
-|--------|-------------|---------|
-| `standard` (default) | Human-readable terminal output | `openslack pr doctor 42` |
-| `plain` | Plain language with status/owner/next-action; good for logs and CI | `openslack pr doctor 42 --format plain` |
-| `tui` | Interactive terminal UI with keyboard navigation; requires TTY | `openslack tui` |
-| `json` | Structured data for scripting or piping | (Coming in future release) |
+| Format               | When to use                                                        | Example                                 |
+| -------------------- | ------------------------------------------------------------------ | --------------------------------------- |
+| `standard` (default) | Human-readable terminal output                                     | `openslack pr doctor 42`                |
+| `plain`              | Plain language with status/owner/next-action; good for logs and CI | `openslack pr doctor 42 --format plain` |
+| `tui`                | Interactive terminal UI with keyboard navigation; requires TTY     | `openslack tui`                         |
+| `json`               | Structured data for scripting or piping                            | (Coming in future release)              |
 
 Commands with `--format plain`:
 
@@ -275,20 +275,20 @@ approval on stale PR checks.
 
 ## Setup
 
-| Command                                          | Purpose                                                                                       |
-| ------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| `openslack setup`                                | Full workspace validation plus explicit agent-runtime readiness (alt: `openslack setup run`)  |
-| `openslack setup --strict`                       | Run setup and fail on warnings as well as critical failures                                   |
-| `openslack setup run --strict`                   | Run the full checklist with CI-style strict warning handling                                  |
-| `openslack setup smoke`                          | Run read-only smoke checks with GitHub setup warnings non-blocking                            |
-| `openslack setup smoke --strict`                 | Run smoke checks and fail on warnings                                                         |
-| `openslack setup github`                         | Read-only setup report for GitHub auth, App permissions/events/repository scope, labels, CODEOWNERS, rulesets, and local prerequisites |
-| `openslack setup github --repair-labels`         | Preview required OpenSlack label repair                                                       |
-| `openslack setup github --repair-labels --apply` | Apply required OpenSlack label repair                                                         |
-| `openslack setup interactive --format tui`       | Read-only setup report TUI with readiness classification                                      |
-| `openslack setup attach --repo owner/name`        | Preview a transactional read-only-monitor attach without writing                              |
-| `openslack setup attach --repo owner/name --mode full-agent --apply` | Commit the full-agent workspace attachment atomically                         |
-| `openslack setup attach --repo owner/name --mode full-agent --apply --start-watch` | Commit, validate, then start the typed watcher in the foreground       |
+| Command                                                                            | Purpose                                                                                                                                |
+| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `openslack setup`                                                                  | Full workspace validation plus explicit agent-runtime readiness (alt: `openslack setup run`)                                           |
+| `openslack setup --strict`                                                         | Run setup and fail on warnings as well as critical failures                                                                            |
+| `openslack setup run --strict`                                                     | Run the full checklist with CI-style strict warning handling                                                                           |
+| `openslack setup smoke`                                                            | Run read-only smoke checks with GitHub setup warnings non-blocking                                                                     |
+| `openslack setup smoke --strict`                                                   | Run smoke checks and fail on warnings                                                                                                  |
+| `openslack setup github`                                                           | Read-only setup report for GitHub auth, App permissions/events/repository scope, labels, CODEOWNERS, rulesets, and local prerequisites |
+| `openslack setup github --repair-labels`                                           | Preview required OpenSlack label repair                                                                                                |
+| `openslack setup github --repair-labels --apply`                                   | Apply required OpenSlack label repair                                                                                                  |
+| `openslack setup interactive --format tui`                                         | Read-only setup report TUI with readiness classification                                                                               |
+| `openslack setup attach --repo owner/name`                                         | Preview a transactional read-only-monitor attach without writing                                                                       |
+| `openslack setup attach --repo owner/name --mode full-agent --apply`               | Commit the full-agent workspace attachment atomically                                                                                  |
+| `openslack setup attach --repo owner/name --mode full-agent --apply --start-watch` | Commit, validate, then start the typed watcher in the foreground                                                                       |
 
 `setup attach` supports only `read-only-monitor` and `full-agent`. The read-only
 mode configures Issue/PR/review/check observation and a console route without
@@ -422,27 +422,27 @@ CI/headless setups may continue to use read-only `env:` references. OpenSlack
 does not fall back to plaintext, encrypted files, PowerShell, or `secret-tool`.
 See `docs/developer/keychain-packaging.md` for the artifact contract.
 
-| Command | Purpose |
-|---------|---------|
-| `openslack workspace validate` | Validate Self-Project workspace |
-| `openslack workspace index` | Build index from `.openslack/` plain text |
-| `openslack workspace status` | Show workspace summary |
+| Command                        | Purpose                                   |
+| ------------------------------ | ----------------------------------------- |
+| `openslack workspace validate` | Validate Self-Project workspace           |
+| `openslack workspace index`    | Build index from `.openslack/` plain text |
+| `openslack workspace status`   | Show workspace summary                    |
 
 ## Self-Evolution (OSEK)
 
-| Command | Purpose |
-|---------|---------|
-| `openslack self classify-pr --paths "..."` | Classify PR risk zone |
-| `openslack self validate --pr <n> --paths "..."` | Full PR validation + manifest |
-| `openslack self eval --suite golden` | Run golden evals (add `--clean` to remove artifacts) |
-| `openslack self observe` | Check system health |
-| `openslack self triage --create-issues` | Create EVOL task issues on GitHub |
-| `openslack self review --pr <n>` | Review PR for merge eligibility |
-| `openslack self scorecard --experiment <id>` | Compute fitness score |
-| `openslack self monitor --experiment <id>` | Post-merge regression check |
-| `openslack self release verify --manifest <file> --trusted-public-key <public.pem>` | Verify a downloaded stable release without a source checkout or Bun |
-| `openslack self plugin check <path> [--format plain\|json] [--verify-integrity]` | Run the deterministic G1-G17 declarative plugin registration preflight |
-| `openslack self plugin run <plugin-id> <action-id>` | Run the private governed plugin proof route with composition-injected policy and activation evidence |
+| Command                                                                             | Purpose                                                                                              |
+| ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `openslack self classify-pr --paths "..."`                                          | Classify PR risk zone                                                                                |
+| `openslack self validate --pr <n> --paths "..."`                                    | Full PR validation + manifest                                                                        |
+| `openslack self eval --suite golden`                                                | Run golden evals (add `--clean` to remove artifacts)                                                 |
+| `openslack self observe`                                                            | Check system health                                                                                  |
+| `openslack self triage --create-issues`                                             | Create EVOL task issues on GitHub                                                                    |
+| `openslack self review --pr <n>`                                                    | Review PR for merge eligibility                                                                      |
+| `openslack self scorecard --experiment <id>`                                        | Compute fitness score                                                                                |
+| `openslack self monitor --experiment <id>`                                          | Post-merge regression check                                                                          |
+| `openslack self release verify --manifest <file> --trusted-public-key <public.pem>` | Verify a downloaded stable release without a source checkout or Bun                                  |
+| `openslack self plugin check <path> [--format plain\|json] [--verify-integrity]`    | Run the deterministic G1-G17 declarative plugin registration preflight                               |
+| `openslack self plugin run <plugin-id> <action-id>`                                 | Run the private governed plugin proof route with composition-injected policy and activation evidence |
 
 Plugin checks emit `READY_TO_REGISTER` only when every applicable authoring check
 passes. G17 is skipped unless `--verify-integrity` is supplied; integrity mode
@@ -463,31 +463,31 @@ runs fail closed.
 
 ## Agent
 
-| Command | Purpose |
-|---------|---------|
-| `openslack agent hire --agent-id <id>` | Generate onboarding package |
-| `openslack agent bootstrap --agent-id <id>` | Verify agent readiness |
-| `openslack agent tick --agent-id <id> --source github-issues` | Claim a task from GitHub |
+| Command                                                       | Purpose                     |
+| ------------------------------------------------------------- | --------------------------- |
+| `openslack agent hire --agent-id <id>`                        | Generate onboarding package |
+| `openslack agent bootstrap --agent-id <id>`                   | Verify agent readiness      |
+| `openslack agent tick --agent-id <id> --source github-issues` | Claim a task from GitHub    |
 
 ## Agent Runtime
 
-| Command                                                               | Purpose                                                                                                             |
-| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `openslack agent-runtime setup aby --root <path> --dry-run`           | Preview the local Aby bridge configuration without writing it                                                       |
-| `openslack agent-runtime setup aby --root <path> --write`             | Validate and write `.openslack.local/agent-runtime.json`                                                            |
-| `openslack agent-runtime credential import --source <file> --credential-ref keychain:<service>/<account>` | Preview a read-free native-keychain credential import |
-| `openslack agent-runtime credential import --source <file> --credential-ref keychain:<service>/<account> --write` | Atomically import a provider credential without replacing an existing value |
-| `openslack agent-runtime setup openai-compatible --base-url <url> --model <model> --credential-ref <env:NAME\|keychain:SERVICE/ACCOUNT>` | Preview non-secret built-in provider configuration |
-| `openslack agent-runtime setup openai-compatible --base-url <url> --model <model> --credential-ref <env:NAME\|keychain:SERVICE/ACCOUNT> --write` | Merge the non-secret provider config into `.openslack.local/agent-runtime.json` |
-| `openslack agent-runtime doctor --provider aby`                       | Diagnose runtime readiness as `not_configured`, `misconfigured`, `unavailable`, or `ready` without launching a task |
-| `openslack agent-runtime doctor --provider openai-compatible` | Validate config and credential reference, then probe the compatible `/models` endpoint |
-| `openslack agent-runtime doctor --provider openai-compatible --format json` | Emit redacted structured diagnostics for scripting |
-| `openslack agent-runtime doctor --provider aby --format json`         | Emit redacted structured diagnostics for scripting                                                                  |
-| `openslack agent-runtime smoke --provider aby`                        | Run a read-only bridge smoke through the existing launcher                                                          |
-| `openslack agent-runtime smoke --provider aby --agent <agentId>`      | Smoke a specific Aby-backed agent id                                                                                |
-| `openslack agent-runtime smoke --provider openai-compatible` | Execute one governed, read-only Chat Completions smoke and persist terminal run evidence |
-| `openslack agent-runtime mcp status --provider aby --agent <agentId>` | Show required/available MCP descriptor status for an agent                                                          |
-| `openslack agent-runtime mcp status --provider aby --run <runId>`     | Show MCP tool evidence from a run transcript                                                                        |
+| Command                                                                                                                                          | Purpose                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `openslack agent-runtime setup aby --root <path> --dry-run`                                                                                      | Preview the local Aby bridge configuration without writing it                                                       |
+| `openslack agent-runtime setup aby --root <path> --write`                                                                                        | Validate and write `.openslack.local/agent-runtime.json`                                                            |
+| `openslack agent-runtime credential import --source <file> --credential-ref keychain:<service>/<account>`                                        | Preview a read-free native-keychain credential import                                                               |
+| `openslack agent-runtime credential import --source <file> --credential-ref keychain:<service>/<account> --write`                                | Atomically import a provider credential without replacing an existing value                                         |
+| `openslack agent-runtime setup openai-compatible --base-url <url> --model <model> --credential-ref <env:NAME\|keychain:SERVICE/ACCOUNT>`         | Preview non-secret built-in provider configuration                                                                  |
+| `openslack agent-runtime setup openai-compatible --base-url <url> --model <model> --credential-ref <env:NAME\|keychain:SERVICE/ACCOUNT> --write` | Merge the non-secret provider config into `.openslack.local/agent-runtime.json`                                     |
+| `openslack agent-runtime doctor --provider aby`                                                                                                  | Diagnose runtime readiness as `not_configured`, `misconfigured`, `unavailable`, or `ready` without launching a task |
+| `openslack agent-runtime doctor --provider openai-compatible`                                                                                    | Validate config and credential reference, then probe the compatible `/models` endpoint                              |
+| `openslack agent-runtime doctor --provider openai-compatible --format json`                                                                      | Emit redacted structured diagnostics for scripting                                                                  |
+| `openslack agent-runtime doctor --provider aby --format json`                                                                                    | Emit redacted structured diagnostics for scripting                                                                  |
+| `openslack agent-runtime smoke --provider aby`                                                                                                   | Run a read-only bridge smoke through the existing launcher                                                          |
+| `openslack agent-runtime smoke --provider aby --agent <agentId>`                                                                                 | Smoke a specific Aby-backed agent id                                                                                |
+| `openslack agent-runtime smoke --provider openai-compatible`                                                                                     | Execute one governed, read-only Chat Completions smoke and persist terminal run evidence                            |
+| `openslack agent-runtime mcp status --provider aby --agent <agentId>`                                                                            | Show required/available MCP descriptor status for an agent                                                          |
+| `openslack agent-runtime mcp status --provider aby --run <runId>`                                                                                | Show MCP tool evidence from a run transcript                                                                        |
 
 Aby is a configurable external provider, not a bundled OpenSlack backend. See
 `docs/guides/aby-integration.md` for setup and smoke-test steps.
@@ -506,15 +506,15 @@ configuration and agent-registry contract.
 
 ## Task
 
-| Command | Purpose |
-|---------|---------|
-| `openslack task create --title "..."` | Preview a schema-valid GitHub Issue task |
-| `openslack task create --template bugfix --title "..." --path "packages/**"` | Preview a task from a product template |
-| `openslack task create --title "..." --create-issue` | Create the GitHub Issue after validation |
-| `openslack task checkout --issue-number <n> --agent-id <id>` | Create isolated worktree |
-| `openslack task sync --agent-id <id> --task-id <id> --run-id <id> --paths "..."` | Commit + push + create draft PR |
-| `openslack task repair worktrees` | Preview orphaned local worktree cleanup |
-| `openslack task repair worktrees --apply` | Apply orphaned local worktree cleanup |
+| Command                                                                          | Purpose                                  |
+| -------------------------------------------------------------------------------- | ---------------------------------------- |
+| `openslack task create --title "..."`                                            | Preview a schema-valid GitHub Issue task |
+| `openslack task create --template bugfix --title "..." --path "packages/**"`     | Preview a task from a product template   |
+| `openslack task create --title "..." --create-issue`                             | Create the GitHub Issue after validation |
+| `openslack task checkout --issue-number <n> --agent-id <id>`                     | Create isolated worktree                 |
+| `openslack task sync --agent-id <id> --task-id <id> --run-id <id> --paths "..."` | Commit + push + create draft PR          |
+| `openslack task repair worktrees`                                                | Preview orphaned local worktree cleanup  |
+| `openslack task repair worktrees --apply`                                        | Apply orphaned local worktree cleanup    |
 
 `task sync` delegates publication to the same package-backed path as
 `openslack delivery publish`. The delivery path requires a GitHub App installation
@@ -565,23 +565,23 @@ normal delivery or product branches.
 
 ## GitHub
 
-| Command | Purpose |
-|---------|---------|
-| `openslack github doctor` | Check GitHub auth, App installation permissions/events, repository scope, and workspace setup |
-| `openslack github repair labels` | Preview required label repair |
-| `openslack github repair labels --apply` | Apply required label repair |
-| `openslack github repair claims` | Preview stale claim repair |
-| `openslack github repair claims --apply` | Apply stale claim repair |
-| `openslack github repair all` | Preview all GitHub repairs |
-| `openslack github repair all --apply` | Apply all GitHub repairs |
-| `openslack github repair-labels` | Compatibility alias for label repair; default is dry-run |
-| `openslack github repair-claims` | Compatibility alias for claim repair; default is dry-run |
-| `openslack github repair-all` | Compatibility alias for all GitHub repairs; default is dry-run |
-| `openslack github metrics` | Task loop metrics |
-| `openslack github claim heartbeat --issue-number <n> --agent-id <id> --ttl-minutes <1..120>` | Extend and verify a claim lease |
-| `openslack github claim review --issue-number <n> --agent-id <id> --pr-url <url>` | Verify the owner and move a claimed Issue to review |
-| `openslack github claim complete --issue-number <n> --agent-id <id> --pr-url <url>` | Complete a merged Issue and verify claim-ref removal |
-| `openslack github issue-done --issue-number <n> --agent-id <id> --pr-url <url>` | Deprecated strict alias for `claim complete` |
+| Command                                                                                      | Purpose                                                                                       |
+| -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `openslack github doctor`                                                                    | Check GitHub auth, App installation permissions/events, repository scope, and workspace setup |
+| `openslack github repair labels`                                                             | Preview required label repair                                                                 |
+| `openslack github repair labels --apply`                                                     | Apply required label repair                                                                   |
+| `openslack github repair claims`                                                             | Preview stale claim repair                                                                    |
+| `openslack github repair claims --apply`                                                     | Apply stale claim repair                                                                      |
+| `openslack github repair all`                                                                | Preview all GitHub repairs                                                                    |
+| `openslack github repair all --apply`                                                        | Apply all GitHub repairs                                                                      |
+| `openslack github repair-labels`                                                             | Compatibility alias for label repair; default is dry-run                                      |
+| `openslack github repair-claims`                                                             | Compatibility alias for claim repair; default is dry-run                                      |
+| `openslack github repair-all`                                                                | Compatibility alias for all GitHub repairs; default is dry-run                                |
+| `openslack github metrics`                                                                   | Task loop metrics                                                                             |
+| `openslack github claim heartbeat --issue-number <n> --agent-id <id> --ttl-minutes <1..120>` | Extend and verify a claim lease                                                               |
+| `openslack github claim review --issue-number <n> --agent-id <id> --pr-url <url>`            | Verify the owner and move a claimed Issue to review                                           |
+| `openslack github claim complete --issue-number <n> --agent-id <id> --pr-url <url>`          | Complete a merged Issue and verify claim-ref removal                                          |
+| `openslack github issue-done --issue-number <n> --agent-id <id> --pr-url <url>`              | Deprecated strict alias for `claim complete`                                                  |
 
 Claim lifecycle commands require live GitHub evidence and return
 `openslack.claim_lifecycle.v1`. They fail closed on missing/conflicting owner
@@ -590,26 +590,26 @@ transport failures are reported with fixed, secret-safe codes.
 
 ## PR Review & Merge Steward (PRMS)
 
-| Command | Purpose |
-|---------|---------|
-| `openslack pr status <n>` | Show PR status and merge readiness |
-| `openslack pr review <n>` | Generate review report for a PR |
-| `openslack pr review <n> --comment` | Post review report as PR comment |
-| `openslack pr recommend <n>` | Recommend next action for a PR |
-| `openslack pr doctor <n>` | Run governance diagnosis (11 gates) |
-| `openslack pr doctor <n> --repo owner/name` | Diagnose a PR in an explicit repository |
-| `openslack pr doctor <n> --auth auto\|app\|token\|dry-run` | Select the GitHub evidence mode |
-| `openslack pr doctor <n> --dry-run` | Show the simulated diagnosis plan only; no governance decision is produced |
-| `openslack pr doctor <n> --format tui` | Interactive PR doctor view (q/Esc to exit) |
-| `openslack pr doctor <n> --comment` | Post doctor report as PR comment |
-| `openslack pr workflow-evidence --base <sha> --head <sha>` | Compute deterministic evidence for governed workflow artifacts |
-| `openslack pr workflow-governance <n>` | Bot-create the single Governance Issue required for a new or core artifact |
-| `openslack pr queue` | Show open PRs sorted by readiness and blocker owner |
-| `openslack pr queue --repo owner/name --repo owner/other` | Project open PR/check summaries for explicit repositories |
-| `openslack pr queue --all` | Project every repository in `.openslack/monitors/github-watch.yaml` |
-| `openslack pr queue --concurrency 4 --api-budget 100 --cache-ttl 60` | Bound projection concurrency, GitHub requests, and local cache freshness |
-| `openslack pr watch <n>` | Poll PR status until ready or timeout |
-| `openslack pr merge <n>` | Merge PR after all gates pass |
+| Command                                                              | Purpose                                                                    |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `openslack pr status <n>`                                            | Show PR status and merge readiness                                         |
+| `openslack pr review <n>`                                            | Generate review report for a PR                                            |
+| `openslack pr review <n> --comment`                                  | Post review report as PR comment                                           |
+| `openslack pr recommend <n>`                                         | Recommend next action for a PR                                             |
+| `openslack pr doctor <n>`                                            | Run governance diagnosis (11 gates)                                        |
+| `openslack pr doctor <n> --repo owner/name`                          | Diagnose a PR in an explicit repository                                    |
+| `openslack pr doctor <n> --auth auto\|app\|token\|dry-run`           | Select the GitHub evidence mode                                            |
+| `openslack pr doctor <n> --dry-run`                                  | Show the simulated diagnosis plan only; no governance decision is produced |
+| `openslack pr doctor <n> --format tui`                               | Interactive PR doctor view (q/Esc to exit)                                 |
+| `openslack pr doctor <n> --comment`                                  | Post doctor report as PR comment                                           |
+| `openslack pr workflow-evidence --base <sha> --head <sha>`           | Compute deterministic evidence for governed workflow artifacts             |
+| `openslack pr workflow-governance <n>`                               | Bot-create the single Governance Issue required for a new or core artifact |
+| `openslack pr queue`                                                 | Show open PRs sorted by readiness and blocker owner                        |
+| `openslack pr queue --repo owner/name --repo owner/other`            | Project open PR/check summaries for explicit repositories                  |
+| `openslack pr queue --all`                                           | Project every repository in `.openslack/monitors/github-watch.yaml`        |
+| `openslack pr queue --concurrency 4 --api-budget 100 --cache-ttl 60` | Bound projection concurrency, GitHub requests, and local cache freshness   |
+| `openslack pr watch <n>`                                             | Poll PR status until ready or timeout                                      |
+| `openslack pr merge <n>`                                             | Merge PR after all gates pass                                              |
 
 `pr doctor` requires live GitHub evidence by default. If no supported credential
 is configured, it exits with `AUTH_REQUIRED` instead of producing a dry-run
@@ -679,25 +679,25 @@ Steward still re-runs PRMS and blocks unless all gates pass.
 
 ## Operator
 
-| Command | Purpose |
-|---------|---------|
-| `openslack operator ask "..."` | Natural language → CLI routing |
-| `openslack operator ask "..." --plan` | Show execution plan without running |
-| `openslack ask plan list` | List pending Operator plans |
-| `openslack ask plan show <id>` | Show a pending Operator plan |
-| `openslack ask plan resume <id> --set prNumber=42` | Fill clarification slots and re-plan |
-| `openslack ask plan approve <id>` | Approve and execute a pending Operator plan |
-| `openslack ask plan cancel <id>` | Cancel a pending Operator plan |
+| Command                                            | Purpose                                     |
+| -------------------------------------------------- | ------------------------------------------- |
+| `openslack operator ask "..."`                     | Natural language → CLI routing              |
+| `openslack operator ask "..." --plan`              | Show execution plan without running         |
+| `openslack ask plan list`                          | List pending Operator plans                 |
+| `openslack ask plan show <id>`                     | Show a pending Operator plan                |
+| `openslack ask plan resume <id> --set prNumber=42` | Fill clarification slots and re-plan        |
+| `openslack ask plan approve <id>`                  | Approve and execute a pending Operator plan |
+| `openslack ask plan cancel <id>`                   | Cancel a pending Operator plan              |
 
 When an LLM provider is configured (`OPENSLACK_LLM_PROVIDER`, `OPENSLACK_LLM_MODEL`, `OPENSLACK_LLM_API_KEY`), OpenSlack uses LLM-first intent classification. The deterministic keyword router serves as fallback when the LLM is unavailable or returns an invalid response. Without LLM configuration, all routing uses the keyword router. LLM output is restricted to registered OpenSlack actions; raw shell commands are rejected.
 
 ## Chat Gateway
 
-| Command | Purpose |
-|---------|---------|
-| `openslack chat start --adapter webhook --port 3000` | Start generic webhook chat adapter |
-| `openslack chat start --adapter webhook --port 3000 --secret <secret>` | Start webhook adapter with HMAC signature verification |
-| `openslack chat start --adapter slack --port 3000 --secret <signing-secret>` | Start Slack Events API adapter |
+| Command                                                                      | Purpose                                                |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `openslack chat start --adapter webhook --port 3000`                         | Start generic webhook chat adapter                     |
+| `openslack chat start --adapter webhook --port 3000 --secret <secret>`       | Start webhook adapter with HMAC signature verification |
+| `openslack chat start --adapter slack --port 3000 --secret <signing-secret>` | Start Slack Events API adapter                         |
 
 Chat Gateway is projection-only. GitHub/Git/.openslack remain the sole source of truth. Slack confirmation can carry an explicit human decision, but it is not by itself a GitHub CODEOWNER approval.
 
@@ -708,14 +708,14 @@ step. Ready PRs display a Confirm merge button.
 
 ## Status & Health
 
-| Command | Purpose |
-|---------|---------|
-| `openslack status` | Product dashboard with lifecycle, maturity, operator configuration, blockers, evidence, and GitHub ops |
-| `openslack status --format plain` | Non-interactive status renderer for logs and CI |
-| `openslack status --format tui` | Interactive status renderer when the terminal supports it |
-| `openslack status generate` | Generate `docs/status/current.md` |
-| `openslack status verify` | Verify consistency across docs |
-| `openslack doctor` | Multi-module health check |
+| Command                           | Purpose                                                                                                |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `openslack status`                | Product dashboard with lifecycle, maturity, operator configuration, blockers, evidence, and GitHub ops |
+| `openslack status --format plain` | Non-interactive status renderer for logs and CI                                                        |
+| `openslack status --format tui`   | Interactive status renderer when the terminal supports it                                              |
+| `openslack status generate`       | Generate `docs/status/current.md`                                                                      |
+| `openslack status verify`         | Verify consistency across docs                                                                         |
+| `openslack doctor`                | Multi-module health check                                                                              |
 
 Module lifecycle and delivery maturity are independent. `ACTIVE` means the
 module belongs to the current product; it does not imply live verification.
@@ -726,33 +726,33 @@ compatibility rules.
 
 ## Collaboration Layer
 
-| Command | Purpose |
-|---------|---------|
-| `openslack collaboration activity` | Show collaboration activity feed |
-| `openslack collaboration activity --since 24` | Filter events from last N hours |
-| `openslack collaboration activity --object pr:42` | Filter by object |
-| `openslack collaboration digest` | Show grouped event summary |
-| `openslack collaboration digest --since 24` | Digest for last N hours |
-| `openslack collaboration handoff create --from claude --to codex --context "..."` | Create a handoff |
-| `openslack collaboration handoff list` | List all handoffs |
-| `openslack collaboration handoff show <id>` | Show a handoff |
-| `openslack collaboration handoff accept <id>` | Accept a handoff |
-| `openslack collaboration handoff close <id>` | Close a handoff |
-| `openslack collaboration decision record --topic "..." --decision "..." --rationale "..." --by claude` | Record a decision |
-| `openslack collaboration decision list` | List all decisions |
-| `openslack collaboration decision show <id>` | Show a decision |
-| `openslack collaboration decision supersede <id> --by <new-id>` | Supersede a decision |
-| `openslack collaboration dashboard` | Show projection-only team dashboard |
-| `openslack collaboration dashboard --since 0` | Show dashboard over all recorded events |
-| `openslack collaboration dashboard --format tui` | Interactive team dashboard (q/Esc to exit) |
-| `openslack collaboration room show pr:42` | Show room summary for an object |
-| `openslack collaboration room show pr:42 --format tui` | Interactive room view (q/Esc to exit) |
-| `openslack collaboration workflow preview <file>` | Preview a typed workflow template |
-| `openslack collaboration workflow preview <file> --input pr_number=42` | Preview with template inputs |
-| `openslack collaboration workflow dry-run <name>` | Simulate workflow execution without real side effects |
-| `openslack collaboration workflow dry-run <name> --input key=value` | Dry-run with input values |
-| `openslack collaboration workflow run <name>` | Execute a workflow with real side effects |
-| `openslack collaboration workflow run <name> --agent-id <id>` | Execute with agent principal authorization |
+| Command                                                                                                | Purpose                                               |
+| ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------- |
+| `openslack collaboration activity`                                                                     | Show collaboration activity feed                      |
+| `openslack collaboration activity --since 24`                                                          | Filter events from last N hours                       |
+| `openslack collaboration activity --object pr:42`                                                      | Filter by object                                      |
+| `openslack collaboration digest`                                                                       | Show grouped event summary                            |
+| `openslack collaboration digest --since 24`                                                            | Digest for last N hours                               |
+| `openslack collaboration handoff create --from claude --to codex --context "..."`                      | Create a handoff                                      |
+| `openslack collaboration handoff list`                                                                 | List all handoffs                                     |
+| `openslack collaboration handoff show <id>`                                                            | Show a handoff                                        |
+| `openslack collaboration handoff accept <id>`                                                          | Accept a handoff                                      |
+| `openslack collaboration handoff close <id>`                                                           | Close a handoff                                       |
+| `openslack collaboration decision record --topic "..." --decision "..." --rationale "..." --by claude` | Record a decision                                     |
+| `openslack collaboration decision list`                                                                | List all decisions                                    |
+| `openslack collaboration decision show <id>`                                                           | Show a decision                                       |
+| `openslack collaboration decision supersede <id> --by <new-id>`                                        | Supersede a decision                                  |
+| `openslack collaboration dashboard`                                                                    | Show projection-only team dashboard                   |
+| `openslack collaboration dashboard --since 0`                                                          | Show dashboard over all recorded events               |
+| `openslack collaboration dashboard --format tui`                                                       | Interactive team dashboard (q/Esc to exit)            |
+| `openslack collaboration room show pr:42`                                                              | Show room summary for an object                       |
+| `openslack collaboration room show pr:42 --format tui`                                                 | Interactive room view (q/Esc to exit)                 |
+| `openslack collaboration workflow preview <file>`                                                      | Preview a typed workflow template                     |
+| `openslack collaboration workflow preview <file> --input pr_number=42`                                 | Preview with template inputs                          |
+| `openslack collaboration workflow dry-run <name>`                                                      | Simulate workflow execution without real side effects |
+| `openslack collaboration workflow dry-run <name> --input key=value`                                    | Dry-run with input values                             |
+| `openslack collaboration workflow run <name>`                                                          | Execute a workflow with real side effects             |
+| `openslack collaboration workflow run <name> --agent-id <id>`                                          | Execute with agent principal authorization            |
 
 The Collaboration Layer is projection-only. GitHub/Git/.openslack remain the sole source of truth. Activity feed, digest, handoffs, decisions, and room views are all derived from events and YAML files.
 
@@ -762,17 +762,17 @@ Agent Conversations provide structured, observable multi-turn interaction thread
 between humans and agents. Threads are stored in `.openslack.local/conversations/`
 with JSONL persistence and secret scanning on all messages.
 
-| Command | Purpose |
-|---------|---------|
-| `openslack conversation start --title "..."` | Create a new conversation thread |
-| `openslack conversation start --title "..." --pr 42` | Create thread linked to a PR |
-| `openslack conversation start --title "..." --issue 15` | Create thread linked to an issue |
-| `openslack conversation list` | List all conversation threads |
-| `openslack conversation list --status active` | Filter threads by status |
-| `openslack conversation show <threadId>` | Show thread details and messages |
-| `openslack conversation send <threadId> <message>` | Append a user message to a thread |
-| `openslack conversation summarize <threadId>` | Show thread summary and next action |
-| `openslack conversation archive <threadId>` | Archive a conversation thread |
+| Command                                                 | Purpose                             |
+| ------------------------------------------------------- | ----------------------------------- |
+| `openslack conversation start --title "..."`            | Create a new conversation thread    |
+| `openslack conversation start --title "..." --pr 42`    | Create thread linked to a PR        |
+| `openslack conversation start --title "..." --issue 15` | Create thread linked to an issue    |
+| `openslack conversation list`                           | List all conversation threads       |
+| `openslack conversation list --status active`           | Filter threads by status            |
+| `openslack conversation show <threadId>`                | Show thread details and messages    |
+| `openslack conversation send <threadId> <message>`      | Append a user message to a thread   |
+| `openslack conversation summarize <threadId>`           | Show thread summary and next action |
+| `openslack conversation archive <threadId>`             | Archive a conversation thread       |
 
 Thread IDs follow the format `CONV-YYYYMMDD-XXXXXXXX` (8 random base-36 characters).
 Messages support 7 kinds: `user_message`, `agent_response`, `tool_event`, `plan`,
@@ -785,29 +785,29 @@ Messages support 7 kinds: `user_message`, `agent_response`, `tool_event`, `plan`
 
 The Profile Sync Robot keeps an organization's public profile (README, blog posts, featured content) in sync with an upstream whitepapers repository. It is read-only by default: `check` and `preview` have no side effects, and `run` requires explicit confirmation or `--yes`.
 
-| Command | Purpose |
-|---------|---------|
-| `openslack collaboration workflow profile-sync check` | Check profile sync readiness without side effects |
-| `openslack collaboration workflow profile-sync preview` | Preview what a sync would change (no side effects) |
-| `openslack collaboration workflow profile-sync preview --format diff` | Preview changes as a diff |
-| `openslack collaboration workflow profile-sync preview --format markdown` | Preview changes as Markdown |
-| `openslack collaboration workflow profile-sync run` | Run profile sync with real side effects (prompts for confirmation) |
-| `openslack collaboration workflow profile-sync run --yes` | Run sync and skip interactive confirmation |
-| `openslack collaboration workflow profile-sync run --agent-id <id>` | Run sync with agent principal authorization |
-| `openslack collaboration workflow profile-sync status` | Show current profile sync status, last sync date, and pending PR |
+| Command                                                                   | Purpose                                                            |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `openslack collaboration workflow profile-sync check`                     | Check profile sync readiness without side effects                  |
+| `openslack collaboration workflow profile-sync preview`                   | Preview what a sync would change (no side effects)                 |
+| `openslack collaboration workflow profile-sync preview --format diff`     | Preview changes as a diff                                          |
+| `openslack collaboration workflow profile-sync preview --format markdown` | Preview changes as Markdown                                        |
+| `openslack collaboration workflow profile-sync run`                       | Run profile sync with real side effects (prompts for confirmation) |
+| `openslack collaboration workflow profile-sync run --yes`                 | Run sync and skip interactive confirmation                         |
+| `openslack collaboration workflow profile-sync run --agent-id <id>`       | Run sync with agent principal authorization                        |
+| `openslack collaboration workflow profile-sync status`                    | Show current profile sync status, last sync date, and pending PR   |
 
 ### Options
 
 All profile-sync subcommands accept these configuration override flags. When not provided, values are loaded from `.openslack/profile-sync.yaml`.
 
-| Option | Description |
-|--------|-------------|
-| `--source <repo>` | Source whitepapers repository (e.g. `org/whitepapers`) |
-| `--target <repo>` | Target profile repository (e.g. `org/org.github.io`) |
-| `--path <path>` | Target README path within the target repo |
-| `--posts <dir>` | Posts directory in the source repo |
-| `--marker <name>` | HTML comment marker name used to identify the injection point |
-| `--max <n>` | Maximum number of posts to include |
+| Option                      | Description                                                                                             |
+| --------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `--source <repo>`           | Source whitepapers repository (e.g. `org/whitepapers`)                                                  |
+| `--target <repo>`           | Target profile repository (e.g. `org/org.github.io`)                                                    |
+| `--path <path>`             | Target README path within the target repo                                                               |
+| `--posts <dir>`             | Posts directory in the source repo                                                                      |
+| `--marker <name>`           | HTML comment marker name used to identify the injection point                                           |
+| `--max <n>`                 | Maximum number of posts to include                                                                      |
 | `--on-existing-pr <action>` | Action when an open profile-sync PR already exists: `skip`, `update`, or `create_new` (default: `skip`) |
 
 The `preview` command also accepts `--format <format>` (`diff`, `json`, or `markdown`; default: `diff`).
@@ -815,16 +815,19 @@ The `preview` command also accepts `--format <format>` (`diff`, `json`, or `mark
 ### Quick Workflow
 
 1. **Check readiness** — confirm source and target are accessible:
+
    ```bash
    openslack collaboration workflow profile-sync check
    ```
 
 2. **Preview changes** — review what a sync would produce before committing:
+
    ```bash
    openslack collaboration workflow profile-sync preview --format diff
    ```
 
 3. **Create the sync PR** — run the sync and let it open a pull request:
+
    ```bash
    openslack collaboration workflow profile-sync run
    ```
@@ -838,59 +841,59 @@ The `preview` command also accepts `--format <format>` (`diff`, `json`, or `mark
 
 The workflow engine loads, validates, executes, checkpoints, and resumes OpenSlack workflow modules. Workflows are TypeScript/JavaScript files that declare metadata, permissions, and phases, and can run in preview, dry-run, or execute mode.
 
-| Command | Purpose |
-|---------|---------|
-| `openslack collaboration workflow list` | List all available workflows (YAML templates and JS modules) |
-| `openslack collaboration workflow show <name>` | Show detailed information about a workflow (phases, inputs, permissions, side effects) |
-| `openslack collaboration workflow validate <name>` | Validate a workflow template or JS module by name |
-| `openslack collaboration workflow preview <file>` | Preview a YAML workflow template without executing it |
-| `openslack collaboration workflow preview <file> --input key=value` | Preview with template input values |
-| `openslack collaboration workflow preview-js <name>` | Preview a JS workflow module in read-only mode |
-| `openslack collaboration workflow preview-js <name> --input key=value` | Preview JS module with input values |
-| `openslack collaboration workflow preview-js <name> --budget-tokens 10000` | Preview with custom token budget |
-| `openslack collaboration workflow dry-run <name>` | Simulate workflow execution without real side effects |
-| `openslack collaboration workflow dry-run <name> --input key=value` | Dry-run with input values |
-| `openslack collaboration workflow dry-run <name> --budget-tokens 50000` | Dry-run with custom token budget |
-| `openslack collaboration workflow run <name>` | Execute a workflow with real side effects |
-| `openslack collaboration workflow run <name> --input key=value` | Execute with input values |
-| `openslack collaboration workflow run <name> --yes` | Auto-approve all side effects without interactive confirmation |
-| `openslack collaboration workflow run <name> --agent-id <id>` | Execute with agent principal authorization |
-| `openslack collaboration workflow run <name> --budget-tokens 100000` | Execute with custom token budget |
-| `openslack collaboration workflow resume <runId>` | Resume a paused workflow run from its last checkpoint |
-| `openslack collaboration workflow resume <runId> --yes` | Resume with auto-approved side effects |
-| `openslack collaboration workflow resume <runId> --agent-id <id>` | Resume with agent principal authorization |
-| `openslack collaboration workflow start --prompt "..."` | Start the Dynamic Workflow path from a prompt by generating a previewable draft |
-| `openslack collaboration workflow start --pattern <pattern>` | Start from a known orchestration pattern without executing |
-| `openslack collaboration workflow start --saved <name>` | Show preview, dry-run, and run commands for a saved workflow |
-| `openslack collaboration workflow patterns list` | List dynamic workflow orchestration patterns |
-| `openslack collaboration workflow patterns show <pattern>` | Show a dynamic workflow pattern |
-| `openslack collaboration workflow catalog list` | List workflow use-case catalog entries |
-| `openslack collaboration workflow catalog show <id>` | Show when to use a catalog workflow and required evidence |
-| `openslack collaboration workflow catalog preview <id>` | Preview the catalog phases and draft command without writing a draft |
-| `openslack collaboration workflow generate --prompt "..."` | Generate a safe dynamic workflow draft without running it |
-| `openslack collaboration workflow generate --pattern fanout-synthesize --prompt "..."` | Generate a draft from a specific pattern |
-| `openslack collaboration workflow preview-draft <draftId>` | Preview a generated draft's phases, budget, permissions, and side effects |
-| `openslack collaboration workflow runs list` | List recorded workflow runs |
-| `openslack collaboration workflow runs show <runId>` | Show run-level phase evidence |
-| `openslack collaboration workflow runs show <runId> --detail progress` | Show run, phase, agent, transcript, and budget evidence |
-| `openslack collaboration workflow runs show <runId> --detail progress --format json` | Emit structured run progress evidence |
-| `openslack collaboration workflow runs control <runId> --action pause` | Record a workflow run control action |
-| `openslack collaboration workflow config show` | Show project workflow policy |
-| `openslack collaboration workflow config enable --ultracode` | Enable workflows and ultracode draft triggers |
-| `openslack collaboration workflow config disable` | Disable workflow generation and execution |
-| `openslack collaboration workflow save <name> --to project` | Save a reusable workflow to project workflow storage |
-| `openslack collaboration workflow save <name> --to claude-project` | Save a reusable workflow to `.claude/workflows/` for Claude-compatible project sharing |
-| `openslack collaboration workflow save-run <runId> --to project` | Save the workflow script associated with a recorded run |
-| `openslack collaboration workflow export-skill <name> --out skills/<name>` | Export a workflow as a skill-style package |
-| `openslack collaboration workflow trust <name>` | View the current trust level for a workflow |
-| `openslack collaboration workflow trust <name> --level <level>` | Set trust level (untrusted, trusted) |
-| `openslack collaboration inspect <runId>` | Inspect a workflow run (HTML, JSON, or Markdown) |
-| `openslack collaboration inspect <runId> --format html` | Inspect with self-contained HTML artifact |
-| `openslack collaboration inspect <runId> --format json` | Inspect as structured JSON |
-| `openslack collaboration inspect <runId> --format markdown` | Inspect as Markdown (default) |
-| `openslack collaboration inspect <runId> --out <file>` | Write output to file instead of stdout |
-| `openslack collaboration inspect <runId> --no-run-output` | Exclude run output section from report |
-| `openslack collaboration inspect <runId> --no-log` | Exclude log entries from report |
+| Command                                                                                | Purpose                                                                                |
+| -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `openslack collaboration workflow list`                                                | List all available workflows (YAML templates and JS modules)                           |
+| `openslack collaboration workflow show <name>`                                         | Show detailed information about a workflow (phases, inputs, permissions, side effects) |
+| `openslack collaboration workflow validate <name>`                                     | Validate a workflow template or JS module by name                                      |
+| `openslack collaboration workflow preview <file>`                                      | Preview a YAML workflow template without executing it                                  |
+| `openslack collaboration workflow preview <file> --input key=value`                    | Preview with template input values                                                     |
+| `openslack collaboration workflow preview-js <name>`                                   | Preview a JS workflow module in read-only mode                                         |
+| `openslack collaboration workflow preview-js <name> --input key=value`                 | Preview JS module with input values                                                    |
+| `openslack collaboration workflow preview-js <name> --budget-tokens 10000`             | Preview with custom token budget                                                       |
+| `openslack collaboration workflow dry-run <name>`                                      | Simulate workflow execution without real side effects                                  |
+| `openslack collaboration workflow dry-run <name> --input key=value`                    | Dry-run with input values                                                              |
+| `openslack collaboration workflow dry-run <name> --budget-tokens 50000`                | Dry-run with custom token budget                                                       |
+| `openslack collaboration workflow run <name>`                                          | Execute a workflow with real side effects                                              |
+| `openslack collaboration workflow run <name> --input key=value`                        | Execute with input values                                                              |
+| `openslack collaboration workflow run <name> --yes`                                    | Auto-approve all side effects without interactive confirmation                         |
+| `openslack collaboration workflow run <name> --agent-id <id>`                          | Execute with agent principal authorization                                             |
+| `openslack collaboration workflow run <name> --budget-tokens 100000`                   | Execute with custom token budget                                                       |
+| `openslack collaboration workflow resume <runId>`                                      | Resume a paused workflow run from its last checkpoint                                  |
+| `openslack collaboration workflow resume <runId> --yes`                                | Resume with auto-approved side effects                                                 |
+| `openslack collaboration workflow resume <runId> --agent-id <id>`                      | Resume with agent principal authorization                                              |
+| `openslack collaboration workflow start --prompt "..."`                                | Start the Dynamic Workflow path from a prompt by generating a previewable draft        |
+| `openslack collaboration workflow start --pattern <pattern>`                           | Start from a known orchestration pattern without executing                             |
+| `openslack collaboration workflow start --saved <name>`                                | Show preview, dry-run, and run commands for a saved workflow                           |
+| `openslack collaboration workflow patterns list`                                       | List dynamic workflow orchestration patterns                                           |
+| `openslack collaboration workflow patterns show <pattern>`                             | Show a dynamic workflow pattern                                                        |
+| `openslack collaboration workflow catalog list`                                        | List workflow use-case catalog entries                                                 |
+| `openslack collaboration workflow catalog show <id>`                                   | Show when to use a catalog workflow and required evidence                              |
+| `openslack collaboration workflow catalog preview <id>`                                | Preview the catalog phases and draft command without writing a draft                   |
+| `openslack collaboration workflow generate --prompt "..."`                             | Generate a safe dynamic workflow draft without running it                              |
+| `openslack collaboration workflow generate --pattern fanout-synthesize --prompt "..."` | Generate a draft from a specific pattern                                               |
+| `openslack collaboration workflow preview-draft <draftId>`                             | Preview a generated draft's phases, budget, permissions, and side effects              |
+| `openslack collaboration workflow runs list`                                           | List recorded workflow runs                                                            |
+| `openslack collaboration workflow runs show <runId>`                                   | Show run-level phase evidence                                                          |
+| `openslack collaboration workflow runs show <runId> --detail progress`                 | Show run, phase, agent, transcript, and budget evidence                                |
+| `openslack collaboration workflow runs show <runId> --detail progress --format json`   | Emit structured run progress evidence                                                  |
+| `openslack collaboration workflow runs control <runId> --action pause`                 | Record a workflow run control action                                                   |
+| `openslack collaboration workflow config show`                                         | Show project workflow policy                                                           |
+| `openslack collaboration workflow config enable --ultracode`                           | Enable workflows and ultracode draft triggers                                          |
+| `openslack collaboration workflow config disable`                                      | Disable workflow generation and execution                                              |
+| `openslack collaboration workflow save <name> --to project`                            | Save a reusable workflow to project workflow storage                                   |
+| `openslack collaboration workflow save <name> --to claude-project`                     | Save a reusable workflow to `.claude/workflows/` for Claude-compatible project sharing |
+| `openslack collaboration workflow save-run <runId> --to project`                       | Save the workflow script associated with a recorded run                                |
+| `openslack collaboration workflow export-skill <name> --out skills/<name>`             | Export a workflow as a skill-style package                                             |
+| `openslack collaboration workflow trust <name>`                                        | View the current trust level for a workflow                                            |
+| `openslack collaboration workflow trust <name> --level <level>`                        | Set trust level (untrusted, trusted)                                                   |
+| `openslack collaboration inspect <runId>`                                              | Inspect a workflow run (HTML, JSON, or Markdown)                                       |
+| `openslack collaboration inspect <runId> --format html`                                | Inspect with self-contained HTML artifact                                              |
+| `openslack collaboration inspect <runId> --format json`                                | Inspect as structured JSON                                                             |
+| `openslack collaboration inspect <runId> --format markdown`                            | Inspect as Markdown (default)                                                          |
+| `openslack collaboration inspect <runId> --out <file>`                                 | Write output to file instead of stdout                                                 |
+| `openslack collaboration inspect <runId> --no-run-output`                              | Exclude run output section from report                                                 |
+| `openslack collaboration inspect <runId> --no-log`                                     | Exclude log entries from report                                                        |
 
 ### Workflow Discovery
 
@@ -904,20 +907,20 @@ Workflows are discovered from:
 
 ### Workflow Execution Modes
 
-| Mode | Description | Side Effects |
-|------|-------------|-------------|
-| `validate` | Static validation only; no execution | None |
-| `preview` | Read-only execution with agent calls | Read-only API calls only |
-| `dry-run` | Simulated execution; side effects logged but not executed | Simulated |
-| `execute` | Full execution with real side effects | Real (requires confirmation) |
+| Mode       | Description                                               | Side Effects                 |
+| ---------- | --------------------------------------------------------- | ---------------------------- |
+| `validate` | Static validation only; no execution                      | None                         |
+| `preview`  | Read-only execution with agent calls                      | Read-only API calls only     |
+| `dry-run`  | Simulated execution; side effects logged but not executed | Simulated                    |
+| `execute`  | Full execution with real side effects                     | Real (requires confirmation) |
 
 ### Workflow Trust Levels
 
-| Level | Applies To | Capabilities |
-|-------|-----------|-------------|
-| `untrusted` | Legacy Anthropic paths, unknown workflows | Read-only agent and GitHub calls |
-| `trusted` | Project workflows explicitly trusted by operator | Declared permissions, side effects gated |
-| `core` | Built-in workflows from `@openslack/workflows` | Full API access (except hardcoded forbidden actions) |
+| Level       | Applies To                                       | Capabilities                                         |
+| ----------- | ------------------------------------------------ | ---------------------------------------------------- |
+| `untrusted` | Legacy Anthropic paths, unknown workflows        | Read-only agent and GitHub calls                     |
+| `trusted`   | Project workflows explicitly trusted by operator | Declared permissions, side effects gated             |
+| `core`      | Built-in workflows from `@openslack/workflows`   | Full API access (except hardcoded forbidden actions) |
 
 ### Workflow Examples
 
@@ -960,10 +963,10 @@ permission profiles, trust levels, PRMS gates, or human approval.
 
 ## Governance
 
-| Command | Purpose |
-|---------|---------|
-| `openslack governance audit` | Audit recent main commits for direct-push compliance |
-| `openslack governance audit --count <n>` | Audit last N commits |
+| Command                                  | Purpose                                              |
+| ---------------------------------------- | ---------------------------------------------------- |
+| `openslack governance audit`             | Audit recent main commits for direct-push compliance |
+| `openslack governance audit --count <n>` | Audit last N commits                                 |
 
 ## Negentropy-Lab Integration
 
@@ -972,16 +975,16 @@ OpenSlack runs as a standalone workbench and can export a schema-pinned, externa
 projection-only. It never contains a writer handle or mutation route, and OpenSlack
 never owns Negentropy-Lab `AuthorityState`.
 
-| Capability | Command | Status |
-|------------|---------|--------|
-| Standalone check | `openslack status` | Real |
-| Export unsigned preview | `openslack collaboration integration negentropy export-slot --format json` | Real |
-| Diagnose schema/signature/receipt/live endpoint | `openslack collaboration integration negentropy doctor --format plain\|json` | Real |
-| Show bounded integration state | `openslack collaboration integration negentropy status --format plain\|json` | Real |
-| Inspect workflow evidence | `openslack collaboration workflow runs show <runId> --detail progress --format json` | Real |
-| Inspect workflow run bundle | `openslack collaboration inspect <runId> --format json` | Real |
-| Inspect PR evidence | `openslack pr status <n>` / `openslack pr doctor <n>` | Real |
-| Profile projection status | `openslack collaboration workflow profile-sync status` | Real |
+| Capability                                      | Command                                                                              | Status |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------ | ------ |
+| Standalone check                                | `openslack status`                                                                   | Real   |
+| Export unsigned preview                         | `openslack collaboration integration negentropy export-slot --format json`           | Real   |
+| Diagnose schema/signature/receipt/live endpoint | `openslack collaboration integration negentropy doctor --format plain\|json`         | Real   |
+| Show bounded integration state                  | `openslack collaboration integration negentropy status --format plain\|json`         | Real   |
+| Inspect workflow evidence                       | `openslack collaboration workflow runs show <runId> --detail progress --format json` | Real   |
+| Inspect workflow run bundle                     | `openslack collaboration inspect <runId> --format json`                              | Real   |
+| Inspect PR evidence                             | `openslack pr status <n>` / `openslack pr doctor <n>`                                | Real   |
+| Profile projection status                       | `openslack collaboration workflow profile-sync status`                               | Real   |
 
 The preview is saved under
 `.openslack.local/integrations/negentropy/slot-preview.json` with
