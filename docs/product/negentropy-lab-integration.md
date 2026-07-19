@@ -20,15 +20,15 @@ Negentropy-Lab.
 
 The contribution is fixed to:
 
-| Property | Value |
-|----------|-------|
-| slot | `scenario-pack.extension` |
-| provider | `external` / `openslack` |
-| layer and kind | `L5` / `scenario-pack` |
-| gate | `SHADOW` |
-| activation mode | `opt-in` |
-| data path | projection-only |
-| preview readiness | `NOT_REGISTERABLE` |
+| Property          | Value                     |
+| ----------------- | ------------------------- |
+| slot              | `scenario-pack.extension` |
+| provider          | `external` / `openslack`  |
+| layer and kind    | `L5` / `scenario-pack`    |
+| gate              | `SHADOW`                  |
+| activation mode   | `opt-in`                  |
+| data path         | projection-only           |
+| preview readiness | `NOT_REGISTERABLE`        |
 
 It has no route, realtime room, lifecycle callback, writer handle, or mutation
 method. Its forbidden methods include `authorityWriterHandle` and
