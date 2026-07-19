@@ -7,7 +7,6 @@ description: >
   and its own OpenSlack workspace. Changes to OpenSlack itself go through the
   same task → claim → worktree → PR → review → merge pipeline.
 mode: self_project
-
 canonical_remote:
   provider: github
   owner: Negentropy-Laby
@@ -15,8 +14,8 @@ canonical_remote:
   default_branch: main
 
 workspace:
-  root: "."
-  state_root: ".openslack"
+  root: '.'
+  state_root: '.openslack'
 
 product:
   repo_role: self

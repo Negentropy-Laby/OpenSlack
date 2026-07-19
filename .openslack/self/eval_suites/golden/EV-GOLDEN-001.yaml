@@ -1,11 +1,11 @@
 id: EV-GOLDEN-001
-title: "Workspace can self-bootstrap"
-goal: "OpenSlack repo can be read as a valid OpenSlack workspace."
+title: 'Workspace can self-bootstrap'
+goal: 'OpenSlack repo can be read as a valid OpenSlack workspace.'
 on_failure: auto_create_evol
 assertions:
-  - description: "openslack.yaml exists"
-    check: "file_exists(openslack.yaml)"
-  - description: "self_evolution policy exists"
-    check: "file_exists(.openslack/policies/self_evolution.yaml)"
-  - description: "workspace validate passes"
-    check: "command(openslack workspace validate)"
+  - description: 'openslack.yaml exists'
+    check: 'file_exists(openslack.yaml)'
+  - description: 'self_evolution policy exists'
+    check: 'file_exists(.openslack/policies/self_evolution.yaml)'
+  - description: 'workspace validate passes'
+    check: 'command(openslack workspace validate)'

@@ -122,7 +122,9 @@ export function parseProfileSyncConfig(yaml: string): ProfileSyncConfigParseResu
   // on_existing_pr
   const onExistingPr = extractString(m, 'on_existing_pr', undefined, 'skip');
   if (onExistingPr && !VALID_ON_EXISTING_PR.has(onExistingPr)) {
-    errors.push(`Invalid on_existing_pr: "${onExistingPr}". Must be one of: skip, update, create_new`);
+    errors.push(
+      `Invalid on_existing_pr: "${onExistingPr}". Must be one of: skip, update, create_new`,
+    );
   }
 
   if (errors.length > 0) {
@@ -196,19 +198,26 @@ export function validateProfileSyncConfig(config: unknown): { valid: boolean; er
   if (!source || typeof source !== 'object') {
     errors.push('source is required');
   } else {
-    if (typeof source.repo !== 'string' || source.repo.length === 0) errors.push('source.repo is required');
-    if (typeof source.branch !== 'string' || source.branch.length === 0) errors.push('source.branch is required');
-    if (typeof source.path !== 'string' || source.path.length === 0) errors.push('source.path is required');
+    if (typeof source.repo !== 'string' || source.repo.length === 0)
+      errors.push('source.repo is required');
+    if (typeof source.branch !== 'string' || source.branch.length === 0)
+      errors.push('source.branch is required');
+    if (typeof source.path !== 'string' || source.path.length === 0)
+      errors.push('source.path is required');
   }
 
   const target = c.target as Record<string, unknown> | undefined;
   if (!target || typeof target !== 'object') {
     errors.push('target is required');
   } else {
-    if (typeof target.repo !== 'string' || target.repo.length === 0) errors.push('target.repo is required');
-    if (typeof target.branch !== 'string' || target.branch.length === 0) errors.push('target.branch is required');
-    if (typeof target.path !== 'string' || target.path.length === 0) errors.push('target.path is required');
-    if (typeof target.marker !== 'string' || target.marker.length === 0) errors.push('target.marker is required');
+    if (typeof target.repo !== 'string' || target.repo.length === 0)
+      errors.push('target.repo is required');
+    if (typeof target.branch !== 'string' || target.branch.length === 0)
+      errors.push('target.branch is required');
+    if (typeof target.path !== 'string' || target.path.length === 0)
+      errors.push('target.path is required');
+    if (typeof target.marker !== 'string' || target.marker.length === 0)
+      errors.push('target.marker is required');
   }
 
   if (typeof c.mode !== 'string' || !VALID_MODES.has(c.mode)) {
@@ -227,7 +236,8 @@ export function validateProfileSyncConfig(config: unknown): { valid: boolean; er
 
   const failure = c.failure_issue as Record<string, unknown> | undefined;
   if (failure && typeof failure === 'object') {
-    if (typeof failure.enabled !== 'boolean') errors.push('failure_issue.enabled must be a boolean');
+    if (typeof failure.enabled !== 'boolean')
+      errors.push('failure_issue.enabled must be a boolean');
   }
 
   return { valid: errors.length === 0, errors };

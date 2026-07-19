@@ -31,18 +31,18 @@ Normal natural language asks use the Operator planner and do not execute side ef
 
 ### Suggested Shortcuts
 
-| Shortcut | Task | Description |
-|----------|------|-------------|
-| 1 | See what needs attention | View items needing immediate action |
-| 2 | Start or continue work | Create tasks, claim issues, work in isolated branches |
-| 3 | Start a workflow | Generate from prompt, choose a pattern, or run a saved workflow |
-| w | Watch running workflows | Inspect run, phase, agent, transcript, controls, and budget evidence |
-| a | Handle paused workflow approvals | Approve or reject workflow effects and budget pauses |
-| s | Save/share run | Choose a workflow run, then save scripts to project, user, or Claude project targets |
-| g | Publish workflow to GitHub Issues | Create proposal, review, or phase-tracking issues |
-| 4 | Review and merge PRs | Check open PRs, run doctor, and merge when ready |
-| 5 | Approve pending items | Approve plans, merge requests, and workflow effects |
-| 6 | Maintain organization profile | Check, preview, and sync your organization profile |
+| Shortcut | Task                              | Description                                                                          |
+| -------- | --------------------------------- | ------------------------------------------------------------------------------------ |
+| 1        | See what needs attention          | View items needing immediate action                                                  |
+| 2        | Start or continue work            | Create tasks, claim issues, work in isolated branches                                |
+| 3        | Start a workflow                  | Generate from prompt, choose a pattern, or run a saved workflow                      |
+| w        | Watch running workflows           | Inspect run, phase, agent, transcript, controls, and budget evidence                 |
+| a        | Handle paused workflow approvals  | Approve or reject workflow effects and budget pauses                                 |
+| s        | Save/share run                    | Choose a workflow run, then save scripts to project, user, or Claude project targets |
+| g        | Publish workflow to GitHub Issues | Create proposal, review, or phase-tracking issues                                    |
+| 4        | Review and merge PRs              | Check open PRs, run doctor, and merge when ready                                     |
+| 5        | Approve pending items             | Approve plans, merge requests, and workflow effects                                  |
+| 6        | Maintain organization profile     | Check, preview, and sync your organization profile                                   |
 
 ### Next Recommended Action
 
@@ -89,13 +89,13 @@ Horizontal 5-stage progress bar (Proposal -> Review -> Run -> PR -> Merged) with
 
 Workflow home uses five action verbs:
 
-| Key | Action | Description |
-|-----|--------|-------------|
-| 1 | Start | Generate from prompt, choose a pattern, or open a saved workflow |
-| 2 | Watch | Open running and paused workflow runs |
-| 3 | Approve | Resolve workflow side effects and budget pauses |
-| 4 | Reuse | Save, export, or share workflow outputs |
-| 5 | Publish | Push workflow lifecycle to GitHub Issues |
+| Key | Action  | Description                                                      |
+| --- | ------- | ---------------------------------------------------------------- |
+| 1   | Start   | Generate from prompt, choose a pattern, or open a saved workflow |
+| 2   | Watch   | Open running and paused workflow runs                            |
+| 3   | Approve | Resolve workflow side effects and budget pauses                  |
+| 4   | Reuse   | Save, export, or share workflow outputs                          |
+| 5   | Publish | Push workflow lifecycle to GitHub Issues                         |
 
 ### Workflow Runs
 
@@ -117,21 +117,21 @@ PR health report with 11 governance gates. Toggle compressed mode with `c` key.
 
 ### Global
 
-| Key | Action |
-|-----|--------|
-| q / Esc | Back / Quit |
-| Up / Down | Navigate |
-| Enter | Select |
+| Key       | Action      |
+| --------- | ----------- |
+| q / Esc   | Back / Quit |
+| Up / Down | Navigate    |
+| Enter     | Select      |
 
 ### View-specific
 
-| Key | View | Action |
-|-----|------|--------|
-| c | Doctor | Toggle compressed summary |
-| r | Lifecycle | Run workflow |
-| d | Lifecycle | Dry-run workflow |
-| a | Approval Center | Approve selected |
-| x | Approval Center | Reject selected |
+| Key | View            | Action                    |
+| --- | --------------- | ------------------------- |
+| c   | Doctor          | Toggle compressed summary |
+| r   | Lifecycle       | Run workflow              |
+| d   | Lifecycle       | Dry-run workflow          |
+| a   | Approval Center | Approve selected          |
+| x   | Approval Center | Reject selected           |
 
 ## Fallback
 

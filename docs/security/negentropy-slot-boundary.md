@@ -32,11 +32,11 @@ These mutations are OpenSlack's operational scope. They are not proxies for Nege
 
 Negentropy-Lab may absorb OpenSlack output in exactly these forms:
 
-| Form | Examples |
-|------|----------|
-| Evidence | Workflow run JSON, PRMS report payload, agent decision/handoff YAML, audit JSONL |
-| Projection | Profile-sync render of `.github/profile/README.md`, room summaries, activity digest |
-| Governed request | Explicit human-approved action request with approval provenance |
+| Form             | Examples                                                                            |
+| ---------------- | ----------------------------------------------------------------------------------- |
+| Evidence         | Workflow run JSON, PRMS report payload, agent decision/handoff YAML, audit JSONL    |
+| Projection       | Profile-sync render of `.github/profile/README.md`, room summaries, activity digest |
+| Governed request | Explicit human-approved action request with approval provenance                     |
 
 Negentropy-Lab decides whether to accept, transform, or reject each contribution. OpenSlack does not assume ingestion, activation, or policy effect.
 

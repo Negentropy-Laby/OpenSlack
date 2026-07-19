@@ -11,15 +11,15 @@ The agent-assisted PR gatekeeper. PRMS fetches PR metadata, classifies risk zone
 
 ## Design Principles
 
-| Principle | Rule |
-|-----------|------|
-| Agent reviews | Agent can analyze, classify, report, recommend |
-| Identity split | Bot/agent identity authors OpenSlack work; human identity reviews and approves |
-| Human approves | Only humans decide approval; GitHub enforcement requires the human GitHub identity |
-| Agent-assisted evidence | Human reviewers may rely on PRMS and agent summaries instead of personally opening the PR page |
+| Principle                   | Rule                                                                                                         |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Agent reviews               | Agent can analyze, classify, report, recommend                                                               |
+| Identity split              | Bot/agent identity authors OpenSlack work; human identity reviews and approves                               |
+| Human approves              | Only humans decide approval; GitHub enforcement requires the human GitHub identity                           |
+| Agent-assisted evidence     | Human reviewers may rely on PRMS and agent summaries instead of personally opening the PR page               |
 | Agent merges after approval | Agent can execute merge only after approval, checks, mergeability, and required conversation resolution pass |
-| No self-review | Agent cannot review PRs it authored |
-| No bypass | Agent cannot bypass branch protection ruleset |
+| No self-review              | Agent cannot review PRs it authored                                                                          |
+| No bypass                   | Agent cannot bypass branch protection ruleset                                                                |
 
 ## Human Approval Semantics
 
@@ -53,6 +53,7 @@ DISCOVERED → CLASSIFIED → ANALYZED → CHECKS_PENDING → NEEDS_HUMAN_APPROV
 ```
 
 Failure paths:
+
 - ANALYZED → NEEDS_CHANGES
 - ANALYZED → BLOCKED_POLICY
 - ANALYZED → BLOCKED_SELF_REVIEW
@@ -67,16 +68,17 @@ Failure paths:
 
 ## Risk Zone Gating
 
-| Zone | Decision | Human Required | Auto-Merge |
-|------|----------|---------------|------------|
-| Green | READY_TO_MERGE (if checks and required conversations pass) | No | Yes |
-| Yellow | READY_TO_MERGE (if checks and required conversations pass) | No | With review |
-| Red | NEEDS_HUMAN_APPROVAL → READY_TO_MERGE after checks and required conversations pass | Yes | After approval |
-| Black | BLOCKED_BLACK_ZONE | N/A | Never |
+| Zone   | Decision                                                                           | Human Required | Auto-Merge     |
+| ------ | ---------------------------------------------------------------------------------- | -------------- | -------------- |
+| Green  | READY_TO_MERGE (if checks and required conversations pass)                         | No             | Yes            |
+| Yellow | READY_TO_MERGE (if checks and required conversations pass)                         | No             | With review    |
+| Red    | NEEDS_HUMAN_APPROVAL → READY_TO_MERGE after checks and required conversations pass | Yes            | After approval |
+| Black  | BLOCKED_BLACK_ZONE                                                                 | N/A            | Never          |
 
 ## Policy
 
 See `.openslack/policies/pr_review.yaml`:
+
 - `no_auto_approval: true`
 - `no_self_review: true`
 - `red_zone_human_required: true`
@@ -85,6 +87,7 @@ See `.openslack/policies/pr_review.yaml`:
 ## Agent Registry
 
 See `.openslack/agents/registry/pr_reviewer.yaml`:
+
 - Role: reviewer
 - Can: fetch PR, classify, report, recommend
 - Cannot: decide approval, approve under bot/app/agent identity, bypass ruleset
@@ -120,13 +123,13 @@ packages/pr/
 
 ## Phase Roadmap
 
-| Phase | Deliverables | Status |
-|-------|-------------|--------|
-| 1.13 (MVP) | `pr status`, `pr review`, `pr recommend` — read-only + report generation | COMPLETE |
-| 1.14A | `pr doctor`, CODEOWNERS resolver, deadlock detector, valid approval filter | COMPLETE |
-| 1.14B | `pr merge` — policy-gated merge execution via `mergeIfReady()` | COMPLETE |
-| 1.15 | Operator integration — natural language PR management | COMPLETE |
-| 1.16 | `pr watch`, `pr comment`, module registry, automated status generation | COMPLETE |
+| Phase      | Deliverables                                                               | Status   |
+| ---------- | -------------------------------------------------------------------------- | -------- |
+| 1.13 (MVP) | `pr status`, `pr review`, `pr recommend` — read-only + report generation   | COMPLETE |
+| 1.14A      | `pr doctor`, CODEOWNERS resolver, deadlock detector, valid approval filter | COMPLETE |
+| 1.14B      | `pr merge` — policy-gated merge execution via `mergeIfReady()`             | COMPLETE |
+| 1.15       | Operator integration — natural language PR management                      | COMPLETE |
+| 1.16       | `pr watch`, `pr comment`, module registry, automated status generation     | COMPLETE |
 
 ## Verification
 

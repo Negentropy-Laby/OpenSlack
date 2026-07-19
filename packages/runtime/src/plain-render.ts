@@ -1,5 +1,13 @@
 export interface PlainFinding {
-  status: 'PASS' | 'WARN' | 'FAIL' | 'ok' | 'fixable_by_command' | 'requires_github_admin' | 'requires_human_approval' | 'informational';
+  status:
+    | 'PASS'
+    | 'WARN'
+    | 'FAIL'
+    | 'ok'
+    | 'fixable_by_command'
+    | 'requires_github_admin'
+    | 'requires_human_approval'
+    | 'informational';
   title: string;
   detail: string;
   nextAction?: string;

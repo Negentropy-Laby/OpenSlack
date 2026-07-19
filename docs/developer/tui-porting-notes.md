@@ -23,12 +23,12 @@ native binary wrapper. The upstream yoga-layout is MIT-licensed.
 
 ## License Status
 
-| Component | Upstream license | Aby status | OpenSlack status |
-|-----------|-----------------|------------|------------------|
-| Ink engine (`src/ink/`) | MIT (vadimdemedes/ink) | Forked, heavily modified | **Confirmed (2026-05-27)** |
-| yoga-layout TS (`src/native-ts/yoga-layout/`) | MIT (Meta yoga-layout) | Pure TS port | **Confirmed (2026-05-27)** |
-| Design system components (`src/components/design-system/`) | Aby-authored | `"UNLICENSED"` | **Gated for PR 2** — not included in PR #93 |
-| pretext-derived code (`terminal-text-layout.ts`) | MIT (nicolo-ribaudo/pretext) | Used with attribution | **Confirmed (2026-05-27)** |
+| Component                                                  | Upstream license             | Aby status               | OpenSlack status                            |
+| ---------------------------------------------------------- | ---------------------------- | ------------------------ | ------------------------------------------- |
+| Ink engine (`src/ink/`)                                    | MIT (vadimdemedes/ink)       | Forked, heavily modified | **Confirmed (2026-05-27)**                  |
+| yoga-layout TS (`src/native-ts/yoga-layout/`)              | MIT (Meta yoga-layout)       | Pure TS port             | **Confirmed (2026-05-27)**                  |
+| Design system components (`src/components/design-system/`) | Aby-authored                 | `"UNLICENSED"`           | **Gated for PR 2** — not included in PR #93 |
+| pretext-derived code (`terminal-text-layout.ts`)           | MIT (nicolo-ribaudo/pretext) | Used with attribution    | **Confirmed (2026-05-27)**                  |
 
 ### Required Before Merge
 
@@ -125,10 +125,12 @@ Tests must prove the shim never outputs OSC sequences to stdout/stderr.
 ### Design System (from `src/components/design-system/`)
 
 Tier 1 (ported directly):
+
 - `ThemeProvider`, `ThemedBox`, `ThemedText`, `ProgressBar`, `StatusIcon`,
   `Byline`, `KeyboardShortcutHint`
 
 Tier 2 (adapted):
+
 - `ListItem`, `Divider`, `Pane` (modal context dependency removed)
 
 ### Utilities (kept subset)
@@ -139,25 +141,25 @@ Tier 2 (adapted):
 
 ## What Gets Excluded
 
-| Component | Reason |
-|-----------|--------|
-| Aby REPL.tsx (953KB chat interface) | Not needed; OpenSlack has its own chat gateway |
-| Aby Doctor.tsx | Not needed; OpenSlack has PRMS |
-| Aby ResumeConversation.tsx | Not needed; no conversation sessions |
-| Aby global state store (AppState, AppStateStore) | Not needed; TUI is render-and-exit |
-| Aby conversation/session runtime | Not needed; no REPL |
-| Aby telemetry/logging infrastructure | Not needed; replaced by no-ops |
-| Aby clipboard/OSC extras | Disabled for security |
-| ScrollBox | No scroll regions in v1 |
-| AlternateScreen | No alternate screen mode in v1 |
-| ErrorOverview | Not needed; errors handled by CLI |
-| Link component (OSC 8) | No hyperlinks in v1 |
-| Mouse selection (use-selection) | No mouse interaction in v1 |
-| Terminal focus detection (use-terminal-focus) | Not needed for render-and-exit |
-| Terminal viewport (use-terminal-viewport) | Not needed for bounded views |
-| Tab status (use-tab-status) | Not needed; no tab navigation |
-| Animation frames (use-animation-frame) | Not needed; no animations |
-| `osc.ts` (termio) | Replaced with inert/trimmed shim; see OSC Handling section above |
+| Component                                        | Reason                                                           |
+| ------------------------------------------------ | ---------------------------------------------------------------- |
+| Aby REPL.tsx (953KB chat interface)              | Not needed; OpenSlack has its own chat gateway                   |
+| Aby Doctor.tsx                                   | Not needed; OpenSlack has PRMS                                   |
+| Aby ResumeConversation.tsx                       | Not needed; no conversation sessions                             |
+| Aby global state store (AppState, AppStateStore) | Not needed; TUI is render-and-exit                               |
+| Aby conversation/session runtime                 | Not needed; no REPL                                              |
+| Aby telemetry/logging infrastructure             | Not needed; replaced by no-ops                                   |
+| Aby clipboard/OSC extras                         | Disabled for security                                            |
+| ScrollBox                                        | No scroll regions in v1                                          |
+| AlternateScreen                                  | No alternate screen mode in v1                                   |
+| ErrorOverview                                    | Not needed; errors handled by CLI                                |
+| Link component (OSC 8)                           | No hyperlinks in v1                                              |
+| Mouse selection (use-selection)                  | No mouse interaction in v1                                       |
+| Terminal focus detection (use-terminal-focus)    | Not needed for render-and-exit                                   |
+| Terminal viewport (use-terminal-viewport)        | Not needed for bounded views                                     |
+| Tab status (use-tab-status)                      | Not needed; no tab navigation                                    |
+| Animation frames (use-animation-frame)           | Not needed; no animations                                        |
+| `osc.ts` (termio)                                | Replaced with inert/trimmed shim; see OSC Handling section above |
 
 ## Coupling Resolution: Stubs
 
@@ -165,14 +167,14 @@ The Aby ink engine imports from several Aby-specific modules. Each is replaced
 with a no-op or safe default. Every stub file includes a comment explaining why
 the replacement is safe.
 
-| Stub | Original Import | Replacement | Justification |
-|------|----------------|-------------|---------------|
-| `stubs/bootstrap-state.ts` | `src/bootstrap/state.js` (`flushInteractionTime`, `markScrollActivity`, `updateLastInteractionTime`) | No-op functions | Aby REPL performance hooks. OpenSlack TUI is render-and-exit or bounded interactive — no scroll tracking or interaction timing needed. |
-| `stubs/debug.ts` | `src/utils/debug.js` (`logForDebugging`) | No-op function | Aby developer-only debug facility. Not wired in production OpenSlack. |
-| `stubs/log.ts` | `src/utils/log.js` (`logError`) | No-op function | Aby telemetry error logger. OpenSlack uses its own error handling. |
-| `stubs/early-input.ts` | `src/utils/early-input.js` (`stopCapturingEarlyInput`) | No-op function | Pre-REPL keystroke capture buffer. Not needed for render-and-exit views. |
-| `stubs/fullscreen.ts` | `src/utils/fullscreen.js` (`isMouseClicksDisabled`) | Returns `false` | Terminal fullscreen mode check. Not used in v1 — no fullscreen mode. |
-| `stubs/exec-file.ts` | `src/utils/exec-file.js` (`execFileNoThrow`) | Returns `{stdout:'',stderr:'',code:1}` | Clipboard subprocess execution. Disabled for security — TUI never spawns subprocesses. |
+| Stub                       | Original Import                                                                                      | Replacement                            | Justification                                                                                                                          |
+| -------------------------- | ---------------------------------------------------------------------------------------------------- | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `stubs/bootstrap-state.ts` | `src/bootstrap/state.js` (`flushInteractionTime`, `markScrollActivity`, `updateLastInteractionTime`) | No-op functions                        | Aby REPL performance hooks. OpenSlack TUI is render-and-exit or bounded interactive — no scroll tracking or interaction timing needed. |
+| `stubs/debug.ts`           | `src/utils/debug.js` (`logForDebugging`)                                                             | No-op function                         | Aby developer-only debug facility. Not wired in production OpenSlack.                                                                  |
+| `stubs/log.ts`             | `src/utils/log.js` (`logError`)                                                                      | No-op function                         | Aby telemetry error logger. OpenSlack uses its own error handling.                                                                     |
+| `stubs/early-input.ts`     | `src/utils/early-input.js` (`stopCapturingEarlyInput`)                                               | No-op function                         | Pre-REPL keystroke capture buffer. Not needed for render-and-exit views.                                                               |
+| `stubs/fullscreen.ts`      | `src/utils/fullscreen.js` (`isMouseClicksDisabled`)                                                  | Returns `false`                        | Terminal fullscreen mode check. Not used in v1 — no fullscreen mode.                                                                   |
+| `stubs/exec-file.ts`       | `src/utils/exec-file.js` (`execFileNoThrow`)                                                         | Returns `{stdout:'',stderr:'',code:1}` | Clipboard subprocess execution. Disabled for security — TUI never spawns subprocesses.                                                 |
 
 ### Bun-specific Replacement
 
@@ -186,6 +188,7 @@ const autoTheme = process.env.OPENSLACK_AUTO_THEME !== 'false';
 ### Stub Verification
 
 After porting, no import in `@openslack/tui` should reach:
+
 - Aby `src/bootstrap/`
 - Aby `src/server/`
 - `bun:bundle`
