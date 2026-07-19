@@ -1,9 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  getRegisteredAction,
-  createRegisteredStep,
-  isRegisteredStep,
-} from '../index.js';
+import { getRegisteredAction, createRegisteredStep, isRegisteredStep } from '../index.js';
 
 describe('conversation tool registry', () => {
   it('conversation.list is a valid registered action', () => {
@@ -60,7 +56,11 @@ describe('conversation tool registry', () => {
       message: { type: 'string', required: true },
     });
 
-    const step = createRegisteredStep('conversation.send', { threadId: 'CONV-001', message: 'Hello' }, 's1');
+    const step = createRegisteredStep(
+      'conversation.send',
+      { threadId: 'CONV-001', message: 'Hello' },
+      's1',
+    );
     expect(step.actionId).toBe('conversation.send');
     expect(step.command).toBe('conversation');
     expect(step.args).toEqual(['send', 'CONV-001', 'Hello']);
@@ -68,12 +68,18 @@ describe('conversation tool registry', () => {
   });
 
   it('conversation.show rejects missing threadId', () => {
-    expect(() => createRegisteredStep('conversation.show', {}, 's1')).toThrow('Missing required input');
+    expect(() => createRegisteredStep('conversation.show', {}, 's1')).toThrow(
+      'Missing required input',
+    );
   });
 
   it('conversation.send rejects missing required inputs', () => {
-    expect(() => createRegisteredStep('conversation.send', { threadId: 'CONV-001' }, 's1')).toThrow('Missing required input');
-    expect(() => createRegisteredStep('conversation.send', { message: 'Hello' }, 's1')).toThrow('Missing required input');
+    expect(() => createRegisteredStep('conversation.send', { threadId: 'CONV-001' }, 's1')).toThrow(
+      'Missing required input',
+    );
+    expect(() => createRegisteredStep('conversation.send', { message: 'Hello' }, 's1')).toThrow(
+      'Missing required input',
+    );
   });
 
   // --- New conversation actions ---
@@ -100,7 +106,9 @@ describe('conversation tool registry', () => {
   });
 
   it('conversation.start rejects missing title', () => {
-    expect(() => createRegisteredStep('conversation.start', {}, 's1')).toThrow('Missing required input');
+    expect(() => createRegisteredStep('conversation.start', {}, 's1')).toThrow(
+      'Missing required input',
+    );
   });
 
   it('conversation.summarize is a valid registered action', () => {
@@ -122,7 +130,9 @@ describe('conversation tool registry', () => {
   });
 
   it('conversation.summarize rejects missing threadId', () => {
-    expect(() => createRegisteredStep('conversation.summarize', {}, 's1')).toThrow('Missing required input');
+    expect(() => createRegisteredStep('conversation.summarize', {}, 's1')).toThrow(
+      'Missing required input',
+    );
   });
 
   it('conversation.archive is a valid registered action', () => {
@@ -144,6 +154,8 @@ describe('conversation tool registry', () => {
   });
 
   it('conversation.archive rejects missing threadId', () => {
-    expect(() => createRegisteredStep('conversation.archive', {}, 's1')).toThrow('Missing required input');
+    expect(() => createRegisteredStep('conversation.archive', {}, 's1')).toThrow(
+      'Missing required input',
+    );
   });
 });

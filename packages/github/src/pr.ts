@@ -22,9 +22,10 @@ export class GitHubEvidenceUnavailableError extends Error {
     status?: number;
     causeMessage: string;
   }) {
-    const target = input.prNumber === undefined
-      ? `${input.owner}/${input.repo}`
-      : `${input.owner}/${input.repo} PR #${input.prNumber}`;
+    const target =
+      input.prNumber === undefined
+        ? `${input.owner}/${input.repo}`
+        : `${input.owner}/${input.repo} PR #${input.prNumber}`;
     super(
       `GITHUB_EVIDENCE_UNAVAILABLE: ${input.operation} failed for ${target}. ${input.causeMessage}`,
     );
@@ -149,13 +150,15 @@ async function listPRFilesRest(
 async function listPRReviewsRest(
   client: Awaited<ReturnType<typeof getClient>>,
   prNumber: number,
-): Promise<Array<{
-  user?: { login?: string | null } | null;
-  state: string;
-  body?: string | null;
-  submitted_at?: string | null;
-  commit_id?: string | null;
-}>> {
+): Promise<
+  Array<{
+    user?: { login?: string | null } | null;
+    state: string;
+    body?: string | null;
+    submitted_at?: string | null;
+    commit_id?: string | null;
+  }>
+> {
   const reviews: Array<{
     user?: { login?: string | null } | null;
     state: string;
@@ -483,11 +486,16 @@ async function listPRFilesGraphQL(
       `,
       { owner: client.owner, repo: client.repo, number: prNumber, after },
     );
-    const connection: NonNullable<NonNullable<NonNullable<GraphQLFilesResponse['repository']>['pullRequest']>['files']> | null | undefined = response.repository?.pullRequest?.files;
+    const connection:
+      | NonNullable<
+          NonNullable<NonNullable<GraphQLFilesResponse['repository']>['pullRequest']>['files']
+        >
+      | null
+      | undefined = response.repository?.pullRequest?.files;
     for (const node of connection?.nodes ?? []) {
       if (node?.path) files.push(node.path);
     }
-    after = connection?.pageInfo.hasNextPage ? connection.pageInfo.endCursor ?? null : null;
+    after = connection?.pageInfo.hasNextPage ? (connection.pageInfo.endCursor ?? null) : null;
   } while (after);
   return files;
 }
@@ -521,7 +529,12 @@ async function getPRReviewsGraphQL(
       `,
       { owner: client.owner, repo: client.repo, number: prNumber, after },
     );
-    const connection: NonNullable<NonNullable<NonNullable<GraphQLReviewsResponse['repository']>['pullRequest']>['reviews']> | null | undefined = response.repository?.pullRequest?.reviews;
+    const connection:
+      | NonNullable<
+          NonNullable<NonNullable<GraphQLReviewsResponse['repository']>['pullRequest']>['reviews']
+        >
+      | null
+      | undefined = response.repository?.pullRequest?.reviews;
     for (const node of connection?.nodes ?? []) {
       reviews.push({
         user: { login: node?.author?.login || 'unknown' },
@@ -531,7 +544,7 @@ async function getPRReviewsGraphQL(
         commitOid: node?.commit?.oid ?? undefined,
       });
     }
-    after = connection?.pageInfo.hasNextPage ? connection.pageInfo.endCursor ?? null : null;
+    after = connection?.pageInfo.hasNextPage ? (connection.pageInfo.endCursor ?? null) : null;
   } while (after);
   return reviews;
 }
@@ -574,8 +587,9 @@ async function getPRChecksGraphQL(
     `,
     { owner: client.owner, repo: client.repo, number: prNumber },
   );
-  const contexts = response.repository?.pullRequest?.commits?.nodes?.[0]?.commit
-    ?.statusCheckRollup?.contexts?.nodes ?? [];
+  const contexts =
+    response.repository?.pullRequest?.commits?.nodes?.[0]?.commit?.statusCheckRollup?.contexts
+      ?.nodes ?? [];
   return contexts
     .filter((node): node is NonNullable<typeof node> => Boolean(node))
     .map((node) => {
@@ -615,18 +629,23 @@ async function getCODEOWNERSGraphQL(
   return response.repository?.object?.text ?? null;
 }
 
-export async function getPR(prNumber: number, options?: GitHubClientOptions): Promise<PRDetail | null> {
+export async function getPR(
+  prNumber: number,
+  options?: GitHubClientOptions,
+): Promise<PRDetail | null> {
   const client = await getClient(options);
   if (client.isDryRun) {
     console.log(`[DRY RUN] Would fetch PR #${prNumber} from ${client.owner}/${client.repo}`);
     return null;
   }
   try {
-    const { data } = await withRetry('fetch pull request', () => client.octokit.pulls.get({
-      owner: client.owner,
-      repo: client.repo,
-      pull_number: prNumber,
-    }));
+    const { data } = await withRetry('fetch pull request', () =>
+      client.octokit.pulls.get({
+        owner: client.owner,
+        repo: client.repo,
+        pull_number: prNumber,
+      }),
+    );
     return {
       number: data.number,
       title: data.title,
@@ -658,17 +677,28 @@ export async function getPR(prNumber: number, options?: GitHubClientOptions): Pr
   }
 }
 
-export async function listPRFiles(prNumber: number, options?: GitHubClientOptions): Promise<string[]> {
+export async function listPRFiles(
+  prNumber: number,
+  options?: GitHubClientOptions,
+): Promise<string[]> {
   const client = await getClient(options);
   if (client.isDryRun) {
     console.log(`[DRY RUN] Would list files for PR #${prNumber}`);
     return [];
   }
   try {
-    const data = await withRetry('list pull request files', () => listPRFilesRest(client, prNumber));
-    return [...new Set(data.flatMap((file) => [file.filename, file.previous_filename].filter(
-      (path): path is string => typeof path === 'string' && path.length > 0,
-    )))];
+    const data = await withRetry('list pull request files', () =>
+      listPRFilesRest(client, prNumber),
+    );
+    return [
+      ...new Set(
+        data.flatMap((file) =>
+          [file.filename, file.previous_filename].filter(
+            (path): path is string => typeof path === 'string' && path.length > 0,
+          ),
+        ),
+      ),
+    ];
   } catch (error) {
     try {
       return await listPRFilesGraphQL(client, prNumber);
@@ -689,14 +719,19 @@ export interface PRFilePatch {
   patch: string;
 }
 
-export async function getPRFilePatches(prNumber: number, options?: GitHubClientOptions): Promise<PRFilePatch[]> {
+export async function getPRFilePatches(
+  prNumber: number,
+  options?: GitHubClientOptions,
+): Promise<PRFilePatch[]> {
   const client = await getClient(options);
   if (client.isDryRun) {
     console.log(`[DRY RUN] Would list file patches for PR #${prNumber}`);
     return [];
   }
   try {
-    const data = await withRetry('list pull request file patches', () => listPRFilesRest(client, prNumber));
+    const data = await withRetry('list pull request file patches', () =>
+      listPRFilesRest(client, prNumber),
+    );
     return data
       .filter((f): f is typeof f & { patch: string } => typeof f.patch === 'string')
       .map((f) => ({ filename: f.filename, patch: f.patch }));
@@ -708,7 +743,10 @@ export async function getPRFilePatches(prNumber: number, options?: GitHubClientO
   }
 }
 
-export async function getPRChecks(prNumber: number, options?: GitHubClientOptions): Promise<PRCheckRun[]> {
+export async function getPRChecks(
+  prNumber: number,
+  options?: GitHubClientOptions,
+): Promise<PRCheckRun[]> {
   const client = await getClient(options);
   if (client.isDryRun) {
     console.log(`[DRY RUN] Would fetch checks for PR #${prNumber}`);
@@ -717,7 +755,9 @@ export async function getPRChecks(prNumber: number, options?: GitHubClientOption
   try {
     const pr = await getPR(prNumber, options);
     if (!pr) return [];
-    const data = await withRetry('fetch pull request checks', () => listPRChecksRest(client, pr.head.sha));
+    const data = await withRetry('fetch pull request checks', () =>
+      listPRChecksRest(client, pr.head.sha),
+    );
     return data.map((run) => ({
       name: run.name,
       status: run.status,
@@ -738,14 +778,19 @@ export async function getPRChecks(prNumber: number, options?: GitHubClientOption
   }
 }
 
-export async function getPRReviews(prNumber: number, options?: GitHubClientOptions): Promise<PRReview[]> {
+export async function getPRReviews(
+  prNumber: number,
+  options?: GitHubClientOptions,
+): Promise<PRReview[]> {
   const client = await getClient(options);
   if (client.isDryRun) {
     console.log(`[DRY RUN] Would fetch reviews for PR #${prNumber}`);
     return [];
   }
   try {
-    const data = await withRetry('fetch pull request reviews', () => listPRReviewsRest(client, prNumber));
+    const data = await withRetry('fetch pull request reviews', () =>
+      listPRReviewsRest(client, prNumber),
+    );
     return data.map((r) => ({
       user: { login: r.user?.login || 'unknown' },
       state: r.state,
@@ -784,14 +829,16 @@ export async function getRepositoryTree(
         repo: client.repo,
         tree_sha: treeSha,
         recursive: 'true',
-      }));
+      }),
+    );
     if (data.truncated) {
       throw new Error(`Recursive Git tree ${treeSha} was truncated.`);
     }
     return data.tree.flatMap((entry) =>
       entry.path && entry.mode && entry.type && entry.sha
         ? [{ path: entry.path, mode: entry.mode, type: entry.type, sha: entry.sha }]
-        : []);
+        : [],
+    );
   } catch (error) {
     // Workflow evidence must never be synthesized from placeholder empty trees.
     // Unlike generic PR metadata, a missing tree changes the trust decision.
@@ -836,19 +883,24 @@ export async function updatePRBody(
   });
 }
 
-export async function getCODEOWNERS(ref: string, options?: GitHubClientOptions): Promise<string | null> {
+export async function getCODEOWNERS(
+  ref: string,
+  options?: GitHubClientOptions,
+): Promise<string | null> {
   const client = await getClient(options);
   if (client.isDryRun) {
     console.log(`[DRY RUN] Would fetch CODEOWNERS from ${client.owner}/${client.repo}@${ref}`);
     return null;
   }
   try {
-    const { data } = await withRetry('fetch CODEOWNERS', () => client.octokit.repos.getContent({
-      owner: client.owner,
-      repo: client.repo,
-      path: '.github/CODEOWNERS',
-      ref,
-    }));
+    const { data } = await withRetry('fetch CODEOWNERS', () =>
+      client.octokit.repos.getContent({
+        owner: client.owner,
+        repo: client.repo,
+        path: '.github/CODEOWNERS',
+        ref,
+      }),
+    );
     if ('content' in data && typeof data.content === 'string') {
       return Buffer.from(data.content, 'base64').toString('utf-8');
     }

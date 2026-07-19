@@ -169,9 +169,7 @@ export function resolveAgentType(agentType: string, rootDir: string): ResolvedAg
   return null;
 }
 
-function extractMcpServerNames(
-  specs: SubagentDefinition['mcpServers'],
-): string[] | undefined {
+function extractMcpServerNames(specs: SubagentDefinition['mcpServers']): string[] | undefined {
   if (!specs || specs.length === 0) return undefined;
 
   const names = new Set<string>();

@@ -2,7 +2,11 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { generateRuntimeIdentity, loadRuntimeIdentity, resolveAgentPrincipal } from '../identity.js';
+import {
+  generateRuntimeIdentity,
+  loadRuntimeIdentity,
+  resolveAgentPrincipal,
+} from '../identity.js';
 
 const AGENT_ID = 'test_agent';
 
@@ -11,7 +15,9 @@ let fixtureRoot: string;
 function writeRegistry(agentId = AGENT_ID): void {
   const registryDir = join(fixtureRoot, '.openslack', 'agents', 'registry');
   mkdirSync(registryDir, { recursive: true });
-  writeFileSync(join(registryDir, `${agentId}.yaml`), `
+  writeFileSync(
+    join(registryDir, `${agentId}.yaml`),
+    `
 schema: openslack.agent_registry.v1
 agent_id: ${agentId}
 display_name: Test Agent
@@ -45,11 +51,16 @@ output_contract:
   must_not_create: []
 approval_rules:
   require_human_approval_for: []
-`, 'utf-8');
+`,
+    'utf-8',
+  );
 }
 
 beforeEach(() => {
-  fixtureRoot = join(tmpdir(), `openslack-identity-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  fixtureRoot = join(
+    tmpdir(),
+    `openslack-identity-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
   mkdirSync(fixtureRoot, { recursive: true });
   writeRegistry();
 });
@@ -101,7 +112,9 @@ describe('resolveAgentPrincipal', () => {
     expect('error' in result).toBe(true);
     expect((result as { error: string }).error).toContain('No runtime identity');
     expect((result as { error: string }).error).toContain('bootstrap');
-    expect(existsSync(join(fixtureRoot, '.openslack.local', 'agents', AGENT_ID, 'identity.yaml'))).toBe(false);
+    expect(
+      existsSync(join(fixtureRoot, '.openslack.local', 'agents', AGENT_ID, 'identity.yaml')),
+    ).toBe(false);
   });
 
   it('resolves principal after identity is explicitly generated', () => {

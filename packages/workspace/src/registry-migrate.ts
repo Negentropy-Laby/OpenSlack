@@ -40,7 +40,8 @@ export function migrateV1ToV2(data: Record<string, unknown>, agentId: string): A
     throw new Error(`Invalid risk_level "${riskLevel}"`);
   }
 
-  const primaryCaps = (capabilities.primary as string[]) || (capabilities as unknown as string[]) || [];
+  const primaryCaps =
+    (capabilities.primary as string[]) || (capabilities as unknown as string[]) || [];
   const secondaryCaps = (capabilities.secondary as string[]) || [];
 
   // Use YAML agent_id if present, otherwise fall back to filename-derived agentId.
@@ -53,7 +54,9 @@ export function migrateV1ToV2(data: Record<string, unknown>, agentId: string): A
   const displayName = rawDisplayName ?? canonicalId.replace(/_/g, ' ').replace(/-/g, ' ');
 
   if (!V2_AGENT_ID_PATTERN.test(canonicalId)) {
-    throw new Error(`Invalid v2 agent_id "${canonicalId}". Expected pattern ${V2_AGENT_ID_PATTERN.source}`);
+    throw new Error(
+      `Invalid v2 agent_id "${canonicalId}". Expected pattern ${V2_AGENT_ID_PATTERN.source}`,
+    );
   }
   if (!displayName.trim()) {
     throw new Error(`Invalid display_name for "${canonicalId}": value is empty`);
@@ -73,7 +76,7 @@ export function migrateV1ToV2(data: Record<string, unknown>, agentId: string): A
         last_rotated_at: null,
         rotation_interval_days: 90,
       },
-      status: (empStatus === 'active' || empStatus === 'onboarding') ? 'active' : 'suspended',
+      status: empStatus === 'active' || empStatus === 'onboarding' ? 'active' : 'suspended',
     },
     vendor: {
       provider: requireString(vendor.provider, 'vendor.provider'),
@@ -148,7 +151,8 @@ export function migrateRegistry(
   if (!existsSync(dir)) return [];
 
   const results: MigrationResult[] = [];
-  const writes: Array<{ file: string; path: string; raw: string; converted: AgentRegistryEntry }> = [];
+  const writes: Array<{ file: string; path: string; raw: string; converted: AgentRegistryEntry }> =
+    [];
   const files = readdirSync(dir).filter((f) => f.endsWith('.yaml') || f.endsWith('.yml'));
 
   for (const file of files) {

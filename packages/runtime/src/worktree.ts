@@ -7,12 +7,19 @@ function findRepoRoot(): string {
     const cwd = process.cwd();
     let dir = cwd;
     for (let i = 0; i < 10; i++) {
-      try { execFileSync('git', ['rev-parse', '--git-dir'], { cwd: dir, stdio: 'pipe' }); return dir; } catch { /* not here */ }
+      try {
+        execFileSync('git', ['rev-parse', '--git-dir'], { cwd: dir, stdio: 'pipe' });
+        return dir;
+      } catch {
+        /* not here */
+      }
       const parent = join(dir, '..');
       if (parent === dir) break;
       dir = parent;
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return process.cwd();
 }
 
@@ -81,7 +88,12 @@ function deleteBranchesForRun(root: string, runId: string): void {
   }
 }
 
-export function createWorktree(taskId: string, agentId: string, runId: string, rootDir?: string): WorktreeResult {
+export function createWorktree(
+  taskId: string,
+  agentId: string,
+  runId: string,
+  rootDir?: string,
+): WorktreeResult {
   // Validate all user-controlled inputs before any shell execution.
   assertSafeSegment(agentId, 'agentId');
   assertSafeSegment(taskId, 'taskId');
@@ -136,7 +148,10 @@ export interface DirtyStatus {
 
 export function checkDirty(worktreePath: string): DirtyStatus {
   try {
-    const result = execFileSync('git', ['status', '--porcelain'], { cwd: worktreePath, stdio: 'pipe' });
+    const result = execFileSync('git', ['status', '--porcelain'], {
+      cwd: worktreePath,
+      stdio: 'pipe',
+    });
     const dirty = result.toString().trim().length > 0;
     return dirty
       ? { status: 'dirty', reason: 'Uncommitted changes detected' }
@@ -160,7 +175,10 @@ export function cleanupWorktree(runId: string, rootDir?: string): boolean {
   const root = resolvedRoot.root;
   const worktreePath = join(root, '.worktrees', runId);
   try {
-    execFileSync('git', ['worktree', 'remove', worktreePath, '--force'], { cwd: root, stdio: 'pipe' });
+    execFileSync('git', ['worktree', 'remove', worktreePath, '--force'], {
+      cwd: root,
+      stdio: 'pipe',
+    });
     deleteBranchesForRun(root, runId);
     return true;
   } catch {

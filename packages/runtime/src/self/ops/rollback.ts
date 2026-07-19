@@ -62,7 +62,9 @@ function getNextEvolutionNumber(root: string): number {
         if (num > maxNum) maxNum = num;
       }
     }
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return maxNum + 1;
 }
 
@@ -96,11 +98,18 @@ function readRollbackTasks(root: string): Array<{ filePath: string; task: Rollba
   return tasks;
 }
 
-function taskMatchesRollback(task: RollbackTaskYaml, signature: string, sourceType: string, experimentId: string): boolean {
+function taskMatchesRollback(
+  task: RollbackTaskYaml,
+  signature: string,
+  sourceType: string,
+  experimentId: string,
+): boolean {
   if (task.rollback_signature === signature) return true;
   if (task.source?.type !== sourceType) return false;
   const evidence = task.source.evidence ?? [];
-  return evidence.some((entry) => entry.includes(`experiment ${experimentId}`) || entry.includes(experimentId));
+  return evidence.some(
+    (entry) => entry.includes(`experiment ${experimentId}`) || entry.includes(experimentId),
+  );
 }
 
 function findMatchingRollback(
@@ -109,8 +118,10 @@ function findMatchingRollback(
   sourceType: string,
   experimentId: string,
 ): { filePath: string; task: RollbackTaskYaml } | undefined {
-  return readRollbackTasks(root).find(({ task }) =>
-    task.status === ACTIVE_ROLLBACK_STATUS && taskMatchesRollback(task, signature, sourceType, experimentId),
+  return readRollbackTasks(root).find(
+    ({ task }) =>
+      task.status === ACTIVE_ROLLBACK_STATUS &&
+      taskMatchesRollback(task, signature, sourceType, experimentId),
   );
 }
 
@@ -241,7 +252,9 @@ export function createRollbackTask(
   return { taskId, created: true, updatedExisting: false, reason: 'created' };
 }
 
-export function expireStaleRollbackTasks(options: CreateRollbackTaskOptions = {}): ExpireRollbackTasksResult {
+export function expireStaleRollbackTasks(
+  options: CreateRollbackTaskOptions = {},
+): ExpireRollbackTasksResult {
   const root = options.root ?? findRepoRoot();
   const now = options.now ?? new Date();
   const maxAgeMs = ROLLBACK_TTL_DAYS * 24 * 60 * 60 * 1000;

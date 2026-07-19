@@ -76,15 +76,22 @@ export function buildDashboardProjection(
     })
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-  const blockerOnly = filters.severity === 'critical' || Boolean(filters.type &&
-    (Array.isArray(filters.type) ? filters.type : [filters.type]).some((t) => BLOCKER_TYPES.has(t as string)));
+  const blockerOnly =
+    filters.severity === 'critical' ||
+    Boolean(
+      filters.type &&
+      (Array.isArray(filters.type) ? filters.type : [filters.type]).some((t) =>
+        BLOCKER_TYPES.has(t as string),
+      ),
+    );
 
   const taskCounts: Record<string, number> = {};
   const prCounts: Record<string, number> = {};
   const blockers: DashboardBlocker[] = [];
 
   for (const event of events) {
-    if (event.object.kind === 'issue' || event.type.startsWith('task.')) increment(taskCounts, event.type);
+    if (event.object.kind === 'issue' || event.type.startsWith('task.'))
+      increment(taskCounts, event.type);
     if (event.object.kind === 'pr' || event.type.startsWith('pr.')) increment(prCounts, event.type);
     if (BLOCKER_TYPES.has(event.type)) {
       blockers.push({
@@ -125,7 +132,10 @@ export function renderDashboardProjection(dashboard: DashboardProjection): strin
 
   const filterEntries = Object.entries(dashboard.appliedFilters);
   if (filterEntries.length > 0) {
-    lines.push('Filters: ' + filterEntries.map(([k, v]) => `${k}=${Array.isArray(v) ? v.join(',') : v}`).join(', '));
+    lines.push(
+      'Filters: ' +
+        filterEntries.map(([k, v]) => `${k}=${Array.isArray(v) ? v.join(',') : v}`).join(', '),
+    );
   }
   lines.push('');
 
@@ -185,12 +195,17 @@ export function renderDashboardProjection(dashboard: DashboardProjection): strin
         ? ` [${(event.metadata.principal as { registry_id: string }).registry_id}]`
         : '';
       const actorName = resolveAgentDisplayName(event.actor);
-      lines.push(`- ${event.timestamp.slice(0, 16)} ${event.type} ${objectRef(event)}: ${event.summary} (by ${actorName})${principalTag}`);
+      lines.push(
+        `- ${event.timestamp.slice(0, 16)} ${event.type} ${objectRef(event)}: ${event.summary} (by ${actorName})${principalTag}`,
+      );
     }
   }
 
-  const isEmpty = taskEntries.length === 0 && prEntries.length === 0
-    && dashboard.blockers.length === 0 && dashboard.recentEvents.length === 0;
+  const isEmpty =
+    taskEntries.length === 0 &&
+    prEntries.length === 0 &&
+    dashboard.blockers.length === 0 &&
+    dashboard.recentEvents.length === 0;
   if (isEmpty) {
     lines.push('');
     lines.push('Getting Started');
@@ -209,11 +224,15 @@ export function renderDashboardMarkdown(dashboard: DashboardProjection): string 
 
   lines.push('# OpenSlack Team Dashboard');
   lines.push('');
-  lines.push(`> **Window:** ${dashboard.sinceHours > 0 ? `${dashboard.sinceHours}h` : 'all events'} | **Generated:** ${dashboard.generatedAt}`);
+  lines.push(
+    `> **Window:** ${dashboard.sinceHours > 0 ? `${dashboard.sinceHours}h` : 'all events'} | **Generated:** ${dashboard.generatedAt}`,
+  );
 
   const filterEntries = Object.entries(dashboard.appliedFilters);
   if (filterEntries.length > 0) {
-    lines.push(`> **Filters:** ${filterEntries.map(([k, v]) => `\`${k}=${Array.isArray(v) ? v.join(',') : v}\``).join(', ')}`);
+    lines.push(
+      `> **Filters:** ${filterEntries.map(([k, v]) => `\`${k}=${Array.isArray(v) ? v.join(',') : v}\``).join(', ')}`,
+    );
   }
   lines.push('');
 
@@ -296,12 +315,17 @@ export function renderDashboardMarkdown(dashboard: DashboardProjection): string 
     lines.push('|------|------|--------|---------|-------|');
     for (const event of dashboard.recentEvents.slice(0, 10)) {
       const actorName = resolveAgentDisplayName(event.actor);
-      lines.push(`| ${event.timestamp.slice(0, 16)} | ${event.type} | ${objectRef(event)} | ${event.summary} | ${actorName} |`);
+      lines.push(
+        `| ${event.timestamp.slice(0, 16)} | ${event.type} | ${objectRef(event)} | ${event.summary} | ${actorName} |`,
+      );
     }
   }
 
-  const isEmpty = taskEntries.length === 0 && prEntries.length === 0
-    && dashboard.blockers.length === 0 && dashboard.recentEvents.length === 0;
+  const isEmpty =
+    taskEntries.length === 0 &&
+    prEntries.length === 0 &&
+    dashboard.blockers.length === 0 &&
+    dashboard.recentEvents.length === 0;
   if (isEmpty) {
     lines.push('');
     lines.push('## Getting Started');
@@ -310,7 +334,9 @@ export function renderDashboardMarkdown(dashboard: DashboardProjection): string 
     lines.push('');
     lines.push('```bash');
     lines.push('openslack pr doctor <n>          # Check a PR');
-    lines.push('openslack collaboration handoff create --from <you> --to <them> --context "..."  # Create a handoff');
+    lines.push(
+      'openslack collaboration handoff create --from <you> --to <them> --context "..."  # Create a handoff',
+    );
     lines.push('openslack status                 # See system overview');
     lines.push('```');
   }

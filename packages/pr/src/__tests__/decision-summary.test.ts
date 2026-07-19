@@ -33,22 +33,27 @@ describe('PR decision summary', () => {
   });
 
   it('shows bot approvals as ignored evidence', () => {
-    const summary = summarizePRDecision(makeReport({
-      decision: 'BOT_APPROVAL_IGNORED',
-      reviews: [{ user: 'github-actions[bot]', state: 'APPROVED' }],
-    }));
+    const summary = summarizePRDecision(
+      makeReport({
+        decision: 'BOT_APPROVAL_IGNORED',
+        reviews: [{ user: 'github-actions[bot]', state: 'APPROVED' }],
+      }),
+    );
     expect(summary.evidence.some((e) => e.includes('Bot approvals ignored'))).toBe(true);
     expect(summary.nextAction).toContain('bot approvals do not satisfy PRMS');
   });
 
   it('renders a compact operational decision block', () => {
-    const text = renderPRDecisionSummary(summarizePRDecision(makeReport({
-      decision: 'READY_TO_MERGE',
-      reviews: [{ user: 'bob', state: 'APPROVED' }],
-    })));
+    const text = renderPRDecisionSummary(
+      summarizePRDecision(
+        makeReport({
+          decision: 'READY_TO_MERGE',
+          reviews: [{ user: 'bob', state: 'APPROVED' }],
+        }),
+      ),
+    );
     expect(text).toContain('Operational Decision');
     expect(text).toContain('READY_TO_MERGE');
     expect(text).toContain('openslack pr doctor 42');
   });
 });
-
