@@ -3,7 +3,16 @@
   "$id": "https://openslack.dev/schemas/lease.schema.json",
   "title": "OpenSlack Task Lease",
   "type": "object",
-  "required": ["schema", "id", "task_id", "agent_id", "status", "created_at", "expires_at", "heartbeat_at"],
+  "required": [
+    "schema",
+    "id",
+    "task_id",
+    "agent_id",
+    "status",
+    "created_at",
+    "expires_at",
+    "heartbeat_at"
+  ],
   "properties": {
     "schema": { "type": "string", "const": "openslack.lease.v1" },
     "id": { "type": "string", "pattern": "^LEASE-\\d{4}-\\d{6}$" },
