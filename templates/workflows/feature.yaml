@@ -35,30 +35,30 @@ phases:
         actionId: task.create.preview
         title: Preview feature task
         input:
-          title: "{{inputs.title}}"
+          title: '{{inputs.title}}'
           template: investigation
       - type: action
         actionId: task.checkout
         title: Create worktree for feature
         input:
-          issueNumber: "{{inputs.issueNumber}}"
-          agentId: "{{inputs.agentId}}"
+          issueNumber: '{{inputs.issueNumber}}'
+          agentId: '{{inputs.agentId}}'
   - name: Implement
     steps:
       - type: action
         actionId: task.sync
         title: Propose feature PR
         input:
-          issueNumber: "{{inputs.issueNumber}}"
-          agentId: "{{inputs.agentId}}"
-          paths: "{{inputs.paths}}"
+          issueNumber: '{{inputs.issueNumber}}'
+          agentId: '{{inputs.agentId}}'
+          paths: '{{inputs.paths}}'
   - name: Review
     steps:
       - type: action
         actionId: pr.doctor
         title: Diagnose PR readiness
         input:
-          prNumber: "{{inputs.prNumber}}"
+          prNumber: '{{inputs.prNumber}}'
       - type: decision-gate
         title: Approve feature for merge
         requiredRole: reviewer
@@ -66,4 +66,4 @@ phases:
         actionId: pr.merge
         title: Merge feature PR
         input:
-          prNumber: "{{inputs.prNumber}}"
+          prNumber: '{{inputs.prNumber}}'

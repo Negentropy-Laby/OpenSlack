@@ -17,7 +17,7 @@ inputs:
   - name: title
     type: string
     required: true
-    default: "Enable TUI mouse click navigation"
+    default: 'Enable TUI mouse click navigation'
     description: Short summary of the change
   - name: issueNumber
     type: integer
@@ -34,7 +34,7 @@ inputs:
   - name: paths
     type: string
     required: true
-    default: "packages/tui/src/ink/components/App.tsx,packages/tui/src/design-system/SelectableList.tsx,packages/tui/src/views/HomeView.tsx,packages/tui/src/views/WorkflowWorkbenchView.tsx,packages/tui/src/views/DashboardView.tsx,packages/tui/src/views/RoomView.tsx,packages/tui/src/design-system/ConfirmationDialog.tsx"
+    default: 'packages/tui/src/ink/components/App.tsx,packages/tui/src/design-system/SelectableList.tsx,packages/tui/src/views/HomeView.tsx,packages/tui/src/views/WorkflowWorkbenchView.tsx,packages/tui/src/views/DashboardView.tsx,packages/tui/src/views/RoomView.tsx,packages/tui/src/design-system/ConfirmationDialog.tsx'
     description: Comma-separated file paths affected by the change
   - name: skipViews
     type: boolean
@@ -52,14 +52,14 @@ phases:
         actionId: task.create.preview
         title: Preview mouse-click task
         input:
-          title: "{{inputs.title}}"
+          title: '{{inputs.title}}'
           template: investigation
       - type: action
         actionId: task.checkout
         title: Create worktree for mouse-click feature
         input:
-          issueNumber: "{{inputs.issueNumber}}"
-          agentId: "{{inputs.agentId}}"
+          issueNumber: '{{inputs.issueNumber}}'
+          agentId: '{{inputs.agentId}}'
       - type: record-decision
         topic: TUI_V1_MINIMAL impact assessment
         decision: Unlock mouse tracking by setting TUI_V1_MINIMAL to false
@@ -68,7 +68,7 @@ phases:
           and Box.onClick. The TUI_V1_MINIMAL flag at App.tsx:43 disables all of it.
           Removing the lock enables DEC mode 1003 (mouse tracking) and alternate
           screen without adding new dependencies.
-        decidedBy: "{{inputs.agentId}}"
+        decidedBy: '{{inputs.agentId}}'
         tags:
           - tui
           - mouse
@@ -84,7 +84,7 @@ phases:
           - DashboardView: click cards to drill down
           - RoomView: click events/decisions
           - ConfirmationDialog: click Confirm/Cancel buttons
-        decidedBy: "{{inputs.agentId}}"
+        decidedBy: '{{inputs.agentId}}'
         tags:
           - tui
           - views
@@ -96,7 +96,7 @@ phases:
         actionId: workspace.validate
         title: Validate workspace before engine changes
       - type: handoff
-        from: "{{inputs.agentId}}"
+        from: '{{inputs.agentId}}'
         to: implementation-agent
         context: |
           Remove TUI_V1_MINIMAL lock in packages/tui/src/ink/components/App.tsx.
@@ -104,7 +104,7 @@ phases:
           Verify componentDidMount sends ENABLE_MOUSE_TRACKING and
           ENTER_ALTERNATE_SCREEN; unmount sends the inverse.
           Run bun run lint to confirm no new errors from the change.
-        issueRef: "{{inputs.issueNumber}}"
+        issueRef: '{{inputs.issueNumber}}'
         nextSteps:
           - Verify terminal mode assertions in App.tsx
           - Confirm no regression in existing keyboard navigation
@@ -112,7 +112,7 @@ phases:
   - name: Component Wiring
     steps:
       - type: handoff
-        from: "{{inputs.agentId}}"
+        from: '{{inputs.agentId}}'
         to: implementation-agent
         context: |
           Add mouse support to TUI components. Skip if inputs.skipViews is true.
@@ -136,7 +136,7 @@ phases:
           6. ConfirmationDialog: wrap Confirm/Cancel in Box onClick.
 
           All changes must preserve existing keyboard shortcuts.
-        issueRef: "{{inputs.issueNumber}}"
+        issueRef: '{{inputs.issueNumber}}'
         nextSteps:
           - Add unit tests for onClick behavior in each component
           - Verify keyboard shortcuts still work after mouse wiring
@@ -148,7 +148,7 @@ phases:
           VS Code). Standard cmd.exe ignores mouse events gracefully. All existing
           keyboard shortcuts remain functional. App.tsx unmount handler restores
           terminal state (DISABLE_MOUSE_TRACKING + SHOW_CURSOR).
-        decidedBy: "{{inputs.agentId}}"
+        decidedBy: '{{inputs.agentId}}'
         tags:
           - compatibility
           - terminal
@@ -170,7 +170,7 @@ phases:
           - WorkflowWorkbenchView: click gallery row enters detail mode
           - ConfirmationDialog: click confirm fires onConfirm, cancel fires onCancel
           - All existing keyboard tests continue to pass (regression guard)
-        decidedBy: "{{inputs.agentId}}"
+        decidedBy: '{{inputs.agentId}}'
         tags:
           - testing
           - coverage
@@ -197,7 +197,7 @@ phases:
           - [ ] VS Code integrated terminal — full mouse tracking
           - [ ] Standard cmd.exe — mouse ignored, keyboard fallback works
           - [ ] SSH/tmux — survives reconnect via STDIN_RESUME_GAP_MS
-        decidedBy: "{{inputs.agentId}}"
+        decidedBy: '{{inputs.agentId}}'
         tags:
           - manual-test
           - terminal
@@ -209,7 +209,7 @@ phases:
         actionId: pr.doctor
         title: Diagnose PR readiness
         input:
-          prNumber: "{{inputs.prNumber}}"
+          prNumber: '{{inputs.prNumber}}'
       - type: decision-gate
         title: Approve TUI mouse-click PR for merge
         requiredRole: reviewer
@@ -217,4 +217,4 @@ phases:
         actionId: pr.merge
         title: Merge mouse-click feature PR
         input:
-          prNumber: "{{inputs.prNumber}}"
+          prNumber: '{{inputs.prNumber}}'

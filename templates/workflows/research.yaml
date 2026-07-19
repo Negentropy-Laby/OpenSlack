@@ -27,26 +27,26 @@ phases:
         actionId: task.create.preview
         title: Preview research task
         input:
-          title: "{{inputs.title}}"
+          title: '{{inputs.title}}'
           template: investigation
       - type: action
         actionId: task.checkout
         title: Create worktree for research
         input:
-          issueNumber: "{{inputs.issueNumber}}"
-          agentId: "{{inputs.agentId}}"
+          issueNumber: '{{inputs.issueNumber}}'
+          agentId: '{{inputs.agentId}}'
   - name: Report
     steps:
       - type: handoff
-        from: "{{inputs.agentId}}"
+        from: '{{inputs.agentId}}'
         to: human
-        context: "Research complete: {{inputs.title}}"
-        issueRef: "{{inputs.issueNumber}}"
+        context: 'Research complete: {{inputs.title}}'
+        issueRef: '{{inputs.issueNumber}}'
       - type: record-decision
-        topic: "Research findings: {{inputs.title}}"
+        topic: 'Research findings: {{inputs.title}}'
         decision: Research completed
         rationale: Agent investigation finished, findings handed off to human
-        decidedBy: "{{inputs.agentId}}"
+        decidedBy: '{{inputs.agentId}}'
         tags:
           - research
           - handoff
