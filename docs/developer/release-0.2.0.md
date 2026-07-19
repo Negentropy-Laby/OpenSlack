@@ -361,9 +361,12 @@ At the current audit baseline, the repository-wide `bun run format:check` has a
 known pre-existing failure, including an invalid Windows backslash escape in
 `.openslack/agents/onboarding/operator/identity.yaml` and broader formatting
 drift. This is a release-head **STOP**, not a waiver. Repair it through a
-separate governed PR, rerun the complete suite on the merged head, and only then
-select `TESTED_COMMIT`. A targeted check of this runbook is useful authoring
-evidence but is not a substitute for the repository-wide gate.
+separately scoped series of governed PRs, rerun the complete suite on the merged
+head, and only then select `TESTED_COMMIT`. Do not combine agent identity,
+registry, prompt, constitutional, generated-status, and ordinary package
+formatting into one mechanical change; each protected boundary keeps its own
+authority and review requirements. A targeted check of this runbook is useful
+authoring evidence but is not a substitute for the repository-wide gate.
 
 On Windows, use Git for Windows Bash when `bash` resolves to the WSL launcher:
 
