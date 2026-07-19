@@ -54,9 +54,11 @@ secret-bearing response body in:
 - `.openslack/modules.yaml`, `docs/status/current.md`, or live-evidence JSON;
 - the release operator checklist.
 
-Commands below accept only an opaque `keychain:`/`env:` reference where the
-product supports one. Secret availability is proved by redacted diagnostics,
-not by printing, reading, copying, hashing, or summarizing the value.
+Commands below accept only an opaque credential reference using the schemes
+documented for that command: Agent Runtime accepts `env:` or `keychain:`, while
+the live-capstone planner accepts `credential:` or `keychain:`. Secret
+availability is proved by redacted diagnostics, not by printing, reading,
+copying, hashing, or summarizing the value.
 
 ## 1. Release identity and freeze
 
@@ -69,7 +71,7 @@ in comparisons and evidence; short SHAs are display-only.
 export RELEASE_VERSION="0.2.0"
 export RELEASE_TAG="v0.2.0"
 export RELEASE_DATE="<YYYY-MM-DD>"
-export CAPSTONE_ID="CAP-<YYYYMMDD>-<8-TO-56-UPPERCASE-OR-DIGIT-CHARS>"
+export CAPSTONE_ID="CAP-<YYYYMMDD>-<8-TO-64-UPPERCASE-OR-DIGIT-CHARS>"
 export TESTED_COMMIT="$(git rev-parse HEAD)"
 ```
 
@@ -79,7 +81,7 @@ export TESTED_COMMIT="$(git rev-parse HEAD)"
 $env:RELEASE_VERSION = "0.2.0"
 $env:RELEASE_TAG = "v0.2.0"
 $env:RELEASE_DATE = "<YYYY-MM-DD>"
-$env:CAPSTONE_ID = "CAP-<YYYYMMDD>-<8-TO-56-UPPERCASE-OR-DIGIT-CHARS>"
+$env:CAPSTONE_ID = "CAP-<YYYYMMDD>-<8-TO-64-UPPERCASE-OR-DIGIT-CHARS>"
 $env:TESTED_COMMIT = (git rev-parse HEAD).Trim()
 ```
 
