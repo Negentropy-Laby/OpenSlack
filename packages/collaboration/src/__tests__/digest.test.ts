@@ -1,11 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { CollaborationEvent } from '../types.js';
-import {
-  groupEvents,
-  getRecommendedNext,
-  buildDigest,
-  renderDigest,
-} from '../digest.js';
+import { groupEvents, getRecommendedNext, buildDigest, renderDigest } from '../digest.js';
 
 function makeEvent(partial: Partial<CollaborationEvent>): CollaborationEvent {
   return {
@@ -103,9 +98,7 @@ describe('groupEvents', () => {
   });
 
   it('blocked takes precedence over governance', () => {
-    const events = [
-      makeEvent({ type: 'governance.audit.failed', summary: 'Audit failed' }),
-    ];
+    const events = [makeEvent({ type: 'governance.audit.failed', summary: 'Audit failed' })];
 
     const groups = groupEvents(events);
     const blocked = groups.find((g) => g.label === 'Blocked');
@@ -182,7 +175,11 @@ describe('renderDigest', () => {
 
   it('renders digest with groups', () => {
     const events = [
-      makeEvent({ type: 'task.done', summary: 'Task completed', object: { kind: 'issue', id: 'TASK-1' } }),
+      makeEvent({
+        type: 'task.done',
+        summary: 'Task completed',
+        object: { kind: 'issue', id: 'TASK-1' },
+      }),
       makeEvent({
         type: 'pr.merge.requested',
         summary: 'Merge requested',
@@ -201,9 +198,7 @@ describe('renderDigest', () => {
   });
 
   it('omits recommended next when empty', () => {
-    const events = [
-      makeEvent({ type: 'task.done', summary: 'Task completed' }),
-    ];
+    const events = [makeEvent({ type: 'task.done', summary: 'Task completed' })];
 
     const digest = buildDigest(events, 24);
     const output = renderDigest(digest);

@@ -72,7 +72,10 @@ export function buildRoomView(
   const decisions = listDecisions();
   const linkedDecisions = decisions.filter((d) => {
     const text = `${d.topic} ${d.decision} ${d.rationale}`.toLowerCase();
-    return text.includes(id.toLowerCase()) || (d.tags && d.tags.some((t) => t.toLowerCase().includes(id.toLowerCase())));
+    return (
+      text.includes(id.toLowerCase()) ||
+      (d.tags && d.tags.some((t) => t.toLowerCase().includes(id.toLowerCase())))
+    );
   });
 
   const handoffs = listHandoffs();
@@ -258,7 +261,9 @@ export function renderRoomChat(view: RoomView): string {
   }
   lines.push('');
 
-  lines.push(`Events: ${view.recentEvents.length} | Blockers: ${view.blockers.length} | Handoffs: ${view.linkedHandoffs.length} | Decisions: ${view.linkedDecisions.length}`);
+  lines.push(
+    `Events: ${view.recentEvents.length} | Blockers: ${view.blockers.length} | Handoffs: ${view.linkedHandoffs.length} | Decisions: ${view.linkedDecisions.length}`,
+  );
   lines.push('');
 
   if (view.blockers.length > 0) {
@@ -272,7 +277,12 @@ export function renderRoomChat(view: RoomView): string {
   if (view.linkedHandoffs.length > 0) {
     lines.push('*Handoffs:*');
     for (const h of view.linkedHandoffs) {
-      const icon = h.status === 'open' ? ':white_circle:' : h.status === 'accepted' ? ':large_orange_circle:' : ':large_green_circle:';
+      const icon =
+        h.status === 'open'
+          ? ':white_circle:'
+          : h.status === 'accepted'
+            ? ':large_orange_circle:'
+            : ':large_green_circle:';
       lines.push(`  ${icon} ${h.id}: ${h.from} -> ${h.to}`);
     }
     lines.push('');
