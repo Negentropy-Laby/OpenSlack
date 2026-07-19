@@ -5,7 +5,16 @@ export { validateWorkspace } from './validate.js';
 export type { WorkspaceConfig, ValidationResult, ValidationError } from './types.js';
 
 // Schemas
-export { schemas, workspaceSchema, agentRegistrySchema, agentRegistryV2Schema, evolutionTaskSchema, taskSchema, leaseSchema, runRecordSchema } from './schemas/index.js';
+export {
+  schemas,
+  workspaceSchema,
+  agentRegistrySchema,
+  agentRegistryV2Schema,
+  evolutionTaskSchema,
+  taskSchema,
+  leaseSchema,
+  runRecordSchema,
+} from './schemas/index.js';
 
 // Module Registry
 export {
@@ -63,11 +72,7 @@ export { applyWorkspaceInit, planWorkspaceInit, renderWorkspaceInitPlan } from '
 export type { WorkspaceInitInput, WorkspaceInitOperation, WorkspaceInitPlan } from './init.js';
 
 // Transactional ordinary-repository sidecar attachment
-export {
-  applyWorkspaceAttach,
-  planWorkspaceAttach,
-  renderWorkspaceAttachPlan,
-} from './attach.js';
+export { applyWorkspaceAttach, planWorkspaceAttach, renderWorkspaceAttachPlan } from './attach.js';
 export type {
   WorkspaceAttachApplyOptions,
   WorkspaceAttachInput,
