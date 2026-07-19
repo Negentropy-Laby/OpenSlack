@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { filterByCapability, filterByRisk, filterByPath, filterRedZonePaths } from '../task-filter.js';
+import {
+  filterByCapability,
+  filterByRisk,
+  filterByPath,
+  filterRedZonePaths,
+} from '../task-filter.js';
 import type { IssueTaskManifest } from '../manifest.js';
 
 function makeManifest(overrides: Partial<IssueTaskManifest> = {}): IssueTaskManifest {
@@ -28,19 +33,18 @@ describe('filterByCapability', () => {
   });
 
   it('denies when agent lacks required capability', () => {
-    const result = filterByCapability(
-      makeManifest({ required_capabilities: ['python'] }),
-      { primary: ['typescript'] },
-    );
+    const result = filterByCapability(makeManifest({ required_capabilities: ['python'] }), {
+      primary: ['typescript'],
+    });
     expect(result.allowed).toBe(false);
     expect(result.reason).toContain('python');
   });
 
   it('checks secondary capabilities too', () => {
-    const result = filterByCapability(
-      makeManifest({ required_capabilities: ['docker'] }),
-      { primary: ['typescript'], secondary: ['docker', 'git'] },
-    );
+    const result = filterByCapability(makeManifest({ required_capabilities: ['docker'] }), {
+      primary: ['typescript'],
+      secondary: ['docker', 'git'],
+    });
     expect(result.allowed).toBe(true);
   });
 });
@@ -69,11 +73,15 @@ describe('filterByRisk', () => {
 
 describe('filterByPath', () => {
   it('allows path not matching forbidden patterns', () => {
-    expect(filterByPath(makeManifest({ forbidden_paths: ['.github/**'] }), ['docs/test.md']).allowed).toBe(true);
+    expect(
+      filterByPath(makeManifest({ forbidden_paths: ['.github/**'] }), ['docs/test.md']).allowed,
+    ).toBe(true);
   });
 
   it('denies path matching forbidden pattern', () => {
-    const result = filterByPath(makeManifest({ forbidden_paths: ['.github/**'] }), ['.github/workflows/test.yml']);
+    const result = filterByPath(makeManifest({ forbidden_paths: ['.github/**'] }), [
+      '.github/workflows/test.yml',
+    ]);
     expect(result.allowed).toBe(false);
     expect(result.reason).toContain('.github/**');
   });
@@ -97,14 +105,20 @@ describe('filterByPath', () => {
   });
 
   it('handles ** glob correctly for nested directories', () => {
-    const result = filterByPath(makeManifest({ forbidden_paths: ['packages/secret/**'] }), ['packages/secret/deep/nested/file.ts']);
+    const result = filterByPath(makeManifest({ forbidden_paths: ['packages/secret/**'] }), [
+      'packages/secret/deep/nested/file.ts',
+    ]);
     expect(result.allowed).toBe(false);
   });
 });
 
 describe('filterRedZonePaths', () => {
   it('identifies .github/ paths as red zone', () => {
-    const red = filterRedZonePaths(['docs/test.md', '.github/workflows/test.yml', 'packages/core/src/foo.ts']);
+    const red = filterRedZonePaths([
+      'docs/test.md',
+      '.github/workflows/test.yml',
+      'packages/core/src/foo.ts',
+    ]);
     expect(red).toEqual(['.github/workflows/test.yml']);
   });
 

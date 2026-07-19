@@ -12,8 +12,28 @@ function mockOctokit(issues: unknown[] = []) {
 describe('pollRepoIssues', () => {
   it('returns issues from the API', async () => {
     const issues = [
-      { number: 1, title: 'First', html_url: 'https://github.com/o/r/issues/1', body: '', state: 'open', labels: [], updated_at: '2026-05-25T10:00:00Z', created_at: '2026-05-25T10:00:00Z', user: { login: 'dev' } },
-      { number: 2, title: 'Second', html_url: 'https://github.com/o/r/issues/2', body: '', state: 'open', labels: [], updated_at: '2026-05-25T11:00:00Z', created_at: '2026-05-25T11:00:00Z', user: { login: 'dev' } },
+      {
+        number: 1,
+        title: 'First',
+        html_url: 'https://github.com/o/r/issues/1',
+        body: '',
+        state: 'open',
+        labels: [],
+        updated_at: '2026-05-25T10:00:00Z',
+        created_at: '2026-05-25T10:00:00Z',
+        user: { login: 'dev' },
+      },
+      {
+        number: 2,
+        title: 'Second',
+        html_url: 'https://github.com/o/r/issues/2',
+        body: '',
+        state: 'open',
+        labels: [],
+        updated_at: '2026-05-25T11:00:00Z',
+        created_at: '2026-05-25T11:00:00Z',
+        user: { login: 'dev' },
+      },
     ];
     const octokit = mockOctokit(issues);
     const result = await pollRepoIssues(octokit, 'owner', 'repo', '2026-05-25T09:00:00Z');
@@ -59,8 +79,29 @@ describe('pollRepoIssues', () => {
 
   it('filters out PR-shaped items with pull_request field', async () => {
     const items = [
-      { number: 1, title: 'Real Issue', html_url: 'https://github.com/o/r/issues/1', body: '', state: 'open', labels: [], updated_at: '2026-05-25T10:00:00Z', created_at: '2026-05-25T10:00:00Z', user: { login: 'dev' } },
-      { number: 2, title: 'A Pull Request', html_url: 'https://github.com/o/r/pull/2', body: '', state: 'open', labels: [], updated_at: '2026-05-25T11:00:00Z', created_at: '2026-05-25T11:00:00Z', user: { login: 'dev' }, pull_request: { url: 'https://api.github.com/repos/o/r/pulls/2' } },
+      {
+        number: 1,
+        title: 'Real Issue',
+        html_url: 'https://github.com/o/r/issues/1',
+        body: '',
+        state: 'open',
+        labels: [],
+        updated_at: '2026-05-25T10:00:00Z',
+        created_at: '2026-05-25T10:00:00Z',
+        user: { login: 'dev' },
+      },
+      {
+        number: 2,
+        title: 'A Pull Request',
+        html_url: 'https://github.com/o/r/pull/2',
+        body: '',
+        state: 'open',
+        labels: [],
+        updated_at: '2026-05-25T11:00:00Z',
+        created_at: '2026-05-25T11:00:00Z',
+        user: { login: 'dev' },
+        pull_request: { url: 'https://api.github.com/repos/o/r/pulls/2' },
+      },
     ];
     const octokit = mockOctokit(items);
     const result = await pollRepoIssues(octokit, 'owner', 'repo', '2026-05-25T09:00:00Z');
