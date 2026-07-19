@@ -22,9 +22,9 @@ function createFakeAbyRoot(root: string): string {
   writeFileSync(
     join(entrypointDir, 'runEntrypoint.ts'),
     [
-      "const target = process.argv[2];",
+      'const target = process.argv[2];',
       "if (!target) throw new Error('missing entrypoint target');",
-      "await import(target);",
+      'await import(target);',
     ].join('\n'),
     'utf-8',
   );
@@ -34,24 +34,24 @@ function createFakeAbyRoot(root: string): string {
       "import { stdin, stdout } from 'node:process';",
       "let buffer = '';",
       "stdin.setEncoding('utf8');",
-      "function envelope(input, kind, payload) {",
+      'function envelope(input, kind, payload) {',
       "  return JSON.stringify({ protocolVersion: input.protocolVersion, sessionId: input.sessionId, correlationId: input.correlationId, timestamp: new Date().toISOString(), kind, payload }) + '\\n';",
-      "}",
+      '}',
       "stdin.on('data', chunk => {",
-      "  buffer += chunk;",
+      '  buffer += chunk;',
       "  const lines = buffer.split('\\n');",
       "  buffer = lines.pop() ?? '';",
-      "  for (const line of lines) {",
-      "    if (!line.trim()) continue;",
-      "    const input = JSON.parse(line);",
+      '  for (const line of lines) {',
+      '    if (!line.trim()) continue;',
+      '    const input = JSON.parse(line);',
       "    if (input.kind === 'handshake_request') stdout.write(envelope(input, 'handshake_response', { accepted: true }));",
       "    if (input.kind === 'run_request') {",
       "      stdout.write(envelope(input, 'run_started', { runId: input.payload.runId }));",
       "      stdout.write(envelope(input, 'assistant_text', { text: 'fake smoke ok' }));",
       "      stdout.write(envelope(input, 'complete', { data: { ok: true }, tokenUsage: 1 }));",
-      "    }",
-      "  }",
-      "});",
+      '    }',
+      '  }',
+      '});',
     ].join('\n'),
     'utf-8',
   );
@@ -109,7 +109,9 @@ describe('runAbyRuntimeSmoke', () => {
 
     expect(report.status, JSON.stringify(report, null, 2)).toBe('PASS');
     expect(report.runId).toMatch(/^RUN-/);
-    expect(report.checks.find((check) => check.name === 'bridge_session_started')?.status).toBe('PASS');
+    expect(report.checks.find((check) => check.name === 'bridge_session_started')?.status).toBe(
+      'PASS',
+    );
     expect(report.checks.find((check) => check.name === 'terminal_event')?.status).toBe('PASS');
     expect(report.evidence.runJson).toContain('run.json');
     expect(report.evidence.metadataJson).toContain('metadata.json');

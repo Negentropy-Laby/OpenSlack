@@ -181,7 +181,10 @@ function buildSmokeReport(input: {
   };
 }
 
-function buildEvidencePaths(rootDir: string, runId: string): Required<AbyRuntimeSmokeReport['evidence']> {
+function buildEvidencePaths(
+  rootDir: string,
+  runId: string,
+): Required<AbyRuntimeSmokeReport['evidence']> {
   const runDir = join(rootDir, '.openslack.local', 'agents', 'runs', runId);
   return {
     runJson: join(runDir, 'run.json'),
@@ -193,11 +196,11 @@ function buildEvidencePaths(rootDir: string, runId: string): Required<AbyRuntime
 function evidenceFilesExist(evidence: AbyRuntimeSmokeReport['evidence']): boolean {
   return Boolean(
     evidence.runJson &&
-      evidence.metadataJson &&
-      evidence.transcriptJsonl &&
-      existsSync(evidence.runJson) &&
-      existsSync(evidence.metadataJson) &&
-      existsSync(evidence.transcriptJsonl),
+    evidence.metadataJson &&
+    evidence.transcriptJsonl &&
+    existsSync(evidence.runJson) &&
+    existsSync(evidence.metadataJson) &&
+    existsSync(evidence.transcriptJsonl),
   );
 }
 
