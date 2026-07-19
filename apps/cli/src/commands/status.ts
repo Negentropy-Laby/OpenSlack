@@ -201,7 +201,18 @@ function getGitHubOps(context: WorkspaceContext): GitHubOps {
     const repository = `${remote.owner}/${remote.repo}`;
     const issuesJson = execFileSync(
       'gh',
-      ['issue', 'list', '--repo', repository, '--state', 'open', '--limit', '200', '--json', 'labels'],
+      [
+        'issue',
+        'list',
+        '--repo',
+        repository,
+        '--state',
+        'open',
+        '--limit',
+        '200',
+        '--json',
+        'labels',
+      ],
       { cwd: context.workspaceRoot, encoding: 'utf-8', stdio: 'pipe' },
     );
     const issues = JSON.parse(issuesJson) as Array<{ labels: Array<{ name: string }> }>;

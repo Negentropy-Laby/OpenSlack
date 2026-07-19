@@ -3,23 +3,47 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import {
-  readEvents, filterEvents, renderActivityFeed, buildDigest, renderDigest,
-  createHandoff, listHandoffs, getHandoff, acceptHandoff, closeHandoff,
-  renderHandoffList, renderHandoff,
-  recordDecision, listDecisions, getDecision, supersedeDecision,
-  renderDecisionList, renderDecision,
-  buildRoomView, renderRoom, renderRoomPlain, renderRoomChat,
-  previewWorkflowTemplate, executeWorkflowTemplate, renderWorkflowPreview,
+  readEvents,
+  filterEvents,
+  renderActivityFeed,
+  buildDigest,
+  renderDigest,
+  createHandoff,
+  listHandoffs,
+  getHandoff,
+  acceptHandoff,
+  closeHandoff,
+  renderHandoffList,
+  renderHandoff,
+  recordDecision,
+  listDecisions,
+  getDecision,
+  supersedeDecision,
+  renderDecisionList,
+  renderDecision,
+  buildRoomView,
+  renderRoom,
+  renderRoomPlain,
+  renderRoomChat,
+  previewWorkflowTemplate,
+  executeWorkflowTemplate,
+  renderWorkflowPreview,
   validateWorkflowTemplate,
-  buildDashboardProjection, renderDashboardProjection, renderDashboardMarkdown, BLOCKER_TYPES,
+  buildDashboardProjection,
+  renderDashboardProjection,
+  renderDashboardMarkdown,
+  BLOCKER_TYPES,
   recordEvent,
 } from '@openslack/collaboration';
 import type { WorkflowTemplate } from '@openslack/collaboration';
 import { resolveAgentPrincipal, renderFindingsPlain } from '@openslack/runtime';
 import type { PlainFinding } from '@openslack/runtime';
 import {
-  buildDashboardCard, buildDigestCard, buildActivityCard,
-  buildWorkflowCard, cardToText,
+  buildDashboardCard,
+  buildDigestCard,
+  buildActivityCard,
+  buildWorkflowCard,
+  cardToText,
 } from '@openslack/chat-gateway';
 import {
   discoverJsWorkflows,
@@ -82,11 +106,7 @@ import {
   bootstrapWorkflowLabels,
   finalizeWorkflowPR,
 } from '@openslack/github';
-import {
-  evaluateWorkflowGate,
-  fetchPRDetails,
-  loadPRCodeownerEvidence,
-} from '@openslack/pr';
+import { evaluateWorkflowGate, fetchPRDetails, loadPRCodeownerEvidence } from '@openslack/pr';
 import {
   diagnoseNegentropyIntegration,
   exportNegentropySlotPreview,
@@ -129,11 +149,12 @@ function resolveAgentAuthOptions(agentId: string | undefined): AgentAuthOptions 
 function createCollaborationEventEmitter(): AgentEventEmitter {
   return (event: AgentConversationEvent) => {
     const severity = event.type === 'agent.conversation.failed' ? 'critical' : undefined;
-    const summary = event.type === 'agent.conversation.started'
-      ? `Agent ${event.agentId} started conversation in phase "${event.phase}" (run ${event.runId})`
-      : event.type === 'agent.conversation.completed'
-        ? `Agent ${event.agentId} completed conversation in phase "${event.phase}" (run ${event.runId})`
-        : `Agent ${event.agentId} failed in phase "${event.phase}" (run ${event.runId}): ${event.error ?? 'unknown error'}`;
+    const summary =
+      event.type === 'agent.conversation.started'
+        ? `Agent ${event.agentId} started conversation in phase "${event.phase}" (run ${event.runId})`
+        : event.type === 'agent.conversation.completed'
+          ? `Agent ${event.agentId} completed conversation in phase "${event.phase}" (run ${event.runId})`
+          : `Agent ${event.agentId} failed in phase "${event.phase}" (run ${event.runId}): ${event.error ?? 'unknown error'}`;
 
     recordEvent({
       type: event.type,
@@ -167,7 +188,9 @@ function ensureWorkflowEnabled(action: string): void {
   const policy = readWorkflowPolicy({ rootDir: findRepoRoot() });
   if (!policy.enabled) {
     console.error(`Workflow ${action} is disabled.`);
-    console.error(policy.reason ?? 'Enable workflows with: openslack collaboration workflow config enable');
+    console.error(
+      policy.reason ?? 'Enable workflows with: openslack collaboration workflow config enable',
+    );
     process.exit(1);
   }
 }
@@ -200,37 +223,46 @@ const WORKFLOW_SAVE_TARGETS = ['project', 'user', 'claude-project'] as const;
 
 function parseWorkflowRunStatus(value: string | undefined): RunStatus['status'] | undefined {
   if (value === undefined) return undefined;
-  if ((WORKFLOW_RUN_STATUSES as readonly string[]).includes(value)) return value as RunStatus['status'];
+  if ((WORKFLOW_RUN_STATUSES as readonly string[]).includes(value))
+    return value as RunStatus['status'];
   console.error(`Invalid workflow run status: ${value}`);
   console.error(`Allowed values: ${WORKFLOW_RUN_STATUSES.join(', ')}`);
   process.exit(1);
 }
 
-function parseWorkflowRunShowDetail(value: string | undefined): typeof WORKFLOW_RUN_SHOW_DETAILS[number] {
+function parseWorkflowRunShowDetail(
+  value: string | undefined,
+): (typeof WORKFLOW_RUN_SHOW_DETAILS)[number] {
   const resolved = value ?? 'summary';
-  if ((WORKFLOW_RUN_SHOW_DETAILS as readonly string[]).includes(resolved)) return resolved as typeof WORKFLOW_RUN_SHOW_DETAILS[number];
+  if ((WORKFLOW_RUN_SHOW_DETAILS as readonly string[]).includes(resolved))
+    return resolved as (typeof WORKFLOW_RUN_SHOW_DETAILS)[number];
   console.error(`Invalid workflow run detail: ${resolved}`);
   console.error(`Allowed values: ${WORKFLOW_RUN_SHOW_DETAILS.join(', ')}`);
   process.exit(1);
 }
 
-function parseWorkflowRunShowFormat(value: string | undefined): typeof WORKFLOW_RUN_SHOW_FORMATS[number] {
+function parseWorkflowRunShowFormat(
+  value: string | undefined,
+): (typeof WORKFLOW_RUN_SHOW_FORMATS)[number] {
   const resolved = value ?? 'plain';
-  if ((WORKFLOW_RUN_SHOW_FORMATS as readonly string[]).includes(resolved)) return resolved as typeof WORKFLOW_RUN_SHOW_FORMATS[number];
+  if ((WORKFLOW_RUN_SHOW_FORMATS as readonly string[]).includes(resolved))
+    return resolved as (typeof WORKFLOW_RUN_SHOW_FORMATS)[number];
   console.error(`Invalid workflow run format: ${resolved}`);
   console.error(`Allowed values: ${WORKFLOW_RUN_SHOW_FORMATS.join(', ')}`);
   process.exit(1);
 }
 
 function parseWorkflowRunControlAction(value: string): WorkflowRunControlAction {
-  if ((WORKFLOW_RUN_CONTROL_ACTIONS as readonly string[]).includes(value)) return value as WorkflowRunControlAction;
+  if ((WORKFLOW_RUN_CONTROL_ACTIONS as readonly string[]).includes(value))
+    return value as WorkflowRunControlAction;
   console.error(`Invalid workflow run control action: ${value}`);
   console.error(`Allowed values: ${WORKFLOW_RUN_CONTROL_ACTIONS.join(', ')}`);
   process.exit(1);
 }
 
-function parseWorkflowSaveTarget(value: string): typeof WORKFLOW_SAVE_TARGETS[number] {
-  if ((WORKFLOW_SAVE_TARGETS as readonly string[]).includes(value)) return value as typeof WORKFLOW_SAVE_TARGETS[number];
+function parseWorkflowSaveTarget(value: string): (typeof WORKFLOW_SAVE_TARGETS)[number] {
+  if ((WORKFLOW_SAVE_TARGETS as readonly string[]).includes(value))
+    return value as (typeof WORKFLOW_SAVE_TARGETS)[number];
   console.error(`--to must be one of: ${WORKFLOW_SAVE_TARGETS.join(', ')}`);
   process.exit(1);
 }
@@ -353,63 +385,112 @@ export function collaborationCommands(): Command {
     .description('Show projection-only team dashboard')
     .option('--since <hours>', 'Window in hours; use 0 for all events', '24')
     .option('--owner <actorId>', 'Filter by actor ID')
-    .option('--module <sourceKind>', 'Filter by source module (operator, prms, github, chat, governance)')
+    .option(
+      '--module <sourceKind>',
+      'Filter by source module (operator, prms, github, chat, governance)',
+    )
     .option('--risk <level>', 'Filter by risk level (none, low, medium, high)')
     .option('--blocker', 'Show only blocker events')
     .option('--type <eventType>', 'Filter by event type')
-    .option('--format <format>', 'Output format: standard, plain, json, chat, markdown, or tui', 'standard')
-    .action(async (options: { since: string; owner?: string; module?: string; risk?: string; blocker?: boolean; type?: string; format: string }) => {
-      const sinceHours = parseInt(options.since, 10);
-      const filters: Record<string, unknown> = {};
-      if (options.owner) filters.actorId = options.owner;
-      if (options.module) filters.sourceKind = options.module;
-      if (options.risk) filters.risk = options.risk;
-      if (options.type) filters.type = options.type;
-      if (options.blocker) filters.type = [...BLOCKER_TYPES];
-      const dashboard = buildDashboardProjection({
-        sinceHours: Number.isFinite(sinceHours) ? sinceHours : 24,
-        filters: Object.keys(filters).length > 0 ? filters : undefined,
-      });
-      if (options.format === 'tui') {
-        try {
-          const { renderDashboardTui } = await import('@openslack/tui');
-          await renderDashboardTui(dashboard);
-        } catch (error) {
-          console.error('TUI unavailable. Falling back to standard output.');
+    .option(
+      '--format <format>',
+      'Output format: standard, plain, json, chat, markdown, or tui',
+      'standard',
+    )
+    .action(
+      async (options: {
+        since: string;
+        owner?: string;
+        module?: string;
+        risk?: string;
+        blocker?: boolean;
+        type?: string;
+        format: string;
+      }) => {
+        const sinceHours = parseInt(options.since, 10);
+        const filters: Record<string, unknown> = {};
+        if (options.owner) filters.actorId = options.owner;
+        if (options.module) filters.sourceKind = options.module;
+        if (options.risk) filters.risk = options.risk;
+        if (options.type) filters.type = options.type;
+        if (options.blocker) filters.type = [...BLOCKER_TYPES];
+        const dashboard = buildDashboardProjection({
+          sinceHours: Number.isFinite(sinceHours) ? sinceHours : 24,
+          filters: Object.keys(filters).length > 0 ? filters : undefined,
+        });
+        if (options.format === 'tui') {
+          try {
+            const { renderDashboardTui } = await import('@openslack/tui');
+            await renderDashboardTui(dashboard);
+          } catch (error) {
+            console.error('TUI unavailable. Falling back to standard output.');
+            console.log(renderDashboardProjection(dashboard));
+          }
+        } else if (options.format === 'json') {
+          console.log(JSON.stringify(dashboard, null, 2));
+        } else if (options.format === 'chat') {
+          const card = buildDashboardCard({
+            sinceHours: dashboard.sinceHours,
+            blockerCount: dashboard.blockerCount,
+            openHandoffs: dashboard.openHandoffs,
+            activeDecisions: dashboard.activeDecisions,
+            blockers: dashboard.blockers.map((b) => ({
+              object: b.object,
+              summary: b.summary,
+              owner: b.owner,
+            })),
+          });
+          console.log(cardToText(card));
+        } else if (options.format === 'plain') {
+          const findings: PlainFinding[] = [];
+          for (const b of dashboard.blockers) {
+            findings.push({
+              status: 'FAIL',
+              title: `Blocker: ${b.object}`,
+              detail: b.summary,
+              nextAction: b.nextAction,
+            });
+          }
+          for (const [type, count] of Object.entries(dashboard.taskCounts)) {
+            findings.push({
+              status: 'informational',
+              title: `Task: ${type}`,
+              detail: `${count} event(s)`,
+            });
+          }
+          for (const [type, count] of Object.entries(dashboard.prCounts)) {
+            findings.push({
+              status: 'informational',
+              title: `PR: ${type}`,
+              detail: `${count} event(s)`,
+            });
+          }
+          if (dashboard.openHandoffs > 0)
+            findings.push({
+              status: 'informational',
+              title: 'Open handoffs',
+              detail: `${dashboard.openHandoffs} open`,
+            });
+          if (dashboard.activeDecisions > 0)
+            findings.push({
+              status: 'informational',
+              title: 'Active decisions',
+              detail: `${dashboard.activeDecisions} active`,
+            });
+          if (dashboard.blockerCount === 0)
+            findings.push({
+              status: 'PASS',
+              title: 'No blockers',
+              detail: `No blockers in the last ${dashboard.sinceHours}h`,
+            });
+          console.log(renderFindingsPlain(findings));
+        } else if (options.format === 'markdown') {
+          console.log(renderDashboardMarkdown(dashboard));
+        } else {
           console.log(renderDashboardProjection(dashboard));
         }
-      } else if (options.format === 'json') {
-        console.log(JSON.stringify(dashboard, null, 2));
-      } else if (options.format === 'chat') {
-        const card = buildDashboardCard({
-          sinceHours: dashboard.sinceHours,
-          blockerCount: dashboard.blockerCount,
-          openHandoffs: dashboard.openHandoffs,
-          activeDecisions: dashboard.activeDecisions,
-          blockers: dashboard.blockers.map((b) => ({ object: b.object, summary: b.summary, owner: b.owner })),
-        });
-        console.log(cardToText(card));
-      } else if (options.format === 'plain') {
-        const findings: PlainFinding[] = [];
-        for (const b of dashboard.blockers) {
-          findings.push({ status: 'FAIL', title: `Blocker: ${b.object}`, detail: b.summary, nextAction: b.nextAction });
-        }
-        for (const [type, count] of Object.entries(dashboard.taskCounts)) {
-          findings.push({ status: 'informational', title: `Task: ${type}`, detail: `${count} event(s)` });
-        }
-        for (const [type, count] of Object.entries(dashboard.prCounts)) {
-          findings.push({ status: 'informational', title: `PR: ${type}`, detail: `${count} event(s)` });
-        }
-        if (dashboard.openHandoffs > 0) findings.push({ status: 'informational', title: 'Open handoffs', detail: `${dashboard.openHandoffs} open` });
-        if (dashboard.activeDecisions > 0) findings.push({ status: 'informational', title: 'Active decisions', detail: `${dashboard.activeDecisions} active` });
-        if (dashboard.blockerCount === 0) findings.push({ status: 'PASS', title: 'No blockers', detail: `No blockers in the last ${dashboard.sinceHours}h` });
-        console.log(renderFindingsPlain(findings));
-      } else if (options.format === 'markdown') {
-        console.log(renderDashboardMarkdown(dashboard));
-      } else {
-        console.log(renderDashboardProjection(dashboard));
-      }
-    });
+      },
+    );
 
   cmd
     .command('activity')
@@ -419,63 +500,80 @@ export function collaborationCommands(): Command {
     .option('--actor <id>', 'Filter by actor ID')
     .option('--type <type>', 'Filter by event type')
     .option('--format <format>', 'Output format: standard, plain, json, or chat', 'standard')
-    .action(async (options: { since: string; object?: string; actor?: string; type?: string; format: string }) => {
-      const hours = parseInt(options.since, 10);
-      const events = readEvents();
+    .action(
+      async (options: {
+        since: string;
+        object?: string;
+        actor?: string;
+        type?: string;
+        format: string;
+      }) => {
+        const hours = parseInt(options.since, 10);
+        const events = readEvents();
 
-      let filtered = events;
+        let filtered = events;
 
-      if (hours > 0) {
-        const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
-        filtered = filterEvents(filtered, { since: cutoff });
-      }
-
-      if (options.object) {
-        const [kind, id] = options.object.split(':');
-        if (kind && id) {
-          filtered = filterEvents(filtered, { objectKind: kind as never, objectId: id });
-        } else {
-          filtered = filterEvents(filtered, { objectId: options.object });
+        if (hours > 0) {
+          const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
+          filtered = filterEvents(filtered, { since: cutoff });
         }
-      }
 
-      if (options.actor) {
-        filtered = filterEvents(filtered, { actorId: options.actor });
-      }
+        if (options.object) {
+          const [kind, id] = options.object.split(':');
+          if (kind && id) {
+            filtered = filterEvents(filtered, { objectKind: kind as never, objectId: id });
+          } else {
+            filtered = filterEvents(filtered, { objectId: options.object });
+          }
+        }
 
-      if (options.type) {
-        filtered = filterEvents(filtered, { type: options.type as never });
-      }
+        if (options.actor) {
+          filtered = filterEvents(filtered, { actorId: options.actor });
+        }
 
-      if (options.format === 'json') {
-        console.log(JSON.stringify(filtered, null, 2));
-      } else if (options.format === 'chat') {
-        const card = buildActivityCard({
-          eventCount: filtered.length,
-          sinceHours: hours,
-          events: filtered.map((e) => ({ type: e.type, object: `${e.object.kind}:${e.object.id}`, summary: e.summary })),
-        });
-        console.log(cardToText(card));
-      } else if (options.format === 'plain') {
-        const findings: PlainFinding[] = filtered.map((event) => {
-          let status: PlainFinding['status'] = 'informational';
-          if (BLOCKER_TYPES.has(event.type)) status = 'FAIL';
-          else if (event.nextAction?.owner === 'human') status = 'requires_human_approval';
-          return { status, title: `${event.type} (${event.object.kind}:${event.object.id})`, detail: event.summary, nextAction: event.nextAction?.action };
-        });
-        console.log(renderFindingsPlain(findings));
-      } else if (options.format === 'tui') {
-        try {
-          const { renderActivityTui } = await import('@openslack/tui');
-          await renderActivityTui(filtered, { periodHours: hours });
-        } catch (error) {
-          console.error('TUI unavailable. Falling back to standard output.');
+        if (options.type) {
+          filtered = filterEvents(filtered, { type: options.type as never });
+        }
+
+        if (options.format === 'json') {
+          console.log(JSON.stringify(filtered, null, 2));
+        } else if (options.format === 'chat') {
+          const card = buildActivityCard({
+            eventCount: filtered.length,
+            sinceHours: hours,
+            events: filtered.map((e) => ({
+              type: e.type,
+              object: `${e.object.kind}:${e.object.id}`,
+              summary: e.summary,
+            })),
+          });
+          console.log(cardToText(card));
+        } else if (options.format === 'plain') {
+          const findings: PlainFinding[] = filtered.map((event) => {
+            let status: PlainFinding['status'] = 'informational';
+            if (BLOCKER_TYPES.has(event.type)) status = 'FAIL';
+            else if (event.nextAction?.owner === 'human') status = 'requires_human_approval';
+            return {
+              status,
+              title: `${event.type} (${event.object.kind}:${event.object.id})`,
+              detail: event.summary,
+              nextAction: event.nextAction?.action,
+            };
+          });
+          console.log(renderFindingsPlain(findings));
+        } else if (options.format === 'tui') {
+          try {
+            const { renderActivityTui } = await import('@openslack/tui');
+            await renderActivityTui(filtered, { periodHours: hours });
+          } catch (error) {
+            console.error('TUI unavailable. Falling back to standard output.');
+            console.log(renderActivityFeed(filtered));
+          }
+        } else {
           console.log(renderActivityFeed(filtered));
         }
-      } else {
-        console.log(renderActivityFeed(filtered));
-      }
-    });
+      },
+    );
 
   cmd
     .command('digest')
@@ -500,14 +598,20 @@ export function collaborationCommands(): Command {
       const digestCard = buildDigestCard({
         sinceHours: digest.periodHours,
         totalEvents: digest.totalEvents,
-        groups: digest.groups.map((g) => ({ label: g.label, count: g.events.length, items: g.events.map((e) => e.summary) })),
+        groups: digest.groups.map((g) => ({
+          label: g.label,
+          count: g.events.length,
+          items: g.events.map((e) => e.summary),
+        })),
       });
 
       // Post to Slack if requested
       if (options.post === 'slack') {
         const channelId = options.channel ?? process.env.SLACK_DIGEST_CHANNEL;
         if (!channelId) {
-          console.error('Slack channel ID required. Use --channel or set SLACK_DIGEST_CHANNEL env var.');
+          console.error(
+            'Slack channel ID required. Use --channel or set SLACK_DIGEST_CHANNEL env var.',
+          );
           process.exit(1);
         }
         const botToken = process.env.SLACK_BOT_TOKEN;
@@ -535,20 +639,30 @@ export function collaborationCommands(): Command {
       } else if (options.format === 'plain') {
         const groupStatusMap: Record<string, PlainFinding['status']> = {
           'Needs Human': 'requires_human_approval',
-          'Blocked': 'FAIL',
-          'Completed': 'PASS',
+          Blocked: 'FAIL',
+          Completed: 'PASS',
           'Agent Activity': 'informational',
-          'Governance': 'informational',
+          Governance: 'informational',
         };
         const findings: PlainFinding[] = [];
         for (const group of digest.groups) {
           const status = groupStatusMap[group.label] ?? 'informational';
           for (const event of group.events) {
-            findings.push({ status, title: `${group.label}: ${event.type}`, detail: event.summary, nextAction: event.nextAction?.action });
+            findings.push({
+              status,
+              title: `${group.label}: ${event.type}`,
+              detail: event.summary,
+              nextAction: event.nextAction?.action,
+            });
           }
         }
         for (const event of digest.recommendedNext) {
-          findings.push({ status: 'fixable_by_command', title: `Next: ${event.object.kind}:${event.object.id}`, detail: event.summary, nextAction: event.nextAction?.action });
+          findings.push({
+            status: 'fixable_by_command',
+            title: `Next: ${event.object.kind}:${event.object.id}`,
+            detail: event.summary,
+            nextAction: event.nextAction?.action,
+          });
         }
         console.log(renderFindingsPlain(findings));
       } else if (options.format === 'tui') {
@@ -576,28 +690,30 @@ export function collaborationCommands(): Command {
     .requiredOption('--context <text>', 'Handoff context')
     .option('--steps <steps>', 'Comma-separated next steps')
     .option('--notes <text>', 'Additional notes')
-    .action((options: {
-      from: string;
-      to: string;
-      issue?: string;
-      pr?: string;
-      context: string;
-      steps?: string;
-      notes?: string;
-    }) => {
-      const handoff = createHandoff({
-        from: options.from,
-        to: options.to,
-        issueRef: options.issue,
-        prRef: options.pr,
-        context: options.context,
-        nextSteps: options.steps ? options.steps.split(',').map((s) => s.trim()) : [],
-        notes: options.notes,
-      });
-      console.log(`Created handoff: ${handoff.id}`);
-      console.log(`Status: ${handoff.status}`);
-      console.log(`From: ${handoff.from} → To: ${handoff.to}`);
-    });
+    .action(
+      (options: {
+        from: string;
+        to: string;
+        issue?: string;
+        pr?: string;
+        context: string;
+        steps?: string;
+        notes?: string;
+      }) => {
+        const handoff = createHandoff({
+          from: options.from,
+          to: options.to,
+          issueRef: options.issue,
+          prRef: options.pr,
+          context: options.context,
+          nextSteps: options.steps ? options.steps.split(',').map((s) => s.trim()) : [],
+          notes: options.notes,
+        });
+        console.log(`Created handoff: ${handoff.id}`);
+        console.log(`Status: ${handoff.status}`);
+        console.log(`From: ${handoff.from} → To: ${handoff.to}`);
+      },
+    );
 
   handoff
     .command('list')
@@ -683,28 +799,34 @@ export function collaborationCommands(): Command {
     .option('--alternatives <items>', 'Comma-separated alternatives considered')
     .option('--consequences <items>', 'Comma-separated consequences')
     .option('--tags <items>', 'Comma-separated tags')
-    .action((options: {
-      topic: string;
-      decision: string;
-      rationale: string;
-      by: string;
-      alternatives?: string;
-      consequences?: string;
-      tags?: string;
-    }) => {
-      const d = recordDecision({
-        topic: options.topic,
-        decision: options.decision,
-        rationale: options.rationale,
-        decidedBy: options.by,
-        alternatives: options.alternatives ? options.alternatives.split(',').map((s) => s.trim()) : [],
-        consequences: options.consequences ? options.consequences.split(',').map((s) => s.trim()) : [],
-        tags: options.tags ? options.tags.split(',').map((s) => s.trim()) : [],
-      });
-      console.log(`Recorded decision: ${d.id}`);
-      console.log(`Topic: ${d.topic}`);
-      console.log(`Status: ${d.status}`);
-    });
+    .action(
+      (options: {
+        topic: string;
+        decision: string;
+        rationale: string;
+        by: string;
+        alternatives?: string;
+        consequences?: string;
+        tags?: string;
+      }) => {
+        const d = recordDecision({
+          topic: options.topic,
+          decision: options.decision,
+          rationale: options.rationale,
+          decidedBy: options.by,
+          alternatives: options.alternatives
+            ? options.alternatives.split(',').map((s) => s.trim())
+            : [],
+          consequences: options.consequences
+            ? options.consequences.split(',').map((s) => s.trim())
+            : [],
+          tags: options.tags ? options.tags.split(',').map((s) => s.trim()) : [],
+        });
+        console.log(`Recorded decision: ${d.id}`);
+        console.log(`Topic: ${d.topic}`);
+        console.log(`Status: ${d.status}`);
+      },
+    );
 
   decision
     .command('list')
@@ -806,7 +928,12 @@ export function collaborationCommands(): Command {
   workflow
     .command('preview <file>')
     .description('Preview a workflow template without executing it')
-    .option('--input <key=value>', 'Template input value', (value, previous: string[]) => [...previous, value], [])
+    .option(
+      '--input <key=value>',
+      'Template input value',
+      (value, previous: string[]) => [...previous, value],
+      [],
+    )
     .option('--format <format>', 'Output format: standard, plain, json, chat, or tui', 'standard')
     .action(async (file: string, options: { input: string[]; format: string }) => {
       const template = loadWorkflowTemplate(file);
@@ -833,25 +960,32 @@ export function collaborationCommands(): Command {
   workflow
     .command('execute <file>')
     .description('Execute a workflow template after validation')
-    .option('--input <key=value>', 'Template input value', (value, previous: string[]) => [...previous, value], [])
+    .option(
+      '--input <key=value>',
+      'Template input value',
+      (value, previous: string[]) => [...previous, value],
+      [],
+    )
     .option('--dry-run', 'Validate and execute registered actions in dry-run mode')
     .option('--agent-id <id>', 'Agent ID for authorization')
-    .action(async (file: string, options: { input: string[]; dryRun?: boolean; agentId?: string }) => {
-      ensureWorkflowEnabled('execution');
-      const template = loadWorkflowTemplate(file);
-      const result = await executeWorkflowTemplate(template, parseInputs(options.input), {
-        dryRun: options.dryRun,
-        ...resolveAgentAuthOptions(options.agentId),
-      });
-      console.log(renderWorkflowPreview(result.preview));
-      console.log('');
-      console.log(`Status: ${result.status}`);
-      console.log(`Correlation: ${result.correlationId}`);
-      if (result.errors.length > 0) {
-        for (const error of result.errors) console.log(`Error: ${error}`);
-        process.exit(1);
-      }
-    });
+    .action(
+      async (file: string, options: { input: string[]; dryRun?: boolean; agentId?: string }) => {
+        ensureWorkflowEnabled('execution');
+        const template = loadWorkflowTemplate(file);
+        const result = await executeWorkflowTemplate(template, parseInputs(options.input), {
+          dryRun: options.dryRun,
+          ...resolveAgentAuthOptions(options.agentId),
+        });
+        console.log(renderWorkflowPreview(result.preview));
+        console.log('');
+        console.log(`Status: ${result.status}`);
+        console.log(`Correlation: ${result.correlationId}`);
+        if (result.errors.length > 0) {
+          for (const error of result.errors) console.log(`Error: ${error}`);
+          process.exit(1);
+        }
+      },
+    );
 
   workflow
     .command('list')
@@ -888,7 +1022,9 @@ export function collaborationCommands(): Command {
         console.log('|------|-------------|--------|--------|------|-------------|');
         for (const m of jsWorkflows) {
           const desc = m.description ?? '-';
-          console.log(`| ${m.name} | ${m.displayName} | ${m.phases} | ${m.inputs} | ${m.file} | ${desc} |`);
+          console.log(
+            `| ${m.name} | ${m.displayName} | ${m.phases} | ${m.inputs} | ${m.file} | ${desc} |`,
+          );
         }
         console.log('');
       }
@@ -926,7 +1062,9 @@ export function collaborationCommands(): Command {
 
   workflow.addCommand(patterns);
 
-  const catalog = new Command('catalog').description('List or preview workflow use-case catalog entries');
+  const catalog = new Command('catalog').description(
+    'List or preview workflow use-case catalog entries',
+  );
 
   catalog
     .command('list')
@@ -963,13 +1101,17 @@ export function collaborationCommands(): Command {
       }
       console.log(renderWorkflowCatalogEntry(entry));
       console.log('');
-      console.log('Draft preview:')
+      console.log('Draft preview:');
       console.log(`  Pattern: ${pattern.id}`);
-      console.log(`  Budget: 100000 tokens, max agents ${pattern.id === 'loop-until-done' ? 100 : 1000}, concurrency 16`);
+      console.log(
+        `  Budget: 100000 tokens, max agents ${pattern.id === 'loop-until-done' ? 100 : 1000}, concurrency 16`,
+      );
       console.log('  Phases:');
       for (const phase of pattern.phases) console.log(`    - ${phase.title}: ${phase.detail}`);
       console.log('');
-      console.log(`Generate: openslack collaboration workflow generate --pattern ${entry.pattern} --prompt "${entry.prompt.replace(/"/g, '\\"')}"`);
+      console.log(
+        `Generate: openslack collaboration workflow generate --pattern ${entry.pattern} --prompt "${entry.prompt.replace(/"/g, '\\"')}"`,
+      );
     });
 
   workflow.addCommand(catalog);
@@ -984,7 +1126,9 @@ export function collaborationCommands(): Command {
       ensureWorkflowEnabled('start');
       const selected = [options.prompt, options.pattern, options.saved].filter(Boolean).length;
       if (selected !== 1 && !(options.prompt && options.pattern && !options.saved)) {
-        console.error('Use exactly one start path: --prompt, --pattern, or --saved. You may combine --prompt with --pattern.');
+        console.error(
+          'Use exactly one start path: --prompt, --pattern, or --saved. You may combine --prompt with --pattern.',
+        );
         process.exit(1);
       }
       try {
@@ -1024,7 +1168,10 @@ export function collaborationCommands(): Command {
           pattern,
           rootDir: findRepoRoot(),
         });
-        const preview = await previewWorkflowDraft({ draftIdOrPath: draft.path, rootDir: findRepoRoot() });
+        const preview = await previewWorkflowDraft({
+          draftIdOrPath: draft.path,
+          rootDir: findRepoRoot(),
+        });
         console.log(renderWorkflowDraftPreview(preview));
         console.log('');
         console.log(`Next: openslack collaboration workflow preview-draft ${draft.draftId}`);
@@ -1039,7 +1186,12 @@ export function collaborationCommands(): Command {
     .description('Generate a dynamic workflow draft without executing it')
     .option('--prompt <text>', 'Task prompt for the dynamic workflow')
     .option('--pattern <pattern>', 'Pattern id, such as fanout-synthesize or tournament')
-    .option('--input <key=value>', 'Draft input hint', (value, previous: string[]) => [...previous, value], [])
+    .option(
+      '--input <key=value>',
+      'Draft input hint',
+      (value, previous: string[]) => [...previous, value],
+      [],
+    )
     .action(async (options: { prompt?: string; pattern?: string; input: string[] }) => {
       ensureWorkflowEnabled('generation');
       if (!options.prompt) {
@@ -1053,11 +1205,16 @@ export function collaborationCommands(): Command {
           inputs: parseInputs(options.input),
           rootDir: findRepoRoot(),
         });
-        const preview = await previewWorkflowDraft({ draftIdOrPath: draft.path, rootDir: findRepoRoot() });
+        const preview = await previewWorkflowDraft({
+          draftIdOrPath: draft.path,
+          rootDir: findRepoRoot(),
+        });
         console.log('Dynamic workflow draft created.');
         console.log(renderWorkflowDraftPreview(preview));
         console.log('');
-        console.log(`Preview with: openslack collaboration workflow preview-draft ${draft.draftId}`);
+        console.log(
+          `Preview with: openslack collaboration workflow preview-draft ${draft.draftId}`,
+        );
       } catch (err) {
         console.error(`Workflow draft generation failed: ${(err as Error).message}`);
         process.exit(1);
@@ -1084,7 +1241,10 @@ export function collaborationCommands(): Command {
     .description('List workflow runs')
     .option('--status <status>', 'Filter by run status')
     .action(async (options: { status?: string }) => {
-      const result = await listWorkflowRuns({ rootDir: findRepoRoot(), status: parseWorkflowRunStatus(options.status) });
+      const result = await listWorkflowRuns({
+        rootDir: findRepoRoot(),
+        status: parseWorkflowRunStatus(options.status),
+      });
       console.log(renderWorkflowRuns(result));
     });
 
@@ -1102,7 +1262,11 @@ export function collaborationCommands(): Command {
           console.error(`Workflow run not found: ${runId}`);
           process.exit(1);
         }
-        console.log(format === 'json' ? JSON.stringify(progress, null, 2) : renderWorkflowRunProgress(progress));
+        console.log(
+          format === 'json'
+            ? JSON.stringify(progress, null, 2)
+            : renderWorkflowRunProgress(progress),
+        );
         return;
       }
       const run = await showWorkflowRun(runId, { rootDir: findRepoRoot() });
@@ -1116,25 +1280,33 @@ export function collaborationCommands(): Command {
   runs
     .command('control <runId>')
     .description('Record a workflow run control action')
-    .requiredOption('--action <action>', 'pause, resume, stopRun, stopAgent, restartAgent, or saveScript')
+    .requiredOption(
+      '--action <action>',
+      'pause, resume, stopRun, stopAgent, restartAgent, or saveScript',
+    )
     .option('--agent-run-id <id>', 'Target AgentRun ID for stopAgent/restartAgent')
     .option('--phase <phase>', 'Target workflow phase for agent-level controls')
     .option('--agent <agent>', 'Target workflow agent label/type for agent-level controls')
-    .action(async (runId: string, options: { action: string; agentRunId?: string; phase?: string; agent?: string }) => {
-      const action = parseWorkflowRunControlAction(options.action);
-      const target: WorkflowRunControlTarget | undefined =
-        options.agentRunId || options.phase || options.agent
-          ? {
-              runId,
-              agentRunId: options.agentRunId,
-              phase: options.phase,
-              agentId: options.agent,
-            }
-          : undefined;
-      const result = await controlWorkflowRun(runId, action, { rootDir: findRepoRoot(), target });
-      console.log(result.message);
-      if (result.status === 'rejected') process.exit(1);
-    });
+    .action(
+      async (
+        runId: string,
+        options: { action: string; agentRunId?: string; phase?: string; agent?: string },
+      ) => {
+        const action = parseWorkflowRunControlAction(options.action);
+        const target: WorkflowRunControlTarget | undefined =
+          options.agentRunId || options.phase || options.agent
+            ? {
+                runId,
+                agentRunId: options.agentRunId,
+                phase: options.phase,
+                agentId: options.agent,
+              }
+            : undefined;
+        const result = await controlWorkflowRun(runId, action, { rootDir: findRepoRoot(), target });
+        console.log(result.message);
+        if (result.status === 'rejected') process.exit(1);
+      },
+    );
 
   workflow.addCommand(runs);
 
@@ -1152,14 +1324,28 @@ export function collaborationCommands(): Command {
     .description('Enable workflow generation and execution')
     .option('--ultracode', 'Also enable ultracode workflow draft triggers')
     .action((options: { ultracode?: boolean }) => {
-      console.log(renderWorkflowPolicy(writeWorkflowPolicy({ enabled: true, ...(options.ultracode ? { ultracode: true } : {}) }, { rootDir: findRepoRoot() })));
+      console.log(
+        renderWorkflowPolicy(
+          writeWorkflowPolicy(
+            { enabled: true, ...(options.ultracode ? { ultracode: true } : {}) },
+            { rootDir: findRepoRoot() },
+          ),
+        ),
+      );
     });
 
   config
     .command('disable')
     .description('Disable workflow generation and execution')
     .action(() => {
-      console.log(renderWorkflowPolicy(writeWorkflowPolicy({ enabled: false, reason: 'disabled by operator command' }, { rootDir: findRepoRoot() })));
+      console.log(
+        renderWorkflowPolicy(
+          writeWorkflowPolicy(
+            { enabled: false, reason: 'disabled by operator command' },
+            { rootDir: findRepoRoot() },
+          ),
+        ),
+      );
     });
 
   workflow.addCommand(config);
@@ -1189,7 +1375,9 @@ export function collaborationCommands(): Command {
       const target = parseWorkflowSaveTarget(options.to);
       try {
         const result = await saveWorkflowRunScript(runId, { rootDir: findRepoRoot(), to: target });
-        console.log(`Saved workflow "${result.workflowName}" from run ${runId} to ${result.source}.`);
+        console.log(
+          `Saved workflow "${result.workflowName}" from run ${runId} to ${result.source}.`,
+        );
         console.log(`Source: ${result.sourcePath}`);
         console.log(`Path: ${result.path}`);
         console.log(`Hash: ${result.scriptHash}`);
@@ -1205,7 +1393,10 @@ export function collaborationCommands(): Command {
     .requiredOption('--out <path>', 'Output skill directory')
     .action(async (name: string, options: { out: string }) => {
       try {
-        const result = await exportWorkflowSkill(name, { rootDir: findRepoRoot(), outDir: options.out });
+        const result = await exportWorkflowSkill(name, {
+          rootDir: findRepoRoot(),
+          outDir: options.out,
+        });
         console.log(`Exported workflow "${result.workflowName}" as a skill package.`);
         console.log(`Skill: ${result.skillPath}`);
         console.log(`Workflow: ${result.workflowPath}`);
@@ -1269,7 +1460,12 @@ export function collaborationCommands(): Command {
   workflow
     .command('preview-js <name>')
     .description('Preview a JS workflow module in read-only mode')
-    .option('--input <key=value>', 'Workflow input value', (value, previous: string[]) => [...previous, value], [])
+    .option(
+      '--input <key=value>',
+      'Workflow input value',
+      (value, previous: string[]) => [...previous, value],
+      [],
+    )
     .option('--budget-tokens <number>', 'Token budget for preview', '10000')
     .action(async (name: string, options: { input: string[]; budgetTokens: string }) => {
       const found = await findJsWorkflow(name);
@@ -1404,193 +1600,223 @@ export function collaborationCommands(): Command {
   workflow
     .command('dry-run <name>')
     .description('Simulate workflow execution without real side effects')
-    .option('--input <key=value>', 'Workflow input value', (value, previous: string[]) => [...previous, value], [])
+    .option(
+      '--input <key=value>',
+      'Workflow input value',
+      (value, previous: string[]) => [...previous, value],
+      [],
+    )
     .option('--budget-tokens <number>', 'Token budget for dry-run', '50000')
     .option('--agent-id <id>', 'Agent ID for authorization')
-    .action(async (name: string, options: { input: string[]; budgetTokens: string; agentId?: string }) => {
-      ensureWorkflowEnabled('dry-run');
-      // Try YAML template first
-      const builtinPath = resolveBuiltinTemplatePath(name);
-      if (builtinPath) {
-        const template = loadWorkflowTemplate(name);
-        const result = await executeWorkflowTemplate(template, parseInputs(options.input), {
-          dryRun: true,
-          ...resolveAgentAuthOptions(options.agentId),
-        });
-        console.log(renderWorkflowPreview(result.preview));
-        console.log('');
-        console.log(`Status: ${result.status}`);
-        console.log(`Correlation: ${result.correlationId}`);
-        if (result.errors.length > 0) {
-          for (const error of result.errors) console.log(`Error: ${error}`);
+    .action(
+      async (
+        name: string,
+        options: { input: string[]; budgetTokens: string; agentId?: string },
+      ) => {
+        ensureWorkflowEnabled('dry-run');
+        // Try YAML template first
+        const builtinPath = resolveBuiltinTemplatePath(name);
+        if (builtinPath) {
+          const template = loadWorkflowTemplate(name);
+          const result = await executeWorkflowTemplate(template, parseInputs(options.input), {
+            dryRun: true,
+            ...resolveAgentAuthOptions(options.agentId),
+          });
+          console.log(renderWorkflowPreview(result.preview));
+          console.log('');
+          console.log(`Status: ${result.status}`);
+          console.log(`Correlation: ${result.correlationId}`);
+          if (result.errors.length > 0) {
+            for (const error of result.errors) console.log(`Error: ${error}`);
+            process.exit(1);
+          }
+          return;
+        }
+
+        // Try JS module
+        const found = await findJsWorkflow(name);
+        if (!found) {
+          console.log(`Workflow "${name}" not found.`);
+          console.log('Use "openslack collaboration workflow list" to see available workflows.');
           process.exit(1);
         }
-        return;
-      }
 
-      // Try JS module
-      const found = await findJsWorkflow(name);
-      if (!found) {
-        console.log(`Workflow "${name}" not found.`);
-        console.log('Use "openslack collaboration workflow list" to see available workflows.');
-        process.exit(1);
-      }
+        try {
+          const mod = await loadWorkflow(found.path);
+          const args = parseInputs(options.input);
+          const budgetTokens = parseInt(options.budgetTokens, 10);
 
-      try {
-        const mod = await loadWorkflow(found.path);
-        const args = parseInputs(options.input);
-        const budgetTokens = parseInt(options.budgetTokens, 10);
-
-        console.log(`Dry-run: ${mod.meta.name}`);
-        console.log(`  Mode: dry-run (simulated side effects)`);
-        console.log(`  Budget: ${budgetTokens} tokens`);
-        console.log('');
-
-        const result = await executeDryRun(mod, {
-          manifest: mod.meta,
-          args,
-          budget: { tokens: Number.isFinite(budgetTokens) ? budgetTokens : 50000, costUsd: 0 },
-        });
-
-        console.log('Dry-Run Result:');
-        console.log(`  Run ID: ${result.runId}`);
-        console.log(`  Workflow: ${result.workflowName}`);
-        console.log(`  Simulated Effects: ${result.simulatedEffects.length}`);
-        for (const effect of result.simulatedEffects) {
-          console.log(`    - [${effect.timestamp}] ${effect.operation}: ${effect.detail}`);
-        }
-        if (result.result) {
+          console.log(`Dry-run: ${mod.meta.name}`);
+          console.log(`  Mode: dry-run (simulated side effects)`);
+          console.log(`  Budget: ${budgetTokens} tokens`);
           console.log('');
-          console.log('  Workflow Result:');
-          console.log(JSON.stringify(result.result, null, 2));
+
+          const result = await executeDryRun(mod, {
+            manifest: mod.meta,
+            args,
+            budget: { tokens: Number.isFinite(budgetTokens) ? budgetTokens : 50000, costUsd: 0 },
+          });
+
+          console.log('Dry-Run Result:');
+          console.log(`  Run ID: ${result.runId}`);
+          console.log(`  Workflow: ${result.workflowName}`);
+          console.log(`  Simulated Effects: ${result.simulatedEffects.length}`);
+          for (const effect of result.simulatedEffects) {
+            console.log(`    - [${effect.timestamp}] ${effect.operation}: ${effect.detail}`);
+          }
+          if (result.result) {
+            console.log('');
+            console.log('  Workflow Result:');
+            console.log(JSON.stringify(result.result, null, 2));
+          }
+          if (result.errors.length > 0) {
+            console.log('');
+            console.log('  Errors:');
+            for (const error of result.errors) console.log(`    - ${error}`);
+          }
+        } catch (err) {
+          console.log(`Dry-run failed for workflow "${name}":`);
+          console.log(`  ${(err as Error).message}`);
+          process.exit(1);
         }
-        if (result.errors.length > 0) {
-          console.log('');
-          console.log('  Errors:');
-          for (const error of result.errors) console.log(`    - ${error}`);
-        }
-      } catch (err) {
-        console.log(`Dry-run failed for workflow "${name}":`);
-        console.log(`  ${(err as Error).message}`);
-        process.exit(1);
-      }
-    });
+      },
+    );
 
   workflow
     .command('run <name>')
     .description('Execute a workflow with real side effects')
-    .option('--input <key=value>', 'Workflow input value', (value, previous: string[]) => [...previous, value], [])
+    .option(
+      '--input <key=value>',
+      'Workflow input value',
+      (value, previous: string[]) => [...previous, value],
+      [],
+    )
     .option('--budget-tokens <number>', 'Token budget for execution', '100000')
     .option('--yes', 'Auto-approve all side effects without interactive confirmation')
     .option('--agent-id <id>', 'Agent ID for authorization')
     .option('--audit-issue', 'Create a GitHub issue to audit this workflow run', false)
-    .action(async (name: string, options: { input: string[]; budgetTokens: string; yes?: boolean; agentId?: string; auditIssue?: boolean }) => {
-      ensureWorkflowEnabled('execution');
-      const found = await findJsWorkflow(name);
-      if (!found) {
-        console.log(`JS workflow module "${name}" not found.`);
-        console.log('Use "openslack collaboration workflow list" to see available workflows.');
-        process.exit(1);
-      }
-
-      try {
-        const mod = await loadWorkflow(found.path);
-        const args = parseInputs(options.input);
-        const budgetTokens = parseInt(options.budgetTokens, 10);
-
-        if (!mod.run && mod.format !== 'claude-ambient') {
-          console.log(`Workflow "${name}" has no run function. Use preview or dry-run instead.`);
+    .action(
+      async (
+        name: string,
+        options: {
+          input: string[];
+          budgetTokens: string;
+          yes?: boolean;
+          agentId?: string;
+          auditIssue?: boolean;
+        },
+      ) => {
+        ensureWorkflowEnabled('execution');
+        const found = await findJsWorkflow(name);
+        if (!found) {
+          console.log(`JS workflow module "${name}" not found.`);
+          console.log('Use "openslack collaboration workflow list" to see available workflows.');
           process.exit(1);
         }
 
-        // Confirmation gate: --yes auto-approves, otherwise interactive prompt required
-        const onConfirm = options.yes
-          ? async (operation: string, detail: string): Promise<boolean> => {
-              console.log(`[AUTO-APPROVE] ${operation}: ${detail}`);
-              return true;
-            }
-          : async (operation: string, detail: string): Promise<boolean> => {
-              // Refuse to execute interactively if not in a TTY
-              if (!process.stdin.isTTY) {
-                console.error(`[ERROR] Cannot prompt for confirmation: not a TTY.`);
-                console.error(`  Use --yes to auto-approve, or run in an interactive terminal.`);
-                return false;
-              }
-              console.log(`[CONFIRM] ${operation}: ${detail}`);
-              const { createInterface } = await import('readline');
-              const rl = createInterface({ input: process.stdin, output: process.stdout });
-              const answer = await new Promise<string>(resolve => {
-                rl.question('Proceed? [y/N] ', resolve);
-              });
-              rl.close();
-              return answer.toLowerCase() === 'y';
-            };
+        try {
+          const mod = await loadWorkflow(found.path);
+          const args = parseInputs(options.input);
+          const budgetTokens = parseInt(options.budgetTokens, 10);
 
-        console.log(`Executing: ${mod.meta.name}`);
-        console.log(`  Mode: execute`);
-        console.log(`  Budget: ${budgetTokens} tokens`);
-        if (options.yes) {
-          console.log(`  Confirmation: auto-approve (--yes)`);
-        }
-        if (mod.meta.sideEffects && mod.meta.sideEffects.length > 0) {
-          console.log(`  Declared side effects:`);
-          for (const se of mod.meta.sideEffects) console.log(`    - ${se}`);
-        }
-        if (mod.meta.risk) console.log(`  Risk: ${mod.meta.risk}`);
-        console.log('');
-
-        const result = await executeRun(mod, {
-          manifest: mod.meta,
-          args,
-          budget: { tokens: Number.isFinite(budgetTokens) ? budgetTokens : 100000, costUsd: 1.0 },
-          onConfirm,
-          allowUnattended: options.yes,
-          agentEventEmitter: createCollaborationEventEmitter(),
-          rootDir: findRepoRoot(),
-          ...resolveAgentAuthOptions(options.agentId),
-        });
-
-        console.log('Execution Result:');
-        console.log(JSON.stringify(result, null, 2));
-
-        if (options.auditIssue) {
-          try {
-            const { publishWorkflowRunAudit } = await import('@openslack/github')
-            const auditResult = await publishWorkflowRunAudit(
-              {
-                runId: (result as Record<string, unknown>).runId as string ?? 'unknown',
-                workflowName: mod.meta.name,
-                workflowHash: mod.hash,
-                mode: 'execute',
-                status: result.status,
-                startedAt: new Date().toISOString(),
-                actor: options.agentId ?? 'openslack-agent-operator',
-              },
-              { createIssue: true },
-            )
-            console.log(`  Audit issue created: #${auditResult.issueNumber} (${auditResult.url})`)
-          } catch (auditErr) {
-            console.log(`  [WARNING] Failed to create audit issue: ${(auditErr as Error).message}`)
+          if (!mod.run && mod.format !== 'claude-ambient') {
+            console.log(`Workflow "${name}" has no run function. Use preview or dry-run instead.`);
+            process.exit(1);
           }
-        }
-      } catch (err) {
-        if (err instanceof WorkflowPausedError) {
-          console.log(`Workflow paused for approval: ${err.operation}`);
-          console.log(`  Run ID: ${err.runId}`);
-          console.log(`  Detail: ${err.detail}`);
+
+          // Confirmation gate: --yes auto-approves, otherwise interactive prompt required
+          const onConfirm = options.yes
+            ? async (operation: string, detail: string): Promise<boolean> => {
+                console.log(`[AUTO-APPROVE] ${operation}: ${detail}`);
+                return true;
+              }
+            : async (operation: string, detail: string): Promise<boolean> => {
+                // Refuse to execute interactively if not in a TTY
+                if (!process.stdin.isTTY) {
+                  console.error(`[ERROR] Cannot prompt for confirmation: not a TTY.`);
+                  console.error(`  Use --yes to auto-approve, or run in an interactive terminal.`);
+                  return false;
+                }
+                console.log(`[CONFIRM] ${operation}: ${detail}`);
+                const { createInterface } = await import('readline');
+                const rl = createInterface({ input: process.stdin, output: process.stdout });
+                const answer = await new Promise<string>((resolve) => {
+                  rl.question('Proceed? [y/N] ', resolve);
+                });
+                rl.close();
+                return answer.toLowerCase() === 'y';
+              };
+
+          console.log(`Executing: ${mod.meta.name}`);
+          console.log(`  Mode: execute`);
+          console.log(`  Budget: ${budgetTokens} tokens`);
+          if (options.yes) {
+            console.log(`  Confirmation: auto-approve (--yes)`);
+          }
+          if (mod.meta.sideEffects && mod.meta.sideEffects.length > 0) {
+            console.log(`  Declared side effects:`);
+            for (const se of mod.meta.sideEffects) console.log(`    - ${se}`);
+          }
+          if (mod.meta.risk) console.log(`  Risk: ${mod.meta.risk}`);
+          console.log('');
+
+          const result = await executeRun(mod, {
+            manifest: mod.meta,
+            args,
+            budget: { tokens: Number.isFinite(budgetTokens) ? budgetTokens : 100000, costUsd: 1.0 },
+            onConfirm,
+            allowUnattended: options.yes,
+            agentEventEmitter: createCollaborationEventEmitter(),
+            rootDir: findRepoRoot(),
+            ...resolveAgentAuthOptions(options.agentId),
+          });
+
+          console.log('Execution Result:');
+          console.log(JSON.stringify(result, null, 2));
+
+          if (options.auditIssue) {
+            try {
+              const { publishWorkflowRunAudit } = await import('@openslack/github');
+              const auditResult = await publishWorkflowRunAudit(
+                {
+                  runId: ((result as Record<string, unknown>).runId as string) ?? 'unknown',
+                  workflowName: mod.meta.name,
+                  workflowHash: mod.hash,
+                  mode: 'execute',
+                  status: result.status,
+                  startedAt: new Date().toISOString(),
+                  actor: options.agentId ?? 'openslack-agent-operator',
+                },
+                { createIssue: true },
+              );
+              console.log(
+                `  Audit issue created: #${auditResult.issueNumber} (${auditResult.url})`,
+              );
+            } catch (auditErr) {
+              console.log(
+                `  [WARNING] Failed to create audit issue: ${(auditErr as Error).message}`,
+              );
+            }
+          }
+        } catch (err) {
+          if (err instanceof WorkflowPausedError) {
+            console.log(`Workflow paused for approval: ${err.operation}`);
+            console.log(`  Run ID: ${err.runId}`);
+            console.log(`  Detail: ${err.detail}`);
+            process.exit(1);
+          }
+          if (err instanceof WorkflowBudgetPausedError) {
+            console.log('Workflow paused for budget approval.');
+            console.log(`  Run ID: ${err.runId}`);
+            console.log(`  Detail: ${err.detail}`);
+            process.exit(1);
+          }
+          console.log(`Execution failed for workflow "${name}":`);
+          console.log(`  ${(err as Error).message}`);
           process.exit(1);
         }
-        if (err instanceof WorkflowBudgetPausedError) {
-          console.log('Workflow paused for budget approval.');
-          console.log(`  Run ID: ${err.runId}`);
-          console.log(`  Detail: ${err.detail}`);
-          process.exit(1);
-        }
-        console.log(`Execution failed for workflow "${name}":`);
-        console.log(`  ${(err as Error).message}`);
-        process.exit(1);
-      }
-    });
+      },
+    );
 
   workflow
     .command('resume <runId>')
@@ -1630,7 +1856,11 @@ export function collaborationCommands(): Command {
         const check = await checkResumable(store, runId, mod.meta);
         if (!check.canResume) {
           console.log(`Cannot resume run ${runId}: ${check.reason}`);
-          if (check.manifestMatch === false && check.storedManifestHash && check.currentManifestHash) {
+          if (
+            check.manifestMatch === false &&
+            check.storedManifestHash &&
+            check.currentManifestHash
+          ) {
             console.log(`  Stored hash: ${check.storedManifestHash}`);
             console.log(`  Current hash: ${check.currentManifestHash}`);
             console.log('  Use --force to override (not recommended).');
@@ -1643,7 +1873,9 @@ export function collaborationCommands(): Command {
 
         console.log(`Resuming: ${mod.meta.name}`);
         console.log(`  Run ID: ${runId}`);
-        console.log(`  Completed phases: ${resumeState.completedPhases.map(p => p.phase).join(', ')}`);
+        console.log(
+          `  Completed phases: ${resumeState.completedPhases.map((p) => p.phase).join(', ')}`,
+        );
         console.log(`  Next phase index: ${resumeState.nextPhaseIndex}`);
         console.log('');
 
@@ -1661,7 +1893,7 @@ export function collaborationCommands(): Command {
               console.log(`[CONFIRM] ${operation}: ${detail}`);
               const { createInterface } = await import('readline');
               const rl = createInterface({ input: process.stdin, output: process.stdout });
-              const answer = await new Promise<string>(resolve => {
+              const answer = await new Promise<string>((resolve) => {
                 rl.question('Proceed? [y/N] ', resolve);
               });
               rl.close();
@@ -1705,85 +1937,87 @@ export function collaborationCommands(): Command {
     .description('Set or view the trust level for a workflow')
     .option('--level <level>', 'Trust level to assign: untrusted, trusted, or core')
     .action(async (name: string, options: { level?: string }) => {
-      const validLevels = ['untrusted', 'trusted', 'core'] as const
-      type TrustLevel = typeof validLevels[number]
+      const validLevels = ['untrusted', 'trusted', 'core'] as const;
+      type TrustLevel = (typeof validLevels)[number];
 
-      const { TrustStore, resolveTrustLevel, getPermissionsForTrustLevel } = await import('@openslack/workflows')
-      const root = findRepoRoot()
-      const trustStore = new TrustStore({ rootDir: root })
+      const { TrustStore, resolveTrustLevel, getPermissionsForTrustLevel } =
+        await import('@openslack/workflows');
+      const root = findRepoRoot();
+      const trustStore = new TrustStore({ rootDir: root });
 
       // If no level specified, show current trust level
       if (!options.level) {
-        const found = await findJsWorkflow(name)
+        const found = await findJsWorkflow(name);
         if (!found) {
-          console.log(`Workflow "${name}" not found.`)
-          console.log('Use "openslack collaboration workflow list" to see available workflows.')
-          process.exit(1)
+          console.log(`Workflow "${name}" not found.`);
+          console.log('Use "openslack collaboration workflow list" to see available workflows.');
+          process.exit(1);
         }
         // Check TrustStore first, then fall back to default
-        const isBuiltin = found.path.includes('/builtins/') || found.path.includes('\\builtins\\')
-        const persistedLevel = trustStore.get(name)
-        const currentLevel = persistedLevel !== 'untrusted'
-          ? persistedLevel
-          : resolveTrustLevel({ isBuiltin })
-        console.log(`Workflow: ${name}`)
-        console.log(`Current trust level: ${currentLevel}`)
+        const isBuiltin = found.path.includes('/builtins/') || found.path.includes('\\builtins\\');
+        const persistedLevel = trustStore.get(name);
+        const currentLevel =
+          persistedLevel !== 'untrusted' ? persistedLevel : resolveTrustLevel({ isBuiltin });
+        console.log(`Workflow: ${name}`);
+        console.log(`Current trust level: ${currentLevel}`);
         if (isBuiltin) {
-          console.log('  (Core workflows are always at core trust level)')
+          console.log('  (Core workflows are always at core trust level)');
         }
         if (persistedLevel !== 'untrusted') {
-          const record = trustStore.list()[name]
+          const record = trustStore.list()[name];
           if (record) {
-            console.log(`  Set at: ${record.setAt}`)
-            console.log(`  Set by: ${record.setBy}`)
+            console.log(`  Set at: ${record.setAt}`);
+            console.log(`  Set by: ${record.setBy}`);
           }
         }
-        console.log('')
-        console.log('To set a trust level: openslack collaboration workflow trust <name> --level <level>')
-        console.log('Valid levels: untrusted, trusted, core')
-        return
+        console.log('');
+        console.log(
+          'To set a trust level: openslack collaboration workflow trust <name> --level <level>',
+        );
+        console.log('Valid levels: untrusted, trusted, core');
+        return;
       }
 
       // Validate the requested level
-      const requestedLevel = options.level.toLowerCase()
+      const requestedLevel = options.level.toLowerCase();
       if (!validLevels.includes(requestedLevel as TrustLevel)) {
-        console.log(`Invalid trust level: "${options.level}"`)
-        console.log('Valid levels: untrusted, trusted, core')
-        process.exit(1)
+        console.log(`Invalid trust level: "${options.level}"`);
+        console.log('Valid levels: untrusted, trusted, core');
+        process.exit(1);
       }
 
       // Look up the workflow
-      const found = await findJsWorkflow(name)
+      const found = await findJsWorkflow(name);
       if (!found) {
-        console.log(`Workflow "${name}" not found.`)
-        console.log('Use "openslack collaboration workflow list" to see available workflows.')
-        process.exit(1)
+        console.log(`Workflow "${name}" not found.`);
+        console.log('Use "openslack collaboration workflow list" to see available workflows.');
+        process.exit(1);
       }
 
       // Check if this is a builtin workflow (cannot change trust level)
-      const isBuiltin = found.path.includes('/builtins/') || found.path.includes('\\builtins\\')
+      const isBuiltin = found.path.includes('/builtins/') || found.path.includes('\\builtins\\');
       if (isBuiltin) {
-        console.log(`Cannot change trust level for builtin workflow "${name}".`)
-        console.log('Core workflows are always at core trust level.')
-        process.exit(1)
+        console.log(`Cannot change trust level for builtin workflow "${name}".`);
+        console.log('Core workflows are always at core trust level.');
+        process.exit(1);
       }
 
       // Check if trying to set to core (requires human authorization)
       if (requestedLevel === 'core') {
-        console.log('Cannot manually set a workflow to core trust level.')
-        console.log('Core trust is reserved for workflows shipped with @openslack/workflows.')
-        process.exit(1)
+        console.log('Cannot manually set a workflow to core trust level.');
+        console.log('Core trust is reserved for workflows shipped with @openslack/workflows.');
+        process.exit(1);
       }
 
       // Persist the trust level assignment via TrustStore
-      trustStore.set(name, requestedLevel as TrustLevel)
-      const perms = getPermissionsForTrustLevel(requestedLevel as TrustLevel)
-      console.log(`Trust level for workflow "${name}" set to: ${requestedLevel}`)
-      console.log(`Available permissions (${perms.size}):`)
+      trustStore.set(name, requestedLevel as TrustLevel);
+      const perms = getPermissionsForTrustLevel(requestedLevel as TrustLevel);
+      console.log(`Trust level for workflow "${name}" set to: ${requestedLevel}`);
+      console.log(`Available permissions (${perms.size}):`);
       for (const perm of perms) {
-        console.log(`  - ${perm}`)
+        console.log(`  - ${perm}`);
       }
-    })
+    });
 
   // ── Inspect command ────────────────────────────────────────────────────────
 
@@ -1794,79 +2028,84 @@ export function collaborationCommands(): Command {
     .option('--out <file>', 'Write output to file instead of stdout')
     .option('--no-run-output', 'Exclude the run output section from the report')
     .option('--no-log', 'Exclude log entries from the report')
-    .action(async (runId: string, options: { format: string; out?: string; noRunOutput?: boolean; noLog?: boolean }) => {
-      const validFormats = ['html', 'json', 'markdown']
-      const format = options.format.toLowerCase()
-      if (!validFormats.includes(format)) {
-        console.error(`Invalid format: "${options.format}". Use: html, json, or markdown`)
-        process.exit(1)
-      }
-
-      const root = findRepoRoot()
-      const store = new RunStore({
-        baseDir: join(root, '.openslack.local', 'workflows'),
-      })
-
-      // Load run data
-      const runStatus = await store.getRunStatus(runId)
-      if (!runStatus) {
-        console.error(`Run ${runId} not found.`)
-        process.exit(1)
-      }
-
-      // Load phases
-      const phases = []
-      if (runStatus.phases) {
-        for (const phase of runStatus.phases) {
-          phases.push(phase)
+    .action(
+      async (
+        runId: string,
+        options: { format: string; out?: string; noRunOutput?: boolean; noLog?: boolean },
+      ) => {
+        const validFormats = ['html', 'json', 'markdown'];
+        const format = options.format.toLowerCase();
+        if (!validFormats.includes(format)) {
+          console.error(`Invalid format: "${options.format}". Use: html, json, or markdown`);
+          process.exit(1);
         }
-      }
 
-      // Load log entries
-      const logEntries: Array<Record<string, unknown>> = []
-      try {
-        const logs = await store.readLog(runId)
-        for (const entry of logs) {
-          logEntries.push(entry as unknown as Record<string, unknown>)
+        const root = findRepoRoot();
+        const store = new RunStore({
+          baseDir: join(root, '.openslack.local', 'workflows'),
+        });
+
+        // Load run data
+        const runStatus = await store.getRunStatus(runId);
+        if (!runStatus) {
+          console.error(`Run ${runId} not found.`);
+          process.exit(1);
         }
-      } catch {
-        // Log file may not exist; continue without logs
-      }
 
-      // Load output
-      let output: unknown = null
-      try {
-        output = await store.loadOutput(runId)
-      } catch {
-        // Output may not exist; continue without output
-      }
+        // Load phases
+        const phases = [];
+        if (runStatus.phases) {
+          for (const phase of runStatus.phases) {
+            phases.push(phase);
+          }
+        }
 
-      const renderOptions = {
-        repoRoot: root,
-        includeOutput: !options.noRunOutput,
-        includeLog: !options.noLog,
-      }
+        // Load log entries
+        const logEntries: Array<Record<string, unknown>> = [];
+        try {
+          const logs = await store.readLog(runId);
+          for (const entry of logs) {
+            logEntries.push(entry as unknown as Record<string, unknown>);
+          }
+        } catch {
+          // Log file may not exist; continue without logs
+        }
 
-      let rendered: string
+        // Load output
+        let output: unknown = null;
+        try {
+          output = await store.loadOutput(runId);
+        } catch {
+          // Output may not exist; continue without output
+        }
 
-      if (format === 'html') {
-        rendered = renderRunHtml(runStatus, phases, logEntries, output, renderOptions)
-      } else if (format === 'json') {
-        rendered = renderRunJson(runStatus, phases, logEntries, output, renderOptions)
-      } else {
-        rendered = renderRunMarkdown(runStatus, phases, logEntries, output, renderOptions)
-      }
+        const renderOptions = {
+          repoRoot: root,
+          includeOutput: !options.noRunOutput,
+          includeLog: !options.noLog,
+        };
 
-      // Output result
-      if (options.out) {
-        const { writeFile: fsWriteFile } = await import('node:fs/promises')
-        const targetPath = options.out
-        await fsWriteFile(targetPath, rendered, 'utf-8')
-        console.log(`Written to ${targetPath}`)
-      } else {
-        console.log(rendered)
-      }
-    })
+        let rendered: string;
+
+        if (format === 'html') {
+          rendered = renderRunHtml(runStatus, phases, logEntries, output, renderOptions);
+        } else if (format === 'json') {
+          rendered = renderRunJson(runStatus, phases, logEntries, output, renderOptions);
+        } else {
+          rendered = renderRunMarkdown(runStatus, phases, logEntries, output, renderOptions);
+        }
+
+        // Output result
+        if (options.out) {
+          const { writeFile: fsWriteFile } = await import('node:fs/promises');
+          const targetPath = options.out;
+          await fsWriteFile(targetPath, rendered, 'utf-8');
+          console.log(`Written to ${targetPath}`);
+        } else {
+          console.log(rendered);
+        }
+      },
+    );
 
   // ── Workflow Issue Commands ────────────────────────────────────────────────
 
@@ -1874,64 +2113,68 @@ export function collaborationCommands(): Command {
     .command('publish <name>')
     .description('[deprecated PR gate] Publish a historical workflow proposal issue')
     .option('--as-issue', 'Create a GitHub issue for the workflow proposal', true)
-    .option('--label <label>', 'Additional labels (can be used multiple times)', (value: string, previous: string[]) => [...previous, value], [])
+    .option(
+      '--label <label>',
+      'Additional labels (can be used multiple times)',
+      (value: string, previous: string[]) => [...previous, value],
+      [],
+    )
     .action(async (name: string, options: { asIssue: boolean; label: string[] }) => {
-      const found = await findJsWorkflow(name)
+      const found = await findJsWorkflow(name);
       if (!found) {
-        console.log(`Workflow "${name}" not found.`)
-        console.log('Use "openslack collaboration workflow list" to see available workflows.')
-        process.exit(1)
+        console.log(`Workflow "${name}" not found.`);
+        console.log('Use "openslack collaboration workflow list" to see available workflows.');
+        process.exit(1);
       }
 
       try {
-        const mod = await loadWorkflow(found.path)
+        const mod = await loadWorkflow(found.path);
         const result = await publishWorkflowProposal(mod, {
           requestedBy: 'openslack-agent-operator',
           extraLabels: options.label,
-        })
-        console.log(`Workflow proposal issue created: #${result.issueNumber}`)
-        console.log(`URL: ${result.url}`)
+        });
+        console.log(`Workflow proposal issue created: #${result.issueNumber}`);
+        console.log(`URL: ${result.url}`);
       } catch (err) {
-        console.log(`Failed to publish workflow proposal:`)
-        console.log(`  ${(err as Error).message}`)
-        process.exit(1)
+        console.log(`Failed to publish workflow proposal:`);
+        console.log(`  ${(err as Error).message}`);
+        process.exit(1);
       }
-    })
+    });
 
   workflow
     .command('review-request <name>')
     .description('[deprecated PR gate] Create a historical workflow review issue')
     .action(async (name: string) => {
-      const found = await findJsWorkflow(name)
+      const found = await findJsWorkflow(name);
       if (!found) {
-        console.log(`Workflow "${name}" not found.`)
-        console.log('Use "openslack collaboration workflow list" to see available workflows.')
-        process.exit(1)
+        console.log(`Workflow "${name}" not found.`);
+        console.log('Use "openslack collaboration workflow list" to see available workflows.');
+        process.exit(1);
       }
 
       try {
-        const mod = await loadWorkflow(found.path)
-        const { TrustStore, resolveTrustLevel } = await import('@openslack/workflows')
-        const root = findRepoRoot()
-        const trustStore = new TrustStore({ rootDir: root })
-        const isBuiltin = found.path.includes('/builtins/') || found.path.includes('\\builtins\\')
-        const persistedLevel = trustStore.get(name)
-        const trustLevel = persistedLevel !== 'untrusted'
-          ? persistedLevel
-          : resolveTrustLevel({ isBuiltin })
+        const mod = await loadWorkflow(found.path);
+        const { TrustStore, resolveTrustLevel } = await import('@openslack/workflows');
+        const root = findRepoRoot();
+        const trustStore = new TrustStore({ rootDir: root });
+        const isBuiltin = found.path.includes('/builtins/') || found.path.includes('\\builtins\\');
+        const persistedLevel = trustStore.get(name);
+        const trustLevel =
+          persistedLevel !== 'untrusted' ? persistedLevel : resolveTrustLevel({ isBuiltin });
 
         const result = await publishWorkflowReviewRequest(mod, {
           requestedBy: 'openslack-agent-operator',
           trustLevel,
-        })
-        console.log(`Workflow review issue created: #${result.issueNumber}`)
-        console.log(`URL: ${result.url}`)
+        });
+        console.log(`Workflow review issue created: #${result.issueNumber}`);
+        console.log(`URL: ${result.url}`);
       } catch (err) {
-        console.log(`Failed to create workflow review:`)
-        console.log(`  ${(err as Error).message}`)
-        process.exit(1)
+        console.log(`Failed to create workflow review:`);
+        console.log(`  ${(err as Error).message}`);
+        process.exit(1);
       }
-    })
+    });
 
   workflow
     .command('audit-run <runId>')
@@ -1939,143 +2182,172 @@ export function collaborationCommands(): Command {
     .option('--issue <number>', 'Append as comment to existing issue')
     .option('--create-issue', 'Create a new run audit issue', false)
     .option('--agent-id <id>', 'Agent ID that performed the run')
-    .action(async (runId: string, options: { issue?: string; createIssue: boolean; agentId?: string }) => {
-      const root = findRepoRoot()
-      const { RunStore } = await import('@openslack/workflows')
-      const store = new RunStore({ baseDir: join(root, '.openslack.local', 'workflows') })
+    .action(
+      async (
+        runId: string,
+        options: { issue?: string; createIssue: boolean; agentId?: string },
+      ) => {
+        const root = findRepoRoot();
+        const { RunStore } = await import('@openslack/workflows');
+        const store = new RunStore({ baseDir: join(root, '.openslack.local', 'workflows') });
 
-      const meta = await store.loadMeta(runId)
-      if (!meta) {
-        console.log(`Run ${runId} not found.`)
-        process.exit(1)
-      }
-
-      const runStatus = await store.getRunStatus(runId)
-      if (!runStatus) {
-        console.log(`Run status for ${runId} not found.`)
-        process.exit(1)
-      }
-
-      // Load workflow module to get the current hash for correlation
-      let workflowHash = ''
-      try {
-        const found = await findJsWorkflow(meta.workflowName)
-        if (found) {
-          const mod = await loadWorkflow(found.path)
-          workflowHash = mod.hash
+        const meta = await store.loadMeta(runId);
+        if (!meta) {
+          console.log(`Run ${runId} not found.`);
+          process.exit(1);
         }
-      } catch {
-        // Ignore workflow lookup failure; workflowHash stays empty
-      }
 
-      try {
-        const issueNum = options.issue ? parseInt(options.issue, 10) : undefined
-        if (options.issue !== undefined && !Number.isFinite(issueNum)) {
-          console.log(`Invalid issue number: "${options.issue}". Must be a positive integer.`)
-          process.exit(1)
+        const runStatus = await store.getRunStatus(runId);
+        if (!runStatus) {
+          console.log(`Run status for ${runId} not found.`);
+          process.exit(1);
         }
-        const result = await publishWorkflowRunAudit(
-          {
-            ...runStatus,
-            workflowHash,
-            actor: options.agentId ?? 'openslack-agent-operator',
-          },
-          {
-            issueNumber: issueNum,
-            createIssue: options.createIssue,
-          },
-        )
-        if (result.isComment) {
-          console.log(`Run audit appended to issue #${result.issueNumber}`)
-        } else {
-          console.log(`Run audit issue created: #${result.issueNumber}`)
+
+        // Load workflow module to get the current hash for correlation
+        let workflowHash = '';
+        try {
+          const found = await findJsWorkflow(meta.workflowName);
+          if (found) {
+            const mod = await loadWorkflow(found.path);
+            workflowHash = mod.hash;
+          }
+        } catch {
+          // Ignore workflow lookup failure; workflowHash stays empty
         }
-        console.log(`URL: ${result.url}`)
-      } catch (err) {
-        console.log(`Failed to publish run audit:`)
-        console.log(`  ${(err as Error).message}`)
-        process.exit(1)
-      }
-    })
+
+        try {
+          const issueNum = options.issue ? parseInt(options.issue, 10) : undefined;
+          if (options.issue !== undefined && !Number.isFinite(issueNum)) {
+            console.log(`Invalid issue number: "${options.issue}". Must be a positive integer.`);
+            process.exit(1);
+          }
+          const result = await publishWorkflowRunAudit(
+            {
+              ...runStatus,
+              workflowHash,
+              actor: options.agentId ?? 'openslack-agent-operator',
+            },
+            {
+              issueNumber: issueNum,
+              createIssue: options.createIssue,
+            },
+          );
+          if (result.isComment) {
+            console.log(`Run audit appended to issue #${result.issueNumber}`);
+          } else {
+            console.log(`Run audit issue created: #${result.issueNumber}`);
+          }
+          console.log(`URL: ${result.url}`);
+        } catch (err) {
+          console.log(`Failed to publish run audit:`);
+          console.log(`  ${(err as Error).message}`);
+          process.exit(1);
+        }
+      },
+    );
 
   workflow
     .command('split <name>')
     .description('Split a workflow into phase sub-issues')
     .requiredOption('--issue <parentIssue>', 'Parent issue number to link sub-issues to')
-    .option('--no-native-subissues', 'Skip native GitHub sub-issue linking and use fallback comments')
-    .option('--dependencies <mode>', 'Link phase dependencies: linear (each phase blocked by previous)', undefined)
-    .action(async (name: string, options: { issue: string; nativeSubissues: boolean; dependencies?: string }) => {
-      const found = await findJsWorkflow(name)
-      if (!found) {
-        console.log(`Workflow "${name}" not found.`)
-        console.log('Use "openslack collaboration workflow list" to see available workflows.')
-        process.exit(1)
-      }
+    .option(
+      '--no-native-subissues',
+      'Skip native GitHub sub-issue linking and use fallback comments',
+    )
+    .option(
+      '--dependencies <mode>',
+      'Link phase dependencies: linear (each phase blocked by previous)',
+      undefined,
+    )
+    .action(
+      async (
+        name: string,
+        options: { issue: string; nativeSubissues: boolean; dependencies?: string },
+      ) => {
+        const found = await findJsWorkflow(name);
+        if (!found) {
+          console.log(`Workflow "${name}" not found.`);
+          console.log('Use "openslack collaboration workflow list" to see available workflows.');
+          process.exit(1);
+        }
 
-      try {
-        const mod = await loadWorkflow(found.path)
-        const parentIssue = parseInt(options.issue, 10)
-        if (!Number.isFinite(parentIssue) || parentIssue <= 0) {
-          console.log(`Invalid issue number: "${options.issue}". Must be a positive integer.`)
-          process.exit(1)
-        }
-        const result = await publishWorkflowSplit(mod, {
-          parentIssue,
-          nativeSubIssues: options.nativeSubissues,
-          linearDependencies: options.dependencies === 'linear',
-        })
-        console.log(`Workflow split parent issue: #${result.parentIssueNumber}`)
-        console.log('Phase sub-issues:')
-        for (const sub of result.subIssues) {
-          console.log(`  - ${sub.phase}: #${sub.issueNumber} (${sub.url})`)
-        }
-        console.log(`Native sub-issues linked: ${result.links.nativeSubIssues}`)
-        console.log(`Fallback dependency links: ${result.links.fallbackDependencies}`)
-        if (result.links.fallbackReasons.length > 0) {
-          console.log('Fallback reasons:')
-          for (const reason of result.links.fallbackReasons) {
-            console.log(`  - ${reason.kind}${reason.issueNumber ? ` #${reason.issueNumber}` : ''}: ${reason.reason}`)
+        try {
+          const mod = await loadWorkflow(found.path);
+          const parentIssue = parseInt(options.issue, 10);
+          if (!Number.isFinite(parentIssue) || parentIssue <= 0) {
+            console.log(`Invalid issue number: "${options.issue}". Must be a positive integer.`);
+            process.exit(1);
           }
+          const result = await publishWorkflowSplit(mod, {
+            parentIssue,
+            nativeSubIssues: options.nativeSubissues,
+            linearDependencies: options.dependencies === 'linear',
+          });
+          console.log(`Workflow split parent issue: #${result.parentIssueNumber}`);
+          console.log('Phase sub-issues:');
+          for (const sub of result.subIssues) {
+            console.log(`  - ${sub.phase}: #${sub.issueNumber} (${sub.url})`);
+          }
+          console.log(`Native sub-issues linked: ${result.links.nativeSubIssues}`);
+          console.log(`Fallback dependency links: ${result.links.fallbackDependencies}`);
+          if (result.links.fallbackReasons.length > 0) {
+            console.log('Fallback reasons:');
+            for (const reason of result.links.fallbackReasons) {
+              console.log(
+                `  - ${reason.kind}${reason.issueNumber ? ` #${reason.issueNumber}` : ''}: ${reason.reason}`,
+              );
+            }
+          }
+        } catch (err) {
+          console.log(`Failed to split workflow:`);
+          console.log(`  ${(err as Error).message}`);
+          process.exit(1);
         }
-      } catch (err) {
-        console.log(`Failed to split workflow:`)
-        console.log(`  ${(err as Error).message}`)
-        process.exit(1)
-      }
-    })
+      },
+    );
 
   workflow
     .command('improvement <name>')
     .description('Create a workflow improvement issue')
     .requiredOption('--problem <text>', 'Description of the problem or limitation')
     .requiredOption('--change <text>', 'Proposed change or improvement')
-    .option('--phase <phaseName>', 'Affected phase name (can be used multiple times)', (value: string, previous: string[]) => [...previous, value], [])
+    .option(
+      '--phase <phaseName>',
+      'Affected phase name (can be used multiple times)',
+      (value: string, previous: string[]) => [...previous, value],
+      [],
+    )
     .option('--breaking', 'Mark as a breaking change', false)
-    .action(async (name: string, options: { problem: string; change: string; phase: string[]; breaking: boolean }) => {
-      const found = await findJsWorkflow(name)
-      if (!found) {
-        console.log(`Workflow "${name}" not found.`)
-        console.log('Use "openslack collaboration workflow list" to see available workflows.')
-        process.exit(1)
-      }
+    .action(
+      async (
+        name: string,
+        options: { problem: string; change: string; phase: string[]; breaking: boolean },
+      ) => {
+        const found = await findJsWorkflow(name);
+        if (!found) {
+          console.log(`Workflow "${name}" not found.`);
+          console.log('Use "openslack collaboration workflow list" to see available workflows.');
+          process.exit(1);
+        }
 
-      try {
-        const result = await publishWorkflowImprovement({
-          schema: 'openslack.workflow_improvement.v1',
-          workflowId: name,
-          problem: options.problem,
-          proposedChange: options.change,
-          affectedPhases: options.phase,
-          backwardCompatible: !options.breaking,
-        })
-        console.log(`Workflow improvement issue created: #${result.issueNumber}`)
-        console.log(`URL: ${result.url}`)
-      } catch (err) {
-        console.log(`Failed to create workflow improvement:`)
-        console.log(`  ${(err as Error).message}`)
-        process.exit(1)
-      }
-    })
+        try {
+          const result = await publishWorkflowImprovement({
+            schema: 'openslack.workflow_improvement.v1',
+            workflowId: name,
+            problem: options.problem,
+            proposedChange: options.change,
+            affectedPhases: options.phase,
+            backwardCompatible: !options.breaking,
+          });
+          console.log(`Workflow improvement issue created: #${result.issueNumber}`);
+          console.log(`URL: ${result.url}`);
+        } catch (err) {
+          console.log(`Failed to create workflow improvement:`);
+          console.log(`  ${(err as Error).message}`);
+          process.exit(1);
+        }
+      },
+    );
 
   workflow
     .command('finalize-pr <prNumber>')
@@ -2086,104 +2358,136 @@ export function collaborationCommands(): Command {
     .option('--phase-issues <numbers>', 'Comma-separated phase issue numbers to close')
     .option('--hash <hash>', 'Workflow hash to record')
     .option('--trust <level>', 'Trust decision: trusted, untrusted, or core')
-    .action(async (prNumber: string, options: { governanceIssue?: string; proposalIssue?: string; reviewIssue?: string; phaseIssues?: string; hash?: string; trust?: string }) => {
-      const pr = parseInt(prNumber, 10)
-      if (!Number.isFinite(pr) || pr <= 0) {
-        console.log(`Invalid PR number: "${prNumber}". Must be a positive integer.`)
-        process.exit(1)
-      }
-
-      const proposalIssue = options.proposalIssue ? parseInt(options.proposalIssue, 10) : undefined
-      const reviewIssue = options.reviewIssue ? parseInt(options.reviewIssue, 10) : undefined
-      let governanceIssue = options.governanceIssue ? parseInt(options.governanceIssue, 10) : undefined
-      const phaseIssues = options.phaseIssues
-        ? options.phaseIssues.split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => Number.isFinite(n))
-        : undefined
-
-      let validTrust = options.trust === 'trusted' || options.trust === 'untrusted' || options.trust === 'core'
-        ? options.trust
-        : undefined
-      let workflowHash = options.hash
-      let trustReviewer: string | undefined
-      let trustReviewCommitOid: string | undefined
-
-      const report = await fetchPRDetails(pr, { requireLive: true, strictEvidence: true })
-      if (report.workflowEvidence) {
-        const { owners: codeowners } = await loadPRCodeownerEvidence(report, {
-          requireLive: true,
-          strictEvidence: true,
-        })
-        const gate = evaluateWorkflowGate({
-          changedFiles: report.changedFiles,
-          body: report.body ?? '',
-          author: report.author,
-          baseSha: report.baseSha,
-          headSha: report.headSha,
-          reviews: report.reviews,
-          workflowEvidence: report.workflowEvidence,
-          governanceIssue: report.workflowGovernanceIssue,
-          codeowners,
-        })
-        if (gate.overall !== 'PASS') {
-          console.log(`Cannot finalize workflow governance for PR #${pr}: gate is ${gate.overall}.`)
-          process.exitCode = 1
-          return
-        }
-        if (options.hash && options.hash !== gate.evidenceHash) {
-          console.log('Cannot override the repository-derived workflow evidence hash.')
-          process.exitCode = 1
-          return
-        }
-        if (options.trust && options.trust !== gate.trustDecision) {
-          console.log('Cannot override the current-head human Workflow-Trust review.')
-          process.exitCode = 1
-          return
-        }
-        if (options.governanceIssue && Number(options.governanceIssue) !== gate.governanceIssue) {
-          console.log('Cannot override the governance issue bound to this workflow artifact change.')
-          process.exitCode = 1
-          return
-        }
-        governanceIssue = gate.governanceIssue
-        workflowHash = gate.evidenceHash
-        validTrust = gate.trustDecision
-        trustReviewer = gate.trustReviewer
-        trustReviewCommitOid = gate.trustReviewCommitOid
-      } else if (options.governanceIssue) {
-        console.log(`Cannot finalize workflow governance for PR #${pr}: repository-derived workflow evidence is unavailable.`)
-        process.exitCode = 1
-        return
-      }
-
-      try {
-        const result = await finalizeWorkflowPR(pr, {
-          governanceIssue,
-          proposalIssue,
-          reviewIssue,
-          phaseIssues,
-          workflowHash,
-          trustDecision: validTrust as 'trusted' | 'untrusted' | 'core' | undefined,
-          trustReviewer,
-          trustReviewCommitOid,
-        })
-
-        if (result.errors.length > 0) {
-          console.log(`Failed to finalize workflow PR #${pr}:`)
-          for (const err of result.errors) console.log(`    - ${err}`)
-          process.exitCode = 1
-          return
+    .action(
+      async (
+        prNumber: string,
+        options: {
+          governanceIssue?: string;
+          proposalIssue?: string;
+          reviewIssue?: string;
+          phaseIssues?: string;
+          hash?: string;
+          trust?: string;
+        },
+      ) => {
+        const pr = parseInt(prNumber, 10);
+        if (!Number.isFinite(pr) || pr <= 0) {
+          console.log(`Invalid PR number: "${prNumber}". Must be a positive integer.`);
+          process.exit(1);
         }
 
-        console.log(`Workflow PR finalize complete for #${pr}:`)
-        console.log(`  Closed issues: ${result.closedIssues.length > 0 ? result.closedIssues.join(', ') : 'none'}`)
-        console.log(`  Commented issues: ${result.commentedIssues.length > 0 ? result.commentedIssues.join(', ') : 'none'}`)
-        console.log(`  Updated labels: ${result.updatedLabels.length > 0 ? result.updatedLabels.join(', ') : 'none'}`)
-      } catch (err) {
-        console.log(`Failed to finalize workflow PR:`)
-        console.log(`  ${(err as Error).message}`)
-        process.exit(1)
-      }
-    })
+        const proposalIssue = options.proposalIssue
+          ? parseInt(options.proposalIssue, 10)
+          : undefined;
+        const reviewIssue = options.reviewIssue ? parseInt(options.reviewIssue, 10) : undefined;
+        let governanceIssue = options.governanceIssue
+          ? parseInt(options.governanceIssue, 10)
+          : undefined;
+        const phaseIssues = options.phaseIssues
+          ? options.phaseIssues
+              .split(',')
+              .map((s) => parseInt(s.trim(), 10))
+              .filter((n) => Number.isFinite(n))
+          : undefined;
+
+        let validTrust =
+          options.trust === 'trusted' || options.trust === 'untrusted' || options.trust === 'core'
+            ? options.trust
+            : undefined;
+        let workflowHash = options.hash;
+        let trustReviewer: string | undefined;
+        let trustReviewCommitOid: string | undefined;
+
+        const report = await fetchPRDetails(pr, { requireLive: true, strictEvidence: true });
+        if (report.workflowEvidence) {
+          const { owners: codeowners } = await loadPRCodeownerEvidence(report, {
+            requireLive: true,
+            strictEvidence: true,
+          });
+          const gate = evaluateWorkflowGate({
+            changedFiles: report.changedFiles,
+            body: report.body ?? '',
+            author: report.author,
+            baseSha: report.baseSha,
+            headSha: report.headSha,
+            reviews: report.reviews,
+            workflowEvidence: report.workflowEvidence,
+            governanceIssue: report.workflowGovernanceIssue,
+            codeowners,
+          });
+          if (gate.overall !== 'PASS') {
+            console.log(
+              `Cannot finalize workflow governance for PR #${pr}: gate is ${gate.overall}.`,
+            );
+            process.exitCode = 1;
+            return;
+          }
+          if (options.hash && options.hash !== gate.evidenceHash) {
+            console.log('Cannot override the repository-derived workflow evidence hash.');
+            process.exitCode = 1;
+            return;
+          }
+          if (options.trust && options.trust !== gate.trustDecision) {
+            console.log('Cannot override the current-head human Workflow-Trust review.');
+            process.exitCode = 1;
+            return;
+          }
+          if (options.governanceIssue && Number(options.governanceIssue) !== gate.governanceIssue) {
+            console.log(
+              'Cannot override the governance issue bound to this workflow artifact change.',
+            );
+            process.exitCode = 1;
+            return;
+          }
+          governanceIssue = gate.governanceIssue;
+          workflowHash = gate.evidenceHash;
+          validTrust = gate.trustDecision;
+          trustReviewer = gate.trustReviewer;
+          trustReviewCommitOid = gate.trustReviewCommitOid;
+        } else if (options.governanceIssue) {
+          console.log(
+            `Cannot finalize workflow governance for PR #${pr}: repository-derived workflow evidence is unavailable.`,
+          );
+          process.exitCode = 1;
+          return;
+        }
+
+        try {
+          const result = await finalizeWorkflowPR(pr, {
+            governanceIssue,
+            proposalIssue,
+            reviewIssue,
+            phaseIssues,
+            workflowHash,
+            trustDecision: validTrust as 'trusted' | 'untrusted' | 'core' | undefined,
+            trustReviewer,
+            trustReviewCommitOid,
+          });
+
+          if (result.errors.length > 0) {
+            console.log(`Failed to finalize workflow PR #${pr}:`);
+            for (const err of result.errors) console.log(`    - ${err}`);
+            process.exitCode = 1;
+            return;
+          }
+
+          console.log(`Workflow PR finalize complete for #${pr}:`);
+          console.log(
+            `  Closed issues: ${result.closedIssues.length > 0 ? result.closedIssues.join(', ') : 'none'}`,
+          );
+          console.log(
+            `  Commented issues: ${result.commentedIssues.length > 0 ? result.commentedIssues.join(', ') : 'none'}`,
+          );
+          console.log(
+            `  Updated labels: ${result.updatedLabels.length > 0 ? result.updatedLabels.join(', ') : 'none'}`,
+          );
+        } catch (err) {
+          console.log(`Failed to finalize workflow PR:`);
+          console.log(`  ${(err as Error).message}`);
+          process.exit(1);
+        }
+      },
+    );
 
   workflow
     .command('labels')
@@ -2191,86 +2495,88 @@ export function collaborationCommands(): Command {
     .option('--bootstrap', 'Create all required workflow labels if they do not exist', false)
     .action(async (options: { bootstrap: boolean }) => {
       if (!options.bootstrap) {
-        console.log('Usage: openslack collaboration workflow labels --bootstrap')
-        console.log('Creates all required workflow labels in the repository.')
-        return
+        console.log('Usage: openslack collaboration workflow labels --bootstrap');
+        console.log('Creates all required workflow labels in the repository.');
+        return;
       }
 
       try {
-        const result = await bootstrapWorkflowLabels()
-        console.log(`Label bootstrap complete:`)
-        console.log(`  Created: ${result.created.length}`)
+        const result = await bootstrapWorkflowLabels();
+        console.log(`Label bootstrap complete:`);
+        console.log(`  Created: ${result.created.length}`);
         if (result.created.length > 0) {
-          for (const name of result.created) console.log(`    - ${name}`)
+          for (const name of result.created) console.log(`    - ${name}`);
         }
-        console.log(`  Existing: ${result.existing.length}`)
+        console.log(`  Existing: ${result.existing.length}`);
         if (result.failed.length > 0) {
-          console.log(`  Failed: ${result.failed.length}`)
-          for (const f of result.failed) console.log(`    - ${f.name}: ${f.reason}`)
+          console.log(`  Failed: ${result.failed.length}`);
+          for (const f of result.failed) console.log(`    - ${f.name}: ${f.reason}`);
         }
       } catch (err) {
-        console.log(`Failed to bootstrap labels:`)
-        console.log(`  ${(err as Error).message}`)
-        process.exit(1)
+        console.log(`Failed to bootstrap labels:`);
+        console.log(`  ${(err as Error).message}`);
+        process.exit(1);
       }
-    })
+    });
 
   // ── Profile Sync subcommand ─────────────────────────────────────────────────
 
-  const profileSync = new Command('profile-sync')
-    .description('Organization profile synchronization shortcuts')
+  const profileSync = new Command('profile-sync').description(
+    'Organization profile synchronization shortcuts',
+  );
 
   // Helper to build config from file + CLI overrides
   async function resolveProfileSyncConfig(options: Record<string, unknown>): Promise<{
-    config: import('@openslack/github').ProfileSyncConfig
-    overrides: string[]
+    config: import('@openslack/github').ProfileSyncConfig;
+    overrides: string[];
   }> {
-    const { loadProfileSyncConfig } = await import('@openslack/github')
-    const root = findRepoRoot()
-    const config = loadProfileSyncConfig(root)
-    const overrides: string[] = []
+    const { loadProfileSyncConfig } = await import('@openslack/github');
+    const root = findRepoRoot();
+    const config = loadProfileSyncConfig(root);
+    const overrides: string[] = [];
 
-    const source = typeof options.source === 'string' ? options.source : undefined
-    const target = typeof options.target === 'string' ? options.target : undefined
-    const path = typeof options.path === 'string' ? options.path : undefined
-    const posts = typeof options.posts === 'string' ? options.posts : undefined
-    const marker = typeof options.marker === 'string' ? options.marker : undefined
-    const max = typeof options.max === 'string' ? options.max : undefined
-    const onExistingPr = typeof options.onExistingPr === 'string' ? options.onExistingPr : undefined
+    const source = typeof options.source === 'string' ? options.source : undefined;
+    const target = typeof options.target === 'string' ? options.target : undefined;
+    const path = typeof options.path === 'string' ? options.path : undefined;
+    const posts = typeof options.posts === 'string' ? options.posts : undefined;
+    const marker = typeof options.marker === 'string' ? options.marker : undefined;
+    const max = typeof options.max === 'string' ? options.max : undefined;
+    const onExistingPr =
+      typeof options.onExistingPr === 'string' ? options.onExistingPr : undefined;
 
     if (source && source !== config.source.repo) {
-      config.source.repo = source
-      overrides.push(`source.repo = ${source}`)
+      config.source.repo = source;
+      overrides.push(`source.repo = ${source}`);
     }
     if (target && target !== config.target.repo) {
-      config.target.repo = target
-      overrides.push(`target.repo = ${target}`)
+      config.target.repo = target;
+      overrides.push(`target.repo = ${target}`);
     }
     if (path && path !== config.target.path) {
-      config.target.path = path
-      overrides.push(`target.path = ${path}`)
+      config.target.path = path;
+      overrides.push(`target.path = ${path}`);
     }
     if (posts && posts !== config.source.path) {
-      config.source.path = posts
-      overrides.push(`source.path = ${posts}`)
+      config.source.path = posts;
+      overrides.push(`source.path = ${posts}`);
     }
     if (marker && marker !== config.target.marker) {
-      config.target.marker = marker
-      overrides.push(`target.marker = ${marker}`)
+      config.target.marker = marker;
+      overrides.push(`target.marker = ${marker}`);
     }
     if (max) {
-      const n = parseInt(max, 10)
+      const n = parseInt(max, 10);
       if (!isNaN(n) && n !== config.max_posts) {
-        config.max_posts = n
-        overrides.push(`max_posts = ${n}`)
+        config.max_posts = n;
+        overrides.push(`max_posts = ${n}`);
       }
     }
     if (onExistingPr && ['skip', 'update', 'create_new'].includes(onExistingPr)) {
-      config.on_existing_pr = onExistingPr as 'skip' | 'update' | 'create_new'
-      overrides.push(`on_existing_pr = ${onExistingPr}`)
+      config.on_existing_pr = onExistingPr as 'skip' | 'update' | 'create_new';
+      overrides.push(`on_existing_pr = ${onExistingPr}`);
     }
 
-    return { config, overrides }
+    return { config, overrides };
   }
 
   profileSync
@@ -2282,30 +2588,32 @@ export function collaborationCommands(): Command {
     .option('--posts <dir>', 'Posts directory in source repo')
     .option('--marker <name>', 'HTML comment marker name')
     .option('--max <n>', 'Maximum posts to include')
-    .action(async (options: {
-      source?: string
-      target?: string
-      path?: string
-      posts?: string
-      marker?: string
-      max?: string
-    }) => {
-      try {
-        const { checkProfileSync } = await import('@openslack/github')
-        const { config, overrides } = await resolveProfileSyncConfig(options)
+    .action(
+      async (options: {
+        source?: string;
+        target?: string;
+        path?: string;
+        posts?: string;
+        marker?: string;
+        max?: string;
+      }) => {
+        try {
+          const { checkProfileSync } = await import('@openslack/github');
+          const { config, overrides } = await resolveProfileSyncConfig(options);
 
-        if (overrides.length > 0) {
-          console.log(`Config overrides: ${overrides.join(', ')}`)
+          if (overrides.length > 0) {
+            console.log(`Config overrides: ${overrides.join(', ')}`);
+          }
+
+          const result = await checkProfileSync(config);
+          console.log(JSON.stringify(result, null, 2));
+          process.exit(result.ok ? 0 : 1);
+        } catch (err) {
+          console.error(`Check failed: ${(err as Error).message}`);
+          process.exit(1);
         }
-
-        const result = await checkProfileSync(config)
-        console.log(JSON.stringify(result, null, 2))
-        process.exit(result.ok ? 0 : 1)
-      } catch (err) {
-        console.error(`Check failed: ${(err as Error).message}`)
-        process.exit(1)
-      }
-    })
+      },
+    );
 
   profileSync
     .command('preview')
@@ -2317,40 +2625,42 @@ export function collaborationCommands(): Command {
     .option('--marker <name>', 'HTML comment marker name')
     .option('--max <n>', 'Maximum posts to include')
     .option('--format <format>', 'Output format: diff, json, markdown', 'diff')
-    .action(async (options: {
-      source?: string
-      target?: string
-      path?: string
-      posts?: string
-      marker?: string
-      max?: string
-      format?: string
-    }) => {
-      try {
-        const { previewProfileSync } = await import('@openslack/github')
-        const { config, overrides } = await resolveProfileSyncConfig(options)
+    .action(
+      async (options: {
+        source?: string;
+        target?: string;
+        path?: string;
+        posts?: string;
+        marker?: string;
+        max?: string;
+        format?: string;
+      }) => {
+        try {
+          const { previewProfileSync } = await import('@openslack/github');
+          const { config, overrides } = await resolveProfileSyncConfig(options);
 
-        if (overrides.length > 0) {
-          console.log(`Config overrides: ${overrides.join(', ')}`)
+          if (overrides.length > 0) {
+            console.log(`Config overrides: ${overrides.join(', ')}`);
+          }
+
+          const result = await previewProfileSync(config);
+          const format = options.format || 'diff';
+
+          if (format === 'diff') {
+            console.log(result.diff || '// No diff available');
+          } else if (format === 'markdown') {
+            console.log(renderProfileSyncPreviewMarkdown(result));
+          } else {
+            console.log(JSON.stringify(result, null, 2));
+          }
+
+          process.exit(result.ok ? 0 : 1);
+        } catch (err) {
+          console.error(`Preview failed: ${(err as Error).message}`);
+          process.exit(1);
         }
-
-        const result = await previewProfileSync(config)
-        const format = options.format || 'diff'
-
-        if (format === 'diff') {
-          console.log(result.diff || '// No diff available')
-        } else if (format === 'markdown') {
-          console.log(renderProfileSyncPreviewMarkdown(result))
-        } else {
-          console.log(JSON.stringify(result, null, 2))
-        }
-
-        process.exit(result.ok ? 0 : 1)
-      } catch (err) {
-        console.error(`Preview failed: ${(err as Error).message}`)
-        process.exit(1)
-      }
-    })
+      },
+    );
 
   profileSync
     .command('run')
@@ -2361,126 +2671,131 @@ export function collaborationCommands(): Command {
     .option('--posts <dir>', 'Posts directory in source repo')
     .option('--marker <name>', 'HTML comment marker name')
     .option('--max <n>', 'Maximum posts to include')
-    .option('--on-existing-pr <action>', 'Action when open profile-sync PR exists: skip, update, create_new')
+    .option(
+      '--on-existing-pr <action>',
+      'Action when open profile-sync PR exists: skip, update, create_new',
+    )
     .option('--yes', 'Auto-approve side effects')
     .option('--agent-id <id>', 'Agent ID for authorization')
-    .action(async (options: {
-      source?: string
-      target?: string
-      path?: string
-      posts?: string
-      marker?: string
-      max?: string
-      onExistingPr?: string
-      yes?: boolean
-      agentId?: string
-    }) => {
-      const found = await findJsWorkflow('profile-sync')
-      if (!found) {
-        console.log('Profile-sync workflow not found.')
-        process.exit(1)
-      }
-
-      try {
-        const { config, overrides } = await resolveProfileSyncConfig(options)
-
-        if (overrides.length > 0) {
-          console.log(`Config overrides: ${overrides.join(', ')}`)
+    .action(
+      async (options: {
+        source?: string;
+        target?: string;
+        path?: string;
+        posts?: string;
+        marker?: string;
+        max?: string;
+        onExistingPr?: string;
+        yes?: boolean;
+        agentId?: string;
+      }) => {
+        const found = await findJsWorkflow('profile-sync');
+        if (!found) {
+          console.log('Profile-sync workflow not found.');
+          process.exit(1);
         }
 
-        const mod = await loadWorkflow(found.path)
-        const onConfirm = options.yes
-          ? async (_operation: string, _detail: string): Promise<boolean> => true
-          : async (operation: string, detail: string): Promise<boolean> => {
-              if (!process.stdin.isTTY) {
-                console.error(`[ERROR] Not a TTY. Use --yes to auto-approve.`)
-                return false
-              }
-              console.log(`[CONFIRM] ${operation}: ${detail}`)
-              const { createInterface } = await import('readline')
-              const rl = createInterface({ input: process.stdin, output: process.stdout })
-              const answer = await new Promise<string>((resolve) => {
-                rl.question('Proceed? [y/N] ', resolve)
-              })
-              rl.close()
-              return answer.toLowerCase() === 'y'
-            }
+        try {
+          const { config, overrides } = await resolveProfileSyncConfig(options);
 
-        const result = await executeRun(mod, {
-          manifest: mod.meta,
-          args: {
-            sourceRepo: config.source.repo,
-            targetRepo: config.target.repo,
-            targetPath: config.target.path,
-            sourcePostsPath: config.source.path,
-            marker: config.target.marker,
-            maxPosts: config.max_posts,
-          },
-          budget: { tokens: 100000, costUsd: 1.0 },
-          onConfirm,
-          allowUnattended: options.yes,
-          agentEventEmitter: createCollaborationEventEmitter(),
-          rootDir: findRepoRoot(),
-          ...resolveAgentAuthOptions(options.agentId),
-        })
+          if (overrides.length > 0) {
+            console.log(`Config overrides: ${overrides.join(', ')}`);
+          }
 
-        console.log(JSON.stringify(result, null, 2))
-      } catch (err) {
-        console.log(`Run failed: ${(err as Error).message}`)
-        process.exit(1)
-      }
-    })
+          const mod = await loadWorkflow(found.path);
+          const onConfirm = options.yes
+            ? async (_operation: string, _detail: string): Promise<boolean> => true
+            : async (operation: string, detail: string): Promise<boolean> => {
+                if (!process.stdin.isTTY) {
+                  console.error(`[ERROR] Not a TTY. Use --yes to auto-approve.`);
+                  return false;
+                }
+                console.log(`[CONFIRM] ${operation}: ${detail}`);
+                const { createInterface } = await import('readline');
+                const rl = createInterface({ input: process.stdin, output: process.stdout });
+                const answer = await new Promise<string>((resolve) => {
+                  rl.question('Proceed? [y/N] ', resolve);
+                });
+                rl.close();
+                return answer.toLowerCase() === 'y';
+              };
+
+          const result = await executeRun(mod, {
+            manifest: mod.meta,
+            args: {
+              sourceRepo: config.source.repo,
+              targetRepo: config.target.repo,
+              targetPath: config.target.path,
+              sourcePostsPath: config.source.path,
+              marker: config.target.marker,
+              maxPosts: config.max_posts,
+            },
+            budget: { tokens: 100000, costUsd: 1.0 },
+            onConfirm,
+            allowUnattended: options.yes,
+            agentEventEmitter: createCollaborationEventEmitter(),
+            rootDir: findRepoRoot(),
+            ...resolveAgentAuthOptions(options.agentId),
+          });
+
+          console.log(JSON.stringify(result, null, 2));
+        } catch (err) {
+          console.log(`Run failed: ${(err as Error).message}`);
+          process.exit(1);
+        }
+      },
+    );
 
   profileSync
     .command('status')
     .description('Show profile sync status')
     .action(async () => {
       try {
-        const { buildProfileSyncStatus } = await import('@openslack/collaboration')
-        const { loadProfileSyncConfig } = await import('@openslack/github')
-        const config = loadProfileSyncConfig()
+        const { buildProfileSyncStatus } = await import('@openslack/collaboration');
+        const { loadProfileSyncConfig } = await import('@openslack/github');
+        const config = loadProfileSyncConfig();
 
         const status = buildProfileSyncStatus({
           targetRepo: config.target.repo,
           targetPath: config.target.path,
           marker: config.target.marker,
-        })
+        });
 
-        console.log('Profile Sync Status')
-        console.log('-------------------')
-        console.log(`State: ${status.state}`)
+        console.log('Profile Sync Status');
+        console.log('-------------------');
+        console.log(`State: ${status.state}`);
         if (status.lastSyncDate) {
-          console.log(`Last sync: ${new Date(status.lastSyncDate).toISOString()}`)
+          console.log(`Last sync: ${new Date(status.lastSyncDate).toISOString()}`);
         }
         if (status.lastPrUrl) {
-          console.log(`PR: ${status.lastPrUrl}`)
+          console.log(`PR: ${status.lastPrUrl}`);
         }
         if (status.lastSourceSha) {
-          console.log(`Source commit: ${status.lastSourceSha}`)
+          console.log(`Source commit: ${status.lastSourceSha}`);
         }
-        console.log(`Posts synced: ${status.postsSynced}`)
-        console.log(`Out of date: ${status.isOutOfDate ? 'yes' : 'no'}`)
+        console.log(`Posts synced: ${status.postsSynced}`);
+        console.log(`Out of date: ${status.isOutOfDate ? 'yes' : 'no'}`);
 
         if (status.failures.length > 0) {
-          console.log('')
-          console.log('Recent failures:')
+          console.log('');
+          console.log('Recent failures:');
           for (const f of status.failures.slice(-3)) {
-            console.log(`  - ${f.date}: ${f.error.slice(0, 80)}`)
-            if (f.issueUrl) console.log(`    Issue: ${f.issueUrl}`)
+            console.log(`  - ${f.date}: ${f.error.slice(0, 80)}`);
+            if (f.issueUrl) console.log(`    Issue: ${f.issueUrl}`);
           }
         }
 
         if (status.state === 'never') {
-          console.log('')
-          console.log('Run `openslack collaboration workflow profile-sync run` to perform a sync.')
+          console.log('');
+          console.log('Run `openslack collaboration workflow profile-sync run` to perform a sync.');
         }
       } catch (err) {
-        console.log(`Status check failed: ${(err as Error).message}`)
-        process.exit(1)
+        console.log(`Status check failed: ${(err as Error).message}`);
+        process.exit(1);
       }
-    })
+    });
 
-  workflow.addCommand(profileSync)
+  workflow.addCommand(profileSync);
 
   cmd.addCommand(workflow);
 
@@ -2492,61 +2807,61 @@ export function collaborationCommands(): Command {
 function renderProfileSyncPreviewMarkdown(
   result: import('@openslack/github').ProfileSyncPreviewResult,
 ): string {
-  const lines: string[] = []
-  lines.push('# Profile Sync Preview')
-  lines.push('')
+  const lines: string[] = [];
+  lines.push('# Profile Sync Preview');
+  lines.push('');
 
   if (!result.ok) {
-    lines.push('## Status: FAILED')
-    lines.push('')
+    lines.push('## Status: FAILED');
+    lines.push('');
     for (const err of result.checkResult.errors) {
-      lines.push(`- ❌ ${err}`)
+      lines.push(`- ❌ ${err}`);
     }
-    lines.push('')
+    lines.push('');
   } else {
-    lines.push('## Status: OK')
-    lines.push('')
+    lines.push('## Status: OK');
+    lines.push('');
   }
 
-  lines.push('## Source')
-  lines.push(`- Repo: ${result.checkResult.source.repo}`)
-  lines.push(`- Branch: ${result.checkResult.source.branch}`)
-  lines.push(`- Path: ${result.checkResult.source.path}`)
-  lines.push(`- Accessible: ${result.checkResult.source.accessible ? '✅' : '❌'}`)
-  lines.push(`- Posts found: ${result.checkResult.source.postCount}`)
-  lines.push('')
+  lines.push('## Source');
+  lines.push(`- Repo: ${result.checkResult.source.repo}`);
+  lines.push(`- Branch: ${result.checkResult.source.branch}`);
+  lines.push(`- Path: ${result.checkResult.source.path}`);
+  lines.push(`- Accessible: ${result.checkResult.source.accessible ? '✅' : '❌'}`);
+  lines.push(`- Posts found: ${result.checkResult.source.postCount}`);
+  lines.push('');
 
-  lines.push('## Target')
-  lines.push(`- Repo: ${result.checkResult.target.repo}`)
-  lines.push(`- Branch: ${result.checkResult.target.branch}`)
-  lines.push(`- Path: ${result.checkResult.target.path}`)
-  lines.push(`- Accessible: ${result.checkResult.target.accessible ? '✅' : '❌'}`)
-  lines.push(`- Marker exists: ${result.checkResult.target.markerExists ? '✅' : '❌'}`)
-  lines.push('')
+  lines.push('## Target');
+  lines.push(`- Repo: ${result.checkResult.target.repo}`);
+  lines.push(`- Branch: ${result.checkResult.target.branch}`);
+  lines.push(`- Path: ${result.checkResult.target.path}`);
+  lines.push(`- Accessible: ${result.checkResult.target.accessible ? '✅' : '❌'}`);
+  lines.push(`- Marker exists: ${result.checkResult.target.markerExists ? '✅' : '❌'}`);
+  lines.push('');
 
-  lines.push('## Posts')
-  lines.push(`- Total valid: ${result.checkResult.posts.total}`)
-  lines.push(`- Published: ${result.checkResult.posts.published}`)
-  lines.push(`- Failed: ${result.checkResult.posts.failed}`)
+  lines.push('## Posts');
+  lines.push(`- Total valid: ${result.checkResult.posts.total}`);
+  lines.push(`- Published: ${result.checkResult.posts.published}`);
+  lines.push(`- Failed: ${result.checkResult.posts.failed}`);
   if (result.checkResult.posts.failures.length > 0) {
-    lines.push('')
-    lines.push('### Failures')
+    lines.push('');
+    lines.push('### Failures');
     for (const f of result.checkResult.posts.failures) {
-      lines.push(`- **${f.file}**:`)
+      lines.push(`- **${f.file}**:`);
       for (const e of f.errors) {
-        lines.push(`  - ${e.field}: ${e.message}`)
+        lines.push(`  - ${e.field}: ${e.message}`);
       }
     }
   }
-  lines.push('')
+  lines.push('');
 
-  lines.push('## Diff')
-  lines.push('```diff')
-  lines.push(result.diff || '// No diff available')
-  lines.push('```')
-  lines.push('')
+  lines.push('## Diff');
+  lines.push('```diff');
+  lines.push(result.diff || '// No diff available');
+  lines.push('```');
+  lines.push('');
 
-  lines.push(`## Would create branch: \`${result.wouldCreateBranch}\``)
+  lines.push(`## Would create branch: \`${result.wouldCreateBranch}\``);
 
-  return lines.join('\n')
+  return lines.join('\n');
 }
