@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mapProductRegistryToStatusTuiFields, statusCommands } from '../commands/status.js';
+import { format as formatMarkdown } from 'prettier';
+import {
+  generateStatusDoc,
+  mapProductRegistryToStatusTuiFields,
+  statusCommands,
+} from '../commands/status.js';
 import type { AttentionItem } from '@openslack/runtime';
 import type { ModulesRegistry } from '@openslack/workspace';
 
@@ -239,6 +244,11 @@ describe('status command', () => {
     const output = logs.join('\n');
     expect(output).toContain('Raw passing Vitest count from .openslack/modules.yaml');
     expect(output).toContain('Module-attributed counts (72 tests, 12 files)');
+
+    const generated = generateStatusDoc('/repo');
+    expect(generated).toContain('`test:packages/runtime/src/__tests__`');
+    expect(generated).not.toContain('**tests**');
+    expect(await formatMarkdown(generated, { parser: 'markdown' })).toBe(generated);
   });
 
   it('shows All clear when no attention items', async () => {
