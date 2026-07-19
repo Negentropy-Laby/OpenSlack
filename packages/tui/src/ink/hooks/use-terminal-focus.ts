@@ -1,7 +1,7 @@
-import { useContext } from 'react'
-import TerminalFocusContext from '../components/TerminalFocusContext.js'
+import { useContext } from 'react';
+import TerminalFocusContext from '../components/TerminalFocusContext.js';
 
 export function useTerminalFocus(): boolean {
-  const { isTerminalFocused } = useContext(TerminalFocusContext)
-  return isTerminalFocused
+  const { isTerminalFocused } = useContext(TerminalFocusContext);
+  return isTerminalFocused;
 }
