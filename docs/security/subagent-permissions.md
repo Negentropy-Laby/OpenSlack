@@ -23,18 +23,18 @@ dispatch runner is built.
 
 ## Threat Model
 
-| Threat | Mitigation | Status |
-|--------|------------|--------|
-| Invalid permissionMode allows privilege escalation | `permissionMode` validated at parse time; only 4 values accepted | ✅ Implemented |
-| Non-array `tools` field silently iterates characters | Runtime type check rejects non-array `tools`/`disallowedTools`/`skills`/`mcpServers` | ✅ Implemented |
-| Invalid `memory`/`isolation` enum values | Enum validation rejects unknown values at parse time | ✅ Implemented |
-| HOME with trailing slash misclassifies agent source | `inferSource` strips trailing slashes before comparison | ✅ Implemented |
-| Subagent escalates privileges beyond declared mode at runtime | Dispatch runner must intersect resolved tools with permission mode baseline | ⬜ Not yet implemented |
-| Subagent accesses tools outside its allowlist at runtime | Runtime tool filtering during dispatch | ⬜ Not yet implemented |
-| Subagent modifies files without worktree isolation | `isolation: worktree` creates separate git worktree during dispatch | ⬜ Not yet implemented |
-| Subagent reads secrets or credentials | Constitutional constraint #9 + `scanValue()` blocks secrets in persisted conversation data | ✅ Implemented (persistence) |
-| Subagent modifies its own definition or registry | Constitutional constraint #6 prohibits self-prompt-edit | ✅ Enforced by constitution |
-| Subagent bypasses human approval for Red Zone changes | Constitutional constraints #3 and #8 | ✅ Enforced by constitution |
+| Threat                                                        | Mitigation                                                                                 | Status                       |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------- |
+| Invalid permissionMode allows privilege escalation            | `permissionMode` validated at parse time; only 4 values accepted                           | ✅ Implemented               |
+| Non-array `tools` field silently iterates characters          | Runtime type check rejects non-array `tools`/`disallowedTools`/`skills`/`mcpServers`       | ✅ Implemented               |
+| Invalid `memory`/`isolation` enum values                      | Enum validation rejects unknown values at parse time                                       | ✅ Implemented               |
+| HOME with trailing slash misclassifies agent source           | `inferSource` strips trailing slashes before comparison                                    | ✅ Implemented               |
+| Subagent escalates privileges beyond declared mode at runtime | Dispatch runner must intersect resolved tools with permission mode baseline                | ⬜ Not yet implemented       |
+| Subagent accesses tools outside its allowlist at runtime      | Runtime tool filtering during dispatch                                                     | ⬜ Not yet implemented       |
+| Subagent modifies files without worktree isolation            | `isolation: worktree` creates separate git worktree during dispatch                        | ⬜ Not yet implemented       |
+| Subagent reads secrets or credentials                         | Constitutional constraint #9 + `scanValue()` blocks secrets in persisted conversation data | ✅ Implemented (persistence) |
+| Subagent modifies its own definition or registry              | Constitutional constraint #6 prohibits self-prompt-edit                                    | ✅ Enforced by constitution  |
+| Subagent bypasses human approval for Red Zone changes         | Constitutional constraints #3 and #8                                                       | ✅ Enforced by constitution  |
 
 ## Permission Modes (Parsed, Not Yet Runtime-Enforced)
 
@@ -42,12 +42,12 @@ Each subagent declares one of four permission modes in its frontmatter
 `permissionMode` field. The parser validates the value; the dispatch runner
 will enforce the capability restrictions.
 
-| Mode | Intended Capabilities | Use Case |
-|------|----------------------|----------|
-| `plan` | Read-only — analyze, search, report but never modify | Code review, research, triage |
-| `acceptEdits` | Read + targeted edits — modify files but no shell commands | Implementing fixes, documentation |
-| `default` | Standard tool access — read, edit, non-destructive shell | General-purpose tasks |
-| `strict` | All tools available but confirmation required for side effects | High-trust agents on sensitive paths |
+| Mode          | Intended Capabilities                                          | Use Case                             |
+| ------------- | -------------------------------------------------------------- | ------------------------------------ |
+| `plan`        | Read-only — analyze, search, report but never modify           | Code review, research, triage        |
+| `acceptEdits` | Read + targeted edits — modify files but no shell commands     | Implementing fixes, documentation    |
+| `default`     | Standard tool access — read, edit, non-destructive shell       | General-purpose tasks                |
+| `strict`      | All tools available but confirmation required for side effects | High-trust agents on sensitive paths |
 
 **Parse-time validation:** The parser rejects any value not in this set. A typo
 in `permissionMode` causes the entire definition to fail — no fallback.
@@ -84,10 +84,10 @@ iteration that was possible before the R3 fix.
 
 ## Isolation Modes (Parsed, Not Yet Runtime-Enforced)
 
-| Mode | Intended Behavior |
-|------|-------------------|
-| `none` | Subagent operates in the current working directory. File system access constrained by permission mode. |
-| `worktree` | Subagent operates in an isolated git worktree. Changes invisible to main branch until merged. |
+| Mode       | Intended Behavior                                                                                      |
+| ---------- | ------------------------------------------------------------------------------------------------------ |
+| `none`     | Subagent operates in the current working directory. File system access constrained by permission mode. |
+| `worktree` | Subagent operates in an isolated git worktree. Changes invisible to main branch until merged.          |
 
 ### Worktree Isolation (Planned)
 
@@ -105,12 +105,12 @@ but has no runtime effect.
 
 The `memory` field controls how subagent conversation data is persisted:
 
-| Scope | Retention | Visibility |
-|-------|-----------|------------|
-| `none` | Ephemeral — messages are not written to disk | Current session only |
-| `local` | 24 hours (default) | Local workspace |
-| `project` | 7 days (7x multiplier) | Shared across project collaborators |
-| `user` | 24 hours | User's local environment |
+| Scope     | Retention                                    | Visibility                          |
+| --------- | -------------------------------------------- | ----------------------------------- |
+| `none`    | Ephemeral — messages are not written to disk | Current session only                |
+| `local`   | 24 hours (default)                           | Local workspace                     |
+| `project` | 7 days (7x multiplier)                       | Shared across project collaborators |
+| `user`    | 24 hours                                     | User's local environment            |
 
 Memory policy is enforced at the persistence layer. When `memory: none` is set,
 `appendMessage()` returns the message object but does not write to JSONL storage.
