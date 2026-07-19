@@ -11,10 +11,10 @@ canonical_status: docs/status/current.md
 ## Executive Summary
 
 Agent Conversations bring structured, observable multi-turn agent-human
-interaction to OpenSlack.  A conversation is a thread of typed messages
+interaction to OpenSlack. A conversation is a thread of typed messages
 (user messages, agent responses, tool events, plans, approval requests,
 decisions, handoffs) stored in `.openslack.local/conversations/` with
-JSONL persistence.  Conversations integrate with the existing
+JSONL persistence. Conversations integrate with the existing
 Collaboration Layer event model, activity feed, digest, and room views,
 making agent interactions as traceable as PR reviews and task claims.
 
@@ -25,7 +25,7 @@ Conversations.
 ## Problem Statement
 
 OpenSlack already has a rich collaboration model: issues, PRs, handoffs,
-decisions, workflow runs, and governance events.  But agent interactions
+decisions, workflow runs, and governance events. But agent interactions
 with humans happen in ad-hoc ways — chat messages, CLI output, comments
 on PRs — and there is no unified, typed record of what was asked, what
 was planned, what tools were invoked, what approvals were requested, and
@@ -48,46 +48,46 @@ and full integration with the collaboration event model.
 
 ### AgentConversationThread
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `string` | `CONV-YYYYMMDD-XXXX` format |
-| `schema` | `string` | `openslack.agent_conversation_thread.v1` |
-| `title` | `string` | Human-readable thread title |
-| `status` | `enum` | `open`, `active`, `paused`, `completed`, `archived` |
-| `createdAt` | `ISO 8601` | Creation timestamp |
-| `updatedAt` | `ISO 8601` | Last update timestamp |
-| `participants` | `AgentParticipant[]` | Human, agent, subagent, system actors |
-| `linkedObjects` | `ConversationLinkedObject[]` | Issues, PRs, workflows, rooms, handoffs, decisions |
-| `memoryPolicy` | `enum` | `local`, `project`, `none` |
-| `summary` | `string?` | Optional summary of the conversation |
-| `nextAction` | `NextAction?` | Owner and action for the next step |
+| Field           | Type                         | Description                                         |
+| --------------- | ---------------------------- | --------------------------------------------------- |
+| `id`            | `string`                     | `CONV-YYYYMMDD-XXXX` format                         |
+| `schema`        | `string`                     | `openslack.agent_conversation_thread.v1`            |
+| `title`         | `string`                     | Human-readable thread title                         |
+| `status`        | `enum`                       | `open`, `active`, `paused`, `completed`, `archived` |
+| `createdAt`     | `ISO 8601`                   | Creation timestamp                                  |
+| `updatedAt`     | `ISO 8601`                   | Last update timestamp                               |
+| `participants`  | `AgentParticipant[]`         | Human, agent, subagent, system actors               |
+| `linkedObjects` | `ConversationLinkedObject[]` | Issues, PRs, workflows, rooms, handoffs, decisions  |
+| `memoryPolicy`  | `enum`                       | `local`, `project`, `none`                          |
+| `summary`       | `string?`                    | Optional summary of the conversation                |
+| `nextAction`    | `NextAction?`                | Owner and action for the next step                  |
 
 ### AgentParticipant
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `string` | Unique participant identifier |
-| `kind` | `enum` | `human`, `agent`, `subagent`, `system` |
-| `provider` | `string?` | `openslack`, `claude-code`, `codex`, `github`, `slack` |
-| `displayName` | `string` | Human-readable name |
-| `role` | `string?` | `operator`, `reviewer`, `implementer`, `researcher`, `planner` |
-| `permissions` | `string[]?` | Granted permissions |
-| `model` | `string?` | Model identifier (for agents) |
-| `color` | `string?` | Display color for TUI |
+| Field         | Type        | Description                                                    |
+| ------------- | ----------- | -------------------------------------------------------------- |
+| `id`          | `string`    | Unique participant identifier                                  |
+| `kind`        | `enum`      | `human`, `agent`, `subagent`, `system`                         |
+| `provider`    | `string?`   | `openslack`, `claude-code`, `codex`, `github`, `slack`         |
+| `displayName` | `string`    | Human-readable name                                            |
+| `role`        | `string?`   | `operator`, `reviewer`, `implementer`, `researcher`, `planner` |
+| `permissions` | `string[]?` | Granted permissions                                            |
+| `model`       | `string?`   | Model identifier (for agents)                                  |
+| `color`       | `string?`   | Display color for TUI                                          |
 
 ### AgentConversationMessage (7 Kinds)
 
 Messages are discriminated unions on the `kind` field:
 
-| Kind | Purpose | Key Fields |
-|------|---------|------------|
-| `user_message` | Human input | `text`, `source` |
-| `agent_response` | Agent reply | `text`, `structured` |
-| `tool_event` | Tool invocation | `toolName`, `input`, `output` |
-| `plan` | Multi-step plan | `planId`, `steps` |
-| `approval_request` | Approval gate | `targetAction`, `riskLevel` |
-| `decision` | Decision recorded | `decisionId`, `summary` |
-| `handoff` | Context transfer | `handoffId`, `toParticipant`, `summary` |
+| Kind               | Purpose           | Key Fields                              |
+| ------------------ | ----------------- | --------------------------------------- |
+| `user_message`     | Human input       | `text`, `source`                        |
+| `agent_response`   | Agent reply       | `text`, `structured`                    |
+| `tool_event`       | Tool invocation   | `toolName`, `input`, `output`           |
+| `plan`             | Multi-step plan   | `planId`, `steps`                       |
+| `approval_request` | Approval gate     | `targetAction`, `riskLevel`             |
+| `decision`         | Decision recorded | `decisionId`, `summary`                 |
+| `handoff`          | Context transfer  | `handoffId`, `toParticipant`, `summary` |
 
 Every message has `id` (`MSG-YYYYMMDD-XXXXXX`), `threadId`,
 `timestamp`, and `authorId`.
@@ -95,7 +95,7 @@ Every message has `id` (`MSG-YYYYMMDD-XXXXXX`), `threadId`,
 ## Subagent Definition Format
 
 Agent Conversations are compatible with Claude Code's `.claude/agents/`
-subagent definitions.  The resolver follows this priority order:
+subagent definitions. The resolver follows this priority order:
 
 1. OpenSlack registry: `.openslack/agents/registry/*.yaml`
 2. Claude Code project-level: `.claude/agents/*.md`
@@ -109,14 +109,14 @@ Resolved agents produce a `ResolvedAgentConfig` with `agentId`, `source`,
 
 All conversation commands live under the `openslack conversation` group:
 
-| Command | Description |
-|---------|-------------|
-| `openslack conversation start --title "..."` | Create a new conversation thread |
-| `openslack conversation list [--status active]` | List conversation threads |
-| `openslack conversation show <threadId>` | Show thread details and messages |
-| `openslack conversation send <threadId> <message>` | Append a message to a thread |
-| `openslack conversation summarize <threadId>` | Show thread summary and next action |
-| `openslack conversation archive <threadId>` | Archive a thread |
+| Command                                            | Description                         |
+| -------------------------------------------------- | ----------------------------------- |
+| `openslack conversation start --title "..."`       | Create a new conversation thread    |
+| `openslack conversation list [--status active]`    | List conversation threads           |
+| `openslack conversation show <threadId>`           | Show thread details and messages    |
+| `openslack conversation send <threadId> <message>` | Append a message to a thread        |
+| `openslack conversation summarize <threadId>`      | Show thread summary and next action |
+| `openslack conversation archive <threadId>`        | Archive a thread                    |
 
 ### start
 
@@ -185,7 +185,7 @@ model, tools, permission mode, isolation level.
 
 When a workflow step involves an agent conversation, the runtime resolves
 the agent type through the `resolveAgentType` function in
-`@openslack/workflows`.  This function checks:
+`@openslack/workflows`. This function checks:
 
 1. OpenSlack agent registry (`.openslack/agents/registry/`)
 2. Claude Code subagent definitions (`.claude/agents/`)
@@ -197,11 +197,11 @@ isolation level for the conversation participant.
 
 Planned collaboration events at conversation lifecycle boundaries:
 
-| Event | When | Status |
-|-------|------|--------|
-| `agent.conversation.started` | Agent call begins in execute mode | ✅ Implemented |
-| `agent.conversation.completed` | Agent finishes successfully | ✅ Implemented |
-| `agent.conversation.failed` | Agent encounters an error | ✅ Implemented |
+| Event                          | When                              | Status         |
+| ------------------------------ | --------------------------------- | -------------- |
+| `agent.conversation.started`   | Agent call begins in execute mode | ✅ Implemented |
+| `agent.conversation.completed` | Agent finishes successfully       | ✅ Implemented |
+| `agent.conversation.failed`    | Agent encounters an error         | ✅ Implemented |
 
 These events are stored in the standard collaboration event log
 (`.openslack.local/collaboration/events.jsonl`) and appear in the
@@ -252,14 +252,14 @@ tool registry with risk levels and side-effect flags. Fine-grained
 permission names (`conversation.create`, etc.) are planned but not yet
 implemented.
 
-| Conversation Action | Operator Registry ID | Risk Level | Side Effects |
-|---------------------|---------------------|------------|--------------|
-| Create thread | `conversation.start` | low | yes |
-| List threads | `conversation.list` | none | no |
-| Show thread | `conversation.show` | none | no |
-| Send message | `conversation.send` | medium | yes |
-| Summarize thread | `conversation.summarize` | none | no |
-| Archive thread | `conversation.archive` | medium | yes |
+| Conversation Action | Operator Registry ID     | Risk Level | Side Effects |
+| ------------------- | ------------------------ | ---------- | ------------ |
+| Create thread       | `conversation.start`     | low        | yes          |
+| List threads        | `conversation.list`      | none       | no           |
+| Show thread         | `conversation.show`      | none       | no           |
+| Send message        | `conversation.send`      | medium     | yes          |
+| Summarize thread    | `conversation.summarize` | none       | no           |
+| Archive thread      | `conversation.archive`   | medium     | yes          |
 
 ### Memory Policy
 
@@ -299,13 +299,13 @@ implemented.
 
 ## Acceptance Criteria
 
-| AC | Criterion |
-|----|-----------|
-| AC-1 | Data model defined with typed messages and validation |
-| AC-2 | Conversation store with JSONL persistence |
-| AC-3 | Collaboration event integration (started/completed/failed) |
-| AC-4 | Agent resolver integration with Claude Code compat |
-| AC-5 | CLI commands and TUI views |
+| AC   | Criterion                                                     |
+| ---- | ------------------------------------------------------------- |
+| AC-1 | Data model defined with typed messages and validation         |
+| AC-2 | Conversation store with JSONL persistence                     |
+| AC-3 | Collaboration event integration (started/completed/failed)    |
+| AC-4 | Agent resolver integration with Claude Code compat            |
+| AC-5 | CLI commands and TUI views                                    |
 | AC-6 | Integration validation, module registry update, documentation |
 
 ## Implementation PR Breakdown
