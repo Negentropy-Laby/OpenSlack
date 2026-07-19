@@ -55,15 +55,15 @@ B8 ──┼── B9
 
 ### B1 — Documentation: Profile Sync in user-guide and README
 
-| Field | Value |
-|-------|-------|
-| Priority | P0 |
-| Spec IDs | P0-1, P0-2 |
-| Risk Zone | **Green** — pure documentation |
-| Human Approval | No |
-| Complexity | Low |
-| Dependencies | None |
-| Estimated Tests | 0 |
+| Field           | Value                          |
+| --------------- | ------------------------------ |
+| Priority        | P0                             |
+| Spec IDs        | P0-1, P0-2                     |
+| Risk Zone       | **Green** — pure documentation |
+| Human Approval  | No                             |
+| Complexity      | Low                            |
+| Dependencies    | None                           |
+| Estimated Tests | 0                              |
 
 **Description:** Add Profile Sync Robot command table and explanation to
 `docs/user-guide.md` (between Collaboration Layer and Workflow Engine sections).
@@ -71,6 +71,7 @@ Add "Maintain organization profile" row to README quick-start table and Profile 
 bullet to Module 05 description.
 
 **Files:**
+
 - `docs/user-guide.md` — insert "Profile Sync Robot" section with command table:
   `check`, `preview`, `run`, `status`, each with description, options, and examples
 - `README.md` — add quick-start path for profile maintenance, add Profile Sync to
@@ -80,38 +81,40 @@ bullet to Module 05 description.
 
 ### B2 — Status count methodology clarification
 
-| Field | Value |
-|-------|-------|
-| Priority | P0 |
-| Spec IDs | P0-4 |
-| Risk Zone | **Green** — CLI output text |
-| Human Approval | No |
-| Complexity | Low |
-| Dependencies | None |
-| Estimated Tests | 2 |
+| Field           | Value                       |
+| --------------- | --------------------------- |
+| Priority        | P0                          |
+| Spec IDs        | P0-4                        |
+| Risk Zone       | **Green** — CLI output text |
+| Human Approval  | No                          |
+| Complexity      | Low                         |
+| Dependencies    | None                        |
+| Estimated Tests | 2                           |
 
 **Description:** Add a disambiguation note after the Test Suite section in the generated
 status output explaining the difference between the raw Vitest deduplicated count and the
 per-module sum from `modules.yaml`.
 
 **Files:**
+
 - `apps/cli/src/commands/status.ts` — add methodology note to generated output
 
 ---
 
 ### B3 — TUI Home view model: task-oriented goal items
 
-| Field | Value |
-|-------|-------|
-| Priority | P0 |
-| Spec IDs | P0-3 |
-| Risk Zone | **Yellow** — TUI view model |
-| Human Approval | No |
-| Complexity | Medium |
-| Dependencies | None |
-| Estimated Tests | 5 |
+| Field           | Value                       |
+| --------------- | --------------------------- |
+| Priority        | P0                          |
+| Spec IDs        | P0-3                        |
+| Risk Zone       | **Yellow** — TUI view model |
+| Human Approval  | No                          |
+| Complexity      | Medium                      |
+| Dependencies    | None                        |
+| Estimated Tests | 5                           |
 
 **Description:** Replace the five `goalItems` with four task-oriented items:
+
 - Start Work (task create/claim)
 - Review Work (PR queue + doctor)
 - Govern Actions (approvals + governance)
@@ -123,6 +126,7 @@ hint from `1-9, w/p/r/a` to `1-9, w/r/a`. Update coordinate diagnostic test expe
 **Must land before B5** (B5 extends this foundation).
 
 **Files:**
+
 - `packages/tui/src/view-models/home.ts` — replace `goalItems` array, remove Profile from `navItems`
 - `packages/tui/src/views/HomeView.tsx` — update footer shortcut text
 - `packages/tui/src/__tests__/homeview-coordinate-diagnostic.test.tsx` — update expected labels
@@ -131,15 +135,15 @@ hint from `1-9, w/p/r/a` to `1-9, w/r/a`. Update coordinate diagnostic test expe
 
 ### B4 — TUI Doctor view: compressed mode + Profile Sync gate
 
-| Field | Value |
-|-------|-------|
-| Priority | P1 + P2 |
-| Spec IDs | P1-2, P2-5 |
-| Risk Zone | **Yellow** — TUI views + CLI wiring |
-| Human Approval | No |
-| Complexity | Medium |
-| Dependencies | None |
-| Estimated Tests | 10 |
+| Field           | Value                               |
+| --------------- | ----------------------------------- |
+| Priority        | P1 + P2                             |
+| Spec IDs        | P1-2, P2-5                          |
+| Risk Zone       | **Yellow** — TUI views + CLI wiring |
+| Human Approval  | No                                  |
+| Complexity      | Medium                              |
+| Dependencies    | None                                |
+| Estimated Tests | 10                                  |
 
 **Description:** Two related Doctor view improvements batched because they touch the same files:
 
@@ -148,13 +152,14 @@ hint from `1-9, w/p/r/a` to `1-9, w/r/a`. Update coordinate diagnostic test expe
    - Blocker (gate name + owner)
    - Why (one-line explanation)
    - Next action (CLI command to run)
-   Full view remains default.
+     Full view remains default.
 
 2. **Profile Sync Gate pane:** Conditional Pane rendered when `profileSyncGate` is defined
    and the PR touches profile sync paths. Extends `DoctorViewModel` with optional
    `profileSyncGate` field.
 
 **Files:**
+
 - `packages/tui/src/view-models/doctor.ts` — add `compressed` toggle, `profileSyncGate` field
 - `packages/tui/src/views/DoctorView.tsx` — add compressed mode rendering, Profile Sync Gate pane
 - `packages/tui/src/__tests__/DoctorView.test.tsx` — compressed mode and gate tests
@@ -165,19 +170,20 @@ hint from `1-9, w/p/r/a` to `1-9, w/r/a`. Update coordinate diagnostic test expe
 
 ### B5 — TUI Home full task-oriented redesign
 
-| Field | Value |
-|-------|-------|
-| Priority | P1 |
-| Spec IDs | P1-1 |
-| Risk Zone | **Yellow** — TUI view + view model |
-| Human Approval | No |
-| Complexity | Medium |
-| Dependencies | **B3** |
-| Estimated Tests | 8 |
+| Field           | Value                              |
+| --------------- | ---------------------------------- |
+| Priority        | P1                                 |
+| Spec IDs        | P1-1                               |
+| Risk Zone       | **Yellow** — TUI view + view model |
+| Human Approval  | No                                 |
+| Complexity      | Medium                             |
+| Dependencies    | **B3**                             |
+| Estimated Tests | 8                                  |
 
 **Description:** Replace 4-section home layout with 2-section layout:
 
 **Section 1: "What do you want to do?"** — 6 canonical tasks with shortcuts:
+
 1. See what needs attention (`1`)
 2. Start or continue work (`2`)
 3. Run or check a workflow (`3`)
@@ -190,6 +196,7 @@ hint from `1-9, w/p/r/a` to `1-9, w/r/a`. Update coordinate diagnostic test expe
 Add `TaskItem` interface with `attentionBadge` for dynamic count overlay on tasks.
 
 **Files:**
+
 - `packages/tui/src/view-models/home.ts` — `TaskItem` interface, new task/nav arrays
 - `packages/tui/src/views/HomeView.tsx` — 2-section layout, `TaskItem` rendering
 - `packages/tui/src/__tests__/homeview-coordinate-diagnostic.test.tsx` — updated expectations
@@ -200,15 +207,15 @@ Add `TaskItem` interface with `attentionBadge` for dynamic count overlay on task
 
 ### B6 — Workflow Lifecycle Board: horizontal linear progress
 
-| Field | Value |
-|-------|-------|
-| Priority | P1 |
-| Spec IDs | P1-3 |
-| Risk Zone | **Yellow** — TUI view + view model |
-| Human Approval | No |
-| Complexity | Medium |
-| Dependencies | None |
-| Estimated Tests | 5 |
+| Field           | Value                              |
+| --------------- | ---------------------------------- |
+| Priority        | P1                                 |
+| Spec IDs        | P1-3                               |
+| Risk Zone       | **Yellow** — TUI view + view model |
+| Human Approval  | No                                 |
+| Complexity      | Medium                             |
+| Dependencies    | None                               |
+| Estimated Tests | 5                                  |
 
 **Description:** Replace vertical stage list in `WorkflowLifecycleView` stages mode with
 horizontal linear progress bar showing 5 canonical stages:
@@ -222,6 +229,7 @@ Click/Enter on stage node enters existing detail mode. Does **not** modify detai
 action-result modes.
 
 **Files:**
+
 - `packages/tui/src/view-models/workflow-lifecycle.ts` — `CanonicalStageSlot` interface, `mapCanonicalStages` helper
 - `packages/tui/src/views/WorkflowLifecycleView.tsx` — horizontal progress bar in stages mode
 - `packages/tui/src/__tests__/WorkflowPreviewView.test.tsx` — lifecycle progress assertions
@@ -230,15 +238,15 @@ action-result modes.
 
 ### B7 — Approval Center: profile-sync category + group reorder
 
-| Field | Value |
-|-------|-------|
-| Priority | P1 |
-| Spec IDs | P1-4 |
-| Risk Zone | **Yellow** — TUI view model + view |
-| Human Approval | No |
-| Complexity | Low |
-| Dependencies | None |
-| Estimated Tests | 4 |
+| Field           | Value                              |
+| --------------- | ---------------------------------- |
+| Priority        | P1                                 |
+| Spec IDs        | P1-4                               |
+| Risk Zone       | **Yellow** — TUI view model + view |
+| Human Approval  | No                                 |
+| Complexity      | Low                                |
+| Dependencies    | None                               |
+| Estimated Tests | 4                                  |
 
 **Description:** Add `profile-sync` as new `ApprovalCategory`. Reorder groups to
 user-facing priority:
@@ -253,6 +261,7 @@ Add `profileSyncAction` field to `ApprovalItem`. Update all switch statements in
 `ApprovalCenterView`.
 
 **Files:**
+
 - `packages/tui/src/view-models/approval-center.ts` — new category, new field
 - `packages/tui/src/views/ApprovalCenterView.tsx` — new cases in switch statements
 - `packages/tui/src/__tests__/render-smoke.test.tsx` — approval center smoke test
@@ -261,15 +270,15 @@ Add `profileSyncAction` field to `ApprovalItem`. Update all switch statements in
 
 ### B8 — Profile view: failure panel, sync details, mode display
 
-| Field | Value |
-|-------|-------|
-| Priority | P1 + P2 |
-| Spec IDs | P1-5, P2-2, P2-3 |
-| Risk Zone | **Yellow** — TUI + CLI + GitHub package |
-| Human Approval | No |
-| Complexity | Medium |
-| Dependencies | None |
-| Estimated Tests | 8 |
+| Field           | Value                                   |
+| --------------- | --------------------------------------- |
+| Priority        | P1 + P2                                 |
+| Spec IDs        | P1-5, P2-2, P2-3                        |
+| Risk Zone       | **Yellow** — TUI + CLI + GitHub package |
+| Human Approval  | No                                      |
+| Complexity      | Medium                                  |
+| Dependencies    | None                                    |
+| Estimated Tests | 8                                       |
 
 **Description:** Three profile-related improvements batched because they all extend
 `ProfileViewModel` and `ProfileView`:
@@ -287,6 +296,7 @@ Add `profileSyncAction` field to `ApprovalItem`. Update all switch statements in
 3. **Mode display in header:** Show `Mode: {mode}` with color coding.
 
 **Files:**
+
 - `packages/tui/src/view-models/profile.ts` — `syncDetails` field, `mode` field
 - `packages/tui/src/views/ProfileView.tsx` — failure panel, sync details pane, mode header
 - `packages/tui/src/__tests__/render-smoke.test.tsx` — profile view smoke
@@ -297,18 +307,19 @@ Add `profileSyncAction` field to `ApprovalItem`. Update all switch statements in
 
 ### B9 — Profile Sync preview defaults to diff output
 
-| Field | Value |
-|-------|-------|
-| Priority | P2 |
-| Spec IDs | P2-1 |
-| Risk Zone | **Green** — CLI default + TUI additive |
-| Human Approval | No |
-| Complexity | Medium |
-| Dependencies | **B8** |
-| Estimated Tests | 5 |
+| Field           | Value                                  |
+| --------------- | -------------------------------------- |
+| Priority        | P2                                     |
+| Spec IDs        | P2-1                                   |
+| Risk Zone       | **Green** — CLI default + TUI additive |
+| Human Approval  | No                                     |
+| Complexity      | Medium                                 |
+| Dependencies    | **B8**                                 |
+| Estimated Tests | 5                                      |
 
 **Description:** Change `profile-sync preview --format` default from `json` to `diff`.
 Add Diff Output Pane in `ProfileView` that renders after successful preview action:
+
 - Color-code diff lines (`+` green, `-` red, `@@` info)
 - Truncate to 30 lines with trailer
 
@@ -316,6 +327,7 @@ Extend `ProfileViewModel` with `diffOutput` field. Update `tui-executors.ts` to 
 diff text in `TuiActionResult`.
 
 **Files:**
+
 - `apps/cli/src/commands/collaboration.ts` — change default format to `diff`
 - `apps/cli/src/commands/tui-executors.ts` — return diff text in action result
 - `packages/tui/src/views/ProfileView.tsx` — diff output pane
@@ -325,15 +337,15 @@ diff text in `TuiActionResult`.
 
 ### B10 — Profile Sync auto-pr smoke tests
 
-| Field | Value |
-|-------|-------|
-| Priority | P2 |
-| Spec IDs | P2-4 |
-| Risk Zone | **Green** — pure test files |
-| Human Approval | No |
-| Complexity | High |
-| Dependencies | None |
-| Estimated Tests | 10 |
+| Field           | Value                       |
+| --------------- | --------------------------- |
+| Priority        | P2                          |
+| Spec IDs        | P2-4                        |
+| Risk Zone       | **Green** — pure test files |
+| Human Approval  | No                          |
+| Complexity      | High                        |
+| Dependencies    | None                        |
+| Estimated Tests | 10                          |
 
 **Description:** Create two new smoke test files:
 
@@ -349,6 +361,7 @@ diff text in `TuiActionResult`.
    - `dryRun: true` no-branch
 
 **Files:**
+
 - `apps/cli/src/__tests__/profile-sync-smoke.test.ts` — new file
 - `packages/github/src/__tests__/profile-sync-run-smoke.test.ts` — new file
 
@@ -356,17 +369,18 @@ diff text in `TuiActionResult`.
 
 ### B11 — TUI style guide enforcement: ESLint rule + doc update
 
-| Field | Value |
-|-------|-------|
-| Priority | P3 |
-| Spec IDs | P3-1a, P3-1b |
-| Risk Zone | **Green** — docs + lint config |
-| Human Approval | No |
-| Complexity | Low |
-| Dependencies | None |
-| Estimated Tests | 3 |
+| Field           | Value                          |
+| --------------- | ------------------------------ |
+| Priority        | P3                             |
+| Spec IDs        | P3-1a, P3-1b                   |
+| Risk Zone       | **Green** — docs + lint config |
+| Human Approval  | No                             |
+| Complexity      | Low                            |
+| Dependencies    | None                           |
+| Estimated Tests | 3                              |
 
 **Description:** Strengthen `tui-style-guide.md` with:
+
 - Column width matrix requirement (80/100/120)
 - CJK/emoji/ANSI link/long URL test requirements
 - Async loading redraw test requirements
@@ -379,6 +393,7 @@ Add belt-and-suspenders source-scan test asserting no TUI source file contains
 `padEnd(` or `padStart(`.
 
 **Files:**
+
 - `docs/developer/tui-style-guide.md` — add sections
 - `eslint.config.js` — add no-restricted-properties rule
 - `packages/tui/src/__tests__/tui-style-lint.test.ts` — new file
@@ -387,24 +402,26 @@ Add belt-and-suspenders source-scan test asserting no TUI source file contains
 
 ### B12 — Column snapshot matrix: test infrastructure
 
-| Field | Value |
-|-------|-------|
-| Priority | P3 |
-| Spec IDs | P3-2a, P3-2b |
-| Risk Zone | **Green** — pure test infrastructure |
-| Human Approval | No |
-| Complexity | Medium |
-| Dependencies | None |
-| Estimated Tests | 21 |
+| Field           | Value                                |
+| --------------- | ------------------------------------ |
+| Priority        | P3                                   |
+| Spec IDs        | P3-2a, P3-2b                         |
+| Risk Zone       | **Green** — pure test infrastructure |
+| Human Approval  | No                                   |
+| Complexity      | Medium                               |
+| Dependencies    | None                                 |
+| Estimated Tests | 21                                   |
 
 **Description:** Create shared test helpers and column snapshot matrix test.
 
 **Helpers:**
+
 - `renderAtColumns(component, widths[])` — render at multiple column widths
 - `assertNoLineExceedsWidth(output, width)` — width assertion
 - View-model factories for all 7 views (minimal valid view models)
 
 **Matrix test:** Render all 7 key views at 80, 100, 120 columns using `describe.each`:
+
 - HomeView, DoctorView, PrQueueView, ProfileView
 - WorkflowLifecycleView, WorkflowWorkbenchView, DashboardView
 
@@ -413,6 +430,7 @@ Assert output contains expected markers and no line exceeds column width.
 **Must land before B13 and B14** which depend on these helpers.
 
 **Files:**
+
 - `packages/tui/src/__tests__/helpers/render-at-columns.ts` — new file
 - `packages/tui/src/__tests__/helpers/view-model-factories.ts` — new file
 - `packages/tui/src/__tests__/column-snapshot-matrix.test.tsx` — new file
@@ -421,17 +439,18 @@ Assert output contains expected markers and no line exceeds column width.
 
 ### B13 — CJK/emoji/ANSI/long URL coverage tests
 
-| Field | Value |
-|-------|-------|
-| Priority | P3 |
-| Spec IDs | P3-3a, P3-3b |
-| Risk Zone | **Green** — pure test files |
-| Human Approval | No |
-| Complexity | Medium |
-| Dependencies | **B12** |
-| Estimated Tests | 15 |
+| Field           | Value                       |
+| --------------- | --------------------------- |
+| Priority        | P3                          |
+| Spec IDs        | P3-3a, P3-3b                |
+| Risk Zone       | **Green** — pure test files |
+| Human Approval  | No                          |
+| Complexity      | Medium                      |
+| Dependencies    | **B12**                     |
+| Estimated Tests | 15                          |
 
 **Description:** Coverage tests across all 7 views for:
+
 - CJK labels and descriptions (Chinese, Japanese, Korean)
 - Emoji in PR titles, workflow names, status text
 - ANSI escape sanitization in external strings
@@ -442,6 +461,7 @@ Plus view-model sanitization unit tests for `sanitizeTerminalText` with CJK/emoj
 inputs and mapper sanitization.
 
 **Files:**
+
 - `packages/tui/src/__tests__/cjk-emoji-ansi-coverage.test.tsx` — new file
 - `packages/tui/src/__tests__/sanitize-unicode.test.ts` — new file
 
@@ -449,15 +469,15 @@ inputs and mapper sanitization.
 
 ### B14 — Plain-safe fallback renderer
 
-| Field | Value |
-|-------|-------|
-| Priority | P3 |
-| Spec IDs | P3-4a, P3-4b, P3-4c |
-| Risk Zone | **Green** — new rendering path |
-| Human Approval | No |
-| Complexity | High |
-| Dependencies | **B12** |
-| Estimated Tests | 12 |
+| Field           | Value                          |
+| --------------- | ------------------------------ |
+| Priority        | P3                             |
+| Spec IDs        | P3-4a, P3-4b, P3-4c            |
+| Risk Zone       | **Green** — new rendering path |
+| Human Approval  | No                             |
+| Complexity      | High                           |
+| Dependencies    | **B12**                        |
+| Estimated Tests | 12                             |
 
 **Description:** Create `plain-render.ts` implementing plain-text rendering as fallback
 when `isTuiSupported()` returns false.
@@ -470,6 +490,7 @@ when `isTuiSupported()` returns false.
 - Wire into CLI `tui.ts` so `--format standard` uses plain renderer when TUI unsupported
 
 **Files:**
+
 - `packages/tui/src/plain-render.ts` — new file (main renderer)
 - `packages/tui/src/index.ts` — export `renderPlain`
 - `packages/tui/src/render.ts` — update error message
@@ -480,17 +501,17 @@ when `isTuiSupported()` returns false.
 
 ## Summary Statistics
 
-| Metric | Value |
-|--------|-------|
-| Total specs | 25 |
-| Total batches | 14 |
-| Green zone batches | 7 |
-| Yellow zone batches | 7 |
-| Red zone batches | 0 |
-| Estimated total new tests | ~98 |
-| Batches with no dependencies | 10 |
-| Batches with dependencies | 4 (B5→B3, B9→B8, B13→B12, B14→B12) |
-| Human approval required | 0 (all green/yellow) |
+| Metric                       | Value                              |
+| ---------------------------- | ---------------------------------- |
+| Total specs                  | 25                                 |
+| Total batches                | 14                                 |
+| Green zone batches           | 7                                  |
+| Yellow zone batches          | 7                                  |
+| Red zone batches             | 0                                  |
+| Estimated total new tests    | ~98                                |
+| Batches with no dependencies | 10                                 |
+| Batches with dependencies    | 4 (B5→B3, B9→B8, B13→B12, B14→B12) |
+| Human approval required      | 0 (all green/yellow)               |
 
 ## Recommended Execution Wave
 
@@ -509,6 +530,7 @@ bun run openslack status verify
 ```
 
 For batches touching TUI views, additionally verify:
+
 ```bash
 bun run openslack collaboration dashboard --format tui
 ```
@@ -530,7 +552,7 @@ asks for dry-run.
   - Do not generate `READY_TO_MERGE`, `BLOCKED_POLICY`, or other governance
     decisions from dry-run placeholder data.
   - Add an evidence banner to every output format: `GitHub evidence: LIVE |
-    DRY-RUN`, `Repo`, and `Auth`.
+DRY-RUN`, `Repo`, and `Auth`.
 
 - Add explicit CLI options.
   - `--dry-run`: simulation only; decision must be `NOT_EVALUATED`.

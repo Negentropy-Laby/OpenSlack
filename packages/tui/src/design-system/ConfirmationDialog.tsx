@@ -1,37 +1,37 @@
 // @openslack/tui — Confirmation dialog component
 
-import React from 'react'
-import Box from '../ink/components/Box.js'
-import ThemedBox from './ThemedBox.js'
-import ThemedText from './ThemedText.js'
-import useInput from '../ink/hooks/use-input.js'
-import { sanitizeTerminalText } from '../sanitize.js'
-import type { ThemeColorKey } from './theme.js'
-import type { TuiAction, TuiRiskLevel } from '../actions/types.js'
+import React from 'react';
+import Box from '../ink/components/Box.js';
+import ThemedBox from './ThemedBox.js';
+import ThemedText from './ThemedText.js';
+import useInput from '../ink/hooks/use-input.js';
+import { sanitizeTerminalText } from '../sanitize.js';
+import type { ThemeColorKey } from './theme.js';
+import type { TuiAction, TuiRiskLevel } from '../actions/types.js';
 
 const RISK_THEME_KEY: Record<TuiRiskLevel, ThemeColorKey> = {
   low: 'info',
   medium: 'warning',
   high: 'error',
   critical: 'blocker',
-}
+};
 
 const RISK_LABEL: Record<TuiRiskLevel, string> = {
   low: 'LOW',
   medium: 'MEDIUM',
   high: 'HIGH',
   critical: 'CRITICAL',
-}
+};
 
 export interface ConfirmationDialogProps {
   /** The action awaiting confirmation. */
-  action: TuiAction
+  action: TuiAction;
   /** Called when user confirms (y). */
-  onConfirm: () => void
+  onConfirm: () => void;
   /** Called when user cancels (n / q / Escape). */
-  onCancel: () => void
+  onCancel: () => void;
   /** Whether the dialog is active (controls useInput). */
-  isActive?: boolean
+  isActive?: boolean;
 }
 
 export default function ConfirmationDialog({
@@ -43,24 +43,18 @@ export default function ConfirmationDialog({
   useInput(
     (input, key) => {
       if (input === 'y' || input === 'Y') {
-        onConfirm()
-      } else if (
-        input === 'n' ||
-        input === 'N' ||
-        input === 'q' ||
-        input === 'Q' ||
-        key.escape
-      ) {
-        onCancel()
+        onConfirm();
+      } else if (input === 'n' || input === 'N' || input === 'q' || input === 'Q' || key.escape) {
+        onCancel();
       }
     },
     { isActive },
-  )
+  );
 
-  const riskColor: ThemeColorKey = RISK_THEME_KEY[action.risk]
-  const riskLabel = RISK_LABEL[action.risk]
-  const safeLabel = sanitizeTerminalText(action.label)
-  const safeDescription = sanitizeTerminalText(action.description)
+  const riskColor: ThemeColorKey = RISK_THEME_KEY[action.risk];
+  const riskLabel = RISK_LABEL[action.risk];
+  const safeLabel = sanitizeTerminalText(action.label);
+  const safeDescription = sanitizeTerminalText(action.description);
 
   return React.createElement(
     ThemedBox,
@@ -79,11 +73,7 @@ export default function ConfirmationDialog({
       React.createElement(ThemedText, { colorTheme: 'foreground', bold: true }, safeLabel),
     ),
     // Description
-    React.createElement(
-      ThemedText,
-      { colorTheme: 'muted' },
-      safeDescription,
-    ),
+    React.createElement(ThemedText, { colorTheme: 'muted' }, safeDescription),
     // Separator
     React.createElement(ThemedText, { colorTheme: 'border' }, '---'),
     // Prompt
@@ -103,5 +93,5 @@ export default function ConfirmationDialog({
         React.createElement(ThemedText, { colorTheme: 'muted' }, '[N]'),
       ),
     ),
-  )
+  );
 }

@@ -1,36 +1,43 @@
-import React, { useCallback } from 'react'
-import Box from '../ink/components/Box.js'
-import Text from '../ink/components/Text.js'
-import useApp from '../ink/hooks/use-app.js'
-import useInput from '../ink/hooks/use-input.js'
-import ThemedText from '../design-system/ThemedText.js'
-import Divider from '../design-system/Divider.js'
-import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
-import SelectableList from '../design-system/SelectableList.js'
-import type { HandoffListViewModel, HandoffListItemViewModel } from '../view-models/handoff.js'
+import React, { useCallback } from 'react';
+import Box from '../ink/components/Box.js';
+import Text from '../ink/components/Text.js';
+import useApp from '../ink/hooks/use-app.js';
+import useInput from '../ink/hooks/use-input.js';
+import ThemedText from '../design-system/ThemedText.js';
+import Divider from '../design-system/Divider.js';
+import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js';
+import SelectableList from '../design-system/SelectableList.js';
+import type { HandoffListViewModel, HandoffListItemViewModel } from '../view-models/handoff.js';
 
 export type HandoffListViewProps = {
-  model: HandoffListViewModel
-  onSelect?: (item: HandoffListItemViewModel) => void
-  onBack?: () => void
-}
+  model: HandoffListViewModel;
+  onSelect?: (item: HandoffListItemViewModel) => void;
+  onBack?: () => void;
+};
 
-export default function HandoffListView({ model, onSelect, onBack }: HandoffListViewProps): React.JSX.Element {
-  const { exit } = useApp()
+export default function HandoffListView({
+  model,
+  onSelect,
+  onBack,
+}: HandoffListViewProps): React.JSX.Element {
+  const { exit } = useApp();
 
-  const handleSelect = useCallback((item: { key: string }) => {
-    if (onSelect) {
-      const found = model.items.find(i => i.id === item.key)
-      if (found) onSelect(found)
-    }
-  }, [model.items, onSelect])
+  const handleSelect = useCallback(
+    (item: { key: string }) => {
+      if (onSelect) {
+        const found = model.items.find((i) => i.id === item.key);
+        if (found) onSelect(found);
+      }
+    },
+    [model.items, onSelect],
+  );
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
-      if (onBack) onBack()
-      else exit()
+      if (onBack) onBack();
+      else exit();
     }
-  })
+  });
 
   return React.createElement(
     Box,
@@ -50,17 +57,14 @@ export default function HandoffListView({ model, onSelect, onBack }: HandoffList
 
     // List
     model.items.length > 0
-      ? React.createElement(
-          SelectableList,
-          {
-            items: model.items.map(item => ({
-              key: item.id,
-              label: `${item.from} → ${item.to}`,
-              detail: `${item.context.slice(0, 50)}${item.context.length > 50 ? '...' : ''} · ${item.age} · ${item.ref}`,
-            })),
-            onSelect: handleSelect,
-          },
-        )
+      ? React.createElement(SelectableList, {
+          items: model.items.map((item) => ({
+            key: item.id,
+            label: `${item.from} → ${item.to}`,
+            detail: `${item.context.slice(0, 50)}${item.context.length > 50 ? '...' : ''} · ${item.age} · ${item.ref}`,
+          })),
+          onSelect: handleSelect,
+        })
       : React.createElement(ThemedText, { colorTheme: 'muted' }, 'No handoffs found.'),
 
     // Footer
@@ -74,5 +78,5 @@ export default function HandoffListView({ model, onSelect, onBack }: HandoffList
       React.createElement(Text, null, '  '),
       React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'back' }),
     ),
-  )
+  );
 }

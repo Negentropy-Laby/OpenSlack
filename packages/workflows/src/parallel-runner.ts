@@ -1,4 +1,4 @@
-import type { BudgetState, ParallelOptions } from './types.js'
+import type { BudgetState, ParallelOptions } from './types.js';
 
 /**
  * Execute an array of async tasks with bounded concurrency and
@@ -18,49 +18,49 @@ export async function runParallel<T>(
   options: ParallelOptions | undefined,
   budget?: BudgetState,
 ): Promise<T[]> {
-  if (tasks.length === 0) return []
+  if (tasks.length === 0) return [];
 
-  const concurrency = options?.concurrency ?? Infinity
+  const concurrency = options?.concurrency ?? Infinity;
 
   // Budget pre-check
   if (budget && budget.tokensRemaining !== null && budget.tokensRemaining <= 0) {
-    throw new Error('Budget exhausted: no tokens remaining for parallel tasks')
+    throw new Error('Budget exhausted: no tokens remaining for parallel tasks');
   }
 
-  const results: T[] = new Array(tasks.length)
-  const settled = new Set<number>()
-  const errors: unknown[] = []
-  const inFlight: Array<{ index: number; promise: Promise<void> }> = []
-  let nextIndex = 0
+  const results: T[] = new Array(tasks.length);
+  const settled = new Set<number>();
+  const errors: unknown[] = [];
+  const inFlight: Array<{ index: number; promise: Promise<void> }> = [];
+  let nextIndex = 0;
 
   function launchTask(index: number): Promise<void> {
     return tasks[index]()
       .then((result) => {
-        results[index] = result
-        settled.add(index)
+        results[index] = result;
+        settled.add(index);
       })
       .catch((err) => {
-        errors.push(err)
-        settled.add(index)
-      })
+        errors.push(err);
+        settled.add(index);
+      });
   }
 
   while (nextIndex < tasks.length || inFlight.length > 0) {
     // Fill up to concurrency limit
     while (inFlight.length < concurrency && nextIndex < tasks.length) {
-      const index = nextIndex++
-      const promise = launchTask(index)
-      inFlight.push({ index, promise })
+      const index = nextIndex++;
+      const promise = launchTask(index);
+      inFlight.push({ index, promise });
     }
 
     if (inFlight.length > 0) {
       // Wait for at least one to settle
-      await Promise.race(inFlight.map((entry) => entry.promise))
+      await Promise.race(inFlight.map((entry) => entry.promise));
 
       // Remove settled entries
       for (let j = inFlight.length - 1; j >= 0; j--) {
         if (settled.has(inFlight[j].index)) {
-          inFlight.splice(j, 1)
+          inFlight.splice(j, 1);
         }
       }
     }
@@ -68,8 +68,8 @@ export async function runParallel<T>(
 
   // Throw the first error if any task failed
   if (errors.length > 0) {
-    throw errors[0]
+    throw errors[0];
   }
 
-  return results
+  return results;
 }

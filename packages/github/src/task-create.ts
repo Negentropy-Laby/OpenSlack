@@ -46,13 +46,7 @@ export interface TaskCreationResult extends TaskCreationPreview {
   nodeId?: string;
 }
 
-const DEFAULT_FORBIDDEN_PATHS = [
-  '.env',
-  '*.pem',
-  '*.key',
-  'secrets/**',
-  'credentials/**',
-];
+const DEFAULT_FORBIDDEN_PATHS = ['.env', '*.pem', '*.key', 'secrets/**', 'credentials/**'];
 
 interface TaskTemplateDefaults {
   template: TaskTemplateKind;
@@ -132,13 +126,18 @@ const TEMPLATE_DEFAULTS: Record<TaskTemplateKind, TaskTemplateDefaults> = {
     forbiddenPaths: DEFAULT_FORBIDDEN_PATHS,
     requiredCapabilities: ['investigation'],
     outputContract: ['issue_comment_summary', 'no_change'],
-    successCriteria: ['Current state is documented with evidence', 'Recommended next action is explicit'],
+    successCriteria: [
+      'Current state is documented with evidence',
+      'Recommended next action is explicit',
+    ],
   },
 };
 
 function generateTaskId(now: Date = new Date()): string {
   const year = now.getUTCFullYear();
-  const suffix = Math.floor(now.getTime() % 1_000_000).toString().padStart(6, '0');
+  const suffix = Math.floor(now.getTime() % 1_000_000)
+    .toString()
+    .padStart(6, '0');
   return `TASK-${year}-${suffix}`;
 }
 
@@ -188,7 +187,8 @@ export function previewTaskCreation(input: TaskCreationInput): TaskCreationPrevi
   const forbiddenPaths = unique(input.forbiddenPaths ?? defaults.forbiddenPaths);
   const requiredCapabilities = unique(input.requiredCapabilities ?? defaults.requiredCapabilities);
   const riskZone = classifyPaths(allowedPaths.length > 0 ? allowedPaths : ['docs/**']);
-  const humanApprovalRequiredFor = input.humanApprovalRequiredFor ?? defaults.humanApprovalRequiredFor;
+  const humanApprovalRequiredFor =
+    input.humanApprovalRequiredFor ?? defaults.humanApprovalRequiredFor;
 
   if (riskZone === 'black') {
     errors.push('Black Zone paths are prohibited and cannot be used for task creation.');
@@ -247,7 +247,9 @@ export function previewTaskCreation(input: TaskCreationInput): TaskCreationPrevi
   };
 }
 
-export async function createTaskFromPreview(preview: TaskCreationPreview): Promise<TaskCreationResult> {
+export async function createTaskFromPreview(
+  preview: TaskCreationPreview,
+): Promise<TaskCreationResult> {
   if (preview.errors.length > 0) {
     return { ...preview, created: false };
   }

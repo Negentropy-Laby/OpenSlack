@@ -1,16 +1,8 @@
 import type { Intent, RiskLevel } from './types.js';
 
-const HIGH_RISK_INTENTS = new Set([
-  'pr_merge',
-  'sync_task',
-  'issue_done',
-]);
+const HIGH_RISK_INTENTS = new Set(['pr_merge', 'sync_task', 'issue_done']);
 
-const MEDIUM_RISK_INTENTS = new Set([
-  'pr_watch',
-  'claim_task',
-  'checkout_task',
-]);
+const MEDIUM_RISK_INTENTS = new Set(['pr_watch', 'claim_task', 'checkout_task']);
 
 const SIDE_EFFECT_INTENTS = new Set([
   'pr_merge',
@@ -43,7 +35,10 @@ export function assessRisk(intent: Intent): { level: RiskLevel; explanation?: st
         explanation: `This will mark issue #${issueNumber} as done and clean up its claim ref. The task will be considered complete.`,
       };
     }
-    return { level: 'high', explanation: 'This action modifies external state and cannot be undone easily.' };
+    return {
+      level: 'high',
+      explanation: 'This action modifies external state and cannot be undone easily.',
+    };
   }
 
   if (MEDIUM_RISK_INTENTS.has(intent.kind)) {

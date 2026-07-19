@@ -3,7 +3,20 @@
   "$id": "https://openslack.dev/schemas/agent-registry.schema.json",
   "title": "OpenSlack Agent Registry Entry",
   "type": "object",
-  "required": ["schema", "agent_id", "display_name", "employee_type", "vendor", "employment", "capabilities", "repositories", "workspace_permissions", "execution", "output_contract", "approval_rules"],
+  "required": [
+    "schema",
+    "agent_id",
+    "display_name",
+    "employee_type",
+    "vendor",
+    "employment",
+    "capabilities",
+    "repositories",
+    "workspace_permissions",
+    "execution",
+    "output_contract",
+    "approval_rules"
+  ],
   "properties": {
     "schema": {
       "type": "string",

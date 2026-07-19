@@ -1,17 +1,17 @@
-import type { WorkflowPatternManifest } from './types.js'
-import { getWorkflowPattern } from './pattern-registry.js'
+import type { WorkflowPatternManifest } from './types.js';
+import { getWorkflowPattern } from './pattern-registry.js';
 
 export interface WorkflowCatalogEntry {
-  id: string
-  name: string
-  description: string
-  pattern: string
-  risk: 'low' | 'medium' | 'high'
-  prompt: string
-  appropriateFor: string[]
-  notFor: string[]
-  requiredEvidence: string[]
-  defaultInputs: Record<string, unknown>
+  id: string;
+  name: string;
+  description: string;
+  pattern: string;
+  risk: 'low' | 'medium' | 'high';
+  prompt: string;
+  appropriateFor: string[];
+  notFor: string[];
+  requiredEvidence: string[];
+  defaultInputs: Record<string, unknown>;
 }
 
 const CATALOG: WorkflowCatalogEntry[] = [
@@ -22,7 +22,11 @@ const CATALOG: WorkflowCatalogEntry[] = [
     pattern: 'fanout-synthesize',
     risk: 'low',
     prompt: 'deep research with independent source collection and citation-backed synthesis',
-    appropriateFor: ['cross-checked research', 'external claim verification', 'design background analysis'],
+    appropriateFor: [
+      'cross-checked research',
+      'external claim verification',
+      'design background analysis',
+    ],
     notFor: ['single source lookup', 'quick status question'],
     requiredEvidence: ['citations', 'source summaries', 'synthesis decision'],
     defaultInputs: { scope: '.', objective: 'Produce cited research findings.' },
@@ -70,7 +74,11 @@ const CATALOG: WorkflowCatalogEntry[] = [
     pattern: 'loop-until-done',
     risk: 'medium',
     prompt: 'root-cause investigation with bounded loop until no new causal evidence appears',
-    appropriateFor: ['failing test investigation', 'incident analysis', 'unknown regression source'],
+    appropriateFor: [
+      'failing test investigation',
+      'incident analysis',
+      'unknown regression source',
+    ],
     notFor: ['known small fix'],
     requiredEvidence: ['hypotheses', 'eliminated causes', 'stop condition'],
     defaultInputs: { scope: '.', objective: 'Find root cause with bounded iterations.' },
@@ -130,50 +138,57 @@ const CATALOG: WorkflowCatalogEntry[] = [
     pattern: 'model-router',
     risk: 'low',
     prompt: 'route workflow tasks by model tier and isolation policy',
-    appropriateFor: ['mixed scan/verify/implement plans', 'cost-aware workflow design', 'isolation review'],
+    appropriateFor: [
+      'mixed scan/verify/implement plans',
+      'cost-aware workflow design',
+      'isolation review',
+    ],
     notFor: ['single direct action'],
     requiredEvidence: ['model route', 'isolation route', 'routing reason'],
     defaultInputs: { scope: '.', objective: 'Route tasks by cost and isolation.' },
   },
-]
+];
 
 export function listWorkflowCatalog(): WorkflowCatalogEntry[] {
-  return [...CATALOG]
+  return [...CATALOG];
 }
 
 export function getWorkflowCatalogEntry(id: string): WorkflowCatalogEntry | undefined {
-  return CATALOG.find((entry) => entry.id === id)
+  return CATALOG.find((entry) => entry.id === id);
 }
 
 export function getWorkflowCatalogPattern(entry: WorkflowCatalogEntry): WorkflowPatternManifest {
-  const pattern = getWorkflowPattern(entry.pattern)
-  if (!pattern) throw new Error(`Catalog entry ${entry.id} references unknown pattern ${entry.pattern}`)
-  return pattern
+  const pattern = getWorkflowPattern(entry.pattern);
+  if (!pattern)
+    throw new Error(`Catalog entry ${entry.id} references unknown pattern ${entry.pattern}`);
+  return pattern;
 }
 
 export function renderWorkflowCatalogList(entries = listWorkflowCatalog()): string {
   return [
     '| Catalog | Pattern | Risk | Description |',
     '|---------|---------|------|-------------|',
-    ...entries.map((entry) => `| ${entry.id} | ${entry.pattern} | ${entry.risk} | ${entry.description} |`),
-  ].join('\n')
+    ...entries.map(
+      (entry) => `| ${entry.id} | ${entry.pattern} | ${entry.risk} | ${entry.description} |`,
+    ),
+  ].join('\n');
 }
 
 export function renderWorkflowCatalogEntry(entry: WorkflowCatalogEntry): string {
-  const lines: string[] = []
-  lines.push(`Catalog: ${entry.id}`)
-  lines.push(`Name: ${entry.name}`)
-  lines.push(`Pattern: ${entry.pattern}`)
-  lines.push(`Risk: ${entry.risk}`)
-  lines.push(`Description: ${entry.description}`)
-  lines.push('')
-  lines.push('Appropriate for:')
-  for (const item of entry.appropriateFor) lines.push(`  - ${item}`)
-  lines.push('')
-  lines.push('Not for:')
-  for (const item of entry.notFor) lines.push(`  - ${item}`)
-  lines.push('')
-  lines.push('Required evidence:')
-  for (const item of entry.requiredEvidence) lines.push(`  - ${item}`)
-  return lines.join('\n')
+  const lines: string[] = [];
+  lines.push(`Catalog: ${entry.id}`);
+  lines.push(`Name: ${entry.name}`);
+  lines.push(`Pattern: ${entry.pattern}`);
+  lines.push(`Risk: ${entry.risk}`);
+  lines.push(`Description: ${entry.description}`);
+  lines.push('');
+  lines.push('Appropriate for:');
+  for (const item of entry.appropriateFor) lines.push(`  - ${item}`);
+  lines.push('');
+  lines.push('Not for:');
+  for (const item of entry.notFor) lines.push(`  - ${item}`);
+  lines.push('');
+  lines.push('Required evidence:');
+  for (const item of entry.requiredEvidence) lines.push(`  - ${item}`);
+  return lines.join('\n');
 }

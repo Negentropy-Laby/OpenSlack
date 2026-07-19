@@ -14,7 +14,11 @@ function makeTempRoot(): string {
 }
 
 function cleanup(root: string) {
-  try { rmSync(root, { recursive: true, force: true }); } catch { /* ignore */ }
+  try {
+    rmSync(root, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
 }
 
 describe('BridgeWorktreeGuard', () => {
@@ -145,7 +149,9 @@ describe('BridgeWorktreeGuard', () => {
 
       const transcript = readTranscript(runId, root);
       const event = transcript.find(
-        (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'worktree_boundary_violation',
+        (e) =>
+          e.type === 'progress' &&
+          (e.data as Record<string, unknown>).step === 'worktree_boundary_violation',
       );
       expect(event).toBeDefined();
     });
@@ -187,10 +193,14 @@ describe('BridgeWorktreeGuard', () => {
       const guard = new BridgeWorktreeGuard(recorder, 'RUN-1');
       const config = BridgeWorktreeGuard.buildConfig('/tmp/worktree-1');
 
-      const result = guard.validateToolEvent('Bash', {
-        cwd: '/tmp/worktree-1',
-        directory: '/tmp/worktree-1/src',
-      }, config);
+      const result = guard.validateToolEvent(
+        'Bash',
+        {
+          cwd: '/tmp/worktree-1',
+          directory: '/tmp/worktree-1/src',
+        },
+        config,
+      );
       expect(result.valid).toBe(true);
     });
 
@@ -199,27 +209,43 @@ describe('BridgeWorktreeGuard', () => {
       const config = BridgeWorktreeGuard.buildConfig('/tmp/worktree-1');
 
       // destination within worktree — should pass
-      const result1 = guard.validateToolEvent('Write', {
-        destination: '/tmp/worktree-1/output.txt',
-      }, config);
+      const result1 = guard.validateToolEvent(
+        'Write',
+        {
+          destination: '/tmp/worktree-1/output.txt',
+        },
+        config,
+      );
       expect(result1.valid).toBe(true);
 
       // target outside worktree — should fail
-      const result2 = guard.validateToolEvent('Write', {
-        target: '/etc/passwd',
-      }, config);
+      const result2 = guard.validateToolEvent(
+        'Write',
+        {
+          target: '/etc/passwd',
+        },
+        config,
+      );
       expect(result2.valid).toBe(false);
 
       // file_path outside worktree — should fail
-      const result3 = guard.validateToolEvent('Read', {
-        file_path: '/etc/shadow',
-      }, config);
+      const result3 = guard.validateToolEvent(
+        'Read',
+        {
+          file_path: '/etc/shadow',
+        },
+        config,
+      );
       expect(result3.valid).toBe(false);
 
       // outputPath within worktree — should pass
-      const result4 = guard.validateToolEvent('Tool', {
-        outputPath: '/tmp/worktree-1/build/',
-      }, config);
+      const result4 = guard.validateToolEvent(
+        'Tool',
+        {
+          outputPath: '/tmp/worktree-1/build/',
+        },
+        config,
+      );
       expect(result4.valid).toBe(true);
     });
   });
@@ -245,7 +271,9 @@ describe('BridgeWorktreeGuard', () => {
 
       const transcript = readTranscript(runId, root);
       const event = transcript.find(
-        (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'bridge_worktree_post_validation',
+        (e) =>
+          e.type === 'progress' &&
+          (e.data as Record<string, unknown>).step === 'bridge_worktree_post_validation',
       );
       expect(event).toBeDefined();
       expect((event!.data as Record<string, unknown>).worktreePath).toBe('/tmp/worktree-1');

@@ -30,13 +30,13 @@ dashboard projection, and dry-run-first repair flows are implemented.
 
 The current product surface has five active modules.
 
-| Module | User-facing value | Current UX maturity |
-|---|---|---|
-| Self-Evolution Kernel | Keeps OpenSlack safe while it changes itself through risk classification, validation, golden evals, self-observe, triage, scorecards, and rollback paths. | Strong for maintainers; still technical for non-maintainers. |
-| GitHub Issues Task Loop | Lets agents discover, claim, work, and complete tasks through GitHub Issues and deterministic claim refs. | Core loop plus typed task creation and dry-run repair UX are active. |
-| Operator Interface | Provides `setup`, `status`, `doctor`, and `ask` as safer human entrypoints over lower-level CLI commands. | Typed planner, optional LLM fallback, setup report, and 24h pending plan memory are active. |
-| PR Review & Merge Steward | Diagnoses PR readiness, checks governance gates, filters invalid approvals, detects deadlocks, and merges only after all gates pass. | Mature governance flow with action-oriented summaries and PR queue active. |
-| Collaboration Layer | Records collaboration events and renders activity, digest, handoff, decision, room, workflow, and dashboard views. | Projection-only observability substrate with CLI team dashboard active. |
+| Module                    | User-facing value                                                                                                                                         | Current UX maturity                                                                         |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Self-Evolution Kernel     | Keeps OpenSlack safe while it changes itself through risk classification, validation, golden evals, self-observe, triage, scorecards, and rollback paths. | Strong for maintainers; still technical for non-maintainers.                                |
+| GitHub Issues Task Loop   | Lets agents discover, claim, work, and complete tasks through GitHub Issues and deterministic claim refs.                                                 | Core loop plus typed task creation and dry-run repair UX are active.                        |
+| Operator Interface        | Provides `setup`, `status`, `doctor`, and `ask` as safer human entrypoints over lower-level CLI commands.                                                 | Typed planner, optional LLM fallback, setup report, and 24h pending plan memory are active. |
+| PR Review & Merge Steward | Diagnoses PR readiness, checks governance gates, filters invalid approvals, detects deadlocks, and merges only after all gates pass.                      | Mature governance flow with action-oriented summaries and PR queue active.                  |
+| Collaboration Layer       | Records collaboration events and renders activity, digest, handoff, decision, room, workflow, and dashboard views.                                        | Projection-only observability substrate with CLI team dashboard active.                     |
 
 Supporting surfaces:
 
@@ -342,7 +342,7 @@ Planned work:
   and authenticated GitHub identity when available.
 - Add a pure authorization function in the policy/kernel boundary:
   `authorizeAgentAction({ principal, actionId, paths, riskZone, sideEffects,
-  githubOperation })`. The decision must be `allow`, `ask`, or `deny`, with
+githubOperation })`. The decision must be `allow`, `ask`, or `deny`, with
   reason and evidence.
 - Replace ad hoc capability parsing in the task loop with a typed registry
   parser and schema validation. Capability and risk matching should consume

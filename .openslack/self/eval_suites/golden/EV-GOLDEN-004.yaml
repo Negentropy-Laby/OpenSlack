@@ -1,14 +1,14 @@
 id: EV-GOLDEN-004
-title: "Concurrent claim — only one succeeds"
-goal: "Concurrent agents cannot claim the same task."
+title: 'Concurrent claim — only one succeeds'
+goal: 'Concurrent agents cannot claim the same task.'
 on_failure: block_pr_critical_alert
 scenario:
-  description: "10 agents attempt to claim the same task concurrently"
+  description: '10 agents attempt to claim the same task concurrently'
   parameters:
     agents: 10
     task: TASK-FAKE-001
 assertions:
-  - description: "Only one claim is granted"
-    check: "granted_claims == 1"
-  - description: "All 9 other claims are denied"
-    check: "denied_claims == 9"
+  - description: 'Only one claim is granted'
+    check: 'granted_claims == 1'
+  - description: 'All 9 other claims are denied'
+    check: 'denied_claims == 9'

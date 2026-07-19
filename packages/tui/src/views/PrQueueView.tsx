@@ -1,42 +1,38 @@
-import React from 'react'
-import Box from '../ink/components/Box.js'
-import Text from '../ink/components/Text.js'
-import useApp from '../ink/hooks/use-app.js'
-import useInput from '../ink/hooks/use-input.js'
-import Pane from '../design-system/Pane.js'
-import ThemedText from '../design-system/ThemedText.js'
-import ListItem from '../design-system/ListItem.js'
-import Divider from '../design-system/Divider.js'
-import StatusIcon from '../design-system/StatusIcon.js'
-import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
-import type { PrQueueViewModel } from '../view-models/pr-queue.js'
+import React from 'react';
+import Box from '../ink/components/Box.js';
+import Text from '../ink/components/Text.js';
+import useApp from '../ink/hooks/use-app.js';
+import useInput from '../ink/hooks/use-input.js';
+import Pane from '../design-system/Pane.js';
+import ThemedText from '../design-system/ThemedText.js';
+import ListItem from '../design-system/ListItem.js';
+import Divider from '../design-system/Divider.js';
+import StatusIcon from '../design-system/StatusIcon.js';
+import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js';
+import type { PrQueueViewModel } from '../view-models/pr-queue.js';
 
 export type PrQueueViewProps = {
-  model: PrQueueViewModel
-  onBack?: () => void
-}
+  model: PrQueueViewModel;
+  onBack?: () => void;
+};
 
 function statusForItem(item: PrQueueViewModel['items'][number]): 'PASS' | 'FAIL' | 'WARN' | 'info' {
-  if (item.canMerge) return 'PASS'
-  if (item.blockerCategory === 'checks') return 'WARN'
-  if (item.blockerCategory !== 'none') return 'FAIL'
-  return 'info'
+  if (item.canMerge) return 'PASS';
+  if (item.blockerCategory === 'checks') return 'WARN';
+  if (item.blockerCategory !== 'none') return 'FAIL';
+  return 'info';
 }
 
 function renderWorkflowGate(
   gate: PrQueueViewModel['items'][number]['workflowGate'],
 ): React.ReactNode {
-  if (!gate.touched) return null
+  if (!gate.touched) return null;
 
   return React.createElement(
     Box,
     { flexDirection: 'column', marginLeft: 3, marginTop: 0 },
-    React.createElement(
-      ThemedText,
-      { colorTheme: 'accent', bold: true },
-      'Workflow Gate:',
-    ),
-    ...gate.criteria.map(criterion =>
+    React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, 'Workflow Gate:'),
+    ...gate.criteria.map((criterion) =>
       React.createElement(
         Box,
         { flexDirection: 'row', key: criterion.name, marginLeft: 2 },
@@ -57,27 +53,24 @@ function renderWorkflowGate(
       ? React.createElement(
           Box,
           { marginLeft: 2 },
-          React.createElement(
-            ThemedText,
-            { colorTheme: 'warning' },
-            '(no criteria defined)',
-          ),
+          React.createElement(ThemedText, { colorTheme: 'warning' }, '(no criteria defined)'),
         )
       : null,
-  )
+  );
 }
 
 export default function PrQueueView({ model, onBack }: PrQueueViewProps): React.JSX.Element {
-  const { exit } = useApp()
+  const { exit } = useApp();
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
-      if (onBack) onBack()
-      else exit()
+      if (onBack) onBack();
+      else exit();
     }
-  })
+  });
 
-  const summaryCategory = model.blockedCount > 0 ? 'fail' : model.pendingCount > 0 ? 'warn' : 'pass'
+  const summaryCategory =
+    model.blockedCount > 0 ? 'fail' : model.pendingCount > 0 ? 'warn' : 'pass';
 
   return React.createElement(
     Box,
@@ -107,7 +100,7 @@ export default function PrQueueView({ model, onBack }: PrQueueViewProps): React.
       ? React.createElement(
           Pane,
           { title: 'Pull Requests', marginY: 0 },
-          ...model.items.map(item =>
+          ...model.items.map((item) =>
             React.createElement(
               Box,
               { key: item.prNumber, flexDirection: 'column', marginY: 0 },
@@ -129,5 +122,5 @@ export default function PrQueueView({ model, onBack }: PrQueueViewProps): React.
       { flexDirection: 'row' },
       React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'exit' }),
     ),
-  )
+  );
 }

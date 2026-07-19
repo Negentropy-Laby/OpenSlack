@@ -1,46 +1,88 @@
 export type ActorKind = 'human' | 'agent' | 'system' | 'github' | 'chat';
 export type Provider = 'cli' | 'slack' | 'webhook' | 'github';
-export type ObjectKind = 'issue' | 'pr' | 'plan' | 'module' | 'agent' | 'handoff' | 'decision' | 'workspace' | 'workflow';
+export type ObjectKind =
+  | 'issue'
+  | 'pr'
+  | 'plan'
+  | 'module'
+  | 'agent'
+  | 'handoff'
+  | 'decision'
+  | 'workspace'
+  | 'workflow';
 export type SourceKind = 'github' | 'openslack' | 'chat' | 'prms' | 'operator' | 'governance';
 export type RiskLevel = 'none' | 'low' | 'medium' | 'high';
 export type Severity = 'info' | 'notice' | 'warning' | 'critical';
 export type Visibility = 'local' | 'workspace' | 'chat';
 
 export type TaskEvent =
-  | 'task.created' | 'task.claimed' | 'task.blocked' | 'task.done' | 'task.released' | 'task.expired';
+  | 'task.created'
+  | 'task.claimed'
+  | 'task.blocked'
+  | 'task.done'
+  | 'task.released'
+  | 'task.expired';
 
 export type PRMSEvent =
-  | 'pr.opened' | 'pr.doctor.ready' | 'pr.doctor.blocked'
-  | 'pr.review.commented' | 'pr.watch.started' | 'pr.watch.completed'
-  | 'pr.merge.requested' | 'pr.merge.confirmed' | 'pr.merge.completed' | 'pr.merge.blocked';
+  | 'pr.opened'
+  | 'pr.doctor.ready'
+  | 'pr.doctor.blocked'
+  | 'pr.review.commented'
+  | 'pr.watch.started'
+  | 'pr.watch.completed'
+  | 'pr.merge.requested'
+  | 'pr.merge.confirmed'
+  | 'pr.merge.completed'
+  | 'pr.merge.blocked';
 
 export type OperatorEvent =
-  | 'operator.intent.parsed' | 'operator.plan.created' | 'operator.plan.blocked'
-  | 'operator.execution.started' | 'operator.execution.completed' | 'operator.execution.failed';
+  | 'operator.intent.parsed'
+  | 'operator.plan.created'
+  | 'operator.plan.blocked'
+  | 'operator.execution.started'
+  | 'operator.execution.completed'
+  | 'operator.execution.failed';
 
 export type ChatEvent =
-  | 'chat.message.received' | 'chat.message.duplicate_dropped'
-  | 'chat.plan.confirmation_requested' | 'chat.plan.confirmed' | 'chat.plan.cancelled' | 'chat.plan.expired';
+  | 'chat.message.received'
+  | 'chat.message.duplicate_dropped'
+  | 'chat.plan.confirmation_requested'
+  | 'chat.plan.confirmed'
+  | 'chat.plan.cancelled'
+  | 'chat.plan.expired';
 
 export type GovernanceEvent =
-  | 'governance.audit.passed' | 'governance.audit.failed'
-  | 'governance.direct_commit.explained' | 'governance.direct_commit.unexplained';
+  | 'governance.audit.passed'
+  | 'governance.audit.failed'
+  | 'governance.direct_commit.explained'
+  | 'governance.direct_commit.unexplained';
 
 export type CollaborationObjectEvent =
-  | 'handoff.created' | 'handoff.accepted' | 'handoff.closed'
-  | 'decision.recorded' | 'decision.superseded'
-  | 'room.summarized' | 'digest.generated'
-  | 'workflow.previewed' | 'workflow.started' | 'workflow.completed' | 'workflow.blocked'
-  | 'profile_sync.triggered' | 'profile_sync.queued' | 'profile_sync.started' | 'profile_sync.completed' | 'profile_sync.failed';
+  | 'handoff.created'
+  | 'handoff.accepted'
+  | 'handoff.closed'
+  | 'decision.recorded'
+  | 'decision.superseded'
+  | 'room.summarized'
+  | 'digest.generated'
+  | 'workflow.previewed'
+  | 'workflow.started'
+  | 'workflow.completed'
+  | 'workflow.blocked'
+  | 'profile_sync.triggered'
+  | 'profile_sync.queued'
+  | 'profile_sync.started'
+  | 'profile_sync.completed'
+  | 'profile_sync.failed';
 
-export type RepairEvent =
-  | 'repair.previewed' | 'repair.applied' | 'repair.failed';
+export type RepairEvent = 'repair.previewed' | 'repair.applied' | 'repair.failed';
 
-export type NotificationEvent =
-  | 'notification.sent' | 'notification.failed';
+export type NotificationEvent = 'notification.sent' | 'notification.failed';
 
 export type AgentConversationEventType =
-  | 'agent.conversation.started' | 'agent.conversation.completed' | 'agent.conversation.failed';
+  | 'agent.conversation.started'
+  | 'agent.conversation.completed'
+  | 'agent.conversation.failed';
 
 export type CollaborationEventType =
   | TaskEvent

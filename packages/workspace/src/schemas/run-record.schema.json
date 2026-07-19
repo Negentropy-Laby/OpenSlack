@@ -3,19 +3,34 @@
   "$id": "https://openslack.dev/schemas/run-record.schema.json",
   "title": "OpenSlack Agent Run Record",
   "type": "object",
-  "required": ["schema", "id", "task_id", "lease_id", "agent_id", "status", "started_at", "worktree_path"],
+  "required": [
+    "schema",
+    "id",
+    "task_id",
+    "lease_id",
+    "agent_id",
+    "status",
+    "started_at",
+    "worktree_path"
+  ],
   "properties": {
     "schema": { "type": "string", "const": "openslack.run_record.v1" },
     "id": { "type": "string", "pattern": "^RUN-\\d{4}-\\d{6}$" },
     "task_id": { "type": "string" },
     "lease_id": { "type": "string" },
     "agent_id": { "type": "string" },
-    "status": { "type": "string", "enum": ["setup", "running", "validating", "completed", "blocked", "cancelled"] },
+    "status": {
+      "type": "string",
+      "enum": ["setup", "running", "validating", "completed", "blocked", "cancelled"]
+    },
     "started_at": { "type": "string", "format": "date-time" },
     "completed_at": { "type": "string", "format": "date-time" },
     "worktree_path": { "type": "string" },
     "branch": { "type": "string" },
-    "output_type": { "type": "string", "enum": ["workspace_pr", "product_pr", "review_comment", "research_memo", "none"] },
+    "output_type": {
+      "type": "string",
+      "enum": ["workspace_pr", "product_pr", "review_comment", "research_memo", "none"]
+    },
     "pr_number": { "type": "integer" },
     "pr_url": { "type": "string" },
     "changed_paths": { "type": "array", "items": { "type": "string" } },

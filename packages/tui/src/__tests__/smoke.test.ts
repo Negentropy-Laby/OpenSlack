@@ -22,7 +22,9 @@ describe('@openslack/tui smoke test', () => {
 
   it('can create React elements with Box and Text', async () => {
     const { Box, Text } = await import('@openslack/tui');
-    const element = React.createElement(Box, { flexDirection: 'column' },
+    const element = React.createElement(
+      Box,
+      { flexDirection: 'column' },
       React.createElement(Text, null, 'Hello TUI'),
     );
     expect(element).toBeDefined();

@@ -8,7 +8,10 @@
     "schema": { "type": "string", "const": "openslack.github_issue_task.v1" },
     "task_id": { "type": "string", "pattern": "^TASK-\\d{4}-\\d{6}$" },
     "title": { "type": "string", "minLength": 1 },
-    "status": { "type": "string", "enum": ["ready", "claimed", "running", "review", "done", "blocked"] },
+    "status": {
+      "type": "string",
+      "enum": ["ready", "claimed", "running", "review", "done", "blocked"]
+    },
     "task_type": { "type": "string" },
     "agent_type": { "type": "string" },
     "risk_level": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
@@ -30,7 +33,10 @@
     },
     "output_contract": {
       "type": "array",
-      "items": { "type": "string", "enum": ["draft_pr", "issue_comment_summary", "workspace_run_record", "no_change"] },
+      "items": {
+        "type": "string",
+        "enum": ["draft_pr", "issue_comment_summary", "workspace_run_record", "no_change"]
+      },
       "uniqueItems": true
     },
     "success_criteria": {
@@ -39,7 +45,10 @@
     },
     "human_approval_required_for": {
       "type": "array",
-      "items": { "type": "string", "enum": ["red_zone_change", "merge_main", "external_message", "policy_change"] }
+      "items": {
+        "type": "string",
+        "enum": ["red_zone_change", "merge_main", "external_message", "policy_change"]
+      }
     },
     "lease": {
       "type": "object",

@@ -34,7 +34,10 @@ describe('createRollbackTask', () => {
 
   it('creates a rollback EVOL YAML file with correct name', () => {
     const root = makeRepoRoot();
-    const result = createRollbackTask('EXP-FAKE-ROLLBACK', { root, now: new Date('2026-05-24T00:00:00.000Z') });
+    const result = createRollbackTask('EXP-FAKE-ROLLBACK', {
+      root,
+      now: new Date('2026-05-24T00:00:00.000Z'),
+    });
 
     expect(result).toMatchObject({ created: true, updatedExisting: false, reason: 'created' });
     expect(result.taskId).toMatch(/^EVOL-2026-\d{6}$/);
@@ -43,8 +46,14 @@ describe('createRollbackTask', () => {
 
   it('deduplicates active rollback proposals for the same experiment', () => {
     const root = makeRepoRoot();
-    const first = createRollbackTask('EXP-DEDUP-001', { root, now: new Date('2026-05-24T00:00:00.000Z') });
-    const second = createRollbackTask('EXP-DEDUP-001', { root, now: new Date('2026-05-24T00:05:00.000Z') });
+    const first = createRollbackTask('EXP-DEDUP-001', {
+      root,
+      now: new Date('2026-05-24T00:00:00.000Z'),
+    });
+    const second = createRollbackTask('EXP-DEDUP-001', {
+      root,
+      now: new Date('2026-05-24T00:05:00.000Z'),
+    });
 
     expect(second).toEqual({
       taskId: first.taskId,
@@ -61,8 +70,15 @@ describe('createRollbackTask', () => {
     const root = makeRepoRoot();
     const result = createRollbackTask('EXP-TEST-ROLLBACK', { root });
 
-    expect(result).toEqual({ taskId: null, created: false, updatedExisting: false, reason: 'test_artifact' });
-    expect(existsSync(join(root, '.openslack', 'self', 'evolution_backlog', 'EVOL-2026-000001.yaml'))).toBe(false);
+    expect(result).toEqual({
+      taskId: null,
+      created: false,
+      updatedExisting: false,
+      reason: 'test_artifact',
+    });
+    expect(
+      existsSync(join(root, '.openslack', 'self', 'evolution_backlog', 'EVOL-2026-000001.yaml')),
+    ).toBe(false);
   });
 
   it('keeps retry and TTL thresholds in one exported location', () => {
@@ -72,25 +88,42 @@ describe('createRollbackTask', () => {
 
   it('rate limits new proposals when a recent non-active proposal exists', () => {
     const root = makeRepoRoot();
-    const first = createRollbackTask('EXP-RATE-001', { root, now: new Date('2026-05-24T00:00:00.000Z') });
+    const first = createRollbackTask('EXP-RATE-001', {
+      root,
+      now: new Date('2026-05-24T00:00:00.000Z'),
+    });
     const yamlPath = backlogPath(root, first.taskId!);
     const task = parseYaml(readFileSync(yamlPath, 'utf-8')) as Record<string, unknown>;
     task.status = 'rejected';
     writeFileSync(yamlPath, stringifyYaml(task), 'utf-8');
 
-    const second = createRollbackTask('EXP-RATE-001', { root, now: new Date('2026-05-24T00:30:00.000Z') });
+    const second = createRollbackTask('EXP-RATE-001', {
+      root,
+      now: new Date('2026-05-24T00:30:00.000Z'),
+    });
 
-    expect(second).toEqual({ taskId: first.taskId, created: false, updatedExisting: false, reason: 'rate_limited' });
+    expect(second).toEqual({
+      taskId: first.taskId,
+      created: false,
+      updatedExisting: false,
+      reason: 'rate_limited',
+    });
   });
 
   it('expires stale rollback proposals using a schema-valid rejected status', () => {
     const root = makeRepoRoot();
-    const result = createRollbackTask('EXP-STALE-001', { root, now: new Date('2026-05-01T00:00:00.000Z') });
+    const result = createRollbackTask('EXP-STALE-001', {
+      root,
+      now: new Date('2026-05-01T00:00:00.000Z'),
+    });
 
     const expired = expireStaleRollbackTasks({ root, now: new Date('2026-05-24T00:00:00.000Z') });
 
     expect(expired.expiredTaskIds).toEqual([result.taskId]);
-    const task = parseYaml(readFileSync(backlogPath(root, result.taskId!), 'utf-8')) as Record<string, unknown>;
+    const task = parseYaml(readFileSync(backlogPath(root, result.taskId!), 'utf-8')) as Record<
+      string,
+      unknown
+    >;
     expect(task.status).toBe('rejected');
   });
 });

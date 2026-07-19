@@ -60,13 +60,7 @@ export class BridgeLifecycleMapper {
    * Called when a bridge session encounters an error.
    * Emits: `bridge_session_failed` progress event with error details.
    */
-  onSessionError(
-    error: {
-      kind: BridgeErrorKind;
-      message: string;
-      sessionId?: string;
-    },
-  ): void {
+  onSessionError(error: { kind: BridgeErrorKind; message: string; sessionId?: string }): void {
     if (!this.recorder) return;
     this.recorder.progress(this.runId, {
       step: 'bridge_session_failed',

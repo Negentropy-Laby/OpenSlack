@@ -16,13 +16,13 @@ const mockedExecFileSync = execFileSync as unknown as ReturnType<typeof vi.fn>;
 
 /** Return all execFileSync calls that invoke git worktree (not rev-parse from findRepoRoot). */
 function worktreeCalls() {
-  return mockedExecFileSync.mock.calls.filter((call) =>
-    call[1]?.includes?.('worktree'),
-  );
+  return mockedExecFileSync.mock.calls.filter((call) => call[1]?.includes?.('worktree'));
 }
 
 describe('assertSafeSegment (via createWorktree)', () => {
-  beforeEach(() => { mockedExecFileSync.mockClear(); });
+  beforeEach(() => {
+    mockedExecFileSync.mockClear();
+  });
 
   it('rejects agentId with shell metacharacters', () => {
     expect(() => createWorktree('task-1', 'agent;rm -rf /', 'run-1')).toThrow(/Invalid agentId/);
@@ -40,12 +40,16 @@ describe('assertSafeSegment (via createWorktree)', () => {
   });
 
   it('rejects path traversal in agentId', () => {
-    expect(() => createWorktree('task-1', '../etc/passwd', 'run-1')).toThrow(/Invalid agentId.*path traversal/);
+    expect(() => createWorktree('task-1', '../etc/passwd', 'run-1')).toThrow(
+      /Invalid agentId.*path traversal/,
+    );
     expect(worktreeCalls()).toHaveLength(0);
   });
 
   it('rejects path traversal in taskId', () => {
-    expect(() => createWorktree('../../etc', 'agent-1', 'run-1')).toThrow(/Invalid taskId.*path traversal/);
+    expect(() => createWorktree('../../etc', 'agent-1', 'run-1')).toThrow(
+      /Invalid taskId.*path traversal/,
+    );
     expect(worktreeCalls()).toHaveLength(0);
   });
 
@@ -65,7 +69,14 @@ describe('assertSafeSegment (via createWorktree)', () => {
     expect(result.success).toBe(true);
     expect(mockedExecFileSync).toHaveBeenCalledWith(
       'git',
-      expect.arrayContaining(['worktree', 'add', '-b', 'agent/my_agent/task-123/run-456', expect.any(String), 'HEAD']),
+      expect.arrayContaining([
+        'worktree',
+        'add',
+        '-b',
+        'agent/my_agent/task-123/run-456',
+        expect.any(String),
+        'HEAD',
+      ]),
       expect.any(Object),
     );
   });
@@ -84,7 +95,9 @@ describe('assertSafeSegment (via createWorktree)', () => {
 });
 
 describe('assertSafeSegment (via cleanupWorktree)', () => {
-  beforeEach(() => { mockedExecFileSync.mockClear(); });
+  beforeEach(() => {
+    mockedExecFileSync.mockClear();
+  });
 
   it('rejects runId with shell metacharacters', () => {
     expect(() => cleanupWorktree('run;rm -rf /')).toThrow(/Invalid runId/);
@@ -127,11 +140,11 @@ describe('assertSafeSegment (via cleanupWorktree)', () => {
         // Mix of canonical and non-canonical branch names ending in /run-456
         return Buffer.from(
           // Too few segments: agent/runId (no agentId or taskId)
-          'agent/run-456\n'
-          // Canonical 4-segment: agent/<agentId>/<taskId>/<runId> — SHOULD be deleted
-          + 'agent/my_agent/task-123/run-456\n'
-          // Too many segments: agent/a/b/c/run-456
-          + 'agent/a/b/c/run-456\n',
+          'agent/run-456\n' +
+            // Canonical 4-segment: agent/<agentId>/<taskId>/<runId> — SHOULD be deleted
+            'agent/my_agent/task-123/run-456\n' +
+            // Too many segments: agent/a/b/c/run-456
+            'agent/a/b/c/run-456\n',
         );
       }
       return Buffer.from('');

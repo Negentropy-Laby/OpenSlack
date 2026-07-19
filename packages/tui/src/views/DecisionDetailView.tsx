@@ -1,31 +1,34 @@
-import React from 'react'
-import Box from '../ink/components/Box.js'
-import Text from '../ink/components/Text.js'
-import useApp from '../ink/hooks/use-app.js'
-import useInput from '../ink/hooks/use-input.js'
-import Pane from '../design-system/Pane.js'
-import ThemedText from '../design-system/ThemedText.js'
-import Divider from '../design-system/Divider.js'
-import StatusIcon from '../design-system/StatusIcon.js'
-import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
-import type { DecisionDetailViewModel } from '../view-models/decision.js'
+import React from 'react';
+import Box from '../ink/components/Box.js';
+import Text from '../ink/components/Text.js';
+import useApp from '../ink/hooks/use-app.js';
+import useInput from '../ink/hooks/use-input.js';
+import Pane from '../design-system/Pane.js';
+import ThemedText from '../design-system/ThemedText.js';
+import Divider from '../design-system/Divider.js';
+import StatusIcon from '../design-system/StatusIcon.js';
+import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js';
+import type { DecisionDetailViewModel } from '../view-models/decision.js';
 
 export type DecisionDetailViewProps = {
-  model: DecisionDetailViewModel
-  onBack?: () => void
-}
+  model: DecisionDetailViewModel;
+  onBack?: () => void;
+};
 
-export default function DecisionDetailView({ model, onBack }: DecisionDetailViewProps): React.JSX.Element {
-  const { exit } = useApp()
+export default function DecisionDetailView({
+  model,
+  onBack,
+}: DecisionDetailViewProps): React.JSX.Element {
+  const { exit } = useApp();
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
-      if (onBack) onBack()
-      else exit()
+      if (onBack) onBack();
+      else exit();
     }
-  })
+  });
 
-  const statusIcon = model.status === 'active' ? 'pass' : 'warn'
+  const statusIcon = model.status === 'active' ? 'pass' : 'warn';
 
   return React.createElement(
     Box,
@@ -40,7 +43,11 @@ export default function DecisionDetailView({ model, onBack }: DecisionDetailView
       { flexDirection: 'row' },
       React.createElement(StatusIcon, { category: statusIcon }),
       React.createElement(Text, null, ' '),
-      React.createElement(ThemedText, { colorTheme: 'foreground', bold: true }, `Status: ${model.status}`),
+      React.createElement(
+        ThemedText,
+        { colorTheme: 'foreground', bold: true },
+        `Status: ${model.status}`,
+      ),
     ),
 
     // Core details
@@ -53,13 +60,19 @@ export default function DecisionDetailView({ model, onBack }: DecisionDetailView
       React.createElement(ThemedText, { colorTheme: 'foreground', bold: true }, 'Decision'),
       React.createElement(ThemedText, { colorTheme: 'foreground' }, model.decision),
       React.createElement(Text, null, ''),
-      React.createElement(ThemedText, { colorTheme: 'muted' }, `By: ${model.decidedBy} · Created: ${model.createdAt}`),
+      React.createElement(
+        ThemedText,
+        { colorTheme: 'muted' },
+        `By: ${model.decidedBy} · Created: ${model.createdAt}`,
+      ),
     ),
 
     React.createElement(Divider, { length: 40 }),
 
     // Rationale
-    React.createElement(Pane, { title: 'Rationale', marginY: 0 },
+    React.createElement(
+      Pane,
+      { title: 'Rationale', marginY: 0 },
       React.createElement(ThemedText, { colorTheme: 'foreground' }, model.rationale),
     ),
 
@@ -114,8 +127,14 @@ export default function DecisionDetailView({ model, onBack }: DecisionDetailView
       ? React.createElement(
           Pane,
           { title: 'Superseded', marginY: 0 },
-          React.createElement(ThemedText, { colorTheme: 'warning' }, `Superseded by: ${model.supersededBy}`),
-          model.supersededAt ? React.createElement(ThemedText, { colorTheme: 'muted' }, `At: ${model.supersededAt}`) : null,
+          React.createElement(
+            ThemedText,
+            { colorTheme: 'warning' },
+            `Superseded by: ${model.supersededBy}`,
+          ),
+          model.supersededAt
+            ? React.createElement(ThemedText, { colorTheme: 'muted' }, `At: ${model.supersededAt}`)
+            : null,
         )
       : null,
 
@@ -126,5 +145,5 @@ export default function DecisionDetailView({ model, onBack }: DecisionDetailView
       { flexDirection: 'row' },
       React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'back' }),
     ),
-  )
+  );
 }

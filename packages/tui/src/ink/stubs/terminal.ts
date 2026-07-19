@@ -3,18 +3,18 @@
  */
 
 export type Progress = {
-  state: 'running' | 'completed' | 'error' | 'indeterminate'
-  percentage?: number
-}
+  state: 'running' | 'completed' | 'error' | 'indeterminate';
+  percentage?: number;
+};
 
 export function isProgressReportingAvailable(): boolean {
-  return false
+  return false;
 }
 
 export function isXtermJs(): boolean {
-  return false
+  return false;
 }
 
 export function isSynchronizedOutputSupported(): boolean {
-  return false
+  return false;
 }

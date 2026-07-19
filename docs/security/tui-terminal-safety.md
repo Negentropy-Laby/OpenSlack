@@ -44,15 +44,17 @@ at the view-model boundary:
 
 ```typescript
 export function sanitizeTerminalText(input: string): string {
-  return input
-    // CSI sequences: ECMA-48 form covers private/intermediate bytes
-    // \x1b [ <0-?>* <space-/>* <@-~>
-    // Matches: \x1b[2J, \x1b[?1049h, \x1b[?25l, \x1b[31m, \x1b[>c, etc.
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
-    // OSC sequences: \x1b] ... terminated by BEL(\x07) or ST(\x1b\\)
-    .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '')
-    // C0 controls except \n(\x0a) and \t(\x09)
-    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
+  return (
+    input
+      // CSI sequences: ECMA-48 form covers private/intermediate bytes
+      // \x1b [ <0-?>* <space-/>* <@-~>
+      // Matches: \x1b[2J, \x1b[?1049h, \x1b[?25l, \x1b[31m, \x1b[>c, etc.
+      .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
+      // OSC sequences: \x1b] ... terminated by BEL(\x07) or ST(\x1b\\)
+      .replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '')
+      // C0 controls except \n(\x0a) and \t(\x09)
+      .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '')
+  );
 }
 ```
 
@@ -61,22 +63,22 @@ derived from external sources before returning the view model.
 
 ## Required Tests
 
-| Test case | Input | Expected |
-|-----------|-------|----------|
-| Clipboard OSC injection | `"hello\x1b]52;c;$(whoami)\x07world"` | `"helloworld"` |
-| Screen clear | `"title\x1b[2Jtext"` | `"titletext"` |
-| Cursor home | `"foo\x1b[Hbar"` | `"foobar"` |
-| ANSI color injection | `"\x1b[31mred\x1b[0m"` | `"red"` |
-| Window title | `"\x1b]0;evil\x07text"` | `"text"` |
-| C0 bell | `"alert\x07text"` | `"alerttext"` |
-| Alternate screen enter | `"\x1b[?1049h"` | `""` |
-| Cursor hide | `"\x1b[?25l"` | `""` |
-| Device attributes (private CSI) | `"\x1b[>c"` | `""` |
-| CSI with intermediate | `"\x1b[ ?2004h"` | `""` |
-| Preserves newlines | `"line1\nline2"` | `"line1\nline2"` |
-| Preserves tabs | `"col1\tcol2"` | `"col1\tcol2"` |
-| Preserves Unicode | `"日本語テスト"` | `"日本語テスト"` |
-| Empty string | `""` | `""` |
+| Test case                       | Input                                 | Expected         |
+| ------------------------------- | ------------------------------------- | ---------------- |
+| Clipboard OSC injection         | `"hello\x1b]52;c;$(whoami)\x07world"` | `"helloworld"`   |
+| Screen clear                    | `"title\x1b[2Jtext"`                  | `"titletext"`    |
+| Cursor home                     | `"foo\x1b[Hbar"`                      | `"foobar"`       |
+| ANSI color injection            | `"\x1b[31mred\x1b[0m"`                | `"red"`          |
+| Window title                    | `"\x1b]0;evil\x07text"`               | `"text"`         |
+| C0 bell                         | `"alert\x07text"`                     | `"alerttext"`    |
+| Alternate screen enter          | `"\x1b[?1049h"`                       | `""`             |
+| Cursor hide                     | `"\x1b[?25l"`                         | `""`             |
+| Device attributes (private CSI) | `"\x1b[>c"`                           | `""`             |
+| CSI with intermediate           | `"\x1b[ ?2004h"`                      | `""`             |
+| Preserves newlines              | `"line1\nline2"`                      | `"line1\nline2"` |
+| Preserves tabs                  | `"col1\tcol2"`                        | `"col1\tcol2"`   |
+| Preserves Unicode               | `"日本語テスト"`                      | `"日本語テスト"` |
+| Empty string                    | `""`                                  | `""`             |
 
 ## Scope of Application
 

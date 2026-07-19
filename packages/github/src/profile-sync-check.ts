@@ -37,15 +37,9 @@ export interface ProfileSyncCheckResult {
 
 // ── Check ─────────────────────────────────────────────────────────────────────
 
-export async function checkProfileSync(
-  config: ProfileSyncConfig,
-): Promise<ProfileSyncCheckResult> {
-  const {
-    readRepoDirectory,
-    readRepoFile,
-    parseFrontmatter,
-    validatePost,
-  } = await import('./profile-sync.js');
+export async function checkProfileSync(config: ProfileSyncConfig): Promise<ProfileSyncCheckResult> {
+  const { readRepoDirectory, readRepoFile, parseFrontmatter, validatePost } =
+    await import('./profile-sync.js');
 
   const errors: string[] = [];
 
@@ -82,9 +76,14 @@ export async function checkProfileSync(
   }
 
   try {
-    const entries = await readRepoDirectory(source.owner, source.repo, config.source.path, config.source.branch);
-    mdFiles = entries.filter((e: { name: string; type: string }) =>
-      e.type === 'file' && e.name.endsWith('.md'),
+    const entries = await readRepoDirectory(
+      source.owner,
+      source.repo,
+      config.source.path,
+      config.source.branch,
+    );
+    mdFiles = entries.filter(
+      (e: { name: string; type: string }) => e.type === 'file' && e.name.endsWith('.md'),
     );
     sourceAccessible = true;
     sourcePostCount = mdFiles.length;
@@ -101,16 +100,27 @@ export async function checkProfileSync(
 
   for (const file of mdFiles) {
     try {
-      const fileData = await readRepoFile(source.owner, source.repo, file.path, config.source.branch);
+      const fileData = await readRepoFile(
+        source.owner,
+        source.repo,
+        file.path,
+        config.source.branch,
+      );
       if (!fileData) {
-        failures.push({ file: file.name, errors: [{ field: 'read', message: 'Could not read file' }] });
+        failures.push({
+          file: file.name,
+          errors: [{ field: 'read', message: 'Could not read file' }],
+        });
         failedPosts++;
         continue;
       }
 
       const frontmatter = parseFrontmatter(fileData.content);
       if (!frontmatter) {
-        failures.push({ file: file.name, errors: [{ field: 'frontmatter', message: 'No frontmatter found' }] });
+        failures.push({
+          file: file.name,
+          errors: [{ field: 'frontmatter', message: 'No frontmatter found' }],
+        });
         failedPosts++;
         continue;
       }
@@ -138,12 +148,18 @@ export async function checkProfileSync(
   let markerExists = false;
 
   try {
-    const targetFile = await readRepoFile(target.owner, target.repo, config.target.path, config.target.branch);
+    const targetFile = await readRepoFile(
+      target.owner,
+      target.repo,
+      config.target.path,
+      config.target.branch,
+    );
     if (targetFile) {
       targetAccessible = true;
       const { buildMarkers } = await import('./profile-sync-markers.js');
       const markers = buildMarkers(config.target.marker);
-      markerExists = targetFile.content.includes(markers.start) && targetFile.content.includes(markers.end);
+      markerExists =
+        targetFile.content.includes(markers.start) && targetFile.content.includes(markers.end);
       if (!markerExists) {
         errors.push(`Marker "${markers.start}" / "${markers.end}" not found in target`);
       }

@@ -1,5 +1,9 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import type { AgentExecutionAdapter, AdapterExecutionContext, AdapterExecutionResult } from './adapter.js';
+import type {
+  AgentExecutionAdapter,
+  AdapterExecutionContext,
+  AdapterExecutionResult,
+} from './adapter.js';
 import { PermissionDeniedError } from './types.js';
 
 /**

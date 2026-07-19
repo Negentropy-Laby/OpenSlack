@@ -3,13 +3,11 @@
 // analyzeStaticMeta should throw when processing this file.
 
 function computeName() {
-  return "dynamic-name"
+  return 'dynamic-name';
 }
 
 export const meta = {
   name: computeName(),
-  description: "Dynamic meta that should be rejected",
-  phases: [
-    { title: "Scan", detail: "Scan phase" }
-  ]
-}
+  description: 'Dynamic meta that should be rejected',
+  phases: [{ title: 'Scan', detail: 'Scan phase' }],
+};

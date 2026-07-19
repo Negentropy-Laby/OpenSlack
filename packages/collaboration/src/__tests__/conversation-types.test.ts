@@ -17,7 +17,13 @@ describe('conversation-types', () => {
     { ...baseFields, kind: 'plan', planId: 'PLAN-1', steps: ['step 1', 'step 2'] },
     { ...baseFields, kind: 'approval_request', targetAction: 'merge', riskLevel: 'high' },
     { ...baseFields, kind: 'decision', decisionId: 'DEC-1', summary: 'Use approach A' },
-    { ...baseFields, kind: 'handoff', handoffId: 'HO-1', toParticipant: 'agent-2', summary: 'Passing task' },
+    {
+      ...baseFields,
+      kind: 'handoff',
+      handoffId: 'HO-1',
+      toParticipant: 'agent-2',
+      summary: 'Passing task',
+    },
   ];
 
   it('recognizes all 7 valid message kinds', () => {
