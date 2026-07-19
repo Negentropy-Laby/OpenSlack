@@ -46,159 +46,162 @@ packages/workflows/
 ## Type Definitions (`types.ts`)
 
 ```typescript
-import type { JSONSchema7 } from 'json-schema'
+import type { JSONSchema7 } from 'json-schema';
 
 // ── Manifest ──────────────────────────────────────────────────────────────────
 
 export interface WorkflowPhase {
-  title: string
-  detail: string
+  title: string;
+  detail: string;
 }
 
 export interface WorkflowInput {
-  type: 'string' | 'number' | 'boolean'
-  default?: unknown
-  description: string
+  type: 'string' | 'number' | 'boolean';
+  default?: unknown;
+  description: string;
 }
 
 export interface WorkflowPermissions {
-  github?: string[]
-  git?: string[]
-  filesystem?: string[]
-  openslack?: string[]
+  github?: string[];
+  git?: string[];
+  filesystem?: string[];
+  openslack?: string[];
 }
 
 export interface WorkflowMeta {
-  name: string
-  version?: string
-  description: string
-  whenToUse?: string
-  phases: WorkflowPhase[]
-  inputs?: Record<string, WorkflowInput>
-  permissions?: WorkflowPermissions
-  sideEffects?: string[]
-  forbidden?: string[]
-  risk?: 'low' | 'medium' | 'high'
+  name: string;
+  version?: string;
+  description: string;
+  whenToUse?: string;
+  phases: WorkflowPhase[];
+  inputs?: Record<string, WorkflowInput>;
+  permissions?: WorkflowPermissions;
+  sideEffects?: string[];
+  forbidden?: string[];
+  risk?: 'low' | 'medium' | 'high';
 }
 
 // ── Runtime ───────────────────────────────────────────────────────────────────
 
 export interface BudgetState {
-  tokensUsed: number
-  tokensRemaining: number | null   // null = unlimited
-  costUsd: number
-  agentCalls: number
+  tokensUsed: number;
+  tokensRemaining: number | null; // null = unlimited
+  costUsd: number;
+  agentCalls: number;
 }
 
 export interface AgentOptions {
-  label: string
-  phase: string
-  schema?: JSONSchema7
-  isolation?: 'none' | 'worktree'
-  budget?: { tokens: number }
+  label: string;
+  phase: string;
+  schema?: JSONSchema7;
+  isolation?: 'none' | 'worktree';
+  budget?: { tokens: number };
 }
 
 export interface ParallelOptions {
-  concurrency?: number
+  concurrency?: number;
 }
 
 export interface PhaseCheckpoint {
-  phase: string
-  timestamp: string
-  status: 'completed' | 'failed' | 'skipped'
-  result?: unknown
-  cacheKey?: string
+  phase: string;
+  timestamp: string;
+  status: 'completed' | 'failed' | 'skipped';
+  result?: unknown;
+  cacheKey?: string;
 }
 
 export interface RunStatus {
-  runId: string
-  workflowName: string
-  mode: ExecutionMode
-  status: 'running' | 'paused' | 'completed' | 'failed'
-  startedAt: string
-  updatedAt: string
-  currentPhase?: string
-  phases: PhaseCheckpoint[]
-  args: Record<string, unknown>
+  runId: string;
+  workflowName: string;
+  mode: ExecutionMode;
+  status: 'running' | 'paused' | 'completed' | 'failed';
+  startedAt: string;
+  updatedAt: string;
+  currentPhase?: string;
+  phases: PhaseCheckpoint[];
+  args: Record<string, unknown>;
 }
 
-export type ExecutionMode = 'validate' | 'preview' | 'dry-run' | 'execute'
+export type ExecutionMode = 'validate' | 'preview' | 'dry-run' | 'execute';
 
 // ── PRMS ──────────────────────────────────────────────────────────────────────
 
 export interface PrmsDoctorBlocker {
-  gate: string
-  reason: string
-  zone?: 'green' | 'yellow' | 'red'
-  owner?: string
+  gate: string;
+  reason: string;
+  zone?: 'green' | 'yellow' | 'red';
+  owner?: string;
 }
 
 export interface PrmsDoctorResult {
-  status: 'READY_TO_MERGE' | 'BLOCKED' | 'ERROR'
-  blockers: PrmsDoctorBlocker[]
-  zone: 'green' | 'yellow' | 'red'
-  why: string
-  next: string
-  gates: Record<string, { passed: boolean; detail: string }>
+  status: 'READY_TO_MERGE' | 'BLOCKED' | 'ERROR';
+  blockers: PrmsDoctorBlocker[];
+  zone: 'green' | 'yellow' | 'red';
+  why: string;
+  next: string;
+  gates: Record<string, { passed: boolean; detail: string }>;
 }
 
 export interface WorkflowRuntime {
-  readonly runId: string
-  readonly mode: ExecutionMode
-  readonly budget: BudgetState
-  readonly args: Record<string, unknown>
+  readonly runId: string;
+  readonly mode: ExecutionMode;
+  readonly budget: BudgetState;
+  readonly args: Record<string, unknown>;
 
-  phase(name: string): void
-  log(message: string): void
-  agent<T>(prompt: string, options: AgentOptions): Promise<T>
-  parallel<T>(tasks: Array<() => Promise<T>>, options?: ParallelOptions): Promise<T[]>
-  pipeline<T, R>(items: T[], fn: (item: T, index: number) => Promise<R>): Promise<R[]>
-  workflow(name: string, args?: Record<string, unknown>): Promise<unknown>
+  phase(name: string): void;
+  log(message: string): void;
+  agent<T>(prompt: string, options: AgentOptions): Promise<T>;
+  parallel<T>(tasks: Array<() => Promise<T>>, options?: ParallelOptions): Promise<T[]>;
+  pipeline<T, R>(items: T[], fn: (item: T, index: number) => Promise<R>): Promise<R[]>;
+  workflow(name: string, args?: Record<string, unknown>): Promise<unknown>;
 
   openslack: {
     task: {
-      createPreview(issueData: unknown): Promise<unknown>
-      createIssue(issueData: unknown): Promise<{ issueUrl: string; issueNumber: number }>
-      checkout(issueNumber: number, agentId: string): Promise<{ worktreePath: string; branchName: string }>
-      sync(issueNumber: number): Promise<{ pushed: boolean; prUrl?: string }>
-    }
+      createPreview(issueData: unknown): Promise<unknown>;
+      createIssue(issueData: unknown): Promise<{ issueUrl: string; issueNumber: number }>;
+      checkout(
+        issueNumber: number,
+        agentId: string,
+      ): Promise<{ worktreePath: string; branchName: string }>;
+      sync(issueNumber: number): Promise<{ pushed: boolean; prUrl?: string }>;
+    };
     prms: {
-      classify(paths: string[]): Promise<{ green: string[]; yellow: string[]; red: string[] }>
-      doctor(prNumber: number): Promise<PrmsDoctorResult>
-      queue(): Promise<Array<{ prNumber: number; title: string; status: string }>>
-      requestMerge(prNumber: number): Promise<{ merged: boolean; prmsStatus: string }>
-    }
+      classify(paths: string[]): Promise<{ green: string[]; yellow: string[]; red: string[] }>;
+      doctor(prNumber: number): Promise<PrmsDoctorResult>;
+      queue(): Promise<Array<{ prNumber: number; title: string; status: string }>>;
+      requestMerge(prNumber: number): Promise<{ merged: boolean; prmsStatus: string }>;
+    };
     collaboration: {
-      recordEvent(event: unknown): Promise<void>
-      createHandoff(details: unknown): Promise<unknown>
-      recordDecision(details: unknown): Promise<unknown>
-    }
+      recordEvent(event: unknown): Promise<void>;
+      createHandoff(details: unknown): Promise<unknown>;
+      recordDecision(details: unknown): Promise<unknown>;
+    };
     governance: {
-      audit(action: string, details?: unknown): Promise<void>
-    }
-  }
+      audit(action: string, details?: unknown): Promise<void>;
+    };
+  };
 }
 
 // ── Results ───────────────────────────────────────────────────────────────────
 
 export interface PreviewResult {
-  preview: true
-  findings?: unknown[]
-  triaged?: unknown[]
-  [key: string]: unknown
+  preview: true;
+  findings?: unknown[];
+  triaged?: unknown[];
+  [key: string]: unknown;
 }
 
 export interface RunResult {
-  status: string
-  [key: string]: unknown
+  status: string;
+  [key: string]: unknown;
 }
 
 // ── Workflow Module ───────────────────────────────────────────────────────────
 
 export interface OpenSlackWorkflow {
-  meta: WorkflowMeta
-  preview?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<PreviewResult>
-  run?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<RunResult>
+  meta: WorkflowMeta;
+  preview?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<PreviewResult>;
+  run?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<RunResult>;
 }
 ```
 
@@ -216,16 +219,16 @@ The loader discovers workflow files and detects their format.
 ### Format Detection
 
 ```typescript
-type WorkflowFormat = 'openslack-native' | 'anthropic-compatible' | 'invalid'
+type WorkflowFormat = 'openslack-native' | 'anthropic-compatible' | 'invalid';
 
 function detectFormat(module: Record<string, unknown>): WorkflowFormat {
-  const hasMeta = typeof module.meta === 'object' && module.meta !== null
-  const hasPreview = typeof module.preview === 'function'
-  const hasRun = typeof module.run === 'function'
+  const hasMeta = typeof module.meta === 'object' && module.meta !== null;
+  const hasPreview = typeof module.preview === 'function';
+  const hasRun = typeof module.run === 'function';
 
-  if (hasMeta && (hasPreview || hasRun)) return 'openslack-native'
-  if (hasMeta) return 'anthropic-compatible'
-  return 'invalid'
+  if (hasMeta && (hasPreview || hasRun)) return 'openslack-native';
+  if (hasMeta) return 'anthropic-compatible';
+  return 'invalid';
 }
 ```
 
@@ -261,14 +264,14 @@ When `ctx.workflow()` is called to nest a child workflow, the runtime checks
 nesting depth:
 
 ```typescript
-const MAX_NESTING_DEPTH = 1
+const MAX_NESTING_DEPTH = 1;
 
 function assertNestingDepth(currentDepth: number): void {
   if (currentDepth >= MAX_NESTING_DEPTH) {
     throw new Error(
       `Workflow nesting depth limit (${MAX_NESTING_DEPTH}) exceeded. ` +
-      'Child workflows cannot call ctx.workflow() again.'
-    )
+        'Child workflows cannot call ctx.workflow() again.',
+    );
   }
 }
 ```
@@ -280,23 +283,23 @@ workflows. A child workflow at depth 1 cannot call `ctx.workflow()` again.
 
 ### Validation Rules
 
-| Field | Required | Validation |
-|-------|----------|------------|
-| `name` | Yes | Non-empty string, matches `/^[a-z][a-z0-9-]*$/` |
-| `version` | No | Semver string if present |
-| `description` | Yes | Non-empty string |
-| `phases` | Yes | Array of `{ title, detail }`, at least 1 phase |
-| `permissions` | No (but required for execute mode) | Object with string array values |
-| `sideEffects` | No | Array of strings matching `*.scope.action` pattern |
-| `forbidden` | No | Array of strings, validated against hardcoded blocklist |
-| `risk` | No | One of `low`, `medium`, `high` |
+| Field         | Required                           | Validation                                              |
+| ------------- | ---------------------------------- | ------------------------------------------------------- |
+| `name`        | Yes                                | Non-empty string, matches `/^[a-z][a-z0-9-]*$/`         |
+| `version`     | No                                 | Semver string if present                                |
+| `description` | Yes                                | Non-empty string                                        |
+| `phases`      | Yes                                | Array of `{ title, detail }`, at least 1 phase          |
+| `permissions` | No (but required for execute mode) | Object with string array values                         |
+| `sideEffects` | No                                 | Array of strings matching `*.scope.action` pattern      |
+| `forbidden`   | No                                 | Array of strings, validated against hardcoded blocklist |
+| `risk`        | No                                 | One of `low`, `medium`, `high`                          |
 
 ### Hash Computation
 
 ```typescript
 function computeManifestHash(meta: WorkflowMeta): string {
-  const canonical = JSON.stringify(meta, Object.keys(meta).sort())
-  return createHash('sha256').update(canonical).digest('hex').slice(0, 16)
+  const canonical = JSON.stringify(meta, Object.keys(meta).sort());
+  return createHash('sha256').update(canonical).digest('hex').slice(0, 16);
 }
 ```
 
@@ -308,13 +311,13 @@ Used for cache key generation and integrity checks during resume.
 
 ```typescript
 function createRuntime(options: {
-  runId: string
-  mode: ExecutionMode
-  manifest: WorkflowMeta
-  runStore: RunStore
-  budget?: { tokens: number; costUsd: number }
-  permissions?: WorkflowPermissions
-}): WorkflowRuntime
+  runId: string;
+  mode: ExecutionMode;
+  manifest: WorkflowMeta;
+  runStore: RunStore;
+  budget?: { tokens: number; costUsd: number };
+  permissions?: WorkflowPermissions;
+}): WorkflowRuntime;
 ```
 
 ### Phase Tracking
@@ -503,14 +506,8 @@ function computeCacheKey(
   prompt: string,
   opts: AgentOptions,
 ): string {
-  const parts = [
-    manifestHash,
-    phase,
-    label,
-    hashString(prompt),
-    hashString(JSON.stringify(opts)),
-  ]
-  return parts.join(':')
+  const parts = [manifestHash, phase, label, hashString(prompt), hashString(JSON.stringify(opts))];
+  return parts.join(':');
 }
 ```
 
@@ -526,11 +523,11 @@ Each entry contains:
 
 ```typescript
 interface CacheEntry {
-  key: string
-  timestamp: string
-  result: unknown
-  tokenUsage?: number
-  schemaVersion: string  // For migration support
+  key: string;
+  timestamp: string;
+  result: unknown;
+  tokenUsage?: number;
+  schemaVersion: string; // For migration support
 }
 ```
 
@@ -569,7 +566,12 @@ paused  → running   (resumed)
 Each log entry is a JSONL line:
 
 ```json
-{"ts":"2026-05-28T12:34:56.789Z","phase":"Scan","message":"Raw findings: 15","runId":"run-abc123"}
+{
+  "ts": "2026-05-28T12:34:56.789Z",
+  "phase": "Scan",
+  "message": "Raw findings: 15",
+  "runId": "run-abc123"
+}
 ```
 
 ## Resume Logic (`resume.ts`)
@@ -607,6 +609,7 @@ If the workflow source file has changed since the run was paused:
 > **design placeholder** illustrating the desired API surface. A production
 > implementation must NOT use `AsyncFunction` or `eval` to execute arbitrary
 > JS from workflow files. The real implementation must:
+>
 > 1. Complete static analysis of the file before any execution (see Loading Flow)
 > 2. Run the workflow body inside a sandboxed execution context (e.g., a
 >    dedicated worker thread with restricted globals, or a VM module with
@@ -617,10 +620,7 @@ If the workflow source file has changed since the run was paused:
 
 ```typescript
 // PLACEHOLDER: API shape only. Real implementation uses sandboxed execution.
-function anthropicCompatRunner(
-  moduleBody: string,
-  runtime: WorkflowRuntime,
-): Promise<unknown> {
+function anthropicCompatRunner(moduleBody: string, runtime: WorkflowRuntime): Promise<unknown> {
   // The sandbox object defines the ambient globals available to the workflow.
   // In production, this is passed to a sandboxed execution context, not to
   // new AsyncFunction().
@@ -629,15 +629,16 @@ function anthropicCompatRunner(
     phase: (name: string) => runtime.phase(name),
     log: (msg: string) => runtime.log(msg),
     parallel: <T>(tasks: Array<() => Promise<T>>) => runtime.parallel(tasks),
-    pipeline: <T, R>(items: T[], fn: (item: T, idx: number) => Promise<R>) => runtime.pipeline(items, fn),
+    pipeline: <T, R>(items: T[], fn: (item: T, idx: number) => Promise<R>) =>
+      runtime.pipeline(items, fn),
     agent: <T>(prompt: string, opts: unknown) => runtime.agent<T>(prompt, opts as AgentOptions),
     budget: runtime.budget,
     workflow: (name: string, args?: Record<string, unknown>) => runtime.workflow(name, args),
-  }
+  };
 
   // Production: execute in sandboxed context with restricted globals
   // Placeholder: wrap body in async function (NOT production-safe)
-  throw new Error('anthropicCompatRunner: must use sandboxed execution, not AsyncFunction')
+  throw new Error('anthropicCompatRunner: must use sandboxed execution, not AsyncFunction');
 }
 ```
 
@@ -663,7 +664,7 @@ const ALWAYS_FORBIDDEN = new Set([
   'ruleset.bypass',
   'secrets.read',
   'kernel.constitution.write',
-])
+]);
 ```
 
 ### Permission Resolution
@@ -676,39 +677,36 @@ function resolvePermissions(
 ): Set<string> {
   if (trustLevel === 'untrusted') {
     // Untrusted workflows get read-only access only
-    return new Set(['github.issues.read', 'github.prs.read'])
+    return new Set(['github.issues.read', 'github.prs.read']);
   }
 
   // Intersect declared with granted
-  const allowed = new Set<string>()
+  const allowed = new Set<string>();
   for (const category of Object.keys(declared)) {
-    const declaredActions = declared[category] || []
-    const grantedActions = granted[category] || []
+    const declaredActions = declared[category] || [];
+    const grantedActions = granted[category] || [];
     for (const action of declaredActions) {
-      const key = `${category}.${action}`
+      const key = `${category}.${action}`;
       if (!ALWAYS_FORBIDDEN.has(key) && grantedActions.includes(action)) {
-        allowed.add(key)
+        allowed.add(key);
       }
     }
   }
-  return allowed
+  return allowed;
 }
 ```
 
 ### Nested Workflow Permission Intersection
 
 ```typescript
-function intersectPermissions(
-  parent: Set<string>,
-  child: Set<string>,
-): Set<string> {
-  const result = new Set<string>()
+function intersectPermissions(parent: Set<string>, child: Set<string>): Set<string> {
+  const result = new Set<string>();
   for (const perm of child) {
     if (parent.has(perm) && !ALWAYS_FORBIDDEN.has(perm)) {
-      result.add(perm)
+      result.add(perm);
     }
   }
-  return result
+  return result;
 }
 ```
 
@@ -717,21 +715,26 @@ function intersectPermissions(
 ### Generation
 
 ```typescript
-function renderHtmlArtifact(run: RunStatus, options: {
-  findings?: unknown[]
-  triaged?: unknown[]
-  issues?: Array<{ url: string; title: string }>
-  validation?: Record<string, 'pass' | 'fail'>
-  prUrl?: string
-  auditLog?: Array<{ ts: string; phase: string; message: string }>
-}): string
+function renderHtmlArtifact(
+  run: RunStatus,
+  options: {
+    findings?: unknown[];
+    triaged?: unknown[];
+    issues?: Array<{ url: string; title: string }>;
+    validation?: Record<string, 'pass' | 'fail'>;
+    prUrl?: string;
+    auditLog?: Array<{ ts: string; phase: string; message: string }>;
+  },
+): string;
 ```
 
 ### CSP Policy
 
 ```html
-<meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<meta
+  http-equiv="Content-Security-Policy"
+  content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'"
+/>
 ```
 
 ### Structure
@@ -757,16 +760,16 @@ The Operator module provides the CLI commands that interface with the runtime:
 ```typescript
 // In apps/cli/src/commands/collaboration.ts (Collaboration module owns workflow commands)
 export function registerWorkflowCommands(collab: Command): void {
-  const wf = collab.command('workflow')
-  wf.command('list').action(listWorkflows)
-  wf.command('show <name>').action(showWorkflow)
-  wf.command('validate <name>').action(validateWorkflow)
-  wf.command('preview <name>').action(previewWorkflow)
-  wf.command('dry-run <name>').action(dryRunWorkflow)
-  wf.command('run <name>').action(runWorkflow)
-  wf.command('resume <runId>').action(resumeWorkflow)
-  wf.command('inspect <runId>').action(inspectWorkflow)
-  wf.command('cache clear').action(clearCache)
+  const wf = collab.command('workflow');
+  wf.command('list').action(listWorkflows);
+  wf.command('show <name>').action(showWorkflow);
+  wf.command('validate <name>').action(validateWorkflow);
+  wf.command('preview <name>').action(previewWorkflow);
+  wf.command('dry-run <name>').action(dryRunWorkflow);
+  wf.command('run <name>').action(runWorkflow);
+  wf.command('resume <runId>').action(resumeWorkflow);
+  wf.command('inspect <runId>').action(inspectWorkflow);
+  wf.command('cache clear').action(clearCache);
 }
 ```
 
@@ -775,7 +778,7 @@ export function registerWorkflowCommands(collab: Command): void {
 The `@openslack/runtime` package provides worktree isolation:
 
 ```typescript
-import { createWorktree, checkDirty, cleanupWorktree } from '@openslack/runtime'
+import { createWorktree, checkDirty, cleanupWorktree } from '@openslack/runtime';
 ```
 
 ### Workspace Package
@@ -783,7 +786,7 @@ import { createWorktree, checkDirty, cleanupWorktree } from '@openslack/runtime'
 The `@openslack/workspace` package provides module registry for scope validation:
 
 ```typescript
-import { readModules, getModuleById } from '@openslack/workspace'
+import { readModules, getModuleById } from '@openslack/workspace';
 ```
 
 ## Testing Strategy
@@ -821,22 +824,22 @@ export const meta: WorkflowMeta = {
   ],
   permissions: { github: ['issues:read'] },
   risk: 'low',
-}
+};
 
 export async function preview(ctx: WorkflowRuntime, args: Record<string, unknown>) {
-  ctx.phase('Scan')
-  ctx.log('Test scan starting')
+  ctx.phase('Scan');
+  ctx.log('Test scan starting');
   const result = await ctx.agent('Scan for test findings', {
     label: 'scan:test',
     phase: 'Scan',
     schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
-  })
-  return { preview: true, result }
+  });
+  return { preview: true, result };
 }
 
 export async function run(ctx: WorkflowRuntime, args: Record<string, unknown>) {
-  const previewResult = await preview(ctx, args)
-  ctx.phase('Verify')
-  return { status: 'complete', ...previewResult }
+  const previewResult = await preview(ctx, args);
+  ctx.phase('Verify');
+  return { status: 'complete', ...previewResult };
 }
 ```
