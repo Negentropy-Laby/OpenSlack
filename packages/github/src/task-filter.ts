@@ -64,10 +64,7 @@ export function filterByRisk(
   return { allowed: true };
 }
 
-export function filterByPath(
-  manifest: IssueTaskManifest,
-  changedPaths: string[],
-): FilterResult {
+export function filterByPath(manifest: IssueTaskManifest, changedPaths: string[]): FilterResult {
   const forbidden = manifest.forbidden_paths || [];
 
   for (const path of changedPaths) {
@@ -77,8 +74,8 @@ export function filterByPath(
         .replace(/\*\*\//g, '__GLOBSTAR_SLASH__')
         .replace(/\*\*/g, '__GLOBSTAR__')
         .replace(/\*/g, '[^/]*')
-        .replace(/__GLOBSTAR_SLASH__/g, '(.*/)?')  // **/ matches zero or more directories
-        .replace(/__GLOBSTAR__/g, '.*');             // ** matches any depth
+        .replace(/__GLOBSTAR_SLASH__/g, '(.*/)?') // **/ matches zero or more directories
+        .replace(/__GLOBSTAR__/g, '.*'); // ** matches any depth
       if (new RegExp(`^${pattern}$`).test(path)) {
         return { allowed: false, reason: `Path "${path}" matches forbidden pattern "${fp}"` };
       }
@@ -90,7 +87,10 @@ export function filterByPath(
   for (const path of changedPaths) {
     for (const bp of blackPatterns) {
       if (bp.test(path)) {
-        return { allowed: false, reason: `Path "${path}" is in Black Zone — rejected unconditionally` };
+        return {
+          allowed: false,
+          reason: `Path "${path}" is in Black Zone — rejected unconditionally`,
+        };
       }
     }
   }
@@ -100,9 +100,13 @@ export function filterByPath(
 
 export function filterRedZonePaths(changedPaths: string[]): string[] {
   const redPatterns = [
-    /^\.github\//, /^\.openslack\/policies\//, /^\.openslack\/agents\/registry\//,
-    /^\.openslack\/agents\/prompts\//, /^\.openslack\/self\/constitution/,
-    /^\.openslack\/self\/invariants/, /^packages\/kernel\/src\//,
+    /^\.github\//,
+    /^\.openslack\/policies\//,
+    /^\.openslack\/agents\/registry\//,
+    /^\.openslack\/agents\/prompts\//,
+    /^\.openslack\/self\/constitution/,
+    /^\.openslack\/self\/invariants/,
+    /^packages\/kernel\/src\//,
     /^packages\/self-evolution\/src\/core\//,
   ];
   return changedPaths.filter((p) => redPatterns.some((rp) => rp.test(p)));
@@ -134,29 +138,59 @@ export function runAutoClaimGates(args: {
 }): AutoClaimGateResult {
   const block = extractTaskBlock(args.body);
   if (!block) {
-    return { allowed: false, reason: 'No openslack-task block found in issue body', manifest: null, riskZone: 'green', changedPaths: [] };
+    return {
+      allowed: false,
+      reason: 'No openslack-task block found in issue body',
+      manifest: null,
+      riskZone: 'green',
+      changedPaths: [],
+    };
   }
 
   const parseResult = parseIssueTaskManifest(args.body);
   if (!parseResult.valid) {
-    return { allowed: false, reason: parseResult.errors.join('; '), manifest: null, riskZone: 'green', changedPaths: [] };
+    return {
+      allowed: false,
+      reason: parseResult.errors.join('; '),
+      manifest: null,
+      riskZone: 'green',
+      changedPaths: [],
+    };
   }
   const manifest = parseResult.manifest!;
 
   const riskResult = filterByRisk(manifest, args.agentMaxRiskLevel);
   if (!riskResult.allowed) {
-    return { allowed: false, reason: riskResult.reason!, manifest, riskZone: riskLevelToZone(manifest.risk_level), changedPaths: [] };
+    return {
+      allowed: false,
+      reason: riskResult.reason!,
+      manifest,
+      riskZone: riskLevelToZone(manifest.risk_level),
+      changedPaths: [],
+    };
   }
 
   const capResult = filterByCapability(manifest, args.agentCapabilities);
   if (!capResult.allowed) {
-    return { allowed: false, reason: capResult.reason!, manifest, riskZone: riskLevelToZone(manifest.risk_level), changedPaths: [] };
+    return {
+      allowed: false,
+      reason: capResult.reason!,
+      manifest,
+      riskZone: riskLevelToZone(manifest.risk_level),
+      changedPaths: [],
+    };
   }
 
   const changedPaths = manifest.allowed_paths ?? [];
   const pathResult = filterByPath(manifest, changedPaths);
   if (!pathResult.allowed) {
-    return { allowed: false, reason: pathResult.reason!, manifest, riskZone: riskLevelToZone(manifest.risk_level), changedPaths };
+    return {
+      allowed: false,
+      reason: pathResult.reason!,
+      manifest,
+      riskZone: riskLevelToZone(manifest.risk_level),
+      changedPaths,
+    };
   }
 
   return {

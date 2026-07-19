@@ -3,7 +3,14 @@ import { previewTaskCreation } from '../task-create.js';
 
 describe('previewTaskCreation', () => {
   it('generates a schema-valid task issue preview for each template', () => {
-    const templates = ['bugfix', 'docs', 'test-fix', 'refactor', 'review', 'investigation'] as const;
+    const templates = [
+      'bugfix',
+      'docs',
+      'test-fix',
+      'refactor',
+      'review',
+      'investigation',
+    ] as const;
 
     for (const template of templates) {
       const preview = previewTaskCreation({
@@ -51,4 +58,3 @@ describe('previewTaskCreation', () => {
     expect(preview.manifest.human_approval_required_for).toEqual(['red_zone_change']);
   });
 });
-

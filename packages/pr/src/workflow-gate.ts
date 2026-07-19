@@ -38,14 +38,18 @@ function normalizePath(path: string): string {
 
 export function isWorkflowArtifactPath(path: string): boolean {
   const normalized = normalizePath(path);
-  return WORKFLOW_ARTIFACT_ROOTS.some((root) => normalized.startsWith(root))
-    || CORE_WORKFLOW_ARTIFACTS.has(normalized);
+  return (
+    WORKFLOW_ARTIFACT_ROOTS.some((root) => normalized.startsWith(root)) ||
+    CORE_WORKFLOW_ARTIFACTS.has(normalized)
+  );
 }
 
 export function isCoreWorkflowArtifactPath(path: string): boolean {
   const normalized = normalizePath(path);
-  return normalized.startsWith('packages/workflows/src/builtins/')
-    || CORE_WORKFLOW_ARTIFACTS.has(normalized);
+  return (
+    normalized.startsWith('packages/workflows/src/builtins/') ||
+    CORE_WORKFLOW_ARTIFACTS.has(normalized)
+  );
 }
 
 /** Compatibility name retained for callers; it now means governed artifacts only. */
@@ -148,7 +152,8 @@ function parseTrustMarker(body: string): ParsedTrustMarker {
     .map((line) => line.trim())
     .filter((line) => /^workflow-trust\s*:/i.test(line));
   if (markerLines.length === 0) return {};
-  if (markerLines.length !== 1) return { error: 'Review must contain exactly one Workflow-Trust marker.' };
+  if (markerLines.length !== 1)
+    return { error: 'Review must contain exactly one Workflow-Trust marker.' };
   const match = markerLines[0].match(/^workflow-trust\s*:\s*(untrusted|trusted|core)$/i);
   if (!match) return { error: 'Workflow-Trust must be untrusted, trusted, or core.' };
   return { decision: match[1].toLowerCase() as WorkflowTrustDecision };
@@ -181,12 +186,13 @@ function governanceIssueMatches(
   evidence: WorkflowEvidence | undefined,
 ): boolean {
   if (
-    !issue
-    || !linkedIssueNumber
-    || issue.issueNumber !== linkedIssueNumber
-    || !isBotUser(issue.author)
-    || !evidence
-  ) return false;
+    !issue ||
+    !linkedIssueNumber ||
+    issue.issueNumber !== linkedIssueNumber ||
+    !isBotUser(issue.author) ||
+    !evidence
+  )
+    return false;
   try {
     const body = issue.body;
     const artifactBlock = body.match(/artifact_files:\s*\n([\s\S]*?)\n```/)?.[1] ?? '';
@@ -196,12 +202,14 @@ function governanceIssueMatches(
       .filter((value): value is string => Boolean(value))
       .map((value) => JSON.parse(value) as string)
       .sort(comparePaths);
-    return body.includes('schema: "openslack.workflow_governance.v1"')
-      && body.includes(`pr: ${issue.prNumber}`)
-      && body.includes(`base_sha: ${JSON.stringify(evidence.baseSha)}`)
-      && body.includes(`head_sha: ${JSON.stringify(evidence.headSha)}`)
-      && body.includes(`evidence_hash: ${JSON.stringify(evidence.evidenceHash)}`)
-      && JSON.stringify(issueArtifacts) === JSON.stringify(evidence.artifactFiles);
+    return (
+      body.includes('schema: "openslack.workflow_governance.v1"') &&
+      body.includes(`pr: ${issue.prNumber}`) &&
+      body.includes(`base_sha: ${JSON.stringify(evidence.baseSha)}`) &&
+      body.includes(`head_sha: ${JSON.stringify(evidence.headSha)}`) &&
+      body.includes(`evidence_hash: ${JSON.stringify(evidence.evidenceHash)}`) &&
+      JSON.stringify(issueArtifacts) === JSON.stringify(evidence.artifactFiles)
+    );
   } catch {
     return false;
   }
@@ -218,7 +226,11 @@ export function evaluateWorkflowGate(input: EvaluateWorkflowGateInput): Workflow
       touchedWorkflowFiles: false,
       overall: 'N/A',
       criteria: [
-        { name: 'Workflow artifacts touched', status: 'N/A', detail: 'No governed workflow artifacts modified' },
+        {
+          name: 'Workflow artifacts touched',
+          status: 'N/A',
+          detail: 'No governed workflow artifacts modified',
+        },
         { name: 'Current-head evidence', status: 'N/A' },
         { name: 'Human trust review', status: 'N/A' },
         { name: 'Trust scope', status: 'N/A' },
@@ -231,49 +243,57 @@ export function evaluateWorkflowGate(input: EvaluateWorkflowGateInput): Workflow
   // GitHub's changed-file surface may report only the destination of a rename.
   // The base/head trees are authoritative, so require every reported artifact
   // to be present without rejecting additional deleted/renamed tree entries.
-  const evidenceFilesMatch = evidence !== undefined
-    && touchedArtifacts.every((path) => evidence.artifactFiles.includes(path));
-  const evidenceCurrent = evidence !== undefined
-    && evidence.schema === 'openslack.workflow-evidence.v1'
-    && evidence.baseSha === input.baseSha
-    && evidence.headSha === input.headSha
-    && evidenceFilesMatch;
+  const evidenceFilesMatch =
+    evidence !== undefined &&
+    touchedArtifacts.every((path) => evidence.artifactFiles.includes(path));
+  const evidenceCurrent =
+    evidence !== undefined &&
+    evidence.schema === 'openslack.workflow-evidence.v1' &&
+    evidence.baseSha === input.baseSha &&
+    evidence.headSha === input.headSha &&
+    evidenceFilesMatch;
 
-  const currentHumanReviews = input.reviews.filter((review) =>
-    review.state === 'APPROVED'
-      && normalizeOwner(review.user) !== normalizeOwner(input.author)
-      && !isBotUser(review.user)
-      && Boolean(input.headSha)
-      && review.commitOid === input.headSha,
+  const currentHumanReviews = input.reviews.filter(
+    (review) =>
+      review.state === 'APPROVED' &&
+      normalizeOwner(review.user) !== normalizeOwner(input.author) &&
+      !isBotUser(review.user) &&
+      Boolean(input.headSha) &&
+      review.commitOid === input.headSha,
   );
-  const parsedReviews = currentHumanReviews.map((review) => ({ review, marker: parseTrustMarker(review.body ?? '') }));
+  const parsedReviews = currentHumanReviews.map((review) => ({
+    review,
+    marker: parseTrustMarker(review.body ?? ''),
+  }));
   const invalidMarker = parsedReviews.find(({ marker }) => marker.error);
   const trustReviews = parsedReviews.filter(({ marker }) => marker.decision);
   const decisions = new Set(trustReviews.map(({ marker }) => marker.decision));
   const conflicting = decisions.size > 1;
-  const trustDecision = !invalidMarker && !conflicting && decisions.size === 1
-    ? [...decisions][0]
-    : undefined;
+  const trustDecision =
+    !invalidMarker && !conflicting && decisions.size === 1 ? [...decisions][0] : undefined;
   const trustReviewers = trustReviews
     .filter(({ marker }) => marker.decision === trustDecision)
     .map(({ review }) => review.user)
     .sort(comparePaths);
-  const trustReviewCommitOid = trustReviews.find(({ marker }) => marker.decision === trustDecision)?.review.commitOid;
+  const trustReviewCommitOid = trustReviews.find(({ marker }) => marker.decision === trustDecision)
+    ?.review.commitOid;
 
   const artifactFiles = evidence?.artifactFiles ?? touchedArtifacts;
   const includesCoreArtifact = artifactFiles.some(isCoreWorkflowArtifactPath);
   const codeowners = new Set((input.codeowners ?? []).map(normalizeOwner));
-  const coreReviewerValid = trustDecision !== 'core'
-    || trustReviewers.some((reviewer) => codeowners.has(normalizeOwner(reviewer)));
-  const trustScopeValid = trustDecision !== undefined
-    && (includesCoreArtifact ? trustDecision === 'core' : trustDecision !== 'core')
-    && coreReviewerValid;
+  const coreReviewerValid =
+    trustDecision !== 'core' ||
+    trustReviewers.some((reviewer) => codeowners.has(normalizeOwner(reviewer)));
+  const trustScopeValid =
+    trustDecision !== undefined &&
+    (includesCoreArtifact ? trustDecision === 'core' : trustDecision !== 'core') &&
+    coreReviewerValid;
 
   const issueNumber = governanceIssueNumber(input.body);
-  const governanceRequired = evidence !== undefined
-    && (evidence.addedFiles.length > 0 || includesCoreArtifact);
-  const governanceValid = !governanceRequired
-    || governanceIssueMatches(input.governanceIssue, issueNumber, evidence);
+  const governanceRequired =
+    evidence !== undefined && (evidence.addedFiles.length > 0 || includesCoreArtifact);
+  const governanceValid =
+    !governanceRequired || governanceIssueMatches(input.governanceIssue, issueNumber, evidence);
 
   const criteria: WorkflowGateCriterion[] = [
     {
@@ -291,8 +311,9 @@ export function evaluateWorkflowGate(input: EvaluateWorkflowGateInput): Workflow
     {
       name: 'Human trust review',
       status: trustDecision ? 'PASS' : 'FAIL',
-      detail: invalidMarker?.marker.error
-        ?? (conflicting
+      detail:
+        invalidMarker?.marker.error ??
+        (conflicting
           ? 'Current-head human approvals contain conflicting Workflow-Trust decisions.'
           : trustDecision
             ? `${trustDecision} by ${trustReviewers.join(', ')}`
@@ -302,14 +323,16 @@ export function evaluateWorkflowGate(input: EvaluateWorkflowGateInput): Workflow
       name: 'Trust scope',
       status: trustScopeValid ? 'PASS' : 'FAIL',
       detail: trustScopeValid
-        ? includesCoreArtifact ? 'Core artifact approved as core by a CODEOWNER.' : `Non-core artifact approved as ${trustDecision}.`
+        ? includesCoreArtifact
+          ? 'Core artifact approved as core by a CODEOWNER.'
+          : `Non-core artifact approved as ${trustDecision}.`
         : includesCoreArtifact
           ? 'Builtins, catalog, and pattern artifacts require Workflow-Trust: core from a CODEOWNER.'
           : 'Non-core artifacts only allow Workflow-Trust: trusted or untrusted.',
     },
     {
       name: 'Governance issue',
-      status: governanceRequired ? governanceValid ? 'PASS' : 'FAIL' : 'N/A',
+      status: governanceRequired ? (governanceValid ? 'PASS' : 'FAIL') : 'N/A',
       detail: governanceRequired
         ? governanceValid
           ? `Workflow governance #${issueNumber}`
@@ -318,7 +341,9 @@ export function evaluateWorkflowGate(input: EvaluateWorkflowGateInput): Workflow
     },
   ];
 
-  const overall = criteria.every((criterion) => criterion.status === 'PASS' || criterion.status === 'N/A')
+  const overall = criteria.every(
+    (criterion) => criterion.status === 'PASS' || criterion.status === 'N/A',
+  )
     ? 'PASS'
     : 'FAIL';
   return {

@@ -21,10 +21,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function watchPR(
-  prNumber: number,
-  options: WatchOptions = {},
-): Promise<WatchResult> {
+export async function watchPR(prNumber: number, options: WatchOptions = {}): Promise<WatchResult> {
   const timeout = (options.timeoutSeconds ?? 60) * 1000;
   const interval = (options.intervalSeconds ?? 10) * 1000;
   const policy = loadPRReviewPolicy();
@@ -33,7 +30,9 @@ export async function watchPR(
   let lastDecision: PRReviewState = 'CHECKS_PENDING';
   let lastReason = 'Waiting for first poll';
 
-  console.log(`Watching PR #${prNumber} (timeout: ${options.timeoutSeconds ?? 60}s, interval: ${options.intervalSeconds ?? 10}s)`);
+  console.log(
+    `Watching PR #${prNumber} (timeout: ${options.timeoutSeconds ?? 60}s, interval: ${options.intervalSeconds ?? 10}s)`,
+  );
 
   while (Date.now() - start < timeout) {
     polls++;
@@ -50,7 +49,12 @@ export async function watchPR(
     console.log(`[${elapsed}s] ${diagnosed.decision}: ${diagnosed.reason}`);
 
     if (diagnosed.decision === 'READY_TO_MERGE') {
-      return { finalState: diagnosed.decision, reason: diagnosed.reason, elapsedMs: Date.now() - start, polls };
+      return {
+        finalState: diagnosed.decision,
+        reason: diagnosed.reason,
+        elapsedMs: Date.now() - start,
+        polls,
+      };
     }
 
     if (
@@ -59,7 +63,12 @@ export async function watchPR(
       diagnosed.decision === 'BLOCKED_AUTHOR_IS_SOLE_CODEOWNER' ||
       diagnosed.decision === 'BLOCKED_SINGLE_MAINTAINER'
     ) {
-      return { finalState: diagnosed.decision, reason: diagnosed.reason, elapsedMs: Date.now() - start, polls };
+      return {
+        finalState: diagnosed.decision,
+        reason: diagnosed.reason,
+        elapsedMs: Date.now() - start,
+        polls,
+      };
     }
 
     if (Date.now() - start + interval >= timeout) {

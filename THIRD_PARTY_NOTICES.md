@@ -69,6 +69,7 @@ Aby author.
 grapheme-aware terminal text wrapping.
 
 **Attribution in source:**
+
 ```
 Portions derived from pretext (https://github.com/nicolo-ribaudo/pretext)
 are used under the MIT License.

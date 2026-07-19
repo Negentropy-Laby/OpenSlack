@@ -2,7 +2,13 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { parseRoomId, buildRoomView, renderRoom, renderRoomPlain, renderRoomChat } from '../room.js';
+import {
+  parseRoomId,
+  buildRoomView,
+  renderRoom,
+  renderRoomPlain,
+  renderRoomChat,
+} from '../room.js';
 import { recordEvent } from '../events.js';
 import { createHandoff } from '../handoff.js';
 import { recordDecision } from '../decision.js';
@@ -50,8 +56,17 @@ describe('room', () => {
   it('builds room view with events', () => {
     const events = [
       makeEvent({ type: 'pr.doctor.ready', summary: 'PR ready', object: { kind: 'pr', id: '42' } }),
-      makeEvent({ type: 'pr.merge.requested', summary: 'Merge requested', object: { kind: 'pr', id: '42' }, nextAction: { owner: 'human', action: 'Review' } }),
-      makeEvent({ type: 'task.created', summary: 'Other task', object: { kind: 'issue', id: '21' } }),
+      makeEvent({
+        type: 'pr.merge.requested',
+        summary: 'Merge requested',
+        object: { kind: 'pr', id: '42' },
+        nextAction: { owner: 'human', action: 'Review' },
+      }),
+      makeEvent({
+        type: 'task.created',
+        summary: 'Other task',
+        object: { kind: 'issue', id: '21' },
+      }),
     ];
 
     const view = buildRoomView('pr:42', events);
@@ -63,7 +78,11 @@ describe('room', () => {
 
   it('finds blockers in room view', () => {
     const events = [
-      makeEvent({ type: 'pr.doctor.blocked', summary: 'PR blocked', object: { kind: 'pr', id: '42' } }),
+      makeEvent({
+        type: 'pr.doctor.blocked',
+        summary: 'PR blocked',
+        object: { kind: 'pr', id: '42' },
+      }),
       makeEvent({ type: 'pr.doctor.ready', summary: 'PR ready', object: { kind: 'pr', id: '42' } }),
     ];
 
@@ -82,8 +101,18 @@ describe('room', () => {
   });
 
   it('finds linked decisions', () => {
-    recordDecision({ topic: 'PR 42 approach', decision: 'Use approach A', rationale: 'Better', decidedBy: 'team' });
-    recordDecision({ topic: 'Something else', decision: 'Do B', rationale: 'OK', decidedBy: 'team' });
+    recordDecision({
+      topic: 'PR 42 approach',
+      decision: 'Use approach A',
+      rationale: 'Better',
+      decidedBy: 'team',
+    });
+    recordDecision({
+      topic: 'Something else',
+      decision: 'Do B',
+      rationale: 'OK',
+      decidedBy: 'team',
+    });
 
     const view = buildRoomView('pr:42', []);
     expect(view!.linkedDecisions.length).toBe(1);
@@ -117,7 +146,11 @@ describe('room', () => {
 
   it('renders blockers section', () => {
     const events = [
-      makeEvent({ type: 'pr.doctor.blocked', summary: 'Tests failing', object: { kind: 'pr', id: '42' } }),
+      makeEvent({
+        type: 'pr.doctor.blocked',
+        summary: 'Tests failing',
+        object: { kind: 'pr', id: '42' },
+      }),
     ];
 
     const view = buildRoomView('pr:42', events);
@@ -182,7 +215,11 @@ describe('renderRoomPlain', () => {
 
   it('renders blockers with [BLOCKER] tag', () => {
     const events = [
-      makeEvent({ type: 'pr.doctor.blocked', summary: 'Tests failing', object: { kind: 'pr', id: '42' } }),
+      makeEvent({
+        type: 'pr.doctor.blocked',
+        summary: 'Tests failing',
+        object: { kind: 'pr', id: '42' },
+      }),
     ];
     const view = buildRoomView('pr:42', events);
     const output = renderRoomPlain(view!);
@@ -202,7 +239,12 @@ describe('renderRoomPlain', () => {
   });
 
   it('renders decisions with status', () => {
-    recordDecision({ topic: 'PR 42 approach', decision: 'Use approach A', rationale: 'Better', decidedBy: 'team' });
+    recordDecision({
+      topic: 'PR 42 approach',
+      decision: 'Use approach A',
+      rationale: 'Better',
+      decidedBy: 'team',
+    });
     const view = buildRoomView('pr:42', []);
     const output = renderRoomPlain(view!);
     expect(output).toContain('DECISIONS (1)');
@@ -212,7 +254,11 @@ describe('renderRoomPlain', () => {
   it('renders recent events with blocker tag', () => {
     const events = [
       makeEvent({ type: 'pr.doctor.ready', summary: 'PR ready', object: { kind: 'pr', id: '42' } }),
-      makeEvent({ type: 'pr.doctor.blocked', summary: 'Blocked', object: { kind: 'pr', id: '42' } }),
+      makeEvent({
+        type: 'pr.doctor.blocked',
+        summary: 'Blocked',
+        object: { kind: 'pr', id: '42' },
+      }),
     ];
     const view = buildRoomView('pr:42', events);
     const output = renderRoomPlain(view!);
@@ -297,7 +343,11 @@ describe('renderRoomChat', () => {
 
   it('renders blockers with warning emoji', () => {
     const events = [
-      makeEvent({ type: 'pr.doctor.blocked', summary: 'Tests failing', object: { kind: 'pr', id: '42' } }),
+      makeEvent({
+        type: 'pr.doctor.blocked',
+        summary: 'Tests failing',
+        object: { kind: 'pr', id: '42' },
+      }),
     ];
     const view = buildRoomView('pr:42', events);
     const output = renderRoomChat(view!);
@@ -316,7 +366,12 @@ describe('renderRoomChat', () => {
   });
 
   it('renders decisions with circle icons', () => {
-    recordDecision({ topic: 'PR 42 approach', decision: 'Use approach A', rationale: 'Better', decidedBy: 'team' });
+    recordDecision({
+      topic: 'PR 42 approach',
+      decision: 'Use approach A',
+      rationale: 'Better',
+      decidedBy: 'team',
+    });
     const view = buildRoomView('pr:42', []);
     const output = renderRoomChat(view!);
     expect(output).toContain('*Decisions:*');
