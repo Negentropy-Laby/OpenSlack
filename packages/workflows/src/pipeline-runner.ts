@@ -1,11 +1,11 @@
-import type { BudgetState, ClaudeBudgetAPI, PipelineOptions } from './types.js'
+import type { BudgetState, ClaudeBudgetAPI, PipelineOptions } from './types.js';
 
 /**
  * Cache store interface for pipeline item checkpointing.
  */
 export interface PipelineCacheStore {
-  loadItem(runId: string, phase: string, index: number): Promise<unknown | null>
-  saveItem(runId: string, phase: string, index: number, result: unknown): Promise<void>
+  loadItem(runId: string, phase: string, index: number): Promise<unknown | null>;
+  saveItem(runId: string, phase: string, index: number, result: unknown): Promise<void>;
 }
 
 /**
@@ -37,77 +37,77 @@ export async function runPipeline<T, R>(
   budget?: BudgetState,
   log?: (message: string) => void,
 ): Promise<(R | null)[]> {
-  if (items.length === 0) return []
+  if (items.length === 0) return [];
 
-  const concurrency = options?.concurrency ?? 4
+  const concurrency = options?.concurrency ?? 4;
 
   // Budget pre-check
   if (budget && budget.tokensRemaining !== null && budget.tokensRemaining <= 0) {
-    throw new Error('Budget exhausted: no tokens remaining for pipeline')
+    throw new Error('Budget exhausted: no tokens remaining for pipeline');
   }
 
-  const results: (R | null)[] = new Array(items.length).fill(null)
-  let nextIndex = 0
+  const results: (R | null)[] = new Array(items.length).fill(null);
+  let nextIndex = 0;
 
   // Phase 1: replay cached items (must be contiguous from start)
   for (let i = 0; i < items.length; i++) {
-    const cached = await cache.loadItem(runId, phase, i)
+    const cached = await cache.loadItem(runId, phase, i);
     if (cached !== null) {
-      results[i] = cached as R
-      nextIndex = i + 1
+      results[i] = cached as R;
+      nextIndex = i + 1;
     } else {
-      break
+      break;
     }
   }
 
   if (nextIndex > 0) {
-    log?.(`Replayed ${nextIndex} cached pipeline items for phase "${phase}"`)
+    log?.(`Replayed ${nextIndex} cached pipeline items for phase "${phase}"`);
   }
 
   // If all items were cached, return early
   if (nextIndex >= items.length) {
-    return results
+    return results;
   }
 
   // Phase 2: execute remaining items with bounded concurrency
-  const settled = new Set<number>()
-  const inFlight: Array<{ index: number; promise: Promise<void> }> = []
+  const settled = new Set<number>();
+  const inFlight: Array<{ index: number; promise: Promise<void> }> = [];
 
   async function launchItem(index: number): Promise<void> {
     try {
-      const result = await fn(items[index], index)
-      results[index] = result
-      await cache.saveItem(runId, phase, index, result)
+      const result = await fn(items[index], index);
+      results[index] = result;
+      await cache.saveItem(runId, phase, index, result);
     } catch (err) {
-      results[index] = null
-      const msg = err instanceof Error ? err.message : String(err)
-      log?.(`Pipeline item ${index} failed: ${msg}`)
+      results[index] = null;
+      const msg = err instanceof Error ? err.message : String(err);
+      log?.(`Pipeline item ${index} failed: ${msg}`);
     }
-    settled.add(index)
+    settled.add(index);
   }
 
   while (nextIndex < items.length || inFlight.length > 0) {
     // Fill up to concurrency limit
     while (inFlight.length < concurrency && nextIndex < items.length) {
-      const index = nextIndex++
-      const promise = launchItem(index)
-      inFlight.push({ index, promise })
+      const index = nextIndex++;
+      const promise = launchItem(index);
+      inFlight.push({ index, promise });
     }
 
     if (inFlight.length > 0) {
       // Wait for at least one to settle
-      await Promise.race(inFlight.map((entry) => entry.promise))
+      await Promise.race(inFlight.map((entry) => entry.promise));
 
       // Remove settled entries
       for (let j = inFlight.length - 1; j >= 0; j--) {
         if (settled.has(inFlight[j].index)) {
-          inFlight.splice(j, 1)
+          inFlight.splice(j, 1);
         }
       }
     }
   }
 
-  return results
+  return results;
 }
 
 /**
@@ -126,46 +126,46 @@ export async function runMultiStagePipeline<T, R>(
   stages: Array<(prev: unknown, item: T, index: number) => Promise<unknown>>,
   options?: PipelineOptions,
 ): Promise<(R | null)[]> {
-  if (items.length === 0) return []
-  if (stages.length === 0) return items.map(() => null as R | null)
+  if (items.length === 0) return [];
+  if (stages.length === 0) return items.map(() => null as R | null);
 
-  const concurrency = options?.concurrency ?? 4
-  const results: (R | null)[] = new Array(items.length).fill(null)
+  const concurrency = options?.concurrency ?? 4;
+  const results: (R | null)[] = new Array(items.length).fill(null);
 
-  const settled = new Set<number>()
-  const inFlight: Array<{ index: number; promise: Promise<void> }> = []
-  let nextIndex = 0
+  const settled = new Set<number>();
+  const inFlight: Array<{ index: number; promise: Promise<void> }> = [];
+  let nextIndex = 0;
 
   async function processItem(index: number): Promise<void> {
     try {
-      let prev: unknown = undefined
+      let prev: unknown = undefined;
       for (const stage of stages) {
-        prev = await stage(prev, items[index], index)
+        prev = await stage(prev, items[index], index);
       }
-      results[index] = prev as R
+      results[index] = prev as R;
     } catch (err) {
-      results[index] = null
+      results[index] = null;
     }
-    settled.add(index)
+    settled.add(index);
   }
 
   while (nextIndex < items.length || inFlight.length > 0) {
     while (inFlight.length < concurrency && nextIndex < items.length) {
-      const index = nextIndex++
-      const promise = processItem(index)
-      inFlight.push({ index, promise })
+      const index = nextIndex++;
+      const promise = processItem(index);
+      inFlight.push({ index, promise });
     }
 
     if (inFlight.length > 0) {
-      await Promise.race(inFlight.map((entry) => entry.promise))
+      await Promise.race(inFlight.map((entry) => entry.promise));
 
       for (let j = inFlight.length - 1; j >= 0; j--) {
         if (settled.has(inFlight[j].index)) {
-          inFlight.splice(j, 1)
+          inFlight.splice(j, 1);
         }
       }
     }
   }
 
-  return results
+  return results;
 }
