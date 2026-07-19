@@ -35,7 +35,10 @@ export function verifyNegentropySchemaPin(bytes = bundledNegentropySchemaBytes()
     );
   }
   const schema = JSON.parse(bytes.toString('utf8')) as Record<string, unknown>;
-  if (schema.$id !== 'https://schemas.negentropy.dev/slots/negentropy.slot-contribution.v1.schema.json') {
+  if (
+    schema.$id !==
+    'https://schemas.negentropy.dev/slots/negentropy.slot-contribution.v1.schema.json'
+  ) {
     throw new NegentropySchemaPinError('Pinned Negentropy schema identity is invalid.');
   }
 }
