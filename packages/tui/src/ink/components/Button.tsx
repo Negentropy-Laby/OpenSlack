@@ -65,11 +65,7 @@ function Button({
         setIsActive(true);
         onAction();
         if (activeTimer.current) clearTimeout(activeTimer.current);
-        activeTimer.current = setTimeout(
-          setter => setter(false),
-          100,
-          setIsActive,
-        );
+        activeTimer.current = setTimeout((setter) => setter(false), 100, setIsActive);
       }
     },
     [onAction],

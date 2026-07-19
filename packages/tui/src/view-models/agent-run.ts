@@ -36,15 +36,15 @@ export function mapAgentRunToViewModel(
   const bridgeStarted = transcript.find(
     (e) => e.type === 'progress' && e.data.step === 'bridge_session_started',
   );
-  const bridgeCompleted = [...transcript].reverse().find(
-    (e) => e.type === 'progress' && e.data.step === 'bridge_session_completed',
-  );
-  const bridgeFailed = [...transcript].reverse().find(
-    (e) => e.type === 'progress' && e.data.step === 'bridge_session_failed',
-  );
-  const mcpAvailability = [...transcript].reverse().find(
-    (e) => e.type === 'progress' && e.data.step === 'bridge_mcp_availability',
-  );
+  const bridgeCompleted = [...transcript]
+    .reverse()
+    .find((e) => e.type === 'progress' && e.data.step === 'bridge_session_completed');
+  const bridgeFailed = [...transcript]
+    .reverse()
+    .find((e) => e.type === 'progress' && e.data.step === 'bridge_session_failed');
+  const mcpAvailability = [...transcript]
+    .reverse()
+    .find((e) => e.type === 'progress' && e.data.step === 'bridge_mcp_availability');
   const permissionDenies = transcript.filter(
     (e) =>
       e.type === 'progress' &&
@@ -95,7 +95,9 @@ export function mapAgentRunToViewModel(
 }
 
 function readStringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
 }
 
 function readTranscriptFromState(state: AgentRunState, rootDir?: string): AgentRunEvent[] {

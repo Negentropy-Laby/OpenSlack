@@ -33,26 +33,40 @@ function statusToCategory(status: string): 'pass' | 'fail' | 'warn' | 'info' {
 
 function eventIcon(type: string): string {
   switch (type) {
-    case 'start': return '>';
-    case 'progress': return '~';
-    case 'tool_call': return '#';
-    case 'tool_result': return '<';
-    case 'complete': return '+';
-    case 'fail': return '!';
-    default: return '.';
+    case 'start':
+      return '>';
+    case 'progress':
+      return '~';
+    case 'tool_call':
+      return '#';
+    case 'tool_result':
+      return '<';
+    case 'complete':
+      return '+';
+    case 'fail':
+      return '!';
+    default:
+      return '.';
   }
 }
 
 function eventSummary(e: AgentRunEvent): string {
   const toolName = String(e.data?.toolName ?? e.data?.tool ?? 'unknown');
   switch (e.type) {
-    case 'start': return `started -- ${String(e.data?.agentId ?? 'agent')}`;
-    case 'progress': return `step: ${String(e.data?.step ?? 'unknown')}`;
-    case 'tool_call': return `tool: ${toolName}`;
-    case 'tool_result': return `result: ${toolName}`;
-    case 'complete': return `completed (${String(e.data?.tokenUsage ?? 0)} tokens)`;
-    case 'fail': return `failed: ${String(e.data?.error ?? 'unknown error')}`;
-    default: return e.type;
+    case 'start':
+      return `started -- ${String(e.data?.agentId ?? 'agent')}`;
+    case 'progress':
+      return `step: ${String(e.data?.step ?? 'unknown')}`;
+    case 'tool_call':
+      return `tool: ${toolName}`;
+    case 'tool_result':
+      return `result: ${toolName}`;
+    case 'complete':
+      return `completed (${String(e.data?.tokenUsage ?? 0)} tokens)`;
+    case 'fail':
+      return `failed: ${String(e.data?.error ?? 'unknown error')}`;
+    default:
+      return e.type;
   }
 }
 
@@ -207,13 +221,21 @@ export default function AgentRunDetailView({
           Box,
           { flexDirection: 'row' },
           React.createElement(ThemedText, { colorTheme: 'muted' }, 'Permission Denies: '),
-          React.createElement(ThemedText, { colorTheme: 'foreground' }, String(model.permissionDenies)),
+          React.createElement(
+            ThemedText,
+            { colorTheme: 'foreground' },
+            String(model.permissionDenies),
+          ),
         ),
         React.createElement(
           Box,
           { flexDirection: 'row' },
           React.createElement(ThemedText, { colorTheme: 'muted' }, 'Worktree Handoff: '),
-          React.createElement(ThemedText, { colorTheme: 'foreground' }, model.worktreeHandoffStatus),
+          React.createElement(
+            ThemedText,
+            { colorTheme: 'foreground' },
+            model.worktreeHandoffStatus,
+          ),
         ),
       ),
     ),
@@ -260,11 +282,7 @@ export default function AgentRunDetailView({
                     eventIcon(e.type),
                   ),
                   React.createElement(Text, null, ' '),
-                  React.createElement(
-                    ThemedText,
-                    { colorTheme: 'foreground' },
-                    eventSummary(e),
-                  ),
+                  React.createElement(ThemedText, { colorTheme: 'foreground' }, eventSummary(e)),
                 ),
               ),
             ),
@@ -274,7 +292,11 @@ export default function AgentRunDetailView({
           React.createElement(
             Pane,
             { title: 'Events', marginY: 0 },
-            React.createElement(ThemedText, { colorTheme: 'muted' }, 'No transcript events available'),
+            React.createElement(
+              ThemedText,
+              { colorTheme: 'muted' },
+              'No transcript events available',
+            ),
           ),
         ]),
 

@@ -1,8 +1,8 @@
-import React from 'react'
-import { useTheme } from './ThemeProvider.js'
-import ThemedText from './ThemedText.js'
+import React from 'react';
+import { useTheme } from './ThemeProvider.js';
+import ThemedText from './ThemedText.js';
 
-export type StatusCategory = 'pass' | 'warn' | 'fail' | 'blocked' | 'info'
+export type StatusCategory = 'pass' | 'warn' | 'fail' | 'blocked' | 'info';
 
 const STATUS_MAP: Record<string, StatusCategory> = {
   PASS: 'pass',
@@ -44,7 +44,7 @@ const STATUS_MAP: Record<string, StatusCategory> = {
   PENDING: 'info',
   CHECKS_PENDING: 'warn',
   open: 'info',
-}
+};
 
 const SYMBOLS: Record<StatusCategory, string> = {
   pass: '✓',
@@ -52,7 +52,7 @@ const SYMBOLS: Record<StatusCategory, string> = {
   fail: '✗',
   blocked: '⊘',
   info: '●',
-}
+};
 
 const THEME_KEYS: Record<StatusCategory, 'pass' | 'warning' | 'error' | 'blocker' | 'info'> = {
   pass: 'pass',
@@ -60,23 +60,23 @@ const THEME_KEYS: Record<StatusCategory, 'pass' | 'warning' | 'error' | 'blocker
   fail: 'error',
   blocked: 'blocker',
   info: 'info',
-}
+};
 
 export function categorizeStatus(status: string): StatusCategory {
-  if (STATUS_MAP[status]) return STATUS_MAP[status]
-  if (status.startsWith('BLOCKED_')) return 'blocked'
-  return 'info'
+  if (STATUS_MAP[status]) return STATUS_MAP[status];
+  if (status.startsWith('BLOCKED_')) return 'blocked';
+  return 'info';
 }
 
 export type StatusIconProps = {
-  status?: string
-  category?: StatusCategory
-}
+  status?: string;
+  category?: StatusCategory;
+};
 
 export default function StatusIcon({ status, category }: StatusIconProps): React.JSX.Element {
-  const cat = category ?? (status ? categorizeStatus(status) : 'info')
-  const symbol = SYMBOLS[cat]
-  const themeKey = THEME_KEYS[cat]
+  const cat = category ?? (status ? categorizeStatus(status) : 'info');
+  const symbol = SYMBOLS[cat];
+  const themeKey = THEME_KEYS[cat];
 
-  return React.createElement(ThemedText, { colorTheme: themeKey, bold: true }, symbol)
+  return React.createElement(ThemedText, { colorTheme: themeKey, bold: true }, symbol);
 }

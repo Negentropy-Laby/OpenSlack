@@ -1,11 +1,11 @@
-import React, { type PropsWithChildren, type Ref } from 'react'
-import type { Except } from 'type-fest'
-import type { DOMElement } from '../dom.js'
-import type { ClickEvent } from '../events/click-event.js'
-import type { FocusEvent } from '../events/focus-event.js'
-import type { KeyboardEvent } from '../events/keyboard-event.js'
-import type { Styles } from '../styles.js'
-import * as warn from '../warn.js'
+import React, { type PropsWithChildren, type Ref } from 'react';
+import type { Except } from 'type-fest';
+import type { DOMElement } from '../dom.js';
+import type { ClickEvent } from '../events/click-event.js';
+import type { FocusEvent } from '../events/focus-event.js';
+import type { KeyboardEvent } from '../events/keyboard-event.js';
+import type { Styles } from '../styles.js';
+import * as warn from '../warn.js';
 
 export type Props = Except<Styles, 'textWrap'> & {
   ref?: Ref<DOMElement>;
@@ -68,23 +68,23 @@ function Box({
   ...style
 }: PropsWithChildren<Props>): React.ReactNode {
   // Warn if spacing values are not integers to prevent fractional layout dimensions
-  warn.ifNotInteger(style.margin, 'margin')
-  warn.ifNotInteger(style.marginX, 'marginX')
-  warn.ifNotInteger(style.marginY, 'marginY')
-  warn.ifNotInteger(style.marginTop, 'marginTop')
-  warn.ifNotInteger(style.marginBottom, 'marginBottom')
-  warn.ifNotInteger(style.marginLeft, 'marginLeft')
-  warn.ifNotInteger(style.marginRight, 'marginRight')
-  warn.ifNotInteger(style.padding, 'padding')
-  warn.ifNotInteger(style.paddingX, 'paddingX')
-  warn.ifNotInteger(style.paddingY, 'paddingY')
-  warn.ifNotInteger(style.paddingTop, 'paddingTop')
-  warn.ifNotInteger(style.paddingBottom, 'paddingBottom')
-  warn.ifNotInteger(style.paddingLeft, 'paddingLeft')
-  warn.ifNotInteger(style.paddingRight, 'paddingRight')
-  warn.ifNotInteger(style.gap, 'gap')
-  warn.ifNotInteger(style.columnGap, 'columnGap')
-  warn.ifNotInteger(style.rowGap, 'rowGap')
+  warn.ifNotInteger(style.margin, 'margin');
+  warn.ifNotInteger(style.marginX, 'marginX');
+  warn.ifNotInteger(style.marginY, 'marginY');
+  warn.ifNotInteger(style.marginTop, 'marginTop');
+  warn.ifNotInteger(style.marginBottom, 'marginBottom');
+  warn.ifNotInteger(style.marginLeft, 'marginLeft');
+  warn.ifNotInteger(style.marginRight, 'marginRight');
+  warn.ifNotInteger(style.padding, 'padding');
+  warn.ifNotInteger(style.paddingX, 'paddingX');
+  warn.ifNotInteger(style.paddingY, 'paddingY');
+  warn.ifNotInteger(style.paddingTop, 'paddingTop');
+  warn.ifNotInteger(style.paddingBottom, 'paddingBottom');
+  warn.ifNotInteger(style.paddingLeft, 'paddingLeft');
+  warn.ifNotInteger(style.paddingRight, 'paddingRight');
+  warn.ifNotInteger(style.gap, 'gap');
+  warn.ifNotInteger(style.columnGap, 'columnGap');
+  warn.ifNotInteger(style.rowGap, 'rowGap');
 
   return (
     <ink-box
@@ -112,7 +112,7 @@ function Box({
     >
       {children}
     </ink-box>
-  )
+  );
 }
 
-export default Box
+export default Box;
