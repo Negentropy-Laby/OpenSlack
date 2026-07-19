@@ -42,14 +42,14 @@ failure_issue:
 on_existing_pr: skip
 ```
 
-| Field | Meaning |
-|-------|---------|
-| `source.repo` | Content truth source. |
-| `target.repo` | Repository whose `profile/README.md` is the projection. |
-| `target.marker` | HTML-comment marker that bounds the injected block. |
-| `mode` | `manual` (operator-triggered) or future scheduled mode. |
-| `max_posts` | Maximum posts to include in one sync. |
-| `pr.draft` | Whether the sync PR is opened as a draft. |
+| Field            | Meaning                                                                                |
+| ---------------- | -------------------------------------------------------------------------------------- |
+| `source.repo`    | Content truth source.                                                                  |
+| `target.repo`    | Repository whose `profile/README.md` is the projection.                                |
+| `target.marker`  | HTML-comment marker that bounds the injected block.                                    |
+| `mode`           | `manual` (operator-triggered) or future scheduled mode.                                |
+| `max_posts`      | Maximum posts to include in one sync.                                                  |
+| `pr.draft`       | Whether the sync PR is opened as a draft.                                              |
 | `on_existing_pr` | Action when an open profile-sync PR already exists: `skip`, `update`, or `create_new`. |
 
 All values can be overridden on the command line with flags such as `--source`, `--target`, `--path`, `--posts`, `--marker`, `--max`, and `--on-existing-pr`.
