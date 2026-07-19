@@ -4,10 +4,19 @@ import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import { parseIntent } from '../intent.js';
 import { planActions } from '../planner.js';
-import { listPendingPlans, loadPendingPlan, resumePendingPlan, savePendingPlan, updatePendingPlanState } from '../plan-store.js';
+import {
+  listPendingPlans,
+  loadPendingPlan,
+  resumePendingPlan,
+  savePendingPlan,
+  updatePendingPlanState,
+} from '../plan-store.js';
 
 function makeRoot(): string {
-  return join(tmpdir(), `openslack-operator-plans-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  return join(
+    tmpdir(),
+    `openslack-operator-plans-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
 }
 
 describe('operator plan store', () => {
@@ -41,4 +50,3 @@ describe('operator plan store', () => {
     }
   });
 });
-

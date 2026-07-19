@@ -45,9 +45,10 @@ export function buildDashboardCard(data: DashboardCardData): ChatCard {
 
   return {
     title: 'OpenSlack Team Dashboard',
-    summary: data.blockerCount > 0
-      ? `${data.blockerCount} blocker(s) in the last ${data.sinceHours}h`
-      : `No blockers in the last ${data.sinceHours}h`,
+    summary:
+      data.blockerCount > 0
+        ? `${data.blockerCount} blocker(s) in the last ${data.sinceHours}h`
+        : `No blockers in the last ${data.sinceHours}h`,
     fields,
     actions: [],
   };
@@ -78,9 +79,10 @@ export function buildRoomCard(data: RoomCardData): ChatCard {
 
   return {
     title: `Room: ${data.roomId}`,
-    summary: data.blockerCount > 0
-      ? `${data.blockerCount} active blocker(s)`
-      : `${data.eventCount} events, no blockers`,
+    summary:
+      data.blockerCount > 0
+        ? `${data.blockerCount} active blocker(s)`
+        : `${data.eventCount} events, no blockers`,
     fields,
     actions: [],
   };

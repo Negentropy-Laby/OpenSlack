@@ -2,28 +2,30 @@ import type { PRReviewReport } from './types.js';
 import { filterValidApprovals, isBotUser } from './approvals.js';
 import { renderPRDecisionSummary, summarizePRDecision } from './decision-summary.js';
 
-export function generateDoctorReport(
-  report: PRReviewReport,
-  codeowners: string[],
-): string {
+export function generateDoctorReport(report: PRReviewReport, codeowners: string[]): string {
   const validApprovers = filterValidApprovals(report.reviews, report.author, report.headSha);
   const validApproverSet = new Set(validApprovers);
   const totalReviews = report.reviews.length;
-  const botApprovals = report.reviews.filter(
-    (r) => r.state === 'APPROVED' && isBotUser(r.user),
-  );
+  const botApprovals = report.reviews.filter((r) => r.state === 'APPROVED' && isBotUser(r.user));
 
   const checkSummary =
     report.checks.length === 0
       ? 'none'
       : report.checks.every(
-          (c) => c.status === 'completed'
-            && (c.conclusion === 'success' || c.conclusion === 'neutral' || c.conclusion === 'skipped'),
-        )
+            (c) =>
+              c.status === 'completed' &&
+              (c.conclusion === 'success' ||
+                c.conclusion === 'neutral' ||
+                c.conclusion === 'skipped'),
+          )
         ? 'pass'
         : report.checks.some(
-            (c) => c.conclusion && c.conclusion !== 'success' && c.conclusion !== 'neutral' && c.conclusion !== 'skipped',
-          )
+              (c) =>
+                c.conclusion &&
+                c.conclusion !== 'success' &&
+                c.conclusion !== 'neutral' &&
+                c.conclusion !== 'skipped',
+            )
           ? 'fail'
           : 'pending';
 
@@ -81,7 +83,9 @@ export function generateDoctorReport(
       ? [
           `| Criterion | Status |`,
           `|-----------|--------|`,
-          ...report.workflowGate.criteria.map((c) => `| ${c.name} | ${c.status}${c.detail ? ` — ${c.detail}` : ''} |`),
+          ...report.workflowGate.criteria.map(
+            (c) => `| ${c.name} | ${c.status}${c.detail ? ` — ${c.detail}` : ''} |`,
+          ),
           '',
           `**Overall: ${report.workflowGate.overall}**`,
         ]

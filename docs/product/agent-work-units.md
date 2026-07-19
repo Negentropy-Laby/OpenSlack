@@ -3,13 +3,13 @@
 OpenSlack uses several work units. They are intentionally separate because each
 one owns planning, context, permissions, and evidence differently.
 
-| Work Unit | Plan Owner | Best For | Evidence |
-|-----------|------------|----------|----------|
-| Direct operator action | Operator planner | Single-step, low fan-out tasks | Operator plan and command output |
-| Subagent | Parent agent or workflow phase | One bounded delegation | Agent run transcript |
-| Skill | Human-authored reusable instruction | Repeatable methods and conventions | Skill files and referenced artifacts |
-| Workflow | Workflow runtime script | Long-running, parallel, cached, verified work | Workflow run store, phase outputs, agent transcripts |
-| Agent team | Lead agent supervising peer sessions | Long-lived collaboration | Deferred beyond Dynamic Workflow Parity v1 |
+| Work Unit              | Plan Owner                           | Best For                                      | Evidence                                             |
+| ---------------------- | ------------------------------------ | --------------------------------------------- | ---------------------------------------------------- |
+| Direct operator action | Operator planner                     | Single-step, low fan-out tasks                | Operator plan and command output                     |
+| Subagent               | Parent agent or workflow phase       | One bounded delegation                        | Agent run transcript                                 |
+| Skill                  | Human-authored reusable instruction  | Repeatable methods and conventions            | Skill files and referenced artifacts                 |
+| Workflow               | Workflow runtime script              | Long-running, parallel, cached, verified work | Workflow run store, phase outputs, agent transcripts |
+| Agent team             | Lead agent supervising peer sessions | Long-lived collaboration                      | Deferred beyond Dynamic Workflow Parity v1           |
 
 Dynamic workflows are not just larger subagent prompts. A workflow is a runtime
 script that owns phase order, loops, fan-out, synthesis, and intermediate

@@ -25,9 +25,7 @@ export function appendTranscriptEvent(runId: string, event: AgentRunEvent, rootD
 
   const scan = scanValue(event, 'transcript');
   if (scan.found) {
-    throw new Error(
-      `Transcript event contains ${scan.name} at ${scan.path}. Refusing to persist.`,
-    );
+    throw new Error(`Transcript event contains ${scan.name} at ${scan.path}. Refusing to persist.`);
   }
 
   const transcriptPath = getTranscriptPath(runId, rootDir);

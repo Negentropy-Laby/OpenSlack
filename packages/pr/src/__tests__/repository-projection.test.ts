@@ -11,7 +11,9 @@ import {
 const temporaryRoots: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+  await Promise.all(
+    temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
+  );
 });
 
 async function temporaryRoot(): Promise<string> {
@@ -133,7 +135,9 @@ describe('buildRepositoryPRProjection', () => {
     });
     expect(result.changes).toEqual([]);
     expect(JSON.stringify(result)).not.toContain('untrusted PR body');
-    expect(JSON.stringify(result)).not.toMatch(/"humanApproval":"approved"|"mergeReadiness":"ready"/i);
+    expect(JSON.stringify(result)).not.toMatch(
+      /"humanApproval":"approved"|"mergeReadiness":"ready"/i,
+    );
   });
 
   it('deduplicates repository identity case-insensitively', async () => {
@@ -466,7 +470,8 @@ describe('buildRepositoryPRProjection', () => {
     const localStateRoot = join(workspace, '.openslack.local', 'pr-projection');
     const legacyPath = join(workspace, '.openslack.local', 'daemon', 'state.json');
     await mkdir(join(workspace, '.openslack.local', 'daemon'), { recursive: true });
-    const legacy = '{"schema":"openslack.watch_cursor.v1","repos":{"acme/project":{"lastSeenAt":"x","lastIssueNumber":1}}}\n';
+    const legacy =
+      '{"schema":"openslack.watch_cursor.v1","repos":{"acme/project":{"lastSeenAt":"x","lastIssueNumber":1}}}\n';
     await writeFile(legacyPath, legacy, 'utf8');
     const target = repository('Acme', 'Project');
 
@@ -480,7 +485,9 @@ describe('buildRepositoryPRProjection', () => {
     expect(await readFile(legacyPath, 'utf8')).toBe(legacy);
     expect(await readdir(join(localStateRoot, 'cache'))).toEqual(['acme--project.json']);
     expect(await readdir(join(localStateRoot, 'cursors'))).toEqual(['acme--project.json']);
-    expect((await readdir(join(localStateRoot, 'cache'))).some((path) => path.endsWith('.tmp'))).toBe(false);
+    expect(
+      (await readdir(join(localStateRoot, 'cache'))).some((path) => path.endsWith('.tmp')),
+    ).toBe(false);
   });
 
   it('validates bounded options and repository names before any state write', async () => {

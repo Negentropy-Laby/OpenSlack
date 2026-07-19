@@ -6,24 +6,62 @@ import { sanitizeEvent } from './redact.js';
 const ALLOWED_SCHEMA = 'openslack.collaboration_event.v1';
 
 const ALL_EVENT_TYPES: CollaborationEventType[] = [
-  'task.created', 'task.claimed', 'task.blocked', 'task.done', 'task.released', 'task.expired',
-  'pr.opened', 'pr.doctor.ready', 'pr.doctor.blocked',
-  'pr.review.commented', 'pr.watch.started', 'pr.watch.completed',
-  'pr.merge.requested', 'pr.merge.confirmed', 'pr.merge.completed', 'pr.merge.blocked',
-  'operator.intent.parsed', 'operator.plan.created', 'operator.plan.blocked',
-  'operator.execution.started', 'operator.execution.completed', 'operator.execution.failed',
-  'chat.message.received', 'chat.message.duplicate_dropped',
-  'chat.plan.confirmation_requested', 'chat.plan.confirmed', 'chat.plan.cancelled', 'chat.plan.expired',
-  'governance.audit.passed', 'governance.audit.failed',
-  'governance.direct_commit.explained', 'governance.direct_commit.unexplained',
-  'handoff.created', 'handoff.accepted', 'handoff.closed',
-  'decision.recorded', 'decision.superseded',
-  'room.summarized', 'digest.generated',
-  'workflow.previewed', 'workflow.started', 'workflow.completed', 'workflow.blocked',
-  'profile_sync.triggered', 'profile_sync.queued', 'profile_sync.started', 'profile_sync.completed', 'profile_sync.failed',
-  'repair.previewed', 'repair.applied', 'repair.failed',
-  'notification.sent', 'notification.failed',
-  'agent.conversation.started', 'agent.conversation.completed', 'agent.conversation.failed',
+  'task.created',
+  'task.claimed',
+  'task.blocked',
+  'task.done',
+  'task.released',
+  'task.expired',
+  'pr.opened',
+  'pr.doctor.ready',
+  'pr.doctor.blocked',
+  'pr.review.commented',
+  'pr.watch.started',
+  'pr.watch.completed',
+  'pr.merge.requested',
+  'pr.merge.confirmed',
+  'pr.merge.completed',
+  'pr.merge.blocked',
+  'operator.intent.parsed',
+  'operator.plan.created',
+  'operator.plan.blocked',
+  'operator.execution.started',
+  'operator.execution.completed',
+  'operator.execution.failed',
+  'chat.message.received',
+  'chat.message.duplicate_dropped',
+  'chat.plan.confirmation_requested',
+  'chat.plan.confirmed',
+  'chat.plan.cancelled',
+  'chat.plan.expired',
+  'governance.audit.passed',
+  'governance.audit.failed',
+  'governance.direct_commit.explained',
+  'governance.direct_commit.unexplained',
+  'handoff.created',
+  'handoff.accepted',
+  'handoff.closed',
+  'decision.recorded',
+  'decision.superseded',
+  'room.summarized',
+  'digest.generated',
+  'workflow.previewed',
+  'workflow.started',
+  'workflow.completed',
+  'workflow.blocked',
+  'profile_sync.triggered',
+  'profile_sync.queued',
+  'profile_sync.started',
+  'profile_sync.completed',
+  'profile_sync.failed',
+  'repair.previewed',
+  'repair.applied',
+  'repair.failed',
+  'notification.sent',
+  'notification.failed',
+  'agent.conversation.started',
+  'agent.conversation.completed',
+  'agent.conversation.failed',
 ];
 
 function getEventsDir(rootDir = process.cwd()): string {
@@ -122,7 +160,9 @@ export function validateEvent(event: unknown): { valid: boolean; reason?: string
   return { valid: true };
 }
 
-export function createEvent(partial: Omit<CollaborationEvent, 'id' | 'timestamp' | 'schema'>): CollaborationEvent {
+export function createEvent(
+  partial: Omit<CollaborationEvent, 'id' | 'timestamp' | 'schema'>,
+): CollaborationEvent {
   const event: CollaborationEvent = {
     id: generateEventId(),
     schema: ALLOWED_SCHEMA,
@@ -149,7 +189,9 @@ export function appendEvent(event: CollaborationEvent): void {
   appendFileSync(path, line, 'utf-8');
 }
 
-export function recordEvent(partial: Omit<CollaborationEvent, 'id' | 'timestamp' | 'schema'>): CollaborationEvent {
+export function recordEvent(
+  partial: Omit<CollaborationEvent, 'id' | 'timestamp' | 'schema'>,
+): CollaborationEvent {
   const event = createEvent(partial);
   appendEvent(event);
   return event;
@@ -177,7 +219,10 @@ export function readEvents(rootDir = process.cwd()): CollaborationEvent[] {
   return events;
 }
 
-export function filterEvents(events: CollaborationEvent[], filter: EventFilter): CollaborationEvent[] {
+export function filterEvents(
+  events: CollaborationEvent[],
+  filter: EventFilter,
+): CollaborationEvent[] {
   return events.filter((e) => {
     if (filter.type) {
       const types = Array.isArray(filter.type) ? filter.type : [filter.type];

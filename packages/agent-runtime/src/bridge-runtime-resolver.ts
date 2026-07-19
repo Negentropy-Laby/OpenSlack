@@ -110,17 +110,19 @@ function readAgentRuntimeConfig(options: BridgeRuntimeResolverOptions): unknown 
 function readAbyConfig(config: unknown): AbyBridgeRuntimeConfig {
   if (!config || typeof config !== 'object' || Array.isArray(config)) return {};
   const record = config as Record<string, unknown>;
-  const source = typeof record.aby === 'object' && record.aby !== null
-    ? record.aby as Record<string, unknown>
-    : record;
+  const source =
+    typeof record.aby === 'object' && record.aby !== null
+      ? (record.aby as Record<string, unknown>)
+      : record;
 
-  const env = typeof source.env === 'object' && source.env !== null && !Array.isArray(source.env)
-    ? Object.fromEntries(
-        Object.entries(source.env as Record<string, unknown>).filter(
-          (entry): entry is [string, string] => typeof entry[1] === 'string',
-        ),
-      )
-    : undefined;
+  const env =
+    typeof source.env === 'object' && source.env !== null && !Array.isArray(source.env)
+      ? Object.fromEntries(
+          Object.entries(source.env as Record<string, unknown>).filter(
+            (entry): entry is [string, string] => typeof entry[1] === 'string',
+          ),
+        )
+      : undefined;
 
   return {
     root: readString(source.root) ?? readString(source.abyRoot),
@@ -135,9 +137,7 @@ function readString(value: unknown): string | undefined {
 }
 
 function readPositiveInteger(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isInteger(value) && value > 0
-    ? value
-    : undefined;
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
 function resolveConfiguredPath(pathValue: string, rootDir?: string): string {

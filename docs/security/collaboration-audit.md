@@ -38,13 +38,13 @@ All event metadata passes through `sanitizeEvent()` before write.
 
 ### Secret Patterns
 
-| Pattern | Example | Action |
-|---------|---------|--------|
-| Slack token | `xoxb-1234567890-...` | Reject write |
-| GitHub token | `ghp_abcdef123...` | Reject write |
-| Private key | `-----BEGIN RSA PRIVATE KEY-----` | Reject write |
-| AWS secret | `AWS_SECRET_ACCESS_KEY=...` | Reject write |
-| OpenSlack secret | `OPENSLACK_WEBHOOK_SECRET=...` | Reject write |
+| Pattern          | Example                           | Action       |
+| ---------------- | --------------------------------- | ------------ |
+| Slack token      | `xoxb-1234567890-...`             | Reject write |
+| GitHub token     | `ghp_abcdef123...`                | Reject write |
+| Private key      | `-----BEGIN RSA PRIVATE KEY-----` | Reject write |
+| AWS secret       | `AWS_SECRET_ACCESS_KEY=...`       | Reject write |
+| OpenSlack secret | `OPENSLACK_WEBHOOK_SECRET=...`    | Reject write |
 
 ### Redaction Policy
 
@@ -60,15 +60,16 @@ All event metadata passes through `sanitizeEvent()` before write.
 
 ## Local vs Workspace Audit
 
-| Layer | Path | Committed | Contents |
-|-------|------|-----------|----------|
-| Local runtime | `.openslack.local/collaboration/events.jsonl` | No | Chat traces, operator traces, runtime events |
-| Workspace objects | `.openslack/collaboration/` | Yes | Handoffs, decisions |
-| Derived reports | `.openslack.local/collaboration/digests/` | No | Digest summaries |
+| Layer             | Path                                          | Committed | Contents                                     |
+| ----------------- | --------------------------------------------- | --------- | -------------------------------------------- |
+| Local runtime     | `.openslack.local/collaboration/events.jsonl` | No        | Chat traces, operator traces, runtime events |
+| Workspace objects | `.openslack/collaboration/`                   | Yes       | Handoffs, decisions                          |
+| Derived reports   | `.openslack.local/collaboration/digests/`     | No        | Digest summaries                             |
 
 ## Chat Security Boundary
 
 Chat messages produce events, but the Collaboration Layer does not:
+
 - Store full message text (only message ID, hash, intent kind)
 - Store Slack token or signing secret
 - Treat Slack confirmation alone as GitHub approval

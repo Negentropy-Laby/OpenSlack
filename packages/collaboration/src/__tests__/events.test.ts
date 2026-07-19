@@ -30,7 +30,9 @@ describe('events', () => {
     }
   });
 
-  function makeEvent(partial: Partial<CollaborationEvent> = {}): Omit<CollaborationEvent, 'id' | 'timestamp' | 'schema'> {
+  function makeEvent(
+    partial: Partial<CollaborationEvent> = {},
+  ): Omit<CollaborationEvent, 'id' | 'timestamp' | 'schema'> {
     const base = {
       type: 'pr.doctor.ready' as CollaborationEventType,
       actor: { id: 'test', kind: 'system' as const },
@@ -51,12 +53,14 @@ describe('events', () => {
   });
 
   it('validates repair events', () => {
-    const event = createEvent(makeEvent({
-      type: 'repair.previewed',
-      object: { kind: 'workspace', id: 'github:labels' },
-      source: { kind: 'github', ref: 'github.repair.labels' },
-      summary: 'Previewed GitHub label repair',
-    }));
+    const event = createEvent(
+      makeEvent({
+        type: 'repair.previewed',
+        object: { kind: 'workspace', id: 'github:labels' },
+        source: { kind: 'github', ref: 'github.repair.labels' },
+        summary: 'Previewed GitHub label repair',
+      }),
+    );
     expect(validateEvent(event).valid).toBe(true);
   });
 
@@ -78,7 +82,12 @@ describe('events', () => {
   });
 
   it('rejects event with missing actor', () => {
-    const base = { ...makeEvent(), schema: 'openslack.collaboration_event.v1', id: 'test', timestamp: new Date().toISOString() } as Record<string, unknown>;
+    const base = {
+      ...makeEvent(),
+      schema: 'openslack.collaboration_event.v1',
+      id: 'test',
+      timestamp: new Date().toISOString(),
+    } as Record<string, unknown>;
     delete base.actor;
     const result = validateEvent(base);
     expect(result.valid).toBe(false);
@@ -86,7 +95,12 @@ describe('events', () => {
   });
 
   it('rejects event with missing object', () => {
-    const base = { ...makeEvent(), schema: 'openslack.collaboration_event.v1', id: 'test', timestamp: new Date().toISOString() } as Record<string, unknown>;
+    const base = {
+      ...makeEvent(),
+      schema: 'openslack.collaboration_event.v1',
+      id: 'test',
+      timestamp: new Date().toISOString(),
+    } as Record<string, unknown>;
     delete base.object;
     const result = validateEvent(base);
     expect(result.valid).toBe(false);
@@ -94,7 +108,12 @@ describe('events', () => {
   });
 
   it('rejects event with missing summary', () => {
-    const base = { ...makeEvent(), schema: 'openslack.collaboration_event.v1', id: 'test', timestamp: new Date().toISOString() } as Record<string, unknown>;
+    const base = {
+      ...makeEvent(),
+      schema: 'openslack.collaboration_event.v1',
+      id: 'test',
+      timestamp: new Date().toISOString(),
+    } as Record<string, unknown>;
     delete base.summary;
     const result = validateEvent(base);
     expect(result.valid).toBe(false);
@@ -102,7 +121,12 @@ describe('events', () => {
   });
 
   it('rejects event with containsSensitiveData: true', () => {
-    const base = { ...makeEvent(), schema: 'openslack.collaboration_event.v1', id: 'test', timestamp: new Date().toISOString() } as Record<string, unknown>;
+    const base = {
+      ...makeEvent(),
+      schema: 'openslack.collaboration_event.v1',
+      id: 'test',
+      timestamp: new Date().toISOString(),
+    } as Record<string, unknown>;
     base.containsSensitiveData = true;
     const result = validateEvent(base);
     expect(result.valid).toBe(false);
@@ -110,7 +134,12 @@ describe('events', () => {
   });
 
   it('rejects event with missing visibility', () => {
-    const base = { ...makeEvent(), schema: 'openslack.collaboration_event.v1', id: 'test', timestamp: new Date().toISOString() } as Record<string, unknown>;
+    const base = {
+      ...makeEvent(),
+      schema: 'openslack.collaboration_event.v1',
+      id: 'test',
+      timestamp: new Date().toISOString(),
+    } as Record<string, unknown>;
     delete base.visibility;
     const result = validateEvent(base);
     expect(result.valid).toBe(false);

@@ -71,11 +71,20 @@ function cardFromStep(step: PlanStep, index: number): ConversationActionCard {
   if (step.actionId === 'pr.queue') {
     return { ...base, label: 'Open PR Queue', kind: 'route', route: 'pr-queue' };
   }
-  if (step.actionId === 'pr.doctor' || step.actionId === 'pr.review' || step.actionId === 'pr.status') {
+  if (
+    step.actionId === 'pr.doctor' ||
+    step.actionId === 'pr.review' ||
+    step.actionId === 'pr.status'
+  ) {
     const prNumber = step.input?.prNumber;
     return {
       ...base,
-      label: step.actionId === 'pr.doctor' ? 'Run PR Doctor' : step.actionId === 'pr.review' ? 'Review PR' : 'Check PR Status',
+      label:
+        step.actionId === 'pr.doctor'
+          ? 'Run PR Doctor'
+          : step.actionId === 'pr.review'
+            ? 'Review PR'
+            : 'Check PR Status',
       kind: 'command',
       command: stepCommand(step),
       linkedObject: typeof prNumber === 'number' ? { kind: 'pr', id: String(prNumber) } : undefined,
@@ -101,7 +110,8 @@ function cardFromStep(step: PlanStep, index: number): ConversationActionCard {
       label: step.description,
       kind: 'command',
       command: stepCommand(step),
-      linkedObject: typeof issueNumber === 'number' ? { kind: 'issue', id: String(issueNumber) } : undefined,
+      linkedObject:
+        typeof issueNumber === 'number' ? { kind: 'issue', id: String(issueNumber) } : undefined,
     };
   }
 
@@ -130,7 +140,8 @@ function workflowCards(prompt: string, risk: RiskLevel): ConversationActionCard[
     {
       id: 'workflow-preview-draft',
       label: 'Preview Draft',
-      detail: 'Inspect generated phases, budget, permissions, and side effects. Replace <draftId> with the ID returned by Generate Draft.',
+      detail:
+        'Inspect generated phases, budget, permissions, and side effects. Replace <draftId> with the ID returned by Generate Draft.',
       kind: 'command',
       route: 'workflows',
       command: 'openslack collaboration workflow preview-draft <draftId>',
@@ -140,7 +151,8 @@ function workflowCards(prompt: string, risk: RiskLevel): ConversationActionCard[
     {
       id: 'workflow-dry-run',
       label: 'Dry-run after draft review',
-      detail: 'Use after a reviewed workflow file exists. Replace <workflow-file> with that file path.',
+      detail:
+        'Use after a reviewed workflow file exists. Replace <workflow-file> with that file path.',
       kind: 'command',
       command: 'openslack collaboration workflow dry-run <workflow-file>',
       riskLevel: 'low',
@@ -149,7 +161,8 @@ function workflowCards(prompt: string, risk: RiskLevel): ConversationActionCard[
     {
       id: 'workflow-run',
       label: 'Run after approval',
-      detail: 'Execution can create side effects and must pass workflow approval gates. Replace <workflow-file> with the approved file path.',
+      detail:
+        'Execution can create side effects and must pass workflow approval gates. Replace <workflow-file> with the approved file path.',
       kind: 'approval',
       route: 'approvals',
       command: 'openslack collaboration workflow run <workflow-file>',
@@ -208,7 +221,7 @@ function cardsForPlan(plan: ActionPlan, originalText: string): ConversationActio
       {
         id: 'missing-params',
         label: 'Clarify Request',
-        detail: plan.missingParams.map(p => `${p.name}: ${p.description}`).join('; '),
+        detail: plan.missingParams.map((p) => `${p.name}: ${p.description}`).join('; '),
         kind: 'command',
         command: `openslack ask ${quote(originalText)}`,
         riskLevel: 'none',

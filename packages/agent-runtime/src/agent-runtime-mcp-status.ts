@@ -46,15 +46,13 @@ export function getAgentRuntimeMcpStatus(
     throw new Error(`Unsupported agent runtime provider: ${provider}`);
   }
 
-  const agent = options.agentId
-    ? findAgentRuntimeRegistryEntry(options.agentId, rootDir)
-    : null;
+  const agent = options.agentId ? findAgentRuntimeRegistryEntry(options.agentId, rootDir) : null;
   const run = options.runId ? createRunStore(rootDir).getRun(options.runId) : null;
   const transcript = options.runId ? readTranscript(options.runId, rootDir) : [];
   const startEvent = transcript.find((event) => event.type === 'start');
-  const availabilityEvent = [...transcript].reverse().find(
-    (event) => event.type === 'progress' && event.data.step === 'bridge_mcp_availability',
-  );
+  const availabilityEvent = [...transcript]
+    .reverse()
+    .find((event) => event.type === 'progress' && event.data.step === 'bridge_mcp_availability');
 
   const requiredServers = uniqueSorted([
     ...readStringArray(agent?.requiredMcpServers),
@@ -85,8 +83,7 @@ export function getAgentRuntimeMcpStatus(
   return {
     provider,
     status,
-    scopeNote:
-      'OpenSlack validates MCP descriptors and namespaces; Aby owns MCP client lifecycle.',
+    scopeNote: 'OpenSlack validates MCP descriptors and namespaces; Aby owns MCP client lifecycle.',
     agentId: agent?.agentId ?? run?.agentId ?? options.agentId,
     runId: options.runId,
     requiredServers,
@@ -105,7 +102,13 @@ export function getAgentRuntimeMcpStatus(
     })),
     invalidTools,
     toolEvidence,
-    remediations: remediationForMcp(status, options.agentId, options.runId, missingRequiredServers, invalidTools),
+    remediations: remediationForMcp(
+      status,
+      options.agentId,
+      options.runId,
+      missingRequiredServers,
+      invalidTools,
+    ),
   };
 }
 
@@ -155,7 +158,9 @@ function remediationForMcp(
     remediations.push(`Make required MCP servers available before launch: ${missing.join(', ')}.`);
   }
   if (invalid.length > 0) {
-    remediations.push('Fix MCP tool namespaces so they use mcp.<server>.<tool> for available servers.');
+    remediations.push(
+      'Fix MCP tool namespaces so they use mcp.<server>.<tool> for available servers.',
+    );
   }
   if (remediations.length === 0) {
     remediations.push('No MCP descriptors or transcript evidence were recorded.');

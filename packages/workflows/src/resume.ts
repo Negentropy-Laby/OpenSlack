@@ -1,11 +1,6 @@
-import type {
-  ExecutionMode,
-  PhaseCheckpoint,
-  RunStatus,
-  WorkflowMeta,
-} from './types.js'
-import { computeManifestHash } from './manifest.js'
-import type { RunStore, RunMeta } from './run-store.js'
+import type { ExecutionMode, PhaseCheckpoint, RunStatus, WorkflowMeta } from './types.js';
+import { computeManifestHash } from './manifest.js';
+import type { RunStore, RunMeta } from './run-store.js';
 
 /**
  * Result of a resume check: indicates whether a run can be resumed
@@ -13,17 +8,17 @@ import type { RunStore, RunMeta } from './run-store.js'
  */
 export interface ResumeCheckResult {
   /** Whether the run can be resumed. */
-  canResume: boolean
+  canResume: boolean;
   /** Reason if canResume is false. */
-  reason?: string
+  reason?: string;
   /** Current run status. */
-  status: RunStatus | null
+  status: RunStatus | null;
   /** Whether the manifest hash matches the stored one. */
-  manifestMatch: boolean
+  manifestMatch: boolean;
   /** The stored manifest hash. */
-  storedManifestHash?: string
+  storedManifestHash?: string;
   /** The current manifest hash. */
-  currentManifestHash?: string
+  currentManifestHash?: string;
 }
 
 /**
@@ -32,15 +27,15 @@ export interface ResumeCheckResult {
  */
 export interface ResumeState {
   /** The run ID to resume. */
-  runId: string
+  runId: string;
   /** Completed phase checkpoints from the previous run. */
-  completedPhases: PhaseCheckpoint[]
+  completedPhases: PhaseCheckpoint[];
   /** Index of the next phase to execute (in manifest.phases). */
-  nextPhaseIndex: number
+  nextPhaseIndex: number;
   /** Cached agent results keyed by cache key. */
-  cachedAgentResults: Map<string, unknown>
+  cachedAgentResults: Map<string, unknown>;
   /** The original run metadata. */
-  meta: RunMeta
+  meta: RunMeta;
 }
 
 /**
@@ -57,25 +52,25 @@ export async function checkResumable(
   manifest: WorkflowMeta,
 ): Promise<ResumeCheckResult> {
   // 1. Check run exists
-  const exists = await runStore.runExists(runId)
+  const exists = await runStore.runExists(runId);
   if (!exists) {
     return {
       canResume: false,
       reason: `Run ${runId} not found`,
       status: null,
       manifestMatch: false,
-    }
+    };
   }
 
   // 2. Load current status
-  const status = await runStore.getRunStatus(runId)
+  const status = await runStore.getRunStatus(runId);
   if (status === null) {
     return {
       canResume: false,
       reason: `Run ${runId} status not found`,
       status: null,
       manifestMatch: false,
-    }
+    };
   }
 
   // 3. Check status is "paused"
@@ -85,14 +80,14 @@ export async function checkResumable(
       reason: `Run ${runId} has status "${status.status}", expected "paused"`,
       status,
       manifestMatch: false,
-    }
+    };
   }
 
   // 4. Check manifest hash
-  const meta = await runStore.loadMeta(runId)
-  const storedHash = meta?.manifestHash
-  const currentHash = computeManifestHash(manifest)
-  const manifestMatch = storedHash === currentHash
+  const meta = await runStore.loadMeta(runId);
+  const storedHash = meta?.manifestHash;
+  const currentHash = computeManifestHash(manifest);
+  const manifestMatch = storedHash === currentHash;
 
   return {
     canResume: manifestMatch,
@@ -104,7 +99,7 @@ export async function checkResumable(
     manifestMatch,
     storedManifestHash: storedHash,
     currentManifestHash: currentHash,
-  }
+  };
 }
 
 /**
@@ -121,35 +116,35 @@ export async function prepareResume(
   manifest: WorkflowMeta,
 ): Promise<ResumeState> {
   // Validate the run is resumable
-  const check = await checkResumable(runStore, runId, manifest)
+  const check = await checkResumable(runStore, runId, manifest);
   if (!check.canResume) {
-    throw new Error(check.reason ?? `Cannot resume run ${runId}`)
+    throw new Error(check.reason ?? `Cannot resume run ${runId}`);
   }
 
-  const meta = await runStore.loadMeta(runId)
+  const meta = await runStore.loadMeta(runId);
   if (meta === null) {
-    throw new Error(`Run ${runId} metadata not found`)
+    throw new Error(`Run ${runId} metadata not found`);
   }
 
   // Collect completed phase checkpoints
-  const completedPhases: PhaseCheckpoint[] = []
+  const completedPhases: PhaseCheckpoint[] = [];
   for (const phaseDef of manifest.phases) {
-    const checkpoint = await runStore.loadPhaseCheckpoint(runId, phaseDef.title)
+    const checkpoint = await runStore.loadPhaseCheckpoint(runId, phaseDef.title);
     if (checkpoint !== null && checkpoint.status === 'completed') {
-      completedPhases.push(checkpoint)
+      completedPhases.push(checkpoint);
     } else {
       // Stop at the first non-completed phase
-      break
+      break;
     }
   }
 
   // Determine next phase index
-  const nextPhaseIndex = completedPhases.length
+  const nextPhaseIndex = completedPhases.length;
 
   // Note: agent result loading is lazy; the runtime loads them via
   // the RunStore's loadAgentResult when processing agent calls.
   // Here we return an empty map; actual loading happens on demand.
-  const cachedAgentResults = new Map<string, unknown>()
+  const cachedAgentResults = new Map<string, unknown>();
 
   return {
     runId,
@@ -157,7 +152,7 @@ export async function prepareResume(
     nextPhaseIndex,
     cachedAgentResults,
     meta,
-  }
+  };
 }
 
 /**
@@ -174,43 +169,41 @@ export async function forceResume(
   runId: string,
   manifest: WorkflowMeta,
 ): Promise<ResumeState> {
-  const exists = await runStore.runExists(runId)
+  const exists = await runStore.runExists(runId);
   if (!exists) {
-    throw new Error(`Run ${runId} not found`)
+    throw new Error(`Run ${runId} not found`);
   }
 
-  const status = await runStore.loadStatus(runId)
+  const status = await runStore.loadStatus(runId);
   if (status === null) {
-    throw new Error(`Run ${runId} status not found`)
+    throw new Error(`Run ${runId} status not found`);
   }
 
   if (status.status !== 'paused') {
-    throw new Error(
-      `Run ${runId} has status "${status.status}", expected "paused"`,
-    )
+    throw new Error(`Run ${runId} has status "${status.status}", expected "paused"`);
   }
 
   // Transition back to running
-  await runStore.transitionStatus(runId, 'running')
+  await runStore.transitionStatus(runId, 'running');
 
   // Load meta
-  const meta = await runStore.loadMeta(runId)
+  const meta = await runStore.loadMeta(runId);
   if (meta === null) {
-    throw new Error(`Run ${runId} metadata not found`)
+    throw new Error(`Run ${runId} metadata not found`);
   }
 
   // Collect completed phase checkpoints
-  const completedPhases: PhaseCheckpoint[] = []
+  const completedPhases: PhaseCheckpoint[] = [];
   for (const phaseDef of manifest.phases) {
-    const checkpoint = await runStore.loadPhaseCheckpoint(runId, phaseDef.title)
+    const checkpoint = await runStore.loadPhaseCheckpoint(runId, phaseDef.title);
     if (checkpoint !== null && checkpoint.status === 'completed') {
-      completedPhases.push(checkpoint)
+      completedPhases.push(checkpoint);
     } else {
-      break
+      break;
     }
   }
 
-  const nextPhaseIndex = completedPhases.length
+  const nextPhaseIndex = completedPhases.length;
 
   return {
     runId,
@@ -218,7 +211,7 @@ export async function forceResume(
     nextPhaseIndex,
     cachedAgentResults: new Map(),
     meta,
-  }
+  };
 }
 
 /**
@@ -235,27 +228,25 @@ export function replayCachedPhases(
   manifest: WorkflowMeta,
   checkpoints: PhaseCheckpoint[],
 ): PhaseCheckpoint[] {
-  const result: PhaseCheckpoint[] = []
+  const result: PhaseCheckpoint[] = [];
 
   for (let i = 0; i < manifest.phases.length; i++) {
-    const expectedPhase = manifest.phases[i].title
+    const expectedPhase = manifest.phases[i].title;
     if (i < checkpoints.length) {
-      const cp = checkpoints[i]
+      const cp = checkpoints[i];
       if (cp.phase !== expectedPhase) {
         throw new Error(
           `Phase mismatch at index ${i}: expected "${expectedPhase}", got "${cp.phase}"`,
-        )
+        );
       }
       if (cp.status !== 'completed') {
-        throw new Error(
-          `Phase "${cp.phase}" has status "${cp.status}", expected "completed"`,
-        )
+        throw new Error(`Phase "${cp.phase}" has status "${cp.status}", expected "completed"`);
       }
-      result.push(cp)
+      result.push(cp);
     } else {
-      break
+      break;
     }
   }
 
-  return result
+  return result;
 }

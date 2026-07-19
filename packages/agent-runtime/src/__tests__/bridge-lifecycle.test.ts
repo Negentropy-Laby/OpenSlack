@@ -8,17 +8,18 @@ import { createRunStore } from '../run-store.js';
 import { generateRunId } from '../run-store.js';
 import { readTranscript } from '../transcript.js';
 import { buildPermissionProfile } from '../permissions.js';
-import {
-  FakeBridgeAdapter,
-  createOpenSlackAgentLauncher,
-} from '../index.js';
+import { FakeBridgeAdapter, createOpenSlackAgentLauncher } from '../index.js';
 
 function makeTempRoot(): string {
   return mkdtempSync(join(tmpdir(), 'bridge-lifecycle-test-'));
 }
 
 function cleanup(root: string) {
-  try { rmSync(root, { recursive: true, force: true }); } catch { /* ignore */ }
+  try {
+    rmSync(root, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
 }
 
 describe('BridgeLifecycleMapper', () => {
@@ -55,7 +56,9 @@ describe('BridgeLifecycleMapper', () => {
 
     const transcript = readTranscript(runId, root);
     const event = transcript.find(
-      (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'bridge_session_started',
+      (e) =>
+        e.type === 'progress' &&
+        (e.data as Record<string, unknown>).step === 'bridge_session_started',
     );
     expect(event).toBeDefined();
     expect((event!.data as Record<string, unknown>).sessionId).toBe('sess-123');
@@ -77,7 +80,9 @@ describe('BridgeLifecycleMapper', () => {
 
     const transcript = readTranscript(runId, root);
     const event = transcript.find(
-      (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'bridge_session_completed',
+      (e) =>
+        e.type === 'progress' &&
+        (e.data as Record<string, unknown>).step === 'bridge_session_completed',
     );
     expect(event).toBeDefined();
     expect((event!.data as Record<string, unknown>).runId).toBe(runId);
@@ -100,7 +105,9 @@ describe('BridgeLifecycleMapper', () => {
 
     const transcript = readTranscript(runId, root);
     const event = transcript.find(
-      (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'bridge_session_failed',
+      (e) =>
+        e.type === 'progress' &&
+        (e.data as Record<string, unknown>).step === 'bridge_session_failed',
     );
     expect(event).toBeDefined();
     expect((event!.data as Record<string, unknown>).errorKind).toBe('timeout');
@@ -117,7 +124,8 @@ describe('BridgeLifecycleMapper', () => {
 
     const transcript = readTranscript(runId, root);
     const event = transcript.find(
-      (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'bridge_thinking',
+      (e) =>
+        e.type === 'progress' && (e.data as Record<string, unknown>).step === 'bridge_thinking',
     );
     expect(event).toBeDefined();
     expect((event!.data as Record<string, unknown>).stepNumber).toBe(3);
@@ -133,7 +141,8 @@ describe('BridgeLifecycleMapper', () => {
 
     const transcript = readTranscript(runId, root);
     const event = transcript.find(
-      (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'bridge_tool_call',
+      (e) =>
+        e.type === 'progress' && (e.data as Record<string, unknown>).step === 'bridge_tool_call',
     );
     expect(event).toBeDefined();
     expect((event!.data as Record<string, unknown>).toolName).toBe('Read');
@@ -148,7 +157,8 @@ describe('BridgeLifecycleMapper', () => {
 
     const transcript = readTranscript(runId, root);
     const event = transcript.find(
-      (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'bridge_tool_result',
+      (e) =>
+        e.type === 'progress' && (e.data as Record<string, unknown>).step === 'bridge_tool_result',
     );
     expect(event).toBeDefined();
     expect((event!.data as Record<string, unknown>).toolName).toBe('Read');
@@ -160,7 +170,11 @@ describe('BridgeLifecycleMapper', () => {
 
     // None of these should throw
     mapper.onSessionOpen('sess-null');
-    mapper.onSessionClose({ runId: 'RUN-NULL', sessionId: 'sess-null', terminalReason: 'completed' });
+    mapper.onSessionClose({
+      runId: 'RUN-NULL',
+      sessionId: 'sess-null',
+      terminalReason: 'completed',
+    });
     mapper.onSessionError({ kind: 'timeout', message: 'test', sessionId: 'sess-null' });
     mapper.onBridgeProgress('thinking', { stepNumber: 1 });
     mapper.onBridgeToolCall('Read', { path: 'file.txt' });
@@ -174,7 +188,11 @@ describe('BridgeLifecycleMapper', () => {
     const mapper = new BridgeLifecycleMapper(undefined, 'RUN-UNDEF');
 
     mapper.onSessionOpen('sess-undef');
-    mapper.onSessionClose({ runId: 'RUN-UNDEF', sessionId: 'sess-undef', terminalReason: 'completed' });
+    mapper.onSessionClose({
+      runId: 'RUN-UNDEF',
+      sessionId: 'sess-undef',
+      terminalReason: 'completed',
+    });
     mapper.onSessionError({ kind: 'timeout', message: 'test', sessionId: 'sess-undef' });
 
     expect(true).toBe(true);
@@ -195,7 +213,11 @@ describe('BridgeLifecycleMapper.buildSummary', () => {
     expect(summary.sessionId).toBe('sess-1');
     expect(summary.terminalReason).toBe('completed');
     expect(summary.tokenUsage).toBe(100);
-    expect(summary.toolStats).toEqual({ totalCalls: 5, uniqueTools: ['Read', 'Edit'], lastTool: 'Edit' });
+    expect(summary.toolStats).toEqual({
+      totalCalls: 5,
+      uniqueTools: ['Read', 'Edit'],
+      lastTool: 'Edit',
+    });
     expect(summary.durationMs).toBe(5000);
   });
 
@@ -225,11 +247,10 @@ describe('BridgeLifecycleMapper.buildErrorSummary', () => {
   });
 
   it('builds a timeout summary', () => {
-    const summary = BridgeLifecycleMapper.buildErrorSummary(
-      'RUN-1',
-      'sess-1',
-      { kind: 'timeout', message: 'Timed out' },
-    );
+    const summary = BridgeLifecycleMapper.buildErrorSummary('RUN-1', 'sess-1', {
+      kind: 'timeout',
+      message: 'Timed out',
+    });
 
     expect(summary.terminalReason).toBe('timeout');
   });
@@ -269,12 +290,16 @@ describe('FakeBridgeAdapter lifecycle integration', () => {
     const transcript = readTranscript(run.runId, root);
 
     const startedEvent = transcript.find(
-      (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'bridge_session_started',
+      (e) =>
+        e.type === 'progress' &&
+        (e.data as Record<string, unknown>).step === 'bridge_session_started',
     );
     expect(startedEvent).toBeDefined();
 
     const completedEvent = transcript.find(
-      (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'bridge_session_completed',
+      (e) =>
+        e.type === 'progress' &&
+        (e.data as Record<string, unknown>).step === 'bridge_session_completed',
     );
     expect(completedEvent).toBeDefined();
     expect((completedEvent!.data as Record<string, unknown>).terminalReason).toBe('completed');
@@ -305,7 +330,9 @@ describe('FakeBridgeAdapter lifecycle integration', () => {
     const transcript = readTranscript(run.runId, root);
 
     const failedEvent = transcript.find(
-      (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'bridge_session_failed',
+      (e) =>
+        e.type === 'progress' &&
+        (e.data as Record<string, unknown>).step === 'bridge_session_failed',
     );
     expect(failedEvent).toBeDefined();
     expect((failedEvent!.data as Record<string, unknown>).errorKind).toBe('unknown');
@@ -334,7 +361,9 @@ describe('FakeBridgeAdapter lifecycle integration', () => {
     const transcript = readTranscript(run.runId, root);
 
     const lifecycleEvent = transcript.find(
-      (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'bridge_lifecycle_complete',
+      (e) =>
+        e.type === 'progress' &&
+        (e.data as Record<string, unknown>).step === 'bridge_lifecycle_complete',
     );
     expect(lifecycleEvent).toBeDefined();
     expect((lifecycleEvent!.data as Record<string, unknown>).status).toBe('completed');
@@ -365,7 +394,9 @@ describe('FakeBridgeAdapter lifecycle integration', () => {
     const transcript = readTranscript(run.runId, root);
 
     const lifecycleEvent = transcript.find(
-      (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'bridge_lifecycle_complete',
+      (e) =>
+        e.type === 'progress' &&
+        (e.data as Record<string, unknown>).step === 'bridge_lifecycle_complete',
     );
     expect(lifecycleEvent).toBeDefined();
     expect((lifecycleEvent!.data as Record<string, unknown>).status).toBe('failed');

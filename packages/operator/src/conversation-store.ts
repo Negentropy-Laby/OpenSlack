@@ -1,4 +1,11 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import type { Intent } from './types.js';
 
@@ -21,7 +28,10 @@ const MAX_TURNS = 50;
 const SESSION_ENV = 'OPENSLACK_SESSION_ID';
 
 export function generateSessionId(): string {
-  return process.env[SESSION_ENV] || `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  return (
+    process.env[SESSION_ENV] ||
+    `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  );
 }
 
 function getStoreDir(root = process.cwd()): string {
@@ -79,11 +89,15 @@ export function listConversations(root = process.cwd()): Conversation[] {
       try {
         const conv = loadConversation(name.replace(/\.json$/, ''), root);
         if (conv) conversations.push(conv);
-      } catch { /* skip corrupt files */ }
+      } catch {
+        /* skip corrupt files */
+      }
     }
-  } catch { /* dir doesn't exist yet */ }
-  return conversations.sort((a, b) =>
-    new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+  } catch {
+    /* dir doesn't exist yet */
+  }
+  return conversations.sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
   );
 }
 
@@ -96,16 +110,25 @@ export function pruneExpiredConversations(root = process.cwd()): number {
       if (!name.endsWith('.json')) continue;
       const sessionId = name.replace(/\.json$/, '');
       const conv = loadConversation(sessionId, root);
-      if (conv && (now - new Date(conv.updatedAt).getTime()) > CONVERSATION_TTL_MS) {
+      if (conv && now - new Date(conv.updatedAt).getTime() > CONVERSATION_TTL_MS) {
         const path = getConversationPath(sessionId, root);
-        if (existsSync(path)) { unlinkSync(path); pruned++; }
+        if (existsSync(path)) {
+          unlinkSync(path);
+          pruned++;
+        }
       }
     }
-  } catch { /* nothing to prune */ }
+  } catch {
+    /* nothing to prune */
+  }
   return pruned;
 }
 
-export function getRecentTurns(sessionId: string, limit = 10, root = process.cwd()): ConversationTurn[] {
+export function getRecentTurns(
+  sessionId: string,
+  limit = 10,
+  root = process.cwd(),
+): ConversationTurn[] {
   const conv = loadConversation(sessionId, root);
   if (!conv) return [];
   return conv.turns.slice(-limit);

@@ -25,7 +25,9 @@ interface SlackEvent {
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', (chunk) => { body += chunk; });
+    req.on('data', (chunk) => {
+      body += chunk;
+    });
     req.on('end', () => resolve(body));
     req.on('error', reject);
   });
@@ -108,7 +110,7 @@ export class SlackAdapter implements ChatAdapter {
       const resp = await fetch('https://slack.com/api/chat.postMessage', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.options.botToken}`,
+          Authorization: `Bearer ${this.options.botToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
@@ -220,7 +222,10 @@ export class SlackAdapter implements ChatAdapter {
     res.end(JSON.stringify({ ok: true }));
   }
 
-  private async handleSlackEvent(event: SlackEvent, payload: Record<string, unknown>): Promise<void> {
+  private async handleSlackEvent(
+    event: SlackEvent,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
     // Skip bot messages
     if ((payload as Record<string, unknown>).bot_id) return;
     if (event.user && event.user.startsWith('B')) return;
@@ -245,7 +250,10 @@ export class SlackAdapter implements ChatAdapter {
       id: event.ts || `${Date.now()}`,
       text,
       user: { id: event.user || 'unknown', name: undefined },
-      channel: { id: event.channel || 'unknown', type: event.type === 'app_mention' ? 'channel' : 'dm' },
+      channel: {
+        id: event.channel || 'unknown',
+        type: event.type === 'app_mention' ? 'channel' : 'dm',
+      },
       threadId: event.thread_ts,
       timestamp: new Date().toISOString(),
     };

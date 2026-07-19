@@ -17,7 +17,10 @@ function writeRegistry(agentId: string, yaml: string): void {
 }
 
 beforeEach(() => {
-  fixtureRoot = join(tmpdir(), `openslack-migrate-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  fixtureRoot = join(
+    tmpdir(),
+    `openslack-migrate-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
   mkdirSync(fixtureRoot, { recursive: true });
 });
 
@@ -136,10 +139,13 @@ describe('migrateV1ToV2', () => {
   });
 
   it('defaults missing optional fields', () => {
-    const result = migrateV1ToV2({
-      schema: 'openslack.agent_registry.v1',
-      vendor: { provider: 'anthropic', runtime: 'claude_code' },
-    } as Record<string, unknown>, 'minimal_agent_bot');
+    const result = migrateV1ToV2(
+      {
+        schema: 'openslack.agent_registry.v1',
+        vendor: { provider: 'anthropic', runtime: 'claude_code' },
+      } as Record<string, unknown>,
+      'minimal_agent_bot',
+    );
 
     expect(result.permissions.paths.allow).toEqual(['**']);
     expect(result.permissions.paths.deny).toEqual([]);
@@ -149,10 +155,13 @@ describe('migrateV1ToV2', () => {
   });
 
   it('sets default action permissions', () => {
-    const result = migrateV1ToV2({
-      schema: 'openslack.agent_registry.v1',
-      vendor: { provider: 'anthropic', runtime: 'claude_code' },
-    } as Record<string, unknown>, 'default_agent_bot');
+    const result = migrateV1ToV2(
+      {
+        schema: 'openslack.agent_registry.v1',
+        vendor: { provider: 'anthropic', runtime: 'claude_code' },
+      } as Record<string, unknown>,
+      'default_agent_bot',
+    );
 
     expect(result.permissions.actions['task.claim']).toBe('allow');
     expect(result.permissions.actions['pr.propose']).toBe('allow');
@@ -161,27 +170,41 @@ describe('migrateV1ToV2', () => {
   });
 
   it('rejects agent ids that cannot satisfy v2 schema', () => {
-    expect(() => migrateV1ToV2({ schema: 'openslack.agent_registry.v1' }, 'legacy')).toThrow('Invalid v2 agent_id');
+    expect(() => migrateV1ToV2({ schema: 'openslack.agent_registry.v1' }, 'legacy')).toThrow(
+      'Invalid v2 agent_id',
+    );
   });
 
   it('rejects empty display names', () => {
-    expect(() => migrateV1ToV2({
-      schema: 'openslack.agent_registry.v1',
-      display_name: '',
-      vendor: { provider: 'anthropic', runtime: 'claude_code' },
-    }, 'empty_name_agent')).toThrow('Invalid display_name');
+    expect(() =>
+      migrateV1ToV2(
+        {
+          schema: 'openslack.agent_registry.v1',
+          display_name: '',
+          vendor: { provider: 'anthropic', runtime: 'claude_code' },
+        },
+        'empty_name_agent',
+      ),
+    ).toThrow('Invalid display_name');
   });
 
   it('rejects missing required vendor fields', () => {
-    expect(() => migrateV1ToV2({ schema: 'openslack.agent_registry.v1' }, 'missing_vendor_agent')).toThrow('vendor.provider');
+    expect(() =>
+      migrateV1ToV2({ schema: 'openslack.agent_registry.v1' }, 'missing_vendor_agent'),
+    ).toThrow('vendor.provider');
   });
 
   it('rejects invalid risk levels', () => {
-    expect(() => migrateV1ToV2({
-      schema: 'openslack.agent_registry.v1',
-      vendor: { provider: 'anthropic', runtime: 'claude_code' },
-      risk_level: 'purple',
-    }, 'bad_risk_agent')).toThrow('Invalid risk_level');
+    expect(() =>
+      migrateV1ToV2(
+        {
+          schema: 'openslack.agent_registry.v1',
+          vendor: { provider: 'anthropic', runtime: 'claude_code' },
+          risk_level: 'purple',
+        },
+        'bad_risk_agent',
+      ),
+    ).toThrow('Invalid risk_level');
   });
 });
 
@@ -192,7 +215,10 @@ describe('migrateRegistry', () => {
   });
 
   it('reports already_v2 for v2 entries', () => {
-    writeRegistry('v2_agent_bot', `schema: openslack.agent_registry.v2\nagent_id: "v2_agent_bot"\n`);
+    writeRegistry(
+      'v2_agent_bot',
+      `schema: openslack.agent_registry.v2\nagent_id: "v2_agent_bot"\n`,
+    );
     const results = migrateRegistry(fixtureRoot);
     expect(results).toEqual([{ agentId: 'v2_agent_bot', status: 'already_v2' }]);
   });
@@ -222,7 +248,13 @@ describe('migrateRegistry', () => {
   it('backs up v1 file in apply mode', () => {
     writeRegistry('v1_agent_bot', V1_YAML);
     migrateRegistry(fixtureRoot, { apply: true });
-    const backupPath = join(fixtureRoot, '.openslack', 'agents', 'registry.v1-backup', 'v1_agent_bot.yaml');
+    const backupPath = join(
+      fixtureRoot,
+      '.openslack',
+      'agents',
+      'registry.v1-backup',
+      'v1_agent_bot.yaml',
+    );
     expect(existsSync(backupPath)).toBe(true);
     const backup = readFileSync(backupPath, 'utf-8');
     expect(backup).toContain('openslack.agent_registry.v1');
@@ -246,7 +278,10 @@ describe('migrateRegistry', () => {
 
   it('handles mixed entries', () => {
     writeRegistry('v1_agent_bot', V1_YAML);
-    writeRegistry('v2_agent_bot', `schema: openslack.agent_registry.v2\nagent_id: "v2_agent_bot"\n`);
+    writeRegistry(
+      'v2_agent_bot',
+      `schema: openslack.agent_registry.v2\nagent_id: "v2_agent_bot"\n`,
+    );
     writeRegistry('bad_agent_bot', `schema: unknown.schema\n`);
     const results = migrateRegistry(fixtureRoot);
     expect(results).toHaveLength(3);
@@ -264,7 +299,13 @@ describe('migrateRegistry', () => {
     expect(results.map((r) => r.status)).toContain('error');
     const content = readFileSync(join(registryDir(), 'v1_agent_bot.yaml'), 'utf-8');
     expect(content).toContain('openslack.agent_registry.v1');
-    const backupPath = join(fixtureRoot, '.openslack', 'agents', 'registry.v1-backup', 'v1_agent_bot.yaml');
+    const backupPath = join(
+      fixtureRoot,
+      '.openslack',
+      'agents',
+      'registry.v1-backup',
+      'v1_agent_bot.yaml',
+    );
     expect(existsSync(backupPath)).toBe(false);
   });
 });

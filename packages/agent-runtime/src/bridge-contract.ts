@@ -16,12 +16,7 @@ export const BRIDGE_PROTOCOL_VERSION = '2025-06-03';
 /**
  * Bridge session state machine states.
  */
-export type BridgeSessionState =
-  | 'idle'
-  | 'initializing'
-  | 'ready'
-  | 'busy'
-  | 'shutdown';
+export type BridgeSessionState = 'idle' | 'initializing' | 'ready' | 'busy' | 'shutdown';
 
 /**
  * Bridge error taxonomy for structured failure reporting.
@@ -213,12 +208,12 @@ export interface BridgeWorktreeConfig {
 export class BridgeSessionStateMachine {
   private state: BridgeSessionState = 'idle';
   private readonly sessionId: string;
-  private readonly onTransition?: (
-    from: BridgeSessionState,
-    to: BridgeSessionState,
-  ) => void;
+  private readonly onTransition?: (from: BridgeSessionState, to: BridgeSessionState) => void;
 
-  constructor(sessionId: string, onTransition?: (from: BridgeSessionState, to: BridgeSessionState) => void) {
+  constructor(
+    sessionId: string,
+    onTransition?: (from: BridgeSessionState, to: BridgeSessionState) => void,
+  ) {
     this.sessionId = sessionId;
     this.onTransition = onTransition;
   }

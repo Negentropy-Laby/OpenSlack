@@ -25,9 +25,13 @@ function loadNameCache(root = process.cwd()): void {
         if (idMatch && nameMatch) {
           cache.push({ agentId: idMatch[1].trim(), displayName: nameMatch[1].trim() });
         }
-      } catch { /* skip unreadable files */ }
+      } catch {
+        /* skip unreadable files */
+      }
     }
-  } catch { /* dir doesn't exist */ }
+  } catch {
+    /* dir doesn't exist */
+  }
 }
 
 export function resolveAgentDisplayName(actor: CollaborationActor, root?: string): string {

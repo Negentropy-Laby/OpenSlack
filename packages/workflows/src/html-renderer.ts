@@ -1,6 +1,6 @@
-import type { RunStatus, PhaseCheckpoint } from './types.js'
-import { redactRunBundle } from './redact.js'
-import type { RedactionOptions } from './redact.js'
+import type { RunStatus, PhaseCheckpoint } from './types.js';
+import { redactRunBundle } from './redact.js';
+import type { RedactionOptions } from './redact.js';
 
 // ── HTML Renderer ────────────────────────────────────────────────────────────
 //
@@ -21,7 +21,7 @@ export function escapeHtml(str: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
+    .replace(/'/g, '&#39;');
 }
 
 /**
@@ -29,23 +29,23 @@ export function escapeHtml(str: string): string {
  * or script tag. This handles the full JSON-in-HTML attack surface.
  */
 export function escapeJsonInHtml(value: unknown): string {
-  const json = JSON.stringify(value, null, 0)
-  return escapeHtml(json)
+  const json = JSON.stringify(value, null, 0);
+  return escapeHtml(json);
 }
 
 /**
  * Format a duration between two ISO timestamp strings.
  */
 function formatDuration(startIso: string, endIso: string): string {
-  const start = new Date(startIso).getTime()
-  const end = new Date(endIso).getTime()
-  if (!Number.isFinite(start) || !Number.isFinite(end)) return 'N/A'
-  const diffMs = end - start
-  if (diffMs < 1000) return `${diffMs}ms`
-  if (diffMs < 60000) return `${(diffMs / 1000).toFixed(1)}s`
-  const minutes = Math.floor(diffMs / 60000)
-  const seconds = Math.floor((diffMs % 60000) / 1000)
-  return `${minutes}m ${seconds}s`
+  const start = new Date(startIso).getTime();
+  const end = new Date(endIso).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return 'N/A';
+  const diffMs = end - start;
+  if (diffMs < 1000) return `${diffMs}ms`;
+  if (diffMs < 60000) return `${(diffMs / 1000).toFixed(1)}s`;
+  const minutes = Math.floor(diffMs / 60000);
+  const seconds = Math.floor((diffMs % 60000) / 1000);
+  return `${minutes}m ${seconds}s`;
 }
 
 /**
@@ -61,9 +61,9 @@ function formatTimestamp(iso: string): string {
       minute: '2-digit',
       second: '2-digit',
       timeZoneName: 'short',
-    })
+    });
   } catch {
-    return iso
+    return iso;
   }
 }
 
@@ -110,7 +110,7 @@ function getInlineCss(): string {
     .phase-status-failed { color: #721c24; }
     .phase-status-skipped { color: #6c757d; }
     .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e0e0e0; font-size: 12px; color: #888; }
-  `.trim()
+  `.trim();
 }
 
 /**
@@ -129,15 +129,15 @@ function getCspContent(): string {
     "media-src 'none'",
     "base-uri 'none'",
     "form-action 'none'",
-  ].join('; ')
+  ].join('; ');
 }
 
 /**
  * Render the status badge HTML.
  */
 function renderStatusBadge(status: string): string {
-  const cssClass = `status-${status}`
-  return `<span class="status-badge ${escapeHtml(cssClass)}">${escapeHtml(status)}</span>`
+  const cssClass = `status-${status}`;
+  return `<span class="status-badge ${escapeHtml(cssClass)}">${escapeHtml(status)}</span>`;
 }
 
 /**
@@ -145,23 +145,24 @@ function renderStatusBadge(status: string): string {
  */
 function renderPhasesTable(phases: PhaseCheckpoint[]): string {
   if (!phases || phases.length === 0) {
-    return '<p><em>No phases recorded.</em></p>'
+    return '<p><em>No phases recorded.</em></p>';
   }
 
-  let html = '<table><thead><tr><th>Phase</th><th>Status</th><th>Timestamp</th><th>Cache Key</th></tr></thead><tbody>'
+  let html =
+    '<table><thead><tr><th>Phase</th><th>Status</th><th>Timestamp</th><th>Cache Key</th></tr></thead><tbody>';
 
   for (const phase of phases) {
-    const statusClass = `phase-status-${phase.status}`
-    html += '<tr>'
-    html += `<td><code>${escapeHtml(phase.phase)}</code></td>`
-    html += `<td class="${escapeHtml(statusClass)}">${escapeHtml(phase.status)}</td>`
-    html += `<td>${escapeHtml(formatTimestamp(phase.timestamp))}</td>`
-    html += `<td>${phase.cacheKey ? escapeHtml(phase.cacheKey) : '<em>-</em>'}</td>`
-    html += '</tr>'
+    const statusClass = `phase-status-${phase.status}`;
+    html += '<tr>';
+    html += `<td><code>${escapeHtml(phase.phase)}</code></td>`;
+    html += `<td class="${escapeHtml(statusClass)}">${escapeHtml(phase.status)}</td>`;
+    html += `<td>${escapeHtml(formatTimestamp(phase.timestamp))}</td>`;
+    html += `<td>${phase.cacheKey ? escapeHtml(phase.cacheKey) : '<em>-</em>'}</td>`;
+    html += '</tr>';
   }
 
-  html += '</tbody></table>'
-  return html
+  html += '</tbody></table>';
+  return html;
 }
 
 /**
@@ -169,11 +170,11 @@ function renderPhasesTable(phases: PhaseCheckpoint[]): string {
  */
 function renderOutput(output: unknown): string {
   if (output === null || output === undefined) {
-    return '<p><em>No output recorded.</em></p>'
+    return '<p><em>No output recorded.</em></p>';
   }
 
-  const json = JSON.stringify(output, null, 2)
-  return `<pre><code>${escapeHtml(json)}</code></pre>`
+  const json = JSON.stringify(output, null, 2);
+  return `<pre><code>${escapeHtml(json)}</code></pre>`;
 }
 
 /**
@@ -181,21 +182,22 @@ function renderOutput(output: unknown): string {
  */
 function renderLogTable(logEntries: Array<Record<string, unknown>> | undefined): string {
   if (!logEntries || logEntries.length === 0) {
-    return '<p><em>No log entries recorded.</em></p>'
+    return '<p><em>No log entries recorded.</em></p>';
   }
 
-  let html = '<table><thead><tr><th>Timestamp</th><th>Phase</th><th>Message</th></tr></thead><tbody>'
+  let html =
+    '<table><thead><tr><th>Timestamp</th><th>Phase</th><th>Message</th></tr></thead><tbody>';
 
   for (const entry of logEntries) {
-    html += '<tr>'
-    html += `<td>${escapeHtml(String(entry.ts ?? ''))}</td>`
-    html += `<td>${escapeHtml(String(entry.phase ?? '-'))}</td>`
-    html += `<td>${escapeHtml(String(entry.message ?? ''))}</td>`
-    html += '</tr>'
+    html += '<tr>';
+    html += `<td>${escapeHtml(String(entry.ts ?? ''))}</td>`;
+    html += `<td>${escapeHtml(String(entry.phase ?? '-'))}</td>`;
+    html += `<td>${escapeHtml(String(entry.message ?? ''))}</td>`;
+    html += '</tr>';
   }
 
-  html += '</tbody></table>'
-  return html
+  html += '</tbody></table>';
+  return html;
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -205,9 +207,9 @@ function renderLogTable(logEntries: Array<Record<string, unknown>> | undefined):
  */
 export interface HtmlRenderOptions extends RedactionOptions {
   /** Whether to include the raw JSON output section. Default: true. */
-  includeOutput?: boolean
+  includeOutput?: boolean;
   /** Whether to include log entries. Default: true. */
-  includeLog?: boolean
+  includeLog?: boolean;
 }
 
 /**
@@ -230,71 +232,73 @@ export function renderRunHtml(
     includeOutput: true,
     includeLog: true,
     ...options,
-  }
+  };
 
   // Redact all data before rendering
-  const redacted = redactRunBundle({ status, phases, logEntries, output }, opts)
+  const redacted = redactRunBundle({ status, phases, logEntries, output }, opts);
 
   // Type the redacted data for rendering
   const redactedStatus = redacted.data as {
-    status: Record<string, unknown>
-    phases: unknown[]
-    logEntries?: unknown[]
-    output?: unknown
-  }
-  const rStatus = redactedStatus.status as unknown as RunStatus
-  const rPhases = redactedStatus.phases as unknown as PhaseCheckpoint[]
-  const rLog = redactedStatus.logEntries as Array<Record<string, unknown>> | undefined
-  const rOutput = redactedStatus.output
+    status: Record<string, unknown>;
+    phases: unknown[];
+    logEntries?: unknown[];
+    output?: unknown;
+  };
+  const rStatus = redactedStatus.status as unknown as RunStatus;
+  const rPhases = redactedStatus.phases as unknown as PhaseCheckpoint[];
+  const rLog = redactedStatus.logEntries as Array<Record<string, unknown>> | undefined;
+  const rOutput = redactedStatus.output;
 
   // Build HTML
-  const duration = rStatus.startedAt && rStatus.updatedAt
-    ? formatDuration(rStatus.startedAt, rStatus.updatedAt)
-    : 'N/A'
+  const duration =
+    rStatus.startedAt && rStatus.updatedAt
+      ? formatDuration(rStatus.startedAt, rStatus.updatedAt)
+      : 'N/A';
 
-  let body = ''
+  let body = '';
 
   // Header
-  body += `<h1>Workflow Run: ${escapeHtml(rStatus.runId)}</h1>`
+  body += `<h1>Workflow Run: ${escapeHtml(rStatus.runId)}</h1>`;
 
   // Meta info
-  body += '<div class="meta">'
-  body += `<span>Workflow: <strong>${escapeHtml(rStatus.workflowName)}</strong></span>`
-  body += `<span>Mode: <code>${escapeHtml(rStatus.mode)}</code></span>`
-  body += `<span>Status: ${renderStatusBadge(rStatus.status)}</span>`
-  body += '</div>'
+  body += '<div class="meta">';
+  body += `<span>Workflow: <strong>${escapeHtml(rStatus.workflowName)}</strong></span>`;
+  body += `<span>Mode: <code>${escapeHtml(rStatus.mode)}</code></span>`;
+  body += `<span>Status: ${renderStatusBadge(rStatus.status)}</span>`;
+  body += '</div>';
 
   // Timing
-  body += '<div class="meta">'
-  body += `<span>Started: ${escapeHtml(formatTimestamp(rStatus.startedAt))}</span>`
-  body += `<span>Updated: ${escapeHtml(formatTimestamp(rStatus.updatedAt))}</span>`
-  body += `<span>Duration: ${escapeHtml(duration)}</span>`
+  body += '<div class="meta">';
+  body += `<span>Started: ${escapeHtml(formatTimestamp(rStatus.startedAt))}</span>`;
+  body += `<span>Updated: ${escapeHtml(formatTimestamp(rStatus.updatedAt))}</span>`;
+  body += `<span>Duration: ${escapeHtml(duration)}</span>`;
   if (rStatus.currentPhase) {
-    body += `<span>Current Phase: <code>${escapeHtml(rStatus.currentPhase)}</code></span>`
+    body += `<span>Current Phase: <code>${escapeHtml(rStatus.currentPhase)}</code></span>`;
   }
-  body += '</div>'
+  body += '</div>';
 
   // Phases
-  body += '<h2>Phases</h2>'
-  body += renderPhasesTable(rPhases)
+  body += '<h2>Phases</h2>';
+  body += renderPhasesTable(rPhases);
 
   // Log entries
   if (opts.includeLog) {
-    body += '<h2>Log Entries</h2>'
-    body += renderLogTable(rLog)
+    body += '<h2>Log Entries</h2>';
+    body += renderLogTable(rLog);
   }
 
   // Output
   if (opts.includeOutput) {
-    body += '<h2>Output</h2>'
-    body += renderOutput(rOutput)
+    body += '<h2>Output</h2>';
+    body += renderOutput(rOutput);
   }
 
   // Footer
-  body += '<div class="footer">'
-  body += '<p>Generated by OpenSlack workflow inspector. All data has been redacted for security.</p>'
-  body += `<p>Rendered at ${escapeHtml(new Date().toISOString())}</p>`
-  body += '</div>'
+  body += '<div class="footer">';
+  body +=
+    '<p>Generated by OpenSlack workflow inspector. All data has been redacted for security.</p>';
+  body += `<p>Rendered at ${escapeHtml(new Date().toISOString())}</p>`;
+  body += '</div>';
 
   // Assemble full document
   return `<!DOCTYPE html>
@@ -309,7 +313,7 @@ export function renderRunHtml(
 <body>
 ${body}
 </body>
-</html>`
+</html>`;
 }
 
 /**
@@ -322,8 +326,8 @@ export function renderRunJson(
   output: unknown,
   options?: RedactionOptions,
 ): string {
-  const redacted = redactRunBundle({ status, phases, logEntries, output }, options)
-  return JSON.stringify(redacted.data, null, 2)
+  const redacted = redactRunBundle({ status, phases, logEntries, output }, options);
+  return JSON.stringify(redacted.data, null, 2);
 }
 
 /**
@@ -336,64 +340,67 @@ export function renderRunMarkdown(
   output: unknown,
   options?: RedactionOptions,
 ): string {
-  const redacted = redactRunBundle({ status, phases, logEntries, output }, options)
+  const redacted = redactRunBundle({ status, phases, logEntries, output }, options);
 
-  const rStatus = (redacted.data as Record<string, unknown>).status as unknown as RunStatus
-  const rPhases = (redacted.data as Record<string, unknown>).phases as unknown as PhaseCheckpoint[]
-  const rLog = (redacted.data as Record<string, unknown>).logEntries as Array<Record<string, unknown>> | undefined
-  const rOutput = (redacted.data as Record<string, unknown>).output
+  const rStatus = (redacted.data as Record<string, unknown>).status as unknown as RunStatus;
+  const rPhases = (redacted.data as Record<string, unknown>).phases as unknown as PhaseCheckpoint[];
+  const rLog = (redacted.data as Record<string, unknown>).logEntries as
+    | Array<Record<string, unknown>>
+    | undefined;
+  const rOutput = (redacted.data as Record<string, unknown>).output;
 
-  const duration = rStatus.startedAt && rStatus.updatedAt
-    ? formatDuration(rStatus.startedAt, rStatus.updatedAt)
-    : 'N/A'
+  const duration =
+    rStatus.startedAt && rStatus.updatedAt
+      ? formatDuration(rStatus.startedAt, rStatus.updatedAt)
+      : 'N/A';
 
-  let md = ''
-  md += `# Workflow Run: ${rStatus.runId}\n\n`
-  md += `- **Workflow:** ${rStatus.workflowName}\n`
-  md += `- **Mode:** ${rStatus.mode}\n`
-  md += `- **Status:** ${rStatus.status}\n`
-  md += `- **Started:** ${formatTimestamp(rStatus.startedAt)}\n`
-  md += `- **Updated:** ${formatTimestamp(rStatus.updatedAt)}\n`
-  md += `- **Duration:** ${duration}\n`
+  let md = '';
+  md += `# Workflow Run: ${rStatus.runId}\n\n`;
+  md += `- **Workflow:** ${rStatus.workflowName}\n`;
+  md += `- **Mode:** ${rStatus.mode}\n`;
+  md += `- **Status:** ${rStatus.status}\n`;
+  md += `- **Started:** ${formatTimestamp(rStatus.startedAt)}\n`;
+  md += `- **Updated:** ${formatTimestamp(rStatus.updatedAt)}\n`;
+  md += `- **Duration:** ${duration}\n`;
   if (rStatus.currentPhase) {
-    md += `- **Current Phase:** ${rStatus.currentPhase}\n`
+    md += `- **Current Phase:** ${rStatus.currentPhase}\n`;
   }
-  md += '\n'
+  md += '\n';
 
   // Phases table
-  md += '## Phases\n\n'
+  md += '## Phases\n\n';
   if (rPhases.length === 0) {
-    md += '_No phases recorded._\n\n'
+    md += '_No phases recorded._\n\n';
   } else {
-    md += '| Phase | Status | Timestamp | Cache Key |\n'
-    md += '|-------|--------|-----------|----------|\n'
+    md += '| Phase | Status | Timestamp | Cache Key |\n';
+    md += '|-------|--------|-----------|----------|\n';
     for (const phase of rPhases) {
-      md += `| ${phase.phase} | ${phase.status} | ${formatTimestamp(phase.timestamp)} | ${phase.cacheKey ?? '-'} |\n`
+      md += `| ${phase.phase} | ${phase.status} | ${formatTimestamp(phase.timestamp)} | ${phase.cacheKey ?? '-'} |\n`;
     }
-    md += '\n'
+    md += '\n';
   }
 
   // Log entries
   if (rLog && rLog.length > 0) {
-    md += '## Log Entries\n\n'
-    md += '| Timestamp | Phase | Message |\n'
-    md += '|-----------|-------|--------|\n'
+    md += '## Log Entries\n\n';
+    md += '| Timestamp | Phase | Message |\n';
+    md += '|-----------|-------|--------|\n';
     for (const entry of rLog) {
-      md += `| ${entry.ts ?? ''} | ${entry.phase ?? '-'} | ${entry.message ?? ''} |\n`
+      md += `| ${entry.ts ?? ''} | ${entry.phase ?? '-'} | ${entry.message ?? ''} |\n`;
     }
-    md += '\n'
+    md += '\n';
   }
 
   // Output
   if (rOutput !== null && rOutput !== undefined) {
-    md += '## Output\n\n'
-    md += '```json\n'
-    md += JSON.stringify(rOutput, null, 2)
-    md += '\n```\n\n'
+    md += '## Output\n\n';
+    md += '```json\n';
+    md += JSON.stringify(rOutput, null, 2);
+    md += '\n```\n\n';
   }
 
-  md += '---\n\n'
-  md += `_Generated by OpenSlack workflow inspector at ${new Date().toISOString()}_\n`
+  md += '---\n\n';
+  md += `_Generated by OpenSlack workflow inspector at ${new Date().toISOString()}_\n`;
 
-  return md
+  return md;
 }

@@ -12,12 +12,17 @@ export function renderThreadList(threads: AgentConversationThread[]): string {
 
   for (const t of threads) {
     const statusIcon =
-      t.status === 'open' ? '○' :
-      t.status === 'active' ? '●' :
-      t.status === 'paused' ? '◐' :
-      t.status === 'completed' ? '◉' :
-      t.status === 'archived' ? '▢' :
-      '◇';
+      t.status === 'open'
+        ? '○'
+        : t.status === 'active'
+          ? '●'
+          : t.status === 'paused'
+            ? '◐'
+            : t.status === 'completed'
+              ? '◉'
+              : t.status === 'archived'
+                ? '▢'
+                : '◇';
 
     const participantCount = t.participants.length;
     const linkedInfo = t.linkedObjects.map((o) => `${o.kind}:${o.id}`).join(', ');
@@ -38,7 +43,10 @@ export function renderThreadList(threads: AgentConversationThread[]): string {
   return lines.join('\n');
 }
 
-export function renderThread(thread: AgentConversationThread, messages: AgentConversationMessage[]): string {
+export function renderThread(
+  thread: AgentConversationThread,
+  messages: AgentConversationMessage[],
+): string {
   const lines: string[] = [];
 
   lines.push(`Conversation: ${thread.id}`);

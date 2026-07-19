@@ -25,13 +25,13 @@ gates, collaboration events, and API integration.
 
 ### Design Principles
 
-| Principle | Meaning |
-|-----------|---------|
-| Deterministic | Same inputs + same cache state produce same outputs. No hidden randomness. |
-| Previewable | Every workflow can run in preview mode with zero side effects. |
-| Resumable | Interrupted workflows resume from the last completed phase, not from scratch. |
-| Auditable | Every agent call, permission check, and side effect is recorded to the run store. |
-| Gated | No workflow can approve PRs, bypass rulesets, merge, or read secrets. |
+| Principle          | Meaning                                                                            |
+| ------------------ | ---------------------------------------------------------------------------------- |
+| Deterministic      | Same inputs + same cache state produce same outputs. No hidden randomness.         |
+| Previewable        | Every workflow can run in preview mode with zero side effects.                     |
+| Resumable          | Interrupted workflows resume from the last completed phase, not from scratch.      |
+| Auditable          | Every agent call, permission check, and side effect is recorded to the run store.  |
+| Gated              | No workflow can approve PRs, bypass rulesets, merge, or read secrets.              |
 | Schema-constrained | Agent output is structured data validated against declared schemas, not free text. |
 
 ## 2. Anthropic Workflow Core Mechanisms
@@ -49,8 +49,8 @@ const result = await agent(prompt, {
   label: 'scan:security',
   phase: 'Scan',
   schema: FINDING_SCHEMA,
-  isolation: 'worktree',     // OpenSlack extension
-})
+  isolation: 'worktree', // OpenSlack extension
+});
 ```
 
 OpenSlack adds `isolation` (worktree sandbox), `budget` (token/cost cap), and
@@ -63,8 +63,8 @@ Verify (3 verifiers per finding).
 
 ```javascript
 const results = await parallel(
-  DIMENSIONS.map(d => () => agent(d.prompt, { schema: FINDING_SCHEMA }))
-)
+  DIMENSIONS.map((d) => () => agent(d.prompt, { schema: FINDING_SCHEMA })),
+);
 ```
 
 OpenSlack adds concurrency limits, budget tracking across parallel tasks, and
@@ -80,7 +80,7 @@ emitting progress events and checkpointing after each item. Used in Verify
 ```javascript
 const results = await pipeline(findings, async (finding, idx) => {
   // process each finding; up to N items in flight concurrently
-})
+});
 ```
 
 **Target semantics:** N items in flight concurrently, per-item checkpoints
@@ -101,11 +101,11 @@ phase transitions against the declared `meta.phases` array.
 
 Three JSON schemas constrain agent output to structured data:
 
-| Schema | Phase | Purpose |
-|--------|-------|---------|
-| `FINDING_SCHEMA` | Scan | Structured findings with title, severity, category, module, file, description |
-| `VERDICT_SCHEMA` | Verify | Boolean `refuted` + reason string |
-| `TRIAGE_SCHEMA` | Triage | Prioritized issues with P0-P3, risk zone, labels |
+| Schema           | Phase  | Purpose                                                                       |
+| ---------------- | ------ | ----------------------------------------------------------------------------- |
+| `FINDING_SCHEMA` | Scan   | Structured findings with title, severity, category, module, file, description |
+| `VERDICT_SCHEMA` | Verify | Boolean `refuted` + reason string                                             |
+| `TRIAGE_SCHEMA`  | Triage | Prioritized issues with P0-P3, risk zone, labels                              |
 
 OpenSlack requires all `agent()` calls to declare schemas and fails closed on
 validation errors (see Section 6.3 for failure semantics). LLM-assigned
@@ -128,32 +128,32 @@ OpenSlack adopts it as a standard capability available to any workflow.
 
 ### Target Users
 
-| User | Use Case |
-|------|----------|
-| Operator (human) | Run predefined workflows with `openslack collaboration workflow run <name>` |
-| Operator (agent) | Trigger workflows programmatically via `ctx.openslack.workflow.run()` |
-| Developer | Write new workflows using the OpenSlack-native format |
-| Security reviewer | Audit workflow permissions, side effects, and run history |
+| User              | Use Case                                                                    |
+| ----------------- | --------------------------------------------------------------------------- |
+| Operator (human)  | Run predefined workflows with `openslack collaboration workflow run <name>` |
+| Operator (agent)  | Trigger workflows programmatically via `ctx.openslack.workflow.run()`       |
+| Developer         | Write new workflows using the OpenSlack-native format                       |
+| Security reviewer | Audit workflow permissions, side effects, and run history                   |
 
 ### Workflow vs. One-shot Agent
 
-| Aspect | One-shot Agent | Workflow |
-|--------|---------------|----------|
-| Determinism | Low (varies by prompt) | High (structured phases, schemas) |
-| Resumability | None | Checkpoint per phase |
-| Auditability | Conversation log only | Structured run store with full provenance |
-| Side effects | Ungated | Permission-gated, previewable |
-| Reusability | Copy-paste prompt | Versioned module with declared interface |
+| Aspect       | One-shot Agent         | Workflow                                  |
+| ------------ | ---------------------- | ----------------------------------------- |
+| Determinism  | Low (varies by prompt) | High (structured phases, schemas)         |
+| Resumability | None                   | Checkpoint per phase                      |
+| Auditability | Conversation log only  | Structured run store with full provenance |
+| Side effects | Ungated                | Permission-gated, previewable             |
+| Reusability  | Copy-paste prompt      | Versioned module with declared interface  |
 
 ### Workflow vs. CI Pipeline
 
-| Aspect | CI Pipeline | Workflow |
-|--------|------------|----------|
-| Execution | Container/VM | Agent subtask (LLM + tools) |
-| Branching logic | YAML conditionals | Full TypeScript |
-| Schema validation | None | Required for all agent output |
+| Aspect            | CI Pipeline           | Workflow                       |
+| ----------------- | --------------------- | ------------------------------ |
+| Execution         | Container/VM          | Agent subtask (LLM + tools)    |
+| Branching logic   | YAML conditionals     | Full TypeScript                |
+| Schema validation | None                  | Required for all agent output  |
 | Human interaction | Manual approval gates | Collaboration events, handoffs |
-| Resume | Re-run from scratch | Resume from last checkpoint |
+| Resume            | Re-run from scratch   | Resume from last checkpoint    |
 
 ## 4. User Experience Design
 
@@ -191,12 +191,12 @@ openslack collaboration workflow show full-lifecycle
 
 ### Execution Modes
 
-| Mode | Agent Calls | GitHub API | Git Operations | File Writes | Confirmation |
-|------|------------|------------|----------------|-------------|-------------|
-| validate | No | No | No | No | No |
-| preview | Yes (read-only, non-mutating) | Read-only | No | No | No |
-| dry-run | Yes (read-only) | Simulated | Simulated | Simulated | No |
-| execute | Yes | Yes | Yes | Yes | Required |
+| Mode     | Agent Calls                   | GitHub API | Git Operations | File Writes | Confirmation |
+| -------- | ----------------------------- | ---------- | -------------- | ----------- | ------------ |
+| validate | No                            | No         | No             | No          | No           |
+| preview  | Yes (read-only, non-mutating) | Read-only  | No             | No          | No           |
+| dry-run  | Yes (read-only)               | Simulated  | Simulated      | Simulated   | No           |
+| execute  | Yes                           | Yes        | Yes            | Yes         | Required     |
 
 ### TUI Integration
 
@@ -215,12 +215,12 @@ The Doctor view gains workflow health checks:
 
 ### Output Formats
 
-| Format | Command Flag | Description |
-|--------|-------------|-------------|
-| terminal | default | Structured output to stdout |
-| markdown | `--format markdown` | Markdown report written to file |
-| html | `--format html` | Self-contained HTML artifact with CSP |
-| json | `--format json` | Structured JSON for programmatic consumption |
+| Format   | Command Flag        | Description                                  |
+| -------- | ------------------- | -------------------------------------------- |
+| terminal | default             | Structured output to stdout                  |
+| markdown | `--format markdown` | Markdown report written to file              |
+| html     | `--format html`     | Self-contained HTML artifact with CSP        |
+| json     | `--format json`     | Structured JSON for programmatic consumption |
 
 HTML artifacts are self-contained: no external CDN, no network requests, inline
 CSS/JS, CSP headers in meta tag. Suitable for sharing via GitHub Pages, Slack
@@ -329,11 +329,11 @@ export async function run(
 
 The workflow loader detects format automatically:
 
-| Signal | Format | Loader |
-|--------|--------|--------|
-| `export async function preview` or `export async function run` | OpenSlack-native | Direct import |
-| `export const meta` + top-level body with ambient globals | Anthropic-compatible | `anthropicCompatRunner()` wrapper |
-| Neither | Invalid | Reject with error |
+| Signal                                                         | Format               | Loader                            |
+| -------------------------------------------------------------- | -------------------- | --------------------------------- |
+| `export async function preview` or `export async function run` | OpenSlack-native     | Direct import                     |
+| `export const meta` + top-level body with ambient globals      | Anthropic-compatible | `anthropicCompatRunner()` wrapper |
+| Neither                                                        | Invalid              | Reject with error                 |
 
 ## 6. DSL Design — Runtime Primitives
 
@@ -343,7 +343,7 @@ Marks current execution phase. Validates against `meta.phases` array. Emits
 progress event to TUI and run store. Automatically checkpoints state.
 
 ```typescript
-ctx.phase('Verify')  // Must match a phase title in meta.phases
+ctx.phase('Verify'); // Must match a phase title in meta.phases
 ```
 
 ### 6.2 `ctx.log(message: string): void`
@@ -352,7 +352,7 @@ Writes structured log entry with timestamp, phase, and run ID. Entries are
 persisted to the run store and visible in `openslack collaboration workflow inspect <runId>`.
 
 ```typescript
-ctx.log(`Verified ${count} findings`)
+ctx.log(`Verified ${count} findings`);
 ```
 
 ### 6.3 `ctx.agent<T>(prompt: string, options): Promise<T>`
@@ -364,9 +364,9 @@ const findings = await ctx.agent<FindingsResult>(prompt, {
   label: 'scan:security',
   phase: 'Scan',
   schema: FINDING_SCHEMA,
-  isolation: 'worktree',     // Optional: sandbox in git worktree
+  isolation: 'worktree', // Optional: sandbox in git worktree
   budget: { tokens: 100_000 }, // Optional: cap agent spend
-})
+});
 ```
 
 **Key difference from raw agent calls:** All side effects are routed through
@@ -392,9 +392,9 @@ across all parallel tasks. Each task gets its own log prefix.
 
 ```typescript
 const results = await ctx.parallel(
-  DIMENSIONS.map(d => () => ctx.agent(d.prompt, { schema: FINDING_SCHEMA })),
-  { concurrency: 3 },  // Optional: limit parallelism
-)
+  DIMENSIONS.map((d) => () => ctx.agent(d.prompt, { schema: FINDING_SCHEMA })),
+  { concurrency: 3 }, // Optional: limit parallelism
+);
 ```
 
 ### 6.5 `ctx.pipeline<T, R>(items: T[], fn: (item: T, index: number) => Promise<R>, options?: PipelineOptions): Promise<R[]>`
@@ -412,17 +412,17 @@ so workflows like Verify are not artificially serialized.
 
 ```typescript
 interface PipelineOptions {
-  concurrency?: number  // default: 4; set to 1 for sequential fallback
+  concurrency?: number; // default: 4; set to 1 for sequential fallback
 }
 
 const verified = await ctx.pipeline(
   findings,
   async (finding, idx) => {
-    ctx.log(`Verifying ${idx + 1}/${findings.length}: ${finding.title}`)
-    return verifyFinding(ctx, finding)
+    ctx.log(`Verifying ${idx + 1}/${findings.length}: ${finding.title}`);
+    return verifyFinding(ctx, finding);
   },
-  { concurrency: 8 },  // up to 8 findings verified concurrently
-)
+  { concurrency: 8 }, // up to 8 findings verified concurrently
+);
 ```
 
 ### 6.6 `ctx.budget`: Budget Tracking
@@ -431,10 +431,10 @@ Read-only object tracking cumulative token usage, cost, and remaining budget.
 
 ```typescript
 interface BudgetState {
-  tokensUsed: number
-  tokensRemaining: number
-  costUsd: number
-  agentCalls: number
+  tokensUsed: number;
+  tokensRemaining: number;
+  costUsd: number;
+  agentCalls: number;
 }
 ```
 
@@ -442,8 +442,8 @@ Workflows can check budget before expensive operations:
 
 ```typescript
 if (ctx.budget.tokensRemaining < 50_000) {
-  ctx.log('Budget low, skipping optional analysis')
-  return
+  ctx.log('Budget low, skipping optional analysis');
+  return;
 }
 ```
 
@@ -458,7 +458,7 @@ unbounded recursion, simplifies permission resolution, and keeps the audit
 trail legible.
 
 ```typescript
-const scanResult = await ctx.workflow('codebase-scan', { scope: 'packages/runtime' })
+const scanResult = await ctx.workflow('codebase-scan', { scope: 'packages/runtime' });
 ```
 
 ### 6.8 OpenSlack API Namespace
@@ -492,20 +492,24 @@ ctx.openslack = {
 
 ```typescript
 interface PrmsDoctorResult {
-  status: 'READY_TO_MERGE' | 'BLOCKED' | 'ERROR'
+  status: 'READY_TO_MERGE' | 'BLOCKED' | 'ERROR';
   blockers: Array<{
-    gate: string           // e.g. 'conversation-resolution', 'ci-status', 'zone-approval'
-    reason: string         // Human-readable explanation
-    zone?: 'green' | 'yellow' | 'red'  // If zone-related
-    owner?: string         // Who can resolve this (e.g. '@wsman' for red zone)
-  }>
-  zone: 'green' | 'yellow' | 'red'
-  why: string                     // Summary of current state
-  next: string                    // Recommended next action
-  gates: Record<string, {         // Per-gate details
-    passed: boolean
-    detail: string
-  }>
+    gate: string; // e.g. 'conversation-resolution', 'ci-status', 'zone-approval'
+    reason: string; // Human-readable explanation
+    zone?: 'green' | 'yellow' | 'red'; // If zone-related
+    owner?: string; // Who can resolve this (e.g. '@wsman' for red zone)
+  }>;
+  zone: 'green' | 'yellow' | 'red';
+  why: string; // Summary of current state
+  next: string; // Recommended next action
+  gates: Record<
+    string,
+    {
+      // Per-gate details
+      passed: boolean;
+      detail: string;
+    }
+  >;
 }
 ```
 
@@ -577,11 +581,11 @@ causing side effects.
 
 ### 8.1 Workflow Trust Levels
 
-| Level | Meaning | Allowed Operations |
-|-------|---------|-------------------|
-| untrusted | Downloaded/external workflow | Read-only agent calls, no filesystem access |
-| trusted | Authored by project contributor | All declared permissions, gated side effects |
-| core | Ships with OpenSlack | Full access to all OpenSlack APIs |
+| Level     | Meaning                         | Allowed Operations                           |
+| --------- | ------------------------------- | -------------------------------------------- |
+| untrusted | Downloaded/external workflow    | Read-only agent calls, no filesystem access  |
+| trusted   | Authored by project contributor | All declared permissions, gated side effects |
+| core      | Ships with OpenSlack            | Full access to all OpenSlack APIs            |
 
 ### 8.2 Permission Declarations
 
@@ -603,13 +607,13 @@ permission is not declared, the operation fails with a clear error message.
 
 These actions are **always forbidden** regardless of permission declarations:
 
-| Action | Why |
-|--------|-----|
-| `github.pr.approve` | Agents must never approve PRs |
-| `github.pr.merge` | Direct merge forbidden; use `ctx.openslack.prms.requestMerge()` which re-runs PRMS and merges only when gates pass |
-| `ruleset.bypass` | Branch protection cannot be bypassed |
-| `secrets.read` | No workflow may read credential files |
-| `kernel.constitution.write` | Self-evolution governance rules |
+| Action                      | Why                                                                                                                |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `github.pr.approve`         | Agents must never approve PRs                                                                                      |
+| `github.pr.merge`           | Direct merge forbidden; use `ctx.openslack.prms.requestMerge()` which re-runs PRMS and merges only when gates pass |
+| `ruleset.bypass`            | Branch protection cannot be bypassed                                                                               |
+| `secrets.read`              | No workflow may read credential files                                                                              |
+| `kernel.constitution.write` | Self-evolution governance rules                                                                                    |
 
 ### 8.4 Permission Resolution
 
@@ -710,17 +714,17 @@ HTML output is a self-contained file with:
 
 ### 11.2 Content
 
-| Section | Content |
-|---------|---------|
-| Summary | Workflow name, run ID, status, timestamps, counts |
-| Phases | Expandable sections per phase with findings/results |
-| Findings | Table with title, severity, category, module, file, status (confirmed/refuted) |
-| Triage | Prioritized issue list with P0-P3, risk zone, labels |
-| Issues | Created issue URLs and bodies |
-| Validation | Test/typecheck/lint results |
-| PR | PR URL and metadata |
-| Permissions | Declared vs. granted permissions |
-| Audit Log | Full structured log with timestamps |
+| Section     | Content                                                                        |
+| ----------- | ------------------------------------------------------------------------------ |
+| Summary     | Workflow name, run ID, status, timestamps, counts                              |
+| Phases      | Expandable sections per phase with findings/results                            |
+| Findings    | Table with title, severity, category, module, file, status (confirmed/refuted) |
+| Triage      | Prioritized issue list with P0-P3, risk zone, labels                           |
+| Issues      | Created issue URLs and bodies                                                  |
+| Validation  | Test/typecheck/lint results                                                    |
+| PR          | PR URL and metadata                                                            |
+| Permissions | Declared vs. granted permissions                                               |
+| Audit Log   | Full structured log with timestamps                                            |
 
 ### 11.3 Redaction Requirements
 
@@ -774,7 +778,7 @@ ctx.openslack.collaboration.recordEvent({
   phase: 'Scan',
   runId,
   summary: { findings: 15, verified: 8 },
-})
+});
 ```
 
 Human operators can create handoffs and decisions during workflow execution:
@@ -784,7 +788,7 @@ const decision = await ctx.openslack.collaboration.createHandoff({
   type: 'decision',
   question: 'Proceed with P0 fix implementation?',
   options: ['yes', 'no', 'skip-to-triage'],
-})
+});
 ```
 
 ### 12.3 PRMS Integration
@@ -805,11 +809,11 @@ only path).
 
 ### 12.4 TUI Integration
 
-| TUI View | Workflow Integration |
-|----------|---------------------|
-| Dashboard | "Workflows" tab with active/completed runs, phase progress bars |
-| Doctor | Workflow health checks (orphaned runs, stale cache, permission mismatches) |
-| Setup | Configure workflow permissions and trust levels |
+| TUI View  | Workflow Integration                                                       |
+| --------- | -------------------------------------------------------------------------- |
+| Dashboard | "Workflows" tab with active/completed runs, phase progress bars            |
+| Doctor    | Workflow health checks (orphaned runs, stale cache, permission mismatches) |
+| Setup     | Configure workflow permissions and trust levels                            |
 
 ### 12.5 Chat Gateway Integration
 
@@ -1009,18 +1013,18 @@ $ openslack collaboration workflow inspect run-abc123 --format html > audit-repo
 Based on gaps identified in the reference workflow (see
 [workflow-format-analysis.md](workflow-format-analysis.md)):
 
-| Rule | Why |
-|------|-----|
-| Never trust LLM-assigned `risk_zone` | Must validate with `classifyPaths()`, not the agent's classification |
-| Never hardcode test counts | Read from `docs/status/current.md` or validate by exit code only |
-| Never use raw `gh` or `git` commands in agent calls | Route through `ctx.openslack.task.*` and `ctx.openslack.prms.*` |
-| Never use ambient globals | Use explicit `ctx: WorkflowRuntime` parameter |
-| Never bypass PRMS for PR creation | All PRs must pass through `prms.doctor()` |
+| Rule                                                       | Why                                                                                   |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Never trust LLM-assigned `risk_zone`                       | Must validate with `classifyPaths()`, not the agent's classification                  |
+| Never hardcode test counts                                 | Read from `docs/status/current.md` or validate by exit code only                      |
+| Never use raw `gh` or `git` commands in agent calls        | Route through `ctx.openslack.task.*` and `ctx.openslack.prms.*`                       |
+| Never use ambient globals                                  | Use explicit `ctx: WorkflowRuntime` parameter                                         |
+| Never bypass PRMS for PR creation                          | All PRs must pass through `prms.doctor()`                                             |
 | Never allow `pr.approve` or direct `pr.merge` in workflows | Hardcoded forbidden; use `ctx.openslack.prms.requestMerge()` which re-runs PRMS gates |
-| Never use `Co-Authored-By` in workflow commits | Bot identity enforced by `ctx.openslack.task.sync()` |
-| Never create issues without preview | Preview mode must show the issue body before creation |
-| Never use `--no-verify` or `--force` in git operations | All git operations must follow normal hooks |
-| Never read secrets or credential files | Hardcoded forbidden, even in execute mode |
+| Never use `Co-Authored-By` in workflow commits             | Bot identity enforced by `ctx.openslack.task.sync()`                                  |
+| Never create issues without preview                        | Preview mode must show the issue body before creation                                 |
+| Never use `--no-verify` or `--force` in git operations     | All git operations must follow normal hooks                                           |
+| Never read secrets or credential files                     | Hardcoded forbidden, even in execute mode                                             |
 
 ## 16. Current Workflow Templates vs. Future JS Workflow Modules
 
@@ -1044,15 +1048,15 @@ designed in this document does not replace them.
 The `@openslack/workflows` package and the JS/ESM format described in this
 document represent a **new, separate execution layer**:
 
-| Aspect | Current Templates | Future JS Modules |
-|--------|-------------------|-------------------|
-| Format | Typed TS data structures | Executable JS/ESM modules |
-| Execution | Collaboration engine interprets | Dedicated workflow runtime |
-| Location | `packages/collaboration/` | `.openslack/workflows/`, `packages/workflows/` |
-| Schemas | Implicit in TS types | Explicit JSON Schema declarations |
-| Permissions | Inherited from collaboration | Declared in `meta.permissions` |
-| Side effects | Routed through collaboration APIs | Routed through `ctx.openslack.*` |
-| Module ownership | Collaboration (`module-05`) | New `workflows` module |
+| Aspect           | Current Templates                 | Future JS Modules                              |
+| ---------------- | --------------------------------- | ---------------------------------------------- |
+| Format           | Typed TS data structures          | Executable JS/ESM modules                      |
+| Execution        | Collaboration engine interprets   | Dedicated workflow runtime                     |
+| Location         | `packages/collaboration/`         | `.openslack/workflows/`, `packages/workflows/` |
+| Schemas          | Implicit in TS types              | Explicit JSON Schema declarations              |
+| Permissions      | Inherited from collaboration      | Declared in `meta.permissions`                 |
+| Side effects     | Routed through collaboration APIs | Routed through `ctx.openslack.*`               |
+| Module ownership | Collaboration (`module-05`)       | New `workflows` module                         |
 
 ### Migration Path
 
@@ -1062,12 +1066,12 @@ bridging the two systems. No template rewrite is required — they coexist.
 
 ## 17. Related Documentation
 
-| Document | Purpose |
-|----------|---------|
-| [workflow-format-analysis.md](workflow-format-analysis.md) | Analysis of Anthropic workflow format and integration gaps |
-| [user-experience-roadmap.md](user-experience-roadmap.md) | UX roadmap including workflow TUI integration |
-| [module-04-pr-review-merge-steward.md](module-04-pr-review-merge-steward.md) | PRMS gates that workflows must pass through |
-| [collaboration-layer.md](collaboration-layer.md) | Collaboration events and handoff integration |
-| `docs/developer/workflow-runtime.md` | Technical runtime design (separate document) |
-| `docs/security/workflow-execution.md` | Security model and sandboxing (separate document) |
-| `.claude/workflows/full-lifecycle.js` | Analyzed external Anthropic-style workflow (not shipped with OpenSlack) |
+| Document                                                                     | Purpose                                                                 |
+| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| [workflow-format-analysis.md](workflow-format-analysis.md)                   | Analysis of Anthropic workflow format and integration gaps              |
+| [user-experience-roadmap.md](user-experience-roadmap.md)                     | UX roadmap including workflow TUI integration                           |
+| [module-04-pr-review-merge-steward.md](module-04-pr-review-merge-steward.md) | PRMS gates that workflows must pass through                             |
+| [collaboration-layer.md](collaboration-layer.md)                             | Collaboration events and handoff integration                            |
+| `docs/developer/workflow-runtime.md`                                         | Technical runtime design (separate document)                            |
+| `docs/security/workflow-execution.md`                                        | Security model and sandboxing (separate document)                       |
+| `.claude/workflows/full-lifecycle.js`                                        | Analyzed external Anthropic-style workflow (not shipped with OpenSlack) |
