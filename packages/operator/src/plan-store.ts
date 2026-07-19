@@ -60,7 +60,11 @@ export function savePendingPlan(params: {
     expiresAt: new Date(now.getTime() + OPERATOR_PLAN_TTL_MS).toISOString(),
     actorId: params.actorId,
   };
-  writeFileSync(getPlanPath(pending.planId, params.root), JSON.stringify(pending, null, 2), 'utf-8');
+  writeFileSync(
+    getPlanPath(pending.planId, params.root),
+    JSON.stringify(pending, null, 2),
+    'utf-8',
+  );
   return pending;
 }
 
