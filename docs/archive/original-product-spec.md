@@ -26,6 +26,7 @@ OpenSlack =
 ```
 
 **What OpenSlack is NOT:**
+
 - A chat application. Chat platforms are pluggable frontends, not the system core.
 - An AI chatbot or copilot. Agents are autonomous workers, not conversational assistants.
 - A SaaS platform. All durable state lives in Git repos; the control plane can be rebuilt from them.
@@ -34,13 +35,13 @@ OpenSlack =
 
 ## 2. Design Goals
 
-| # | Goal | Rationale |
-|---|------|-----------|
-| 1 | **State is local-first and Git-backed** | Clone the workspace repo on any machine and read the full company state. No proprietary database is the source of truth. |
-| 2 | **Tasks flow through GitHub Project** | Agents don't find work via chat. They query a structured GitHub Project with standardized fields and views. |
-| 3 | **Agents self-onboard** | A new agent reads its onboarding package (registry, START_HERE, contracts) and knows its identity, where to find tasks, how to claim, and what to produce. |
-| 4 | **Heterogeneous agents collaborate uniformly** | Claude Code, Codex, custom runners all use the same task protocol, claim protocol, and PR protocol. |
-| 5 | **Humans only intervene at governance gates** | High-risk changes, merges, deploys, policy changes, and external messages require human approval. Everything else runs autonomously. |
+| #   | Goal                                           | Rationale                                                                                                                                                  |
+| --- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **State is local-first and Git-backed**        | Clone the workspace repo on any machine and read the full company state. No proprietary database is the source of truth.                                   |
+| 2   | **Tasks flow through GitHub Project**          | Agents don't find work via chat. They query a structured GitHub Project with standardized fields and views.                                                |
+| 3   | **Agents self-onboard**                        | A new agent reads its onboarding package (registry, START_HERE, contracts) and knows its identity, where to find tasks, how to claim, and what to produce. |
+| 4   | **Heterogeneous agents collaborate uniformly** | Claude Code, Codex, custom runners all use the same task protocol, claim protocol, and PR protocol.                                                        |
+| 5   | **Humans only intervene at governance gates**  | High-risk changes, merges, deploys, policy changes, and external messages require human approval. Everything else runs autonomously.                       |
 
 ---
 
@@ -50,11 +51,11 @@ OpenSlack =
 
 OpenSlack has three state layers. When they conflict, the hierarchy resolves as follows:
 
-| Layer | Type | Authority | Backed by |
-|-------|------|-----------|-----------|
-| **Workspace Repo** (Git) | Durable source of truth | **Highest** — definitive for policies, registry, org, task records | GitHub (`openslack-workspace`) |
-| **GitHub Project** | Task index + visual queue | **Index** — reflects workspace state, may lag | GitHub Projects API |
-| **ACP DB** | Runtime cache | **Ephemeral** — rebuildable from workspace + Project | SQLite or Postgres (local/remote) |
+| Layer                    | Type                      | Authority                                                          | Backed by                         |
+| ------------------------ | ------------------------- | ------------------------------------------------------------------ | --------------------------------- |
+| **Workspace Repo** (Git) | Durable source of truth   | **Highest** — definitive for policies, registry, org, task records | GitHub (`openslack-workspace`)    |
+| **GitHub Project**       | Task index + visual queue | **Index** — reflects workspace state, may lag                      | GitHub Projects API               |
+| **ACP DB**               | Runtime cache             | **Ephemeral** — rebuildable from workspace + Project               | SQLite or Postgres (local/remote) |
 
 **Rebuild rule:** If the ACP DB is destroyed, the system must be able to reconstruct all runtime state from the workspace repo's `tasks/` and `leases/` directories plus the GitHub Project's field values.
 
@@ -126,38 +127,39 @@ openslack-workspace/
 Every OpenSlack company has at least one GitHub Project (v2) serving as the task market.
 
 **Why GitHub Project + Issues (not draft items alone):**
+
 - Issues support comments, labels, assignees, linked PRs, timeline events, and automation triggers.
 - GitHub Project provides the structured view layer (fields, filters, grouping, layout).
 - Together they form a task object with both structured metadata and conversational context.
 
 #### Standard Fields
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `OpenSlack Status` | Single select | `Intake` → `Ready` → `Claimed` → `Running` → `Review` → `Done` / `Blocked` / `Cancelled` |
-| `Required Agent Type` | Single select | `codex` / `claude_code` / `reviewer` / `research` / `sync` / `memory` / `ops` |
-| `Required Capabilities` | Text | Comma-separated, e.g. `typescript, ci_fix, react, security_review` |
-| `Risk Level` | Single select | `low` / `medium` / `high` / `critical` |
-| `Priority` | Single select | `p0` / `p1` / `p2` / `p3` |
-| `Product Repo` | Text | Target product repository, e.g. `your-org/product-app` |
-| `Workspace Path` | Text | Relative path in workspace, e.g. `tasks/open/TASK-2026-000123` |
-| `Claimed By` | Text | Agent ID currently holding the lease |
-| `Lease ID` | Text | Active lease identifier |
-| `Lease Expires At` | Text | ISO 8601 timestamp |
-| `Last Heartbeat` | Text | ISO 8601 timestamp |
-| `Human Approval Required` | Single select | `none` / `merge` / `deploy` / `external_message` / `policy_change` |
-| `Output Contract` | Text | Expected output type: `workspace_pr`, `product_pr`, `review_comment`, `research_memo` |
+| Field                     | Type          | Description                                                                              |
+| ------------------------- | ------------- | ---------------------------------------------------------------------------------------- |
+| `OpenSlack Status`        | Single select | `Intake` → `Ready` → `Claimed` → `Running` → `Review` → `Done` / `Blocked` / `Cancelled` |
+| `Required Agent Type`     | Single select | `codex` / `claude_code` / `reviewer` / `research` / `sync` / `memory` / `ops`            |
+| `Required Capabilities`   | Text          | Comma-separated, e.g. `typescript, ci_fix, react, security_review`                       |
+| `Risk Level`              | Single select | `low` / `medium` / `high` / `critical`                                                   |
+| `Priority`                | Single select | `p0` / `p1` / `p2` / `p3`                                                                |
+| `Product Repo`            | Text          | Target product repository, e.g. `your-org/product-app`                                   |
+| `Workspace Path`          | Text          | Relative path in workspace, e.g. `tasks/open/TASK-2026-000123`                           |
+| `Claimed By`              | Text          | Agent ID currently holding the lease                                                     |
+| `Lease ID`                | Text          | Active lease identifier                                                                  |
+| `Lease Expires At`        | Text          | ISO 8601 timestamp                                                                       |
+| `Last Heartbeat`          | Text          | ISO 8601 timestamp                                                                       |
+| `Human Approval Required` | Single select | `none` / `merge` / `deploy` / `external_message` / `policy_change`                       |
+| `Output Contract`         | Text          | Expected output type: `workspace_pr`, `product_pr`, `review_comment`, `research_memo`    |
 
 #### Standard Views
 
-| View | Filter | Purpose |
-|------|--------|---------|
-| Agent Intake | Status = Intake | New tasks awaiting triage |
-| Ready for Agents | Status = Ready | Tasks available for claiming |
-| Claimed / Running | Status in (Claimed, Running) | Active work in progress |
-| Human Review | `Human Approval Required != none` OR Status = Review | Tasks needing human attention |
-| Blocked | Status = Blocked | Stuck tasks |
-| Done (This Week) | Status = Done, updated within 7 days | Recently completed work |
+| View              | Filter                                               | Purpose                       |
+| ----------------- | ---------------------------------------------------- | ----------------------------- |
+| Agent Intake      | Status = Intake                                      | New tasks awaiting triage     |
+| Ready for Agents  | Status = Ready                                       | Tasks available for claiming  |
+| Claimed / Running | Status in (Claimed, Running)                         | Active work in progress       |
+| Human Review      | `Human Approval Required != none` OR Status = Review | Tasks needing human attention |
+| Blocked           | Status = Blocked                                     | Stuck tasks                   |
+| Done (This Week)  | Status = Done, updated within 7 days                 | Recently completed work       |
 
 ### 4.2 Agent Control Plane (ACP)
 
@@ -174,6 +176,7 @@ The ACP is the scheduling and enforcement brain. It is **not** a chat-dependent 
 - Audit logging
 
 **Deployment modes:**
+
 1. **Embedded CLI** — `openslack agent tick` runs the full ACP cycle locally per agent invocation. Suitable for single-machine setups.
 2. **Server mode** — A persistent process exposes the Claim API and heartbeat endpoints. Suitable for multi-agent coordination across machines.
 3. **Hybrid** — Server handles claims and heartbeats; agents run ticks locally with worktree isolation.
@@ -183,12 +186,14 @@ The ACP is the scheduling and enforcement brain. It is **not** a chat-dependent 
 The Chat Gateway translates OpenSlack events into chat-platform-specific messages and translates human commands back into OpenSlack actions.
 
 **It only does:**
+
 - Status notifications (task claimed, completed, blocked)
 - Approval cards (merge request, deploy request, policy change)
 - Exception escalation (lease expired, agent error, conflict)
 - Human commands (`/openslack approve`, `/openslack reject`, `/openslack block`)
 
 **It never does:**
+
 - Store durable state
 - Hold task locks
 - Serve as agent scheduling source
@@ -203,7 +208,7 @@ Each agent runtime (Codex, Claude Code, custom) gets an adapter that implements:
 ```typescript
 interface AgentAdapter {
   agentId: string;
-  type: "codex" | "claude_code" | "custom" | "reviewer" | "research" | "sync";
+  type: 'codex' | 'claude_code' | 'custom' | 'reviewer' | 'research' | 'sync';
 
   capabilities(): AgentCapability[];
 
@@ -281,14 +286,14 @@ Adapters are responsible for translating OpenSlack task context into the native 
 
 ### 5.1 Failure Paths
 
-| Scenario | Handling |
-|----------|----------|
-| Lease expires mid-work | Agent detects expiry on next heartbeat; immediately stops work; marks task Blocked with reason; releases lease. Next agent tick may re-claim. |
-| Agent crashes | No heartbeat received; Claim Broker marks lease expired after TTL; task returns to Ready after a cooldown period (prevents immediate re-claim by same agent type). |
-| Claim Broker unreachable | Agent retries with exponential backoff (max 3 attempts). Falls back to reading workspace lease files directly if configured. Logs and exits if unrecoverable. |
-| GitHub API rate limited | Agent backs off, logs warning, retries at next tick. Built-in rate limit awareness in GitHub provider. |
-| Conflicting workspace PRs | Standard Git merge conflict. Merge Agent attempts trivial resolution; escalates to human for complex conflicts. |
-| Agent produces invalid output | Review Agent (or schema validation in sync-propose) rejects PR. Task moves to Blocked with validation errors. |
+| Scenario                      | Handling                                                                                                                                                           |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Lease expires mid-work        | Agent detects expiry on next heartbeat; immediately stops work; marks task Blocked with reason; releases lease. Next agent tick may re-claim.                      |
+| Agent crashes                 | No heartbeat received; Claim Broker marks lease expired after TTL; task returns to Ready after a cooldown period (prevents immediate re-claim by same agent type). |
+| Claim Broker unreachable      | Agent retries with exponential backoff (max 3 attempts). Falls back to reading workspace lease files directly if configured. Logs and exits if unrecoverable.      |
+| GitHub API rate limited       | Agent backs off, logs warning, retries at next tick. Built-in rate limit awareness in GitHub provider.                                                             |
+| Conflicting workspace PRs     | Standard Git merge conflict. Merge Agent attempts trivial resolution; escalates to human for complex conflicts.                                                    |
+| Agent produces invalid output | Review Agent (or schema validation in sync-propose) rejects PR. Task moves to Blocked with validation errors.                                                      |
 
 ---
 
@@ -371,63 +376,63 @@ agents/
 ```yaml
 schema: openslack.agent.v1
 
-agent_id: "<unique-id>"
-display_name: "<Human-readable name>"
+agent_id: '<unique-id>'
+display_name: '<Human-readable name>'
 employee_type: ai_agent
 
 vendor:
-  provider: "openai | anthropic | custom"
-  runtime: "codex | claude_code | custom_runner"
-  model: "<model-identifier>"
+  provider: 'openai | anthropic | custom'
+  runtime: 'codex | claude_code | custom_runner'
+  model: '<model-identifier>'
 
 employment:
   status: active | paused | retired
-  hired_at: "<ISO 8601>"
-  hired_by: "human:<identifier> | agent:<agent_id>"
-  department: "<department>"
-  role: "<role>"
-  seniority: "intern | junior | mid | senior | principal"
-  manager: "<principal_id>"
+  hired_at: '<ISO 8601>'
+  hired_by: 'human:<identifier> | agent:<agent_id>'
+  department: '<department>'
+  role: '<role>'
+  seniority: 'intern | junior | mid | senior | principal'
+  manager: '<principal_id>'
 
 identity:
-  github_login: "<bot-account>"
-  github_app_installation_id: "<installation-id>"
-  chat_identity: "<optional>"
+  github_login: '<bot-account>'
+  github_app_installation_id: '<installation-id>'
+  chat_identity: '<optional>'
 
 capabilities:
-  primary: ["<cap1>", "<cap2>"]
-  secondary: ["<cap3>"]
+  primary: ['<cap1>', '<cap2>']
+  secondary: ['<cap3>']
 
 task_matching:
-  github_owner: "<org-or-user>"
+  github_owner: '<org-or-user>'
   github_project_number: <number>
-  project_node_id: "<project-node-id>"
-  allowed_statuses: ["Ready"]
-  required_agent_types: ["<type>"]
-  required_capabilities_any: ["<cap1>", "<cap2>"]
-  excluded_labels: ["human-only", "blocked", "confidential"]
+  project_node_id: '<project-node-id>'
+  allowed_statuses: ['Ready']
+  required_agent_types: ['<type>']
+  required_capabilities_any: ['<cap1>', '<cap2>']
+  excluded_labels: ['human-only', 'blocked', 'confidential']
   max_risk_level: medium
-  priority_order: ["p0", "p1", "p2", "p3"]
+  priority_order: ['p0', 'p1', 'p2', 'p3']
 
 repositories:
   workspace_repo:
-    owner: "<org>"
-    repo: "openslack-workspace"
+    owner: '<org>'
+    repo: 'openslack-workspace'
     default_branch: main
-  allowed_product_repos: ["<org>/<repo>"]
+  allowed_product_repos: ['<org>/<repo>']
 
 workspace_permissions:
   allow:
-    - "tasks/open/**/runs/**"
-    - "tasks/claimed/**/runs/**"
-    - "tasks/running/**/runs/**"
-    - "outbox/pr_proposals/**"
+    - 'tasks/open/**/runs/**'
+    - 'tasks/claimed/**/runs/**'
+    - 'tasks/running/**/runs/**'
+    - 'outbox/pr_proposals/**'
   deny:
-    - "governance/**"
-    - "policies/**"
-    - "agents/registry/<agent_id>.yaml"
-    - "agents/prompts/<agent_id>.md"
-    - "integrations/**"
+    - 'governance/**'
+    - 'policies/**'
+    - 'agents/registry/<agent_id>.yaml'
+    - 'agents/prompts/<agent_id>.md'
+    - 'integrations/**'
 
 execution:
   max_parallel_tasks: 1
@@ -438,9 +443,9 @@ execution:
   max_daily_cost_usd: 50
 
 output_contract:
-  must_create: ["workspace_run_record"]
-  may_create: ["product_pr", "workspace_pr", "review_comment"]
-  must_not_create: ["direct_main_push", "production_deploy", "external_customer_message"]
+  must_create: ['workspace_run_record']
+  may_create: ['product_pr', 'workspace_pr', 'review_comment']
+  must_not_create: ['direct_main_push', 'production_deploy', 'external_customer_message']
 
 approval_rules:
   require_human_approval_for:
@@ -454,7 +459,7 @@ approval_rules:
 scheduler:
   preferred_mode: github_actions | codex_automation | claude_routine | local_cron
   cadence_minutes: 15
-  fallback_modes: ["local_cron"]
+  fallback_modes: ['local_cron']
 ```
 
 ---
@@ -486,6 +491,7 @@ Authorization: Bearer <OPENSLACK_AGENT_TOKEN>
 ```
 
 **Response (granted):**
+
 ```json
 {
   "claim_status": "granted",
@@ -501,6 +507,7 @@ Authorization: Bearer <OPENSLACK_AGENT_TOKEN>
 ```
 
 **Response (denied):**
+
 ```json
 {
   "claim_status": "denied",
@@ -521,6 +528,7 @@ AVAILABLE ──claim──▶ CLAIMED ──heartbeat──▶ RUNNING ──co
 ```
 
 Edge cases:
+
 - **CLAIMED → EXPIRED:** No heartbeat within lease TTL. Task returns to Ready after cooldown.
 - **RUNNING → BLOCKED:** Agent encounters unrecoverable issue. Human or triage agent decides next step.
 - **RUNNING → RELEASED:** Agent voluntarily releases. Task returns to Ready.
@@ -537,6 +545,7 @@ OpenSlack supports four scheduling modes. Agents can use one or fall back throug
 **Best for:** Low-cost, standardized, no-local-machine-required scheduling.
 
 **Limitations to understand:**
+
 - Minimum interval: ~5 minutes (GitHub does not guarantee sub-5-minute precision)
 - Only runs on the default branch
 - May be delayed or dropped during high GitHub Actions load
@@ -548,7 +557,7 @@ name: OpenSlack Agent Tick - <agent_id>
 
 on:
   schedule:
-    - cron: "7,22,37,52 * * * *"  # 4x/hour, off-peak minutes
+    - cron: '7,22,37,52 * * * *' # 4x/hour, off-peak minutes
   workflow_dispatch:
 
 concurrency:
@@ -568,11 +577,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          repository: "<org>/openslack-workspace"
+          repository: '<org>/openslack-workspace'
           token: ${{ secrets.OPENSLACK_GITHUB_TOKEN }}
           fetch-depth: 0
       - uses: actions/setup-node@v4
-        with: { node-version: "22" }
+        with: { node-version: '22' }
       - run: npm install -g @openslack/cli
       - run: openslack workspace validate
       - run: openslack agent bootstrap --agent-id "$OPENSLACK_AGENT_ID"
@@ -617,11 +626,13 @@ Agent worktree changes
 ```
 
 **PR title format:**
+
 ```
 [OpenSlack][<TASK-ID>][<agent_id>] <description>
 ```
 
 **PR body must include:**
+
 - Task ID, Agent ID, Lease ID, Run ID
 - Risk level
 - Changed paths (with justification for each)
@@ -634,35 +645,35 @@ Agent worktree changes
 
 ### 10.1 Hard Rules (Enforced by ACP)
 
-| # | Rule | Enforcement Point |
-|---|------|-------------------|
-| 1 | Agent cannot modify its own registry file | Path permission check in worktree |
-| 2 | Agent cannot modify its own prompt file | Path permission check in worktree |
-| 3 | Agent cannot modify `policies/**` | Path permission check in worktree |
-| 4 | Agent cannot push directly to `main` | PR-only workflow enforced by branch protections |
-| 5 | Agent cannot merge its own PR | Merge Agent or human only; agent PRs exclude self-merge |
-| 6 | Agent cannot read or write secrets | Secrets never exposed to agent worktrees; only via CI environment |
-| 7 | Agent cannot bypass Claim Broker | Tick command validates all claims through broker |
-| 8 | Agent cannot work beyond lease expiry | Heartbeat check enforces TTL; worktree access revoked on expiry |
-| 9 | Agent cannot exceed concurrency limit | Claim Broker enforces max_active_leases |
-| 10 | Agent cannot execute high-risk approvals on low-trust chat platforms | Chat trust tier checked before processing approval commands |
+| #   | Rule                                                                 | Enforcement Point                                                 |
+| --- | -------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| 1   | Agent cannot modify its own registry file                            | Path permission check in worktree                                 |
+| 2   | Agent cannot modify its own prompt file                              | Path permission check in worktree                                 |
+| 3   | Agent cannot modify `policies/**`                                    | Path permission check in worktree                                 |
+| 4   | Agent cannot push directly to `main`                                 | PR-only workflow enforced by branch protections                   |
+| 5   | Agent cannot merge its own PR                                        | Merge Agent or human only; agent PRs exclude self-merge           |
+| 6   | Agent cannot read or write secrets                                   | Secrets never exposed to agent worktrees; only via CI environment |
+| 7   | Agent cannot bypass Claim Broker                                     | Tick command validates all claims through broker                  |
+| 8   | Agent cannot work beyond lease expiry                                | Heartbeat check enforces TTL; worktree access revoked on expiry   |
+| 9   | Agent cannot exceed concurrency limit                                | Claim Broker enforces max_active_leases                           |
+| 10  | Agent cannot execute high-risk approvals on low-trust chat platforms | Chat trust tier checked before processing approval commands       |
 
 ### 10.2 Risk Classification
 
-| Level | Examples | Merge Authority |
-|-------|----------|-----------------|
-| **Low** | Task-local run records, read-only summaries, idle heartbeats | Merge Agent (auto) |
-| **Medium** | Draft PRs, memory updates, project context changes | Review Agent + Merge Agent |
-| **High** | Product PR merge, staging deploy, customer-facing draft | Human approval required |
+| Level        | Examples                                                           | Merge Authority               |
+| ------------ | ------------------------------------------------------------------ | ----------------------------- |
+| **Low**      | Task-local run records, read-only summaries, idle heartbeats       | Merge Agent (auto)            |
+| **Medium**   | Draft PRs, memory updates, project context changes                 | Review Agent + Merge Agent    |
+| **High**     | Product PR merge, staging deploy, customer-facing draft            | Human approval required       |
 | **Critical** | Production deploy, policy change, permission change, prompt change | Human approval + admin review |
 
 ### 10.3 Chat Platform Trust Tiers
 
-| Tier | Platforms | Allowed Actions |
-|------|-----------|-----------------|
-| **Trusted** | Slack (verified workspace), self-hosted Mattermost/Matrix | All approvals including high-risk |
-| **Standard** | Teams, Discord (verified server) | Medium-risk approvals only |
-| **Untrusted** | Telegram, generic webhook | Notifications only; no approval actions accepted |
+| Tier          | Platforms                                                 | Allowed Actions                                  |
+| ------------- | --------------------------------------------------------- | ------------------------------------------------ |
+| **Trusted**   | Slack (verified workspace), self-hosted Mattermost/Matrix | All approvals including high-risk                |
+| **Standard**  | Teams, Discord (verified server)                          | Medium-risk approvals only                       |
+| **Untrusted** | Telegram, generic webhook                                 | Notifications only; no approval actions accepted |
 
 ---
 
@@ -673,6 +684,7 @@ Agent worktree changes
 OpenSlack v1.0 MVP is the minimal system that can hire 3 agents, run 20 tasks across them, and prove the core loop: discover → claim → work → PR → review → merge.
 
 **In scope:**
+
 - Workspace init, validate, index
 - GitHub Project field discovery and task query
 - Claim Broker with atomic lease acquisition
@@ -686,6 +698,7 @@ OpenSlack v1.0 MVP is the minimal system that can hire 3 agents, run 20 tasks ac
 - GitHub Actions scheduler
 
 **Out of scope for MVP (deferred to v1.1+):**
+
 - Codex automation integration (when Codex API stabilizes)
 - Claude Code routine integration (when routines exit research preview)
 - Teams, Discord, Telegram, and other chat adapters
@@ -695,16 +708,16 @@ OpenSlack v1.0 MVP is the minimal system that can hire 3 agents, run 20 tasks ac
 
 ### 11.2 Milestones
 
-| Week | Milestone | Deliverables |
-|------|-----------|-------------|
-| 1 | Workspace + Schema | `init`, `validate`, `index`; agent/task/lease schemas; workspace.yaml parsing |
-| 2 | GitHub Project Provider | Field discovery, ready-task query, issue parsing, field/comment update |
-| 3 | Claim Broker | Atomic lease, claim API, heartbeat API, expiry, release/steal |
-| 4 | Agent Onboarding Generator | `agent hire` command, full template generation, dry-run validation |
-| 5 | Agent Runtime | `bootstrap`, `tick`, worktree manager, path permission enforcement, run records |
-| 6 | PR Orchestration | Workspace PR creation, Review Agent, Merge Agent (low-risk only) |
-| 7 | Chat Gateway (MVP) | Slack adapter, generic webhook, approval cards, status projection |
-| 8 | Pilot | Hire 3 agents, run 20 tasks, end-to-end validation |
+| Week | Milestone                  | Deliverables                                                                    |
+| ---- | -------------------------- | ------------------------------------------------------------------------------- |
+| 1    | Workspace + Schema         | `init`, `validate`, `index`; agent/task/lease schemas; workspace.yaml parsing   |
+| 2    | GitHub Project Provider    | Field discovery, ready-task query, issue parsing, field/comment update          |
+| 3    | Claim Broker               | Atomic lease, claim API, heartbeat API, expiry, release/steal                   |
+| 4    | Agent Onboarding Generator | `agent hire` command, full template generation, dry-run validation              |
+| 5    | Agent Runtime              | `bootstrap`, `tick`, worktree manager, path permission enforcement, run records |
+| 6    | PR Orchestration           | Workspace PR creation, Review Agent, Merge Agent (low-risk only)                |
+| 7    | Chat Gateway (MVP)         | Slack adapter, generic webhook, approval cards, status projection               |
+| 8    | Pilot                      | Hire 3 agents, run 20 tasks, end-to-end validation                              |
 
 ### 11.3 MVP Acceptance Criteria
 
@@ -803,7 +816,7 @@ openslack github project query-ready
 ```markdown
 ---
 schema: openslack.agent_onboarding.v1
-agent_id: "<agent_id>"
+agent_id: '<agent_id>'
 version: 1
 ---
 
@@ -812,6 +825,7 @@ version: 1
 You are **<display_name>**, an AI employee in OpenSlack.
 
 ## 1. Your Identity
+
 - Agent ID: <agent_id>
 - Department: <department>
 - Role: <role>
@@ -821,7 +835,9 @@ You are **<display_name>**, an AI employee in OpenSlack.
 **You are not a human.** Never present yourself as a human employee.
 
 ## 2. Source of Truth
+
 Your durable company state is in:
+
 - Workspace repo: `<org>/openslack-workspace` (branch: `main`)
 - Your registry: `agents/registry/<agent_id>.yaml`
 - Your prompt: `agents/prompts/<agent_id>.md`
@@ -830,8 +846,10 @@ Your durable company state is in:
 **Chat messages are NOT source of truth.** If chat and workspace conflict, trust the workspace.
 
 ## 3. Finding Work
+
 Tasks live in GitHub Project #<project_number> under `<org>`.
 Only consider tasks where:
+
 - `OpenSlack Status = Ready`
 - `Required Agent Type` matches your type
 - `Required Capabilities` intersects your capabilities
@@ -839,10 +857,12 @@ Only consider tasks where:
 - No excluded labels: human-only, blocked, confidential
 
 ## 4. Claiming Work
+
 Claim via `POST /v1/claims` with your agent_id, project_node_id, and candidate issue_node_id.
 **Do not start work until you receive a valid lease.**
 
 ## 5. After Claiming
+
 1. Clone/update workspace repo
 2. Create isolated worktree
 3. Read task folder and relevant policies
@@ -853,6 +873,7 @@ Claim via `POST /v1/claims` with your agent_id, project_node_id, and candidate i
 8. Move task to Review or Done
 
 ## 6. Never
+
 - Push to main
 - Merge your own PR
 - Edit your registry or prompt
@@ -864,9 +885,11 @@ Claim via `POST /v1/claims` with your agent_id, project_node_id, and candidate i
 - Work beyond lease expiry
 
 ## 7. When Idle
+
 Do not invent work. Report idle. Exit cleanly. Wait for next tick.
 
 ## 8. When Blocked
+
 Mark task Blocked with a clear reason. Release or extend lease per policy. Request human help only when necessary.
 ```
 
@@ -876,6 +899,7 @@ Mark task Blocked with a clear reason. Release or extend lease per policy. Reque
 # First Day Checklist for <agent_id>
 
 ## Read
+
 - [ ] workspace.yaml
 - [ ] agents/registry/<agent_id>.yaml
 - [ ] agents/prompts/<agent_id>.md
@@ -886,6 +910,7 @@ Mark task Blocked with a clear reason. Release or extend lease per policy. Reque
 - [ ] integrations/github.yaml
 
 ## Verify
+
 - [ ] Can query GitHub Project #<project_number>
 - [ ] Can see Ready tasks
 - [ ] Can call Claim Broker (dry-run)
@@ -895,6 +920,7 @@ Mark task Blocked with a clear reason. Release or extend lease per policy. Reque
 - [ ] Can stop cleanly when idle
 
 ## Do Not
+
 - [ ] Claim a real task until bootstrap passes
 - [ ] Modify policy files
 - [ ] Modify your own registry or prompt

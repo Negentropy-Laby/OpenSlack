@@ -49,11 +49,11 @@ sourceOfTruthObjects, forbiddenActions, outputs
 
 Three schemas constrain agent output:
 
-| Schema | Phase | Constrains |
-|--------|-------|------------|
-| `FINDING_SCHEMA` | Scan | `findings[]` with title/severity/category/module/file/description |
-| `VERDICT_SCHEMA` | Verify | `refuted` boolean + `reason` string |
-| `TRIAGE_SCHEMA` | Triage | `issues[]` with priority/risk_zone/labels |
+| Schema           | Phase  | Constrains                                                        |
+| ---------------- | ------ | ----------------------------------------------------------------- |
+| `FINDING_SCHEMA` | Scan   | `findings[]` with title/severity/category/module/file/description |
+| `VERDICT_SCHEMA` | Verify | `refuted` boolean + `reason` string                               |
+| `TRIAGE_SCHEMA`  | Triage | `issues[]` with priority/risk_zone/labels                         |
 
 This is a key design: agent output is structured data, not free text. OpenSlack
 should require all workflow agent calls to declare schemas, and fail-closed on
@@ -62,10 +62,10 @@ validation errors.
 ### 3. Runtime Inputs (`args`)
 
 ```javascript
-const scope     = args?.scope     || 'all'
-const maxPerDim = args?.maxPerDim || 3
-const maxIssues = args?.maxIssues || 3
-const autoImpl  = args?.autoImpl !== false
+const scope = args?.scope || 'all';
+const maxPerDim = args?.maxPerDim || 3;
+const maxIssues = args?.maxIssues || 3;
+const autoImpl = args?.autoImpl !== false;
 ```
 
 Maps to OpenSlack workflow `--input` flags:
@@ -77,14 +77,14 @@ openslack collaboration workflow preview full-lifecycle \
 
 ### 4. Ambient Runtime Primitives
 
-| Primitive | Purpose |
-|-----------|---------|
-| `phase(name)` | Mark execution stage for logging/UI/progress |
-| `log(text)` | Write workflow log |
-| `parallel(tasks)` | Execute multiple async tasks concurrently |
+| Primitive             | Purpose                                                              |
+| --------------------- | -------------------------------------------------------------------- |
+| `phase(name)`         | Mark execution stage for logging/UI/progress                         |
+| `log(text)`           | Write workflow log                                                   |
+| `parallel(tasks)`     | Execute multiple async tasks concurrently                            |
 | `pipeline(items, fn)` | Process list items with bounded concurrency and per-item checkpoints |
-| `agent(prompt, opts)` | Launch agent subtask with label/phase/schema |
-| `args` | External input parameters |
+| `agent(prompt, opts)` | Launch agent subtask with label/phase/schema                         |
+| `args`                | External input parameters                                            |
 
 OpenSlack should provide these as an explicit context object, not globals:
 
@@ -298,15 +298,15 @@ export const meta = {
 
 ## Implementation Plan
 
-| PR | Scope | Key Deliverable |
-|----|-------|-----------------|
-| 1 | Format analysis docs | `docs/product/workflow-format-analysis.md`, runtime design, security model |
-| 2 | `@openslack/workflows` loader | Meta parser, type definitions, validator, hash computation |
-| 3 | Runtime primitives | `phase`, `log`, `parallel`, `pipeline`, `agent` shim, mock/dry-run support |
-| 4 | Preview mode for full-lifecycle | Example workflow running Scan/Verify/Triage only |
-| 5 | Permission and trust model | Workflow trust/untrust, permission checks, side-effect gating |
-| 6 | OpenSlack-native rewrite | `preview(ctx, args)` + `run(ctx, args)` with OpenSlack API calls |
-| 7 | Multi-format output | `--format html`, `--format tui`, `--format markdown` |
+| PR  | Scope                           | Key Deliverable                                                            |
+| --- | ------------------------------- | -------------------------------------------------------------------------- |
+| 1   | Format analysis docs            | `docs/product/workflow-format-analysis.md`, runtime design, security model |
+| 2   | `@openslack/workflows` loader   | Meta parser, type definitions, validator, hash computation                 |
+| 3   | Runtime primitives              | `phase`, `log`, `parallel`, `pipeline`, `agent` shim, mock/dry-run support |
+| 4   | Preview mode for full-lifecycle | Example workflow running Scan/Verify/Triage only                           |
+| 5   | Permission and trust model      | Workflow trust/untrust, permission checks, side-effect gating              |
+| 6   | OpenSlack-native rewrite        | `preview(ctx, args)` + `run(ctx, args)` with OpenSlack API calls           |
+| 7   | Multi-format output             | `--format html`, `--format tui`, `--format markdown`                       |
 
 ## Summary
 
