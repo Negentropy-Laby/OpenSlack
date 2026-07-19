@@ -5,7 +5,7 @@ import { BUILTIN_ACTION_REGISTRY, type ActionRegistryPort } from './tool-registr
 import { recommendWorkflowForQuery } from './workflow-recommendation.js';
 import { KNOWN_INTENTS } from './intent-kinds.js';
 
-const ALLOWLISTED_INTENTS = new Set(KNOWN_INTENTS.filter(k => k !== 'unknown'));
+const ALLOWLISTED_INTENTS = new Set(KNOWN_INTENTS.filter((k) => k !== 'unknown'));
 
 function buildSteps(intent: Intent, registry: ActionRegistryPort): PlanStep[] {
   const prNumber = intent.slots.prNumber as number | undefined;
@@ -13,8 +13,11 @@ function buildSteps(intent: Intent, registry: ActionRegistryPort): PlanStep[] {
   const agentId = intent.slots.agentId as string | undefined;
   const paths = intent.slots.paths as string | undefined;
   const title = intent.slots.title as string | undefined;
-  const step = (actionId: string, input: Record<string, string | number | boolean | undefined> = {}, id = 's1') =>
-    registry.createStep(actionId, input, id);
+  const step = (
+    actionId: string,
+    input: Record<string, string | number | boolean | undefined> = {},
+    id = 's1',
+  ) => registry.createStep(actionId, input, id);
 
   switch (intent.kind) {
     case 'workflow_recommended':
@@ -63,10 +66,7 @@ function buildSteps(intent: Intent, registry: ActionRegistryPort): PlanStep[] {
 
     case 'pr_merge':
       if (!prNumber) return [];
-      return [
-        step('pr.doctor', { prNumber }, 's1'),
-        step('pr.merge', { prNumber }, 's2'),
-      ];
+      return [step('pr.doctor', { prNumber }, 's1'), step('pr.merge', { prNumber }, 's2')];
 
     case 'create_task':
       if (!title) return [];
@@ -105,23 +105,40 @@ function buildSteps(intent: Intent, registry: ActionRegistryPort): PlanStep[] {
 
 function buildGoal(intent: Intent): string {
   switch (intent.kind) {
-    case 'status': return 'Check OpenSlack status';
-    case 'doctor': return 'Run health diagnostics';
-    case 'governance_audit': return 'Audit governance compliance';
-    case 'pr_status': return `Check PR #${intent.slots.prNumber} status`;
-    case 'pr_doctor': return `Diagnose PR #${intent.slots.prNumber}`;
-    case 'pr_review': return `Review PR #${intent.slots.prNumber}`;
-    case 'pr_queue': return 'Show PR queue';
-    case 'pr_watch': return `Watch PR #${intent.slots.prNumber}`;
-    case 'pr_merge': return `Merge PR #${intent.slots.prNumber}`;
-    case 'create_task': return `Preview task "${intent.slots.title}"`;
-    case 'claim_task': return 'Claim a task from GitHub Issues';
-    case 'checkout_task': return `Checkout issue #${intent.slots.issueNumber}`;
-    case 'sync_task': return `Sync issue #${intent.slots.issueNumber}`;
-    case 'issue_done': return `Mark issue #${intent.slots.issueNumber} done`;
-    case 'github_repair_labels': return 'Preview GitHub label repair';
-    case 'github_repair_claims': return 'Preview GitHub claim repair';
-    case 'task_repair_worktrees': return 'Preview local worktree repair';
+    case 'status':
+      return 'Check OpenSlack status';
+    case 'doctor':
+      return 'Run health diagnostics';
+    case 'governance_audit':
+      return 'Audit governance compliance';
+    case 'pr_status':
+      return `Check PR #${intent.slots.prNumber} status`;
+    case 'pr_doctor':
+      return `Diagnose PR #${intent.slots.prNumber}`;
+    case 'pr_review':
+      return `Review PR #${intent.slots.prNumber}`;
+    case 'pr_queue':
+      return 'Show PR queue';
+    case 'pr_watch':
+      return `Watch PR #${intent.slots.prNumber}`;
+    case 'pr_merge':
+      return `Merge PR #${intent.slots.prNumber}`;
+    case 'create_task':
+      return `Preview task "${intent.slots.title}"`;
+    case 'claim_task':
+      return 'Claim a task from GitHub Issues';
+    case 'checkout_task':
+      return `Checkout issue #${intent.slots.issueNumber}`;
+    case 'sync_task':
+      return `Sync issue #${intent.slots.issueNumber}`;
+    case 'issue_done':
+      return `Mark issue #${intent.slots.issueNumber} done`;
+    case 'github_repair_labels':
+      return 'Preview GitHub label repair';
+    case 'github_repair_claims':
+      return 'Preview GitHub claim repair';
+    case 'task_repair_worktrees':
+      return 'Preview local worktree repair';
     case 'workflow_recommended':
     case 'workflow_draft_required':
       return 'Prepare a dynamic workflow recommendation';
@@ -129,7 +146,8 @@ function buildGoal(intent: Intent): string {
       return 'Recommend direct operator action';
     case 'profile_sync':
       return 'Recommend profile sync action';
-    default: return 'Unknown request';
+    default:
+      return 'Unknown request';
   }
 }
 
@@ -154,8 +172,12 @@ export function planActions(
   const steps = missing.length === 0 ? buildSteps(intent, registry) : [];
   const risk = assessRisk(intent);
   const workflowRecommendation =
-    intent.kind === 'workflow_recommended' || intent.kind === 'workflow_not_needed' || intent.kind === 'workflow_draft_required'
-      ? recommendWorkflowForQuery(String(intent.slots.query ?? ''), { allowDraft: intent.kind === 'workflow_draft_required' })
+    intent.kind === 'workflow_recommended' ||
+    intent.kind === 'workflow_not_needed' ||
+    intent.kind === 'workflow_draft_required'
+      ? recommendWorkflowForQuery(String(intent.slots.query ?? ''), {
+          allowDraft: intent.kind === 'workflow_draft_required',
+        })
       : undefined;
 
   // Any step that requires confirmation triggers plan-level confirmation

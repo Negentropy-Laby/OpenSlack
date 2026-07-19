@@ -130,10 +130,9 @@ function report(overrides: Partial<PRReviewReport> = {}): PRReviewReport {
 describe('loadPRCodeownerEvidence', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    hoisted.getCODEOWNERS.mockResolvedValue([
-      '.github/** @wsman',
-      'packages/workflows/src/builtins/** @workflow-owner',
-    ].join('\n'));
+    hoisted.getCODEOWNERS.mockResolvedValue(
+      ['.github/** @wsman', 'packages/workflows/src/builtins/** @workflow-owner'].join('\n'),
+    );
   });
 
   it('loads CODEOWNERS from baseSha and resolves the complete PR file set', async () => {
@@ -161,13 +160,15 @@ describe('loadPRCodeownerEvidence', () => {
   });
 
   it('fails closed when baseSha or CODEOWNERS evidence is unavailable', async () => {
-    await expect(loadPRCodeownerEvidence(report({ baseSha: undefined })))
-      .rejects.toBeInstanceOf(PRCodeownerEvidenceUnavailableError);
+    await expect(loadPRCodeownerEvidence(report({ baseSha: undefined }))).rejects.toBeInstanceOf(
+      PRCodeownerEvidenceUnavailableError,
+    );
     expect(hoisted.getCODEOWNERS).not.toHaveBeenCalled();
 
     hoisted.getCODEOWNERS.mockResolvedValueOnce(null);
-    await expect(loadPRCodeownerEvidence(report()))
-      .rejects.toThrow('CODEOWNERS could not be loaded from immutable-base-sha');
+    await expect(loadPRCodeownerEvidence(report())).rejects.toThrow(
+      'CODEOWNERS could not be loaded from immutable-base-sha',
+    );
   });
 
   it('is the only CODEOWNERS loading path used by PRMS consumers', () => {

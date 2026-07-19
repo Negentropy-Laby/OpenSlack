@@ -84,12 +84,20 @@ function scanTaskDirs(root: string): TaskEntry[] {
                 filePath: yf,
               });
             } catch {
-              tasks.push({ id: entry.name, title: entry.name, status: category, category, filePath: yf });
+              tasks.push({
+                id: entry.name,
+                title: entry.name,
+                status: category,
+                category,
+                filePath: yf,
+              });
             }
           }
         }
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
   return tasks;
 }
@@ -104,7 +112,12 @@ function scanEvolutionBacklog(root: string): EvolEntry[] {
       const idMatch = raw.match(/^id:\s*(.+?)\s*$/m);
       const titleMatch = raw.match(/^title:\s*["']?(.+?)["']?\s*$/m);
       const statusMatch = raw.match(/^status:\s*(.+?)\s*$/m);
-      return { id: idMatch?.[1]?.trim() || '', title: titleMatch?.[1]?.trim() || '', status: statusMatch?.[1]?.trim() || 'unknown', filePath: f };
+      return {
+        id: idMatch?.[1]?.trim() || '',
+        title: titleMatch?.[1]?.trim() || '',
+        status: statusMatch?.[1]?.trim() || 'unknown',
+        filePath: f,
+      };
     } catch {
       return { id: '', title: '', status: 'unknown', filePath: f };
     }

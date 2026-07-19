@@ -3,23 +3,80 @@
   "$id": "https://openslack.dev/schemas/evolution-task.schema.json",
   "title": "OpenSlack Evolution Task",
   "type": "object",
-  "required": ["schema", "id", "title", "status", "created_at", "created_by", "source", "problem", "hypothesis", "risk", "constraints", "validation", "output_contract"],
+  "required": [
+    "schema",
+    "id",
+    "title",
+    "status",
+    "created_at",
+    "created_by",
+    "source",
+    "problem",
+    "hypothesis",
+    "risk",
+    "constraints",
+    "validation",
+    "output_contract"
+  ],
   "properties": {
     "schema": { "type": "string", "const": "openslack.evolution_task.v1" },
     "id": { "type": "string", "pattern": "^EVOL-\\d{4}-\\d{6}$" },
     "title": { "type": "string" },
     "status": {
       "type": "string",
-      "enum": ["observed", "diagnosed", "proposed", "planned", "claimable", "claimed", "implementing", "validating", "validated", "reviewing", "approved", "merge_queued", "merged", "canary_monitoring", "stable", "learned", "validation_failed", "rejected", "regression_detected", "rollback_proposed", "rolled_back"]
+      "enum": [
+        "observed",
+        "diagnosed",
+        "proposed",
+        "planned",
+        "claimable",
+        "claimed",
+        "implementing",
+        "validating",
+        "validated",
+        "reviewing",
+        "approved",
+        "merge_queued",
+        "merged",
+        "canary_monitoring",
+        "stable",
+        "learned",
+        "validation_failed",
+        "rejected",
+        "regression_detected",
+        "rollback_proposed",
+        "rolled_back"
+      ]
     },
     "created_at": { "type": "string", "format": "date-time" },
     "created_by": { "type": "string" },
-    "depends_on": { "type": "array", "items": { "type": "string" }, "description": "EVOL task IDs this task depends on" },
+    "depends_on": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "EVOL task IDs this task depends on"
+    },
     "source": {
       "type": "object",
       "required": ["type", "evidence"],
       "properties": {
-        "type": { "type": "string", "enum": ["post_merge_monitor", "ci_failure", "test_flake", "github_issue", "pr_review", "user_feedback", "agent_failure", "task_timeout", "cost_anomaly", "schema_validation_failure", "workspace_drift", "security_scan", "chat_adapter_failure"] },
+        "type": {
+          "type": "string",
+          "enum": [
+            "post_merge_monitor",
+            "ci_failure",
+            "test_flake",
+            "github_issue",
+            "pr_review",
+            "user_feedback",
+            "agent_failure",
+            "task_timeout",
+            "cost_anomaly",
+            "schema_validation_failure",
+            "workspace_drift",
+            "security_scan",
+            "chat_adapter_failure"
+          ]
+        },
         "evidence": { "type": "array", "items": { "type": "string" } }
       }
     },

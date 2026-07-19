@@ -4,7 +4,11 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { parseAgentRegistry } from '@openslack/workspace';
 import type { ParsedAgentRegistryEntry } from '@openslack/workspace';
 import { resolvePermissionSnapshot } from '@openslack/kernel';
-import type { AgentRuntimeIdentity, AgentPrincipal, AgentPermissionSnapshot } from '@openslack/kernel';
+import type {
+  AgentRuntimeIdentity,
+  AgentPrincipal,
+  AgentPermissionSnapshot,
+} from '@openslack/kernel';
 
 function generateRunId(): string {
   const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
@@ -41,8 +45,10 @@ export function generateRuntimeIdentity(args: {
   let existing: Record<string, unknown> = {};
   if (existsSync(identityPath)) {
     try {
-      existing = parseYaml(readFileSync(identityPath, 'utf-8')) as Record<string, unknown> || {};
-    } catch { /* ignore parse errors */ }
+      existing = (parseYaml(readFileSync(identityPath, 'utf-8')) as Record<string, unknown>) || {};
+    } catch {
+      /* ignore parse errors */
+    }
   }
 
   const merged = {
@@ -90,7 +96,9 @@ export function resolveAgentPrincipal(args: {
   }
 
   if (registry.identity.status !== 'active') {
-    return { error: `Agent "${agentId}" identity status is "${registry.identity.status}", expected "active"` };
+    return {
+      error: `Agent "${agentId}" identity status is "${registry.identity.status}", expected "active"`,
+    };
   }
 
   const runtimeIdentity = loadRuntimeIdentity(root, agentId);

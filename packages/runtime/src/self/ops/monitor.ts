@@ -55,12 +55,16 @@ export function monitorPostMerge(
 ): MonitorResult {
   const observations: string[] = [];
   let hasRegression = false;
-  const metrics: Record<string, { baseline: number; current: number; delta: number; threshold: number }> = {};
+  const metrics: Record<
+    string,
+    { baseline: number; current: number; delta: number; threshold: number }
+  > = {};
 
   // If checks not provided, run genesis in-process (no execSync)
-  const evalChecks = checks.length > 0 ? checks : [
-    { name: 'genesis', result: checkGenesis(), baseline: 1, threshold: -0.05 },
-  ];
+  const evalChecks =
+    checks.length > 0
+      ? checks
+      : [{ name: 'genesis', result: checkGenesis(), baseline: 1, threshold: -0.05 }];
 
   for (const check of evalChecks) {
     const current = check.result.result === 'pass' ? 1 : 0;

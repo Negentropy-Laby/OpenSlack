@@ -1,14 +1,14 @@
 id: EV-GOLDEN-007
-title: "Post-merge regression creates rollback task"
-goal: "Failed post-merge monitor creates rollback task."
+title: 'Post-merge regression creates rollback task'
+goal: 'Failed post-merge monitor creates rollback task.'
 on_failure: auto_create_rollback
 scenario:
-  description: "Simulated post-merge eval failure"
+  description: 'Simulated post-merge eval failure'
   parameters:
     merged_experiment: EXP-FAKE-001
     post_merge_eval: fail
 assertions:
-  - description: "Rollback task is created"
-    check: "rollback_task_created == true"
-  - description: "Revert PR is proposed"
-    check: "revert_pr_proposed == true"
+  - description: 'Rollback task is created'
+    check: 'rollback_task_created == true'
+  - description: 'Revert PR is proposed'
+    check: 'revert_pr_proposed == true'

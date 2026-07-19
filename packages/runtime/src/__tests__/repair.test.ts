@@ -5,7 +5,10 @@ import { describe, expect, it } from 'vitest';
 import { repairWorktrees } from '../repair.js';
 
 function makeRoot(): string {
-  const root = join(tmpdir(), `openslack-repair-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const root = join(
+    tmpdir(),
+    `openslack-repair-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
   mkdirSync(join(root, '.worktrees', 'RUN-1'), { recursive: true });
   writeFileSync(join(root, 'openslack.yaml'), 'schema: openslack.workspace.v1\n', 'utf-8');
   return root;
@@ -35,4 +38,3 @@ describe('repairWorktrees', () => {
     }
   });
 });
-

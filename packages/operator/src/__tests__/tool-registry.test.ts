@@ -114,9 +114,7 @@ describe('tool registry', () => {
     const plugin = pluginStatusAction(pluginId);
     expect(() => createActionRegistry([plugin, plugin])).toThrow('Duplicate');
     expect(() =>
-      createActionRegistry([
-        { ...plugin, id: 'reader.status' as PluginActionId },
-      ]),
+      createActionRegistry([{ ...plugin, id: 'reader.status' as PluginActionId }]),
     ).toThrow('plugin-namespaced');
   });
 
@@ -132,10 +130,16 @@ describe('tool registry', () => {
       },
     ]);
 
-    expect(registry.createStep(pluginId, {
-      'filter.label': 'bug',
-      'pr-number': 198,
-    }, 's1').input).toEqual({
+    expect(
+      registry.createStep(
+        pluginId,
+        {
+          'filter.label': 'bug',
+          'pr-number': 198,
+        },
+        's1',
+      ).input,
+    ).toEqual({
       'filter.label': 'bug',
       'pr-number': 198,
     });
@@ -189,11 +193,15 @@ describe('tool registry', () => {
     revokedInput.revoke();
 
     expect(BUILTIN_ACTION_REGISTRY.revalidateStep(accessorStep).valid).toBe(false);
-    expect(BUILTIN_ACTION_REGISTRY.revalidateStep({ ...canonical, args: accessorArgs }).valid).toBe(false);
+    expect(BUILTIN_ACTION_REGISTRY.revalidateStep({ ...canonical, args: accessorArgs }).valid).toBe(
+      false,
+    );
     expect(getterInvoked).toBe(false);
     expect(BUILTIN_ACTION_REGISTRY.revalidateStep({ ...canonical, args: proxy }).valid).toBe(false);
     expect(BUILTIN_ACTION_REGISTRY.revalidateStep(revokedRoot.proxy).valid).toBe(false);
-    expect(BUILTIN_ACTION_REGISTRY.revalidateStep({ ...canonical, input: revokedInput.proxy }).valid).toBe(false);
+    expect(
+      BUILTIN_ACTION_REGISTRY.revalidateStep({ ...canonical, input: revokedInput.proxy }).valid,
+    ).toBe(false);
   });
 
   it('rejects prototype-named unknown input fields without dropping or inheriting them', () => {
@@ -201,7 +209,9 @@ describe('tool registry', () => {
       const input = JSON.parse(`{"${key}":"unexpected"}`) as Record<string, string>;
       const canonical = createRegisteredStep('status.show', {}, 's1');
 
-      expect(() => createRegisteredStep('status.show', input, 's1')).toThrow(`Unknown input: ${key}`);
+      expect(() => createRegisteredStep('status.show', input, 's1')).toThrow(
+        `Unknown input: ${key}`,
+      );
       expect(BUILTIN_ACTION_REGISTRY.revalidateStep({ ...canonical, input }).valid).toBe(false);
     }
   });
@@ -215,22 +225,38 @@ describe('tool registry', () => {
   });
 
   it('rejects unknown actions instead of accepting raw shell', () => {
-    expect(() => createRegisteredStep('shell.run', { command: 'rm -rf .' }, 's1')).toThrow('Unregistered');
+    expect(() => createRegisteredStep('shell.run', { command: 'rm -rf .' }, 's1')).toThrow(
+      'Unregistered',
+    );
   });
 
   it('rejects invalid action input', () => {
-    expect(() => createRegisteredStep('pr.doctor', { prNumber: '12' }, 's1')).toThrow('expected number');
+    expect(() => createRegisteredStep('pr.doctor', { prNumber: '12' }, 's1')).toThrow(
+      'expected number',
+    );
   });
 
   it('registers task creation preview instead of raw issue commands', () => {
-    const step = createRegisteredStep('task.create.preview', { title: 'Investigate setup', template: 'investigation' }, 's1');
+    const step = createRegisteredStep(
+      'task.create.preview',
+      { title: 'Investigate setup', template: 'investigation' },
+      's1',
+    );
     expect(step.command).toBe('task');
-    expect(step.args).toEqual(['create', '--template', 'investigation', '--title', 'Investigate setup']);
+    expect(step.args).toEqual([
+      'create',
+      '--template',
+      'investigation',
+      '--title',
+      'Investigate setup',
+    ]);
     expect(isRegisteredStep(step)).toBe(true);
   });
 
   it('requires owner and PR evidence for the deprecated issue completion action', () => {
-    expect(() => createRegisteredStep('github.issue_done', { issueNumber: 42 }, 's1')).toThrow('agentId');
+    expect(() => createRegisteredStep('github.issue_done', { issueNumber: 42 }, 's1')).toThrow(
+      'agentId',
+    );
 
     const step = createRegisteredStep(
       'github.issue_done',
@@ -253,7 +279,12 @@ describe('tool registry', () => {
       actionId: 'status.show',
       input: {},
     }));
-    expect(() => buildActionPlanFromRegisteredActions('too many', { kind: 'status', slots: {}, confidence: 1 }, calls))
-      .toThrow('max tool step limit');
+    expect(() =>
+      buildActionPlanFromRegisteredActions(
+        'too many',
+        { kind: 'status', slots: {}, confidence: 1 },
+        calls,
+      ),
+    ).toThrow('max tool step limit');
   });
 });

@@ -14,7 +14,12 @@ function hashMessage(text: string, userId: string, channelId: string): string {
   return createHash('sha256').update(`${userId}:${channelId}:${text}`).digest('hex');
 }
 
-export function isDuplicate(messageId: string, text: string, userId: string, channelId: string): boolean {
+export function isDuplicate(
+  messageId: string,
+  text: string,
+  userId: string,
+  channelId: string,
+): boolean {
   // Check by message ID
   if (processed.has(messageId)) return true;
 
@@ -27,7 +32,12 @@ export function isDuplicate(messageId: string, text: string, userId: string, cha
   return false;
 }
 
-export function markProcessed(messageId: string, text: string, userId: string, channelId: string): void {
+export function markProcessed(
+  messageId: string,
+  text: string,
+  userId: string,
+  channelId: string,
+): void {
   const hash = hashMessage(text, userId, channelId);
   processed.set(messageId, {
     messageId,

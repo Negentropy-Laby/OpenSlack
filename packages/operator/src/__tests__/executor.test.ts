@@ -12,7 +12,9 @@ import {
 import type { ActionPlan, PlanStep } from '../types.js';
 import type { AgentPermissionSnapshot } from '@openslack/kernel';
 
-function makeSnapshot(overrides: Partial<AgentPermissionSnapshot['permissions']> = {}): AgentPermissionSnapshot {
+function makeSnapshot(
+  overrides: Partial<AgentPermissionSnapshot['permissions']> = {},
+): AgentPermissionSnapshot {
   return {
     principal: {
       registry_id: 'test_agent',
@@ -109,7 +111,14 @@ describe('executePlan', () => {
       goal: 'Raw shell',
       intent: { kind: 'unknown', slots: {}, confidence: 0 },
       steps: [
-        { id: 's1', tool: 'openslack-cli', command: 'shell', args: ['rm', '-rf', '.'], description: 'Raw shell', confirmationRequired: false },
+        {
+          id: 's1',
+          tool: 'openslack-cli',
+          command: 'shell',
+          args: ['rm', '-rf', '.'],
+          description: 'Raw shell',
+          confirmationRequired: false,
+        },
       ],
       riskLevel: 'high',
       missingParams: [],
@@ -156,28 +165,38 @@ describe('executePlan', () => {
     ]);
     const plan = makePlan(registry.createStep(pluginId, {}, 's1'));
 
-    const result = await executePlan(plan, {
-      snapshot: makeSnapshot({ actions: { [pluginId]: 'ask' } }),
-      confirmStep: async () => true,
-    }, registry);
+    const result = await executePlan(
+      plan,
+      {
+        snapshot: makeSnapshot({ actions: { [pluginId]: 'ask' } }),
+        confirmStep: async () => true,
+      },
+      registry,
+    );
 
     expect(result.status).toBe('failed');
     expect(result.summary).toContain('Failed at step');
     expect(result.steps[0].output).toContain('Unsupported tool');
   });
 
-
   it('passes changed paths and derived risk to authorization', async () => {
-    const plan = makePlan(createRegisteredStep('task.sync', {
-      issueNumber: 12,
-      agentId: 'test_agent',
-      paths: 'packages/kernel/src/index.ts',
-    }, 's1'), {
-      goal: 'Sync protected path',
-      intent: { kind: 'sync_task', slots: {}, confidence: 1 },
-      riskLevel: 'medium',
-      sideEffects: true,
-    });
+    const plan = makePlan(
+      createRegisteredStep(
+        'task.sync',
+        {
+          issueNumber: 12,
+          agentId: 'test_agent',
+          paths: 'packages/kernel/src/index.ts',
+        },
+        's1',
+      ),
+      {
+        goal: 'Sync protected path',
+        intent: { kind: 'sync_task', slots: {}, confidence: 1 },
+        riskLevel: 'medium',
+        sideEffects: true,
+      },
+    );
 
     const result = await executePlan(plan, {
       snapshot: makeSnapshot({ actions: { 'task.sync': 'allow' }, max_risk_zone: 'yellow' }),
@@ -205,16 +224,20 @@ describe('executePlan', () => {
   it('rejects split input/args authority before authorization or confirmation', async () => {
     const confirmStep = vi.fn(async () => true);
     const onStepStart = vi.fn();
-    const canonical = createRegisteredStep('task.sync', {
-      issueNumber: 12,
-      agentId: 'test_agent',
-      paths: 'docs/README.md',
-    }, 's1');
+    const canonical = createRegisteredStep(
+      'task.sync',
+      {
+        issueNumber: 12,
+        agentId: 'test_agent',
+        paths: 'docs/README.md',
+      },
+      's1',
+    );
     const plan = makePlan({
       ...canonical,
-      args: canonical.args.map((arg) => arg === 'docs/README.md'
-        ? 'packages/kernel/src/index.ts'
-        : arg),
+      args: canonical.args.map((arg) =>
+        arg === 'docs/README.md' ? 'packages/kernel/src/index.ts' : arg,
+      ),
     });
 
     const result = await executePlan(plan, {
