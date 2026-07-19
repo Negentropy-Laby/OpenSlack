@@ -1,11 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import {
-  mkdir,
-  open,
-  readFile,
-  rename,
-  rm,
-} from 'node:fs/promises';
+import { mkdir, open, readFile, rename, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import {
   canonicalizeRepositoryName,
@@ -399,9 +393,9 @@ function isRepositoryIdentity(value: unknown, expected: RepositoryIdentity): boo
   const canonical = canonicalizeRepositoryName(value.owner, value.repo);
   return Boolean(
     canonical &&
-      canonical.fullName === value.fullName &&
-      canonical.canonicalFullName === value.canonicalFullName &&
-      canonical.canonicalFullName === expected.canonicalFullName,
+    canonical.fullName === value.fullName &&
+    canonical.canonicalFullName === value.canonicalFullName &&
+    canonical.canonicalFullName === expected.canonicalFullName,
   );
 }
 
@@ -610,7 +604,8 @@ async function projectRepository(input: {
   try {
     const client = await clientFactory(repository);
     assertClientRepository(client, repository);
-    if (client.isDryRun) throw new ProjectionInvalidResponseError('Dry-run clients cannot build live projections.');
+    if (client.isDryRun)
+      throw new ProjectionInvalidResponseError('Dry-run clients cannot build live projections.');
 
     const openPullRequests = await scheduler.run(async () => {
       const response = await client.octokit.pulls.list({
@@ -636,7 +631,9 @@ async function projectRepository(input: {
         );
         const checks =
           checkResult.summary ??
-          (cached?.headSha === pullRequest.headSha ? cloneCheckSummary(cached.checks) : emptyCheckSummary(false));
+          (cached?.headSha === pullRequest.headSha
+            ? cloneCheckSummary(cached.checks)
+            : emptyCheckSummary(false));
         return {
           ...pullRequest,
           checks,
@@ -676,9 +673,7 @@ async function projectRepository(input: {
       source: 'github-live',
     }));
     const partial =
-      liveItems.some((item) => item.partial) ||
-      missingChanges.partial ||
-      scheduler.exhausted;
+      liveItems.some((item) => item.partial) || missingChanges.partial || scheduler.exhausted;
 
     await store.writeCache(repository, {
       schema: 'openslack.repository_pr_projection_cache.v1',
@@ -746,9 +741,14 @@ async function fetchCheckSummary(
         }),
       );
       const runs = response.data.check_runs;
-      if (!Array.isArray(runs)) throw new ProjectionInvalidResponseError('GitHub check response is invalid.');
+      if (!Array.isArray(runs))
+        throw new ProjectionInvalidResponseError('GitHub check response is invalid.');
       for (const run of runs) {
-        summarizeCheck(summary, String(run.status), run.conclusion === null ? null : String(run.conclusion));
+        summarizeCheck(
+          summary,
+          String(run.status),
+          run.conclusion === null ? null : String(run.conclusion),
+        );
       }
       if (runs.length < CHECK_PAGE_SIZE) return { summary, complete: true };
     }
@@ -771,7 +771,9 @@ async function findMissingPullRequestChanges(input: {
   if (!input.cursor) return { changes: [], partial: false };
   const missing = Object.entries(input.cursor.pullRequests)
     .map(([number, snapshot]) => ({ prNumber: Number(number), snapshot }))
-    .filter(({ prNumber }) => Number.isSafeInteger(prNumber) && !input.currentNumbers.has(prNumber));
+    .filter(
+      ({ prNumber }) => Number.isSafeInteger(prNumber) && !input.currentNumbers.has(prNumber),
+    );
   const changes: RepositoryProjectionChange[] = [];
   let partial = false;
   await Promise.all(
@@ -786,7 +788,8 @@ async function findMissingPullRequestChanges(input: {
         );
         const state = typeof response.data.state === 'string' ? response.data.state : null;
         const headSha = typeof response.data.head?.sha === 'string' ? response.data.head.sha : null;
-        if (!state || !headSha) throw new ProjectionInvalidResponseError('GitHub pull request response is invalid.');
+        if (!state || !headSha)
+          throw new ProjectionInvalidResponseError('GitHub pull request response is invalid.');
         const changedFields: Array<'state' | 'headSha'> = [];
         if (snapshot.state !== state) changedFields.push('state');
         if (snapshot.headSha !== headSha) changedFields.push('headSha');
@@ -857,9 +860,7 @@ function compareProjectionCursor(
     }
   }
   return changes.sort(
-    (left, right) =>
-      left.prNumber - right.prNumber ||
-      left.kind.localeCompare(right.kind, 'en-US'),
+    (left, right) => left.prNumber - right.prNumber || left.kind.localeCompare(right.kind, 'en-US'),
   );
 }
 
@@ -965,7 +966,8 @@ function normalizeRepositories(
 }
 
 function normalizePullRequestList(value: unknown): GitHubPullRequestSnapshot[] {
-  if (!Array.isArray(value)) throw new ProjectionInvalidResponseError('GitHub pull request list is invalid.');
+  if (!Array.isArray(value))
+    throw new ProjectionInvalidResponseError('GitHub pull request list is invalid.');
   const snapshots: GitHubPullRequestSnapshot[] = [];
   for (const item of value) {
     if (!item || typeof item !== 'object' || Array.isArray(item)) {
@@ -1003,7 +1005,9 @@ function assertClientRepository(client: GitHubClient, repository: RepositoryIden
     client.owner.toLocaleLowerCase('en-US') !== repository.owner.toLocaleLowerCase('en-US') ||
     client.repo.toLocaleLowerCase('en-US') !== repository.repo.toLocaleLowerCase('en-US')
   ) {
-    throw new ProjectionInvalidResponseError('Repository projection client is bound to another repository.');
+    throw new ProjectionInvalidResponseError(
+      'Repository projection client is bound to another repository.',
+    );
   }
 }
 
@@ -1082,11 +1086,7 @@ function boundedInteger(
   name: string,
 ): number {
   const resolvedValue = value ?? defaultValue;
-  if (
-    !Number.isSafeInteger(resolvedValue) ||
-    resolvedValue < minimum ||
-    resolvedValue > maximum
-  ) {
+  if (!Number.isSafeInteger(resolvedValue) || resolvedValue < minimum || resolvedValue > maximum) {
     throw new TypeError(`${name} must be an integer between ${minimum} and ${maximum}.`);
   }
   return resolvedValue;
