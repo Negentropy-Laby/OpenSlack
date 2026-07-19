@@ -33,8 +33,8 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
   code expressions while conservatively redacting credential literals and
   falling back safely for configuration, binary, unknown, and invalid UTF-8
   content.
-- A governed Negentropy-Lab `scenario-pack.extension` preview fixed to external,
-  opt-in, L5, SHADOW, and projection-only behavior.
+- A governed Negentropy-Lab `scenario-pack.extension` slot preview fixed to
+  external, opt-in, L5, SHADOW, and projection-only behavior.
 
 ### Changed
 
@@ -65,8 +65,13 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 The following nine unique blocker IDs are external release prerequisites and
 evidence gates at this branch cut. They are **not delivered features**, and this
 changelog does not assert production readiness. Their final disposition must be
-recorded through the [0.2.0 release runbook] and owner-scoped live evidence before
-any maturity promotion:
+recorded through the 0.2.0 release runbook
+(`docs/developer/release-0.2.0.md`) and owner-scoped live evidence before any
+maturity promotion.
+
+The version date above is the declared release date for this branch cut. If the
+tag date changes, a bot-authored, human-approved changelog-only PR must update the
+date and rerun the release-head validation before `TESTED_COMMIT` is selected.
 
 - `signed_v0_2_0_release_pending` — publish and verify both signed target artifact
   sets at the tested commit.
@@ -100,4 +105,3 @@ any maturity promotion:
 [Unreleased]: https://github.com/Negentropy-Laby/OpenSlack/compare/v0.2.0...HEAD
 [0.2.0]: https://github.com/Negentropy-Laby/OpenSlack/releases/tag/v0.2.0
 [PR #206]: https://github.com/Negentropy-Laby/OpenSlack/pull/206
-[0.2.0 release runbook]: docs/developer/release-0.2.0.md
