@@ -131,9 +131,7 @@ export function migrateLocalStateSchemas(
 
   const original = readFileSync(path, 'utf-8');
   const parsed = JSON.parse(original) as Record<string, unknown>;
-  const timestamp = (options.now ?? (() => new Date()))()
-    .toISOString()
-    .replace(/[:.]/g, '-');
+  const timestamp = (options.now ?? (() => new Date()))().toISOString().replace(/[:.]/g, '-');
   const backupDir = join(localStateRoot, 'backups', 'state-migrations', timestamp);
   const backupPath = join(backupDir, basename(path));
   mkdirSync(backupDir, { recursive: true });
