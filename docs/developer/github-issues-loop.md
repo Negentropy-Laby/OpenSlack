@@ -307,5 +307,4 @@ filterRedZonePaths(changedPaths)  # identifies Red Zone crossing (.github/, kern
 ```bash
 repairLabels()  # idempotently creates 7 openslack:state labels
 repairExpiredClaims()  # lists refs, checks expiry, deletes stale, resets labels
-`
 ```
