@@ -111,9 +111,14 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
 
   async openSession(config: BridgeSessionConfig): Promise<BridgeSessionState> {
     // Guard against double-open — prevents orphaned child processes
-    if ((this.process && !this.process.killed) ||
-        (this.sessionMachine && this.sessionMachine.currentState !== 'shutdown')) {
-      throw new BridgeAdapterError('session_unavailable', 'Session already active — close the current session first');
+    if (
+      (this.process && !this.process.killed) ||
+      (this.sessionMachine && this.sessionMachine.currentState !== 'shutdown')
+    ) {
+      throw new BridgeAdapterError(
+        'session_unavailable',
+        'Session already active — close the current session first',
+      );
     }
 
     const sessionId = `bridge-${config.runId}`;
@@ -194,8 +199,16 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
   // ---------------------------------------------------------------------------
 
   async execute<T>(context: AdapterExecutionContext): Promise<AdapterExecutionResult<T>> {
-    const { prompt, runId, agentId, resolvedConfig, permissionProfile, worktreePath, recorder, toolGuard } =
-      context;
+    const {
+      prompt,
+      runId,
+      agentId,
+      resolvedConfig,
+      permissionProfile,
+      worktreePath,
+      recorder,
+      toolGuard,
+    } = context;
 
     const lifecycle = new BridgeLifecycleMapper(recorder, runId);
     const guard = new BridgePermissionGuard(permissionProfile, recorder, runId);
@@ -312,13 +325,19 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
         // Validate every incoming envelope
         const validation = validateBridgeEnvelope(envelope);
         if (!validation.valid) {
-          throw new BridgeAdapterError('envelope_malformed', validation.error ?? 'Invalid envelope');
+          throw new BridgeAdapterError(
+            'envelope_malformed',
+            validation.error ?? 'Invalid envelope',
+          );
         }
 
         // Permission guard on every inbound envelope
         const permCheck = guard.validateInboundResponse(envelope);
         if (!permCheck.valid) {
-          throw new BridgeAdapterError('permission_denied', permCheck.violation ?? 'Permission denied');
+          throw new BridgeAdapterError(
+            'permission_denied',
+            permCheck.violation ?? 'Permission denied',
+          );
         }
 
         // Process by kind
@@ -330,7 +349,10 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
           }
 
           case 'assistant_text': {
-            lifecycle.onBridgeProgress('assistant_text', envelope.payload as Record<string, unknown>);
+            lifecycle.onBridgeProgress(
+              'assistant_text',
+              envelope.payload as Record<string, unknown>,
+            );
             reconciliationEvents.push({ kind: envelope.kind, payload: envelope.payload });
             break;
           }
@@ -348,7 +370,10 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
             if (worktreeConfig) {
               const wtCheck = worktreeGuard.validateToolEvent(toolName, tp, worktreeConfig);
               if (!wtCheck.valid) {
-                throw new BridgeAdapterError('worktree_boundary_violation', wtCheck.violation ?? 'Worktree boundary violation');
+                throw new BridgeAdapterError(
+                  'worktree_boundary_violation',
+                  wtCheck.violation ?? 'Worktree boundary violation',
+                );
               }
             }
             // Enforce permission: ToolGuard.check() throws PermissionDeniedError
@@ -369,7 +394,10 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
             if (worktreeConfig) {
               const wtCheck = worktreeGuard.validateToolEvent(toolName, tp, worktreeConfig);
               if (!wtCheck.valid) {
-                throw new BridgeAdapterError('worktree_boundary_violation', wtCheck.violation ?? 'Worktree boundary violation');
+                throw new BridgeAdapterError(
+                  'worktree_boundary_violation',
+                  wtCheck.violation ?? 'Worktree boundary violation',
+                );
               }
             }
             // Write canonical tool_result transcript event
@@ -389,7 +417,8 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
             recorder.progress(runId, {
               step: 'bridge_approval_required',
               payload: envelope.payload,
-              reason: 'External bridge requested approval; OpenSlack does not accept external approval decisions',
+              reason:
+                'External bridge requested approval; OpenSlack does not accept external approval decisions',
             });
             throw new BridgeAdapterError(
               'permission_denied',
@@ -505,7 +534,9 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       this.process = spawn(command, args, spawnOpts);
 
       this.process.on('error', (err) => {
-        reject(new BridgeAdapterError('process_crash', `Failed to spawn bridge process: ${err.message}`));
+        reject(
+          new BridgeAdapterError('process_crash', `Failed to spawn bridge process: ${err.message}`),
+        );
       });
 
       this.process.on('spawn', () => {
@@ -580,7 +611,9 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       // Inbound envelope size limit — prevents OOM from malicious runtimes
       if (line.length > (this.options.maxEnvelopeSizeBytes ?? MAX_ENVELOPE_SIZE_BYTES)) {
         if (this.pendingReject) {
-          this.pendingReject(new BridgeAdapterError('envelope_malformed', 'Inbound envelope exceeds maximum size'));
+          this.pendingReject(
+            new BridgeAdapterError('envelope_malformed', 'Inbound envelope exceeds maximum size'),
+          );
           this.pendingResponse = null;
           this.pendingReject = null;
         }
@@ -606,7 +639,9 @@ export class BridgeProcessAdapter implements AgentExecutionAdapter, BridgeContra
       } catch {
         // Invalid JSON line — record as malformed
         if (this.pendingReject) {
-          this.pendingReject(new BridgeAdapterError('envelope_malformed', 'Invalid JSON in bridge response'));
+          this.pendingReject(
+            new BridgeAdapterError('envelope_malformed', 'Invalid JSON in bridge response'),
+          );
           this.pendingResponse = null;
           this.pendingReject = null;
         }
@@ -805,7 +840,10 @@ export class FakeBridgeAdapter implements AgentExecutionAdapter, BridgeContract 
       required: context.resolvedConfig.requiredMcpServers ?? [],
       available: availableMcpServers,
     });
-    if (context.resolvedConfig.requiredMcpServers && context.resolvedConfig.requiredMcpServers.length > 0) {
+    if (
+      context.resolvedConfig.requiredMcpServers &&
+      context.resolvedConfig.requiredMcpServers.length > 0
+    ) {
       const mcpDescriptors = buildMcpServerDescriptors(context.resolvedConfig.requiredMcpServers);
       validateRequiredMcpServers(mcpDescriptors, availableMcpServers);
     }
@@ -915,7 +953,11 @@ export class FakeBridgeAdapter implements AgentExecutionAdapter, BridgeContract 
       };
     }
 
-    if (lowerPrompt.includes('research') || lowerPrompt.includes('find') || lowerPrompt.includes('search')) {
+    if (
+      lowerPrompt.includes('research') ||
+      lowerPrompt.includes('find') ||
+      lowerPrompt.includes('search')
+    ) {
       return {
         data: {
           summary: 'Fake bridge research: analyzed available context.',
@@ -929,7 +971,11 @@ export class FakeBridgeAdapter implements AgentExecutionAdapter, BridgeContract 
     if (lowerPrompt.includes('plan') || lowerPrompt.includes('design')) {
       return {
         data: {
-          plan: ['Step 1: Analyze requirements', 'Step 2: Implement changes', 'Step 3: Validate results'],
+          plan: [
+            'Step 1: Analyze requirements',
+            'Step 2: Implement changes',
+            'Step 3: Validate results',
+          ],
           estimatedEffort: 'medium',
         },
         tokenUsage: estimateTokenUsage(prompt, { plan: 'placeholder' }),

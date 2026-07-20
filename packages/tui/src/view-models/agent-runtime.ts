@@ -51,9 +51,10 @@ export function mapAbyRuntimeDoctorToViewModel(
     safeEnvAllowed: report.env.allowedKeys,
     safeEnvRejected: report.env.rejectedKeys,
     checks: report.checks,
-    remediations: report.remediations.length > 0
-      ? report.remediations
-      : report.remediation.split('\n').filter((line) => line.trim()),
+    remediations:
+      report.remediations.length > 0
+        ? report.remediations
+        : report.remediation.split('\n').filter((line) => line.trim()),
     lastSmokeRun: options.rootDir
       ? findLastSmokeRun(options.rootDir, options.smokeAgentId ?? 'anthropic_architect_aby')
       : undefined,
@@ -98,7 +99,14 @@ function listRuns(rootDir: string): AgentRunState[] {
 }
 
 function isSmokeRun(rootDir: string, run: AgentRunState): boolean {
-  const metadataPath = join(rootDir, '.openslack.local', 'agents', 'runs', run.runId, 'metadata.json');
+  const metadataPath = join(
+    rootDir,
+    '.openslack.local',
+    'agents',
+    'runs',
+    run.runId,
+    'metadata.json',
+  );
   if (!existsSync(metadataPath)) return false;
   try {
     const parsed = JSON.parse(readFileSync(metadataPath, 'utf-8')) as {

@@ -2,12 +2,17 @@ import type { Intent, MissingParam } from './types.js';
 
 const MAX_CLARIFICATION_ROUNDS = 3;
 
-const REQUIRED_PARAMS: Record<string, Array<{ name: string; type: 'string' | 'number' | 'string[]'; description: string }>> = {
+const REQUIRED_PARAMS: Record<
+  string,
+  Array<{ name: string; type: 'string' | 'number' | 'string[]'; description: string }>
+> = {
   pr_merge: [{ name: 'prNumber', type: 'number', description: 'Pull request number to merge' }],
   pr_doctor: [{ name: 'prNumber', type: 'number', description: 'Pull request number to diagnose' }],
   pr_review: [{ name: 'prNumber', type: 'number', description: 'Pull request number to review' }],
   pr_watch: [{ name: 'prNumber', type: 'number', description: 'Pull request number to watch' }],
-  pr_status: [{ name: 'prNumber', type: 'number', description: 'Pull request number to check status' }],
+  pr_status: [
+    { name: 'prNumber', type: 'number', description: 'Pull request number to check status' },
+  ],
   checkout_task: [
     { name: 'issueNumber', type: 'number', description: 'Issue number to checkout' },
     { name: 'agentId', type: 'string', description: 'Agent ID (e.g., claude_code_001)' },
@@ -19,7 +24,13 @@ const REQUIRED_PARAMS: Record<string, Array<{ name: string; type: 'string' | 'nu
   ],
   issue_done: [{ name: 'issueNumber', type: 'number', description: 'Issue number to mark done' }],
   claim_task: [{ name: 'agentId', type: 'string', description: 'Agent ID' }],
-  create_task: [{ name: 'title', type: 'string', description: 'Task title, e.g. --title "Fix failing validation"' }],
+  create_task: [
+    {
+      name: 'title',
+      type: 'string',
+      description: 'Task title, e.g. --title "Fix failing validation"',
+    },
+  ],
 };
 
 export function identifyMissingParams(intent: Intent): MissingParam[] {
@@ -29,8 +40,12 @@ export function identifyMissingParams(intent: Intent): MissingParam[] {
   const missing: MissingParam[] = [];
   for (const param of required) {
     const value = intent.slots[param.name];
-    if (value === undefined || value === null || value === '' ||
-        (Array.isArray(value) && value.length === 0)) {
+    if (
+      value === undefined ||
+      value === null ||
+      value === '' ||
+      (Array.isArray(value) && value.length === 0)
+    ) {
       missing.push({ ...param, required: true });
     }
   }
@@ -53,11 +68,13 @@ export function buildClarificationQuestion(
   }
 
   if (round === 1) {
-    const hints = missing.map((m) => {
-      if (m.type === 'number') return `${m.name}: just say the number, like "#42"`;
-      if (m.type === 'string') return `${m.name}: type the value directly`;
-      return `${m.name}: provide a list`;
-    }).join('. ');
+    const hints = missing
+      .map((m) => {
+        if (m.type === 'number') return `${m.name}: just say the number, like "#42"`;
+        if (m.type === 'string') return `${m.name}: type the value directly`;
+        return `${m.name}: provide a list`;
+      })
+      .join('. ');
     return `Still need: ${items}. Tip: ${hints}`;
   }
 

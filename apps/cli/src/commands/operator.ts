@@ -122,32 +122,64 @@ async function runAsk(
     // Maybe the query is a short response to a previous plan
     const context = resolveContext(intent, history, lastPending?.planId, query);
     if (context.type === 'confirm_last_plan' && lastPending) {
-      appendTurn(sessionId, { role: 'user', content: query, timestamp: new Date().toISOString() }, root);
+      appendTurn(
+        sessionId,
+        { role: 'user', content: query, timestamp: new Date().toISOString() },
+        root,
+      );
       console.log(`Confirming plan: ${lastPending.planId}`);
       updatePendingPlanState(lastPending.planId, 'approved', root);
 
       const authOptions = resolveAgentAuthOptions(options.agentId);
-      const result = await executePlan(lastPending.plan, {
-        ...authOptions,
-        confirmStep: async () => true,
-        onStepStart: (step: PlanStep) => { console.log(`→ ${step.description}`); },
-        onStepComplete: (step, sr) => {
-          if (sr.status === 'success') console.log(`  ✓ ${step.id} complete`);
-          else if (sr.status === 'skipped') console.log(`  ⊘ ${step.id} skipped`);
-          else console.log(`  ✗ ${step.id} failed`);
+      const result = await executePlan(
+        lastPending.plan,
+        {
+          ...authOptions,
+          confirmStep: async () => true,
+          onStepStart: (step: PlanStep) => {
+            console.log(`→ ${step.description}`);
+          },
+          onStepComplete: (step, sr) => {
+            if (sr.status === 'success') console.log(`  ✓ ${step.id} complete`);
+            else if (sr.status === 'skipped') console.log(`  ⊘ ${step.id} skipped`);
+            else console.log(`  ✗ ${step.id} failed`);
+          },
         },
-      }, actionRegistry);
+        actionRegistry,
+      );
 
       if (result.status === 'success') updatePendingPlanState(lastPending.planId, 'executed', root);
-      appendTurn(sessionId, { role: 'assistant', content: summarizeResults(result), intent, timestamp: new Date().toISOString() }, root);
+      appendTurn(
+        sessionId,
+        {
+          role: 'assistant',
+          content: summarizeResults(result),
+          intent,
+          timestamp: new Date().toISOString(),
+        },
+        root,
+      );
       console.log(`\n${summarizeResults(result)}\n`);
       return;
     }
 
     if (context.type === 'cancel_last_plan' && lastPending) {
-      appendTurn(sessionId, { role: 'user', content: query, timestamp: new Date().toISOString() }, root);
+      appendTurn(
+        sessionId,
+        { role: 'user', content: query, timestamp: new Date().toISOString() },
+        root,
+      );
       updatePendingPlanState(lastPending.planId, 'cancelled', root);
-      appendTurn(sessionId, { role: 'assistant', content: `Cancelled plan: ${lastPending.planId}`, intent, timestamp: new Date().toISOString() }, root);
+      appendTurn(
+        sessionId,
+        {
+          role: 'assistant',
+          content: `Cancelled plan: ${lastPending.planId}`,
+          intent,
+          timestamp: new Date().toISOString(),
+        },
+        root,
+      );
       console.log(`Cancelled plan: ${lastPending.planId}\n`);
       return;
     }
@@ -175,7 +207,11 @@ async function runAsk(
   }
 
   // Append user turn with resolved intent
-  appendTurn(sessionId, { role: 'user', content: query, intent, timestamp: new Date().toISOString() }, root);
+  appendTurn(
+    sessionId,
+    { role: 'user', content: query, intent, timestamp: new Date().toISOString() },
+    root,
+  );
 
   const plan = planActions(intent, actionRegistry);
 
@@ -191,9 +227,11 @@ async function runAsk(
       if (!policy.enabled || !policy.ultracode) {
         console.log(formatPlan(plan));
         console.log('');
-        console.log(policy.enabled
-          ? 'Ultracode workflow draft generation is disabled. Enable with: openslack collaboration workflow config enable --ultracode'
-          : 'Workflow generation is disabled. Enable with: openslack collaboration workflow config enable');
+        console.log(
+          policy.enabled
+            ? 'Ultracode workflow draft generation is disabled. Enable with: openslack collaboration workflow config enable --ultracode'
+            : 'Workflow generation is disabled. Enable with: openslack collaboration workflow config enable',
+        );
         return;
       }
       const draft = await generateWorkflowDraft({
@@ -205,7 +243,16 @@ async function runAsk(
       console.log(formatPlan(plan));
       console.log('');
       console.log(renderWorkflowDraftPreview(preview));
-      appendTurn(sessionId, { role: 'assistant', content: `Workflow draft created: ${draft.draftId}`, intent, timestamp: new Date().toISOString() }, root);
+      appendTurn(
+        sessionId,
+        {
+          role: 'assistant',
+          content: `Workflow draft created: ${draft.draftId}`,
+          intent,
+          timestamp: new Date().toISOString(),
+        },
+        root,
+      );
       return;
     } catch (error) {
       console.log(`Workflow draft generation failed: ${(error as Error).message}`);
@@ -224,9 +271,13 @@ async function runAsk(
       redacted: false,
       containsSensitiveData: false,
       risk: plan.riskLevel,
-      nextAction: plan.missingParams.length > 0
-        ? { owner: 'human', action: `Provide missing params: ${plan.missingParams.map((p) => p.name).join(', ')}` }
-        : { owner: 'human', action: `Confirm execution of plan: ${plan.goal}` },
+      nextAction:
+        plan.missingParams.length > 0
+          ? {
+              owner: 'human',
+              action: `Provide missing params: ${plan.missingParams.map((p) => p.name).join(', ')}`,
+            }
+          : { owner: 'human', action: `Confirm execution of plan: ${plan.goal}` },
     });
   } catch {
     // Best-effort event recording
@@ -243,7 +294,10 @@ async function runAsk(
     }
 
     const pending = savePendingPlan({
-      query, plan, actorId: 'cli', root,
+      query,
+      plan,
+      actorId: 'cli',
+      root,
       state: 'pending',
     });
     // Update clarification rounds
@@ -253,7 +307,13 @@ async function runAsk(
       const planData = JSON.parse(JSON.stringify(updatedPlan)) as Record<string, unknown>;
       planData.clarificationRounds = currentRounds + 1;
       const { writeFileSync } = await import('node:fs');
-      const planPath = join(root, '.openslack.local', 'operator', 'plans', `${pending.planId}.json`);
+      const planPath = join(
+        root,
+        '.openslack.local',
+        'operator',
+        'plans',
+        `${pending.planId}.json`,
+      );
       writeFileSync(planPath, JSON.stringify(planData, null, 2), 'utf-8');
     }
 
@@ -261,7 +321,11 @@ async function runAsk(
     console.log(`${question}`);
     console.log(`Plan ID: ${pending.planId}  (Session: ${sessionId})`);
     console.log(`Resume with: openslack ask plan resume ${pending.planId} --set name=value`);
-    appendTurn(sessionId, { role: 'assistant', content: question, intent, timestamp: new Date().toISOString() }, root);
+    appendTurn(
+      sessionId,
+      { role: 'assistant', content: question, intent, timestamp: new Date().toISOString() },
+      root,
+    );
     console.log('');
     return;
   }
@@ -273,7 +337,16 @@ async function runAsk(
     const pending = savePendingPlan({ query, plan, actorId: 'cli', root });
     console.log(`Saved pending plan: ${pending.planId}`);
     console.log(`Approve later with: openslack ask plan approve ${pending.planId}`);
-    appendTurn(sessionId, { role: 'assistant', content: `Plan saved: ${pending.planId}`, intent, timestamp: new Date().toISOString() }, root);
+    appendTurn(
+      sessionId,
+      {
+        role: 'assistant',
+        content: `Plan saved: ${pending.planId}`,
+        intent,
+        timestamp: new Date().toISOString(),
+      },
+      root,
+    );
     return;
   }
 
@@ -290,7 +363,16 @@ async function runAsk(
     const confirmed = await confirmPrompt(message);
     if (!confirmed) {
       console.log('Cancelled by user. Pending plan remains available until expiry.\n');
-      appendTurn(sessionId, { role: 'assistant', content: 'Plan cancelled by user.', intent, timestamp: new Date().toISOString() }, root);
+      appendTurn(
+        sessionId,
+        {
+          role: 'assistant',
+          content: 'Plan cancelled by user.',
+          intent,
+          timestamp: new Date().toISOString(),
+        },
+        root,
+      );
       return;
     }
     updatePendingPlanState(pending.planId, 'approved', root);
@@ -299,29 +381,37 @@ async function runAsk(
 
   const authOptions = resolveAgentAuthOptions(options.agentId);
 
-  const result = await executePlan(plan, {
-    dryRun: options.plan,
-    ...authOptions,
-    onStepStart: (step: PlanStep) => {
-      console.log(`→ ${step.description}`);
+  const result = await executePlan(
+    plan,
+    {
+      dryRun: options.plan,
+      ...authOptions,
+      onStepStart: (step: PlanStep) => {
+        console.log(`→ ${step.description}`);
+      },
+      onStepComplete: (step, stepResult) => {
+        if (stepResult.status === 'success') {
+          console.log(`  ✓ ${step.id} complete`);
+        } else if (stepResult.status === 'skipped') {
+          console.log(`  ⊘ ${step.id} skipped`);
+        } else {
+          console.log(`  ✗ ${step.id} failed`);
+        }
+      },
     },
-    onStepComplete: (step, stepResult) => {
-      if (stepResult.status === 'success') {
-        console.log(`  ✓ ${step.id} complete`);
-      } else if (stepResult.status === 'skipped') {
-        console.log(`  ⊘ ${step.id} skipped`);
-      } else {
-        console.log(`  ✗ ${step.id} failed`);
-      }
-    },
-  }, actionRegistry);
+    actionRegistry,
+  );
 
   if (pendingPlanId && result.status === 'success') {
     updatePendingPlanState(pendingPlanId, 'executed', root);
   }
 
   const summary = summarizeResults(result);
-  appendTurn(sessionId, { role: 'assistant', content: summary, intent, timestamp: new Date().toISOString() }, root);
+  appendTurn(
+    sessionId,
+    { role: 'assistant', content: summary, intent, timestamp: new Date().toISOString() },
+    root,
+  );
   console.log('');
   console.log(summary);
   console.log('');
@@ -334,10 +424,18 @@ export function buildAskCommand(context: OperatorCommandContext = {}): Command {
     .option('--plan', 'Show the execution plan without running it')
     .option('--agent-id <id>', 'Agent ID for authorization')
     .option('--session <id>', 'Session ID for conversation continuity')
-    .option('--effort <level>', 'Reasoning/workflow effort level; use ultracode to create a dynamic workflow draft')
-    .action(async (queryParts: string[], options: { plan?: boolean; agentId?: string; session?: string; effort?: string }) => {
-      await runAsk(queryParts.join(' '), options, context);
-    });
+    .option(
+      '--effort <level>',
+      'Reasoning/workflow effort level; use ultracode to create a dynamic workflow draft',
+    )
+    .action(
+      async (
+        queryParts: string[],
+        options: { plan?: boolean; agentId?: string; session?: string; effort?: string },
+      ) => {
+        await runAsk(queryParts.join(' '), options, context);
+      },
+    );
 
   const planCmd = new Command('plan').description('Manage pending Operator plans');
 
@@ -388,7 +486,12 @@ export function buildAskCommand(context: OperatorCommandContext = {}): Command {
   planCmd
     .command('resume <planId>')
     .description('Update a pending plan with clarification values')
-    .option('--set <key=value>', 'Slot update, can be repeated', (value, previous: string[]) => [...previous, value], [])
+    .option(
+      '--set <key=value>',
+      'Slot update, can be repeated',
+      (value, previous: string[]) => [...previous, value],
+      [],
+    )
     .action((planId: string, options: { set: string[] }) => {
       const pending = resumePendingPlan(
         planId,
@@ -460,7 +563,9 @@ export function buildAskCommand(context: OperatorCommandContext = {}): Command {
         const role = turn.role === 'user' ? 'You' : 'Operator';
         console.log(`[${time}] ${role}: ${turn.content}`);
         if (turn.intent && turn.intent.kind !== 'unknown') {
-          console.log(`  Intent: ${turn.intent.kind} (${(turn.intent.confidence * 100).toFixed(0)}%)`);
+          console.log(
+            `  Intent: ${turn.intent.kind} (${(turn.intent.confidence * 100).toFixed(0)}%)`,
+          );
         }
       }
       console.log('');

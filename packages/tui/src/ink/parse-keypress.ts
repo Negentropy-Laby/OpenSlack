@@ -4,47 +4,46 @@
  * Uses the termio tokenizer for escape sequence boundary detection,
  * then interprets sequences as keypresses.
  */
-import { Buffer } from 'buffer'
-import { PASTE_END, PASTE_START } from './termio/csi.js'
-import { createTokenizer, type Tokenizer } from './termio/tokenize.js'
+import { Buffer } from 'buffer';
+import { PASTE_END, PASTE_START } from './termio/csi.js';
+import { createTokenizer, type Tokenizer } from './termio/tokenize.js';
 
-const META_KEY_CODE_RE = /^(?:\x1b)([a-zA-Z0-9])$/
+const META_KEY_CODE_RE = /^(?:\x1b)([a-zA-Z0-9])$/;
 
-const FN_KEY_RE =
-  /^(?:\x1b+)(O|N|\[|\[\[)(?:(\d+)(?:;(\d+))?([~^$])|(?:1;)?(\d+)?([a-zA-Z]))/
+const FN_KEY_RE = /^(?:\x1b+)(O|N|\[|\[\[)(?:(\d+)(?:;(\d+))?([~^$])|(?:1;)?(\d+)?([a-zA-Z]))/;
 
 // CSI u (kitty keyboard protocol): ESC [ codepoint [; modifier] u
 // Example: ESC[13;2u = Shift+Enter, ESC[27u = Escape (no modifiers)
 // Modifier is optional - when absent, defaults to 1 (no modifiers)
-const CSI_U_RE = /^\x1b\[(\d+)(?:;(\d+))?u/
+const CSI_U_RE = /^\x1b\[(\d+)(?:;(\d+))?u/;
 
 // xterm modifyOtherKeys: ESC [ 27 ; modifier ; keycode ~
 // Example: ESC[27;2;13~ = Shift+Enter. Emitted by Ghostty/tmux/xterm when
 // modifyOtherKeys=2 is active or via user keybinds, typically over SSH where
 // TERM sniffing misses Ghostty and we never push Kitty keyboard mode.
 // Note param order is reversed vs CSI u (modifier first, keycode second).
-const MODIFY_OTHER_KEYS_RE = /^\x1b\[27;(\d+);(\d+)~/
+const MODIFY_OTHER_KEYS_RE = /^\x1b\[27;(\d+);(\d+)~/;
 
 // -- Terminal response patterns (inbound sequences from the terminal itself) --
 // DECRPM: CSI ? Ps ; Pm $ y  — response to DECRQM (request mode)
-const DECRPM_RE = /^\x1b\[\?(\d+);(\d+)\$y$/
+const DECRPM_RE = /^\x1b\[\?(\d+);(\d+)\$y$/;
 // DA1: CSI ? Ps ; ... c  — primary device attributes response
-const DA1_RE = /^\x1b\[\?([\d;]*)c$/
+const DA1_RE = /^\x1b\[\?([\d;]*)c$/;
 // DA2: CSI > Ps ; ... c  — secondary device attributes response
-const DA2_RE = /^\x1b\[>([\d;]*)c$/
+const DA2_RE = /^\x1b\[>([\d;]*)c$/;
 // Kitty keyboard flags: CSI ? flags u  — response to CSI ? u query
 // (private ? marker distinguishes from CSI u key events)
-const KITTY_FLAGS_RE = /^\x1b\[\?(\d+)u$/
+const KITTY_FLAGS_RE = /^\x1b\[\?(\d+)u$/;
 // DECXCPR cursor position: CSI ? row ; col R
 // The ? marker disambiguates from modified F3 keys (Shift+F3 = CSI 1;2 R,
 // Ctrl+F3 = CSI 1;5 R, etc.) — plain CSI row;col R is genuinely ambiguous.
-const CURSOR_POSITION_RE = /^\x1b\[\?(\d+);(\d+)R$/
+const CURSOR_POSITION_RE = /^\x1b\[\?(\d+);(\d+)R$/;
 // OSC response: OSC code ; data (BEL|ST)
-const OSC_RESPONSE_RE = /^\x1b\](\d+);(.*?)(?:\x07|\x1b\\)$/s
+const OSC_RESPONSE_RE = /^\x1b\](\d+);(.*?)(?:\x07|\x1b\\)$/s;
 // XTVERSION: DCS > | name ST  — terminal name/version string (answer to CSI > 0 q).
-const XTVERSION_RE = /^\x1bP>\|(.*?)(?:\x07|\x1b\\)$/s
+const XTVERSION_RE = /^\x1bP>\|(.*?)(?:\x07|\x1b\\)$/s;
 // SGR mouse event: CSI < button ; col ; row M (press) or m (release)
-const SGR_MOUSE_RE = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/
+const SGR_MOUSE_RE = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/;
 
 function createPasteKey(content: string): ParsedKey {
   return {
@@ -59,7 +58,7 @@ function createPasteKey(content: string): ParsedKey {
     sequence: content,
     raw: content,
     isPasted: true,
-  }
+  };
 }
 
 /** DECRPM status values (response to DECRQM) */
@@ -69,7 +68,7 @@ export const DECRPM_STATUS = {
   RESET: 2,
   PERMANENTLY_SET: 3,
   PERMANENTLY_RESET: 4,
-} as const
+} as const;
 
 /**
  * A response sequence received from the terminal (not a keypress).
@@ -82,7 +81,7 @@ export type TerminalResponse =
   | { type: 'kittyKeyboard'; flags: number }
   | { type: 'cursorPosition'; row: number; col: number }
   | { type: 'osc'; code: number; data: string }
-  | { type: 'xtversion'; name: string }
+  | { type: 'xtversion'; name: string };
 
 /**
  * Try to recognize a sequence token as a terminal response.
@@ -90,26 +89,26 @@ export type TerminalResponse =
  */
 function parseTerminalResponse(s: string): TerminalResponse | null {
   if (s.startsWith('\x1b[')) {
-    let m: RegExpExecArray | null
+    let m: RegExpExecArray | null;
 
     if ((m = DECRPM_RE.exec(s))) {
       return {
         type: 'decrpm',
         mode: parseInt(m[1]!, 10),
         status: parseInt(m[2]!, 10),
-      }
+      };
     }
 
     if ((m = DA1_RE.exec(s))) {
-      return { type: 'da1', params: splitNumericParams(m[1]!) }
+      return { type: 'da1', params: splitNumericParams(m[1]!) };
     }
 
     if ((m = DA2_RE.exec(s))) {
-      return { type: 'da2', params: splitNumericParams(m[1]!) }
+      return { type: 'da2', params: splitNumericParams(m[1]!) };
     }
 
     if ((m = KITTY_FLAGS_RE.exec(s))) {
-      return { type: 'kittyKeyboard', flags: parseInt(m[1]!, 10) }
+      return { type: 'kittyKeyboard', flags: parseInt(m[1]!, 10) };
     }
 
     if ((m = CURSOR_POSITION_RE.exec(s))) {
@@ -117,61 +116,61 @@ function parseTerminalResponse(s: string): TerminalResponse | null {
         type: 'cursorPosition',
         row: parseInt(m[1]!, 10),
         col: parseInt(m[2]!, 10),
-      }
+      };
     }
 
-    return null
+    return null;
   }
 
   if (s.startsWith('\x1b]')) {
-    const m = OSC_RESPONSE_RE.exec(s)
+    const m = OSC_RESPONSE_RE.exec(s);
     if (m) {
-      return { type: 'osc', code: parseInt(m[1]!, 10), data: m[2]! }
+      return { type: 'osc', code: parseInt(m[1]!, 10), data: m[2]! };
     }
   }
 
   if (s.startsWith('\x1bP')) {
-    const m = XTVERSION_RE.exec(s)
+    const m = XTVERSION_RE.exec(s);
     if (m) {
-      return { type: 'xtversion', name: m[1]! }
+      return { type: 'xtversion', name: m[1]! };
     }
   }
 
-  return null
+  return null;
 }
 
 function splitNumericParams(params: string): number[] {
-  if (!params) return []
-  return params.split(';').map(p => parseInt(p, 10))
+  if (!params) return [];
+  return params.split(';').map((p) => parseInt(p, 10));
 }
 
 export type KeyParseState = {
-  mode: 'NORMAL' | 'IN_PASTE'
-  incomplete: string
-  pasteBuffer: string
-  _tokenizer?: Tokenizer
-}
+  mode: 'NORMAL' | 'IN_PASTE';
+  incomplete: string;
+  pasteBuffer: string;
+  _tokenizer?: Tokenizer;
+};
 
 export const INITIAL_STATE: KeyParseState = {
   mode: 'NORMAL',
   incomplete: '',
   pasteBuffer: '',
-}
+};
 
 function inputToString(input: Buffer | string): string {
   if (Buffer.isBuffer(input)) {
     if (input[0]! > 127 && input[1] === undefined) {
-      ;(input[0] as unknown as number) -= 128
-      return '\x1b' + String(input)
+      (input[0] as unknown as number) -= 128;
+      return '\x1b' + String(input);
     } else {
-      return String(input)
+      return String(input);
     }
   } else if (input !== undefined && typeof input !== 'string') {
-    return String(input)
+    return String(input);
   } else if (!input) {
-    return ''
+    return '';
   } else {
-    return input
+    return input;
   }
 }
 
@@ -179,61 +178,58 @@ export function parseMultipleKeypresses(
   prevState: KeyParseState,
   input: Buffer | string | null = '',
 ): [ParsedInput[], KeyParseState] {
-  const isFlush = input === null
-  const inputString = isFlush ? '' : inputToString(input)
+  const isFlush = input === null;
+  const inputString = isFlush ? '' : inputToString(input);
 
-  const tokenizer = prevState._tokenizer ?? createTokenizer({ x10Mouse: true })
+  const tokenizer = prevState._tokenizer ?? createTokenizer({ x10Mouse: true });
 
-  const tokens = isFlush ? tokenizer.flush() : tokenizer.feed(inputString)
+  const tokens = isFlush ? tokenizer.flush() : tokenizer.feed(inputString);
 
-  const keys: ParsedInput[] = []
-  let inPaste = prevState.mode === 'IN_PASTE'
-  let pasteBuffer = prevState.pasteBuffer
+  const keys: ParsedInput[] = [];
+  let inPaste = prevState.mode === 'IN_PASTE';
+  let pasteBuffer = prevState.pasteBuffer;
 
   for (const token of tokens) {
     if (token.type === 'sequence') {
       if (token.value === PASTE_START) {
-        inPaste = true
-        pasteBuffer = ''
+        inPaste = true;
+        pasteBuffer = '';
       } else if (token.value === PASTE_END) {
-        keys.push(createPasteKey(pasteBuffer))
-        inPaste = false
-        pasteBuffer = ''
+        keys.push(createPasteKey(pasteBuffer));
+        inPaste = false;
+        pasteBuffer = '';
       } else if (inPaste) {
-        pasteBuffer += token.value
+        pasteBuffer += token.value;
       } else {
-        const response = parseTerminalResponse(token.value)
+        const response = parseTerminalResponse(token.value);
         if (response) {
-          keys.push({ kind: 'response', sequence: token.value, response })
+          keys.push({ kind: 'response', sequence: token.value, response });
         } else {
-          const mouse = parseMouseEvent(token.value)
+          const mouse = parseMouseEvent(token.value);
           if (mouse) {
-            keys.push(mouse)
+            keys.push(mouse);
           } else {
-            keys.push(parseKeypress(token.value))
+            keys.push(parseKeypress(token.value));
           }
         }
       }
     } else if (token.type === 'text') {
       if (inPaste) {
-        pasteBuffer += token.value
-      } else if (
-        /^\[<\d+;\d+;\d+[Mm]$/.test(token.value) ||
-        /^\[M[\x20-￿]{3}$/.test(token.value)
-      ) {
-        const resynthesized = '\x1b' + token.value
-        const mouse = parseMouseEvent(resynthesized)
-        keys.push(mouse ?? parseKeypress(resynthesized))
+        pasteBuffer += token.value;
+      } else if (/^\[<\d+;\d+;\d+[Mm]$/.test(token.value) || /^\[M[\x20-￿]{3}$/.test(token.value)) {
+        const resynthesized = '\x1b' + token.value;
+        const mouse = parseMouseEvent(resynthesized);
+        keys.push(mouse ?? parseKeypress(resynthesized));
       } else {
-        keys.push(parseKeypress(token.value))
+        keys.push(parseKeypress(token.value));
       }
     }
   }
 
   if (isFlush && inPaste && pasteBuffer) {
-    keys.push(createPasteKey(pasteBuffer))
-    inPaste = false
-    pasteBuffer = ''
+    keys.push(createPasteKey(pasteBuffer));
+    inPaste = false;
+    pasteBuffer = '';
   }
 
   const newState: KeyParseState = {
@@ -241,9 +237,9 @@ export function parseMultipleKeypresses(
     incomplete: tokenizer.buffer(),
     pasteBuffer,
     _tokenizer: tokenizer,
-  }
+  };
 
-  return [keys, newState]
+  return [keys, newState];
 }
 
 const keyName: Record<string, string> = {
@@ -332,156 +328,133 @@ const keyName: Record<string, string> = {
   '[7^': 'home',
   '[8^': 'end',
   '[Z': 'tab',
-}
+};
 
 export const nonAlphanumericKeys = [
-  ...Object.values(keyName).filter(v => v.length > 1),
+  ...Object.values(keyName).filter((v) => v.length > 1),
   'escape',
   'backspace',
   'wheelup',
   'wheeldown',
   'mouse',
-]
+];
 
 const isShiftKey = (code: string): boolean => {
-  return [
-    '[a',
-    '[b',
-    '[c',
-    '[d',
-    '[e',
-    '[2$',
-    '[3$',
-    '[5$',
-    '[6$',
-    '[7$',
-    '[8$',
-    '[Z',
-  ].includes(code)
-}
+  return ['[a', '[b', '[c', '[d', '[e', '[2$', '[3$', '[5$', '[6$', '[7$', '[8$', '[Z'].includes(
+    code,
+  );
+};
 
 const isCtrlKey = (code: string): boolean => {
-  return [
-    'Oa',
-    'Ob',
-    'Oc',
-    'Od',
-    'Oe',
-    '[2^',
-    '[3^',
-    '[5^',
-    '[6^',
-    '[7^',
-    '[8^',
-  ].includes(code)
-}
+  return ['Oa', 'Ob', 'Oc', 'Od', 'Oe', '[2^', '[3^', '[5^', '[6^', '[7^', '[8^'].includes(code);
+};
 
 function decodeModifier(modifier: number): {
-  shift: boolean
-  meta: boolean
-  ctrl: boolean
-  super: boolean
+  shift: boolean;
+  meta: boolean;
+  ctrl: boolean;
+  super: boolean;
 } {
-  const m = modifier - 1
+  const m = modifier - 1;
   return {
     shift: !!(m & 1),
     meta: !!(m & 2),
     ctrl: !!(m & 4),
     super: !!(m & 8),
-  }
+  };
 }
 
 function keycodeToName(keycode: number): string | undefined {
   switch (keycode) {
     case 9:
-      return 'tab'
+      return 'tab';
     case 13:
-      return 'return'
+      return 'return';
     case 27:
-      return 'escape'
+      return 'escape';
     case 32:
-      return 'space'
+      return 'space';
     case 127:
-      return 'backspace'
+      return 'backspace';
     case 57399:
-      return '0'
+      return '0';
     case 57400:
-      return '1'
+      return '1';
     case 57401:
-      return '2'
+      return '2';
     case 57402:
-      return '3'
+      return '3';
     case 57403:
-      return '4'
+      return '4';
     case 57404:
-      return '5'
+      return '5';
     case 57405:
-      return '6'
+      return '6';
     case 57406:
-      return '7'
+      return '7';
     case 57407:
-      return '8'
+      return '8';
     case 57408:
-      return '9'
+      return '9';
     case 57409:
-      return '.'
+      return '.';
     case 57410:
-      return '/'
+      return '/';
     case 57411:
-      return '*'
+      return '*';
     case 57412:
-      return '-'
+      return '-';
     case 57413:
-      return '+'
+      return '+';
     case 57414:
-      return 'return'
+      return 'return';
     case 57415:
-      return '='
+      return '=';
     default:
       if (keycode >= 32 && keycode <= 126) {
-        return String.fromCharCode(keycode).toLowerCase()
+        return String.fromCharCode(keycode).toLowerCase();
       }
-      return undefined
+      return undefined;
   }
 }
 
 export type ParsedKey = {
-  kind: 'key'
-  fn: boolean
-  name: string | undefined
-  ctrl: boolean
-  meta: boolean
-  shift: boolean
-  option: boolean
-  super: boolean
-  sequence: string | undefined
-  raw: string | undefined
-  code?: string
-  isPasted: boolean
-}
+  kind: 'key';
+  fn: boolean;
+  name: string | undefined;
+  ctrl: boolean;
+  meta: boolean;
+  shift: boolean;
+  option: boolean;
+  super: boolean;
+  sequence: string | undefined;
+  raw: string | undefined;
+  code?: string;
+  isPasted: boolean;
+};
 
 export type ParsedResponse = {
-  kind: 'response'
-  sequence: string
-  response: TerminalResponse
-}
+  kind: 'response';
+  sequence: string;
+  response: TerminalResponse;
+};
 
 export type ParsedMouse = {
-  kind: 'mouse'
-  button: number
-  action: 'press' | 'release'
-  col: number
-  row: number
-  sequence: string
-}
+  kind: 'mouse';
+  button: number;
+  action: 'press' | 'release';
+  col: number;
+  row: number;
+  sequence: string;
+};
 
-export type ParsedInput = ParsedKey | ParsedMouse | ParsedResponse
+export type ParsedInput = ParsedKey | ParsedMouse | ParsedResponse;
 
 function parseMouseEvent(s: string): ParsedMouse | null {
-  const match = SGR_MOUSE_RE.exec(s)
+  const match = SGR_MOUSE_RE.exec(s);
   if (match) {
-    const button = parseInt(match[1]!, 10)
-    if ((button & 0x40) !== 0) return null
+    const button = parseInt(match[1]!, 10);
+    if ((button & 0x40) !== 0) return null;
     return {
       kind: 'mouse',
       button,
@@ -489,12 +462,12 @@ function parseMouseEvent(s: string): ParsedMouse | null {
       col: parseInt(match[2]!, 10),
       row: parseInt(match[3]!, 10),
       sequence: s,
-    }
+    };
   }
-  if (s.length !== 6 || !s.startsWith('\x1b[M')) return null
-  const button = s.charCodeAt(3) - 32
-  if ((button & 0x40) !== 0) return null
-  const action = (button & 0x03) === 3 && (button & 0x20) === 0 ? 'release' : 'press'
+  if (s.length !== 6 || !s.startsWith('\x1b[M')) return null;
+  const button = s.charCodeAt(3) - 32;
+  if ((button & 0x40) !== 0) return null;
+  const action = (button & 0x03) === 3 && (button & 0x20) === 0 ? 'release' : 'press';
   return {
     kind: 'mouse',
     button,
@@ -502,11 +475,11 @@ function parseMouseEvent(s: string): ParsedMouse | null {
     col: s.charCodeAt(4) - 32,
     row: s.charCodeAt(5) - 32,
     sequence: s,
-  }
+  };
 }
 
 function parseKeypress(s: string = ''): ParsedKey {
-  let parts
+  let parts;
 
   const key: ParsedKey = {
     kind: 'key',
@@ -520,16 +493,16 @@ function parseKeypress(s: string = ''): ParsedKey {
     sequence: s,
     raw: s,
     isPasted: false,
-  }
+  };
 
-  key.sequence = key.sequence || s || key.name
+  key.sequence = key.sequence || s || key.name;
 
-  let match: RegExpExecArray | null
+  let match: RegExpExecArray | null;
   if ((match = CSI_U_RE.exec(s))) {
-    const codepoint = parseInt(match[1]!, 10)
-    const modifier = match[2] ? parseInt(match[2], 10) : 1
-    const mods = decodeModifier(modifier)
-    const name = keycodeToName(codepoint)
+    const codepoint = parseInt(match[1]!, 10);
+    const modifier = match[2] ? parseInt(match[2], 10) : 1;
+    const mods = decodeModifier(modifier);
+    const name = keycodeToName(codepoint);
     return {
       kind: 'key',
       name,
@@ -542,12 +515,12 @@ function parseKeypress(s: string = ''): ParsedKey {
       sequence: s,
       raw: s,
       isPasted: false,
-    }
+    };
   }
 
   if ((match = MODIFY_OTHER_KEYS_RE.exec(s))) {
-    const mods = decodeModifier(parseInt(match[1]!, 10))
-    const name = keycodeToName(parseInt(match[2]!, 10))
+    const mods = decodeModifier(parseInt(match[1]!, 10));
+    const name = keycodeToName(parseInt(match[2]!, 10));
     return {
       kind: 'key',
       name,
@@ -560,107 +533,105 @@ function parseKeypress(s: string = ''): ParsedKey {
       sequence: s,
       raw: s,
       isPasted: false,
-    }
+    };
   }
 
   if ((match = SGR_MOUSE_RE.exec(s))) {
-    const button = parseInt(match[1]!, 10)
-    if ((button & 0x43) === 0x40) return createNavKey(s, 'wheelup', false)
-    if ((button & 0x43) === 0x41) return createNavKey(s, 'wheeldown', false)
-    return createNavKey(s, 'mouse', false)
+    const button = parseInt(match[1]!, 10);
+    if ((button & 0x43) === 0x40) return createNavKey(s, 'wheelup', false);
+    if ((button & 0x43) === 0x41) return createNavKey(s, 'wheeldown', false);
+    return createNavKey(s, 'mouse', false);
   }
 
   if (s.length === 6 && s.startsWith('\x1b[M')) {
-    const button = s.charCodeAt(3) - 32
-    if ((button & 0x43) === 0x40) return createNavKey(s, 'wheelup', false)
-    if ((button & 0x43) === 0x41) return createNavKey(s, 'wheeldown', false)
-    return createNavKey(s, 'mouse', false)
+    const button = s.charCodeAt(3) - 32;
+    if ((button & 0x43) === 0x40) return createNavKey(s, 'wheelup', false);
+    if ((button & 0x43) === 0x41) return createNavKey(s, 'wheeldown', false);
+    return createNavKey(s, 'mouse', false);
   }
 
   if (s === '\r') {
-    key.raw = undefined
-    key.name = 'return'
+    key.raw = undefined;
+    key.name = 'return';
   } else if (s === '\n') {
-    key.name = 'enter'
+    key.name = 'enter';
   } else if (s === '\t') {
-    key.name = 'tab'
+    key.name = 'tab';
   } else if (s === '\b' || s === '\x1b\b') {
-    key.name = 'backspace'
-    key.meta = s.charAt(0) === '\x1b'
+    key.name = 'backspace';
+    key.meta = s.charAt(0) === '\x1b';
   } else if (s === '\x7f' || s === '\x1b\x7f') {
-    key.name = 'backspace'
-    key.meta = s.charAt(0) === '\x1b'
+    key.name = 'backspace';
+    key.meta = s.charAt(0) === '\x1b';
   } else if (s === '\x1b' || s === '\x1b\x1b') {
-    key.name = 'escape'
-    key.meta = s.length === 2
+    key.name = 'escape';
+    key.meta = s.length === 2;
   } else if (s === ' ' || s === '\x1b ') {
-    key.name = 'space'
-    key.meta = s.length === 2
+    key.name = 'space';
+    key.meta = s.length === 2;
   } else if (s === '\x1f') {
-    key.name = '_'
-    key.ctrl = true
+    key.name = '_';
+    key.ctrl = true;
   } else if (s <= '\x1a' && s.length === 1) {
-    key.name = String.fromCharCode(s.charCodeAt(0) + 'a'.charCodeAt(0) - 1)
-    key.ctrl = true
+    key.name = String.fromCharCode(s.charCodeAt(0) + 'a'.charCodeAt(0) - 1);
+    key.ctrl = true;
   } else if (s.length === 1 && s >= '0' && s <= '9') {
-    key.name = 'number'
+    key.name = 'number';
   } else if (s.length === 1 && s >= 'a' && s <= 'z') {
-    key.name = s
+    key.name = s;
   } else if (s.length === 1 && s >= 'A' && s <= 'Z') {
-    key.name = s.toLowerCase()
-    key.shift = true
+    key.name = s.toLowerCase();
+    key.shift = true;
   } else if ((parts = META_KEY_CODE_RE.exec(s))) {
-    key.meta = true
-    key.shift = /^[A-Z]$/.test(parts[1]!)
+    key.meta = true;
+    key.shift = /^[A-Z]$/.test(parts[1]!);
   } else if ((parts = FN_KEY_RE.exec(s))) {
-    const segs = [...s]
+    const segs = [...s];
 
     if (segs[0] === '' && segs[1] === '') {
-      key.option = true
+      key.option = true;
     }
 
-    const code = [parts[1], parts[2], parts[4], parts[6]]
-      .filter(Boolean)
-      .join('')
+    const code = [parts[1], parts[2], parts[4], parts[6]].filter(Boolean).join('');
 
-    const modifier = ((parts[3] || parts[5] || 1) as number) - 1
+    const modifier = ((parts[3] || parts[5] || 1) as number) - 1;
 
-    key.ctrl = !!(modifier & 4)
-    key.meta = !!(modifier & 2)
-    key.super = !!(modifier & 8)
-    key.shift = !!(modifier & 1)
-    key.code = code
+    key.ctrl = !!(modifier & 4);
+    key.meta = !!(modifier & 2);
+    key.super = !!(modifier & 8);
+    key.shift = !!(modifier & 1);
+    key.code = code;
 
-    key.name = keyName[code]
-    key.shift = isShiftKey(code) || key.shift
-    key.ctrl = isCtrlKey(code) || key.ctrl
+    key.name = keyName[code];
+    key.shift = isShiftKey(code) || key.shift;
+    key.ctrl = isCtrlKey(code) || key.ctrl;
   }
 
   // iTerm in natural text editing mode
   if (key.raw === '\x1Bb') {
-    key.meta = true
-    key.name = 'left'
+    key.meta = true;
+    key.name = 'left';
   } else if (key.raw === '\x1Bf') {
-    key.meta = true
-    key.name = 'right'
+    key.meta = true;
+    key.name = 'right';
   }
 
   switch (s) {
     case '[1~':
-      return createNavKey(s, 'home', false)
+      return createNavKey(s, 'home', false);
     case '[4~':
-      return createNavKey(s, 'end', false)
+      return createNavKey(s, 'end', false);
     case '[5~':
-      return createNavKey(s, 'pageup', false)
+      return createNavKey(s, 'pageup', false);
     case '[6~':
-      return createNavKey(s, 'pagedown', false)
+      return createNavKey(s, 'pagedown', false);
     case '[1;5D':
-      return createNavKey(s, 'left', true)
+      return createNavKey(s, 'left', true);
     case '[1;5C':
-      return createNavKey(s, 'right', true)
+      return createNavKey(s, 'right', true);
   }
 
-  return key
+  return key;
 }
 
 function createNavKey(s: string, name: string, ctrl: boolean): ParsedKey {
@@ -676,5 +647,5 @@ function createNavKey(s: string, name: string, ctrl: boolean): ParsedKey {
     sequence: s,
     raw: s,
     isPasted: false,
-  }
+  };
 }

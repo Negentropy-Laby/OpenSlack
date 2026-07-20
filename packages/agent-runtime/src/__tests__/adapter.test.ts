@@ -2,11 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import {
-  createOpenSlackAgentLauncher,
-  createRunStore,
-  LocalExecutionAdapter,
-} from '../index.js';
+import { createOpenSlackAgentLauncher, createRunStore, LocalExecutionAdapter } from '../index.js';
 import type {
   AgentExecutionAdapter,
   AdapterExecutionContext,
@@ -18,7 +14,11 @@ function makeTempRoot(): string {
 }
 
 function cleanup(root: string) {
-  try { rmSync(root, { recursive: true, force: true }); } catch { /* ignore */ }
+  try {
+    rmSync(root, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
 }
 
 describe('LocalExecutionAdapter', () => {
@@ -215,7 +215,8 @@ describe('Custom adapter injection', () => {
     expect(progressEvent).toBeDefined();
 
     const toolCallEvent = transcript.find(
-      (e) => e.type === 'tool_call' && (e.data as Record<string, unknown>).toolName === 'CustomTool',
+      (e) =>
+        e.type === 'tool_call' && (e.data as Record<string, unknown>).toolName === 'CustomTool',
     );
     expect(toolCallEvent).toBeDefined();
   });

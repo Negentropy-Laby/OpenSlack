@@ -18,18 +18,29 @@ export interface WorktreeRepairResult {
 
 function registeredWorktreePaths(root: string): Set<string> {
   try {
-    const raw = execSync('git worktree list --porcelain', { cwd: root, encoding: 'utf-8', stdio: 'pipe' });
+    const raw = execSync('git worktree list --porcelain', {
+      cwd: root,
+      encoding: 'utf-8',
+      stdio: 'pipe',
+    });
     const paths = raw
       .split('\n')
       .filter((line) => line.startsWith('worktree '))
-      .map((line) => line.replace(/^worktree\s+/, '').trim().replace(/\\/g, '/'));
+      .map((line) =>
+        line
+          .replace(/^worktree\s+/, '')
+          .trim()
+          .replace(/\\/g, '/'),
+      );
     return new Set(paths);
   } catch {
     return new Set();
   }
 }
 
-export function repairWorktrees(options: { root?: string; dryRun?: boolean } = {}): WorktreeRepairResult {
+export function repairWorktrees(
+  options: { root?: string; dryRun?: boolean } = {},
+): WorktreeRepairResult {
   const root = options.root ?? findRepoRoot();
   const dryRun = options.dryRun ?? true;
   const worktreesDir = join(root, '.worktrees');
@@ -53,7 +64,9 @@ export function repairWorktrees(options: { root?: string; dryRun?: boolean } = {
       issue: 'orphaned_directory',
       planned: dryRun,
       fixed: !dryRun,
-      detail: dryRun ? 'Would remove orphaned worktree directory' : 'Removed orphaned worktree directory',
+      detail: dryRun
+        ? 'Would remove orphaned worktree directory'
+        : 'Removed orphaned worktree directory',
     });
   }
 
@@ -82,4 +95,3 @@ export function renderWorktreeRepair(result: WorktreeRepairResult): string {
 
   return lines.join('\n');
 }
-

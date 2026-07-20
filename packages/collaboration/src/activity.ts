@@ -23,9 +23,10 @@ export function formatActivityEvent(event: CollaborationEvent): string {
   }
 
   if (event.owner) {
-    const ownerName = event.owner.kind === 'agent' || event.owner.kind === 'human'
-      ? resolveAgentDisplayName({ id: event.owner.id, kind: event.owner.kind })
-      : `${event.owner.kind}:${event.owner.id}`;
+    const ownerName =
+      event.owner.kind === 'agent' || event.owner.kind === 'human'
+        ? resolveAgentDisplayName({ id: event.owner.id, kind: event.owner.kind })
+        : `${event.owner.kind}:${event.owner.id}`;
     parts.push(`      Owner: ${ownerName}`);
   }
 
@@ -62,7 +63,10 @@ export function renderActivityFeed(events: CollaborationEvent[]): string {
   return lines.join('\n');
 }
 
-export function getRecentEvents(hours: number, allEvents: CollaborationEvent[]): CollaborationEvent[] {
+export function getRecentEvents(
+  hours: number,
+  allEvents: CollaborationEvent[],
+): CollaborationEvent[] {
   const cutoff = new Date(Date.now() - hours * 60 * 60 * 1000);
   return allEvents.filter((e) => new Date(e.timestamp) >= cutoff);
 }

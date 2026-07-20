@@ -39,11 +39,21 @@ export { default as SelectableList } from './design-system/SelectableList.js';
 export type { SelectableListItem, SelectableListProps } from './design-system/SelectableList.js';
 
 // Action dispatch
-export { TuiActionCategory, TuiRiskLevel, TuiActionStatus, REQUIRES_CONFIRMATION } from './actions/types.js';
+export {
+  TuiActionCategory,
+  TuiRiskLevel,
+  TuiActionStatus,
+  REQUIRES_CONFIRMATION,
+} from './actions/types.js';
 export type { TuiAction, TuiActionResult, TuiActionState } from './actions/types.js';
 export { useActionDispatch } from './actions/use-action-dispatch.js';
 export type { UseActionDispatchReturn } from './actions/use-action-dispatch.js';
-export type { TuiActionHandlers, ApprovalExecutionParams, ConversationActionCard, TuiAskResult } from './views/render-shell.js';
+export type {
+  TuiActionHandlers,
+  ApprovalExecutionParams,
+  ConversationActionCard,
+  TuiAskResult,
+} from './views/render-shell.js';
 
 // Conversation-first workbench UI
 export { default as AskBar } from './components/AskBar.js';
@@ -90,7 +100,10 @@ export type { DoctorReportInput, DoctorViewModel, ProfileSyncGate } from './view
 export { renderSetupTui } from './views/render-setup.js';
 export type { SetupViewModel, SetupReadiness } from './view-models/setup.js';
 export { renderWorkflowPreviewTui } from './views/render-workflow-preview.js';
-export type { WorkflowPreviewViewModel, WorkflowPreviewStepViewModel } from './view-models/workflow-preview.js';
+export type {
+  WorkflowPreviewViewModel,
+  WorkflowPreviewStepViewModel,
+} from './view-models/workflow-preview.js';
 export { renderPrQueueTui } from './views/render-pr-queue.js';
 export type { PrQueueInputItem, PrQueueViewModel } from './view-models/pr-queue.js';
 export { mapPrQueueToViewModel } from './view-models/pr-queue.js';
@@ -116,19 +129,54 @@ export { mapAbyRuntimeDoctorToViewModel } from './view-models/agent-runtime.js';
 
 // Navigation shell
 export { renderShellTui } from './views/render-shell.js';
-export type { ShellViewData, WorkflowLifecycleBaseData, WorkflowLifecycleLoader } from './views/render-shell.js';
+export type {
+  ShellViewData,
+  WorkflowLifecycleBaseData,
+  WorkflowLifecycleLoader,
+} from './views/render-shell.js';
 export { NavigationProvider, useNavigation, HOME_ROUTE } from './navigation/context.js';
 export type { Route, RouterState, RouterActions } from './navigation/router.js';
 export type { HomeViewModel } from './view-models/home.js';
 export { mapHomeToViewModel } from './view-models/home.js';
-export type { ApprovalCenterViewModel, ApprovalItem, ApprovalCategory } from './view-models/approval-center.js';
+export type {
+  ApprovalCenterViewModel,
+  ApprovalItem,
+  ApprovalCategory,
+} from './view-models/approval-center.js';
 export { mapApprovalCenterToViewModel, getCategoryLabel } from './view-models/approval-center.js';
-export type { WorkflowGalleryViewModel, WorkflowGalleryItem, WorkflowDetailViewModel, WorkflowStartPatternItem } from './view-models/workflow-gallery.js';
-export { mapWorkflowGalleryToViewModel, mapWorkflowDetailToViewModel } from './view-models/workflow-gallery.js';
-export type { WorkflowRunProgressViewModel, WorkflowRunProgressItem, WorkflowPhaseProgressItem, WorkflowAgentProgressItem, WorkflowRunDecisionSummary } from './view-models/workflow-runs.js';
-export { mapWorkflowRunsToViewModel, deriveWorkflowRunDecisionSummary } from './view-models/workflow-runs.js';
-export type { WorkflowLifecycleViewModel, LifecycleStage, PhaseIssueItem, CanonicalStageSlot, CanonicalStageKey, CanonicalStageStatus } from './view-models/workflow-lifecycle.js';
-export { mapWorkflowLifecycleToViewModel, mapCanonicalStages } from './view-models/workflow-lifecycle.js';
+export type {
+  WorkflowGalleryViewModel,
+  WorkflowGalleryItem,
+  WorkflowDetailViewModel,
+  WorkflowStartPatternItem,
+} from './view-models/workflow-gallery.js';
+export {
+  mapWorkflowGalleryToViewModel,
+  mapWorkflowDetailToViewModel,
+} from './view-models/workflow-gallery.js';
+export type {
+  WorkflowRunProgressViewModel,
+  WorkflowRunProgressItem,
+  WorkflowPhaseProgressItem,
+  WorkflowAgentProgressItem,
+  WorkflowRunDecisionSummary,
+} from './view-models/workflow-runs.js';
+export {
+  mapWorkflowRunsToViewModel,
+  deriveWorkflowRunDecisionSummary,
+} from './view-models/workflow-runs.js';
+export type {
+  WorkflowLifecycleViewModel,
+  LifecycleStage,
+  PhaseIssueItem,
+  CanonicalStageSlot,
+  CanonicalStageKey,
+  CanonicalStageStatus,
+} from './view-models/workflow-lifecycle.js';
+export {
+  mapWorkflowLifecycleToViewModel,
+  mapCanonicalStages,
+} from './view-models/workflow-lifecycle.js';
 export type { IssuesPrViewModel, IssueItem, PrItem } from './view-models/issues-pr.js';
 export { mapIssuesPrToViewModel } from './view-models/issues-pr.js';
 
@@ -139,19 +187,36 @@ export { mapActivityToViewModel } from './view-models/activity.js';
 
 // Digest
 export { renderDigestTui } from './views/render-digest.js';
-export type { DigestViewModel, DigestGroupViewModel, DigestEventViewModel } from './view-models/digest.js';
+export type {
+  DigestViewModel,
+  DigestGroupViewModel,
+  DigestEventViewModel,
+} from './view-models/digest.js';
 export { mapDigestToViewModel } from './view-models/digest.js';
 
 // Handoff
 export { renderHandoffListTui, renderHandoffDetailTui } from './views/render-handoff.js';
-export type { HandoffListViewModel, HandoffListItemViewModel, HandoffDetailViewModel } from './view-models/handoff.js';
+export type {
+  HandoffListViewModel,
+  HandoffListItemViewModel,
+  HandoffDetailViewModel,
+} from './view-models/handoff.js';
 export { mapHandoffListToViewModel, mapHandoffToViewModel } from './view-models/handoff.js';
 
 // Decision
 export { renderDecisionListTui, renderDecisionDetailTui } from './views/render-decision.js';
-export type { DecisionListViewModel, DecisionListItemViewModel, DecisionDetailViewModel } from './view-models/decision.js';
+export type {
+  DecisionListViewModel,
+  DecisionListItemViewModel,
+  DecisionDetailViewModel,
+} from './view-models/decision.js';
 export { mapDecisionListToViewModel, mapDecisionToViewModel } from './view-models/decision.js';
 
 // Profile
-export type { ProfileViewModel, ProfileSyncDetails, ProfileFailureDetails, ProfileSyncMode } from './view-models/profile.js';
+export type {
+  ProfileViewModel,
+  ProfileSyncDetails,
+  ProfileFailureDetails,
+  ProfileSyncMode,
+} from './view-models/profile.js';
 export { mapProfileToViewModel } from './view-models/profile.js';

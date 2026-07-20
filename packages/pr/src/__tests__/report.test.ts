@@ -47,28 +47,34 @@ describe('generateReviewReport', () => {
   });
 
   it('includes check status', () => {
-    const md = generateReviewReport(makeReport({
-      checks: [
-        { name: 'classify', status: 'completed', conclusion: 'success' },
-        { name: 'canary', status: 'completed', conclusion: 'failure' },
-      ],
-    }));
+    const md = generateReviewReport(
+      makeReport({
+        checks: [
+          { name: 'classify', status: 'completed', conclusion: 'success' },
+          { name: 'canary', status: 'completed', conclusion: 'failure' },
+        ],
+      }),
+    );
     expect(md).toContain('classify');
     expect(md).toContain('canary');
   });
 
   it('includes human approvals', () => {
-    const md = generateReviewReport(makeReport({
-      humanApprovals: [{ user: 'wsman' }],
-    }));
+    const md = generateReviewReport(
+      makeReport({
+        humanApprovals: [{ user: 'wsman' }],
+      }),
+    );
     expect(md).toContain('@wsman');
   });
 
   it('contains reason and recommendation', () => {
-    const md = generateReviewReport(makeReport({
-      reason: 'Test reason',
-      recommendation: 'Test recommendation',
-    }));
+    const md = generateReviewReport(
+      makeReport({
+        reason: 'Test reason',
+        recommendation: 'Test recommendation',
+      }),
+    );
     expect(md).toContain('Test reason');
     expect(md).toContain('Test recommendation');
   });
@@ -79,12 +85,14 @@ describe('generateReviewReport', () => {
   });
 
   it('renders skipped checks with skip icon', () => {
-    const md = generateReviewReport(makeReport({
-      checks: [
-        { name: 'canary', status: 'completed', conclusion: 'success' },
-        { name: 'on-pr-merged', status: 'completed', conclusion: 'skipped' },
-      ],
-    }));
+    const md = generateReviewReport(
+      makeReport({
+        checks: [
+          { name: 'canary', status: 'completed', conclusion: 'success' },
+          { name: 'on-pr-merged', status: 'completed', conclusion: 'skipped' },
+        ],
+      }),
+    );
     expect(md).toContain('⏭️');
     expect(md).toContain('on-pr-merged');
   });

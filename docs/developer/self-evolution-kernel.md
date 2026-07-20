@@ -33,20 +33,20 @@ OBSERVE → CLASSIFY → VALIDATE → REVIEW → SCORECARD → MERGE → MONITOR
 
 ## Key Commands
 
-| Command | Purpose |
-|---------|---------|
-| `openslack workspace validate` | Validate Self-Project workspace |
-| `openslack self classify-pr --paths "..."` | Classify PR risk zone |
-| `openslack self eval --suite golden` | Run 7 golden evals |
-| `openslack self observe` | Check health |
-| `openslack self triage` | Create EVOL tasks from observations |
-| `openslack agent hire --agent-id <id>` | Create onboarding package |
-| `openslack agent bootstrap --agent-id <id>` | Verify agent readiness |
-| `openslack agent tick --agent-id <id>` | Run agent work cycle |
-| `openslack task sync --paths "..."` | Generate workspace PR body |
-| `openslack self review --pr <n> --implementer <a> --reviewer <b>` | Review PR |
-| `openslack self scorecard --experiment <id>` | Compute fitness score |
-| `openslack self monitor --experiment <id>` | Post-merge regression check |
+| Command                                                           | Purpose                             |
+| ----------------------------------------------------------------- | ----------------------------------- |
+| `openslack workspace validate`                                    | Validate Self-Project workspace     |
+| `openslack self classify-pr --paths "..."`                        | Classify PR risk zone               |
+| `openslack self eval --suite golden`                              | Run 7 golden evals                  |
+| `openslack self observe`                                          | Check health                        |
+| `openslack self triage`                                           | Create EVOL tasks from observations |
+| `openslack agent hire --agent-id <id>`                            | Create onboarding package           |
+| `openslack agent bootstrap --agent-id <id>`                       | Verify agent readiness              |
+| `openslack agent tick --agent-id <id>`                            | Run agent work cycle                |
+| `openslack task sync --paths "..."`                               | Generate workspace PR body          |
+| `openslack self review --pr <n> --implementer <a> --reviewer <b>` | Review PR                           |
+| `openslack self scorecard --experiment <id>`                      | Compute fitness score               |
+| `openslack self monitor --experiment <id>`                        | Post-merge regression check         |
 
 ## Development
 

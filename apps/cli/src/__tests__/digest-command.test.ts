@@ -1,13 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import {
-  buildDigestCard,
-  cardToText,
-  buildWorkflowCard,
-} from '@openslack/chat-gateway';
-import {
-  previewWorkflowTemplate,
-  renderWorkflowPreview,
-} from '@openslack/collaboration';
+import { buildDigestCard, cardToText, buildWorkflowCard } from '@openslack/chat-gateway';
+import { previewWorkflowTemplate, renderWorkflowPreview } from '@openslack/collaboration';
 
 // ─── Digest Slack posting logic tests ──────────────────────────────────────────
 
@@ -34,9 +27,7 @@ describe('digest --post slack integration logic', () => {
     const card = buildDigestCard({
       sinceHours: 8,
       totalEvents: 5,
-      groups: [
-        { label: 'Completed', count: 5, items: ['Done'] },
-      ],
+      groups: [{ label: 'Completed', count: 5, items: ['Done'] }],
     });
     const text = cardToText(card);
     expect(typeof text).toBe('string');
@@ -65,9 +56,7 @@ describe('workflow preview --format logic', () => {
     schema: 'openslack.workflow_template.v1' as const,
     id: 'test-preview',
     name: 'Test Preview Workflow',
-    inputs: [
-      { name: 'repo', type: 'string' as const, required: true },
-    ],
+    inputs: [{ name: 'repo', type: 'string' as const, required: true }],
     phases: [
       {
         name: 'Assess',
@@ -80,7 +69,13 @@ describe('workflow preview --format logic', () => {
         name: 'Decide',
         steps: [
           { type: 'decision-gate' as const, title: 'Approve deployment', requiredRole: 'admin' },
-          { type: 'record-decision' as const, topic: 'Deploy?', decision: 'Yes', rationale: 'Tests pass', decidedBy: 'admin' },
+          {
+            type: 'record-decision' as const,
+            topic: 'Deploy?',
+            decision: 'Yes',
+            rationale: 'Tests pass',
+            decidedBy: 'admin',
+          },
         ],
       },
     ],
@@ -175,9 +170,7 @@ describe('workflow preview with non-action steps', () => {
       },
       {
         name: 'Wait',
-        steps: [
-          { type: 'wait' as const, title: 'Wait for CI' },
-        ],
+        steps: [{ type: 'wait' as const, title: 'Wait for CI' }],
       },
     ],
   };

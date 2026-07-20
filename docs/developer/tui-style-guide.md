@@ -139,13 +139,12 @@ output instead of a broken interactive view:
 
 ## Common Failure Modes
 
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| Columns drift with Chinese text | `padEnd()` counted code units | Use `stringWidth()` and bounded layout |
-| Emoji overlaps following text | slicing split a wide grapheme | Use `slice-ansi.ts` and assert width |
-| Old rows remain after async refresh | shorter frame did not clear tail rows | Add redraw regression test |
-| CI snapshot differs from terminal | ANSI/control output leaked | Sanitize external text and render through Ink |
-| Monochrome view loses meaning | status was color-only | Add explicit text labels |
-| View overflows at 80 columns | layout assumes 100+ columns | Add Column Width Matrix test |
-| Plain output is empty | TUI-only path with no fallback | Add plain-safe fallback path |
-
+| Symptom                             | Cause                                 | Fix                                           |
+| ----------------------------------- | ------------------------------------- | --------------------------------------------- |
+| Columns drift with Chinese text     | `padEnd()` counted code units         | Use `stringWidth()` and bounded layout        |
+| Emoji overlaps following text       | slicing split a wide grapheme         | Use `slice-ansi.ts` and assert width          |
+| Old rows remain after async refresh | shorter frame did not clear tail rows | Add redraw regression test                    |
+| CI snapshot differs from terminal   | ANSI/control output leaked            | Sanitize external text and render through Ink |
+| Monochrome view loses meaning       | status was color-only                 | Add explicit text labels                      |
+| View overflows at 80 columns        | layout assumes 100+ columns           | Add Column Width Matrix test                  |
+| Plain output is empty               | TUI-only path with no fallback        | Add plain-safe fallback path                  |

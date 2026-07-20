@@ -270,9 +270,13 @@ describe('createOpenSlackAgentLauncher', () => {
       async execute<T>(context: AdapterExecutionContext) {
         activeRunId = context.runId;
         await new Promise((_resolve, reject) => {
-          context.signal?.addEventListener('abort', () => {
-            reject(context.signal?.reason ?? new Error('cancelled'));
-          }, { once: true });
+          context.signal?.addEventListener(
+            'abort',
+            () => {
+              reject(context.signal?.reason ?? new Error('cancelled'));
+            },
+            { once: true },
+          );
         });
         return { data: { ok: true } as T };
       },
@@ -309,9 +313,13 @@ describe('createOpenSlackAgentLauncher', () => {
       async execute<T>(context: AdapterExecutionContext) {
         activeRunId = context.runId;
         await new Promise((_resolve, reject) => {
-          context.signal?.addEventListener('abort', () => {
-            reject(context.signal?.reason ?? new Error('restart requested'));
-          }, { once: true });
+          context.signal?.addEventListener(
+            'abort',
+            () => {
+              reject(context.signal?.reason ?? new Error('restart requested'));
+            },
+            { once: true },
+          );
         });
         return { data: { ok: true } as T };
       },
@@ -338,14 +346,20 @@ describe('createOpenSlackAgentLauncher', () => {
     await expect(runPromise).rejects.toBeInstanceOf(AgentRunRestartRequestedError);
     expect(store.getRun(activeRunId)?.status).toBe('cancelled');
     const transcript = readTranscript(activeRunId, root);
-    expect(transcript.some((entry) =>
-      entry.type === 'progress' &&
-      (entry.data as Record<string, unknown>).step === 'agent_restart_requested'
-    )).toBe(true);
-    expect(transcript.some((entry) =>
-      entry.type === 'progress' &&
-      (entry.data as Record<string, unknown>).step === 'agent_restart_handoff'
-    )).toBe(true);
+    expect(
+      transcript.some(
+        (entry) =>
+          entry.type === 'progress' &&
+          (entry.data as Record<string, unknown>).step === 'agent_restart_requested',
+      ),
+    ).toBe(true);
+    expect(
+      transcript.some(
+        (entry) =>
+          entry.type === 'progress' &&
+          (entry.data as Record<string, unknown>).step === 'agent_restart_handoff',
+      ),
+    ).toBe(true);
   });
 
   it('writes transcript events', async () => {
@@ -473,7 +487,9 @@ describe('createOpenSlackAgentLauncher', () => {
     const transcript = readTranscript(run.runId, root);
 
     const lifecycleEvent = transcript.find(
-      (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'bridge_lifecycle_complete',
+      (e) =>
+        e.type === 'progress' &&
+        (e.data as Record<string, unknown>).step === 'bridge_lifecycle_complete',
     );
     expect(lifecycleEvent).toBeUndefined();
   });
@@ -487,20 +503,20 @@ describe('createOpenSlackAgentLauncher', () => {
         "import { stdin, stdout } from 'node:process';",
         "let buffer = '';",
         "stdin.setEncoding('utf8');",
-        "function envelope(input, kind, payload) {",
+        'function envelope(input, kind, payload) {',
         "  return JSON.stringify({ protocolVersion: input.protocolVersion, sessionId: input.sessionId, correlationId: input.correlationId, timestamp: new Date().toISOString(), kind, payload }) + '\\n';",
-        "}",
+        '}',
         "stdin.on('data', chunk => {",
-        "  buffer += chunk;",
+        '  buffer += chunk;',
         "  const lines = buffer.split('\\n');",
         "  buffer = lines.pop() ?? '';",
-        "  for (const line of lines) {",
-        "    if (!line.trim()) continue;",
-        "    const input = JSON.parse(line);",
+        '  for (const line of lines) {',
+        '    if (!line.trim()) continue;',
+        '    const input = JSON.parse(line);',
         "    if (input.kind === 'handshake_request') stdout.write(envelope(input, 'handshake_response', { accepted: true }));",
         "    if (input.kind === 'run_request') stdout.write(envelope(input, 'complete', { data: { ok: true, payload: input.payload, env: { prompt: process.env.OPENSLACK_AGENT_PROMPT ?? null, anthropicKey: process.env.ANTHROPIC_API_KEY ?? null, runner: process.env.AGENT_RUN_BRIDGE_RUNNER ?? null, safeTrace: process.env.AGENT_RUN_SAFE_TRACE ?? null, oldRunId: process.env.OPENSLACK_RUN_ID ?? null, oldAgentId: process.env.OPENSLACK_AGENT_ID ?? null, runId: process.env.AGENT_RUN_ID ?? null, agentId: process.env.AGENT_ID ?? null } }, tokenUsage: 7 }));",
-        "  }",
-        "});",
+        '  }',
+        '});',
       ].join('\n'),
       'utf-8',
     );
@@ -547,7 +563,10 @@ describe('createOpenSlackAgentLauncher', () => {
     expect((result.data as any).payload.maxTurns).toBe(4);
     expect((result.data as any).payload.allowedTools).toContain('Read');
     expect((result.data as any).payload.permissionMode).toBe('plan');
-    expect((result.data as any).payload.mcp).toEqual({ required: ['github'], available: ['github'] });
+    expect((result.data as any).payload.mcp).toEqual({
+      required: ['github'],
+      available: ['github'],
+    });
     expect((result.data as any).payload.metadata.integrationId).toBe('openslack');
     expect((result.data as any).payload.metadata.resolvedConfig.model).toBe('sonnet');
     expect((result.data as any).env).toMatchObject({

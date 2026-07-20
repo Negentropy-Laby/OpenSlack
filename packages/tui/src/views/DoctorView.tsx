@@ -1,41 +1,53 @@
-import React, { useState } from 'react'
-import Box from '../ink/components/Box.js'
-import Text from '../ink/components/Text.js'
-import useApp from '../ink/hooks/use-app.js'
-import useInput from '../ink/hooks/use-input.js'
-import Pane from '../design-system/Pane.js'
-import ThemedText from '../design-system/ThemedText.js'
-import ListItem from '../design-system/ListItem.js'
-import Divider from '../design-system/Divider.js'
-import StatusIcon from '../design-system/StatusIcon.js'
-import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
-import type { DoctorViewModel } from '../view-models/doctor.js'
+import React, { useState } from 'react';
+import Box from '../ink/components/Box.js';
+import Text from '../ink/components/Text.js';
+import useApp from '../ink/hooks/use-app.js';
+import useInput from '../ink/hooks/use-input.js';
+import Pane from '../design-system/Pane.js';
+import ThemedText from '../design-system/ThemedText.js';
+import ListItem from '../design-system/ListItem.js';
+import Divider from '../design-system/Divider.js';
+import StatusIcon from '../design-system/StatusIcon.js';
+import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js';
+import type { DoctorViewModel } from '../view-models/doctor.js';
 
 export type DoctorViewProps = {
-  model: DoctorViewModel
-}
+  model: DoctorViewModel;
+};
 
 function CompressedView({ model }: DoctorViewProps): React.JSX.Element {
-  const canMerge = model.decision === 'READY_TO_MERGE'
-  const failedGate = model.gates.find(g => g.status === 'FAIL')
+  const canMerge = model.decision === 'READY_TO_MERGE';
+  const failedGate = model.gates.find((g) => g.status === 'FAIL');
 
   return React.createElement(
     Box,
     { flexDirection: 'column', paddingX: 1 },
-    React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, `PR #${model.prNumber} Summary`),
+    React.createElement(
+      ThemedText,
+      { colorTheme: 'accent', bold: true },
+      `PR #${model.prNumber} Summary`,
+    ),
     React.createElement(Divider, { length: 50 }),
     React.createElement(
       Box,
       { flexDirection: 'row' },
       React.createElement(ThemedText, { colorTheme: 'foreground', bold: true }, 'Can merge: '),
-      React.createElement(ThemedText, { colorTheme: canMerge ? 'success' : 'error', bold: true }, canMerge ? 'YES' : 'NO'),
+      React.createElement(
+        ThemedText,
+        { colorTheme: canMerge ? 'success' : 'error', bold: true },
+        canMerge ? 'YES' : 'NO',
+      ),
     ),
     React.createElement(
       Box,
       { flexDirection: 'row' },
       React.createElement(ThemedText, { colorTheme: 'foreground', bold: true }, 'Blocker: '),
       failedGate
-        ? React.createElement(ThemedText, { colorTheme: 'error' }, `${failedGate.name} - ${failedGate.detail}`)
+        ? React.createElement(
+            ThemedText,
+            { colorTheme: 'error' },
+            `${failedGate.name} - ${failedGate.detail}`,
+          )
         : React.createElement(ThemedText, { colorTheme: 'success' }, 'No blockers'),
     ),
     React.createElement(
@@ -48,23 +60,34 @@ function CompressedView({ model }: DoctorViewProps): React.JSX.Element {
       Box,
       { flexDirection: 'row' },
       React.createElement(ThemedText, { colorTheme: 'foreground', bold: true }, 'Next: '),
-      React.createElement(ThemedText, { colorTheme: 'accent' }, `openslack pr doctor ${model.prNumber}`),
+      React.createElement(
+        ThemedText,
+        { colorTheme: 'accent' },
+        `openslack pr doctor ${model.prNumber}`,
+      ),
     ),
     React.createElement(Divider, { length: 40 }),
     React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, 'Press c for full view'),
-  )
+  );
 }
 
 function FullView({ model }: DoctorViewProps): React.JSX.Element {
-  const decisionCategory = model.decision === 'READY_TO_MERGE' ? 'pass' as const
-    : model.gates.some(g => g.status === 'FAIL') ? 'fail' as const
-    : 'warn' as const
+  const decisionCategory =
+    model.decision === 'READY_TO_MERGE'
+      ? ('pass' as const)
+      : model.gates.some((g) => g.status === 'FAIL')
+        ? ('fail' as const)
+        : ('warn' as const);
 
   return React.createElement(
     Box,
     { flexDirection: 'column', paddingX: 1 },
     // Header
-    React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, `PR #${model.prNumber} Doctor Report`),
+    React.createElement(
+      ThemedText,
+      { colorTheme: 'accent', bold: true },
+      `PR #${model.prNumber} Doctor Report`,
+    ),
     React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, model.title),
     React.createElement(Divider, { length: 50 }),
 
@@ -74,9 +97,20 @@ function FullView({ model }: DoctorViewProps): React.JSX.Element {
       { flexDirection: 'row' },
       React.createElement(ThemedText, { colorTheme: 'foreground' }, `Author: @${model.author}`),
       React.createElement(Text, null, '  '),
-      React.createElement(ThemedText, { colorTheme: model.riskZone === 'black' ? 'error' : model.riskZone === 'red' ? 'warning' : 'success' }, `Risk: ${model.riskZone.toUpperCase()}`),
+      React.createElement(
+        ThemedText,
+        {
+          colorTheme:
+            model.riskZone === 'black' ? 'error' : model.riskZone === 'red' ? 'warning' : 'success',
+        },
+        `Risk: ${model.riskZone.toUpperCase()}`,
+      ),
       React.createElement(Text, null, '  '),
-      React.createElement(ThemedText, { colorTheme: model.draft ? 'error' : 'muted' }, model.draft ? 'DRAFT' : model.state),
+      React.createElement(
+        ThemedText,
+        { colorTheme: model.draft ? 'error' : 'muted' },
+        model.draft ? 'DRAFT' : model.state,
+      ),
     ),
     React.createElement(Divider, { length: 40 }),
 
@@ -84,7 +118,7 @@ function FullView({ model }: DoctorViewProps): React.JSX.Element {
     React.createElement(
       Pane,
       { title: 'Gates', marginY: 0 },
-      ...model.gates.map(g =>
+      ...model.gates.map((g) =>
         React.createElement(ListItem, {
           key: g.name,
           label: g.name,
@@ -122,7 +156,7 @@ function FullView({ model }: DoctorViewProps): React.JSX.Element {
       ? React.createElement(
           Pane,
           { title: 'Checks', marginY: 0 },
-          ...model.checks.map(c =>
+          ...model.checks.map((c) =>
             React.createElement(ListItem, {
               key: c.name,
               label: c.name,
@@ -138,7 +172,7 @@ function FullView({ model }: DoctorViewProps): React.JSX.Element {
       ? React.createElement(
           Pane,
           { title: 'Reviews', marginY: 0 },
-          ...model.reviews.map(r =>
+          ...model.reviews.map((r) =>
             React.createElement(ListItem, {
               key: r.user,
               label: `@${r.user}`,
@@ -177,24 +211,24 @@ function FullView({ model }: DoctorViewProps): React.JSX.Element {
       React.createElement(Text, null, '  '),
       React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'exit' }),
     ),
-  )
+  );
 }
 
 export default function DoctorView({ model }: DoctorViewProps): React.JSX.Element {
-  const { exit } = useApp()
-  const [compressed, setCompressed] = useState(model.compressed)
+  const { exit } = useApp();
+  const [compressed, setCompressed] = useState(model.compressed);
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
-      exit()
+      exit();
     } else if (input === 'c') {
-      setCompressed(prev => !prev)
+      setCompressed((prev) => !prev);
     }
-  })
+  });
 
   if (compressed) {
-    return React.createElement(CompressedView, { model })
+    return React.createElement(CompressedView, { model });
   }
 
-  return React.createElement(FullView, { model })
+  return React.createElement(FullView, { model });
 }

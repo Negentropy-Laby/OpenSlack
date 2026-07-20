@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildDashboardProjection, renderDashboardProjection, renderDashboardMarkdown } from '../dashboard.js';
+import {
+  buildDashboardProjection,
+  renderDashboardProjection,
+  renderDashboardMarkdown,
+} from '../dashboard.js';
 import type { CollaborationEvent } from '../types.js';
 
 function event(overrides: Partial<CollaborationEvent>): CollaborationEvent {
@@ -25,7 +29,11 @@ describe('dashboard projection', () => {
     const dashboard = buildDashboardProjection({
       events: [
         event({ type: 'pr.doctor.blocked' }),
-        event({ type: 'task.created', object: { kind: 'issue', id: '7' }, summary: 'Task created' }),
+        event({
+          type: 'task.created',
+          object: { kind: 'issue', id: '7' },
+          summary: 'Task created',
+        }),
       ],
     });
 
@@ -46,7 +54,13 @@ describe('dashboard projection', () => {
 
   it('does not show getting started guidance when events exist', () => {
     const dashboard = buildDashboardProjection({
-      events: [event({ type: 'task.created', object: { kind: 'issue', id: '1' }, summary: 'Task created' })],
+      events: [
+        event({
+          type: 'task.created',
+          object: { kind: 'issue', id: '1' },
+          summary: 'Task created',
+        }),
+      ],
     });
     const rendered = renderDashboardProjection(dashboard);
     expect(rendered).not.toContain('Getting Started');
@@ -55,8 +69,16 @@ describe('dashboard projection', () => {
   it('filters by actor ID', () => {
     const dashboard = buildDashboardProjection({
       events: [
-        event({ type: 'task.created', actor: { id: 'agent_a', kind: 'agent', provider: 'cli' }, object: { kind: 'issue', id: '1' } }),
-        event({ type: 'task.created', actor: { id: 'agent_b', kind: 'agent', provider: 'cli' }, object: { kind: 'issue', id: '2' } }),
+        event({
+          type: 'task.created',
+          actor: { id: 'agent_a', kind: 'agent', provider: 'cli' },
+          object: { kind: 'issue', id: '1' },
+        }),
+        event({
+          type: 'task.created',
+          actor: { id: 'agent_b', kind: 'agent', provider: 'cli' },
+          object: { kind: 'issue', id: '2' },
+        }),
       ],
       filters: { actorId: 'agent_a' },
     });
@@ -66,8 +88,16 @@ describe('dashboard projection', () => {
   it('filters by source kind', () => {
     const dashboard = buildDashboardProjection({
       events: [
-        event({ type: 'task.created', source: { kind: 'operator', ref: 'test' }, object: { kind: 'issue', id: '1' } }),
-        event({ type: 'task.created', source: { kind: 'prms', ref: 'test' }, object: { kind: 'issue', id: '2' } }),
+        event({
+          type: 'task.created',
+          source: { kind: 'operator', ref: 'test' },
+          object: { kind: 'issue', id: '1' },
+        }),
+        event({
+          type: 'task.created',
+          source: { kind: 'prms', ref: 'test' },
+          object: { kind: 'issue', id: '2' },
+        }),
       ],
       filters: { sourceKind: 'prms' },
     });
@@ -86,7 +116,9 @@ describe('dashboard projection', () => {
   });
 
   it('includes handoff and decision details', () => {
-    const dashboard = buildDashboardProjection({ events: [event({ type: 'task.created', object: { kind: 'issue', id: '1' } })] });
+    const dashboard = buildDashboardProjection({
+      events: [event({ type: 'task.created', object: { kind: 'issue', id: '1' } })],
+    });
     expect(Array.isArray(dashboard.openHandoffDetails)).toBe(true);
     expect(Array.isArray(dashboard.activeDecisionDetails)).toBe(true);
   });
@@ -112,8 +144,16 @@ describe('renderDashboardMarkdown', () => {
   it('renders task counts as a markdown table', () => {
     const dashboard = buildDashboardProjection({
       events: [
-        event({ type: 'task.created', object: { kind: 'issue', id: '1' }, summary: 'Task created' }),
-        event({ type: 'task.created', object: { kind: 'issue', id: '2' }, summary: 'Another task' }),
+        event({
+          type: 'task.created',
+          object: { kind: 'issue', id: '1' },
+          summary: 'Task created',
+        }),
+        event({
+          type: 'task.created',
+          object: { kind: 'issue', id: '2' },
+          summary: 'Another task',
+        }),
       ],
     });
     const md = renderDashboardMarkdown(dashboard);
@@ -124,9 +164,7 @@ describe('renderDashboardMarkdown', () => {
 
   it('renders PR counts as a markdown table', () => {
     const dashboard = buildDashboardProjection({
-      events: [
-        event({ type: 'pr.opened' }),
-      ],
+      events: [event({ type: 'pr.opened' })],
     });
     const md = renderDashboardMarkdown(dashboard);
     expect(md).toContain('## PRs');
@@ -149,7 +187,11 @@ describe('renderDashboardMarkdown', () => {
   it('renders blockers without severity', () => {
     const dashboard = buildDashboardProjection({
       events: [
-        event({ type: 'task.blocked', object: { kind: 'issue', id: '5' }, summary: 'Blocked task' }),
+        event({
+          type: 'task.blocked',
+          object: { kind: 'issue', id: '5' },
+          summary: 'Blocked task',
+        }),
       ],
     });
     const md = renderDashboardMarkdown(dashboard);
@@ -166,7 +208,11 @@ describe('renderDashboardMarkdown', () => {
   it('renders recent activity as a markdown table', () => {
     const dashboard = buildDashboardProjection({
       events: [
-        event({ type: 'task.created', object: { kind: 'issue', id: '1' }, summary: 'Created task' }),
+        event({
+          type: 'task.created',
+          object: { kind: 'issue', id: '1' },
+          summary: 'Created task',
+        }),
       ],
     });
     const md = renderDashboardMarkdown(dashboard);
@@ -191,7 +237,9 @@ describe('renderDashboardMarkdown', () => {
 
   it('does not show getting started when events exist', () => {
     const dashboard = buildDashboardProjection({
-      events: [event({ type: 'task.created', object: { kind: 'issue', id: '1' }, summary: 'Task' })],
+      events: [
+        event({ type: 'task.created', object: { kind: 'issue', id: '1' }, summary: 'Task' }),
+      ],
     });
     const md = renderDashboardMarkdown(dashboard);
     expect(md).not.toContain('## Getting Started');
@@ -216,7 +264,11 @@ describe('renderDashboardMarkdown', () => {
   it('renders blocker owner and next action', () => {
     const dashboard = buildDashboardProjection({
       events: [
-        event({ type: 'pr.doctor.blocked', summary: 'PR blocked', nextAction: { owner: 'human', action: 'Fix tests' } }),
+        event({
+          type: 'pr.doctor.blocked',
+          summary: 'PR blocked',
+          nextAction: { owner: 'human', action: 'Fix tests' },
+        }),
       ],
     });
     const md = renderDashboardMarkdown(dashboard);
@@ -234,10 +286,11 @@ describe('renderDashboardMarkdown', () => {
 
   it('omits PRs section when no PR events', () => {
     const dashboard = buildDashboardProjection({
-      events: [event({ type: 'task.created', object: { kind: 'issue', id: '1' }, summary: 'Task' })],
+      events: [
+        event({ type: 'task.created', object: { kind: 'issue', id: '1' }, summary: 'Task' }),
+      ],
     });
     const md = renderDashboardMarkdown(dashboard);
     expect(md).not.toContain('## PRs');
   });
 });
-

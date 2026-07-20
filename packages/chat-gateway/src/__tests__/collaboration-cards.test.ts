@@ -1,9 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildDashboardCard, buildDigestCard, buildRoomCard, buildActivityCard,
+  buildDashboardCard,
+  buildDigestCard,
+  buildRoomCard,
+  buildActivityCard,
 } from '../collaboration-cards.js';
 import type {
-  DashboardCardData, DigestCardData, RoomCardData, ActivityCardData,
+  DashboardCardData,
+  DigestCardData,
+  RoomCardData,
+  ActivityCardData,
 } from '../collaboration-cards.js';
 import { cardToText } from '../cards.js';
 
@@ -118,7 +124,9 @@ describe('buildActivityCard', () => {
       eventCount: 20,
       sinceHours: 24,
       events: Array.from({ length: 10 }, (_, i) => ({
-        type: 'event', object: `obj:${i}`, summary: `Event ${i}`,
+        type: 'event',
+        object: `obj:${i}`,
+        summary: `Event ${i}`,
       })),
     };
     const card = buildActivityCard(data);

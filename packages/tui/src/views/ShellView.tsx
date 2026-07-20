@@ -284,7 +284,8 @@ function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
       return React.createElement(PlaceholderView, { route: current });
     }
     case 'workflow-runs': {
-      const model = data?.workflowRuns ?? mapWorkflowRunsToViewModel(data?.workflowRunProgress ?? []);
+      const model =
+        data?.workflowRuns ?? mapWorkflowRunsToViewModel(data?.workflowRunProgress ?? []);
       return React.createElement(WorkflowRunsView, {
         model,
         actionHandlers: data?.actionHandlers,
@@ -377,7 +378,11 @@ function ViewRouter({ data }: { data?: ShellViewData }): React.JSX.Element {
         | import('@openslack/agent-runtime').AgentRunState
         | undefined;
       const runId = current.params?.runId as string | undefined;
-      const resolvedRunState = runState ?? (runId ? createRunStore(data?.rootDir ?? process.cwd()).getRun(runId) ?? undefined : undefined);
+      const resolvedRunState =
+        runState ??
+        (runId
+          ? (createRunStore(data?.rootDir ?? process.cwd()).getRun(runId) ?? undefined)
+          : undefined);
       if (resolvedRunState) {
         const runModel = mapAgentRunToViewModel(resolvedRunState, {
           rootDir: data?.rootDir ?? process.cwd(),

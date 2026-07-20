@@ -17,7 +17,8 @@ vi.mock('@openslack/github', () => ({
   getPRReviews: (...args: unknown[]) => hoisted.mockGetPRReviews(...args),
   getPRFilePatches: (...args: unknown[]) => hoisted.mockGetPRFilePatches(...args),
   getRepositoryTree: (...args: unknown[]) => hoisted.mockGetRepositoryTree(...args),
-  findWorkflowGovernanceIssue: (...args: unknown[]) => hoisted.mockFindWorkflowGovernanceIssue(...args),
+  findWorkflowGovernanceIssue: (...args: unknown[]) =>
+    hoisted.mockFindWorkflowGovernanceIssue(...args),
 }));
 
 import { fetchPRDetails } from '../fetch.js';
@@ -67,14 +68,18 @@ describe('fetchPRDetails', () => {
     const report = await fetchPRDetails(138, { strictEvidence: true });
 
     expect(report.state).toBe('open');
-    expect(report.checks).toEqual([{ name: 'validate', status: 'completed', conclusion: 'success' }]);
-    expect(report.reviews).toEqual([{
-      user: 'wsman',
-      state: 'APPROVED',
-      body: 'approved',
-      submittedAt: '2026-06-01T14:32:04Z',
-      commitOid: 'head-sha',
-    }]);
+    expect(report.checks).toEqual([
+      { name: 'validate', status: 'completed', conclusion: 'success' },
+    ]);
+    expect(report.reviews).toEqual([
+      {
+        user: 'wsman',
+        state: 'APPROVED',
+        body: 'approved',
+        submittedAt: '2026-06-01T14:32:04Z',
+        commitOid: 'head-sha',
+      },
+    ]);
     expect(report.humanApprovals).toEqual([{ user: 'wsman' }]);
     expect(hoisted.mockGetPRFilePatches).not.toHaveBeenCalled();
   });
@@ -156,7 +161,6 @@ describe('fetchPRDetails', () => {
     expect(report.humanApprovals).toEqual([{ user: 'alice' }]);
   });
 
-
   it('propagates strict evidence failures instead of fabricating missing approval', async () => {
     const error = new Error('GITHUB_EVIDENCE_UNAVAILABLE: reviews failed');
     hoisted.mockGetPRReviews.mockRejectedValue(error);
@@ -165,7 +169,9 @@ describe('fetchPRDetails', () => {
   });
 
   it('fetches patches only for profile-sync candidates', async () => {
-    hoisted.mockGetPR.mockResolvedValue(mockPR({ head: { ref: 'openslack/profile-sync/latest', sha: 'head-sha' } }));
+    hoisted.mockGetPR.mockResolvedValue(
+      mockPR({ head: { ref: 'openslack/profile-sync/latest', sha: 'head-sha' } }),
+    );
     hoisted.mockListPRFiles.mockResolvedValue(['profile/README.md']);
     hoisted.mockGetPRFilePatches.mockResolvedValue([
       { filename: 'profile/README.md', patch: '@@ marker patch' },
@@ -174,7 +180,9 @@ describe('fetchPRDetails', () => {
     const report = await fetchPRDetails(138, { strictEvidence: true });
 
     expect(hoisted.mockGetPRFilePatches).toHaveBeenCalledWith(138, { strictEvidence: true });
-    expect(report.filePatches).toEqual([{ filename: 'profile/README.md', patch: '@@ marker patch' }]);
+    expect(report.filePatches).toEqual([
+      { filename: 'profile/README.md', patch: '@@ marker patch' },
+    ]);
   });
 
   it('binds a new workflow artifact to its governance issue evidence', async () => {

@@ -51,8 +51,10 @@ export function assessPRAuthorRisk(input: PRAuthorRiskInput): PRAuthorRiskPrefli
       riskZone,
       author,
       codeowners,
-      reason: 'Red Zone paths require human CODEOWNER approval, but no CODEOWNER matched the changed paths.',
-      recommendation: 'Add a human CODEOWNER for the touched Red Zone paths before creating the PR.',
+      reason:
+        'Red Zone paths require human CODEOWNER approval, but no CODEOWNER matched the changed paths.',
+      recommendation:
+        'Add a human CODEOWNER for the touched Red Zone paths before creating the PR.',
     };
   }
 
@@ -62,7 +64,8 @@ export function assessPRAuthorRisk(input: PRAuthorRiskInput): PRAuthorRiskPrefli
       riskZone,
       author,
       codeowners,
-      reason: 'Red Zone PR is bot/agent-authored; a separate human CODEOWNER can approve on GitHub.',
+      reason:
+        'Red Zone PR is bot/agent-authored; a separate human CODEOWNER can approve on GitHub.',
       recommendation: `Request GitHub approval from human CODEOWNER(s): ${codeowners.join(', ')}.`,
     };
   }
@@ -79,14 +82,20 @@ export function assessPRAuthorRisk(input: PRAuthorRiskInput): PRAuthorRiskPrefli
 
   const authorAsOwner = `@${author}`;
   const otherOwners = codeowners.filter((owner) => normalizeLogin(owner) !== author);
-  if (codeowners.some((owner) => owner.toLowerCase() === authorAsOwner) && otherOwners.length === 0) {
+  if (
+    codeowners.some((owner) => owner.toLowerCase() === authorAsOwner) &&
+    otherOwners.length === 0
+  ) {
     return {
       status: 'red_zone_sole_codeowner_deadlock',
       riskZone,
       author,
       codeowners,
       reason: `PR author @${author} is the only CODEOWNER for touched Red Zone paths.`,
-      recommendation: 'Recreate as a bot/agent-authored PR, then request human CODEOWNER approval from @' + author + '.',
+      recommendation:
+        'Recreate as a bot/agent-authored PR, then request human CODEOWNER approval from @' +
+        author +
+        '.',
     };
   }
 

@@ -43,8 +43,9 @@ export async function pollRepoIssues(
     });
 
     // GitHub Issues API returns PR-shaped items too; filter them out
-    const issues = (data as unknown as Array<GitHubApiIssue & { pull_request?: unknown }>)
-      .filter((item) => !item.pull_request) as unknown as GitHubApiIssue[];
+    const issues = (data as unknown as Array<GitHubApiIssue & { pull_request?: unknown }>).filter(
+      (item) => !item.pull_request,
+    ) as unknown as GitHubApiIssue[];
 
     let newCursor: RepoCursor;
     if (issues.length > 0) {

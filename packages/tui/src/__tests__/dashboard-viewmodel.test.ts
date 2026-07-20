@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest'
-import { mapDashboardToViewModel } from '../view-models/dashboard.js'
-import type { DashboardProjection } from '@openslack/collaboration'
+import { describe, it, expect } from 'vitest';
+import { mapDashboardToViewModel } from '../view-models/dashboard.js';
+import type { DashboardProjection } from '@openslack/collaboration';
 
 function makeProjection(overrides?: Partial<DashboardProjection>): DashboardProjection {
   return {
@@ -10,7 +10,13 @@ function makeProjection(overrides?: Partial<DashboardProjection>): DashboardProj
     prCounts: { 'pr.doctor.passed': 3 },
     blockerCount: 2,
     blockers: [
-      { object: 'pr:42', summary: 'Missing reviews', owner: 'alice', nextAction: 'Request review', severity: 'high' },
+      {
+        object: 'pr:42',
+        summary: 'Missing reviews',
+        owner: 'alice',
+        nextAction: 'Request review',
+        severity: 'high',
+      },
       { object: 'pr:99', summary: 'Merge conflict' },
     ],
     openHandoffs: 1,
@@ -56,58 +62,66 @@ function makeProjection(overrides?: Partial<DashboardProjection>): DashboardProj
     ],
     appliedFilters: {},
     ...overrides,
-  }
+  };
 }
 
 describe('mapDashboardToViewModel', () => {
   it('maps a full projection to a view model', () => {
-    const model = mapDashboardToViewModel(makeProjection())
-    expect(model.title).toBe('OpenSlack Team Dashboard')
-    expect(model.summary.blockers).toBe(2)
-    expect(model.summary.handoffs).toBe(1)
-    expect(model.summary.decisions).toBe(1)
-    expect(model.blockers).toHaveLength(2)
-    expect(model.handoffs).toHaveLength(1)
-    expect(model.decisions).toHaveLength(1)
-    expect(model.recentActivity).toHaveLength(1)
-  })
+    const model = mapDashboardToViewModel(makeProjection());
+    expect(model.title).toBe('OpenSlack Team Dashboard');
+    expect(model.summary.blockers).toBe(2);
+    expect(model.summary.handoffs).toBe(1);
+    expect(model.summary.decisions).toBe(1);
+    expect(model.blockers).toHaveLength(2);
+    expect(model.handoffs).toHaveLength(1);
+    expect(model.decisions).toHaveLength(1);
+    expect(model.recentActivity).toHaveLength(1);
+  });
 
   it('sanitizes escape sequences from blocker summary', () => {
-    const model = mapDashboardToViewModel(makeProjection({
-      blockers: [{ object: 'pr:1', summary: 'Bad\x1b[31m inject' }],
-    }))
-    expect(model.blockers[0].summary).toBe('Bad inject')
-  })
+    const model = mapDashboardToViewModel(
+      makeProjection({
+        blockers: [{ object: 'pr:1', summary: 'Bad\x1b[31m inject' }],
+      }),
+    );
+    expect(model.blockers[0].summary).toBe('Bad inject');
+  });
 
   it('handles empty projection', () => {
-    const model = mapDashboardToViewModel(makeProjection({
-      blockerCount: 0,
-      blockers: [],
-      openHandoffs: 0,
-      activeDecisions: 0,
-      recentEvents: [],
-      openHandoffDetails: [],
-      activeDecisionDetails: [],
-      taskCounts: {},
-      prCounts: {},
-    }))
-    expect(model.blockers).toHaveLength(0)
-    expect(model.handoffs).toHaveLength(0)
-    expect(model.decisions).toHaveLength(0)
-    expect(model.recentActivity).toHaveLength(0)
-  })
+    const model = mapDashboardToViewModel(
+      makeProjection({
+        blockerCount: 0,
+        blockers: [],
+        openHandoffs: 0,
+        activeDecisions: 0,
+        recentEvents: [],
+        openHandoffDetails: [],
+        activeDecisionDetails: [],
+        taskCounts: {},
+        prCounts: {},
+      }),
+    );
+    expect(model.blockers).toHaveLength(0);
+    expect(model.handoffs).toHaveLength(0);
+    expect(model.decisions).toHaveLength(0);
+    expect(model.recentActivity).toHaveLength(0);
+  });
 
   it('maps blocker with all optional fields', () => {
-    const model = mapDashboardToViewModel(makeProjection({
-      blockers: [{ object: 'pr:1', summary: 's', owner: 'bob', nextAction: 'Fix it', severity: 'high' }],
-    }))
-    expect(model.blockers[0].owner).toBe('bob')
-    expect(model.blockers[0].nextAction).toBe('Fix it')
-    expect(model.blockers[0].severity).toBe('high')
-  })
+    const model = mapDashboardToViewModel(
+      makeProjection({
+        blockers: [
+          { object: 'pr:1', summary: 's', owner: 'bob', nextAction: 'Fix it', severity: 'high' },
+        ],
+      }),
+    );
+    expect(model.blockers[0].owner).toBe('bob');
+    expect(model.blockers[0].nextAction).toBe('Fix it');
+    expect(model.blockers[0].severity).toBe('high');
+  });
 
   it('calculates handoff age', () => {
-    const model = mapDashboardToViewModel(makeProjection())
-    expect(model.handoffs[0].age).toBe('1h')
-  })
-})
+    const model = mapDashboardToViewModel(makeProjection());
+    expect(model.handoffs[0].age).toBe('1h');
+  });
+});

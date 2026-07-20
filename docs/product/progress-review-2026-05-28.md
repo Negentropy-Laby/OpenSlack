@@ -27,14 +27,14 @@ understanding and discovery.
 
 ## Current Metrics
 
-| Metric | Value |
-|--------|-------|
-| Active product modules | 5 |
-| Active packages | 11 |
-| Unit tests (Vitest) | 808 across 101 test files |
-| Module-registered tests | 1112 (packages counted per-module with shared deps) |
-| Golden evals | 7/7 passing |
-| Status source | `docs/status/current.md` (generated from `.openslack/modules.yaml`) |
+| Metric                  | Value                                                               |
+| ----------------------- | ------------------------------------------------------------------- |
+| Active product modules  | 5                                                                   |
+| Active packages         | 11                                                                  |
+| Unit tests (Vitest)     | 808 across 101 test files                                           |
+| Module-registered tests | 1112 (packages counted per-module with shared deps)                 |
+| Golden evals            | 7/7 passing                                                         |
+| Status source           | `docs/status/current.md` (generated from `.openslack/modules.yaml`) |
 
 ### Packages
 
@@ -118,12 +118,12 @@ registered under Operator and Collaboration modules.
 
 Four views shipped:
 
-| Command | View | PR |
-|---------|------|----|
-| `openslack collaboration dashboard --format tui` | DashboardView | #96 |
-| `openslack collaboration room show <ref> --format tui` | RoomView | #97 |
-| `openslack pr doctor <n> --format tui` | DoctorView | #98 |
-| `openslack setup interactive --format tui` | SetupView | #99 |
+| Command                                                | View          | PR  |
+| ------------------------------------------------------ | ------------- | --- |
+| `openslack collaboration dashboard --format tui`       | DashboardView | #96 |
+| `openslack collaboration room show <ref> --format tui` | RoomView      | #97 |
+| `openslack pr doctor <n> --format tui`                 | DoctorView    | #98 |
+| `openslack setup interactive --format tui`             | SetupView     | #99 |
 
 Design system components: ThemeProvider, ThemedBox, ThemedText, StatusIcon,
 ProgressBar, Divider, ListItem, Pane, KeyboardShortcutHint.
@@ -162,11 +162,11 @@ OpenSlack remains:
 
 ### Package Boundary
 
-| Layer | Role | Source of truth |
-|-------|------|-----------------|
-| CLI (`apps/cli`) | Command surface, format routing | `--format tui` triggers lazy import |
-| TUI (`@openslack/tui`) | Renders interactive views, produces no state | Receives data through view models |
-| Domain packages | Business logic, projections, governance | Unchanged |
+| Layer                  | Role                                         | Source of truth                     |
+| ---------------------- | -------------------------------------------- | ----------------------------------- |
+| CLI (`apps/cli`)       | Command surface, format routing              | `--format tui` triggers lazy import |
+| TUI (`@openslack/tui`) | Renders interactive views, produces no state | Receives data through view models   |
+| Domain packages        | Business logic, projections, governance      | Unchanged                           |
 
 ### Forbidden TUI Actions
 
@@ -342,18 +342,19 @@ hand-editing of generated status.
 
 The TUI was delivered in 8 PRs following a phased plan:
 
-| PR | Scope | Key Deliverable |
-|----|-------|-----------------|
-| #93 | Skeleton + Ink engine | `@openslack/tui` package, minimal Ink fork, pure TS Yoga |
-| #94 | Design system + theme | 9 design system components, OpenSlack theme |
-| #95 | Capabilities + sanitize | `isTuiSupported()`, `renderTui()`, `sanitizeTerminalText()` |
-| #96 | Dashboard TUI | First user-visible view: `collaboration dashboard --format tui` |
-| #97 | Room TUI | `collaboration room show <ref> --format tui` |
-| #98 | PR Doctor TUI | `pr doctor <n> --format tui` |
-| #99 | Setup Report TUI | `setup interactive --format tui` |
-| #100 | Docs sync | Module registry, user guide, status docs updated |
+| PR   | Scope                   | Key Deliverable                                                 |
+| ---- | ----------------------- | --------------------------------------------------------------- |
+| #93  | Skeleton + Ink engine   | `@openslack/tui` package, minimal Ink fork, pure TS Yoga        |
+| #94  | Design system + theme   | 9 design system components, OpenSlack theme                     |
+| #95  | Capabilities + sanitize | `isTuiSupported()`, `renderTui()`, `sanitizeTerminalText()`     |
+| #96  | Dashboard TUI           | First user-visible view: `collaboration dashboard --format tui` |
+| #97  | Room TUI                | `collaboration room show <ref> --format tui`                    |
+| #98  | PR Doctor TUI           | `pr doctor <n> --format tui`                                    |
+| #99  | Setup Report TUI        | `setup interactive --format tui`                                |
+| #100 | Docs sync               | Module registry, user guide, status docs updated                |
 
 Each PR required 1–3 review rounds. Key issues caught in review:
+
 - Lockfile not updated after adding workspace dependencies
 - Doctor view re-derived approval validity from raw reviews instead of using
   `report.humanApprovals`
@@ -400,7 +401,7 @@ Move from generic template engine to scenario products:
 - Each defines task breakdown, agent division, handoff checklist, PRMS policy,
   validation, decision points
 - User experience: `openslack collaboration workflow preview
-  templates/workflows/feature.yaml --input title="Add PRMS Slack cards"`
+templates/workflows/feature.yaml --input title="Add PRMS Slack cards"`
 
 ### P3: Continue Plain-Language Output Expansion
 

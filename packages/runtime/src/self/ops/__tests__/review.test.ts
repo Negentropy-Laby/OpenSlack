@@ -42,34 +42,54 @@ describe('reviewPR', () => {
   });
 
   it('detects black zone violation', () => {
-    const result = reviewPR(1, makeValidation({
-      protectedPathCheck: { result: 'fail', red_zone_touched: false, black_zone_touched: true },
-    }), 'agent-a', 'agent-b');
+    const result = reviewPR(
+      1,
+      makeValidation({
+        protectedPathCheck: { result: 'fail', red_zone_touched: false, black_zone_touched: true },
+      }),
+      'agent-a',
+      'agent-b',
+    );
     const blackCheck = result.checks.find((c) => c.name === 'black_zone');
     expect(blackCheck?.passed).toBe(false);
   });
 
   it('detects red zone violation', () => {
-    const result = reviewPR(1, makeValidation({
-      protectedPathCheck: { result: 'fail', red_zone_touched: true, black_zone_touched: false },
-    }), 'agent-a', 'agent-b');
+    const result = reviewPR(
+      1,
+      makeValidation({
+        protectedPathCheck: { result: 'fail', red_zone_touched: true, black_zone_touched: false },
+      }),
+      'agent-a',
+      'agent-b',
+    );
     const redCheck = result.checks.find((c) => c.name === 'red_zone');
     expect(redCheck?.passed).toBe(false);
     expect(redCheck?.detail).toContain('requires human approval');
   });
 
   it('blocks when fitness score < 0.70', () => {
-    const result = reviewPR(1, makeValidation({
-      score: { dimensions: {}, overall: 0.5, decision: 'block' },
-    }), 'agent-a', 'agent-b');
+    const result = reviewPR(
+      1,
+      makeValidation({
+        score: { dimensions: {}, overall: 0.5, decision: 'block' },
+      }),
+      'agent-a',
+      'agent-b',
+    );
     const fitnessCheck = result.checks.find((c) => c.name === 'fitness');
     expect(fitnessCheck?.passed).toBe(false);
   });
 
   it('warns when fitness score is between 0.70 and 0.85', () => {
-    const result = reviewPR(1, makeValidation({
-      score: { dimensions: {}, overall: 0.75, decision: 'review' },
-    }), 'agent-a', 'agent-b');
+    const result = reviewPR(
+      1,
+      makeValidation({
+        score: { dimensions: {}, overall: 0.75, decision: 'review' },
+      }),
+      'agent-a',
+      'agent-b',
+    );
     const fitnessCheck = result.checks.find((c) => c.name === 'fitness');
     expect(fitnessCheck?.passed).toBe(true);
     expect(fitnessCheck?.detail).toContain('manual review recommended');

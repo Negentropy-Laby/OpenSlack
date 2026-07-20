@@ -37,9 +37,7 @@ describe('Real render smoke test', () => {
     });
 
     instance = await tui.render(
-      React.createElement(tui.Box, null,
-        React.createElement(tui.Text, null, 'Hello TUI'),
-      ),
+      React.createElement(tui.Box, null, React.createElement(tui.Text, null, 'Hello TUI')),
       { stdout, patchConsole: false },
     );
 
@@ -85,7 +83,8 @@ describe('Real render smoke test', () => {
   }, 15000);
 
   it('maps profile-sync approval category in view model', async () => {
-    const { mapApprovalCenterToViewModel, getCategoryLabel } = await import('../view-models/approval-center.js');
+    const { mapApprovalCenterToViewModel, getCategoryLabel } =
+      await import('../view-models/approval-center.js');
 
     const model = mapApprovalCenterToViewModel({
       pendingApprovals: [
@@ -120,7 +119,7 @@ describe('Real render smoke test', () => {
     expect(model.summary.mergeRequests).toBe(1);
 
     // group ordering: merge-request, workflow-effect, profile-sync, plan, github-review
-    expect(model.groups.map(g => g.category)).toEqual(['merge-request', 'profile-sync']);
+    expect(model.groups.map((g) => g.category)).toEqual(['merge-request', 'profile-sync']);
 
     // category label
     expect(getCategoryLabel('profile-sync')).toBe('Profile Sync');
@@ -180,7 +179,9 @@ describe('Real render smoke test', () => {
     expect(model.mode).toBe('auto-pr');
     expect(model.failureDetails).toBeDefined();
     expect(model.failureDetails!.reason).toBe('Source repository inaccessible');
-    expect(model.failureDetails!.nextAction).toBe('Run `openslack collaboration workflow profile-sync check` for details');
+    expect(model.failureDetails!.nextAction).toBe(
+      'Run `openslack collaboration workflow profile-sync check` for details',
+    );
   });
 
   it('renders ProfileView with failure panel when sync failed', async () => {
@@ -211,10 +212,10 @@ describe('Real render smoke test', () => {
 
     const ProfileView = (await import('../views/ProfileView.js')).default;
 
-    instance = await tui.render(
-      React.createElement(ProfileView, { model }),
-      { stdout, patchConsole: false },
-    );
+    instance = await tui.render(React.createElement(ProfileView, { model }), {
+      stdout,
+      patchConsole: false,
+    });
 
     await new Promise((r) => setTimeout(r, 150));
 
@@ -257,10 +258,10 @@ describe('Real render smoke test', () => {
 
     const ProfileView = (await import('../views/ProfileView.js')).default;
 
-    instance = await tui.render(
-      React.createElement(ProfileView, { model }),
-      { stdout, patchConsole: false },
-    );
+    instance = await tui.render(React.createElement(ProfileView, { model }), {
+      stdout,
+      patchConsole: false,
+    });
 
     await new Promise((r) => setTimeout(r, 150));
 
