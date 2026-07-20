@@ -68,7 +68,9 @@ describe('release archive creation', () => {
     expect(smokeSource).toContain("'Lifecycle: ACTIVE | Maturity: LOCAL_READY'");
     expect(smokeSource).not.toContain("'Deferred (excluded)'");
 
-    const attributes = readFileSync(resolve(import.meta.dirname, '..', '..', '..', '.gitattributes'));
+    const attributes = readFileSync(
+      resolve(import.meta.dirname, '..', '..', '..', '.gitattributes'),
+    );
     expect(attributes.toString('utf-8')).toContain(
       'packages/integration-negentropy/src/schema/negentropy.slot-contribution.v1.schema.json text eol=lf',
     );
