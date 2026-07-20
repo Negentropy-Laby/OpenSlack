@@ -1,6 +1,19 @@
 {
   "name": "@openslack/plugin-api",
   "version": "0.2.0",
+  "description": "OpenSlack public plugin contract — manifest schema, capability IDs, and host policy types",
+  "keywords": [
+    "openslack",
+    "agent-collaboration",
+    "github",
+    "llm-agents",
+    "plugin-api"
+  ],
+  "homepage": "https://github.com/Negentropy-Laby/OpenSlack/tree/main/packages/plugin-api",
+  "bugs": {
+    "url": "https://github.com/Negentropy-Laby/OpenSlack/issues"
+  },
+  "sideEffects": false,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

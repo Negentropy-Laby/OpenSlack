@@ -1,6 +1,19 @@
 {
   "name": "@openslack/sdk",
   "version": "0.2.0",
+  "description": "OpenSlack plugin SDK — typed defineManifest helpers for declarative plugin authors",
+  "keywords": [
+    "openslack",
+    "agent-collaboration",
+    "github",
+    "llm-agents",
+    "sdk"
+  ],
+  "homepage": "https://github.com/Negentropy-Laby/OpenSlack/tree/main/packages/sdk",
+  "bugs": {
+    "url": "https://github.com/Negentropy-Laby/OpenSlack/issues"
+  },
+  "sideEffects": false,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
