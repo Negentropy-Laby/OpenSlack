@@ -6,9 +6,5 @@
     "resolveJsonModule": true
   },
   "include": ["src/**/*.ts"],
-  "references": [
-    { "path": "../collaboration" },
-    { "path": "../pr" },
-    { "path": "../workflows" }
-  ]
+  "references": [{ "path": "../collaboration" }, { "path": "../pr" }, { "path": "../workflows" }]
 }
