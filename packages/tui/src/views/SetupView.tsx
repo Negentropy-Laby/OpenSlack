@@ -1,34 +1,34 @@
-import React from 'react'
-import Box from '../ink/components/Box.js'
-import Text from '../ink/components/Text.js'
-import useApp from '../ink/hooks/use-app.js'
-import useInput from '../ink/hooks/use-input.js'
-import Pane from '../design-system/Pane.js'
-import ThemedText from '../design-system/ThemedText.js'
-import ListItem from '../design-system/ListItem.js'
-import Divider from '../design-system/Divider.js'
-import StatusIcon from '../design-system/StatusIcon.js'
-import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
-import type { SetupViewModel, SetupReadiness } from '../view-models/setup.js'
+import React from 'react';
+import Box from '../ink/components/Box.js';
+import Text from '../ink/components/Text.js';
+import useApp from '../ink/hooks/use-app.js';
+import useInput from '../ink/hooks/use-input.js';
+import Pane from '../design-system/Pane.js';
+import ThemedText from '../design-system/ThemedText.js';
+import ListItem from '../design-system/ListItem.js';
+import Divider from '../design-system/Divider.js';
+import StatusIcon from '../design-system/StatusIcon.js';
+import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js';
+import type { SetupViewModel, SetupReadiness } from '../view-models/setup.js';
 
 export type SetupViewProps = {
-  model: SetupViewModel
-}
+  model: SetupViewModel;
+};
 
 function readinessCategory(r: SetupReadiness): 'pass' | 'warn' | 'fail' {
-  if (r === 'ready') return 'pass'
-  if (r === 'almost ready') return 'warn'
-  return 'fail'
+  if (r === 'ready') return 'pass';
+  if (r === 'almost ready') return 'warn';
+  return 'fail';
 }
 
 export default function SetupView({ model }: SetupViewProps): React.JSX.Element {
-  const { exit } = useApp()
+  const { exit } = useApp();
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
-      exit()
+      exit();
     }
-  })
+  });
 
   return React.createElement(
     Box,
@@ -43,9 +43,17 @@ export default function SetupView({ model }: SetupViewProps): React.JSX.Element 
       { flexDirection: 'row' },
       React.createElement(StatusIcon, { category: readinessCategory(model.readiness) }),
       React.createElement(Text, null, ' '),
-      React.createElement(ThemedText, { colorTheme: 'foreground', bold: true }, `Readiness: ${model.readiness}`),
+      React.createElement(
+        ThemedText,
+        { colorTheme: 'foreground', bold: true },
+        `Readiness: ${model.readiness}`,
+      ),
     ),
-    React.createElement(ThemedText, { colorTheme: 'muted' }, `${model.passedChecks}/${model.totalChecks} checks passed`),
+    React.createElement(
+      ThemedText,
+      { colorTheme: 'muted' },
+      `${model.passedChecks}/${model.totalChecks} checks passed`,
+    ),
     React.createElement(Divider, { length: 40 }),
 
     // Fixable items
@@ -53,7 +61,7 @@ export default function SetupView({ model }: SetupViewProps): React.JSX.Element 
       ? React.createElement(
           Pane,
           { title: `Fixable (${model.fixable.length})`, marginY: 0 },
-          ...model.fixable.map(f =>
+          ...model.fixable.map((f) =>
             React.createElement(ListItem, {
               key: f.id,
               label: f.title,
@@ -69,7 +77,7 @@ export default function SetupView({ model }: SetupViewProps): React.JSX.Element 
       ? React.createElement(
           Pane,
           { title: `Needs Action (${model.needsAction.length})`, marginY: 0 },
-          ...model.needsAction.map(f =>
+          ...model.needsAction.map((f) =>
             React.createElement(ListItem, {
               key: f.id,
               label: f.title,
@@ -85,7 +93,7 @@ export default function SetupView({ model }: SetupViewProps): React.JSX.Element 
       ? React.createElement(
           Pane,
           { title: `Passed (${model.ok.length})`, marginY: 0 },
-          ...model.ok.map(f =>
+          ...model.ok.map((f) =>
             React.createElement(ListItem, {
               key: f.id,
               label: f.title,
@@ -108,5 +116,5 @@ export default function SetupView({ model }: SetupViewProps): React.JSX.Element 
       { flexDirection: 'row' },
       React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'exit' }),
     ),
-  )
+  );
 }

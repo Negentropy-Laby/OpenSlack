@@ -49,10 +49,7 @@ export function parseCODEOWNERS(content: string): CodeownersEntry[] {
     });
 }
 
-export function resolveCodeowners(
-  changedFiles: string[],
-  entries: CodeownersEntry[],
-): string[] {
+export function resolveCodeowners(changedFiles: string[], entries: CodeownersEntry[]): string[] {
   const owners = new Set<string>();
   for (const file of changedFiles) {
     for (const entry of entries) {

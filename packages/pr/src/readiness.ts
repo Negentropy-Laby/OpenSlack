@@ -25,7 +25,11 @@ export function checkMergeReadiness(
 
   // Required checks gate
   const failingChecks = report.checks.filter(
-    (c) => c.conclusion && c.conclusion !== 'success' && c.conclusion !== 'neutral' && c.conclusion !== 'skipped',
+    (c) =>
+      c.conclusion &&
+      c.conclusion !== 'success' &&
+      c.conclusion !== 'neutral' &&
+      c.conclusion !== 'skipped',
   );
   const pendingChecks = report.checks.filter((c) => c.status !== 'completed');
 
@@ -64,7 +68,8 @@ export function checkMergeReadiness(
     recommendation = 'Safe to merge.';
   } else if (report.riskZone === 'yellow') {
     decision = 'READY_TO_MERGE';
-    reason = 'Yellow Zone. All checks passed. Independent review recommended but not gated for MVP.';
+    reason =
+      'Yellow Zone. All checks passed. Independent review recommended but not gated for MVP.';
     recommendation = 'Proceed with merge if independent review exists.';
   } else if (report.riskZone === 'red' && report.humanApprovals.length > 0) {
     decision = 'READY_TO_MERGE';

@@ -7,7 +7,7 @@ export const NEGENTROPY_SCHEMA_PIN = Object.freeze({
   repository: 'wsman/Negentropy-Lab',
   commit: '989c73a99ad5af94c6cad617bf34e2f400bafa9c',
   path: 'packages/core/src/slots/schema/negentropy.slot-contribution.v1.schema.json',
-  sha256: 'd3220080e1200391f9d5c0b2e74df1306540d57ff922d0da4156b32675efffa2',
+  sha256: '45ca9bec47d8427d59fee4a949a32677beba81a468193f0bed4c24a3381b1c1f',
   version: 'negentropy.slot-contribution.v1',
 } as const satisfies NegentropySchemaPin);
 

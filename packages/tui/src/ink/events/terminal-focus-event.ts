@@ -1,12 +1,12 @@
-import { Event } from './event.js'
+import { Event } from './event.js';
 
-export type TerminalFocusEventType = 'terminalfocus' | 'terminalblur'
+export type TerminalFocusEventType = 'terminalfocus' | 'terminalblur';
 
 export class TerminalFocusEvent extends Event {
-  readonly type: TerminalFocusEventType
+  readonly type: TerminalFocusEventType;
 
   constructor(type: TerminalFocusEventType) {
-    super()
-    this.type = type
+    super();
+    this.type = type;
   }
 }

@@ -257,7 +257,14 @@ export interface FanoutSynthesizeResult<R, S> {
 
 export interface AdversarialVerifyOptions<T> {
   candidates: T[];
-  verifier: (candidate: T, index: number) => Promise<'confirmed' | 'refuted' | 'needs-human-review'> | 'confirmed' | 'refuted' | 'needs-human-review';
+  verifier: (
+    candidate: T,
+    index: number,
+  ) =>
+    | Promise<'confirmed' | 'refuted' | 'needs-human-review'>
+    | 'confirmed'
+    | 'refuted'
+    | 'needs-human-review';
 }
 
 export interface AdversarialVerifyResult<T> {
@@ -303,15 +310,24 @@ export interface ModelIsolationRoute {
 }
 
 export interface WorkflowHelperAPI {
-  fanoutSynthesize<T, R, S>(options: FanoutSynthesizeOptions<T, R, S>): Promise<FanoutSynthesizeResult<R, S>>;
+  fanoutSynthesize<T, R, S>(
+    options: FanoutSynthesizeOptions<T, R, S>,
+  ): Promise<FanoutSynthesizeResult<R, S>>;
   adversarialVerify<T>(options: AdversarialVerifyOptions<T>): Promise<AdversarialVerifyResult<T>>;
-  generateAndFilter<T>(options: GenerateAndFilterOptions<T>): Promise<{ pattern: 'generate-filter'; generated: number; kept: T[] }>;
+  generateAndFilter<T>(
+    options: GenerateAndFilterOptions<T>,
+  ): Promise<{ pattern: 'generate-filter'; generated: number; kept: T[] }>;
   tournament<T>(options: TournamentOptions<T>): Promise<TournamentResult<T>>;
   loopUntilDone<T>(options: LoopUntilDoneOptions<T>): Promise<LoopUntilDoneResult<T>>;
-  routeModelAndIsolation(task: { label: string; purpose?: string; write?: boolean }): ModelIsolationRoute;
+  routeModelAndIsolation(task: {
+    label: string;
+    purpose?: string;
+    write?: boolean;
+  }): ModelIsolationRoute;
 }
 
-export type WorkflowCall = ((name: string, args?: Record<string, unknown>) => Promise<unknown>) & WorkflowHelperAPI;
+export type WorkflowCall = ((name: string, args?: Record<string, unknown>) => Promise<unknown>) &
+  WorkflowHelperAPI;
 
 export interface WorkflowBudgetPolicy {
   maxAgents?: number;
@@ -368,7 +384,13 @@ export interface WorkflowRecommendation {
   nextAction: string;
 }
 
-export type WorkflowRunControlAction = 'pause' | 'resume' | 'stopRun' | 'stopAgent' | 'restartAgent' | 'saveScript';
+export type WorkflowRunControlAction =
+  | 'pause'
+  | 'resume'
+  | 'stopRun'
+  | 'stopAgent'
+  | 'restartAgent'
+  | 'saveScript';
 
 export interface WorkflowRunControlResult {
   runId: string;

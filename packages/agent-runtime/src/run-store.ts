@@ -81,8 +81,7 @@ export function sweepOrphanRunTempFiles(
   const baseDir = getRunsBaseDir(rootDir);
   if (!existsSync(baseDir)) return 0;
 
-  const cutoff = (options.nowMs ?? Date.now()) -
-    (options.olderThanMs ?? ORPHAN_TEMP_MAX_AGE_MS);
+  const cutoff = (options.nowMs ?? Date.now()) - (options.olderThanMs ?? ORPHAN_TEMP_MAX_AGE_MS);
   let removed = 0;
   const runEntries = (() => {
     try {

@@ -25,12 +25,22 @@ export const REQUIRED_OPENSLACK_LABELS = [
 export async function repairExpiredClaims(options: RepairOptions = {}): Promise<RepairResult[]> {
   const client = await getClient();
   const results: RepairResult[] = [];
-  if (client.isDryRun) { results.push({ action: 'repairExpiredClaims', fixed: false, planned: true, detail: 'Dry-run mode' }); return results; }
+  if (client.isDryRun) {
+    results.push({
+      action: 'repairExpiredClaims',
+      fixed: false,
+      planned: true,
+      detail: 'Dry-run mode',
+    });
+    return results;
+  }
 
   try {
     // List all claim refs
     const { data: refs } = await client.octokit.git.listMatchingRefs({
-      owner: client.owner, repo: client.repo, ref: 'heads/openslack/claims',
+      owner: client.owner,
+      repo: client.repo,
+      ref: 'heads/openslack/claims',
     });
 
     const now = new Date();
@@ -42,30 +52,75 @@ export async function repairExpiredClaims(options: RepairOptions = {}): Promise<
       // Check most recent claim comment for expiry
       try {
         const { data: comments } = await client.octokit.issues.listComments({
-          owner: client.owner, repo: client.repo, issue_number: issueNumber,
-          sort: 'created', direction: 'desc', per_page: 5,
+          owner: client.owner,
+          repo: client.repo,
+          issue_number: issueNumber,
+          sort: 'created',
+          direction: 'desc',
+          per_page: 5,
         });
         const claimComment = comments.find((c) => c.body?.includes('<!-- openslack-claim'));
         if (claimComment) {
           const expiresMatch = claimComment.body?.match(/"expires_at":\s*"([^"]+)"/);
           if (expiresMatch && new Date(expiresMatch[1]) < now) {
             if (options.dryRun) {
-              results.push({ action: 'expireClaim', issueNumber, fixed: false, planned: true, detail: `Would expire claim and return issue to ready` });
+              results.push({
+                action: 'expireClaim',
+                issueNumber,
+                fixed: false,
+                planned: true,
+                detail: `Would expire claim and return issue to ready`,
+              });
               continue;
             }
             // Expired — delete ref, reset to ready
-            try { await client.octokit.git.deleteRef({ owner: client.owner, repo: client.repo, ref: `heads/openslack/claims/issue-${issueNumber}` }); } catch { /* ok */ }
+            try {
+              await client.octokit.git.deleteRef({
+                owner: client.owner,
+                repo: client.repo,
+                ref: `heads/openslack/claims/issue-${issueNumber}`,
+              });
+            } catch {
+              /* ok */
+            }
             const labelsToRemove = ['openslack:claimed', 'openslack:running'];
             for (const l of labelsToRemove) {
-              try { await client.octokit.issues.removeLabel({ owner: client.owner, repo: client.repo, issue_number: issueNumber, name: l }); } catch { /* ok */ }
+              try {
+                await client.octokit.issues.removeLabel({
+                  owner: client.owner,
+                  repo: client.repo,
+                  issue_number: issueNumber,
+                  name: l,
+                });
+              } catch {
+                /* ok */
+              }
             }
-            try { await client.octokit.issues.addLabels({ owner: client.owner, repo: client.repo, issue_number: issueNumber, labels: ['openslack:ready'] }); } catch { /* ok */ }
-            results.push({ action: 'expireClaim', issueNumber, fixed: true, detail: `Claim expired, issue returned to ready` });
+            try {
+              await client.octokit.issues.addLabels({
+                owner: client.owner,
+                repo: client.repo,
+                issue_number: issueNumber,
+                labels: ['openslack:ready'],
+              });
+            } catch {
+              /* ok */
+            }
+            results.push({
+              action: 'expireClaim',
+              issueNumber,
+              fixed: true,
+              detail: `Claim expired, issue returned to ready`,
+            });
           }
         }
-      } catch { /* skip */ }
+      } catch {
+        /* skip */
+      }
     }
-  } catch { /* no claims refs found */ }
+  } catch {
+    /* no claims refs found */
+  }
 
   return results;
 }
@@ -73,23 +128,39 @@ export async function repairExpiredClaims(options: RepairOptions = {}): Promise<
 export async function repairLabels(options: RepairOptions = {}): Promise<RepairResult[]> {
   const client = await getClient();
   const results: RepairResult[] = [];
-  if (client.isDryRun) { results.push({ action: 'repairLabels', fixed: false, planned: true, detail: 'Dry-run mode' }); return results; }
+  if (client.isDryRun) {
+    results.push({ action: 'repairLabels', fixed: false, planned: true, detail: 'Dry-run mode' });
+    return results;
+  }
 
   for (const label of REQUIRED_OPENSLACK_LABELS) {
     if (options.dryRun) {
-      results.push({ action: 'createLabel', fixed: false, planned: true, detail: `Would ensure label exists: ${label.name}` });
+      results.push({
+        action: 'createLabel',
+        fixed: false,
+        planned: true,
+        detail: `Would ensure label exists: ${label.name}`,
+      });
       continue;
     }
     try {
       await client.octokit.issues.createLabel({
-        owner: client.owner, repo: client.repo, name: label.name, color: label.color, description: label.description,
+        owner: client.owner,
+        repo: client.repo,
+        name: label.name,
+        color: label.color,
+        description: label.description,
       });
       results.push({ action: 'createLabel', fixed: true, detail: `Created label: ${label.name}` });
     } catch (e) {
       if ((e as { status?: number }).status === 422) {
         // Already exists — skip
       } else {
-        results.push({ action: 'createLabel', fixed: false, detail: `Failed to create ${label.name}: ${(e as Error).message}` });
+        results.push({
+          action: 'createLabel',
+          fixed: false,
+          detail: `Failed to create ${label.name}: ${(e as Error).message}`,
+        });
       }
     }
   }

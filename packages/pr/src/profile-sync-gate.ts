@@ -9,7 +9,10 @@ function isProfileSyncPR(changedFiles: string[], branchName: string, body: strin
     return true;
   }
   // Check PR body metadata block
-  if (body.includes('```openslack-profile-sync-metadata') || body.includes('profile: sync latest')) {
+  if (
+    body.includes('```openslack-profile-sync-metadata') ||
+    body.includes('profile: sync latest')
+  ) {
     return true;
   }
   // Check if only profile/README.md is modified
@@ -39,7 +42,10 @@ function extractPostsIncluded(body: string): number | null {
   return match ? parseInt(match[1], 10) : null;
 }
 
-function isPatchWithinMarkerRange(patch: string, marker: string): { valid: boolean; detail: string } {
+function isPatchWithinMarkerRange(
+  patch: string,
+  marker: string,
+): { valid: boolean; detail: string } {
   const startMarker = `<!-- openslack:${marker}:start -->`;
   const endMarker = `<!-- openslack:${marker}:end -->`;
 
@@ -66,7 +72,11 @@ function isPatchWithinMarkerRange(patch: string, marker: string): { valid: boole
 
   for (let i = 0; i < hunkLines.length; i++) {
     const line = hunkLines[i];
-    if ((line.startsWith('+') || line.startsWith('-')) && !line.startsWith('+++') && !line.startsWith('---')) {
+    if (
+      (line.startsWith('+') || line.startsWith('-')) &&
+      !line.startsWith('+++') &&
+      !line.startsWith('---')
+    ) {
       const content = line.slice(1).trim();
 
       // Marker itself must not be modified

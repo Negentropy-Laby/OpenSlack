@@ -36,7 +36,10 @@ interface TokenCache {
 
 export class GitHubAppTokenError extends Error {
   readonly code:
-    'APP_CONFIG_MISSING' | 'APP_CONFIG_INVALID' | 'APP_TOKEN_REQUEST_FAILED' | 'APP_TOKEN_INVALID';
+    | 'APP_CONFIG_MISSING'
+    | 'APP_CONFIG_INVALID'
+    | 'APP_TOKEN_REQUEST_FAILED'
+    | 'APP_TOKEN_INVALID';
 
   constructor(code: GitHubAppTokenError['code'], message: string) {
     super(message);

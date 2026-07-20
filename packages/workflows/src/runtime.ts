@@ -176,7 +176,8 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
       _resolvedLauncher = options.agentLauncher;
       return _resolvedLauncher;
     }
-    const { createOpenSlackAgentLauncher, createRunStore } = await import('@openslack/agent-runtime');
+    const { createOpenSlackAgentLauncher, createRunStore } =
+      await import('@openslack/agent-runtime');
     const launcher = createOpenSlackAgentLauncher({
       runStore: createRunStore(options.rootDir),
       rootDir: options.rootDir,
@@ -269,13 +270,18 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
   workflowCall.generateAndFilter = async (helperOptions) => {
     const generated = await helperOptions.generate();
     const kept = await helperOptions.filter(generated);
-    const capped = typeof helperOptions.topK === 'number' ? kept.slice(0, helperOptions.topK) : kept;
+    const capped =
+      typeof helperOptions.topK === 'number' ? kept.slice(0, helperOptions.topK) : kept;
     return { pattern: 'generate-filter', generated: generated.length, kept: capped };
   };
 
   workflowCall.tournament = async (helperOptions) => {
     let contestants = [...helperOptions.contestants];
-    const rounds: Array<{ left: (typeof contestants)[number]; right: (typeof contestants)[number]; winner: (typeof contestants)[number] }> = [];
+    const rounds: Array<{
+      left: (typeof contestants)[number];
+      right: (typeof contestants)[number];
+      winner: (typeof contestants)[number];
+    }> = [];
     while (contestants.length > 1) {
       const next: typeof contestants = [];
       for (let i = 0; i < contestants.length; i += 2) {
@@ -316,7 +322,8 @@ export function createRuntime(options: RuntimeOptions): WorkflowRuntime {
 
   workflowCall.routeModelAndIsolation = (task) => {
     const purpose = task.purpose?.toLowerCase() ?? task.label.toLowerCase();
-    const strong = purpose.includes('security') ||
+    const strong =
+      purpose.includes('security') ||
       purpose.includes('architecture') ||
       purpose.includes('verify') ||
       purpose.includes('synthesize');

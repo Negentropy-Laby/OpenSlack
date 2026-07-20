@@ -1,14 +1,11 @@
-const KNOWN_BOTS = new Set([
-  'github-actions',
-  'openslack-bot',
-  'dependabot',
-  'renovate',
-]);
+const KNOWN_BOTS = new Set(['github-actions', 'openslack-bot', 'dependabot', 'renovate']);
 
 export function isBotUser(user: string): boolean {
-  return user.endsWith('[bot]')
-    || user.toLowerCase().startsWith('app/')
-    || KNOWN_BOTS.has(user.toLowerCase());
+  return (
+    user.endsWith('[bot]') ||
+    user.toLowerCase().startsWith('app/') ||
+    KNOWN_BOTS.has(user.toLowerCase())
+  );
 }
 
 export function filterValidApprovals(

@@ -1,21 +1,21 @@
-import type { SubagentDefinition } from '@openslack/kernel'
-import { sanitizeTerminalText } from '../sanitize.js'
+import type { SubagentDefinition } from '@openslack/kernel';
+import { sanitizeTerminalText } from '../sanitize.js';
 
 export interface AgentDetailItem {
-  name: string
-  source: string
-  description: string
-  model?: string
-  tools: string[]
-  deniedTools: string[]
-  memory: string
-  isolation: string
-  canSpawn: boolean
-  maxTurns?: number
+  name: string;
+  source: string;
+  description: string;
+  model?: string;
+  tools: string[];
+  deniedTools: string[];
+  memory: string;
+  isolation: string;
+  canSpawn: boolean;
+  maxTurns?: number;
 }
 
 export function mapSubagentToViewModel(agent: SubagentDefinition): AgentDetailItem {
-  const s = sanitizeTerminalText
+  const s = sanitizeTerminalText;
 
   return {
     name: s(agent.name),
@@ -26,7 +26,7 @@ export function mapSubagentToViewModel(agent: SubagentDefinition): AgentDetailIt
     deniedTools: (agent.disallowedTools ?? []).map(s),
     memory: agent.memory ?? 'none',
     isolation: agent.isolation ?? 'none',
-    canSpawn: (agent.tools ?? []).some(t => t === 'spawn_subagent' || t === 'Task'),
+    canSpawn: (agent.tools ?? []).some((t) => t === 'spawn_subagent' || t === 'Task'),
     maxTurns: agent.maxTurns,
-  }
+  };
 }

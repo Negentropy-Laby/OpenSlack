@@ -1,27 +1,27 @@
-import React from 'react'
-import Box from '../ink/components/Box.js'
-import Text from '../ink/components/Text.js'
-import useApp from '../ink/hooks/use-app.js'
-import useInput from '../ink/hooks/use-input.js'
-import Divider from '../design-system/Divider.js'
-import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
-import ListItem from '../design-system/ListItem.js'
-import Pane from '../design-system/Pane.js'
-import StatusIcon from '../design-system/StatusIcon.js'
-import ThemedText from '../design-system/ThemedText.js'
-import type { RepositoryPrProjectionViewModel } from '../view-models/repository-pr-projection.js'
+import React from 'react';
+import Box from '../ink/components/Box.js';
+import Text from '../ink/components/Text.js';
+import useApp from '../ink/hooks/use-app.js';
+import useInput from '../ink/hooks/use-input.js';
+import Divider from '../design-system/Divider.js';
+import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js';
+import ListItem from '../design-system/ListItem.js';
+import Pane from '../design-system/Pane.js';
+import StatusIcon from '../design-system/StatusIcon.js';
+import ThemedText from '../design-system/ThemedText.js';
+import type { RepositoryPrProjectionViewModel } from '../view-models/repository-pr-projection.js';
 
 export interface RepositoryPrProjectionViewProps {
-  model: RepositoryPrProjectionViewModel
+  model: RepositoryPrProjectionViewModel;
 }
 
 export default function RepositoryPrProjectionView({
   model,
 }: RepositoryPrProjectionViewProps): React.JSX.Element {
-  const { exit } = useApp()
+  const { exit } = useApp();
   useInput((input, key) => {
-    if (input === 'q' || key.escape) exit()
-  })
+    if (input === 'q' || key.escape) exit();
+  });
 
   return React.createElement(
     Box,
@@ -39,16 +39,8 @@ export default function RepositoryPrProjectionView({
         `Repositories: ${model.repositoryCount} | PRs: ${model.itemCount} | API: ${model.budgetLabel}`,
       ),
     ),
-    React.createElement(
-      ThemedText,
-      { colorTheme: 'warning' },
-      model.authorityLabel,
-    ),
-    React.createElement(
-      ThemedText,
-      { colorTheme: 'muted' },
-      `Fetched: ${model.fetchedAt}`,
-    ),
+    React.createElement(ThemedText, { colorTheme: 'warning' }, model.authorityLabel),
+    React.createElement(ThemedText, { colorTheme: 'muted' }, `Fetched: ${model.fetchedAt}`),
     React.createElement(Divider, { length: 60 }),
     model.items.length > 0
       ? React.createElement(
@@ -70,5 +62,5 @@ export default function RepositoryPrProjectionView({
       { flexDirection: 'row' },
       React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'exit' }),
     ),
-  )
+  );
 }

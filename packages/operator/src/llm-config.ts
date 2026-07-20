@@ -3,10 +3,7 @@
  *
  * SECURITY: This module must NEVER include the API key value in its output.
  */
-import {
-  getLLMPlannerProvider,
-  type LLMPlannerProviderRegistryPort,
-} from './llm.js';
+import { getLLMPlannerProvider, type LLMPlannerProviderRegistryPort } from './llm.js';
 
 export interface LLMConfigStatus {
   mode: 'llm-first' | 'keyword-only' | 'misconfigured';

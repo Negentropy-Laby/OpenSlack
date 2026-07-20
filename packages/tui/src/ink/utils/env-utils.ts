@@ -1,1 +1,1 @@
-export { isEnvTruthy } from '../../utils/env-utils.js'
+export { isEnvTruthy } from '../../utils/env-utils.js';
