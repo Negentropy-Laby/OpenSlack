@@ -3,9 +3,7 @@
 // detectFormat should return 'anthropic-compatible' (has meta, no preview/run).
 
 export const meta = {
-  name: "meta-only",
-  description: "Meta-only claude workflow",
-  phases: [
-    { title: "Scan", detail: "Scan phase" }
-  ]
-}
+  name: 'meta-only',
+  description: 'Meta-only claude workflow',
+  phases: [{ title: 'Scan', detail: 'Scan phase' }],
+};

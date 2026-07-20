@@ -10,7 +10,11 @@ function recordBlockedEvent(
     recEvt({
       type: 'task.blocked',
       actor: { id: agentId, kind: 'agent', provider: 'github' },
-      object: { kind: 'issue', id: `${event.owner}/${event.repo}#${event.issueNumber}`, url: event.url },
+      object: {
+        kind: 'issue',
+        id: `${event.owner}/${event.repo}#${event.issueNumber}`,
+        url: event.url,
+      },
       source: { kind: 'github', ref: 'github.watch.auto_claim' },
       summary: `Auto-claim blocked: ${agentId} on ${event.owner}/${event.repo}#${event.issueNumber} — ${reason}`,
       visibility: 'local',
@@ -35,7 +39,12 @@ export function buildAutoClaimFn(root: string): AutoClaimFn {
       const resolved = resolveAgentPrincipal({ root, agentId, provider: 'github' });
       if ('error' in resolved) {
         console.warn(`[Auto-Claim] ${agentId}: ${resolved.error}`);
-        recordBlockedEvent(recEvt, event, agentId, `principal resolution failed: ${resolved.error}`);
+        recordBlockedEvent(
+          recEvt,
+          event,
+          agentId,
+          `principal resolution failed: ${resolved.error}`,
+        );
         continue;
       }
 
@@ -82,12 +91,18 @@ export function buildAutoClaimFn(root: string): AutoClaimFn {
           principal: resolved.principal,
         });
         if (claimResult.claimStatus === 'granted') {
-          console.log(`[Auto-Claim] ${agentId} claimed ${event.owner}/${event.repo}#${event.issueNumber}`);
+          console.log(
+            `[Auto-Claim] ${agentId} claimed ${event.owner}/${event.repo}#${event.issueNumber}`,
+          );
           try {
             recEvt({
               type: 'task.claimed',
               actor: { id: agentId, kind: 'agent', provider: 'github' },
-              object: { kind: 'issue', id: `${event.owner}/${event.repo}#${event.issueNumber}`, url: event.url },
+              object: {
+                kind: 'issue',
+                id: `${event.owner}/${event.repo}#${event.issueNumber}`,
+                url: event.url,
+              },
               source: { kind: 'github', ref: 'github.watch.auto_claim' },
               summary: `Auto-claim: ${agentId} claimed ${event.owner}/${event.repo}#${event.issueNumber}`,
               visibility: 'local',
@@ -98,8 +113,15 @@ export function buildAutoClaimFn(root: string): AutoClaimFn {
             // best-effort event recording
           }
         } else {
-          console.warn(`[Auto-Claim] ${agentId}: claim denied — ${claimResult.reason ?? 'unknown'}`);
-          recordBlockedEvent(recEvt, event, agentId, `claim denied: ${claimResult.reason ?? 'unknown'}`);
+          console.warn(
+            `[Auto-Claim] ${agentId}: claim denied — ${claimResult.reason ?? 'unknown'}`,
+          );
+          recordBlockedEvent(
+            recEvt,
+            event,
+            agentId,
+            `claim denied: ${claimResult.reason ?? 'unknown'}`,
+          );
         }
       } catch (err) {
         console.warn(`[Auto-Claim] ${agentId}: claim failed — ${(err as Error).message}`);

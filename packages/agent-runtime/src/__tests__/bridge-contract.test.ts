@@ -6,7 +6,11 @@ import {
   buildBridgeEnvelope,
   validateBridgeEnvelope,
 } from '../bridge-contract.js';
-import type { BridgeEnvelope, BridgeEnvelopeKind, BridgeCapabilityDescriptor } from '../bridge-contract.js';
+import type {
+  BridgeEnvelope,
+  BridgeEnvelopeKind,
+  BridgeCapabilityDescriptor,
+} from '../bridge-contract.js';
 
 describe('BRIDGE_PROTOCOL_VERSION', () => {
   it('has a date-based version string', () => {
@@ -220,37 +224,73 @@ describe('validateBridgeEnvelope', () => {
   });
 
   it('rejects missing protocolVersion', () => {
-    const result = validateBridgeEnvelope({ sessionId: 's', correlationId: 'r', timestamp: 't', kind: 'progress', payload: {} });
+    const result = validateBridgeEnvelope({
+      sessionId: 's',
+      correlationId: 'r',
+      timestamp: 't',
+      kind: 'progress',
+      payload: {},
+    });
     expect(result.valid).toBe(false);
     expect(result.error).toContain('protocolVersion');
   });
 
   it('rejects missing sessionId', () => {
-    const result = validateBridgeEnvelope({ protocolVersion: BRIDGE_PROTOCOL_VERSION, correlationId: 'r', timestamp: 't', kind: 'progress', payload: {} });
+    const result = validateBridgeEnvelope({
+      protocolVersion: BRIDGE_PROTOCOL_VERSION,
+      correlationId: 'r',
+      timestamp: 't',
+      kind: 'progress',
+      payload: {},
+    });
     expect(result.valid).toBe(false);
     expect(result.error).toContain('sessionId');
   });
 
   it('rejects missing correlationId', () => {
-    const result = validateBridgeEnvelope({ protocolVersion: BRIDGE_PROTOCOL_VERSION, sessionId: 's', timestamp: 't', kind: 'progress', payload: {} });
+    const result = validateBridgeEnvelope({
+      protocolVersion: BRIDGE_PROTOCOL_VERSION,
+      sessionId: 's',
+      timestamp: 't',
+      kind: 'progress',
+      payload: {},
+    });
     expect(result.valid).toBe(false);
     expect(result.error).toContain('correlationId');
   });
 
   it('rejects missing timestamp', () => {
-    const result = validateBridgeEnvelope({ protocolVersion: BRIDGE_PROTOCOL_VERSION, sessionId: 's', correlationId: 'r', kind: 'progress', payload: {} });
+    const result = validateBridgeEnvelope({
+      protocolVersion: BRIDGE_PROTOCOL_VERSION,
+      sessionId: 's',
+      correlationId: 'r',
+      kind: 'progress',
+      payload: {},
+    });
     expect(result.valid).toBe(false);
     expect(result.error).toContain('timestamp');
   });
 
   it('rejects missing kind', () => {
-    const result = validateBridgeEnvelope({ protocolVersion: BRIDGE_PROTOCOL_VERSION, sessionId: 's', correlationId: 'r', timestamp: 't', payload: {} });
+    const result = validateBridgeEnvelope({
+      protocolVersion: BRIDGE_PROTOCOL_VERSION,
+      sessionId: 's',
+      correlationId: 'r',
+      timestamp: 't',
+      payload: {},
+    });
     expect(result.valid).toBe(false);
     expect(result.error).toContain('kind');
   });
 
   it('rejects missing payload', () => {
-    const result = validateBridgeEnvelope({ protocolVersion: BRIDGE_PROTOCOL_VERSION, sessionId: 's', correlationId: 'r', timestamp: 't', kind: 'progress' });
+    const result = validateBridgeEnvelope({
+      protocolVersion: BRIDGE_PROTOCOL_VERSION,
+      sessionId: 's',
+      correlationId: 'r',
+      timestamp: 't',
+      kind: 'progress',
+    });
     expect(result.valid).toBe(false);
     expect(result.error).toContain('payload');
   });
@@ -342,7 +382,12 @@ describe('BridgeContract interface (type check)', () => {
     expect(caps).toHaveLength(1);
     expect(mockContract.negotiateCapabilities).toHaveBeenCalled();
 
-    const sessionState = await mockContract.openSession({ runId: 'r1', agentId: 'a1', prompt: 'test', permissionProfile: { allowedTools: [], deniedTools: [], permissionMode: 'plan' } });
+    const sessionState = await mockContract.openSession({
+      runId: 'r1',
+      agentId: 'a1',
+      prompt: 'test',
+      permissionProfile: { allowedTools: [], deniedTools: [], permissionMode: 'plan' },
+    });
     expect(sessionState).toBe('ready');
     expect(mockContract.openSession).toHaveBeenCalled();
 
@@ -350,7 +395,10 @@ describe('BridgeContract interface (type check)', () => {
     expect(closeState).toBe('shutdown');
     expect(mockContract.closeSession).toHaveBeenCalled();
 
-    await mockContract.sendEnvelope('sess-1', buildBridgeEnvelope('sess-1', 'run-1', 'progress', {}));
+    await mockContract.sendEnvelope(
+      'sess-1',
+      buildBridgeEnvelope('sess-1', 'run-1', 'progress', {}),
+    );
     expect(mockContract.sendEnvelope).toHaveBeenCalled();
 
     const health = await mockContract.healthCheck();

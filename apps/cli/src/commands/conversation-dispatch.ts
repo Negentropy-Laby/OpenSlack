@@ -110,9 +110,7 @@ export async function dispatchConversationAgentMessage(input: {
   }
 
   const responseText =
-    typeof runResult.data === 'string'
-      ? runResult.data
-      : JSON.stringify(runResult.data, null, 2);
+    typeof runResult.data === 'string' ? runResult.data : JSON.stringify(runResult.data, null, 2);
 
   appendMessage(
     threadId,

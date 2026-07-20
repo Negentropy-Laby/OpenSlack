@@ -32,9 +32,9 @@ function createFakeAbyRoot(root: string): string {
   writeFileSync(
     join(entrypointDir, 'runEntrypoint.ts'),
     [
-      "const target = process.argv[2];",
+      'const target = process.argv[2];',
       "if (!target) throw new Error('missing entrypoint target');",
-      "await import(target);",
+      'await import(target);',
     ].join('\n'),
     'utf-8',
   );
@@ -45,19 +45,19 @@ function createFakeAbyRoot(root: string): string {
       "import { stdin, stdout, env } from 'node:process';",
       "let buffer = '';",
       "stdin.setEncoding('utf8');",
-      "function envelope(input, kind, payload) {",
+      'function envelope(input, kind, payload) {',
       "  return JSON.stringify({ protocolVersion: input.protocolVersion, sessionId: input.sessionId, correlationId: input.correlationId, timestamp: new Date().toISOString(), kind, payload }) + '\\n';",
-      "}",
+      '}',
       "stdin.on('data', chunk => {",
-      "  buffer += chunk;",
+      '  buffer += chunk;',
       "  const lines = buffer.split('\\n');",
       "  buffer = lines.pop() ?? '';",
-      "  for (const line of lines) {",
-      "    if (!line.trim()) continue;",
-      "    const input = JSON.parse(line);",
+      '  for (const line of lines) {',
+      '    if (!line.trim()) continue;',
+      '    const input = JSON.parse(line);',
       "    if (input.kind === 'handshake_request') {",
       "      stdout.write(envelope(input, 'handshake_response', { accepted: true }));",
-      "    }",
+      '    }',
       "    if (input.kind === 'run_request') {",
       "      stdout.write(envelope(input, 'run_started', { runId: input.payload.runId }));",
       "      stdout.write(envelope(input, 'assistant_text', { text: 'fake aby response' }));",
@@ -65,9 +65,9 @@ function createFakeAbyRoot(root: string): string {
       "      stdout.write(envelope(input, 'tool_request', { toolName: 'Read', input: { path: 'README.md' } }));",
       "      stdout.write(envelope(input, 'tool_response', { toolName: 'Read', output: { found: true } }));",
       "      stdout.write(envelope(input, 'complete', { data: { response: 'fake aby complete', payload: input.payload, envAudit: { safeRunner: env.AGENT_RUN_BRIDGE_RUNNER, unsafePresent: Boolean(env.OPENSLACK_PRIVATE_KEY) } }, tokenUsage: 7 }));",
-      "    }",
-      "  }",
-      "});",
+      '    }',
+      '  }',
+      '});',
     ].join('\n'),
     'utf-8',
   );
@@ -141,17 +141,37 @@ describe('Aby process bridge smoke', () => {
     expect(result.data.response).toBe('fake aby complete');
     expect(result.data.payload.input).toEqual([{ role: 'user', content: 'inspect README' }]);
     expect(result.data.payload.mcp).toEqual({ required: ['github'], available: ['github'] });
-    expect((result.data.payload.metadata as Record<string, unknown>).integrationId).toBe('openslack');
-    expect((result.data.payload.metadata as Record<string, unknown>).threadId).toBe('CONV-20260603-ABCDEFGH');
+    expect((result.data.payload.metadata as Record<string, unknown>).integrationId).toBe(
+      'openslack',
+    );
+    expect((result.data.payload.metadata as Record<string, unknown>).threadId).toBe(
+      'CONV-20260603-ABCDEFGH',
+    );
     expect(result.data.envAudit.safeRunner).toBe('fake');
     expect(result.data.envAudit.unsafePresent).toBe(false);
 
     const transcript = readTranscript(result.runId, root);
-    expect(transcript.some((event) => event.type === 'progress' && event.data.step === 'bridge_session_started')).toBe(true);
-    expect(transcript.some((event) => event.type === 'progress' && event.data.step === 'bridge_run_started')).toBe(true);
-    expect(transcript.some((event) => event.type === 'progress' && event.data.step === 'bridge_assistant_text')).toBe(true);
-    expect(transcript.some((event) => event.type === 'tool_call' && event.data.toolName === 'Read')).toBe(true);
-    expect(transcript.some((event) => event.type === 'tool_result' && event.data.toolName === 'Read')).toBe(true);
+    expect(
+      transcript.some(
+        (event) => event.type === 'progress' && event.data.step === 'bridge_session_started',
+      ),
+    ).toBe(true);
+    expect(
+      transcript.some(
+        (event) => event.type === 'progress' && event.data.step === 'bridge_run_started',
+      ),
+    ).toBe(true);
+    expect(
+      transcript.some(
+        (event) => event.type === 'progress' && event.data.step === 'bridge_assistant_text',
+      ),
+    ).toBe(true);
+    expect(
+      transcript.some((event) => event.type === 'tool_call' && event.data.toolName === 'Read'),
+    ).toBe(true);
+    expect(
+      transcript.some((event) => event.type === 'tool_result' && event.data.toolName === 'Read'),
+    ).toBe(true);
     expect(transcript.some((event) => event.type === 'complete')).toBe(true);
 
     const run = store.getRun(result.runId);

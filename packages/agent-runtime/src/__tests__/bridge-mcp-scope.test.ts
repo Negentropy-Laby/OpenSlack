@@ -17,10 +17,7 @@ describe('negotiateMcpServers', () => {
   });
 
   it('returns available servers that match', () => {
-    const result = negotiateMcpServers(
-      [{ name: 'server1' }, { name: 'server2' }],
-      ['server1'],
-    );
+    const result = negotiateMcpServers([{ name: 'server1' }, { name: 'server2' }], ['server1']);
     expect(result.available).toHaveLength(1);
     expect(result.available[0].name).toBe('server1');
     expect(result.missing).toHaveLength(1);
@@ -37,10 +34,7 @@ describe('negotiateMcpServers', () => {
   });
 
   it('returns all missing when no available servers', () => {
-    const result = negotiateMcpServers(
-      [{ name: 'server1' }, { name: 'server2' }],
-      [],
-    );
+    const result = negotiateMcpServers([{ name: 'server1' }, { name: 'server2' }], []);
     expect(result.available).toHaveLength(0);
     expect(result.missing).toHaveLength(2);
   });
@@ -72,20 +66,14 @@ describe('validateRequiredMcpServers', () => {
   });
 
   it('throws AgentUnavailableError when required server missing', () => {
-    expect(() =>
-      validateRequiredMcpServers(
-        [{ name: 'server1', required: true }],
-        [],
-      ),
-    ).toThrow(AgentUnavailableError);
+    expect(() => validateRequiredMcpServers([{ name: 'server1', required: true }], [])).toThrow(
+      AgentUnavailableError,
+    );
   });
 
   it('throws with missing server names', () => {
     try {
-      validateRequiredMcpServers(
-        [{ name: 'git' }, { name: 'github' }],
-        ['git'],
-      );
+      validateRequiredMcpServers([{ name: 'git' }, { name: 'github' }], ['git']);
       expect.fail('should have thrown');
     } catch (err) {
       expect(err).toBeInstanceOf(AgentUnavailableError);
@@ -95,10 +83,7 @@ describe('validateRequiredMcpServers', () => {
 
   it('does not throw for optional missing servers', () => {
     expect(() =>
-      validateRequiredMcpServers(
-        [{ name: 'server1', required: false }],
-        [],
-      ),
+      validateRequiredMcpServers([{ name: 'server1', required: false }], []),
     ).not.toThrow();
   });
 });
@@ -152,10 +137,7 @@ describe('validateMcpToolNamespace', () => {
   });
 
   it('flags malformed tool names', () => {
-    const result = validateMcpToolNamespace(
-      ['mcp.invalid', 'mcp.server.tool'],
-      ['server'],
-    );
+    const result = validateMcpToolNamespace(['mcp.invalid', 'mcp.server.tool'], ['server']);
     expect(result.valid).toHaveLength(1);
     expect(result.invalid).toHaveLength(1);
     expect(result.invalid[0].tool).toBe('mcp.invalid');

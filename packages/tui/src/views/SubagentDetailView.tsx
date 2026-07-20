@@ -1,32 +1,32 @@
-import React from 'react'
-import Box from '../ink/components/Box.js'
-import Text from '../ink/components/Text.js'
-import useApp from '../ink/hooks/use-app.js'
-import useInput from '../ink/hooks/use-input.js'
-import Pane from '../design-system/Pane.js'
-import ThemedText from '../design-system/ThemedText.js'
-import Divider from '../design-system/Divider.js'
-import StatusIcon from '../design-system/StatusIcon.js'
-import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
-import type { AgentDetailItem } from '../view-models/agent-detail.js'
+import React from 'react';
+import Box from '../ink/components/Box.js';
+import Text from '../ink/components/Text.js';
+import useApp from '../ink/hooks/use-app.js';
+import useInput from '../ink/hooks/use-input.js';
+import Pane from '../design-system/Pane.js';
+import ThemedText from '../design-system/ThemedText.js';
+import Divider from '../design-system/Divider.js';
+import StatusIcon from '../design-system/StatusIcon.js';
+import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js';
+import type { AgentDetailItem } from '../view-models/agent-detail.js';
 
 export type SubagentDetailViewProps = {
-  model: AgentDetailItem
-  onBack?: () => void
-}
+  model: AgentDetailItem;
+  onBack?: () => void;
+};
 
 export default function SubagentDetailView({
   model,
   onBack,
 }: SubagentDetailViewProps): React.JSX.Element {
-  const { exit } = useApp()
+  const { exit } = useApp();
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
-      if (onBack) onBack()
-      else exit()
+      if (onBack) onBack();
+      else exit();
     }
-  })
+  });
 
   return React.createElement(
     Box,
@@ -41,7 +41,9 @@ export default function SubagentDetailView({
     React.createElement(Divider, { length: 40 }),
 
     // Identity section
-    React.createElement(Pane, { title: 'Identity', marginY: 0 },
+    React.createElement(
+      Pane,
+      { title: 'Identity', marginY: 0 },
       React.createElement(
         Box,
         { flexDirection: 'column' },
@@ -71,7 +73,9 @@ export default function SubagentDetailView({
     ),
 
     // Capabilities section
-    React.createElement(Pane, { title: 'Capabilities', marginY: 0 },
+    React.createElement(
+      Pane,
+      { title: 'Capabilities', marginY: 0 },
       React.createElement(
         Box,
         { flexDirection: 'column' },
@@ -81,7 +85,7 @@ export default function SubagentDetailView({
           { flexDirection: 'column' },
           React.createElement(ThemedText, { colorTheme: 'muted' }, 'Tools:'),
           ...(model.tools.length > 0
-            ? model.tools.map(tool =>
+            ? model.tools.map((tool) =>
                 React.createElement(
                   Box,
                   { key: tool, marginLeft: 2, flexDirection: 'row' },
@@ -90,7 +94,13 @@ export default function SubagentDetailView({
                   React.createElement(ThemedText, { colorTheme: 'foreground' }, tool),
                 ),
               )
-            : [React.createElement(ThemedText, { key: 'none', colorTheme: 'muted', dim: true }, '  (none)')]),
+            : [
+                React.createElement(
+                  ThemedText,
+                  { key: 'none', colorTheme: 'muted', dim: true },
+                  '  (none)',
+                ),
+              ]),
         ),
         // Denied tools
         ...(model.deniedTools.length > 0
@@ -99,7 +109,7 @@ export default function SubagentDetailView({
                 Box,
                 { flexDirection: 'column', marginTop: 0 },
                 React.createElement(ThemedText, { colorTheme: 'muted' }, 'Denied Tools:'),
-                ...model.deniedTools.map(tool =>
+                ...model.deniedTools.map((tool) =>
                   React.createElement(
                     Box,
                     { key: `denied-${tool}`, marginLeft: 2, flexDirection: 'row' },
@@ -118,7 +128,11 @@ export default function SubagentDetailView({
                 Box,
                 { flexDirection: 'row', marginTop: 0 },
                 React.createElement(ThemedText, { colorTheme: 'muted' }, 'Max Turns: '),
-                React.createElement(ThemedText, { colorTheme: 'foreground' }, String(model.maxTurns)),
+                React.createElement(
+                  ThemedText,
+                  { colorTheme: 'foreground' },
+                  String(model.maxTurns),
+                ),
               ),
             ]
           : []),
@@ -126,7 +140,9 @@ export default function SubagentDetailView({
     ),
 
     // Policy section
-    React.createElement(Pane, { title: 'Policy', marginY: 0 },
+    React.createElement(
+      Pane,
+      { title: 'Policy', marginY: 0 },
       React.createElement(
         Box,
         { flexDirection: 'column' },
@@ -146,12 +162,13 @@ export default function SubagentDetailView({
           Box,
           { flexDirection: 'row' },
           React.createElement(ThemedText, { colorTheme: 'muted' }, 'Can Spawn: '),
-          React.createElement(
-            StatusIcon,
-            { category: model.canSpawn ? 'pass' : 'info' },
-          ),
+          React.createElement(StatusIcon, { category: model.canSpawn ? 'pass' : 'info' }),
           React.createElement(Text, null, ' '),
-          React.createElement(ThemedText, { colorTheme: 'foreground' }, model.canSpawn ? 'Yes' : 'No'),
+          React.createElement(
+            ThemedText,
+            { colorTheme: 'foreground' },
+            model.canSpawn ? 'Yes' : 'No',
+          ),
         ),
       ),
     ),
@@ -163,5 +180,5 @@ export default function SubagentDetailView({
       { flexDirection: 'row' },
       React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'back' }),
     ),
-  )
+  );
 }

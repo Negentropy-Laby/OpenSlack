@@ -10,7 +10,9 @@ function makeBody(overrides: Record<string, unknown> = {}): string {
     risk_level: 'low',
     ...overrides,
   };
-  return 'Some issue description\n\n```openslack-task\n' + JSON.stringify(manifest, null, 2) + '\n```\n';
+  return (
+    'Some issue description\n\n```openslack-task\n' + JSON.stringify(manifest, null, 2) + '\n```\n'
+  );
 }
 
 describe('riskLevelToZone', () => {

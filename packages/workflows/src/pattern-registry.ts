@@ -1,11 +1,14 @@
-import type { WorkflowPatternManifest } from './types.js'
+import type { WorkflowPatternManifest } from './types.js';
 
 const PATTERNS: WorkflowPatternManifest[] = [
   {
     id: 'classify-and-act',
     name: 'Classify And Act',
     description: 'Classify each work item, then route it to the correct agent or workflow branch.',
-    argsSchema: { type: 'object', properties: { items: { type: 'array' }, routes: { type: 'object' } } },
+    argsSchema: {
+      type: 'object',
+      properties: { items: { type: 'array' }, routes: { type: 'object' } },
+    },
     defaultRisk: 'low',
     phases: [
       { title: 'Classify', detail: 'Classify each item into a route.' },
@@ -18,8 +21,12 @@ const PATTERNS: WorkflowPatternManifest[] = [
   {
     id: 'fanout-synthesize',
     name: 'Fan-Out And Synthesize',
-    description: 'Fan work out to independent agents, then synthesize structured results at a barrier.',
-    argsSchema: { type: 'object', properties: { scope: { type: 'string' }, outputSchema: { type: 'object' } } },
+    description:
+      'Fan work out to independent agents, then synthesize structured results at a barrier.',
+    argsSchema: {
+      type: 'object',
+      properties: { scope: { type: 'string' }, outputSchema: { type: 'object' } },
+    },
     defaultRisk: 'low',
     phases: [
       { title: 'Partition', detail: 'Split the input set into independent work items.' },
@@ -32,8 +39,12 @@ const PATTERNS: WorkflowPatternManifest[] = [
   {
     id: 'adversarial-verification',
     name: 'Adversarial Verification',
-    description: 'Have independent verifier agents confirm, refute, or escalate candidate findings.',
-    argsSchema: { type: 'object', properties: { candidates: { type: 'array' }, rubric: { type: 'string' } } },
+    description:
+      'Have independent verifier agents confirm, refute, or escalate candidate findings.',
+    argsSchema: {
+      type: 'object',
+      properties: { candidates: { type: 'array' }, rubric: { type: 'string' } },
+    },
     defaultRisk: 'low',
     phases: [
       { title: 'Generate', detail: 'Collect candidate findings or claims.' },
@@ -46,8 +57,12 @@ const PATTERNS: WorkflowPatternManifest[] = [
   {
     id: 'generate-filter',
     name: 'Generate And Filter',
-    description: 'Generate many candidates, filter and dedupe them, then keep only the best outputs.',
-    argsSchema: { type: 'object', properties: { topK: { type: 'number' }, dedupeBy: { type: 'string' } } },
+    description:
+      'Generate many candidates, filter and dedupe them, then keep only the best outputs.',
+    argsSchema: {
+      type: 'object',
+      properties: { topK: { type: 'number' }, dedupeBy: { type: 'string' } },
+    },
     defaultRisk: 'low',
     phases: [
       { title: 'Generate', detail: 'Produce candidate alternatives.' },
@@ -61,7 +76,10 @@ const PATTERNS: WorkflowPatternManifest[] = [
     id: 'tournament',
     name: 'Tournament',
     description: 'Compare candidates pairwise until a winner or ranked shortlist emerges.',
-    argsSchema: { type: 'object', properties: { contestants: { type: 'array' }, bracket: { enum: ['single-elimination'] } } },
+    argsSchema: {
+      type: 'object',
+      properties: { contestants: { type: 'array' }, bracket: { enum: ['single-elimination'] } },
+    },
     defaultRisk: 'low',
     phases: [
       { title: 'Seed', detail: 'Seed contestants into a bracket.' },
@@ -75,7 +93,11 @@ const PATTERNS: WorkflowPatternManifest[] = [
     id: 'loop-until-done',
     name: 'Loop Until Done',
     description: 'Repeat a bounded workflow loop until a stop condition is satisfied.',
-    argsSchema: { type: 'object', required: ['until', 'maxIterations'], properties: { until: { type: 'string' }, maxIterations: { type: 'number' } } },
+    argsSchema: {
+      type: 'object',
+      required: ['until', 'maxIterations'],
+      properties: { until: { type: 'string' }, maxIterations: { type: 'number' } },
+    },
     defaultRisk: 'medium',
     phases: [
       { title: 'Run Iteration', detail: 'Execute one bounded iteration.' },
@@ -88,7 +110,8 @@ const PATTERNS: WorkflowPatternManifest[] = [
   {
     id: 'model-router',
     name: 'Model Router',
-    description: 'Route classification, verification, synthesis, and write tasks to suitable models and isolation modes.',
+    description:
+      'Route classification, verification, synthesis, and write tasks to suitable models and isolation modes.',
     argsSchema: { type: 'object', properties: { tasks: { type: 'array' } } },
     defaultRisk: 'low',
     phases: [
@@ -99,27 +122,27 @@ const PATTERNS: WorkflowPatternManifest[] = [
     requiredCapabilities: ['model routing', 'worktree policy'],
     useCases: ['large audits', 'migration planning', 'mixed-cost workflows'],
   },
-]
+];
 
 export function listWorkflowPatterns(): WorkflowPatternManifest[] {
-  return [...PATTERNS]
+  return [...PATTERNS];
 }
 
 export function getWorkflowPattern(id: string): WorkflowPatternManifest | undefined {
-  return PATTERNS.find((pattern) => pattern.id === id)
+  return PATTERNS.find((pattern) => pattern.id === id);
 }
 
 export function renderWorkflowPattern(pattern: WorkflowPatternManifest): string {
-  const lines: string[] = []
-  lines.push(`Pattern: ${pattern.id}`)
-  lines.push(`Name: ${pattern.name}`)
-  lines.push(`Risk: ${pattern.defaultRisk}`)
-  lines.push(`Description: ${pattern.description}`)
-  lines.push('')
-  lines.push('Phases:')
-  for (const phase of pattern.phases) lines.push(`  - ${phase.title}: ${phase.detail}`)
-  lines.push('')
-  lines.push(`Capabilities: ${pattern.requiredCapabilities.join(', ')}`)
-  lines.push(`Use cases: ${pattern.useCases.join(', ')}`)
-  return lines.join('\n')
+  const lines: string[] = [];
+  lines.push(`Pattern: ${pattern.id}`);
+  lines.push(`Name: ${pattern.name}`);
+  lines.push(`Risk: ${pattern.defaultRisk}`);
+  lines.push(`Description: ${pattern.description}`);
+  lines.push('');
+  lines.push('Phases:');
+  for (const phase of pattern.phases) lines.push(`  - ${phase.title}: ${phase.detail}`);
+  lines.push('');
+  lines.push(`Capabilities: ${pattern.requiredCapabilities.join(', ')}`);
+  lines.push(`Use cases: ${pattern.useCases.join(', ')}`);
+  return lines.join('\n');
 }

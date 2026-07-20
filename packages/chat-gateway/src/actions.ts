@@ -3,9 +3,22 @@ import type { ActionRegistryPort } from '@openslack/operator';
 import type { ChatMessage, ChatResponse } from './types.js';
 import { loadPendingPlan, validatePlan, deletePendingPlan, isActionAllowed } from './plan-store.js';
 import { formatResultAsMarkdown, formatError } from './formatter.js';
-import { buildPRCard, cardToText, toSlackBlocks, buildHandoffCard, buildDecisionCard, buildWorkflowCard } from './cards.js';
+import {
+  buildPRCard,
+  cardToText,
+  toSlackBlocks,
+  buildHandoffCard,
+  buildDecisionCard,
+  buildWorkflowCard,
+} from './cards.js';
 import { summarizePRForChat, formatPRChatSummary } from '@openslack/pr';
-import { recordEvent, acceptHandoff, closeHandoff, getHandoff, getDecision } from '@openslack/collaboration';
+import {
+  recordEvent,
+  acceptHandoff,
+  closeHandoff,
+  getHandoff,
+  getDecision,
+} from '@openslack/collaboration';
 import { resolveAgentPrincipal } from '@openslack/runtime';
 
 interface ActionContext {
@@ -26,11 +39,14 @@ async function runPRDoctor(
   prNumber: string,
   registry: ActionRegistryPort,
 ): Promise<{ output: string; status: 'success' | 'failed' }> {
-  const plan = planActions({
-    kind: 'pr_doctor',
-    slots: { prNumber: Number(prNumber) },
-    confidence: 1,
-  }, registry);
+  const plan = planActions(
+    {
+      kind: 'pr_doctor',
+      slots: { prNumber: Number(prNumber) },
+      confidence: 1,
+    },
+    registry,
+  );
 
   const result = await executePlan(plan, { dryRun: false }, registry);
   const stepResult = result.steps[0];
@@ -40,7 +56,10 @@ async function runPRDoctor(
   };
 }
 
-function resolveActionAgentAuth(agentId: string | undefined, provider: 'slack' | 'webhook'): Parameters<typeof executePlan>[1] {
+function resolveActionAgentAuth(
+  agentId: string | undefined,
+  provider: 'slack' | 'webhook',
+): Parameters<typeof executePlan>[1] {
   if (!agentId) return {};
   const resolved = resolveAgentPrincipal({ root: process.cwd(), agentId, provider });
   if ('error' in resolved) {
@@ -55,11 +74,14 @@ async function runPRMerge(
   provider: 'slack' | 'webhook',
   registry: ActionRegistryPort,
 ): Promise<{ output: string; status: 'success' | 'failed' }> {
-  const plan = planActions({
-    kind: 'pr_merge',
-    slots: { prNumber: Number(prNumber) },
-    confidence: 1,
-  }, registry);
+  const plan = planActions(
+    {
+      kind: 'pr_merge',
+      slots: { prNumber: Number(prNumber) },
+      confidence: 1,
+    },
+    registry,
+  );
 
   const result = await executePlan(
     plan,
@@ -81,11 +103,14 @@ async function runPRWatch(
   prNumber: string,
   registry: ActionRegistryPort,
 ): Promise<{ output: string; status: 'success' | 'failed' }> {
-  const plan = planActions({
-    kind: 'pr_watch',
-    slots: { prNumber: Number(prNumber) },
-    confidence: 1,
-  }, registry);
+  const plan = planActions(
+    {
+      kind: 'pr_watch',
+      slots: { prNumber: Number(prNumber) },
+      confidence: 1,
+    },
+    registry,
+  );
 
   const result = await executePlan(plan, { dryRun: false }, registry);
   const stepResult = result.steps[0];
@@ -109,7 +134,9 @@ async function handleShowDoctor(
     return formatError(`Failed to run PR doctor: ${output}`);
   }
 
-  return { text: `*PR #${prNumber} Doctor Report*\n\n${output.slice(0, 1500)}${output.length > 1500 ? '...' : ''}` };
+  return {
+    text: `*PR #${prNumber} Doctor Report*\n\n${output.slice(0, 1500)}${output.length > 1500 ? '...' : ''}`,
+  };
 }
 
 async function handleWatchPR(
@@ -122,7 +149,9 @@ async function handleWatchPR(
     return formatError(`Failed to watch PR: ${output}`);
   }
 
-  return { text: `*Watching PR #${prNumber}*\n\n${output.slice(0, 1500)}${output.length > 1500 ? '...' : ''}` };
+  return {
+    text: `*Watching PR #${prNumber}*\n\n${output.slice(0, 1500)}${output.length > 1500 ? '...' : ''}`,
+  };
 }
 
 async function handleConfirmMerge(
@@ -140,18 +169,17 @@ async function handleConfirmMerge(
     return formatError('Invalid action type.');
   }
 
-  const validation = validatePlan(
-    plan,
-    message.user.id,
-    message.channel.id,
-    message.threadId,
-  );
+  const validation = validatePlan(plan, message.user.id, message.channel.id, message.threadId);
 
   if (!validation.valid) {
     try {
       recordEvent({
         type: 'operator.plan.blocked',
-        actor: { id: message.user.id, kind: 'chat', provider: message.channel.type === 'webhook' ? 'webhook' : 'slack' },
+        actor: {
+          id: message.user.id,
+          kind: 'chat',
+          provider: message.channel.type === 'webhook' ? 'webhook' : 'slack',
+        },
         object: { kind: 'plan', id: planId },
         source: { kind: 'chat', ref: message.channel.id },
         summary: validation.reason || 'Plan validation failed',
@@ -180,7 +208,11 @@ async function handleConfirmMerge(
     try {
       recordEvent({
         type: 'pr.merge.blocked',
-        actor: { id: message.user.id, kind: 'chat', provider: message.channel.type === 'webhook' ? 'webhook' : 'slack' },
+        actor: {
+          id: message.user.id,
+          kind: 'chat',
+          provider: message.channel.type === 'webhook' ? 'webhook' : 'slack',
+        },
         object: { kind: 'pr', id: prNumber },
         source: { kind: 'chat', ref: planId },
         summary: `Chat-confirmed merge blocked by PR doctor for PR #${prNumber}`,
@@ -215,7 +247,11 @@ async function handleConfirmMerge(
     try {
       recordEvent({
         type: 'pr.merge.blocked',
-        actor: { id: message.user.id, kind: 'chat', provider: message.channel.type === 'webhook' ? 'webhook' : 'slack' },
+        actor: {
+          id: message.user.id,
+          kind: 'chat',
+          provider: message.channel.type === 'webhook' ? 'webhook' : 'slack',
+        },
         object: { kind: 'pr', id: prNumber },
         source: { kind: 'chat', ref: planId },
         summary: `Chat-confirmed merge failed for PR #${prNumber}`,
@@ -233,7 +269,11 @@ async function handleConfirmMerge(
   try {
     recordEvent({
       type: 'chat.plan.confirmed',
-      actor: { id: message.user.id, kind: 'chat', provider: message.channel.type === 'webhook' ? 'webhook' : 'slack' },
+      actor: {
+        id: message.user.id,
+        kind: 'chat',
+        provider: message.channel.type === 'webhook' ? 'webhook' : 'slack',
+      },
       object: { kind: 'plan', id: planId },
       source: { kind: 'chat', ref: message.channel.id },
       summary: `Chat plan confirmed for PR #${prNumber}; GitHub approval was still enforced by PRMS`,
@@ -244,7 +284,11 @@ async function handleConfirmMerge(
     });
     recordEvent({
       type: 'pr.merge.completed',
-      actor: { id: message.user.id, kind: 'chat', provider: message.channel.type === 'webhook' ? 'webhook' : 'slack' },
+      actor: {
+        id: message.user.id,
+        kind: 'chat',
+        provider: message.channel.type === 'webhook' ? 'webhook' : 'slack',
+      },
       object: { kind: 'pr', id: prNumber },
       source: { kind: 'chat', ref: planId },
       summary: `PR #${prNumber} merged after PRMS re-check`,
@@ -262,7 +306,10 @@ async function handleConfirmMerge(
   };
 }
 
-async function validatePendingChatPlan(planId: string, message: ChatMessage): Promise<{
+async function validatePendingChatPlan(
+  planId: string,
+  message: ChatMessage,
+): Promise<{
   plan?: NonNullable<ReturnType<typeof loadPendingPlan>>;
   error?: ChatResponse;
 }> {
@@ -339,7 +386,9 @@ async function handleAcceptHandoff(handoffId: string, message: ChatMessage): Pro
       redacted: false,
       containsSensitiveData: false,
     });
-  } catch { /* best-effort */ }
+  } catch {
+    /* best-effort */
+  }
 
   const card = buildHandoffCard(accepted);
   return { text: cardToText(card) };
@@ -366,13 +415,18 @@ async function handleCloseHandoff(handoffId: string, message: ChatMessage): Prom
       redacted: false,
       containsSensitiveData: false,
     });
-  } catch { /* best-effort */ }
+  } catch {
+    /* best-effort */
+  }
 
   const card = buildHandoffCard(closed);
   return { text: cardToText(card) };
 }
 
-async function handleRecordDecision(decisionId: string, _message: ChatMessage): Promise<ChatResponse> {
+async function handleRecordDecision(
+  decisionId: string,
+  _message: ChatMessage,
+): Promise<ChatResponse> {
   const decision = getDecision(decisionId);
   if (!decision) {
     return formatError(`Decision not found: ${decisionId}`);
@@ -381,7 +435,10 @@ async function handleRecordDecision(decisionId: string, _message: ChatMessage): 
   return { text: cardToText(card) };
 }
 
-async function handleExecuteWorkflow(correlationId: string, message: ChatMessage): Promise<ChatResponse> {
+async function handleExecuteWorkflow(
+  correlationId: string,
+  message: ChatMessage,
+): Promise<ChatResponse> {
   const plan = loadPendingPlan(correlationId);
   if (plan) {
     const validation = validatePlan(plan, message.user.id, message.channel.id, message.threadId);
@@ -402,18 +459,26 @@ async function handleExecuteWorkflow(correlationId: string, message: ChatMessage
       redacted: false,
       containsSensitiveData: false,
     });
-  } catch { /* best-effort */ }
+  } catch {
+    /* best-effort */
+  }
 
   if (plan) deletePendingPlan(correlationId);
-  return { text: `Workflow ${correlationId} confirmed. Use \`openslack workflow run ${correlationId}\` to execute.` };
+  return {
+    text: `Workflow ${correlationId} confirmed. Use \`openslack workflow run ${correlationId}\` to execute.`,
+  };
 }
 
 async function handlePreviewTask(issueNumber: string): Promise<ChatResponse> {
-  return { text: `Task #${issueNumber} preview not yet available in chat. Use: \`openslack task show ${issueNumber}\`` };
+  return {
+    text: `Task #${issueNumber} preview not yet available in chat. Use: \`openslack task show ${issueNumber}\``,
+  };
 }
 
 async function handleClaimTask(issueNumber: string, message: ChatMessage): Promise<ChatResponse> {
-  return { text: `Task #${issueNumber} claim not yet available in chat. Use: \`openslack task claim ${issueNumber}\`` };
+  return {
+    text: `Task #${issueNumber} claim not yet available in chat. Use: \`openslack task claim ${issueNumber}\``,
+  };
 }
 
 async function handleApprovePlan(planId: string, message: ChatMessage): Promise<ChatResponse> {
@@ -422,7 +487,9 @@ async function handleApprovePlan(planId: string, message: ChatMessage): Promise<
 
   const plan = validation.plan;
   if (plan?.action !== 'approve_plan') {
-    return formatError(`Plan ${planId} cannot be approved with this chat action. Use the specific action for ${plan?.action ?? 'this plan'} or the CLI approval command.`);
+    return formatError(
+      `Plan ${planId} cannot be approved with this chat action. Use the specific action for ${plan?.action ?? 'this plan'} or the CLI approval command.`,
+    );
   }
 
   try {
@@ -436,8 +503,12 @@ async function handleApprovePlan(planId: string, message: ChatMessage): Promise<
       redacted: false,
       containsSensitiveData: false,
     });
-  } catch { /* best-effort */ }
-  return { text: `Plan ${planId} confirmed in chat. Chat confirmation does not execute this plan; run the CLI approval command shown by the Operator to execute it.` };
+  } catch {
+    /* best-effort */
+  }
+  return {
+    text: `Plan ${planId} confirmed in chat. Chat confirmation does not execute this plan; run the CLI approval command shown by the Operator to execute it.`,
+  };
 }
 
 export async function handleAction(

@@ -27,7 +27,9 @@ describe('recommendWorkflowForQuery', () => {
   });
 
   it('scales confidence when multiple fanout signals are present', () => {
-    const recommendation = recommendWorkflowForQuery('audit all packages across every API endpoint');
+    const recommendation = recommendWorkflowForQuery(
+      'audit all packages across every API endpoint',
+    );
 
     expect(recommendation.decision).toBe('workflow_recommended');
     expect(recommendation.confidence).toBeGreaterThan(0.75);
@@ -41,7 +43,9 @@ describe('recommendWorkflowForQuery', () => {
   });
 
   it('treats ultracode as a draft trigger without executing a workflow', () => {
-    const recommendation = recommendWorkflowForQuery('ultracode: root-cause all failing workflow tests');
+    const recommendation = recommendWorkflowForQuery(
+      'ultracode: root-cause all failing workflow tests',
+    );
 
     expect(recommendation.decision).toBe('workflow_draft_required');
     expect(recommendation.confidence).toBeGreaterThan(0.9);

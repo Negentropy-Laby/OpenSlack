@@ -3,8 +3,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from '
 import { join } from 'node:path';
 
 export type ChatPlanAction =
-  | 'confirm_merge' | 'show_doctor' | 'watch_pr' | 'cancel'
-  | 'accept_handoff' | 'close_handoff'
+  | 'confirm_merge'
+  | 'show_doctor'
+  | 'watch_pr'
+  | 'cancel'
+  | 'accept_handoff'
+  | 'close_handoff'
   | 'record_decision'
   | 'execute_workflow'
   | 'approve_plan';
@@ -38,7 +42,9 @@ function planPath(planId: string): string {
   return join(getStoreDir(), `${planId}.json`);
 }
 
-function hashPlan(plan: Omit<PendingPlan, 'planId' | 'planHash' | 'createdAt' | 'expiresAt'>): string {
+function hashPlan(
+  plan: Omit<PendingPlan, 'planId' | 'planHash' | 'createdAt' | 'expiresAt'>,
+): string {
   const data = JSON.stringify(plan);
   return createHash('sha256').update(data).digest('hex').slice(0, 16);
 }
@@ -49,7 +55,9 @@ export function generatePlanId(): string {
   return `PLAN-${ts}-${rand}`;
 }
 
-export function createPendingPlan(params: Omit<PendingPlan, 'planId' | 'planHash' | 'createdAt' | 'expiresAt'>): PendingPlan {
+export function createPendingPlan(
+  params: Omit<PendingPlan, 'planId' | 'planHash' | 'createdAt' | 'expiresAt'>,
+): PendingPlan {
   const planId = generatePlanId();
   const planHash = hashPlan(params);
   const createdAt = new Date().toISOString();
@@ -118,8 +126,14 @@ export function validatePlan(
 
 export function isActionAllowed(action: string): action is PendingPlan['action'] {
   return [
-    'confirm_merge', 'show_doctor', 'watch_pr', 'cancel',
-    'accept_handoff', 'close_handoff', 'record_decision',
-    'execute_workflow', 'approve_plan',
+    'confirm_merge',
+    'show_doctor',
+    'watch_pr',
+    'cancel',
+    'accept_handoff',
+    'close_handoff',
+    'record_decision',
+    'execute_workflow',
+    'approve_plan',
   ].includes(action);
 }

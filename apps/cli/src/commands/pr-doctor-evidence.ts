@@ -85,5 +85,7 @@ export function renderEvidenceUnavailableMessage(
     '',
     'No merge readiness, policy blocker, approval, check, CODEOWNERS, workflow, or profile-sync gate result is available.',
     'Retry after GitHub API recovery or use --dry-run for an explicit simulation.',
-  ].filter((line): line is string => typeof line === 'string').join('\n');
+  ]
+    .filter((line): line is string => typeof line === 'string')
+    .join('\n');
 }

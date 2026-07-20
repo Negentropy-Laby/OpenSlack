@@ -20,7 +20,11 @@ export function containsSecret(value: unknown): { found: boolean; name?: string 
   return { found: false };
 }
 
-export function scanValue(value: unknown, path: string, depth: number = 0): { found: boolean; name?: string; path?: string } {
+export function scanValue(
+  value: unknown,
+  path: string,
+  depth: number = 0,
+): { found: boolean; name?: string; path?: string } {
   // Guard against circular references and excessive depth
   if (depth > 10) return { found: false };
 

@@ -9,65 +9,65 @@
  *
  * At 80 and 100 columns. Asserts no crash, no width overflow, output non-empty.
  */
-import { describe, it, expect } from 'vitest'
-import React from 'react'
-import { render } from '@openslack/tui'
-import { NavigationProvider } from '../../navigation/context.js'
-import stripAnsi from 'strip-ansi'
+import { describe, it, expect } from 'vitest';
+import React from 'react';
+import { render } from '@openslack/tui';
+import { NavigationProvider } from '../../navigation/context.js';
+import stripAnsi from 'strip-ansi';
 
-import HomeView from '../../views/HomeView.js'
-import DoctorView from '../../views/DoctorView.js'
-import PrQueueView from '../../views/PrQueueView.js'
-import ProfileView from '../../views/ProfileView.js'
-import WorkflowLifecycleView from '../../views/WorkflowLifecycleView.js'
-import WorkflowWorkbenchView from '../../views/WorkflowWorkbenchView.js'
-import DashboardView from '../../views/DashboardView.js'
-import ApprovalCenterView from '../../views/ApprovalCenterView.js'
-import RoomView from '../../views/RoomView.js'
+import HomeView from '../../views/HomeView.js';
+import DoctorView from '../../views/DoctorView.js';
+import PrQueueView from '../../views/PrQueueView.js';
+import ProfileView from '../../views/ProfileView.js';
+import WorkflowLifecycleView from '../../views/WorkflowLifecycleView.js';
+import WorkflowWorkbenchView from '../../views/WorkflowWorkbenchView.js';
+import DashboardView from '../../views/DashboardView.js';
+import ApprovalCenterView from '../../views/ApprovalCenterView.js';
+import RoomView from '../../views/RoomView.js';
 
-import type { HomeViewModel } from '../../view-models/home.js'
-import type { DoctorViewModel } from '../../view-models/doctor.js'
-import type { PrQueueViewModel } from '../../view-models/pr-queue.js'
-import type { ProfileViewModel } from '../../view-models/profile.js'
-import type { WorkflowLifecycleViewModel } from '../../view-models/workflow-lifecycle.js'
-import type { WorkflowGalleryViewModel } from '../../view-models/workflow-gallery.js'
-import type { DashboardViewModel } from '../../view-models/dashboard.js'
-import type { ApprovalCenterViewModel } from '../../view-models/approval-center.js'
-import type { RoomViewModel } from '../../view-models/room.js'
+import type { HomeViewModel } from '../../view-models/home.js';
+import type { DoctorViewModel } from '../../view-models/doctor.js';
+import type { PrQueueViewModel } from '../../view-models/pr-queue.js';
+import type { ProfileViewModel } from '../../view-models/profile.js';
+import type { WorkflowLifecycleViewModel } from '../../view-models/workflow-lifecycle.js';
+import type { WorkflowGalleryViewModel } from '../../view-models/workflow-gallery.js';
+import type { DashboardViewModel } from '../../view-models/dashboard.js';
+import type { ApprovalCenterViewModel } from '../../view-models/approval-center.js';
+import type { RoomViewModel } from '../../view-models/room.js';
 
-import { assertNoLineExceedsWidth } from '../helpers/render-at-columns.js'
+import { assertNoLineExceedsWidth } from '../helpers/render-at-columns.js';
 
-import { Writable } from 'stream'
+import { Writable } from 'stream';
 
 // ── Helpers ──
 
 function createMockStdout(columns: number, rows = 50) {
-  const chunks: string[] = []
+  const chunks: string[] = [];
   const stdout = new Writable({
     write(chunk: Buffer | string, _encoding: string, cb: () => void) {
-      chunks.push(String(chunk))
-      cb()
+      chunks.push(String(chunk));
+      cb();
     },
-  }) as NodeJS.WriteStream
+  }) as NodeJS.WriteStream;
   Object.defineProperties(stdout, {
     columns: { value: columns, writable: true, configurable: true },
     rows: { value: rows, writable: true, configurable: true },
     isTTY: { value: false, configurable: true },
-  })
-  return { stdout, chunks }
+  });
+  return { stdout, chunks };
 }
 
 async function renderAt(element: React.ReactElement, cols: number): Promise<string> {
-  const { stdout, chunks } = createMockStdout(cols)
-  const instance = await render(element, { stdout, patchConsole: false })
-  await new Promise((r) => setTimeout(r, 200))
-  const output = chunks.join('')
-  instance.unmount()
-  return output
+  const { stdout, chunks } = createMockStdout(cols);
+  const instance = await render(element, { stdout, patchConsole: false });
+  await new Promise((r) => setTimeout(r, 200));
+  const output = chunks.join('');
+  instance.unmount();
+  return output;
 }
 
 function withNav(element: React.ReactElement): React.ReactElement {
-  return React.createElement(NavigationProvider, null, element)
+  return React.createElement(NavigationProvider, null, element);
 }
 
 // ── Empty/missing factories ──
@@ -80,7 +80,7 @@ function createEmptyHomeViewModel(): HomeViewModel {
     tasks: [],
     systemStatus: 'ready',
     nextRecommendedAction: undefined,
-  }
+  };
 }
 
 function createFailedDoctorViewModel(): DoctorViewModel {
@@ -115,7 +115,7 @@ function createFailedDoctorViewModel(): DoctorViewModel {
       passed: false,
       detail: 'Profile sync not run',
     },
-  }
+  };
 }
 
 function createEmptyPrQueueViewModel(): PrQueueViewModel {
@@ -126,7 +126,7 @@ function createEmptyPrQueueViewModel(): PrQueueViewModel {
     blockedCount: 0,
     pendingCount: 0,
     items: [],
-  }
+  };
 }
 
 function createMissingProfileViewModel(): ProfileViewModel {
@@ -144,13 +144,28 @@ function createMissingProfileViewModel(): ProfileViewModel {
     mode: 'manual',
     guidedStep: 'check',
     checkGroups: [
-      { key: 'source', label: 'Source repository', status: 'fail', detail: 'Repository not configured' },
+      {
+        key: 'source',
+        label: 'Source repository',
+        status: 'fail',
+        detail: 'Repository not configured',
+      },
       { key: 'posts', label: 'Posts', status: 'unknown', detail: 'No posts found' },
-      { key: 'target-marker', label: 'Target marker', status: 'fail', detail: 'Marker not found in target' },
-      { key: 'permissions', label: 'Permissions', status: 'unknown', detail: 'Cannot verify permissions' },
+      {
+        key: 'target-marker',
+        label: 'Target marker',
+        status: 'fail',
+        detail: 'Marker not found in target',
+      },
+      {
+        key: 'permissions',
+        label: 'Permissions',
+        status: 'unknown',
+        detail: 'Cannot verify permissions',
+      },
     ],
     actions: [],
-  }
+  };
 }
 
 function createEmptyWorkflowLifecycleViewModel(): WorkflowLifecycleViewModel {
@@ -171,14 +186,14 @@ function createEmptyWorkflowLifecycleViewModel(): WorkflowLifecycleViewModel {
     fallbackReasons: ['No workflow data available'],
     blockedGateItems: [],
     statusSummary: 'No workflow data',
-  }
+  };
 }
 
 function createEmptyWorkflowWorkbenchViewModel(): WorkflowGalleryViewModel {
   return {
     workflows: [],
     summary: { total: 0, yaml: 0, js: 0 },
-  }
+  };
 }
 
 function createEmptyDashboardViewModel(): DashboardViewModel {
@@ -190,7 +205,7 @@ function createEmptyDashboardViewModel(): DashboardViewModel {
     handoffs: [],
     decisions: [],
     recentActivity: [],
-  }
+  };
 }
 
 function createEmptyApprovalCenterViewModel(): ApprovalCenterViewModel {
@@ -204,7 +219,7 @@ function createEmptyApprovalCenterViewModel(): ApprovalCenterViewModel {
       profileSyncs: 0,
       githubReviews: 0,
     },
-  }
+  };
 }
 
 function createEmptyRoomViewModel(): RoomViewModel {
@@ -220,19 +235,19 @@ function createEmptyRoomViewModel(): RoomViewModel {
     handoffs: [],
     decisions: [],
     recentActivity: [],
-  }
+  };
 }
 
 // ── Test matrix ──
 
-const WIDTHS = [80, 100] as const
+const WIDTHS = [80, 100] as const;
 
 type EmptyViewSpec = {
-  name: string
-  needsNav: boolean
-  create: () => React.ReactElement
-  requiredMarker?: string
-}
+  name: string;
+  needsNav: boolean;
+  create: () => React.ReactElement;
+  requiredMarker?: string;
+};
 
 const EMPTY_VIEWS: EmptyViewSpec[] = [
   {
@@ -262,13 +277,19 @@ const EMPTY_VIEWS: EmptyViewSpec[] = [
   {
     name: 'WorkflowLifecycleView (empty)',
     needsNav: true,
-    create: () => React.createElement(WorkflowLifecycleView, { model: createEmptyWorkflowLifecycleViewModel() }),
+    create: () =>
+      React.createElement(WorkflowLifecycleView, {
+        model: createEmptyWorkflowLifecycleViewModel(),
+      }),
     requiredMarker: 'Lifecycle',
   },
   {
     name: 'WorkflowWorkbenchView (empty)',
     needsNav: true,
-    create: () => React.createElement(WorkflowWorkbenchView, { galleryModel: createEmptyWorkflowWorkbenchViewModel() }),
+    create: () =>
+      React.createElement(WorkflowWorkbenchView, {
+        galleryModel: createEmptyWorkflowWorkbenchViewModel(),
+      }),
     requiredMarker: 'Workflows',
   },
   {
@@ -280,7 +301,8 @@ const EMPTY_VIEWS: EmptyViewSpec[] = [
   {
     name: 'ApprovalCenterView (empty)',
     needsNav: true,
-    create: () => React.createElement(ApprovalCenterView, { model: createEmptyApprovalCenterViewModel() }),
+    create: () =>
+      React.createElement(ApprovalCenterView, { model: createEmptyApprovalCenterViewModel() }),
     requiredMarker: 'Approvals',
   },
   {
@@ -289,7 +311,7 @@ const EMPTY_VIEWS: EmptyViewSpec[] = [
     create: () => React.createElement(RoomView, { model: createEmptyRoomViewModel() }),
     requiredMarker: 'Room',
   },
-]
+];
 
 // ── Tests ──
 
@@ -297,35 +319,35 @@ describe.each(WIDTHS)('error/missing state at %d columns', (cols) => {
   for (const spec of EMPTY_VIEWS) {
     describe(spec.name, () => {
       it('renders without crashing', async () => {
-        const element = spec.create()
-        const wrapped = spec.needsNav ? withNav(element) : element
-        const output = await renderAt(wrapped, cols)
-        expect(output.length).toBeGreaterThan(0)
-      })
+        const element = spec.create();
+        const wrapped = spec.needsNav ? withNav(element) : element;
+        const output = await renderAt(wrapped, cols);
+        expect(output.length).toBeGreaterThan(0);
+      });
 
       it('does not exceed column width', async () => {
-        const element = spec.create()
-        const wrapped = spec.needsNav ? withNav(element) : element
-        const output = await renderAt(wrapped, cols)
-        assertNoLineExceedsWidth(output, cols)
-      })
+        const element = spec.create();
+        const wrapped = spec.needsNav ? withNav(element) : element;
+        const output = await renderAt(wrapped, cols);
+        assertNoLineExceedsWidth(output, cols);
+      });
 
       if (spec.requiredMarker) {
         it(`contains required marker: ${spec.requiredMarker}`, async () => {
-          const element = spec.create()
-          const wrapped = spec.needsNav ? withNav(element) : element
-          const output = await renderAt(wrapped, cols)
-          expect(output).toContain(spec.requiredMarker!)
-        })
+          const element = spec.create();
+          const wrapped = spec.needsNav ? withNav(element) : element;
+          const output = await renderAt(wrapped, cols);
+          expect(output).toContain(spec.requiredMarker!);
+        });
       }
 
       it('does not contain raw ANSI after stripping Ink colors', async () => {
-        const element = spec.create()
-        const wrapped = spec.needsNav ? withNav(element) : element
-        const output = await renderAt(wrapped, cols)
-        const stripped = stripAnsi(output)
-        expect(stripped).not.toContain('\x1b[')
-      })
-    })
+        const element = spec.create();
+        const wrapped = spec.needsNav ? withNav(element) : element;
+        const output = await renderAt(wrapped, cols);
+        const stripped = stripAnsi(output);
+        expect(stripped).not.toContain('\x1b[');
+      });
+    });
   }
-})
+});

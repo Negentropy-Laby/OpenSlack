@@ -47,11 +47,13 @@ export async function createTaskIssue(
   };
 }
 
-export async function queryReadyIssueTasks(options: {
-  agentType?: string;
-  capabilities?: string[];
-  maxRisk?: string;
-} = {}): Promise<IssueTask[]> {
+export async function queryReadyIssueTasks(
+  options: {
+    agentType?: string;
+    capabilities?: string[];
+    maxRisk?: string;
+  } = {},
+): Promise<IssueTask[]> {
   const client = await getClient();
   if (client.isDryRun) {
     console.log('[DRY RUN] Would query ready issue tasks');
@@ -79,7 +81,9 @@ export async function queryReadyIssueTasks(options: {
     issueNodeId: item.node_id,
     title: item.title,
     url: item.html_url,
-    labels: item.labels.map((l: string | { name?: string }) => typeof l === 'string' ? l : l.name || ''),
+    labels: item.labels.map((l: string | { name?: string }) =>
+      typeof l === 'string' ? l : l.name || '',
+    ),
     body: item.body || '',
   }));
 
@@ -121,7 +125,10 @@ export function parseTaskManifest(body: string): IssueTaskManifest | undefined {
       const colonIdx = trimmed.indexOf(':');
       if (colonIdx === -1) continue;
       const key = trimmed.slice(0, colonIdx).trim();
-      const value = trimmed.slice(colonIdx + 1).trim().replace(/^["']|["']$/g, '');
+      const value = trimmed
+        .slice(colonIdx + 1)
+        .trim()
+        .replace(/^["']|["']$/g, '');
       if (value === '') {
         currentList = [];
         currentListKey = key;

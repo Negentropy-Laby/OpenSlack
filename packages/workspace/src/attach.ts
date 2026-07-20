@@ -20,10 +20,7 @@ import {
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { validateWorkspace } from './validate.js';
-import {
-  createEmbeddedAssetResolver,
-  type AssetResolver,
-} from './workspace-context.js';
+import { createEmbeddedAssetResolver, type AssetResolver } from './workspace-context.js';
 import type { ValidationResult, WorkspaceConfig } from './types.js';
 
 export type WorkspaceAttachMode = 'read-only-monitor' | 'full-agent';
@@ -39,11 +36,7 @@ export interface WorkspaceAttachInput {
   now?: () => Date;
 }
 
-export type WorkspaceAttachOperationAction =
-  | 'create'
-  | 'replace'
-  | 'unchanged'
-  | 'conflict';
+export type WorkspaceAttachOperationAction = 'create' | 'replace' | 'unchanged' | 'conflict';
 
 export interface WorkspaceAttachRollbackData {
   existed: boolean;
@@ -131,8 +124,7 @@ const ATTACH_PROVIDER_PATH = '.openslack/templates/agent-runtime.example.json';
 const ATTACH_WORKFLOW_PATH = '.openslack/workflows/first-task.yaml';
 const ATTACH_WATCH_PATH = '.openslack/monitors/github-watch.yaml';
 const ATTACH_JOURNAL_PATH = '.openslack.local/transactions/attach.rollback.json';
-const ATTACH_COMMITTED_JOURNAL_PATH =
-  '.openslack.local/transactions/attach.committed.json';
+const ATTACH_COMMITTED_JOURNAL_PATH = '.openslack.local/transactions/attach.committed.json';
 const ATTACH_LOCK_PATH = '.openslack.local/locks/attach.lock';
 const GENERATED_FILE_MODE = 0o644;
 const MAX_JOURNAL_BYTES = 4 * 1024 * 1024;
@@ -196,7 +188,10 @@ export function planWorkspaceAttach(input: WorkspaceAttachInput): WorkspaceAttac
     existing: existingWorkspace.kind === 'valid' ? existingWorkspace.config : undefined,
   });
   const files = new Map<string, { content: Buffer; replace: boolean }>();
-  files.set('openslack.yaml', { content: utf8(workspaceConfig), replace: existingWorkspace.kind === 'valid' });
+  files.set('openslack.yaml', {
+    content: utf8(workspaceConfig),
+    replace: existingWorkspace.kind === 'valid',
+  });
   files.set(ATTACH_WATCH_PATH, {
     content: utf8(renderWatchConfig(repository.owner, repository.repo)),
     replace: isCompatibleWatchConfig(targetRoot, repository),
@@ -223,11 +218,19 @@ export function planWorkspaceAttach(input: WorkspaceAttachInput): WorkspaceAttac
     });
     files.set(ATTACH_PROVIDER_PATH, {
       content: utf8(assets.readText('workspace.provider-template')),
-      replace: isExactEmbeddedAsset(targetRoot, ATTACH_PROVIDER_PATH, assets.readText('workspace.provider-template')),
+      replace: isExactEmbeddedAsset(
+        targetRoot,
+        ATTACH_PROVIDER_PATH,
+        assets.readText('workspace.provider-template'),
+      ),
     });
     files.set(ATTACH_WORKFLOW_PATH, {
       content: utf8(assets.readText('workspace.workflow-template')),
-      replace: isExactEmbeddedAsset(targetRoot, ATTACH_WORKFLOW_PATH, assets.readText('workspace.workflow-template')),
+      replace: isExactEmbeddedAsset(
+        targetRoot,
+        ATTACH_WORKFLOW_PATH,
+        assets.readText('workspace.workflow-template'),
+      ),
     });
   }
 
@@ -239,7 +242,11 @@ export function planWorkspaceAttach(input: WorkspaceAttachInput): WorkspaceAttac
   if (input.mode === 'read-only-monitor') {
     for (const path of [ATTACH_AGENT_PATH, ATTACH_PROVIDER_PATH, ATTACH_WORKFLOW_PATH]) {
       if (existsSync(join(targetRoot, path))) {
-        const conflict = planExistingConflict(targetRoot, path, 'executable full-agent artifact exists');
+        const conflict = planExistingConflict(
+          targetRoot,
+          path,
+          'executable full-agent artifact exists',
+        );
         operations.push(conflict);
         conflicts.push(`${path}: ${conflict.detail}`);
       }
@@ -282,7 +289,9 @@ export function applyWorkspaceAttach(
 ): WorkspaceAttachResult {
   assertPlanIntegrity(plan);
   if (!plan.applicable || plan.conflicts.length > 0 || plan.validationErrors.length > 0) {
-    throw new Error('Workspace attach plan has conflicts or validation errors and cannot be applied.');
+    throw new Error(
+      'Workspace attach plan has conflicts or validation errors and cannot be applied.',
+    );
   }
   const lockPath = join(plan.targetRoot, ATTACH_LOCK_PATH);
   const journalPath = join(plan.targetRoot, ATTACH_JOURNAL_PATH);
@@ -391,8 +400,7 @@ export function renderWorkspaceAttachPlan(plan: WorkspaceAttachPlan): string {
     `Mode: ${plan.mode}`,
     `Repository: ${plan.repository.fullName}`,
     ...plan.operations.map(
-      (operation) =>
-        `[${operation.action.toUpperCase()}] ${operation.path} — ${operation.detail}`,
+      (operation) => `[${operation.action.toUpperCase()}] ${operation.path} — ${operation.detail}`,
     ),
     ...plan.validationErrors.map((error) => `[VALIDATION] ${error}`),
     plan.applicable
@@ -423,9 +431,7 @@ function renderWorkspaceConfig(input: {
       owner: input.repository.owner,
       repo: input.repository.repo,
       default_branch:
-        input.input.defaultBranch ??
-        input.existing?.canonical_remote.default_branch ??
-        'main',
+        input.input.defaultBranch ?? input.existing?.canonical_remote.default_branch ?? 'main',
     },
     workspace: { root: '.', state_root: '.openslack' },
     product: input.existing?.product ?? {
@@ -621,10 +627,10 @@ function isCompatibleWatchConfig(
     const entry = parsed.repositories[0];
     return Boolean(
       isRecord(entry) &&
-        typeof entry.owner === 'string' &&
-        typeof entry.repo === 'string' &&
-        entry.owner.toLocaleLowerCase('en-US') === repository.owner.toLocaleLowerCase('en-US') &&
-        entry.repo.toLocaleLowerCase('en-US') === repository.repo.toLocaleLowerCase('en-US'),
+      typeof entry.owner === 'string' &&
+      typeof entry.repo === 'string' &&
+      entry.owner.toLocaleLowerCase('en-US') === repository.owner.toLocaleLowerCase('en-US') &&
+      entry.repo.toLocaleLowerCase('en-US') === repository.repo.toLocaleLowerCase('en-US'),
     );
   } catch {
     return false;
@@ -682,7 +688,14 @@ function planFile(
       return operation(path, 'unchanged', current, mode, desired, 'already matches');
     }
     if (!allowReplace) {
-      return operation(path, 'conflict', current, mode, null, 'existing content is not attach-managed');
+      return operation(
+        path,
+        'conflict',
+        current,
+        mode,
+        null,
+        'existing content is not attach-managed',
+      );
     }
     return operation(path, 'replace', current, mode, desired, 'update attach-managed file');
   } catch {
@@ -690,7 +703,11 @@ function planFile(
   }
 }
 
-function planExistingConflict(root: string, path: string, detail: string): WorkspaceAttachOperation {
+function planExistingConflict(
+  root: string,
+  path: string,
+  detail: string,
+): WorkspaceAttachOperation {
   try {
     assertRegularFileWithoutSymlink(root, path);
     const current = readFileSync(join(root, path));
@@ -712,12 +729,26 @@ function planGitignore(root: string): WorkspaceAttachOperation {
     const current = readFileSync(absolute);
     const text = decodeUtf8(current);
     if (text.split(/\r?\n/u).some((line) => line.trim() === '.openslack.local/')) {
-      return operation(path, 'unchanged', current, fileMode(absolute), current, 'local state already ignored');
+      return operation(
+        path,
+        'unchanged',
+        current,
+        fileMode(absolute),
+        current,
+        'local state already ignored',
+      );
     }
     const newline = text.includes('\r\n') ? '\r\n' : '\n';
     const prefix = text.length > 0 && !text.endsWith('\n') ? newline : '';
     const desired = utf8(`${text}${prefix}.openslack.local/${newline}`);
-    return operation(path, 'replace', current, fileMode(absolute), desired, 'append local-state ignore');
+    return operation(
+      path,
+      'replace',
+      current,
+      fileMode(absolute),
+      desired,
+      'append local-state ignore',
+    );
   } catch {
     return operation(path, 'conflict', null, null, null, 'existing .gitignore is not safe UTF-8');
   }
@@ -759,7 +790,8 @@ function validateVirtualAttachSnapshot(
 ): string[] {
   const errors: string[] = [];
   const workspace = parseYamlBuffer(files.get('openslack.yaml'));
-  if (!isWorkspaceConfigShape(workspace)) errors.push('openslack.yaml virtual schema validation failed.');
+  if (!isWorkspaceConfigShape(workspace))
+    errors.push('openslack.yaml virtual schema validation failed.');
   if (
     isRecord(workspace) &&
     (!isRecord(workspace.sidecar) ||
@@ -780,7 +812,8 @@ function validateVirtualAttachSnapshot(
   }
   if (mode === 'full-agent') {
     const agent = parseYamlBuffer(files.get(ATTACH_AGENT_PATH));
-    if (!isSafeFullAgent(agent)) errors.push('Generated full-agent registry violates its authority invariant.');
+    if (!isSafeFullAgent(agent))
+      errors.push('Generated full-agent registry violates its authority invariant.');
     if (!files.has(ATTACH_PROVIDER_PATH) || !files.has(ATTACH_WORKFLOW_PATH)) {
       errors.push('Full-agent mode is missing provider or workflow templates.');
     }
@@ -826,7 +859,10 @@ function isSafeFullAgent(value: unknown): boolean {
   ) {
     return false;
   }
-  return value.permissions.actions['pr.approve'] === 'deny' && value.permissions.actions['pr.merge'] === 'deny';
+  return (
+    value.permissions.actions['pr.approve'] === 'deny' &&
+    value.permissions.actions['pr.merge'] === 'deny'
+  );
 }
 
 function postValidate(
@@ -847,9 +883,7 @@ function postValidate(
     if (operation.action === 'conflict') continue;
     const absolute = join(plan.targetRoot, operation.path);
     if (!existsSync(absolute) || operation.afterSha256 === null) {
-      throw new Error(
-        `Workspace attach post-validation failed: ${operation.path} is missing.`,
-      );
+      throw new Error(`Workspace attach post-validation failed: ${operation.path} is missing.`);
     }
     assertRegularFileWithoutSymlink(plan.targetRoot, operation.path);
     const bytes = readFileSync(absolute);
@@ -893,7 +927,8 @@ function assertOperationCurrent(root: string, operation: WorkspaceAttachOperatio
   const absolute = join(root, operation.path);
   assertContainedByRealpath(root, absolute);
   if (!existsSync(absolute)) {
-    if (operation.beforeSha256 !== null || operation.beforeMode !== null) throw changedAfterPreview(operation.path);
+    if (operation.beforeSha256 !== null || operation.beforeMode !== null)
+      throw changedAfterPreview(operation.path);
     return;
   }
   assertRegularFileWithoutSymlink(root, operation.path);
@@ -1016,7 +1051,8 @@ function restoreJournal(root: string, journalPath: string): void {
 function readJournal(root: string, path: string): WorkspaceAttachJournal {
   assertContainedByRealpath(root, path);
   const bytes = readFileSync(path);
-  if (bytes.byteLength > MAX_JOURNAL_BYTES) throw new Error('Workspace attach rollback journal is oversized.');
+  if (bytes.byteLength > MAX_JOURNAL_BYTES)
+    throw new Error('Workspace attach rollback journal is oversized.');
   let parsed: unknown;
   try {
     parsed = JSON.parse(decodeUtf8(bytes));
@@ -1126,7 +1162,8 @@ function assertRegularFileWithoutSymlink(root: string, path: string): void {
     current = join(current, segment);
     if (!existsSync(current)) continue;
     const status = lstatSync(current);
-    if (status.isSymbolicLink()) throw new Error(`Workspace attach refuses symlinked paths: ${path}`);
+    if (status.isSymbolicLink())
+      throw new Error(`Workspace attach refuses symlinked paths: ${path}`);
     if (current === join(resolve(root), normalize(path)) && !status.isFile()) {
       throw new Error(`Workspace attach requires a regular file: ${path}`);
     }
@@ -1143,7 +1180,8 @@ function assertContainedByRealpath(root: string, candidate: string): void {
     existing = parent;
   }
   const existingReal = realpathSync.native(existing);
-  if (!isContained(rootReal, existingReal)) throw new Error('Workspace attach path escapes the workspace root.');
+  if (!isContained(rootReal, existingReal))
+    throw new Error('Workspace attach path escapes the workspace root.');
 }
 
 function isContained(root: string, candidate: string): boolean {
@@ -1225,7 +1263,8 @@ function decodeUtf8(value: Buffer): string {
 
 function strictBase64(value: string): Buffer {
   const decoded = Buffer.from(value, 'base64');
-  if (decoded.toString('base64') !== value) throw new Error('Rollback journal contains invalid base64.');
+  if (decoded.toString('base64') !== value)
+    throw new Error('Rollback journal contains invalid base64.');
   return decoded;
 }
 
@@ -1274,5 +1313,7 @@ function asError(value: unknown): Error {
 }
 
 function isNodeError(value: unknown, code: string): boolean {
-  return value instanceof Error && 'code' in value && (value as NodeJS.ErrnoException).code === code;
+  return (
+    value instanceof Error && 'code' in value && (value as NodeJS.ErrnoException).code === code
+  );
 }
