@@ -12,46 +12,49 @@ import {
   startWorkflowFromPattern,
   startWorkflowFromPrompt,
   submitWorkbenchAskFromTui,
-} from '../commands/tui-executors.js'
-import type { ApprovalExecutionParams } from '../commands/tui-executors.js'
-import { TrustStore } from '@openslack/workflows'
-import * as operator from '@openslack/operator'
-import type { ActionRegistryPort } from '@openslack/operator'
-import * as collaboration from '@openslack/collaboration'
-import * as pr from '@openslack/pr'
-import * as github from '@openslack/github'
+} from '../commands/tui-executors.js';
+import type { ApprovalExecutionParams } from '../commands/tui-executors.js';
+import { TrustStore } from '@openslack/workflows';
+import * as operator from '@openslack/operator';
+import type { ActionRegistryPort } from '@openslack/operator';
+import * as collaboration from '@openslack/collaboration';
+import * as pr from '@openslack/pr';
+import * as github from '@openslack/github';
 
 // ── Module-level mocks ──────────────────────────────────────────────────────────
 
 vi.mock('@openslack/operator', async () => {
-  const actual = await vi.importActual<typeof import('@openslack/operator')>('@openslack/operator')
+  const actual = await vi.importActual<typeof import('@openslack/operator')>('@openslack/operator');
   return {
     ...actual,
     updatePendingPlanState: vi.fn(),
     listPendingPlans: vi.fn(),
-  }
-})
+  };
+});
 
 vi.mock('@openslack/collaboration', async () => {
-  const actual = await vi.importActual<typeof import('@openslack/collaboration')>('@openslack/collaboration')
+  const actual = await vi.importActual<typeof import('@openslack/collaboration')>(
+    '@openslack/collaboration',
+  );
   return {
     ...actual,
     recordDecision: vi.fn(),
     listHandoffs: vi.fn(() => []),
     recordEvent: vi.fn(),
-  }
-})
+  };
+});
 
 vi.mock('@openslack/pr', () => ({
   mergeIfReady: vi.fn(),
-}))
+}));
 
 vi.mock('@openslack/github', () => ({
   publishWorkflowSplit: vi.fn(),
-}))
+}));
 
 vi.mock('@openslack/workflows', async () => {
-  const actual = await vi.importActual<typeof import('@openslack/workflows')>('@openslack/workflows')
+  const actual =
+    await vi.importActual<typeof import('@openslack/workflows')>('@openslack/workflows');
   return {
     ...actual,
     TrustStore: vi.fn((opts: { rootDir: string }) => ({
@@ -77,47 +80,53 @@ vi.mock('@openslack/workflows', async () => {
       expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
       approvedEffects: [],
     })),
-    generateWorkflowDraft: vi.fn(() => Promise.resolve({
-      draftId: 'draft-001',
-      path: '/test/root/.openslack/workflows/drafts/draft-001.workflow.yaml',
-      pattern: 'fanout-synthesize',
-      createdAt: '2026-01-01T00:00:00.000Z',
-    })),
-    getWorkflowPattern: vi.fn((patternId: string) => patternId === 'fanout-synthesize'
-      ? {
-          id: 'fanout-synthesize',
-          name: 'Fanout synthesize',
-          description: 'Fan out research and synthesize evidence',
-          useCases: ['research broad task surfaces'],
-          phases: [],
-          requiredCapabilities: [],
-        }
-      : null),
-    saveWorkflowRunScript: vi.fn(() => Promise.resolve({
-      workflowName: 'test-wf',
-      sourceRunId: 'run-001',
-      source: 'project',
-      path: '/test/root/.openslack/workflows/test-wf.mjs',
-      scriptHash: 'script-hash',
-    })),
+    generateWorkflowDraft: vi.fn(() =>
+      Promise.resolve({
+        draftId: 'draft-001',
+        path: '/test/root/.openslack/workflows/drafts/draft-001.workflow.yaml',
+        pattern: 'fanout-synthesize',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      }),
+    ),
+    getWorkflowPattern: vi.fn((patternId: string) =>
+      patternId === 'fanout-synthesize'
+        ? {
+            id: 'fanout-synthesize',
+            name: 'Fanout synthesize',
+            description: 'Fan out research and synthesize evidence',
+            useCases: ['research broad task surfaces'],
+            phases: [],
+            requiredCapabilities: [],
+          }
+        : null,
+    ),
+    saveWorkflowRunScript: vi.fn(() =>
+      Promise.resolve({
+        workflowName: 'test-wf',
+        sourceRunId: 'run-001',
+        source: 'project',
+        path: '/test/root/.openslack/workflows/test-wf.mjs',
+        scriptHash: 'script-hash',
+      }),
+    ),
     WorkflowPausedError: class WorkflowPausedError extends Error {
-      readonly operation: string
-      readonly runId: string
+      readonly operation: string;
+      readonly runId: string;
       constructor(operation: string, _detail: string, runId: string) {
-        super(`Workflow paused: ${operation}`)
-        this.name = 'WorkflowPausedError'
-        this.operation = operation
-        this.runId = runId
+        super(`Workflow paused: ${operation}`);
+        this.name = 'WorkflowPausedError';
+        this.operation = operation;
+        this.runId = runId;
       }
     },
     WorkflowBudgetPausedError: class WorkflowBudgetPausedError extends Error {
-      readonly runId: string
-      readonly detail: string
+      readonly runId: string;
+      readonly detail: string;
       constructor(runId: string, detail: string) {
-        super(`Workflow paused: budget exceeded for run ${runId}`)
-        this.name = 'WorkflowBudgetPausedError'
-        this.runId = runId
-        this.detail = detail
+        super(`Workflow paused: budget exceeded for run ${runId}`);
+        this.name = 'WorkflowBudgetPausedError';
+        this.runId = runId;
+        this.detail = detail;
       }
     },
     hashString: vi.fn(() => 'hashed-input'),
@@ -128,12 +137,12 @@ vi.mock('@openslack/workflows', async () => {
       loadMeta: vi.fn(),
       listRunsByStatus: vi.fn(() => []),
     })),
-  }
-})
+  };
+});
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const ROOT = '/test/root'
+const ROOT = '/test/root';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────────
 
@@ -144,7 +153,7 @@ function planParams(overrides?: Partial<ApprovalExecutionParams>): ApprovalExecu
     title: 'Test Plan',
     planId: 'PLAN-1',
     ...overrides,
-  }
+  };
 }
 
 function mergeParams(overrides?: Partial<ApprovalExecutionParams>): ApprovalExecutionParams {
@@ -154,7 +163,7 @@ function mergeParams(overrides?: Partial<ApprovalExecutionParams>): ApprovalExec
     title: 'Merge PR #42',
     prNumber: 42,
     ...overrides,
-  }
+  };
 }
 
 function workflowEffectParams(
@@ -166,7 +175,7 @@ function workflowEffectParams(
     title: 'Deploy to staging',
     workflowName: 'deploy-staging',
     ...overrides,
-  }
+  };
 }
 
 function githubReviewParams(overrides?: Partial<ApprovalExecutionParams>): ApprovalExecutionParams {
@@ -175,28 +184,31 @@ function githubReviewParams(overrides?: Partial<ApprovalExecutionParams>): Appro
     category: 'github-review',
     title: 'Approve PR #99',
     ...overrides,
-  }
+  };
 }
 
 // ── executeApproval ─────────────────────────────────────────────────────────────
 
 describe('executeApproval', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-  })
+    vi.clearAllMocks();
+  });
 
   // ── Plan category ──────────────────────────────────────────────────────────
 
   describe('plan category', () => {
     it('plan approve - updates state and records decision', async () => {
-      vi.mocked(operator.updatePendingPlanState).mockReturnValue({ planId: 'PLAN-1', state: 'approved' } as unknown as ReturnType<typeof operator.updatePendingPlanState>)
+      vi.mocked(operator.updatePendingPlanState).mockReturnValue({
+        planId: 'PLAN-1',
+        state: 'approved',
+      } as unknown as ReturnType<typeof operator.updatePendingPlanState>);
 
-      const result = await executeApproval(planParams(), true, ROOT, 'tui-user')
+      const result = await executeApproval(planParams(), true, ROOT, 'tui-user');
 
-      expect(result.success).toBe(true)
-      expect(result.message).toContain('PLAN-1')
-      expect(result.message).toContain('approved')
-      expect(operator.updatePendingPlanState).toHaveBeenCalledWith('PLAN-1', 'approved', ROOT)
+      expect(result.success).toBe(true);
+      expect(result.message).toContain('PLAN-1');
+      expect(result.message).toContain('approved');
+      expect(operator.updatePendingPlanState).toHaveBeenCalledWith('PLAN-1', 'approved', ROOT);
       expect(collaboration.recordDecision).toHaveBeenCalledWith(
         expect.objectContaining({
           topic: 'Test Plan',
@@ -204,54 +216,62 @@ describe('executeApproval', () => {
           decidedBy: 'tui-user',
           tags: expect.arrayContaining(['plan-approval', 'tui']),
         }),
-      )
-    })
+      );
+    });
 
     it('plan reject - cancels plan and records decision', async () => {
-      vi.mocked(operator.updatePendingPlanState).mockReturnValue({ planId: 'PLAN-1', state: 'cancelled' } as unknown as ReturnType<typeof operator.updatePendingPlanState>)
+      vi.mocked(operator.updatePendingPlanState).mockReturnValue({
+        planId: 'PLAN-1',
+        state: 'cancelled',
+      } as unknown as ReturnType<typeof operator.updatePendingPlanState>);
 
-      const result = await executeApproval(planParams(), false, ROOT, 'tui-user')
+      const result = await executeApproval(planParams(), false, ROOT, 'tui-user');
 
-      expect(result.success).toBe(true)
-      expect(result.message).toContain('rejected')
-      expect(operator.updatePendingPlanState).toHaveBeenCalledWith('PLAN-1', 'cancelled', ROOT)
+      expect(result.success).toBe(true);
+      expect(result.message).toContain('rejected');
+      expect(operator.updatePendingPlanState).toHaveBeenCalledWith('PLAN-1', 'cancelled', ROOT);
       expect(collaboration.recordDecision).toHaveBeenCalledWith(
         expect.objectContaining({
           decision: 'rejected',
           rationale: expect.stringContaining('Rejected'),
         }),
-      )
-    })
+      );
+    });
 
     it('plan not found - returns failure', async () => {
-      vi.mocked(operator.updatePendingPlanState).mockReturnValue(null)
+      vi.mocked(operator.updatePendingPlanState).mockReturnValue(null);
 
-      const result = await executeApproval(planParams(), true, ROOT, 'tui-user')
+      const result = await executeApproval(planParams(), true, ROOT, 'tui-user');
 
-      expect(result.success).toBe(false)
-      expect(result.message).toContain('not found')
-      expect(collaboration.recordDecision).not.toHaveBeenCalled()
-    })
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('not found');
+      expect(collaboration.recordDecision).not.toHaveBeenCalled();
+    });
 
     it('plan without planId - returns failure', async () => {
-      const result = await executeApproval(planParams({ planId: undefined }), true, ROOT, 'tui-user')
+      const result = await executeApproval(
+        planParams({ planId: undefined }),
+        true,
+        ROOT,
+        'tui-user',
+      );
 
-      expect(result.success).toBe(false)
-      expect(result.message).toContain('Plan ID not available')
-      expect(operator.updatePendingPlanState).not.toHaveBeenCalled()
-    })
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('Plan ID not available');
+      expect(operator.updatePendingPlanState).not.toHaveBeenCalled();
+    });
 
     it('handles API errors gracefully', async () => {
       vi.mocked(operator.updatePendingPlanState).mockImplementation(() => {
-        throw new Error('disk full')
-      })
+        throw new Error('disk full');
+      });
 
-      const result = await executeApproval(planParams(), true, ROOT, 'tui-user')
+      const result = await executeApproval(planParams(), true, ROOT, 'tui-user');
 
-      expect(result.success).toBe(false)
-      expect(result.message).toContain('disk full')
-    })
-  })
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('disk full');
+    });
+  });
 
   // ── Merge-request category ─────────────────────────────────────────────────
 
@@ -263,26 +283,26 @@ describe('executeApproval', () => {
         reason: 'ok',
         message: 'Merged successfully',
         sha: 'abc123',
-      })
+      });
 
-      const result = await executeApproval(mergeParams(), true, ROOT, 'tui-user')
+      const result = await executeApproval(mergeParams(), true, ROOT, 'tui-user');
 
-      expect(result.success).toBe(true)
-      expect(result.data?.sha).toBe('abc123')
+      expect(result.success).toBe(true);
+      expect(result.data?.sha).toBe('abc123');
       expect(pr.mergeIfReady).toHaveBeenCalledWith(42, {
         no_auto_approval: true,
         no_self_review: true,
         red_zone_human_required: true,
         black_zone_never_merge: true,
-      })
+      });
       expect(collaboration.recordDecision).toHaveBeenCalledWith(
         expect.objectContaining({
           topic: 'Merge PR #42',
           decision: 'approved',
           tags: expect.arrayContaining(['merge-request', 'tui', 'pr-42']),
         }),
-      )
-    })
+      );
+    });
 
     it('merge-request approve - merge blocked returns failure', async () => {
       vi.mocked(pr.mergeIfReady).mockResolvedValue({
@@ -290,52 +310,57 @@ describe('executeApproval', () => {
         decision: 'BLOCKED' as unknown as 'approved',
         reason: 'checks failed',
         message: 'Blocked',
-      } as unknown as Awaited<ReturnType<typeof pr.mergeIfReady>>)
+      } as unknown as Awaited<ReturnType<typeof pr.mergeIfReady>>);
 
-      const result = await executeApproval(mergeParams(), true, ROOT, 'tui-user')
+      const result = await executeApproval(mergeParams(), true, ROOT, 'tui-user');
 
-      expect(result.success).toBe(false)
-      expect(result.message).toContain('Merge blocked')
-      expect(result.message).toContain('checks failed')
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('Merge blocked');
+      expect(result.message).toContain('checks failed');
       expect(collaboration.recordDecision).toHaveBeenCalledWith(
         expect.objectContaining({
           decision: 'blocked',
           rationale: 'checks failed',
         }),
-      )
-    })
+      );
+    });
 
     it('merge-request reject - records cancelled decision', async () => {
-      const result = await executeApproval(mergeParams(), false, ROOT, 'tui-user')
+      const result = await executeApproval(mergeParams(), false, ROOT, 'tui-user');
 
-      expect(result.success).toBe(true)
-      expect(result.message).toContain('rejected')
-      expect(pr.mergeIfReady).not.toHaveBeenCalled()
+      expect(result.success).toBe(true);
+      expect(result.message).toContain('rejected');
+      expect(pr.mergeIfReady).not.toHaveBeenCalled();
       expect(collaboration.recordDecision).toHaveBeenCalledWith(
         expect.objectContaining({
           decision: 'cancelled',
           rationale: expect.stringContaining('rejected via TUI'),
         }),
-      )
-    })
+      );
+    });
 
     it('merge-request without prNumber - returns failure', async () => {
-      const result = await executeApproval(mergeParams({ prNumber: undefined }), true, ROOT, 'tui-user')
+      const result = await executeApproval(
+        mergeParams({ prNumber: undefined }),
+        true,
+        ROOT,
+        'tui-user',
+      );
 
-      expect(result.success).toBe(false)
-      expect(result.message).toContain('PR number not available')
-      expect(pr.mergeIfReady).not.toHaveBeenCalled()
-    })
-  })
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('PR number not available');
+      expect(pr.mergeIfReady).not.toHaveBeenCalled();
+    });
+  });
 
   // ── Workflow-effect category ───────────────────────────────────────────────
 
   describe('workflow-effect category', () => {
     it('workflow-effect confirm - records decision', async () => {
-      const result = await executeApproval(workflowEffectParams(), true, ROOT, 'tui-user')
+      const result = await executeApproval(workflowEffectParams(), true, ROOT, 'tui-user');
 
-      expect(result.success).toBe(true)
-      expect(result.message).toContain('confirmed')
+      expect(result.success).toBe(true);
+      expect(result.message).toContain('confirmed');
       expect(collaboration.recordDecision).toHaveBeenCalledWith(
         expect.objectContaining({
           topic: 'Deploy to staging',
@@ -343,253 +368,336 @@ describe('executeApproval', () => {
           rationale: expect.stringContaining('confirmed via TUI'),
           tags: expect.arrayContaining(['workflow-effect', 'tui']),
         }),
-      )
-    })
+      );
+    });
 
     it('workflow-effect cancel - records decision', async () => {
-      const result = await executeApproval(workflowEffectParams(), false, ROOT, 'tui-user')
+      const result = await executeApproval(workflowEffectParams(), false, ROOT, 'tui-user');
 
-      expect(result.success).toBe(true)
-      expect(result.message).toContain('cancelled')
+      expect(result.success).toBe(true);
+      expect(result.message).toContain('cancelled');
       expect(collaboration.recordDecision).toHaveBeenCalledWith(
         expect.objectContaining({
           decision: 'cancelled',
           rationale: expect.stringContaining('cancelled via TUI'),
         }),
-      )
-    })
+      );
+    });
 
     it('workflow-effect includes workflowName in rationale when present', async () => {
-      await executeApproval(workflowEffectParams(), true, ROOT, 'tui-user')
+      await executeApproval(workflowEffectParams(), true, ROOT, 'tui-user');
 
       expect(collaboration.recordDecision).toHaveBeenCalledWith(
         expect.objectContaining({
           rationale: expect.stringContaining('for deploy-staging'),
         }),
-      )
-    })
+      );
+    });
 
     it('workflow-effect omits workflow name from rationale when absent', async () => {
-      await executeApproval(workflowEffectParams({ workflowName: undefined }), true, ROOT, 'tui-user')
+      await executeApproval(
+        workflowEffectParams({ workflowName: undefined }),
+        true,
+        ROOT,
+        'tui-user',
+      );
 
-      const call = vi.mocked(collaboration.recordDecision).mock.calls[0][0] as { rationale: string }
-      expect(call.rationale).not.toContain('for undefined')
-    })
-  })
+      const call = vi.mocked(collaboration.recordDecision).mock.calls[0][0] as {
+        rationale: string;
+      };
+      expect(call.rationale).not.toContain('for undefined');
+    });
+  });
 
   // ── GitHub-review category ─────────────────────────────────────────────────
 
   describe('github-review category', () => {
     it('github-review always returns CLI fallback', async () => {
-      const result = await executeApproval(githubReviewParams(), true, ROOT, 'tui-user')
+      const result = await executeApproval(githubReviewParams(), true, ROOT, 'tui-user');
 
-      expect(result.success).toBe(false)
-      expect(result.message).toContain('GitHub PR approval requires human GitHub identity')
-      expect(result.data?.cliCommand).toContain('gh pr review')
-    })
-  })
-})
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('GitHub PR approval requires human GitHub identity');
+      expect(result.data?.cliCommand).toContain('gh pr review');
+    });
+  });
+});
 
 // ── executeTrustChange ───────────────────────────────────────────────────────────
 
 describe('executeTrustChange', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-  })
+    vi.clearAllMocks();
+  });
 
   it('changes trust level successfully', async () => {
-    const result = await executeTrustChange('my-workflow', 'untrusted', 'trusted', ROOT)
+    const result = await executeTrustChange('my-workflow', 'untrusted', 'trusted', ROOT);
 
-    expect(result.success).toBe(true)
-    expect(result.message).toContain('my-workflow')
-    expect(result.message).toContain('untrusted')
-    expect(result.message).toContain('trusted')
-    expect(vi.mocked(TrustStore).mock.results[0].value.set).toHaveBeenCalledWith('my-workflow', 'trusted')
-    expect(vi.mocked(TrustStore).mock.results[0].value.save).toHaveBeenCalled()
-    expect(TrustStore).toHaveBeenCalledWith({ rootDir: ROOT })
-  })
+    expect(result.success).toBe(true);
+    expect(result.message).toContain('my-workflow');
+    expect(result.message).toContain('untrusted');
+    expect(result.message).toContain('trusted');
+    expect(vi.mocked(TrustStore).mock.results[0].value.set).toHaveBeenCalledWith(
+      'my-workflow',
+      'trusted',
+    );
+    expect(vi.mocked(TrustStore).mock.results[0].value.save).toHaveBeenCalled();
+    expect(TrustStore).toHaveBeenCalledWith({ rootDir: ROOT });
+  });
 
   it('rejects core workflows', async () => {
-    const result = await executeTrustChange('system-critical', 'core', 'trusted', ROOT)
+    const result = await executeTrustChange('system-critical', 'core', 'trusted', ROOT);
 
-    expect(result.success).toBe(false)
-    expect(result.message).toContain('Protected workflows')
-  })
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('Protected workflows');
+  });
 
   it('rejects builtin workflows', async () => {
-    const result = await executeTrustChange('builtin-checks', 'builtin', 'trusted', ROOT)
+    const result = await executeTrustChange('builtin-checks', 'builtin', 'trusted', ROOT);
 
-    expect(result.success).toBe(false)
-    expect(result.message).toContain('Protected workflows')
-  })
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('Protected workflows');
+  });
 
   it('handles save errors', async () => {
-    const { TrustStore: MockedTrustStore } = await import('@openslack/workflows')
-    vi.mocked(MockedTrustStore).mockImplementation(() => (({
-      rootDir: ROOT,
-      get: vi.fn(() => 'untrusted'),
-      set: vi.fn(),
-      save: vi.fn(() => { throw new Error('permission denied') }),
-    }) as unknown as InstanceType<typeof MockedTrustStore>))
+    const { TrustStore: MockedTrustStore } = await import('@openslack/workflows');
+    vi.mocked(MockedTrustStore).mockImplementation(
+      () =>
+        ({
+          rootDir: ROOT,
+          get: vi.fn(() => 'untrusted'),
+          set: vi.fn(),
+          save: vi.fn(() => {
+            throw new Error('permission denied');
+          }),
+        }) as unknown as InstanceType<typeof MockedTrustStore>,
+    );
 
-    const result = await executeTrustChange('my-workflow', 'untrusted', 'trusted', ROOT)
+    const result = await executeTrustChange('my-workflow', 'untrusted', 'trusted', ROOT);
 
-    expect(result.success).toBe(false)
-    expect(result.message).toContain('permission denied')
-  })
-})
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('permission denied');
+  });
+});
 
 // ── workflow start and save/share handlers ─────────────────────────────────────
 
 describe('workflow start and save/share handlers', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-  })
+    vi.clearAllMocks();
+  });
 
   it('starts a workflow draft from prompt', async () => {
-    const { generateWorkflowDraft } = await import('@openslack/workflows')
+    const { generateWorkflowDraft } = await import('@openslack/workflows');
 
-    const result = await startWorkflowFromPrompt('audit all workflow routes', ROOT)
+    const result = await startWorkflowFromPrompt('audit all workflow routes', ROOT);
 
-    expect(result.success).toBe(true)
-    expect(result.message).toContain('draft-001')
+    expect(result.success).toBe(true);
+    expect(result.message).toContain('draft-001');
     expect(generateWorkflowDraft).toHaveBeenCalledWith({
       prompt: 'audit all workflow routes',
       rootDir: ROOT,
-    })
-  })
+    });
+  });
 
   it('starts a workflow draft from pattern registry', async () => {
-    const { generateWorkflowDraft, getWorkflowPattern } = await import('@openslack/workflows')
+    const { generateWorkflowDraft, getWorkflowPattern } = await import('@openslack/workflows');
 
-    const result = await startWorkflowFromPattern('fanout-synthesize', ROOT)
+    const result = await startWorkflowFromPattern('fanout-synthesize', ROOT);
 
-    expect(result.success).toBe(true)
-    expect(getWorkflowPattern).toHaveBeenCalledWith('fanout-synthesize')
-    expect(generateWorkflowDraft).toHaveBeenCalledWith(expect.objectContaining({
-      pattern: 'fanout-synthesize',
-      rootDir: ROOT,
-    }))
-  })
+    expect(result.success).toBe(true);
+    expect(getWorkflowPattern).toHaveBeenCalledWith('fanout-synthesize');
+    expect(generateWorkflowDraft).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pattern: 'fanout-synthesize',
+        rootDir: ROOT,
+      }),
+    );
+  });
 
   it('rejects unknown workflow start patterns', async () => {
-    const result = await startWorkflowFromPattern('missing-pattern', ROOT)
+    const result = await startWorkflowFromPattern('missing-pattern', ROOT);
 
-    expect(result.success).toBe(false)
-    expect(result.message).toContain('Unknown workflow pattern')
-  })
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('Unknown workflow pattern');
+  });
 
   it('saves workflow run scripts to project, user, and Claude project targets', async () => {
-    const { saveWorkflowRunScript } = await import('@openslack/workflows')
+    const { saveWorkflowRunScript } = await import('@openslack/workflows');
 
-    await saveWorkflowRunScriptFromTui('run-001', ROOT, 'project')
-    await saveWorkflowRunScriptFromTui('run-001', ROOT, 'user')
-    await saveWorkflowRunScriptFromTui('run-001', ROOT, 'claude-project')
+    await saveWorkflowRunScriptFromTui('run-001', ROOT, 'project');
+    await saveWorkflowRunScriptFromTui('run-001', ROOT, 'user');
+    await saveWorkflowRunScriptFromTui('run-001', ROOT, 'claude-project');
 
-    expect(saveWorkflowRunScript).toHaveBeenNthCalledWith(1, 'run-001', { rootDir: ROOT, to: 'project' })
-    expect(saveWorkflowRunScript).toHaveBeenNthCalledWith(2, 'run-001', { rootDir: ROOT, to: 'user' })
-    expect(saveWorkflowRunScript).toHaveBeenNthCalledWith(3, 'run-001', { rootDir: ROOT, to: 'claude-project' })
-  })
+    expect(saveWorkflowRunScript).toHaveBeenNthCalledWith(1, 'run-001', {
+      rootDir: ROOT,
+      to: 'project',
+    });
+    expect(saveWorkflowRunScript).toHaveBeenNthCalledWith(2, 'run-001', {
+      rootDir: ROOT,
+      to: 'user',
+    });
+    expect(saveWorkflowRunScript).toHaveBeenNthCalledWith(3, 'run-001', {
+      rootDir: ROOT,
+      to: 'claude-project',
+    });
+  });
 
   it('splits workflow phases by creating a parent issue when none is provided', async () => {
-    const { findWorkflow, loadWorkflow } = await import('@openslack/workflows')
-    vi.mocked(findWorkflow).mockResolvedValueOnce({ path: '/test/wf.js', name: 'test-wf', source: 'openslack-project' })
+    const { findWorkflow, loadWorkflow } = await import('@openslack/workflows');
+    vi.mocked(findWorkflow).mockResolvedValueOnce({
+      path: '/test/wf.js',
+      name: 'test-wf',
+      source: 'openslack-project',
+    });
     vi.mocked(loadWorkflow).mockResolvedValueOnce({
-      meta: { name: 'test-wf', description: 'Test', phases: [{ title: 'Scan', detail: 'Scan' }], risk: 'medium' },
+      meta: {
+        name: 'test-wf',
+        description: 'Test',
+        phases: [{ title: 'Scan', detail: 'Scan' }],
+        risk: 'medium',
+      },
       format: 'openslack-native',
       hash: 'hash123',
-    })
+    });
     vi.mocked(github.publishWorkflowSplit).mockResolvedValueOnce({
       parentIssueNumber: 100,
       subIssues: [{ phase: 'Scan', issueNumber: 101, url: 'https://github.com/test/101' }],
-      links: { nativeSubIssues: 0, fallbackSubIssues: 1, nativeDependencies: 0, fallbackDependencies: 0, fallbackReasons: [] },
-    })
+      links: {
+        nativeSubIssues: 0,
+        fallbackSubIssues: 1,
+        nativeDependencies: 0,
+        fallbackDependencies: 0,
+        fallbackReasons: [],
+      },
+    });
 
-    const result = await splitWorkflowIntoIssues('test-wf', undefined, ROOT)
+    const result = await splitWorkflowIntoIssues('test-wf', undefined, ROOT);
 
-    expect(result.success).toBe(true)
-    expect(github.publishWorkflowSplit).toHaveBeenCalledWith(expect.any(Object), {})
-    expect(result.data?.parentIssueNumber).toBe(100)
-  })
+    expect(result.success).toBe(true);
+    expect(github.publishWorkflowSplit).toHaveBeenCalledWith(expect.any(Object), {});
+    expect(result.data?.parentIssueNumber).toBe(100);
+  });
 
   it('passes an existing parent issue when splitting workflow phases', async () => {
-    const { findWorkflow, loadWorkflow } = await import('@openslack/workflows')
-    vi.mocked(findWorkflow).mockResolvedValueOnce({ path: '/test/wf.js', name: 'test-wf', source: 'openslack-project' })
+    const { findWorkflow, loadWorkflow } = await import('@openslack/workflows');
+    vi.mocked(findWorkflow).mockResolvedValueOnce({
+      path: '/test/wf.js',
+      name: 'test-wf',
+      source: 'openslack-project',
+    });
     vi.mocked(loadWorkflow).mockResolvedValueOnce({
-      meta: { name: 'test-wf', description: 'Test', phases: [{ title: 'Scan', detail: 'Scan' }], risk: 'medium' },
+      meta: {
+        name: 'test-wf',
+        description: 'Test',
+        phases: [{ title: 'Scan', detail: 'Scan' }],
+        risk: 'medium',
+      },
       format: 'openslack-native',
       hash: 'hash123',
-    })
+    });
     vi.mocked(github.publishWorkflowSplit).mockResolvedValueOnce({
       parentIssueNumber: 42,
       subIssues: [{ phase: 'Scan', issueNumber: 43, url: 'https://github.com/test/43' }],
-      links: { nativeSubIssues: 0, fallbackSubIssues: 1, nativeDependencies: 0, fallbackDependencies: 0, fallbackReasons: [] },
-    })
+      links: {
+        nativeSubIssues: 0,
+        fallbackSubIssues: 1,
+        nativeDependencies: 0,
+        fallbackDependencies: 0,
+        fallbackReasons: [],
+      },
+    });
 
-    const result = await splitWorkflowIntoIssues('test-wf', 42, ROOT)
+    const result = await splitWorkflowIntoIssues('test-wf', 42, ROOT);
 
-    expect(result.success).toBe(true)
-    expect(github.publishWorkflowSplit).toHaveBeenCalledWith(expect.any(Object), { parentIssue: 42 })
-    expect(result.data?.parentIssueNumber).toBe(42)
-  })
-})
+    expect(result.success).toBe(true);
+    expect(github.publishWorkflowSplit).toHaveBeenCalledWith(expect.any(Object), {
+      parentIssue: 42,
+    });
+    expect(result.data?.parentIssueNumber).toBe(42);
+  });
+});
 
 // ── executeWorkflowRun ───────────────────────────────────────────────────────────
 
 describe('executeWorkflowRun', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-  })
+    vi.clearAllMocks();
+  });
 
   it('returns not found for missing workflow', async () => {
-    const result = await executeWorkflowRun('deploy-production', 'preview', process.cwd())
+    const result = await executeWorkflowRun('deploy-production', 'preview', process.cwd());
 
-    expect(result.success).toBe(false)
-    expect(result.message).toContain('not found')
-  })
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('not found');
+  });
 
   it('returns not found for missing workflow in dry-run mode', async () => {
-    const result = await executeWorkflowRun('deploy-production', 'dry-run', process.cwd())
+    const result = await executeWorkflowRun('deploy-production', 'dry-run', process.cwd());
 
-    expect(result.success).toBe(false)
-    expect(result.message).toContain('not found')
-  })
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('not found');
+  });
 
   it('returns not found for missing workflow in run mode', async () => {
-    const result = await executeWorkflowRun('deploy-production', 'run', process.cwd())
+    const result = await executeWorkflowRun('deploy-production', 'run', process.cwd());
 
-    expect(result.success).toBe(false)
-    expect(result.message).toContain('not found')
-  })
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('not found');
+  });
 
   it('run mode builds manifest and passes confirmationPolicy', async () => {
-    const { findWorkflow, loadWorkflow, executeDryRun, executeRun, buildApprovalManifest, TrustStore } = await import('@openslack/workflows')
-    vi.mocked(findWorkflow).mockResolvedValue({ path: '/test/wf.js', name: 'test-wf', source: 'openslack-project' })
+    const {
+      findWorkflow,
+      loadWorkflow,
+      executeDryRun,
+      executeRun,
+      buildApprovalManifest,
+      TrustStore,
+    } = await import('@openslack/workflows');
+    vi.mocked(findWorkflow).mockResolvedValue({
+      path: '/test/wf.js',
+      name: 'test-wf',
+      source: 'openslack-project',
+    });
     vi.mocked(loadWorkflow).mockResolvedValue({
-      meta: { name: 'test-wf', description: 'Test', phases: [{ title: 'Scan', detail: 'Scan' }], risk: 'medium' },
+      meta: {
+        name: 'test-wf',
+        description: 'Test',
+        phases: [{ title: 'Scan', detail: 'Scan' }],
+        risk: 'medium',
+      },
       format: 'openslack-native',
       hash: 'hash123',
-    })
-    vi.mocked(TrustStore).mockImplementation(() => ({
-      rootDir: ROOT,
-      get: vi.fn(() => 'trusted'),
-      set: vi.fn(),
-      save: vi.fn(),
-    }) as unknown as InstanceType<typeof TrustStore>)
+    });
+    vi.mocked(TrustStore).mockImplementation(
+      () =>
+        ({
+          rootDir: ROOT,
+          get: vi.fn(() => 'trusted'),
+          set: vi.fn(),
+          save: vi.fn(),
+        }) as unknown as InstanceType<typeof TrustStore>,
+    );
     vi.mocked(executeDryRun).mockResolvedValue({
       dryRun: true,
       runId: 'dryrun-001',
       workflowName: 'test-wf',
-      simulatedEffects: [{ operation: 'openslack.task.createIssue', detail: 'Create issue', timestamp: '2026-01-01T00:00:00Z' }],
+      simulatedEffects: [
+        {
+          operation: 'openslack.task.createIssue',
+          detail: 'Create issue',
+          timestamp: '2026-01-01T00:00:00Z',
+        },
+      ],
       errors: [],
-    })
-    vi.mocked(executeRun).mockResolvedValue({ status: 'completed' })
+    });
+    vi.mocked(executeRun).mockResolvedValue({ status: 'completed' });
 
-    const result = await executeWorkflowRun('test-wf', 'run', ROOT)
+    const result = await executeWorkflowRun('test-wf', 'run', ROOT);
 
-    expect(result.success).toBe(true)
-    expect(executeDryRun).toHaveBeenCalled()
-    expect(buildApprovalManifest).toHaveBeenCalled()
+    expect(result.success).toBe(true);
+    expect(executeDryRun).toHaveBeenCalled();
+    expect(buildApprovalManifest).toHaveBeenCalled();
     expect(executeRun).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -598,171 +706,235 @@ describe('executeWorkflowRun', () => {
           onUnexpectedEffect: 'pause',
         }),
       }),
-    )
-  })
+    );
+  });
 
   it('run mode rejects untrusted high-risk workflow', async () => {
-    const { findWorkflow, loadWorkflow, TrustStore } = await import('@openslack/workflows')
-    vi.mocked(findWorkflow).mockResolvedValue({ path: '/test/wf.js', name: 'risky-wf', source: 'openslack-project' })
+    const { findWorkflow, loadWorkflow, TrustStore } = await import('@openslack/workflows');
+    vi.mocked(findWorkflow).mockResolvedValue({
+      path: '/test/wf.js',
+      name: 'risky-wf',
+      source: 'openslack-project',
+    });
     vi.mocked(loadWorkflow).mockResolvedValue({
-      meta: { name: 'risky-wf', description: 'Risky', phases: [{ title: 'Scan', detail: 'Scan' }], risk: 'high' },
+      meta: {
+        name: 'risky-wf',
+        description: 'Risky',
+        phases: [{ title: 'Scan', detail: 'Scan' }],
+        risk: 'high',
+      },
       format: 'openslack-native',
       hash: 'hash123',
-    })
-    vi.mocked(TrustStore).mockImplementation(() => ({
-      rootDir: ROOT,
-      get: vi.fn(() => 'untrusted'),
-      set: vi.fn(),
-      save: vi.fn(),
-    }) as unknown as InstanceType<typeof TrustStore>)
+    });
+    vi.mocked(TrustStore).mockImplementation(
+      () =>
+        ({
+          rootDir: ROOT,
+          get: vi.fn(() => 'untrusted'),
+          set: vi.fn(),
+          save: vi.fn(),
+        }) as unknown as InstanceType<typeof TrustStore>,
+    );
 
-    const result = await executeWorkflowRun('risky-wf', 'run', ROOT, 'tui-user')
+    const result = await executeWorkflowRun('risky-wf', 'run', ROOT, 'tui-user');
 
-    expect(result.success).toBe(false)
-    expect(result.message).toContain('untrusted')
-  })
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('untrusted');
+  });
 
   it('run mode returns pause message on WorkflowPausedError', async () => {
-    const { findWorkflow, loadWorkflow, executeDryRun, executeRun, WorkflowPausedError } = await import('@openslack/workflows')
-    vi.mocked(findWorkflow).mockResolvedValue({ path: '/test/wf.js', name: 'test-wf', source: 'openslack-project' })
+    const { findWorkflow, loadWorkflow, executeDryRun, executeRun, WorkflowPausedError } =
+      await import('@openslack/workflows');
+    vi.mocked(findWorkflow).mockResolvedValue({
+      path: '/test/wf.js',
+      name: 'test-wf',
+      source: 'openslack-project',
+    });
     vi.mocked(loadWorkflow).mockResolvedValue({
-      meta: { name: 'test-wf', description: 'Test', phases: [{ title: 'Scan', detail: 'Scan' }], risk: 'low' },
+      meta: {
+        name: 'test-wf',
+        description: 'Test',
+        phases: [{ title: 'Scan', detail: 'Scan' }],
+        risk: 'low',
+      },
       format: 'openslack-native',
       hash: 'hash123',
-    })
+    });
     vi.mocked(executeDryRun).mockResolvedValue({
       dryRun: true,
       runId: 'dryrun-001',
       workflowName: 'test-wf',
       simulatedEffects: [],
       errors: [],
-    })
+    });
     vi.mocked(executeRun).mockImplementation(() => {
-      throw new WorkflowPausedError('openslack.task.checkout', 'Checkout', 'run-001')
-    })
+      throw new WorkflowPausedError('openslack.task.checkout', 'Checkout', 'run-001');
+    });
 
-    const result = await executeWorkflowRun('test-wf', 'run', ROOT)
+    const result = await executeWorkflowRun('test-wf', 'run', ROOT);
 
-    expect(result.success).toBe(false)
-    expect(result.message).toContain('paused')
-    expect(result.message).toContain('openslack.task.checkout')
-    expect(result.data).toMatchObject({ runId: 'run-001', operation: 'openslack.task.checkout' })
-  })
-})
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('paused');
+    expect(result.message).toContain('openslack.task.checkout');
+    expect(result.data).toMatchObject({ runId: 'run-001', operation: 'openslack.task.checkout' });
+  });
+});
 
 // ── executeApproval workflow-effect with runId ───────────────────────────────────
 
 describe('executeApproval workflow-effect with runId', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
-  })
+    vi.clearAllMocks();
+  });
 
   it('approves and resumes paused workflow', async () => {
-    const { RunStore, findWorkflow, loadWorkflow, executeResume } = await import('@openslack/workflows')
+    const { RunStore, findWorkflow, loadWorkflow, executeResume } =
+      await import('@openslack/workflows');
     const mockStore = {
       loadPendingApprovals: vi.fn(() => [
-        { id: 'appr-1', operation: 'openslack.task.createIssue', detail: 'Create issue', timestamp: '2026-01-01T00:00:00Z', status: 'pending' },
+        {
+          id: 'appr-1',
+          operation: 'openslack.task.createIssue',
+          detail: 'Create issue',
+          timestamp: '2026-01-01T00:00:00Z',
+          status: 'pending',
+        },
       ]),
       resolvePendingApproval: vi.fn(),
       transitionStatus: vi.fn(),
-      loadMeta: vi.fn(() => ({ runId: 'run-001', workflowName: 'test-wf', mode: 'execute', manifestHash: 'abc', args: {}, startedAt: '2026-01-01T00:00:00Z' })),
-    }
-    vi.mocked(RunStore).mockImplementation(() => mockStore as unknown as InstanceType<typeof RunStore>)
-    vi.mocked(findWorkflow).mockResolvedValue({ path: '/test/wf.js', name: 'test-wf', source: 'openslack-project' })
+      loadMeta: vi.fn(() => ({
+        runId: 'run-001',
+        workflowName: 'test-wf',
+        mode: 'execute',
+        manifestHash: 'abc',
+        args: {},
+        startedAt: '2026-01-01T00:00:00Z',
+      })),
+    };
+    vi.mocked(RunStore).mockImplementation(
+      () => mockStore as unknown as InstanceType<typeof RunStore>,
+    );
+    vi.mocked(findWorkflow).mockResolvedValue({
+      path: '/test/wf.js',
+      name: 'test-wf',
+      source: 'openslack-project',
+    });
     vi.mocked(loadWorkflow).mockResolvedValue({
       meta: { name: 'test-wf', description: 'Test', phases: [{ title: 'Scan', detail: 'Scan' }] },
       format: 'openslack-native',
       hash: 'hash123',
-    })
-    vi.mocked(executeResume).mockResolvedValue({ status: 'completed' })
+    });
+    vi.mocked(executeResume).mockResolvedValue({ status: 'completed' });
 
     const result = await executeApproval(
-      { id: 'run-001', category: 'workflow-effect', title: 'Paused workflow', runId: 'run-001', workflowName: 'test-wf' },
+      {
+        id: 'run-001',
+        category: 'workflow-effect',
+        title: 'Paused workflow',
+        runId: 'run-001',
+        workflowName: 'test-wf',
+      },
       true,
       ROOT,
       'tui-user',
-    )
+    );
 
-    expect(result.success).toBe(true)
-    expect(result.message).toContain('resumed')
-    expect(mockStore.resolvePendingApproval).toHaveBeenCalledWith('run-001', 'appr-1', 'approved')
+    expect(result.success).toBe(true);
+    expect(result.message).toContain('resumed');
+    expect(mockStore.resolvePendingApproval).toHaveBeenCalledWith('run-001', 'appr-1', 'approved');
     expect(collaboration.recordDecision).toHaveBeenCalledWith(
       expect.objectContaining({
         decision: 'approved',
         tags: expect.arrayContaining(['workflow-effect', 'tui', 'run-run-001']),
       }),
-    )
-  })
+    );
+  });
 
   it('rejects and cancels paused workflow', async () => {
-    const { RunStore } = await import('@openslack/workflows')
+    const { RunStore } = await import('@openslack/workflows');
     const mockStore = {
       loadPendingApprovals: vi.fn(() => [
-        { id: 'appr-1', operation: 'openslack.task.createIssue', detail: 'Create issue', timestamp: '2026-01-01T00:00:00Z', status: 'pending' },
+        {
+          id: 'appr-1',
+          operation: 'openslack.task.createIssue',
+          detail: 'Create issue',
+          timestamp: '2026-01-01T00:00:00Z',
+          status: 'pending',
+        },
       ]),
       resolvePendingApproval: vi.fn(),
       transitionStatus: vi.fn(),
-    }
-    vi.mocked(RunStore).mockImplementation(() => mockStore as unknown as InstanceType<typeof RunStore>)
+    };
+    vi.mocked(RunStore).mockImplementation(
+      () => mockStore as unknown as InstanceType<typeof RunStore>,
+    );
 
     const result = await executeApproval(
-      { id: 'run-001', category: 'workflow-effect', title: 'Paused workflow', runId: 'run-001', workflowName: 'test-wf' },
+      {
+        id: 'run-001',
+        category: 'workflow-effect',
+        title: 'Paused workflow',
+        runId: 'run-001',
+        workflowName: 'test-wf',
+      },
       false,
       ROOT,
       'tui-user',
-    )
+    );
 
-    expect(result.success).toBe(true)
-    expect(result.message).toContain('cancelled')
-    expect(mockStore.resolvePendingApproval).toHaveBeenCalledWith('run-001', 'appr-1', 'rejected')
-    expect(mockStore.transitionStatus).toHaveBeenCalledWith('run-001', 'cancelled')
+    expect(result.success).toBe(true);
+    expect(result.message).toContain('cancelled');
+    expect(mockStore.resolvePendingApproval).toHaveBeenCalledWith('run-001', 'appr-1', 'rejected');
+    expect(mockStore.transitionStatus).toHaveBeenCalledWith('run-001', 'cancelled');
     expect(collaboration.recordDecision).toHaveBeenCalledWith(
       expect.objectContaining({
         decision: 'cancelled',
         tags: expect.arrayContaining(['workflow-effect', 'tui', 'run-run-001']),
       }),
-    )
-  })
-})
+    );
+  });
+});
 
 // ── conversation-first workbench ask handlers ─────────────────────────────────
 
 describe('conversation-first workbench ask handlers', () => {
-  let tempRoot: string
+  let tempRoot: string;
 
   beforeEach(() => {
-    vi.clearAllMocks()
-    tempRoot = mkdtempSync(join(tmpdir(), 'openslack-tui-ask-'))
-  })
+    vi.clearAllMocks();
+    tempRoot = mkdtempSync(join(tmpdir(), 'openslack-tui-ask-'));
+  });
 
   afterEach(() => {
-    rmSync(tempRoot, { recursive: true, force: true })
-  })
+    rmSync(tempRoot, { recursive: true, force: true });
+  });
 
   it('creates a workbench thread and records user ask plus plan summary', async () => {
-    const result = await submitWorkbenchAskFromTui('check status', tempRoot, 'tui-user')
+    const result = await submitWorkbenchAskFromTui('check status', tempRoot, 'tui-user');
 
-    expect(result.status).toBe('planned')
-    expect(result.threadId).toMatch(/^CONV-/)
-    expect(result.message).toContain('status')
-    expect(result.cards.some(card => card.route === 'status')).toBe(true)
+    expect(result.status).toBe('planned');
+    expect(result.threadId).toMatch(/^CONV-/);
+    expect(result.message).toContain('status');
+    expect(result.cards.some((card) => card.route === 'status')).toBe(true);
 
-    const stored = collaboration.getThread(result.threadId, tempRoot)
-    expect(stored?.thread.title).toBe('OpenSlack Workbench Session')
-    expect(stored?.messages).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        kind: 'user_message',
-        authorId: 'tui-user',
-        text: 'check status',
-      }),
-      expect.objectContaining({
-        kind: 'plan',
-        authorId: 'openslack',
-        planId: `tui-${result.threadId}-plan-2`,
-        steps: expect.arrayContaining([expect.stringContaining('status')]),
-      }),
-    ]))
-  })
+    const stored = collaboration.getThread(result.threadId, tempRoot);
+    expect(stored?.thread.title).toBe('OpenSlack Workbench Session');
+    expect(stored?.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'user_message',
+          authorId: 'tui-user',
+          text: 'check status',
+        }),
+        expect.objectContaining({
+          kind: 'plan',
+          authorId: 'openslack',
+          planId: `tui-${result.threadId}-plan-2`,
+          steps: expect.arrayContaining([expect.stringContaining('status')]),
+        }),
+      ]),
+    );
+  });
 
   it('routes workbench planning through the supplied application registries', async () => {
     const createStep = vi.fn((...args: Parameters<ActionRegistryPort['createStep']>) =>
@@ -772,8 +944,7 @@ describe('conversation-first workbench ask handlers', () => {
       list: () => operator.BUILTIN_ACTION_REGISTRY.list(),
       get: (actionId: string) => operator.BUILTIN_ACTION_REGISTRY.get(actionId),
       createStep,
-      revalidateStep: (value: unknown) =>
-        operator.BUILTIN_ACTION_REGISTRY.revalidateStep(value),
+      revalidateStep: (value: unknown) => operator.BUILTIN_ACTION_REGISTRY.revalidateStep(value),
       buildPlanSteps: (...args: Parameters<ActionRegistryPort['buildPlanSteps']>) =>
         operator.BUILTIN_ACTION_REGISTRY.buildPlanSteps(...args),
     } satisfies ActionRegistryPort;
@@ -795,19 +966,19 @@ describe('conversation-first workbench ask handlers', () => {
   });
 
   it('does not create a workbench thread for empty input', async () => {
-    const result = await submitWorkbenchAskFromTui('   ', tempRoot, 'tui-user')
+    const result = await submitWorkbenchAskFromTui('   ', tempRoot, 'tui-user');
 
-    expect(result.status).toBe('error')
-    expect(collaboration.listThreads({ rootDir: tempRoot })).toHaveLength(0)
-  })
+    expect(result.status).toBe('error');
+    expect(collaboration.listThreads({ rootDir: tempRoot })).toHaveLength(0);
+  });
 
   it('records action card execution and links referenced objects', async () => {
-    const ask = await submitWorkbenchAskFromTui('PR #42 status', tempRoot, 'tui-user')
-    expect(ask.cards).toEqual(expect.arrayContaining([
-      expect.objectContaining({ command: 'openslack pr status 42' }),
-    ]))
-    const card = ask.cards.find(item => item.linkedObject?.kind === 'pr')
-    expect(card).toBeDefined()
+    const ask = await submitWorkbenchAskFromTui('PR #42 status', tempRoot, 'tui-user');
+    expect(ask.cards).toEqual(
+      expect.arrayContaining([expect.objectContaining({ command: 'openslack pr status 42' })]),
+    );
+    const card = ask.cards.find((item) => item.linkedObject?.kind === 'pr');
+    expect(card).toBeDefined();
 
     const result = await recordWorkbenchActionFromTui(
       ask.threadId,
@@ -815,27 +986,33 @@ describe('conversation-first workbench ask handlers', () => {
       'Use: openslack pr status 42',
       tempRoot,
       'tui-user',
-    )
+    );
 
-    expect(result.success).toBe(true)
-    const stored = collaboration.getThread(ask.threadId, tempRoot)
-    expect(stored?.thread.linkedObjects).toContainEqual({ kind: 'pr', id: '42' })
-    expect(stored?.messages).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        kind: 'tool_event',
-        toolName: 'tui.action_card',
-        input: expect.objectContaining({ id: card!.id, kind: card!.kind }),
-        output: expect.objectContaining({ message: 'Use: openslack pr status 42' }),
-      }),
-    ]))
-  })
+    expect(result.success).toBe(true);
+    const stored = collaboration.getThread(ask.threadId, tempRoot);
+    expect(stored?.thread.linkedObjects).toContainEqual({ kind: 'pr', id: '42' });
+    expect(stored?.messages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'tool_event',
+          toolName: 'tui.action_card',
+          input: expect.objectContaining({ id: card!.id, kind: card!.kind }),
+          output: expect.objectContaining({ message: 'Use: openslack pr status 42' }),
+        }),
+      ]),
+    );
+  });
 
   it('records missing subagent mentions as user messages without dispatching', async () => {
-    const result = await submitWorkbenchAskFromTui('@missing-agent review PR #42', tempRoot, 'tui-user')
+    const result = await submitWorkbenchAskFromTui(
+      '@missing-agent review PR #42',
+      tempRoot,
+      'tui-user',
+    );
 
-    expect(result.status).toBe('recorded')
-    expect(result.cards).toHaveLength(0)
-    expect(result.message).toContain('Agent "missing-agent" not found')
+    expect(result.status).toBe('recorded');
+    expect(result.cards).toHaveLength(0);
+    expect(result.message).toContain('Agent "missing-agent" not found');
 
     const stored = collaboration.getThread(result.threadId, tempRoot);
     expect(stored?.messages).toEqual(

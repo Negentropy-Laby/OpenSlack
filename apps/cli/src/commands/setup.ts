@@ -105,20 +105,11 @@ export function setupCommands(dependencies: SetupCommandDependencies = {}): Comm
     .command('attach')
     .description('Preview or transactionally attach OpenSlack to an ordinary GitHub repository')
     .requiredOption('--repo <owner/name>', 'Canonical GitHub repository')
-    .option(
-      '--mode <mode>',
-      'Attach mode: read-only-monitor or full-agent',
-      'read-only-monitor',
-    )
+    .option('--mode <mode>', 'Attach mode: read-only-monitor or full-agent', 'read-only-monitor')
     .option('--apply', 'Commit the previewed workspace transaction')
     .option('--start-watch', 'Start the foreground watch daemon after a successful apply')
     .action(
-      async (options: {
-        repo: string;
-        mode: string;
-        apply?: boolean;
-        startWatch?: boolean;
-      }) => {
+      async (options: { repo: string; mode: string; apply?: boolean; startWatch?: boolean }) => {
         let committed = false;
         try {
           if (options.startWatch && !options.apply) {

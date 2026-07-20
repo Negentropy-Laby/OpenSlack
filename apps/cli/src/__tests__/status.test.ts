@@ -3,37 +3,39 @@ import { mapProductRegistryToStatusTuiFields, statusCommands } from '../commands
 import type { AttentionItem } from '@openslack/runtime';
 import type { ModulesRegistry } from '@openslack/workspace';
 
-const mockReadModules = vi.fn((): ModulesRegistry => ({
-  schema: 'openslack.modules.v2',
-  sourceSchema: 'openslack.modules.v2',
-  modules: [
-    {
-      id: 'runtime',
-      name: 'runtime',
-      phase: '1',
-      status: 'active',
-      maturity: 'local_ready',
-      operatorConfigured: false,
-      externalBlockers: ['clean_machine_smoke_pending'],
-      evidenceRefs: ['test:packages/runtime/src/__tests__'],
-      tests: 42,
-      packages: ['@openslack/runtime'],
-    },
-    {
-      id: 'collaboration',
-      name: 'collaboration',
-      phase: '2',
-      status: 'active',
-      maturity: 'implemented',
-      operatorConfigured: false,
-      externalBlockers: [],
-      evidenceRefs: ['test:packages/collaboration/src/__tests__'],
-      tests: 30,
-      packages: ['@openslack/collaboration'],
-    },
-  ],
-  deferredWork: [],
-}));
+const mockReadModules = vi.fn(
+  (): ModulesRegistry => ({
+    schema: 'openslack.modules.v2',
+    sourceSchema: 'openslack.modules.v2',
+    modules: [
+      {
+        id: 'runtime',
+        name: 'runtime',
+        phase: '1',
+        status: 'active',
+        maturity: 'local_ready',
+        operatorConfigured: false,
+        externalBlockers: ['clean_machine_smoke_pending'],
+        evidenceRefs: ['test:packages/runtime/src/__tests__'],
+        tests: 42,
+        packages: ['@openslack/runtime'],
+      },
+      {
+        id: 'collaboration',
+        name: 'collaboration',
+        phase: '2',
+        status: 'active',
+        maturity: 'implemented',
+        operatorConfigured: false,
+        externalBlockers: [],
+        evidenceRefs: ['test:packages/collaboration/src/__tests__'],
+        tests: 30,
+        packages: ['@openslack/collaboration'],
+      },
+    ],
+    deferredWork: [],
+  }),
+);
 const mockValidateModules = vi.fn(() => ({ valid: true, errors: [] }));
 const mockGetTotalTests = vi.fn(() => 72);
 const mockGetTotalTestFiles = vi.fn(() => 12);
