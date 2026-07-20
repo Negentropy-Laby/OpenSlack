@@ -29,6 +29,7 @@ No agent may merge its own pull request.
 ## 4. Protected Areas
 
 The following paths are constitutional or governance-critical:
+
 - `.github/**`
 - `.openslack/policies/**`
 - `.openslack/agents/registry/**`
