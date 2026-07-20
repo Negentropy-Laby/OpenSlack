@@ -2,7 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { format as formatMarkdown } from 'prettier';
 import {
   generateStatusDoc,
+  inlineCodeCell,
   mapProductRegistryToStatusTuiFields,
+  renderMarkdownTable,
   statusCommands,
 } from '../commands/status.js';
 import type { AttentionItem } from '@openslack/runtime';
@@ -249,6 +251,10 @@ describe('status command', () => {
     expect(generated).toContain('`test:packages/runtime/src/__tests__`');
     expect(generated).not.toContain('**tests**');
     expect(await formatMarkdown(generated, { parser: 'markdown' })).toBe(generated);
+    expect(inlineCodeCell('test:packages/runtime/src/__tests__')).toBe(
+      '`test:packages/runtime/src/__tests__`',
+    );
+    expect(renderMarkdownTable(['Field'], [['Value']])).toBe('| Field |\n| ----- |\n| Value |');
   });
 
   it('shows All clear when no attention items', async () => {

@@ -66,7 +66,7 @@ function tableCell(value: string): string {
   return value.replace(/\|/g, '\\|').replace(/\s+/g, ' ').trim();
 }
 
-function inlineCodeCell(value: string): string {
+export function inlineCodeCell(value: string): string {
   const normalized = tableCell(value);
   return normalized.includes('`') ? `\`\` ${normalized} \`\`` : `\`${normalized}\``;
 }
