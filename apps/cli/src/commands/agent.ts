@@ -69,6 +69,10 @@ export function agentCommands(): Command {
       // Copy and substitute templates
       const templates = readdirSync(templateDir);
       for (const tmpl of templates) {
+        // Runtime identity is operator-local state. It must never be copied into
+        // the tracked onboarding package.
+        if (tmpl === 'identity.yaml') continue;
+
         let content = readFileSync(join(templateDir, tmpl), 'utf-8');
         for (const [key, value] of Object.entries(vars)) {
           content = content.replaceAll(key, value);
@@ -80,9 +84,7 @@ export function agentCommands(): Command {
           tmpl.endsWith('.yaml') ||
           tmpl === 'local_cron.example'
             ? onboardingDir
-            : tmpl === 'identity.yaml'
-              ? onboardingDir
-              : promptsDir;
+            : promptsDir;
 
         writeFileSync(join(destDir, tmpl), content, 'utf-8');
       }

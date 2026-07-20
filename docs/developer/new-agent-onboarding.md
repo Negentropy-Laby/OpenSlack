@@ -13,7 +13,10 @@ openslack agent hire --agent-id codex_developer_ci-bot \
 This creates:
 
 - `agents/registry/<agent_id>.yaml` — Registry entry
-- `agents/onboarding/<agent_id>/` — 9 onboarding files
+- `agents/onboarding/<agent_id>/` — 8 tracked onboarding files
+
+`identity.yaml` is intentionally not copied into the tracked onboarding directory. It remains
+operator-local state and must be created under `.openslack.local/` as described below.
 
 ## Manual Steps After Hiring
 
@@ -39,7 +42,7 @@ This creates:
 | File                          | Purpose                                             |
 | ----------------------------- | --------------------------------------------------- |
 | `START_HERE.md`               | Entry point: identity, where tasks live, boundaries |
-| `identity.yaml`               | Local credentials (never committed)                 |
+| `identity.yaml`               | Local-only credentials template (never committed)   |
 | `github_task_contract.yaml`   | Project number, field mappings                      |
 | `claim_policy.yaml`           | Lease TTL, heartbeat interval, concurrency          |
 | `schedule.github-actions.yml` | GitHub Actions tick schedule                        |
