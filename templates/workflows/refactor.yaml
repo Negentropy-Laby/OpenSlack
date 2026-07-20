@@ -35,21 +35,21 @@ phases:
         actionId: task.create.preview
         title: Preview refactor task
         input:
-          title: "{{inputs.title}}"
+          title: '{{inputs.title}}'
           template: investigation
       - type: action
         actionId: task.checkout
         title: Create worktree for refactor
         input:
-          issueNumber: "{{inputs.issueNumber}}"
-          agentId: "{{inputs.agentId}}"
+          issueNumber: '{{inputs.issueNumber}}'
+          agentId: '{{inputs.agentId}}'
   - name: Planning
     steps:
       - type: record-decision
-        topic: "Refactoring plan: {{inputs.title}}"
+        topic: 'Refactoring plan: {{inputs.title}}'
         decision: Plan approved
         rationale: Analysis complete, refactoring approach defined for scope in paths
-        decidedBy: "{{inputs.agentId}}"
+        decidedBy: '{{inputs.agentId}}'
         tags:
           - refactor
           - planning
@@ -59,16 +59,16 @@ phases:
         actionId: task.sync
         title: Propose refactor PR
         input:
-          issueNumber: "{{inputs.issueNumber}}"
-          agentId: "{{inputs.agentId}}"
-          paths: "{{inputs.paths}}"
+          issueNumber: '{{inputs.issueNumber}}'
+          agentId: '{{inputs.agentId}}'
+          paths: '{{inputs.paths}}'
   - name: Review
     steps:
       - type: action
         actionId: pr.doctor
         title: Diagnose PR readiness
         input:
-          prNumber: "{{inputs.prNumber}}"
+          prNumber: '{{inputs.prNumber}}'
       - type: decision-gate
         title: Approve refactor for merge
         requiredRole: reviewer
@@ -76,4 +76,4 @@ phases:
         actionId: pr.merge
         title: Merge refactor PR
         input:
-          prNumber: "{{inputs.prNumber}}"
+          prNumber: '{{inputs.prNumber}}'

@@ -35,30 +35,30 @@ phases:
         actionId: task.create.preview
         title: Preview bug-fix task
         input:
-          title: "{{inputs.title}}"
+          title: '{{inputs.title}}'
           template: investigation
       - type: action
         actionId: task.checkout
         title: Create worktree for bug fix
         input:
-          issueNumber: "{{inputs.issueNumber}}"
-          agentId: "{{inputs.agentId}}"
+          issueNumber: '{{inputs.issueNumber}}'
+          agentId: '{{inputs.agentId}}'
   - name: Implementation
     steps:
       - type: action
         actionId: task.sync
         title: Propose fix PR
         input:
-          issueNumber: "{{inputs.issueNumber}}"
-          agentId: "{{inputs.agentId}}"
-          paths: "{{inputs.paths}}"
+          issueNumber: '{{inputs.issueNumber}}'
+          agentId: '{{inputs.agentId}}'
+          paths: '{{inputs.paths}}'
   - name: Review
     steps:
       - type: action
         actionId: pr.doctor
         title: Diagnose PR readiness
         input:
-          prNumber: "{{inputs.prNumber}}"
+          prNumber: '{{inputs.prNumber}}'
       - type: decision-gate
         title: Approve bug fix for merge
         requiredRole: reviewer
@@ -66,4 +66,4 @@ phases:
         actionId: pr.merge
         title: Merge bug-fix PR
         input:
-          prNumber: "{{inputs.prNumber}}"
+          prNumber: '{{inputs.prNumber}}'

@@ -36,35 +36,35 @@ phases:
         actionId: task.create.preview
         title: Preview incident task
         input:
-          title: "{{inputs.title}}"
+          title: '{{inputs.title}}'
           template: investigation
       - type: action
         actionId: task.checkout
         title: Create worktree for incident
         input:
-          issueNumber: "{{inputs.issueNumber}}"
-          agentId: "{{inputs.agentId}}"
+          issueNumber: '{{inputs.issueNumber}}'
+          agentId: '{{inputs.agentId}}'
   - name: Fix
     steps:
       - type: action
         actionId: task.sync
         title: Propose incident fix PR
         input:
-          issueNumber: "{{inputs.issueNumber}}"
-          agentId: "{{inputs.agentId}}"
-          paths: "{{inputs.paths}}"
+          issueNumber: '{{inputs.issueNumber}}'
+          agentId: '{{inputs.agentId}}'
+          paths: '{{inputs.paths}}'
       - type: handoff
-        from: "{{inputs.agentId}}"
+        from: '{{inputs.agentId}}'
         to: human
-        context: "Incident fix ready for review: {{inputs.title}}"
-        issueRef: "{{inputs.issueNumber}}"
+        context: 'Incident fix ready for review: {{inputs.title}}'
+        issueRef: '{{inputs.issueNumber}}'
   - name: Approve
     steps:
       - type: action
         actionId: pr.doctor
         title: Diagnose PR readiness
         input:
-          prNumber: "{{inputs.prNumber}}"
+          prNumber: '{{inputs.prNumber}}'
       - type: decision-gate
         title: Approve incident fix for merge
         requiredRole: maintainer
@@ -72,4 +72,4 @@ phases:
         actionId: pr.merge
         title: Merge incident fix PR
         input:
-          prNumber: "{{inputs.prNumber}}"
+          prNumber: '{{inputs.prNumber}}'
