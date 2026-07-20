@@ -1,39 +1,44 @@
-import React, { useState } from 'react'
-import Box from '../ink/components/Box.js'
-import Text from '../ink/components/Text.js'
-import useApp from '../ink/hooks/use-app.js'
-import useInput from '../ink/hooks/use-input.js'
-import Pane from '../design-system/Pane.js'
-import ThemedText from '../design-system/ThemedText.js'
-import Divider from '../design-system/Divider.js'
-import StatusIcon from '../design-system/StatusIcon.js'
-import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
-import type { ActivityViewModel, ActivityEventViewModel } from '../view-models/activity.js'
+import React, { useState } from 'react';
+import Box from '../ink/components/Box.js';
+import Text from '../ink/components/Text.js';
+import useApp from '../ink/hooks/use-app.js';
+import useInput from '../ink/hooks/use-input.js';
+import Pane from '../design-system/Pane.js';
+import ThemedText from '../design-system/ThemedText.js';
+import Divider from '../design-system/Divider.js';
+import StatusIcon from '../design-system/StatusIcon.js';
+import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js';
+import type { ActivityViewModel, ActivityEventViewModel } from '../view-models/activity.js';
 
 export type ActivityViewProps = {
-  model: ActivityViewModel
-  onBack?: () => void
-}
+  model: ActivityViewModel;
+  onBack?: () => void;
+};
 
-type FilterMode = 'all' | 'blocked' | 'needs-human' | 'agent'
+type FilterMode = 'all' | 'blocked' | 'needs-human' | 'agent';
 
 function getEventStatus(event: ActivityEventViewModel): 'FAIL' | 'WARN' | 'PASS' | 'info' {
-  if (event.type.includes('blocked') || event.type.includes('failed')) return 'FAIL'
-  if (event.nextAction || event.risk === 'high') return 'WARN'
-  if (event.type.includes('completed') || event.type.includes('passed')) return 'PASS'
-  return 'info'
+  if (event.type.includes('blocked') || event.type.includes('failed')) return 'FAIL';
+  if (event.nextAction || event.risk === 'high') return 'WARN';
+  if (event.type.includes('completed') || event.type.includes('passed')) return 'PASS';
+  return 'info';
 }
 
-function filterEvents(events: ActivityEventViewModel[], mode: FilterMode): ActivityEventViewModel[] {
-  if (mode === 'all') return events
-  if (mode === 'blocked') return events.filter(e => e.type.includes('blocked') || e.type.includes('failed'))
-  if (mode === 'needs-human') return events.filter(e => e.nextAction !== undefined)
-  if (mode === 'agent') return events.filter(e => !e.type.includes('blocked') && !e.type.includes('failed'))
-  return events
+function filterEvents(
+  events: ActivityEventViewModel[],
+  mode: FilterMode,
+): ActivityEventViewModel[] {
+  if (mode === 'all') return events;
+  if (mode === 'blocked')
+    return events.filter((e) => e.type.includes('blocked') || e.type.includes('failed'));
+  if (mode === 'needs-human') return events.filter((e) => e.nextAction !== undefined);
+  if (mode === 'agent')
+    return events.filter((e) => !e.type.includes('blocked') && !e.type.includes('failed'));
+  return events;
 }
 
 function renderEventPane(title: string, events: ActivityEventViewModel[]): React.ReactNode {
-  if (events.length === 0) return null
+  if (events.length === 0) return null;
   return React.createElement(
     Pane,
     { title: `${title} (${events.length})`, marginY: 0 },
@@ -41,16 +46,21 @@ function renderEventPane(title: string, events: ActivityEventViewModel[]): React
       React.createElement(
         Box,
         { key: `${e.type}-${i}`, flexDirection: 'row' },
-        React.createElement(StatusIcon, { category: getEventStatus(e) === 'FAIL' ? 'fail' : getEventStatus(e) === 'WARN' ? 'warn' : getEventStatus(e) === 'PASS' ? 'pass' : 'info' }),
+        React.createElement(StatusIcon, {
+          category:
+            getEventStatus(e) === 'FAIL'
+              ? 'fail'
+              : getEventStatus(e) === 'WARN'
+                ? 'warn'
+                : getEventStatus(e) === 'PASS'
+                  ? 'pass'
+                  : 'info',
+        }),
         React.createElement(Text, null, ' '),
         React.createElement(
           Box,
           { flexDirection: 'column' },
-          React.createElement(
-            ThemedText,
-            { colorTheme: 'foreground' },
-            `${e.time} ${e.type}`,
-          ),
+          React.createElement(ThemedText, { colorTheme: 'foreground' }, `${e.time} ${e.type}`),
           e.summary
             ? React.createElement(
                 ThemedText,
@@ -68,31 +78,31 @@ function renderEventPane(title: string, events: ActivityEventViewModel[]): React
         ),
       ),
     ),
-  )
+  );
 }
 
 export default function ActivityView({ model, onBack }: ActivityViewProps): React.JSX.Element {
-  const { exit } = useApp()
-  const [filterMode, setFilterMode] = useState<FilterMode>('all')
+  const { exit } = useApp();
+  const [filterMode, setFilterMode] = useState<FilterMode>('all');
 
-  const filtered = filterEvents(model.events, filterMode)
-  const today = filterEvents(model.today, filterMode)
-  const yesterday = filterEvents(model.yesterday, filterMode)
-  const older = filterEvents(model.older, filterMode)
+  const filtered = filterEvents(model.events, filterMode);
+  const today = filterEvents(model.today, filterMode);
+  const yesterday = filterEvents(model.yesterday, filterMode);
+  const older = filterEvents(model.older, filterMode);
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
-      if (onBack) onBack()
-      else exit()
+      if (onBack) onBack();
+      else exit();
     }
     if (input === 'f') {
-      setFilterMode(prev => {
-        const modes: FilterMode[] = ['all', 'blocked', 'needs-human', 'agent']
-        const idx = modes.indexOf(prev)
-        return modes[(idx + 1) % modes.length]
-      })
+      setFilterMode((prev) => {
+        const modes: FilterMode[] = ['all', 'blocked', 'needs-human', 'agent'];
+        const idx = modes.indexOf(prev);
+        return modes[(idx + 1) % modes.length];
+      });
     }
-  })
+  });
 
   return React.createElement(
     Box,
@@ -112,7 +122,11 @@ export default function ActivityView({ model, onBack }: ActivityViewProps): Reac
     older.length > 0 ? renderEventPane('Older', older) : null,
 
     filtered.length === 0
-      ? React.createElement(ThemedText, { colorTheme: 'muted' }, 'No events match the current filter.')
+      ? React.createElement(
+          ThemedText,
+          { colorTheme: 'muted' },
+          'No events match the current filter.',
+        )
       : null,
 
     // Footer
@@ -124,5 +138,5 @@ export default function ActivityView({ model, onBack }: ActivityViewProps): Reac
       React.createElement(Text, null, '  '),
       React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'back' }),
     ),
-  )
+  );
 }

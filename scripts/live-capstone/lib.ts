@@ -144,9 +144,7 @@ export function createLiveCapstonePlan(options: PlanLiveCapstoneOptions): LiveCa
   return run;
 }
 
-export function recordLiveCapstoneStep(
-  options: RecordLiveCapstoneOptions,
-): LiveCapstoneRun {
+export function recordLiveCapstoneStep(options: RecordLiveCapstoneOptions): LiveCapstoneRun {
   assertCommit(options.testedCommit);
   assertCorrelation(options.correlationId);
   if (!LIVE_CAPSTONE_STEPS.includes(options.step)) throw new Error('Unknown capstone step.');
@@ -195,9 +193,7 @@ export function recordLiveCapstoneStep(
   });
 }
 
-export function verifyLiveCapstone(
-  options: VerifyLiveCapstoneOptions,
-): LiveCapstoneVerification {
+export function verifyLiveCapstone(options: VerifyLiveCapstoneOptions): LiveCapstoneVerification {
   assertCommit(options.testedCommit);
   assertCorrelation(options.correlationId);
   const run = readLiveCapstoneRun(
@@ -219,9 +215,7 @@ export function verifyLiveCapstone(
   const valid =
     failures.length === 0 &&
     Object.values(platforms).every((platform) => platform.complete && platform.passed);
-  const bytes = readFileSync(
-    liveCapstoneRunPath(options.workspaceRoot, options.correlationId),
-  );
+  const bytes = readFileSync(liveCapstoneRunPath(options.workspaceRoot, options.correlationId));
   return {
     schema: 'openslack.live_capstone_verification.v1',
     correlationId: run.correlationId,
@@ -233,9 +227,10 @@ export function verifyLiveCapstone(
     runManifestSha256: createHash('sha256').update(bytes).digest('hex'),
   };
 
-  function verifyPlatform(
-    id: LiveCapstonePlatform,
-  ): { readonly complete: boolean; readonly passed: boolean } {
+  function verifyPlatform(id: LiveCapstonePlatform): {
+    readonly complete: boolean;
+    readonly passed: boolean;
+  } {
     const platform = run.runs[id];
     if (!platform) {
       failures.push(`PLATFORM_MISSING:${id}`);
@@ -268,13 +263,7 @@ export function verifyLiveCapstone(
 
 export function liveCapstoneRunPath(workspaceRoot: string, correlationId: string): string {
   assertCorrelation(correlationId);
-  const path = join(
-    workspaceRoot,
-    '.openslack.local',
-    'capstone',
-    correlationId,
-    'run.json',
-  );
+  const path = join(workspaceRoot, '.openslack.local', 'capstone', correlationId, 'run.json');
   assertContained(workspaceRoot, path);
   return path;
 }
@@ -293,7 +282,8 @@ export function readLiveCapstoneRun(path: string): LiveCapstoneRun {
 export function assertNoSensitiveData(value: unknown): void {
   const text = JSON.stringify(value);
   for (const pattern of SENSITIVE_PATTERNS) {
-    if (pattern.test(text)) throw new Error('Capstone manifest contains prohibited secret material.');
+    if (pattern.test(text))
+      throw new Error('Capstone manifest contains prohibited secret material.');
   }
 }
 
@@ -329,11 +319,7 @@ function writeRunAtomic(workspaceRoot: string, run: LiveCapstoneRun, create: boo
   }
 }
 
-function withLock<T>(
-  workspaceRoot: string,
-  correlationId: string,
-  operation: () => T,
-): T {
+function withLock<T>(workspaceRoot: string, correlationId: string, operation: () => T): T {
   const path = join(dirname(liveCapstoneRunPath(workspaceRoot, correlationId)), 'record.lock');
   let handle: number | undefined;
   try {
@@ -354,7 +340,8 @@ function hashArtifact(path: string): string {
 
 function assertRegularReferenceFile(path: string, allowPublicKey: boolean): void {
   const info = lstatSync(resolve(path));
-  if (!info.isFile() || info.isSymbolicLink()) throw new Error('Capstone input must be a regular file.');
+  if (!info.isFile() || info.isSymbolicLink())
+    throw new Error('Capstone input must be a regular file.');
   if (!allowPublicKey && /\.(?:pem|key|p12|pfx)$/iu.test(path)) {
     throw new Error('Capstone artifact input must not be credential material.');
   }

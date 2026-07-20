@@ -154,9 +154,7 @@ export function validatePublicManifest(
   }
 }
 
-export function stageManifest(
-  manifest: Record<string, unknown>,
-): Record<string, unknown> {
+export function stageManifest(manifest: Record<string, unknown>): Record<string, unknown> {
   const staged = structuredClone(manifest);
   delete staged.private;
   for (const field of DEPENDENCY_FIELDS) {
@@ -188,7 +186,11 @@ export function copyPackagePayload(source: string, destination: string): void {
   const destinationRoot = resolve(destination);
   mkdirSync(destinationRoot, { recursive: true });
   copyTree(resolve(sourceRoot, 'dist'), resolve(destinationRoot, 'dist'), sourceRoot);
-  copyRegularFile(resolve(sourceRoot, 'README.md'), resolve(destinationRoot, 'README.md'), sourceRoot);
+  copyRegularFile(
+    resolve(sourceRoot, 'README.md'),
+    resolve(destinationRoot, 'README.md'),
+    sourceRoot,
+  );
 }
 
 function copyTree(source: string, destination: string, sourceRoot: string): void {
@@ -282,7 +284,9 @@ export function sha256File(path: string): string {
 }
 
 export function sha256Canonical(value: unknown): string {
-  return createHash('sha256').update(`${JSON.stringify(value)}\n`).digest('hex');
+  return createHash('sha256')
+    .update(`${JSON.stringify(value)}\n`)
+    .digest('hex');
 }
 
 export function resetDirectory(path: string): void {

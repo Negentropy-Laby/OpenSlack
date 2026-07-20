@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useCallback, useState } from 'react'
+import React, { createContext, useContext, useCallback, useState } from 'react';
 import {
   type Route,
   type RouterState,
@@ -9,40 +9,40 @@ import {
   routerPop,
   routerReplace,
   routerReset,
-} from './router.js'
+} from './router.js';
 
-const NavigationContext = createContext<RouterState & RouterActions | null>(null)
+const NavigationContext = createContext<(RouterState & RouterActions) | null>(null);
 
 export function useNavigation(): RouterState & RouterActions {
-  const ctx = useContext(NavigationContext)
+  const ctx = useContext(NavigationContext);
   if (!ctx) {
-    throw new Error('useNavigation must be used within a NavigationProvider')
+    throw new Error('useNavigation must be used within a NavigationProvider');
   }
-  return ctx
+  return ctx;
 }
 
 export function NavigationProvider({
   children,
 }: {
-  children?: React.ReactNode
+  children?: React.ReactNode;
 }): React.JSX.Element {
-  const [state, setState] = useState<RouterState>(createInitialRouterState)
+  const [state, setState] = useState<RouterState>(createInitialRouterState);
 
   const push = useCallback((route: Route) => {
-    setState(prev => routerPush(prev, route))
-  }, [])
+    setState((prev) => routerPush(prev, route));
+  }, []);
 
   const pop = useCallback(() => {
-    setState(prev => routerPop(prev))
-  }, [])
+    setState((prev) => routerPop(prev));
+  }, []);
 
   const replace = useCallback((route: Route) => {
-    setState(prev => routerReplace(prev, route))
-  }, [])
+    setState((prev) => routerReplace(prev, route));
+  }, []);
 
   const reset = useCallback(() => {
-    setState(routerReset)
-  }, [])
+    setState(routerReset);
+  }, []);
 
   const value: RouterState & RouterActions = {
     ...state,
@@ -50,14 +50,10 @@ export function NavigationProvider({
     pop,
     replace,
     reset,
-  }
+  };
 
-  return React.createElement(
-    NavigationContext.Provider,
-    { value },
-    children,
-  )
+  return React.createElement(NavigationContext.Provider, { value }, children);
 }
 
-export { HOME_ROUTE }
-export type { Route, RouterState, RouterActions }
+export { HOME_ROUTE };
+export type { Route, RouterState, RouterActions };

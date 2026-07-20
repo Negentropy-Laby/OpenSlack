@@ -50,7 +50,11 @@ describe('public package contract', () => {
     ['lifecycle script', { scripts: { install: 'node install.js' } }, /lifecycle script/],
     ['React dependency', { dependencies: { react: '^19.0.0' } }, /forbidden/],
     ['native dependency', { dependencies: { '@napi-rs/keyring': '1.3.0' } }, /forbidden/],
-    ['unpublished runtime dependency', { dependencies: { '@openslack/kernel': 'workspace:*' } }, /unexpected/],
+    [
+      'unpublished runtime dependency',
+      { dependencies: { '@openslack/kernel': 'workspace:*' } },
+      /unexpected/,
+    ],
   ])('rejects a malicious %s manifest', (_name, patch, expected) => {
     expect(() => validatePublicManifest({ ...validManifest(), ...patch }, definition)).toThrow(
       expected,

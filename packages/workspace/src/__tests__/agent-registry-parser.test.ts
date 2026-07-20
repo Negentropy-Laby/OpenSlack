@@ -16,7 +16,10 @@ function writeRegistry(agentId: string, yaml: string): void {
 }
 
 beforeEach(() => {
-  fixtureRoot = join(tmpdir(), `openslack-registry-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  fixtureRoot = join(
+    tmpdir(),
+    `openslack-registry-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
   mkdirSync(fixtureRoot, { recursive: true });
 });
 
@@ -31,7 +34,9 @@ describe('parseAgentRegistry', () => {
   });
 
   it('parses v1 registry and normalizes to v2 shape', () => {
-    writeRegistry('test_architect', `
+    writeRegistry(
+      'test_architect',
+      `
 schema: openslack.agent_registry.v1
 agent_id: test_architect
 display_name: Test Architect
@@ -66,7 +71,8 @@ output_contract:
   must_not_create: []
 approval_rules:
   require_human_approval_for: []
-`);
+`,
+    );
 
     const result = parseAgentRegistry(fixtureRoot, 'test_architect');
     expect(result).not.toBeNull();
@@ -98,7 +104,9 @@ approval_rules:
   });
 
   it('parses v2 registry without wildcard permissions', () => {
-    writeRegistry('reviewer', `
+    writeRegistry(
+      'reviewer',
+      `
 schema: openslack.agent_registry.v2
 agent_id: reviewer
 display_name: Reviewer
@@ -146,7 +154,8 @@ output_contract:
   must_not_create: []
 approval_rules:
   require_human_approval_for: []
-`);
+`,
+    );
 
     const result = parseAgentRegistry(fixtureRoot, 'reviewer');
     expect(result).not.toBeNull();

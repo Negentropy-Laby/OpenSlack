@@ -15,7 +15,8 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
     )
     .action(async () => {
       try {
-        const { isTuiSupported, renderPlainHome, mapDashboardToViewModel } = await import('@openslack/tui');
+        const { isTuiSupported, renderPlainHome, mapDashboardToViewModel } =
+          await import('@openslack/tui');
         if (!isTuiSupported()) {
           // Fall back to plain-text renderer for unsupported terminals
           const { mapHomeToViewModel } = await import('@openslack/tui');
@@ -24,7 +25,16 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
           process.exit(0);
         }
 
-        const { renderShellTui, mapStatusToViewModel, mapPrQueueToViewModel, mapWorkflowGalleryToViewModel, mapApprovalCenterToViewModel, mapWorkflowLifecycleToViewModel, mapAbyRuntimeDoctorToViewModel, mapWorkflowRunsToViewModel } = await import('@openslack/tui');
+        const {
+          renderShellTui,
+          mapStatusToViewModel,
+          mapPrQueueToViewModel,
+          mapWorkflowGalleryToViewModel,
+          mapApprovalCenterToViewModel,
+          mapWorkflowLifecycleToViewModel,
+          mapAbyRuntimeDoctorToViewModel,
+          mapWorkflowRunsToViewModel,
+        } = await import('@openslack/tui');
         const data: import('@openslack/tui').ShellViewData = { rootDir: process.cwd() };
 
         const { resolveWorkspaceContext } = await import('@openslack/workspace');
@@ -71,8 +81,16 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
           let commit = 'unknown';
           let commitSubject = 'unknown';
           try {
-            commit = execSync('git rev-parse --short HEAD', { cwd: root, encoding: 'utf-8', stdio: 'pipe' }).trim();
-            commitSubject = execSync('git log -1 --format=%s', { cwd: root, encoding: 'utf-8', stdio: 'pipe' }).trim();
+            commit = execSync('git rev-parse --short HEAD', {
+              cwd: root,
+              encoding: 'utf-8',
+              stdio: 'pipe',
+            }).trim();
+            commitSubject = execSync('git log -1 --format=%s', {
+              cwd: root,
+              encoding: 'utf-8',
+              stdio: 'pipe',
+            }).trim();
           } catch {}
 
           data.status = mapStatusToViewModel({
@@ -80,7 +98,15 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
             commit,
             commitSubject,
             ...productStatus,
-            gitHub: { available: false, tasksReady: 0, tasksClaimed: 0, tasksBlocked: 0, prsOpen: 0, prsBlocked: 0, prsReady: 0 },
+            gitHub: {
+              available: false,
+              tasksReady: 0,
+              tasksClaimed: 0,
+              tasksBlocked: 0,
+              prsOpen: 0,
+              prsBlocked: 0,
+              prsReady: 0,
+            },
             recommendations: [],
             attentionItems: [],
             nextAction: 'Run openslack status for full report',
@@ -102,14 +128,20 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
 
         // Pre-fetch workflow gallery data
         try {
-          const { discoverJsWorkflows, discoverYamlTemplates, resolveBuiltinTemplatesDir, TrustStore, listWorkflowPatterns } = await import('@openslack/workflows');
+          const {
+            discoverJsWorkflows,
+            discoverYamlTemplates,
+            resolveBuiltinTemplatesDir,
+            TrustStore,
+            listWorkflowPatterns,
+          } = await import('@openslack/workflows');
           const trustStore = new TrustStore({ rootDir: root });
           const jsWorkflows = await discoverJsWorkflows(root);
           const yamlDir = resolveBuiltinTemplatesDir();
           const yamlWorkflows = yamlDir ? await discoverYamlTemplates(yamlDir) : [];
 
           const workflows = [
-            ...yamlWorkflows.map(w => ({
+            ...yamlWorkflows.map((w) => ({
               name: w.name,
               description: w.displayName,
               format: 'yaml' as const,
@@ -117,7 +149,7 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
               risk: 'unknown',
               phases: w.phases,
             })),
-            ...jsWorkflows.map(w => ({
+            ...jsWorkflows.map((w) => ({
               name: w.name,
               description: w.description ?? w.displayName,
               format: w.format ?? 'openslack-native',
@@ -129,7 +161,7 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
 
           data.workflowGallery = mapWorkflowGalleryToViewModel({
             workflows,
-            patterns: listWorkflowPatterns().map(pattern => ({
+            patterns: listWorkflowPatterns().map((pattern) => ({
               id: pattern.id,
               name: pattern.name,
               description: pattern.description,
@@ -139,21 +171,51 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
           // Pre-fetch workflow lifecycle base data (cheap local data only)
           try {
             const { findWorkflow, loadWorkflow, RunStore } = await import('@openslack/workflows');
-            const lifecycleBase: Record<string, { workflowHash: string; trustLevel: string; risk: string; sourcePath: string; currentRun?: { runId: string; status: string; startedAt: string } }> = {};
+            const lifecycleBase: Record<
+              string,
+              {
+                workflowHash: string;
+                trustLevel: string;
+                risk: string;
+                sourcePath: string;
+                currentRun?: { runId: string; status: string; startedAt: string };
+              }
+            > = {};
 
             for (const wf of workflows) {
               const found = await findWorkflow(wf.name, root);
               if (!found) continue;
               const mod = await loadWorkflow(found.path);
-              const runStore = new RunStore({ baseDir: join(root, '.openslack.local', 'workflows') });
+              const runStore = new RunStore({
+                baseDir: join(root, '.openslack.local', 'workflows'),
+              });
 
               // Find most recent run for this workflow across all statuses
               let currentRun: { runId: string; status: string; startedAt: string } | undefined;
-              for (const status of ['running', 'paused_waiting_approval', 'paused', 'completed', 'failed', 'cancelled']) {
-                const runs = await runStore.listRunsByStatus(status as 'running' | 'paused_waiting_approval' | 'paused' | 'completed' | 'failed' | 'cancelled');
-                const match = runs.find(r => r.workflowName === wf.name);
+              for (const status of [
+                'running',
+                'paused_waiting_approval',
+                'paused',
+                'completed',
+                'failed',
+                'cancelled',
+              ]) {
+                const runs = await runStore.listRunsByStatus(
+                  status as
+                    | 'running'
+                    | 'paused_waiting_approval'
+                    | 'paused'
+                    | 'completed'
+                    | 'failed'
+                    | 'cancelled',
+                );
+                const match = runs.find((r) => r.workflowName === wf.name);
                 if (match) {
-                  currentRun = { runId: match.runId, status: match.status, startedAt: match.startedAt };
+                  currentRun = {
+                    runId: match.runId,
+                    status: match.status,
+                    startedAt: match.startedAt,
+                  };
                   break;
                 }
               }
@@ -239,13 +301,19 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
             stages.push({
               name: `phase-${pi.phase}`,
               label: `Phase: ${pi.phase}`,
-              status: pi.state === 'open' ? (pi.blockedBy && pi.blockedBy.length > 0 ? 'blocked' : 'in-progress') : 'complete',
+              status:
+                pi.state === 'open'
+                  ? pi.blockedBy && pi.blockedBy.length > 0
+                    ? 'blocked'
+                    : 'in-progress'
+                  : 'complete',
               icon: pi.blockedBy && pi.blockedBy.length > 0 ? '\u{1F512}' : '✓',
               issueNumber: pi.number,
               issueUrl: pi.url,
-              detail: pi.blockedBy && pi.blockedBy.length > 0
-                ? `Blocked by #${pi.blockedBy.join(', #')}`
-                : `Phase issue #${pi.number}`,
+              detail:
+                pi.blockedBy && pi.blockedBy.length > 0
+                  ? `Blocked by #${pi.blockedBy.join(', #')}`
+                  : `Phase issue #${pi.number}`,
             });
           }
 
@@ -254,7 +322,12 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
             stages.push({
               name: 'run',
               label: 'Run Audit',
-              status: latest.status === 'completed' ? 'complete' : latest.status === 'failed' ? 'failed' : 'in-progress',
+              status:
+                latest.status === 'completed'
+                  ? 'complete'
+                  : latest.status === 'failed'
+                    ? 'failed'
+                    : 'in-progress',
               icon: '\u{1F3C3}',
               issueNumber: latest.number,
               issueUrl: latest.url,
@@ -266,7 +339,9 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
             stages.push({
               name: 'improvement',
               label: 'Improvements',
-              status: gh.improvementIssues.every(i => i.state === 'closed') ? 'complete' : 'in-progress',
+              status: gh.improvementIssues.every((i) => i.state === 'closed')
+                ? 'complete'
+                : 'in-progress',
               icon: '\u{1F4A1}',
               detail: `${gh.improvementIssues.length} improvement issue${gh.improvementIssues.length === 1 ? '' : 's'}`,
             });
@@ -277,19 +352,26 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
             stages.push({
               name: 'pr',
               label: 'Pull Request',
-              status: pr.state === 'closed' ? 'complete' : pr.state === 'merged' ? 'complete' : 'in-progress',
+              status:
+                pr.state === 'closed'
+                  ? 'complete'
+                  : pr.state === 'merged'
+                    ? 'complete'
+                    : 'in-progress',
               icon: '\u{1F4E6}',
               detail: `PR #${pr.number}`,
             });
           }
 
-          const phaseIssues: import('@openslack/tui').PhaseIssueItem[] = gh.phaseIssues.map(pi => ({
-            phase: pi.phase,
-            issueNumber: pi.number,
-            status: pi.state,
-            blockedBy: pi.blockedBy?.map(String),
-            trackingMode: pi.trackingMode,
-          }));
+          const phaseIssues: import('@openslack/tui').PhaseIssueItem[] = gh.phaseIssues.map(
+            (pi) => ({
+              phase: pi.phase,
+              issueNumber: pi.number,
+              status: pi.state,
+              blockedBy: pi.blockedBy?.map(String),
+              trackingMode: pi.trackingMode,
+            }),
+          );
 
           let nextAction: string | undefined;
           if (!gh.proposalIssue) {
@@ -302,8 +384,8 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
             nextAction = 'Security review in progress';
           } else if (!gh.splitIssue && gh.phaseIssues.length === 0) {
             nextAction = 'Split into phase issues (s in Issues menu)';
-          } else if (gh.phaseIssues.some(p => p.state === 'open')) {
-            nextAction = `Complete ${gh.phaseIssues.filter(p => p.state === 'open').length} open phase issue(s)`;
+          } else if (gh.phaseIssues.some((p) => p.state === 'open')) {
+            nextAction = `Complete ${gh.phaseIssues.filter((p) => p.state === 'open').length} open phase issue(s)`;
           } else if (gh.runIssues.length === 0) {
             nextAction = 'Run workflow audit (r to run)';
           } else if (gh.linkedPRs.length === 0) {
@@ -342,10 +424,13 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
 
         // Pre-fetch digest data
         try {
-          const { readEvents, filterEvents, buildDigest } = await import('@openslack/collaboration');
+          const { readEvents, filterEvents, buildDigest } =
+            await import('@openslack/collaboration');
           const { mapDigestToViewModel } = await import('@openslack/tui');
           const events = readEvents();
-          const filtered = filterEvents(events, { since: new Date(Date.now() - 24 * 60 * 60 * 1000) });
+          const filtered = filterEvents(events, {
+            since: new Date(Date.now() - 24 * 60 * 60 * 1000),
+          });
           const digest = buildDigest(filtered, 24);
           data.digest = mapDigestToViewModel(digest);
         } catch {
@@ -366,7 +451,8 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
         try {
           const { listThreads, getThread } = await import('@openslack/collaboration');
           const threads = listThreads();
-          const messages: Record<string, NonNullable<ReturnType<typeof getThread>>['messages']> = {};
+          const messages: Record<string, NonNullable<ReturnType<typeof getThread>>['messages']> =
+            {};
           for (const t of threads) {
             const detail = getThread(t.id);
             if (detail) {
@@ -395,7 +481,7 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
           const { RunStore } = await import('@openslack/workflows');
 
           const pendingPlans = listPendingPlans(root);
-          const openHandoffs = listHandoffs().filter(h => h.status === 'open');
+          const openHandoffs = listHandoffs().filter((h) => h.status === 'open');
 
           // Pre-fetch paused workflow runs
           let pausedRuns: Array<{ runId: string; workflowName: string; startedAt: string }> = [];
@@ -408,18 +494,23 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
 
           const pendingApprovals = [
             ...pendingPlans
-              .filter(p => p.state === 'pending')
-              .map(p => ({
+              .filter((p) => p.state === 'pending')
+              .map((p) => ({
                 id: p.planId,
                 category: 'plan' as const,
                 title: `Plan: ${p.query}`,
                 detail: `Plan ${p.planId} with ${p.plan.steps.length} steps, risk: ${p.plan.riskLevel}`,
-                risk: p.plan.riskLevel === 'high' ? 'high' : p.plan.riskLevel === 'medium' ? 'medium' : 'low',
+                risk:
+                  p.plan.riskLevel === 'high'
+                    ? 'high'
+                    : p.plan.riskLevel === 'medium'
+                      ? 'medium'
+                      : 'low',
                 requestedBy: p.actorId ?? 'system',
                 requestedAt: p.createdAt,
                 planId: p.planId,
               })),
-            ...pausedRuns.map(run => ({
+            ...pausedRuns.map((run) => ({
               id: run.runId,
               category: 'workflow-effect' as const,
               title: `Workflow "${run.workflowName}" paused — unexpected side effect`,
@@ -430,7 +521,7 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
               workflowName: run.workflowName,
               runId: run.runId,
             })),
-            ...openHandoffs.map(h => ({
+            ...openHandoffs.map((h) => ({
               id: h.id,
               category: 'workflow-effect' as const,
               title: `Handoff: ${h.context}`,
@@ -452,7 +543,8 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
           const { readEvents, filterEvents } = await import('@openslack/collaboration');
           const events = readEvents();
           const profileEvents = filterEvents(events, { type: 'profile_sync.completed' as never });
-          const lastEvent = profileEvents.length > 0 ? profileEvents[profileEvents.length - 1] : null;
+          const lastEvent =
+            profileEvents.length > 0 ? profileEvents[profileEvents.length - 1] : null;
 
           // Try to load config and run a quick check
           let markerStatus: 'present' | 'missing' | 'unknown' = 'unknown';
@@ -464,7 +556,8 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
           let syncStatus: 'synced' | 'pending' | 'failed' | 'never' = 'never';
 
           try {
-            const { loadProfileSyncConfig, checkProfileSync, listOpenPRs } = await import('@openslack/github');
+            const { loadProfileSyncConfig, checkProfileSync, listOpenPRs } =
+              await import('@openslack/github');
             const psConfig = loadProfileSyncConfig(root);
             const checkResult = await checkProfileSync(psConfig);
             markerStatus = checkResult.target.markerExists ? 'present' : 'missing';
@@ -493,8 +586,8 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
             };
 
             const openPRs = await listOpenPRs(20);
-            const profileSyncPR = openPRs.find((p) =>
-              p.title.includes('profile: sync latest') || p.title.includes('Profile Sync'),
+            const profileSyncPR = openPRs.find(
+              (p) => p.title.includes('profile: sync latest') || p.title.includes('Profile Sync'),
             );
             if (profileSyncPR) {
               pendingPR = {
@@ -521,21 +614,30 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
           }
 
           data.profile = mapProfileToViewModel({
-            targetRepo: lastEvent?.metadata?.targetRepo as string | undefined ?? 'Negentropy-Laby/.github',
-            targetPath: lastEvent?.metadata?.targetPath as string | undefined ?? 'profile/README.md',
-            marker: lastEvent?.metadata?.marker as string | undefined ?? 'latest-insights',
+            targetRepo:
+              (lastEvent?.metadata?.targetRepo as string | undefined) ?? 'Negentropy-Laby/.github',
+            targetPath:
+              (lastEvent?.metadata?.targetPath as string | undefined) ?? 'profile/README.md',
+            marker: (lastEvent?.metadata?.marker as string | undefined) ?? 'latest-insights',
             syncStatus,
-            lastSyncDate: lastEvent ? new Date(lastEvent.timestamp).toISOString().slice(0, 10) : undefined,
+            lastSyncDate: lastEvent
+              ? new Date(lastEvent.timestamp).toISOString().slice(0, 10)
+              : undefined,
             lastPrUrl: lastEvent?.metadata?.prUrl as string | undefined,
             markerStatus,
             pendingPR,
-            posts: (lastEvent?.metadata?.postsIncluded as Array<{ title: string; slug: string; date: string }> | undefined)?.map((p) => ({
-              title: p.title,
-              date: p.date,
-              summary: '',
-              sourcePath: p.slug + '.md',
-              url: '',
-            })) ?? [],
+            posts:
+              (
+                lastEvent?.metadata?.postsIncluded as
+                  | Array<{ title: string; slug: string; date: string }>
+                  | undefined
+              )?.map((p) => ({
+                title: p.title,
+                date: p.date,
+                summary: '',
+                sourcePath: p.slug + '.md',
+                url: '',
+              })) ?? [],
             validationSummary,
             syncDetails,
             failureDetails,
@@ -550,7 +652,11 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
         try {
           const { execSync } = await import('node:child_process');
           // Try git user name first, then OS user
-          actorId = execSync('git config user.name', { encoding: 'utf-8', stdio: 'pipe' }).trim() || process.env.USER || process.env.USERNAME || 'tui-user';
+          actorId =
+            execSync('git config user.name', { encoding: 'utf-8', stdio: 'pipe' }).trim() ||
+            process.env.USER ||
+            process.env.USERNAME ||
+            'tui-user';
         } catch {
           actorId = process.env.USER || process.env.USERNAME || 'tui-user';
         }

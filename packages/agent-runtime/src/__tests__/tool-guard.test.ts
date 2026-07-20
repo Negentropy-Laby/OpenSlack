@@ -21,7 +21,11 @@ function makeTempRoot(): string {
 }
 
 function cleanup(root: string) {
-  try { rmSync(root, { recursive: true, force: true }); } catch { /* ignore */ }
+  try {
+    rmSync(root, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
 }
 
 describe('ToolGuard', () => {

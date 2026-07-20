@@ -12,10 +12,7 @@ import {
   filterEvents,
   buildRoomView,
 } from '../index.js';
-import type {
-  AgentConversationMessage,
-  CollaborationEvent,
-} from '../index.js';
+import type { AgentConversationMessage, CollaborationEvent } from '../index.js';
 
 /**
  * Integration tests for conversation-workflow interaction.
@@ -88,7 +85,13 @@ describe('conversation-workflow integration', () => {
       title: 'E2E Workflow Conversation',
       participants: [
         { id: 'human-1', kind: 'human', displayName: 'Alice', role: 'operator' },
-        { id: 'agent-claude', kind: 'agent', displayName: 'Claude', role: 'implementer', provider: 'openslack' },
+        {
+          id: 'agent-claude',
+          kind: 'agent',
+          displayName: 'Claude',
+          role: 'implementer',
+          provider: 'openslack',
+        },
       ],
       linkedObjects: [{ kind: 'issue', id: '42' }],
     });
@@ -206,9 +209,7 @@ describe('conversation-workflow integration', () => {
 
     // Verify the failed event can be read back from the event log
     const allEvents = readEvents();
-    const convEvents = allEvents.filter(
-      (e) => e.correlationId === correlationId,
-    );
+    const convEvents = allEvents.filter((e) => e.correlationId === correlationId);
     expect(convEvents).toHaveLength(2);
     expect(convEvents[0].type).toBe('agent.conversation.started');
     expect(convEvents[1].type).toBe('agent.conversation.failed');
@@ -327,9 +328,7 @@ describe('conversation-workflow integration', () => {
         { id: 'human-1', kind: 'human', displayName: 'Carol' },
         { id: 'agent-1', kind: 'agent', displayName: 'Assistant' },
       ],
-      linkedObjects: [
-        { kind: 'issue', id: '99' },
-      ],
+      linkedObjects: [{ kind: 'issue', id: '99' }],
     });
 
     appendMessage(thread.id, {
@@ -453,7 +452,9 @@ describe('conversation-workflow integration', () => {
       threadId: thread.id,
       authorId: 'agent-1',
       toolName: 'writeFile',
-      input: { path: 'packages/collaboration/src/__tests__/conversation-workflow-integration.test.ts' },
+      input: {
+        path: 'packages/collaboration/src/__tests__/conversation-workflow-integration.test.ts',
+      },
     });
 
     // Approval request

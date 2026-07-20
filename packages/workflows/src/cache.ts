@@ -1,15 +1,15 @@
-import { createHash } from 'node:crypto'
-import type { AgentOptions } from './types.js'
+import { createHash } from 'node:crypto';
+import type { AgentOptions } from './types.js';
 
 /**
  * Cache entry stored on disk for agent results.
  */
 export interface CacheEntry {
-  key: string
-  timestamp: string
-  result: unknown
-  tokenUsage?: number
-  schemaVersion?: string
+  key: string;
+  timestamp: string;
+  result: unknown;
+  tokenUsage?: number;
+  schemaVersion?: string;
 }
 
 /**
@@ -18,52 +18,52 @@ export interface CacheEntry {
  */
 export interface CacheStore {
   /** Load a cached entry. Returns null on miss. */
-  get(key: string): Promise<CacheEntry | null>
+  get(key: string): Promise<CacheEntry | null>;
   /** Save a cache entry. */
-  set(key: string, entry: CacheEntry): Promise<void>
+  set(key: string, entry: CacheEntry): Promise<void>;
   /** Remove a specific cache entry. Returns true if it existed. */
-  invalidate(key: string): Promise<boolean>
+  invalidate(key: string): Promise<boolean>;
   /** Invalidate all entries matching a prefix. Returns count of removed entries. */
-  invalidateByPrefix(prefix: string): Promise<number>
+  invalidateByPrefix(prefix: string): Promise<number>;
 }
 
 /**
  * In-memory CacheStore implementation for testing.
  */
 export class MemoryCacheStore implements CacheStore {
-  private readonly store = new Map<string, CacheEntry>()
+  private readonly store = new Map<string, CacheEntry>();
 
   async get(key: string): Promise<CacheEntry | null> {
-    return this.store.get(key) ?? null
+    return this.store.get(key) ?? null;
   }
 
   async set(key: string, entry: CacheEntry): Promise<void> {
-    this.store.set(key, entry)
+    this.store.set(key, entry);
   }
 
   async invalidate(key: string): Promise<boolean> {
-    return this.store.delete(key)
+    return this.store.delete(key);
   }
 
   async invalidateByPrefix(prefix: string): Promise<number> {
-    let count = 0
+    let count = 0;
     for (const key of this.store.keys()) {
       if (key.startsWith(prefix)) {
-        this.store.delete(key)
-        count++
+        this.store.delete(key);
+        count++;
       }
     }
-    return count
+    return count;
   }
 
   /** Get current cache size (test helper). */
   get size(): number {
-    return this.store.size
+    return this.store.size;
   }
 
   /** Check if a key exists (test helper). */
   has(key: string): boolean {
-    return this.store.has(key)
+    return this.store.has(key);
   }
 }
 
@@ -72,10 +72,7 @@ export class MemoryCacheStore implements CacheStore {
  * Returns a hex string (first 12 chars of SHA-256).
  */
 export function hashString(input: string): string {
-  return createHash('sha256')
-    .update(input)
-    .digest('hex')
-    .slice(0, 12)
+  return createHash('sha256').update(input).digest('hex').slice(0, 12);
 }
 
 /**
@@ -93,19 +90,16 @@ export function computeCacheKey(
   prompt: string,
   opts?: AgentOptions,
 ): string {
-  const promptHash = hashString(prompt)
-  const optsHash = opts ? hashString(JSON.stringify(opts)) : 'no-opts'
-  return `${manifestHash}:${phase}:${label}:${promptHash}:${optsHash}`
+  const promptHash = hashString(prompt);
+  const optsHash = opts ? hashString(JSON.stringify(opts)) : 'no-opts';
+  return `${manifestHash}:${phase}:${label}:${promptHash}:${optsHash}`;
 }
 
 /**
  * Get a cache entry. Delegates to the provided store.
  */
-export async function getCacheEntry(
-  store: CacheStore,
-  key: string,
-): Promise<CacheEntry | null> {
-  return store.get(key)
+export async function getCacheEntry(store: CacheStore, key: string): Promise<CacheEntry | null> {
+  return store.get(key);
 }
 
 /**
@@ -123,18 +117,15 @@ export async function setCacheEntry(
     result,
     tokenUsage,
     schemaVersion: '1',
-  }
-  await store.set(key, entry)
+  };
+  await store.set(key, entry);
 }
 
 /**
  * Invalidate a specific cache entry.
  */
-export async function invalidateCacheEntry(
-  store: CacheStore,
-  key: string,
-): Promise<boolean> {
-  return store.invalidate(key)
+export async function invalidateCacheEntry(store: CacheStore, key: string): Promise<boolean> {
+  return store.invalidate(key);
 }
 
 /**
@@ -145,12 +136,12 @@ export async function invalidateByManifestHash(
   store: CacheStore,
   manifestHash: string,
 ): Promise<number> {
-  return store.invalidateByPrefix(`${manifestHash}:`)
+  return store.invalidateByPrefix(`${manifestHash}:`);
 }
 
 /**
  * Create a new CacheStore instance (in-memory by default).
  */
 export function createCacheStore(): MemoryCacheStore {
-  return new MemoryCacheStore()
+  return new MemoryCacheStore();
 }

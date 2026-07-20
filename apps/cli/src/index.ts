@@ -28,10 +28,7 @@ import {
 import { PLUGIN_ACTION_WORKSPACE_LOAD_FAILED } from './boot/plugin-action-runner.js';
 import { getBuildInfo } from './release/build-info.js';
 import { findWorkspaceRoot, resolveWorkspaceContext } from '@openslack/workspace';
-import {
-  assertLocalStateCompatibility,
-  LocalStateCompatibilityError,
-} from '@openslack/runtime';
+import { assertLocalStateCompatibility, LocalStateCompatibilityError } from '@openslack/runtime';
 
 const buildInfo = getBuildInfo();
 const contextOptions = {

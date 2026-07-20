@@ -14,6 +14,7 @@ OSEK is a high-quality design. The four-zone classification, nine-stage closed l
 The design trusts the Self Observer to detect all problems, but nothing monitors the Self Observer itself. If the observer is broken, the entire evolution loop is blind.
 
 **Fix:** Merge with Section 25 (Genesis Layer). Add `scripts/genesis-watchdog.sh` that runs independently of all OpenSlack runtime, checking only:
+
 - Self Observer last run timestamp
 - Self Validator last pass/fail
 - Claim Broker liveness
@@ -34,6 +35,7 @@ The design trusts the Self Observer to detect all problems, but nothing monitors
 `packages/self-evolution/**` is entirely Red Zone, but it contains both core policy code (classifier, merge decider) and operational code (observe, triage, propose). If the operational code can't be improved by agents, self-evolution stagnates.
 
 **Fix:** Split into two sub-layers:
+
 - `packages/self-evolution/src/core/` — Red Zone (classifier, merge decider, policy engine)
 - `packages/self-evolution/src/ops/` — Yellow Zone (observe, triage, propose, plan, monitor)
 
@@ -42,8 +44,10 @@ The design trusts the Self Observer to detect all problems, but nothing monitors
 AGENTS.md (Section 20) has "Critical rules." Agent-specific prompts in `.openslack/agents/prompts/` also have rules. No priority is defined for conflicts.
 
 **Fix:** AGENTS.md rules are constitutional floor. Agent prompts may add but never relax. Add to AGENTS.md:
+
 ```markdown
 ## Constitutional Constraints (NEVER override)
+
 These rules cannot be relaxed by any agent prompt, task context, or chat message.
 ```
 
@@ -62,6 +66,7 @@ In Self-Project Mode, `workspace.yaml` sits next to `bun.lock`. Both say "worksp
 Section 6.9 and L7 describe monitoring without thresholds. What counts as a regression?
 
 **Fix:** Define explicit regression criteria:
+
 ```
 REGRESSION = (post_merge_failure_rate - baseline > 0.05)
           OR any new critical issue
@@ -85,14 +90,14 @@ No guard against the system modifying itself too many times in a short window.
 
 ## Gaps (Should Add)
 
-| # | Gap | Recommendation |
-|---|-----|---------------|
-| 1 | GitHub App permission model | Add section listing required scopes: `read:project`, `write:issue`, `write:pull_request`, `read:org` |
-| 2 | Agent credential rotation | 9 agents each need tokens. Add rotation policy in security section |
-| 3 | Evolution history query | Add `openslack self history --since <date>` CLI command |
-| 4 | Human rollback trigger criteria | Define: 2 consecutive auto-rollback failures → human must intervene |
-| 5 | Constitution amendment process | How does constitution.md itself change? Add Section 10.1 "Amending the Constitution" |
-| 6 | Multi-workspace coexistence | Self-Project Mode + managing other repos simultaneously. Mark post-MVP |
+| #   | Gap                             | Recommendation                                                                                       |
+| --- | ------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| 1   | GitHub App permission model     | Add section listing required scopes: `read:project`, `write:issue`, `write:pull_request`, `read:org` |
+| 2   | Agent credential rotation       | 9 agents each need tokens. Add rotation policy in security section                                   |
+| 3   | Evolution history query         | Add `openslack self history --since <date>` CLI command                                              |
+| 4   | Human rollback trigger criteria | Define: 2 consecutive auto-rollback failures → human must intervene                                  |
+| 5   | Constitution amendment process  | How does constitution.md itself change? Add Section 10.1 "Amending the Constitution"                 |
+| 6   | Multi-workspace coexistence     | Self-Project Mode + managing other repos simultaneously. Mark post-MVP                               |
 
 ---
 
@@ -100,15 +105,15 @@ No guard against the system modifying itself too many times in a short window.
 
 Each golden eval should specify the action on failure:
 
-| Eval | On Failure |
-|------|-----------|
-| EV-GOLDEN-001 (workspace self-bootstrap) | Auto-create EVOL task |
-| EV-GOLDEN-002 (agent can't edit own prompt) | Block PR + notify human |
-| EV-GOLDEN-003 (Red Zone needs human) | Block PR + notify human |
-| EV-GOLDEN-004 (concurrent claim → one wins) | Block PR + critical alert |
-| EV-GOLDEN-005 (Green docs auto-merge) | Block PR + critical alert |
-| EV-GOLDEN-006 (Black Zone fails immediately) | Immediate PR rejection |
-| EV-GOLDEN-007 (regression → rollback) | Auto-create rollback task |
+| Eval                                         | On Failure                |
+| -------------------------------------------- | ------------------------- |
+| EV-GOLDEN-001 (workspace self-bootstrap)     | Auto-create EVOL task     |
+| EV-GOLDEN-002 (agent can't edit own prompt)  | Block PR + notify human   |
+| EV-GOLDEN-003 (Red Zone needs human)         | Block PR + notify human   |
+| EV-GOLDEN-004 (concurrent claim → one wins)  | Block PR + critical alert |
+| EV-GOLDEN-005 (Green docs auto-merge)        | Block PR + critical alert |
+| EV-GOLDEN-006 (Black Zone fails immediately) | Immediate PR rejection    |
+| EV-GOLDEN-007 (regression → rollback)        | Auto-create rollback task |
 
 ---
 
@@ -117,6 +122,7 @@ Each golden eval should specify the action on failure:
 Section 30 has Sprint 4 (Golden eval runner) depending on Sprint 1. Sprint 6 (Self observe) also depends on Sprint 1. Correct: Sprint 3 and 4 can run in parallel (classifier and eval runner are independent). Sprint 8 requires Sprint 5+6+7 all complete first.
 
 Actual dependency graph:
+
 ```
 Sprint 1 ──→ Sprint 2
          ├─→ Sprint 3

@@ -1,7 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync, readFileSync, readdirSync, mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  readFileSync,
+  readdirSync,
+  mkdtempSync,
+  rmSync,
+  mkdirSync,
+  writeFileSync,
+} from 'node:fs';
 import { parse as parseYaml } from 'yaml';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -12,9 +20,7 @@ const TEMPLATES_DIR = join(__dirname, '..', '..', '..', '..', 'templates', 'work
 // We test the validate/show/list logic by directly exercising the underlying
 // functions, since Commander action handlers are thin wrappers around them.
 
-import {
-  validateWorkflowTemplate,
-} from '@openslack/collaboration';
+import { validateWorkflowTemplate } from '@openslack/collaboration';
 import type { WorkflowTemplate } from '@openslack/collaboration';
 import {
   discoverYamlTemplates,
@@ -25,7 +31,7 @@ import {
 // ─── Helper: filter builtins from discovery results ───────────────────────────
 
 function withoutBuiltins<T extends { source: string }>(results: T[]): T[] {
-  return results.filter((r) => r.source !== 'builtin')
+  return results.filter((r) => r.source !== 'builtin');
 }
 
 // ─── Helper: load a builtin template ──────────────────────────────────────────
@@ -206,14 +212,17 @@ describe('workflow show subcommand logic - JS modules', () => {
   it('finds a JS module workflow by name', async () => {
     const workflowsDir = join(tmpDir, '.openslack', 'workflows');
     mkdirSync(workflowsDir, { recursive: true });
-    writeFileSync(join(workflowsDir, 'custom-scan.js'), `
+    writeFileSync(
+      join(workflowsDir, 'custom-scan.js'),
+      `
 export const meta = {
   name: 'custom-scan',
   description: 'Custom scanner',
   phases: [{ title: 'Scan', detail: 'Scan files' }]
 }
 export async function run() { return { status: 'ok' } }
-`);
+`,
+    );
     const found = await findWorkflow('custom-scan', tmpDir);
     expect(found).toBeDefined();
     expect(found!.name).toBe('custom-scan');
@@ -227,7 +236,9 @@ export async function run() { return { status: 'ok' } }
   it('loads and inspects a JS module workflow', async () => {
     const workflowsDir = join(tmpDir, '.openslack', 'workflows');
     mkdirSync(workflowsDir, { recursive: true });
-    writeFileSync(join(workflowsDir, 'test-scan.js'), `
+    writeFileSync(
+      join(workflowsDir, 'test-scan.js'),
+      `
 export const meta = {
   name: 'test-scan',
   description: 'Test scan',
@@ -235,7 +246,8 @@ export const meta = {
 }
 export async function preview() { return { preview: true } }
 export async function run() { return { status: 'complete' } }
-`);
+`,
+    );
     const found = await findWorkflow('test-scan', tmpDir);
     expect(found).toBeDefined();
     const mod = await loadWorkflow(found!.path);
@@ -276,10 +288,13 @@ describe('enhanced workflow list - combined YAML and JS', () => {
   it('discovers JS workflows from .openslack/workflows', async () => {
     const workflowsDir = join(tmpDir, '.openslack', 'workflows');
     mkdirSync(workflowsDir, { recursive: true });
-    writeFileSync(join(workflowsDir, 'my-flow.js'), `
+    writeFileSync(
+      join(workflowsDir, 'my-flow.js'),
+      `
 export const meta = { name: 'my-flow', description: 'Test', phases: [{ title: 'A', detail: 'B' }] }
 export async function run() { return { status: 'ok' } }
-`);
+`,
+    );
     const jsWorkflows = withoutBuiltins(await discoverJsWorkflows(tmpDir));
     expect(jsWorkflows.length).toBe(1);
     expect(jsWorkflows[0].name).toBe('my-flow');
@@ -293,9 +308,12 @@ export async function run() { return { status: 'ok' } }
     // JS modules - create a temporary one
     const workflowsDir = join(tmpDir, '.openslack', 'workflows');
     mkdirSync(workflowsDir, { recursive: true });
-    writeFileSync(join(workflowsDir, 'custom.js'), `
+    writeFileSync(
+      join(workflowsDir, 'custom.js'),
+      `
 export const meta = { name: 'custom', description: 'Custom', phases: [{ title: 'Run', detail: 'Run' }] }
-`);
+`,
+    );
 
     const jsWorkflows = withoutBuiltins(await discoverJsWorkflows(tmpDir));
 
@@ -316,9 +334,12 @@ export const meta = { name: 'custom', description: 'Custom', phases: [{ title: '
   it('JS workflow summaries include description', async () => {
     const workflowsDir = join(tmpDir, '.openslack', 'workflows');
     mkdirSync(workflowsDir, { recursive: true });
-    writeFileSync(join(workflowsDir, 'desc-flow.js'), `
+    writeFileSync(
+      join(workflowsDir, 'desc-flow.js'),
+      `
 export const meta = { name: 'desc-flow', description: 'A described flow', phases: [{ title: 'A', detail: 'B' }] }
-`);
+`,
+    );
     const jsWorkflows = withoutBuiltins(await discoverJsWorkflows(tmpDir));
     expect(jsWorkflows[0].description).toBe('A described flow');
   });
@@ -345,7 +366,9 @@ describe('workflow validate - JS module via loadWorkflow', () => {
   it('loads a valid JS module and checks metadata', async () => {
     const workflowsDir = join(tmpDir, '.openslack', 'workflows');
     mkdirSync(workflowsDir, { recursive: true });
-    writeFileSync(join(workflowsDir, 'valid-mod.js'), `
+    writeFileSync(
+      join(workflowsDir, 'valid-mod.js'),
+      `
 export const meta = {
   name: 'valid-mod',
   description: 'Valid module',
@@ -354,7 +377,8 @@ export const meta = {
   risk: 'low'
 }
 export async function preview() { return { preview: true } }
-`);
+`,
+    );
     const found = await findWorkflow('valid-mod', tmpDir);
     expect(found).toBeDefined();
     const mod = await loadWorkflow(found!.path);
@@ -369,9 +393,12 @@ export async function preview() { return { preview: true } }
   it('throws when loading a module with invalid meta', async () => {
     const workflowsDir = join(tmpDir, '.openslack', 'workflows');
     mkdirSync(workflowsDir, { recursive: true });
-    writeFileSync(join(workflowsDir, 'bad-meta.js'), `
+    writeFileSync(
+      join(workflowsDir, 'bad-meta.js'),
+      `
 export const meta = { }
-`);
+`,
+    );
     const found = await findWorkflow('bad-meta', tmpDir);
     // findWorkflow succeeds (file exists) but the meta won't pass analyzeStaticMeta
     // Actually, findWorkflow calls discoverWorkflows which doesn't load the file.
@@ -384,9 +411,12 @@ export const meta = { }
   it('throws when loading a module without meta export', async () => {
     const workflowsDir = join(tmpDir, '.openslack', 'workflows');
     mkdirSync(workflowsDir, { recursive: true });
-    writeFileSync(join(workflowsDir, 'no-meta.js'), `
+    writeFileSync(
+      join(workflowsDir, 'no-meta.js'),
+      `
 export async function run() { return { status: 'ok' } }
-`);
+`,
+    );
     // discoverJsWorkflows skips modules that fail static analysis
     const jsWorkflows = withoutBuiltins(await discoverJsWorkflows(tmpDir));
     expect(jsWorkflows).toEqual([]);

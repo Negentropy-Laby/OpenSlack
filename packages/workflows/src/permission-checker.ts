@@ -1,4 +1,4 @@
-import type { WorkflowPermissions, TrustLevel, ExecutionMode } from './types.js'
+import type { WorkflowPermissions, TrustLevel, ExecutionMode } from './types.js';
 
 /**
  * Hardcoded set of actions that are ALWAYS forbidden,
@@ -13,22 +13,19 @@ import type { WorkflowPermissions, TrustLevel, ExecutionMode } from './types.js'
  * @see manifest-validator.ts for the manifest validation copy
  */
 export const ALWAYS_FORBIDDEN = new Set([
-  'github.pr.approve',       // Agents must never approve PRs -- human approval required
-  'github.pr.merge',         // Direct merge forbidden; use ctx.openslack.prms.requestMerge()
-  'ruleset.bypass',          // Branch protection rules cannot be bypassed programmatically
-  'secrets.read',            // No workflow may read PEM keys, tokens, or credential files
+  'github.pr.approve', // Agents must never approve PRs -- human approval required
+  'github.pr.merge', // Direct merge forbidden; use ctx.openslack.prms.requestMerge()
+  'ruleset.bypass', // Branch protection rules cannot be bypassed programmatically
+  'secrets.read', // No workflow may read PEM keys, tokens, or credential files
   'kernel.constitution.write', // Self-evolution governance rules are immutable by workflows
-  'agent.registry.write',    // Agent registry modifications require human authorization
-  'workflow.trust.upgrade',  // Trust level upgrades require human action, not workflow self-promotion
-])
+  'agent.registry.write', // Agent registry modifications require human authorization
+  'workflow.trust.upgrade', // Trust level upgrades require human action, not workflow self-promotion
+]);
 
 /**
  * Read-only permissions granted to untrusted workflows.
  */
-const UNTRUSTED_READONLY = new Set([
-  'github.issues.read',
-  'github.prs.read',
-])
+const UNTRUSTED_READONLY = new Set(['github.issues.read', 'github.prs.read']);
 
 /**
  * Permissions available to trusted workflows in addition to untrusted.
@@ -50,7 +47,7 @@ const TRUSTED_AVAILABLE = new Set([
   'openslack.collaboration.createHandoff',
   'openslack.collaboration.recordDecision',
   'openslack.governance.audit',
-])
+]);
 
 /**
  * All permissions available to core workflows (everything trusted has plus runtime APIs).
@@ -63,18 +60,18 @@ const CORE_AVAILABLE = new Set([
   'openslack.prms.classify',
   'openslack.prms.queue',
   'openslack.prms.requestMerge',
-])
+]);
 
 /**
  * Determine if an action is a write action (not read-only).
  */
 function isWriteAction(action: string): boolean {
   // Read actions: those ending in .read or explicitly read-related
-  if (action.endsWith('.read')) return false
+  if (action.endsWith('.read')) return false;
   // Known read-only patterns
-  const readOnlyPatterns = ['issues.read', 'prs.read', 'classify', 'queue', 'doctor']
-  const suffix = action.split('.').slice(1).join('.')
-  return !readOnlyPatterns.includes(suffix)
+  const readOnlyPatterns = ['issues.read', 'prs.read', 'classify', 'queue', 'doctor'];
+  const suffix = action.split('.').slice(1).join('.');
+  return !readOnlyPatterns.includes(suffix);
 }
 
 /**
@@ -91,23 +88,23 @@ export function resolvePermissions(
   trustLevel: TrustLevel,
 ): Set<string> {
   if (trustLevel === 'untrusted') {
-    return new Set(UNTRUSTED_READONLY)
+    return new Set(UNTRUSTED_READONLY);
   }
 
-  const allowed = new Set<string>()
+  const allowed = new Set<string>();
   for (const category of Object.keys(declared) as Array<keyof WorkflowPermissions>) {
-    const declaredActions = declared[category] ?? []
-    const grantedActions = granted[category] ?? []
+    const declaredActions = declared[category] ?? [];
+    const grantedActions = granted[category] ?? [];
     for (const action of declaredActions) {
       // Normalize action separators: both `:` and `.` are treated as `.` in keys
-      const normalizedAction = action.replace(/:/g, '.')
-      const key = `${category}.${normalizedAction}`
+      const normalizedAction = action.replace(/:/g, '.');
+      const key = `${category}.${normalizedAction}`;
       if (!ALWAYS_FORBIDDEN.has(key) && grantedActions.includes(action)) {
-        allowed.add(key)
+        allowed.add(key);
       }
     }
   }
-  return allowed
+  return allowed;
 }
 
 /**
@@ -119,13 +116,13 @@ export function resolvePermissions(
  */
 export function resolveTrustLevel(options: {
   /** Whether the workflow is in the builtins directory */
-  isBuiltin: boolean
+  isBuiltin: boolean;
   /** Explicitly assigned trust level (from config or CLI) */
-  assignedLevel?: TrustLevel
+  assignedLevel?: TrustLevel;
 }): TrustLevel {
-  if (options.isBuiltin) return 'core'
-  if (options.assignedLevel) return options.assignedLevel
-  return 'untrusted'
+  if (options.isBuiltin) return 'core';
+  if (options.assignedLevel) return options.assignedLevel;
+  return 'untrusted';
 }
 
 /**
@@ -136,13 +133,13 @@ export function resolveTrustLevel(options: {
 export function getPermissionsForTrustLevel(level: TrustLevel): Set<string> {
   switch (level) {
     case 'untrusted':
-      return new Set(UNTRUSTED_READONLY)
+      return new Set(UNTRUSTED_READONLY);
     case 'trusted':
-      return new Set([...UNTRUSTED_READONLY, ...TRUSTED_AVAILABLE])
+      return new Set([...UNTRUSTED_READONLY, ...TRUSTED_AVAILABLE]);
     case 'core':
-      return new Set(CORE_AVAILABLE)
+      return new Set(CORE_AVAILABLE);
     default:
-      return new Set(UNTRUSTED_READONLY)
+      return new Set(UNTRUSTED_READONLY);
   }
 }
 
@@ -151,9 +148,9 @@ export function getPermissionsForTrustLevel(level: TrustLevel): Set<string> {
  */
 export interface PermissionCheckResult {
   /** Whether the action is allowed */
-  allowed: boolean
+  allowed: boolean;
   /** Human-readable reason if denied */
-  reason?: string
+  reason?: string;
 }
 
 /**
@@ -167,61 +164,58 @@ export interface PermissionCheckResult {
  */
 export function fullCheckPermission(options: {
   /** The action to check (e.g., 'github.issues.create') */
-  action: string
+  action: string;
   /** The current trust level */
-  trustLevel: TrustLevel
+  trustLevel: TrustLevel;
   /** The current execution mode */
-  mode: ExecutionMode
+  mode: ExecutionMode;
   /** The workflow's declared permissions */
-  declared: WorkflowPermissions
+  declared: WorkflowPermissions;
   /** The workflow's granted permissions */
-  granted: WorkflowPermissions
+  granted: WorkflowPermissions;
 }): PermissionCheckResult {
-  const { action, trustLevel, mode, declared, granted } = options
+  const { action, trustLevel, mode, declared, granted } = options;
 
   // Step 1: Hardcoded blocklist
   if (ALWAYS_FORBIDDEN.has(action)) {
-    return { allowed: false, reason: 'Permanently forbidden' }
+    return { allowed: false, reason: 'Permanently forbidden' };
   }
 
   // Step 2: Execution mode restrictions
   if (mode === 'validate') {
-    return { allowed: false, reason: 'No operations allowed in validate mode' }
+    return { allowed: false, reason: 'No operations allowed in validate mode' };
   }
   if (mode === 'preview' && isWriteAction(action)) {
-    return { allowed: false, reason: 'Write operations not allowed in preview mode' }
+    return { allowed: false, reason: 'Write operations not allowed in preview mode' };
   }
   if (mode === 'dry-run') {
-    return { allowed: false, reason: 'Simulated in dry-run mode (not actually executed)' }
+    return { allowed: false, reason: 'Simulated in dry-run mode (not actually executed)' };
   }
 
   // Step 3: Trust level restrictions
   if (trustLevel === 'untrusted' && isWriteAction(action)) {
-    return { allowed: false, reason: 'Write operations require trusted level or above' }
+    return { allowed: false, reason: 'Write operations require trusted level or above' };
   }
 
   // Step 4: Declared permissions
-  const effectivePermissions = resolvePermissions(declared, granted, trustLevel)
+  const effectivePermissions = resolvePermissions(declared, granted, trustLevel);
   if (!effectivePermissions.has(action)) {
-    return { allowed: false, reason: `Permission "${action}" not in effective permission set` }
+    return { allowed: false, reason: `Permission "${action}" not in effective permission set` };
   }
 
   // Step 5: Allowed
-  return { allowed: true }
+  return { allowed: true };
 }
 
 /**
  * Check whether a specific action is permitted by the given permission set.
  * Always returns false for actions in ALWAYS_FORBIDDEN.
  */
-export function checkPermission(
-  permissions: Set<string>,
-  action: string,
-): boolean {
+export function checkPermission(permissions: Set<string>, action: string): boolean {
   if (ALWAYS_FORBIDDEN.has(action)) {
-    return false
+    return false;
   }
-  return permissions.has(action)
+  return permissions.has(action);
 }
 
 /**
@@ -229,15 +223,12 @@ export function checkPermission(
  * The child can only use permissions that both the parent has AND the child
  * requests, minus anything in ALWAYS_FORBIDDEN.
  */
-export function intersectPermissions(
-  parent: Set<string>,
-  child: Set<string>,
-): Set<string> {
-  const result = new Set<string>()
+export function intersectPermissions(parent: Set<string>, child: Set<string>): Set<string> {
+  const result = new Set<string>();
   for (const perm of child) {
     if (parent.has(perm) && !ALWAYS_FORBIDDEN.has(perm)) {
-      result.add(perm)
+      result.add(perm);
     }
   }
-  return result
+  return result;
 }

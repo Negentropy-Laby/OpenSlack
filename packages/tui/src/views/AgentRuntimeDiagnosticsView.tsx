@@ -93,7 +93,11 @@ export default function AgentRuntimeDiagnosticsView({
           `Args: ${model.args.length > 0 ? compact(model.args.join(' ')) : 'not recorded'}`,
         ),
         React.createElement(ThemedText, { colorTheme: 'muted' }, `Timeout: ${model.timeoutMs}`),
-        React.createElement(ThemedText, { colorTheme: 'muted' }, `Config path: ${compact(model.configPath)}`),
+        React.createElement(
+          ThemedText,
+          { colorTheme: 'muted' },
+          `Config path: ${compact(model.configPath)}`,
+        ),
       ),
     ),
     React.createElement(
@@ -142,9 +146,21 @@ export default function AgentRuntimeDiagnosticsView({
         ? React.createElement(
             Box,
             { flexDirection: 'column' },
-            React.createElement(ThemedText, { colorTheme: 'foreground' }, `Run: ${model.lastSmokeRun.runId}`),
-            React.createElement(ThemedText, { colorTheme: 'foreground' }, `Status: ${model.lastSmokeRun.status}`),
-            React.createElement(ThemedText, { colorTheme: 'muted' }, `Started: ${model.lastSmokeRun.startedAt}`),
+            React.createElement(
+              ThemedText,
+              { colorTheme: 'foreground' },
+              `Run: ${model.lastSmokeRun.runId}`,
+            ),
+            React.createElement(
+              ThemedText,
+              { colorTheme: 'foreground' },
+              `Status: ${model.lastSmokeRun.status}`,
+            ),
+            React.createElement(
+              ThemedText,
+              { colorTheme: 'muted' },
+              `Started: ${model.lastSmokeRun.startedAt}`,
+            ),
             React.createElement(
               ThemedText,
               { colorTheme: 'muted' },
@@ -160,7 +176,11 @@ export default function AgentRuntimeDiagnosticsView({
         Box,
         { flexDirection: 'column' },
         ...model.remediations.map((line, index) =>
-          React.createElement(ThemedText, { colorTheme: 'foreground', key: index }, compact(`- ${line}`)),
+          React.createElement(
+            ThemedText,
+            { colorTheme: 'foreground', key: index },
+            compact(`- ${line}`),
+          ),
         ),
       ),
     ),

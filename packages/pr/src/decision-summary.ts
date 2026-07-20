@@ -100,7 +100,13 @@ function nextActionFor(report: PRReviewReport, owner: PRDecisionOwner): string {
 function evidenceFor(report: PRReviewReport, codeowners: string[]): string[] {
   const validApprovers = filterValidApprovals(report.reviews, report.author, report.headSha);
   const botApprovals = report.reviews.filter((r) => r.state === 'APPROVED' && isBotUser(r.user));
-  const failedChecks = report.checks.filter((c) => c.conclusion && c.conclusion !== 'success' && c.conclusion !== 'neutral' && c.conclusion !== 'skipped');
+  const failedChecks = report.checks.filter(
+    (c) =>
+      c.conclusion &&
+      c.conclusion !== 'success' &&
+      c.conclusion !== 'neutral' &&
+      c.conclusion !== 'skipped',
+  );
   const pendingChecks = report.checks.filter((c) => c.status !== 'completed');
   const evidence: string[] = [
     `Risk zone: ${report.riskZone}`,
@@ -108,14 +114,20 @@ function evidenceFor(report: PRReviewReport, codeowners: string[]): string[] {
     `Valid human approvals: ${validApprovers.length}`,
   ];
   if (codeowners.length > 0) evidence.push(`CODEOWNERS: ${codeowners.join(', ')}`);
-  if (botApprovals.length > 0) evidence.push(`Bot approvals ignored: ${botApprovals.map((r) => `@${r.user}`).join(', ')}`);
-  if (pendingChecks.length > 0) evidence.push(`Pending checks: ${pendingChecks.map((c) => c.name).join(', ')}`);
-  if (failedChecks.length > 0) evidence.push(`Failing checks: ${failedChecks.map((c) => c.name).join(', ')}`);
+  if (botApprovals.length > 0)
+    evidence.push(`Bot approvals ignored: ${botApprovals.map((r) => `@${r.user}`).join(', ')}`);
+  if (pendingChecks.length > 0)
+    evidence.push(`Pending checks: ${pendingChecks.map((c) => c.name).join(', ')}`);
+  if (failedChecks.length > 0)
+    evidence.push(`Failing checks: ${failedChecks.map((c) => c.name).join(', ')}`);
   if (report.mergeable === false) evidence.push('GitHub reports merge conflicts.');
   return evidence;
 }
 
-export function summarizePRDecision(report: PRReviewReport, codeowners: string[] = []): PRDecisionSummary {
+export function summarizePRDecision(
+  report: PRReviewReport,
+  codeowners: string[] = [],
+): PRDecisionSummary {
   const blockerCategory = categoryFor(report.decision);
   const owner = ownerFor(blockerCategory, report.decision);
   return {
@@ -193,4 +205,3 @@ export function renderPRQueue(items: PRQueueItem[]): string {
   }
   return lines.join('\n');
 }
-

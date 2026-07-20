@@ -38,7 +38,10 @@ const ALLOWED_COMMANDS: ReadonlyMap<string, AllowedCommandHandler> = new Map([
   ['bun run openslack workspace validate', validateWorkspaceCommand],
 ]);
 
-function evaluateAssertion(evalCase: EvalCase, assertion: { description: string; check: string }): AssertionResult {
+function evaluateAssertion(
+  evalCase: EvalCase,
+  assertion: { description: string; check: string },
+): AssertionResult {
   const root = findRepoRoot();
   const check = assertion.check.trim();
 
@@ -80,7 +83,10 @@ function evaluateAssertion(evalCase: EvalCase, assertion: { description: string;
       if (humanMatch) {
         const classification = classifySelfEvolutionPR(paths);
         const expected = humanMatch[1] === 'true';
-        return { passed: classification.humanApprovalRequired === expected, detail: `human_approval_required: ${classification.humanApprovalRequired} (expected ${expected})` };
+        return {
+          passed: classification.humanApprovalRequired === expected,
+          detail: `human_approval_required: ${classification.humanApprovalRequired} (expected ${expected})`,
+        };
       }
 
       // auto_merge_allowed == true/false
@@ -88,7 +94,10 @@ function evaluateAssertion(evalCase: EvalCase, assertion: { description: string;
       if (autoMatch) {
         const classification = classifySelfEvolutionPR(paths);
         const expected = autoMatch[1] === 'true';
-        return { passed: classification.autoMergeAllowed === expected, detail: `auto_merge_allowed: ${classification.autoMergeAllowed} (expected ${expected})` };
+        return {
+          passed: classification.autoMergeAllowed === expected,
+          detail: `auto_merge_allowed: ${classification.autoMergeAllowed} (expected ${expected})`,
+        };
       }
 
       // merge_decision == deny/merge_queue/require_human/wait
@@ -96,10 +105,18 @@ function evaluateAssertion(evalCase: EvalCase, assertion: { description: string;
       if (mergeMatch) {
         const classification = classifySelfEvolutionPR(paths);
         const expected = mergeMatch[1];
-        const decision = classification.riskZone === 'black' ? 'deny' :
-          classification.humanApprovalRequired ? 'require_human' :
-          classification.autoMergeAllowed ? 'merge_queue' : 'wait';
-        return { passed: decision === expected, detail: `merge_decision: ${decision} (expected ${expected})` };
+        const decision =
+          classification.riskZone === 'black'
+            ? 'deny'
+            : classification.humanApprovalRequired
+              ? 'require_human'
+              : classification.autoMergeAllowed
+                ? 'merge_queue'
+                : 'wait';
+        return {
+          passed: decision === expected,
+          detail: `merge_decision: ${decision} (expected ${expected})`,
+        };
       }
     }
 
@@ -121,18 +138,32 @@ function evaluateAssertion(evalCase: EvalCase, assertion: { description: string;
         }
         if (claimGrantedMatch) {
           const expected = parseInt(claimGrantedMatch[1], 10);
-          return { passed: granted === expected, detail: `granted_claims: ${granted} (expected ${expected})` };
+          return {
+            passed: granted === expected,
+            detail: `granted_claims: ${granted} (expected ${expected})`,
+          };
         }
         if (claimDeniedMatch) {
           const expected = parseInt(claimDeniedMatch[1], 10);
-          return { passed: denied === expected, detail: `denied_claims: ${denied} (expected ${expected})` };
+          return {
+            passed: denied === expected,
+            detail: `denied_claims: ${denied} (expected ${expected})`,
+          };
         }
       }
       // EV-GOLDEN-007: Regression → rollback — real assertion
       if (check === 'rollback_task_created == true' || check === 'revert_pr_proposed == true') {
         const result = createRollbackTask('EXP-FAKE-001');
         const fileExists = result.taskId
-          ? existsSync(join(findRepoRoot(), '.openslack', 'self', 'evolution_backlog', `${result.taskId}.yaml`))
+          ? existsSync(
+              join(
+                findRepoRoot(),
+                '.openslack',
+                'self',
+                'evolution_backlog',
+                `${result.taskId}.yaml`,
+              ),
+            )
           : false;
         return { passed: fileExists, detail: `rollback task ${result.taskId} ${result.reason}` };
       }
@@ -180,7 +211,9 @@ export function generateScorecard(evalResults: EvalResult[]): string | null {
     checks[r.caseId] = { result: r.passed ? 'pass' : 'fail', command: `golden-eval:${r.caseId}` };
   }
   const score = computeFitnessScore({
-    checks: Object.fromEntries(Object.entries(checks).map(([k, v]) => [k, { ...v, result: v.result as 'pass' | 'fail' }])),
+    checks: Object.fromEntries(
+      Object.entries(checks).map(([k, v]) => [k, { ...v, result: v.result as 'pass' | 'fail' }]),
+    ),
   });
   const now = new Date();
   const year = now.getFullYear();
@@ -189,13 +222,20 @@ export function generateScorecard(evalResults: EvalResult[]): string | null {
   const scoreDir = join(root, '.openslack', 'self', 'scorecards', String(year), month);
   mkdirSync(scoreDir, { recursive: true });
   const scorePath = join(scoreDir, `SCORE-${year}-${scoreSeq}.yaml`);
-  writeFileSync(scorePath, stringify({
-    schema: 'openslack.fitness_score.v1',
-    experiment_id: 'golden-eval',
-    dimensions: score.dimensions,
-    overall: score.overall,
-    decision: score.decision,
-    generated_at: now.toISOString(),
-  }, { lineWidth: 120 }), 'utf-8');
+  writeFileSync(
+    scorePath,
+    stringify(
+      {
+        schema: 'openslack.fitness_score.v1',
+        experiment_id: 'golden-eval',
+        dimensions: score.dimensions,
+        overall: score.overall,
+        decision: score.decision,
+        generated_at: now.toISOString(),
+      },
+      { lineWidth: 120 },
+    ),
+    'utf-8',
+  );
   return scorePath;
 }

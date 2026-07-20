@@ -1,39 +1,48 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mapProductRegistryToStatusTuiFields, statusCommands } from '../commands/status.js';
+import { format as formatMarkdown } from 'prettier';
+import {
+  generateStatusDoc,
+  inlineCodeCell,
+  mapProductRegistryToStatusTuiFields,
+  renderMarkdownTable,
+  statusCommands,
+} from '../commands/status.js';
 import type { AttentionItem } from '@openslack/runtime';
 import type { ModulesRegistry } from '@openslack/workspace';
 
-const mockReadModules = vi.fn((): ModulesRegistry => ({
-  schema: 'openslack.modules.v2',
-  sourceSchema: 'openslack.modules.v2',
-  modules: [
-    {
-      id: 'runtime',
-      name: 'runtime',
-      phase: '1',
-      status: 'active',
-      maturity: 'local_ready',
-      operatorConfigured: false,
-      externalBlockers: ['clean_machine_smoke_pending'],
-      evidenceRefs: ['test:packages/runtime/src/__tests__'],
-      tests: 42,
-      packages: ['@openslack/runtime'],
-    },
-    {
-      id: 'collaboration',
-      name: 'collaboration',
-      phase: '2',
-      status: 'active',
-      maturity: 'implemented',
-      operatorConfigured: false,
-      externalBlockers: [],
-      evidenceRefs: ['test:packages/collaboration/src/__tests__'],
-      tests: 30,
-      packages: ['@openslack/collaboration'],
-    },
-  ],
-  deferredWork: [],
-}));
+const mockReadModules = vi.fn(
+  (): ModulesRegistry => ({
+    schema: 'openslack.modules.v2',
+    sourceSchema: 'openslack.modules.v2',
+    modules: [
+      {
+        id: 'runtime',
+        name: 'runtime',
+        phase: '1',
+        status: 'active',
+        maturity: 'local_ready',
+        operatorConfigured: false,
+        externalBlockers: ['clean_machine_smoke_pending'],
+        evidenceRefs: ['test:packages/runtime/src/__tests__'],
+        tests: 42,
+        packages: ['@openslack/runtime'],
+      },
+      {
+        id: 'collaboration',
+        name: 'collaboration',
+        phase: '2',
+        status: 'active',
+        maturity: 'implemented',
+        operatorConfigured: false,
+        externalBlockers: [],
+        evidenceRefs: ['test:packages/collaboration/src/__tests__'],
+        tests: 30,
+        packages: ['@openslack/collaboration'],
+      },
+    ],
+    deferredWork: [],
+  }),
+);
 const mockValidateModules = vi.fn(() => ({ valid: true, errors: [] }));
 const mockGetTotalTests = vi.fn(() => 72);
 const mockGetTotalTestFiles = vi.fn(() => 12);
@@ -237,6 +246,15 @@ describe('status command', () => {
     const output = logs.join('\n');
     expect(output).toContain('Raw passing Vitest count from .openslack/modules.yaml');
     expect(output).toContain('Module-attributed counts (72 tests, 12 files)');
+
+    const generated = generateStatusDoc('/repo');
+    expect(generated).toContain('`test:packages/runtime/src/__tests__`');
+    expect(generated).not.toContain('**tests**');
+    expect(await formatMarkdown(generated, { parser: 'markdown' })).toBe(generated);
+    expect(inlineCodeCell('test:packages/runtime/src/__tests__')).toBe(
+      '`test:packages/runtime/src/__tests__`',
+    );
+    expect(renderMarkdownTable(['Field'], [['Value']])).toBe('| Field |\n| ----- |\n| Value |');
   });
 
   it('shows All clear when no attention items', async () => {

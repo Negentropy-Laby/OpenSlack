@@ -42,8 +42,7 @@ export function loadNegentropyIntegrationConfig(
     record.endpoint === undefined
       ? undefined
       : validateEndpoint(record.endpoint, options.allowLoopbackHttp === true);
-  const keyId =
-    record.keyId === undefined ? undefined : requiredString(record.keyId, 'keyId', 256);
+  const keyId = record.keyId === undefined ? undefined : requiredString(record.keyId, 'keyId', 256);
   const maxEvidenceAgeHours =
     record.maxEvidenceAgeHours === undefined
       ? 168
@@ -58,9 +57,7 @@ export function loadNegentropyIntegrationConfig(
 function validateEndpoint(value: unknown, allowLoopbackHttp: boolean): string {
   const text = requiredString(value, 'endpoint', 2048);
   const url = new URL(text);
-  const loopback = ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(
-    url.hostname.toLowerCase(),
-  );
+  const loopback = ['127.0.0.1', 'localhost', '::1', '[::1]'].includes(url.hostname.toLowerCase());
   if (url.protocol !== 'https:' && !(allowLoopbackHttp && loopback && url.protocol === 'http:')) {
     throw new Error('Negentropy endpoint must use HTTPS.');
   }
@@ -77,12 +74,7 @@ function requiredString(value: unknown, field: string, maxLength: number): strin
   return value.trim();
 }
 
-function boundedInteger(
-  value: unknown,
-  field: string,
-  minimum: number,
-  maximum: number,
-): number {
+function boundedInteger(value: unknown, field: string, minimum: number, maximum: number): number {
   if (!Number.isInteger(value) || (value as number) < minimum || (value as number) > maximum) {
     throw new Error(`Negentropy ${field} must be between ${minimum} and ${maximum}.`);
   }

@@ -76,7 +76,8 @@ function required(name: string): string {
 function repeated(name: string): string[] {
   const values: string[] = [];
   for (let index = 0; index < process.argv.length; index += 1) {
-    if (process.argv[index] === name && process.argv[index + 1]) values.push(process.argv[index + 1]!);
+    if (process.argv[index] === name && process.argv[index + 1])
+      values.push(process.argv[index + 1]!);
   }
   return values;
 }

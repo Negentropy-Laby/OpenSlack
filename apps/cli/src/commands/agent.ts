@@ -73,9 +73,16 @@ export function agentCommands(): Command {
         for (const [key, value] of Object.entries(vars)) {
           content = content.replaceAll(key, value);
         }
-        const destDir = tmpl === 'START_HERE.md' || tmpl.endsWith('.md') || tmpl.endsWith('.yml') || tmpl.endsWith('.yaml') || tmpl === 'local_cron.example'
-          ? onboardingDir
-          : tmpl === 'identity.yaml' ? onboardingDir : promptsDir;
+        const destDir =
+          tmpl === 'START_HERE.md' ||
+          tmpl.endsWith('.md') ||
+          tmpl.endsWith('.yml') ||
+          tmpl.endsWith('.yaml') ||
+          tmpl === 'local_cron.example'
+            ? onboardingDir
+            : tmpl === 'identity.yaml'
+              ? onboardingDir
+              : promptsDir;
 
         writeFileSync(join(destDir, tmpl), content, 'utf-8');
       }
@@ -193,7 +200,9 @@ approval_rules:
         if ('error' in resolved) {
           console.log(`  [WARN] Identity resolution: ${resolved.error}`);
         } else {
-          console.log(`  [PASS] Principal resolved: ${resolved.principal.registry_id} run=${resolved.principal.run_id}`);
+          console.log(
+            `  [PASS] Principal resolved: ${resolved.principal.registry_id} run=${resolved.principal.run_id}`,
+          );
           console.log(`  [PASS] Permission snapshot source: ${resolved.snapshot.source}`);
         }
       } catch (err) {
@@ -214,12 +223,15 @@ approval_rules:
     .requiredOption('--agent-id <id>', 'Agent ID')
     .option('--source <source>', 'Task source: local, github-issues', 'local')
     .action(async (options) => {
-      const source = (options.source === 'github-issues' ? 'github-issues' : 'local') as 'local' | 'github-issues';
+      const source = (options.source === 'github-issues' ? 'github-issues' : 'local') as
+        | 'local'
+        | 'github-issues';
       const result = await tickAgent(options.agentId, { source });
       console.log(`Agent tick: ${result.agentId}`);
       console.log(`  Source: ${source}`);
       console.log(`  Action: ${result.action}`);
-      if (result.principal) console.log(`  Principal: ${result.principal.registry_id} run=${result.principal.run_id}`);
+      if (result.principal)
+        console.log(`  Principal: ${result.principal.registry_id} run=${result.principal.run_id}`);
       if (result.taskId) console.log(`  Task: ${result.taskId}`);
       if (result.leaseId) console.log(`  Claim: ${result.leaseId}`);
       console.log(`  ${result.message}`);
@@ -247,7 +259,11 @@ approval_rules:
       const writeBlocked = apply && errors > 0;
       for (const r of results) {
         if (r.status === 'converted') {
-          const suffix = apply ? (writeBlocked ? ' (blocked; not written)' : ' (written)') : ' (preview)';
+          const suffix = apply
+            ? writeBlocked
+              ? ' (blocked; not written)'
+              : ' (written)'
+            : ' (preview)';
           console.log(`[CONVERT] ${r.agentId}: v1 → v2${suffix}`);
         } else if (r.status === 'already_v2') {
           console.log(`[OK] ${r.agentId}: already v2`);
@@ -256,7 +272,9 @@ approval_rules:
         }
       }
       const converted = results.filter((r) => r.status === 'converted').length;
-      console.log(`\n${converted} converted, ${results.length - converted - errors} already v2, ${errors} errors.`);
+      console.log(
+        `\n${converted} converted, ${results.length - converted - errors} already v2, ${errors} errors.`,
+      );
       if (apply && converted > 0) {
         if (errors === 0) {
           console.log('V1 backups saved to .openslack/agents/registry.v1-backup/');

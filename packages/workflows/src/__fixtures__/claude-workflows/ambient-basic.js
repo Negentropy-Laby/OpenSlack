@@ -3,23 +3,23 @@
 // analyzeStaticMeta should parse the meta successfully.
 
 export const meta = {
-  name: "ambient-basic",
-  description: "Basic ambient DSL claude workflow",
+  name: 'ambient-basic',
+  description: 'Basic ambient DSL claude workflow',
   phases: [
-    { title: "Scan", detail: "Scan phase" },
-    { title: "Report", detail: "Report findings" }
-  ]
-}
+    { title: 'Scan', detail: 'Scan phase' },
+    { title: 'Report', detail: 'Report findings' },
+  ],
+};
 
-phase("Scan")
-log("Starting ambient scan")
+phase('Scan');
+log('Starting ambient scan');
 
-const findings = await agent("Scan the codebase for issues", {
-  label: "scan:basic",
-  phase: "Scan",
-})
+const findings = await agent('Scan the codebase for issues', {
+  label: 'scan:basic',
+  phase: 'Scan',
+});
 
-log("Scan complete, found issues")
+log('Scan complete, found issues');
 
-phase("Report")
-log("Reporting findings")
+phase('Report');
+log('Reporting findings');

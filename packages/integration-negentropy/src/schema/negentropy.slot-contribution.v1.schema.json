@@ -5,9 +5,7 @@
   "description": "Function-free JSON artifact accepted by POST /slot-contributions.",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "manifest"
-  ],
+  "required": ["manifest"],
   "properties": {
     "manifest": {
       "$ref": "#/$defs/slotManifest"
@@ -38,14 +36,10 @@
                 "const": "scenario-pack.extension"
               }
             },
-            "required": [
-              "slotId"
-            ]
+            "required": ["slotId"]
           }
         },
-        "required": [
-          "manifest"
-        ]
+        "required": ["manifest"]
       },
       "then": {
         "properties": {
@@ -71,17 +65,12 @@
                         "$ref": "#/$defs/slotPermission"
                       },
                       {
-                        "required": [
-                          "forbiddenApiMethods"
-                        ],
+                        "required": ["forbiddenApiMethods"],
                         "properties": {
                           "allowedApiMethods": {
                             "not": {
                               "contains": {
-                                "enum": [
-                                  "authorityWriterHandle",
-                                  "proposeMutation"
-                                ]
+                                "enum": ["authorityWriterHandle", "proposeMutation"]
                               }
                             }
                           },
@@ -187,29 +176,18 @@
     "slotGate": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "mode",
-        "activationMode"
-      ],
+      "required": ["mode", "activationMode"],
       "properties": {
         "mode": {
           "type": "string",
-          "enum": [
-            "OFF",
-            "SHADOW",
-            "ENFORCE"
-          ]
+          "enum": ["OFF", "SHADOW", "ENFORCE"]
         },
         "priority": {
           "type": "number"
         },
         "activationMode": {
           "type": "string",
-          "enum": [
-            "always-on",
-            "opt-in",
-            "feature-gated"
-          ]
+          "enum": ["always-on", "opt-in", "feature-gated"]
         },
         "featureKey": {
           "$ref": "#/$defs/nonEmptyString"
@@ -222,9 +200,7 @@
     "slotManifestSignature": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "value"
-      ],
+      "required": ["value"],
       "properties": {
         "algorithm": {
           "$ref": "#/$defs/nonEmptyString"
@@ -267,28 +243,14 @@
         },
         "providerKind": {
           "type": "string",
-          "enum": [
-            "built-in",
-            "bundled",
-            "workspace",
-            "external",
-            "plugin"
-          ]
+          "enum": ["built-in", "bundled", "workspace", "external", "plugin"]
         },
         "providerId": {
           "$ref": "#/$defs/nonEmptyString"
         },
         "layer": {
           "type": "string",
-          "enum": [
-            "L0",
-            "L1",
-            "L2",
-            "L3",
-            "L4",
-            "L5",
-            "L6"
-          ]
+          "enum": ["L0", "L1", "L2", "L3", "L4", "L5", "L6"]
         },
         "kind": {
           "type": "string",
@@ -344,22 +306,11 @@
     "routeContribution": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "method",
-        "path",
-        "installerId",
-        "boundary"
-      ],
+      "required": ["method", "path", "installerId", "boundary"],
       "properties": {
         "method": {
           "type": "string",
-          "enum": [
-            "GET",
-            "POST",
-            "PUT",
-            "PATCH",
-            "DELETE"
-          ]
+          "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
         },
         "path": {
           "type": "string",
@@ -373,13 +324,7 @@
         },
         "boundary": {
           "type": "string",
-          "enum": [
-            "read-only",
-            "mutation",
-            "governed-mutation",
-            "workflow",
-            "admin"
-          ]
+          "enum": ["read-only", "mutation", "governed-mutation", "workflow", "admin"]
         },
         "requiredPlatformCapabilities": {
           "$ref": "#/$defs/platformCapabilities"
@@ -395,10 +340,7 @@
     "realtimeRoomContribution": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "roomName",
-        "readOnly"
-      ],
+      "required": ["roomName", "readOnly"],
       "properties": {
         "roomName": {
           "$ref": "#/$defs/nonEmptyString"
@@ -440,9 +382,7 @@
     "lifecycleResult": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "ok"
-      ],
+      "required": ["ok"],
       "properties": {
         "ok": {
           "type": "boolean"

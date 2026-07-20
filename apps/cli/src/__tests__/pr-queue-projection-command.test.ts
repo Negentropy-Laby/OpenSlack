@@ -49,11 +49,9 @@ vi.mock('@openslack/pr', () => ({
   postReviewComment: vi.fn(),
   watchPR: vi.fn(),
   buildPRQueue: (...args: unknown[]) => hoisted.buildPRQueue(...args),
-  buildRepositoryPRProjection: (...args: unknown[]) =>
-    hoisted.buildRepositoryPRProjection(...args),
+  buildRepositoryPRProjection: (...args: unknown[]) => hoisted.buildRepositoryPRProjection(...args),
   renderPRQueue: (value: unknown) => hoisted.renderPRQueue(value),
-  renderRepositoryPRProjection: (value: unknown) =>
-    hoisted.renderRepositoryPRProjection(value),
+  renderRepositoryPRProjection: (value: unknown) => hoisted.renderRepositoryPRProjection(value),
   isCoreWorkflowArtifactPath: vi.fn(),
   computeLocalWorkflowEvidence: vi.fn(),
 }));

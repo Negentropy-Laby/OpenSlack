@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { copyFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 
-const EXPECTED_SHA256 = 'd3220080e1200391f9d5c0b2e74df1306540d57ff922d0da4156b32675efffa2';
+const EXPECTED_SHA256 = '45ca9bec47d8427d59fee4a949a32677beba81a468193f0bed4c24a3381b1c1f';
 const root = resolve(import.meta.dirname, '..', '..');
 const source = resolve(
   root,

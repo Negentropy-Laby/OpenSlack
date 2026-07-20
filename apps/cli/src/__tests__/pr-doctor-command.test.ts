@@ -26,7 +26,9 @@ const hoisted = vi.hoisted(() => {
       status?: number;
       causeMessage: string;
     }) {
-      super(`GITHUB_EVIDENCE_UNAVAILABLE: ${input.operation} failed for ${input.owner}/${input.repo}. ${input.causeMessage}`);
+      super(
+        `GITHUB_EVIDENCE_UNAVAILABLE: ${input.operation} failed for ${input.owner}/${input.repo}. ${input.causeMessage}`,
+      );
       this.name = 'GitHubEvidenceUnavailableError';
       this.operation = input.operation;
       this.owner = input.owner;
@@ -70,7 +72,8 @@ vi.mock('@openslack/github', () => ({
   getCODEOWNERS: (...args: unknown[]) => hoisted.mockGetCODEOWNERS(...args),
   commentOnPR: (...args: unknown[]) => hoisted.mockCommentOnPR(...args),
   publishWorkflowGovernance: (...args: unknown[]) => hoisted.mockPublishWorkflowGovernance(...args),
-  findWorkflowGovernanceIssue: (...args: unknown[]) => hoisted.mockFindWorkflowGovernanceIssue(...args),
+  findWorkflowGovernanceIssue: (...args: unknown[]) =>
+    hoisted.mockFindWorkflowGovernanceIssue(...args),
   updatePRBody: (...args: unknown[]) => hoisted.mockUpdatePRBody(...args),
   canonicalizeRepositoryName: (owner: string, repo: string) => ({
     owner,
@@ -107,9 +110,11 @@ vi.mock('@openslack/pr', () => ({
   postReviewComment: vi.fn(),
   watchPR: vi.fn(),
   buildPRQueue: vi.fn(),
-  buildRepositoryPRProjection: (...args: unknown[]) => hoisted.mockBuildRepositoryPRProjection(...args),
+  buildRepositoryPRProjection: (...args: unknown[]) =>
+    hoisted.mockBuildRepositoryPRProjection(...args),
   renderPRQueue: vi.fn(),
-  renderRepositoryPRProjection: (...args: unknown[]) => hoisted.mockRenderRepositoryPRProjection(...args),
+  renderRepositoryPRProjection: (...args: unknown[]) =>
+    hoisted.mockRenderRepositoryPRProjection(...args),
   summarizePRDecision: () => ({ evidence: ['Checks: pass'] }),
   isCoreWorkflowArtifactPath: (path: string) => path.includes('/builtins/'),
   computeLocalWorkflowEvidence: vi.fn(),
@@ -163,7 +168,9 @@ describe('pr doctor command live evidence gate', () => {
   });
 
   it('fails closed when live GitHub credentials are missing', async () => {
-    hoisted.mockGetClient.mockRejectedValue(new hoisted.MockGitHubAuthRequiredError('AUTH_REQUIRED: missing credential'));
+    hoisted.mockGetClient.mockRejectedValue(
+      new hoisted.MockGitHubAuthRequiredError('AUTH_REQUIRED: missing credential'),
+    );
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     await runPrCommand(['doctor', '42']);
@@ -261,14 +268,16 @@ describe('pr doctor command live evidence gate', () => {
       isDryRun: false,
       octokit: {},
     });
-    hoisted.mockFetchPRDetails.mockRejectedValue(new hoisted.MockGitHubEvidenceUnavailableError({
-      operation: 'fetch pull request reviews',
-      owner: 'Negentropy-Laby',
-      repo: 'OpenSlack',
-      prNumber: 42,
-      status: 500,
-      causeMessage: 'server error',
-    }));
+    hoisted.mockFetchPRDetails.mockRejectedValue(
+      new hoisted.MockGitHubEvidenceUnavailableError({
+        operation: 'fetch pull request reviews',
+        owner: 'Negentropy-Laby',
+        repo: 'OpenSlack',
+        prNumber: 42,
+        status: 500,
+        causeMessage: 'server error',
+      }),
+    );
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     await runPrCommand(['doctor', '42', '--auth', 'app']);
@@ -336,20 +345,22 @@ describe('pr workflow-governance command', () => {
       authMode: 'github_app_installation',
       isDryRun: false,
     });
-    hoisted.mockFetchPRDetails.mockResolvedValue(makeReport({
-      body: 'Summary',
-      workflowEvidence: {
-        schema: 'openslack.workflow-evidence.v1',
-        baseSha: 'base',
-        headSha: 'head',
-        evidenceHash: 'sha256:evidence',
-        artifactFiles: ['templates/workflows/new.yaml'],
-        addedFiles: ['templates/workflows/new.yaml'],
-        modifiedFiles: [],
-        deletedFiles: [],
-        changeKind: 'added',
-      },
-    }));
+    hoisted.mockFetchPRDetails.mockResolvedValue(
+      makeReport({
+        body: 'Summary',
+        workflowEvidence: {
+          schema: 'openslack.workflow-evidence.v1',
+          baseSha: 'base',
+          headSha: 'head',
+          evidenceHash: 'sha256:evidence',
+          artifactFiles: ['templates/workflows/new.yaml'],
+          addedFiles: ['templates/workflows/new.yaml'],
+          modifiedFiles: [],
+          deletedFiles: [],
+          changeKind: 'added',
+        },
+      }),
+    );
     hoisted.mockPublishWorkflowGovernance.mockResolvedValue({ issueNumber: 177, url: 'issue-url' });
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
@@ -359,10 +370,12 @@ describe('pr workflow-governance command', () => {
       requireLive: true,
       strictEvidence: true,
     });
-    expect(hoisted.mockPublishWorkflowGovernance).toHaveBeenCalledWith(expect.objectContaining({
-      prNumber: 42,
-      evidenceHash: 'sha256:evidence',
-    }));
+    expect(hoisted.mockPublishWorkflowGovernance).toHaveBeenCalledWith(
+      expect.objectContaining({
+        prNumber: 42,
+        evidenceHash: 'sha256:evidence',
+      }),
+    );
     expect(hoisted.mockUpdatePRBody).toHaveBeenCalledWith(
       42,
       expect.stringContaining('Workflow governance #177'),

@@ -4,12 +4,15 @@ import {
   planActions,
   executePlan,
 } from '@openslack/operator';
-import type {
-  ActionRegistryPort,
-  LLMPlannerProviderRegistryPort,
-} from '@openslack/operator';
+import type { ActionRegistryPort, LLMPlannerProviderRegistryPort } from '@openslack/operator';
 import type { ChatMessage, ChatResponse, GatewayConfig } from './types.js';
-import { verifyRequestSignature, mapActor, canExecuteSideEffects, buildDefaultActor, loadActorMappings } from './authz.js';
+import {
+  verifyRequestSignature,
+  mapActor,
+  canExecuteSideEffects,
+  buildDefaultActor,
+  loadActorMappings,
+} from './authz.js';
 import { formatPlanAsMarkdown, formatResultAsMarkdown, formatError } from './formatter.js';
 import { isDuplicate, markProcessed } from './interaction-store.js';
 import { handleAction, parseActionText } from './actions.js';
@@ -86,7 +89,11 @@ export async function routeMessage(
   let agentAuth: Parameters<typeof executePlan>[1] = {};
   try {
     if (actor?.agentId) {
-      const resolved = resolveAgentPrincipal({ root: process.cwd(), agentId: actor.agentId, provider: providerFor(message) });
+      const resolved = resolveAgentPrincipal({
+        root: process.cwd(),
+        agentId: actor.agentId,
+        provider: providerFor(message),
+      });
       if ('error' in resolved) {
         return formatError(`Authorization failed: ${resolved.error}`);
       }
@@ -101,7 +108,13 @@ export async function routeMessage(
   if (parsedAction) {
     // Side-effecting actions require a mapped actor with write permission
     const sideEffectActions = new Set([
-      'accept_handoff', 'close_handoff', 'confirm_merge', 'execute_workflow', 'approve_plan', 'claim_task', 'cancel',
+      'accept_handoff',
+      'close_handoff',
+      'confirm_merge',
+      'execute_workflow',
+      'approve_plan',
+      'claim_task',
+      'cancel',
     ]);
     if (sideEffectActions.has(parsedAction.action) && !canExecuteSideEffects(actor, config)) {
       markProcessed(message.id, message.text, message.user.id, message.channel.id);
@@ -128,7 +141,9 @@ export async function routeMessage(
 
   if (intent.kind === 'unknown') {
     return {
-      text: fallbackPrefix + `I don't understand that. Try: status, PR #N doctor, merge PR #N, create task.`,
+      text:
+        fallbackPrefix +
+        `I don't understand that. Try: status, PR #N doctor, merge PR #N, create task.`,
     };
   }
 
@@ -147,7 +162,11 @@ export async function routeMessage(
     try {
       recordEvent({
         type: 'operator.plan.blocked',
-        actor: { id: resolvedActor.id, kind: actor ? 'human' : 'chat', provider: providerFor(message) },
+        actor: {
+          id: resolvedActor.id,
+          kind: actor ? 'human' : 'chat',
+          provider: providerFor(message),
+        },
         object: { kind: 'plan', id: plan.goal },
         source: { kind: 'chat', ref: message.channel.id },
         summary: `Chat plan blocked by read-only actor policy: ${plan.goal}`,
@@ -155,13 +174,19 @@ export async function routeMessage(
         redacted: false,
         containsSensitiveData: false,
         risk: plan.riskLevel,
-        nextAction: { owner: 'human', action: 'Map this chat user to an OpenSlack role with write permission' },
+        nextAction: {
+          owner: 'human',
+          action: 'Map this chat user to an OpenSlack role with write permission',
+        },
       });
     } catch {
       // best-effort event recording
     }
     return {
-      text: fallbackPrefix + formatPlanAsMarkdown(plan) + '\n\n⚠️ This action has side effects. Unmapped actors are read-only. Add this user to the actor mapping with a write role to continue.',
+      text:
+        fallbackPrefix +
+        formatPlanAsMarkdown(plan) +
+        '\n\n⚠️ This action has side effects. Unmapped actors are read-only. Add this user to the actor mapping with a write role to continue.',
     };
   }
 
@@ -188,12 +213,18 @@ export async function routeMessage(
     lines.push('');
     lines.push(`Click **Confirm merge** to proceed, or **Cancel** to discard.`);
     lines.push('');
-    lines.push('_Slack confirmation is not a GitHub approval. This will re-run PR doctor before merging._');
+    lines.push(
+      '_Slack confirmation is not a GitHub approval. This will re-run PR doctor before merging._',
+    );
 
     try {
       recordEvent({
         type: 'chat.plan.confirmation_requested',
-        actor: { id: resolvedActor.id, kind: actor ? 'human' : 'chat', provider: providerFor(message) },
+        actor: {
+          id: resolvedActor.id,
+          kind: actor ? 'human' : 'chat',
+          provider: providerFor(message),
+        },
         object: { kind: 'plan', id: pending.planId },
         source: { kind: 'chat', ref: message.channel.id },
         summary: `Chat confirmation requested for ${plan.goal}`,
