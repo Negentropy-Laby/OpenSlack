@@ -22,15 +22,22 @@ function loadYamlEvalCase(filePath: string): EvalCase {
     title: String(data.title || ''),
     goal: String(data.goal || ''),
     onFailure: String(data.on_failure || 'auto_create_evol') as EvalCase['onFailure'],
-    assertions: (data.assertions as Array<{ description: string; check: string }>)?.map((a) => ({
-      description: String(a.description),
-      check: String(a.check),
-    })) || [],
-    setup: data.setup ? { changed_paths: (data.setup as Record<string, unknown>).changed_paths as string[] } : undefined,
-    scenario: data.scenario ? {
-      description: String((data.scenario as Record<string, unknown>).description || ''),
-      parameters: (data.scenario as Record<string, unknown>).parameters as Record<string, unknown> || {},
-    } : undefined,
+    assertions:
+      (data.assertions as Array<{ description: string; check: string }>)?.map((a) => ({
+        description: String(a.description),
+        check: String(a.check),
+      })) || [],
+    setup: data.setup
+      ? { changed_paths: (data.setup as Record<string, unknown>).changed_paths as string[] }
+      : undefined,
+    scenario: data.scenario
+      ? {
+          description: String((data.scenario as Record<string, unknown>).description || ''),
+          parameters:
+            ((data.scenario as Record<string, unknown>).parameters as Record<string, unknown>) ||
+            {},
+        }
+      : undefined,
   };
 }
 

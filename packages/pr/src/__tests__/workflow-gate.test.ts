@@ -23,10 +23,7 @@ function modifiedEvidence(path = 'templates/workflows/feature.yaml') {
   });
 }
 
-function governanceIssue(
-  evidence: ReturnType<typeof modifiedEvidence>,
-  issueNumber = 123,
-) {
+function governanceIssue(evidence: ReturnType<typeof modifiedEvidence>, issueNumber = 123) {
   return {
     issueNumber,
     prNumber: 176,
@@ -120,8 +117,14 @@ describe('workflow tree evidence', () => {
     const first = createWorkflowEvidence({
       baseSha: BASE_SHA,
       headSha: HEAD_SHA,
-      baseTree: [entry('templates/workflows/b.yaml', 'b1'), entry('templates/workflows/a.yaml', 'a1')],
-      headTree: [entry('templates/workflows/a.yaml', 'a2'), entry('templates/workflows/b.yaml', 'b1')],
+      baseTree: [
+        entry('templates/workflows/b.yaml', 'b1'),
+        entry('templates/workflows/a.yaml', 'a1'),
+      ],
+      headTree: [
+        entry('templates/workflows/a.yaml', 'a2'),
+        entry('templates/workflows/b.yaml', 'b1'),
+      ],
     });
     const second = createWorkflowEvidence({
       baseSha: BASE_SHA,
@@ -140,12 +143,14 @@ describe('workflow tree evidence', () => {
 
     expect(first.evidenceHash).toBe(second.evidenceHash);
     expect(first.modifiedFiles).toEqual(['templates/workflows/a.yaml']);
-    expect(() => createWorkflowEvidence({
-      baseSha: BASE_SHA,
-      headSha: HEAD_SHA,
-      baseTree: [entry('templates/workflows/a.yaml', 'same')],
-      headTree: [entry('templates/workflows/a.yaml', 'same')],
-    })).toThrow(NoWorkflowArtifactChangeError);
+    expect(() =>
+      createWorkflowEvidence({
+        baseSha: BASE_SHA,
+        headSha: HEAD_SHA,
+        baseTree: [entry('templates/workflows/a.yaml', 'same')],
+        headTree: [entry('templates/workflows/a.yaml', 'same')],
+      }),
+    ).toThrow(NoWorkflowArtifactChangeError);
   });
 
   it('records added, modified, deleted, renamed, and binary blobs by Git identity', () => {
@@ -174,12 +179,14 @@ describe('workflow tree evidence', () => {
       'templates/workflows/delete.yaml',
       'templates/workflows/old.yaml',
     ]);
-    expect(evaluate({
-      changedFiles: ['templates/workflows/new.yaml', 'templates/workflows/binary.bin'],
-      workflowEvidence: evidence,
-      body: 'Workflow governance #123',
-      governanceIssue: governanceIssue(evidence),
-    }).overall).toBe('PASS');
+    expect(
+      evaluate({
+        changedFiles: ['templates/workflows/new.yaml', 'templates/workflows/binary.bin'],
+        workflowEvidence: evidence,
+        body: 'Workflow governance #123',
+        governanceIssue: governanceIssue(evidence),
+      }).overall,
+    ).toBe('PASS');
   });
 });
 
@@ -206,18 +213,24 @@ describe('human workflow trust review', () => {
   });
 
   it('rejects duplicate, unknown, and conflicting trust markers', () => {
-    expect(evaluate({
-      reviews: [review('reviewer', 'Workflow-Trust: trusted\nWorkflow-Trust: trusted')],
-    }).overall).toBe('FAIL');
-    expect(evaluate({
-      reviews: [review('reviewer', 'Workflow-Trust: superuser')],
-    }).overall).toBe('FAIL');
-    expect(evaluate({
-      reviews: [
-        review('alice', 'Workflow-Trust: trusted'),
-        review('bob', 'Workflow-Trust: untrusted'),
-      ],
-    }).overall).toBe('FAIL');
+    expect(
+      evaluate({
+        reviews: [review('reviewer', 'Workflow-Trust: trusted\nWorkflow-Trust: trusted')],
+      }).overall,
+    ).toBe('FAIL');
+    expect(
+      evaluate({
+        reviews: [review('reviewer', 'Workflow-Trust: superuser')],
+      }).overall,
+    ).toBe('FAIL');
+    expect(
+      evaluate({
+        reviews: [
+          review('alice', 'Workflow-Trust: trusted'),
+          review('bob', 'Workflow-Trust: untrusted'),
+        ],
+      }).overall,
+    ).toBe('FAIL');
   });
 
   it('allows an untrusted artifact to merge under runtime read-only restrictions', () => {
@@ -240,16 +253,20 @@ describe('human workflow trust review', () => {
 
     expect(evaluate(input).overall).toBe('FAIL');
     expect(evaluate({ ...input, body: 'Workflow governance #123' }).overall).toBe('FAIL');
-    expect(evaluate({
-      ...input,
-      body: 'Workflow governance #123',
-      governanceIssue: { ...governanceIssue(evidence), author: 'human-author' },
-    }).overall).toBe('FAIL');
-    expect(evaluate({
-      ...input,
-      body: 'Workflow governance #123',
-      governanceIssue: governanceIssue(evidence),
-    }).overall).toBe('PASS');
+    expect(
+      evaluate({
+        ...input,
+        body: 'Workflow governance #123',
+        governanceIssue: { ...governanceIssue(evidence), author: 'human-author' },
+      }).overall,
+    ).toBe('FAIL');
+    expect(
+      evaluate({
+        ...input,
+        body: 'Workflow governance #123',
+        governanceIssue: governanceIssue(evidence),
+      }).overall,
+    ).toBe('PASS');
   });
 
   it('requires core trust, a CODEOWNER, and a governance issue for core artifacts', () => {
@@ -263,14 +280,18 @@ describe('human workflow trust review', () => {
     };
 
     expect(evaluate(common).overall).toBe('FAIL');
-    expect(evaluate({
-      ...common,
-      reviews: [review('reviewer', 'Workflow-Trust: core')],
-    }).overall).toBe('FAIL');
-    expect(evaluate({
-      ...common,
-      reviews: [review('owner', 'Workflow-Trust: core')],
-    }).overall).toBe('PASS');
+    expect(
+      evaluate({
+        ...common,
+        reviews: [review('reviewer', 'Workflow-Trust: core')],
+      }).overall,
+    ).toBe('FAIL');
+    expect(
+      evaluate({
+        ...common,
+        reviews: [review('owner', 'Workflow-Trust: core')],
+      }).overall,
+    ).toBe('PASS');
   });
 
   it('accepts the PR #185 evidence shape using PR-level CODEOWNER evidence', () => {
@@ -281,10 +302,7 @@ describe('human workflow trust review', () => {
     issue.body = issue.body.replaceAll('pr: 176', 'pr: 185');
 
     const result = evaluateWorkflowGate({
-      changedFiles: [
-        '.github/workflows/openslack-release.yml',
-        path,
-      ],
+      changedFiles: ['.github/workflows/openslack-release.yml', path],
       body: 'Workflow governance #186',
       author: 'openslack-agent-operator[bot]',
       baseSha: BASE_SHA,
@@ -320,16 +338,20 @@ describe('human workflow trust review', () => {
       codeowners: ['@owner'],
     };
 
-    expect(evaluateWorkflowGate({
-      ...common,
-      governanceIssue: {
-        ...issue,
-        body: issue.body.replace(workflowEvidence.evidenceHash, 'sha256:wrong'),
-      },
-    }).overall).toBe('FAIL');
-    expect(evaluateWorkflowGate({
-      ...common,
-      governanceIssue: { ...issue, issueNumber: 187 },
-    }).overall).toBe('FAIL');
+    expect(
+      evaluateWorkflowGate({
+        ...common,
+        governanceIssue: {
+          ...issue,
+          body: issue.body.replace(workflowEvidence.evidenceHash, 'sha256:wrong'),
+        },
+      }).overall,
+    ).toBe('FAIL');
+    expect(
+      evaluateWorkflowGate({
+        ...common,
+        governanceIssue: { ...issue, issueNumber: 187 },
+      }).overall,
+    ).toBe('FAIL');
   });
 });

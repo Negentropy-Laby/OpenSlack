@@ -147,7 +147,7 @@ function normalizeV1toV2(data: Record<string, unknown>, agentId: string): AgentR
         last_rotated_at: null,
         rotation_interval_days: 90,
       },
-      status: (empStatus === 'active' || empStatus === 'onboarding') ? 'active' : 'suspended',
+      status: empStatus === 'active' || empStatus === 'onboarding' ? 'active' : 'suspended',
     },
     vendor: {
       provider: vendor.provider as string,

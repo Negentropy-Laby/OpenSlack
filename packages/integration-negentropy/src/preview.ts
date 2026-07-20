@@ -12,10 +12,7 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { contributionArtifactHash } from './canonical.js';
 import { collectNegentropyEvidence } from './evidence.js';
 import { NEGENTROPY_SCHEMA_PIN, verifyNegentropySchemaPin } from './schema-pin.js';
-import type {
-  NegentropySlotContributionArtifactV1,
-  NegentropySlotPreview,
-} from './types.js';
+import type { NegentropySlotContributionArtifactV1, NegentropySlotPreview } from './types.js';
 
 export interface ExportNegentropySlotPreviewOptions {
   readonly workspaceRoot: string;

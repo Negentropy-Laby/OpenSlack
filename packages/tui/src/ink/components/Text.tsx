@@ -58,50 +58,50 @@ const memoizedStylesForWrap: Record<NonNullable<Styles['textWrap']>, Styles> = {
     flexGrow: 0,
     flexShrink: 1,
     flexDirection: 'row',
-    textWrap: 'wrap'
+    textWrap: 'wrap',
   },
   'wrap-trim': {
     flexGrow: 0,
     flexShrink: 1,
     flexDirection: 'row',
-    textWrap: 'wrap-trim'
+    textWrap: 'wrap-trim',
   },
   end: {
     flexGrow: 0,
     flexShrink: 1,
     flexDirection: 'row',
-    textWrap: 'end'
+    textWrap: 'end',
   },
   middle: {
     flexGrow: 0,
     flexShrink: 1,
     flexDirection: 'row',
-    textWrap: 'middle'
+    textWrap: 'middle',
   },
   'truncate-end': {
     flexGrow: 0,
     flexShrink: 1,
     flexDirection: 'row',
-    textWrap: 'truncate-end'
+    textWrap: 'truncate-end',
   },
   truncate: {
     flexGrow: 0,
     flexShrink: 1,
     flexDirection: 'row',
-    textWrap: 'truncate'
+    textWrap: 'truncate',
   },
   'truncate-middle': {
     flexGrow: 0,
     flexShrink: 1,
     flexDirection: 'row',
-    textWrap: 'truncate-middle'
+    textWrap: 'truncate-middle',
   },
   'truncate-start': {
     flexGrow: 0,
     flexShrink: 1,
     flexDirection: 'row',
-    textWrap: 'truncate-start'
-  }
+    textWrap: 'truncate-start',
+  },
 } as const;
 
 /**

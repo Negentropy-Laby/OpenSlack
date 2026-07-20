@@ -17,16 +17,16 @@ compromised or malicious.
 
 ## Threat Model
 
-| Threat | Mitigation |
-|--------|------------|
-| Malicious workflow file injected into repository | Trust levels + permission gating |
-| Compromised agent subtask attempts unauthorized actions | Sandboxing + permission checker |
-| Prompt injection via user-controlled input flowing into agent calls | Input sanitization + schema validation |
-| Workaround forbidden actions via nested workflows | Permission intersection + hardcoded blocklist |
-| Data exfiltration via agent output | Network sandboxing in preview mode |
-| Credential access via workflow | Hardcoded forbidden: secrets.read |
-| Privilege escalation via mode confusion | Strict mode isolation, no escalation path |
-| Unbounded workflow nesting leading to recursion | Max nesting depth 1; child workflows cannot call `ctx.workflow()` |
+| Threat                                                              | Mitigation                                                        |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Malicious workflow file injected into repository                    | Trust levels + permission gating                                  |
+| Compromised agent subtask attempts unauthorized actions             | Sandboxing + permission checker                                   |
+| Prompt injection via user-controlled input flowing into agent calls | Input sanitization + schema validation                            |
+| Workaround forbidden actions via nested workflows                   | Permission intersection + hardcoded blocklist                     |
+| Data exfiltration via agent output                                  | Network sandboxing in preview mode                                |
+| Credential access via workflow                                      | Hardcoded forbidden: secrets.read                                 |
+| Privilege escalation via mode confusion                             | Strict mode isolation, no escalation path                         |
+| Unbounded workflow nesting leading to recursion                     | Max nesting depth 1; child workflows cannot call `ctx.workflow()` |
 
 ## Trust Levels
 
@@ -116,33 +116,35 @@ Applies to workflows shipped with the `@openslack/workflows` package
 These actions are blocked for ALL trust levels, including core. No permission
 declaration, trust upgrade, or configuration change can override them.
 
-| Action | Block Reason |
-|--------|-------------|
-| `github.pr.approve` | Agents must never approve PRs — human approval required |
-| `github.pr.merge` | Direct merge forbidden; workflows must use `ctx.openslack.prms.requestMerge()` which re-runs PRMS and merges only when all gates pass |
-| `ruleset.bypass` | Branch protection rules cannot be bypassed programmatically |
-| `secrets.read` | No workflow may read PEM keys, tokens, or credential files |
-| `kernel.constitution.write` | Self-evolution governance rules are immutable by workflows |
-| `agent.registry.write` | Agent registry modifications require human authorization |
-| `workflow.trust.upgrade` | Trust level upgrades require human action, not workflow self-promotion |
+| Action                      | Block Reason                                                                                                                          |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `github.pr.approve`         | Agents must never approve PRs — human approval required                                                                               |
+| `github.pr.merge`           | Direct merge forbidden; workflows must use `ctx.openslack.prms.requestMerge()` which re-runs PRMS and merges only when all gates pass |
+| `ruleset.bypass`            | Branch protection rules cannot be bypassed programmatically                                                                           |
+| `secrets.read`              | No workflow may read PEM keys, tokens, or credential files                                                                            |
+| `kernel.constitution.write` | Self-evolution governance rules are immutable by workflows                                                                            |
+| `agent.registry.write`      | Agent registry modifications require human authorization                                                                              |
+| `workflow.trust.upgrade`    | Trust level upgrades require human action, not workflow self-promotion                                                                |
 
 ### Enforcement Point
 
 ```typescript
 // In permission-checker.ts — checked BEFORE every operation
-const ALWAYS_FORBIDDEN: ReadonlySet<string> = Object.freeze(new Set([
-  'github.pr.approve',
-  'github.pr.merge',    // Direct merge forbidden; use ctx.openslack.prms.requestMerge()
-  'ruleset.bypass',
-  'secrets.read',
-  'kernel.constitution.write',
-  'agent.registry.write',
-  'workflow.trust.upgrade',
-]))
+const ALWAYS_FORBIDDEN: ReadonlySet<string> = Object.freeze(
+  new Set([
+    'github.pr.approve',
+    'github.pr.merge', // Direct merge forbidden; use ctx.openslack.prms.requestMerge()
+    'ruleset.bypass',
+    'secrets.read',
+    'kernel.constitution.write',
+    'agent.registry.write',
+    'workflow.trust.upgrade',
+  ]),
+);
 
 function assertAllowed(action: string): void {
   if (ALWAYS_FORBIDDEN.has(action)) {
-    throw new SecurityError(`Action "${action}" is permanently forbidden`)
+    throw new SecurityError(`Action "${action}" is permanently forbidden`);
   }
 }
 ```
@@ -183,33 +185,33 @@ function checkPermission(
 ): { allowed: boolean; reason?: string } {
   // 1. Hardcoded blocklist
   if (ALWAYS_FORBIDDEN.has(action)) {
-    return { allowed: false, reason: 'Permanently forbidden' }
+    return { allowed: false, reason: 'Permanently forbidden' };
   }
 
   // 2. Execution mode
   if (mode === 'validate' || mode === 'preview') {
     if (isWriteAction(action)) {
-      return { allowed: false, reason: `Not allowed in ${mode} mode` }
+      return { allowed: false, reason: `Not allowed in ${mode} mode` };
     }
   }
   if (mode === 'dry-run') {
     // Simulate, don't execute
-    return { allowed: false, reason: 'Simulated in dry-run mode' }
+    return { allowed: false, reason: 'Simulated in dry-run mode' };
   }
 
   // 3. Trust level
   if (trustLevel === 'untrusted' && isWriteAction(action)) {
-    return { allowed: false, reason: 'Write operations require trusted level' }
+    return { allowed: false, reason: 'Write operations require trusted level' };
   }
 
   // 4. Declared permissions
-  const [category, operation] = action.split('.')
-  const declaredActions = declared[category] || []
+  const [category, operation] = action.split('.');
+  const declaredActions = declared[category] || [];
   if (!declaredActions.includes(operation)) {
-    return { allowed: false, reason: `Permission "${action}" not declared in manifest` }
+    return { allowed: false, reason: `Permission "${action}" not declared in manifest` };
   }
 
-  return { allowed: true }
+  return { allowed: true };
 }
 ```
 
@@ -246,12 +248,12 @@ path.normalize(writePath).startsWith(path.normalize(worktreePath))
 
 ### Network Isolation
 
-| Mode | Read API | Write API | External Network |
-|------|----------|-----------|------------------|
-| validate | None | None | None |
-| preview | GitHub read-only (non-mutating agents) | None | None |
-| dry-run | GitHub read-only | Simulated | None |
-| execute | GitHub read/write (via proxy) | GitHub write (via proxy) | Blocked |
+| Mode     | Read API                               | Write API                | External Network |
+| -------- | -------------------------------------- | ------------------------ | ---------------- |
+| validate | None                                   | None                     | None             |
+| preview  | GitHub read-only (non-mutating agents) | None                     | None             |
+| dry-run  | GitHub read-only                       | Simulated                | None             |
+| execute  | GitHub read/write (via proxy)          | GitHub write (via proxy) | Blocked          |
 
 All GitHub API calls in execute mode are proxied through OpenSlack's GitHub
 adapter, which:
@@ -311,11 +313,11 @@ runtime validates them against `classifyPaths()`:
 ```typescript
 // After triage returns risk_zone for each issue
 const realZones = await ctx.openslack.prms.classify(
-  issue.file ? [issue.file] : [`packages/${issue.module}/`]
-)
+  issue.file ? [issue.file] : [`packages/${issue.module}/`],
+);
 if (realZones.red.length > 0 && issue.risk_zone !== 'red') {
-  ctx.log(`WARNING: LLM assigned ${issue.risk_zone} but classifyPaths() returned red`)
-  issue.risk_zone = 'red'  // Escalate to more restrictive
+  ctx.log(`WARNING: LLM assigned ${issue.risk_zone} but classifyPaths() returned red`);
+  issue.risk_zone = 'red'; // Escalate to more restrictive
 }
 ```
 
@@ -327,15 +329,15 @@ The runtime always escalates to the more restrictive zone, never downgrades.
 
 Every workflow run produces a complete audit trail:
 
-| Event | Fields |
-|-------|--------|
-| Workflow loaded | name, format, trust level, manifest hash |
-| Permission check | action, allowed, reason |
-| Phase transition | from, to, timestamp, checkpoint hash |
-| Agent call | label, phase, prompt hash, schema, result hash, token usage |
-| Side effect | type, target, mode (simulated/real), result |
-| Permission denied | action, reason, caller |
-| Error | phase, message, stack trace |
+| Event             | Fields                                                      |
+| ----------------- | ----------------------------------------------------------- |
+| Workflow loaded   | name, format, trust level, manifest hash                    |
+| Permission check  | action, allowed, reason                                     |
+| Phase transition  | from, to, timestamp, checkpoint hash                        |
+| Agent call        | label, phase, prompt hash, schema, result hash, token usage |
+| Side effect       | type, target, mode (simulated/real), result                 |
+| Permission denied | action, reason, caller                                      |
+| Error             | phase, message, stack trace                                 |
 
 ### Log Storage
 
@@ -356,7 +358,7 @@ ctx.openslack.governance.audit('workflow.side-effect', {
   mode: 'execute',
   permission: 'github.issues:create',
   trustLevel: 'trusted',
-})
+});
 ```
 
 Governance audit entries are also recorded to the collaboration layer for
@@ -382,7 +384,7 @@ Object.defineProperty(this, 'mode', {
   value: options.mode,
   writable: false,
   configurable: false,
-})
+});
 ```
 
 ### Confirmation Gate
@@ -393,12 +395,12 @@ first side-effect operation:
 ```typescript
 if (this.mode === 'execute' && !this.confirmed) {
   const confirmed = await this.confirmationPrompt(
-    `Workflow "${this.manifest.name}" requests write access. Proceed?`
-  )
+    `Workflow "${this.manifest.name}" requests write access. Proceed?`,
+  );
   if (!confirmed) {
-    throw new Error('Workflow execution cancelled by user')
+    throw new Error('Workflow execution cancelled by user');
   }
-  this.confirmed = true
+  this.confirmed = true;
 }
 ```
 
@@ -466,9 +468,9 @@ When a cached result fails deserialization:
 
 ## Relationship to Other Security Documents
 
-| Document | Overlap | Relationship |
-|----------|---------|-------------|
-| [human-approval.md](human-approval.md) | Approval gates | Workflows respect approval freshness rules for PR merge |
-| [self-evolution-guardrails.md](self-evolution-guardrails.md) | Kernel protection | Workflows cannot write to kernel constitution |
-| [collaboration-audit.md](collaboration-audit.md) | Audit trail | Workflow audit entries feed into collaboration audit log |
-| [tui-terminal-safety.md](tui-terminal-safety.md) | Terminal safety | HTML artifacts follow terminal escape sequence safety rules |
+| Document                                                     | Overlap           | Relationship                                                |
+| ------------------------------------------------------------ | ----------------- | ----------------------------------------------------------- |
+| [human-approval.md](human-approval.md)                       | Approval gates    | Workflows respect approval freshness rules for PR merge     |
+| [self-evolution-guardrails.md](self-evolution-guardrails.md) | Kernel protection | Workflows cannot write to kernel constitution               |
+| [collaboration-audit.md](collaboration-audit.md)             | Audit trail       | Workflow audit entries feed into collaboration audit log    |
+| [tui-terminal-safety.md](tui-terminal-safety.md)             | Terminal safety   | HTML artifacts follow terminal escape sequence safety rules |

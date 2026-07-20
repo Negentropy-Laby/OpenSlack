@@ -60,12 +60,22 @@ export function diagnosePR(
       .join(', ');
     decision = 'BLOCKED_WORKFLOW_GATE';
     reason = `Workflow gate failed. Missing: ${failedCriteria}`;
-    if (workflowGate.criteria.some((criterion) => criterion.name === 'Current-head evidence' && criterion.status === 'FAIL')) {
+    if (
+      workflowGate.criteria.some(
+        (criterion) => criterion.name === 'Current-head evidence' && criterion.status === 'FAIL',
+      )
+    ) {
       recommendation = `Refresh live base/head workflow evidence for PR #${report.prNumber}; do not approve stale or unavailable evidence.`;
-    } else if (workflowGate.criteria.some((criterion) => criterion.name === 'Governance issue' && criterion.status === 'FAIL')) {
+    } else if (
+      workflowGate.criteria.some(
+        (criterion) => criterion.name === 'Governance issue' && criterion.status === 'FAIL',
+      )
+    ) {
       recommendation = `Run openslack pr workflow-governance ${report.prNumber} with GitHub App authentication.`;
     } else {
-      const trust = workflowGate.artifactFiles?.some(isCoreWorkflowArtifactPath) ? 'core' : 'trusted';
+      const trust = workflowGate.artifactFiles?.some(isCoreWorkflowArtifactPath)
+        ? 'core'
+        : 'trusted';
       recommendation = `Run gh pr review ${report.prNumber} --approve --body "Workflow-Trust: ${trust}" as an authorized human on the current head.`;
     }
     return { ...report, decision, reason, recommendation, workflowGate };
@@ -85,7 +95,8 @@ export function diagnosePR(
       .join(', ');
     decision = 'BLOCKED_PROFILE_SYNC_GATE';
     reason = `Profile-sync gate failed. Issues: ${failedCriteria}`;
-    recommendation = 'Ensure the PR only modifies profile/README.md within the marker block, includes full metadata, and is not a direct-main write.';
+    recommendation =
+      'Ensure the PR only modifies profile/README.md within the marker block, includes full metadata, and is not a direct-main write.';
     return { ...report, decision, reason, recommendation, workflowGate, profileSyncGate };
   }
 
@@ -108,7 +119,11 @@ export function diagnosePR(
 
   // 8. Checks failed
   const failingChecks = report.checks.filter(
-    (c) => c.conclusion && c.conclusion !== 'success' && c.conclusion !== 'neutral' && c.conclusion !== 'skipped',
+    (c) =>
+      c.conclusion &&
+      c.conclusion !== 'success' &&
+      c.conclusion !== 'neutral' &&
+      c.conclusion !== 'skipped',
   );
   if (failingChecks.length > 0) {
     decision = 'CHECKS_FAILED';
@@ -145,9 +160,7 @@ export function diagnosePR(
 
   // 11. Missing human approval
   if (validApprovers.length === 0) {
-    const botApprovals = report.reviews.filter(
-      (r) => r.state === 'APPROVED' && isBotUser(r.user),
-    );
+    const botApprovals = report.reviews.filter((r) => r.state === 'APPROVED' && isBotUser(r.user));
     if (botApprovals.length > 0) {
       decision = 'BOT_APPROVAL_IGNORED';
       reason = 'Bot approvals exist but are ignored per policy. Human approval required.';
@@ -183,10 +196,9 @@ export function diagnosePR(
     recommendation = 'Safe to merge.';
   } else if (report.riskZone === 'red') {
     decision = 'READY_TO_MERGE';
-    reason =
-      hasAssignedCodeowners
-        ? 'Red Zone. CODEOWNER approval satisfied. All checks passed.'
-        : 'Red Zone. Independent human approval satisfied; no matching CODEOWNERS entries. All checks passed.';
+    reason = hasAssignedCodeowners
+      ? 'Red Zone. CODEOWNER approval satisfied. All checks passed.'
+      : 'Red Zone. Independent human approval satisfied; no matching CODEOWNERS entries. All checks passed.';
     recommendation = 'Ready to merge.';
   }
 

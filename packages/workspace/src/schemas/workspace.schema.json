@@ -3,7 +3,15 @@
   "$id": "https://openslack.dev/schemas/workspace.schema.json",
   "title": "OpenSlack Workspace Configuration",
   "type": "object",
-  "required": ["schema", "workspace_id", "name", "mode", "canonical_remote", "workspace", "product"],
+  "required": [
+    "schema",
+    "workspace_id",
+    "name",
+    "mode",
+    "canonical_remote",
+    "workspace",
+    "product"
+  ],
   "properties": {
     "schema": {
       "type": "string",

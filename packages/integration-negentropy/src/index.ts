@@ -4,10 +4,7 @@ export {
   bundledNegentropySchemaBytes,
   verifyNegentropySchemaPin,
 } from './schema-pin.js';
-export {
-  collectNegentropyEvidence,
-  type CollectNegentropyEvidenceOptions,
-} from './evidence.js';
+export { collectNegentropyEvidence, type CollectNegentropyEvidenceOptions } from './evidence.js';
 export {
   exportNegentropySlotPreview,
   negentropyIntegrationStateDir,

@@ -25,16 +25,19 @@ describe('resolveAgentDisplayName', () => {
   });
 
   it('returns actor.id when no registry exists', () => {
-    expect(resolveAgentDisplayName({ id: 'unknown_agent', kind: 'agent' }, TMP_ROOT)).toBe('unknown_agent');
+    expect(resolveAgentDisplayName({ id: 'unknown_agent', kind: 'agent' }, TMP_ROOT)).toBe(
+      'unknown_agent',
+    );
   });
 
   it('resolves display_name from registry YAML', () => {
     const dir = join(TMP_ROOT, '.openslack', 'agents', 'registry');
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'test_agent.yaml'), [
-      'agent_id: test_agent',
-      'display_name: Test Agent Bot',
-    ].join('\n'), 'utf-8');
+    writeFileSync(
+      join(dir, 'test_agent.yaml'),
+      ['agent_id: test_agent', 'display_name: Test Agent Bot'].join('\n'),
+      'utf-8',
+    );
 
     clearNameCache();
     const result = resolveAgentDisplayName({ id: 'test_agent', kind: 'agent' }, TMP_ROOT);
@@ -44,10 +47,11 @@ describe('resolveAgentDisplayName', () => {
   it('caches results across calls', () => {
     const dir = join(TMP_ROOT, '.openslack', 'agents', 'registry');
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'cached.yaml'), [
-      'agent_id: cached',
-      'display_name: Cached Agent',
-    ].join('\n'), 'utf-8');
+    writeFileSync(
+      join(dir, 'cached.yaml'),
+      ['agent_id: cached', 'display_name: Cached Agent'].join('\n'),
+      'utf-8',
+    );
 
     clearNameCache();
     const first = resolveAgentDisplayName({ id: 'cached', kind: 'agent' }, TMP_ROOT);

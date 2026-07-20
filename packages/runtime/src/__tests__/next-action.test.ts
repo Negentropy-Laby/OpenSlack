@@ -13,8 +13,23 @@ describe('recommendNextActions', () => {
   it('prioritizes doctor failure above everything', () => {
     const ctx: NextActionContext = {
       doctorFailed: true,
-      setupFindings: [{ status: 'fixable_by_command', title: 'Missing auth', nextAction: 'Configure auth', command: 'openslack setup' }],
-      gitHubOps: { ready: 5, claimed: 0, blocked: 0, openPRs: 3, blockedPRs: 2, readyPRs: 1, available: true },
+      setupFindings: [
+        {
+          status: 'fixable_by_command',
+          title: 'Missing auth',
+          nextAction: 'Configure auth',
+          command: 'openslack setup',
+        },
+      ],
+      gitHubOps: {
+        ready: 5,
+        claimed: 0,
+        blocked: 0,
+        openPRs: 3,
+        blockedPRs: 2,
+        readyPRs: 1,
+        available: true,
+      },
       blockers: [{ object: 'pr:42', summary: 'Blocked', owner: 'human:wsman' }],
     };
     const recs = recommendNextActions(ctx);
@@ -25,7 +40,12 @@ describe('recommendNextActions', () => {
   it('maps fixable setup findings with nextAction to recommendations', () => {
     const ctx: NextActionContext = {
       setupFindings: [
-        { status: 'fixable_by_command', title: 'Missing auth', nextAction: 'Configure auth', command: 'openslack setup github' },
+        {
+          status: 'fixable_by_command',
+          title: 'Missing auth',
+          nextAction: 'Configure auth',
+          command: 'openslack setup github',
+        },
         { status: 'ok', title: 'Repo root', command: undefined },
       ],
     };
@@ -38,8 +58,17 @@ describe('recommendNextActions', () => {
   it('skips evergreen setup findings without nextAction (e.g. github-labels)', () => {
     const ctx: NextActionContext = {
       setupFindings: [
-        { status: 'fixable_by_command', title: 'OpenSlack labels', command: 'openslack github repair labels --apply' },
-        { status: 'fixable_by_command', title: 'Missing auth', nextAction: 'Configure auth', command: 'openslack setup' },
+        {
+          status: 'fixable_by_command',
+          title: 'OpenSlack labels',
+          command: 'openslack github repair labels --apply',
+        },
+        {
+          status: 'fixable_by_command',
+          title: 'Missing auth',
+          nextAction: 'Configure auth',
+          command: 'openslack setup',
+        },
       ],
     };
     const recs = recommendNextActions(ctx);
@@ -50,7 +79,12 @@ describe('recommendNextActions', () => {
   it('maps human-owned blockers with natural language in action, not command', () => {
     const ctx: NextActionContext = {
       blockers: [
-        { object: 'pr:42', summary: 'Missing approval', owner: 'human:wsman', nextAction: 'Review on GitHub' },
+        {
+          object: 'pr:42',
+          summary: 'Missing approval',
+          owner: 'human:wsman',
+          nextAction: 'Review on GitHub',
+        },
         { object: 'pr:43', summary: 'Checks failing', owner: 'agent:bot' },
       ],
     };
@@ -63,7 +97,15 @@ describe('recommendNextActions', () => {
 
   it('maps blocked PRs to recommendations', () => {
     const ctx: NextActionContext = {
-      gitHubOps: { ready: 0, claimed: 0, blocked: 0, openPRs: 5, blockedPRs: 3, readyPRs: 2, available: true },
+      gitHubOps: {
+        ready: 0,
+        claimed: 0,
+        blocked: 0,
+        openPRs: 5,
+        blockedPRs: 3,
+        readyPRs: 2,
+        available: true,
+      },
     };
     const recs = recommendNextActions(ctx);
     expect(recs).toHaveLength(2);
@@ -75,7 +117,15 @@ describe('recommendNextActions', () => {
 
   it('maps ready tasks with correct agent tick command including --agent-id', () => {
     const ctx: NextActionContext = {
-      gitHubOps: { ready: 4, claimed: 0, blocked: 0, openPRs: 0, blockedPRs: 0, readyPRs: 0, available: true },
+      gitHubOps: {
+        ready: 4,
+        claimed: 0,
+        blocked: 0,
+        openPRs: 0,
+        blockedPRs: 0,
+        readyPRs: 0,
+        available: true,
+      },
     };
     const recs = recommendNextActions(ctx);
     expect(recs).toHaveLength(1);
@@ -86,9 +136,31 @@ describe('recommendNextActions', () => {
 
   it('maintains deterministic priority ordering', () => {
     const ctx: NextActionContext = {
-      setupFindings: [{ status: 'fixable_by_command', title: 'Missing auth', nextAction: 'Fix auth', command: 'openslack setup' }],
-      gitHubOps: { ready: 2, claimed: 0, blocked: 0, openPRs: 3, blockedPRs: 1, readyPRs: 1, available: true },
-      blockers: [{ object: 'pr:10', summary: 'Needs review', owner: 'human:lead', nextAction: 'Review on GitHub' }],
+      setupFindings: [
+        {
+          status: 'fixable_by_command',
+          title: 'Missing auth',
+          nextAction: 'Fix auth',
+          command: 'openslack setup',
+        },
+      ],
+      gitHubOps: {
+        ready: 2,
+        claimed: 0,
+        blocked: 0,
+        openPRs: 3,
+        blockedPRs: 1,
+        readyPRs: 1,
+        available: true,
+      },
+      blockers: [
+        {
+          object: 'pr:10',
+          summary: 'Needs review',
+          owner: 'human:lead',
+          nextAction: 'Review on GitHub',
+        },
+      ],
     };
     const recs = recommendNextActions(ctx);
     const priorities = recs.map((r) => r.priority);
@@ -106,7 +178,15 @@ describe('recommendNextActions', () => {
         { status: 'fixable_by_command', title: 'C', nextAction: 'Fix C', command: 'c' },
         { status: 'fixable_by_command', title: 'D', nextAction: 'Fix D', command: 'd' },
       ],
-      gitHubOps: { ready: 5, claimed: 0, blocked: 0, openPRs: 3, blockedPRs: 2, readyPRs: 1, available: true },
+      gitHubOps: {
+        ready: 5,
+        claimed: 0,
+        blocked: 0,
+        openPRs: 3,
+        blockedPRs: 2,
+        readyPRs: 1,
+        available: true,
+      },
       blockers: [{ object: 'pr:1', summary: 'X', owner: 'human:a' }],
     };
     const recs = recommendNextActions(ctx);
@@ -116,7 +196,12 @@ describe('recommendNextActions', () => {
   it('does not put non-command text into command field', () => {
     const ctx: NextActionContext = {
       blockers: [
-        { object: 'pr:42', summary: 'Needs review', owner: 'human:lead', nextAction: 'Approve the PR on GitHub' },
+        {
+          object: 'pr:42',
+          summary: 'Needs review',
+          owner: 'human:lead',
+          nextAction: 'Approve the PR on GitHub',
+        },
       ],
     };
     const recs = recommendNextActions(ctx);
@@ -142,7 +227,12 @@ describe('getAttentionItems', () => {
   it('includes fixable setup findings as high priority', async () => {
     const ctx: NextActionContext = {
       setupFindings: [
-        { status: 'fixable_by_command', title: 'Missing auth', nextAction: 'Configure auth', command: 'openslack setup' },
+        {
+          status: 'fixable_by_command',
+          title: 'Missing auth',
+          nextAction: 'Configure auth',
+          command: 'openslack setup',
+        },
         { status: 'ok', title: 'Repo root' },
       ],
     };
@@ -166,7 +256,12 @@ describe('getAttentionItems', () => {
   it('includes human-owned blockers as medium priority', async () => {
     const ctx: NextActionContext = {
       blockers: [
-        { object: 'pr:42', summary: 'Missing approval', owner: 'human:lead', nextAction: 'Review on GitHub' },
+        {
+          object: 'pr:42',
+          summary: 'Missing approval',
+          owner: 'human:lead',
+          nextAction: 'Review on GitHub',
+        },
         { object: 'pr:43', summary: 'Failing checks', owner: 'agent:bot' },
       ],
     };
@@ -179,7 +274,15 @@ describe('getAttentionItems', () => {
 
   it('includes blocked PRs as medium priority', async () => {
     const ctx: NextActionContext = {
-      gitHubOps: { ready: 0, claimed: 0, blocked: 0, openPRs: 5, blockedPRs: 2, readyPRs: 1, available: true },
+      gitHubOps: {
+        ready: 0,
+        claimed: 0,
+        blocked: 0,
+        openPRs: 5,
+        blockedPRs: 2,
+        readyPRs: 1,
+        available: true,
+      },
     };
     const items = await getAttentionItems(ctx);
     const blockedItem = items.find((i) => i.type === 'pr' && i.description.includes('blocked'));
@@ -189,7 +292,15 @@ describe('getAttentionItems', () => {
 
   it('includes ready tasks as low priority', async () => {
     const ctx: NextActionContext = {
-      gitHubOps: { ready: 3, claimed: 0, blocked: 0, openPRs: 0, blockedPRs: 0, readyPRs: 0, available: true },
+      gitHubOps: {
+        ready: 3,
+        claimed: 0,
+        blocked: 0,
+        openPRs: 0,
+        blockedPRs: 0,
+        readyPRs: 0,
+        available: true,
+      },
     };
     const items = await getAttentionItems(ctx);
     expect(items).toHaveLength(1);
@@ -200,7 +311,15 @@ describe('getAttentionItems', () => {
 
   it('includes ready PRs as low priority', async () => {
     const ctx: NextActionContext = {
-      gitHubOps: { ready: 0, claimed: 0, blocked: 0, openPRs: 3, blockedPRs: 0, readyPRs: 2, available: true },
+      gitHubOps: {
+        ready: 0,
+        claimed: 0,
+        blocked: 0,
+        openPRs: 3,
+        blockedPRs: 0,
+        readyPRs: 2,
+        available: true,
+      },
     };
     const items = await getAttentionItems(ctx);
     const readyItem = items.find((i) => i.description.includes('ready to merge'));
@@ -213,7 +332,15 @@ describe('getAttentionItems', () => {
       doctorFailed: true,
       setupFindings: [{ status: 'fixable_by_command', title: 'Auth', nextAction: 'Fix auth' }],
       blockers: [{ object: 'pr:1', summary: 'Blocked', owner: 'human:dev' }],
-      gitHubOps: { ready: 5, claimed: 0, blocked: 0, openPRs: 2, blockedPRs: 1, readyPRs: 0, available: true },
+      gitHubOps: {
+        ready: 5,
+        claimed: 0,
+        blocked: 0,
+        openPRs: 2,
+        blockedPRs: 1,
+        readyPRs: 0,
+        available: true,
+      },
     };
     const items = await getAttentionItems(ctx);
     expect(items.length).toBeGreaterThanOrEqual(4);

@@ -4,8 +4,8 @@ import { parseGitLsTree } from '../local-workflow-evidence.js';
 describe('parseGitLsTree', () => {
   it('preserves Git mode, type, blob identity, and paths with spaces', () => {
     const output = Buffer.from(
-      '100644 blob abc123\ttemplates/workflows/feature one.yaml\0'
-      + '100755 blob def456\t.openslack/workflows/run.js\0',
+      '100644 blob abc123\ttemplates/workflows/feature one.yaml\0' +
+        '100755 blob def456\t.openslack/workflows/run.js\0',
       'utf8',
     );
 

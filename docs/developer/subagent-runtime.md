@@ -37,12 +37,12 @@ Resolution is handled by `resolveAgentType()` in `@openslack/workflows`.
 
 ### Key Packages
 
-| Package | Role |
-|---------|------|
-| `@openslack/kernel` | Defines `SubagentDefinition` and `PermissionMode` types |
+| Package                | Role                                                                     |
+| ---------------------- | ------------------------------------------------------------------------ |
+| `@openslack/kernel`    | Defines `SubagentDefinition` and `PermissionMode` types                  |
 | `@openslack/workspace` | `parseSubagentMarkdown()` and `discoverSubagents()` — parses `.md` files |
-| `@openslack/workflows` | `resolveAgentType()` — full resolution with caching |
-| `@openslack/operator` | `tool-registry.ts` — routes actions through the planner |
+| `@openslack/workflows` | `resolveAgentType()` — full resolution with caching                      |
+| `@openslack/operator`  | `tool-registry.ts` — routes actions through the planner                  |
 
 ### Caching
 
@@ -77,31 +77,32 @@ memory: project
 isolation: none
 color: green
 ---
+
 You are a code reviewer. Analyze the provided diff for correctness bugs,
 security issues, and style problems. Do not suggest edits — only report findings.
 ```
 
 ### Required Fields
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `name` | string | Human-readable agent name |
-| `description` | string | One-line purpose summary |
+| Field         | Type   | Description               |
+| ------------- | ------ | ------------------------- |
+| `name`        | string | Human-readable agent name |
+| `description` | string | One-line purpose summary  |
 
 ### Optional Fields
 
-| Field | Type | Default | Description |
-|-------|------|---------|-------------|
-| `model` | string | inherited | Model override (e.g., `sonnet`, `opus`, `haiku`) |
-| `tools` | string[] | all allowed | Allowlist of tools the subagent may use |
-| `disallowedTools` | string[] | none | Tools explicitly denied |
-| `permissionMode` | string | `default` | One of: `plan`, `acceptEdits`, `default`, `strict` |
-| `maxTurns` | number | inherited | Maximum conversation turns |
-| `skills` | string[] | none | Named skill references |
-| `mcpServers` | object[] | none | MCP server configurations |
-| `memory` | string | `local` | Memory scope: `user`, `project`, `local`, `none` |
-| `isolation` | string | `none` | Isolation mode: `none`, `worktree` |
-| `color` | string | none | Display color for TUI |
+| Field             | Type     | Default     | Description                                        |
+| ----------------- | -------- | ----------- | -------------------------------------------------- |
+| `model`           | string   | inherited   | Model override (e.g., `sonnet`, `opus`, `haiku`)   |
+| `tools`           | string[] | all allowed | Allowlist of tools the subagent may use            |
+| `disallowedTools` | string[] | none        | Tools explicitly denied                            |
+| `permissionMode`  | string   | `default`   | One of: `plan`, `acceptEdits`, `default`, `strict` |
+| `maxTurns`        | number   | inherited   | Maximum conversation turns                         |
+| `skills`          | string[] | none        | Named skill references                             |
+| `mcpServers`      | object[] | none        | MCP server configurations                          |
+| `memory`          | string   | `local`     | Memory scope: `user`, `project`, `local`, `none`   |
+| `isolation`       | string   | `none`      | Isolation mode: `none`, `worktree`                 |
+| `color`           | string   | none        | Display color for TUI                              |
 
 ### Validation
 
@@ -122,12 +123,12 @@ coercion.
 
 The `source` field indicates where the definition was found:
 
-| Source | Location | Priority |
-|--------|----------|----------|
+| Source               | Location                            | Priority    |
+| -------------------- | ----------------------------------- | ----------- |
 | `openslack-registry` | `.openslack/agents/registry/*.yaml` | 1 (highest) |
-| `claude-project` | `<root>/.claude/agents/*.md` | 2 |
-| `claude-user` | `$HOME/.claude/agents/*.md` | 3 |
-| `runtime` | Any other path | 4 |
+| `claude-project`     | `<root>/.claude/agents/*.md`        | 2           |
+| `claude-user`        | `$HOME/.claude/agents/*.md`         | 3           |
+| `runtime`            | Any other path                      | 4           |
 
 Project-level agents override user-level agents with the same ID. This prevents
 project-specific configurations from being accidentally overridden by a user's

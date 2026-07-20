@@ -1,25 +1,30 @@
-import React, { PureComponent, type ReactNode } from 'react'
-import { updateLastInteractionTime } from '../stubs/bootstrap-state.js'
-import { logForDebugging } from '../stubs/debug.js'
-import { stopCapturingEarlyInput } from '../stubs/early-input.js'
-import { isEnvTruthy } from '../utils/env-utils.js'
-import { isMouseClicksDisabled } from '../stubs/fullscreen.js'
-import { logError } from '../stubs/log.js'
-import { EventEmitter } from '../events/emitter.js'
-import { InputEvent } from '../events/input-event.js'
-import { TerminalFocusEvent } from '../events/terminal-focus-event.js'
+import React, { PureComponent, type ReactNode } from 'react';
+import { updateLastInteractionTime } from '../stubs/bootstrap-state.js';
+import { logForDebugging } from '../stubs/debug.js';
+import { stopCapturingEarlyInput } from '../stubs/early-input.js';
+import { isEnvTruthy } from '../utils/env-utils.js';
+import { isMouseClicksDisabled } from '../stubs/fullscreen.js';
+import { logError } from '../stubs/log.js';
+import { EventEmitter } from '../events/emitter.js';
+import { InputEvent } from '../events/input-event.js';
+import { TerminalFocusEvent } from '../events/terminal-focus-event.js';
 import {
   INITIAL_STATE,
   type ParsedInput,
   type ParsedKey,
   type ParsedMouse,
   parseMultipleKeypresses,
-} from '../parse-keypress.js'
-import reconciler from '../reconciler.js'
-import { finishSelection, hasSelection, type SelectionState, startSelection } from '../selection.js'
-import { isXtermJs, setXtversionName, supportsExtendedKeys } from '../terminal.js'
-import { getTerminalFocused, setTerminalFocused } from '../terminal-focus-state.js'
-import { TerminalQuerier, xtversion } from '../terminal-querier.js'
+} from '../parse-keypress.js';
+import reconciler from '../reconciler.js';
+import {
+  finishSelection,
+  hasSelection,
+  type SelectionState,
+  startSelection,
+} from '../selection.js';
+import { isXtermJs, setXtversionName, supportsExtendedKeys } from '../terminal.js';
+import { getTerminalFocused, setTerminalFocused } from '../terminal-focus-state.js';
+import { TerminalQuerier, xtversion } from '../terminal-querier.js';
 import {
   DISABLE_KITTY_KEYBOARD,
   DISABLE_MODIFY_OTHER_KEYS,
@@ -27,165 +32,175 @@ import {
   ENABLE_MODIFY_OTHER_KEYS,
   FOCUS_IN,
   FOCUS_OUT,
-} from '../termio/csi.js'
-import { DBP, DFE, DISABLE_MOUSE_TRACKING, EBP, EFE, HIDE_CURSOR, SHOW_CURSOR } from '../termio/dec.js'
-import AppContext from './AppContext.js'
-import { ClockProvider } from './ClockContext.js'
-import CursorDeclarationContext, { type CursorDeclarationSetter } from './CursorDeclarationContext.js'
-import ErrorOverview from './ErrorOverview.js'
-import StdinContext from './StdinContext.js'
-import { TerminalFocusProvider } from './TerminalFocusContext.js'
-import { TerminalSizeContext } from './TerminalSizeContext.js'
+} from '../termio/csi.js';
+import {
+  DBP,
+  DFE,
+  DISABLE_MOUSE_TRACKING,
+  EBP,
+  EFE,
+  HIDE_CURSOR,
+  SHOW_CURSOR,
+} from '../termio/dec.js';
+import AppContext from './AppContext.js';
+import { ClockProvider } from './ClockContext.js';
+import CursorDeclarationContext, {
+  type CursorDeclarationSetter,
+} from './CursorDeclarationContext.js';
+import ErrorOverview from './ErrorOverview.js';
+import StdinContext from './StdinContext.js';
+import { TerminalFocusProvider } from './TerminalFocusContext.js';
+import { TerminalSizeContext } from './TerminalSizeContext.js';
 
 // v1 scope flag: disables mouse tracking, alt-screen, selection, focus
 // reporting, and kitty keyboard protocol writes. The code paths remain
 // compilable but produce no terminal output for these capabilities.
-const TUI_V1_MINIMAL = false
+const TUI_V1_MINIMAL = false;
 
 // Platforms that support Unix-style process suspension (SIGSTOP/SIGCONT)
-const SUPPORTS_SUSPEND = process.platform !== 'win32'
+const SUPPORTS_SUSPEND = process.platform !== 'win32';
 
 // After this many milliseconds of stdin silence, the next chunk triggers
 // a terminal mode re-assert (mouse tracking). Catches tmux detach→attach,
 // ssh reconnect, and laptop wake — the terminal resets DEC private modes
 // but no signal reaches us. 5s is well above normal inter-keystroke gaps
 // but short enough that the first scroll after reattach works.
-const STDIN_RESUME_GAP_MS = 5000
+const STDIN_RESUME_GAP_MS = 5000;
 
 // Backpressure limits for input processing. The stdin drain caps raw stream
 // read/parse work; the dispatch drain caps EventEmitter, DOM keyboard event,
 // and React discrete update work. Both drains yield with setImmediate when
 // their budget is exhausted so sustained key-repeat cannot monopolize a tick.
-const MAX_STDIN_CHUNKS_PER_DRAIN = 8
-const MAX_STDIN_DRAIN_MS = 4
-const MAX_DISPATCH_ITEMS_PER_DRAIN = 40
-const MAX_DISPATCH_DRAIN_MS = 8
+const MAX_STDIN_CHUNKS_PER_DRAIN = 8;
+const MAX_STDIN_DRAIN_MS = 4;
+const MAX_DISPATCH_ITEMS_PER_DRAIN = 40;
+const MAX_DISPATCH_DRAIN_MS = 8;
 
 type Props = {
-  readonly children: ReactNode
-  readonly stdin: NodeJS.ReadStream
-  readonly stdout: NodeJS.WriteStream
-  readonly stderr: NodeJS.WriteStream
-  readonly exitOnCtrlC: boolean
-  readonly onExit: (error?: Error) => void
-  readonly terminalColumns: number
-  readonly terminalRows: number
+  readonly children: ReactNode;
+  readonly stdin: NodeJS.ReadStream;
+  readonly stdout: NodeJS.WriteStream;
+  readonly stderr: NodeJS.WriteStream;
+  readonly exitOnCtrlC: boolean;
+  readonly onExit: (error?: Error) => void;
+  readonly terminalColumns: number;
+  readonly terminalRows: number;
   // Text selection state. App mutates this directly from mouse events
   // and calls onSelectionChange to trigger a repaint. Mouse events only
   // arrive when <AlternateScreen> (or similar) enables mouse tracking,
   // so the handler is always wired but dormant until tracking is on.
-  readonly selection: SelectionState
-  readonly onSelectionChange: () => void
+  readonly selection: SelectionState;
+  readonly onSelectionChange: () => void;
   // Dispatch a click at (col, row) — hit-tests the DOM tree and bubbles
   // onClick handlers. Returns true if a DOM handler consumed the click.
   // No-op (returns false) outside fullscreen mode (Ink.dispatchClick
   // gates on altScreenActive).
-  readonly onClickAt: (col: number, row: number) => boolean
+  readonly onClickAt: (col: number, row: number) => boolean;
   // Dispatch hover (onMouseEnter/onMouseLeave) as the pointer moves over
   // DOM elements. Called for mode-1003 motion events with no button held.
   // No-op outside fullscreen (Ink.dispatchHover gates on altScreenActive).
-  readonly onHoverAt: (col: number, row: number) => void
+  readonly onHoverAt: (col: number, row: number) => void;
   // Look up the OSC 8 hyperlink at (col, row) synchronously at click
   // time. Returns the URL or undefined. The browser-open is deferred by
   // MULTI_CLICK_TIMEOUT_MS so double-click can cancel it.
-  readonly getHyperlinkAt: (col: number, row: number) => string | undefined
+  readonly getHyperlinkAt: (col: number, row: number) => string | undefined;
   // Open a hyperlink URL in the browser. Called after the timer fires.
-  readonly onOpenHyperlink: (url: string) => void
+  readonly onOpenHyperlink: (url: string) => void;
   // Called on double/triple-click PRESS at (col, row). count=2 selects
   // the word under the cursor; count=3 selects the line. Ink reads the
   // screen buffer to find word/line boundaries and mutates selection,
   // setting isDragging=true so a subsequent drag extends by word/line.
-  readonly onMultiClick: (col: number, row: number, count: 2 | 3) => void
+  readonly onMultiClick: (col: number, row: number, count: 2 | 3) => void;
   // Called on drag-motion. Mode-aware: char mode updates focus to the
   // exact cell; word/line mode snaps to word/line boundaries. Needs
   // screen-buffer access (word boundaries) so lives on Ink, not here.
-  readonly onSelectionDrag: (col: number, row: number) => void
+  readonly onSelectionDrag: (col: number, row: number) => void;
   // Called when stdin data arrives after a >STDIN_RESUME_GAP_MS gap.
   // Ink re-asserts terminal modes: extended key reporting, and (when in
   // fullscreen) re-enters alt-screen + mouse tracking. Idempotent on the
   // terminal side. Optional so testing.tsx doesn't need to stub it.
-  readonly onStdinResume?: () => void
+  readonly onStdinResume?: () => void;
   // Receives the declared native-cursor position from useDeclaredCursor
   // so ink.tsx can park the terminal cursor there after each frame.
   // Enables IME composition at the input caret and lets screen readers /
   // magnifiers track the input. Optional so testing.tsx doesn't stub it.
-  readonly onCursorDeclaration?: CursorDeclarationSetter
+  readonly onCursorDeclaration?: CursorDeclarationSetter;
   // Dispatch a keyboard event through the DOM tree. Called for each
   // parsed key alongside the legacy EventEmitter path.
-  readonly dispatchKeyboardEvent: (parsedKey: ParsedKey) => void
-}
+  readonly dispatchKeyboardEvent: (parsedKey: ParsedKey) => void;
+};
 
 // Multi-click detection thresholds. 500ms is the macOS default; a small
 // position tolerance allows for trackpad jitter between clicks.
-const MULTI_CLICK_TIMEOUT_MS = 500
-const MULTI_CLICK_DISTANCE = 1
+const MULTI_CLICK_TIMEOUT_MS = 500;
+const MULTI_CLICK_DISTANCE = 1;
 type State = {
-  readonly error?: Error
-}
+  readonly error?: Error;
+};
 
 // Root component for all Ink apps
 // It renders stdin and stdout contexts, so that children can access them if needed
 // It also handles Ctrl+C exiting and cursor visibility
 export default class App extends PureComponent<Props, State> {
-  static displayName = 'InternalApp'
+  static displayName = 'InternalApp';
   static getDerivedStateFromError(error: Error) {
     return {
       error,
-    }
+    };
   }
   override state = {
     error: undefined,
-  }
+  };
 
   // Count how many components enabled raw mode to avoid disabling
   // raw mode until all components don't need it anymore
-  rawModeEnabledCount = 0
-  internal_eventEmitter = new EventEmitter()
-  keyParseState = INITIAL_STATE
+  rawModeEnabledCount = 0;
+  internal_eventEmitter = new EventEmitter();
+  keyParseState = INITIAL_STATE;
   // Timer for flushing incomplete escape sequences
-  incompleteEscapeTimer: NodeJS.Timeout | null = null
+  incompleteEscapeTimer: NodeJS.Timeout | null = null;
   // Parsed input waiting for bounded dispatch. Reading/parsing stdin is kept
   // separate from React/EventEmitter dispatch so rapid key-repeat cannot
   // monopolize one event-loop tick.
-  pendingInputItems: ParsedInput[] = []
-  inputDrainImmediate: ReturnType<typeof setImmediate> | null = null
-  stdinDrainImmediate: ReturnType<typeof setImmediate> | null = null
-  isInputDrainActive = false
-  isStdinDrainActive = false
+  pendingInputItems: ParsedInput[] = [];
+  inputDrainImmediate: ReturnType<typeof setImmediate> | null = null;
+  stdinDrainImmediate: ReturnType<typeof setImmediate> | null = null;
+  isInputDrainActive = false;
+  isStdinDrainActive = false;
   // Timeout durations for incomplete sequences (ms)
-  readonly NORMAL_TIMEOUT = 50 // Short timeout for regular esc sequences
-  readonly PASTE_TIMEOUT = 500 // Longer timeout for paste operations
+  readonly NORMAL_TIMEOUT = 50; // Short timeout for regular esc sequences
+  readonly PASTE_TIMEOUT = 500; // Longer timeout for paste operations
 
   // Terminal query/response dispatch. Responses arrive on stdin (parsed
   // out by parse-keypress) and are routed to pending promise resolvers.
-  querier = new TerminalQuerier(this.props.stdout)
+  querier = new TerminalQuerier(this.props.stdout);
 
   // Multi-click tracking for double/triple-click text selection. A click
   // within MULTI_CLICK_TIMEOUT_MS and MULTI_CLICK_DISTANCE of the previous
   // click increments clickCount; otherwise it resets to 1.
-  lastClickTime = 0
-  lastClickCol = -1
-  lastClickRow = -1
-  clickCount = 0
+  lastClickTime = 0;
+  lastClickCol = -1;
+  lastClickRow = -1;
+  clickCount = 0;
   // Deferred hyperlink-open timer — cancelled if a second click arrives
   // within MULTI_CLICK_TIMEOUT_MS (so double-clicking a hyperlink selects
   // the word without also opening the browser). DOM onClick dispatch is
   // NOT deferred — it returns true from onClickAt and skips this timer.
-  pendingHyperlinkTimer: ReturnType<typeof setTimeout> | null = null
+  pendingHyperlinkTimer: ReturnType<typeof setTimeout> | null = null;
   // Last mode-1003 motion position. Terminals already dedupe to cell
   // granularity but this also lets us skip dispatchHover entirely on
   // repeat events (drag-then-release at same cell, etc.).
-  lastHoverCol = -1
-  lastHoverRow = -1
+  lastHoverCol = -1;
+  lastHoverRow = -1;
 
   // Timestamp of last stdin chunk. Used to detect long gaps (tmux attach,
   // ssh reconnect, laptop wake) and trigger terminal mode re-assert.
   // Initialized to now so startup doesn't false-trigger.
-  lastStdinTime = Date.now()
+  lastStdinTime = Date.now();
 
   // Determines if TTY is supported on the provided stdin
   isRawModeSupported(): boolean {
-    return this.props.stdin.isTTY
+    return this.props.stdin.isTTY;
   }
   override render() {
     return (
@@ -212,59 +227,65 @@ export default class App extends PureComponent<Props, State> {
           >
             <TerminalFocusProvider>
               <ClockProvider>
-                <CursorDeclarationContext.Provider value={this.props.onCursorDeclaration ?? (() => {})}>
-                  {this.state.error ? <ErrorOverview error={this.state.error as Error} /> : this.props.children}
+                <CursorDeclarationContext.Provider
+                  value={this.props.onCursorDeclaration ?? (() => {})}
+                >
+                  {this.state.error ? (
+                    <ErrorOverview error={this.state.error as Error} />
+                  ) : (
+                    this.props.children
+                  )}
                 </CursorDeclarationContext.Provider>
               </ClockProvider>
             </TerminalFocusProvider>
           </StdinContext.Provider>
         </AppContext.Provider>
       </TerminalSizeContext.Provider>
-    )
+    );
   }
   override componentDidMount() {
     // In accessibility mode, keep the native cursor visible for screen magnifiers and other tools
     if (this.props.stdout.isTTY && !isEnvTruthy(process.env.CLAUDE_CODE_ACCESSIBILITY)) {
-      this.props.stdout.write(HIDE_CURSOR)
+      this.props.stdout.write(HIDE_CURSOR);
     }
   }
   override componentWillUnmount() {
     if (this.props.stdout.isTTY) {
-      this.props.stdout.write(SHOW_CURSOR)
+      this.props.stdout.write(SHOW_CURSOR);
     }
 
     // Clear any pending timers
     if (this.incompleteEscapeTimer) {
-      clearTimeout(this.incompleteEscapeTimer)
-      this.incompleteEscapeTimer = null
+      clearTimeout(this.incompleteEscapeTimer);
+      this.incompleteEscapeTimer = null;
     }
     if (this.pendingHyperlinkTimer) {
-      clearTimeout(this.pendingHyperlinkTimer)
-      this.pendingHyperlinkTimer = null
+      clearTimeout(this.pendingHyperlinkTimer);
+      this.pendingHyperlinkTimer = null;
     }
-    this.clearPendingInputWork()
+    this.clearPendingInputWork();
     // ignore calling setRawMode on an handle stdin it cannot be called
     if (this.isRawModeSupported()) {
-      this.handleSetRawMode(false)
+      this.handleSetRawMode(false);
     }
   }
   override componentDidCatch(error: Error) {
-    this.handleExit(error)
+    this.handleExit(error);
   }
   handleSetRawMode = (isEnabled: boolean): void => {
-    const { stdin } = this.props
+    const { stdin } = this.props;
     if (!this.isRawModeSupported()) {
       if (stdin === process.stdin) {
         throw new Error(
           'Raw mode is not supported on the current process.stdin, which Ink uses as input stream by default.\nRead about how to prevent this error on https://github.com/vadimdemedes/ink/#israwmodesupported',
-        )
+        );
       } else {
         throw new Error(
           'Raw mode is not supported on the stdin provided to Ink.\nRead about how to prevent this error on https://github.com/vadimdemedes/ink/#israwmodesupported',
-        )
+        );
       }
     }
-    stdin.setEncoding('utf8')
+    stdin.setEncoding('utf8');
     if (isEnabled) {
       // Ensure raw mode is enabled only once
       if (this.rawModeEnabledCount === 0) {
@@ -272,17 +293,17 @@ export default class App extends PureComponent<Props, State> {
         // Both use the same stdin 'readable' + read() pattern, so they can't
         // coexist -- our handler would drain stdin before Ink's can see it.
         // The buffered text is preserved for REPL.tsx via consumeEarlyInput().
-        stopCapturingEarlyInput()
-        stdin.ref()
-        stdin.setRawMode(true)
-        stdin.addListener('readable', this.handleReadable)
+        stopCapturingEarlyInput();
+        stdin.ref();
+        stdin.setRawMode(true);
+        stdin.addListener('readable', this.handleReadable);
         // Enable bracketed paste mode — disabled in v1 (minimal TUI)
         if (!TUI_V1_MINIMAL) {
-          this.props.stdout.write(EBP)
+          this.props.stdout.write(EBP);
         }
         // Enable terminal focus reporting (DECSET 1004) — disabled in v1
         if (!TUI_V1_MINIMAL) {
-          this.props.stdout.write(EFE)
+          this.props.stdout.write(EFE);
         }
         // Enable extended key reporting so ctrl+shift+<letter> is
         // distinguishable from ctrl+<letter>. We write both the kitty stack
@@ -290,8 +311,8 @@ export default class App extends PureComponent<Props, State> {
         // terminals honor whichever they implement (tmux only accepts the
         // latter).
         if (supportsExtendedKeys() && !TUI_V1_MINIMAL) {
-          this.props.stdout.write(ENABLE_KITTY_KEYBOARD)
-          this.props.stdout.write(ENABLE_MODIFY_OTHER_KEYS)
+          this.props.stdout.write(ENABLE_KITTY_KEYBOARD);
+          this.props.stdout.write(ENABLE_MODIFY_OTHER_KEYS);
         }
         // Probe terminal identity. XTVERSION survives SSH (query/reply goes
         // through the pty), unlike TERM_PROGRAM. Used for wheel-scroll base
@@ -306,44 +327,44 @@ export default class App extends PureComponent<Props, State> {
           setImmediate(() => {
             void Promise.all([this.querier.send(xtversion()), this.querier.flush()]).then(([r]) => {
               if (r) {
-                setXtversionName(r.name)
-                logForDebugging(`XTVERSION: terminal identified as "${r.name}"`)
+                setXtversionName(r.name);
+                logForDebugging(`XTVERSION: terminal identified as "${r.name}"`);
               } else {
-                logForDebugging('XTVERSION: no reply (terminal ignored query)')
+                logForDebugging('XTVERSION: no reply (terminal ignored query)');
               }
-            })
-          })
+            });
+          });
         }
       }
-      this.rawModeEnabledCount++
-      return
+      this.rawModeEnabledCount++;
+      return;
     }
 
     // Disable raw mode only when no components left that are using it
     if (--this.rawModeEnabledCount === 0) {
       // Disabled in v1: kitty keyboard, modifyOtherKeys, focus reporting, bracketed paste
       if (!TUI_V1_MINIMAL) {
-        this.props.stdout.write(DISABLE_MODIFY_OTHER_KEYS)
-        this.props.stdout.write(DISABLE_KITTY_KEYBOARD)
+        this.props.stdout.write(DISABLE_MODIFY_OTHER_KEYS);
+        this.props.stdout.write(DISABLE_KITTY_KEYBOARD);
         // Disable terminal focus reporting (DECSET 1004)
-        this.props.stdout.write(DFE)
+        this.props.stdout.write(DFE);
         // Disable bracketed paste mode
-        this.props.stdout.write(DBP)
+        this.props.stdout.write(DBP);
       }
-      stdin.setRawMode(false)
-      stdin.removeListener('readable', this.handleReadable)
-      stdin.unref()
-      this.clearPendingInputWork()
+      stdin.setRawMode(false);
+      stdin.removeListener('readable', this.handleReadable);
+      stdin.unref();
+      this.clearPendingInputWork();
     }
-  }
+  };
 
   // Helper to flush incomplete escape sequences
   flushIncomplete = (): void => {
     // Clear the timer reference
-    this.incompleteEscapeTimer = null
+    this.incompleteEscapeTimer = null;
 
     // Only proceed if we have incomplete sequences
-    if (!this.keyParseState.incomplete) return
+    if (!this.keyParseState.incomplete) return;
 
     // Fullscreen: if stdin has data waiting, it's almost certainly the
     // continuation of the buffered sequence (e.g. `[<64;74;16M` after a
@@ -354,207 +375,213 @@ export default class App extends PureComponent<Props, State> {
     // drain stdin next and clear this timer. Prevents both the spurious
     // Escape key and the lost scroll event.
     if (this.props.stdin.readableLength > 0) {
-      this.incompleteEscapeTimer = setTimeout(this.flushIncomplete, this.NORMAL_TIMEOUT)
-      return
+      this.incompleteEscapeTimer = setTimeout(this.flushIncomplete, this.NORMAL_TIMEOUT);
+      return;
     }
 
     // Process incomplete as a flush operation (input=null)
     // This reuses all existing parsing logic
-    this.processInput(null)
-  }
+    this.processInput(null);
+  };
 
   // Process input through the parser and enqueue the parsed results for
   // bounded dispatch.
   processInput = (input: string | Buffer | null): void => {
     // Parse input using our state machine
-    const [keys, newState] = parseMultipleKeypresses(this.keyParseState, input)
-    this.keyParseState = newState
+    const [keys, newState] = parseMultipleKeypresses(this.keyParseState, input);
+    this.keyParseState = newState;
 
     if (keys.length > 0) {
-      this.pendingInputItems.push(...keys)
-      this.scheduleInputDrain()
+      this.pendingInputItems.push(...keys);
+      this.scheduleInputDrain();
     }
 
     // If we have incomplete escape sequences, set a timer to flush them
     if (this.keyParseState.incomplete) {
       // Cancel any existing timer first
       if (this.incompleteEscapeTimer) {
-        clearTimeout(this.incompleteEscapeTimer)
+        clearTimeout(this.incompleteEscapeTimer);
       }
       this.incompleteEscapeTimer = setTimeout(
         this.flushIncomplete,
         this.keyParseState.mode === 'IN_PASTE' ? this.PASTE_TIMEOUT : this.NORMAL_TIMEOUT,
-      )
+      );
     }
-  }
+  };
 
   scheduleInputDrain = (): void => {
-    if (this.inputDrainImmediate !== null) return
+    if (this.inputDrainImmediate !== null) return;
 
-    this.inputDrainImmediate = setImmediate(this.drainInputQueue)
-  }
+    this.inputDrainImmediate = setImmediate(this.drainInputQueue);
+  };
 
   drainInputQueue = (): void => {
-    this.inputDrainImmediate = null
+    this.inputDrainImmediate = null;
 
     if (this.isInputDrainActive) {
-      this.scheduleInputDrain()
-      return
+      this.scheduleInputDrain();
+      return;
     }
 
-    this.isInputDrainActive = true
-    let shouldContinue = true
+    this.isInputDrainActive = true;
+    let shouldContinue = true;
 
     try {
-      const startedAt = Date.now()
-      let processed = 0
+      const startedAt = Date.now();
+      let processed = 0;
 
       while (this.pendingInputItems.length > 0 && processed < MAX_DISPATCH_ITEMS_PER_DRAIN) {
-        const remainingBudget = MAX_DISPATCH_ITEMS_PER_DRAIN - processed
-        const batch = this.pendingInputItems.splice(0, remainingBudget)
+        const remainingBudget = MAX_DISPATCH_ITEMS_PER_DRAIN - processed;
+        const batch = this.pendingInputItems.splice(0, remainingBudget);
 
         // Process each bounded batch in a single discreteUpdates call to
         // preserve the existing paste/key-repeat batching protection while
         // allowing the event loop to run between batches.
-        reconciler.discreteUpdates(processKeysInBatch, this, batch, undefined, undefined)
-        processed += batch.length
+        reconciler.discreteUpdates(processKeysInBatch, this, batch, undefined, undefined);
+        processed += batch.length;
 
         if (Date.now() - startedAt >= MAX_DISPATCH_DRAIN_MS) {
-          break
+          break;
         }
       }
     } catch (error) {
-      shouldContinue = false
-      this.pendingInputItems.length = 0
-      this.handleInputProcessingError(error)
+      shouldContinue = false;
+      this.pendingInputItems.length = 0;
+      this.handleInputProcessingError(error);
     } finally {
-      this.isInputDrainActive = false
+      this.isInputDrainActive = false;
     }
 
     if (shouldContinue && this.pendingInputItems.length > 0) {
-      this.scheduleInputDrain()
+      this.scheduleInputDrain();
     }
-  }
+  };
 
   scheduleStdinDrain = (): void => {
-    if (this.stdinDrainImmediate !== null) return
+    if (this.stdinDrainImmediate !== null) return;
 
-    this.stdinDrainImmediate = setImmediate(this.drainReadableInput)
-  }
+    this.stdinDrainImmediate = setImmediate(this.drainReadableInput);
+  };
 
   drainReadableInput = (): void => {
-    this.stdinDrainImmediate = null
+    this.stdinDrainImmediate = null;
 
     if (this.isStdinDrainActive) {
-      this.scheduleStdinDrain()
-      return
+      this.scheduleStdinDrain();
+      return;
     }
 
-    this.isStdinDrainActive = true
+    this.isStdinDrainActive = true;
 
     try {
-      const startedAt = Date.now()
-      let chunksProcessed = 0
-      let hitBudget = false
-      let chunk
+      const startedAt = Date.now();
+      let chunksProcessed = 0;
+      let hitBudget = false;
+      let chunk;
 
       while ((chunk = this.props.stdin.read() as string | null) !== null) {
-        this.processInput(chunk)
-        chunksProcessed++
+        this.processInput(chunk);
+        chunksProcessed++;
 
-        if (chunksProcessed >= MAX_STDIN_CHUNKS_PER_DRAIN || Date.now() - startedAt >= MAX_STDIN_DRAIN_MS) {
-          hitBudget = true
-          break
+        if (
+          chunksProcessed >= MAX_STDIN_CHUNKS_PER_DRAIN ||
+          Date.now() - startedAt >= MAX_STDIN_DRAIN_MS
+        ) {
+          hitBudget = true;
+          break;
         }
       }
 
       if (hitBudget || this.props.stdin.readableLength > 0) {
-        this.scheduleStdinDrain()
+        this.scheduleStdinDrain();
       }
     } catch (error) {
-      this.handleInputProcessingError(error)
+      this.handleInputProcessingError(error);
     } finally {
-      this.isStdinDrainActive = false
+      this.isStdinDrainActive = false;
     }
-  }
+  };
 
   handleInputProcessingError = (error: unknown): void => {
     // In Bun, an uncaught throw inside a stream 'readable' handler can
     // permanently wedge the stream: data stays buffered and 'readable'
     // never re-emits. Catching here ensures the stream stays healthy so
     // subsequent keystrokes are still delivered.
-    logError(error)
+    logError(error);
 
     // Re-attach the listener in case the exception detached it.
     // Bun may remove the listener after an error; without this,
     // the session freezes permanently (stdin reader dead, event loop alive).
-    const { stdin } = this.props
-    if (this.rawModeEnabledCount > 0 && !stdin.listeners('readable').includes(this.handleReadable)) {
+    const { stdin } = this.props;
+    if (
+      this.rawModeEnabledCount > 0 &&
+      !stdin.listeners('readable').includes(this.handleReadable)
+    ) {
       logForDebugging('handleReadable: re-attaching stdin readable listener after error recovery', {
         level: 'warn',
-      })
-      stdin.addListener('readable', this.handleReadable)
+      });
+      stdin.addListener('readable', this.handleReadable);
     }
-  }
+  };
 
   clearPendingInputWork = (): void => {
     if (this.inputDrainImmediate !== null) {
-      clearImmediate(this.inputDrainImmediate)
-      this.inputDrainImmediate = null
+      clearImmediate(this.inputDrainImmediate);
+      this.inputDrainImmediate = null;
     }
 
     if (this.stdinDrainImmediate !== null) {
-      clearImmediate(this.stdinDrainImmediate)
-      this.stdinDrainImmediate = null
+      clearImmediate(this.stdinDrainImmediate);
+      this.stdinDrainImmediate = null;
     }
 
-    this.pendingInputItems.length = 0
-  }
+    this.pendingInputItems.length = 0;
+  };
 
   handleReadable = (): void => {
     // Detect long stdin gaps (tmux attach, ssh reconnect, laptop wake).
     // The terminal may have reset DEC private modes; re-assert mouse
     // tracking. Checked before the read loop so one Date.now() covers
     // all chunks in this readable event.
-    const now = Date.now()
+    const now = Date.now();
     if (now - this.lastStdinTime > STDIN_RESUME_GAP_MS) {
-      this.props.onStdinResume?.()
+      this.props.onStdinResume?.();
     }
-    this.lastStdinTime = now
-    this.drainReadableInput()
-  }
+    this.lastStdinTime = now;
+    this.drainReadableInput();
+  };
   handleInput = (input: string | undefined): void => {
     // Exit on Ctrl+C
     if (input === '\x03' && this.props.exitOnCtrlC) {
-      this.handleExit()
+      this.handleExit();
     }
 
     // Note: Ctrl+Z (suspend) is now handled in processKeysInBatch using the
     // parsed key to support both raw (\x1a) and CSI u format from Kitty
     // keyboard protocol terminals (Ghostty, iTerm2, kitty, WezTerm)
-  }
+  };
   handleExit = (error?: Error): void => {
     if (this.isRawModeSupported()) {
-      this.handleSetRawMode(false)
+      this.handleSetRawMode(false);
     }
-    this.props.onExit(error)
-  }
+    this.props.onExit(error);
+  };
   handleTerminalFocus = (isFocused: boolean): void => {
     // setTerminalFocused notifies subscribers: TerminalFocusProvider (context)
     // and Clock (interval speed) — no App setState needed.
-    setTerminalFocused(isFocused)
-  }
+    setTerminalFocused(isFocused);
+  };
   handleSuspend = (): void => {
     if (!this.isRawModeSupported()) {
-      return
+      return;
     }
 
     // Store the exact raw mode count to restore it properly
-    const rawModeCountBeforeSuspend = this.rawModeEnabledCount
+    const rawModeCountBeforeSuspend = this.rawModeEnabledCount;
 
     // Completely disable raw mode before suspending
     while (this.rawModeEnabledCount > 0) {
-      this.handleSetRawMode(false)
+      this.handleSetRawMode(false);
     }
 
     // Show cursor, disable focus reporting, and disable mouse tracking
@@ -564,47 +591,52 @@ export default class App extends PureComponent<Props, State> {
     // shell prompt while suspended.
     // Guarded in v1: these modes are never enabled so no need to disable.
     if (this.props.stdout.isTTY && !TUI_V1_MINIMAL) {
-      this.props.stdout.write(SHOW_CURSOR + DFE + DISABLE_MOUSE_TRACKING)
+      this.props.stdout.write(SHOW_CURSOR + DFE + DISABLE_MOUSE_TRACKING);
     } else if (this.props.stdout.isTTY) {
       // Always show cursor on suspend even in minimal mode
-      this.props.stdout.write(SHOW_CURSOR)
+      this.props.stdout.write(SHOW_CURSOR);
     }
 
     // Emit suspend event for Aby Assistant to handle. Mostly just has a notification
-    this.internal_eventEmitter.emit('suspend')
+    this.internal_eventEmitter.emit('suspend');
 
     // Set up resume handler
     const resumeHandler = () => {
       // Restore raw mode to exact previous state
       for (let i = 0; i < rawModeCountBeforeSuspend; i++) {
         if (this.isRawModeSupported()) {
-          this.handleSetRawMode(true)
+          this.handleSetRawMode(true);
         }
       }
 
       // Hide cursor (unless in accessibility mode) and re-enable focus reporting after resuming
       if (this.props.stdout.isTTY) {
         if (!isEnvTruthy(process.env.CLAUDE_CODE_ACCESSIBILITY)) {
-          this.props.stdout.write(HIDE_CURSOR)
+          this.props.stdout.write(HIDE_CURSOR);
         }
         // Re-enable focus reporting to restore terminal state — disabled in v1
         if (!TUI_V1_MINIMAL) {
-          this.props.stdout.write(EFE)
+          this.props.stdout.write(EFE);
         }
       }
 
       // Emit resume event for Aby Assistant to handle
-      this.internal_eventEmitter.emit('resume')
-      process.removeListener('SIGCONT', resumeHandler)
-    }
-    process.on('SIGCONT', resumeHandler)
-    process.kill(process.pid, 'SIGSTOP')
-  }
+      this.internal_eventEmitter.emit('resume');
+      process.removeListener('SIGCONT', resumeHandler);
+    };
+    process.on('SIGCONT', resumeHandler);
+    process.kill(process.pid, 'SIGSTOP');
+  };
 }
 
 // Helper to process all keys within a single discrete update context.
 // discreteUpdates expects (fn, a, b, c, d) -> fn(a, b, c, d)
-function processKeysInBatch(app: App, items: ParsedInput[], _unused1: undefined, _unused2: undefined): void {
+function processKeysInBatch(
+  app: App,
+  items: ParsedInput[],
+  _unused1: undefined,
+  _unused2: undefined,
+): void {
   // Update interaction time for notification timeout tracking.
   // This is called from the central input handler to avoid having multiple
   // stdin listeners that can cause race conditions and dropped input.
@@ -612,67 +644,71 @@ function processKeysInBatch(app: App, items: ParsedInput[], _unused1: undefined,
   // Mode-1003 no-button motion is also excluded — passive cursor drift is
   // not engagement (would suppress idle notifications + defer housekeeping).
   if (
-    items.some(i => i.kind === 'key' || (i.kind === 'mouse' && !((i.button & 0x20) !== 0 && (i.button & 0x03) === 3)))
+    items.some(
+      (i) =>
+        i.kind === 'key' ||
+        (i.kind === 'mouse' && !((i.button & 0x20) !== 0 && (i.button & 0x03) === 3)),
+    )
   ) {
-    updateLastInteractionTime()
+    updateLastInteractionTime();
   }
   for (const item of items) {
     // Terminal responses (DECRPM, DA1, OSC replies, etc.) are not user
     // input — route them to the querier to resolve pending promises.
     if (item.kind === 'response') {
-      app.querier.onResponse(item.response)
-      continue
+      app.querier.onResponse(item.response);
+      continue;
     }
 
     // Mouse click/drag events update selection state (fullscreen only).
     // Terminal sends 1-indexed col/row; convert to 0-indexed for the
     // screen buffer. Button bit 0x20 = drag (motion while button held).
     if (item.kind === 'mouse') {
-      handleMouseEvent(app, item)
-      continue
+      handleMouseEvent(app, item);
+      continue;
     }
-    const sequence = item.sequence
+    const sequence = item.sequence;
 
     // Handle terminal focus events (DECSET 1004)
     if (sequence === FOCUS_IN) {
-      app.handleTerminalFocus(true)
-      const event = new TerminalFocusEvent('terminalfocus')
-      app.internal_eventEmitter.emit('terminalfocus', event)
-      continue
+      app.handleTerminalFocus(true);
+      const event = new TerminalFocusEvent('terminalfocus');
+      app.internal_eventEmitter.emit('terminalfocus', event);
+      continue;
     }
     if (sequence === FOCUS_OUT) {
-      app.handleTerminalFocus(false)
+      app.handleTerminalFocus(false);
       // Defensive: if we lost the release event (mouse released outside
       // terminal window — some emulators drop it rather than capturing the
       // pointer), focus-out is the next observable signal that the drag is
       // over. Without this, drag-to-scroll's timer runs until the scroll
       // boundary is hit.
       if (app.props.selection.isDragging) {
-        finishSelection(app.props.selection)
-        app.props.onSelectionChange()
+        finishSelection(app.props.selection);
+        app.props.onSelectionChange();
       }
-      const event = new TerminalFocusEvent('terminalblur')
-      app.internal_eventEmitter.emit('terminalblur', event)
-      continue
+      const event = new TerminalFocusEvent('terminalblur');
+      app.internal_eventEmitter.emit('terminalblur', event);
+      continue;
     }
 
     // Failsafe: if we receive input, the terminal must be focused
     if (!getTerminalFocused()) {
-      setTerminalFocused(true)
+      setTerminalFocused(true);
     }
 
     // Handle Ctrl+Z (suspend) using parsed key to support both raw (\x1a) and
     // CSI u format (\x1b[122;5u) from Kitty keyboard protocol terminals
     if (item.name === 'z' && item.ctrl && SUPPORTS_SUSPEND) {
-      app.handleSuspend()
-      continue
+      app.handleSuspend();
+      continue;
     }
-    app.handleInput(sequence)
-    const event = new InputEvent(item)
-    app.internal_eventEmitter.emit('input', event)
+    app.handleInput(sequence);
+    const event = new InputEvent(item);
+    app.internal_eventEmitter.emit('input', event);
 
     // Also dispatch through the DOM tree so onKeyDown handlers fire.
-    app.props.dispatchKeyboardEvent(item)
+    app.props.dispatchKeyboardEvent(item);
   }
 }
 
@@ -680,12 +716,12 @@ function processKeysInBatch(app: App, items: ParsedInput[], _unused1: undefined,
 export function handleMouseEvent(app: App, m: ParsedMouse): void {
   // Allow disabling click handling while keeping wheel scroll (which goes
   // through the keybinding system as 'wheelup'/'wheeldown', not here).
-  if (isMouseClicksDisabled()) return
-  const sel = app.props.selection
+  if (isMouseClicksDisabled()) return;
+  const sel = app.props.selection;
   // Terminal coords are 1-indexed; screen buffer is 0-indexed
-  const col = m.col - 1
-  const row = m.row - 1
-  const baseButton = m.button & 0x03
+  const col = m.col - 1;
+  const row = m.row - 1;
+  const baseButton = m.button & 0x03;
   if ((m.button & 0x20) !== 0 && baseButton === 3) {
     // Mode-1003 motion with no button held. Dispatch hover; skip the
     // rest of this handler (no selection, no click-count side effects).
@@ -700,20 +736,20 @@ export function handleMouseEvent(app: App, m: ParsedMouse): void {
     // past the edge, came back" — and tmux drops focus events unless
     // `focus-events on` is set, so this is the more reliable signal.
     if (sel.isDragging) {
-      finishSelection(sel)
-      app.props.onSelectionChange()
+      finishSelection(sel);
+      app.props.onSelectionChange();
     }
-    if (col === app.lastHoverCol && row === app.lastHoverRow) return
-    app.lastHoverCol = col
-    app.lastHoverRow = row
-    app.props.onHoverAt(col, row)
-    return
+    if (col === app.lastHoverCol && row === app.lastHoverRow) return;
+    app.lastHoverCol = col;
+    app.lastHoverRow = row;
+    app.props.onHoverAt(col, row);
+    return;
   }
   if (m.action === 'press') {
     if (baseButton !== 0) {
       // Non-left press breaks the multi-click chain.
-      app.clickCount = 0
-      return
+      app.clickCount = 0;
+      return;
     }
     if ((m.button & 0x20) !== 0) {
       // Drag motion: mode-aware extension (char/word/line). onSelectionDrag
@@ -725,14 +761,14 @@ export function handleMouseEvent(app: App, m: ParsedMouse): void {
       // is skipped) and leaves a selection overlay that looks like text
       // disappearing.
       if (sel.anchor) {
-        const dragDx = Math.abs(col - sel.anchor.col)
-        const dragDy = Math.abs(row - sel.anchor.row)
+        const dragDx = Math.abs(col - sel.anchor.col);
+        const dragDy = Math.abs(row - sel.anchor.row);
         if (dragDx <= 1 && dragDy <= 1) {
-          return
+          return;
         }
       }
-      app.props.onSelectionDrag(col, row)
-      return
+      app.props.onSelectionDrag(col, row);
+      return;
     }
     // Lost-release fallback for mode-1002-only terminals: a fresh press
     // while isDragging=true means the previous release was dropped (cursor
@@ -740,43 +776,43 @@ export function handleMouseEvent(app: App, m: ParsedMouse): void {
     // before startSelection/onMultiClick clobbers it. Mode-1003 terminals
     // hit the no-button-motion recovery above instead, so this is rare.
     if (sel.isDragging) {
-      finishSelection(sel)
-      app.props.onSelectionChange()
+      finishSelection(sel);
+      app.props.onSelectionChange();
     }
     // Fresh left press. Detect multi-click HERE (not on release) so the
     // word/line highlight appears immediately and a subsequent drag can
     // extend by word/line like native macOS. Previously detected on
     // release, which meant (a) visible latency before the word highlights
     // and (b) double-click+drag fell through to char-mode selection.
-    const now = Date.now()
+    const now = Date.now();
     const nearLast =
       now - app.lastClickTime < MULTI_CLICK_TIMEOUT_MS &&
       Math.abs(col - app.lastClickCol) <= MULTI_CLICK_DISTANCE &&
-      Math.abs(row - app.lastClickRow) <= MULTI_CLICK_DISTANCE
-    app.clickCount = nearLast ? app.clickCount + 1 : 1
-    app.lastClickTime = now
-    app.lastClickCol = col
-    app.lastClickRow = row
+      Math.abs(row - app.lastClickRow) <= MULTI_CLICK_DISTANCE;
+    app.clickCount = nearLast ? app.clickCount + 1 : 1;
+    app.lastClickTime = now;
+    app.lastClickCol = col;
+    app.lastClickRow = row;
     if (app.clickCount >= 2) {
       // Cancel any pending hyperlink-open from the first click — this is
       // a double-click, not a single-click on a link.
       if (app.pendingHyperlinkTimer) {
-        clearTimeout(app.pendingHyperlinkTimer)
-        app.pendingHyperlinkTimer = null
+        clearTimeout(app.pendingHyperlinkTimer);
+        app.pendingHyperlinkTimer = null;
       }
       // Cap at 3 (line select) for quadruple+ clicks.
-      const count = app.clickCount === 2 ? 2 : 3
-      app.props.onMultiClick(col, row, count)
-      return
+      const count = app.clickCount === 2 ? 2 : 3;
+      app.props.onMultiClick(col, row, count);
+      return;
     }
-    startSelection(sel, col, row)
+    startSelection(sel, col, row);
     // SGR bit 0x08 = alt (xterm.js wires altKey here, not metaKey — see
     // comment at the hyperlink-open guard below). On macOS xterm.js,
     // receiving alt means macOptionClickForcesSelection is OFF (otherwise
     // xterm.js would have consumed the event for native selection).
-    sel.lastPressHadAlt = (m.button & 0x08) !== 0
-    app.props.onSelectionChange()
-    return
+    sel.lastPressHadAlt = (m.button & 0x08) !== 0;
+    app.props.onSelectionChange();
+    return;
   }
 
   // Release: end the drag even for non-zero button codes. Some terminals
@@ -792,15 +828,15 @@ export function handleMouseEvent(app: App, m: ParsedMouse): void {
   // disappear (selection overlay) without any navigation.
   if (baseButton !== 0 && baseButton !== 3) {
     // Right/middle button release — finish selection only, no click dispatch
-    if (!sel.isDragging) return
-    finishSelection(sel)
-    app.props.onSelectionChange()
-    return
+    if (!sel.isDragging) return;
+    finishSelection(sel);
+    app.props.onSelectionChange();
+    return;
   }
 
   // For left button (0) or SGR release/no-button (3): finish selection
   // and check click dispatch.
-  finishSelection(sel)
+  finishSelection(sel);
   // NOTE: unlike the old release-based detection we do NOT reset clickCount
   // on release-after-drag. This aligns with NSEvent.clickCount semantics:
   // an intervening drag doesn't break the click chain. Practical upside:
@@ -821,7 +857,7 @@ export function handleMouseEvent(app: App, m: ParsedMouse): void {
       // Resolve the hyperlink URL synchronously while the screen buffer
       // still reflects what the user clicked — deferring only the
       // browser-open so double-click can cancel it.
-      const url = app.props.getHyperlinkAt(col, row)
+      const url = app.props.getHyperlinkAt(col, row);
       // xterm.js (VS Code, Cursor, Windsurf, etc.) has its own OSC 8 link
       // handler that fires on Cmd+click *without consuming the mouse event*
       // (Linkifier._handleMouseUp calls link.activate() but never
@@ -837,19 +873,19 @@ export function handleMouseEvent(app: App, m: ParsedMouse): void {
         // Clear any prior pending timer — clicking a second link
         // supersedes the first (only the latest click opens).
         if (app.pendingHyperlinkTimer) {
-          clearTimeout(app.pendingHyperlinkTimer)
+          clearTimeout(app.pendingHyperlinkTimer);
         }
         app.pendingHyperlinkTimer = setTimeout(
           (app, url) => {
-            app.pendingHyperlinkTimer = null
-            app.props.onOpenHyperlink(url)
+            app.pendingHyperlinkTimer = null;
+            app.props.onOpenHyperlink(url);
           },
           MULTI_CLICK_TIMEOUT_MS,
           app,
           url,
-        )
+        );
       }
     }
   }
-  app.props.onSelectionChange()
+  app.props.onSelectionChange();
 }
