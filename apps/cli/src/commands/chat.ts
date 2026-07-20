@@ -13,7 +13,11 @@ export function chatCommands(operatorContext?: OperatorApplicationContext): Comm
     .option('--port <number>', 'Port for adapter', '3000')
     .option('--secret <string>', 'Shared secret (webhook) or Slack signing secret')
     .action(async (options: { adapter: string; port: string; secret?: string }) => {
-      const secret = options.secret || process.env.OPENSLACK_WEBHOOK_SECRET || process.env.OPENSLACK_SLACK_SIGNING_SECRET || '';
+      const secret =
+        options.secret ||
+        process.env.OPENSLACK_WEBHOOK_SECRET ||
+        process.env.OPENSLACK_SLACK_SIGNING_SECRET ||
+        '';
       const config: GatewayConfig = {
         webhookSecret: secret,
         readOnlyByDefault: true,
@@ -26,14 +30,19 @@ export function chatCommands(operatorContext?: OperatorApplicationContext): Comm
         });
 
         adapter.onMessage(async (message) => {
-          const result = await routeMessage(message, config, {
-            payload: JSON.stringify({
-              text: message.text,
-              user: message.user.id,
-              channel: message.channel.id,
-            }),
-            signature: undefined,
-          }, operatorContext);
+          const result = await routeMessage(
+            message,
+            config,
+            {
+              payload: JSON.stringify({
+                text: message.text,
+                user: message.user.id,
+                channel: message.channel.id,
+              }),
+              signature: undefined,
+            },
+            operatorContext,
+          );
 
           console.log(`[${message.id}] ${message.user.id}: ${message.text}`);
           if (result.text) {
@@ -45,12 +54,15 @@ export function chatCommands(operatorContext?: OperatorApplicationContext): Comm
         await adapter.connect();
       } else if (options.adapter === 'slack') {
         if (!secret) {
-          console.error('Slack signing secret required. Set OPENSLACK_SLACK_SIGNING_SECRET or use --secret');
+          console.error(
+            'Slack signing secret required. Set OPENSLACK_SLACK_SIGNING_SECRET or use --secret',
+          );
           process.exit(1);
         }
 
         const botToken = process.env.OPENSLACK_SLACK_BOT_TOKEN;
-        const allowedWorkspaces = process.env.OPENSLACK_CHAT_ALLOWED_WORKSPACE?.split(',') || undefined;
+        const allowedWorkspaces =
+          process.env.OPENSLACK_CHAT_ALLOWED_WORKSPACE?.split(',') || undefined;
 
         const adapter = new SlackAdapter({
           port: Number(options.port),
@@ -60,14 +72,19 @@ export function chatCommands(operatorContext?: OperatorApplicationContext): Comm
         });
 
         adapter.onMessage(async (message) => {
-          const result = await routeMessage(message, config, {
-            payload: JSON.stringify({
-              text: message.text,
-              user: message.user.id,
-              channel: message.channel.id,
-            }),
-            signature: undefined,
-          }, operatorContext);
+          const result = await routeMessage(
+            message,
+            config,
+            {
+              payload: JSON.stringify({
+                text: message.text,
+                user: message.user.id,
+                channel: message.channel.id,
+              }),
+              signature: undefined,
+            },
+            operatorContext,
+          );
 
           console.log(`[${message.id}] ${message.user.id}: ${message.text}`);
           if (result.text) {

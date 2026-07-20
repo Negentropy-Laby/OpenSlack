@@ -1,6 +1,19 @@
 {
   "name": "@openslack/plugin-host",
   "version": "0.2.0",
+  "description": "OpenSlack instance-scoped plugin host — strict-byte loader, integrity lock, atomic registries, and required audit writes",
+  "keywords": [
+    "openslack",
+    "agent-collaboration",
+    "github",
+    "llm-agents",
+    "plugin-host"
+  ],
+  "homepage": "https://github.com/Negentropy-Laby/OpenSlack/tree/main/packages/plugin-host",
+  "bugs": {
+    "url": "https://github.com/Negentropy-Laby/OpenSlack/issues"
+  },
+  "sideEffects": false,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

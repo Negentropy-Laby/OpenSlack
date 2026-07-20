@@ -2,7 +2,14 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, it, expect } from 'vitest';
-import { verifyRequestSignature, verifyRequestTimestamp, mapActor, canExecuteSideEffects, buildDefaultActor, loadActorMappings } from '../authz.js';
+import {
+  verifyRequestSignature,
+  verifyRequestTimestamp,
+  mapActor,
+  canExecuteSideEffects,
+  buildDefaultActor,
+  loadActorMappings,
+} from '../authz.js';
 import { createHmac } from 'node:crypto';
 import type { ChatMessage } from '../types.js';
 
@@ -91,7 +98,13 @@ describe('mapActor', () => {
   it('returns agent id for mapped agent actors', () => {
     const msg = makeMsg('u1', 'webhook');
     const mapped = mapActor(msg, [
-      { providerUserId: 'u1', provider: 'webhook', openslackActorId: 'ci-agent', roles: ['write'], agentId: 'test_agent' },
+      {
+        providerUserId: 'u1',
+        provider: 'webhook',
+        openslackActorId: 'ci-agent',
+        roles: ['write'],
+        agentId: 'test_agent',
+      },
     ]);
     expect(mapped).toEqual({ id: 'ci-agent', roles: ['write'], agentId: 'test_agent' });
   });
@@ -99,17 +112,36 @@ describe('mapActor', () => {
 
 describe('loadActorMappings', () => {
   it('loads JSON actor mapping files', () => {
-    const root = join(tmpdir(), `openslack-chat-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const root = join(
+      tmpdir(),
+      `openslack-chat-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
     mkdirSync(root, { recursive: true });
     const path = join(root, 'actors.json');
-    writeFileSync(path, JSON.stringify({
-      mappings: [
-        { providerUserId: 'u1', provider: 'slack', openslackActorId: 'alice', roles: ['read', 'write'], agentId: 'test_agent' },
-      ],
-    }), 'utf-8');
+    writeFileSync(
+      path,
+      JSON.stringify({
+        mappings: [
+          {
+            providerUserId: 'u1',
+            provider: 'slack',
+            openslackActorId: 'alice',
+            roles: ['read', 'write'],
+            agentId: 'test_agent',
+          },
+        ],
+      }),
+      'utf-8',
+    );
     try {
       expect(loadActorMappings(path)).toEqual([
-        { providerUserId: 'u1', provider: 'slack', openslackActorId: 'alice', roles: ['read', 'write'], agentId: 'test_agent' },
+        {
+          providerUserId: 'u1',
+          provider: 'slack',
+          openslackActorId: 'alice',
+          roles: ['read', 'write'],
+          agentId: 'test_agent',
+        },
       ]);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -119,7 +151,9 @@ describe('loadActorMappings', () => {
 
 describe('canExecuteSideEffects', () => {
   it('allows write role when read-only by default', () => {
-    expect(canExecuteSideEffects({ id: 'a', roles: ['write'] }, { readOnlyByDefault: true })).toBe(true);
+    expect(canExecuteSideEffects({ id: 'a', roles: ['write'] }, { readOnlyByDefault: true })).toBe(
+      true,
+    );
   });
 
   it('blocks unmapped actor when read-only by default', () => {

@@ -16,11 +16,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-  applyWorkspaceAttach,
-  planWorkspaceAttach,
-  type WorkspaceAttachPlan,
-} from '../attach.js';
+import { applyWorkspaceAttach, planWorkspaceAttach, type WorkspaceAttachPlan } from '../attach.js';
 import { validateWorkspace } from '../validate.js';
 
 const roots: string[] = [];
@@ -52,8 +48,12 @@ describe('transactional workspace attach', () => {
     expect(result.changed).toBe(true);
     expect(result.validation.valid).toBe(true);
     expect(validateWorkspace(root).valid).toBe(true);
-    expect(existsSync(join(root, '.openslack', 'agents', 'registry', 'openslack_agent_operator.yaml'))).toBe(false);
-    expect(existsSync(join(root, '.openslack', 'templates', 'agent-runtime.example.json'))).toBe(false);
+    expect(
+      existsSync(join(root, '.openslack', 'agents', 'registry', 'openslack_agent_operator.yaml')),
+    ).toBe(false);
+    expect(existsSync(join(root, '.openslack', 'templates', 'agent-runtime.example.json'))).toBe(
+      false,
+    );
     expect(existsSync(join(root, '.openslack', 'workflows', 'first-task.yaml'))).toBe(false);
     const workspace = yaml(root, 'openslack.yaml');
     expect(workspace.sidecar).toEqual({
@@ -113,14 +113,20 @@ describe('transactional workspace attach', () => {
     expect(() => applyWorkspaceAttach(plan)).toThrow(/changed after attach preview/u);
     expect(readFileSync(join(root, '.gitignore'), 'utf8')).toBe('changed-after-preview\n');
     expect(existsSync(join(root, 'openslack.yaml'))).toBe(false);
-    expect(existsSync(join(root, '.openslack.local', 'transactions', 'attach.rollback.json'))).toBe(false);
+    expect(existsSync(join(root, '.openslack.local', 'transactions', 'attach.rollback.json'))).toBe(
+      false,
+    );
   });
 
   it('rejects a symlinked ancestor introduced after preview', () => {
     const root = gitRoot();
     const external = temporaryRoot('openslack-attach-external-');
     const plan = attachPlan(root, 'read-only-monitor');
-    symlinkSync(external, join(root, '.openslack'), process.platform === 'win32' ? 'junction' : 'dir');
+    symlinkSync(
+      external,
+      join(root, '.openslack'),
+      process.platform === 'win32' ? 'junction' : 'dir',
+    );
 
     expect(() => applyWorkspaceAttach(plan)).toThrow(/symlinked paths|escapes the workspace root/u);
     expect(lstatSync(join(root, '.openslack')).isSymbolicLink()).toBe(true);
@@ -149,7 +155,9 @@ describe('transactional workspace attach', () => {
     expect(readFileSync(gitignore)).toEqual(original);
     expect(mode(gitignore)).toBe(originalMode);
     expect(existsSync(join(root, 'openslack.yaml'))).toBe(false);
-    expect(existsSync(join(root, '.openslack.local', 'transactions', 'attach.rollback.json'))).toBe(false);
+    expect(existsSync(join(root, '.openslack.local', 'transactions', 'attach.rollback.json'))).toBe(
+      false,
+    );
   });
 
   it('rolls back every write when post-validation fails', () => {
@@ -210,9 +218,9 @@ describe('transactional workspace attach', () => {
     expect(result.changed).toBe(true);
     expect(result.journalCleanupDeferred).toBe(true);
     expect(validateWorkspace(root).valid).toBe(true);
-    expect(
-      existsSync(join(root, '.openslack.local', 'transactions', 'attach.rollback.json')),
-    ).toBe(false);
+    expect(existsSync(join(root, '.openslack.local', 'transactions', 'attach.rollback.json'))).toBe(
+      false,
+    );
     expect(
       existsSync(join(root, '.openslack.local', 'transactions', 'attach.committed.json')),
     ).toBe(true);
@@ -254,14 +262,18 @@ applyWorkspaceAttach(plan, { hooks: { afterWrite() { process.exit(77); } } });
       encoding: 'utf8',
     });
     expect(child.status, child.stderr).toBe(77);
-    expect(existsSync(join(root, '.openslack.local', 'transactions', 'attach.rollback.json'))).toBe(true);
+    expect(existsSync(join(root, '.openslack.local', 'transactions', 'attach.rollback.json'))).toBe(
+      true,
+    );
     expect(existsSync(join(root, '.openslack.local', 'locks', 'attach.lock'))).toBe(true);
 
     const result = applyWorkspaceAttach(plan);
 
     expect(result.recoveredTransaction).toBe(true);
     expect(result.validation.valid).toBe(true);
-    expect(existsSync(join(root, '.openslack.local', 'transactions', 'attach.rollback.json'))).toBe(false);
+    expect(existsSync(join(root, '.openslack.local', 'transactions', 'attach.rollback.json'))).toBe(
+      false,
+    );
     expect(existsSync(join(root, '.openslack.local', 'locks', 'attach.lock'))).toBe(false);
     expect(readFileSync(join(root, '.gitignore'), 'utf8')).toBe(
       'node_modules/\n.openslack.local/\n',

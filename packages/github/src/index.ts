@@ -246,10 +246,7 @@ export type {
   CollaborationEventRecord,
   WatchDaemonDependencies,
 } from './watch-daemon.js';
-export {
-  startWorkspaceWatchDaemon,
-  WorkspaceWatchDaemonStartError,
-} from './workspace-watch.js';
+export { startWorkspaceWatchDaemon, WorkspaceWatchDaemonStartError } from './workspace-watch.js';
 export type {
   StartWorkspaceWatchDaemonOptions,
   WorkspaceWatchDaemonHandle,

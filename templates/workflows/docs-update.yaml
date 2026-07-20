@@ -35,19 +35,19 @@ phases:
         actionId: task.create.preview
         title: Preview docs-update task
         input:
-          title: "{{inputs.title}}"
+          title: '{{inputs.title}}'
           template: investigation
       - type: action
         actionId: task.checkout
         title: Create worktree for docs update
         input:
-          issueNumber: "{{inputs.issueNumber}}"
-          agentId: "{{inputs.agentId}}"
+          issueNumber: '{{inputs.issueNumber}}'
+          agentId: '{{inputs.agentId}}'
       - type: record-decision
-        topic: "Docs audit: {{inputs.title}}"
+        topic: 'Docs audit: {{inputs.title}}'
         decision: Audit complete
         rationale: Reviewed existing documentation and identified update scope
-        decidedBy: "{{inputs.agentId}}"
+        decidedBy: '{{inputs.agentId}}'
         tags:
           - documentation
           - audit
@@ -57,21 +57,21 @@ phases:
         actionId: task.sync
         title: Propose docs-update PR
         input:
-          issueNumber: "{{inputs.issueNumber}}"
-          agentId: "{{inputs.agentId}}"
-          paths: "{{inputs.paths}}"
+          issueNumber: '{{inputs.issueNumber}}'
+          agentId: '{{inputs.agentId}}'
+          paths: '{{inputs.paths}}'
   - name: Verify
     steps:
       - type: action
         actionId: pr.doctor
         title: Diagnose PR readiness
         input:
-          prNumber: "{{inputs.prNumber}}"
+          prNumber: '{{inputs.prNumber}}'
       - type: record-decision
-        topic: "Docs verify: {{inputs.title}}"
+        topic: 'Docs verify: {{inputs.title}}'
         decision: Verification passed
         rationale: Documentation changes verified for accuracy and consistency
-        decidedBy: "{{inputs.agentId}}"
+        decidedBy: '{{inputs.agentId}}'
         tags:
           - documentation
           - verification

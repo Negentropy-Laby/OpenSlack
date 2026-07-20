@@ -24,7 +24,7 @@ phases:
         actionId: pr.doctor
         title: Diagnose release PR readiness
         input:
-          prNumber: "{{inputs.prNumber}}"
+          prNumber: '{{inputs.prNumber}}'
   - name: Approve
     steps:
       - type: decision-gate
@@ -36,4 +36,4 @@ phases:
         actionId: pr.merge
         title: Merge release PR
         input:
-          prNumber: "{{inputs.prNumber}}"
+          prNumber: '{{inputs.prNumber}}'

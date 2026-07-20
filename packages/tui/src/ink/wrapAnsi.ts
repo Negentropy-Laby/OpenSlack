@@ -1,21 +1,16 @@
-import wrapAnsiNpm from 'wrap-ansi'
+import wrapAnsiNpm from 'wrap-ansi';
 
 type WrapAnsiOptions = {
-  hard?: boolean
-  wordWrap?: boolean
-  trim?: boolean
-}
+  hard?: boolean;
+  wordWrap?: boolean;
+  trim?: boolean;
+};
 
-const wrapAnsiBun = null as ((
-  input: string,
-  columns: number,
-  options?: WrapAnsiOptions,
-) => string) | null
+const wrapAnsiBun = null as
+  | ((input: string, columns: number, options?: WrapAnsiOptions) => string)
+  | null;
 
-const wrapAnsi: (
-  input: string,
-  columns: number,
-  options?: WrapAnsiOptions,
-) => string = wrapAnsiBun ?? wrapAnsiNpm
+const wrapAnsi: (input: string, columns: number, options?: WrapAnsiOptions) => string =
+  wrapAnsiBun ?? wrapAnsiNpm;
 
-export { wrapAnsi }
+export { wrapAnsi };

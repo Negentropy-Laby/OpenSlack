@@ -1,6 +1,19 @@
 {
   "name": "@openslack/plugin-testkit",
   "version": "0.2.0",
+  "description": "OpenSlack plugin testkit — deterministic checks for declarative plugin manifests",
+  "keywords": [
+    "openslack",
+    "agent-collaboration",
+    "github",
+    "llm-agents",
+    "testkit"
+  ],
+  "homepage": "https://github.com/Negentropy-Laby/OpenSlack/tree/main/packages/plugin-testkit",
+  "bugs": {
+    "url": "https://github.com/Negentropy-Laby/OpenSlack/issues"
+  },
+  "sideEffects": false,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

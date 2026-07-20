@@ -70,6 +70,7 @@
 
 **Source:** `AGENTS.md` hard prohibition added 2026-05-23 (PR #34): "Do not include `Co-Authored-By:` lines. Do not mention AI/model/tool authorship in commits."
 **Impact:**
+
 - Pre-PR-34 commits (approx. first 70 commits) contain `Co-authored-by: Claude Opus 4.6 <noreply@anthropic.com>` and `Co-Authored-By:` lines.
 - Post-PR-34 squash-merge commits PR #35–#46 also contain Co-Authored-By lines because GitHub squash merge retained them from PR descriptions. These commits are in permanent git history:
   - `f7041666e5dae411821fa77a5e5589f2df9cf464` (PR #35)
@@ -80,13 +81,14 @@
   - `5f13d7edb0f30735c6c074e9ec231de0559cd88d` (PR #45)
   - `83d4235a3fe0f9e8d054b7475762b70efb01dfaf` (PR #46)
 - These cannot be rewritten without force-pushing main, which is prohibited by branch protection ruleset.
-**Resolution:** Accepted as historical artifacts. No rewrite of published history. All new commits from PR #47 onward must comply with the AGENTS.md hard prohibition. PR #54 added automated enforcement to `openslack governance audit`. PR #80 narrowed the bot attribution exemption to only `openslack-agent-operator[bot]` (the project's own bot) — all other bot Co-authored-by trailers (copilot[bot], dependabot[bot], etc.) remain violations.
-**Preventive measure:**
+  **Resolution:** Accepted as historical artifacts. No rewrite of published history. All new commits from PR #47 onward must comply with the AGENTS.md hard prohibition. PR #54 added automated enforcement to `openslack governance audit`. PR #80 narrowed the bot attribution exemption to only `openslack-agent-operator[bot]` (the project's own bot) — all other bot Co-authored-by trailers (copilot[bot], dependabot[bot], etc.) remain violations.
+  **Preventive measure:**
+
 1. `AGENTS.md` § Commit Convention prohibits all Co-authored-by lines except `openslack-agent-operator[bot]`.
 2. `openslack governance audit` checks commit message content for prohibited attribution patterns (baseline: PR #34), stripping only the project bot trailer before checking.
 3. All future commits must not contain prohibited Co-Authored-By lines. Agent/tool automation that appends them must be disabled or amended before merge.
-**Closed:** 2026-05-24.
-**Filed:** 2026-05-23.
+   **Closed:** 2026-05-24.
+   **Filed:** 2026-05-23.
 
 ### CLOSED: P2-6 — Compat shim package cleanup
 

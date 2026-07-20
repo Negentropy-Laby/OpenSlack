@@ -10,11 +10,16 @@ export interface ChatCardField {
 }
 
 export type ChatActionKind =
-  | 'show_doctor' | 'watch_pr' | 'confirm_merge' | 'cancel'
-  | 'accept_handoff' | 'close_handoff'
+  | 'show_doctor'
+  | 'watch_pr'
+  | 'confirm_merge'
+  | 'cancel'
+  | 'accept_handoff'
+  | 'close_handoff'
   | 'record_decision'
   | 'execute_workflow'
-  | 'preview_task' | 'claim_task'
+  | 'preview_task'
+  | 'claim_task'
   | 'approve_plan';
 
 export interface ChatAction {
@@ -95,9 +100,7 @@ export interface TaskSummary {
 }
 
 export function buildTaskCard(task: TaskSummary): ChatCard {
-  const fields: ChatCardField[] = [
-    { label: 'Status', value: task.status },
-  ];
+  const fields: ChatCardField[] = [{ label: 'Status', value: task.status }];
   if (task.assignee) fields.push({ label: 'Assignee', value: task.assignee });
   if (task.risk) fields.push({ label: 'Risk', value: task.risk });
 
@@ -106,8 +109,20 @@ export function buildTaskCard(task: TaskSummary): ChatCard {
     summary: `Status: ${task.status}`,
     fields,
     actions: [
-      { id: 'preview', label: 'Preview', style: 'default', action: 'preview_task', value: String(task.issueNumber) },
-      { id: 'claim', label: 'Claim', style: 'primary', action: 'claim_task', value: String(task.issueNumber) },
+      {
+        id: 'preview',
+        label: 'Preview',
+        style: 'default',
+        action: 'preview_task',
+        value: String(task.issueNumber),
+      },
+      {
+        id: 'claim',
+        label: 'Claim',
+        style: 'primary',
+        action: 'claim_task',
+        value: String(task.issueNumber),
+      },
     ],
   };
 }
@@ -123,8 +138,20 @@ export function buildHandoffCard(handoff: Handoff): ChatCard {
 
   const actions: ChatAction[] = [];
   if (handoff.status === 'open') {
-    actions.push({ id: 'accept', label: 'Accept', style: 'primary', action: 'accept_handoff', value: handoff.id });
-    actions.push({ id: 'close', label: 'Close', style: 'default', action: 'close_handoff', value: handoff.id });
+    actions.push({
+      id: 'accept',
+      label: 'Accept',
+      style: 'primary',
+      action: 'accept_handoff',
+      value: handoff.id,
+    });
+    actions.push({
+      id: 'close',
+      label: 'Close',
+      style: 'default',
+      action: 'close_handoff',
+      value: handoff.id,
+    });
   }
 
   return {
@@ -148,9 +175,18 @@ export function buildDecisionCard(decision: Decision): ChatCard {
     title: `Decision: ${decision.id}`,
     summary: `${decision.topic}: ${decision.decision}`,
     fields,
-    actions: decision.status === 'active'
-      ? [{ id: 'record', label: 'Record Alternative', style: 'default', action: 'record_decision', value: decision.id }]
-      : [],
+    actions:
+      decision.status === 'active'
+        ? [
+            {
+              id: 'record',
+              label: 'Record Alternative',
+              style: 'default',
+              action: 'record_decision',
+              value: decision.id,
+            },
+          ]
+        : [],
   };
 }
 
@@ -170,8 +206,20 @@ export function buildWorkflowCard(preview: WorkflowPreview): ChatCard {
 
   const actions: ChatAction[] = [];
   if (preview.errors.length === 0) {
-    actions.push({ id: 'execute', label: 'Execute', style: 'primary', action: 'execute_workflow', value: preview.correlationId });
-    actions.push({ id: 'cancel', label: 'Cancel', style: 'danger', action: 'cancel', value: preview.correlationId });
+    actions.push({
+      id: 'execute',
+      label: 'Execute',
+      style: 'primary',
+      action: 'execute_workflow',
+      value: preview.correlationId,
+    });
+    actions.push({
+      id: 'cancel',
+      label: 'Cancel',
+      style: 'danger',
+      action: 'cancel',
+      value: preview.correlationId,
+    });
   }
 
   return {
@@ -213,9 +261,7 @@ export function toSlackBlocks(card: ChatCard): unknown[] {
   ];
 
   if (card.fields.length > 0) {
-    const fieldTexts = card.fields
-      .map((f) => `*${f.label}:* ${f.value}`)
-      .join('  |  ');
+    const fieldTexts = card.fields.map((f) => `*${f.label}:* ${f.value}`).join('  |  ');
     blocks.push({
       type: 'section',
       text: {

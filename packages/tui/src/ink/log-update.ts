@@ -1,11 +1,7 @@
-import {
-  type AnsiCode,
-  ansiCodesToString,
-  diffAnsiCodes,
-} from '@alcalzone/ansi-tokenize'
-import { logForDebugging } from './stubs/debug.js'
-import type { Diff, FlickerReason, Frame } from './frame.js'
-import type { Point } from './layout/geometry.js'
+import { type AnsiCode, ansiCodesToString, diffAnsiCodes } from '@alcalzone/ansi-tokenize';
+import { logForDebugging } from './stubs/debug.js';
+import type { Diff, FlickerReason, Frame } from './frame.js';
+import type { Point } from './layout/geometry.js';
 import {
   type Cell,
   CellWidth,
@@ -18,137 +14,131 @@ import {
   type StylePool,
   shiftRows,
   visibleCellAtIndex,
-} from './screen.js'
+} from './screen.js';
 import {
   CURSOR_HOME,
   scrollDown as csiScrollDown,
   scrollUp as csiScrollUp,
   RESET_SCROLL_REGION,
   setScrollRegion,
-} from './termio/csi.js'
-import { LINK_END, link as oscLink } from './termio/osc.js'
+} from './termio/csi.js';
+import { LINK_END, link as oscLink } from './termio/osc.js';
 
 type State = {
-  previousOutput: string
-}
+  previousOutput: string;
+};
 
 type Options = {
-  isTTY: boolean
-  stylePool: StylePool
+  isTTY: boolean;
+  stylePool: StylePool;
   // Main-screen Windows terminals can keep cleared scrollback visible, so
   // offscreen full redraws may appear as duplicate assistant messages.
-  appendOnlyOffscreenReset?: boolean
-}
+  appendOnlyOffscreenReset?: boolean;
+};
 
-const CARRIAGE_RETURN = { type: 'carriageReturn' } as const
-const NEWLINE = { type: 'stdout', content: '\n' } as const
+const CARRIAGE_RETURN = { type: 'carriageReturn' } as const;
+const NEWLINE = { type: 'stdout', content: '\n' } as const;
 
 export class LogUpdate {
-  private state: State
+  private state: State;
 
   constructor(private readonly options: Options) {
     this.state = {
       previousOutput: '',
-    }
+    };
   }
 
   renderPreviousOutput_DEPRECATED(prevFrame: Frame): Diff {
     if (!this.options.isTTY) {
       // Non-TTY output is no longer supported (string output was removed)
-      return [NEWLINE]
+      return [NEWLINE];
     }
-    return this.getRenderOpsForDone(prevFrame)
+    return this.getRenderOpsForDone(prevFrame);
   }
 
   // Called when process resumes from suspension (SIGCONT) to prevent clobbering terminal content
   reset(): void {
-    this.state.previousOutput = ''
+    this.state.previousOutput = '';
   }
 
   private renderFullFrame(frame: Frame): Diff {
-    const previousOutput = this.state.previousOutput
-    const lines = frameToStyledLines(frame.screen, this.options.stylePool)
+    const previousOutput = this.state.previousOutput;
+    const lines = frameToStyledLines(frame.screen, this.options.stylePool);
 
     if (lines.length === 0) {
-      return []
+      return [];
     }
-    const output = lines.join('\n')
-    this.state.previousOutput = output
+    const output = lines.join('\n');
+    this.state.previousOutput = output;
 
     if (output.length === 0 || output === previousOutput) {
-      return []
+      return [];
     }
 
     if (previousOutput.length === 0) {
-      return [{ type: 'stdout', content: output }]
+      return [{ type: 'stdout', content: output }];
     }
 
     if (output.startsWith(previousOutput)) {
-      return [{ type: 'stdout', content: output.slice(previousOutput.length) }]
+      return [{ type: 'stdout', content: output.slice(previousOutput.length) }];
     }
 
     if (previousOutput.startsWith(output)) {
       // Output is a prefix of previous output. Emit the new output and
       // clear any old trailing content that is no longer present.
-      const prevLines = previousOutput.split('\n')
-      const nextLines = output.split('\n')
-      const linesToClear = prevLines.length - nextLines.length
-      const clearOld = linesToClear > 0 ? '\n\x1b[K'.repeat(linesToClear) : ''
-      return [{ type: 'stdout', content: output + '\x1b[K' + clearOld }]
+      const prevLines = previousOutput.split('\n');
+      const nextLines = output.split('\n');
+      const linesToClear = prevLines.length - nextLines.length;
+      const clearOld = linesToClear > 0 ? '\n\x1b[K'.repeat(linesToClear) : '';
+      return [{ type: 'stdout', content: output + '\x1b[K' + clearOld }];
     }
 
-    const commonPrefixLength = getCommonPrefixLength(previousOutput, output)
+    const commonPrefixLength = getCommonPrefixLength(previousOutput, output);
     const lineStart =
-      commonPrefixLength <= 0
-        ? 0
-        : output.lastIndexOf('\n', commonPrefixLength - 1) + 1
-    const changedTail = withLineClears(
-      output.slice(lineStart),
-      previousOutput.slice(lineStart),
-    )
+      commonPrefixLength <= 0 ? 0 : output.lastIndexOf('\n', commonPrefixLength - 1) + 1;
+    const changedTail = withLineClears(output.slice(lineStart), previousOutput.slice(lineStart));
     if (changedTail.length === 0) {
-      return []
+      return [];
     }
-    const prefix = previousOutput.endsWith('\n') ? '' : '\n'
-    return [{ type: 'stdout', content: prefix + changedTail }]
+    const prefix = previousOutput.endsWith('\n') ? '' : '\n';
+    return [{ type: 'stdout', content: prefix + changedTail }];
   }
 
   private renderAppendOnlyOffscreenReset(prev: Frame, next: Frame): Diff {
-    const previousLines = frameToPlainLines(prev.screen)
-    const nextLines = frameToPlainLines(next.screen)
-    let firstChangedLine = 0
+    const previousLines = frameToPlainLines(prev.screen);
+    const nextLines = frameToPlainLines(next.screen);
+    let firstChangedLine = 0;
 
     while (
       firstChangedLine < previousLines.length &&
       firstChangedLine < nextLines.length &&
       previousLines[firstChangedLine] === nextLines[firstChangedLine]
     ) {
-      firstChangedLine += 1
+      firstChangedLine += 1;
     }
 
-    const visibleStart = Math.max(0, next.screen.height - next.viewport.height)
+    const visibleStart = Math.max(0, next.screen.height - next.viewport.height);
     while (
       firstChangedLine < visibleStart ||
       (firstChangedLine < previousLines.length &&
         firstChangedLine < nextLines.length &&
         previousLines[firstChangedLine] === nextLines[firstChangedLine])
     ) {
-      firstChangedLine += 1
+      firstChangedLine += 1;
     }
 
     if (firstChangedLine >= nextLines.length) {
-      return []
+      return [];
     }
 
-    const changedLines = frameToStyledLines(
-      next.screen,
-      this.options.stylePool,
-    ).slice(firstChangedLine)
+    const changedLines = frameToStyledLines(next.screen, this.options.stylePool).slice(
+      firstChangedLine,
+    );
     // Clear to end of line after each row to prevent stale content from
     // previous frames bleeding through when the new line is shorter.
-    const output = changedLines.map(line => line + '\x1b[K').join('\n')
+    const output = changedLines.map((line) => line + '\x1b[K').join('\n');
     if (output.length === 0) {
-      return []
+      return [];
     }
 
     return [
@@ -156,7 +146,7 @@ export class LogUpdate {
         type: 'stdout',
         content: firstChangedLine > 0 ? `\n${output}` : output,
       },
-    ]
+    ];
   }
 
   private resetOrAppendOffscreen(
@@ -173,32 +163,27 @@ export class LogUpdate {
       !altScreen &&
       next.screen.height >= prev.screen.height
     ) {
-      return this.renderAppendOnlyOffscreenReset(prev, next)
+      return this.renderAppendOnlyOffscreenReset(prev, next);
     }
-    return fullResetSequence_CAUSES_FLICKER(next, reason, stylePool, debug)
+    return fullResetSequence_CAUSES_FLICKER(next, reason, stylePool, debug);
   }
 
   private getRenderOpsForDone(prev: Frame): Diff {
-    this.state.previousOutput = ''
+    this.state.previousOutput = '';
 
     if (!prev.cursor.visible) {
-      return [{ type: 'cursorShow' }]
+      return [{ type: 'cursorShow' }];
     }
-    return []
+    return [];
   }
 
-  render(
-    prev: Frame,
-    next: Frame,
-    altScreen = false,
-    decstbmSafe = true,
-  ): Diff {
+  render(prev: Frame, next: Frame, altScreen = false, decstbmSafe = true): Diff {
     if (!this.options.isTTY) {
-      return this.renderFullFrame(next)
+      return this.renderFullFrame(next);
     }
 
-    const startTime = performance.now()
-    const stylePool = this.options.stylePool
+    const startTime = performance.now();
+    const stylePool = this.options.stylePool;
 
     // Since we assume the cursor is at the bottom on the screen, we only need
     // to clear when the viewport gets shorter (i.e. the cursor position drifts)
@@ -210,7 +195,7 @@ export class LogUpdate {
       next.viewport.height < prev.viewport.height ||
       (prev.viewport.width !== 0 && next.viewport.width !== prev.viewport.width)
     ) {
-      return fullResetSequence_CAUSES_FLICKER(next, 'resize', stylePool)
+      return fullResetSequence_CAUSES_FLICKER(next, 'resize', stylePool);
     }
 
     // DECSTBM scroll optimization: when a ScrollBox's scrollTop changed,
@@ -229,15 +214,11 @@ export class LogUpdate {
     // where scrollTop moves. Falling through to the diff loop writes all
     // shifted rows: more bytes, no intermediate state. next.screen from
     // render-node-to-output's blit+shift is correct either way.
-    let scrollPatch: Diff = []
+    let scrollPatch: Diff = [];
     if (altScreen && next.scrollHint && decstbmSafe) {
-      const { top, bottom, delta } = next.scrollHint
-      if (
-        top >= 0 &&
-        bottom < prev.screen.height &&
-        bottom < next.screen.height
-      ) {
-        shiftRows(prev.screen, top, bottom, delta)
+      const { top, bottom, delta } = next.scrollHint;
+      if (top >= 0 && bottom < prev.screen.height && bottom < next.screen.height) {
+        shiftRows(prev.screen, top, bottom, delta);
         scrollPatch = [
           {
             type: 'stdout',
@@ -247,7 +228,7 @@ export class LogUpdate {
               RESET_SCROLL_REGION +
               CURSOR_HOME,
           },
-        ]
+        ];
       }
     }
 
@@ -263,15 +244,14 @@ export class LogUpdate {
     // This early full-reset check only applies in "steady state" (not growing).
     // For growing, the viewportY calculation below (with cursorRestoreScroll)
     // catches unreachable scrollback rows in the diff loop instead.
-    const cursorAtBottom = prev.cursor.y >= prev.screen.height - 1
-    const isGrowing = next.screen.height > prev.screen.height
+    const cursorAtBottom = prev.cursor.y >= prev.screen.height - 1;
+    const isGrowing = next.screen.height > prev.screen.height;
     // When content fills the viewport exactly (height == viewport) and the
     // cursor is at the bottom, the cursor-restore LF at the end of the
     // previous frame scrolled 1 row into scrollback. Use >= to catch this.
-    const prevHadScrollback =
-      cursorAtBottom && prev.screen.height >= prev.viewport.height
-    const isShrinking = next.screen.height < prev.screen.height
-    const nextFitsViewport = next.screen.height <= prev.viewport.height
+    const prevHadScrollback = cursorAtBottom && prev.screen.height >= prev.viewport.height;
+    const isShrinking = next.screen.height < prev.screen.height;
+    const nextFitsViewport = next.screen.height <= prev.viewport.height;
 
     // When shrinking from above-viewport to at-or-below-viewport, content that
     // was in scrollback should now be visible. Terminal clear operations can't
@@ -281,14 +261,8 @@ export class LogUpdate {
     if (prevHadScrollback && nextFitsViewport && isShrinking) {
       logForDebugging(
         `Full reset (shrink->below): prevHeight=${prev.screen.height}, nextHeight=${next.screen.height}, viewport=${prev.viewport.height}`,
-      )
-      return this.resetOrAppendOffscreen(
-        prev,
-        next,
-        'offscreen',
-        stylePool,
-        altScreen,
-      )
+      );
+      return this.resetOrAppendOffscreen(prev, next, 'offscreen', stylePool, altScreen);
     }
 
     if (
@@ -299,45 +273,37 @@ export class LogUpdate {
     ) {
       // viewportY = rows in scrollback from content overflow
       // +1 for the row pushed by cursor-restore scroll
-      const viewportY = prev.screen.height - prev.viewport.height
-      const scrollbackRows = viewportY + 1
+      const viewportY = prev.screen.height - prev.viewport.height;
+      const scrollbackRows = viewportY + 1;
 
-      let scrollbackChangeY = -1
+      let scrollbackChangeY = -1;
       diffEach(prev.screen, next.screen, (_x, y) => {
         if (y < scrollbackRows) {
-          scrollbackChangeY = y
-          return true // early exit
+          scrollbackChangeY = y;
+          return true; // early exit
         }
-      })
+      });
       if (scrollbackChangeY >= 0) {
-        const prevLine = readLine(prev.screen, scrollbackChangeY)
-        const nextLine = readLine(next.screen, scrollbackChangeY)
-        return this.resetOrAppendOffscreen(
-          prev,
-          next,
-          'offscreen',
-          stylePool,
-          altScreen,
-          {
-            triggerY: scrollbackChangeY,
-            prevLine,
-            nextLine,
-          },
-        )
+        const prevLine = readLine(prev.screen, scrollbackChangeY);
+        const nextLine = readLine(next.screen, scrollbackChangeY);
+        return this.resetOrAppendOffscreen(prev, next, 'offscreen', stylePool, altScreen, {
+          triggerY: scrollbackChangeY,
+          prevLine,
+          nextLine,
+        });
       }
     }
 
-    const screen = new VirtualScreen(prev.cursor, next.viewport.width)
+    const screen = new VirtualScreen(prev.cursor, next.viewport.width);
 
     // Treat empty screen as height 1 to avoid spurious adjustments on first render
-    const heightDelta =
-      Math.max(next.screen.height, 1) - Math.max(prev.screen.height, 1)
-    const shrinking = heightDelta < 0
-    const growing = heightDelta > 0
+    const heightDelta = Math.max(next.screen.height, 1) - Math.max(prev.screen.height, 1);
+    const shrinking = heightDelta < 0;
+    const growing = heightDelta > 0;
 
     // Handle shrinking: clear lines from the bottom
     if (shrinking) {
-      const linesToClear = prev.screen.height - next.screen.height
+      const linesToClear = prev.screen.height - next.screen.height;
 
       // eraseLines only works within the viewport - it can't clear scrollback.
       // If we need to clear more lines than fit in the viewport, some are in
@@ -349,19 +315,19 @@ export class LogUpdate {
           'offscreen',
           this.options.stylePool,
           altScreen,
-        )
+        );
       }
 
       // clear(N) moves cursor UP by N-1 lines and to column 0
       // This puts us at line prev.screen.height - N = next.screen.height
       // But we want to be at next.screen.height - 1 (bottom of new screen)
-      screen.txn(prev => [
+      screen.txn((prev) => [
         [
           { type: 'clear', count: linesToClear },
           { type: 'cursorMove', x: 0, y: -1 },
         ],
         { dx: -prev.x, dy: -linesToClear },
-      ])
+      ]);
     }
 
     // viewportY = number of rows in scrollback (not visible on terminal).
@@ -371,47 +337,39 @@ export class LogUpdate {
     // an additional row out of view at the end of the previous frame. Without
     // this, the diff loop treats that row as reachable — but the cursor clamps
     // at viewport top, causing writes to land 1 row off and garbling the output.
-    const cursorRestoreScroll = prevHadScrollback ? 1 : 0
+    const cursorRestoreScroll = prevHadScrollback ? 1 : 0;
     const viewportY = growing
-      ? Math.max(
-          0,
-          prev.screen.height - prev.viewport.height + cursorRestoreScroll,
-        )
+      ? Math.max(0, prev.screen.height - prev.viewport.height + cursorRestoreScroll)
       : Math.max(prev.screen.height, next.screen.height) -
         next.viewport.height +
-        cursorRestoreScroll
+        cursorRestoreScroll;
 
-    let currentStyleId = stylePool.none
-    let currentHyperlink: Hyperlink = undefined
+    let currentStyleId = stylePool.none;
+    let currentHyperlink: Hyperlink = undefined;
 
     // First pass: render changes to existing rows (rows < prev.screen.height)
-    let needsFullReset = false
-    let resetTriggerY = -1
+    let needsFullReset = false;
+    let resetTriggerY = -1;
     diffEach(prev.screen, next.screen, (x, y, removed, added) => {
       // Skip new rows - we'll render them directly after
       if (growing && y >= prev.screen.height) {
-        return
+        return;
       }
 
       // Skip spacers during rendering because the terminal will automatically
       // advance 2 columns when we write the wide character itself.
       // SpacerTail: Second cell of a wide character
       // SpacerHead: Marks line-end position where wide char wraps to next line
-      if (
-        added &&
-        (added.width === CellWidth.SpacerTail ||
-          added.width === CellWidth.SpacerHead)
-      ) {
-        return
+      if (added && (added.width === CellWidth.SpacerTail || added.width === CellWidth.SpacerHead)) {
+        return;
       }
 
       if (
         removed &&
-        (removed.width === CellWidth.SpacerTail ||
-          removed.width === CellWidth.SpacerHead) &&
+        (removed.width === CellWidth.SpacerTail || removed.width === CellWidth.SpacerHead) &&
         !added
       ) {
-        return
+        return;
       }
 
       // Skip empty cells that don't need to overwrite existing content.
@@ -419,85 +377,59 @@ export class LogUpdate {
       // line wrapping at the edge of the screen.
       // Uses isEmptyCellAt to check if both packed words are zero (empty cell).
       if (added && isEmptyCellAt(next.screen, x, y) && !removed) {
-        return
+        return;
       }
 
       // If the cell outside the viewport range has changed, we need to reset
       // because we can't move the cursor there to draw.
       if (y < viewportY) {
-        needsFullReset = true
-        resetTriggerY = y
-        return true // early exit
+        needsFullReset = true;
+        resetTriggerY = y;
+        return true; // early exit
       }
 
-      moveCursorTo(screen, x, y)
+      moveCursorTo(screen, x, y);
 
       if (added) {
-        const targetHyperlink = added.hyperlink
-        currentHyperlink = transitionHyperlink(
-          screen.diff,
-          currentHyperlink,
-          targetHyperlink,
-        )
-        const styleStr = stylePool.transition(currentStyleId, added.styleId)
+        const targetHyperlink = added.hyperlink;
+        currentHyperlink = transitionHyperlink(screen.diff, currentHyperlink, targetHyperlink);
+        const styleStr = stylePool.transition(currentStyleId, added.styleId);
         if (writeCellWithStyleStr(screen, added, styleStr)) {
-          currentStyleId = added.styleId
+          currentStyleId = added.styleId;
         }
       } else if (removed) {
         // Cell was removed - clear it with a space
         // (This handles shrinking content)
         // Reset any active styles/hyperlinks first to avoid leaking into cleared cells
-        const styleIdToReset = currentStyleId
-        const hyperlinkToReset = currentHyperlink
-        currentStyleId = stylePool.none
-        currentHyperlink = undefined
+        const styleIdToReset = currentStyleId;
+        const hyperlinkToReset = currentHyperlink;
+        currentStyleId = stylePool.none;
+        currentHyperlink = undefined;
 
         screen.txn(() => {
-          const patches: Diff = []
-          transitionStyle(patches, stylePool, styleIdToReset, stylePool.none)
-          transitionHyperlink(patches, hyperlinkToReset, undefined)
-          patches.push({ type: 'stdout', content: ' ' })
-          return [patches, { dx: 1, dy: 0 }]
-        })
+          const patches: Diff = [];
+          transitionStyle(patches, stylePool, styleIdToReset, stylePool.none);
+          transitionHyperlink(patches, hyperlinkToReset, undefined);
+          patches.push({ type: 'stdout', content: ' ' });
+          return [patches, { dx: 1, dy: 0 }];
+        });
       }
-    })
+    });
     if (needsFullReset) {
-      return this.resetOrAppendOffscreen(
-        prev,
-        next,
-        'offscreen',
-        stylePool,
-        altScreen,
-        {
-          triggerY: resetTriggerY,
-          prevLine: readLine(prev.screen, resetTriggerY),
-          nextLine: readLine(next.screen, resetTriggerY),
-        },
-      )
+      return this.resetOrAppendOffscreen(prev, next, 'offscreen', stylePool, altScreen, {
+        triggerY: resetTriggerY,
+        prevLine: readLine(prev.screen, resetTriggerY),
+        nextLine: readLine(next.screen, resetTriggerY),
+      });
     }
 
     // Reset styles before rendering new rows (they'll set their own styles)
-    currentStyleId = transitionStyle(
-      screen.diff,
-      stylePool,
-      currentStyleId,
-      stylePool.none,
-    )
-    currentHyperlink = transitionHyperlink(
-      screen.diff,
-      currentHyperlink,
-      undefined,
-    )
+    currentStyleId = transitionStyle(screen.diff, stylePool, currentStyleId, stylePool.none);
+    currentHyperlink = transitionHyperlink(screen.diff, currentHyperlink, undefined);
 
     // Handle growth: render new rows directly (they naturally scroll the terminal)
     if (growing) {
-      renderFrameSlice(
-        screen,
-        next,
-        prev.screen.height,
-        next.screen.height,
-        stylePool,
-      )
+      renderFrameSlice(screen, next, prev.screen.height, next.screen.height, stylePool);
     }
 
     // Restore cursor. Skipped in alt-screen: the cursor is hidden, its
@@ -513,128 +445,122 @@ export class LogUpdate {
       // no-op; next frame's CSI H anchors cursor
     } else if (next.cursor.y >= next.screen.height) {
       // Move to column 0 of current line, then emit newlines to reach target row
-      screen.txn(prev => {
-        const rowsToCreate = next.cursor.y - prev.y
+      screen.txn((prev) => {
+        const rowsToCreate = next.cursor.y - prev.y;
         if (rowsToCreate > 0) {
           // Use CR to resolve pending wrap (if any) without advancing
           // to the next line, then LF to create each new row.
-          const patches: Diff = new Array<Diff[number]>(1 + rowsToCreate)
-          patches[0] = CARRIAGE_RETURN
+          const patches: Diff = new Array<Diff[number]>(1 + rowsToCreate);
+          patches[0] = CARRIAGE_RETURN;
           for (let i = 0; i < rowsToCreate; i++) {
-            patches[1 + i] = NEWLINE
+            patches[1 + i] = NEWLINE;
           }
-          return [patches, { dx: -prev.x, dy: rowsToCreate }]
+          return [patches, { dx: -prev.x, dy: rowsToCreate }];
         }
         // At or past target row - need to move cursor to correct position
-        const dy = next.cursor.y - prev.y
+        const dy = next.cursor.y - prev.y;
         if (dy !== 0 || prev.x !== next.cursor.x) {
           // Use CR to clear pending wrap (if any), then cursor move
-          const patches: Diff = [CARRIAGE_RETURN]
-          patches.push({ type: 'cursorMove', x: next.cursor.x, y: dy })
-          return [patches, { dx: next.cursor.x - prev.x, dy }]
+          const patches: Diff = [CARRIAGE_RETURN];
+          patches.push({ type: 'cursorMove', x: next.cursor.x, y: dy });
+          return [patches, { dx: next.cursor.x - prev.x, dy }];
         }
-        return [[], { dx: 0, dy: 0 }]
-      })
+        return [[], { dx: 0, dy: 0 }];
+      });
     } else {
-      moveCursorTo(screen, next.cursor.x, next.cursor.y)
+      moveCursorTo(screen, next.cursor.x, next.cursor.y);
     }
 
-    const elapsed = performance.now() - startTime
+    const elapsed = performance.now() - startTime;
     if (elapsed > 50) {
-      const damage = next.screen.damage
+      const damage = next.screen.damage;
       const damageInfo = damage
         ? `${damage.width}x${damage.height} at (${damage.x},${damage.y})`
-        : 'none'
+        : 'none';
       logForDebugging(
         `Slow render: ${elapsed.toFixed(1)}ms, screen: ${next.screen.height}x${next.screen.width}, damage: ${damageInfo}, changes: ${screen.diff.length}`,
-      )
+      );
     }
 
-    return scrollPatch.length > 0
-      ? [...scrollPatch, ...screen.diff]
-      : screen.diff
+    return scrollPatch.length > 0 ? [...scrollPatch, ...screen.diff] : screen.diff;
   }
 }
 
 function getCommonPrefixLength(a: string, b: string): number {
-  const max = Math.min(a.length, b.length)
-  let index = 0
+  const max = Math.min(a.length, b.length);
+  let index = 0;
   while (index < max && a[index] === b[index]) {
-    index += 1
+    index += 1;
   }
-  return index
+  return index;
 }
 
 function withLineClears(nextTail: string, previousTail: string): string {
-  const nextLines = nextTail.split('\n')
-  const previousLines = previousTail.split('\n')
-  const clearedNext = nextLines.map(line => line + '\x1b[K').join('\n')
-  const extraPreviousLines = Math.max(0, previousLines.length - nextLines.length)
-  return clearedNext + (extraPreviousLines > 0 ? '\n\x1b[K'.repeat(extraPreviousLines) : '')
+  const nextLines = nextTail.split('\n');
+  const previousLines = previousTail.split('\n');
+  const clearedNext = nextLines.map((line) => line + '\x1b[K').join('\n');
+  const extraPreviousLines = Math.max(0, previousLines.length - nextLines.length);
+  return clearedNext + (extraPreviousLines > 0 ? '\n\x1b[K'.repeat(extraPreviousLines) : '');
 }
 
 function frameToPlainLines(screen: Screen): string[] {
-  const lines: string[] = []
+  const lines: string[] = [];
   for (let y = 0; y < screen.height; y++) {
-    lines.push(readLine(screen, y))
+    lines.push(readLine(screen, y));
   }
-  return lines
+  return lines;
 }
 
 function frameToStyledLines(screen: Screen, stylePool: StylePool): string[] {
-  const lines: string[] = []
-  let currentStyles: AnsiCode[] = []
-  let currentHyperlink: Hyperlink = undefined
+  const lines: string[] = [];
+  let currentStyles: AnsiCode[] = [];
+  let currentHyperlink: Hyperlink = undefined;
   for (let y = 0; y < screen.height; y++) {
-    let line = ''
+    let line = '';
     for (let x = 0; x < screen.width; x++) {
-      const cell = cellAt(screen, x, y)
+      const cell = cellAt(screen, x, y);
       if (cell && cell.width !== CellWidth.SpacerTail) {
         // Handle hyperlink transitions
         if (cell.hyperlink !== currentHyperlink) {
           if (currentHyperlink !== undefined) {
-            line += LINK_END
+            line += LINK_END;
           }
           if (cell.hyperlink !== undefined) {
-            line += oscLink(cell.hyperlink)
+            line += oscLink(cell.hyperlink);
           }
-          currentHyperlink = cell.hyperlink
+          currentHyperlink = cell.hyperlink;
         }
-        const cellStyles = stylePool.get(cell.styleId)
-        const styleDiff = diffAnsiCodes(currentStyles, cellStyles)
+        const cellStyles = stylePool.get(cell.styleId);
+        const styleDiff = diffAnsiCodes(currentStyles, cellStyles);
         if (styleDiff.length > 0) {
-          line += ansiCodesToString(styleDiff)
-          currentStyles = cellStyles
+          line += ansiCodesToString(styleDiff);
+          currentStyles = cellStyles;
         }
-        line += cell.char
+        line += cell.char;
       }
     }
     // Close any open hyperlink before resetting styles
     if (currentHyperlink !== undefined) {
-      line += LINK_END
-      currentHyperlink = undefined
+      line += LINK_END;
+      currentHyperlink = undefined;
     }
     // Reset styles at end of line so trimEnd doesn't leave dangling codes
-    const resetCodes = diffAnsiCodes(currentStyles, [])
+    const resetCodes = diffAnsiCodes(currentStyles, []);
     if (resetCodes.length > 0) {
-      line += ansiCodesToString(resetCodes)
-      currentStyles = []
+      line += ansiCodesToString(resetCodes);
+      currentStyles = [];
     }
-    lines.push(line.trimEnd())
+    lines.push(line.trimEnd());
   }
-  return lines
+  return lines;
 }
 
-function transitionHyperlink(
-  diff: Diff,
-  current: Hyperlink,
-  target: Hyperlink,
-): Hyperlink {
+function transitionHyperlink(diff: Diff, current: Hyperlink, target: Hyperlink): Hyperlink {
   if (current !== target) {
-    diff.push({ type: 'hyperlink', uri: target ?? '' })
-    return target
+    diff.push({ type: 'hyperlink', uri: target ?? '' });
+    return target;
   }
-  return current
+  return current;
 }
 
 function transitionStyle(
@@ -643,19 +569,19 @@ function transitionStyle(
   currentId: number,
   targetId: number,
 ): number {
-  const str = stylePool.transition(currentId, targetId)
+  const str = stylePool.transition(currentId, targetId);
   if (str.length > 0) {
-    diff.push({ type: 'styleStr', str })
+    diff.push({ type: 'styleStr', str });
   }
-  return targetId
+  return targetId;
 }
 
 function readLine(screen: Screen, y: number): string {
-  let line = ''
+  let line = '';
   for (let x = 0; x < screen.width; x++) {
-    line += charInCellAt(screen, x, y) ?? ' '
+    line += charInCellAt(screen, x, y) ?? ' ';
   }
-  return line.trimEnd()
+  return line.trimEnd();
 }
 
 function fullResetSequence_CAUSES_FLICKER(
@@ -665,18 +591,14 @@ function fullResetSequence_CAUSES_FLICKER(
   debug?: { triggerY: number; prevLine: string; nextLine: string },
 ): Diff {
   // After clearTerminal, cursor is at (0, 0)
-  const screen = new VirtualScreen({ x: 0, y: 0 }, frame.viewport.width)
-  renderFrame(screen, frame, stylePool)
-  return [{ type: 'clearTerminal', reason, debug }, ...screen.diff]
+  const screen = new VirtualScreen({ x: 0, y: 0 }, frame.viewport.width);
+  renderFrame(screen, frame, stylePool);
+  return [{ type: 'clearTerminal', reason, debug }, ...screen.diff];
 }
 
-function renderFrame(
-  screen: VirtualScreen,
-  frame: Frame,
-  stylePool: StylePool,
-): void {
-  renderFrameSlice(screen, frame, 0, frame.screen.height, stylePool)
-  moveCursorTo(screen, frame.cursor.x, frame.cursor.y)
+function renderFrame(screen: VirtualScreen, frame: Frame, stylePool: StylePool): void {
+  renderFrameSlice(screen, frame, 0, frame.screen.height, stylePool);
+  moveCursorTo(screen, frame.cursor.x, frame.cursor.y);
 }
 
 /**
@@ -691,15 +613,15 @@ function renderFrameSlice(
   endY: number,
   stylePool: StylePool,
 ): VirtualScreen {
-  let currentStyleId = stylePool.none
-  let currentHyperlink: Hyperlink = undefined
+  let currentStyleId = stylePool.none;
+  let currentHyperlink: Hyperlink = undefined;
   // Track the styleId of the last rendered cell on this line (-1 if none).
   // Passed to visibleCellAtIndex to enable fg-only space optimization.
-  let lastRenderedStyleId = -1
+  let lastRenderedStyleId = -1;
 
-  const { width: screenWidth, cells, charPool, hyperlinkPool } = frame.screen
+  const { width: screenWidth, cells, charPool, hyperlinkPool } = frame.screen;
 
-  let index = startY * screenWidth
+  let index = startY * screenWidth;
   for (let y = startY; y < endY; y += 1) {
     // Advance cursor to this row using LF (not CSI CUD / cursor-down).
     // CSI CUD stops at the viewport bottom margin and cannot scroll,
@@ -708,83 +630,64 @@ function renderFrameSlice(
     // cursor-down silently fails, creating a permanent off-by-one
     // between the virtual cursor and the real terminal cursor.
     if (screen.cursor.y < y) {
-      const rowsToAdvance = y - screen.cursor.y
-      screen.txn(prev => {
-        const patches: Diff = new Array<Diff[number]>(1 + rowsToAdvance)
-        patches[0] = CARRIAGE_RETURN
+      const rowsToAdvance = y - screen.cursor.y;
+      screen.txn((prev) => {
+        const patches: Diff = new Array<Diff[number]>(1 + rowsToAdvance);
+        patches[0] = CARRIAGE_RETURN;
         for (let i = 0; i < rowsToAdvance; i++) {
-          patches[1 + i] = NEWLINE
+          patches[1 + i] = NEWLINE;
         }
-        return [patches, { dx: -prev.x, dy: rowsToAdvance }]
-      })
+        return [patches, { dx: -prev.x, dy: rowsToAdvance }];
+      });
     }
     // Reset at start of each line — no cell rendered yet
-    lastRenderedStyleId = -1
+    lastRenderedStyleId = -1;
 
     for (let x = 0; x < screenWidth; x += 1, index += 1) {
       // Skip spacers, unstyled empty cells, and fg-only styled spaces that
       // match the last rendered style (since cursor-forward produces identical
       // visual result). visibleCellAtIndex handles the optimization internally
       // to avoid allocating Cell objects for skipped cells.
-      const cell = visibleCellAtIndex(
-        cells,
-        charPool,
-        hyperlinkPool,
-        index,
-        lastRenderedStyleId,
-      )
+      const cell = visibleCellAtIndex(cells, charPool, hyperlinkPool, index, lastRenderedStyleId);
       if (!cell) {
-        continue
+        continue;
       }
 
-      moveCursorTo(screen, x, y)
+      moveCursorTo(screen, x, y);
 
       // Handle hyperlink
-      const targetHyperlink = cell.hyperlink
-      currentHyperlink = transitionHyperlink(
-        screen.diff,
-        currentHyperlink,
-        targetHyperlink,
-      )
+      const targetHyperlink = cell.hyperlink;
+      currentHyperlink = transitionHyperlink(screen.diff, currentHyperlink, targetHyperlink);
 
       // Style transition — cached string, zero allocations after warmup
-      const styleStr = stylePool.transition(currentStyleId, cell.styleId)
+      const styleStr = stylePool.transition(currentStyleId, cell.styleId);
       if (writeCellWithStyleStr(screen, cell, styleStr)) {
-        currentStyleId = cell.styleId
-        lastRenderedStyleId = cell.styleId
+        currentStyleId = cell.styleId;
+        lastRenderedStyleId = cell.styleId;
       }
     }
     // Reset styles/hyperlinks before newline so background color doesn't
     // bleed into the next line when the terminal scrolls. The old code
     // reset implicitly by writing trailing unstyled spaces; now that we
     // skip empty cells, we must reset explicitly.
-    currentStyleId = transitionStyle(
-      screen.diff,
-      stylePool,
-      currentStyleId,
-      stylePool.none,
-    )
-    currentHyperlink = transitionHyperlink(
-      screen.diff,
-      currentHyperlink,
-      undefined,
-    )
+    currentStyleId = transitionStyle(screen.diff, stylePool, currentStyleId, stylePool.none);
+    currentHyperlink = transitionHyperlink(screen.diff, currentHyperlink, undefined);
     if (y < endY - 1) {
       // CR+LF between rows — \r resets to column 0, \n moves to next line.
       // Without \r, the terminal cursor stays at whatever column content ended
       // (since we skip trailing spaces, this can be mid-row).
-      screen.txn(prev => [[CARRIAGE_RETURN, NEWLINE], { dx: -prev.x, dy: 1 }])
+      screen.txn((prev) => [[CARRIAGE_RETURN, NEWLINE], { dx: -prev.x, dy: 1 }]);
     }
   }
 
   // Reset any open style/hyperlink at end of slice
-  transitionStyle(screen.diff, stylePool, currentStyleId, stylePool.none)
-  transitionHyperlink(screen.diff, currentHyperlink, undefined)
+  transitionStyle(screen.diff, stylePool, currentStyleId, stylePool.none);
+  transitionHyperlink(screen.diff, currentHyperlink, undefined);
 
-  return screen
+  return screen;
 }
 
-type Delta = { dx: number; dy: number }
+type Delta = { dx: number; dy: number };
 
 /**
  * Write a cell with a pre-serialized style transition string (from
@@ -797,31 +700,27 @@ type Delta = { dx: number; dy: number }
  * unchanged. Updating the virtual tracker anyway desyncs it from the
  * terminal, and the next transition is computed from phantom state.
  */
-function writeCellWithStyleStr(
-  screen: VirtualScreen,
-  cell: Cell,
-  styleStr: string,
-): boolean {
-  const cellWidth = cell.width === CellWidth.Wide ? 2 : 1
-  const px = screen.cursor.x
-  const vw = screen.viewportWidth
+function writeCellWithStyleStr(screen: VirtualScreen, cell: Cell, styleStr: string): boolean {
+  const cellWidth = cell.width === CellWidth.Wide ? 2 : 1;
+  const px = screen.cursor.x;
+  const vw = screen.viewportWidth;
 
   // Don't write wide chars that would cross the viewport edge.
   // Single-codepoint chars (CJK) at vw-2 are safe; multi-codepoint
   // graphemes (flags, ZWJ emoji) need stricter threshold.
   if (cellWidth === 2 && px < vw) {
-    const threshold = cell.char.length > 2 ? vw : vw + 1
+    const threshold = cell.char.length > 2 ? vw : vw + 1;
     if (px + 2 >= threshold) {
-      return false
+      return false;
     }
   }
 
-  const diff = screen.diff
+  const diff = screen.diff;
   if (styleStr.length > 0) {
-    diff.push({ type: 'styleStr', str: styleStr })
+    diff.push({ type: 'styleStr', str: styleStr });
   }
 
-  const needsCompensation = cellWidth === 2 && needsWidthCompensation(cell.char)
+  const needsCompensation = cellWidth === 2 && needsWidthCompensation(cell.char);
 
   // On terminals with old wcwidth tables, a compensated emoji only advances
   // the cursor 1 column, so the CHA below skips column x+1 without painting
@@ -830,51 +729,51 @@ function writeCellWithStyleStr(
   // gap with the emoji's background. Also clears any stale content at x+1.
   // CHA is 1-based, so column px+1 (0-based) is CHA target px+2.
   if (needsCompensation && px + 1 < vw) {
-    diff.push({ type: 'cursorTo', col: px + 2 })
-    diff.push({ type: 'stdout', content: ' ' })
-    diff.push({ type: 'cursorTo', col: px + 1 })
+    diff.push({ type: 'cursorTo', col: px + 2 });
+    diff.push({ type: 'stdout', content: ' ' });
+    diff.push({ type: 'cursorTo', col: px + 1 });
   }
 
-  diff.push({ type: 'stdout', content: cell.char })
+  diff.push({ type: 'stdout', content: cell.char });
 
   // Force terminal cursor to correct column after the emoji.
   if (needsCompensation) {
-    diff.push({ type: 'cursorTo', col: px + cellWidth + 1 })
+    diff.push({ type: 'cursorTo', col: px + cellWidth + 1 });
   }
 
   // Update cursor — mutate in place to avoid Point allocation
   if (px >= vw) {
-    screen.cursor.x = cellWidth
-    screen.cursor.y++
+    screen.cursor.x = cellWidth;
+    screen.cursor.y++;
   } else {
-    screen.cursor.x = px + cellWidth
+    screen.cursor.x = px + cellWidth;
   }
-  return true
+  return true;
 }
 
 function moveCursorTo(screen: VirtualScreen, targetX: number, targetY: number) {
-  const prevX = screen.cursor.x
-  const prevY = screen.cursor.y
-  const dx = targetX - prevX
-  const dy = targetY - prevY
-  const inPendingWrap = prevX >= screen.viewportWidth
+  const prevX = screen.cursor.x;
+  const prevY = screen.cursor.y;
+  const dx = targetX - prevX;
+  const dy = targetY - prevY;
+  const inPendingWrap = prevX >= screen.viewportWidth;
 
   // If we're in pending wrap state (cursor.x >= width), use CR
   // to reset to column 0 on the current line without advancing
   // to the next line, then issue the cursor movement.
   if (inPendingWrap) {
-    screen.diff.push(CARRIAGE_RETURN, { type: 'cursorMove', x: targetX, y: dy })
+    screen.diff.push(CARRIAGE_RETURN, { type: 'cursorMove', x: targetX, y: dy });
   } else if (dy !== 0) {
     // When moving to a different line, use carriage return (\r) to reset to
     // column 0 first, then cursor move.
-    screen.diff.push(CARRIAGE_RETURN, { type: 'cursorMove', x: targetX, y: dy })
+    screen.diff.push(CARRIAGE_RETURN, { type: 'cursorMove', x: targetX, y: dy });
   } else {
     // Standard same-line cursor move
-    screen.diff.push({ type: 'cursorMove', x: dx, y: dy })
+    screen.diff.push({ type: 'cursorMove', x: dx, y: dy });
   }
 
-  screen.cursor.x = targetX
-  screen.cursor.y = targetY
+  screen.cursor.x = targetX;
+  screen.cursor.y = targetY;
 }
 
 /**
@@ -888,43 +787,43 @@ function moveCursorTo(screen: VirtualScreen, targetX: number, targetY: number) {
  *    Examples: ⚔️ (U+2694), ☠️ (U+2620), ❤️ (U+2764).
  */
 function needsWidthCompensation(char: string): boolean {
-  const cp = char.codePointAt(0)
-  if (cp === undefined) return false
+  const cp = char.codePointAt(0);
+  if (cp === undefined) return false;
   // U+1FA70-U+1FAFF: Symbols and Pictographs Extended-A (Unicode 12.0-15.0)
   // U+1FB00-U+1FBFF: Symbols for Legacy Computing (Unicode 13.0)
   if ((cp >= 0x1fa70 && cp <= 0x1faff) || (cp >= 0x1fb00 && cp <= 0x1fbff)) {
-    return true
+    return true;
   }
   // Text-by-default emoji with VS16: scan for U+FE0F in multi-codepoint
   // graphemes. Single BMP chars (length 1) and surrogate pairs without VS16
   // skip this check. VS16 (0xFE0F) can't collide with surrogates (0xD800-0xDFFF).
   if (char.length >= 2) {
     for (let i = 0; i < char.length; i++) {
-      if (char.charCodeAt(i) === 0xfe0f) return true
+      if (char.charCodeAt(i) === 0xfe0f) return true;
     }
   }
-  return false
+  return false;
 }
 
 class VirtualScreen {
   // Public for direct mutation by writeCellWithStyleStr (avoids txn overhead).
   // File-private class — not exposed outside log-update.ts.
-  cursor: Point
-  diff: Diff = []
+  cursor: Point;
+  diff: Diff = [];
 
   constructor(
     origin: Point,
     readonly viewportWidth: number,
   ) {
-    this.cursor = { ...origin }
+    this.cursor = { ...origin };
   }
 
   txn(fn: (prev: Point) => [patches: Diff, next: Delta]): void {
-    const [patches, next] = fn(this.cursor)
+    const [patches, next] = fn(this.cursor);
     for (const patch of patches) {
-      this.diff.push(patch)
+      this.diff.push(patch);
     }
-    this.cursor.x += next.dx
-    this.cursor.y += next.dy
+    this.cursor.x += next.dx;
+    this.cursor.y += next.dy;
   }
 }

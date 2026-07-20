@@ -13,7 +13,11 @@ import type { ConversationTurn } from '../conversation-store.js';
 
 const TMP_ROOT = join(process.cwd(), '.test-conversation-store');
 
-function makeTurn(role: 'user' | 'assistant', content: string, timestamp?: string): ConversationTurn {
+function makeTurn(
+  role: 'user' | 'assistant',
+  content: string,
+  timestamp?: string,
+): ConversationTurn {
   return { role, content, timestamp: timestamp ?? new Date().toISOString() };
 }
 
@@ -95,7 +99,13 @@ describe('listConversations', () => {
     const sid2 = generateSessionId();
     appendTurn(sid1, makeTurn('user', 'first'), TMP_ROOT);
     // Force sid1 to be older so sort is deterministic even under fast clocks
-    const conv1Path = join(TMP_ROOT, '.openslack.local', 'operator', 'conversations', `${sid1}.json`);
+    const conv1Path = join(
+      TMP_ROOT,
+      '.openslack.local',
+      'operator',
+      'conversations',
+      `${sid1}.json`,
+    );
     const conv1 = JSON.parse(readFileSync(conv1Path, 'utf-8'));
     conv1.updatedAt = new Date(Date.now() - 1000).toISOString();
     writeFileSync(conv1Path, JSON.stringify(conv1, null, 2), 'utf-8');

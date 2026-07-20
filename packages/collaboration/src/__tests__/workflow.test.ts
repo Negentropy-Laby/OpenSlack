@@ -37,7 +37,13 @@ describe('workflow templates', () => {
           steps: [
             { type: 'action', actionId: 'pr.doctor', input: { prNumber: '{{inputs.pr_number}}' } },
             { type: 'decision-gate', title: 'Human approval required', requiredRole: 'codeowner' },
-            { type: 'handoff', from: 'agent', to: 'human', context: 'Review PR {{inputs.pr_number}}', prRef: '{{inputs.pr_number}}' },
+            {
+              type: 'handoff',
+              from: 'agent',
+              to: 'human',
+              context: 'Review PR {{inputs.pr_number}}',
+              prRef: '{{inputs.pr_number}}',
+            },
           ],
         },
       ],
@@ -68,11 +74,19 @@ describe('workflow templates', () => {
   });
 
   it('executes dry-run workflow and records correlated events', async () => {
-    const result = await executeWorkflowTemplate(makeTemplate(), { pr_number: 42 }, { dryRun: true, correlationId: 'WF-test' });
+    const result = await executeWorkflowTemplate(
+      makeTemplate(),
+      { pr_number: 42 },
+      { dryRun: true, correlationId: 'WF-test' },
+    );
 
     expect(result.status).toBe('completed');
     const events = readEvents().filter((event) => event.correlationId === 'WF-test');
-    expect(events.map((event) => event.type)).toEqual(['workflow.previewed', 'workflow.started', 'workflow.completed']);
+    expect(events.map((event) => event.type)).toEqual([
+      'workflow.previewed',
+      'workflow.started',
+      'workflow.completed',
+    ]);
   });
 
   it('blocks templates with unknown registered actions', () => {
@@ -110,7 +124,11 @@ describe('workflow templates', () => {
       ],
     };
 
-    const result = await executeWorkflowTemplate(template, { agentId: 'codex-dev', issueNumber: 7 }, { dryRun: false, correlationId: 'WF-handoff-test' });
+    const result = await executeWorkflowTemplate(
+      template,
+      { agentId: 'codex-dev', issueNumber: 7 },
+      { dryRun: false, correlationId: 'WF-handoff-test' },
+    );
 
     expect(result.status).toBe('completed');
     expect(result.handoffs).toHaveLength(1);
@@ -146,7 +164,11 @@ describe('workflow templates', () => {
       ],
     };
 
-    const result = await executeWorkflowTemplate(template, { agentId: 'claude-reviewer', title: 'Auth redesign' }, { dryRun: false, correlationId: 'WF-decision-test' });
+    const result = await executeWorkflowTemplate(
+      template,
+      { agentId: 'claude-reviewer', title: 'Auth redesign' },
+      { dryRun: false, correlationId: 'WF-decision-test' },
+    );
 
     expect(result.status).toBe('completed');
     expect(result.decisions).toHaveLength(1);

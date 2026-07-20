@@ -1,40 +1,41 @@
-import { describe, expect, it } from 'vitest'
-import React from 'react'
-import { Writable } from 'stream'
-import { render } from '@openslack/tui'
-import { NavigationProvider } from '../navigation/context.js'
-import WorkflowRunsView from '../views/WorkflowRunsView.js'
-import { deriveWorkflowRunDecisionSummary } from '../view-models/workflow-runs.js'
-import type { WorkflowRunProgressItem, WorkflowRunProgressViewModel } from '../view-models/workflow-runs.js'
+import { describe, expect, it } from 'vitest';
+import React from 'react';
+import { Writable } from 'stream';
+import { render } from '@openslack/tui';
+import { NavigationProvider } from '../navigation/context.js';
+import WorkflowRunsView from '../views/WorkflowRunsView.js';
+import { deriveWorkflowRunDecisionSummary } from '../view-models/workflow-runs.js';
+import type {
+  WorkflowRunProgressItem,
+  WorkflowRunProgressViewModel,
+} from '../view-models/workflow-runs.js';
 
 function createMockStdout(columns = 100, rows = 50) {
-  const chunks: string[] = []
+  const chunks: string[] = [];
   const stdout = new Writable({
     write(chunk, _, cb) {
-      chunks.push(String(chunk))
-      cb()
+      chunks.push(String(chunk));
+      cb();
     },
-  }) as NodeJS.WriteStream
+  }) as NodeJS.WriteStream;
   Object.defineProperties(stdout, {
     columns: { value: columns, writable: true, configurable: true },
     rows: { value: rows, writable: true, configurable: true },
     isTTY: { value: false, configurable: true },
-  })
-  return { stdout, chunks }
+  });
+  return { stdout, chunks };
 }
 
 async function renderRuns(model: WorkflowRunProgressViewModel): Promise<string> {
-  const { stdout, chunks } = createMockStdout()
+  const { stdout, chunks } = createMockStdout();
   const instance = await render(
-    React.createElement(NavigationProvider, null,
-      React.createElement(WorkflowRunsView, { model }),
-    ),
+    React.createElement(NavigationProvider, null, React.createElement(WorkflowRunsView, { model })),
     { stdout, patchConsole: false },
-  )
-  await new Promise((resolve) => setTimeout(resolve, 200))
-  const output = chunks.join('')
-  instance.unmount()
-  return output
+  );
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const output = chunks.join('');
+  instance.unmount();
+  return output;
 }
 
 describe('WorkflowRunsView', () => {
@@ -114,33 +115,35 @@ describe('WorkflowRunsView', () => {
         failed: 0,
         pendingApprovals: 1,
       },
-    }
+    };
 
-    const output = await renderRuns(model)
+    const output = await renderRuns(model);
 
-    expect(output).toContain('Dynamic Workflows / Runs')
-    expect(output).toContain('approvals 1')
-    expect(output).toContain('Decision Summary')
-    expect(output).toContain('Status: paused_waiting_approval | Owner: human')
-    expect(output).toContain('Blocker: 1 pending approval')
-    expect(output).toContain('Next action: open approvals')
-    expect(output).toContain('Budget 90/100 tokens')
-    expect(output).toContain('90%')
-    expect(output).toContain('warning')
-    expect(output).toContain('cost $0.000180')
-    expect(output).toContain('Budget warning: 90% of token budget used.')
-    expect(output).toContain('save target Project workflow')
-    expect(output).toContain('Save/share workflow source')
-    expect(output).toContain('[1] Project workflow - .openslack/workflows')
-    expect(output).toContain('[2] Claude project - .claude/workflows')
-    expect(output).toContain('[3] User workflow - ~/.claude/workflows')
-    expect(output).toContain('[4] Skill package - skills/<name> (CLI only)')
-    expect(output).toContain('This saves source only. It does not copy transcripts, secrets, or local evidence.')
-    expect(output).toContain('dynamic-audit')
-    expect(output).toContain('Scan')
-    expect(output).toContain('replay yes')
-  })
-})
+    expect(output).toContain('Dynamic Workflows / Runs');
+    expect(output).toContain('approvals 1');
+    expect(output).toContain('Decision Summary');
+    expect(output).toContain('Status: paused_waiting_approval | Owner: human');
+    expect(output).toContain('Blocker: 1 pending approval');
+    expect(output).toContain('Next action: open approvals');
+    expect(output).toContain('Budget 90/100 tokens');
+    expect(output).toContain('90%');
+    expect(output).toContain('warning');
+    expect(output).toContain('cost $0.000180');
+    expect(output).toContain('Budget warning: 90% of token budget used.');
+    expect(output).toContain('save target Project workflow');
+    expect(output).toContain('Save/share workflow source');
+    expect(output).toContain('[1] Project workflow - .openslack/workflows');
+    expect(output).toContain('[2] Claude project - .claude/workflows');
+    expect(output).toContain('[3] User workflow - ~/.claude/workflows');
+    expect(output).toContain('[4] Skill package - skills/<name> (CLI only)');
+    expect(output).toContain(
+      'This saves source only. It does not copy transcripts, secrets, or local evidence.',
+    );
+    expect(output).toContain('dynamic-audit');
+    expect(output).toContain('Scan');
+    expect(output).toContain('replay yes');
+  });
+});
 
 function makeRun(overrides: Partial<WorkflowRunProgressItem> = {}): WorkflowRunProgressItem {
   return {
@@ -179,7 +182,7 @@ function makeRun(overrides: Partial<WorkflowRunProgressItem> = {}): WorkflowRunP
     logTail: [],
     warnings: [],
     ...overrides,
-  }
+  };
 }
 
 describe('deriveWorkflowRunDecisionSummary', () => {
@@ -189,55 +192,71 @@ describe('deriveWorkflowRunDecisionSummary', () => {
       owner: 'workflow',
       blocker: 'none',
       nextAction: 'watch Scan',
-    })
-  })
+    });
+  });
 
   it('maps paused approvals to human ownership', () => {
-    expect(deriveWorkflowRunDecisionSummary(makeRun({ status: 'paused_waiting_approval', pendingApprovalCount: 2 }))).toMatchObject({
+    expect(
+      deriveWorkflowRunDecisionSummary(
+        makeRun({ status: 'paused_waiting_approval', pendingApprovalCount: 2 }),
+      ),
+    ).toMatchObject({
       owner: 'human',
       blocker: '2 pending approvals',
       nextAction: 'open approvals',
-    })
-  })
+    });
+  });
 
   it('maps budget warning to review budget guidance', () => {
-    expect(deriveWorkflowRunDecisionSummary(makeRun({ budget: { ...makeRun().budget, status: 'warning' } }))).toMatchObject({
+    expect(
+      deriveWorkflowRunDecisionSummary(
+        makeRun({ budget: { ...makeRun().budget, status: 'warning' } }),
+      ),
+    ).toMatchObject({
       owner: 'workflow',
       blocker: 'budget warning',
       nextAction: 'review budget / pause / continue',
-    })
-  })
+    });
+  });
 
   it('maps exceeded budget according to policy', () => {
-    expect(deriveWorkflowRunDecisionSummary(makeRun({ budget: { ...makeRun().budget, status: 'exceeded', onExceeded: 'pause' } }))).toMatchObject({
+    expect(
+      deriveWorkflowRunDecisionSummary(
+        makeRun({ budget: { ...makeRun().budget, status: 'exceeded', onExceeded: 'pause' } }),
+      ),
+    ).toMatchObject({
       owner: 'human',
       blocker: 'budget exceeded',
       nextAction: 'open approvals or increase budget',
-    })
-    expect(deriveWorkflowRunDecisionSummary(makeRun({ budget: { ...makeRun().budget, status: 'exceeded', onExceeded: 'fail' } }))).toMatchObject({
+    });
+    expect(
+      deriveWorkflowRunDecisionSummary(
+        makeRun({ budget: { ...makeRun().budget, status: 'exceeded', onExceeded: 'fail' } }),
+      ),
+    ).toMatchObject({
       owner: 'agent/operator',
       blocker: 'budget exceeded',
       nextAction: 'inspect failed budget stop',
-    })
-  })
+    });
+  });
 
   it('maps failed phases to inspection guidance', () => {
     const run = makeRun({
       status: 'running',
       phases: [{ ...makeRun().phases[0]!, phase: 'Verify', status: 'failed' }],
-    })
+    });
     expect(deriveWorkflowRunDecisionSummary(run)).toMatchObject({
       owner: 'agent/operator',
       blocker: 'failed phase: Verify',
       nextAction: 'inspect failed phase',
-    })
-  })
+    });
+  });
 
   it('maps completed runs to save/share or publish', () => {
     expect(deriveWorkflowRunDecisionSummary(makeRun({ status: 'completed' }))).toMatchObject({
       owner: 'none',
       blocker: 'none',
       nextAction: 'save/share or publish',
-    })
-  })
-})
+    });
+  });
+});

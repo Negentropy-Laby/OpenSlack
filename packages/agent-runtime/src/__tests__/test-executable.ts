@@ -21,10 +21,7 @@ export function resolveTestBunExecutable(): string {
     if (!directory) continue;
     const candidates =
       process.platform === 'win32'
-        ? [
-            join(directory, 'bun.exe'),
-            join(directory, 'node_modules', 'bun', 'bin', 'bun.exe'),
-          ]
+        ? [join(directory, 'bun.exe'), join(directory, 'node_modules', 'bun', 'bin', 'bun.exe')]
         : [join(directory, 'bun')];
     for (const candidate of candidates) {
       if (existsSync(candidate)) return candidate;

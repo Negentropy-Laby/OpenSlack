@@ -42,9 +42,7 @@ describe('conversation-store', () => {
   it('creates a thread with options', () => {
     const t = createThread({
       title: 'Feature Work',
-      participants: [
-        { id: 'agent-1', kind: 'agent', displayName: 'Claude', role: 'implementer' },
-      ],
+      participants: [{ id: 'agent-1', kind: 'agent', displayName: 'Claude', role: 'implementer' }],
       linkedObjects: [{ kind: 'issue', id: '42' }],
       memoryPolicy: 'project',
     });
@@ -97,7 +95,12 @@ describe('conversation-store', () => {
 
   it('gets a thread by id with messages', () => {
     const t = createThread({ title: 'With Messages' });
-    appendMessage(t.id, { kind: 'user_message', threadId: t.id, authorId: 'user-1', text: 'Hello' });
+    appendMessage(t.id, {
+      kind: 'user_message',
+      threadId: t.id,
+      authorId: 'user-1',
+      text: 'Hello',
+    });
 
     const result = getThread(t.id);
     expect(result).not.toBeNull();
@@ -115,7 +118,12 @@ describe('conversation-store', () => {
 
   it('appends user_message', () => {
     const t = createThread({ title: 'Msg' });
-    const msg = appendMessage(t.id, { kind: 'user_message', threadId: t.id, authorId: 'user-1', text: 'Hi' });
+    const msg = appendMessage(t.id, {
+      kind: 'user_message',
+      threadId: t.id,
+      authorId: 'user-1',
+      text: 'Hi',
+    });
 
     expect(msg.kind).toBe('user_message');
     expect(msg.id.startsWith('MSG-')).toBe(true);
@@ -127,7 +135,12 @@ describe('conversation-store', () => {
 
   it('appends agent_response', () => {
     const t = createThread({ title: 'Msg' });
-    const msg = appendMessage(t.id, { kind: 'agent_response', threadId: t.id, authorId: 'agent-1', text: 'Response' });
+    const msg = appendMessage(t.id, {
+      kind: 'agent_response',
+      threadId: t.id,
+      authorId: 'agent-1',
+      text: 'Response',
+    });
 
     expect(msg.kind).toBe('agent_response');
     if (msg.kind === 'agent_response') {
@@ -137,7 +150,12 @@ describe('conversation-store', () => {
 
   it('appends tool_event', () => {
     const t = createThread({ title: 'Msg' });
-    const msg = appendMessage(t.id, { kind: 'tool_event', threadId: t.id, authorId: 'agent-1', toolName: 'readFile' });
+    const msg = appendMessage(t.id, {
+      kind: 'tool_event',
+      threadId: t.id,
+      authorId: 'agent-1',
+      toolName: 'readFile',
+    });
 
     expect(msg.kind).toBe('tool_event');
     if (msg.kind === 'tool_event') {
@@ -147,7 +165,13 @@ describe('conversation-store', () => {
 
   it('appends plan', () => {
     const t = createThread({ title: 'Msg' });
-    const msg = appendMessage(t.id, { kind: 'plan', threadId: t.id, authorId: 'agent-1', planId: 'PLAN-1', steps: ['a', 'b'] });
+    const msg = appendMessage(t.id, {
+      kind: 'plan',
+      threadId: t.id,
+      authorId: 'agent-1',
+      planId: 'PLAN-1',
+      steps: ['a', 'b'],
+    });
 
     expect(msg.kind).toBe('plan');
     if (msg.kind === 'plan') {
@@ -158,7 +182,13 @@ describe('conversation-store', () => {
 
   it('appends approval_request', () => {
     const t = createThread({ title: 'Msg' });
-    const msg = appendMessage(t.id, { kind: 'approval_request', threadId: t.id, authorId: 'agent-1', targetAction: 'merge', riskLevel: 'high' });
+    const msg = appendMessage(t.id, {
+      kind: 'approval_request',
+      threadId: t.id,
+      authorId: 'agent-1',
+      targetAction: 'merge',
+      riskLevel: 'high',
+    });
 
     expect(msg.kind).toBe('approval_request');
     if (msg.kind === 'approval_request') {
@@ -169,7 +199,13 @@ describe('conversation-store', () => {
 
   it('appends decision', () => {
     const t = createThread({ title: 'Msg' });
-    const msg = appendMessage(t.id, { kind: 'decision', threadId: t.id, authorId: 'agent-1', decisionId: 'DEC-1', summary: 'Go with A' });
+    const msg = appendMessage(t.id, {
+      kind: 'decision',
+      threadId: t.id,
+      authorId: 'agent-1',
+      decisionId: 'DEC-1',
+      summary: 'Go with A',
+    });
 
     expect(msg.kind).toBe('decision');
     if (msg.kind === 'decision') {
@@ -180,7 +216,14 @@ describe('conversation-store', () => {
 
   it('appends handoff', () => {
     const t = createThread({ title: 'Msg' });
-    const msg = appendMessage(t.id, { kind: 'handoff', threadId: t.id, authorId: 'agent-1', handoffId: 'HO-1', toParticipant: 'agent-2', summary: 'Take over' });
+    const msg = appendMessage(t.id, {
+      kind: 'handoff',
+      threadId: t.id,
+      authorId: 'agent-1',
+      handoffId: 'HO-1',
+      toParticipant: 'agent-2',
+      summary: 'Take over',
+    });
 
     expect(msg.kind).toBe('handoff');
     if (msg.kind === 'handoff') {
@@ -192,7 +235,12 @@ describe('conversation-store', () => {
 
   it('throws when appending to nonexistent thread', () => {
     expect(() =>
-      appendMessage('CONV-NOTFOUND', { kind: 'user_message', threadId: 'CONV-NOTFOUND', authorId: 'x', text: 'fail' })
+      appendMessage('CONV-NOTFOUND', {
+        kind: 'user_message',
+        threadId: 'CONV-NOTFOUND',
+        authorId: 'x',
+        text: 'fail',
+      }),
     ).toThrow('Thread not found');
   });
 
@@ -200,7 +248,7 @@ describe('conversation-store', () => {
 
   it('rejects thread creation with secret in title', () => {
     expect(() =>
-      createThread({ title: 'My ' + 'ghp_' + 'abcdef1234567890abcdef1234567890abcd token' })
+      createThread({ title: 'My ' + 'ghp_' + 'abcdef1234567890abcdef1234567890abcd token' }),
     ).toThrow(/Thread title contains.*GitHub token/i);
   });
 
@@ -210,7 +258,7 @@ describe('conversation-store', () => {
       createThread({
         title: 'Safe title',
         participants: [{ id: 'u1', kind: 'human', displayName: 'Key: ' + ghToken }],
-      })
+      }),
     ).toThrow(/participants contain.*GitHub token/i);
   });
 
@@ -300,7 +348,12 @@ describe('conversation-store', () => {
   it('handles multiple appends to same thread', () => {
     const t = createThread({ title: 'Multi' });
     for (let i = 0; i < 10; i++) {
-      appendMessage(t.id, { kind: 'user_message', threadId: t.id, authorId: `u${i}`, text: `Msg ${i}` });
+      appendMessage(t.id, {
+        kind: 'user_message',
+        threadId: t.id,
+        authorId: `u${i}`,
+        text: `Msg ${i}`,
+      });
     }
 
     const result = getThread(t.id);
@@ -332,7 +385,12 @@ describe('conversation-store', () => {
 
   it('appendMessage rejects path traversal threadId', () => {
     expect(() =>
-      appendMessage('../etc/passwd', { kind: 'user_message', threadId: '../etc/passwd', authorId: 'x', text: 'fail' })
+      appendMessage('../etc/passwd', {
+        kind: 'user_message',
+        threadId: '../etc/passwd',
+        authorId: 'x',
+        text: 'fail',
+      }),
     ).toThrow(/Invalid thread ID/);
   });
 
@@ -345,14 +403,25 @@ describe('conversation-store', () => {
   it('rejects messages containing Slack tokens', () => {
     const t = createThread({ title: 'Secret Test' });
     expect(() =>
-      appendMessage(t.id, { kind: 'user_message', threadId: t.id, authorId: 'u1', text: 'Here is my token: ' + 'xox' + 'b-1234567890-ABCDEFGHIJKLMNOPQRSTUVWX' })
+      appendMessage(t.id, {
+        kind: 'user_message',
+        threadId: t.id,
+        authorId: 'u1',
+        text: 'Here is my token: ' + 'xox' + 'b-1234567890-ABCDEFGHIJKLMNOPQRSTUVWX',
+      }),
     ).toThrow(/contains.*Slack token/i);
   });
 
   it('rejects messages containing GitHub tokens in tool_event input', () => {
     const t = createThread({ title: 'Secret Test' });
     expect(() =>
-      appendMessage(t.id, { kind: 'tool_event', threadId: t.id, authorId: 'a1', toolName: 'fetch', input: 'ghp_' + 'abcdef1234567890abcdef1234567890abcd' })
+      appendMessage(t.id, {
+        kind: 'tool_event',
+        threadId: t.id,
+        authorId: 'a1',
+        toolName: 'fetch',
+        input: 'ghp_' + 'abcdef1234567890abcdef1234567890abcd',
+      }),
     ).toThrow(/contains.*GitHub token/i);
   });
 
@@ -360,7 +429,12 @@ describe('conversation-store', () => {
 
   it('does not persist messages when memoryPolicy is none', () => {
     const t = createThread({ title: 'Ephemeral', memoryPolicy: 'none' });
-    const msg = appendMessage(t.id, { kind: 'user_message', threadId: t.id, authorId: 'u1', text: 'Transient' });
+    const msg = appendMessage(t.id, {
+      kind: 'user_message',
+      threadId: t.id,
+      authorId: 'u1',
+      text: 'Transient',
+    });
 
     // Message is returned but not persisted to JSONL
     expect(msg.kind).toBe('user_message');
@@ -420,7 +494,7 @@ describe('conversation-store', () => {
     writeFileSync(metaPath, '{ invalid json !!!', 'utf-8');
 
     expect(() =>
-      appendMessage(t.id, { kind: 'user_message', threadId: t.id, authorId: 'u1', text: 'fail' })
+      appendMessage(t.id, { kind: 'user_message', threadId: t.id, authorId: 'u1', text: 'fail' }),
     ).toThrow(/Failed to read thread metadata/);
   });
 });

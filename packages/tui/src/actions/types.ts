@@ -28,25 +28,25 @@ export enum TuiActionStatus {
 }
 
 export interface TuiActionResult {
-  readonly success: boolean
-  readonly message: string
-  readonly data?: Record<string, unknown>
+  readonly success: boolean;
+  readonly message: string;
+  readonly data?: Record<string, unknown>;
 }
 
 export interface TuiAction {
-  readonly id: string
-  readonly category: TuiActionCategory
-  readonly risk: TuiRiskLevel
-  readonly label: string
-  readonly description: string
-  readonly requiresConfirmation: boolean
-  readonly handler: () => Promise<TuiActionResult>
+  readonly id: string;
+  readonly category: TuiActionCategory;
+  readonly risk: TuiRiskLevel;
+  readonly label: string;
+  readonly description: string;
+  readonly requiresConfirmation: boolean;
+  readonly handler: () => Promise<TuiActionResult>;
 }
 
 export interface TuiActionState {
-  readonly status: TuiActionStatus
-  readonly result?: TuiActionResult
-  readonly error?: string
+  readonly status: TuiActionStatus;
+  readonly result?: TuiActionResult;
+  readonly error?: string;
 }
 
 /** Categories that always require user confirmation, regardless of requiresConfirmation flag. */
@@ -56,4 +56,4 @@ export const REQUIRES_CONFIRMATION: ReadonlySet<TuiActionCategory> = new Set<Tui
   TuiActionCategory.GithubApproval,
   TuiActionCategory.ProfileSyncConfirmation,
   TuiActionCategory.TrustChange,
-])
+]);

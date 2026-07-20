@@ -1,42 +1,42 @@
-import { getClient } from './client.js'
+import { getClient } from './client.js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface RepoFileEntry {
-  name: string
-  path: string
-  type: 'file' | 'dir'
-  sha: string
+  name: string;
+  path: string;
+  type: 'file' | 'dir';
+  sha: string;
 }
 
 export interface RepoFileContent {
-  content: string
-  sha: string
+  content: string;
+  sha: string;
 }
 
 export interface ProfileSyncPRResult {
-  url: string
-  number: number
+  url: string;
+  number: number;
 }
 
 export interface ParsedPost {
-  title: string
-  date: string
-  tags: string[]
-  summary: string
-  status: string
-  slug: string
-  sourcePath: string
+  title: string;
+  date: string;
+  tags: string[];
+  summary: string;
+  status: string;
+  slug: string;
+  sourcePath: string;
 }
 
 export interface PostValidationError {
-  field: string
-  message: string
+  field: string;
+  message: string;
 }
 
 export interface PostValidationResult {
-  valid: boolean
-  errors: PostValidationError[]
+  valid: boolean;
+  errors: PostValidationError[];
 }
 
 // ── Content Reading ───────────────────────────────────────────────────────────
@@ -51,10 +51,10 @@ export async function readRepoDirectory(
   path: string,
   ref?: string,
 ): Promise<RepoFileEntry[]> {
-  const client = await getClient()
+  const client = await getClient();
   if (client.isDryRun) {
-    console.log(`[DRY RUN] Would list ${owner}/${repo}/${path}${ref ? `@${ref}` : ''}`)
-    return []
+    console.log(`[DRY RUN] Would list ${owner}/${repo}/${path}${ref ? `@${ref}` : ''}`);
+    return [];
   }
 
   const { data } = await client.octokit.repos.getContent({
@@ -62,22 +62,23 @@ export async function readRepoDirectory(
     repo,
     path,
     ref,
-  })
+  });
 
   if (!Array.isArray(data)) {
-    return []
+    return [];
   }
 
   return data
-    .filter((item): item is typeof item & { type: 'file' | 'dir' } =>
-      item.type === 'file' || item.type === 'dir',
+    .filter(
+      (item): item is typeof item & { type: 'file' | 'dir' } =>
+        item.type === 'file' || item.type === 'dir',
     )
     .map((item) => ({
       name: item.name,
       path: item.path,
       type: item.type,
       sha: item.sha,
-    }))
+    }));
 }
 
 /**
@@ -90,10 +91,10 @@ export async function readRepoFile(
   path: string,
   ref?: string,
 ): Promise<RepoFileContent | null> {
-  const client = await getClient()
+  const client = await getClient();
   if (client.isDryRun) {
-    console.log(`[DRY RUN] Would read ${owner}/${repo}/${path}${ref ? `@${ref}` : ''}`)
-    return { content: `[DRY RUN] Simulated content for ${path}`, sha: 'DRY_RUN_SHA' }
+    console.log(`[DRY RUN] Would read ${owner}/${repo}/${path}${ref ? `@${ref}` : ''}`);
+    return { content: `[DRY RUN] Simulated content for ${path}`, sha: 'DRY_RUN_SHA' };
   }
 
   try {
@@ -102,23 +103,23 @@ export async function readRepoFile(
       repo,
       path,
       ref,
-    })
+    });
 
     if (Array.isArray(data) || !('content' in data) || typeof data.content !== 'string') {
-      return null
+      return null;
     }
 
     return {
       content: Buffer.from(data.content, 'base64').toString('utf-8'),
       sha: data.sha,
-    }
+    };
   } catch {
-    return null
+    return null;
   }
 }
 
-import { buildMarkers, MarkerNotFoundError } from './profile-sync-markers.js'
-export { MarkerNotFoundError } from './profile-sync-markers.js'
+import { buildMarkers, MarkerNotFoundError } from './profile-sync-markers.js';
+export { MarkerNotFoundError } from './profile-sync-markers.js';
 
 // ── Marker Patching ───────────────────────────────────────────────────────────
 
@@ -137,27 +138,27 @@ export function patchMarkerSection(
   markerName: string,
   newSection: string,
 ): string {
-  const markers = buildMarkers(markerName)
-  const startIdx = content.indexOf(markers.start)
-  const endIdx = content.indexOf(markers.end)
+  const markers = buildMarkers(markerName);
+  const startIdx = content.indexOf(markers.start);
+  const endIdx = content.indexOf(markers.end);
 
   if (startIdx === -1 || endIdx === -1) {
     throw new MarkerNotFoundError(
       `Marker "openslack:${markerName}" not found in target content. ` +
         `Expected both "${markers.start}" and "${markers.end}" to be present.`,
-    )
+    );
   }
 
   if (endIdx <= startIdx) {
     throw new MarkerNotFoundError(
       `End marker for "openslack:${markerName}" appears before start marker.`,
-    )
+    );
   }
 
-  const before = content.slice(0, startIdx + markers.start.length)
-  const after = content.slice(endIdx)
+  const before = content.slice(0, startIdx + markers.start.length);
+  const after = content.slice(endIdx);
 
-  return `${before}\n${newSection}\n${after}`
+  return `${before}\n${newSection}\n${after}`;
 }
 
 // ── Branch Creation ───────────────────────────────────────────────────────────
@@ -171,28 +172,30 @@ export async function createBranch(
   branchName: string,
   baseRef: string = 'main',
 ): Promise<{ sha: string }> {
-  const client = await getClient()
+  const client = await getClient();
   if (client.isDryRun) {
-    console.log(`[DRY RUN] Would create branch "${branchName}" in ${owner}/${repo} from ${baseRef}`)
-    return { sha: 'DRY_RUN_SHA' }
+    console.log(
+      `[DRY RUN] Would create branch "${branchName}" in ${owner}/${repo} from ${baseRef}`,
+    );
+    return { sha: 'DRY_RUN_SHA' };
   }
 
   const { data: refData } = await client.octokit.git.getRef({
     owner,
     repo,
     ref: `heads/${baseRef}`,
-  })
+  });
 
-  const sha = refData.object.sha as string
+  const sha = refData.object.sha as string;
 
   await client.octokit.git.createRef({
     owner,
     repo,
     ref: `refs/heads/${branchName}`,
     sha,
-  })
+  });
 
-  return { sha }
+  return { sha };
 }
 
 // ── File Commit ───────────────────────────────────────────────────────────────
@@ -210,10 +213,10 @@ export async function commitFileToBranch(
   message: string,
   existingSha?: string,
 ): Promise<{ commitSha: string }> {
-  const client = await getClient()
+  const client = await getClient();
   if (client.isDryRun) {
-    console.log(`[DRY RUN] Would commit "${path}" to ${owner}/${repo}@${branchName}`)
-    return { commitSha: 'DRY_RUN_COMMIT_SHA' }
+    console.log(`[DRY RUN] Would commit "${path}" to ${owner}/${repo}@${branchName}`);
+    return { commitSha: 'DRY_RUN_COMMIT_SHA' };
   }
 
   const { data } = await client.octokit.repos.createOrUpdateFileContents({
@@ -224,9 +227,9 @@ export async function commitFileToBranch(
     content: Buffer.from(content, 'utf-8').toString('base64'),
     branch: branchName,
     sha: existingSha,
-  })
+  });
 
-  return { commitSha: data.commit?.sha ?? 'unknown' }
+  return { commitSha: data.commit?.sha ?? 'unknown' };
 }
 
 // ── PR Creation ───────────────────────────────────────────────────────────────
@@ -242,10 +245,10 @@ export async function createProfileSyncPR(
   body: string,
   baseRef: string = 'main',
 ): Promise<ProfileSyncPRResult> {
-  const client = await getClient()
+  const client = await getClient();
   if (client.isDryRun) {
-    console.log(`[DRY RUN] Would create draft PR in ${owner}/${repo}: "${title}"`)
-    return { url: `https://github.com/${owner}/${repo}/pull/DRY_RUN`, number: 0 }
+    console.log(`[DRY RUN] Would create draft PR in ${owner}/${repo}: "${title}"`);
+    return { url: `https://github.com/${owner}/${repo}/pull/DRY_RUN`, number: 0 };
   }
 
   const { data } = await client.octokit.pulls.create({
@@ -256,12 +259,12 @@ export async function createProfileSyncPR(
     head: branchName,
     base: baseRef,
     draft: true,
-  })
+  });
 
   return {
     url: data.html_url,
     number: data.number,
-  }
+  };
 }
 
 // ── Frontmatter Parsing ───────────────────────────────────────────────────────
@@ -271,72 +274,74 @@ export async function createProfileSyncPR(
  * Extracts content between `---` delimiters at the start of a markdown file.
  */
 export function parseFrontmatter(source: string): Record<string, unknown> | null {
-  const trimmed = source.trimStart()
+  const trimmed = source.trimStart();
   if (!trimmed.startsWith('---')) {
-    return null
+    return null;
   }
 
-  const endDelimiter = trimmed.indexOf('\n---', 3)
+  const endDelimiter = trimmed.indexOf('\n---', 3);
   if (endDelimiter === -1) {
-    return null
+    return null;
   }
 
-  const yamlContent = trimmed.slice(3, endDelimiter).trim()
-  const result: Record<string, unknown> = {}
+  const yamlContent = trimmed.slice(3, endDelimiter).trim();
+  const result: Record<string, unknown> = {};
 
   // Simple key: value line parser (handles arrays like [a, b], quoted strings)
   for (const line of yamlContent.split('\n')) {
-    const trimmedLine = line.trim()
-    if (!trimmedLine || trimmedLine.startsWith('#')) continue
+    const trimmedLine = line.trim();
+    if (!trimmedLine || trimmedLine.startsWith('#')) continue;
 
-    const colonIdx = trimmedLine.indexOf(':')
-    if (colonIdx === -1) continue
+    const colonIdx = trimmedLine.indexOf(':');
+    if (colonIdx === -1) continue;
 
-    const key = trimmedLine.slice(0, colonIdx).trim()
-    let rawValue = trimmedLine.slice(colonIdx + 1).trim()
+    const key = trimmedLine.slice(0, colonIdx).trim();
+    let rawValue = trimmedLine.slice(colonIdx + 1).trim();
 
     // Remove surrounding quotes
-    if ((rawValue.startsWith('"') && rawValue.endsWith('"')) ||
-        (rawValue.startsWith("'") && rawValue.endsWith("'"))) {
-      rawValue = rawValue.slice(1, -1)
+    if (
+      (rawValue.startsWith('"') && rawValue.endsWith('"')) ||
+      (rawValue.startsWith("'") && rawValue.endsWith("'"))
+    ) {
+      rawValue = rawValue.slice(1, -1);
     }
 
     // Parse arrays like ["a", "b"] or [a, b]
     if (rawValue.startsWith('[') && rawValue.endsWith(']')) {
-      const inner = rawValue.slice(1, -1)
+      const inner = rawValue.slice(1, -1);
       result[key] = inner
         .split(',')
         .map((s) => s.trim())
         .map((s) => {
           if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
-            return s.slice(1, -1)
+            return s.slice(1, -1);
           }
-          return s
+          return s;
         })
-        .filter((s) => s.length > 0)
+        .filter((s) => s.length > 0);
     } else {
-      result[key] = rawValue
+      result[key] = rawValue;
     }
   }
 
-  return result
+  return result;
 }
 
 /**
  * Extract the markdown body (after frontmatter).
  */
 export function extractBody(source: string): string {
-  const trimmed = source.trimStart()
+  const trimmed = source.trimStart();
   if (!trimmed.startsWith('---')) {
-    return source
+    return source;
   }
 
-  const endDelimiter = trimmed.indexOf('\n---', 3)
+  const endDelimiter = trimmed.indexOf('\n---', 3);
   if (endDelimiter === -1) {
-    return source
+    return source;
   }
 
-  return trimmed.slice(endDelimiter + 4).trimStart()
+  return trimmed.slice(endDelimiter + 4).trimStart();
 }
 
 // ── Post Validation ───────────────────────────────────────────────────────────
@@ -345,36 +350,53 @@ export function extractBody(source: string): string {
  * Validate a parsed post frontmatter.
  */
 export function validatePost(frontmatter: Record<string, unknown>): PostValidationResult {
-  const errors: PostValidationError[] = []
+  const errors: PostValidationError[] = [];
 
-  if (!frontmatter.title || typeof frontmatter.title !== 'string' || frontmatter.title.trim().length === 0) {
-    errors.push({ field: 'title', message: 'Title is required and must be a non-empty string' })
+  if (
+    !frontmatter.title ||
+    typeof frontmatter.title !== 'string' ||
+    frontmatter.title.trim().length === 0
+  ) {
+    errors.push({ field: 'title', message: 'Title is required and must be a non-empty string' });
   }
 
   if (!frontmatter.date || typeof frontmatter.date !== 'string') {
-    errors.push({ field: 'date', message: 'Date is required and must be a string' })
+    errors.push({ field: 'date', message: 'Date is required and must be a string' });
   } else {
-    const dateParsed = new Date(frontmatter.date)
+    const dateParsed = new Date(frontmatter.date);
     if (Number.isNaN(dateParsed.getTime())) {
-      errors.push({ field: 'date', message: `Invalid date: ${frontmatter.date}` })
+      errors.push({ field: 'date', message: `Invalid date: ${frontmatter.date}` });
     }
   }
 
-  if (!frontmatter.summary || typeof frontmatter.summary !== 'string' || frontmatter.summary.trim().length === 0) {
-    errors.push({ field: 'summary', message: 'Summary is required and must be a non-empty string' })
+  if (
+    !frontmatter.summary ||
+    typeof frontmatter.summary !== 'string' ||
+    frontmatter.summary.trim().length === 0
+  ) {
+    errors.push({
+      field: 'summary',
+      message: 'Summary is required and must be a non-empty string',
+    });
   } else if (frontmatter.summary.length > 240) {
-    errors.push({ field: 'summary', message: `Summary exceeds 240 characters (${frontmatter.summary.length})` })
+    errors.push({
+      field: 'summary',
+      message: `Summary exceeds 240 characters (${frontmatter.summary.length})`,
+    });
   }
 
   if (!Array.isArray(frontmatter.tags)) {
-    errors.push({ field: 'tags', message: 'Tags must be an array of strings' })
+    errors.push({ field: 'tags', message: 'Tags must be an array of strings' });
   }
 
   if (frontmatter.status !== 'published') {
-    errors.push({ field: 'status', message: `Expected status "published", got "${frontmatter.status}"` })
+    errors.push({
+      field: 'status',
+      message: `Expected status "published", got "${frontmatter.status}"`,
+    });
   }
 
-  return { valid: errors.length === 0, errors }
+  return { valid: errors.length === 0, errors };
 }
 
 // ── Post Sorting ──────────────────────────────────────────────────────────────
@@ -384,10 +406,10 @@ export function validatePost(frontmatter: Record<string, unknown>): PostValidati
  */
 export function sortPostsByDate(posts: ParsedPost[]): ParsedPost[] {
   return [...posts].sort((a, b) => {
-    const dateA = new Date(a.date).getTime()
-    const dateB = new Date(b.date).getTime()
-    return dateB - dateA
-  })
+    const dateA = new Date(a.date).getTime();
+    const dateB = new Date(b.date).getTime();
+    return dateB - dateA;
+  });
 }
 
 // ── Section Rendering ─────────────────────────────────────────────────────────
@@ -395,29 +417,23 @@ export function sortPostsByDate(posts: ParsedPost[]): ParsedPost[] {
 /**
  * Render the "Latest Insights" markdown section from parsed posts.
  */
-export function renderLatestInsightsSection(
-  posts: ParsedPost[],
-  sourceRepo: string,
-): string {
-  const lines: string[] = []
+export function renderLatestInsightsSection(posts: ParsedPost[], sourceRepo: string): string {
+  const lines: string[] = [];
 
   for (const post of posts) {
-    const url = `https://github.com/${sourceRepo}/blob/main/${post.sourcePath}`
-    const dateStr = post.date
-    lines.push(`- [${escapeMarkdown(post.title)}](${url}) — *${dateStr}*`)
-    lines.push(`  ${post.summary}`)
-    lines.push('')
+    const url = `https://github.com/${sourceRepo}/blob/main/${post.sourcePath}`;
+    const dateStr = post.date;
+    lines.push(`- [${escapeMarkdown(post.title)}](${url}) — *${dateStr}*`);
+    lines.push(`  ${post.summary}`);
+    lines.push('');
   }
 
-  return lines.join('\n').trimEnd()
+  return lines.join('\n').trimEnd();
 }
 
 /**
  * Escape markdown characters in a string for safe use in link text.
  */
 function escapeMarkdown(text: string): string {
-  return text
-    .replace(/\\/g, '\\\\')
-    .replace(/\[/g, '\\[')
-    .replace(/\]/g, '\\]')
+  return text.replace(/\\/g, '\\\\').replace(/\[/g, '\\[').replace(/\]/g, '\\]');
 }

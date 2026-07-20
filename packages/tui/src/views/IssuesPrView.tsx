@@ -1,23 +1,23 @@
-import React, { useState, useCallback } from 'react'
-import Box from '../ink/components/Box.js'
-import Text from '../ink/components/Text.js'
-import useInput from '../ink/hooks/use-input.js'
-import Pane from '../design-system/Pane.js'
-import ThemedText from '../design-system/ThemedText.js'
-import Divider from '../design-system/Divider.js'
-import StatusIcon from '../design-system/StatusIcon.js'
-import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
-import { useNavigation } from '../navigation/context.js'
-import { useClampedIndex } from '../hooks/use-clamped-index.js'
-import type { IssuesPrViewModel } from '../view-models/issues-pr.js'
+import React, { useState, useCallback } from 'react';
+import Box from '../ink/components/Box.js';
+import Text from '../ink/components/Text.js';
+import useInput from '../ink/hooks/use-input.js';
+import Pane from '../design-system/Pane.js';
+import ThemedText from '../design-system/ThemedText.js';
+import Divider from '../design-system/Divider.js';
+import StatusIcon from '../design-system/StatusIcon.js';
+import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js';
+import { useNavigation } from '../navigation/context.js';
+import { useClampedIndex } from '../hooks/use-clamped-index.js';
+import type { IssuesPrViewModel } from '../view-models/issues-pr.js';
 
-type Tab = 'issues' | 'prs'
+type Tab = 'issues' | 'prs';
 
 type IssuesPrViewProps = {
-  model: IssuesPrViewModel
-  onSelectIssue?: (issueNumber: number) => void
-  onSelectPr?: (prNumber: number) => void
-}
+  model: IssuesPrViewModel;
+  onSelectIssue?: (issueNumber: number) => void;
+  onSelectPr?: (prNumber: number) => void;
+};
 
 const STATUS_ICONS: Record<string, 'pass' | 'warn' | 'fail' | 'info' | 'blocked'> = {
   ready: 'pass',
@@ -28,80 +28,89 @@ const STATUS_ICONS: Record<string, 'pass' | 'warn' | 'fail' | 'info' | 'blocked'
   stale: 'fail',
   pending: 'warn',
   checking: 'info',
-}
+};
 
 function formatIssueDetail(status: string, assignee: string | undefined, labels: string[]): string {
-  let result = status
-  if (assignee) result += ' - ' + assignee
-  if (labels.length > 0) result += ' [' + labels.join(', ') + ']'
-  return result
+  let result = status;
+  if (assignee) result += ' - ' + assignee;
+  if (labels.length > 0) result += ' [' + labels.join(', ') + ']';
+  return result;
 }
 
-function formatPrDetail(status: string, author: string, riskZone: string, blocker: string | undefined): string {
-  let result = status + ' - ' + author + ' - ' + riskZone
-  if (blocker) result += ' - blocked: ' + blocker
-  return result
+function formatPrDetail(
+  status: string,
+  author: string,
+  riskZone: string,
+  blocker: string | undefined,
+): string {
+  let result = status + ' - ' + author + ' - ' + riskZone;
+  if (blocker) result += ' - blocked: ' + blocker;
+  return result;
 }
 
-export default function IssuesPrView({ model, onSelectIssue, onSelectPr }: IssuesPrViewProps): React.JSX.Element {
-  const { pop, push } = useNavigation()
-  const [tab, setTab] = useState<Tab>(model.tab)
+export default function IssuesPrView({
+  model,
+  onSelectIssue,
+  onSelectPr,
+}: IssuesPrViewProps): React.JSX.Element {
+  const { pop, push } = useNavigation();
+  const [tab, setTab] = useState<Tab>(model.tab);
 
-  const issues = model.issues
-  const prs = model.prs
-  const currentItems = tab === 'issues' ? issues : prs
-  const itemCount = currentItems.length
-  const [selectedIndex, setSelectedIndex] = useClampedIndex(itemCount)
+  const issues = model.issues;
+  const prs = model.prs;
+  const currentItems = tab === 'issues' ? issues : prs;
+  const itemCount = currentItems.length;
+  const [selectedIndex, setSelectedIndex] = useClampedIndex(itemCount);
 
   const handleSelect = useCallback(() => {
     if (tab === 'issues') {
-      const issue = issues[selectedIndex]
+      const issue = issues[selectedIndex];
       if (issue) {
         if (onSelectIssue) {
-          onSelectIssue(issue.number)
+          onSelectIssue(issue.number);
         } else {
-          push({ view: 'room', params: { roomId: `issue:${issue.number}` } })
+          push({ view: 'room', params: { roomId: `issue:${issue.number}` } });
         }
       }
     } else {
-      const pr = prs[selectedIndex]
+      const pr = prs[selectedIndex];
       if (pr) {
         if (onSelectPr) {
-          onSelectPr(pr.number)
+          onSelectPr(pr.number);
         } else {
-          push({ view: 'room', params: { roomId: `pr:${pr.number}` } })
+          push({ view: 'room', params: { roomId: `pr:${pr.number}` } });
         }
       }
     }
-  }, [tab, selectedIndex, issues, prs, onSelectIssue, onSelectPr, push])
+  }, [tab, selectedIndex, issues, prs, onSelectIssue, onSelectPr, push]);
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
-      pop()
-      return
+      pop();
+      return;
     }
     if (input === '1') {
-      setTab('issues')
-      setSelectedIndex(0)
-      return
+      setTab('issues');
+      setSelectedIndex(0);
+      return;
     }
     if (input === '2') {
-      setTab('prs')
-      setSelectedIndex(0)
-      return
+      setTab('prs');
+      setSelectedIndex(0);
+      return;
     }
     if (key.upArrow) {
-      setSelectedIndex(prev => (prev > 0 ? prev - 1 : itemCount - 1))
+      setSelectedIndex((prev) => (prev > 0 ? prev - 1 : itemCount - 1));
     } else if (key.downArrow) {
-      setSelectedIndex(prev => (prev < itemCount - 1 ? prev + 1 : 0))
+      setSelectedIndex((prev) => (prev < itemCount - 1 ? prev + 1 : 0));
     } else if (key.return) {
-      handleSelect()
+      handleSelect();
     }
-  })
+  });
 
   const tabIndicator = (t: Tab, label: string, num: number) => {
-    const isActive = tab === t
-    const text = isActive ? '[' + label + ' (' + num + ')]' : ' ' + label + ' (' + num + ') '
+    const isActive = tab === t;
+    const text = isActive ? '[' + label + ' (' + num + ')]' : ' ' + label + ' (' + num + ') ';
     return React.createElement(
       Box,
       { flexDirection: 'row' },
@@ -110,14 +119,14 @@ export default function IssuesPrView({ model, onSelectIssue, onSelectPr }: Issue
         { colorTheme: isActive ? 'accent' : 'muted', bold: isActive },
         text,
       ),
-    )
-  }
+    );
+  };
 
   const issueRows = issues.map((issue, i) => {
-    const isSelected = i === selectedIndex
-    const pointer = isSelected ? '>' : ' '
-    const statusIcon = STATUS_ICONS[issue.status] ?? 'info'
-    const title = '#' + issue.number + ' ' + issue.title
+    const isSelected = i === selectedIndex;
+    const pointer = isSelected ? '>' : ' ';
+    const statusIcon = STATUS_ICONS[issue.status] ?? 'info';
+    const title = '#' + issue.number + ' ' + issue.title;
 
     return React.createElement(
       Box,
@@ -144,14 +153,14 @@ export default function IssuesPrView({ model, onSelectIssue, onSelectPr }: Issue
           formatIssueDetail(issue.status, issue.assignee, issue.labels),
         ),
       ),
-    )
-  })
+    );
+  });
 
   const prRows = prs.map((pr, i) => {
-    const isSelected = i === selectedIndex
-    const pointer = isSelected ? '>' : ' '
-    const statusIcon = STATUS_ICONS[pr.status] ?? 'info'
-    const title = 'PR #' + pr.number + ' ' + pr.title
+    const isSelected = i === selectedIndex;
+    const pointer = isSelected ? '>' : ' ';
+    const statusIcon = STATUS_ICONS[pr.status] ?? 'info';
+    const title = 'PR #' + pr.number + ' ' + pr.title;
 
     return React.createElement(
       Box,
@@ -178,12 +187,29 @@ export default function IssuesPrView({ model, onSelectIssue, onSelectPr }: Issue
           formatPrDetail(pr.status, pr.author, pr.riskZone, pr.blocker),
         ),
       ),
-    )
-  })
+    );
+  });
 
-  const summaryText = tab === 'issues'
-    ? 'Issues: ' + model.summary.issues.total + ' (' + model.summary.issues.ready + ' ready, ' + model.summary.issues.claimed + ' claimed, ' + model.summary.issues.blocked + ' blocked)'
-    : 'PRs: ' + model.summary.prs.total + ' (' + model.summary.prs.ready + ' ready, ' + model.summary.prs.blocked + ' blocked, ' + model.summary.prs.pending + ' pending)'
+  const summaryText =
+    tab === 'issues'
+      ? 'Issues: ' +
+        model.summary.issues.total +
+        ' (' +
+        model.summary.issues.ready +
+        ' ready, ' +
+        model.summary.issues.claimed +
+        ' claimed, ' +
+        model.summary.issues.blocked +
+        ' blocked)'
+      : 'PRs: ' +
+        model.summary.prs.total +
+        ' (' +
+        model.summary.prs.ready +
+        ' ready, ' +
+        model.summary.prs.blocked +
+        ' blocked, ' +
+        model.summary.prs.pending +
+        ' pending)';
 
   return React.createElement(
     Box,
@@ -191,7 +217,11 @@ export default function IssuesPrView({ model, onSelectIssue, onSelectPr }: Issue
     React.createElement(
       Box,
       { flexDirection: 'row' },
-      React.createElement(ThemedText, { colorTheme: 'accent', bold: true }, 'OpenSlack / Tasks & PRs'),
+      React.createElement(
+        ThemedText,
+        { colorTheme: 'accent', bold: true },
+        'OpenSlack / Tasks & PRs',
+      ),
       React.createElement(Text, null, '  '),
       React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, summaryText),
     ),
@@ -227,5 +257,5 @@ export default function IssuesPrView({ model, onSelectIssue, onSelectPr }: Issue
       React.createElement(Text, null, '  '),
       React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'back' }),
     ),
-  )
+  );
 }

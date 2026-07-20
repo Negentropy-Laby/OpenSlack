@@ -39,30 +39,30 @@ adapter default used by workflow `ctx.agent()`.
 
 ### Event Mapping (Aby -> OpenSlack)
 
-| Aby Event | OpenSlack Event | Adaptation |
-|-----------|-----------------|------------|
-| SessionStart | `progress` transcript event (`bridge_session_started`) | `agent.conversation.started` remains projected once by the existing workflow/conversation lifecycle bridge |
-| ToolCall | `tool_call` (transcript) | ToolGuard.check() before every reported invocation |
-| ToolResult | `tool_result` (transcript) | Secret scan via scanValue() before persistence |
-| Progress | `progress` (transcript) | Intermediate reasoning, step markers |
-| Complete | transcript complete through recorder | `agent.conversation.completed` remains projected once by agent-shim/conversation integration |
-| Fail | transcript fail through recorder | `agent.conversation.failed` remains projected once by agent-shim/conversation integration; launcher finally block still runs worktree cleanup |
-| Cancel | deferred for preview unless explicit terminal status is added | Timeout maps to fail; a future explicit cancel path should call `recorder.cancel()` and project `agent.conversation.failed` with `terminalReason=cancelled` metadata, without changing the collaboration schema |
-| PermissionDenied | `progress` transcript event (`tool_denied`) + PermissionDeniedError | ToolGuard throws, launcher catches, recorder.fail() |
+| Aby Event        | OpenSlack Event                                                     | Adaptation                                                                                                                                                                                                      |
+| ---------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SessionStart     | `progress` transcript event (`bridge_session_started`)              | `agent.conversation.started` remains projected once by the existing workflow/conversation lifecycle bridge                                                                                                      |
+| ToolCall         | `tool_call` (transcript)                                            | ToolGuard.check() before every reported invocation                                                                                                                                                              |
+| ToolResult       | `tool_result` (transcript)                                          | Secret scan via scanValue() before persistence                                                                                                                                                                  |
+| Progress         | `progress` (transcript)                                             | Intermediate reasoning, step markers                                                                                                                                                                            |
+| Complete         | transcript complete through recorder                                | `agent.conversation.completed` remains projected once by agent-shim/conversation integration                                                                                                                    |
+| Fail             | transcript fail through recorder                                    | `agent.conversation.failed` remains projected once by agent-shim/conversation integration; launcher finally block still runs worktree cleanup                                                                   |
+| Cancel           | deferred for preview unless explicit terminal status is added       | Timeout maps to fail; a future explicit cancel path should call `recorder.cancel()` and project `agent.conversation.failed` with `terminalReason=cancelled` metadata, without changing the collaboration schema |
+| PermissionDenied | `progress` transcript event (`tool_denied`) + PermissionDeniedError | ToolGuard throws, launcher catches, recorder.fail()                                                                                                                                                             |
 
 ### Request Bridge Schema (OpenSlack -> Aby)
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| input | array | yes | Generic L3 messages (`system`, `user`, `tool`); prompt/task text is carried only in the JSON bridge envelope |
-| agentId | string | yes | Agent identifier from registry or subagent discovery |
-| runId | string | yes | `RUN-YYYYMMDD-XXXXXXXX` format, correlates all events |
-| allowedTools | string[] | yes | OpenSlack-filtered allowed tool names |
-| deniedTools | string[] | yes | OpenSlack deny list plus tools filtered by BridgePermissionGuard |
-| permissionMode | string | yes | `plan`, `acceptEdits`, `default`, or `strict` |
-| worktreePath | string | no | Isolated git worktree path, set as CWD |
-| timeout | integer | no | Default 120000ms, from adapter or agent config |
-| metadata | object | no | OpenSlack-owned adapter metadata such as integrationId, source, correlationId, threadId, budget, and safe resolvedConfig |
+| Field          | Type     | Required | Description                                                                                                              |
+| -------------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------ |
+| input          | array    | yes      | Generic L3 messages (`system`, `user`, `tool`); prompt/task text is carried only in the JSON bridge envelope             |
+| agentId        | string   | yes      | Agent identifier from registry or subagent discovery                                                                     |
+| runId          | string   | yes      | `RUN-YYYYMMDD-XXXXXXXX` format, correlates all events                                                                    |
+| allowedTools   | string[] | yes      | OpenSlack-filtered allowed tool names                                                                                    |
+| deniedTools    | string[] | yes      | OpenSlack deny list plus tools filtered by BridgePermissionGuard                                                         |
+| permissionMode | string   | yes      | `plan`, `acceptEdits`, `default`, or `strict`                                                                            |
+| worktreePath   | string   | no       | Isolated git worktree path, set as CWD                                                                                   |
+| timeout        | integer  | no       | Default 120000ms, from adapter or agent config                                                                           |
+| metadata       | object   | no       | OpenSlack-owned adapter metadata such as integrationId, source, correlationId, threadId, budget, and safe resolvedConfig |
 
 Only generic process metadata is passed via environment variables:
 `AGENT_RUN_ID`, `AGENT_ID`, `AGENT_RUN_BRIDGE_PROTOCOL_VERSION`, and optional
@@ -72,13 +72,13 @@ envelope so they can be validated, size-capped, and redacted consistently.
 
 ### Response Bridge Schema (Aby -> OpenSlack)
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| data | object | yes | Structured result, validated against schema if provided |
-| tokenUsage | integer | no | Actual or estimated token consumption |
-| toolStats | object | no | `{ totalCalls, uniqueTools, lastTool }` |
-| events | object[] | no | Transcript events for reconciliation |
-| exitStatus | object | no | `{ exitCode, signal, timedOut, truncated, durationMs }` |
+| Field      | Type     | Required | Description                                             |
+| ---------- | -------- | -------- | ------------------------------------------------------- |
+| data       | object   | yes      | Structured result, validated against schema if provided |
+| tokenUsage | integer  | no       | Actual or estimated token consumption                   |
+| toolStats  | object   | no       | `{ totalCalls, uniqueTools, lastTool }`                 |
+| events     | object[] | no       | Transcript events for reconciliation                    |
+| exitStatus | object   | no       | `{ exitCode, signal, timedOut, truncated, durationMs }` |
 
 ### Permission Boundary Matrix
 
@@ -121,17 +121,17 @@ preview.
 
 ### Gap Analysis
 
-| Capability | Status | Recommendation |
-|-----------|--------|---------------|
-| Streaming stdout/stderr | gap | Defer. Full capture model for preview; add streaming variant for TUI/chat. |
-| AbortSignal / cancel API | gap | Defer. Timeout kill only; add when interactive cancel is needed. |
-| Dynamic tool negotiation | partial | Stub. Profile resolved before execution and immutable; add `tool_request` event for negotiation. |
-| Bidirectional event bridge | partial | Stub. Add JSONL bridge envelopes over stdout/stderr or an event pipe for mid-run events; do not record collaboration events directly inside agent-runtime. |
-| Model selection routing | gap | Defer. Add `OPENSLACK_AGENT_MODEL` env var when multi-model routing is needed. |
-| Cost tracking at boundary | partial | Stub. Budget tracked but not enforced mid-run; add mid-run budget signals later. |
-| Conversation thread lifecycle | implemented | No gap. Agent-shim/conversation integration projects lifecycle events; bridge must avoid duplicate started/completed/failed events. |
-| Secret scanning of output | implemented | No gap. `scanValue()` runs on transcript events, metadata, and messages. |
-| Heartbeat / liveness | gap | Defer. Timeout kill only; add heartbeat transcript events for watchdog. |
+| Capability                    | Status      | Recommendation                                                                                                                                             |
+| ----------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Streaming stdout/stderr       | gap         | Defer. Full capture model for preview; add streaming variant for TUI/chat.                                                                                 |
+| AbortSignal / cancel API      | gap         | Defer. Timeout kill only; add when interactive cancel is needed.                                                                                           |
+| Dynamic tool negotiation      | partial     | Stub. Profile resolved before execution and immutable; add `tool_request` event for negotiation.                                                           |
+| Bidirectional event bridge    | partial     | Stub. Add JSONL bridge envelopes over stdout/stderr or an event pipe for mid-run events; do not record collaboration events directly inside agent-runtime. |
+| Model selection routing       | gap         | Defer. Add `OPENSLACK_AGENT_MODEL` env var when multi-model routing is needed.                                                                             |
+| Cost tracking at boundary     | partial     | Stub. Budget tracked but not enforced mid-run; add mid-run budget signals later.                                                                           |
+| Conversation thread lifecycle | implemented | No gap. Agent-shim/conversation integration projects lifecycle events; bridge must avoid duplicate started/completed/failed events.                        |
+| Secret scanning of output     | implemented | No gap. `scanValue()` runs on transcript events, metadata, and messages.                                                                                   |
+| Heartbeat / liveness          | gap         | Defer. Timeout kill only; add heartbeat transcript events for watchdog.                                                                                    |
 
 ---
 
@@ -429,15 +429,15 @@ Approximately 95 new tests across 7 test files, bringing agent-runtime from 73 t
 
 Following the AR-2 pattern, each phase is a separate PR:
 
-| PR | Branch | Phase | Risk Zone |
-|----|--------|-------|-----------|
-| 1 | `phase-ar25a/bridge-contract` | AR-2.5A Bridge Contract | Yellow |
-| 2 | `phase-ar25b/bridge-adapter` | AR-2.5B External Adapter | Yellow |
-| 3 | `phase-ar25c/bridge-lifecycle` | AR-2.5C Lifecycle Mapping | Yellow |
-| 4 | `phase-ar25d/bridge-permission-guard` | AR-2.5D Permission Boundary | Red |
-| 5 | `phase-ar25e/bridge-worktree-guard` | AR-2.5E Worktree Contract | Yellow |
-| 6 | `phase-ar26/bridge-mcp-scope` | AR-2.6 MCP Runtime Scope | Yellow |
-| 7 | `phase-ar27/bridge-factory-workflow` | AR-2.7 Workflow Enablement | Yellow |
+| PR  | Branch                                | Phase                       | Risk Zone |
+| --- | ------------------------------------- | --------------------------- | --------- |
+| 1   | `phase-ar25a/bridge-contract`         | AR-2.5A Bridge Contract     | Yellow    |
+| 2   | `phase-ar25b/bridge-adapter`          | AR-2.5B External Adapter    | Yellow    |
+| 3   | `phase-ar25c/bridge-lifecycle`        | AR-2.5C Lifecycle Mapping   | Yellow    |
+| 4   | `phase-ar25d/bridge-permission-guard` | AR-2.5D Permission Boundary | Red       |
+| 5   | `phase-ar25e/bridge-worktree-guard`   | AR-2.5E Worktree Contract   | Yellow    |
+| 6   | `phase-ar26/bridge-mcp-scope`         | AR-2.6 MCP Runtime Scope    | Yellow    |
+| 7   | `phase-ar27/bridge-factory-workflow`  | AR-2.7 Workflow Enablement  | Yellow    |
 
 Merge order: 2.5A -> 2.5B -> {2.5C, 2.5D} -> 2.5E -> 2.6 -> 2.7.
 AR-2.5D requires human approval before merge.

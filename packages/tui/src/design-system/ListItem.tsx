@@ -1,15 +1,15 @@
-import React from 'react'
-import Box from '../ink/components/Box.js'
-import Text from '../ink/components/Text.js'
-import ThemedText from './ThemedText.js'
-import StatusIcon from './StatusIcon.js'
+import React from 'react';
+import Box from '../ink/components/Box.js';
+import Text from '../ink/components/Text.js';
+import ThemedText from './ThemedText.js';
+import StatusIcon from './StatusIcon.js';
 
 export type ListItemProps = {
-  label: string
-  detail?: string
-  bullet?: string
-  status?: string
-}
+  label: string;
+  detail?: string;
+  bullet?: string;
+  status?: string;
+};
 
 export default function ListItem({
   label,
@@ -19,7 +19,7 @@ export default function ListItem({
 }: ListItemProps): React.JSX.Element {
   const icon = status
     ? React.createElement(StatusIcon, { status })
-    : React.createElement(ThemedText, { colorTheme: 'muted' }, `${bullet} `)
+    : React.createElement(ThemedText, { colorTheme: 'muted' }, `${bullet} `);
 
   const labelLine = React.createElement(
     Box,
@@ -27,9 +27,9 @@ export default function ListItem({
     icon,
     React.createElement(Text, null, ' '),
     React.createElement(ThemedText, { colorTheme: 'foreground' }, label),
-  )
+  );
 
-  if (!detail) return labelLine
+  if (!detail) return labelLine;
 
   return React.createElement(
     Box,
@@ -40,5 +40,5 @@ export default function ListItem({
       { marginLeft: 3 },
       React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, detail),
     ),
-  )
+  );
 }

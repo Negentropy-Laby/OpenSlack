@@ -1,24 +1,31 @@
-import React from 'react'
-import Box from '../ink/components/Box.js'
-import Text from '../ink/components/Text.js'
-import useApp from '../ink/hooks/use-app.js'
-import useInput from '../ink/hooks/use-input.js'
-import Pane from '../design-system/Pane.js'
-import ThemedText from '../design-system/ThemedText.js'
-import Divider from '../design-system/Divider.js'
-import StatusIcon from '../design-system/StatusIcon.js'
-import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
-import type { DigestViewModel, DigestGroupViewModel } from '../view-models/digest.js'
+import React from 'react';
+import Box from '../ink/components/Box.js';
+import Text from '../ink/components/Text.js';
+import useApp from '../ink/hooks/use-app.js';
+import useInput from '../ink/hooks/use-input.js';
+import Pane from '../design-system/Pane.js';
+import ThemedText from '../design-system/ThemedText.js';
+import Divider from '../design-system/Divider.js';
+import StatusIcon from '../design-system/StatusIcon.js';
+import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js';
+import type { DigestViewModel, DigestGroupViewModel } from '../view-models/digest.js';
 
 export type DigestViewProps = {
-  model: DigestViewModel
-  onBack?: () => void
-}
+  model: DigestViewModel;
+  onBack?: () => void;
+};
 
 function renderGroup(group: DigestGroupViewModel, index: number): React.ReactNode {
-  if (group.events.length === 0) return null
+  if (group.events.length === 0) return null;
 
-  const iconCategory = group.status === 'fail' ? 'fail' : group.status === 'warn' ? 'warn' : group.status === 'pass' ? 'pass' : 'info'
+  const iconCategory =
+    group.status === 'fail'
+      ? 'fail'
+      : group.status === 'warn'
+        ? 'warn'
+        : group.status === 'pass'
+          ? 'pass'
+          : 'info';
 
   return React.createElement(
     Pane,
@@ -32,11 +39,7 @@ function renderGroup(group: DigestGroupViewModel, index: number): React.ReactNod
         React.createElement(
           Box,
           { flexDirection: 'column' },
-          React.createElement(
-            ThemedText,
-            { colorTheme: 'foreground' },
-            `${e.time} ${e.type}`,
-          ),
+          React.createElement(ThemedText, { colorTheme: 'foreground' }, `${e.time} ${e.type}`),
           e.summary
             ? React.createElement(
                 ThemedText,
@@ -52,18 +55,18 @@ function renderGroup(group: DigestGroupViewModel, index: number): React.ReactNod
         ),
       ),
     ),
-  )
+  );
 }
 
 export default function DigestView({ model, onBack }: DigestViewProps): React.JSX.Element {
-  const { exit } = useApp()
+  const { exit } = useApp();
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
-      if (onBack) onBack()
-      else exit()
+      if (onBack) onBack();
+      else exit();
     }
-  })
+  });
 
   return React.createElement(
     Box,
@@ -100,9 +103,9 @@ export default function DigestView({ model, onBack }: DigestViewProps): React.JS
               ),
               React.createElement(Text, null, ' — '),
               React.createElement(ThemedText, { colorTheme: 'foreground' }, r.action),
-              ),
             ),
-          )
+          ),
+        )
       : null,
 
     // Footer
@@ -112,5 +115,5 @@ export default function DigestView({ model, onBack }: DigestViewProps): React.JS
       { flexDirection: 'row' },
       React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'back' }),
     ),
-  )
+  );
 }

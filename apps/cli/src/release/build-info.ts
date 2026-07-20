@@ -21,7 +21,8 @@ export function getBuildInfo(): OpenSlackBuildInfo {
   return {
     schema: 'openslack.build_info.v1',
     version: injected('__OPENSLACK_BUILD_VERSION__', () => __OPENSLACK_BUILD_VERSION__) ?? '0.2.0',
-    commit: injected('__OPENSLACK_BUILD_COMMIT__', () => __OPENSLACK_BUILD_COMMIT__) ?? 'development',
+    commit:
+      injected('__OPENSLACK_BUILD_COMMIT__', () => __OPENSLACK_BUILD_COMMIT__) ?? 'development',
     channel: injected('__OPENSLACK_BUILD_CHANNEL__', () => __OPENSLACK_BUILD_CHANNEL__) ?? 'source',
     target:
       injected('__OPENSLACK_BUILD_TARGET__', () => __OPENSLACK_BUILD_TARGET__) ??

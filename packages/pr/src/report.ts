@@ -20,7 +20,14 @@ export function generateReviewReport(report: PRReviewReport): string {
     '### Checks',
     '',
     ...report.checks.map((c) => {
-      const icon = c.conclusion === 'success' ? '✅' : c.conclusion === 'skipped' ? '⏭️' : c.conclusion === null || c.status !== 'completed' ? '⏳' : '❌';
+      const icon =
+        c.conclusion === 'success'
+          ? '✅'
+          : c.conclusion === 'skipped'
+            ? '⏭️'
+            : c.conclusion === null || c.status !== 'completed'
+              ? '⏳'
+              : '❌';
       return `- ${icon} ${c.name} (${c.status}${c.conclusion ? ` / ${c.conclusion}` : ''})`;
     }),
     '',

@@ -19,7 +19,12 @@ vi.mock('@openslack/collaboration', () => ({
   appendMessage: (threadId: string, msg: unknown) => mockAppendMessage(threadId, msg),
   archiveThread: (id: string) => mockArchiveThread(id),
   linkRunToThread: (threadId: string, runId: string) => mockLinkRunToThread(threadId, runId),
-  renderMessage: (msg: { kind: string; authorId?: string; text?: string; [key: string]: unknown }) => {
+  renderMessage: (msg: {
+    kind: string;
+    authorId?: string;
+    text?: string;
+    [key: string]: unknown;
+  }) => {
     const ts = new Date((msg as { timestamp?: string }).timestamp || '').toLocaleString();
     switch (msg.kind) {
       case 'user_message':
@@ -70,7 +75,9 @@ describe('conversation CLI commands', () => {
     });
 
     const cmd = conversationCommands();
-    await cmd.parseAsync(['node', 'openslack conversation', 'start', '--title', 'Test Thread'], { from: 'node' });
+    await cmd.parseAsync(['node', 'openslack conversation', 'start', '--title', 'Test Thread'], {
+      from: 'node',
+    });
 
     logSpy.mockRestore();
 
@@ -84,8 +91,20 @@ describe('conversation CLI commands', () => {
 
   it('conversation list returns formatted table', async () => {
     mockListThreads.mockReturnValue([
-      { id: 'CONV-001', title: 'Alpha', status: 'open', participants: [], updatedAt: '2026-06-02T10:00:00Z' },
-      { id: 'CONV-002', title: 'Beta', status: 'active', participants: [{ id: 'u1', displayName: 'User 1' }], updatedAt: '2026-06-02T11:00:00Z' },
+      {
+        id: 'CONV-001',
+        title: 'Alpha',
+        status: 'open',
+        participants: [],
+        updatedAt: '2026-06-02T10:00:00Z',
+      },
+      {
+        id: 'CONV-002',
+        title: 'Beta',
+        status: 'active',
+        participants: [{ id: 'u1', displayName: 'User 1' }],
+        updatedAt: '2026-06-02T11:00:00Z',
+      },
     ]);
 
     const logs: string[] = [];
@@ -108,7 +127,15 @@ describe('conversation CLI commands', () => {
     mockListThreads.mockImplementation((opts?: unknown) => {
       const o = opts as { status?: string } | undefined;
       if (o?.status === 'active') {
-        return [{ id: 'CONV-002', title: 'Beta', status: 'active', participants: [], updatedAt: '2026-06-02T11:00:00Z' }];
+        return [
+          {
+            id: 'CONV-002',
+            title: 'Beta',
+            status: 'active',
+            participants: [],
+            updatedAt: '2026-06-02T11:00:00Z',
+          },
+        ];
       }
       return [];
     });
@@ -119,7 +146,9 @@ describe('conversation CLI commands', () => {
     });
 
     const cmd = conversationCommands();
-    await cmd.parseAsync(['node', 'openslack conversation', 'list', '--status', 'active'], { from: 'node' });
+    await cmd.parseAsync(['node', 'openslack conversation', 'list', '--status', 'active'], {
+      from: 'node',
+    });
 
     logSpy.mockRestore();
 
@@ -140,7 +169,14 @@ describe('conversation CLI commands', () => {
         linkedObjects: [],
       },
       messages: [
-        { kind: 'user_message', id: 'MSG-001', threadId: 'CONV-001', timestamp: '2026-06-02T10:05:00Z', authorId: 'alice', text: 'Hello' },
+        {
+          kind: 'user_message',
+          id: 'MSG-001',
+          threadId: 'CONV-001',
+          timestamp: '2026-06-02T10:05:00Z',
+          authorId: 'alice',
+          text: 'Hello',
+        },
       ],
     });
 
@@ -199,7 +235,9 @@ describe('conversation CLI commands', () => {
     });
 
     const cmd = conversationCommands();
-    await cmd.parseAsync(['node', 'openslack conversation', 'send', 'CONV-001', 'Hello world'], { from: 'node' });
+    await cmd.parseAsync(['node', 'openslack conversation', 'send', 'CONV-001', 'Hello world'], {
+      from: 'node',
+    });
 
     logSpy.mockRestore();
 
@@ -235,13 +273,22 @@ describe('conversation CLI commands', () => {
 
     const cmd = conversationCommands();
     await cmd.parseAsync(
-      ['node', 'openslack conversation', 'send', 'CONV-001', '@anthropic_architect_aby review this'],
+      [
+        'node',
+        'openslack conversation',
+        'send',
+        'CONV-001',
+        '@anthropic_architect_aby review this',
+      ],
       { from: 'node' },
     );
 
     logSpy.mockRestore();
 
-    expect(mockResolveAgentType).toHaveBeenCalledWith('anthropic_architect_aby', expect.any(String));
+    expect(mockResolveAgentType).toHaveBeenCalledWith(
+      'anthropic_architect_aby',
+      expect.any(String),
+    );
     expect(mockLauncher).toHaveBeenCalledWith(
       'review this',
       expect.objectContaining({
@@ -333,7 +380,9 @@ describe('conversation CLI commands', () => {
     });
 
     const cmd = conversationCommands();
-    await cmd.parseAsync(['node', 'openslack conversation', 'summarize', 'CONV-001'], { from: 'node' });
+    await cmd.parseAsync(['node', 'openslack conversation', 'summarize', 'CONV-001'], {
+      from: 'node',
+    });
 
     logSpy.mockRestore();
 
@@ -353,7 +402,9 @@ describe('conversation CLI commands', () => {
     });
 
     const cmd = conversationCommands();
-    await cmd.parseAsync(['node', 'openslack conversation', 'archive', 'CONV-001'], { from: 'node' });
+    await cmd.parseAsync(['node', 'openslack conversation', 'archive', 'CONV-001'], {
+      from: 'node',
+    });
 
     logSpy.mockRestore();
 
@@ -423,7 +474,9 @@ describe('conversation CLI commands', () => {
 
     const cmd = conversationCommands();
     await expect(
-      cmd.parseAsync(['node', 'openslack conversation', 'send', 'INVALID', 'Hello'], { from: 'node' }),
+      cmd.parseAsync(['node', 'openslack conversation', 'send', 'INVALID', 'Hello'], {
+        from: 'node',
+      }),
     ).rejects.toThrow('process.exit');
 
     logSpy.mockRestore();

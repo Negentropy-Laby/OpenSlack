@@ -73,7 +73,7 @@ export function validatePR(options: {
     pr: { number: options.prNumber, head_sha: options.headSha },
     agent_id: options.agentId,
     summary: {
-      result: riskZone === 'black' ? 'fail' : (wsResult.pass ? 'pass' : 'fail'),
+      result: riskZone === 'black' ? 'fail' : wsResult.pass ? 'pass' : 'fail',
       risk_level: riskZone,
       human_approval_required: riskZone === 'red',
       auto_merge_candidate: riskZone === 'green',
@@ -88,7 +88,11 @@ export function validatePR(options: {
   };
 
   // Write YAML (yaml is a hard dependency)
-  writeFileSync(join(experimentDir, 'self_validation.yaml'), stringify(manifest, { lineWidth: 120 }), 'utf-8');
+  writeFileSync(
+    join(experimentDir, 'self_validation.yaml'),
+    stringify(manifest, { lineWidth: 120 }),
+    'utf-8',
+  );
 
   return {
     experimentId: options.experimentId,
@@ -97,6 +101,6 @@ export function validatePR(options: {
     checks,
     protectedPathCheck,
     score,
-    decision: riskZone === 'black' ? 'fail' : (wsResult.pass ? 'pass' : 'fail'),
+    decision: riskZone === 'black' ? 'fail' : wsResult.pass ? 'pass' : 'fail',
   };
 }

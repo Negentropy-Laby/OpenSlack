@@ -5,14 +5,9 @@
  */
 
 import type { AgentExecutionAdapter } from './adapter.js';
-import {
-  LocalExecutionAdapter,
-} from './adapter.js';
+import { LocalExecutionAdapter } from './adapter.js';
 import { ExternalCommandAdapter } from './external-command-adapter.js';
-import {
-  BridgeProcessAdapter,
-  FakeBridgeAdapter,
-} from './bridge-adapter.js';
+import { BridgeProcessAdapter, FakeBridgeAdapter } from './bridge-adapter.js';
 
 export type BridgeMode = 'local' | 'external-command' | 'process' | 'fake';
 
@@ -64,9 +59,7 @@ export function createBridgeAdapter(options: BridgeFactoryOptions = {}): AgentEx
 
     case 'external-command': {
       if (!options.command) {
-        throw new BridgeFactoryError(
-          'external-command mode requires a command option',
-        );
+        throw new BridgeFactoryError('external-command mode requires a command option');
       }
       return new ExternalCommandAdapter({
         command: options.command,
@@ -78,9 +71,7 @@ export function createBridgeAdapter(options: BridgeFactoryOptions = {}): AgentEx
 
     case 'process': {
       if (!options.command) {
-        throw new BridgeFactoryError(
-          'process mode requires a command option',
-        );
+        throw new BridgeFactoryError('process mode requires a command option');
       }
       return new BridgeProcessAdapter({
         command: options.command,
@@ -119,7 +110,10 @@ export class BridgeFactory {
   /**
    * Create an adapter for the given bridge mode.
    */
-  static create(mode: BridgeMode, options?: Omit<BridgeFactoryOptions, 'bridgeMode'>): AgentExecutionAdapter {
+  static create(
+    mode: BridgeMode,
+    options?: Omit<BridgeFactoryOptions, 'bridgeMode'>,
+  ): AgentExecutionAdapter {
     return createBridgeAdapter({ bridgeMode: mode, ...options });
   }
 

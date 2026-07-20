@@ -44,7 +44,11 @@ export function bootstrapAgent(agentId: string): BootstrapResult {
   if (existsSync(onboardingDir)) {
     checks.push({ name: 'onboarding', passed: true, detail: `Onboarding package exists` });
   } else {
-    checks.push({ name: 'onboarding', passed: false, detail: `Onboarding package not found: ${onboardingDir}` });
+    checks.push({
+      name: 'onboarding',
+      passed: false,
+      detail: `Onboarding package not found: ${onboardingDir}`,
+    });
   }
 
   // 3. START_HERE.md exists
@@ -60,7 +64,11 @@ export function bootstrapAgent(agentId: string): BootstrapResult {
   if (existsSync(localIdentityPath)) {
     checks.push({ name: 'local_identity', passed: true, detail: 'Local identity found' });
   } else {
-    checks.push({ name: 'local_identity', passed: false, detail: `Local identity not found: ${localIdentityPath}` });
+    checks.push({
+      name: 'local_identity',
+      passed: false,
+      detail: `Local identity not found: ${localIdentityPath}`,
+    });
   }
 
   // 5. Workspace validation
@@ -69,10 +77,18 @@ export function bootstrapAgent(agentId: string): BootstrapResult {
     if (wsResult.valid) {
       checks.push({ name: 'workspace', passed: true, detail: 'Workspace validation passed' });
     } else {
-      checks.push({ name: 'workspace', passed: false, detail: wsResult.errors.map((e) => e.message).join('; ') });
+      checks.push({
+        name: 'workspace',
+        passed: false,
+        detail: wsResult.errors.map((e) => e.message).join('; '),
+      });
     }
   } catch (e) {
-    checks.push({ name: 'workspace', passed: false, detail: `Workspace validation error: ${(e as Error).message}` });
+    checks.push({
+      name: 'workspace',
+      passed: false,
+      detail: `Workspace validation error: ${(e as Error).message}`,
+    });
   }
 
   // 6. Permissions section is valid (v1 or v2)
@@ -80,24 +96,48 @@ export function bootstrapAgent(agentId: string): BootstrapResult {
     const registry = parseAgentRegistry(root, agentId);
     if (registry && registry.permissions && registry.permissions.paths) {
       const source = (registry as ParsedAgentRegistryEntry)._source_schema;
-      checks.push({ name: 'permissions', passed: true, detail: `Permissions present (source: ${source})` });
+      checks.push({
+        name: 'permissions',
+        passed: true,
+        detail: `Permissions present (source: ${source})`,
+      });
     } else {
-      checks.push({ name: 'permissions', passed: false, detail: 'No valid permissions section found in registry' });
+      checks.push({
+        name: 'permissions',
+        passed: false,
+        detail: 'No valid permissions section found in registry',
+      });
     }
   } catch (e) {
-    checks.push({ name: 'permissions', passed: false, detail: `Permission check error: ${(e as Error).message}` });
+    checks.push({
+      name: 'permissions',
+      passed: false,
+      detail: `Permission check error: ${(e as Error).message}`,
+    });
   }
 
   // 7. Runtime identity — generate if missing
   const existingIdentity = loadRuntimeIdentity(root, agentId);
   if (existingIdentity) {
-    checks.push({ name: 'runtime_identity', passed: true, detail: `Runtime identity: run_id=${existingIdentity.run_id}` });
+    checks.push({
+      name: 'runtime_identity',
+      passed: true,
+      detail: `Runtime identity: run_id=${existingIdentity.run_id}`,
+    });
   } else {
     try {
       const identity = generateRuntimeIdentity({ root, agentId, provider: 'cli' });
-      checks.push({ name: 'runtime_identity', passed: true, detail: `Runtime identity generated: run_id=${identity.run_id}` });
+      checks.push({
+        name: 'runtime_identity',
+        passed: true,
+        detail: `Runtime identity generated: run_id=${identity.run_id}`,
+      });
     } catch (e) {
-      checks.push({ name: 'runtime_identity', passed: false, detail: `Failed to generate runtime identity: ${(e as Error).message}` });
+      checks.push({
+        name: 'runtime_identity',
+        passed: false,
+        detail: `Failed to generate runtime identity: ${(e as Error).message}`,
+      });
     }
   }
 

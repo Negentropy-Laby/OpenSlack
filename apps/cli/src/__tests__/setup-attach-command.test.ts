@@ -23,10 +23,9 @@ describe('setup attach command', () => {
     process.chdir(root);
     const logs = captureConsole();
 
-    await setupCommands().parseAsync(
-      ['node', 'openslack', 'attach', '--repo', 'Acme/Project'],
-      { from: 'node' },
-    );
+    await setupCommands().parseAsync(['node', 'openslack', 'attach', '--repo', 'Acme/Project'], {
+      from: 'node',
+    });
 
     expect(logs.stdout.join('\n')).toContain('Workspace attach preview');
     expect(logs.stdout.join('\n')).toContain('Preview only');
@@ -113,15 +112,7 @@ describe('setup attach command', () => {
     await setupCommands({
       startWatch: vi.fn().mockRejectedValue(new Error('daemon failed safely')),
     }).parseAsync(
-      [
-        'node',
-        'openslack',
-        'attach',
-        '--repo',
-        'Acme/Project',
-        '--apply',
-        '--start-watch',
-      ],
+      ['node', 'openslack', 'attach', '--repo', 'Acme/Project', '--apply', '--start-watch'],
       { from: 'node' },
     );
 
@@ -135,10 +126,11 @@ describe('setup attach command', () => {
     const root = gitRoot();
     process.chdir(root);
     const logs = captureConsole();
-    const command = () => setupCommands().parseAsync(
-      ['node', 'openslack', 'attach', '--repo', 'Acme/Project', '--apply'],
-      { from: 'node' },
-    );
+    const command = () =>
+      setupCommands().parseAsync(
+        ['node', 'openslack', 'attach', '--repo', 'Acme/Project', '--apply'],
+        { from: 'node' },
+      );
 
     await command();
     const before = readFileSync(join(root, 'openslack.yaml'));

@@ -1,10 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { planActions } from '../planner.js';
 import { parseIntent } from '../intent.js';
-import {
-  BUILTIN_ACTION_REGISTRY,
-  type ActionRegistryPort,
-} from '../tool-registry.js';
+import { BUILTIN_ACTION_REGISTRY, type ActionRegistryPort } from '../tool-registry.js';
 
 describe('planActions', () => {
   it('plans status with no confirmation needed', () => {
@@ -58,10 +55,7 @@ describe('planActions', () => {
     const explicit = planActions(intent, registry);
 
     expect(explicit).toEqual(baseline);
-    expect(createStep.mock.calls.map(([actionId]) => actionId)).toEqual([
-      'pr.doctor',
-      'pr.merge',
-    ]);
+    expect(createStep.mock.calls.map(([actionId]) => actionId)).toEqual(['pr.doctor', 'pr.merge']);
   });
 
   it('identifies missing params for sync', () => {

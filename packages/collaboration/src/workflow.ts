@@ -104,7 +104,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function coerceInput(value: unknown, type: WorkflowInputType): string | number | boolean | undefined {
+function coerceInput(
+  value: unknown,
+  type: WorkflowInputType,
+): string | number | boolean | undefined {
   if (value === undefined) return undefined;
   if (type === 'integer') {
     const n = typeof value === 'number' ? value : Number(value);
@@ -119,7 +122,10 @@ function coerceInput(value: unknown, type: WorkflowInputType): string | number |
   return typeof value === 'string' ? value : String(value);
 }
 
-function resolveInputs(template: WorkflowTemplate, provided: Record<string, unknown>): { values: Record<string, string | number | boolean>; errors: string[] } {
+function resolveInputs(
+  template: WorkflowTemplate,
+  provided: Record<string, unknown>,
+): { values: Record<string, string | number | boolean>; errors: string[] } {
   const values: Record<string, string | number | boolean> = {};
   const errors: string[] = [];
 
@@ -140,18 +146,31 @@ function resolveInputs(template: WorkflowTemplate, provided: Record<string, unkn
   return { values, errors };
 }
 
-function resolveTemplateValue(value: unknown, inputs: Record<string, string | number | boolean>): unknown {
+function resolveTemplateValue(
+  value: unknown,
+  inputs: Record<string, string | number | boolean>,
+): unknown {
   if (typeof value !== 'string') return value;
   const exact = value.match(/^{{\s*inputs\.([a-zA-Z0-9_-]+)\s*}}$/);
   if (exact) return inputs[exact[1]];
-  return value.replace(/{{\s*inputs\.([a-zA-Z0-9_-]+)\s*}}/g, (_m, name: string) => String(inputs[name] ?? ''));
+  return value.replace(/{{\s*inputs\.([a-zA-Z0-9_-]+)\s*}}/g, (_m, name: string) =>
+    String(inputs[name] ?? ''),
+  );
 }
 
-function resolveTemplateRecord(record: Record<string, unknown> | undefined, inputs: Record<string, string | number | boolean>): Record<string, string | number | boolean | undefined> {
+function resolveTemplateRecord(
+  record: Record<string, unknown> | undefined,
+  inputs: Record<string, string | number | boolean>,
+): Record<string, string | number | boolean | undefined> {
   const resolved: Record<string, string | number | boolean | undefined> = {};
   for (const [key, value] of Object.entries(record ?? {})) {
     const next = resolveTemplateValue(value, inputs);
-    if (typeof next === 'string' || typeof next === 'number' || typeof next === 'boolean' || next === undefined) {
+    if (
+      typeof next === 'string' ||
+      typeof next === 'number' ||
+      typeof next === 'boolean' ||
+      next === undefined
+    ) {
       resolved[key] = next;
     }
   }
@@ -161,10 +180,13 @@ function resolveTemplateRecord(record: Record<string, unknown> | undefined, inpu
 export function validateWorkflowTemplate(template: unknown): string[] {
   const errors: string[] = [];
   if (!isRecord(template)) return ['Template must be an object'];
-  if (template.schema !== 'openslack.workflow_template.v1') errors.push('schema must be openslack.workflow_template.v1');
+  if (template.schema !== 'openslack.workflow_template.v1')
+    errors.push('schema must be openslack.workflow_template.v1');
   if (typeof template.id !== 'string' || template.id.length === 0) errors.push('id is required');
-  if (typeof template.name !== 'string' || template.name.length === 0) errors.push('name is required');
-  if (!Array.isArray(template.phases) || template.phases.length === 0) errors.push('phases must be a non-empty array');
+  if (typeof template.name !== 'string' || template.name.length === 0)
+    errors.push('name is required');
+  if (!Array.isArray(template.phases) || template.phases.length === 0)
+    errors.push('phases must be a non-empty array');
 
   if (Array.isArray(template.phases)) {
     for (const [phaseIndex, phase] of template.phases.entries()) {
@@ -182,12 +204,15 @@ export function validateWorkflowTemplate(template: unknown): string[] {
           errors.push(`phase ${phaseIndex + 1} step ${stepIndex + 1} must be an object`);
           continue;
         }
-        if (typeof step.command === 'string') errors.push(`phase ${phaseIndex + 1} step ${stepIndex + 1} cannot use raw command`);
+        if (typeof step.command === 'string')
+          errors.push(`phase ${phaseIndex + 1} step ${stepIndex + 1} cannot use raw command`);
         if (step.type === 'action') {
           if (typeof step.actionId !== 'string' || !getRegisteredAction(step.actionId)) {
             errors.push(`phase ${phaseIndex + 1} step ${stepIndex + 1} uses unknown action`);
           }
-        } else if (!['decision-gate', 'handoff', 'record-decision', 'wait'].includes(String(step.type))) {
+        } else if (
+          !['decision-gate', 'handoff', 'record-decision', 'wait'].includes(String(step.type))
+        ) {
           errors.push(`phase ${phaseIndex + 1} step ${stepIndex + 1} has unsupported type`);
         }
       }
@@ -219,7 +244,9 @@ function buildPlan(template: WorkflowTemplate, actionStep: PlanStep): ActionPlan
     riskLevel: risk,
     missingParams: [],
     requiresConfirmation: actionStep.confirmationRequired,
-    sideEffects: Boolean(actionStep.actionId && getRegisteredAction(actionStep.actionId)?.sideEffects),
+    sideEffects: Boolean(
+      actionStep.actionId && getRegisteredAction(actionStep.actionId)?.sideEffects,
+    ),
   };
 }
 
@@ -238,7 +265,11 @@ export function previewWorkflowTemplate(
       for (const rawStep of phase.steps) {
         if (rawStep.type === 'action') {
           try {
-            const step = createRegisteredStep(rawStep.actionId, resolveTemplateRecord(rawStep.input, resolvedInputs.values), `preview-${steps.length + 1}`);
+            const step = createRegisteredStep(
+              rawStep.actionId,
+              resolveTemplateRecord(rawStep.input, resolvedInputs.values),
+              `preview-${steps.length + 1}`,
+            );
             const action = getRegisteredAction(rawStep.actionId);
             steps.push({
               phase: phase.name,
@@ -255,7 +286,12 @@ export function previewWorkflowTemplate(
           steps.push({
             phase: phase.name,
             type: rawStep.type,
-            title: rawStep.type === 'wait' ? rawStep.title : rawStep.type === 'decision-gate' ? rawStep.title : rawStep.type,
+            title:
+              rawStep.type === 'wait'
+                ? rawStep.title
+                : rawStep.type === 'decision-gate'
+                  ? rawStep.title
+                  : rawStep.type,
             sideEffects: rawStep.type === 'handoff' || rawStep.type === 'record-decision',
             requiresConfirmation: rawStep.type === 'decision-gate',
             requiredRole: rawStep.type === 'decision-gate' ? rawStep.requiredRole : undefined,
@@ -271,7 +307,12 @@ export function previewWorkflowTemplate(
 export async function executeWorkflowTemplate(
   template: WorkflowTemplate,
   providedInputs: Record<string, unknown> = {},
-  options: { dryRun?: boolean; correlationId?: string; principal?: AgentPrincipal; snapshot?: AgentPermissionSnapshot } = {},
+  options: {
+    dryRun?: boolean;
+    correlationId?: string;
+    principal?: AgentPrincipal;
+    snapshot?: AgentPermissionSnapshot;
+  } = {},
 ): Promise<WorkflowRunResult> {
   const correlationId = options.correlationId ?? generateCorrelationId(template.id);
   const preview = previewWorkflowTemplate(template, providedInputs, correlationId);
@@ -305,7 +346,15 @@ export async function executeWorkflowTemplate(
       severity: 'warning',
       nextAction: { owner: 'human', action: 'Fix workflow template validation errors' },
     });
-    return { templateId: template.id, correlationId, status: 'blocked', preview, handoffs, decisions, errors };
+    return {
+      templateId: template.id,
+      correlationId,
+      status: 'blocked',
+      preview,
+      handoffs,
+      decisions,
+      errors,
+    };
   }
 
   recordEvent({
@@ -324,9 +373,21 @@ export async function executeWorkflowTemplate(
   for (const phase of template.phases) {
     for (const rawStep of phase.steps) {
       if (rawStep.type === 'action') {
-        const step = createRegisteredStep(rawStep.actionId, resolveTemplateRecord(rawStep.input, resolvedInputs), `s${preview.steps.length + 1}`);
-        const result = await executePlan(buildPlan(template, step), { dryRun: options.dryRun, principal: options.principal, snapshot: options.snapshot });
-        if (result.status === 'failed' || result.status === 'blocked' || result.status === 'cancelled') {
+        const step = createRegisteredStep(
+          rawStep.actionId,
+          resolveTemplateRecord(rawStep.input, resolvedInputs),
+          `s${preview.steps.length + 1}`,
+        );
+        const result = await executePlan(buildPlan(template, step), {
+          dryRun: options.dryRun,
+          principal: options.principal,
+          snapshot: options.snapshot,
+        });
+        if (
+          result.status === 'failed' ||
+          result.status === 'blocked' ||
+          result.status === 'cancelled'
+        ) {
           errors.push(result.summary);
           recordEvent({
             type: 'workflow.blocked',
@@ -340,28 +401,52 @@ export async function executeWorkflowTemplate(
             correlationId,
             severity: 'warning',
           });
-          return { templateId: template.id, correlationId, status: 'blocked', preview, handoffs, decisions, errors };
+          return {
+            templateId: template.id,
+            correlationId,
+            status: 'blocked',
+            preview,
+            handoffs,
+            decisions,
+            errors,
+          };
         }
       } else if (rawStep.type === 'handoff' && !options.dryRun) {
-        handoffs.push(createHandoff({
-          from: String(resolveTemplateValue(rawStep.from, resolvedInputs)),
-          to: String(resolveTemplateValue(rawStep.to, resolvedInputs)),
-          context: String(resolveTemplateValue(rawStep.context, resolvedInputs)),
-          issueRef: rawStep.issueRef ? String(resolveTemplateValue(rawStep.issueRef, resolvedInputs)) : undefined,
-          prRef: rawStep.prRef ? String(resolveTemplateValue(rawStep.prRef, resolvedInputs)) : undefined,
-          nextSteps: rawStep.nextSteps?.map((s) => String(resolveTemplateValue(s, resolvedInputs))),
-          notes: rawStep.notes ? String(resolveTemplateValue(rawStep.notes, resolvedInputs)) : undefined,
-        }));
+        handoffs.push(
+          createHandoff({
+            from: String(resolveTemplateValue(rawStep.from, resolvedInputs)),
+            to: String(resolveTemplateValue(rawStep.to, resolvedInputs)),
+            context: String(resolveTemplateValue(rawStep.context, resolvedInputs)),
+            issueRef: rawStep.issueRef
+              ? String(resolveTemplateValue(rawStep.issueRef, resolvedInputs))
+              : undefined,
+            prRef: rawStep.prRef
+              ? String(resolveTemplateValue(rawStep.prRef, resolvedInputs))
+              : undefined,
+            nextSteps: rawStep.nextSteps?.map((s) =>
+              String(resolveTemplateValue(s, resolvedInputs)),
+            ),
+            notes: rawStep.notes
+              ? String(resolveTemplateValue(rawStep.notes, resolvedInputs))
+              : undefined,
+          }),
+        );
       } else if (rawStep.type === 'record-decision' && !options.dryRun) {
-        decisions.push(recordDecision({
-          topic: String(resolveTemplateValue(rawStep.topic, resolvedInputs)),
-          decision: String(resolveTemplateValue(rawStep.decision, resolvedInputs)),
-          rationale: String(resolveTemplateValue(rawStep.rationale, resolvedInputs)),
-          decidedBy: String(resolveTemplateValue(rawStep.decidedBy, resolvedInputs)),
-          alternatives: rawStep.alternatives?.map((a) => String(resolveTemplateValue(a, resolvedInputs))),
-          consequences: rawStep.consequences?.map((c) => String(resolveTemplateValue(c, resolvedInputs))),
-          tags: rawStep.tags?.map((t) => String(resolveTemplateValue(t, resolvedInputs))),
-        }));
+        decisions.push(
+          recordDecision({
+            topic: String(resolveTemplateValue(rawStep.topic, resolvedInputs)),
+            decision: String(resolveTemplateValue(rawStep.decision, resolvedInputs)),
+            rationale: String(resolveTemplateValue(rawStep.rationale, resolvedInputs)),
+            decidedBy: String(resolveTemplateValue(rawStep.decidedBy, resolvedInputs)),
+            alternatives: rawStep.alternatives?.map((a) =>
+              String(resolveTemplateValue(a, resolvedInputs)),
+            ),
+            consequences: rawStep.consequences?.map((c) =>
+              String(resolveTemplateValue(c, resolvedInputs)),
+            ),
+            tags: rawStep.tags?.map((t) => String(resolveTemplateValue(t, resolvedInputs))),
+          }),
+        );
       }
     }
   }
@@ -378,7 +463,15 @@ export async function executeWorkflowTemplate(
     correlationId,
   });
 
-  return { templateId: template.id, correlationId, status: 'completed', preview, handoffs, decisions, errors };
+  return {
+    templateId: template.id,
+    correlationId,
+    status: 'completed',
+    preview,
+    handoffs,
+    decisions,
+    errors,
+  };
 }
 
 export function renderWorkflowPreview(preview: WorkflowPreview): string {
@@ -399,7 +492,9 @@ export function renderWorkflowPreview(preview: WorkflowPreview): string {
       step.sideEffects ? 'side-effect' : 'read-only',
       step.requiresConfirmation ? 'confirmation' : undefined,
       step.requiredRole ? `role:${step.requiredRole}` : undefined,
-    ].filter(Boolean).join(', ');
+    ]
+      .filter(Boolean)
+      .join(', ');
     lines.push(`- [${step.phase}] ${step.title}${flags ? ` (${flags})` : ''}`);
   }
 

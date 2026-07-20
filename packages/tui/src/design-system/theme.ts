@@ -1,6 +1,6 @@
-import type { Color } from '../ink/styles.js'
+import type { Color } from '../ink/styles.js';
 
-export type ThemeMode = 'light' | 'dark'
+export type ThemeMode = 'light' | 'dark';
 
 export type ThemeColorKey =
   | 'success'
@@ -13,21 +13,21 @@ export type ThemeColorKey =
   | 'pass'
   | 'blocker'
   | 'foreground'
-  | 'background'
+  | 'background';
 
 export interface Theme {
-  readonly mode: ThemeMode
-  readonly success: Color
-  readonly error: Color
-  readonly warning: Color
-  readonly info: Color
-  readonly muted: Color
-  readonly accent: Color
-  readonly border: Color
-  readonly pass: Color
-  readonly blocker: Color
-  readonly foreground: Color
-  readonly background: Color
+  readonly mode: ThemeMode;
+  readonly success: Color;
+  readonly error: Color;
+  readonly warning: Color;
+  readonly info: Color;
+  readonly muted: Color;
+  readonly accent: Color;
+  readonly border: Color;
+  readonly pass: Color;
+  readonly blocker: Color;
+  readonly foreground: Color;
+  readonly background: Color;
 }
 
 export const themes: Record<ThemeMode, Theme> = {
@@ -59,16 +59,16 @@ export const themes: Record<ThemeMode, Theme> = {
     foreground: 'ansi:black',
     background: 'ansi:white',
   },
-}
+};
 
 export function resolveTheme(mode?: ThemeMode): Theme {
-  if (mode) return themes[mode]
+  if (mode) return themes[mode];
 
-  const autoDisabled = process.env.OPENSLACK_AUTO_THEME === 'false'
+  const autoDisabled = process.env.OPENSLACK_AUTO_THEME === 'false';
   if (!autoDisabled) {
-    const scheme = process.env.COLORSCHEME
-    if (scheme === 'light' || scheme === '0') return themes.light
+    const scheme = process.env.COLORSCHEME;
+    if (scheme === 'light' || scheme === '0') return themes.light;
   }
 
-  return themes.dark
+  return themes.dark;
 }

@@ -90,11 +90,7 @@ export interface ActionRegistryPort {
   get(actionId: string): RegisteredAction | undefined;
   createStep(actionId: string, input: ToolInput, stepId: string): PlanStep;
   revalidateStep(step: unknown): PlanStepRevalidation;
-  buildPlanSteps(
-    goal: string,
-    intent: Intent,
-    calls: readonly RegisteredActionCall[],
-  ): PlanStep[];
+  buildPlanSteps(goal: string, intent: Intent, calls: readonly RegisteredActionCall[]): PlanStep[];
 }
 
 function valueMatchesType(value: ToolInputValue, type: InputType): boolean {
@@ -112,10 +108,17 @@ function numArg(args: string[], index: number): boolean {
 }
 
 function exact(command: string, args: string[]): (step: PlanStep) => boolean {
-  return (step) => step.command === command && step.args.length === args.length && step.args.every((arg, i) => arg === args[i]);
+  return (step) =>
+    step.command === command &&
+    step.args.length === args.length &&
+    step.args.every((arg, i) => arg === args[i]);
 }
 
-function variable(command: string, prefix: string[], requiredArgs: number): (step: PlanStep) => boolean {
+function variable(
+  command: string,
+  prefix: string[],
+  requiredArgs: number,
+): (step: PlanStep) => boolean {
   return (step) =>
     step.command === command &&
     step.args.length >= requiredArgs &&
@@ -133,7 +136,16 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
     riskLevel: 'none',
     sideEffects: false,
     confirmationRequired: false,
-    build: (_input, id) => ({ id, actionId: 'status.show', input: {}, tool: 'openslack-cli', command: 'status', args: [], description: 'Show product dashboard', confirmationRequired: false }),
+    build: (_input, id) => ({
+      id,
+      actionId: 'status.show',
+      input: {},
+      tool: 'openslack-cli',
+      command: 'status',
+      args: [],
+      description: 'Show product dashboard',
+      confirmationRequired: false,
+    }),
     match: exact('status', []),
   },
   'workspace.status': {
@@ -143,7 +155,16 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
     riskLevel: 'none',
     sideEffects: false,
     confirmationRequired: false,
-    build: (_input, id) => ({ id, actionId: 'workspace.status', input: {}, tool: 'openslack-cli', command: 'workspace', args: ['status'], description: 'Show workspace status', confirmationRequired: false }),
+    build: (_input, id) => ({
+      id,
+      actionId: 'workspace.status',
+      input: {},
+      tool: 'openslack-cli',
+      command: 'workspace',
+      args: ['status'],
+      description: 'Show workspace status',
+      confirmationRequired: false,
+    }),
     match: exact('workspace', ['status']),
   },
   'github.metrics': {
@@ -153,7 +174,16 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
     riskLevel: 'none',
     sideEffects: false,
     confirmationRequired: false,
-    build: (_input, id) => ({ id, actionId: 'github.metrics', input: {}, tool: 'openslack-cli', command: 'github', args: ['metrics'], description: 'Show task loop metrics', confirmationRequired: false }),
+    build: (_input, id) => ({
+      id,
+      actionId: 'github.metrics',
+      input: {},
+      tool: 'openslack-cli',
+      command: 'github',
+      args: ['metrics'],
+      description: 'Show task loop metrics',
+      confirmationRequired: false,
+    }),
     match: exact('github', ['metrics']),
   },
   'workspace.index': {
@@ -163,7 +193,16 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
     riskLevel: 'low',
     sideEffects: true,
     confirmationRequired: false,
-    build: (_input, id) => ({ id, actionId: 'workspace.index', input: {}, tool: 'openslack-cli', command: 'workspace', args: ['index'], description: 'Build workspace index', confirmationRequired: false }),
+    build: (_input, id) => ({
+      id,
+      actionId: 'workspace.index',
+      input: {},
+      tool: 'openslack-cli',
+      command: 'workspace',
+      args: ['index'],
+      description: 'Build workspace index',
+      confirmationRequired: false,
+    }),
     match: exact('workspace', ['index']),
   },
   'doctor.run': {
@@ -173,7 +212,16 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
     riskLevel: 'none',
     sideEffects: false,
     confirmationRequired: false,
-    build: (_input, id) => ({ id, actionId: 'doctor.run', input: {}, tool: 'openslack-cli', command: 'doctor', args: [], description: 'Run multi-module health check', confirmationRequired: false }),
+    build: (_input, id) => ({
+      id,
+      actionId: 'doctor.run',
+      input: {},
+      tool: 'openslack-cli',
+      command: 'doctor',
+      args: [],
+      description: 'Run multi-module health check',
+      confirmationRequired: false,
+    }),
     match: exact('doctor', []),
   },
   'workspace.validate': {
@@ -183,7 +231,16 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
     riskLevel: 'none',
     sideEffects: false,
     confirmationRequired: false,
-    build: (_input, id) => ({ id, actionId: 'workspace.validate', input: {}, tool: 'openslack-cli', command: 'workspace', args: ['validate'], description: 'Validate workspace', confirmationRequired: false }),
+    build: (_input, id) => ({
+      id,
+      actionId: 'workspace.validate',
+      input: {},
+      tool: 'openslack-cli',
+      command: 'workspace',
+      args: ['validate'],
+      description: 'Validate workspace',
+      confirmationRequired: false,
+    }),
     match: exact('workspace', ['validate']),
   },
   'self.eval.golden': {
@@ -193,7 +250,16 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
     riskLevel: 'none',
     sideEffects: false,
     confirmationRequired: false,
-    build: (_input, id) => ({ id, actionId: 'self.eval.golden', input: {}, tool: 'openslack-cli', command: 'self', args: ['eval', '--suite', 'golden'], description: 'Run golden evals', confirmationRequired: false }),
+    build: (_input, id) => ({
+      id,
+      actionId: 'self.eval.golden',
+      input: {},
+      tool: 'openslack-cli',
+      command: 'self',
+      args: ['eval', '--suite', 'golden'],
+      description: 'Run golden evals',
+      confirmationRequired: false,
+    }),
     match: exact('self', ['eval', '--suite', 'golden']),
   },
   'self.observe': {
@@ -203,7 +269,16 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
     riskLevel: 'none',
     sideEffects: false,
     confirmationRequired: false,
-    build: (_input, id) => ({ id, actionId: 'self.observe', input: {}, tool: 'openslack-cli', command: 'self', args: ['observe'], description: 'Check system health', confirmationRequired: false }),
+    build: (_input, id) => ({
+      id,
+      actionId: 'self.observe',
+      input: {},
+      tool: 'openslack-cli',
+      command: 'self',
+      args: ['observe'],
+      description: 'Check system health',
+      confirmationRequired: false,
+    }),
     match: exact('self', ['observe']),
   },
   'governance.audit': {
@@ -213,7 +288,16 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
     riskLevel: 'none',
     sideEffects: false,
     confirmationRequired: false,
-    build: (_input, id) => ({ id, actionId: 'governance.audit', input: {}, tool: 'openslack-cli', command: 'governance', args: ['audit'], description: 'Audit governance compliance', confirmationRequired: false }),
+    build: (_input, id) => ({
+      id,
+      actionId: 'governance.audit',
+      input: {},
+      tool: 'openslack-cli',
+      command: 'governance',
+      args: ['audit'],
+      description: 'Audit governance compliance',
+      confirmationRequired: false,
+    }),
     match: exact('governance', ['audit']),
   },
   'pr.status': {
@@ -223,7 +307,16 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
     riskLevel: 'none',
     sideEffects: false,
     confirmationRequired: false,
-    build: (input, id) => ({ id, actionId: 'pr.status', input, tool: 'openslack-cli', command: 'pr', args: ['status', str(input.prNumber)], description: `Show PR #${input.prNumber} status`, confirmationRequired: false }),
+    build: (input, id) => ({
+      id,
+      actionId: 'pr.status',
+      input,
+      tool: 'openslack-cli',
+      command: 'pr',
+      args: ['status', str(input.prNumber)],
+      description: `Show PR #${input.prNumber} status`,
+      confirmationRequired: false,
+    }),
     match: (step) => variable('pr', ['status'], 2)(step) && numArg(step.args, 1),
   },
   'pr.doctor': {
@@ -233,7 +326,17 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
     riskLevel: 'none',
     sideEffects: false,
     confirmationRequired: false,
-    build: (input, id) => ({ id, actionId: 'pr.doctor', input, tool: 'openslack-cli', command: 'pr', args: ['doctor', str(input.prNumber)], description: `Diagnose PR #${input.prNumber} governance`, confirmationRequired: false, produces: ['diagnosis'] }),
+    build: (input, id) => ({
+      id,
+      actionId: 'pr.doctor',
+      input,
+      tool: 'openslack-cli',
+      command: 'pr',
+      args: ['doctor', str(input.prNumber)],
+      description: `Diagnose PR #${input.prNumber} governance`,
+      confirmationRequired: false,
+      produces: ['diagnosis'],
+    }),
     match: (step) => variable('pr', ['doctor'], 2)(step) && numArg(step.args, 1),
   },
   'pr.review': {
@@ -243,7 +346,16 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
     riskLevel: 'none',
     sideEffects: false,
     confirmationRequired: false,
-    build: (input, id) => ({ id, actionId: 'pr.review', input, tool: 'openslack-cli', command: 'pr', args: ['review', str(input.prNumber)], description: `Review PR #${input.prNumber}`, confirmationRequired: false }),
+    build: (input, id) => ({
+      id,
+      actionId: 'pr.review',
+      input,
+      tool: 'openslack-cli',
+      command: 'pr',
+      args: ['review', str(input.prNumber)],
+      description: `Review PR #${input.prNumber}`,
+      confirmationRequired: false,
+    }),
     match: (step) => variable('pr', ['review'], 2)(step) && numArg(step.args, 1),
   },
   'pr.queue': {
@@ -253,7 +365,16 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
     riskLevel: 'none',
     sideEffects: false,
     confirmationRequired: false,
-    build: (_input, id) => ({ id, actionId: 'pr.queue', input: {}, tool: 'openslack-cli', command: 'pr', args: ['queue'], description: 'Show PR queue', confirmationRequired: false }),
+    build: (_input, id) => ({
+      id,
+      actionId: 'pr.queue',
+      input: {},
+      tool: 'openslack-cli',
+      command: 'pr',
+      args: ['queue'],
+      description: 'Show PR queue',
+      confirmationRequired: false,
+    }),
     match: exact('pr', ['queue']),
   },
   'pr.watch': {
@@ -263,7 +384,16 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
     riskLevel: 'none',
     sideEffects: false,
     confirmationRequired: false,
-    build: (input, id) => ({ id, actionId: 'pr.watch', input, tool: 'openslack-cli', command: 'pr', args: ['watch', str(input.prNumber)], description: `Watch PR #${input.prNumber} until ready`, confirmationRequired: false }),
+    build: (input, id) => ({
+      id,
+      actionId: 'pr.watch',
+      input,
+      tool: 'openslack-cli',
+      command: 'pr',
+      args: ['watch', str(input.prNumber)],
+      description: `Watch PR #${input.prNumber} until ready`,
+      confirmationRequired: false,
+    }),
     match: (step) => variable('pr', ['watch'], 2)(step) && numArg(step.args, 1),
   },
   'pr.merge': {
@@ -273,7 +403,16 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
     riskLevel: 'high',
     sideEffects: true,
     confirmationRequired: true,
-    build: (input, id) => ({ id, actionId: 'pr.merge', input, tool: 'openslack-cli', command: 'pr', args: ['merge', str(input.prNumber)], description: `Merge PR #${input.prNumber}`, confirmationRequired: true }),
+    build: (input, id) => ({
+      id,
+      actionId: 'pr.merge',
+      input,
+      tool: 'openslack-cli',
+      command: 'pr',
+      args: ['merge', str(input.prNumber)],
+      description: `Merge PR #${input.prNumber}`,
+      confirmationRequired: true,
+    }),
     match: (step) => variable('pr', ['merge'], 2)(step) && numArg(step.args, 1),
   },
   'task.create.preview': {
@@ -289,7 +428,13 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
       input,
       tool: 'openslack-cli',
       command: 'task',
-      args: ['create', '--template', str(input.template ?? 'investigation'), '--title', str(input.title)],
+      args: [
+        'create',
+        '--template',
+        str(input.template ?? 'investigation'),
+        '--title',
+        str(input.title),
+      ],
       description: `Preview task "${input.title}"`,
       confirmationRequired: false,
     }),
@@ -302,7 +447,16 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
     riskLevel: 'medium',
     sideEffects: true,
     confirmationRequired: false,
-    build: (_input, id) => ({ id, actionId: 'self.triage.create_issues', input: {}, tool: 'openslack-cli', command: 'self', args: ['triage', '--create-issues'], description: 'Create EVOL tasks on GitHub', confirmationRequired: false }),
+    build: (_input, id) => ({
+      id,
+      actionId: 'self.triage.create_issues',
+      input: {},
+      tool: 'openslack-cli',
+      command: 'self',
+      args: ['triage', '--create-issues'],
+      description: 'Create EVOL tasks on GitHub',
+      confirmationRequired: false,
+    }),
     match: exact('self', ['triage', '--create-issues']),
   },
   'agent.claim_task': {
@@ -312,38 +466,109 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
     riskLevel: 'low',
     sideEffects: true,
     confirmationRequired: false,
-    build: (input, id) => ({ id, actionId: 'agent.claim_task', input, tool: 'openslack-cli', command: 'agent', args: ['tick', '--source', 'github-issues', '--agent-id', str(input.agentId)], description: `Claim task for ${input.agentId}`, confirmationRequired: false }),
-    match: (step) => variable('agent', ['tick', '--source', 'github-issues', '--agent-id'], 5)(step),
+    build: (input, id) => ({
+      id,
+      actionId: 'agent.claim_task',
+      input,
+      tool: 'openslack-cli',
+      command: 'agent',
+      args: ['tick', '--source', 'github-issues', '--agent-id', str(input.agentId)],
+      description: `Claim task for ${input.agentId}`,
+      confirmationRequired: false,
+    }),
+    match: (step) =>
+      variable('agent', ['tick', '--source', 'github-issues', '--agent-id'], 5)(step),
   },
   'task.checkout': {
     id: 'task.checkout',
     description: 'Create worktree for an issue',
-    inputSchema: { issueNumber: { type: 'number', required: true }, agentId: { type: 'string', required: true } },
+    inputSchema: {
+      issueNumber: { type: 'number', required: true },
+      agentId: { type: 'string', required: true },
+    },
     riskLevel: 'low',
     sideEffects: true,
     confirmationRequired: false,
-    build: (input, id) => ({ id, actionId: 'task.checkout', input, tool: 'openslack-cli', command: 'task', args: ['checkout', '--issue-number', str(input.issueNumber), '--agent-id', str(input.agentId)], description: `Create worktree for issue #${input.issueNumber}`, confirmationRequired: false }),
+    build: (input, id) => ({
+      id,
+      actionId: 'task.checkout',
+      input,
+      tool: 'openslack-cli',
+      command: 'task',
+      args: [
+        'checkout',
+        '--issue-number',
+        str(input.issueNumber),
+        '--agent-id',
+        str(input.agentId),
+      ],
+      description: `Create worktree for issue #${input.issueNumber}`,
+      confirmationRequired: false,
+    }),
     match: (step) => variable('task', ['checkout', '--issue-number'], 5)(step),
   },
   'task.sync': {
     id: 'task.sync',
     description: 'Propose workspace PR for an issue',
-    inputSchema: { issueNumber: { type: 'number', required: true }, agentId: { type: 'string', required: true }, paths: { type: 'string', required: true } },
+    inputSchema: {
+      issueNumber: { type: 'number', required: true },
+      agentId: { type: 'string', required: true },
+      paths: { type: 'string', required: true },
+    },
     riskLevel: 'medium',
     sideEffects: true,
     confirmationRequired: true,
-    build: (input, id) => ({ id, actionId: 'task.sync', input, tool: 'openslack-cli', command: 'task', args: ['sync', '--issue-number', str(input.issueNumber), '--agent-id', str(input.agentId), '--paths', str(input.paths)], description: `Propose workspace PR for issue #${input.issueNumber}`, confirmationRequired: true }),
+    build: (input, id) => ({
+      id,
+      actionId: 'task.sync',
+      input,
+      tool: 'openslack-cli',
+      command: 'task',
+      args: [
+        'sync',
+        '--issue-number',
+        str(input.issueNumber),
+        '--agent-id',
+        str(input.agentId),
+        '--paths',
+        str(input.paths),
+      ],
+      description: `Propose workspace PR for issue #${input.issueNumber}`,
+      confirmationRequired: true,
+    }),
     match: (step) => variable('task', ['sync', '--issue-number'], 7)(step),
   },
   'github.issue_done': {
     id: 'github.issue_done',
     description: 'Mark issue done',
-    inputSchema: { issueNumber: { type: 'number', required: true }, agentId: { type: 'string', required: true }, prUrl: { type: 'string', required: true } },
+    inputSchema: {
+      issueNumber: { type: 'number', required: true },
+      agentId: { type: 'string', required: true },
+      prUrl: { type: 'string', required: true },
+    },
     riskLevel: 'medium',
     sideEffects: true,
     confirmationRequired: true,
-    build: (input, id) => ({ id, actionId: 'github.issue_done', input, tool: 'openslack-cli', command: 'github', args: ['issue-done', '--issue-number', str(input.issueNumber), '--agent-id', str(input.agentId), '--pr-url', str(input.prUrl)], description: `Mark issue #${input.issueNumber} as done`, confirmationRequired: true }),
-    match: (step) => variable('github', ['issue-done', '--issue-number'], 7)(step) && numArg(step.args, 2),
+    build: (input, id) => ({
+      id,
+      actionId: 'github.issue_done',
+      input,
+      tool: 'openslack-cli',
+      command: 'github',
+      args: [
+        'issue-done',
+        '--issue-number',
+        str(input.issueNumber),
+        '--agent-id',
+        str(input.agentId),
+        '--pr-url',
+        str(input.prUrl),
+      ],
+      description: `Mark issue #${input.issueNumber} as done`,
+      confirmationRequired: true,
+    }),
+    match: (step) =>
+      variable('github', ['issue-done', '--issue-number'], 7)(step) && numArg(step.args, 2),
   },
   'github.repair.labels.preview': {
     id: 'github.repair.labels.preview',
@@ -352,7 +577,16 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
     riskLevel: 'none',
     sideEffects: false,
     confirmationRequired: false,
-    build: (_input, id) => ({ id, actionId: 'github.repair.labels.preview', input: {}, tool: 'openslack-cli', command: 'github', args: ['repair', 'labels'], description: 'Preview GitHub label repair', confirmationRequired: false }),
+    build: (_input, id) => ({
+      id,
+      actionId: 'github.repair.labels.preview',
+      input: {},
+      tool: 'openslack-cli',
+      command: 'github',
+      args: ['repair', 'labels'],
+      description: 'Preview GitHub label repair',
+      confirmationRequired: false,
+    }),
     match: exact('github', ['repair', 'labels']),
   },
   'github.repair.claims.preview': {
@@ -362,7 +596,16 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
     riskLevel: 'none',
     sideEffects: false,
     confirmationRequired: false,
-    build: (_input, id) => ({ id, actionId: 'github.repair.claims.preview', input: {}, tool: 'openslack-cli', command: 'github', args: ['repair', 'claims'], description: 'Preview GitHub claim repair', confirmationRequired: false }),
+    build: (_input, id) => ({
+      id,
+      actionId: 'github.repair.claims.preview',
+      input: {},
+      tool: 'openslack-cli',
+      command: 'github',
+      args: ['repair', 'claims'],
+      description: 'Preview GitHub claim repair',
+      confirmationRequired: false,
+    }),
     match: exact('github', ['repair', 'claims']),
   },
   'task.repair.worktrees.preview': {
@@ -372,13 +615,27 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
     riskLevel: 'none',
     sideEffects: false,
     confirmationRequired: false,
-    build: (_input, id) => ({ id, actionId: 'task.repair.worktrees.preview', input: {}, tool: 'openslack-cli', command: 'task', args: ['repair', 'worktrees'], description: 'Preview local worktree repair', confirmationRequired: false }),
+    build: (_input, id) => ({
+      id,
+      actionId: 'task.repair.worktrees.preview',
+      input: {},
+      tool: 'openslack-cli',
+      command: 'task',
+      args: ['repair', 'worktrees'],
+      description: 'Preview local worktree repair',
+      confirmationRequired: false,
+    }),
     match: exact('task', ['repair', 'worktrees']),
   },
   'conversation.start': {
     id: 'conversation.start',
     description: 'Create a new conversation thread',
-    inputSchema: { title: { type: 'string', required: true }, pr: { type: 'number' }, issue: { type: 'number' }, workflow: { type: 'string' } },
+    inputSchema: {
+      title: { type: 'string', required: true },
+      pr: { type: 'number' },
+      issue: { type: 'number' },
+      workflow: { type: 'string' },
+    },
     riskLevel: 'low',
     sideEffects: true,
     confirmationRequired: false,
@@ -387,7 +644,16 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
       if (input.pr !== undefined) args.push('--pr', str(input.pr));
       if (input.issue !== undefined) args.push('--issue', str(input.issue));
       if (input.workflow !== undefined) args.push('--workflow', str(input.workflow));
-      return { id, actionId: 'conversation.start', input, tool: 'openslack-cli', command: 'conversation', args, description: `Create conversation thread "${input.title}"`, confirmationRequired: false };
+      return {
+        id,
+        actionId: 'conversation.start',
+        input,
+        tool: 'openslack-cli',
+        command: 'conversation',
+        args,
+        description: `Create conversation thread "${input.title}"`,
+        confirmationRequired: false,
+      };
     },
     match: (step) => variable('conversation', ['start'], 3)(step) && step.args.includes('--title'),
   },
@@ -401,7 +667,16 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
     build: (input, id) => {
       const args = ['list'];
       if (input.status) args.push('--status', str(input.status));
-      return { id, actionId: 'conversation.list', input, tool: 'openslack-cli', command: 'conversation', args, description: 'List conversation threads', confirmationRequired: false };
+      return {
+        id,
+        actionId: 'conversation.list',
+        input,
+        tool: 'openslack-cli',
+        command: 'conversation',
+        args,
+        description: 'List conversation threads',
+        confirmationRequired: false,
+      };
     },
     match: (step) => variable('conversation', ['list'], 1)(step),
   },
@@ -412,17 +687,38 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
     riskLevel: 'none',
     sideEffects: false,
     confirmationRequired: false,
-    build: (input, id) => ({ id, actionId: 'conversation.show', input, tool: 'openslack-cli', command: 'conversation', args: ['show', str(input.threadId)], description: `Show conversation thread ${input.threadId}`, confirmationRequired: false }),
+    build: (input, id) => ({
+      id,
+      actionId: 'conversation.show',
+      input,
+      tool: 'openslack-cli',
+      command: 'conversation',
+      args: ['show', str(input.threadId)],
+      description: `Show conversation thread ${input.threadId}`,
+      confirmationRequired: false,
+    }),
     match: (step) => variable('conversation', ['show'], 2)(step),
   },
   'conversation.send': {
     id: 'conversation.send',
     description: 'Send message to conversation thread',
-    inputSchema: { threadId: { type: 'string', required: true }, message: { type: 'string', required: true } },
+    inputSchema: {
+      threadId: { type: 'string', required: true },
+      message: { type: 'string', required: true },
+    },
     riskLevel: 'medium',
     sideEffects: true,
     confirmationRequired: false,
-    build: (input, id) => ({ id, actionId: 'conversation.send', input, tool: 'openslack-cli', command: 'conversation', args: ['send', str(input.threadId), str(input.message)], description: `Send message to thread ${input.threadId}`, confirmationRequired: false }),
+    build: (input, id) => ({
+      id,
+      actionId: 'conversation.send',
+      input,
+      tool: 'openslack-cli',
+      command: 'conversation',
+      args: ['send', str(input.threadId), str(input.message)],
+      description: `Send message to thread ${input.threadId}`,
+      confirmationRequired: false,
+    }),
     match: (step) => variable('conversation', ['send'], 3)(step),
   },
   'conversation.summarize': {
@@ -432,7 +728,16 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
     riskLevel: 'none',
     sideEffects: false,
     confirmationRequired: false,
-    build: (input, id) => ({ id, actionId: 'conversation.summarize', input, tool: 'openslack-cli', command: 'conversation', args: ['summarize', str(input.threadId)], description: `Summarize conversation thread ${input.threadId}`, confirmationRequired: false }),
+    build: (input, id) => ({
+      id,
+      actionId: 'conversation.summarize',
+      input,
+      tool: 'openslack-cli',
+      command: 'conversation',
+      args: ['summarize', str(input.threadId)],
+      description: `Summarize conversation thread ${input.threadId}`,
+      confirmationRequired: false,
+    }),
     match: (step) => variable('conversation', ['summarize'], 2)(step),
   },
   'conversation.archive': {
@@ -442,7 +747,16 @@ const BUILT_IN_ACTION_DEFINITIONS: Record<
     riskLevel: 'medium',
     sideEffects: true,
     confirmationRequired: false,
-    build: (input, id) => ({ id, actionId: 'conversation.archive', input, tool: 'openslack-cli', command: 'conversation', args: ['archive', str(input.threadId)], description: `Archive conversation thread ${input.threadId}`, confirmationRequired: false }),
+    build: (input, id) => ({
+      id,
+      actionId: 'conversation.archive',
+      input,
+      tool: 'openslack-cli',
+      command: 'conversation',
+      args: ['archive', str(input.threadId)],
+      description: `Archive conversation thread ${input.threadId}`,
+      confirmationRequired: false,
+    }),
     match: (step) => variable('conversation', ['archive'], 2)(step),
   },
 };
@@ -645,7 +959,10 @@ function normalizePlanStep(value: unknown): PlanStep | undefined {
   return Object.freeze(normalized);
 }
 
-function sameStringArray(left: readonly string[] | undefined, right: readonly string[] | undefined): boolean {
+function sameStringArray(
+  left: readonly string[] | undefined,
+  right: readonly string[] | undefined,
+): boolean {
   if (left === undefined || right === undefined) return left === right;
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
@@ -654,10 +971,7 @@ function sameToolInput(left: ToolInput | undefined, right: ToolInput | undefined
   if (left === undefined || right === undefined) return left === right;
   const leftKeys = Object.keys(left).sort();
   const rightKeys = Object.keys(right).sort();
-  return (
-    sameStringArray(leftKeys, rightKeys) &&
-    leftKeys.every((key) => left[key] === right[key])
-  );
+  return sameStringArray(leftKeys, rightKeys) && leftKeys.every((key) => left[key] === right[key]);
 }
 
 function samePlanStep(left: PlanStep, right: PlanStep): boolean {
@@ -674,7 +988,10 @@ function samePlanStep(left: PlanStep, right: PlanStep): boolean {
   );
 }
 
-export function validateRegisteredActionInput(action: RegisteredAction, input: ToolInput): string[] {
+export function validateRegisteredActionInput(
+  action: RegisteredAction,
+  input: ToolInput,
+): string[] {
   const errors: string[] = [];
   for (const [name, field] of Object.entries(action.inputSchema)) {
     const value = input[name];
@@ -724,7 +1041,10 @@ function buildCanonicalStep(
   return step;
 }
 
-function unsafeStepIdentity(value: unknown): { readonly stepId: string; readonly actionId?: string } {
+function unsafeStepIdentity(value: unknown): {
+  readonly stepId: string;
+  readonly actionId?: string;
+} {
   const descriptors = ownDataDescriptors(value);
   const stepId = typeof descriptors?.id?.value === 'string' ? descriptors.id.value : 'unknown';
   const actionId =
@@ -818,15 +1138,11 @@ class InstanceActionRegistry implements ActionRegistryPort {
     if (calls.length > 6) {
       throw new Error('Registered action plan exceeds max tool step limit: 6');
     }
-    return calls.map((call, index) =>
-      this.createStep(call.actionId, call.input, `s${index + 1}`),
-    );
+    return calls.map((call, index) => this.createStep(call.actionId, call.input, `s${index + 1}`));
   }
 }
 
-export function createActionRegistry(
-  actions: readonly RegisteredAction[],
-): ActionRegistryPort {
+export function createActionRegistry(actions: readonly RegisteredAction[]): ActionRegistryPort {
   return new InstanceActionRegistry(actions);
 }
 

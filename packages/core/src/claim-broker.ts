@@ -1,4 +1,13 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync, renameSync, unlinkSync, openSync, closeSync } from 'node:fs';
+import {
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  renameSync,
+  unlinkSync,
+  openSync,
+  closeSync,
+} from 'node:fs';
 import { join, dirname } from 'node:path';
 
 export interface Lease {
@@ -27,7 +36,14 @@ export interface ClaimResult {
   leaseId?: string;
   lease?: Lease;
   expiresAt?: string;
-  reason?: 'NOT_READY' | 'ALREADY_CLAIMED' | 'CAPABILITY_MISMATCH' | 'RISK_EXCEEDED' | 'BUDGET_EXCEEDED' | 'AGENT_PAUSED' | 'LOCK_TIMEOUT';
+  reason?:
+    | 'NOT_READY'
+    | 'ALREADY_CLAIMED'
+    | 'CAPABILITY_MISMATCH'
+    | 'RISK_EXCEEDED'
+    | 'BUDGET_EXCEEDED'
+    | 'AGENT_PAUSED'
+    | 'LOCK_TIMEOUT';
 }
 
 export class ClaimBroker {
@@ -195,10 +211,18 @@ export class FileClaimBroker extends ClaimBroker {
 
   private releaseLock(): void {
     if (this.lockFd !== null) {
-      try { closeSync(this.lockFd); } catch { /* ignore */ }
+      try {
+        closeSync(this.lockFd);
+      } catch {
+        /* ignore */
+      }
       this.lockFd = null;
     }
-    try { unlinkSync(this.lockPath); } catch { /* ignore */ }
+    try {
+      unlinkSync(this.lockPath);
+    } catch {
+      /* ignore */
+    }
   }
 
   private loadWithLock(): void {
@@ -235,7 +259,8 @@ export class FileClaimBroker extends ClaimBroker {
   }
 
   override claimTask(request: ClaimRequest): ClaimResult {
-    if (!this.acquireLock()) return { claimStatus: 'denied', taskId: request.taskId, reason: 'LOCK_TIMEOUT' };
+    if (!this.acquireLock())
+      return { claimStatus: 'denied', taskId: request.taskId, reason: 'LOCK_TIMEOUT' };
     try {
       this.loadWithLock();
       const result = super.claimTask(request);
@@ -284,6 +309,10 @@ export class FileClaimBroker extends ClaimBroker {
 
   override _reset(): void {
     super._reset();
-    try { unlinkSync(this.statePath); } catch { /* ignore */ }
+    try {
+      unlinkSync(this.statePath);
+    } catch {
+      /* ignore */
+    }
   }
 }

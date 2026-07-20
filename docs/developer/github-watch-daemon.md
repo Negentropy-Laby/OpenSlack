@@ -30,12 +30,12 @@ Primary user outcomes:
 
 The daemon is a cross-module capability, not a sixth active module.
 
-| Area | Responsibility |
-|------|----------------|
-| GitHub Issues Task Loop | Repo allowlist, Issue webhook normalization, polling fallback, task matching. |
-| Collaboration Layer | Event recording, dashboard/room projection, notification audit. |
-| Operator Interface | User-facing start/status/doctor commands and setup guidance. |
-| Agent Identity Control Plane | Optional auto-claim authorization. |
+| Area                         | Responsibility                                                                |
+| ---------------------------- | ----------------------------------------------------------------------------- |
+| GitHub Issues Task Loop      | Repo allowlist, Issue webhook normalization, polling fallback, task matching. |
+| Collaboration Layer          | Event recording, dashboard/room projection, notification audit.               |
+| Operator Interface           | User-facing start/status/doctor commands and setup guidance.                  |
+| Agent Identity Control Plane | Optional auto-claim authorization.                                            |
 
 Recommended CLI namespace:
 
@@ -126,7 +126,7 @@ repositories:
         - blocked
     routes:
       - sink: slack
-        channel: "#openslack-tasks"
+        channel: '#openslack-tasks'
       - sink: webhook
         name: local-dev
     auto_claim:
