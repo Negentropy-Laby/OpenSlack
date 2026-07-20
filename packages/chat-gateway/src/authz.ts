@@ -33,7 +33,9 @@ export function mapActor(
 ): { id: string; roles: string[]; agentId?: string } | undefined {
   const provider = message.channel.type === 'webhook' ? 'webhook' : 'slack';
   const mapped = mappings.find(
-    (m) => m.providerUserId === message.user.id && (m.provider === message.channel.type || m.provider === provider),
+    (m) =>
+      m.providerUserId === message.user.id &&
+      (m.provider === message.channel.type || m.provider === provider),
   );
   if (mapped) {
     return mapped.agentId
@@ -46,12 +48,14 @@ export function mapActor(
 function isActorMapping(value: unknown): value is ActorMapping {
   if (!value || typeof value !== 'object') return false;
   const item = value as Record<string, unknown>;
-  return typeof item.providerUserId === 'string' &&
+  return (
+    typeof item.providerUserId === 'string' &&
     typeof item.provider === 'string' &&
     typeof item.openslackActorId === 'string' &&
     Array.isArray(item.roles) &&
     item.roles.every((role) => typeof role === 'string') &&
-    (item.agentId === undefined || typeof item.agentId === 'string');
+    (item.agentId === undefined || typeof item.agentId === 'string')
+  );
 }
 
 export function loadActorMappings(path: string | undefined): ActorMapping[] {
@@ -59,7 +63,11 @@ export function loadActorMappings(path: string | undefined): ActorMapping[] {
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf-8')) as unknown;
     if (Array.isArray(parsed)) return parsed.filter(isActorMapping);
-    if (parsed && typeof parsed === 'object' && Array.isArray((parsed as { mappings?: unknown }).mappings)) {
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      Array.isArray((parsed as { mappings?: unknown }).mappings)
+    ) {
       return (parsed as { mappings: unknown[] }).mappings.filter(isActorMapping);
     }
     return [];

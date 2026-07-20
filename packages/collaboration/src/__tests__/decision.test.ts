@@ -54,7 +54,12 @@ describe('decision', () => {
   });
 
   it('gets a decision by id', () => {
-    const created = recordDecision({ topic: 'X', decision: 'Do X', rationale: 'Because', decidedBy: 'z' });
+    const created = recordDecision({
+      topic: 'X',
+      decision: 'Do X',
+      rationale: 'Because',
+      decidedBy: 'z',
+    });
     const fetched = getDecision(created.id);
 
     expect(fetched).toBeDefined();
@@ -66,7 +71,12 @@ describe('decision', () => {
   });
 
   it('supersedes an active decision', () => {
-    const old = recordDecision({ topic: 'Old', decision: 'Do old', rationale: 'Because', decidedBy: 'a' });
+    const old = recordDecision({
+      topic: 'Old',
+      decision: 'Do old',
+      rationale: 'Because',
+      decidedBy: 'a',
+    });
     const updated = supersedeDecision(old.id, 'DEC-NEW');
 
     expect(updated).toBeDefined();
@@ -75,7 +85,12 @@ describe('decision', () => {
   });
 
   it('fails to supersede a non-active decision', () => {
-    const d = recordDecision({ topic: 'Old', decision: 'Do old', rationale: 'Because', decidedBy: 'a' });
+    const d = recordDecision({
+      topic: 'Old',
+      decision: 'Do old',
+      rationale: 'Because',
+      decidedBy: 'a',
+    });
     supersedeDecision(d.id, 'DEC-NEW');
 
     const second = supersedeDecision(d.id, 'DEC-OTHER');
@@ -83,7 +98,12 @@ describe('decision', () => {
   });
 
   it('renders decision list', () => {
-    recordDecision({ topic: 'Use TypeScript', decision: 'Migrate', rationale: 'Types', decidedBy: 'claude' });
+    recordDecision({
+      topic: 'Use TypeScript',
+      decision: 'Migrate',
+      rationale: 'Types',
+      decidedBy: 'claude',
+    });
     const output = renderDecisionList(listDecisions());
 
     expect(output).toContain('Decisions');
@@ -118,9 +138,19 @@ describe('decision', () => {
   });
 
   it('sorts list by createdAt descending', async () => {
-    const d1 = recordDecision({ topic: 'First', decision: 'Do 1', rationale: 'Because', decidedBy: 'a' });
+    const d1 = recordDecision({
+      topic: 'First',
+      decision: 'Do 1',
+      rationale: 'Because',
+      decidedBy: 'a',
+    });
     await new Promise((r) => setTimeout(r, 50));
-    const d2 = recordDecision({ topic: 'Second', decision: 'Do 2', rationale: 'Because', decidedBy: 'b' });
+    const d2 = recordDecision({
+      topic: 'Second',
+      decision: 'Do 2',
+      rationale: 'Because',
+      decidedBy: 'b',
+    });
 
     const list = listDecisions();
     expect(list.map((d) => d.id)).toContain(d1.id);

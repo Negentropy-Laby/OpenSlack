@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { buildPRCard, buildTaskCard, buildHandoffCard, buildDecisionCard, buildWorkflowCard, buildPlanCard, toSlackBlocks, cardToText } from '../cards.js';
+import {
+  buildPRCard,
+  buildTaskCard,
+  buildHandoffCard,
+  buildDecisionCard,
+  buildWorkflowCard,
+  buildPlanCard,
+  toSlackBlocks,
+  cardToText,
+} from '../cards.js';
 import type { PRChatSummary } from '@openslack/pr';
 import type { Handoff, Decision, WorkflowPreview } from '@openslack/collaboration';
 import type { ActionPlan } from '@openslack/operator';
@@ -70,7 +79,10 @@ describe('toSlackBlocks', () => {
     expect(header.type).toBe('section');
     expect(header.text.text).toContain('PR #12');
 
-    const actions = blocks[blocks.length - 1] as { type: string; elements: Array<{ type: string; action_id: string }> };
+    const actions = blocks[blocks.length - 1] as {
+      type: string;
+      elements: Array<{ type: string; action_id: string }>;
+    };
     expect(actions.type).toBe('actions');
     expect(actions.elements[0].action_id).toBe('confirm_merge:12');
   });
@@ -116,7 +128,13 @@ describe('buildTaskCard', () => {
   });
 
   it('includes assignee and risk when present', () => {
-    const card = buildTaskCard({ issueNumber: 10, title: 'Bug', status: 'claimed', assignee: 'bot_001', risk: 'high' });
+    const card = buildTaskCard({
+      issueNumber: 10,
+      title: 'Bug',
+      status: 'claimed',
+      assignee: 'bot_001',
+      risk: 'high',
+    });
     expect(card.fields).toContainEqual({ label: 'Assignee', value: 'bot_001' });
     expect(card.fields).toContainEqual({ label: 'Risk', value: 'high' });
   });
@@ -182,8 +200,20 @@ describe('buildWorkflowCard', () => {
     name: 'Release Flow',
     correlationId: 'WF-RELEASE-20260525-A1B2C3',
     steps: [
-      { phase: 'Build', type: 'action', title: 'Run tests', sideEffects: false, requiresConfirmation: false },
-      { phase: 'Deploy', type: 'action', title: 'Deploy to prod', sideEffects: true, requiresConfirmation: true },
+      {
+        phase: 'Build',
+        type: 'action',
+        title: 'Run tests',
+        sideEffects: false,
+        requiresConfirmation: false,
+      },
+      {
+        phase: 'Deploy',
+        type: 'action',
+        title: 'Deploy to prod',
+        sideEffects: true,
+        requiresConfirmation: true,
+      },
     ],
     errors: [],
   };

@@ -100,9 +100,7 @@ export async function diagnoseNegentropyIntegration(
       ),
     );
   } else {
-    findings.push(
-      finding('NEGENTROPY_EVIDENCE_FRESH', 'SKIP', 'No canonical preview to assess.'),
-    );
+    findings.push(finding('NEGENTROPY_EVIDENCE_FRESH', 'SKIP', 'No canonical preview to assess.'));
   }
 
   const signatureAttached = existsSync(negentropySignaturePath(options.workspaceRoot));
@@ -389,7 +387,9 @@ function assertContributionIdentity(
     throw new Error('Contribution exceeds projection-only scope.');
   }
   const permission = record(manifest.permission);
-  const forbidden = new Set(Array.isArray(permission.forbiddenApiMethods) ? permission.forbiddenApiMethods : []);
+  const forbidden = new Set(
+    Array.isArray(permission.forbiddenApiMethods) ? permission.forbiddenApiMethods : [],
+  );
   if (
     Object.hasOwn(permission, 'authorityWriterHandle') ||
     !forbidden.has('authorityWriterHandle') ||
@@ -439,7 +439,9 @@ function readBoundedJson(root: string, path: string, maximum: number): unknown {
   if (!info.isFile() || info.isSymbolicLink() || info.size > maximum) {
     throw new Error('Negentropy artifact must be a bounded regular file.');
   }
-  return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(readFileSync(path))) as unknown;
+  return JSON.parse(
+    new TextDecoder('utf-8', { fatal: true }).decode(readFileSync(path)),
+  ) as unknown;
 }
 
 function exactRecord(value: unknown, fields: readonly string[]): Record<string, unknown> {

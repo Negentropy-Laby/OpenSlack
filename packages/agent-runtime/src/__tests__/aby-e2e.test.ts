@@ -69,7 +69,11 @@ describe('real Aby bridge smoke', () => {
       const run = store.getRun(result.runId);
       expect(run?.status).toBe('completed');
       const transcript = readTranscript(result.runId, root);
-      expect(transcript.some((event) => event.type === 'progress' && event.data.step === 'bridge_session_started')).toBe(true);
+      expect(
+        transcript.some(
+          (event) => event.type === 'progress' && event.data.step === 'bridge_session_started',
+        ),
+      ).toBe(true);
       expect(transcript.some((event) => event.type === 'complete')).toBe(true);
     } finally {
       cleanup(root);

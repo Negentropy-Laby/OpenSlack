@@ -58,12 +58,12 @@ When a workflow runs in `execute` mode (real side effects), the following safety
 
 ## Vocabulary Reference Table
 
-| Term | Scope | Requires Human | Persists to GitHub |
-|------|-------|---------------|-------------------|
-| Approve Plan | OpenSlack workflow | Yes | No |
-| Confirm Operation | OpenSlack execution | Yes (or `--yes`) | No |
-| Confirm Merge | OpenSlack PRMS | Yes (or `--yes`) | No (PRMS submits request) |
-| GitHub Review Approval | GitHub PR | Yes, with GitHub identity | Yes |
+| Term                   | Scope               | Requires Human            | Persists to GitHub        |
+| ---------------------- | ------------------- | ------------------------- | ------------------------- |
+| Approve Plan           | OpenSlack workflow  | Yes                       | No                        |
+| Confirm Operation      | OpenSlack execution | Yes (or `--yes`)          | No                        |
+| Confirm Merge          | OpenSlack PRMS      | Yes (or `--yes`)          | No (PRMS submits request) |
+| GitHub Review Approval | GitHub PR           | Yes, with GitHub identity | Yes                       |
 
 ## Anti-Patterns to Avoid
 

@@ -1,7 +1,13 @@
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
-import type { ActionPlan, PlanStep, StepResult, ExecutionResult, ExecutionOptions } from './types.js';
+import type {
+  ActionPlan,
+  PlanStep,
+  StepResult,
+  ExecutionResult,
+  ExecutionOptions,
+} from './types.js';
 import { BUILTIN_ACTION_REGISTRY, type ActionRegistryPort } from './tool-registry.js';
 import type { AgentPrincipal } from '@openslack/kernel';
 import { authorizeAgentAction, classifyPaths } from '@openslack/kernel';
@@ -28,7 +34,8 @@ function generatePlanId(): string {
 function runCLIStep(step: PlanStep, root: string): Promise<StepResult> {
   return new Promise((resolve) => {
     const args = [
-      '--import', 'tsx',
+      '--import',
+      'tsx',
       join(root, 'apps', 'cli', 'src', 'index.ts'),
       step.command,
       ...step.args,
@@ -67,7 +74,10 @@ function runCLIStep(step: PlanStep, root: string): Promise<StepResult> {
 
 function splitPathList(value: unknown): string[] {
   if (typeof value !== 'string') return [];
-  return value.split(',').map((path) => path.trim()).filter(Boolean);
+  return value
+    .split(',')
+    .map((path) => path.trim())
+    .filter(Boolean);
 }
 
 function getStepChangedPaths(step: PlanStep): string[] {
@@ -110,7 +120,10 @@ function rejectedStep(
 
 export async function executePlan(
   plan: ActionPlan,
-  options: ExecutionOptions & { principal?: AgentPrincipal; snapshot?: AgentPermissionSnapshot } = {},
+  options: ExecutionOptions & {
+    principal?: AgentPrincipal;
+    snapshot?: AgentPermissionSnapshot;
+  } = {},
   registry: ActionRegistryPort = BUILTIN_ACTION_REGISTRY,
 ): Promise<ExecutionResult> {
   const planId = generatePlanId();
@@ -205,7 +218,11 @@ export async function executePlan(
 
         const confirmed = await options.confirmStep(step);
         if (!confirmed) {
-          results.push({ stepId: step.id, status: 'skipped', output: 'Authorization cancelled by user' });
+          results.push({
+            stepId: step.id,
+            status: 'skipped',
+            output: 'Authorization cancelled by user',
+          });
           return {
             planId,
             status: 'cancelled',

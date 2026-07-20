@@ -3,7 +3,10 @@ import type { ActionPlan, ExecutionResult } from './types.js';
 function redactPotentialSecrets(value: string): string {
   return value
     .replace(/sk-[a-zA-Z0-9]{20,}/g, '[redacted secret]')
-    .replace(/-----BEGIN (RSA|EC|OPENSSH|DSA) PRIVATE KEY-----[\s\S]*?-----END \1 PRIVATE KEY-----/g, '[redacted private key]');
+    .replace(
+      /-----BEGIN (RSA|EC|OPENSSH|DSA) PRIVATE KEY-----[\s\S]*?-----END \1 PRIVATE KEY-----/g,
+      '[redacted private key]',
+    );
 }
 
 function formatOutputSnippet(output: string): string[] {
@@ -11,7 +14,10 @@ function formatOutputSnippet(output: string): string[] {
   if (!redacted) return [];
 
   const maxChars = 1200;
-  const snippet = redacted.length > maxChars ? `${redacted.slice(0, maxChars)}\n... [output truncated]` : redacted;
+  const snippet =
+    redacted.length > maxChars
+      ? `${redacted.slice(0, maxChars)}\n... [output truncated]`
+      : redacted;
   return snippet.split(/\r?\n/).map((line) => `    ${line}`);
 }
 

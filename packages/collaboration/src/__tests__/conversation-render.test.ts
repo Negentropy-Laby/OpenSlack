@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { renderThreadList, renderThread, renderMessage } from '../conversation-render.js';
-import type { AgentConversationThread, AgentConversationMessage, AgentParticipant, ConversationLinkedObject } from '../conversation-types.js';
+import type {
+  AgentConversationThread,
+  AgentConversationMessage,
+  AgentParticipant,
+  ConversationLinkedObject,
+} from '../conversation-types.js';
 
 const now = new Date().toISOString();
 
@@ -33,7 +38,9 @@ function makeThread(overrides: Partial<AgentConversationThread> = {}): AgentConv
   };
 }
 
-function makeMessage(overrides: Partial<AgentConversationMessage> & { kind: AgentConversationMessage['kind'] }): AgentConversationMessage {
+function makeMessage(
+  overrides: Partial<AgentConversationMessage> & { kind: AgentConversationMessage['kind'] },
+): AgentConversationMessage {
   return {
     id: 'MSG-20260602-TEST1',
     threadId: 'CONV-20260602-TEST1',
@@ -95,7 +102,11 @@ describe('conversation-render', () => {
     });
 
     it('renders nextAction when present', () => {
-      const threads = [makeThread({ nextAction: { owner: 'agent-1', action: 'Review PR', command: 'openslack pr doctor 42' } })];
+      const threads = [
+        makeThread({
+          nextAction: { owner: 'agent-1', action: 'Review PR', command: 'openslack pr doctor 42' },
+        }),
+      ];
       const output = renderThreadList(threads);
       expect(output).toContain('agent-1');
       expect(output).toContain('Review PR');
@@ -152,7 +163,9 @@ describe('conversation-render', () => {
     });
 
     it('renders nextAction with command', () => {
-      const thread = makeThread({ nextAction: { owner: 'agent-1', action: 'Run tests', command: 'bun test' } });
+      const thread = makeThread({
+        nextAction: { owner: 'agent-1', action: 'Run tests', command: 'bun test' },
+      });
       const output = renderThread(thread, []);
       expect(output).toContain('Command: bun test');
     });
@@ -179,7 +192,11 @@ describe('conversation-render', () => {
     });
 
     it('renders user_message with source', () => {
-      const msg = makeMessage({ kind: 'user_message', text: 'Hello', source: { kind: 'slack', ref: 'channel-1' } });
+      const msg = makeMessage({
+        kind: 'user_message',
+        text: 'Hello',
+        source: { kind: 'slack', ref: 'channel-1' },
+      });
       const output = renderMessage(msg);
       expect(output).toContain('via slack');
     });
@@ -192,7 +209,11 @@ describe('conversation-render', () => {
     });
 
     it('renders agent_response with structured tag', () => {
-      const msg = makeMessage({ kind: 'agent_response', text: 'Data', structured: { type: 'json', value: 42 } });
+      const msg = makeMessage({
+        kind: 'agent_response',
+        text: 'Data',
+        structured: { type: 'json', value: 42 },
+      });
       const output = renderMessage(msg);
       expect(output).toContain('(structured)');
     });
@@ -218,7 +239,11 @@ describe('conversation-render', () => {
     });
 
     it('renders approval_request', () => {
-      const msg = makeMessage({ kind: 'approval_request', targetAction: 'merge', riskLevel: 'high' });
+      const msg = makeMessage({
+        kind: 'approval_request',
+        targetAction: 'merge',
+        riskLevel: 'high',
+      });
       const output = renderMessage(msg);
       expect(output).toContain('approval_needed');
       expect(output).toContain('merge');
@@ -233,7 +258,12 @@ describe('conversation-render', () => {
     });
 
     it('renders handoff', () => {
-      const msg = makeMessage({ kind: 'handoff', handoffId: 'HO-1', toParticipant: 'agent-2', summary: 'Passing' });
+      const msg = makeMessage({
+        kind: 'handoff',
+        handoffId: 'HO-1',
+        toParticipant: 'agent-2',
+        summary: 'Passing',
+      });
       const output = renderMessage(msg);
       expect(output).toContain('handoff:HO-1');
       expect(output).toContain('agent-2');

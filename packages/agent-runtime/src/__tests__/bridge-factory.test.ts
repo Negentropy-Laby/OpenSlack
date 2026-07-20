@@ -19,7 +19,11 @@ function makeTempRoot(): string {
 }
 
 function cleanup(root: string) {
-  try { rmSync(root, { recursive: true, force: true }); } catch { /* ignore */ }
+  try {
+    rmSync(root, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
 }
 
 describe('createBridgeAdapter', () => {
@@ -43,9 +47,9 @@ describe('createBridgeAdapter', () => {
   });
 
   it('throws for external-command mode without command', () => {
-    expect(() =>
-      createBridgeAdapter({ bridgeMode: 'external-command' }),
-    ).toThrow(BridgeFactoryError);
+    expect(() => createBridgeAdapter({ bridgeMode: 'external-command' })).toThrow(
+      BridgeFactoryError,
+    );
   });
 
   it('returns BridgeProcessAdapter for process mode', () => {
@@ -58,9 +62,7 @@ describe('createBridgeAdapter', () => {
   });
 
   it('throws for process mode without command', () => {
-    expect(() =>
-      createBridgeAdapter({ bridgeMode: 'process' }),
-    ).toThrow(BridgeFactoryError);
+    expect(() => createBridgeAdapter({ bridgeMode: 'process' })).toThrow(BridgeFactoryError);
   });
 
   it('returns FakeBridgeAdapter for fake mode', () => {
@@ -70,15 +72,15 @@ describe('createBridgeAdapter', () => {
   });
 
   it('throws for unknown mode', () => {
-    expect(() =>
-      createBridgeAdapter({ bridgeMode: 'unknown' as any }),
-    ).toThrow(/Unknown bridge mode/);
+    expect(() => createBridgeAdapter({ bridgeMode: 'unknown' as any })).toThrow(
+      /Unknown bridge mode/,
+    );
   });
 
   it('error message includes valid modes', () => {
-    expect(() =>
-      createBridgeAdapter({ bridgeMode: 'bad' as any }),
-    ).toThrow(/local.*external-command.*process.*fake/);
+    expect(() => createBridgeAdapter({ bridgeMode: 'bad' as any })).toThrow(
+      /local.*external-command.*process.*fake/,
+    );
   });
 
   it('passes availableMcpServers to process adapter', () => {

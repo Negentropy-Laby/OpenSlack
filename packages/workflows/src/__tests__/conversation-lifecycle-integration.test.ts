@@ -166,7 +166,10 @@ describe('conversation lifecycle integration', () => {
     const result = await executeRun(
       {
         meta: testManifest({
-          phases: [{ title: 'plan', detail: 'plan phase' }, { title: 'execute', detail: 'execute phase' }],
+          phases: [
+            { title: 'plan', detail: 'plan phase' },
+            { title: 'execute', detail: 'execute phase' },
+          ],
         }),
         run: async (ctx: WorkflowRuntime) => {
           ctx.phase('plan');
@@ -186,7 +189,10 @@ describe('conversation lifecycle integration', () => {
       },
       {
         manifest: testManifest({
-          phases: [{ title: 'plan', detail: 'plan phase' }, { title: 'execute', detail: 'execute phase' }],
+          phases: [
+            { title: 'plan', detail: 'plan phase' },
+            { title: 'execute', detail: 'execute phase' },
+          ],
         }),
         agentLauncher: async <T>(prompt: string, opts: { label?: string }) => {
           return {

@@ -1,4 +1,4 @@
-import type { WorkflowMeta, WorkflowRuntime, PreviewResult, RunResult } from '../types.js'
+import type { WorkflowMeta, WorkflowRuntime, PreviewResult, RunResult } from '../types.js';
 
 export const meta: WorkflowMeta = {
   name: 'test-scan',
@@ -9,27 +9,24 @@ export const meta: WorkflowMeta = {
   ],
   permissions: { github: ['issues:read'] },
   risk: 'low',
-}
+};
 
 export async function preview(
   ctx: WorkflowRuntime,
   args: Record<string, unknown>,
 ): Promise<PreviewResult> {
-  ctx.phase('Scan')
-  ctx.log('Test scan starting')
+  ctx.phase('Scan');
+  ctx.log('Test scan starting');
   const result = await ctx.agent('Scan for test findings', {
     label: 'scan:test',
     phase: 'Scan',
     schema: { type: 'object', properties: { ok: { type: 'boolean' } } },
-  })
-  return { preview: true, result }
+  });
+  return { preview: true, result };
 }
 
-export async function run(
-  ctx: WorkflowRuntime,
-  args: Record<string, unknown>,
-): Promise<RunResult> {
-  const previewResult = await preview(ctx, args)
-  ctx.phase('Verify')
-  return { status: 'complete', ...previewResult }
+export async function run(ctx: WorkflowRuntime, args: Record<string, unknown>): Promise<RunResult> {
+  const previewResult = await preview(ctx, args);
+  ctx.phase('Verify');
+  return { status: 'complete', ...previewResult };
 }

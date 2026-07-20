@@ -29,7 +29,11 @@ export function workspaceCommands(): Command {
     .action(() => {
       console.log('Building workspace index...');
       const index = buildIndex();
-      console.log(`Tasks: ${index.tasks.length} (${Object.entries(index.taskCounts).map(([k, v]) => `${k}: ${v}`).join(', ')})`);
+      console.log(
+        `Tasks: ${index.tasks.length} (${Object.entries(index.taskCounts)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join(', ')})`,
+      );
       console.log(`Evolutions: ${index.evolutions.length}`);
       console.log(`Agents: ${index.agents.length}`);
       console.log('Index written to .openslack/index.json');

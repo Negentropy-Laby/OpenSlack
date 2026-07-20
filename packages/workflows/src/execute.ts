@@ -6,27 +6,27 @@ import type {
   ExecutionMode,
   WorkflowFormat,
   ConfirmationPolicy,
-} from './types.js'
-import { createRuntime, ExecuteDeniedError, WorkflowPausedError } from './runtime.js'
-import type { ConfirmCallback } from './runtime.js'
-import { validateEffectAgainstManifest } from './manifest-validator.js'
-import type { AgentLauncher, AgentCacheStore, AgentEventEmitter } from './agent-shim.js'
-import type { PipelineCacheStore } from './pipeline-runner.js'
-import { RunStore } from './run-store.js'
-import type { RuntimeWithPersistence } from './runtime.js'
-import { WorkflowBudgetPausedError } from './agent-shim.js'
-import { join } from 'node:path'
+} from './types.js';
+import { createRuntime, ExecuteDeniedError, WorkflowPausedError } from './runtime.js';
+import type { ConfirmCallback } from './runtime.js';
+import { validateEffectAgainstManifest } from './manifest-validator.js';
+import type { AgentLauncher, AgentCacheStore, AgentEventEmitter } from './agent-shim.js';
+import type { PipelineCacheStore } from './pipeline-runner.js';
+import { RunStore } from './run-store.js';
+import type { RuntimeWithPersistence } from './runtime.js';
+import { WorkflowBudgetPausedError } from './agent-shim.js';
+import { join } from 'node:path';
 
 /**
  * Error thrown when a dry-run validation encounters issues.
  */
 export class DryRunError extends Error {
-  readonly violations: string[]
+  readonly violations: string[];
 
   constructor(violations: string[]) {
-    super(`Dry-run validation failed: ${violations.join('; ')}`)
-    this.name = 'DryRunError'
-    this.violations = violations
+    super(`Dry-run validation failed: ${violations.join('; ')}`);
+    this.name = 'DryRunError';
+    this.violations = violations;
   }
 }
 
@@ -35,26 +35,26 @@ export class DryRunError extends Error {
  */
 export interface DryRunResult {
   /** Always true for dry-run results. */
-  dryRun: true
+  dryRun: true;
   /** The run ID for this dry-run. */
-  runId: string
+  runId: string;
   /** Workflow name. */
-  workflowName: string
+  workflowName: string;
   /** List of simulated side effects that would have been performed. */
-  simulatedEffects: SimulatedEffect[]
+  simulatedEffects: SimulatedEffect[];
   /** The workflow result (if the workflow completed successfully). */
-  result?: RunResult
+  result?: RunResult;
   /** Errors that occurred during dry-run. */
-  errors: string[]
+  errors: string[];
 }
 
 /**
  * A simulated side effect recorded during dry-run.
  */
 export interface SimulatedEffect {
-  operation: string
-  detail: string
-  timestamp: string
+  operation: string;
+  detail: string;
+  timestamp: string;
 }
 
 /**
@@ -62,17 +62,17 @@ export interface SimulatedEffect {
  */
 export interface DryRunOptions {
   /** Workflow manifest */
-  manifest: WorkflowMeta
+  manifest: WorkflowMeta;
   /** Workflow arguments */
-  args?: Record<string, unknown>
+  args?: Record<string, unknown>;
   /** Budget limits */
-  budget?: { tokens: number; costUsd: number }
+  budget?: { tokens: number; costUsd: number };
   /** Agent launcher for agent calls */
-  agentLauncher?: AgentLauncher
+  agentLauncher?: AgentLauncher;
   /** Agent cache store */
-  agentCache?: AgentCacheStore
+  agentCache?: AgentCacheStore;
   /** Pipeline cache store */
-  pipelineCache?: PipelineCacheStore
+  pipelineCache?: PipelineCacheStore;
 }
 
 /**
@@ -80,75 +80,72 @@ export interface DryRunOptions {
  */
 export interface ExecuteRunOptions {
   /** Workflow manifest */
-  manifest: WorkflowMeta
+  manifest: WorkflowMeta;
   /** Workflow arguments */
-  args?: Record<string, unknown>
+  args?: Record<string, unknown>;
   /** Budget limits */
-  budget?: { tokens: number; costUsd: number }
+  budget?: { tokens: number; costUsd: number };
   /** Agent launcher for agent calls */
-  agentLauncher?: AgentLauncher
+  agentLauncher?: AgentLauncher;
   /** Agent cache store */
-  agentCache?: AgentCacheStore
+  agentCache?: AgentCacheStore;
   /** Pipeline cache store */
-  pipelineCache?: PipelineCacheStore
+  pipelineCache?: PipelineCacheStore;
   /**
    * Confirmation callback for execute mode. Required unless allowUnattended is set.
    * Called before each side-effect operation; returning false aborts with ExecuteDeniedError.
    */
-  onConfirm?: ConfirmCallback
+  onConfirm?: ConfirmCallback;
   /**
    * Allow non-interactive execution without a confirmation callback.
    * This is the programmatic equivalent of --yes. Only use in trusted
    * automation contexts (CI, tests) where human confirmation is not feasible.
    * When set, operations proceed without prompting but are still logged.
    */
-  allowUnattended?: boolean
+  allowUnattended?: boolean;
   /**
    * Manifest-based confirmation policy. Preferred over legacy onConfirm/allowUnattended.
    * When provided, the runtime validates each side effect against the approved manifest
    * and either auto-confirms known effects or pauses on unexpected ones.
    */
-  confirmationPolicy?: ConfirmationPolicy
+  confirmationPolicy?: ConfirmationPolicy;
   /**
    * Optional event emitter for agent conversation lifecycle events.
    * When provided, the runtime emits started/completed/failed events during
    * agent calls in execute mode. The collaboration bridge emitter converts
    * these into CollaborationEvent records via recordEvent().
    */
-  agentEventEmitter?: AgentEventEmitter
+  agentEventEmitter?: AgentEventEmitter;
   /**
    * Root directory for resolving agent types and collaboration paths.
    * Defaults to process.cwd().
    */
-  rootDir?: string
+  rootDir?: string;
 }
 
 function workflowRunStore(rootDir: string): RunStore {
-  return new RunStore({ baseDir: join(rootDir, '.openslack.local', 'workflows') })
+  return new RunStore({ baseDir: join(rootDir, '.openslack.local', 'workflows') });
 }
 
 function workflowHash(
   workflow: { meta: WorkflowMeta; hash?: string },
   manifest: WorkflowMeta,
 ): string {
-  return workflow.hash ?? `${manifest.name}:${manifest.version ?? 'unversioned'}`
+  return workflow.hash ?? `${manifest.name}:${manifest.version ?? 'unversioned'}`;
 }
 
-function createRunStoreAgentCache(
-  store: RunStore,
-  delegate?: AgentCacheStore,
-): AgentCacheStore {
+function createRunStoreAgentCache(store: RunStore, delegate?: AgentCacheStore): AgentCacheStore {
   return {
     async load(runId: string, cacheKey: string) {
-      const stored = await store.loadAgentResult(runId, cacheKey)
-      if (stored !== null) return stored as Awaited<ReturnType<AgentCacheStore['load']>>
-      return delegate ? delegate.load(runId, cacheKey) : null
+      const stored = await store.loadAgentResult(runId, cacheKey);
+      if (stored !== null) return stored as Awaited<ReturnType<AgentCacheStore['load']>>;
+      return delegate ? delegate.load(runId, cacheKey) : null;
     },
     async save(runId: string, cacheKey: string, result) {
-      if (delegate) await delegate.save(runId, cacheKey, result)
-      await store.saveAgentResult(runId, cacheKey, result)
+      if (delegate) await delegate.save(runId, cacheKey, result);
+      await store.saveAgentResult(runId, cacheKey, result);
     },
-  }
+  };
 }
 
 function createRunStorePipelineCache(
@@ -157,15 +154,15 @@ function createRunStorePipelineCache(
 ): PipelineCacheStore {
   return {
     async loadItem(runId: string, phase: string, index: number) {
-      const stored = await store.loadPipelineItem(runId, phase, index)
-      if (stored !== null) return stored
-      return delegate ? delegate.loadItem(runId, phase, index) : null
+      const stored = await store.loadPipelineItem(runId, phase, index);
+      if (stored !== null) return stored;
+      return delegate ? delegate.loadItem(runId, phase, index) : null;
     },
     async saveItem(runId: string, phase: string, index: number, result: unknown) {
-      if (delegate) await delegate.saveItem(runId, phase, index, result)
-      await store.savePipelineItem(runId, phase, index, result)
+      if (delegate) await delegate.saveItem(runId, phase, index, result);
+      await store.savePipelineItem(runId, phase, index, result);
     },
-  }
+  };
 }
 
 async function safeTransition(
@@ -174,26 +171,26 @@ async function safeTransition(
   status: import('./types.js').RunStatus['status'],
 ): Promise<void> {
   try {
-    const current = await store.loadStatus(runId)
-    if (!current || current.status === status) return
-    await store.transitionStatus(runId, status)
+    const current = await store.loadStatus(runId);
+    if (!current || current.status === status) return;
+    await store.transitionStatus(runId, status);
   } catch {
     // Failure handling must not mask the workflow error/result.
   }
 }
 
 async function ensureRunInitialized(options: {
-  store: RunStore
-  runId: string
-  manifest: WorkflowMeta
-  mode: ExecutionMode
-  args: Record<string, unknown>
-  startedAt?: string
-  manifestHash: string
-  budget?: { tokens: number; costUsd: number }
+  store: RunStore;
+  runId: string;
+  manifest: WorkflowMeta;
+  mode: ExecutionMode;
+  args: Record<string, unknown>;
+  startedAt?: string;
+  manifestHash: string;
+  budget?: { tokens: number; costUsd: number };
 }): Promise<void> {
-  if (await options.store.runExists(options.runId)) return
-  const startedAt = options.startedAt ?? new Date().toISOString()
+  if (await options.store.runExists(options.runId)) return;
+  const startedAt = options.startedAt ?? new Date().toISOString();
   await options.store.initRun(options.runId, {
     runId: options.runId,
     workflowName: options.manifest.name,
@@ -203,12 +200,12 @@ async function ensureRunInitialized(options: {
     startedAt,
     budget: options.budget,
     budgetPolicy: options.manifest.budgetPolicy,
-  })
+  });
 }
 
 async function flushRuntime(runtime: WorkflowRuntime): Promise<void> {
-  const flush = (runtime as Partial<RuntimeWithPersistence>).flushPersistence
-  if (flush) await flush()
+  const flush = (runtime as Partial<RuntimeWithPersistence>).flushPersistence;
+  if (flush) await flush();
 }
 
 async function pauseForUnexpectedEffect(
@@ -220,8 +217,8 @@ async function pauseForUnexpectedEffect(
     operation: error.operation,
     detail: error.detail,
     timestamp: new Date().toISOString(),
-  })
-  await safeTransition(store, runId, 'paused_waiting_approval')
+  });
+  await safeTransition(store, runId, 'paused_waiting_approval');
 }
 
 /**
@@ -239,8 +236,8 @@ function createDryRunAgentLauncher(): AgentLauncher {
         message: 'Dry-run mode: agent call simulated',
       } as T,
       tokenUsage: 0,
-    }
-  }
+    };
+  };
 }
 
 /**
@@ -255,40 +252,36 @@ function createDryRunAgentLauncher(): AgentLauncher {
  */
 export async function executeDryRun(
   workflow: {
-    meta: WorkflowMeta
-    run?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<RunResult>
-    format?: WorkflowFormat
-    sourceBody?: string
+    meta: WorkflowMeta;
+    run?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<RunResult>;
+    format?: WorkflowFormat;
+    sourceBody?: string;
   },
   options: DryRunOptions,
 ): Promise<DryRunResult> {
-  const {
-    manifest,
-    args = {},
-    budget,
-  } = options
+  const { manifest, args = {}, budget } = options;
 
-  const runId = `dryrun-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-  const simulatedEffects: SimulatedEffect[] = []
-  const errors: string[] = []
+  const runId = `dryrun-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const simulatedEffects: SimulatedEffect[] = [];
+  const errors: string[] = [];
 
   // Track simulated effects by wrapping log
-  const originalLog = (message: string) => {}
+  const originalLog = (message: string) => {};
   const effectTracker = {
     log(message: string) {
       // Detect [DRY-RUN] messages and track them as simulated effects
       if (message.startsWith('[DRY-RUN]')) {
-        const match = message.match(/^\[DRY-RUN\]\s+(\S+):\s+(.*)$/)
+        const match = message.match(/^\[DRY-RUN\]\s+(\S+):\s+(.*)$/);
         if (match) {
           simulatedEffects.push({
             operation: match[1],
             detail: match[2],
             timestamp: new Date().toISOString(),
-          })
+          });
         }
       }
     },
-  }
+  };
 
   const runtime = createRuntime({
     runId,
@@ -303,41 +296,41 @@ export async function executeDryRun(
     agentLauncher: options.agentLauncher ?? createDryRunAgentLauncher(),
     agentCache: options.agentCache,
     pipelineCache: options.pipelineCache,
-  })
+  });
 
-  let result: RunResult | undefined
+  let result: RunResult | undefined;
 
   // Handle claude-ambient workflows
   if (workflow.format === 'claude-ambient' && workflow.sourceBody) {
     try {
-      const { executeAmbientWorkflow } = await import('./ambient-runner.js')
-      const ambientResult = await executeAmbientWorkflow(workflow.sourceBody, runtime, args)
+      const { executeAmbientWorkflow } = await import('./ambient-runner.js');
+      const ambientResult = await executeAmbientWorkflow(workflow.sourceBody, runtime, args);
       result = {
         status: 'completed',
         ...(typeof ambientResult === 'object' && ambientResult !== null
-          ? ambientResult as Record<string, unknown>
+          ? (ambientResult as Record<string, unknown>)
           : { result: ambientResult }),
-      } as RunResult
+      } as RunResult;
     } catch (err) {
       if (err instanceof ExecuteDeniedError) {
-        errors.push(`Execute denied: ${err.operation} — ${err.detail}`)
+        errors.push(`Execute denied: ${err.operation} — ${err.detail}`);
       } else {
-        errors.push((err as Error).message)
+        errors.push((err as Error).message);
       }
     }
   } else if (workflow.run) {
     try {
-      result = await workflow.run(runtime, args)
+      result = await workflow.run(runtime, args);
     } catch (err) {
       if (err instanceof ExecuteDeniedError) {
         // Should not happen in dry-run mode, but handle gracefully
-        errors.push(`Execute denied: ${err.operation} — ${err.detail}`)
+        errors.push(`Execute denied: ${err.operation} — ${err.detail}`);
       } else {
-        errors.push((err as Error).message)
+        errors.push((err as Error).message);
       }
     }
   } else {
-    errors.push('Workflow has no run function')
+    errors.push('Workflow has no run function');
   }
 
   return {
@@ -347,7 +340,7 @@ export async function executeDryRun(
     simulatedEffects,
     result,
     errors,
-  }
+  };
 }
 
 /**
@@ -358,22 +351,20 @@ export async function executeDryRun(
  * and onUnexpectedEffect is set to 'pause'.
  * Returns false (deny) for always-forbidden effects.
  */
-export function createOnConfirmFromPolicy(
-  policy: ConfirmationPolicy,
-): ConfirmCallback {
+export function createOnConfirmFromPolicy(policy: ConfirmationPolicy): ConfirmCallback {
   return async (operation: string, detail: string): Promise<boolean> => {
-    const validation = validateEffectAgainstManifest(operation, detail, policy)
+    const validation = validateEffectAgainstManifest(operation, detail, policy);
 
     if (validation.allowed) {
-      return true
+      return true;
     }
 
     if (policy.onUnexpectedEffect === 'pause') {
-      throw new WorkflowPausedError(operation, detail, policy.runId)
+      throw new WorkflowPausedError(operation, detail, policy.runId);
     }
 
-    return false
-  }
+    return false;
+  };
 }
 
 /**
@@ -389,24 +380,21 @@ export function createOnConfirmFromPolicy(
  */
 export async function executeRun(
   workflow: {
-    meta: WorkflowMeta
-    run?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<RunResult>
-    format?: WorkflowFormat
-    sourceBody?: string
+    meta: WorkflowMeta;
+    run?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<RunResult>;
+    format?: WorkflowFormat;
+    sourceBody?: string;
   },
   options: ExecuteRunOptions,
 ): Promise<RunResult> {
-  const {
-    manifest,
-    args = {},
-    budget,
-  } = options
+  const { manifest, args = {}, budget } = options;
 
-  const runId = options.confirmationPolicy?.runId
-    ?? `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-  const rootDir = options.rootDir ?? process.cwd()
-  const store = workflowRunStore(rootDir)
-  const effectiveBudget = budget ?? { tokens: 100000, costUsd: 1.0 }
+  const runId =
+    options.confirmationPolicy?.runId ??
+    `run-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  const rootDir = options.rootDir ?? process.cwd();
+  const store = workflowRunStore(rootDir);
+  const effectiveBudget = budget ?? { tokens: 100000, costUsd: 1.0 };
 
   await ensureRunInitialized({
     store,
@@ -416,16 +404,15 @@ export async function executeRun(
     args,
     manifestHash: workflowHash(workflow, manifest),
     budget: effectiveBudget,
-  })
+  });
 
   // Resolve confirmation callback: confirmationPolicy takes precedence over legacy options
-  let effectiveOnConfirm: ConfirmCallback | undefined
+  let effectiveOnConfirm: ConfirmCallback | undefined;
   if (options.confirmationPolicy) {
-    effectiveOnConfirm = createOnConfirmFromPolicy(options.confirmationPolicy)
+    effectiveOnConfirm = createOnConfirmFromPolicy(options.confirmationPolicy);
   } else {
-    effectiveOnConfirm = options.onConfirm ?? (options.allowUnattended
-      ? async () => true
-      : undefined)
+    effectiveOnConfirm =
+      options.onConfirm ?? (options.allowUnattended ? async () => true : undefined);
   }
 
   // Safety gate: execute mode MUST have either a confirmation callback
@@ -433,8 +420,8 @@ export async function executeRun(
   if (!effectiveOnConfirm) {
     throw new Error(
       'Execute mode requires a confirmation callback (onConfirm) or explicit --yes flag (allowUnattended). ' +
-      'Without human confirmation, workflows with real side effects will not execute.',
-    )
+        'Without human confirmation, workflows with real side effects will not execute.',
+    );
   }
 
   const runtime = createRuntime({
@@ -454,48 +441,48 @@ export async function executeRun(
     agentEventEmitter: options.agentEventEmitter,
     rootDir,
     runStore: store,
-  })
+  });
 
   try {
     // Handle claude-ambient workflows
     if (workflow.format === 'claude-ambient' && workflow.sourceBody) {
-      const { executeAmbientWorkflow } = await import('./ambient-runner.js')
-      const ambientResult = await executeAmbientWorkflow(workflow.sourceBody, runtime, args)
+      const { executeAmbientWorkflow } = await import('./ambient-runner.js');
+      const ambientResult = await executeAmbientWorkflow(workflow.sourceBody, runtime, args);
       const result = {
         status: 'completed',
         ...(typeof ambientResult === 'object' && ambientResult !== null
-          ? ambientResult as Record<string, unknown>
+          ? (ambientResult as Record<string, unknown>)
           : { result: ambientResult }),
-      } as RunResult
-      const output = { ...result, runId }
-      await flushRuntime(runtime)
-      await store.saveOutput(runId, output)
-      await safeTransition(store, runId, 'completed')
-      return output
+      } as RunResult;
+      const output = { ...result, runId };
+      await flushRuntime(runtime);
+      await store.saveOutput(runId, output);
+      await safeTransition(store, runId, 'completed');
+      return output;
     }
 
     if (!workflow.run) {
-      throw new Error(`Workflow "${manifest.name}" has no run function`)
+      throw new Error(`Workflow "${manifest.name}" has no run function`);
     }
 
-    const result = await workflow.run(runtime, args)
-    const output = { ...result, runId }
-    await flushRuntime(runtime)
-    await store.saveOutput(runId, output)
-    await safeTransition(store, runId, 'completed')
-    return output
+    const result = await workflow.run(runtime, args);
+    const output = { ...result, runId };
+    await flushRuntime(runtime);
+    await store.saveOutput(runId, output);
+    await safeTransition(store, runId, 'completed');
+    return output;
   } catch (err) {
-    await flushRuntime(runtime)
+    await flushRuntime(runtime);
     if (err instanceof WorkflowPausedError) {
-      await pauseForUnexpectedEffect(store, runId, err)
-      throw err
+      await pauseForUnexpectedEffect(store, runId, err);
+      throw err;
     }
     if (err instanceof WorkflowBudgetPausedError) {
-      await safeTransition(store, runId, 'paused_waiting_approval')
-      throw err
+      await safeTransition(store, runId, 'paused_waiting_approval');
+      throw err;
     }
-    await safeTransition(store, runId, 'failed')
-    throw err
+    await safeTransition(store, runId, 'failed');
+    throw err;
   }
 }
 
@@ -511,38 +498,33 @@ export async function executeRun(
  */
 export async function executeResume(
   workflow: {
-    meta: WorkflowMeta
-    run?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<RunResult>
-    format?: WorkflowFormat
-    sourceBody?: string
+    meta: WorkflowMeta;
+    run?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<RunResult>;
+    format?: WorkflowFormat;
+    sourceBody?: string;
   },
   options: {
-    runId: string
-    manifest: WorkflowMeta
-    args?: Record<string, unknown>
-    budget?: { tokens: number; costUsd: number }
-    agentLauncher?: AgentLauncher
-    agentCache?: AgentCacheStore
-    pipelineCache?: PipelineCacheStore
-    onConfirm?: ConfirmCallback
+    runId: string;
+    manifest: WorkflowMeta;
+    args?: Record<string, unknown>;
+    budget?: { tokens: number; costUsd: number };
+    agentLauncher?: AgentLauncher;
+    agentCache?: AgentCacheStore;
+    pipelineCache?: PipelineCacheStore;
+    onConfirm?: ConfirmCallback;
     /** Allow non-interactive execution without confirmation (CI/test use). */
-    allowUnattended?: boolean
-    confirmationPolicy?: ConfirmationPolicy
+    allowUnattended?: boolean;
+    confirmationPolicy?: ConfirmationPolicy;
     /** Optional event emitter for agent conversation lifecycle events. */
-    agentEventEmitter?: AgentEventEmitter
+    agentEventEmitter?: AgentEventEmitter;
     /** Root directory for resolving agent types and collaboration paths. */
-    rootDir?: string
+    rootDir?: string;
   },
 ): Promise<RunResult> {
-  const {
-    runId,
-    manifest,
-    args = {},
-    budget,
-  } = options
-  const rootDir = options.rootDir ?? process.cwd()
-  const store = workflowRunStore(rootDir)
-  const effectiveBudget = budget ?? { tokens: 100000, costUsd: 1.0 }
+  const { runId, manifest, args = {}, budget } = options;
+  const rootDir = options.rootDir ?? process.cwd();
+  const store = workflowRunStore(rootDir);
+  const effectiveBudget = budget ?? { tokens: 100000, costUsd: 1.0 };
 
   await ensureRunInitialized({
     store,
@@ -552,33 +534,32 @@ export async function executeResume(
     args,
     manifestHash: workflowHash(workflow, manifest),
     budget: effectiveBudget,
-  })
-  const status = await store.loadStatus(runId)
+  });
+  const status = await store.loadStatus(runId);
   if (status?.status === 'paused_waiting_approval') {
-    await safeTransition(store, runId, 'resuming')
-    await safeTransition(store, runId, 'running')
+    await safeTransition(store, runId, 'resuming');
+    await safeTransition(store, runId, 'running');
   } else if (status?.status === 'paused') {
-    await safeTransition(store, runId, 'running')
+    await safeTransition(store, runId, 'running');
   } else if (status?.status === 'resuming') {
-    await safeTransition(store, runId, 'running')
+    await safeTransition(store, runId, 'running');
   }
 
   // Resolve confirmation callback: confirmationPolicy takes precedence over legacy options
-  let effectiveOnConfirm: ConfirmCallback | undefined
+  let effectiveOnConfirm: ConfirmCallback | undefined;
   if (options.confirmationPolicy) {
-    effectiveOnConfirm = createOnConfirmFromPolicy(options.confirmationPolicy)
+    effectiveOnConfirm = createOnConfirmFromPolicy(options.confirmationPolicy);
   } else {
-    effectiveOnConfirm = options.onConfirm ?? (options.allowUnattended
-      ? async () => true
-      : undefined)
+    effectiveOnConfirm =
+      options.onConfirm ?? (options.allowUnattended ? async () => true : undefined);
   }
 
   // Safety gate: same as executeRun
   if (!effectiveOnConfirm) {
     throw new Error(
       'Execute mode requires a confirmation callback (onConfirm) or explicit --yes flag (allowUnattended). ' +
-      'Without human confirmation, workflows with real side effects will not execute.',
-    )
+        'Without human confirmation, workflows with real side effects will not execute.',
+    );
   }
 
   const runtime = createRuntime({
@@ -598,47 +579,47 @@ export async function executeResume(
     agentEventEmitter: options.agentEventEmitter,
     rootDir,
     runStore: store,
-  })
+  });
 
   try {
     // Handle claude-ambient workflows
     if (workflow.format === 'claude-ambient' && workflow.sourceBody) {
-      const { executeAmbientWorkflow } = await import('./ambient-runner.js')
-      const ambientResult = await executeAmbientWorkflow(workflow.sourceBody, runtime, args)
+      const { executeAmbientWorkflow } = await import('./ambient-runner.js');
+      const ambientResult = await executeAmbientWorkflow(workflow.sourceBody, runtime, args);
       const result = {
         status: 'completed',
         ...(typeof ambientResult === 'object' && ambientResult !== null
-          ? ambientResult as Record<string, unknown>
+          ? (ambientResult as Record<string, unknown>)
           : { result: ambientResult }),
-      } as RunResult
-      const output = { ...result, runId }
-      await flushRuntime(runtime)
-      await store.saveOutput(runId, output)
-      await safeTransition(store, runId, 'completed')
-      return output
+      } as RunResult;
+      const output = { ...result, runId };
+      await flushRuntime(runtime);
+      await store.saveOutput(runId, output);
+      await safeTransition(store, runId, 'completed');
+      return output;
     }
 
     if (!workflow.run) {
-      throw new Error(`Workflow "${manifest.name}" has no run function`)
+      throw new Error(`Workflow "${manifest.name}" has no run function`);
     }
 
-    const result = await workflow.run(runtime, args)
-    const output = { ...result, runId }
-    await flushRuntime(runtime)
-    await store.saveOutput(runId, output)
-    await safeTransition(store, runId, 'completed')
-    return output
+    const result = await workflow.run(runtime, args);
+    const output = { ...result, runId };
+    await flushRuntime(runtime);
+    await store.saveOutput(runId, output);
+    await safeTransition(store, runId, 'completed');
+    return output;
   } catch (err) {
-    await flushRuntime(runtime)
+    await flushRuntime(runtime);
     if (err instanceof WorkflowPausedError) {
-      await pauseForUnexpectedEffect(store, runId, err)
-      throw err
+      await pauseForUnexpectedEffect(store, runId, err);
+      throw err;
     }
     if (err instanceof WorkflowBudgetPausedError) {
-      await safeTransition(store, runId, 'paused_waiting_approval')
-      throw err
+      await safeTransition(store, runId, 'paused_waiting_approval');
+      throw err;
     }
-    await safeTransition(store, runId, 'failed')
-    throw err
+    await safeTransition(store, runId, 'failed');
+    throw err;
   }
 }

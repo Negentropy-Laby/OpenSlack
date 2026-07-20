@@ -3,14 +3,16 @@ import { handleAction } from '../actions.js';
 import { createPendingPlan, deletePendingPlan, loadPendingPlan } from '../plan-store.js';
 import { routeMessage } from '../router.js';
 import type { ChatMessage, GatewayConfig } from '../types.js';
-import {
-  BUILTIN_ACTION_REGISTRY,
-  createLLMPlannerProviderRegistry,
-} from '@openslack/operator';
+import { BUILTIN_ACTION_REGISTRY, createLLMPlannerProviderRegistry } from '@openslack/operator';
 
 const createdPlans: string[] = [];
 
-function makeMessage(text: string, userId = 'U123', channelId = 'C456', threadId?: string): ChatMessage {
+function makeMessage(
+  text: string,
+  userId = 'U123',
+  channelId = 'C456',
+  threadId?: string,
+): ChatMessage {
   return {
     id: `msg-${Date.now()}-${Math.random().toString(36).slice(2)}`,
     text,
@@ -63,7 +65,9 @@ describe('chat action pending-plan authorization', () => {
   it('does not let a different channel approve a pending plan', async () => {
     const plan = makePlan({ action: 'approve_plan' });
 
-    const response = await handleAction(makeMessage(`action:approve_plan:${plan.planId}`, 'U123', 'C999'));
+    const response = await handleAction(
+      makeMessage(`action:approve_plan:${plan.planId}`, 'U123', 'C999'),
+    );
 
     expect(response?.text).toContain('different channel');
     expect(loadPendingPlan(plan.planId)).not.toBeNull();

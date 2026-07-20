@@ -1,6 +1,15 @@
 import { Command } from 'commander';
 import { classifySelfEvolutionPR } from '@openslack/kernel';
-import { observeHealth, triageObservations, validatePR, reviewPR, computeFitnessScore, monitorPostMerge, runGoldenEval, generateScorecard } from '@openslack/runtime';
+import {
+  observeHealth,
+  triageObservations,
+  validatePR,
+  reviewPR,
+  computeFitnessScore,
+  monitorPostMerge,
+  runGoldenEval,
+  generateScorecard,
+} from '@openslack/runtime';
 import { validateWorkspace } from '@openslack/workspace';
 import type { PluginActionRunnerPort } from '../boot/plugin-action-runner.js';
 import type { CheckPluginOptions } from '@openslack/plugin-testkit';
@@ -50,7 +59,9 @@ export function selfCommands(
       } else {
         console.log(`Risk Zone: ${classification.riskZone.toUpperCase()}`);
         console.log(`Auto-merge: ${classification.autoMergeAllowed ? 'Yes' : 'No'}`);
-        console.log(`Human approval: ${classification.humanApprovalRequired ? 'Required' : 'Not required'}`);
+        console.log(
+          `Human approval: ${classification.humanApprovalRequired ? 'Required' : 'Not required'}`,
+        );
         console.log(`Required checks: ${classification.requiredChecks.join(', ') || 'none'}`);
         console.log(`Required agent reviews: ${classification.requiredAgentReviews}`);
       }
@@ -82,10 +93,14 @@ export function selfCommands(
         if (options.format === 'json') {
           console.log(JSON.stringify(result, null, 2));
         } else {
-          console.log(`Risk Zone: ${result.protectedPathCheck.black_zone_touched ? 'BLACK' : result.protectedPathCheck.red_zone_touched ? 'RED' : 'PASS'}`);
+          console.log(
+            `Risk Zone: ${result.protectedPathCheck.black_zone_touched ? 'BLACK' : result.protectedPathCheck.red_zone_touched ? 'RED' : 'PASS'}`,
+          );
           console.log(`Fitness Score: ${result.score.overall} → ${result.score.decision}`);
           console.log(`Decision: ${result.decision}`);
-          console.log(`Manifest: .openslack/self/experiments/${result.experimentId}/self_validation.yaml (YAML)`);
+          console.log(
+            `Manifest: .openslack/self/experiments/${result.experimentId}/self_validation.yaml (YAML)`,
+          );
         }
         if (result.decision === 'fail') process.exit(1);
       } else {
@@ -194,15 +209,21 @@ export function selfCommands(
                 const fp = j(dir, f);
                 try {
                   if (statSync(fp).mtimeMs >= cleanStart - 1000) del(fp);
-                } catch { /* ok */ }
+                } catch {
+                  /* ok */
+                }
               }
             }
             console.log('(cleaned artifacts)');
-          } catch { /* skip */ }
+          } catch {
+            /* skip */
+          }
         }
 
         if (options.format === 'json') {
-          console.log(JSON.stringify({ suite: 'golden', passed, total: results.length, results }, null, 2));
+          console.log(
+            JSON.stringify({ suite: 'golden', passed, total: results.length, results }, null, 2),
+          );
         } else {
           for (const r of results) {
             const icon = r.passed ? 'PASS' : 'FAIL';
@@ -227,9 +248,15 @@ export function selfCommands(
     .requiredOption('--implementer <id>', 'Implementation agent ID')
     .requiredOption('--reviewer <id>', 'Reviewer agent ID')
     .action((options) => {
-      const result = reviewPR(parseInt(options.pr, 10), null, options.implementer, options.reviewer);
+      const result = reviewPR(
+        parseInt(options.pr, 10),
+        null,
+        options.implementer,
+        options.reviewer,
+      );
       console.log(`Decision: ${result.decision.toUpperCase()}`);
-      for (const check of result.checks) console.log(`  [${check.passed ? 'PASS' : 'FAIL'}] ${check.name}: ${check.detail}`);
+      for (const check of result.checks)
+        console.log(`  [${check.passed ? 'PASS' : 'FAIL'}] ${check.name}: ${check.detail}`);
       if (result.decision === 'reject') process.exit(1);
     });
 
@@ -238,14 +265,18 @@ export function selfCommands(
     .description('Compute fitness score')
     .option('--experiment <id>', 'Experiment ID')
     .action((options) => {
-      const score = computeFitnessScore({ checks: {
-        'unit-tests': { result: 'pass', command: 'bun run test' },
-        'typecheck': { result: 'pass', command: 'bun run typecheck' },
-        'workspace-validate': { result: 'pass', command: 'openslack workspace validate' },
-        'self-eval': { result: 'pass', command: 'openslack self eval' },
-        'security-scan': { result: 'pass', command: '', findings: [] },
-      }});
-      console.log(`Fitness score for ${options.experiment || 'unknown'}: ${score.overall} → ${score.decision.toUpperCase()}`);
+      const score = computeFitnessScore({
+        checks: {
+          'unit-tests': { result: 'pass', command: 'bun run test' },
+          typecheck: { result: 'pass', command: 'bun run typecheck' },
+          'workspace-validate': { result: 'pass', command: 'openslack workspace validate' },
+          'self-eval': { result: 'pass', command: 'openslack self eval' },
+          'security-scan': { result: 'pass', command: '', findings: [] },
+        },
+      });
+      console.log(
+        `Fitness score for ${options.experiment || 'unknown'}: ${score.overall} → ${score.decision.toUpperCase()}`,
+      );
     });
 
   cmd
@@ -254,7 +285,9 @@ export function selfCommands(
     .option('--experiment <id>', 'Experiment ID')
     .action((options) => {
       const result = monitorPostMerge(options.experiment || 'unknown');
-      console.log(`Experiment: ${result.experimentId}, Regression: ${result.regression ? 'YES' : 'NO'}, Recommendation: ${result.recommendation}`);
+      console.log(
+        `Experiment: ${result.experimentId}, Regression: ${result.regression ? 'YES' : 'NO'}, Recommendation: ${result.recommendation}`,
+      );
       if (result.regression) process.exit(1);
     });
 

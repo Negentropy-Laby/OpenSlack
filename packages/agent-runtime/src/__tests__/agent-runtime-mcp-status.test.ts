@@ -2,11 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import {
-  appendTranscriptEvent,
-  createRunStore,
-  getAgentRuntimeMcpStatus,
-} from '../index.js';
+import { appendTranscriptEvent, createRunStore, getAgentRuntimeMcpStatus } from '../index.js';
 import { buildPermissionProfile } from '../permissions.js';
 
 function makeTempRoot(): string {

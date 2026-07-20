@@ -1,4 +1,10 @@
-import type { WorkflowRuntime, AgentOptions, PreviewResult, RunResult, PipelineOptions } from './types.js'
+import type {
+  WorkflowRuntime,
+  AgentOptions,
+  PreviewResult,
+  RunResult,
+  PipelineOptions,
+} from './types.js';
 
 /**
  * Sandboxed ambient globals exposed to anthropic-compatible workflows.
@@ -10,49 +16,46 @@ import type { WorkflowRuntime, AgentOptions, PreviewResult, RunResult, PipelineO
  */
 export interface AnthropicCompatSandbox {
   /** Workflow arguments (read-only) */
-  readonly args: Record<string, unknown>
+  readonly args: Record<string, unknown>;
   /** Declare current phase */
-  phase(name: string): void
+  phase(name: string): void;
   /** Log a message */
-  log(message: string): void
+  log(message: string): void;
   /** Read-only budget snapshot */
   readonly budget: {
-    readonly tokensUsed: number
-    readonly tokensRemaining: number | null
-    readonly costUsd: number
-    readonly agentCalls: number
+    readonly tokensUsed: number;
+    readonly tokensRemaining: number | null;
+    readonly costUsd: number;
+    readonly agentCalls: number;
     /** Total budget (tokensUsed + tokensRemaining), or null if unlimited */
-    readonly total: number | null
+    readonly total: number | null;
     /** Tokens spent so far */
-    spent(): number
+    spent(): number;
     /** Tokens remaining, or Infinity if unlimited */
-    remaining(): number
-  }
+    remaining(): number;
+  };
   /** Agent subtask call — read-only in preview mode */
-  agent<T>(prompt: string, options: AgentOptions): Promise<T>
+  agent<T>(prompt: string, options: AgentOptions): Promise<T>;
   /** Parallel execution */
-  parallel<T>(tasks: Array<() => Promise<T>>): Promise<T[]>
+  parallel<T>(tasks: Array<() => Promise<T>>): Promise<T[]>;
   /** Pipeline execution */
-  pipeline<T, R>(
-    items: T[],
-    ...args: unknown[]
-  ): Promise<R[]>
+  pipeline<T, R>(items: T[], ...args: unknown[]): Promise<R[]>;
   /** Nested workflow call — blocked in preview mode */
-  workflow(name: string, args?: Record<string, unknown>): Promise<unknown>
+  workflow(name: string, args?: Record<string, unknown>): Promise<unknown>;
   /** OpenSlack API access — runtime enforces mode restrictions */
-  readonly openslack: WorkflowRuntime['openslack']
+  readonly openslack: WorkflowRuntime['openslack'];
 }
 
 /**
  * Error thrown when an anthropic-compatible workflow attempts a forbidden operation.
  */
 export class AnthropicCompatError extends Error {
-  readonly operation: string
+  readonly operation: string;
 
   constructor(operation: string, reason: string) {
-    super(`Anthropic-compat forbidden: ${operation} — ${reason}`)
-    this.name = 'AnthropicCompatError'
-    this.operation = operation
+    super(`Anthropic-compat forbidden: ${operation} — ${reason}`);
+    this.name = 'AnthropicCompatError';
+    this.operation = operation;
   }
 }
 
@@ -68,85 +71,97 @@ export class AnthropicCompatError extends Error {
  * The returned sandbox object is meant to be passed to a sandboxed execution
  * context (worker thread, VM module, etc.), not executed directly.
  */
-export function createAnthropicCompatSandbox(
-  runtime: WorkflowRuntime,
-): AnthropicCompatSandbox {
-  const isPreview = runtime.mode === 'preview'
+export function createAnthropicCompatSandbox(runtime: WorkflowRuntime): AnthropicCompatSandbox {
+  const isPreview = runtime.mode === 'preview';
 
   // Read-only budget snapshot — captured once, never mutates
   const budgetSnapshot = {
-    get tokensUsed() { return runtime.budget.tokensUsed },
-    get tokensRemaining() { return runtime.budget.tokensRemaining },
-    get costUsd() { return runtime.budget.costUsd },
-    get agentCalls() { return runtime.budget.agentCalls },
-    get total(): number | null {
-      if (runtime.budget.tokensRemaining === null) return null
-      return runtime.budget.tokensUsed + runtime.budget.tokensRemaining
+    get tokensUsed() {
+      return runtime.budget.tokensUsed;
     },
-    spent(): number { return runtime.budget.tokensUsed },
-    remaining(): number { return runtime.budget.tokensRemaining ?? Infinity },
-  }
+    get tokensRemaining() {
+      return runtime.budget.tokensRemaining;
+    },
+    get costUsd() {
+      return runtime.budget.costUsd;
+    },
+    get agentCalls() {
+      return runtime.budget.agentCalls;
+    },
+    get total(): number | null {
+      if (runtime.budget.tokensRemaining === null) return null;
+      return runtime.budget.tokensUsed + runtime.budget.tokensRemaining;
+    },
+    spent(): number {
+      return runtime.budget.tokensUsed;
+    },
+    remaining(): number {
+      return runtime.budget.tokensRemaining ?? Infinity;
+    },
+  };
 
   const sandbox: AnthropicCompatSandbox = {
     args: Object.freeze({ ...runtime.args }),
 
     phase(name: string): void {
-      runtime.phase(name)
+      runtime.phase(name);
     },
 
     log(message: string): void {
-      runtime.log(message)
+      runtime.log(message);
     },
 
     budget: budgetSnapshot,
 
     async agent<T>(prompt: string, options: AgentOptions): Promise<T> {
-      return runtime.agent<T>(prompt, options)
+      return runtime.agent<T>(prompt, options);
     },
 
     async parallel<T>(tasks: Array<() => Promise<T>>): Promise<T[]> {
-      return runtime.parallel(tasks)
+      return runtime.parallel(tasks);
     },
 
-    async pipeline<T, R>(
-      items: T[],
-      ...args: unknown[]
-    ): Promise<R[]> {
-      const last = args[args.length - 1]
-      const hasOptions = typeof last === 'object' && last !== null && 'concurrency' in last
-      const stages = hasOptions ? args.slice(0, -1) : args
-      const options = hasOptions ? (last as PipelineOptions) : undefined
+    async pipeline<T, R>(items: T[], ...args: unknown[]): Promise<R[]> {
+      const last = args[args.length - 1];
+      const hasOptions = typeof last === 'object' && last !== null && 'concurrency' in last;
+      const stages = hasOptions ? args.slice(0, -1) : args;
+      const options = hasOptions ? (last as PipelineOptions) : undefined;
 
       if (stages.length === 0) {
-        throw new AnthropicCompatError('pipeline', 'Pipeline requires at least one stage function')
+        throw new AnthropicCompatError('pipeline', 'Pipeline requires at least one stage function');
       }
 
       if (stages.length === 1) {
-        return runtime.pipeline(items, stages[0] as (item: T, index: number) => Promise<R>, options)
+        return runtime.pipeline(
+          items,
+          stages[0] as (item: T, index: number) => Promise<R>,
+          options,
+        );
       }
 
-      return runtime.pipeline(items, stages as Array<(prev: unknown, item: T, index: number) => Promise<unknown>>, options)
+      return runtime.pipeline(
+        items,
+        stages as Array<(prev: unknown, item: T, index: number) => Promise<unknown>>,
+        options,
+      );
     },
 
-    async workflow(
-      name: string,
-      args?: Record<string, unknown>,
-    ): Promise<unknown> {
+    async workflow(name: string, args?: Record<string, unknown>): Promise<unknown> {
       if (isPreview) {
         throw new AnthropicCompatError(
           'workflow',
           'Nested workflow calls are forbidden in preview mode for anthropic-compatible workflows',
-        )
+        );
       }
-      return runtime.workflow(name, args)
+      return runtime.workflow(name, args);
     },
 
     get openslack(): WorkflowRuntime['openslack'] {
-      return runtime.openslack
+      return runtime.openslack;
     },
-  }
+  };
 
-  return sandbox
+  return sandbox;
 }
 
 /**
@@ -162,14 +177,14 @@ export function createAnthropicCompatSandbox(
 export function createAnthropicCompatRunner(
   runtime: WorkflowRuntime,
   workflowModule: {
-    preview?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<PreviewResult>
-    run?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<RunResult>
+    preview?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<PreviewResult>;
+    run?: (ctx: WorkflowRuntime, args: Record<string, unknown>) => Promise<RunResult>;
   },
 ): {
-  preview: (args: Record<string, unknown>) => Promise<PreviewResult>
-  run: (args: Record<string, unknown>) => Promise<RunResult>
+  preview: (args: Record<string, unknown>) => Promise<PreviewResult>;
+  run: (args: Record<string, unknown>) => Promise<RunResult>;
 } {
-  const sandbox = createAnthropicCompatSandbox(runtime)
+  const sandbox = createAnthropicCompatSandbox(runtime);
 
   // The sandbox is available for modules that use ambient globals.
   // For OpenSlack-native-format modules wrapped via compat, the module's
@@ -179,12 +194,12 @@ export function createAnthropicCompatRunner(
     async preview(args: Record<string, unknown>): Promise<PreviewResult> {
       if (workflowModule.preview) {
         // Delegate to the module's preview function with the runtime
-        return workflowModule.preview(runtime, args)
+        return workflowModule.preview(runtime, args);
       }
 
       // Default preview for anthropic-compatible modules (meta-only):
       // Return basic info about the workflow without executing agent calls
-      runtime.log('Anthropic-compat default preview: read-only inspection')
+      runtime.log('Anthropic-compat default preview: read-only inspection');
       return {
         preview: true,
         mode: runtime.mode,
@@ -194,19 +209,19 @@ export function createAnthropicCompatRunner(
           tokensRemaining: runtime.budget.tokensRemaining,
           agentCalls: runtime.budget.agentCalls,
         },
-      }
+      };
     },
 
     async run(args: Record<string, unknown>): Promise<RunResult> {
       if (workflowModule.run) {
-        return workflowModule.run(runtime, args)
+        return workflowModule.run(runtime, args);
       }
 
       // No run function — cannot execute
       throw new AnthropicCompatError(
         'run',
         'Anthropic-compatible module has no "run" export. Only preview is available for meta-only modules.',
-      )
+      );
     },
-  }
+  };
 }

@@ -55,10 +55,7 @@ export class BridgeWorktreeGuard {
    * Validate that a path is within the allowed root.
    * Returns validation result; does not throw.
    */
-  validatePath(
-    path: string,
-    allowedRoot: string,
-  ): BridgeWorktreeValidationResult {
+  validatePath(path: string, allowedRoot: string): BridgeWorktreeValidationResult {
     // Reject null bytes — prevents null byte injection attacks
     if (path.includes('\0') || allowedRoot.includes('\0')) {
       return {
@@ -205,11 +202,7 @@ export class BridgeWorktreeGuard {
   /**
    * Record a boundary violation as transcript evidence.
    */
-  private recordBoundaryViolation(
-    context: string,
-    path: string,
-    allowedRoot: string,
-  ): void {
+  private recordBoundaryViolation(context: string, path: string, allowedRoot: string): void {
     this.recorder.progress(this.runId, {
       step: 'worktree_boundary_violation',
       context,
@@ -232,8 +225,17 @@ function extractPathsFromToolInput(input: Record<string, unknown>): string[] {
   // Note: 'command' (Bash tool) contains embedded paths that require
   // different validation (CWD-based rather than path parsing).
   const pathFields = [
-    'path', 'filePath', 'cwd', 'dir', 'directory', 'rootDir',
-    'destination', 'target', 'outputPath', 'file_path', 'workingDirectory',
+    'path',
+    'filePath',
+    'cwd',
+    'dir',
+    'directory',
+    'rootDir',
+    'destination',
+    'target',
+    'outputPath',
+    'file_path',
+    'workingDirectory',
   ];
 
   for (const field of pathFields) {

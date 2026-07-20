@@ -49,102 +49,109 @@ export function prCommands(): Command {
     .command('queue')
     .description('Show open PRs grouped by readiness and blocker owner')
     .option('--limit <n>', 'Maximum open PRs to inspect', '20')
-    .option('--repo <owner/name>', 'Project a GitHub repository; can be repeated', collectRepository, [])
+    .option(
+      '--repo <owner/name>',
+      'Project a GitHub repository; can be repeated',
+      collectRepository,
+      [],
+    )
     .option('--all', 'Project all repositories in the GitHub Watch config')
     .option('--concurrency <n>', 'Maximum concurrent GitHub projection requests', '4')
     .option('--api-budget <n>', 'Maximum GitHub projection API requests', '100')
     .option('--cache-ttl <seconds>', 'Projection cache TTL in seconds', '60')
     .option('--config <path>', 'GitHub Watch config path', '.openslack/monitors/github-watch.yaml')
     .option('--format <format>', 'Output format: standard or tui', 'standard')
-    .action(async (options: {
-      limit: string;
-      repo: string[];
-      all?: boolean;
-      concurrency: string;
-      apiBudget: string;
-      cacheTtl: string;
-      config: string;
-      format: string;
-    }) => {
-      const limit = parseInt(options.limit, 10);
-      const multiRepositoryMode = options.all === true || options.repo.length > 0;
-      if (!multiRepositoryMode) {
-        const items = await buildPRQueue(Number.isFinite(limit) ? limit : 20);
-        if (options.format === 'tui') {
-          try {
-            const { renderPrQueueTui } = await import('@openslack/tui');
-            await renderPrQueueTui(items);
-          } catch {
-            console.error('TUI unavailable. Falling back to standard output.');
+    .action(
+      async (options: {
+        limit: string;
+        repo: string[];
+        all?: boolean;
+        concurrency: string;
+        apiBudget: string;
+        cacheTtl: string;
+        config: string;
+        format: string;
+      }) => {
+        const limit = parseInt(options.limit, 10);
+        const multiRepositoryMode = options.all === true || options.repo.length > 0;
+        if (!multiRepositoryMode) {
+          const items = await buildPRQueue(Number.isFinite(limit) ? limit : 20);
+          if (options.format === 'tui') {
+            try {
+              const { renderPrQueueTui } = await import('@openslack/tui');
+              await renderPrQueueTui(items);
+            } catch {
+              console.error('TUI unavailable. Falling back to standard output.');
+              console.log(renderPRQueue(items));
+            }
+          } else {
             console.log(renderPRQueue(items));
           }
-        } else {
-          console.log(renderPRQueue(items));
+          return;
         }
-        return;
-      }
 
-      if (options.all && options.repo.length > 0) {
-        console.error('Invalid options: --repo and --all are mutually exclusive.');
-        process.exitCode = 1;
-        return;
-      }
-
-      const repositories: Array<{ owner: string; repo: string }> = [];
-      if (options.all) {
-        const watchConfig = loadGitHubWatchConfig(options.config);
-        if (!watchConfig.valid || !watchConfig.config) {
-          console.error(`GitHub Watch config is invalid: ${watchConfig.errors.join('; ')}`);
+        if (options.all && options.repo.length > 0) {
+          console.error('Invalid options: --repo and --all are mutually exclusive.');
           process.exitCode = 1;
           return;
         }
-        repositories.push(
-          ...watchConfig.config.repositories.map((repository) => ({
-            owner: repository.owner,
-            repo: repository.repo,
-          })),
-        );
-      } else {
-        for (const value of options.repo) {
-          const parsed = parseGitHubRepoSpec(value);
-          const normalized = parsed
-            ? canonicalizeRepositoryName(parsed.owner, parsed.repo)
-            : null;
-          if (!normalized) {
-            console.error(`Invalid GitHub repository "${value}". Expected owner/name.`);
+
+        const repositories: Array<{ owner: string; repo: string }> = [];
+        if (options.all) {
+          const watchConfig = loadGitHubWatchConfig(options.config);
+          if (!watchConfig.valid || !watchConfig.config) {
+            console.error(`GitHub Watch config is invalid: ${watchConfig.errors.join('; ')}`);
             process.exitCode = 1;
             return;
           }
-          repositories.push({ owner: normalized.owner, repo: normalized.repo });
+          repositories.push(
+            ...watchConfig.config.repositories.map((repository) => ({
+              owner: repository.owner,
+              repo: repository.repo,
+            })),
+          );
+        } else {
+          for (const value of options.repo) {
+            const parsed = parseGitHubRepoSpec(value);
+            const normalized = parsed
+              ? canonicalizeRepositoryName(parsed.owner, parsed.repo)
+              : null;
+            if (!normalized) {
+              console.error(`Invalid GitHub repository "${value}". Expected owner/name.`);
+              process.exitCode = 1;
+              return;
+            }
+            repositories.push({ owner: normalized.owner, repo: normalized.repo });
+          }
         }
-      }
 
-      try {
-        const projection = await buildRepositoryPRProjection({
-          repositories,
-          workspaceRoot: process.cwd(),
-          limit: parseProjectionInteger(options.limit, 'limit'),
-          concurrency: parseProjectionInteger(options.concurrency, 'concurrency'),
-          apiBudget: parseProjectionInteger(options.apiBudget, 'api-budget'),
-          cacheTtlSeconds: parseProjectionInteger(options.cacheTtl, 'cache-ttl'),
-        });
-        if (options.format === 'tui') {
-          try {
-            const { renderRepositoryPrProjectionTui } = await import('@openslack/tui');
-            await renderRepositoryPrProjectionTui(projection);
-          } catch {
-            console.error('TUI unavailable. Falling back to standard output.');
+        try {
+          const projection = await buildRepositoryPRProjection({
+            repositories,
+            workspaceRoot: process.cwd(),
+            limit: parseProjectionInteger(options.limit, 'limit'),
+            concurrency: parseProjectionInteger(options.concurrency, 'concurrency'),
+            apiBudget: parseProjectionInteger(options.apiBudget, 'api-budget'),
+            cacheTtlSeconds: parseProjectionInteger(options.cacheTtl, 'cache-ttl'),
+          });
+          if (options.format === 'tui') {
+            try {
+              const { renderRepositoryPrProjectionTui } = await import('@openslack/tui');
+              await renderRepositoryPrProjectionTui(projection);
+            } catch {
+              console.error('TUI unavailable. Falling back to standard output.');
+              console.log(renderRepositoryPRProjection(projection));
+            }
+          } else {
             console.log(renderRepositoryPRProjection(projection));
           }
-        } else {
-          console.log(renderRepositoryPRProjection(projection));
+          if (projection.partial) process.exitCode = 2;
+        } catch (error) {
+          console.error(error instanceof Error ? error.message : String(error));
+          process.exitCode = 1;
         }
-        if (projection.partial) process.exitCode = 2;
-      } catch (error) {
-        console.error(error instanceof Error ? error.message : String(error));
-        process.exitCode = 1;
-      }
-    });
+      },
+    );
 
   cmd
     .command('status <number>')
@@ -226,7 +233,11 @@ export function prCommands(): Command {
     .action((options: { base: string; head: string; format: string }) => {
       const evidence = computeLocalWorkflowEvidence(options.base, options.head);
       if (options.format === 'json') {
-        console.log(JSON.stringify(evidence ?? { schema: 'openslack.workflow-evidence.v1', artifactFiles: [] }));
+        console.log(
+          JSON.stringify(
+            evidence ?? { schema: 'openslack.workflow-evidence.v1', artifactFiles: [] },
+          ),
+        );
         return;
       }
       if (!evidence) {
@@ -252,13 +263,17 @@ export function prCommands(): Command {
       }
       const client = await getClient();
       if (client.authMode !== 'github_app_installation') {
-        console.error('BOT_AUTH_REQUIRED: workflow governance issues must be created by the configured GitHub App.');
+        console.error(
+          'BOT_AUTH_REQUIRED: workflow governance issues must be created by the configured GitHub App.',
+        );
         process.exitCode = 1;
         return;
       }
       const report = await fetchPRDetails(prNumber, { requireLive: true, strictEvidence: true });
       if (report.changedFiles.length === 0) {
-        console.error(`PR #${prNumber} has no indexed changed files yet; retry workflow governance preparation.`);
+        console.error(
+          `PR #${prNumber} has no indexed changed files yet; retry workflow governance preparation.`,
+        );
         process.exitCode = 1;
         return;
       }
@@ -267,10 +282,12 @@ export function prCommands(): Command {
         console.log(`PR #${prNumber} does not modify governed workflow artifacts.`);
         return;
       }
-      const required = evidence.addedFiles.length > 0
-        || evidence.artifactFiles.some(isCoreWorkflowArtifactPath);
+      const required =
+        evidence.addedFiles.length > 0 || evidence.artifactFiles.some(isCoreWorkflowArtifactPath);
       if (!required) {
-        console.log(`PR #${prNumber} updates existing non-core artifacts; the PR is the governance record.`);
+        console.log(
+          `PR #${prNumber} updates existing non-core artifacts; the PR is the governance record.`,
+        );
         return;
       }
       const existing = report.body?.match(/workflow\s+governance\s+#(\d+)/i);
@@ -278,8 +295,9 @@ export function prCommands(): Command {
         console.log(`Workflow governance #${existing[1]} is already linked.`);
         return;
       }
-      const created = await findWorkflowGovernanceIssue(prNumber)
-        ?? await publishWorkflowGovernance({
+      const created =
+        (await findWorkflowGovernanceIssue(prNumber)) ??
+        (await publishWorkflowGovernance({
           schema: 'openslack.workflow_governance.v1',
           prNumber,
           artifactFiles: evidence.artifactFiles,
@@ -288,7 +306,7 @@ export function prCommands(): Command {
           headSha: evidence.headSha,
           evidenceHash: evidence.evidenceHash,
           requestedBy: 'openslack-agent-operator',
-        });
+        }));
       const body = `${report.body?.trimEnd() ?? ''}\n\n## Workflow governance\n\n- Workflow governance #${created.issueNumber}\n`;
       await updatePRBody(prNumber, body);
       console.log(`Workflow governance issue created: #${created.issueNumber}`);
@@ -303,179 +321,233 @@ export function prCommands(): Command {
     .option('--dry-run', 'Simulate the diagnosis plan without fetching live GitHub evidence')
     .option('--repo <owner/name>', 'Target GitHub repository')
     .option('--auth <mode>', 'Auth mode: auto, app, token, or dry-run', 'auto')
-    .action(async (number: string, options: { comment?: boolean; format: string; dryRun?: boolean; repo?: string; auth?: string }) => {
-      const prNumber = parseInt(number, 10);
-      let clientOptions;
-      let client;
-      try {
-        clientOptions = buildPRDoctorClientOptions(options);
-        client = await getClient(clientOptions);
-      } catch (error) {
-        const err = error instanceof Error ? error : new Error(String(error));
-        if (err instanceof GitHubAuthRequiredError || err.message.includes('AUTH_REQUIRED')) {
-          console.error(renderAuthRequiredMessage(prNumber, err));
-          process.exitCode = 1;
-          return;
-        }
-        console.error(err.message);
-        process.exitCode = 1;
-        return;
-      }
-
-      if (client.isDryRun) {
-        console.log(renderDoctorDryRunReport(prNumber, client));
-        return;
-      }
-
-      if (options.comment && client.authMode !== 'github_app_installation') {
-        console.error('BOT_AUTH_REQUIRED: pr doctor --comment requires GitHub App bot authentication.');
-        console.error('Try: powershell -ExecutionPolicy Bypass -File scripts\\openslack-bot.ps1 pr doctor ' + prNumber + ' --comment');
-        process.exitCode = 1;
-        return;
-      }
-
-      const evidenceBanner = renderDoctorEvidenceBanner(client);
-      let report: PRReviewReport;
-      let codeowners: string[];
-      try {
-        report = await fetchPRDetails(prNumber, clientOptions);
-        if (report.state === 'unknown') {
-          console.error(`PR_FETCH_FAILED: Could not fetch PR #${prNumber} from ${client.owner}/${client.repo}.`);
-          process.exitCode = 1;
-          return;
-        }
-        const classified = classifyPRReport(report);
-        ({ owners: codeowners } = await loadPRCodeownerEvidence(classified, clientOptions));
-        report = classified;
-      } catch (error) {
-        if (
-          error instanceof GitHubEvidenceUnavailableError ||
-          error instanceof PRCodeownerEvidenceUnavailableError
-        ) {
-          console.error(renderEvidenceUnavailableMessage(client, error));
-          process.exitCode = 1;
-          return;
-        }
-        throw error;
-      }
-      const policy = loadPRReviewPolicy();
-
-      const diagnosed = diagnosePR(report, policy, codeowners);
-      const doctorOutput = `${evidenceBanner}\n\n${generateDoctorReport(diagnosed, codeowners)}`;
-
-      const isReady = diagnosed.decision === 'READY_TO_MERGE';
-      try {
-        recordEvent({
-          type: isReady ? 'pr.doctor.ready' : 'pr.doctor.blocked',
-          actor: { id: 'cli', kind: 'system', provider: 'cli' },
-          object: { kind: 'pr', id: String(prNumber) },
-          source: { kind: 'prms', ref: 'diagnosePR' },
-          summary: isReady
-            ? `PR #${prNumber} is ready to merge`
-            : `PR #${prNumber} blocked: ${diagnosed.reason}`,
-          visibility: 'local',
-          redacted: false,
-          containsSensitiveData: false,
-          risk: isReady ? 'none' : 'medium',
-          owner: isReady ? undefined : { id: diagnosed.recommendation?.includes('review') ? 'human' : 'agent', kind: 'human' },
-          nextAction: isReady
-            ? { owner: 'human', action: `Review and merge PR #${prNumber} on GitHub` }
-            : { owner: 'human', action: diagnosed.recommendation },
-        });
-      } catch {
-        // Event recording is best-effort; do not block the CLI flow
-      }
-
-      if (options.comment) {
-        await commentOnPR(prNumber, doctorOutput, clientOptions);
-        console.log(`Doctor report posted on PR #${prNumber}`);
-      } else if (options.format === 'tui') {
+    .action(
+      async (
+        number: string,
+        options: {
+          comment?: boolean;
+          format: string;
+          dryRun?: boolean;
+          repo?: string;
+          auth?: string;
+        },
+      ) => {
+        const prNumber = parseInt(number, 10);
+        let clientOptions;
+        let client;
         try {
-          const { summarizePRDecision } = await import('@openslack/pr');
-          const summary = summarizePRDecision(diagnosed, codeowners);
-          const { renderDoctorTui } = await import('@openslack/tui');
-          await renderDoctorTui(diagnosed, {
-            evidence: [
-              ...evidenceBanner.split('\n'),
-              ...summary.evidence,
-            ],
-            profileSyncGate: diagnosed.profileSyncGate && diagnosed.profileSyncGate.overall !== 'N/A'
-              ? { passed: diagnosed.profileSyncGate.overall === 'PASS', detail: diagnosed.profileSyncGate.criteria.map(c => `${c.name}: ${c.status}${c.detail ? ' - ' + c.detail : ''}`).join('; ') }
-              : undefined,
-          });
+          clientOptions = buildPRDoctorClientOptions(options);
+          client = await getClient(clientOptions);
         } catch (error) {
-          console.error('TUI unavailable. Falling back to standard output.');
+          const err = error instanceof Error ? error : new Error(String(error));
+          if (err instanceof GitHubAuthRequiredError || err.message.includes('AUTH_REQUIRED')) {
+            console.error(renderAuthRequiredMessage(prNumber, err));
+            process.exitCode = 1;
+            return;
+          }
+          console.error(err.message);
+          process.exitCode = 1;
+          return;
+        }
+
+        if (client.isDryRun) {
+          console.log(renderDoctorDryRunReport(prNumber, client));
+          return;
+        }
+
+        if (options.comment && client.authMode !== 'github_app_installation') {
+          console.error(
+            'BOT_AUTH_REQUIRED: pr doctor --comment requires GitHub App bot authentication.',
+          );
+          console.error(
+            'Try: powershell -ExecutionPolicy Bypass -File scripts\\openslack-bot.ps1 pr doctor ' +
+              prNumber +
+              ' --comment',
+          );
+          process.exitCode = 1;
+          return;
+        }
+
+        const evidenceBanner = renderDoctorEvidenceBanner(client);
+        let report: PRReviewReport;
+        let codeowners: string[];
+        try {
+          report = await fetchPRDetails(prNumber, clientOptions);
+          if (report.state === 'unknown') {
+            console.error(
+              `PR_FETCH_FAILED: Could not fetch PR #${prNumber} from ${client.owner}/${client.repo}.`,
+            );
+            process.exitCode = 1;
+            return;
+          }
+          const classified = classifyPRReport(report);
+          ({ owners: codeowners } = await loadPRCodeownerEvidence(classified, clientOptions));
+          report = classified;
+        } catch (error) {
+          if (
+            error instanceof GitHubEvidenceUnavailableError ||
+            error instanceof PRCodeownerEvidenceUnavailableError
+          ) {
+            console.error(renderEvidenceUnavailableMessage(client, error));
+            process.exitCode = 1;
+            return;
+          }
+          throw error;
+        }
+        const policy = loadPRReviewPolicy();
+
+        const diagnosed = diagnosePR(report, policy, codeowners);
+        const doctorOutput = `${evidenceBanner}\n\n${generateDoctorReport(diagnosed, codeowners)}`;
+
+        const isReady = diagnosed.decision === 'READY_TO_MERGE';
+        try {
+          recordEvent({
+            type: isReady ? 'pr.doctor.ready' : 'pr.doctor.blocked',
+            actor: { id: 'cli', kind: 'system', provider: 'cli' },
+            object: { kind: 'pr', id: String(prNumber) },
+            source: { kind: 'prms', ref: 'diagnosePR' },
+            summary: isReady
+              ? `PR #${prNumber} is ready to merge`
+              : `PR #${prNumber} blocked: ${diagnosed.reason}`,
+            visibility: 'local',
+            redacted: false,
+            containsSensitiveData: false,
+            risk: isReady ? 'none' : 'medium',
+            owner: isReady
+              ? undefined
+              : {
+                  id: diagnosed.recommendation?.includes('review') ? 'human' : 'agent',
+                  kind: 'human',
+                },
+            nextAction: isReady
+              ? { owner: 'human', action: `Review and merge PR #${prNumber} on GitHub` }
+              : { owner: 'human', action: diagnosed.recommendation },
+          });
+        } catch {
+          // Event recording is best-effort; do not block the CLI flow
+        }
+
+        if (options.comment) {
+          await commentOnPR(prNumber, doctorOutput, clientOptions);
+          console.log(`Doctor report posted on PR #${prNumber}`);
+        } else if (options.format === 'tui') {
+          try {
+            const { summarizePRDecision } = await import('@openslack/pr');
+            const summary = summarizePRDecision(diagnosed, codeowners);
+            const { renderDoctorTui } = await import('@openslack/tui');
+            await renderDoctorTui(diagnosed, {
+              evidence: [...evidenceBanner.split('\n'), ...summary.evidence],
+              profileSyncGate:
+                diagnosed.profileSyncGate && diagnosed.profileSyncGate.overall !== 'N/A'
+                  ? {
+                      passed: diagnosed.profileSyncGate.overall === 'PASS',
+                      detail: diagnosed.profileSyncGate.criteria
+                        .map((c) => `${c.name}: ${c.status}${c.detail ? ' - ' + c.detail : ''}`)
+                        .join('; '),
+                    }
+                  : undefined,
+            });
+          } catch (error) {
+            console.error('TUI unavailable. Falling back to standard output.');
+            console.log(doctorOutput);
+          }
+        } else if (options.format === 'plain') {
+          const findings: PlainFinding[] = [];
+          findings.push({
+            status: 'PASS',
+            title: 'GitHub evidence',
+            detail: `LIVE; Repo: ${client.owner}/${client.repo}; Auth: ${client.authMode}`,
+          });
+          findings.push({
+            status: diagnosed.draft ? 'FAIL' : 'PASS',
+            title: 'Draft state',
+            detail: diagnosed.draft ? 'PR is in draft state' : 'Ready for review',
+          });
+          findings.push({
+            status: diagnosed.state !== 'open' ? 'FAIL' : 'PASS',
+            title: 'PR state',
+            detail: diagnosed.state !== 'open' ? `PR is ${diagnosed.state}` : 'Open',
+          });
+          findings.push({
+            status: diagnosed.mergeable === false ? 'FAIL' : 'PASS',
+            title: 'Merge conflicts',
+            detail: diagnosed.mergeable === false ? 'Has merge conflicts' : 'No merge conflicts',
+          });
+          // Workflow Gate
+          if (diagnosed.workflowGate && diagnosed.workflowGate.overall !== 'N/A') {
+            findings.push({
+              status: diagnosed.workflowGate.overall === 'PASS' ? 'PASS' : 'FAIL',
+              title: 'Workflow Gate',
+              detail: diagnosed.workflowGate.criteria
+                .filter((c) => c.status !== 'N/A')
+                .map((c) => `${c.name}: ${c.status}`)
+                .join('; '),
+              nextAction:
+                diagnosed.workflowGate.overall === 'FAIL'
+                  ? `Approve the current head with: gh pr review ${prNumber} --approve --body "Workflow-Trust: trusted"`
+                  : undefined,
+            });
+          }
+          const failing = diagnosed.checks.filter(
+            (c) => c.conclusion && c.conclusion !== 'success' && c.conclusion !== 'neutral',
+          );
+          const pending = diagnosed.checks.filter((c) => c.status !== 'completed');
+          if (pending.length > 0) {
+            findings.push({
+              status: 'WARN',
+              title: 'CI Checks',
+              detail: `${pending.length} pending`,
+              nextAction: 'Wait for checks',
+            });
+          } else if (failing.length > 0) {
+            findings.push({
+              status: 'FAIL',
+              title: 'CI Checks',
+              detail: `${failing.length} failing`,
+              nextAction: 'Fix failing checks',
+            });
+          } else {
+            findings.push({
+              status: 'PASS',
+              title: 'CI Checks',
+              detail: `All ${diagnosed.checks.length} passed`,
+            });
+          }
+          const validApprovals = diagnosed.reviews.filter(
+            (r) => r.state === 'APPROVED' && r.user !== diagnosed.author,
+          );
+          findings.push({
+            status:
+              validApprovals.length === 0 && diagnosed.decision !== 'READY_TO_MERGE'
+                ? 'requires_human_approval'
+                : 'PASS',
+            title: 'Approvals',
+            detail: `${validApprovals.length} valid approval(s)`,
+            nextAction: validApprovals.length === 0 ? diagnosed.recommendation : undefined,
+          });
+          findings.push({
+            status:
+              diagnosed.riskZone === 'black'
+                ? 'FAIL'
+                : diagnosed.riskZone === 'red'
+                  ? 'WARN'
+                  : 'PASS',
+            title: 'Risk zone',
+            detail: `Zone: ${diagnosed.riskZone.toUpperCase()}`,
+          });
+          const blocked = diagnosed.decision !== 'READY_TO_MERGE';
+          findings.push({
+            status: blocked ? 'FAIL' : 'PASS',
+            title: 'Merge decision',
+            detail: `${diagnosed.decision}: ${diagnosed.reason}`,
+            nextAction: blocked ? diagnosed.recommendation : undefined,
+          });
+          console.log(renderFindingsPlain(findings));
+        } else {
           console.log(doctorOutput);
         }
-      } else if (options.format === 'plain') {
-        const findings: PlainFinding[] = [];
-        findings.push({
-          status: 'PASS',
-          title: 'GitHub evidence',
-          detail: `LIVE; Repo: ${client.owner}/${client.repo}; Auth: ${client.authMode}`,
-        });
-        findings.push({
-          status: diagnosed.draft ? 'FAIL' : 'PASS',
-          title: 'Draft state',
-          detail: diagnosed.draft ? 'PR is in draft state' : 'Ready for review',
-        });
-        findings.push({
-          status: diagnosed.state !== 'open' ? 'FAIL' : 'PASS',
-          title: 'PR state',
-          detail: diagnosed.state !== 'open' ? `PR is ${diagnosed.state}` : 'Open',
-        });
-        findings.push({
-          status: diagnosed.mergeable === false ? 'FAIL' : 'PASS',
-          title: 'Merge conflicts',
-          detail: diagnosed.mergeable === false ? 'Has merge conflicts' : 'No merge conflicts',
-        });
-        // Workflow Gate
-        if (diagnosed.workflowGate && diagnosed.workflowGate.overall !== 'N/A') {
-          findings.push({
-            status: diagnosed.workflowGate.overall === 'PASS' ? 'PASS' : 'FAIL',
-            title: 'Workflow Gate',
-            detail: diagnosed.workflowGate.criteria
-              .filter((c) => c.status !== 'N/A')
-              .map((c) => `${c.name}: ${c.status}`)
-              .join('; '),
-            nextAction: diagnosed.workflowGate.overall === 'FAIL'
-              ? `Approve the current head with: gh pr review ${prNumber} --approve --body "Workflow-Trust: trusted"`
-              : undefined,
-          });
-        }
-        const failing = diagnosed.checks.filter((c) => c.conclusion && c.conclusion !== 'success' && c.conclusion !== 'neutral');
-        const pending = diagnosed.checks.filter((c) => c.status !== 'completed');
-        if (pending.length > 0) {
-          findings.push({ status: 'WARN', title: 'CI Checks', detail: `${pending.length} pending`, nextAction: 'Wait for checks' });
-        } else if (failing.length > 0) {
-          findings.push({ status: 'FAIL', title: 'CI Checks', detail: `${failing.length} failing`, nextAction: 'Fix failing checks' });
-        } else {
-          findings.push({ status: 'PASS', title: 'CI Checks', detail: `All ${diagnosed.checks.length} passed` });
-        }
-        const validApprovals = diagnosed.reviews.filter((r) => r.state === 'APPROVED' && r.user !== diagnosed.author);
-        findings.push({
-          status: validApprovals.length === 0 && diagnosed.decision !== 'READY_TO_MERGE' ? 'requires_human_approval' : 'PASS',
-          title: 'Approvals',
-          detail: `${validApprovals.length} valid approval(s)`,
-          nextAction: validApprovals.length === 0 ? diagnosed.recommendation : undefined,
-        });
-        findings.push({
-          status: diagnosed.riskZone === 'black' ? 'FAIL' : diagnosed.riskZone === 'red' ? 'WARN' : 'PASS',
-          title: 'Risk zone',
-          detail: `Zone: ${diagnosed.riskZone.toUpperCase()}`,
-        });
-        const blocked = diagnosed.decision !== 'READY_TO_MERGE';
-        findings.push({
-          status: blocked ? 'FAIL' : 'PASS',
-          title: 'Merge decision',
-          detail: `${diagnosed.decision}: ${diagnosed.reason}`,
-          nextAction: blocked ? diagnosed.recommendation : undefined,
-        });
-        console.log(renderFindingsPlain(findings));
-      } else {
-        console.log(doctorOutput);
-      }
-    });
+      },
+    );
 
   cmd
     .command('watch <number>')
@@ -517,7 +589,11 @@ export function prCommands(): Command {
           if (parent === dir) break;
           dir = parent;
         }
-        const resolved = resolveAgentPrincipal({ root: dir, agentId: options.agentId, provider: 'cli' });
+        const resolved = resolveAgentPrincipal({
+          root: dir,
+          agentId: options.agentId,
+          provider: 'cli',
+        });
         if ('error' in resolved) {
           console.error(`Authorization failed: ${resolved.error}`);
           process.exit(1);
@@ -561,7 +637,10 @@ export function prCommands(): Command {
       const policy = loadPRReviewPolicy();
 
       // Resolve agent principal if --agent-id provided
-      let authOptions: { principal?: import('@openslack/kernel').AgentPrincipal; snapshot?: import('@openslack/kernel').AgentPermissionSnapshot } = {};
+      let authOptions: {
+        principal?: import('@openslack/kernel').AgentPrincipal;
+        snapshot?: import('@openslack/kernel').AgentPermissionSnapshot;
+      } = {};
       if (options.agentId) {
         const { resolveAgentPrincipal } = await import('@openslack/runtime');
         const { existsSync } = await import('node:fs');
@@ -573,7 +652,11 @@ export function prCommands(): Command {
           if (parent === dir) break;
           dir = parent;
         }
-        const resolved = resolveAgentPrincipal({ root: dir, agentId: options.agentId, provider: 'cli' });
+        const resolved = resolveAgentPrincipal({
+          root: dir,
+          agentId: options.agentId,
+          provider: 'cli',
+        });
         if ('error' in resolved) {
           console.error(`Authorization failed: ${resolved.error}`);
           process.exit(1);

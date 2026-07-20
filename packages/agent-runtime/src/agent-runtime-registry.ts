@@ -15,7 +15,9 @@ export interface AgentRuntimeRegistryEntry {
   requiredMcpServers: string[];
 }
 
-export function listAgentRuntimeRegistryEntries(rootDir = process.cwd()): AgentRuntimeRegistryEntry[] {
+export function listAgentRuntimeRegistryEntries(
+  rootDir = process.cwd(),
+): AgentRuntimeRegistryEntry[] {
   const registryDir = join(rootDir, '.openslack', 'agents', 'registry');
   if (!existsSync(registryDir)) return [];
 
@@ -46,7 +48,9 @@ export function findAgentRuntimeRegistryEntry(
   agentId: string,
   rootDir = process.cwd(),
 ): AgentRuntimeRegistryEntry | null {
-  return listAgentRuntimeRegistryEntries(rootDir).find((entry) => entry.agentId === agentId) ?? null;
+  return (
+    listAgentRuntimeRegistryEntries(rootDir).find((entry) => entry.agentId === agentId) ?? null
+  );
 }
 
 function parseRegistryEntry(sourcePath: string): AgentRuntimeRegistryEntry | null {
@@ -125,7 +129,10 @@ function readStringList(value: unknown): string[] {
 }
 
 function readBridgeMode(value: unknown): ResolvedAgentConfig['bridgeMode'] | undefined {
-  return value === 'local' || value === 'external-command' || value === 'process' || value === 'fake'
+  return value === 'local' ||
+    value === 'external-command' ||
+    value === 'process' ||
+    value === 'fake'
     ? value
     : undefined;
 }

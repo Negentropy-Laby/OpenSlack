@@ -1,5 +1,10 @@
 import React, { createContext, type Context, useMemo, useSyncExternalStore } from 'react';
-import { getTerminalFocused, getTerminalFocusState, subscribeTerminalFocus, type TerminalFocusState } from '../terminal-focus-state.js';
+import {
+  getTerminalFocused,
+  getTerminalFocusState,
+  subscribeTerminalFocus,
+  type TerminalFocusState,
+} from '../terminal-focus-state.js';
 export type { TerminalFocusState };
 export type TerminalFocusContextProps = {
   readonly isTerminalFocused: boolean;
@@ -7,17 +12,23 @@ export type TerminalFocusContextProps = {
 };
 const TerminalFocusContext = createContext<TerminalFocusContextProps>({
   isTerminalFocused: true,
-  terminalFocusState: 'unknown'
+  terminalFocusState: 'unknown',
 });
 
-;(TerminalFocusContext as Context<TerminalFocusContextProps> & {
-  displayName?: string;
-}).displayName = 'TerminalFocusContext';
+(
+  TerminalFocusContext as Context<TerminalFocusContextProps> & {
+    displayName?: string;
+  }
+).displayName = 'TerminalFocusContext';
 
 // Separate component so App.tsx doesn't re-render on focus changes.
 // Children are a stable prop reference, so they don't re-render either —
 // only components that consume the context will re-render.
-export function TerminalFocusProvider({ children }: { children: React.ReactNode }): React.ReactNode {
+export function TerminalFocusProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}): React.ReactNode {
   const isTerminalFocused = useSyncExternalStore(subscribeTerminalFocus, getTerminalFocused);
   const terminalFocusState = useSyncExternalStore(subscribeTerminalFocus, getTerminalFocusState);
 
@@ -26,10 +37,6 @@ export function TerminalFocusProvider({ children }: { children: React.ReactNode 
     [isTerminalFocused, terminalFocusState],
   );
 
-  return (
-    <TerminalFocusContext.Provider value={value}>
-      {children}
-    </TerminalFocusContext.Provider>
-  );
+  return <TerminalFocusContext.Provider value={value}>{children}</TerminalFocusContext.Provider>;
 }
 export default TerminalFocusContext;

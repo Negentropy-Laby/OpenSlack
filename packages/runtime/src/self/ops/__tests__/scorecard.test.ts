@@ -7,7 +7,7 @@ describe('computeFitnessScore', () => {
       checks: {
         'unit-tests': { result: 'pass', command: 'bun run test' },
         'integration-tests': { result: 'pass', command: 'bun run test:integration' },
-        'typecheck': { result: 'pass', command: 'bun run typecheck' },
+        typecheck: { result: 'pass', command: 'bun run typecheck' },
         'workspace-validate': { result: 'pass', command: 'openslack workspace validate' },
         'self-eval': { result: 'pass', command: 'openslack self eval' },
         'security-scan': { result: 'pass', command: 'openslack self scan-secrets', findings: [] },
@@ -21,7 +21,7 @@ describe('computeFitnessScore', () => {
     const score = computeFitnessScore({
       checks: {
         'unit-tests': { result: 'fail', command: 'bun run test' },
-        'typecheck': { result: 'pass', command: 'bun run typecheck' },
+        typecheck: { result: 'pass', command: 'bun run typecheck' },
         'workspace-validate': { result: 'pass', command: 'openslack workspace validate' },
         'self-eval': { result: 'pass', command: 'openslack self eval' },
         'security-scan': { result: 'pass', command: 'openslack self scan-secrets', findings: [] },
@@ -36,10 +36,14 @@ describe('computeFitnessScore', () => {
       checks: {
         'unit-tests': { result: 'pass', command: 'bun run test' },
         'integration-tests': { result: 'pass', command: 'bun run test:integration' },
-        'typecheck': { result: 'pass', command: 'bun run typecheck' },
+        typecheck: { result: 'pass', command: 'bun run typecheck' },
         'workspace-validate': { result: 'pass', command: 'openslack workspace validate' },
         'self-eval': { result: 'pass', command: 'openslack self eval' },
-        'security-scan': { result: 'fail', command: 'openslack self scan-secrets', findings: ['API_KEY_LEAK'] },
+        'security-scan': {
+          result: 'fail',
+          command: 'openslack self scan-secrets',
+          findings: ['API_KEY_LEAK'],
+        },
       },
     });
     expect(score.dimensions.security.score).toBe(0);
@@ -50,7 +54,7 @@ describe('computeFitnessScore', () => {
     const score = computeFitnessScore({
       checks: {
         'unit-tests': { result: 'pass', command: 'bun run test' },
-        'typecheck': { result: 'pass', command: 'bun run typecheck' },
+        typecheck: { result: 'pass', command: 'bun run typecheck' },
         'workspace-validate': { result: 'pass', command: 'openslack workspace validate' },
         'self-eval': { result: 'pass', command: 'openslack self eval' },
         'security-scan': { result: 'pass', command: 'openslack self scan-secrets', findings: [] },
@@ -65,7 +69,7 @@ describe('computeFitnessScore', () => {
     const score = computeFitnessScore({
       checks: {
         'unit-tests': { result: 'pass', command: 'bun run test' },
-        'typecheck': { result: 'pass', command: 'bun run typecheck' },
+        typecheck: { result: 'pass', command: 'bun run typecheck' },
         'workspace-validate': { result: 'pass', command: 'openslack workspace validate' },
         'self-eval': { result: 'pass', command: 'openslack self eval' },
         'security-scan': { result: 'pass', command: 'openslack self scan-secrets', findings: [] },
@@ -79,7 +83,7 @@ describe('computeFitnessScore', () => {
     const score = computeFitnessScore({
       checks: {
         'unit-tests': { result: 'pass', command: 'bun run test' },
-        'typecheck': { result: 'pass', command: 'bun run typecheck' },
+        typecheck: { result: 'pass', command: 'bun run typecheck' },
         'workspace-validate': { result: 'pass', command: 'openslack workspace validate' },
         'self-eval': { result: 'pass', command: 'openslack self eval' },
         'security-scan': { result: 'pass', command: 'openslack self scan-secrets', findings: [] },
@@ -95,11 +99,11 @@ describe('computeFitnessScore', () => {
     expect(dims.length).toBe(6);
 
     // Verify weights
-    expect(score.dimensions.correctness.weight).toBe(0.30);
-    expect(score.dimensions.reliability.weight).toBe(0.20);
-    expect(score.dimensions.security.weight).toBe(0.20);
-    expect(score.dimensions.cost.weight).toBe(0.10);
-    expect(score.dimensions.simplicity.weight).toBe(0.10);
-    expect(score.dimensions.developer_experience.weight).toBe(0.10);
+    expect(score.dimensions.correctness.weight).toBe(0.3);
+    expect(score.dimensions.reliability.weight).toBe(0.2);
+    expect(score.dimensions.security.weight).toBe(0.2);
+    expect(score.dimensions.cost.weight).toBe(0.1);
+    expect(score.dimensions.simplicity.weight).toBe(0.1);
+    expect(score.dimensions.developer_experience.weight).toBe(0.1);
   });
 });

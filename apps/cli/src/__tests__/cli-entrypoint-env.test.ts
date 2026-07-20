@@ -17,7 +17,7 @@ describe('CLI entrypoint environment handling', () => {
       const script = [
         `process.chdir(${JSON.stringify(tempDir)});`,
         "process.argv = ['node', 'openslack', '--help'];",
-        "process.exit = ((code) => { throw new Error(`exit:${code ?? 0}`); });",
+        'process.exit = ((code) => { throw new Error(`exit:${code ?? 0}`); });',
         'try {',
         `  await import(${JSON.stringify(pathToFileURL(cliIndex).href)});`,
         '} catch (err) {',

@@ -89,7 +89,8 @@ function normalizeIntent(value: unknown): Intent | undefined {
   const candidate = value as Partial<Intent>;
   if (!isIntentKind(candidate.kind)) return undefined;
   const slots = candidate.slots && typeof candidate.slots === 'object' ? candidate.slots : {};
-  const confidence = typeof candidate.confidence === 'number' ? Math.max(0, Math.min(1, candidate.confidence)) : 0.5;
+  const confidence =
+    typeof candidate.confidence === 'number' ? Math.max(0, Math.min(1, candidate.confidence)) : 0.5;
   return { kind: candidate.kind, slots: slots as Intent['slots'], confidence };
 }
 
@@ -107,8 +108,8 @@ function buildLLMRequest(query: string, actionRegistry: ActionRegistryPort): LLM
 }
 
 function buildSystemPrompt(actions: LLMPlannerRequest['actions']): string {
-  const intentList = KNOWN_INTENTS.filter(k => k !== 'unknown').join(', ');
-  const actionList = actions.map(a => `  - ${a.id}: ${a.description}`).join('\n');
+  const intentList = KNOWN_INTENTS.filter((k) => k !== 'unknown').join(', ');
+  const actionList = actions.map((a) => `  - ${a.id}: ${a.description}`).join('\n');
   return [
     'You are the OpenSlack intent classifier. Classify the user request into exactly one intent kind.',
     '',
@@ -236,13 +237,18 @@ export async function resolveIntent(
         return {
           intent: parsed,
           source: 'keyword-fallback',
-          fallbackReason: 'LLM returned unknown for a keyword-recognized request, using keyword fallback',
+          fallbackReason:
+            'LLM returned unknown for a keyword-recognized request, using keyword fallback',
         };
       }
 
       // Merge slots: LLM slots as base, fill from parsed where LLM didn't provide
       const mergedSlots = mergeSlots(intent.slots, parsed.slots);
-      const merged: Intent = { kind: intent.kind, slots: mergedSlots, confidence: intent.confidence };
+      const merged: Intent = {
+        kind: intent.kind,
+        slots: mergedSlots,
+        confidence: intent.confidence,
+      };
 
       return { intent: merged, source: 'llm' };
     } catch (err) {
@@ -259,7 +265,11 @@ export async function resolveIntent(
     }
   }
 
-  return { intent: parsed, source: 'keyword-fallback', fallbackReason: 'LLM retries exhausted, using keyword fallback' };
+  return {
+    intent: parsed,
+    source: 'keyword-fallback',
+    fallbackReason: 'LLM retries exhausted, using keyword fallback',
+  };
 }
 
 export function createOpenAICompatiblePlannerProvider(options: {
@@ -302,7 +312,9 @@ export function createOpenAICompatiblePlannerProvider(options: {
         signal,
       });
       if (!response.ok) throw new Error(`LLM provider failed: ${response.status}`);
-      const body = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+      const body = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
       const content = body.choices?.[0]?.message?.content;
       if (!content) throw new Error('LLM provider returned no content');
       const parsed = JSON.parse(content) as LLMPlannerResponse;

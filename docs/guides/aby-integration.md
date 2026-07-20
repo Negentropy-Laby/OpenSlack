@@ -66,9 +66,9 @@ can use a vendor runtime hint:
 
 ```yaml
 vendor:
-  provider: "aby"
-  runtime: "aby_assistant"
-  model: "default"
+  provider: 'aby'
+  runtime: 'aby_assistant'
+  model: 'default'
 ```
 
 The workflow resolver maps Aby runtime hints to `bridgeMode: "process"`.
@@ -136,14 +136,14 @@ After a run, the same run ID should be visible in:
 
 ## Common Failures
 
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| `No Aby root configured` | Neither `OPENSLACK_ABY_ROOT` nor `.openslack.local/agent-runtime.json` has a root | Set one explicit local path |
-| `missing runEntrypoint.ts` | Aby checkout does not expose the sidecar launcher | Update Aby or point to the correct checkout |
-| `missing agentRunBridge.ts` | Aby checkout does not expose the generic bridge entrypoint | Update Aby to the L3 bridge version |
-| `Rejected unsafe keys` | Config tried to forward secret-like env keys | Remove those keys; do not send task content or secrets through env |
-| `permission_denied` | Aby requested a forbidden tool or approval flow | Adjust the OpenSlack permission profile; OpenSlack remains final policy authority |
-| `Bridge response timed out` | Aby process did not complete within the configured timeout | Increase `timeoutMs` or inspect Aby stderr logs |
+| Symptom                     | Cause                                                                             | Fix                                                                               |
+| --------------------------- | --------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `No Aby root configured`    | Neither `OPENSLACK_ABY_ROOT` nor `.openslack.local/agent-runtime.json` has a root | Set one explicit local path                                                       |
+| `missing runEntrypoint.ts`  | Aby checkout does not expose the sidecar launcher                                 | Update Aby or point to the correct checkout                                       |
+| `missing agentRunBridge.ts` | Aby checkout does not expose the generic bridge entrypoint                        | Update Aby to the L3 bridge version                                               |
+| `Rejected unsafe keys`      | Config tried to forward secret-like env keys                                      | Remove those keys; do not send task content or secrets through env                |
+| `permission_denied`         | Aby requested a forbidden tool or approval flow                                   | Adjust the OpenSlack permission profile; OpenSlack remains final policy authority |
+| `Bridge response timed out` | Aby process did not complete within the configured timeout                        | Increase `timeoutMs` or inspect Aby stderr logs                                   |
 
 ## Boundaries
 

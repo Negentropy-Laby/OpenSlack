@@ -49,7 +49,9 @@ export function auditBridgeEnv(input?: Record<string, string>): BridgeEnvAudit {
   };
 }
 
-export function buildSafeBridgeEnv(input?: Record<string, string>): Record<string, string> | undefined {
+export function buildSafeBridgeEnv(
+  input?: Record<string, string>,
+): Record<string, string> | undefined {
   const audit = auditBridgeEnv(input);
   return Object.keys(audit.safeEnv).length > 0 ? audit.safeEnv : undefined;
 }

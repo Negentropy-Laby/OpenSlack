@@ -6,9 +6,6 @@ export function debug(_namespace: string, _formatter: string, ..._args: unknown[
   // intentionally empty
 }
 
-export function logForDebugging(
-  _message: string,
-  _opts?: { level?: string },
-): void {
+export function logForDebugging(_message: string, _opts?: { level?: string }): void {
   // intentionally empty
 }

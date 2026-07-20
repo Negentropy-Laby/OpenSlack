@@ -66,15 +66,37 @@ function tableCell(value: string): string {
   return value.replace(/\|/g, '\\|').replace(/\s+/g, ' ').trim();
 }
 
+export function inlineCodeCell(value: string): string {
+  const normalized = tableCell(value);
+  return normalized.includes('`') ? `\`\` ${normalized} \`\`` : `\`${normalized}\``;
+}
+
 function listCell(values: string[]): string {
-  return values.length > 0 ? values.map(tableCell).join('<br>') : 'None';
+  return values.length > 0 ? values.map(inlineCodeCell).join('<br>') : 'None';
+}
+
+export function renderMarkdownTable(headers: string[], rows: string[][]): string {
+  if (headers.length === 0) throw new Error('Markdown tables require at least one column.');
+  for (const row of rows) {
+    if (row.length !== headers.length) {
+      throw new Error(`Markdown table row has ${row.length} cells; expected ${headers.length}.`);
+    }
+  }
+
+  const widths = headers.map((header, index) =>
+    Math.max(3, header.length, ...rows.map((row) => row[index].length)),
+  );
+  const renderRow = (row: string[]): string =>
+    `| ${row.map((cell, index) => cell.padEnd(widths[index])).join(' | ')} |`;
+  const separator = widths.map((width) => '-'.repeat(width));
+  return [renderRow(headers), renderRow(separator), ...rows.map(renderRow)].join('\n');
 }
 
 function operatorLabel(configured: boolean): string {
   return configured ? 'CONFIGURED' : 'NOT_CONFIGURED';
 }
 
-function generateStatusDoc(root: string): string {
+export function generateStatusDoc(root: string): string {
   const registry = readModules(root);
   const validation = validateModules(registry, { rootPath: root });
   if (!validation.valid) {
@@ -87,28 +109,72 @@ function generateStatusDoc(root: string): string {
   const vitestFiles = registry.vitest_files ?? totalTestFiles;
   const totalGoldenEvals = registry.modules.reduce((sum, m) => sum + (m.golden_evals || 0), 0);
 
-  const moduleRows = registry.modules
-    .map(
-      (m) =>
-        `| ${tableCell(m.name)} | ${tableCell(m.phase)} | ${m.status.toUpperCase()} | ${m.maturity.toUpperCase()} | ${operatorLabel(m.operatorConfigured)} | ${listCell(m.externalBlockers)} | ${listCell(m.evidenceRefs)} | ${tableCell(m.notes || '')} |`,
-    )
-    .join('\n');
-
-  const componentRows = registry.modules
-    .flatMap((module) =>
-      (module.components ?? []).map(
-        (component) =>
-          `| ${tableCell(module.name)} | ${tableCell(component.name)} | ${component.maturity.toUpperCase()} | ${operatorLabel(component.operatorConfigured)} | ${listCell(component.externalBlockers)} | ${listCell(component.evidenceRefs)} |`,
+  const repositoryTable = renderMarkdownTable(
+    ['Field', 'Value'],
+    [['Remote', '`https://github.com/Negentropy-Laby/OpenSlack`']],
+  );
+  const moduleTable = renderMarkdownTable(
+    [
+      'Module',
+      'Phase',
+      'Lifecycle',
+      'Maturity',
+      'Declared Operator Baseline',
+      'External Blockers',
+      'Evidence',
+      'Notes',
+    ],
+    registry.modules.map((module) => [
+      tableCell(module.name),
+      tableCell(module.phase),
+      module.status.toUpperCase(),
+      module.maturity.toUpperCase(),
+      operatorLabel(module.operatorConfigured),
+      listCell(module.externalBlockers),
+      listCell(module.evidenceRefs),
+      tableCell(module.notes || ''),
+    ]),
+  );
+  const componentTable = renderMarkdownTable(
+    [
+      'Owning Module',
+      'Component',
+      'Maturity',
+      'Declared Operator Baseline',
+      'External Blockers',
+      'Evidence',
+    ],
+    registry.modules
+      .flatMap((module) =>
+        (module.components ?? []).map((component) => [
+          tableCell(module.name),
+          tableCell(component.name),
+          component.maturity.toUpperCase(),
+          operatorLabel(component.operatorConfigured),
+          listCell(component.externalBlockers),
+          listCell(component.evidenceRefs),
+        ]),
+      )
+      .concat(
+        registry.modules.some((module) => (module.components?.length ?? 0) > 0)
+          ? []
+          : [['None', 'None', 'PLANNED', 'NOT_CONFIGURED', 'None', 'None']],
       ),
-    )
-    .join('\n');
-
-  const deferredRows = (registry.deferredWork ?? [])
-    .map(
-      (item) =>
-        `| ${tableCell(item.name)} | ${item.status.toUpperCase()} | ${item.maturity.toUpperCase()} | NO | ${tableCell(item.branch ?? '')} | ${listCell(item.evidenceRefs)} | ${tableCell(item.notes ?? '')} |`,
-    )
-    .join('\n');
+  );
+  const deferredTable = renderMarkdownTable(
+    ['Work', 'Status', 'Maturity', 'Counts Toward Standalone', 'Branch', 'Evidence', 'Notes'],
+    (registry.deferredWork ?? []).length > 0
+      ? (registry.deferredWork ?? []).map((item) => [
+          tableCell(item.name),
+          item.status.toUpperCase(),
+          item.maturity.toUpperCase(),
+          'NO',
+          tableCell(item.branch ?? ''),
+          listCell(item.evidenceRefs),
+          tableCell(item.notes ?? ''),
+        ])
+      : [['None', 'DEFERRED', 'PLANNED', 'NO', '', 'None', '']],
+  );
 
   const packageSet = new Set<string>();
   for (const m of registry.modules) {
@@ -133,38 +199,30 @@ supersedes:
 
 ## Repository
 
-| Field | Value |
-|-------|-------|
-| Remote | \`https://github.com/Negentropy-Laby/OpenSlack\` |
+${repositoryTable}
 
 ## Modules
 
-| Module | Phase | Lifecycle | Maturity | Declared Operator Baseline | External Blockers | Evidence | Notes |
-|--------|-------|-----------|----------|----------|-------------------|----------|-------|
-${moduleRows}
+${moduleTable}
 
 ## Components
 
-| Owning Module | Component | Maturity | Declared Operator Baseline | External Blockers | Evidence |
-|---------------|-----------|----------|----------|-------------------|----------|
-${componentRows || '| None | None | PLANNED | NOT_CONFIGURED | None | None |'}
+${componentTable}
 
 ## Deferred Work
 
 Deferred work is visible but is not a product module and is not counted toward
 standalone P0 completion.
 
-| Work | Status | Maturity | Counts Toward Standalone | Branch | Evidence | Notes |
-|------|--------|----------|--------------------------|--------|----------|-------|
-${deferredRows || '| None | DEFERRED | PLANNED | NO |  | None | |'}
+${deferredTable}
 
 ## Packages (${packages.length} active)
 
-${packages.map((p) => `- ${p}`).join('\n')}
+${packages.length > 0 ? packages.map((p) => `- ${p}`).join('\n') : '- None'}
 
 ## CLI Commands
 
-${cliCommands.map((c) => `- ${c}`).join('\n')}
+${cliCommands.length > 0 ? cliCommands.map((c) => `- ${c}`).join('\n') : '- None'}
 
 ## Golden Evals
 
@@ -201,7 +259,18 @@ function getGitHubOps(context: WorkspaceContext): GitHubOps {
     const repository = `${remote.owner}/${remote.repo}`;
     const issuesJson = execFileSync(
       'gh',
-      ['issue', 'list', '--repo', repository, '--state', 'open', '--limit', '200', '--json', 'labels'],
+      [
+        'issue',
+        'list',
+        '--repo',
+        repository,
+        '--state',
+        'open',
+        '--limit',
+        '200',
+        '--json',
+        'labels',
+      ],
       { cwd: context.workspaceRoot, encoding: 'utf-8', stdio: 'pipe' },
     );
     const issues = JSON.parse(issuesJson) as Array<{ labels: Array<{ name: string }> }>;

@@ -15,7 +15,11 @@ function makeTempRoot(): string {
 }
 
 function cleanup(root: string) {
-  try { rmSync(root, { recursive: true, force: true }); } catch { /* ignore */ }
+  try {
+    rmSync(root, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
 }
 
 describe('BridgePermissionGuard', () => {
@@ -118,7 +122,11 @@ describe('BridgePermissionGuard', () => {
       agentId: 'test',
       prompt: 'test',
       resolvedConfig: { agentId: 'test', source: 'test' },
-      permissionProfile: buildPermissionProfile({ agentId: 'test', source: 'test', permissionMode: 'plan' }),
+      permissionProfile: buildPermissionProfile({
+        agentId: 'test',
+        source: 'test',
+        permissionMode: 'plan',
+      }),
     });
 
     const profile = buildPermissionProfile({
@@ -131,7 +139,9 @@ describe('BridgePermissionGuard', () => {
 
     const transcript = readTranscript(runId, root);
     const event = transcript.find(
-      (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'bridge_permission_filter',
+      (e) =>
+        e.type === 'progress' &&
+        (e.data as Record<string, unknown>).step === 'bridge_permission_filter',
     );
     expect(event).toBeDefined();
     expect((event!.data as Record<string, unknown>).deniedTools).toContain('Bash');
@@ -252,7 +262,9 @@ describe('BridgePermissionGuard', () => {
 
     const transcript = readTranscript(runId, root);
     const event = transcript.find(
-      (e) => e.type === 'progress' && (e.data as Record<string, unknown>).step === 'bridge_permission_denied',
+      (e) =>
+        e.type === 'progress' &&
+        (e.data as Record<string, unknown>).step === 'bridge_permission_denied',
     );
     expect(event).toBeDefined();
     expect((event!.data as Record<string, unknown>).toolName).toBe('Bash');
