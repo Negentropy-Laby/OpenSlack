@@ -39,14 +39,14 @@ operator-local state and must be created under `.openslack.local/` as described 
 
 ## Agent Files
 
-| File                          | Purpose                                             |
-| ----------------------------- | --------------------------------------------------- |
-| `START_HERE.md`               | Entry point: identity, where tasks live, boundaries |
-| `identity.yaml`               | Local-only credentials template (never committed)   |
-| `github_task_contract.yaml`   | Project number, field mappings                      |
-| `claim_policy.yaml`           | Lease TTL, heartbeat interval, concurrency          |
-| `schedule.github-actions.yml` | GitHub Actions tick schedule                        |
-| `codex_automation_prompt.md`  | Codex-native automation prompt                      |
-| `claude_routine_prompt.md`    | Claude Code routine prompt                          |
-| `local_cron.example`          | Local cron schedule                                 |
-| `first_day_checklist.md`      | Bootstrap verification                              |
+| File                          | Purpose                                                                    |
+| ----------------------------- | -------------------------------------------------------------------------- |
+| `START_HERE.md`               | Entry point: identity, where tasks live, boundaries                        |
+| `identity.yaml`               | Operator-local credentials created in `.openslack.local/`; never committed |
+| `github_task_contract.yaml`   | Project number, field mappings                                             |
+| `claim_policy.yaml`           | Lease TTL, heartbeat interval, concurrency                                 |
+| `schedule.github-actions.yml` | GitHub Actions tick schedule                                               |
+| `codex_automation_prompt.md`  | Codex-native automation prompt                                             |
+| `claude_routine_prompt.md`    | Claude Code routine prompt                                                 |
+| `local_cron.example`          | Local cron schedule                                                        |
+| `first_day_checklist.md`      | Bootstrap verification                                                     |

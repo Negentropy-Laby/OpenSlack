@@ -46,6 +46,8 @@ export function agentCommands(): Command {
       const registryDir = join(root, '.openslack', 'agents', 'registry');
       const promptsDir = join(root, '.openslack', 'agents', 'prompts');
       const onboardingDir = join(root, '.openslack', 'agents', 'onboarding', agentId);
+      mkdirSync(registryDir, { recursive: true });
+      mkdirSync(promptsDir, { recursive: true });
       mkdirSync(onboardingDir, { recursive: true });
 
       // Template variables

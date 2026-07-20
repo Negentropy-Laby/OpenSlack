@@ -32,8 +32,6 @@ describe('agent hire', () => {
     cpSync(join(sourceRoot, 'templates', 'new-agent'), join(root, 'templates', 'new-agent'), {
       recursive: true,
     });
-    mkdirSync(join(root, '.openslack', 'agents', 'registry'), { recursive: true });
-    mkdirSync(join(root, '.openslack', 'agents', 'prompts'), { recursive: true });
 
     const previousCwd = process.cwd();
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -53,6 +51,7 @@ describe('agent hire', () => {
     expect(existsSync(join(root, '.openslack', 'agents', 'registry', 'fixture-agent.yaml'))).toBe(
       true,
     );
+    expect(existsSync(join(root, '.openslack', 'agents', 'prompts'))).toBe(true);
     expect(log).toHaveBeenCalledWith(
       '  1. Create local identity in .openslack.local/agents/fixture-agent/identity.yaml',
     );
