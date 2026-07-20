@@ -1,44 +1,44 @@
-import React from 'react'
-import Box from '../ink/components/Box.js'
-import Text from '../ink/components/Text.js'
-import useApp from '../ink/hooks/use-app.js'
-import useInput from '../ink/hooks/use-input.js'
-import Pane from '../design-system/Pane.js'
-import ThemedText from '../design-system/ThemedText.js'
-import ListItem from '../design-system/ListItem.js'
-import Divider from '../design-system/Divider.js'
-import StatusIcon from '../design-system/StatusIcon.js'
-import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
-import type { StatusViewModel } from '../view-models/status.js'
+import React from 'react';
+import Box from '../ink/components/Box.js';
+import Text from '../ink/components/Text.js';
+import useApp from '../ink/hooks/use-app.js';
+import useInput from '../ink/hooks/use-input.js';
+import Pane from '../design-system/Pane.js';
+import ThemedText from '../design-system/ThemedText.js';
+import ListItem from '../design-system/ListItem.js';
+import Divider from '../design-system/Divider.js';
+import StatusIcon from '../design-system/StatusIcon.js';
+import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js';
+import type { StatusViewModel } from '../view-models/status.js';
 
 export type StatusViewProps = {
-  model: StatusViewModel
-  onBack?: () => void
-}
+  model: StatusViewModel;
+  onBack?: () => void;
+};
 
 function attentionStatus(
   priority: StatusViewModel['attentionItems'][number]['priority'],
 ): 'FAIL' | 'WARN' | 'info' {
-  if (priority === 'high') return 'FAIL'
-  if (priority === 'medium') return 'WARN'
-  return 'info'
+  if (priority === 'high') return 'FAIL';
+  if (priority === 'medium') return 'WARN';
+  return 'info';
 }
 
 function maturityStatus(maturity: string): 'PASS' | 'WARN' | 'info' {
-  if (maturity === 'LIVE_VERIFIED' || maturity === 'PRODUCTION_READY') return 'PASS'
-  if (maturity === 'LOCAL_READY') return 'WARN'
-  return 'info'
+  if (maturity === 'LIVE_VERIFIED' || maturity === 'PRODUCTION_READY') return 'PASS';
+  if (maturity === 'LOCAL_READY') return 'WARN';
+  return 'info';
 }
 
 export default function StatusView({ model, onBack }: StatusViewProps): React.JSX.Element {
-  const { exit } = useApp()
+  const { exit } = useApp();
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
-      if (onBack) onBack()
-      else exit()
+      if (onBack) onBack();
+      else exit();
     }
-  })
+  });
 
   return React.createElement(
     Box,
@@ -88,7 +88,7 @@ export default function StatusView({ model, onBack }: StatusViewProps): React.JS
             detail: m.evidenceRefs.join(', ') || 'none',
             status: m.evidenceRefs.length > 0 ? 'info' : 'WARN',
           }),
-        ]
+        ];
         for (const component of m.components) {
           rows.push(
             React.createElement(ListItem, {
@@ -109,9 +109,9 @@ export default function StatusView({ model, onBack }: StatusViewProps): React.JS
               detail: component.evidenceRefs.join(', ') || 'none',
               status: component.evidenceRefs.length > 0 ? 'info' : 'WARN',
             }),
-          )
+          );
         }
-        return rows
+        return rows;
       }),
     ),
 
@@ -224,5 +224,5 @@ export default function StatusView({ model, onBack }: StatusViewProps): React.JS
       { flexDirection: 'row' },
       React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'exit' }),
     ),
-  )
+  );
 }

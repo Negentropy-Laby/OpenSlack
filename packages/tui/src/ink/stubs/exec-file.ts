@@ -4,9 +4,9 @@
  */
 
 export interface ExecResult {
-  code: number | null
-  stdout: string
-  stderr: string
+  code: number | null;
+  stdout: string;
+  stderr: string;
 }
 
 export async function execFileNoThrow(
@@ -14,5 +14,5 @@ export async function execFileNoThrow(
   _args: string[],
   _opts?: { input?: string; useCwd?: boolean; timeout?: number },
 ): Promise<ExecResult> {
-  return { code: 1, stdout: '', stderr: '' }
+  return { code: 1, stdout: '', stderr: '' };
 }

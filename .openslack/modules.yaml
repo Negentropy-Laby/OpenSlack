@@ -33,7 +33,7 @@ modules:
       - commit:ae04404ddb548da8019754561c11a357ae2b794f
       - test:packages/kernel/src/self/core/__tests__/classify-pr.test.ts
       - repo:.openslack/self/eval_suites/golden
-    phase: "1.6"
+    phase: '1.6'
     cli:
       - openslack self
       - openslack workspace
@@ -41,13 +41,13 @@ modules:
       - openslack self plugin run
       - openslack self plugin check
     packages:
-      - "@openslack/kernel"
-      - "@openslack/plugin-api"
-      - "@openslack/plugin-host"
-      - "@openslack/plugin-testkit"
-      - "@openslack/sdk"
-      - "@openslack/workspace"
-      - "@openslack/runtime"
+      - '@openslack/kernel'
+      - '@openslack/plugin-api'
+      - '@openslack/plugin-host'
+      - '@openslack/plugin-testkit'
+      - '@openslack/sdk'
+      - '@openslack/workspace'
+      - '@openslack/runtime'
     tests: 540
     test_files: 52
     golden_evals: 7
@@ -70,17 +70,17 @@ modules:
       - test:packages/github/src/__tests__/workspace-watch.test.ts
       - commit:d065a8ddf7dab9a6018ff8f8f3c8702dcf6e176b
       - test:packages/github/src/__tests__/app-installation-diagnostics.test.ts
-    phase: "1.7"
+    phase: '1.7'
     cli:
       - openslack github
       - openslack agent
       - openslack task
       - openslack delivery
     packages:
-      - "@openslack/github"
-      - "@openslack/runtime"
-      - "@openslack/core"
-      - "@openslack/delivery"
+      - '@openslack/github'
+      - '@openslack/runtime'
+      - '@openslack/core'
+      - '@openslack/delivery'
     tests: 660
     test_files: 73
     notes: "GitHub Issues task loop active with typed task creation, dry-run repair, Phase 4 watch daemon, installation-scoped GitHub delivery, and strict claim heartbeat/review/complete transitions. The watch daemon now durably accepts Issue, push, PR, review, and check observations through an atomic lease-backed queue with bounded attempts, exponential backoff, retention, compaction, restart recovery, and per-route idempotency/completion. The governed GitHub App manifest subscribes to Issue, push, pull-request, pull-request-review, check-run, and check-suite events and requests checks read. App-JWT diagnostics compare accepted installation permissions/events against that contract, while installation tokens are used only to prove repository accessibility; setup and doctor report stable reauthorization, subscription, scope, and ready codes with GitHub's management URL but never perform administrator changes. PR/review/check delivery proves access to the event repository and refreshes live state through that explicitly bound client; scope mismatch fails closed without workspace-repository fallback, and review observations remain non-authoritative. Claim lifecycle operations verify structured owner evidence and postconditions, fail closed on partial GitHub state, and provide an idempotent recovery command without republishing a PR. Delivery publishes HEAD and a draft PR through the same GitHub App token, disables host credentials and hooks, synchronizes remote/PR SHAs, and returns AWAITING_GATES evidence for PRMS. Read-only installation-scope diagnostics and a preview-first temporary-ref push/delete probe verify selected-repository access and contents write capability before first delivery."
@@ -110,7 +110,7 @@ modules:
       - commit:20d54252ea9e35d2fead75aaea8a67d10d2bebfe
       - test:apps/cli/src/__tests__/setup-attach-command.test.ts
       - test:packages/workspace/src/__tests__/attach.test.ts
-    phase: "2A/2B/2C"
+    phase: '2A/2B/2C'
     cli:
       - openslack ask
       - openslack setup
@@ -120,11 +120,11 @@ modules:
       - openslack chat
       - openslack setup attach
     packages:
-      - "@openslack/cli"
-      - "@openslack/operator"
-      - "@openslack/chat-gateway"
-      - "@openslack/tui"
-      - "@openslack/credentials"
+      - '@openslack/cli'
+      - '@openslack/operator'
+      - '@openslack/chat-gateway'
+      - '@openslack/tui'
+      - '@openslack/credentials'
     tests: 945
     test_files: 112
     notes: Structured planner active. Webhook and Slack chat adapters active with actor mapping. PRMS chat cards and action confirmation active. The typed Operator action registry is instance-scoped, preserves the closed 30-action built-in default, accepts explicit planner/executor injection, and canonical-revalidates frozen PlanSteps at execution. The CLI application composition root constructs one sealed PluginHost and instance-scoped Operator action, LLM-provider, conversation-store, and plugin-action bindings per process. Its host target catalog exposes only the audited bounded github.metrics returned-item count under the exact github.issues.read capability; SHADOW plugin actions remain visibility-only, while ENFORCE proof plans are rebuilt through the same canonical registry before execution. All other built-ins and all unconfigured plugin authority remain fail-closed until complete behavior contracts, policy, activation evidence, and a durable audit sink are explicitly composed. Setup attach provides preview-first read-only-monitor and full-agent modes backed by a virtual validation plan, persistent rollback journal, workspace lock, before-hash/realpath/symlink/containment checks, atomic writes, exact byte/mode rollback, crash recovery, and idempotent apply; the foreground watcher starts only after commit and validation. Generated agents cannot approve or merge. LLM-first intent routing with deterministic keyword fallback, setup report, and 24h pending plan store active. Session-based conversation memory with multi-turn context resolution and progressive clarification. Doctor --format plain for non-technical output. Conversation-first TUI workbench with Ask OpenSlack, Operator recommendation cards, workflow draft-first cards, profile sync recommendations, and subagent mention dispatch. TUI setup report view and PR doctor view via --format tui. Versioned Windows x64 and Linux x64 archive builds embed the CLI, workflow assets, native keychain binding, build metadata, SBOM, checksums, and provenance; native build and unpacked smoke are enforced by the release matrix. The installed CLI verifies stable release artifacts and trusted signatures without a source checkout, Bun, or Node.js. Agent Runtime credentials can be previewed and imported atomically into the native keychain without writing secret values to workspace configuration.
@@ -142,14 +142,14 @@ modules:
       - test:packages/pr/src/__tests__/merge.test.ts
       - commit:0a1a57b453dca5248658fa077db5efbe07527c66
       - test:packages/pr/src/__tests__/repository-projection.test.ts
-    phase: "1.15"
+    phase: '1.15'
     cli:
       - openslack pr
       - openslack governance
     packages:
-      - "@openslack/pr"
-      - "@openslack/github"
-      - "@openslack/kernel"
+      - '@openslack/pr'
+      - '@openslack/github'
+      - '@openslack/kernel'
     tests: 656
     test_files: 57
     notes: Phase 2C chat report and action confirmation active. Supports status/review/recommend/doctor/queue/merge/watch, review/doctor comments, governance audit, operational decision summaries, deadlock detection, Red Zone author-risk preflight, and chat-friendly PR summaries with confirm-merge flow. The queue now has a separate bounded multi-repository projection mode with repeatable explicit repositories or the configured GitHub Watch repository set, a global concurrency/API budget, atomic display-only cache and independent cursor, and informational synthetic PR-state/check-summary changes. Cached and synthetic projection state never enters doctor, approval, merge, Workflow Trust, or governance. Repository-event notifications refresh current PR/review/check observations from an explicitly repository-bound live client, but the projection stamps human approval and merge readiness as not evaluated; webhook or live review state never becomes PRMS authority. Workflow artifact governance is bound to deterministic base/head tree evidence and a single current-head human approval carrying Workflow-Trust.
@@ -171,7 +171,7 @@ modules:
       - commit:20d54252ea9e35d2fead75aaea8a67d10d2bebfe
       - test:packages/integration-negentropy/src/__tests__/integration.test.ts
       - test:apps/cli/src/__tests__/collaboration-negentropy-command.test.ts
-    phase: "2D/2E"
+    phase: '2D/2E'
     cli:
       - openslack collaboration activity
       - openslack collaboration digest
@@ -224,12 +224,12 @@ modules:
       - openslack agent-runtime smoke
       - openslack agent-runtime mcp status
     packages:
-      - "@openslack/collaboration"
-      - "@openslack/workflows"
-      - "@openslack/tui"
-      - "@openslack/github"
-      - "@openslack/agent-runtime"
-      - "@openslack/integration-negentropy"
+      - '@openslack/collaboration'
+      - '@openslack/workflows'
+      - '@openslack/tui'
+      - '@openslack/github'
+      - '@openslack/agent-runtime'
+      - '@openslack/integration-negentropy'
     tests: 2000
     test_files: 161
     components:

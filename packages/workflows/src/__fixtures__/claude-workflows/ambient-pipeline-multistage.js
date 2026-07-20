@@ -3,34 +3,34 @@
 // analyzeStaticMeta should parse the meta successfully.
 
 export const meta = {
-  name: "ambient-pipeline-multistage",
-  description: "Multi-stage pipeline ambient claude workflow",
+  name: 'ambient-pipeline-multistage',
+  description: 'Multi-stage pipeline ambient claude workflow',
   phases: [
-    { title: "Collect", detail: "Collect items" },
-    { title: "Enrich", detail: "Enrich items" },
-    { title: "Rank", detail: "Rank results" }
-  ]
-}
+    { title: 'Collect', detail: 'Collect items' },
+    { title: 'Enrich', detail: 'Enrich items' },
+    { title: 'Rank', detail: 'Rank results' },
+  ],
+};
 
-phase("Collect")
-log("Collecting items for multi-stage pipeline")
+phase('Collect');
+log('Collecting items for multi-stage pipeline');
 
-const items = ["item-a", "item-b", "item-c", "item-d"]
+const items = ['item-a', 'item-b', 'item-c', 'item-d'];
 
 const enriched = await pipeline(items, (item) => {
-  return agent("Enrich " + item, {
-    label: "enrich:" + item,
-    phase: "Enrich",
-  })
-})
+  return agent('Enrich ' + item, {
+    label: 'enrich:' + item,
+    phase: 'Enrich',
+  });
+});
 
-log("Enriched " + enriched.length + " items")
+log('Enriched ' + enriched.length + ' items');
 
 const ranked = await pipeline(enriched, (item) => {
-  return agent("Rank " + item, {
-    label: "rank:item",
-    phase: "Rank",
-  })
-})
+  return agent('Rank ' + item, {
+    label: 'rank:item',
+    phase: 'Rank',
+  });
+});
 
-log("Ranked " + ranked.length + " items")
+log('Ranked ' + ranked.length + ' items');

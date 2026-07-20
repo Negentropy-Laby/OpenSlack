@@ -4,13 +4,37 @@ import type { ConversationTurn } from './conversation-store.js';
 type SlotValue = string | number | string[] | undefined;
 
 const AFFIRMATIONS = new Set([
-  'yes', 'y', 'ok', 'okay', 'do it', 'go ahead', 'proceed', 'confirm', 'sure',
-  '好的', '确认', '执行', '合并', 'merge it', '继续', 'yes do it', 'go for it',
+  'yes',
+  'y',
+  'ok',
+  'okay',
+  'do it',
+  'go ahead',
+  'proceed',
+  'confirm',
+  'sure',
+  '好的',
+  '确认',
+  '执行',
+  '合并',
+  'merge it',
+  '继续',
+  'yes do it',
+  'go for it',
 ]);
 
 const NEGATIONS = new Set([
-  'no', 'n', 'nope', 'cancel', 'stop', 'abort', 'never mind',
-  '取消', '不要', '停止', '算了',
+  'no',
+  'n',
+  'nope',
+  'cancel',
+  'stop',
+  'abort',
+  'never mind',
+  '取消',
+  '不要',
+  '停止',
+  '算了',
 ]);
 
 export type ContextResolution =
@@ -20,8 +44,12 @@ export type ContextResolution =
   | { type: 'none' };
 
 function hasSlotValue(value: SlotValue): value is string | number | string[] {
-  return value !== undefined && value !== null && value !== '' &&
-    !(Array.isArray(value) && value.length === 0);
+  return (
+    value !== undefined &&
+    value !== null &&
+    value !== '' &&
+    !(Array.isArray(value) && value.length === 0)
+  );
 }
 
 export function mergeDefinedSlots(

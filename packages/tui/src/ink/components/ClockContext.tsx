@@ -62,7 +62,7 @@ export function createClock(tickIntervalMs: number): Clock {
       if (ms === currentTickIntervalMs) return;
       currentTickIntervalMs = ms;
       updateInterval();
-    }
+    },
   };
 }
 export const ClockContext = createContext<Clock | null>(null);
@@ -76,9 +76,7 @@ export function ClockProvider({ children }: { children: React.ReactNode }): Reac
   const focused = useTerminalFocus();
 
   useEffect(() => {
-    clock.setTickInterval(
-      focused ? FRAME_INTERVAL_MS : BLURRED_TICK_INTERVAL_MS,
-    );
+    clock.setTickInterval(focused ? FRAME_INTERVAL_MS : BLURRED_TICK_INTERVAL_MS);
   }, [clock, focused]);
 
   return <ClockContext.Provider value={clock}>{children}</ClockContext.Provider>;

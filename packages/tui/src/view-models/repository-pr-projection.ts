@@ -1,68 +1,68 @@
-import { sanitizeTerminalText } from '../sanitize.js'
+import { sanitizeTerminalText } from '../sanitize.js';
 
 export interface RepositoryPrProjectionInput {
-  fetchedAt: string
-  partial: boolean
+  fetchedAt: string;
+  partial: boolean;
   budget: {
-    limit: number
-    used: number
-    exhausted: boolean
-  }
+    limit: number;
+    used: number;
+    exhausted: boolean;
+  };
   repositories: Array<{
-    repository: { fullName: string }
-  }>
+    repository: { fullName: string };
+  }>;
   items: Array<{
-    repository: { fullName: string }
-    prNumber: number
-    title: string
-    author: string
-    state: string
-    draft: boolean
-    headSha: string
-    updatedAt: string
+    repository: { fullName: string };
+    prNumber: number;
+    title: string;
+    author: string;
+    state: string;
+    draft: boolean;
+    headSha: string;
+    updatedAt: string;
     checks: {
-      successful: number
-      failed: number
-      pending: number
-      neutral: number
-      complete: boolean
-    }
-    fetchedAt: string
-    ageSeconds: number
-    stale: boolean
-    partial: boolean
-    source: string
-  }>
+      successful: number;
+      failed: number;
+      pending: number;
+      neutral: number;
+      complete: boolean;
+    };
+    fetchedAt: string;
+    ageSeconds: number;
+    stale: boolean;
+    partial: boolean;
+    source: string;
+  }>;
 }
 
 export interface RepositoryPrProjectionViewModel {
-  title: string
-  fetchedAt: string
-  repositoryCount: number
-  itemCount: number
-  partial: boolean
-  budgetLabel: string
-  authorityLabel: string
+  title: string;
+  fetchedAt: string;
+  repositoryCount: number;
+  itemCount: number;
+  partial: boolean;
+  budgetLabel: string;
+  authorityLabel: string;
   items: Array<{
-    key: string
-    repository: string
-    prNumber: number
-    title: string
-    author: string
-    state: string
-    draft: boolean
-    headSha: string
-    updatedAt: string
-    checksLabel: string
-    freshnessLabel: string
-    warning: boolean
-  }>
+    key: string;
+    repository: string;
+    prNumber: number;
+    title: string;
+    author: string;
+    state: string;
+    draft: boolean;
+    headSha: string;
+    updatedAt: string;
+    checksLabel: string;
+    freshnessLabel: string;
+    warning: boolean;
+  }>;
 }
 
 export function mapRepositoryPrProjectionToViewModel(
   input: RepositoryPrProjectionInput,
 ): RepositoryPrProjectionViewModel {
-  const s = sanitizeTerminalText
+  const s = sanitizeTerminalText;
   return {
     title: 'Repository PR Projection',
     fetchedAt: s(input.fetchedAt),
@@ -85,5 +85,5 @@ export function mapRepositoryPrProjectionToViewModel(
       freshnessLabel: `${s(item.source)} | age=${item.ageSeconds}s | stale=${item.stale ? 'yes' : 'no'} | partial=${item.partial ? 'yes' : 'no'}`,
       warning: item.partial || item.stale || item.checks.failed > 0,
     })),
-  }
+  };
 }

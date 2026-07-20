@@ -17,10 +17,12 @@ import {
 } from './workflow-gate.js';
 
 function isProfileSyncCandidate(files: string[], headRef: string, body: string): boolean {
-  return headRef.startsWith('openslack/profile-sync/')
-    || body.includes('```openslack-profile-sync-metadata')
-    || body.includes('profile: sync latest')
-    || files.includes('profile/README.md');
+  return (
+    headRef.startsWith('openslack/profile-sync/') ||
+    body.includes('```openslack-profile-sync-metadata') ||
+    body.includes('profile: sync latest') ||
+    files.includes('profile/README.md')
+  );
 }
 
 function latestReviewsByReviewer(reviews: PRReview[]): PRReview[] {
@@ -35,13 +37,13 @@ function latestReviewsByReviewer(reviews: PRReview[]): PRReview[] {
     }
 
     const nextTime = review.submittedAt ? Date.parse(review.submittedAt) : Number.NaN;
-    const currentTime = current.review.submittedAt ? Date.parse(current.review.submittedAt) : Number.NaN;
-    const newerByTime = Number.isFinite(nextTime) && Number.isFinite(currentTime)
-      ? nextTime >= currentTime
-      : false;
-    const newerByOrder = !Number.isFinite(nextTime) || !Number.isFinite(currentTime)
-      ? index >= current.index
-      : false;
+    const currentTime = current.review.submittedAt
+      ? Date.parse(current.review.submittedAt)
+      : Number.NaN;
+    const newerByTime =
+      Number.isFinite(nextTime) && Number.isFinite(currentTime) ? nextTime >= currentTime : false;
+    const newerByOrder =
+      !Number.isFinite(nextTime) || !Number.isFinite(currentTime) ? index >= current.index : false;
 
     if (newerByTime || newerByOrder) latest.set(key, { review, index });
   });
@@ -75,9 +77,10 @@ export async function fetchPRDetails(
       headTree,
     });
   }
-  const governanceRequired = workflowEvidence !== undefined
-    && (workflowEvidence.addedFiles.length > 0
-      || workflowEvidence.artifactFiles.some(isCoreWorkflowArtifactPath));
+  const governanceRequired =
+    workflowEvidence !== undefined &&
+    (workflowEvidence.addedFiles.length > 0 ||
+      workflowEvidence.artifactFiles.some(isCoreWorkflowArtifactPath));
   const workflowGovernanceIssue = governanceRequired
     ? await findWorkflowGovernanceIssue(prNumber, options)
     : undefined;
@@ -122,13 +125,14 @@ export async function fetchPRDetails(
     mergeable: pr?.mergeable ?? false,
     body: pr?.body ?? '',
     workflowEvidence,
-    workflowGovernanceIssue: workflowGovernanceIssue?.body && workflowGovernanceIssue.author
-      ? {
-          issueNumber: workflowGovernanceIssue.issueNumber,
-          prNumber,
-          author: workflowGovernanceIssue.author,
-          body: workflowGovernanceIssue.body,
-        }
-      : undefined,
+    workflowGovernanceIssue:
+      workflowGovernanceIssue?.body && workflowGovernanceIssue.author
+        ? {
+            issueNumber: workflowGovernanceIssue.issueNumber,
+            prNumber,
+            author: workflowGovernanceIssue.author,
+            body: workflowGovernanceIssue.body,
+          }
+        : undefined,
   };
 }

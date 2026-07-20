@@ -1,7 +1,4 @@
-import type {
-  AgentRunBridgeRequestPayload,
-  BridgeSessionConfig,
-} from './bridge-contract.js';
+import type { AgentRunBridgeRequestPayload, BridgeSessionConfig } from './bridge-contract.js';
 import type { ResolvedAgentConfig } from './types.js';
 
 export interface BuildAgentRunBridgeRequestOptions {
@@ -60,8 +57,9 @@ function buildInputMessages(
   resolvedConfig: ResolvedAgentConfig,
 ): AgentRunBridgeRequestPayload['input'] {
   const input: AgentRunBridgeRequestPayload['input'] = [];
-  const systemParts = [resolvedConfig.initialPrompt, resolvedConfig.prompt]
-    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+  const systemParts = [resolvedConfig.initialPrompt, resolvedConfig.prompt].filter(
+    (value): value is string => typeof value === 'string' && value.trim().length > 0,
+  );
 
   if (systemParts.length > 0) {
     input.push({ role: 'system', content: systemParts.join('\n\n') });
@@ -98,7 +96,8 @@ function buildSafeResolvedConfig(config: ResolvedAgentConfig): Record<string, un
   if (typeof config.background === 'boolean') safe.background = config.background;
   if (typeof config.remote === 'boolean') safe.remote = config.remote;
   if (config.effort !== undefined) safe.effort = config.effort;
-  if (Array.isArray(config.tools)) safe.tools = config.tools.filter((item) => typeof item === 'string');
+  if (Array.isArray(config.tools))
+    safe.tools = config.tools.filter((item) => typeof item === 'string');
   if (Array.isArray(config.disallowedTools)) {
     safe.disallowedTools = config.disallowedTools.filter((item) => typeof item === 'string');
   }

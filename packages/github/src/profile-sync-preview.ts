@@ -46,9 +46,14 @@ export async function previewProfileSync(
   const source = parseRepoString(config.source.repo);
   const target = parseRepoString(config.target.repo);
 
-  const entries = await readRepoDirectory(source.owner, source.repo, config.source.path, config.source.branch);
-  const mdFiles = entries.filter((e: { name: string; type: string }) =>
-    e.type === 'file' && e.name.endsWith('.md'),
+  const entries = await readRepoDirectory(
+    source.owner,
+    source.repo,
+    config.source.path,
+    config.source.branch,
+  );
+  const mdFiles = entries.filter(
+    (e: { name: string; type: string }) => e.type === 'file' && e.name.endsWith('.md'),
   );
 
   const posts: Array<{
@@ -88,7 +93,12 @@ export async function previewProfileSync(
   const rendered = renderLatestInsightsSection(selected, config.source.repo);
 
   // Step 3: Compute diff
-  const targetFile = await readRepoFile(target.owner, target.repo, config.target.path, config.target.branch);
+  const targetFile = await readRepoFile(
+    target.owner,
+    target.repo,
+    config.target.path,
+    config.target.branch,
+  );
   let diff = '';
   let patchedContent: string | undefined;
 
@@ -96,11 +106,7 @@ export async function previewProfileSync(
     const { patchMarkerSection, MarkerNotFoundError } = await import('./profile-sync.js');
     try {
       patchedContent = patchMarkerSection(targetFile.content, config.target.marker, rendered);
-      diff = computeUnifiedDiff(
-        config.target.path,
-        targetFile.content,
-        patchedContent,
-      );
+      diff = computeUnifiedDiff(config.target.path, targetFile.content, patchedContent);
     } catch (err: unknown) {
       if (err instanceof MarkerNotFoundError) {
         // This should have been caught in check, but handle defensively
@@ -137,7 +143,12 @@ function computeUnifiedDiff(path: string, before: string, after: string): string
   while (i < beforeLines.length || j < afterLines.length) {
     const lcsLine = lcsIdx < lcs.length ? lcs[lcsIdx] : null;
 
-    if (i < beforeLines.length && j < afterLines.length && beforeLines[i] === afterLines[j] && beforeLines[i] === lcsLine) {
+    if (
+      i < beforeLines.length &&
+      j < afterLines.length &&
+      beforeLines[i] === afterLines[j] &&
+      beforeLines[i] === lcsLine
+    ) {
       // Unchanged line
       if (currentHunk && currentHunk.lines.length >= 7) {
         hunks.push(currentHunk);
@@ -181,10 +192,7 @@ function computeUnifiedDiff(path: string, before: string, after: string): string
     return `--- a/${path}\n+++ b/${path}\n// No changes`;
   }
 
-  const lines: string[] = [
-    `--- a/${path}`,
-    `+++ b/${path}`,
-  ];
+  const lines: string[] = [`--- a/${path}`, `+++ b/${path}`];
 
   for (const hunk of hunks) {
     lines.push(`@@ -${hunk.start},${beforeLines.length} +${hunk.start},${afterLines.length} @@`);

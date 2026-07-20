@@ -1,48 +1,48 @@
-import { sanitizeTerminalText } from '../sanitize.js'
+import { sanitizeTerminalText } from '../sanitize.js';
 
 export interface DoctorReportInput {
-  prNumber: number
-  title: string
-  author: string
-  state: string
-  draft: boolean
-  riskZone: string
-  mergeable: boolean
-  decision: string
-  reason: string
-  recommendation: string
-  checks: Array<{ name: string; status: string; conclusion: string | null }>
-  reviews: Array<{ user: string; state: string }>
-  humanApprovals: Array<{ user: string }>
+  prNumber: number;
+  title: string;
+  author: string;
+  state: string;
+  draft: boolean;
+  riskZone: string;
+  mergeable: boolean;
+  decision: string;
+  reason: string;
+  recommendation: string;
+  checks: Array<{ name: string; status: string; conclusion: string | null }>;
+  reviews: Array<{ user: string; state: string }>;
+  humanApprovals: Array<{ user: string }>;
 }
 
 export interface ProfileSyncGate {
-  passed: boolean
-  detail: string
+  passed: boolean;
+  detail: string;
 }
 
 export interface DoctorViewModel {
-  prNumber: number
-  title: string
-  author: string
-  state: string
-  draft: boolean
-  riskZone: string
-  mergeable: boolean
-  decision: string
-  reason: string
-  recommendation: string
-  gates: Array<{ name: string; status: 'PASS' | 'FAIL' | 'WARN' | 'info'; detail: string }>
-  checks: Array<{ name: string; status: 'PASS' | 'FAIL' | 'WARN'; conclusion: string }>
-  reviews: Array<{ user: string; state: string; valid: boolean }>
-  evidence: string[]
-  compressed: boolean
-  profileSyncGate?: ProfileSyncGate
+  prNumber: number;
+  title: string;
+  author: string;
+  state: string;
+  draft: boolean;
+  riskZone: string;
+  mergeable: boolean;
+  decision: string;
+  reason: string;
+  recommendation: string;
+  gates: Array<{ name: string; status: 'PASS' | 'FAIL' | 'WARN' | 'info'; detail: string }>;
+  checks: Array<{ name: string; status: 'PASS' | 'FAIL' | 'WARN'; conclusion: string }>;
+  reviews: Array<{ user: string; state: string; valid: boolean }>;
+  evidence: string[];
+  compressed: boolean;
+  profileSyncGate?: ProfileSyncGate;
 }
 
 export interface DoctorMapperOptions {
-  evidence?: string[]
-  profileSyncGate?: ProfileSyncGate
+  evidence?: string[];
+  profileSyncGate?: ProfileSyncGate;
 }
 
 export function mapDoctorToViewModel(
@@ -50,19 +50,23 @@ export function mapDoctorToViewModel(
   evidenceOrOptions?: string[] | DoctorMapperOptions,
 ): DoctorViewModel {
   const failing = report.checks.filter(
-    c => c.conclusion && c.conclusion !== 'success' && c.conclusion !== 'neutral' && c.conclusion !== 'skipped',
-  )
-  const pending = report.checks.filter(c => c.status !== 'completed')
+    (c) =>
+      c.conclusion &&
+      c.conclusion !== 'success' &&
+      c.conclusion !== 'neutral' &&
+      c.conclusion !== 'skipped',
+  );
+  const pending = report.checks.filter((c) => c.status !== 'completed');
 
-  const validApprovalCount = report.humanApprovals.length
+  const validApprovalCount = report.humanApprovals.length;
 
-  let evidence: string[]
-  let profileSyncGate: ProfileSyncGate | undefined
+  let evidence: string[];
+  let profileSyncGate: ProfileSyncGate | undefined;
   if (Array.isArray(evidenceOrOptions)) {
-    evidence = evidenceOrOptions
+    evidence = evidenceOrOptions;
   } else {
-    evidence = evidenceOrOptions?.evidence ?? []
-    profileSyncGate = evidenceOrOptions?.profileSyncGate
+    evidence = evidenceOrOptions?.evidence ?? [];
+    profileSyncGate = evidenceOrOptions?.profileSyncGate;
   }
 
   const gates: DoctorViewModel['gates'] = [
@@ -84,11 +88,12 @@ export function mapDoctorToViewModel(
     {
       name: 'Checks',
       status: pending.length > 0 ? 'WARN' : failing.length > 0 ? 'FAIL' : 'PASS',
-      detail: pending.length > 0
-        ? `${pending.length} pending`
-        : failing.length > 0
-          ? `${failing.length} failing`
-          : `All ${report.checks.length} passed`,
+      detail:
+        pending.length > 0
+          ? `${pending.length} pending`
+          : failing.length > 0
+            ? `${failing.length} failing`
+            : `All ${report.checks.length} passed`,
     },
     {
       name: 'Approvals',
@@ -100,7 +105,7 @@ export function mapDoctorToViewModel(
       status: report.riskZone === 'black' ? 'FAIL' : report.riskZone === 'red' ? 'WARN' : 'PASS',
       detail: `Zone: ${report.riskZone.toUpperCase()}`,
     },
-  ]
+  ];
 
   return {
     prNumber: report.prNumber,
@@ -114,22 +119,23 @@ export function mapDoctorToViewModel(
     reason: sanitizeTerminalText(report.reason),
     recommendation: sanitizeTerminalText(report.recommendation),
     gates,
-    checks: report.checks.map(c => ({
+    checks: report.checks.map((c) => ({
       name: sanitizeTerminalText(c.name),
-      status: c.conclusion === 'success' || c.conclusion === 'neutral' || c.conclusion === 'skipped'
-        ? 'PASS'
-        : c.conclusion === null || c.status !== 'completed'
-          ? 'WARN'
-          : 'FAIL',
+      status:
+        c.conclusion === 'success' || c.conclusion === 'neutral' || c.conclusion === 'skipped'
+          ? 'PASS'
+          : c.conclusion === null || c.status !== 'completed'
+            ? 'WARN'
+            : 'FAIL',
       conclusion: c.conclusion ?? sanitizeTerminalText(c.status),
     })),
-    reviews: report.reviews.map(r => ({
+    reviews: report.reviews.map((r) => ({
       user: sanitizeTerminalText(r.user),
       state: sanitizeTerminalText(r.state),
-      valid: report.humanApprovals.some(h => h.user === r.user),
+      valid: report.humanApprovals.some((h) => h.user === r.user),
     })),
     evidence: evidence.map(sanitizeTerminalText),
     compressed: false,
     profileSyncGate,
-  }
+  };
 }

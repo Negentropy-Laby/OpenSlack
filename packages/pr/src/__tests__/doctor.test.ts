@@ -132,12 +132,16 @@ describe('diagnosePR', () => {
     const result = diagnosePR(report, DEFAULT_POLICY, []);
     expect(result.decision).toBe('READY_TO_MERGE');
 
-    const stale = diagnosePR(makeReport({
-      riskZone: 'yellow',
-      headSha: 'current-head',
-      changedFiles: ['apps/cli/src/index.ts'],
-      reviews: [{ user: 'alice', state: 'APPROVED', commitOid: 'old-head' }],
-    }), DEFAULT_POLICY, []);
+    const stale = diagnosePR(
+      makeReport({
+        riskZone: 'yellow',
+        headSha: 'current-head',
+        changedFiles: ['apps/cli/src/index.ts'],
+        reviews: [{ user: 'alice', state: 'APPROVED', commitOid: 'old-head' }],
+      }),
+      DEFAULT_POLICY,
+      [],
+    );
     expect(stale.decision).toBe('NEEDS_HUMAN_APPROVAL');
   });
 
@@ -155,12 +159,14 @@ describe('diagnosePR', () => {
       baseSha: 'base',
       headSha: 'head',
       workflowEvidence,
-      reviews: [{
-        user: 'alice',
-        state: 'APPROVED',
-        body: 'Workflow-Trust: trusted',
-        commitOid: 'head',
-      }],
+      reviews: [
+        {
+          user: 'alice',
+          state: 'APPROVED',
+          body: 'Workflow-Trust: trusted',
+          commitOid: 'head',
+        },
+      ],
     });
 
     expect(diagnosePR(report, DEFAULT_POLICY, []).decision).toBe('READY_TO_MERGE');
@@ -180,12 +186,14 @@ describe('diagnosePR', () => {
       baseSha: 'base',
       headSha: 'head',
       workflowEvidence,
-      reviews: [{
-        user: 'alice',
-        state: 'APPROVED',
-        body: 'Workflow-Trust: trusted',
-        commitOid: 'old-head',
-      }],
+      reviews: [
+        {
+          user: 'alice',
+          state: 'APPROVED',
+          body: 'Workflow-Trust: trusted',
+          commitOid: 'old-head',
+        },
+      ],
     });
 
     expect(diagnosePR(report, DEFAULT_POLICY, []).decision).toBe('BLOCKED_WORKFLOW_GATE');
@@ -206,17 +214,25 @@ describe('diagnosePR', () => {
     expect(noMatchingOwners.decision).toBe('READY_TO_MERGE');
     expect(noMatchingOwners.reason).toContain('Independent human approval satisfied');
 
-    const staleNoMatchingOwners = diagnosePR({
-      ...report,
-      headSha: 'current-head',
-      reviews: [{ user: 'alice', state: 'APPROVED', commitOid: 'old-head' }],
-    }, DEFAULT_POLICY, []);
+    const staleNoMatchingOwners = diagnosePR(
+      {
+        ...report,
+        headSha: 'current-head',
+        reviews: [{ user: 'alice', state: 'APPROVED', commitOid: 'old-head' }],
+      },
+      DEFAULT_POLICY,
+      [],
+    );
     expect(staleNoMatchingOwners.decision).toBe('NEEDS_HUMAN_APPROVAL');
 
-    const botNoMatchingOwners = diagnosePR({
-      ...report,
-      reviews: [{ user: 'dependabot[bot]', state: 'APPROVED' }],
-    }, DEFAULT_POLICY, []);
+    const botNoMatchingOwners = diagnosePR(
+      {
+        ...report,
+        reviews: [{ user: 'dependabot[bot]', state: 'APPROVED' }],
+      },
+      DEFAULT_POLICY,
+      [],
+    );
     expect(botNoMatchingOwners.decision).toBe('BOT_APPROVAL_IGNORED');
   });
 

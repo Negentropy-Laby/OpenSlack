@@ -5,9 +5,5 @@
     "rootDir": "./src"
   },
   "include": ["src"],
-  "references": [
-    { "path": "../core" },
-    { "path": "../kernel" },
-    { "path": "../pr" }
-  ]
+  "references": [{ "path": "../core" }, { "path": "../kernel" }, { "path": "../pr" }]
 }

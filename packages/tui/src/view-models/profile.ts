@@ -1,143 +1,145 @@
-import { sanitizeTerminalText } from '../sanitize.js'
+import { sanitizeTerminalText } from '../sanitize.js';
 
 export interface ProfilePostViewModel {
-  title: string
-  date: string
-  summary: string
-  sourcePath: string
-  url: string
+  title: string;
+  date: string;
+  summary: string;
+  sourcePath: string;
+  url: string;
 }
 
 export interface ProfileActionViewModel {
-  id: string
-  key: string
-  label: string
-  description: string
-  risk: 'low' | 'medium' | 'high'
+  id: string;
+  key: string;
+  label: string;
+  description: string;
+  risk: 'low' | 'medium' | 'high';
 }
 
 /** A single check result group for the guided flow. */
 export interface ProfileCheckGroup {
   /** Group key: source, posts, target-marker, permissions */
-  key: string
+  key: string;
   /** Display label */
-  label: string
+  label: string;
   /** Check status */
-  status: 'pass' | 'fail' | 'warn' | 'unknown'
+  status: 'pass' | 'fail' | 'warn' | 'unknown';
   /** Human-readable detail */
-  detail: string
+  detail: string;
 }
 
 /** Which step of the guided flow the user is on. */
-export type ProfileGuidedStep = 'check' | 'preview' | 'create-pr' | 'complete'
+export type ProfileGuidedStep = 'check' | 'preview' | 'create-pr' | 'complete';
 
-export type ProfileSyncMode = 'manual' | 'watch' | 'auto-pr'
+export type ProfileSyncMode = 'manual' | 'watch' | 'auto-pr';
 
 export interface ProfileSyncDetails {
-  sourceCommit?: string
-  sourceDate?: string
-  targetHash?: string
+  sourceCommit?: string;
+  sourceDate?: string;
+  targetHash?: string;
   pendingPR?: {
-    number: number
-    status: string
-  }
+    number: number;
+    status: string;
+  };
   lastSync?: {
-    timestamp: string
-    result: 'success' | 'failed' | 'unknown'
-  }
-  mode: ProfileSyncMode
+    timestamp: string;
+    result: 'success' | 'failed' | 'unknown';
+  };
+  mode: ProfileSyncMode;
 }
 
 export interface ProfileFailureDetails {
-  reason: string
-  nextAction: string
+  reason: string;
+  nextAction: string;
 }
 
 export interface ProfileViewModel {
-  title: string
-  targetRepo: string
-  targetPath: string
-  marker: string
-  syncStatus: 'synced' | 'pending' | 'failed' | 'never'
-  lastSyncDate?: string
-  lastPrUrl?: string
-  markerStatus: 'present' | 'missing' | 'unknown'
-  pendingPR?: { number: number; url: string; branch: string }
-  posts: ProfilePostViewModel[]
+  title: string;
+  targetRepo: string;
+  targetPath: string;
+  marker: string;
+  syncStatus: 'synced' | 'pending' | 'failed' | 'never';
+  lastSyncDate?: string;
+  lastPrUrl?: string;
+  markerStatus: 'present' | 'missing' | 'unknown';
+  pendingPR?: { number: number; url: string; branch: string };
+  posts: ProfilePostViewModel[];
   validationSummary: {
-    total: number
-    published: number
-    failed: number
-  }
-  syncDetails?: ProfileSyncDetails
-  failureDetails?: ProfileFailureDetails
-  mode: ProfileSyncMode
-  diffOutput?: string
+    total: number;
+    published: number;
+    failed: number;
+  };
+  syncDetails?: ProfileSyncDetails;
+  failureDetails?: ProfileFailureDetails;
+  mode: ProfileSyncMode;
+  diffOutput?: string;
   /** Structured check result groups for the guided flow */
-  checkGroups?: ProfileCheckGroup[]
+  checkGroups?: ProfileCheckGroup[];
   /** Which step of the guided 3-step flow */
-  guidedStep?: ProfileGuidedStep
-  actions: ProfileActionViewModel[]
+  guidedStep?: ProfileGuidedStep;
+  actions: ProfileActionViewModel[];
   actionResult?: {
-    actionId: string
-    success: boolean
-    message: string
-  }
+    actionId: string;
+    success: boolean;
+    message: string;
+  };
 }
 
-export type ProfileActionResult = NonNullable<ProfileViewModel['actionResult']>
+export type ProfileActionResult = NonNullable<ProfileViewModel['actionResult']>;
 
 export function sanitizeProfileActionResult(result: ProfileActionResult): ProfileActionResult {
   return {
     actionId: sanitizeTerminalText(result.actionId),
     success: result.success,
     message: sanitizeTerminalText(result.message),
-  }
+  };
 }
 
-export function sanitizeProfileCheckGroups(groups: ProfileCheckGroup[] | undefined): ProfileCheckGroup[] | undefined {
+export function sanitizeProfileCheckGroups(
+  groups: ProfileCheckGroup[] | undefined,
+): ProfileCheckGroup[] | undefined {
   return groups?.map((group) => ({
     key: sanitizeTerminalText(group.key),
     label: sanitizeTerminalText(group.label),
     status: group.status,
     detail: sanitizeTerminalText(group.detail ?? ''),
-  }))
+  }));
 }
 
 export function mapProfileToViewModel(data?: {
-  targetRepo?: string
-  targetPath?: string
-  marker?: string
-  syncStatus?: 'synced' | 'pending' | 'failed' | 'never'
-  lastSyncDate?: string
-  lastPrUrl?: string
-  markerStatus?: 'present' | 'missing' | 'unknown'
-  pendingPR?: { number: number; url: string; branch: string }
+  targetRepo?: string;
+  targetPath?: string;
+  marker?: string;
+  syncStatus?: 'synced' | 'pending' | 'failed' | 'never';
+  lastSyncDate?: string;
+  lastPrUrl?: string;
+  markerStatus?: 'present' | 'missing' | 'unknown';
+  pendingPR?: { number: number; url: string; branch: string };
   posts?: Array<{
-    title: string
-    date: string
-    summary: string
-    sourcePath: string
-    url: string
-  }>
+    title: string;
+    date: string;
+    summary: string;
+    sourcePath: string;
+    url: string;
+  }>;
   validationSummary?: {
-    total: number
-    published: number
-    failed: number
-  }
-  syncDetails?: ProfileSyncDetails
-  failureDetails?: ProfileFailureDetails
-  mode?: ProfileSyncMode
-  diffOutput?: string
+    total: number;
+    published: number;
+    failed: number;
+  };
+  syncDetails?: ProfileSyncDetails;
+  failureDetails?: ProfileFailureDetails;
+  mode?: ProfileSyncMode;
+  diffOutput?: string;
   actionResult?: {
-    actionId: string
-    success: boolean
-    message: string
-  }
-  checkGroups?: ProfileCheckGroup[]
-  guidedStep?: ProfileGuidedStep
+    actionId: string;
+    success: boolean;
+    message: string;
+  };
+  checkGroups?: ProfileCheckGroup[];
+  guidedStep?: ProfileGuidedStep;
 }): ProfileViewModel {
-  const s = sanitizeTerminalText
+  const s = sanitizeTerminalText;
 
   const posts = (data?.posts ?? []).map((p) => ({
     title: s(p.title),
@@ -145,16 +147,34 @@ export function mapProfileToViewModel(data?: {
     summary: s(p.summary),
     sourcePath: s(p.sourcePath),
     url: s(p.url),
-  }))
+  }));
 
   const actions: ProfileActionViewModel[] = [
     { id: 'check', key: 'c', label: 'Check', description: 'Check sync readiness', risk: 'low' },
     { id: 'preview', key: 'p', label: 'Preview', description: 'Preview diff patch', risk: 'low' },
     { id: 'dryrun', key: 'd', label: 'Dry-run', description: 'Simulate sync run', risk: 'low' },
-    { id: 'create-pr', key: 'r', label: 'Create PR', description: 'Run profile sync and create PR', risk: 'medium' },
-    { id: 'open-pr', key: 'o', label: 'Open PR', description: 'Open pending PR in browser', risk: 'low' },
-    { id: 'failure-issue', key: 'i', label: 'Failure Issue', description: 'Create failure issue', risk: 'low' },
-  ]
+    {
+      id: 'create-pr',
+      key: 'r',
+      label: 'Create PR',
+      description: 'Run profile sync and create PR',
+      risk: 'medium',
+    },
+    {
+      id: 'open-pr',
+      key: 'o',
+      label: 'Open PR',
+      description: 'Open pending PR in browser',
+      risk: 'low',
+    },
+    {
+      id: 'failure-issue',
+      key: 'i',
+      label: 'Failure Issue',
+      description: 'Create failure issue',
+      risk: 'low',
+    },
+  ];
 
   return {
     title: 'Organization Profile',
@@ -180,14 +200,22 @@ export function mapProfileToViewModel(data?: {
     },
     syncDetails: data?.syncDetails
       ? {
-          sourceCommit: data.syncDetails.sourceCommit ? s(data.syncDetails.sourceCommit) : undefined,
+          sourceCommit: data.syncDetails.sourceCommit
+            ? s(data.syncDetails.sourceCommit)
+            : undefined,
           sourceDate: data.syncDetails.sourceDate ? s(data.syncDetails.sourceDate) : undefined,
           targetHash: data.syncDetails.targetHash ? s(data.syncDetails.targetHash) : undefined,
           pendingPR: data.syncDetails.pendingPR
-            ? { number: data.syncDetails.pendingPR.number, status: s(data.syncDetails.pendingPR.status) }
+            ? {
+                number: data.syncDetails.pendingPR.number,
+                status: s(data.syncDetails.pendingPR.status),
+              }
             : undefined,
           lastSync: data.syncDetails.lastSync
-            ? { timestamp: s(data.syncDetails.lastSync.timestamp), result: data.syncDetails.lastSync.result }
+            ? {
+                timestamp: s(data.syncDetails.lastSync.timestamp),
+                result: data.syncDetails.lastSync.result,
+              }
             : undefined,
           mode: data.syncDetails.mode,
         }
@@ -201,13 +229,16 @@ export function mapProfileToViewModel(data?: {
     mode: data?.mode ?? 'manual',
     diffOutput: data?.diffOutput ? s(data.diffOutput) : undefined,
     checkGroups: sanitizeProfileCheckGroups(data?.checkGroups),
-    guidedStep: data?.guidedStep ?? (
-      data?.syncStatus === 'synced' ? 'complete' as ProfileGuidedStep
-      : data?.syncStatus === 'failed' ? 'check' as ProfileGuidedStep
-      : data?.pendingPR ? 'create-pr' as ProfileGuidedStep
-      : 'check' as ProfileGuidedStep
-    ),
+    guidedStep:
+      data?.guidedStep ??
+      (data?.syncStatus === 'synced'
+        ? ('complete' as ProfileGuidedStep)
+        : data?.syncStatus === 'failed'
+          ? ('check' as ProfileGuidedStep)
+          : data?.pendingPR
+            ? ('create-pr' as ProfileGuidedStep)
+            : ('check' as ProfileGuidedStep)),
     actions,
     actionResult: data?.actionResult ? sanitizeProfileActionResult(data.actionResult) : undefined,
-  }
+  };
 }

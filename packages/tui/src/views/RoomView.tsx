@@ -1,33 +1,33 @@
-import React from 'react'
-import Box from '../ink/components/Box.js'
-import Text from '../ink/components/Text.js'
-import useApp from '../ink/hooks/use-app.js'
-import useInput from '../ink/hooks/use-input.js'
-import Pane from '../design-system/Pane.js'
-import ThemedText from '../design-system/ThemedText.js'
-import ListItem from '../design-system/ListItem.js'
-import Divider from '../design-system/Divider.js'
-import StatusIcon from '../design-system/StatusIcon.js'
-import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js'
-import type { RoomViewModel } from '../view-models/room.js'
+import React from 'react';
+import Box from '../ink/components/Box.js';
+import Text from '../ink/components/Text.js';
+import useApp from '../ink/hooks/use-app.js';
+import useInput from '../ink/hooks/use-input.js';
+import Pane from '../design-system/Pane.js';
+import ThemedText from '../design-system/ThemedText.js';
+import ListItem from '../design-system/ListItem.js';
+import Divider from '../design-system/Divider.js';
+import StatusIcon from '../design-system/StatusIcon.js';
+import KeyboardShortcutHint from '../design-system/KeyboardShortcutHint.js';
+import type { RoomViewModel } from '../view-models/room.js';
 
 export type RoomViewProps = {
-  model: RoomViewModel
-  onBack?: () => void
-}
+  model: RoomViewModel;
+  onBack?: () => void;
+};
 
 export default function RoomView({ model, onBack }: RoomViewProps): React.JSX.Element {
-  const { exit } = useApp()
+  const { exit } = useApp();
 
   useInput((input, key) => {
     if (input === 'q' || key.escape) {
       if (onBack) {
-        onBack()
+        onBack();
       } else {
-        exit()
+        exit();
       }
     }
-  })
+  });
 
   return React.createElement(
     Box,
@@ -64,7 +64,7 @@ export default function RoomView({ model, onBack }: RoomViewProps): React.JSX.El
       ? React.createElement(
           Pane,
           { title: `Blockers (${model.blockerCount})`, marginY: 0 },
-          ...model.blockers.map(b =>
+          ...model.blockers.map((b) =>
             React.createElement(ListItem, {
               key: `${b.type}-${b.timestamp}`,
               label: `${b.type}`,
@@ -80,7 +80,7 @@ export default function RoomView({ model, onBack }: RoomViewProps): React.JSX.El
       ? React.createElement(
           Pane,
           { title: `Handoffs (${model.handoffs.length})`, marginY: 0 },
-          ...model.handoffs.map(h =>
+          ...model.handoffs.map((h) =>
             React.createElement(ListItem, {
               key: h.id,
               label: `${h.from} → ${h.to}`,
@@ -96,7 +96,7 @@ export default function RoomView({ model, onBack }: RoomViewProps): React.JSX.El
       ? React.createElement(
           Pane,
           { title: `Decisions (${model.decisions.length})`, marginY: 0 },
-          ...model.decisions.map(d =>
+          ...model.decisions.map((d) =>
             React.createElement(ListItem, {
               key: d.id,
               label: d.topic,
@@ -117,11 +117,19 @@ export default function RoomView({ model, onBack }: RoomViewProps): React.JSX.El
               key: `${a.type}-${i}`,
               label: a.summary,
               detail: `${a.time} · ${a.actor}`,
-              status: a.type.includes('blocked') ? 'FAIL' : a.type.includes('passed') ? 'PASS' : 'info',
+              status: a.type.includes('blocked')
+                ? 'FAIL'
+                : a.type.includes('passed')
+                  ? 'PASS'
+                  : 'info',
             }),
           ),
         )
-      : React.createElement(ThemedText, { colorTheme: 'muted' }, 'No activity found for this room.'),
+      : React.createElement(
+          ThemedText,
+          { colorTheme: 'muted' },
+          'No activity found for this room.',
+        ),
 
     // Footer
     React.createElement(Divider, { length: 40 }),
@@ -130,5 +138,5 @@ export default function RoomView({ model, onBack }: RoomViewProps): React.JSX.El
       { flexDirection: 'row' },
       React.createElement(KeyboardShortcutHint, { keys: ['q', 'Esc'], description: 'exit' }),
     ),
-  )
+  );
 }

@@ -30,7 +30,8 @@ export function detectDeadlock(
       deadlocked: true,
       type: 'SINGLE_MAINTAINER',
       reason: `Single maintainer deadlock: @${author} is the only CODEOWNER in this repository.`,
-      recommendation: 'Use a bot/agent-authored Red Zone PR with human CODEOWNER approval, or add a second human CODEOWNER. Do not use bot approval.',
+      recommendation:
+        'Use a bot/agent-authored Red Zone PR with human CODEOWNER approval, or add a second human CODEOWNER. Do not use bot approval.',
     };
   }
 

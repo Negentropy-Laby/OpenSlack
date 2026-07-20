@@ -111,9 +111,7 @@ export class BridgePermissionGuard {
    * Validate a list of inbound tool events (from bridge-reported events).
    * Returns valid events and records violations for denied ones.
    */
-  filterInboundToolEvents(
-    events: Array<{ toolName: string; payload?: unknown }>,
-  ): {
+  filterInboundToolEvents(events: Array<{ toolName: string; payload?: unknown }>): {
     valid: Array<{ toolName: string; payload?: unknown }>;
     violations: Array<{ toolName: string; reason: string }>;
   } {

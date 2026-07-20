@@ -9,7 +9,9 @@ interface WebhookAdapterOptions {
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', (chunk) => { body += chunk; });
+    req.on('data', (chunk) => {
+      body += chunk;
+    });
     req.on('end', () => resolve(body));
     req.on('error', reject);
   });
@@ -146,10 +148,12 @@ export class WebhookAdapter implements ChatAdapter {
     await Promise.all(this.handlers.map((h) => h(message)));
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({
-      ok: true,
-      messageId: message.id,
-      responses: this.responses.map((r) => r.text),
-    }));
+    res.end(
+      JSON.stringify({
+        ok: true,
+        messageId: message.id,
+        responses: this.responses.map((r) => r.text),
+      }),
+    );
   }
 }

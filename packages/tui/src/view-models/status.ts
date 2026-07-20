@@ -1,108 +1,108 @@
-import { sanitizeTerminalText } from '../sanitize.js'
+import { sanitizeTerminalText } from '../sanitize.js';
 
 export interface StatusViewModel {
-  title: string
-  version: string
-  mode: 'SOURCE_CHECKOUT' | 'WORKSPACE'
-  commit: string
-  commitSubject: string
+  title: string;
+  version: string;
+  mode: 'SOURCE_CHECKOUT' | 'WORKSPACE';
+  commit: string;
+  commitSubject: string;
   modules: Array<{
-    name: string
-    lifecycle: string
-    maturity: string
-    operatorConfigured: boolean
-    externalBlockers: string[]
-    evidenceRefs: string[]
-    tests: number | null
+    name: string;
+    lifecycle: string;
+    maturity: string;
+    operatorConfigured: boolean;
+    externalBlockers: string[];
+    evidenceRefs: string[];
+    tests: number | null;
     components: Array<{
-      name: string
-      maturity: string
-      operatorConfigured: boolean
-      externalBlockers: string[]
-      evidenceRefs: string[]
-    }>
-  }>
+      name: string;
+      maturity: string;
+      operatorConfigured: boolean;
+      externalBlockers: string[];
+      evidenceRefs: string[];
+    }>;
+  }>;
   deferredWork: Array<{
-    name: string
-    maturity: string
-    branch: string | null
-    evidenceRefs: string[]
-    countedTowardStandalone: false
-  }>
+    name: string;
+    maturity: string;
+    branch: string | null;
+    evidenceRefs: string[];
+    countedTowardStandalone: false;
+  }>;
   gitHub: {
-    available: boolean
-    tasksReady: number
-    tasksClaimed: number
-    tasksBlocked: number
-    prsOpen: number
-    prsBlocked: number
-    prsReady: number
-  }
+    available: boolean;
+    tasksReady: number;
+    tasksClaimed: number;
+    tasksBlocked: number;
+    prsOpen: number;
+    prsBlocked: number;
+    prsReady: number;
+  };
   testSuite: {
-    totalTests: number
-    totalFiles: number
-  }
+    totalTests: number;
+    totalFiles: number;
+  };
   recommendations: Array<{
-    title: string
-    action: string
-    command: string | null
-  }>
+    title: string;
+    action: string;
+    command: string | null;
+  }>;
   attentionItems: Array<{
-    type: string
-    description: string
-    action: string
-    priority: 'high' | 'medium' | 'low'
-  }>
-  nextAction: string
+    type: string;
+    description: string;
+    action: string;
+    priority: 'high' | 'medium' | 'low';
+  }>;
+  nextAction: string;
 }
 
 export function mapStatusToViewModel(data: {
-  mode: 'SOURCE_CHECKOUT' | 'WORKSPACE'
-  commit: string
-  commitSubject: string
+  mode: 'SOURCE_CHECKOUT' | 'WORKSPACE';
+  commit: string;
+  commitSubject: string;
   modules: Array<{
-    name: string
-    lifecycle: string
-    maturity: string
-    operatorConfigured: boolean
-    externalBlockers: string[]
-    evidenceRefs: string[]
-    tests?: number
+    name: string;
+    lifecycle: string;
+    maturity: string;
+    operatorConfigured: boolean;
+    externalBlockers: string[];
+    evidenceRefs: string[];
+    tests?: number;
     components?: Array<{
-      name: string
-      maturity: string
-      operatorConfigured: boolean
-      externalBlockers: string[]
-      evidenceRefs: string[]
-    }>
-  }>
+      name: string;
+      maturity: string;
+      operatorConfigured: boolean;
+      externalBlockers: string[];
+      evidenceRefs: string[];
+    }>;
+  }>;
   deferredWork: Array<{
-    name: string
-    maturity: string
-    branch?: string
-    evidenceRefs: string[]
-    countedTowardStandalone: false
-  }>
+    name: string;
+    maturity: string;
+    branch?: string;
+    evidenceRefs: string[];
+    countedTowardStandalone: false;
+  }>;
   gitHub: {
-    available: boolean
-    tasksReady: number
-    tasksClaimed: number
-    tasksBlocked: number
-    prsOpen: number
-    prsBlocked: number
-    prsReady: number
-  }
-  testSuite: { totalTests: number; totalFiles: number }
-  recommendations: Array<{ title: string; action: string; command?: string }>
+    available: boolean;
+    tasksReady: number;
+    tasksClaimed: number;
+    tasksBlocked: number;
+    prsOpen: number;
+    prsBlocked: number;
+    prsReady: number;
+  };
+  testSuite: { totalTests: number; totalFiles: number };
+  recommendations: Array<{ title: string; action: string; command?: string }>;
   attentionItems: Array<{
-    type: string
-    description: string
-    action: string
-    priority: 'high' | 'medium' | 'low'
-  }>
-  nextAction: string
+    type: string;
+    description: string;
+    action: string;
+    priority: 'high' | 'medium' | 'low';
+  }>;
+  nextAction: string;
 }): StatusViewModel {
-  const s = sanitizeTerminalText
+  const s = sanitizeTerminalText;
 
   return {
     title: 'OpenSlack Status',
@@ -147,5 +147,5 @@ export function mapStatusToViewModel(data: {
       priority: a.priority,
     })),
     nextAction: s(data.nextAction),
-  }
+  };
 }

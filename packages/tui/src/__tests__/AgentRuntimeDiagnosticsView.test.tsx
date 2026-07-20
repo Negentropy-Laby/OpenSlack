@@ -12,14 +12,23 @@ function vm(status: 'PASS' | 'FAIL'): AgentRuntimeDiagnosticsViewModel {
     configPath: '/repo/.openslack.local/agent-runtime.json',
     root: status === 'PASS' ? '/aby' : 'not configured',
     command: 'bun',
-    args: ['/aby/src/sidecar/entrypoints/runEntrypoint.ts', '/aby/src/sidecar/entrypoints/agentRunBridge.ts'],
+    args: [
+      '/aby/src/sidecar/entrypoints/runEntrypoint.ts',
+      '/aby/src/sidecar/entrypoints/agentRunBridge.ts',
+    ],
     timeoutMs: '120000ms',
     safeEnvAllowed: ['AGENT_RUN_BRIDGE_RUNNER'],
     safeEnvRejected: status === 'PASS' ? [] : ['OPENSLACK_PRIVATE_KEY'],
     checks: [
-      { name: 'config-source', status, detail: status === 'PASS' ? 'Using env' : 'No Aby root configured' },
+      {
+        name: 'config-source',
+        status,
+        detail: status === 'PASS' ? 'Using env' : 'No Aby root configured',
+      },
     ],
-    remediations: [status === 'PASS' ? 'Aby bridge runtime is configured and ready.' : 'Set OPENSLACK_ABY_ROOT.'],
+    remediations: [
+      status === 'PASS' ? 'Aby bridge runtime is configured and ready.' : 'Set OPENSLACK_ABY_ROOT.',
+    ],
   };
 }
 

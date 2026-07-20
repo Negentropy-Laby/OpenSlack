@@ -4,43 +4,45 @@ Use this page when you know what you want to do, but not which document owns it.
 
 ## Start Here
 
-| Goal | Read |
-|------|------|
-| Install, run setup, and understand the product quickly | `../README.md` |
-| Follow step-by-step workflows (first run, workflows, blocked PRs, governed actions, activity, handoffs) | `guides/core-workflows.md` |
-| Use the workflow-first TUI and CLI workbench | `guides/dynamic-workflow-workbench.md` |
-| Configure Aby as an external agent runtime | `guides/aby-integration.md` |
-| Understand dynamic workflows and work-unit boundaries | `product/dynamic-workflows.md`, `product/agent-work-units.md` |
-| Find the exact CLI command and flags | `user-guide.md` |
-| Check current modules, packages, commands, and test counts | `status/current.md` |
-| Understand lifecycle, maturity, blockers, and evidence rules | `developer/module-maturity.md` |
-| Understand repository rules for contributors and agents | `../AGENTS.md` |
-| Find product and module design docs | `product/openslack-product-current.md` |
-| Understand the Negentropy-Lab slot preview and boundary | `product/negentropy-lab-integration.md`, `security/negentropy-slot-boundary.md`, `developer/negentropy-slot-adapter.md`, `guides/embed-openslack-in-negentropy-lab.md` |
-| Learn how Profile Sync renders a GitHub profile projection | `product/profile-sync.md` |
-| Understand the public plugin contract, testkit, Red host, and embedding boundary | `developer/plugins/manifest.md`, `developer/plugins/authoring.md`, `developer/plugins/testkit.md`, `developer/plugins/host.md`, `developer/plugins/embedding.md` |
-| Run the secret-free Windows/Linux production capstone | `developer/live-capstone.md` |
+| Goal                                                                                                    | Read                                                                                                                                                                   |
+| ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Install, run setup, and understand the product quickly                                                  | `../README.md`                                                                                                                                                         |
+| Follow step-by-step workflows (first run, workflows, blocked PRs, governed actions, activity, handoffs) | `guides/core-workflows.md`                                                                                                                                             |
+| Use the workflow-first TUI and CLI workbench                                                            | `guides/dynamic-workflow-workbench.md`                                                                                                                                 |
+| Configure Aby as an external agent runtime                                                              | `guides/aby-integration.md`                                                                                                                                            |
+| Understand dynamic workflows and work-unit boundaries                                                   | `product/dynamic-workflows.md`, `product/agent-work-units.md`                                                                                                          |
+| Find the exact CLI command and flags                                                                    | `user-guide.md`                                                                                                                                                        |
+| Check current modules, packages, commands, and test counts                                              | `status/current.md`                                                                                                                                                    |
+| Understand lifecycle, maturity, blockers, and evidence rules                                            | `developer/module-maturity.md`                                                                                                                                         |
+| Understand repository rules for contributors and agents                                                 | `../AGENTS.md`                                                                                                                                                         |
+| Find product and module design docs                                                                     | `product/openslack-product-current.md`                                                                                                                                 |
+| Understand the Negentropy-Lab slot preview and boundary                                                 | `product/negentropy-lab-integration.md`, `security/negentropy-slot-boundary.md`, `developer/negentropy-slot-adapter.md`, `guides/embed-openslack-in-negentropy-lab.md` |
+| Learn how Profile Sync renders a GitHub profile projection                                              | `product/profile-sync.md`                                                                                                                                              |
+| Understand the public plugin contract, testkit, Red host, and embedding boundary                        | `developer/plugins/manifest.md`, `developer/plugins/authoring.md`, `developer/plugins/testkit.md`, `developer/plugins/host.md`, `developer/plugins/embedding.md`       |
+| Run the secret-free Windows/Linux production capstone                                                   | `developer/live-capstone.md`                                                                                                                                           |
+| Operate the 0.2.0 release, recover npm publication, and review release history                          | `developer/release-0.2.0.md`, `developer/npm-rollback.md`, `../CHANGELOG.md`                                                                                           |
 
 ## Common Workflows
 
-| Workflow | Docs |
-|----------|------|
-| First-run health check | `../README.md`, `user-guide.md` |
-| GitHub authentication and setup repair | `developer/github-automation.md`, `user-guide.md` |
-| GitHub Issues task loop | `developer/github-issues-loop.md`, `user-guide.md` |
-| GitHub watch daemon and realtime Issue notifications | `developer/github-watch-daemon.md`, `product/user-experience-roadmap.md` |
-| Agent identity and onboarding | `developer/agent-registry-schema.md`, `developer/new-agent-onboarding.md` |
-| Install, upgrade, and rollback | `guides/install-openslack.md`, `guides/manual-upgrade-rollback.md` |
-| Aby external runtime setup | `guides/aby-integration.md`, `developer/aby-bridge-integration-plan.md`, `developer/mcp-runtime-lifecycle.md` |
-| Embed OpenSlack into Negentropy-Lab as an external scenario-pack slot | `product/negentropy-lab-integration.md`, `guides/embed-openslack-in-negentropy-lab.md`, `developer/negentropy-slot-adapter.md`, `security/negentropy-slot-boundary.md` |
-| Maintain the GitHub profile README with Profile Sync | `product/profile-sync.md`, `user-guide.md` |
-| Self-evolution, risk zones, plugin trust, and rollback | `product/phase-1.md`, `developer/self-evolution-kernel.md`, `security/self-evolution-guardrails.md`, `security/plugin-trust-model.md` |
-| Author, preflight, and host declarative manifests or reviewed bundled descriptors | `developer/plugins/manifest.md`, `developer/plugins/authoring.md`, `developer/plugins/testkit.md`, `developer/plugins/host.md`, `developer/plugins/embedding.md` |
-| PR review, human approval, and merge governance | `product/module-04-pr-review-merge-steward.md`, `security/human-approval.md`, `user-guide.md` |
-| Collaboration events, handoffs, decisions, rooms, and workflows | `product/collaboration-layer.md`, `developer/collaboration-events.md`, `security/collaboration-audit.md` |
-| Dynamic workflow recommendation, pattern library, drafts, and policy | `guides/dynamic-workflow-workbench.md`, `product/dynamic-workflows.md`, `product/agent-work-units.md` |
-| UX roadmap and productization plan | `product/user-experience-roadmap.md` |
-| Technical debt register | `developer/technical-debt.md` |
+| Workflow                                                                          | Docs                                                                                                                                                                   |
+| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| First-run health check                                                            | `../README.md`, `user-guide.md`                                                                                                                                        |
+| GitHub authentication and setup repair                                            | `developer/github-automation.md`, `user-guide.md`                                                                                                                      |
+| GitHub Issues task loop                                                           | `developer/github-issues-loop.md`, `user-guide.md`                                                                                                                     |
+| GitHub watch daemon and realtime Issue notifications                              | `developer/github-watch-daemon.md`, `product/user-experience-roadmap.md`                                                                                               |
+| Agent identity and onboarding                                                     | `developer/agent-registry-schema.md`, `developer/new-agent-onboarding.md`                                                                                              |
+| Install, upgrade, and rollback                                                    | `guides/install-openslack.md`, `guides/manual-upgrade-rollback.md`                                                                                                     |
+| Release 0.2.0 and recover staged, partial, or withdrawn npm publication           | `developer/release-0.2.0.md`, `developer/npm-rollback.md`, `../CHANGELOG.md`                                                                                           |
+| Aby external runtime setup                                                        | `guides/aby-integration.md`, `developer/aby-bridge-integration-plan.md`, `developer/mcp-runtime-lifecycle.md`                                                          |
+| Embed OpenSlack into Negentropy-Lab as an external scenario-pack slot             | `product/negentropy-lab-integration.md`, `guides/embed-openslack-in-negentropy-lab.md`, `developer/negentropy-slot-adapter.md`, `security/negentropy-slot-boundary.md` |
+| Maintain the GitHub profile README with Profile Sync                              | `product/profile-sync.md`, `user-guide.md`                                                                                                                             |
+| Self-evolution, risk zones, plugin trust, and rollback                            | `product/phase-1.md`, `developer/self-evolution-kernel.md`, `security/self-evolution-guardrails.md`, `security/plugin-trust-model.md`                                  |
+| Author, preflight, and host declarative manifests or reviewed bundled descriptors | `developer/plugins/manifest.md`, `developer/plugins/authoring.md`, `developer/plugins/testkit.md`, `developer/plugins/host.md`, `developer/plugins/embedding.md`       |
+| PR review, human approval, and merge governance                                   | `product/module-04-pr-review-merge-steward.md`, `security/human-approval.md`, `user-guide.md`                                                                          |
+| Collaboration events, handoffs, decisions, rooms, and workflows                   | `product/collaboration-layer.md`, `developer/collaboration-events.md`, `security/collaboration-audit.md`                                                               |
+| Dynamic workflow recommendation, pattern library, drafts, and policy              | `guides/dynamic-workflow-workbench.md`, `product/dynamic-workflows.md`, `product/agent-work-units.md`                                                                  |
+| UX roadmap and productization plan                                                | `product/user-experience-roadmap.md`                                                                                                                                   |
+| Technical debt register                                                           | `developer/technical-debt.md`                                                                                                                                          |
 
 ## Source-Of-Truth Rules
 

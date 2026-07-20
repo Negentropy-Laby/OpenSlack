@@ -5,24 +5,27 @@
  * These are intentionally minimal -- they contain enough data to render meaningful output
  * without relying on real production data.
  */
-import type { HomeViewModel } from '../../view-models/home.js'
-import type { DoctorViewModel } from '../../view-models/doctor.js'
-import type { PrQueueViewModel } from '../../view-models/pr-queue.js'
-import type { ProfileViewModel } from '../../view-models/profile.js'
-import type { WorkflowLifecycleViewModel } from '../../view-models/workflow-lifecycle.js'
-import type { WorkflowGalleryViewModel } from '../../view-models/workflow-gallery.js'
-import type { DashboardViewModel } from '../../view-models/dashboard.js'
-import type { ApprovalCenterViewModel, ApprovalCategory } from '../../view-models/approval-center.js'
-import type { RoomViewModel } from '../../view-models/room.js'
-import type { ActivityViewModel } from '../../view-models/activity.js'
-import type { DecisionListViewModel, DecisionDetailViewModel } from '../../view-models/decision.js'
-import type { DigestViewModel } from '../../view-models/digest.js'
-import type { HandoffListViewModel, HandoffDetailViewModel } from '../../view-models/handoff.js'
-import type { IssuesPrViewModel } from '../../view-models/issues-pr.js'
-import type { SetupViewModel } from '../../view-models/setup.js'
-import type { StatusViewModel } from '../../view-models/status.js'
-import type { WorkflowPreviewViewModel } from '../../view-models/workflow-preview.js'
-import type { ShellViewData } from '../../views/render-shell.js'
+import type { HomeViewModel } from '../../view-models/home.js';
+import type { DoctorViewModel } from '../../view-models/doctor.js';
+import type { PrQueueViewModel } from '../../view-models/pr-queue.js';
+import type { ProfileViewModel } from '../../view-models/profile.js';
+import type { WorkflowLifecycleViewModel } from '../../view-models/workflow-lifecycle.js';
+import type { WorkflowGalleryViewModel } from '../../view-models/workflow-gallery.js';
+import type { DashboardViewModel } from '../../view-models/dashboard.js';
+import type {
+  ApprovalCenterViewModel,
+  ApprovalCategory,
+} from '../../view-models/approval-center.js';
+import type { RoomViewModel } from '../../view-models/room.js';
+import type { ActivityViewModel } from '../../view-models/activity.js';
+import type { DecisionListViewModel, DecisionDetailViewModel } from '../../view-models/decision.js';
+import type { DigestViewModel } from '../../view-models/digest.js';
+import type { HandoffListViewModel, HandoffDetailViewModel } from '../../view-models/handoff.js';
+import type { IssuesPrViewModel } from '../../view-models/issues-pr.js';
+import type { SetupViewModel } from '../../view-models/setup.js';
+import type { StatusViewModel } from '../../view-models/status.js';
+import type { WorkflowPreviewViewModel } from '../../view-models/workflow-preview.js';
+import type { ShellViewData } from '../../views/render-shell.js';
 
 export function createHomeViewModel(): HomeViewModel {
   return {
@@ -37,21 +40,88 @@ export function createHomeViewModel(): HomeViewModel {
       { label: 'Profile', key: 'profile', shortcut: 'r' },
     ],
     tasks: [
-      { key: 'see-attention', label: 'See what needs attention', route: 'dashboard', description: 'View items needing immediate action', shortcut: '1' },
-      { key: 'start-work', label: 'Start or continue work', route: 'workflows', description: 'Create tasks, claim issues, and work in isolated branches', shortcut: '2' },
-      { key: 'run-workflow', label: 'Start a workflow', route: 'workflows', description: 'Generate from prompt, choose a pattern, or run a saved workflow', shortcut: '3' },
-      { key: 'watch-workflows', label: 'Watch running workflows', route: 'workflow-runs', description: 'Inspect run, phase, agent, transcript, controls, and budget evidence', shortcut: 'w' },
-      { key: 'approve-workflows', label: 'Handle paused workflow approvals', route: 'approvals', description: 'Approve or reject workflow effects and budget pauses', shortcut: 'a' },
-      { key: 'save-share-workflow', label: 'Save/share run', route: 'workflow-runs', description: 'Choose a workflow run, then save scripts to project, user, or Claude project targets', shortcut: 's' },
-      { key: 'publish-workflow', label: 'Publish workflow to GitHub Issues', route: 'workflows', description: 'Create proposal, review, or phase tracking issues', shortcut: 'g' },
-      { key: 'review-prs', label: 'Review and merge PRs', route: 'pr-queue', description: 'Check open PRs, run doctor, and merge when ready', shortcut: '4' },
-      { key: 'approve-pending', label: 'Approve pending items', route: 'approvals', description: 'Approve plans, merge requests, and workflow effects', shortcut: '5' },
-      { key: 'maintain-profile', label: 'Maintain organization profile', route: 'profile', description: 'Check, preview, and sync your organization profile', shortcut: '6' },
-      { key: 'view-conversations', label: 'View active conversations', route: 'conversations', description: 'Browse agent conversation threads and messages', shortcut: 'c' },
+      {
+        key: 'see-attention',
+        label: 'See what needs attention',
+        route: 'dashboard',
+        description: 'View items needing immediate action',
+        shortcut: '1',
+      },
+      {
+        key: 'start-work',
+        label: 'Start or continue work',
+        route: 'workflows',
+        description: 'Create tasks, claim issues, and work in isolated branches',
+        shortcut: '2',
+      },
+      {
+        key: 'run-workflow',
+        label: 'Start a workflow',
+        route: 'workflows',
+        description: 'Generate from prompt, choose a pattern, or run a saved workflow',
+        shortcut: '3',
+      },
+      {
+        key: 'watch-workflows',
+        label: 'Watch running workflows',
+        route: 'workflow-runs',
+        description: 'Inspect run, phase, agent, transcript, controls, and budget evidence',
+        shortcut: 'w',
+      },
+      {
+        key: 'approve-workflows',
+        label: 'Handle paused workflow approvals',
+        route: 'approvals',
+        description: 'Approve or reject workflow effects and budget pauses',
+        shortcut: 'a',
+      },
+      {
+        key: 'save-share-workflow',
+        label: 'Save/share run',
+        route: 'workflow-runs',
+        description:
+          'Choose a workflow run, then save scripts to project, user, or Claude project targets',
+        shortcut: 's',
+      },
+      {
+        key: 'publish-workflow',
+        label: 'Publish workflow to GitHub Issues',
+        route: 'workflows',
+        description: 'Create proposal, review, or phase tracking issues',
+        shortcut: 'g',
+      },
+      {
+        key: 'review-prs',
+        label: 'Review and merge PRs',
+        route: 'pr-queue',
+        description: 'Check open PRs, run doctor, and merge when ready',
+        shortcut: '4',
+      },
+      {
+        key: 'approve-pending',
+        label: 'Approve pending items',
+        route: 'approvals',
+        description: 'Approve plans, merge requests, and workflow effects',
+        shortcut: '5',
+      },
+      {
+        key: 'maintain-profile',
+        label: 'Maintain organization profile',
+        route: 'profile',
+        description: 'Check, preview, and sync your organization profile',
+        shortcut: '6',
+      },
+      {
+        key: 'view-conversations',
+        label: 'View active conversations',
+        route: 'conversations',
+        description: 'Browse agent conversation threads and messages',
+        shortcut: 'c',
+      },
     ],
     systemStatus: 'ready',
     nextRecommendedAction: undefined,
-  }
+  };
 }
 export function createHomeViewModelWithAction(): HomeViewModel {
   return {
@@ -63,7 +133,7 @@ export function createHomeViewModelWithAction(): HomeViewModel {
       urgency: 'governance' as const,
       priority: 1,
     },
-  }
+  };
 }
 
 export function createDoctorViewModel(): DoctorViewModel {
@@ -91,12 +161,10 @@ export function createDoctorViewModel(): DoctorViewModel {
       { name: 'ci/test', status: 'PASS', conclusion: 'success' },
       { name: 'ci/build', status: 'PASS', conclusion: 'success' },
     ],
-    reviews: [
-      { user: 'human-reviewer', state: 'APPROVED', valid: true },
-    ],
+    reviews: [{ user: 'human-reviewer', state: 'APPROVED', valid: true }],
     evidence: ['PR authored by bot identity', 'CODEOWNER approval verified'],
     compressed: false,
-  }
+  };
 }
 
 export function createPrQueueViewModel(): PrQueueViewModel {
@@ -131,10 +199,14 @@ export function createPrQueueViewModel(): PrQueueViewModel {
         riskZone: 'yellow',
         nextAction: 'Wait for CI to pass',
         rerunCommand: 'openslack pr doctor 130',
-        workflowGate: { touched: true, criteria: [{ name: 'Coverage', passed: false }], overall: 'FAIL' },
+        workflowGate: {
+          touched: true,
+          criteria: [{ name: 'Coverage', passed: false }],
+          overall: 'FAIL',
+        },
       },
     ],
-  }
+  };
 }
 
 export function createProfileViewModel(): ProfileViewModel {
@@ -173,20 +245,48 @@ export function createProfileViewModel(): ProfileViewModel {
     mode: 'manual',
     guidedStep: 'complete',
     checkGroups: [
-      { key: 'source', label: 'Source repository', status: 'pass', detail: 'Commit abc1234 (2026-05-30)' },
+      {
+        key: 'source',
+        label: 'Source repository',
+        status: 'pass',
+        detail: 'Commit abc1234 (2026-05-30)',
+      },
       { key: 'posts', label: 'Posts', status: 'pass', detail: '1/1 published, 0 failed' },
-      { key: 'target-marker', label: 'Target marker', status: 'pass', detail: 'Marker present in target' },
+      {
+        key: 'target-marker',
+        label: 'Target marker',
+        status: 'pass',
+        detail: 'Marker present in target',
+      },
       { key: 'permissions', label: 'Permissions', status: 'pass', detail: 'All checks passed' },
     ],
     actions: [
       { id: 'check', key: 'c', label: 'Check', description: 'Check sync readiness', risk: 'low' },
       { id: 'preview', key: 'p', label: 'Preview', description: 'Preview diff patch', risk: 'low' },
       { id: 'dryrun', key: 'd', label: 'Dry-run', description: 'Simulate sync run', risk: 'low' },
-      { id: 'create-pr', key: 'r', label: 'Create PR', description: 'Run profile sync and create PR', risk: 'medium' },
-      { id: 'open-pr', key: 'o', label: 'Open PR', description: 'Open pending PR in browser', risk: 'low' },
-      { id: 'failure-issue', key: 'i', label: 'Failure Issue', description: 'Create failure issue', risk: 'low' },
+      {
+        id: 'create-pr',
+        key: 'r',
+        label: 'Create PR',
+        description: 'Run profile sync and create PR',
+        risk: 'medium',
+      },
+      {
+        id: 'open-pr',
+        key: 'o',
+        label: 'Open PR',
+        description: 'Open pending PR in browser',
+        risk: 'low',
+      },
+      {
+        id: 'failure-issue',
+        key: 'i',
+        label: 'Failure Issue',
+        description: 'Create failure issue',
+        risk: 'low',
+      },
     ],
-  }
+  };
 }
 
 export function createWorkflowLifecycleViewModel(): WorkflowLifecycleViewModel {
@@ -197,11 +297,37 @@ export function createWorkflowLifecycleViewModel(): WorkflowLifecycleViewModel {
     risk: 'medium',
     sourcePath: '.openslack/workflows/test-workflow',
     stages: [
-      { name: 'proposal', label: 'Proposal', status: 'complete', icon: 'check', issueNumber: 120, detail: 'Proposal accepted' },
-      { name: 'review', label: 'Review', status: 'complete', icon: 'check', issueNumber: 121, detail: 'Review passed' },
-      { name: 'run', label: 'Run', status: 'in-progress', icon: 'running', detail: 'Currently executing' },
+      {
+        name: 'proposal',
+        label: 'Proposal',
+        status: 'complete',
+        icon: 'check',
+        issueNumber: 120,
+        detail: 'Proposal accepted',
+      },
+      {
+        name: 'review',
+        label: 'Review',
+        status: 'complete',
+        icon: 'check',
+        issueNumber: 121,
+        detail: 'Review passed',
+      },
+      {
+        name: 'run',
+        label: 'Run',
+        status: 'in-progress',
+        icon: 'running',
+        detail: 'Currently executing',
+      },
       { name: 'pr', label: 'PR', status: 'pending', icon: 'clock', detail: 'PR not created yet' },
-      { name: 'merged', label: 'Merged', status: 'pending', icon: 'clock', detail: 'Not merged yet' },
+      {
+        name: 'merged',
+        label: 'Merged',
+        status: 'pending',
+        icon: 'clock',
+        detail: 'Not merged yet',
+      },
     ],
     phaseIssues: [
       { phase: 'proposal', issueNumber: 120, status: 'closed', trackingMode: 'native' },
@@ -222,7 +348,7 @@ export function createWorkflowLifecycleViewModel(): WorkflowLifecycleViewModel {
     blockedGateItems: [],
     statusSummary: 'At run stage, waiting for execution to complete',
     parentIssueNumber: 42,
-  }
+  };
 }
 
 export function createWorkflowWorkbenchViewModel(): WorkflowGalleryViewModel {
@@ -263,7 +389,7 @@ export function createWorkflowWorkbenchViewModel(): WorkflowGalleryViewModel {
         description: 'Compare alternatives and choose a winner',
       },
     ],
-  }
+  };
 }
 
 export function createDashboardViewModel(): DashboardViewModel {
@@ -276,19 +402,37 @@ export function createDashboardViewModel(): DashboardViewModel {
       decisions: 1,
     },
     blockers: [
-      { object: 'PR #130', summary: 'CI checks failing', owner: 'team-lead', nextAction: 'Fix test failures', severity: 'high' },
+      {
+        object: 'PR #130',
+        summary: 'CI checks failing',
+        owner: 'team-lead',
+        nextAction: 'Fix test failures',
+        severity: 'high',
+      },
     ],
     handoffs: [
-      { id: 'h-001', from: 'agent-a', to: 'agent-b', status: 'open', context: 'Continue PR review', age: '2h' },
+      {
+        id: 'h-001',
+        from: 'agent-a',
+        to: 'agent-b',
+        status: 'open',
+        context: 'Continue PR review',
+        age: '2h',
+      },
     ],
     decisions: [
-      { id: 'd-001', topic: 'Adopt new branching strategy', status: 'active', decidedBy: 'team-lead' },
+      {
+        id: 'd-001',
+        topic: 'Adopt new branching strategy',
+        status: 'active',
+        decidedBy: 'team-lead',
+      },
     ],
     recentActivity: [
       { time: '12:00 PM', type: 'pr.merged', summary: 'PR #127 merged', actor: 'agent-a' },
       { time: '11:30 AM', type: 'task.completed', summary: 'Issue #119 closed', actor: 'agent-b' },
     ],
-  }
+  };
 }
 
 export function createApprovalCenterViewModel(): ApprovalCenterViewModel {
@@ -359,7 +503,7 @@ export function createApprovalCenterViewModel(): ApprovalCenterViewModel {
         },
       ],
     },
-  ]
+  ];
 
   return {
     pendingApprovals: groups.flatMap((g) => g.items),
@@ -371,7 +515,7 @@ export function createApprovalCenterViewModel(): ApprovalCenterViewModel {
       profileSyncs: 0,
       githubReviews: 1,
     },
-  }
+  };
 }
 
 export function createRoomViewModel(): RoomViewModel {
@@ -384,19 +528,39 @@ export function createRoomViewModel(): RoomViewModel {
     nextAction: 'Review and approve',
     blockerCount: 1,
     blockers: [
-      { type: 'check', summary: 'CI test suite failing on Node 18', timestamp: '2026-06-01T08:00:00Z' },
+      {
+        type: 'check',
+        summary: 'CI test suite failing on Node 18',
+        timestamp: '2026-06-01T08:00:00Z',
+      },
     ],
     handoffs: [
-      { id: 'h-001', from: 'agent-a', to: 'agent-b', status: 'open', context: 'Continue review after CI fix' },
+      {
+        id: 'h-001',
+        from: 'agent-a',
+        to: 'agent-b',
+        status: 'open',
+        context: 'Continue review after CI fix',
+      },
     ],
     decisions: [
       { id: 'd-001', topic: 'Approve layout changes', decision: 'pending', status: 'active' },
     ],
     recentActivity: [
-      { time: '12:00 PM', type: 'review.comment', summary: 'Commented on layout width calculation', actor: 'agent-a' },
-      { time: '11:30 AM', type: 'check.failed', summary: 'CI test failed: width exceeds 80 cols', actor: 'ci-bot' },
+      {
+        time: '12:00 PM',
+        type: 'review.comment',
+        summary: 'Commented on layout width calculation',
+        actor: 'agent-a',
+      },
+      {
+        time: '11:30 AM',
+        type: 'check.failed',
+        summary: 'CI test failed: width exceeds 80 cols',
+        actor: 'ci-bot',
+      },
     ],
-  }
+  };
 }
 
 export function createActivityViewModel(): ActivityViewModel {
@@ -405,20 +569,76 @@ export function createActivityViewModel(): ActivityViewModel {
     periodHours: 24,
     totalEvents: 4,
     events: [
-      { time: '12:00', type: 'pr.merged', summary: 'PR #127 merged', actor: 'agent-a', objectKind: 'pr', objectId: '127' },
-      { time: '11:30', type: 'check.failed', summary: 'CI check failed on PR #130', actor: 'ci-bot', objectKind: 'pr', objectId: '130' },
-      { time: '11:00', type: 'task.completed', summary: 'Issue #119 closed', actor: 'agent-b', objectKind: 'issue', objectId: '119' },
-      { time: '10:00', type: 'handoff.created', summary: 'Handoff h-001 created', actor: 'agent-a', objectKind: 'handoff', objectId: 'h-001' },
+      {
+        time: '12:00',
+        type: 'pr.merged',
+        summary: 'PR #127 merged',
+        actor: 'agent-a',
+        objectKind: 'pr',
+        objectId: '127',
+      },
+      {
+        time: '11:30',
+        type: 'check.failed',
+        summary: 'CI check failed on PR #130',
+        actor: 'ci-bot',
+        objectKind: 'pr',
+        objectId: '130',
+      },
+      {
+        time: '11:00',
+        type: 'task.completed',
+        summary: 'Issue #119 closed',
+        actor: 'agent-b',
+        objectKind: 'issue',
+        objectId: '119',
+      },
+      {
+        time: '10:00',
+        type: 'handoff.created',
+        summary: 'Handoff h-001 created',
+        actor: 'agent-a',
+        objectKind: 'handoff',
+        objectId: 'h-001',
+      },
     ],
     today: [
-      { time: '12:00', type: 'pr.merged', summary: 'PR #127 merged', actor: 'agent-a', objectKind: 'pr', objectId: '127' },
-      { time: '11:30', type: 'check.failed', summary: 'CI check failed on PR #130', actor: 'ci-bot', objectKind: 'pr', objectId: '130' },
-      { time: '11:00', type: 'task.completed', summary: 'Issue #119 closed', actor: 'agent-b', objectKind: 'issue', objectId: '119' },
-      { time: '10:00', type: 'handoff.created', summary: 'Handoff h-001 created', actor: 'agent-a', objectKind: 'handoff', objectId: 'h-001' },
+      {
+        time: '12:00',
+        type: 'pr.merged',
+        summary: 'PR #127 merged',
+        actor: 'agent-a',
+        objectKind: 'pr',
+        objectId: '127',
+      },
+      {
+        time: '11:30',
+        type: 'check.failed',
+        summary: 'CI check failed on PR #130',
+        actor: 'ci-bot',
+        objectKind: 'pr',
+        objectId: '130',
+      },
+      {
+        time: '11:00',
+        type: 'task.completed',
+        summary: 'Issue #119 closed',
+        actor: 'agent-b',
+        objectKind: 'issue',
+        objectId: '119',
+      },
+      {
+        time: '10:00',
+        type: 'handoff.created',
+        summary: 'Handoff h-001 created',
+        actor: 'agent-a',
+        objectKind: 'handoff',
+        objectId: 'h-001',
+      },
     ],
     yesterday: [],
     older: [],
-  }
+  };
 }
 
 export function createDecisionListViewModel(): DecisionListViewModel {
@@ -427,10 +647,24 @@ export function createDecisionListViewModel(): DecisionListViewModel {
     totalCount: 2,
     activeCount: 1,
     items: [
-      { id: 'd-001', topic: 'Adopt new branching strategy', decision: 'Approved', status: 'active', decidedBy: 'team-lead', age: '2d' },
-      { id: 'd-002', topic: 'Use YAML workflow format', decision: 'Approved', status: 'superseded', decidedBy: 'dev-lead', age: '7d' },
+      {
+        id: 'd-001',
+        topic: 'Adopt new branching strategy',
+        decision: 'Approved',
+        status: 'active',
+        decidedBy: 'team-lead',
+        age: '2d',
+      },
+      {
+        id: 'd-002',
+        topic: 'Use YAML workflow format',
+        decision: 'Approved',
+        status: 'superseded',
+        decidedBy: 'dev-lead',
+        age: '7d',
+      },
     ],
-  }
+  };
 }
 
 export function createDecisionDetailViewModel(): DecisionDetailViewModel {
@@ -445,7 +679,7 @@ export function createDecisionDetailViewModel(): DecisionDetailViewModel {
     createdAt: '2026-05-29T10:00:00Z',
     status: 'active',
     tags: ['branching', 'process'],
-  }
+  };
 }
 
 export function createDigestViewModel(): DigestViewModel {
@@ -459,8 +693,20 @@ export function createDigestViewModel(): DigestViewModel {
         count: 2,
         status: 'pass',
         events: [
-          { time: '12:00', type: 'pr.merged', summary: 'PR #127 merged', objectKind: 'pr', objectId: '127' },
-          { time: '11:30', type: 'task.completed', summary: 'Issue #119 closed', objectKind: 'issue', objectId: '119' },
+          {
+            time: '12:00',
+            type: 'pr.merged',
+            summary: 'PR #127 merged',
+            objectKind: 'pr',
+            objectId: '127',
+          },
+          {
+            time: '11:30',
+            type: 'task.completed',
+            summary: 'Issue #119 closed',
+            objectKind: 'issue',
+            objectId: '119',
+          },
         ],
       },
       {
@@ -468,7 +714,13 @@ export function createDigestViewModel(): DigestViewModel {
         count: 1,
         status: 'fail',
         events: [
-          { time: '11:00', type: 'check.failed', summary: 'CI check failed on PR #130', objectKind: 'pr', objectId: '130' },
+          {
+            time: '11:00',
+            type: 'check.failed',
+            summary: 'CI check failed on PR #130',
+            objectKind: 'pr',
+            objectId: '130',
+          },
         ],
       },
       {
@@ -476,15 +728,25 @@ export function createDigestViewModel(): DigestViewModel {
         count: 2,
         status: 'info',
         events: [
-          { time: '10:30', type: 'handoff.created', summary: 'Handoff h-001 created', objectKind: 'handoff', objectId: 'h-001' },
-          { time: '10:00', type: 'approval.requested', summary: 'PR #130 needs review', objectKind: 'pr', objectId: '130' },
+          {
+            time: '10:30',
+            type: 'handoff.created',
+            summary: 'Handoff h-001 created',
+            objectKind: 'handoff',
+            objectId: 'h-001',
+          },
+          {
+            time: '10:00',
+            type: 'approval.requested',
+            summary: 'PR #130 needs review',
+            objectKind: 'pr',
+            objectId: '130',
+          },
         ],
       },
     ],
-    recommendedNext: [
-      { objectKind: 'pr', objectId: '130', action: 'Review and approve PR #130' },
-    ],
-  }
+    recommendedNext: [{ objectKind: 'pr', objectId: '130', action: 'Review and approve PR #130' }],
+  };
 }
 
 export function createHandoffListViewModel(): HandoffListViewModel {
@@ -493,10 +755,26 @@ export function createHandoffListViewModel(): HandoffListViewModel {
     totalCount: 2,
     openCount: 1,
     items: [
-      { id: 'h-001', from: 'agent-a', to: 'agent-b', status: 'open', context: 'Continue PR review after CI fix', age: '2h', ref: 'pr:130' },
-      { id: 'h-002', from: 'agent-b', to: 'agent-a', status: 'closed', context: 'Initial investigation done', age: '5d', ref: 'issue:119' },
+      {
+        id: 'h-001',
+        from: 'agent-a',
+        to: 'agent-b',
+        status: 'open',
+        context: 'Continue PR review after CI fix',
+        age: '2h',
+        ref: 'pr:130',
+      },
+      {
+        id: 'h-002',
+        from: 'agent-b',
+        to: 'agent-a',
+        status: 'closed',
+        context: 'Initial investigation done',
+        age: '5d',
+        ref: 'issue:119',
+      },
     ],
-  }
+  };
 }
 
 export function createHandoffDetailViewModel(): HandoffDetailViewModel {
@@ -511,25 +789,46 @@ export function createHandoffDetailViewModel(): HandoffDetailViewModel {
     notes: 'PR #130 has a flaky test in the auth module. Check the CI logs before re-running.',
     canAccept: true,
     canClose: true,
-  }
+  };
 }
 
 export function createIssuesPrViewModel(): IssuesPrViewModel {
   return {
     tab: 'prs',
     issues: [
-      { number: 119, title: 'Fix auth flow edge case', status: 'claimed', assignee: 'agent-a', labels: ['bug', 'priority:high'] },
+      {
+        number: 119,
+        title: 'Fix auth flow edge case',
+        status: 'claimed',
+        assignee: 'agent-a',
+        labels: ['bug', 'priority:high'],
+      },
       { number: 120, title: 'Add workflow validation', status: 'ready', labels: ['enhancement'] },
     ],
     prs: [
-      { number: 127, title: 'Fix auth flow edge case', status: 'ready', author: 'test-bot', riskZone: 'green', nextAction: 'Merge when approved' },
-      { number: 130, title: 'Add new dashboard metrics', status: 'blocked', author: 'test-bot', riskZone: 'yellow', blocker: 'CI checks failing', nextAction: 'Fix test failures' },
+      {
+        number: 127,
+        title: 'Fix auth flow edge case',
+        status: 'ready',
+        author: 'test-bot',
+        riskZone: 'green',
+        nextAction: 'Merge when approved',
+      },
+      {
+        number: 130,
+        title: 'Add new dashboard metrics',
+        status: 'blocked',
+        author: 'test-bot',
+        riskZone: 'yellow',
+        blocker: 'CI checks failing',
+        nextAction: 'Fix test failures',
+      },
     ],
     summary: {
       issues: { total: 2, ready: 1, claimed: 1, blocked: 0 },
       prs: { total: 2, ready: 1, blocked: 1, pending: 0 },
     },
-  }
+  };
 }
 
 export function createSetupViewModel(): SetupViewModel {
@@ -539,16 +838,44 @@ export function createSetupViewModel(): SetupViewModel {
     totalChecks: 4,
     passedChecks: 2,
     fixable: [
-      { id: 'labels', title: 'Create required labels', status: 'WARN', detail: 'Labels task:ready, task:claimed missing', nextAction: 'Run label setup command', command: 'openslack setup labels' },
+      {
+        id: 'labels',
+        title: 'Create required labels',
+        status: 'WARN',
+        detail: 'Labels task:ready, task:claimed missing',
+        nextAction: 'Run label setup command',
+        command: 'openslack setup labels',
+      },
     ],
     needsAction: [
-      { id: 'branch-protection', title: 'Enable branch protection', status: 'FAIL', detail: 'Main branch is not protected', nextAction: 'Enable in GitHub settings', command: '' },
+      {
+        id: 'branch-protection',
+        title: 'Enable branch protection',
+        status: 'FAIL',
+        detail: 'Main branch is not protected',
+        nextAction: 'Enable in GitHub settings',
+        command: '',
+      },
     ],
     ok: [
-      { id: 'repo', title: 'Repository accessible', status: 'PASS', detail: 'Connected to GitHub', nextAction: '', command: '' },
-      { id: 'git', title: 'Git available', status: 'PASS', detail: 'Git 2.40+', nextAction: '', command: '' },
+      {
+        id: 'repo',
+        title: 'Repository accessible',
+        status: 'PASS',
+        detail: 'Connected to GitHub',
+        nextAction: '',
+        command: '',
+      },
+      {
+        id: 'git',
+        title: 'Git available',
+        status: 'PASS',
+        detail: 'Git 2.40+',
+        nextAction: '',
+        command: '',
+      },
     ],
-  }
+  };
 }
 
 export function createStatusViewModel(): StatusViewModel {
@@ -565,7 +892,7 @@ export function createStatusViewModel(): StatusViewModel {
     evidenceRefs: ['test:packages/tui/src/__tests__'],
     tests,
     components: [],
-  })
+  });
 
   return {
     title: 'OpenSlack Status',
@@ -618,7 +945,7 @@ export function createStatusViewModel(): StatusViewModel {
       },
     ],
     nextAction: 'Review PR #130 and fix failing checks',
-  }
+  };
 }
 
 export function createWorkflowPreviewViewModel(): WorkflowPreviewViewModel {
@@ -627,8 +954,24 @@ export function createWorkflowPreviewViewModel(): WorkflowPreviewViewModel {
     name: 'Test Workflow',
     correlationId: 'corr-001',
     steps: [
-      { phase: 'Setup', type: 'action', title: 'Run setup', actionId: 'setup', sideEffects: false, requiresConfirmation: false, requiredRole: '' },
-      { phase: 'Execute', type: 'action', title: 'Execute task', actionId: 'execute', sideEffects: true, requiresConfirmation: false, requiredRole: '' },
+      {
+        phase: 'Setup',
+        type: 'action',
+        title: 'Run setup',
+        actionId: 'setup',
+        sideEffects: false,
+        requiresConfirmation: false,
+        requiredRole: '',
+      },
+      {
+        phase: 'Execute',
+        type: 'action',
+        title: 'Execute task',
+        actionId: 'execute',
+        sideEffects: true,
+        requiresConfirmation: false,
+        requiredRole: '',
+      },
     ],
     phases: ['Setup', 'Execute'],
     phaseCount: 2,
@@ -637,7 +980,7 @@ export function createWorkflowPreviewViewModel(): WorkflowPreviewViewModel {
     requiresConfirmation: false,
     errors: [],
     hasErrors: false,
-  }
+  };
 }
 
 export function createShellViewData(): ShellViewData {
@@ -646,5 +989,5 @@ export function createShellViewData(): ShellViewData {
     status: createStatusViewModel(),
     prQueue: createPrQueueViewModel(),
     profile: createProfileViewModel(),
-  }
+  };
 }

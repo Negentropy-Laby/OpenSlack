@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { mapRepositoryPrProjectionToViewModel } from '../view-models/repository-pr-projection.js'
+import { describe, expect, it } from 'vitest';
+import { mapRepositoryPrProjectionToViewModel } from '../view-models/repository-pr-projection.js';
 
 describe('mapRepositoryPrProjectionToViewModel', () => {
   it('keeps multi-repository projection informational and sanitizes display text', () => {
@@ -32,7 +32,7 @@ describe('mapRepositoryPrProjectionToViewModel', () => {
           source: 'github-live',
         },
       ],
-    })
+    });
 
     expect(model).toMatchObject({
       partial: true,
@@ -46,8 +46,8 @@ describe('mapRepositoryPrProjectionToViewModel', () => {
           warning: true,
         },
       ],
-    })
-    expect(model.items[0]?.title).not.toContain('\u001b')
-    expect(model.items[0]?.checksLabel).toContain('(partial)')
-  })
-})
+    });
+    expect(model.items[0]?.title).not.toContain('\u001b');
+    expect(model.items[0]?.checksLabel).toContain('(partial)');
+  });
+});

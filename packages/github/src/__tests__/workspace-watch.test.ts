@@ -3,10 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { stringify as stringifyYaml } from 'yaml';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  startWorkspaceWatchDaemon,
-  WorkspaceWatchDaemonStartError,
-} from '../workspace-watch.js';
+import { startWorkspaceWatchDaemon, WorkspaceWatchDaemonStartError } from '../workspace-watch.js';
 
 const roots: string[] = [];
 

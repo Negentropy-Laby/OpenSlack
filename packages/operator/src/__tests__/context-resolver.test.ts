@@ -7,7 +7,10 @@ function makeTurn(role: 'user' | 'assistant', content: string, intent?: Intent):
   return { role, content, intent, timestamp: new Date().toISOString() };
 }
 
-function makeIntent(kind: string, slots: Record<string, string | number | string[] | undefined> = {}): Intent {
+function makeIntent(
+  kind: string,
+  slots: Record<string, string | number | string[] | undefined> = {},
+): Intent {
   return { kind: kind as Intent['kind'], slots, confidence: 0.9 };
 }
 
@@ -63,10 +66,18 @@ describe('resolveContext', () => {
 
   it('resolves multiple missing slots', () => {
     const history = [
-      makeTurn('user', 'checkout 15 as bot_001', makeIntent('checkout_task', { issueNumber: 15, agentId: 'bot_001' })),
+      makeTurn(
+        'user',
+        'checkout 15 as bot_001',
+        makeIntent('checkout_task', { issueNumber: 15, agentId: 'bot_001' }),
+      ),
       makeTurn('assistant', 'Checked out issue 15'),
     ];
-    const current = makeIntent('sync_task', { issueNumber: undefined, agentId: undefined, paths: undefined });
+    const current = makeIntent('sync_task', {
+      issueNumber: undefined,
+      agentId: undefined,
+      paths: undefined,
+    });
     const result = resolveContext(current, history);
     expect(result.type).toBe('resolve_slots');
     if (result.type === 'resolve_slots') {
@@ -133,29 +144,17 @@ describe('extractSlotsFromMessage', () => {
 
 describe('mergeDefinedSlots', () => {
   it('does not let undefined current slots erase resolved history', () => {
-    const slots = mergeDefinedSlots(
-      { prNumber: 42 },
-      {},
-      { prNumber: undefined },
-    );
+    const slots = mergeDefinedSlots({ prNumber: 42 }, {}, { prNumber: undefined });
     expect(slots.prNumber).toBe(42);
   });
 
   it('lets explicit message slots override resolved history', () => {
-    const slots = mergeDefinedSlots(
-      { prNumber: 42 },
-      { prNumber: 99 },
-      { prNumber: undefined },
-    );
+    const slots = mergeDefinedSlots({ prNumber: 42 }, { prNumber: 99 }, { prNumber: undefined });
     expect(slots.prNumber).toBe(99);
   });
 
   it('lets filled intent slots override earlier sources', () => {
-    const slots = mergeDefinedSlots(
-      { prNumber: 42 },
-      { prNumber: 99 },
-      { prNumber: 123 },
-    );
+    const slots = mergeDefinedSlots({ prNumber: 42 }, { prNumber: 99 }, { prNumber: 123 });
     expect(slots.prNumber).toBe(123);
   });
 });
