@@ -1,6 +1,6 @@
 schema: openslack.claim_policy.v1
 
-agent_id: "operator"
+agent_id: 'operator'
 
 lease:
   ttl_minutes: 60
@@ -19,5 +19,5 @@ cooldown:
 
 priorities:
   prefer_p0: true
-  sort_by: "priority_descending"
-  max_risk_level: "medium"
+  sort_by: 'priority_descending'
+  max_risk_level: 'medium'

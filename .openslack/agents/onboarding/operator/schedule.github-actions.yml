@@ -3,7 +3,7 @@ name: OpenSlack Agent Tick - operator
 on:
   schedule:
     # Off-peak minutes: 7, 22, 37, 52 past each hour (4x/hour)
-    - cron: "7,22,37,52 * * * *"
+    - cron: '7,22,37,52 * * * *'
   workflow_dispatch:
 
 concurrency:
@@ -23,12 +23,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          repository: "wsman/OpenSlack"
+          repository: 'wsman/OpenSlack'
           token: ${{"{{ secrets.OPENSLACK_GITHUB_TOKEN }}"}}
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: '22'
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
