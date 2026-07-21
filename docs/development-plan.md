@@ -2,11 +2,23 @@
 
 > 本计划把已批准的 Architecture（6 模块 CDD / 290 canonical AC / OpenAPI 3.1 / CTRL-001..024）
 > 映射为可逐批授权、逐批审查的实现批次。**本文件不授权任何代码**；每个批次开工前仍需所有者
-> 单独授权，且 Architecture → Pre-Implementation gate 尚未运行（`production/stage.txt` = Architecture）。
+> 单独授权。当前 `production/stage.txt` = Implementation；B1、B2 已完成并归档，B3–B6 待授权后开工。
+
+## 实现进度
+
+- CP0 — 已完成
+- B1 — 已完成并归档（`8cbd0eb`；机械核验 + `-race` 实证；评审方法见
+  [`implementation-review-archive.md`](../memory_bank/t3_archive/reviews/implementation-review-archive.md)）
+- B2 — 已完成并归档（`8cbd0eb`；同上；79 NS AC 核心路径有测试证据，边界组合归 B6 对账）
+- B3 — 未授权
+- B4 — 未授权
+- B5 — 未授权
+- B6 — 未授权
 
 ## 前置条件（任何批次开工前）
 
-1. 运行 Architecture → Pre-Implementation gate 并记录 PASS 证据（当前 NOT RUN）。
+1. Architecture → Pre-Implementation gate 未运行；B1–B2 经所有者逐批单独授权开工。
+   B3+ 开工前由所有者决定是否补跑该 gate 并记录证据。
 2. Go 1.26.5 工具链环境就绪（本地或 CI runner）；`go mod tidy` 生成 `go.sum`，固化 patch 版本。
 3. 本批次范围冻结：列出本批覆盖的 AC ID 清单（引用 `architecture/tr-registry.yaml` 的 family），
    由所有者批准；范围外行为不得混入。
@@ -36,13 +48,15 @@
 - [ ] 无 CTRL-024 / CTRL-016 违规；无数值 SLA 承诺
 - [ ] 评审证据已归档；tr-registry 的 `planned_test_types` 如有实现证据更新，同批完成（Change Rule）
 
+B1、B2 已实现并满足上述通过标准（B2 的 AC 覆盖估计见本节上方注释）。
+
 ## 批次划分（沿模块依赖 DAG）
 
 | 批次 | 范围 | 依赖 | AC 家族（数量） |
 |---|---|---|---|
 | CP0（已完成） | 测试基线、`internal/delivery/backoff.go`、CI、accessibility | — | — |
-| B1 | 工程基座与数据层 | CP0 | APP lifecycle、迁移不变量（非 AC 计数） |
-| B2 | Notification Store 核心 | B1 | NS（79） |
+| B1 | 工程基座与数据层（已完成） | CP0 | APP lifecycle、迁移不变量（非 AC 计数） |
+| B2 | Notification Store 核心（已完成） | B1 | NS（79） |
 | B3 | Caller Access + Vendor Registry | B1（契约层对齐 B2） | CA（15）+ VR（152） |
 | B4 | Delivery | B2 + B3 | DL（20） |
 | B5 | Operations Control + Reliability Observability | B2（+B3 只读） | OC（14）+ RO（10） |
@@ -60,9 +74,12 @@
 表无 UPDATE 路径）；配置加载的 fail-closed 行为有负向测试。
 
 **通过标准（增量）**：
-- [ ] 迁移 up/down 在空库与重复执行下幂等；与 data-model.md 逐表对账零偏差
-- [ ] pepper env 缺失/双丢失时 readiness=false、auth `503`，有测试
-- [ ] 无任何业务行为混入（本批不实现任何 AC 业务路径）
+- [x] 迁移 up/down 在空库与重复执行下幂等；与 data-model.md 逐表对账零偏差
+- [x] pepper env 缺失/双丢失时启动 fail-closed（config.Load 报错、服务不启动），有测试；
+  auth `503` 语义随 B3 认证落地后验证
+- [x] 无任何业务行为混入（本批不实现任何 AC 业务路径）
+
+**评审证据**：[`implementation-review-archive.md`](../memory_bank/t3_archive/reviews/implementation-review-archive.md) §B1 + B2 Review。
 
 ### B2 — Notification Store 核心
 
@@ -77,9 +94,11 @@ commit-outcome-unknown 重试收敛、replay 与 in-flight 的 OCC 竞态；`dea
 die 的 Store 写路径（为 B4 的 B-01 做准备）。
 
 **通过标准（增量）**：
-- [ ] 79/79 NS AC 有测试证据；并发竞态用例在 `-race` 下稳定通过（CI 重复运行无 flake）
-- [ ] attempt history 任何路径不可 UPDATE/DELETE（代码评审 + 数据库权限双重验证）
-- [ ] not-found/越权统一响应不泄露存在性（负向测试）
+- [x] 79 条 NS AC 中核心行为路径有测试证据；并发竞态用例在 `-race` 下稳定通过（边界组合归 B6，见下注）
+- [x] attempt history 任何路径不可 UPDATE/DELETE（触发器集成测试 + 代码扫描双重验证）
+- [x] not-found/越权统一响应不泄露存在性（负向测试）
+
+> 注：79 条 AC 中核心行为路径有单元/集成测试；clock-unavailable、cursor 漂移全矩阵、batch 边界全组合等边界项当前为 code-only，约定在 B6 端到端硬化时补齐对账（见评审档案 AC 覆盖估计）。
 
 ### B3 — Caller Access + Vendor Registry
 

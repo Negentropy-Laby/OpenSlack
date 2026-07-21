@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres:18.4
+    environment:
+      POSTGRES_USER: rc_wsman
+      POSTGRES_PASSWORD: rc_wsman
+      POSTGRES_DB: rc_wsman
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rc_wsman -d rc_wsman"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  app:
+    build:
+      context: .
+      target: builder
+    working_dir: /src
+    environment:
+      DATABASE_URL: postgres://rc_wsman:rc_wsman@db:5432/rc_wsman?sslmode=disable
+      API_KEY_PEPPER_ACTIVE: '{"id":"v1","value":"test-active-pepper-value"}'
+      API_KEY_PEPPER_PREVIOUS: '{"id":"v0","value":"test-previous-pepper-value"}'
+      ENV_CREDENTIAL_ALLOWLIST: "VENDOR_A_TOKEN,VENDOR_B_TOKEN"
+      HTTP_BIND: ":8080"
+      METRICS_PATH: "/metrics"
+      WORKER_INTERVAL: "5s"
+      LEASE_DURATION: "30s"
+      SHUTDOWN_DEADLINE: "30s"
+      WORKER_CONCURRENCY: "5"
+      MIGRATION_SOURCE: "migrations"
+    volumes:
+      - .:/src
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db_data:

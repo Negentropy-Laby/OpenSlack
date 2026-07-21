@@ -1,29 +1,38 @@
-// rc_wsman - module manifest (Pre-Implementation CP0 skeleton).
+// rc_wsman - module manifest (B1 engineering foundation).
 //
-// AUTHORED-BUT-NOT-TIDIED. The local development shell has no Go toolchain
-// (`go: command not found`), so `go mod tidy` has not run and there is
-// intentionally NO go.sum. Both are generated in a Go-equipped environment
-// (locally or in CI - see .github/workflows/tests.yml).
-//
-// Dependency intents (majors pinned per standards/technical-preferences.md;
-// exact patches resolved at Implementation time "without changing the accepted
-// majors", per technical-preferences.md lines 27-28). These modules enter the
-// require block - with go.sum entries - when their importing code lands and
-// `go mod tidy` runs:
-//
-//	github.com/go-chi/chi/v5             v5   HTTP router
-//	github.com/jackc/pgx/v5              v5   PostgreSQL driver
-//	github.com/golang-migrate/migrate/v4 v4   migration tool
-//	github.com/prometheus/client_golang  v1   metrics
-//
-// Consistency note: this manifest complies with technical-preferences.md:27-28
-// as written - sentence 1 forbids the file only "in the documentation phase"
-// (CP0 is past that, in Pre-Implementation); sentence 2 forbids exact patches
-// until implementation authorization (this skeleton is majors-only: no require,
-// no go.sum, so no patches are recorded). Gate 1's Test Framework Baseline also
-// independently requires a go.mod. The baseline (full-jitter leaf + unit test in
-// internal/delivery) is stdlib-only and needs none of the above.
-
+// External dependencies are resolved to the accepted major versions listed in
+// standards/technical-preferences.md.  The patch versions below are the ones
+// selected by `go mod tidy` in the Go-equipped Docker image; they are recorded
+// in go.sum so the exact resolution is reproducible.
 module rc_wsman
 
 go 1.26.5
+
+require (
+	github.com/go-chi/chi/v5 v5.2.0
+	github.com/golang-migrate/migrate/v4 v4.18.1
+	github.com/jackc/pgx/v5 v5.7.1
+	github.com/prometheus/client_golang v1.20.5
+)
+
+require (
+	github.com/beorn7/perks v1.0.1 // indirect
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/hashicorp/errwrap v1.1.0 // indirect
+	github.com/hashicorp/go-multierror v1.1.1 // indirect
+	github.com/jackc/pgerrcode v0.0.0-20220416144525-469b46aa5efa // indirect
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
+	github.com/jackc/puddle/v2 v2.2.2 // indirect
+	github.com/klauspost/compress v1.17.9 // indirect
+	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
+	github.com/prometheus/client_model v0.6.1 // indirect
+	github.com/prometheus/common v0.55.0 // indirect
+	github.com/prometheus/procfs v0.15.1 // indirect
+	go.uber.org/atomic v1.7.0 // indirect
+	golang.org/x/crypto v0.27.0 // indirect
+	golang.org/x/sync v0.8.0 // indirect
+	golang.org/x/sys v0.25.0 // indirect
+	golang.org/x/text v0.18.0 // indirect
+	google.golang.org/protobuf v1.34.2 // indirect
+)

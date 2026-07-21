@@ -6,9 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `rc_wsman` is a **documentation-first** take-home assignment: an internal API notification-delivery service. Internal callers submit an already-formed vendor HTTP body; the service persists it in a PostgreSQL transactional outbox and delivers to operator-approved vendor HTTPS endpoints with at-least-once semantics, bounded retry, queryable dead-letter state, and guarded manual replay.
 
-The deliverable is the documentation set plus an owner-authorized **Pre-Implementation CP0 skeleton**: `go.mod` (majors-only, no `go.sum`), one stdlib-only full-jitter backoff leaf (`internal/delivery/backoff.go` + `backoff_test.go`), `tests/` layout, and CI (`.github/workflows/tests.yml`). The skeleton is **authored-but-not-compiled** — the local shell has no Go toolchain; compilation and `go.sum` generation happen in CI or a Go-equipped environment. The authoritative stage is [`production/stage.txt`](production/stage.txt) = **`Architecture`** (the Architecture → Pre-Implementation gate has NOT been run; CP0 was separately owner-authorized). Implementation service code has **not** been authorized.
+The deliverable is the documentation set plus an owner-authorized MVP implementation in progress (batches B1–B6 per [`docs/development-plan.md`](docs/development-plan.md)). **B1 (engineering foundation) and B2 (Notification Store core) are complete and verified**: `migrations/` base schema (pending rows ARE the outbox, dead rows ARE the DLQ, append-only triggers), `internal/config` (env allowlist + fail-closed pepper), `internal/app` (chi v5 `/healthz` + `/metrics`, graceful shutdown), `cmd/server` (startup migrations + schema version check), `internal/notificationstore` (domain + pure state machine + PostgreSQL repository with `FOR UPDATE SKIP LOCKED` claim, OCC, HMAC-signed cursors), full unit + real-PostgreSQL integration tests run with `-race` via Docker. The authoritative stage is [`production/stage.txt`](production/stage.txt) = **`Implementation`**. B3 (Caller Access + Vendor Registry) onward has **not** been authorized.
 
-**Do not create service code, SQL migrations, additional tests, Dockerfiles, or run any stage gate without explicit owner authorization.** The project treats each of these as a separately-authorized step; producing them prematurely violates its core discipline. When unsure, ask.
+**Do not start B3+ work (caller/vendor APIs, delivery workers, operations endpoints) or run any stage gate without explicit owner authorization.** The project treats each batch as a separately-authorized step. The local shell has no Go toolchain — build/vet/test run in Docker (`golang:1.26.5`, `GOMODCACHE=.gomodcache`; DB integration tests need `docker compose up -d db` and `DATABASE_URL`).
 
 ## Non-obvious working rules (read before editing)
 
@@ -59,9 +59,14 @@ design/cdd/             6 module CDDs + product-concept + module-index + reviews
 design/registry/        entities.yaml (schema/api/permission/config authority map)
 design/ux/              surface profile + interaction patterns
 design/accessibility-requirements.md  Basic-tier accessibility requirements (CP0)
-go.mod                  CP0 skeleton manifest (majors-only; no go.sum until Go toolchain available)
-internal/delivery/      CP0 full-jitter backoff leaf + unit test (stdlib-only, authored-not-compiled)
-tests/                  unit/ + integration/ skeleton (integration populated at Implementation)
+go.mod                  resolved manifest (chi/pgx/migrate/client_golang; go.sum tracked)
+cmd/server/             binary entry: config → pool → migrations → HTTP lifecycle
+internal/app/           chi v5 HTTP lifecycle (healthz/metrics, graceful shutdown)
+internal/config/        env allowlist config + fail-closed pepper loading
+internal/delivery/      CP0 full-jitter backoff leaf + unit test (stdlib-only)
+internal/notificationstore/  B2 Store: domain + pure state machine + postgres adapter
+migrations/             golang-migrate SQL (000001 base schema, append-only triggers)
+tests/                  unit/ + integration/ (real PostgreSQL via DATABASE_URL; skip when unset)
 .github/workflows/      tests.yml CI (go mod tidy / go vet / go test -race)
 memory_bank/t0_core/    constitution (BL-01..06) + state mirrors
 memory_bank/t1_axioms/  tech/system/behavior/qa/architecture/ux/knowledge/module-support context
@@ -73,7 +78,17 @@ production/stage.txt   authoritative stage token (= Architecture)
 
 ## Verification
 
-The local shell has **no Go toolchain**; the CP0 skeleton compiles in CI (`.github/workflows/tests.yml`: `go mod tidy`, `go vet ./...`, `go test -race ./...` on push/PR). The repeatable documentation checks the reviews perform (from repo root, Git Bash):
+The local shell has **no Go toolchain**; build/vet/test run in Docker (authorized):
+
+```bash
+docker compose up -d db
+MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W):/src" -w /src \
+  -e GOMODCACHE=/src/.gomodcache \
+  -e DATABASE_URL="postgres://rc_wsman:rc_wsman@host.docker.internal:5432/rc_wsman?sslmode=disable" \
+  golang:1.26.5 sh -c "go build ./... && go vet ./... && go test -race ./..."
+```
+
+CI mirrors this in `.github/workflows/tests.yml` (`go mod tidy`, `go vet ./...`, `go test -race ./...` on push/PR). The repeatable documentation checks the reviews perform (from repo root, Git Bash):
 
 - **YAML registries parse, no duplicate keys**: `python -c "import yaml; yaml.safe_load(open('docs/architecture/tr-registry.yaml'))"` — repeat for `docs/architecture/adr-registry.yaml` and `design/registry/entities.yaml`.
 - **Local Markdown links resolve**: confirm every `](...md...)` target exists.

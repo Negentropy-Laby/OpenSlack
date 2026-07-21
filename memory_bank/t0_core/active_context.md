@@ -4,13 +4,7 @@
 
 ## Repo Status
 - **Project**: `rc_wsman` — API 通知投递服务（内部系统，作业项目）
-- **Current working state**: Architecture 阶段 — 6/6 CDD Approved；Delivery B-01、公开
-  `payload_base64` wire 与 Vendor method source 均已 fresh focused review APPROVED；entity/trace registry
-  已通过 consistency/cross-review run 03；Specification → Architecture gate PASS；
-  Architecture package 独立审查 APPROVED；实现尚未开始，等待新的授权。架构审查的两项 Non-Blocking Advisory
-  已在 Architecture 范围闭合（ADR-0003 pepper 生命周期 + deadline backlog 分析；fresh 独立 re-review APPROVED
-  `docs/architecture/architecture-review-archive.md`；deployment-package 实例化与 Pre-Impl
-  证明仍待后续阶段）。2026-07-21 经所有者授权完成文档 consolidation：逐模块 review log、cross-review、
+- **Current working state**: Implementation 阶段 — 所有者于 2026-07-21 授权分批次开发 B1-B6；B1 已完成，B2 Notification Store 核心实现中。2026-07-21 经所有者授权完成文档 consolidation：逐模块 review log、cross-review、
   gate run 与 architecture review 原件已合并归档（`design/cdd/reviews/review-archive.md`、
   `docs/architecture/architecture-review-archive.md`、`memory_bank/t3_archive/gate-archive.md`），
   占位文件 `release_state.md` 与 `production/session-state/` 已退役
@@ -58,8 +52,8 @@
   完整 CIDR 清单与算法进 ADR。
 
 ## Pending
-- **Implementation-stage 授权**：尚未获得；不创建 Implementation-stage 服务代码、SQL migration 或运行制品（CP0 Pre-Implementation 骨架——go.mod、full-jitter 测试基线、CI——已由所有者授权，见 Module Status "MVP 代码" 行）
-- **触发指标基线**（演进用）：实现后测量 outbox 深度增长、最老 pending 年龄和 vendor 饱和
+- **Implementation-stage 任务**：B2 Notification Store 核心实现中（已获授权）；B3-B6 后续按开发计划推进。
+- **触发指标基线**（演进用）：B2 完成后测量 outbox 深度、最老 pending 年龄和 dead 计数等可观测项。
 
 ## Active Risks
 - 供应商是否 honor 幂等键不受我方控制 —— 出站重复为公开风险，由调用方对账兜底

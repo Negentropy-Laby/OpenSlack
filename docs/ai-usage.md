@@ -48,6 +48,22 @@ AI 输出不会因“听起来完整”而自动成为决定：每项绑定决�
 - 架构包审查：`../architecture/architecture-review-archive.md`
 - 阶段门禁：`../memory_bank/t3_archive/gate-archive.md`
 
+## B1 工程基座与数据层（2026-07-21）
+
+| 方面 | 记录 |
+|---|---|
+| AI 提供的帮助 | 生成 Dockerfile（多阶段 builder/app）、docker-compose（app + PostgreSQL 18.4）、B1 基础迁移 SQL（golang-migrate v4 风格）、`internal/config` 环境配置与 fail-closed pepper 处理、`internal/app` chi v5 路由骨架与优雅关闭、`cmd/server` 入口、以及对应单元/集成测试 |
+| 未采纳或人工修正 | 未采纳单独 `outbox` 表（data-model.md 明确 pending/dead 行即 outbox/DLQ）；未在 B1 实现任何业务 AC 路径；未修改 `production/stage.txt`（无门禁运行） |
+| 所有者决定与理由 | 所有者明确授权 B1 交付物；本地 shell 无 Go 工具链，依赖解析与编译验证通过 Docker 进行；若 Docker daemon 不可用，则记录环境限制并提交代码供后续 Go 环境验证 |
+
+## B2 Notification Store 核心（2026-07-21）
+
+| 方面 | 记录 |
+|---|---|
+| AI 提供的帮助 | 实现 `internal/notificationstore` domain（Repository 接口 8 方法、ActorContext/capability 矩阵、指纹与校验）与纯状态机 transition（succeed/retry/die/replay 判别联合）；PostgreSQL adapter（pgx/v5，SKIP LOCKED claim、OCC、append-only、HMAC 签名 cursor）；21 个单元用例（含 B-01 决策、6 项 policy_termination 计数规则、error_code 矩阵）与 10 个真实 PostgreSQL 集成用例（幂等矩阵、并发 claim、lease-holder、crash-after-send recovery、append-only 触发器、dead-list + replay、scoped outbox）；启动迁移接线 |
+| 未采纳或人工修正 | AI 初稿 4 处真实缺陷由集成测试暴露并修复：迁移缺 `updated_at`/`replay_actor`/`replay_reason` 列（CDD §data model 有据）；intake 冲突路径误判（`pgx.ErrNoRows` 才是 ON CONFLICT DO NOTHING 的冲突信号）；recovery 循环 `conn busy`（pgx 单连接禁止交错查询，改为先物化）；scan NULL 列崩溃（改指针扫描）。未采纳 testcontainers（沿用 compose + DATABASE_URL skip 模式，不增依赖） |
+| 所有者决定与理由 | Docker 验证命令经所有者批准；B2 测试全部在真实 PostgreSQL 18.4（compose）上跑 `-race`，不用 mock 数据库——CDD 对抗性纪律要求并发/触发器行为可证伪 |
+
 ## Pre-Implementation CP0（2026-07-21）
 
 | 方面 | 记录 |

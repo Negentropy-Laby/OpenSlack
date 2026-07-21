@@ -84,14 +84,15 @@ Internal caller / operator
 | 关键取舍与演进 | 本 README、四份 ADR |
 | 中间件理由与替代方案 | [ADR-0001](docs/architecture/adr-0001-postgresql-outbox.md) |
 | AI 帮助、未采纳建议、自主决策 | [AI 使用说明](docs/ai-usage.md) |
-| MVP 代码与运行说明 | **仅有 CP0 测试基线骨架**（`internal/delivery/backoff.go` + CI）；业务源码尚未授权建立 |
+| MVP 代码与运行说明 | B1 工程基座与数据层已落地（迁移、配置、HTTP 骨架、Docker）；业务投递路径按 [分批次开发计划](docs/development-plan.md) 推进 |
 
 ## 当前状态
 
-- 权威阶段：[`production/stage.txt`](production/stage.txt)（= Architecture；Architecture → Pre-Implementation gate 未运行）
+- 权威阶段：[`production/stage.txt`](production/stage.txt)（= Implementation；B1 已完成，B2 Notification Store 实现中）
 - 设计状态：以 [`design/cdd/module-index.md`](design/cdd/module-index.md) 为准
-- 实现状态：无业务源码、无 migration、无容器。经授权的 Pre-Implementation CP0 骨架已存在——
-  `go.mod`（majors-only，无 go.sum）、`internal/delivery/backoff.go` full-jitter leaf + 单测、
-  `tests/` 布局与 `.github/workflows/tests.yml` CI；本地无 Go 工具链，骨架为 authored-but-not-compiled，
-  由 CI 执行 `go mod tidy` / `go vet` / `go test -race`
-- 未来运行入口：实现阶段建立后补充；当前文档不伪造启动命令或运行证据
+- 实现状态：B1 已交付——`migrations/` 基础 schema（pending 行即 outbox、dead 行即 DLQ）、
+  `internal/config` 环境配置与 fail-closed pepper、`internal/app` chi v5 骨架（`/healthz`、`/metrics`）、
+  `cmd/server` 入口、Dockerfile + docker-compose；`go.sum` 已生成。B2 Notification Store 核心
+  （domain + PostgreSQL repository）实现中，尚未 wire 到 HTTP 层
+- 运行方式：`docker compose up db` 起 PostgreSQL 18.4；编译与测试在 Go 1.26.5 环境执行
+  `go build ./... && go vet ./... && go test ./...`（本地 shell 无 Go，可用 compose 的 `app` builder 目标）

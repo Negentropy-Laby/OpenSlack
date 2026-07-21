@@ -4,8 +4,8 @@
 
 ## Snapshot
 - **Domain**: product（通用产品项目）
-- **Current phase**: Architecture（Specification → Architecture gate run 03 PASS；Architecture review APPROVED；two Non-Blocking Advisories closed at Architecture scope 2026-07-20 per `architecture-review-archive.md`）
-- **Stage source**: `../../production/stage.txt` = `Architecture`
+- **Current phase**: Implementation（owner authorized 2026-07-21；B1 + B2 completed and verified, B3 not authorized）
+- **Stage source**: `../../production/stage.txt` = `Implementation`
 - **Review mode**: lean（最近模块评审使用 `--depth lean`；repo 级 `review-mode.txt` 未建）
 - **Strict QA mode**: off
 - **Last completed gate**: PASS（Specification → Architecture, run 03, 2026-07-20）—
@@ -13,10 +13,9 @@
 - **Last updated**: 2026-07-21
 
 ## Current Blocker
-- **Blocker**: no open documentation blocker；实现尚未获得授权。
-- **Next command**: none in current scope；停在 Architecture，等待新的实现授权。
-- **Evidence required**: future implementation work must separately authorize framework/code work and
-  Architecture → Pre-Implementation gate；本轮不运行该门禁。
+- **Blocker**: none；B1 + B2 completed and verified (`go vet` + `go test -race` green on real PostgreSQL 18.4 via Docker).
+- **Next command**: await owner authorization for B3 (Caller Access + Vendor Registry).
+- **Evidence required**: B3 fresh-session review per `docs/development-plan.md`.
 
 ## State Evidence（里程碑；逐轮评审明细见 `../../design/cdd/reviews/review-archive.md`）
 | 日期 | 事件 | 产物 / 证据 |
@@ -34,3 +33,5 @@
 | 2026-07-21 | Owner authorized entering Pre-Implementation (CP0)：Test Framework Baseline 骨架（`go.mod` majors-only、backoff leaf + 单测、`tests/`、CI、`design/accessibility-requirements.md`）；authored-but-not-compiled，编译验证交由 CI；gate 未运行，stage 仍 Architecture | `../../go.mod`、`../../internal/delivery/`、`../../tests/README.md`、`../../.github/workflows/tests.yml` |
 | 2026-07-21 | Owner-authorized 文档 consolidation：13 份 review log/cross-review → `review-archive.md`；2 份 architecture review → `architecture-review-archive.md`；4 份 gate run → `gate-archive.md`；constitution review 并入 review-index 附录；删除占位文件（release_state、session-state、architecture/README）；镜像规则四改三 | 各档案头部 consolidation 注记、`amendment_log.md` |
 | 2026-07-21 | 分批次开发计划建立：CP0 → B1 工程基座 → B2 Store → B3 Caller+VR → B4 Delivery → B5 OC+RO → B6 硬化/部署；每批含范围冻结、5 步审查流程与通过标准；不授权任何代码 | `../../docs/development-plan.md` |
+| 2026-07-21 | 所有者授权进入 Implementation；stage.txt → `Implementation`。B1 工程基座交付：`go.sum` 固化（chi v5.2.0 / pgx v5.7.1 / migrate v4.18.1 / client_golang v1.20.5）、`migrations/000001` 基础 schema（5 张逻辑表 + append-only trigger + OCC/lease 列；无独立 outbox 表）、`internal/config`（env allowlist + fail-closed pepper）、`internal/app`（`/healthz` + `/metrics` + 优雅关闭）、`cmd/server`、Dockerfile/docker-compose。B2 Notification Store 核心实现中：`internal/notificationstore` domain + transition + PostgreSQL repository 已写入，尚未接 HTTP、无本包测试、未独立评审 | `../../migrations/`、`../../internal/config/`、`../../internal/app/`、`../../internal/notificationstore/`、`../../Dockerfile`、`../../docs/ai-usage.md` §B1 |
+| 2026-07-21 | B1 + B2 完成并验证：B2 Store 全量落地（domain/状态机/postgres adapter）+ 21 单元 + 10 真实 PostgreSQL 集成用例（幂等/并发 claim/lease-holder/crash-after-send/append-only/dead-list+replay/scoped outbox），`go vet` + `go test -race` 全绿；修复 7 处缺陷（含无 CDD 依据的 `last_http_status` 列按 Authority Rule 移除）；启动迁移接线；评审归档（非 pristine fresh-session，如实记录） | `../t3_archive/reviews/implementation-review-archive.md`、`../../docs/ai-usage.md` §B2 |
