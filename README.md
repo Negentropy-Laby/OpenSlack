@@ -69,6 +69,7 @@ Internal caller / operator
 - [安全威胁模型](docs/security/threat-model.md)
 - [运维手册](docs/operations/runbook.md)
 - [测试策略](docs/testing/test-strategy.md)
+- [分批次开发计划](docs/development-plan.md)
 - [AI 使用说明](docs/ai-usage.md)
 - [六模块 CDD 索引](design/cdd/module-index.md)
 - [ADR 注册表](docs/architecture/adr-registry.yaml)
