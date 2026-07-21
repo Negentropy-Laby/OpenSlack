@@ -1,0 +1,45 @@
+version: 1
+status: approved
+last_updated: 2026-07-20
+records:
+  ADR-0001:
+    title: PostgreSQL Transactional Outbox and Concurrency
+    status: Accepted
+    date: 2026-07-20
+    path: docs/architecture/adr-0001-postgresql-outbox.md
+    owns:
+      - durable intake and outbox atomicity
+      - PostgreSQL as the sole persistent truth
+      - SKIP LOCKED claim, lease and OCC transition atomicity
+      - append-only attempt and audit writes
+  ADR-0002:
+    title: Inbound Idempotency and Outbound At-Least-Once
+    status: Accepted
+    date: 2026-07-20
+    path: docs/architecture/adr-0002-idempotency-at-least-once.md
+    owns:
+      - caller-scoped request fingerprint deduplication
+      - 202 replay and 409 conflict behavior
+      - outbound notification-id idempotency mapping
+      - duplicate-side-effect disclosure
+  ADR-0003:
+    title: API Key Identity, Scope and Capability
+    status: Accepted
+    date: 2026-07-20
+    path: docs/architecture/adr-0003-api-key-authorization.md
+    owns:
+      - HMAC-digest API key storage and pepper
+      - server-derived ActorContext
+      - scope and capability attenuation
+      - key rotation and revocation
+      - pepper generation, rotation, recovery dependency and invalidation procedure (routine grace-window + emergency bulk-revoke + pepper-loss fail-closed recovery)
+  ADR-0004:
+    title: SSRF-Safe Outbound HTTP and Secret References
+    status: Accepted
+    date: 2026-07-20
+    path: docs/architecture/adr-0004-ssrf-safe-http.md
+    owns:
+      - Registry-only destinations and secret references
+      - all-address validation and DNS pinning
+      - disabled proxy and rejected redirects
+      - original-host TLS verification and response-body exclusion

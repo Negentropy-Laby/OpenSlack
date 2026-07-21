@@ -1,0 +1,69 @@
+# Module Support Map
+# Index modules to the laws, CDDs, ADRs, and evidence that support them.
+# 权威来源：docs/architecture/requirements-traceability.md（Architecture-to-Requirement Matrix）
+#   + docs/architecture/tr-registry.yaml + design/cdd/module-index.md。
+# evidence 暂为空（实现未开始，production/qa/evidence/ 无产物）；不虚构证据。
+
+modules:
+  notification-store:
+    laws:
+      - BL-02
+      - BL-03
+      - BL-04
+      - BL-06
+    cdds:
+      - design/cdd/notification-store.md
+    adrs:
+      - docs/architecture/adr-0001-postgresql-outbox.md
+      - docs/architecture/adr-0002-idempotency-at-least-once.md
+      - docs/architecture/adr-0003-api-key-authorization.md
+    evidence: []  # pending implementation
+  vendor-registry:
+    laws:
+      - BL-05
+    cdds:
+      - design/cdd/vendor-registry.md
+    adrs:
+      - docs/architecture/adr-0001-postgresql-outbox.md
+      - docs/architecture/adr-0003-api-key-authorization.md
+      - docs/architecture/adr-0004-ssrf-safe-http.md
+    evidence: []  # pending implementation
+  caller-access:
+    laws:
+      - BL-02
+      - BL-05
+    cdds:
+      - design/cdd/caller-access.md
+    adrs:
+      - docs/architecture/adr-0003-api-key-authorization.md
+    evidence: []  # pending implementation
+  delivery:
+    laws:
+      - BL-03
+      - BL-04
+      - BL-05
+    cdds:
+      - design/cdd/delivery.md
+    adrs:
+      - docs/architecture/adr-0001-postgresql-outbox.md
+      - docs/architecture/adr-0002-idempotency-at-least-once.md
+      - docs/architecture/adr-0004-ssrf-safe-http.md
+    evidence: []  # pending implementation
+  operations-control:
+    laws:
+      - BL-04
+    cdds:
+      - design/cdd/operations-control.md
+    adrs:
+      - docs/architecture/adr-0001-postgresql-outbox.md
+      - docs/architecture/adr-0003-api-key-authorization.md
+    evidence: []  # pending implementation
+  reliability-observability:
+    laws:
+      - BL-06
+    cdds:
+      - design/cdd/reliability-observability.md
+    adrs:
+      - docs/architecture/adr-0001-postgresql-outbox.md
+      - docs/architecture/adr-0003-api-key-authorization.md
+    evidence: []  # pending implementation
