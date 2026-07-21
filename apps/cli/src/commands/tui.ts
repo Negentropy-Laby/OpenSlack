@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import type { OperatorApplicationContext } from '../boot/context.js';
+import { getBuildInfo } from '../release/build-info.js';
 
 export function tuiCommands(operatorContext?: OperatorApplicationContext): Command {
   return new Command('tui')
@@ -94,6 +95,7 @@ export function tuiCommands(operatorContext?: OperatorApplicationContext): Comma
           } catch {}
 
           data.status = mapStatusToViewModel({
+            version: `v${getBuildInfo().version}`,
             mode: context.sourceCheckout ? 'SOURCE_CHECKOUT' : 'WORKSPACE',
             commit,
             commitSubject,
