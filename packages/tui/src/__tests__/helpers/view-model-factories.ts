@@ -896,7 +896,7 @@ export function createStatusViewModel(): StatusViewModel {
 
   return {
     title: 'OpenSlack Status',
-    version: 'v0.1 Developer Preview',
+    version: 'v0.2.0',
     mode: 'SOURCE_CHECKOUT',
     commit: 'abc1234',
     commitSubject: 'Merge PR #127: Fix auth flow',

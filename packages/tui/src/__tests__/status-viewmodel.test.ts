@@ -5,6 +5,7 @@ function makeData(
   overrides?: Partial<Parameters<typeof mapStatusToViewModel>[0]>,
 ): Parameters<typeof mapStatusToViewModel>[0] {
   return {
+    version: 'v0.2.0',
     mode: 'SOURCE_CHECKOUT',
     commit: 'abc1234',
     commitSubject: 'feat: add new module',
@@ -39,7 +40,7 @@ describe('mapStatusToViewModel', () => {
   it('maps a complete status data', () => {
     const model = mapStatusToViewModel(makeData());
     expect(model.title).toBe('OpenSlack Status');
-    expect(model.version).toBe('v0.1 Developer Preview');
+    expect(model.version).toBe('v0.2.0');
     expect(model.commit).toBe('abc1234');
     expect(model.commitSubject).toBe('feat: add new module');
   });
@@ -133,6 +134,7 @@ describe('mapStatusToViewModel', () => {
   it('sanitizes escape sequences from all fields', () => {
     const model = mapStatusToViewModel(
       makeData({
+        version: 'v0.2.0\x1b[31m',
         commit: 'abc\x1b[31m1234',
         commitSubject: 'evil\x1b[32m subject',
         modules: [statusModule('bad\x1b[33m module')],
@@ -143,6 +145,7 @@ describe('mapStatusToViewModel', () => {
         nextAction: 'next\x1b[31m action',
       }),
     );
+    expect(model.version).toBe('v0.2.0');
     expect(model.commit).toBe('abc1234');
     expect(model.commitSubject).toBe('evil subject');
     expect(model.modules[0].name).toBe('bad module');

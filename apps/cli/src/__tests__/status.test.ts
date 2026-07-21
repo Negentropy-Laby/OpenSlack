@@ -7,8 +7,19 @@ import {
   renderMarkdownTable,
   statusCommands,
 } from '../commands/status.js';
+import { getBuildInfo } from '../release/build-info.js';
 import type { AttentionItem } from '@openslack/runtime';
 import type { ModulesRegistry } from '@openslack/workspace';
+
+const { mockRenderStatusTui } = vi.hoisted(() => ({
+  mockRenderStatusTui: vi.fn(),
+}));
+
+vi.mock('@openslack/tui', () => {
+  const mapStatusToViewModel = (data: { version: string }) => data;
+  const renderPlainStatus = (model: { version: string }) => `Version: ${model.version}`;
+  return { mapStatusToViewModel, renderPlainStatus, renderStatusTui: mockRenderStatusTui };
+});
 
 const mockReadModules = vi.fn(
   (): ModulesRegistry => ({
@@ -166,7 +177,7 @@ vi.mock('node:fs', () => ({
   writeFileSync: vi.fn(),
 }));
 
-async function runStatus(): Promise<string[]> {
+async function runStatus(format = 'standard'): Promise<string[]> {
   const command = statusCommands();
   const logs: string[] = [];
   const logSpy = vi.spyOn(console, 'log').mockImplementation((...a: unknown[]) => {
@@ -177,7 +188,9 @@ async function runStatus(): Promise<string[]> {
   // Suppress process.exit inside the command handler
   const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {}) as never);
 
-  await command.parseAsync(['node', 'openslack'], { from: 'node' });
+  const args = ['node', 'openslack'];
+  if (format !== 'standard') args.push('--format', format);
+  await command.parseAsync(args, { from: 'node' });
 
   logSpy.mockRestore();
   errorSpy.mockRestore();
@@ -198,6 +211,21 @@ describe('status command', () => {
     const logs = await runStatus();
     const output = logs.join('\n');
     expect(output).toContain('Needs Attention:');
+  });
+
+  it('uses the build metadata version in standard, plain, and TUI output', async () => {
+    const expectedVersion = `v${getBuildInfo().version}`;
+
+    const standardOutput = (await runStatus()).join('\n');
+    expect(standardOutput).toContain(`Version:    ${expectedVersion}`);
+
+    const plainOutput = (await runStatus('plain')).join('\n');
+    expect(plainOutput).toContain(`Version: ${expectedVersion}`);
+
+    await runStatus('tui');
+    expect(mockRenderStatusTui).toHaveBeenCalledWith(
+      expect.objectContaining({ version: expectedVersion }),
+    );
   });
 
   it('reports agent runtime readiness separately from module status', async () => {

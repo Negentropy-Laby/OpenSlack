@@ -1128,7 +1128,7 @@ describe('renderPlainStatus', () => {
     const vm = createStatusViewModel();
     const out = renderPlainStatus(vm);
     expect(out).toContain('OpenSlack Status');
-    expect(out).toContain('Version: v0.1 Developer Preview');
+    expect(out).toContain('Version: v0.2.0');
     expect(out).toContain('Commit: abc1234');
     expect(out).toContain('Modules (5):');
     expect(out).toContain('GitHub:');

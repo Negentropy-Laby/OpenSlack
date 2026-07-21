@@ -17,6 +17,7 @@ import { getAttentionItems, getNextAction } from '@openslack/runtime';
 import { buildSetupReport } from '@openslack/runtime';
 import { buildDashboardProjection } from '@openslack/collaboration';
 import { diagnoseAgentRuntime } from '@openslack/agent-runtime';
+import { getBuildInfo } from '../release/build-info.js';
 
 function getGitInfo(root: string): {
   commitCount: number;
@@ -338,7 +339,7 @@ async function showStatusDashboard(context: WorkspaceContext): Promise<void> {
 
     console.log('OpenSlack Status');
     console.log('════════════════');
-    console.log(`Version:    v0.1 Developer Preview`);
+    console.log(`Version:    v${getBuildInfo().version}`);
     console.log(`Mode:       ${context.sourceCheckout ? 'SOURCE_CHECKOUT' : 'WORKSPACE'}`);
     console.log(`Commit:     ${gitInfo.latestCommit}`);
     console.log('');
@@ -528,6 +529,7 @@ async function buildStatusTuiData(context: WorkspaceContext): Promise<StatusTuiD
   const attentionItems = await getAttentionItems({ setupFindings, gitHubOps: ops, blockers });
 
   return {
+    version: `v${getBuildInfo().version}`,
     mode: context.sourceCheckout ? 'SOURCE_CHECKOUT' : 'WORKSPACE',
     commit: gitInfo.latestCommit,
     commitSubject: gitInfo.latestSubject,

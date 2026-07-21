@@ -312,7 +312,7 @@ describe.each(COLUMN_WIDTHS)('at %d columns', (cols) => {
     const output = await renderAt(React.createElement(StatusView, { model }), cols);
 
     expect(output).toContain('OpenSlack Status');
-    expect(output).toContain('v0.1 Developer Preview');
+    expect(output).toContain('v0.2.0');
     expect(output).toContain('abc1234');
     expect(output).toContain('Self-Evolution Kernel');
     expect(output).toContain('Collaboration Layer');

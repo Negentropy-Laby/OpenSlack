@@ -9,7 +9,7 @@ import type { StatusViewModel } from '../view-models/status.js';
 function makeModel(overrides?: Partial<StatusViewModel>): StatusViewModel {
   return {
     title: 'OpenSlack Status',
-    version: 'v0.1 Developer Preview',
+    version: 'v0.2.0',
     mode: 'SOURCE_CHECKOUT',
     commit: 'abc1234',
     commitSubject: 'feat: add status TUI',
@@ -92,7 +92,7 @@ describe('StatusView', () => {
   it('renders header with title and version', async () => {
     const output = await renderView(makeModel());
     expect(output).toContain('OpenSlack Status');
-    expect(output).toContain('v0.1 Developer Preview');
+    expect(output).toContain('v0.2.0');
   });
 
   it('renders commit information', async () => {

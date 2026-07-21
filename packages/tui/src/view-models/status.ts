@@ -57,6 +57,7 @@ export interface StatusViewModel {
 }
 
 export function mapStatusToViewModel(data: {
+  version: string;
   mode: 'SOURCE_CHECKOUT' | 'WORKSPACE';
   commit: string;
   commitSubject: string;
@@ -106,7 +107,7 @@ export function mapStatusToViewModel(data: {
 
   return {
     title: 'OpenSlack Status',
-    version: 'v0.1 Developer Preview',
+    version: s(data.version),
     mode: data.mode,
     commit: s(data.commit),
     commitSubject: s(data.commitSubject),
