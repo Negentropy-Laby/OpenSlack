@@ -4,7 +4,7 @@ schema: openslack.github_task_claim.v1
 # Agents use these parameters to filter and claim tasks from the Project board.
 
 claim_broker:
-  authority: "Claim Broker"
+  authority: 'Claim Broker'
   atomic: true
   duplicate_prevention: true
 
@@ -14,24 +14,24 @@ lease_defaults:
   max_parallel_tasks: 1
 
 task_matching:
-  allowed_statuses: ["Ready"]
-  excluded_labels: ["human-only", "blocked", "confidential"]
-  priority_order: ["p0", "p1", "p2", "p3"]
+  allowed_statuses: ['Ready']
+  excluded_labels: ['human-only', 'blocked', 'confidential']
+  priority_order: ['p0', 'p1', 'p2', 'p3']
 
 cooldown:
   after_expiry_minutes: 5
   after_release_minutes: 0
-  reason: "Prevents immediate re-claim by same agent type after expiry"
+  reason: 'Prevents immediate re-claim by same agent type after expiry'
 
 retry:
   max_attempts: 3
   backoff_ms: 1000
 
 evolution_board:
-  github_owner: "wsman"
+  github_owner: 'wsman'
   project_number: 1
   fields:
-    status: "OpenSlack Status"
-    risk_level: "Risk Level"
-    claimed_by: "Claimed By"
-    lease_id: "Lease ID"
+    status: 'OpenSlack Status'
+    risk_level: 'Risk Level'
+    claimed_by: 'Claimed By'
+    lease_id: 'Lease ID'

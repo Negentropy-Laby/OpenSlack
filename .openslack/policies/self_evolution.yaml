@@ -57,8 +57,8 @@ zones:
     push_allowed: false
     paths:
       - .env
-      - "**/*.pem"
-      - "**/*.key"
+      - '**/*.pem'
+      - '**/*.key'
       - secrets/**
       - credentials/**
       - private/**

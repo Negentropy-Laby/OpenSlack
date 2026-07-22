@@ -2,34 +2,34 @@ schema: openslack.risk_policy.v1
 
 levels:
   low:
-    description: "Task-local changes, read-only summaries, idle heartbeats"
+    description: 'Task-local changes, read-only summaries, idle heartbeats'
     examples:
-      - "Run record creation"
-      - "Heartbeat update"
-      - "Read-only task query"
-    merge_authority: "Merge Agent (auto)"
+      - 'Run record creation'
+      - 'Heartbeat update'
+      - 'Read-only task query'
+    merge_authority: 'Merge Agent (auto)'
 
   medium:
-    description: "Draft PRs, memory updates, project context changes"
+    description: 'Draft PRs, memory updates, project context changes'
     examples:
-      - "Workspace PR draft"
-      - "Agent memory write"
-      - "Task status update"
-    merge_authority: "Review Agent + Merge Agent"
+      - 'Workspace PR draft'
+      - 'Agent memory write'
+      - 'Task status update'
+    merge_authority: 'Review Agent + Merge Agent'
 
   high:
-    description: "Product PR merge, staging deploy, customer-facing draft"
+    description: 'Product PR merge, staging deploy, customer-facing draft'
     examples:
-      - "Product code PR merge"
-      - "CI workflow change"
-      - "Policy modification"
-    merge_authority: "Human approval required"
+      - 'Product code PR merge'
+      - 'CI workflow change'
+      - 'Policy modification'
+    merge_authority: 'Human approval required'
 
   critical:
-    description: "Production deploy, policy change, permission change, prompt change"
+    description: 'Production deploy, policy change, permission change, prompt change'
     examples:
-      - "Production deployment"
-      - "Agent prompt modification"
-      - "Constitution amendment"
-      - "Self-evolution core modification"
-    merge_authority: "Human approval + admin review"
+      - 'Production deployment'
+      - 'Agent prompt modification'
+      - 'Constitution amendment'
+      - 'Self-evolution core modification'
+    merge_authority: 'Human approval + admin review'
