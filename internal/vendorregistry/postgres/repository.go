@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"rc_wsman/internal/vendorregistry"
@@ -205,7 +206,7 @@ func (r *Repository) GetEndpointVersion(ctx context.Context, vendorID string, co
 	row := r.pool.QueryRow(ctx, `
 		SELECT vendor_id, config_version, config_schema_version, canonical_url, method, hostname, port, transport_kind,
 		       endpoint_policy, transport_auth_headers, outbound_idempotency_mapping,
-		       auth_strategy, credential_ref_scheme, credential_ref_handle, COALESCE(credential_ref_version, ''), created_by_actor, created_at
+		       auth_strategy, response_policy, credential_ref_scheme, credential_ref_handle, credential_ref_version, created_by_actor, created_at
 		FROM endpoint_versions
 		WHERE vendor_id = $1 AND config_version = $2
 	`, vendorID, configVersion)
@@ -219,7 +220,7 @@ func (r *Repository) ListActiveEndpointVersions(ctx context.Context) ([]vendorre
 	rows, err := r.pool.Query(ctx, `
 		SELECT e.vendor_id, e.config_version, e.config_schema_version, e.canonical_url, e.method, e.hostname, e.port, e.transport_kind,
 		       e.endpoint_policy, e.transport_auth_headers, e.outbound_idempotency_mapping,
-		       e.auth_strategy, e.credential_ref_scheme, e.credential_ref_handle, COALESCE(e.credential_ref_version, ''), e.created_by_actor, e.created_at
+		       e.auth_strategy, e.response_policy, e.credential_ref_scheme, e.credential_ref_handle, e.credential_ref_version, e.created_by_actor, e.created_at
 		FROM vendors v
 		JOIN endpoint_versions e ON e.vendor_id=v.vendor_id AND e.config_version=v.current_config_version
 		WHERE v.lifecycle='active'
@@ -356,7 +357,7 @@ func (r *Repository) ListEndpointVersions(ctx context.Context, vendorID string, 
 
 	rows, err := r.pool.Query(ctx, `
 		SELECT vendor_id, config_version, config_schema_version, canonical_url, method, transport_kind,
-		       auth_strategy, credential_ref_scheme, COALESCE(credential_ref_version, ''), created_at, created_by_actor
+		       auth_strategy, credential_ref_scheme, credential_ref_version, created_at, created_by_actor
 		FROM endpoint_versions
 		WHERE vendor_id = $1 AND config_version <= $2 AND config_version > $3
 		ORDER BY config_version ASC
@@ -370,9 +371,18 @@ func (r *Repository) ListEndpointVersions(ctx context.Context, vendorID string, 
 	var items []vendorregistry.EndpointVersionListItem
 	for rows.Next() {
 		var it vendorregistry.EndpointVersionListItem
+		var credentialScheme, credentialVersion pgtype.Text
 		if err := rows.Scan(&it.VendorID, &it.ConfigVersion, &it.ConfigSchemaVersion, &it.CanonicalURL, &it.Method, &it.TransportKind,
-			&it.AuthStrategy, &it.CredentialDescriptor.Scheme, &it.CredentialDescriptor.ReferenceVersion, &it.CreatedAt, &it.CreatedByActor); err != nil {
+			&it.AuthStrategy, &credentialScheme, &credentialVersion, &it.CreatedAt, &it.CreatedByActor); err != nil {
 			return vendorregistry.Page[vendorregistry.EndpointVersionListItem]{}, 0, vendorregistry.ReadError{Code: "VENDOR_INACTIVE_OR_UNKNOWN", Err: err}
+		}
+		if credentialScheme.Valid {
+			it.CredentialDescriptor = &vendorregistry.CredentialDescriptor{Scheme: credentialScheme.String}
+			if credentialVersion.Valid {
+				it.CredentialDescriptor.ReferenceVersion = credentialVersion.String
+			}
+		} else if credentialVersion.Valid {
+			return vendorregistry.Page[vendorregistry.EndpointVersionListItem]{}, 0, vendorregistry.ReadError{Code: "VENDOR_INACTIVE_OR_UNKNOWN", Err: errors.New("partial credential descriptor")}
 		}
 		items = append(items, it)
 	}
@@ -566,14 +576,15 @@ func (r *Repository) insertEndpointVersion(ctx context.Context, tx pgx.Tx, v ven
 	if err != nil {
 		return fmt.Errorf("marshal endpoint_policy: %w", err)
 	}
+	credentialScheme, credentialHandle, credentialVersion := credentialColumnValues(v.CredentialRef)
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO endpoint_versions (
 		    vendor_id, config_version, config_schema_version, canonical_url, method, hostname, port, transport_kind,
 		    endpoint_policy, transport_auth_headers, outbound_idempotency_mapping,
-		    auth_strategy, credential_ref_scheme, credential_ref_handle, credential_ref_version, created_by_actor, created_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+		    auth_strategy, response_policy, credential_ref_scheme, credential_ref_handle, credential_ref_version, created_by_actor, created_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 	`, v.VendorID, v.ConfigVersion, v.ConfigSchemaVersion, v.CanonicalURL, v.Method, v.Hostname, v.Port, v.TransportKind,
-		policyJSON, tahJSON, oidJSON, v.AuthStrategy, v.CredentialRef.Scheme, v.CredentialRef.OpaqueHandle, v.CredentialRef.ReferenceVersion, v.CreatedByActor, v.CreatedAt); err != nil {
+		policyJSON, tahJSON, oidJSON, v.AuthStrategy, v.ResponsePolicy, credentialScheme, credentialHandle, credentialVersion, v.CreatedByActor, v.CreatedAt); err != nil {
 		return mapError(err)
 	}
 	return nil
@@ -613,13 +624,22 @@ func (r *Repository) insertAuditEvent(ctx context.Context, tx pgx.Tx, audit vend
 func (r *Repository) scanEndpointVersion(row pgx.Row) (vendorregistry.EndpointVersion, error) {
 	var v vendorregistry.EndpointVersion
 	var policyJSON, tahJSON, oidJSON []byte
+	var credentialScheme, credentialHandle, credentialVersion pgtype.Text
 	err := row.Scan(&v.VendorID, &v.ConfigVersion, &v.ConfigSchemaVersion, &v.CanonicalURL, &v.Method, &v.Hostname, &v.Port, &v.TransportKind,
-		&policyJSON, &tahJSON, &oidJSON, &v.AuthStrategy, &v.CredentialRef.Scheme, &v.CredentialRef.OpaqueHandle, &v.CredentialRef.ReferenceVersion, &v.CreatedByActor, &v.CreatedAt)
+		&policyJSON, &tahJSON, &oidJSON, &v.AuthStrategy, &v.ResponsePolicy, &credentialScheme, &credentialHandle, &credentialVersion, &v.CreatedByActor, &v.CreatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return vendorregistry.EndpointVersion{}, vendorregistry.ReadError{Code: "VERSION_NOT_FOUND"}
 		}
 		return vendorregistry.EndpointVersion{}, vendorregistry.ReadError{Code: "VENDOR_INACTIVE_OR_UNKNOWN", Err: err}
+	}
+	if credentialScheme.Valid && credentialHandle.Valid {
+		v.CredentialRef = &vendorregistry.CredentialRef{Scheme: credentialScheme.String, OpaqueHandle: credentialHandle.String}
+		if credentialVersion.Valid {
+			v.CredentialRef.ReferenceVersion = credentialVersion.String
+		}
+	} else if credentialScheme.Valid || credentialHandle.Valid || credentialVersion.Valid {
+		return vendorregistry.EndpointVersion{}, vendorregistry.ReadError{Code: "VENDOR_INACTIVE_OR_UNKNOWN", Err: errors.New("partial credential reference")}
 	}
 	if err := json.Unmarshal(policyJSON, &v.EndpointPolicy); err != nil {
 		return vendorregistry.EndpointVersion{}, fmt.Errorf("unmarshal endpoint_policy: %w", err)
@@ -643,6 +663,13 @@ func (r *Repository) scanEndpointVersion(row pgx.Row) (vendorregistry.EndpointVe
 		v.CIDRException = v.EndpointPolicy.CIDRException
 	}
 	return v, nil
+}
+
+func credentialColumnValues(ref *vendorregistry.CredentialRef) (any, any, any) {
+	if ref == nil {
+		return nil, nil, nil
+	}
+	return ref.Scheme, ref.OpaqueHandle, ref.ReferenceVersion
 }
 
 func mapError(err error) error {

@@ -86,7 +86,7 @@ func endpointVersionInput(version EndpointVersion) EndpointConfigInput {
 	}
 	allowedHeaders := append([]string(nil), version.EndpointPolicy.AllowedRequestHeaderNames...)
 	forbiddenHeaders := append([]string(nil), version.EndpointPolicy.ForbiddenRequestHeaderNames...)
-	return EndpointConfigInput{
+	input := EndpointConfigInput{
 		EndpointTarget: EndpointTargetInput{URL: version.CanonicalURL, PrivateNetworkException: private},
 		Method:         version.Method, TransportAuthHeaders: &headers,
 		OutboundIdempotencyMapping: version.OutboundIdempotencyMapping,
@@ -95,9 +95,12 @@ func endpointVersionInput(version EndpointVersion) EndpointConfigInput {
 			ForbiddenRequestHeaderNames: &forbiddenHeaders,
 			MaxRequestBodyBytes:         version.EndpointPolicy.MaxRequestBodyBytes,
 		},
-		AuthStrategy:  version.AuthStrategy,
-		CredentialRef: CredentialRefInput{Scheme: version.CredentialRef.Scheme, OpaqueHandle: version.CredentialRef.OpaqueHandle, ReferenceVersion: version.CredentialRef.ReferenceVersion},
+		AuthStrategy: version.AuthStrategy,
 	}
+	if version.CredentialRef != nil {
+		input.CredentialRef = CredentialRefInput{Scheme: version.CredentialRef.Scheme, OpaqueHandle: version.CredentialRef.OpaqueHandle, ReferenceVersion: version.CredentialRef.ReferenceVersion}
+	}
+	return input
 }
 
 func cloneConfig(cfg Config) Config {

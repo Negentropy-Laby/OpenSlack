@@ -73,7 +73,8 @@ func endpointVersionFor(vendorID, actorID string) vendorregistry.EndpointVersion
 			MaxRequestBodyBytes:         65536,
 		},
 		AuthStrategy:   "bearer",
-		CredentialRef:  vendorregistry.CredentialRef{Scheme: "env", OpaqueHandle: "VENDOR_A_TOKEN", ReferenceVersion: "v1"},
+		ResponsePolicy: vendorregistry.ResponsePolicyHTTPStatusV1,
+		CredentialRef:  &vendorregistry.CredentialRef{Scheme: "env", OpaqueHandle: "VENDOR_A_TOKEN", ReferenceVersion: "v1"},
 		CreatedByActor: actorID,
 		CreatedAt:      time.Now(),
 	}
@@ -198,7 +199,7 @@ func TestPostgresRepository_ReadsOptionalCredentialReferenceVersionWhenNull(t *t
 
 	repo := postgres.New(pool)
 	version, err := repo.GetEndpointVersion(ctx, vendorID, 1)
-	if err != nil || version.CredentialRef.ReferenceVersion != "" {
+	if err != nil || version.CredentialRef == nil || version.CredentialRef.ReferenceVersion != "" {
 		t.Fatalf("get endpoint version=%+v err=%v", version.CredentialRef, err)
 	}
 	active, err := repo.ListActiveEndpointVersions(ctx)
@@ -209,7 +210,7 @@ func TestPostgresRepository_ReadsOptionalCredentialReferenceVersionWhenNull(t *t
 	for _, item := range active {
 		if item.VendorID == vendorID {
 			found = true
-			if item.CredentialRef.ReferenceVersion != "" {
+			if item.CredentialRef == nil || item.CredentialRef.ReferenceVersion != "" {
 				t.Fatalf("active reference version=%q, want empty", item.CredentialRef.ReferenceVersion)
 			}
 		}
@@ -220,6 +221,69 @@ func TestPostgresRepository_ReadsOptionalCredentialReferenceVersionWhenNull(t *t
 	page, _, err := repo.ListEndpointVersions(ctx, vendorID, "", 10)
 	if err != nil || len(page.Items) != 1 || page.Items[0].CredentialDescriptor.ReferenceVersion != "" {
 		t.Fatalf("list endpoint versions=%+v err=%v", page, err)
+	}
+}
+
+func TestPostgresRepository_ReadsSchemaV2NoneAuthWithNullCredential(t *testing.T) {
+	pool := openVRPool(t)
+	defer pool.Close()
+
+	ctx := context.Background()
+	vendorID := uniqueVendor(t, "-none-auth")
+	scope := uniqueScope(t)
+	actor := uniqueActor(t)
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO vendors (
+			vendor_id, owning_scope, lifecycle, record_revision, current_config_version, activated_at
+		) VALUES ($1, $2, 'active', 1, 1, clock_timestamp())`, vendorID, scope); err != nil {
+		t.Fatalf("seed active vendor: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO endpoint_versions (
+			vendor_id, config_version, config_schema_version, canonical_url, method, hostname, port,
+			transport_kind, auth_strategy, response_policy, credential_ref_scheme, credential_ref_handle,
+			credential_ref_version, transport_auth_headers, outbound_idempotency_mapping, endpoint_policy,
+			created_by_actor
+		) VALUES (
+			$1, 1, 2, 'https://example.com/webhook', 'POST', 'example.com', 443,
+			'https_public', 'none', 'http_status_v1', NULL, NULL, NULL, '[]'::jsonb,
+			'{"Mode":"none"}'::jsonb,
+			'{"AllowedRequestHeaderNames":[],"ForbiddenRequestHeaderNames":[],"MaxRequestBodyBytes":65536}'::jsonb,
+			$2
+		)`, vendorID, actor); err != nil {
+		t.Fatalf("seed endpoint with no credential: %v", err)
+	}
+
+	repo := postgres.New(pool)
+	version, err := repo.GetEndpointVersion(ctx, vendorID, 1)
+	if err != nil {
+		t.Fatalf("get endpoint version: %v", err)
+	}
+	if version.AuthStrategy != "none" || version.ResponsePolicy != vendorregistry.ResponsePolicyHTTPStatusV1 || version.CredentialRef != nil {
+		t.Fatalf("nullable credential scan drifted: %+v", version)
+	}
+	active, err := repo.ListActiveEndpointVersions(ctx)
+	if err != nil {
+		t.Fatalf("list active endpoint versions: %v", err)
+	}
+	found := false
+	for _, item := range active {
+		if item.VendorID == vendorID {
+			found = true
+			if item.CredentialRef != nil {
+				t.Fatalf("active nullable credential=%+v, want zero value", item.CredentialRef)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("active endpoint %s not returned", vendorID)
+	}
+	page, _, err := repo.ListEndpointVersions(ctx, vendorID, "", 10)
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("list endpoint versions=%+v err=%v", page, err)
+	}
+	if page.Items[0].CredentialDescriptor != nil {
+		t.Fatalf("historical nullable credential drifted: %+v", page.Items[0])
 	}
 }
 

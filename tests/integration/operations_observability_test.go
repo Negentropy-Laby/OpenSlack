@@ -65,7 +65,7 @@ func (s acceptanceSnapshotReader) Snapshot(context.Context, vendorregistry.Actor
 		CanonicalURL: "https://vendor.example/hook", Method: http.MethodPost, Hostname: "vendor.example", Port: 443,
 		TransportKind: "https_public", OutboundIdempotencyMapping: vendorregistry.OutboundIdempotencyMapping{Mode: "none"},
 		EndpointPolicy: vendorregistry.EndpointPolicy{AllowedRequestHeaderNames: []string{}, ForbiddenRequestHeaderNames: []string{}, MaxRequestBodyBytes: 4096},
-		AuthStrategy:   "bearer", CredentialRef: vendorregistry.CredentialRef{Scheme: "env", OpaqueHandle: "ACCEPTANCE_VENDOR_TOKEN", ReferenceVersion: "v1"},
+		AuthStrategy:   "bearer", CredentialRef: &vendorregistry.CredentialRef{Scheme: "env", OpaqueHandle: "ACCEPTANCE_VENDOR_TOKEN", ReferenceVersion: "v1"},
 	}, nil
 }
 

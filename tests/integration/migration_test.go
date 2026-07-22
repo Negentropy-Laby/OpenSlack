@@ -37,6 +37,42 @@ func TestMigrationConstraintsRejectContractDrift(t *testing.T) {
 	if err == nil {
 		t.Fatal("database accepted non-bearer endpoint version")
 	}
+	if _, err := pool.Exec(ctx, `INSERT INTO endpoint_versions (
+		vendor_id, config_version, config_schema_version, canonical_url, method, transport_kind, auth_strategy,
+		response_policy, credential_ref_scheme, credential_ref_handle, credential_ref_version,
+		created_by_actor, hostname, port
+	) VALUES ('vendor-migration', 1, 2, 'https://example.com/hook', 'POST', 'https_public',
+		'none', 'http_status_v1', NULL, NULL, NULL, 'operator-1', 'example.com', 443)`); err != nil {
+		t.Fatalf("database rejected valid schema v2 none-auth endpoint: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO endpoint_versions (
+		vendor_id, config_version, config_schema_version, canonical_url, method, transport_kind, auth_strategy,
+		response_policy, credential_ref_scheme, credential_ref_handle, created_by_actor, hostname, port
+	) VALUES ('vendor-migration', 2, 2, 'https://example.com/hook', 'POST', 'https_public',
+		'bearer', 'json_ack_v1', 'env', 'TOKEN', 'operator-1', 'example.com', 443)`); err != nil {
+		t.Fatalf("database rejected valid schema v2 bearer json-ack endpoint: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO endpoint_versions (
+		vendor_id, config_version, config_schema_version, canonical_url, method, transport_kind, auth_strategy,
+		response_policy, credential_ref_scheme, credential_ref_handle, created_by_actor, hostname, port
+	) VALUES ('vendor-migration', 3, 1, 'https://example.com/hook', 'POST', 'https_public',
+		'bearer', 'json_ack_v1', 'env', 'TOKEN', 'operator-1', 'example.com', 443)`); err == nil {
+		t.Fatal("database accepted json_ack_v1 on schema v1")
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO endpoint_versions (
+		vendor_id, config_version, config_schema_version, canonical_url, method, transport_kind, auth_strategy,
+		response_policy, credential_ref_scheme, credential_ref_handle, created_by_actor, hostname, port
+	) VALUES ('vendor-migration', 3, 2, 'https://example.com/hook', 'POST', 'https_public',
+		'none', 'http_status_v1', 'env', 'TOKEN', 'operator-1', 'example.com', 443)`); err == nil {
+		t.Fatal("database accepted credential columns with auth none")
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO endpoint_versions (
+		vendor_id, config_version, config_schema_version, canonical_url, method, transport_kind, auth_strategy,
+		response_policy, credential_ref_scheme, credential_ref_handle, created_by_actor, hostname, port
+	) VALUES ('vendor-migration', 3, 3, 'https://example.com/hook', 'POST', 'https_public',
+		'bearer', 'http_status_v1', 'env', 'TOKEN', 'operator-1', 'example.com', 443)`); err == nil {
+		t.Fatal("database accepted config schema version outside 1 or 2")
+	}
 	if _, err := pool.Exec(ctx, `INSERT INTO notifications (
 		notification_id, caller_id, vendor_id, idempotency_key, request_fingerprint, payload_bytes,
 		state, version, attempt_count, delivery_cycle_started_at, created_at, updated_at
@@ -165,10 +201,10 @@ func TestMigrationsUpDown(t *testing.T) {
 		VALUES ('vendor-upgrade-valid', 'team-a', 'draft');
 		INSERT INTO endpoint_versions (
 			vendor_id, config_version, canonical_url, method, transport_kind,
-			auth_strategy, credential_ref_scheme, credential_ref_handle, created_by_actor
+			auth_strategy, credential_ref_scheme, credential_ref_handle, credential_ref_version, created_by_actor
 		) VALUES (
 			'vendor-upgrade-valid', 1, 'https://vendor.example/hook', 'POST', 'https_public',
-			'bearer', 'env', 'VENDOR_TOKEN', 'operator-1'
+			'bearer', 'env', 'VENDOR_TOKEN', 'v1', 'operator-1'
 		)`); err != nil {
 		t.Fatalf("seed v1 bearer row: %v", err)
 	}
@@ -180,24 +216,24 @@ func TestMigrationsUpDown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("version after upgrade: %v", err)
 	}
-	if version != 6 {
-		t.Fatalf("version after upgrade = %d, want 6", version)
+	if version != 7 {
+		t.Fatalf("version after upgrade = %d, want 7", version)
 	}
 	if dirty {
 		t.Fatal("migration marked dirty after valid upgrade")
 	}
 
 	if err := m.Steps(-1); err != nil {
-		t.Fatalf("step down 000006: %v", err)
-	}
-	if version, dirty, err = m.Version(); err != nil || version != 5 || dirty {
-		t.Fatalf("version after step down = %d dirty=%v err=%v, want clean 5", version, dirty, err)
-	}
-	if err := m.Steps(1); err != nil {
-		t.Fatalf("step reapply 000006: %v", err)
+		t.Fatalf("step down 000007: %v", err)
 	}
 	if version, dirty, err = m.Version(); err != nil || version != 6 || dirty {
-		t.Fatalf("version after step reapply = %d dirty=%v err=%v, want clean 6", version, dirty, err)
+		t.Fatalf("version after step down = %d dirty=%v err=%v, want clean 6", version, dirty, err)
+	}
+	if err := m.Steps(1); err != nil {
+		t.Fatalf("step reapply 000007: %v", err)
+	}
+	if version, dirty, err = m.Version(); err != nil || version != 7 || dirty {
+		t.Fatalf("version after step reapply = %d dirty=%v err=%v, want clean 7", version, dirty, err)
 	}
 
 	if err := m.Down(); err != nil {
@@ -209,7 +245,76 @@ func TestMigrationsUpDown(t *testing.T) {
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
 		t.Fatalf("fresh re-install: %v", err)
 	}
-	if version, dirty, err = m.Version(); err != nil || version != 6 || dirty {
-		t.Fatalf("version after fresh re-install = %d dirty=%v err=%v, want clean 6", version, dirty, err)
+	if version, dirty, err = m.Version(); err != nil || version != 7 || dirty {
+		t.Fatalf("version after fresh re-install = %d dirty=%v err=%v, want clean 7", version, dirty, err)
+	}
+}
+
+func TestMigration000007StorageContractAndDownGuard(t *testing.T) {
+	dbURL := testsupport.OpenMigrationSchemaURL(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	defer pool.Close()
+	migrateURL := dbURL
+	if strings.HasPrefix(migrateURL, "postgres://") {
+		migrateURL = "pgx5://" + strings.TrimPrefix(migrateURL, "postgres://")
+	}
+	m, err := migrate.New(migrationsURL(), migrateURL)
+	if err != nil {
+		t.Fatalf("migrate new: %v", err)
+	}
+	defer m.Close()
+	if err := m.Steps(6); err != nil {
+		t.Fatalf("install through 000006: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO vendors (vendor_id, owning_scope, lifecycle)
+		VALUES ('vendor-schema-v1', 'team-a', 'draft');
+		INSERT INTO endpoint_versions (
+			vendor_id, config_version, config_schema_version, canonical_url, method, hostname, port,
+			transport_kind, auth_strategy, credential_ref_scheme, credential_ref_handle, credential_ref_version, created_by_actor
+		) VALUES (
+			'vendor-schema-v1', 1, 1, 'https://vendor.example/hook', 'POST', 'vendor.example', 443,
+			'https_public', 'bearer', 'env', 'VENDOR_TOKEN', NULL, 'operator-1'
+		)`); err != nil {
+		t.Fatalf("seed schema v1: %v", err)
+	}
+	if err := m.Steps(1); err != nil {
+		t.Fatalf("upgrade 6 to 7: %v", err)
+	}
+	var responsePolicy string
+	if err := pool.QueryRow(ctx, `SELECT response_policy FROM endpoint_versions WHERE vendor_id='vendor-schema-v1'`).Scan(&responsePolicy); err != nil {
+		t.Fatalf("read upgraded v1 row: %v", err)
+	}
+	if responsePolicy != "http_status_v1" {
+		t.Fatalf("upgraded v1 response policy=%q", responsePolicy)
+	}
+	if err := m.Steps(-1); err != nil {
+		t.Fatalf("v1-only 7 to 6 rollback: %v", err)
+	}
+	if err := m.Steps(1); err != nil {
+		t.Fatalf("reapply 6 to 7: %v", err)
+	}
+
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO vendors (vendor_id, owning_scope, lifecycle)
+		VALUES ('vendor-schema-v2', 'team-a', 'draft');
+		INSERT INTO endpoint_versions (
+			vendor_id, config_version, config_schema_version, canonical_url, method, hostname, port,
+			transport_kind, auth_strategy, response_policy, credential_ref_scheme, credential_ref_handle,
+			credential_ref_version, created_by_actor
+		) VALUES (
+			'vendor-schema-v2', 1, 2, 'https://vendor.example/hook', 'POST', 'vendor.example', 443,
+			'https_public', 'none', 'http_status_v1', NULL, NULL, NULL, 'operator-1'
+		)`); err != nil {
+		t.Fatalf("seed valid schema v2 none-auth row: %v", err)
+	}
+	if err := m.Steps(-1); err == nil {
+		t.Fatal("000007 down accepted v2-only endpoint data")
 	}
 }

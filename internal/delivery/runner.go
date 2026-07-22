@@ -123,7 +123,10 @@ func (r *Runner) RunOnce(ctx context.Context, storeCtx notificationstore.ActorCo
 		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonRequestUnbuildable)
 	}
 
-	cred, err := r.credentials.Resolve(ctx, snapshot.CredentialRef)
+	if snapshot.CredentialRef == nil {
+		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonCredentialUnavailable)
+	}
+	cred, err := r.credentials.Resolve(ctx, *snapshot.CredentialRef)
 	if err != nil {
 		if _, ok := err.(*PolicyError); ok {
 			return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonCredentialUnavailable)

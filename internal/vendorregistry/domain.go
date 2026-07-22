@@ -27,6 +27,14 @@ const (
 	LifecycleDisabled = "disabled"
 )
 
+// Response policies define how Delivery interprets a vendor response. Schema
+// v1 is permanently bound to HTTP status semantics; schema v2 may opt into a
+// bounded JSON acknowledgement policy.
+const (
+	ResponsePolicyHTTPStatusV1 = "http_status_v1"
+	ResponsePolicyJSONAckV1    = "json_ack_v1"
+)
+
 // Actor kinds.
 const (
 	ActorKindIngress  = "ingress"
@@ -236,7 +244,8 @@ type EndpointVersion struct {
 	OutboundIdempotencyMapping OutboundIdempotencyMapping
 	EndpointPolicy             EndpointPolicy
 	AuthStrategy               string
-	CredentialRef              CredentialRef
+	ResponsePolicy             string
+	CredentialRef              *CredentialRef
 	CreatedByActor             string
 	CreatedAt                  time.Time
 }
@@ -339,7 +348,8 @@ type DeliveryConfigSnapshot struct {
 	OutboundIdempotencyMapping OutboundIdempotencyMapping
 	EndpointPolicy             EndpointPolicy
 	AuthStrategy               string
-	CredentialRef              CredentialRef
+	ResponsePolicy             string
+	CredentialRef              *CredentialRef
 }
 
 // HistoricalConfigSnapshot is the history read without opaque credential locator.
@@ -358,7 +368,8 @@ type HistoricalConfigSnapshot struct {
 	OutboundIdempotencyMapping OutboundIdempotencyMapping
 	EndpointPolicy             EndpointPolicy
 	AuthStrategy               string
-	CredentialDescriptor       CredentialDescriptor
+	ResponsePolicy             string
+	CredentialDescriptor       *CredentialDescriptor
 }
 
 // VendorListItem is a list projection.
@@ -373,16 +384,16 @@ type VendorListItem struct {
 
 // EndpointVersionListItem is a historical endpoint projection.
 type EndpointVersionListItem struct {
-	VendorID             string               `json:"vendor_id"`
-	ConfigVersion        int64                `json:"config_version"`
-	ConfigSchemaVersion  int64                `json:"config_schema_version"`
-	CanonicalURL         string               `json:"canonical_url"`
-	Method               string               `json:"method"`
-	TransportKind        string               `json:"transport_kind"`
-	AuthStrategy         string               `json:"auth_strategy"`
-	CredentialDescriptor CredentialDescriptor `json:"credential_descriptor"`
-	CreatedAt            time.Time            `json:"created_at"`
-	CreatedByActor       string               `json:"created_by_actor"`
+	VendorID             string                `json:"vendor_id"`
+	ConfigVersion        int64                 `json:"config_version"`
+	ConfigSchemaVersion  int64                 `json:"config_schema_version"`
+	CanonicalURL         string                `json:"canonical_url"`
+	Method               string                `json:"method"`
+	TransportKind        string                `json:"transport_kind"`
+	AuthStrategy         string                `json:"auth_strategy"`
+	CredentialDescriptor *CredentialDescriptor `json:"credential_descriptor,omitempty"`
+	CreatedAt            time.Time             `json:"created_at"`
+	CreatedByActor       string                `json:"created_by_actor"`
 }
 
 // AdminAuditListItem is an audit list projection.
@@ -839,7 +850,7 @@ func ValidateEndpointConfig(cfg Config, ep EndpointConfigInput) (EndpointVersion
 			CIDRException:               cidrException,
 		},
 		AuthStrategy:  ep.AuthStrategy,
-		CredentialRef: CredentialRef{Scheme: ep.CredentialRef.Scheme, OpaqueHandle: ep.CredentialRef.OpaqueHandle, ReferenceVersion: ep.CredentialRef.ReferenceVersion},
+		CredentialRef: &CredentialRef{Scheme: ep.CredentialRef.Scheme, OpaqueHandle: ep.CredentialRef.OpaqueHandle, ReferenceVersion: ep.CredentialRef.ReferenceVersion},
 	}
 	return version, nil
 }

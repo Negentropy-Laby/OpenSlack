@@ -344,6 +344,7 @@ func (s *Service) register(ctx context.Context, actor ActorContext, cmd AdminCom
 	version.VendorID = cmd.VendorID
 	version.ConfigVersion = 1
 	version.ConfigSchemaVersion = 1
+	version.ResponsePolicy = ResponsePolicyHTTPStatusV1
 	version.CreatedByActor = actor.ActorID
 	version.CreatedAt = s.now()
 
@@ -408,6 +409,9 @@ func (s *Service) updateVersion(ctx context.Context, actor ActorContext, cmd Adm
 	if err != nil {
 		return AdminResult{}, AdminCommandError{Code: "COMMIT_OUTCOME_UNKNOWN", Err: err}
 	}
+	if current.CredentialRef == nil {
+		return AdminResult{}, AdminCommandError{Code: "INVALID_CREDENTIAL_REF", Err: errors.New("current endpoint has no credential reference")}
+	}
 	epInput.CredentialRef = CredentialRefInput{
 		Scheme:           current.CredentialRef.Scheme,
 		OpaqueHandle:     current.CredentialRef.OpaqueHandle,
@@ -420,6 +424,7 @@ func (s *Service) updateVersion(ctx context.Context, actor ActorContext, cmd Adm
 	version.VendorID = cmd.VendorID
 	version.ConfigVersion = vendor.CurrentConfigVersion + 1
 	version.ConfigSchemaVersion = 1
+	version.ResponsePolicy = ResponsePolicyHTTPStatusV1
 	version.CreatedByActor = actor.ActorID
 	version.CreatedAt = s.now()
 
@@ -523,6 +528,9 @@ func (s *Service) rotateCredentialRef(ctx context.Context, actor ActorContext, c
 	if err != nil {
 		return AdminResult{}, AdminCommandError{Code: "COMMIT_OUTCOME_UNKNOWN", Err: err}
 	}
+	if current.CredentialRef == nil {
+		return AdminResult{}, AdminCommandError{Code: "INVALID_CREDENTIAL_REF", Err: errors.New("current endpoint has no credential reference")}
+	}
 	version := EndpointVersion{
 		VendorID:                   cmd.VendorID,
 		ConfigVersion:              vendor.CurrentConfigVersion + 1,
@@ -537,7 +545,8 @@ func (s *Service) rotateCredentialRef(ctx context.Context, actor ActorContext, c
 		OutboundIdempotencyMapping: current.OutboundIdempotencyMapping,
 		EndpointPolicy:             current.EndpointPolicy,
 		AuthStrategy:               current.AuthStrategy,
-		CredentialRef:              CredentialRef{Scheme: crefInput.Scheme, OpaqueHandle: crefInput.OpaqueHandle, ReferenceVersion: crefInput.ReferenceVersion},
+		ResponsePolicy:             ResponsePolicyHTTPStatusV1,
+		CredentialRef:              &CredentialRef{Scheme: crefInput.Scheme, OpaqueHandle: crefInput.OpaqueHandle, ReferenceVersion: crefInput.ReferenceVersion},
 		CreatedByActor:             actor.ActorID,
 		CreatedAt:                  s.now(),
 	}
@@ -855,7 +864,7 @@ func (s *Service) Snapshot(ctx context.Context, actor ActorContext, vendorID str
 
 func versionToDeliverySnapshot(v EndpointVersion) DeliveryConfigSnapshot {
 	return DeliveryConfigSnapshot{
-		ProjectionSchema:           "delivery-v1",
+		ProjectionSchema:           "delivery-v2",
 		VendorID:                   v.VendorID,
 		ConfigVersion:              v.ConfigVersion,
 		ConfigSchemaVersion:        v.ConfigSchemaVersion,
@@ -869,13 +878,14 @@ func versionToDeliverySnapshot(v EndpointVersion) DeliveryConfigSnapshot {
 		OutboundIdempotencyMapping: v.OutboundIdempotencyMapping,
 		EndpointPolicy:             v.EndpointPolicy,
 		AuthStrategy:               v.AuthStrategy,
+		ResponsePolicy:             v.ResponsePolicy,
 		CredentialRef:              v.CredentialRef,
 	}
 }
 
 func versionToHistoricalSnapshot(v EndpointVersion) HistoricalConfigSnapshot {
-	return HistoricalConfigSnapshot{
-		ProjectionSchema:           "historical-v1",
+	snapshot := HistoricalConfigSnapshot{
+		ProjectionSchema:           "historical-v2",
 		VendorID:                   v.VendorID,
 		ConfigVersion:              v.ConfigVersion,
 		ConfigSchemaVersion:        v.ConfigSchemaVersion,
@@ -889,8 +899,12 @@ func versionToHistoricalSnapshot(v EndpointVersion) HistoricalConfigSnapshot {
 		OutboundIdempotencyMapping: v.OutboundIdempotencyMapping,
 		EndpointPolicy:             v.EndpointPolicy,
 		AuthStrategy:               v.AuthStrategy,
-		CredentialDescriptor:       CredentialDescriptor{Scheme: v.CredentialRef.Scheme, ReferenceVersion: v.CredentialRef.ReferenceVersion},
+		ResponsePolicy:             v.ResponsePolicy,
 	}
+	if v.CredentialRef != nil {
+		snapshot.CredentialDescriptor = &CredentialDescriptor{Scheme: v.CredentialRef.Scheme, ReferenceVersion: v.CredentialRef.ReferenceVersion}
+	}
+	return snapshot
 }
 
 // ListVendors returns authorized vendor list page.
