@@ -209,6 +209,10 @@ The approved, not-yet-wired v2 queue derives each local `route_record_id` as low
 key, with NUL delimiters. Migrated v1 routes use their copied original key as input; they do not receive a new v2
 handoff key. The ID is derived queue identity and is never accepted from watch configuration.
 
+The standalone v2 Blob and receipt stores are also not wired here yet. IB3 must acquire `queue-v2` before either
+storage lock; neither storage primitive may acquire the queue lock. Receipt repair from an embedded accepted record
+must not POST again.
+
 The queue accepts or rejects duplicates atomically. A successful route is
 marked completed immediately and is not resent when another route retries. If
 a process exits after a remote sink accepts a message but before the local

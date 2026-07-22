@@ -199,6 +199,34 @@ export {
 } from './notification-body.js';
 export type { NotificationBodyHandoffValidation } from './notification-body.js';
 export {
+  NOTIFICATION_BLOB_STORE_RELATIVE_PATH,
+  NotificationBlobStore,
+  NotificationBlobStoreError,
+  notificationBlobStorePath,
+} from './notification-blob-store.js';
+export type {
+  NotificationBlobGcInput,
+  NotificationBlobGcResult,
+  NotificationBlobInput,
+  NotificationBlobPutResult,
+  NotificationBlobReadResult,
+  NotificationBlobStoreErrorCode,
+  NotificationBlobStoreOptions,
+} from './notification-blob-store.js';
+export {
+  NOTIFICATION_RECEIPT_STORE_RELATIVE_PATH,
+  NotificationReceiptStore,
+  NotificationReceiptStoreError,
+  notificationReceiptStorePath,
+  serializeNotificationAcceptanceReceipt,
+} from './notification-receipt-store.js';
+export type {
+  NotificationAcceptanceReceiptV1,
+  NotificationReceiptEnsureResult,
+  NotificationReceiptStoreErrorCode,
+  NotificationReceiptStoreOptions,
+} from './notification-receipt-store.js';
+export {
   GITHUB_WATCH_EVENT_KEYS,
   GITHUB_WEBHOOK_EVENT_NAMES,
   canonicalWatchRouteKey,
