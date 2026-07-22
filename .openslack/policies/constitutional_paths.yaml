@@ -5,29 +5,29 @@ schema: openslack.constitutional_paths.v1
 # This file itself is a constitutional path.
 
 constitutional_paths:
-  - ".openslack/self/constitution.md"
-  - ".openslack/self/invariants.yaml"
-  - ".openslack/policies/constitutional_paths.yaml"
-  - ".openslack/policies/self_evolution.yaml"
+  - '.openslack/self/constitution.md'
+  - '.openslack/self/invariants.yaml'
+  - '.openslack/policies/constitutional_paths.yaml'
+  - '.openslack/policies/self_evolution.yaml'
 
 governance_paths:
-  - ".openslack/agents/registry/**"
-  - ".openslack/agents/prompts/**"
-  - ".openslack/plugins/**"
-  - ".openslack/plugins.lock"
-  - ".openslack/policies/risk.yaml"
-  - ".openslack/policies/approvals.yaml"
-  - ".openslack/policies/workspace_write_permissions.yaml"
-  - ".github/workflows/**"
-  - ".github/rulesets/**"
+  - '.openslack/agents/registry/**'
+  - '.openslack/agents/prompts/**'
+  - '.openslack/plugins/**'
+  - '.openslack/plugins.lock'
+  - '.openslack/policies/risk.yaml'
+  - '.openslack/policies/approvals.yaml'
+  - '.openslack/policies/workspace_write_permissions.yaml'
+  - '.github/workflows/**'
+  - '.github/rulesets/**'
 
 execution_paths:
-  - "packages/policy/src/**"
-  - "packages/self-evolution/src/core/**"
-  - "packages/plugin-host/**"
+  - 'packages/policy/src/**'
+  - 'packages/self-evolution/src/core/**'
+  - 'packages/plugin-host/**'
 
 amendment_process:
-  requires: "human_approval"
+  requires: 'human_approval'
   required_reviewers: 2
   requires_security_review: true
   cooldown_hours: 24
