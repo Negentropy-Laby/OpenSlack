@@ -51,9 +51,8 @@ GitHub event
 
 ## Route Identity And Handoff Key
 
-Every external v2 route has an immutable `route_id` matching the expression formed by concatenating these three
-literals with no separator: `^[a-z]`, `(?:[a-z0-9-]{0,62}[a-z0-9])?`, and `$`. It is unique within the canonical
-repository.
+Every external v2 route has an immutable `route_id` matching
+`^(?:[a-z])(?:[a-z0-9-]{0,62}[a-z0-9])?$` (1–64 characters). It is unique within the canonical repository.
 
 `routing_epoch` is a positive safe
 integer starting at 1. Backend, vendor, target, encoder, response policy, outbound idempotency mapping or any other
@@ -69,9 +68,14 @@ ASCII(routing_epoch without leading zeroes)
 ```
 
 OpenSlack hashes the preimage with SHA-256, takes the first 16 bytes, sets the RFC 4122 variant and version nibble 5,
-then renders lowercase `8-4-4-4-12`. Payload digest is deliberately excluded. The same key with different vendor or
-payload bytes must converge to the existing notification or return `409 IdempotencyConflict`; it must not create a
-new notification.
+then renders lowercase `8-4-4-4-12`. This is a UUIDv5-formatted SHA-256 digest: it uses the UUID variant and
+version-5 bit layout only for encoding. It is not RFC 4122 UUIDv5, which uses SHA-1; implementations must not replace
+this construction with a standard UUIDv5 library. Payload digest is deliberately excluded. The same key with
+different vendor or payload bytes must converge to the existing notification or return `409 IdempotencyConflict`;
+it must not create a new notification.
+
+`event_stable_key` is non-empty and contains no U+0000. The canonical `route_id` is also NUL-free and
+`routing_epoch` is decimal ASCII, making the delimiter-based preimage unambiguous.
 
 ## Final Vendor Body
 
