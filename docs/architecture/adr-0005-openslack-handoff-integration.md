@@ -2,7 +2,8 @@
 
 ## Status
 
-Proposed — `PENDING_INDEPENDENT_REVIEW` at `G0-CONTRACT`.
+Accepted under the owner-authorized standalone review waiver —
+`G0_CONTRACT_PASS_WITH_RC_REVIEW_WAIVER`.
 
 ## Date
 
@@ -223,9 +224,25 @@ must retain this baseline and every subsequent standalone commit as ancestors, p
 at `services/notification-delivery`, and put relocation changes in later commits. Standalone repository archival and
 database cleanup remain separately authorized external actions.
 
+## Standalone Review Governance
+
+The owner accepted the IB0 contract merge at `1b68cb6` without representing it as independently reviewed. For the
+remaining standalone lifetime of this repository, integration changes require all of the following controls:
+
+- every change is proposed through a pull request based on the latest `main`;
+- the required CI checks pass against that current base;
+- the repository owner uses a merge commit; direct pushes, squash merges, rebases and force-pushes are forbidden;
+- no pull-request approval is required in this standalone repository.
+
+This is a review-policy waiver, not a technical-contract waiver. It does not alter the authority boundary, frozen
+wire contracts, implementation gates or acceptance criteria in this ADR. It also does not claim that pull request
+#1 received an independent approval. The waiver ends when the complete standalone history is imported at IB6; from
+that point, this service and all later changes are governed by OpenSlack's independent-review requirements.
+
 ## Non-Goals Of IB0
 
 - No migrations, endpoint schema changes, response-body reads or credentials are implemented here.
 - No OpenSlack Blob, client, queue, router, CLI or runtime path is enabled here.
 - No production-readiness or live-verification claim is made.
-- G0 remains pending until the two IB0 changes receive independent review.
+- G0 is recorded as `G0_CONTRACT_PASS_WITH_RC_REVIEW_WAIVER`; the service-side exception is limited to the
+  standalone review policy defined above.

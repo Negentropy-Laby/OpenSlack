@@ -45,7 +45,7 @@ records:
       - original-host TLS verification and response-body exclusion
   ADR-0005:
     title: OpenSlack Notification Handoff Integration
-    status: Proposed
+    status: Accepted
     date: 2026-07-22
     path: docs/architecture/adr-0005-openslack-handoff-integration.md
     owns:
@@ -53,3 +53,4 @@ records:
       - route ID, routing epoch and handoff idempotency-key v2 contract
       - final vendor bytes and receipt protocol contract
       - two-repository, two-vendor Canary and full-history import gates
+      - standalone review waiver and post-IB6 OpenSlack review-policy transition

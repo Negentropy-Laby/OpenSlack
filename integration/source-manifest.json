@@ -1,7 +1,7 @@
 {
   "schema": "negentropy_laby.notification_delivery_source.v1",
   "status": "IB0_BASELINE",
-  "review_status": "PENDING_INDEPENDENT_REVIEW",
+  "review_status": "G0_CONTRACT_PASS_WITH_RC_REVIEW_WAIVER",
   "source_repository": "https://github.com/wsman/rc_wsman.git",
   "source_commit": "7976962e7de1c6ffcd234d2962b89dc4b23c95c0",
   "source_tree": "ad742f2295c70af27d67173b248f7ae151e7faf9",
@@ -22,6 +22,9 @@
   },
   "runtime_change": false,
   "notes": [
+    "Pull request #1 merged as 1b68cb6 without independent approval; no independent review is claimed.",
+    "During the standalone repository lifetime, integration changes require a current-main pull request, passing required CI, and a merge commit; direct pushes, squash merges, rebases, and force-pushes are forbidden, while the required approval count is zero.",
+    "The standalone review waiver ends at the IB6 full-history import, after which OpenSlack independent-review requirements govern this service.",
     "The review baseline remains immutable evidence even after integration work adds later source commits.",
     "IB6 must add the final standalone source tip, tree, archive tag, and import commit without replacing this baseline."
   ]
