@@ -1,6 +1,6 @@
 # Accessibility Requirements
 
-> **Status**: Draft — Pre-Implementation CP0 (pending Architecture→Pre-Implementation gate review)
+> **Status**: Implemented and mechanically verified — Basic API ergonomics; sensory/UI accessibility N/A
 > **Tier**: Basic
 > **Domain**: internal headless Bearer-auth JSON/HTTP API + data/migration workflow
 > **Authority sources**: `../memory_bank/t1_axioms/ux_accessibility_context.md`,
@@ -21,6 +21,9 @@ asynchronous state; and predictable batch semantics. This document commits the s
 
 Higher tiers (SDK example library, integrator usability testing) are deferred to a future
 v1+ SDK/integrator program (see Scope).
+
+The historical Architecture→Pre-Implementation gate was not run. Implementation proceeded under explicit owner
+authorization; this document's current status reflects implemented contract evidence, not a retroactive gate claim.
 
 ## Sensory Applicability
 

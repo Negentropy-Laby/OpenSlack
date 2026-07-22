@@ -1,6 +1,7 @@
 # Test Strategy
 
-> Documentation only. No test framework, test file, CI workflow or runtime evidence exists yet.
+> Implemented test strategy. Current local evidence is indexed in `ac-evidence.json` and summarized in
+> `acceptance-report.json`; GitHub-hosted CI has not run in this workspace.
 
 ## Test Layers
 
@@ -69,7 +70,13 @@ No pass/fail throughput or latency target is invented before implementation. The
 
 Results establish evolution triggers; they do not retroactively become an external SLA without an ADR.
 
-## Exit Criteria for Future Implementation
+## Exit Criteria
 
-All canonical CDD AC are mapped to at least one planned test type; critical scenarios above pass; race/security/fault
-tests pass; migrations preserve append-only/immutable invariants; documentation and OpenAPI match shipped behavior.
+All 290 canonical CDD AC and four NSBR mappings are linked to existing tests. Critical logic, race, security,
+migration, OpenAPI, Prometheus, Compose, crash-after-send, pepper, capacity and PITR checks pass locally. Formal
+batch approval still depends on the recorded fresh independent reviews.
+
+本轮运行证据分别冻结在 [`capacity-report.md`](capacity-report.md)、
+[`fault-drill-report.md`](fault-drill-report.md)、[`pitr-report.md`](pitr-report.md) 和
+[`marker-scan-report.md`](marker-scan-report.md)；`acceptance-report.json` 只汇总结果，不替代这些原始参数
+与失败记录。

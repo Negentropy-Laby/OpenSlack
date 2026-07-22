@@ -1,7 +1,7 @@
 # Requirements Traceability
 
 > **Status**: Approved design trace
-> **Implementation evidence**: none; implementation has not started
+> **Implementation evidence**: 290/290 canonical AC + 4/4 NSBR mapped to existing tests; final cross-batch review Approved
 
 ## Coverage Result
 
@@ -67,6 +67,6 @@ The architecture review must explicitly cover:
 
 ## Change Rule
 
-A new or changed CDD AC must be added to `tr-registry.yaml` in the same change, with component, ADR and planned test
-type mappings. A future test may cite multiple ACs, but no AC may rely only on prose or an untracked implementation
-detail.
+A new or changed CDD AC must be added to `tr-registry.yaml` and
+[`../testing/ac-evidence.json`](../testing/ac-evidence.json) in the same change, with component, ADR, test type and
+existing test-function evidence. No AC may rely only on prose or an untracked implementation detail.

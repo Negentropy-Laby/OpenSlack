@@ -1,9 +1,9 @@
 # rc_wsman Master Architecture
 
 > **Status**: Approved — independent Architecture review PASS (2026-07-20)
-> **Stage**: Architecture
+> **Stage**: Implementation
 > **Stack**: Go 1.26.5, PostgreSQL 18.4, chi v5, pgx v5
-> **Implementation**: not started
+> **Implementation**: B1–B6 implemented, mechanically verified and independently Approved; local submission-ready
 
 ## Goals and Constraints
 

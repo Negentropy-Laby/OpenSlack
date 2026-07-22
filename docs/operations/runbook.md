@@ -1,6 +1,18 @@
 # Operations Runbook
 
-> Target behavior only. Commands and dashboards are added after implementation; this file does not claim a running system.
+> B6 本地运行手册。示例 secret 和 destructive drill 只允许用于隔离验收环境；生产密钥管理、备份
+> 调度和通知通道由部署方提供。
+
+## Local Start
+
+```bash
+docker compose --env-file deploy/local.env.example up --build --wait
+curl --fail http://127.0.0.1:8080/health/ready
+curl --fail http://127.0.0.1:8080/metrics
+```
+
+Compose 启动 PostgreSQL 18.4、非 root app image 和 Prometheus 3.13.1。`/metrics` 必须恰有三项
+`rc_wsman_*` 业务 gauge；Prometheus scrape timeout 为 5s，app collection timeout 为 2s。
 
 ## Signals
 
@@ -46,7 +58,12 @@ Batch maximum is 100. Automatic replay and “replay all matching query” are f
 
 ## API-Key Pepper Rotation and Compromise
 
-Target behavior only; exact commands and drill cadence belong to the later deployment package.
+生产 key-admin 接入不暴露为 HTTP API/CLI；部署方通过受控 harness 调用既有 KeyAdmin。仓库中的
+测试专用演练命令为：
+
+```bash
+go test ./tests/integration -run '^TestPepperRotationRunbookUsesKeyAdminAndFailsClosed$' -count=1 -v
+```
 
 - **Routine rotation** (planned): deploy `API_KEY_PEPPER_ACTIVE=new` with `API_KEY_PEPPER_PREVIOUS=old`, restart,
   rotate principal keys at leisure under the at-most-two-active-keys rule, confirm zero non-revoked keys still
@@ -73,9 +90,28 @@ Target behavior only; exact commands and drill cadence belong to the later deplo
 - Confirmed rollback and commit-outcome-unknown are diagnosed differently.
 - Do not start an empty replacement database or write to local disk as a fallback.
 
+隔离的 crash-after-send、双 recovery 竞争、数据库停止/恢复和有界关闭演练命令为：
+
+```bash
+RUN_DESTRUCTIVE_ACCEPTANCE=1 COMPOSE_PROJECT_NAME=rcwsman_b6_acceptance \
+  DB_PORT=55432 APP_PORT=58080 PROMETHEUS_PORT=59090 scripts/acceptance/faults.sh
+```
+
+本轮事实证据见 [`../testing/fault-drill-report.md`](../testing/fault-drill-report.md)。
+
 ## Backup and Restore Target Procedure
 
-This is the required production procedure, not evidence that a backup system already exists:
+生产仍须把 backup/WAL storage、identity 与 app secret 分离。仓库提供隔离本地演练：
+
+```bash
+COMPOSE_PROJECT_NAME=rcwsman_b6_acceptance \
+  DB_PORT=55432 APP_PORT=58080 PROMETHEUS_PORT=59090 \
+  docker compose --env-file deploy/local.env.example up --build --detach --wait
+RUN_DESTRUCTIVE_ACCEPTANCE=1 scripts/acceptance/pitr.sh
+```
+
+脚本只接受命名为 acceptance 的源容器，在 `/tmp` 和临时 volume 内运行 PostgreSQL 18.4 physical
+base backup、WAL archive、固定 age v1.3.1 加密和 target-time restore，并自动清理恢复资源。生产程序：
 
 1. use the PostgreSQL platform's encrypted base-backup plus continuous WAL/PITR facility; backup storage credentials
    are separate from application credentials;
@@ -93,6 +129,20 @@ This is the required production procedure, not evidence that a backup system alr
 
 A restore drill must succeed before production readiness and recur on an operator-owned schedule. Exact platform
 commands, retention and drill cadence belong to the later deployment package.
+
+本轮隔离恢复的逐字段结果见 [`../testing/pitr-report.md`](../testing/pitr-report.md)。
+
+## Redaction Verification
+
+新增日志 sink、projection 或验收制品时，运行 fail-closed marker 扫描：
+
+```bash
+RUN_DESTRUCTIVE_ACCEPTANCE=1 COMPOSE_PROJECT_NAME=rcwsman_b6_acceptance \
+  DB_PORT=55432 APP_PORT=58080 PROMETHEUS_PORT=59090 scripts/acceptance/marker-scan.sh
+```
+
+本轮结果见 [`../testing/marker-scan-report.md`](../testing/marker-scan-report.md)。marker 扫描只证明已枚举
+surface 的本轮输出；不能替代新增 sink 的设计审查。
 
 ## Safe Manual Actions
 

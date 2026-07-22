@@ -1,9 +1,11 @@
 version: 1
 status: approved
-last_updated: 2026-07-20
+last_updated: 2026-07-22
 purpose: >
   Cross-document authority map for the approved Specification and Architecture
-  documents. It is design evidence only and does not describe implemented code.
+  documents. Implementation evidence for B1-B4 is linked separately and does
+  not change behavioral ownership.
+implementation_evidence: docs/testing/b1-b4-ac-evidence.json
 
 authority_rules:
   - Each identifier has exactly one behavioral authority.
@@ -302,6 +304,18 @@ config_map:
   RECOVERY_BATCH_MAX:
     value: 100
     authority: design/cdd/notification-store.md
+  RECOVERY_BATCH_SIZE:
+    value: 100
+    range: 1..100
+    authority: docs/architecture/architecture.md
+  RECOVERY_INTERVAL:
+    value: 5s
+    range: "(0, LEASE_TTL]"
+    authority: docs/architecture/architecture.md
+  METRICS_COLLECTION_TIMEOUT:
+    value: 2s
+    constraint: less than Prometheus 5s scrape timeout
+    authority: design/cdd/reliability-observability.md
   STORE_LIST_PAGE_DEFAULT:
     value: 100
     source_name: LIST_PAGE_DEFAULT
@@ -349,10 +363,18 @@ config_map:
     value: [POST]
     allowed_expansion: [POST, PUT, PATCH]
     authority: design/cdd/vendor-registry.md
+  ENDPOINT_AUTH_STRATEGY_ALLOWLIST:
+    value: [bearer]
+    authority: design/cdd/vendor-registry.md
+    public_wire: docs/api/openapi.yaml#/components/schemas/EndpointConfigInput/properties/auth_strategy
   CREDENTIAL_REF_SCHEME_ALLOWLIST:
     value: [env]
     authority: design/cdd/vendor-registry.md
     architecture_resolution: docs/architecture/adr-0004-ssrf-safe-http.md
+  CREDENTIAL_PROFILE_VALIDATOR:
+    value: bearer-env-v1
+    required: true
+    authority: design/cdd/vendor-registry.md
   STATIC_HEADER_NAME_ALLOWLIST:
     value: [accept, content-type, user-agent]
     authority: design/cdd/vendor-registry.md

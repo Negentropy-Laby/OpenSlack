@@ -1,6 +1,8 @@
 # rc_wsman — API 通知投递服务
 
-> 文档先行的 take-home assignment。当前只完成需求、规格与架构设计；MVP 实现尚未开始。
+> 文档先行的 take-home assignment。B1–B6 已实现、完成本地机械验收，并通过逐批及最终
+> cross-batch fresh independent review；当前为本地 submission-ready。GitHub-hosted CI 与生产部署
+> 不在本地证据范围内。
 
 ## 30 秒了解
 
@@ -8,11 +10,12 @@
 事务中持久化通知与 outbox 可见性，然后以 **at-least-once** 语义投递到服务端批准的供应商端点。
 业务系统收到 `202 Accepted` 后无需等待供应商响应，也不需要自行处理重试、死信和人工恢复。
 
-本系统解决：
+已落地的 MVP 解决：
 
 - 原子接收、入站幂等、异步投递、有界重试与 `dead` 状态；
 - 供应商端点/凭证引用的受控配置与 SSRF 防护；
-- 状态查询、授权人工重放和 day-1 可靠性指标。
+- 授权运维查询、preview/execute 人工重放、三项可靠性指标与固定 dead 告警；
+- lease recovery、pepper generation 启动校验、Compose/Prometheus 和隔离 PITR 演练。
 
 本系统不解决：
 
@@ -84,15 +87,18 @@ Internal caller / operator
 | 关键取舍与演进 | 本 README、四份 ADR |
 | 中间件理由与替代方案 | [ADR-0001](docs/architecture/adr-0001-postgresql-outbox.md) |
 | AI 帮助、未采纳建议、自主决策 | [AI 使用说明](docs/ai-usage.md) |
-| MVP 代码与运行说明 | B1 工程基座与数据层已落地（迁移、配置、HTTP 骨架、Docker）；业务投递路径按 [分批次开发计划](docs/development-plan.md) 推进 |
+| MVP 代码与运行说明 | B1–B6 已落地；290+4 映射见 [AC 证据清单](docs/testing/ac-evidence.json)，运行证据见 [验收报告](docs/testing/acceptance-report.json) |
 
 ## 当前状态
 
-- 权威阶段：[`production/stage.txt`](production/stage.txt)（= Implementation；B1 已完成，B2 Notification Store 实现中）
+- 权威阶段：[`production/stage.txt`](production/stage.txt)（= Implementation）
 - 设计状态：以 [`design/cdd/module-index.md`](design/cdd/module-index.md) 为准
-- 实现状态：B1 已交付——`migrations/` 基础 schema（pending 行即 outbox、dead 行即 DLQ）、
-  `internal/config` 环境配置与 fail-closed pepper、`internal/app` chi v5 骨架（`/healthz`、`/metrics`）、
-  `cmd/server` 入口、Dockerfile + docker-compose；`go.sum` 已生成。B2 Notification Store 核心
-  （domain + PostgreSQL repository）实现中，尚未 wire 到 HTTP 层
-- 运行方式：`docker compose up db` 起 PostgreSQL 18.4；编译与测试在 Go 1.26.5 环境执行
-  `go build ./... && go vet ./... && go test ./...`（本地 shell 无 Go，可用 compose 的 `app` builder 目标）
+- 实现状态：B1–B6 代码、迁移、全部公开 HTTP 契约、worker/recovery、Prometheus、部署与隔离演练
+  已机械闭合；B1/B2、B3、B4、B5、B6 及最终 cross-batch re-review 均为 **APPROVED**（0 blocker）。
+- 平台入口：`/health/live`、`/health/ready`、`/metrics`；业务入口以
+  [`docs/api/openapi.yaml`](docs/api/openapi.yaml) 为准。
+- 一键运行：`docker compose --env-file deploy/local.env.example up --build --wait`。示例 secret 仅供
+  本地验收；生产必须外部注入。
+- 完整本地校验：`go build ./... && go vet ./... && go test -race ./...`；稳定性复核使用
+  `go test -race ./... -count=5`。Prometheus 与 PITR 命令见[运维手册](docs/operations/runbook.md)。
+- [容量报告](docs/testing/capacity-report.md)是当前机器基线，不是 SLA。

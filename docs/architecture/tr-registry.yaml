@@ -1,13 +1,16 @@
 version: 1
 status: approved
-last_updated: 2026-07-20
+last_updated: 2026-07-22
 scope: six approved module CDDs
 source_of_test_taxonomy: docs/testing/test-strategy.md
 coverage_rule: >
   Every canonical acceptance criterion listed below inherits the architecture
   components, ADRs and planned test types of its requirement family. Four
-  additional NSBR identifiers are non-AC boundary coverage mappings. No entry
-  represents an implemented or passing test.
+  additional NSBR identifiers are non-AC boundary coverage mappings. B1-B6
+  implementation evidence is maintained in docs/testing/ac-evidence.json;
+  this registry remains the canonical AC inventory and architecture mapping.
+implementation_evidence:
+  B1-B6: docs/testing/ac-evidence.json
 
 requirement_families:
   NS-INTAKE:

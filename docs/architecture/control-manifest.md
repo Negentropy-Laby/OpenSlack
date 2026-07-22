@@ -1,7 +1,7 @@
 # Architecture Control Manifest
 
 > **Status**: Approved design controls
-> **Evidence level**: documentary; no implementation or runtime evidence exists
+> **Evidence level**: implemented, mechanically verified and independently Approved
 
 | ID | Binding control | Authority | Intended enforcement | Planned evidence |
 |---|---|---|---|---|
@@ -30,5 +30,6 @@
 | CTRL-023 | append-only attempts, endpoint versions and audit facts survive migrations | Data model | DB grants + forward migration | migration tests |
 | CTRL-024 | no Kafka, Redis, independent DLQ, scheduler platform or service mesh in MVP | ADR-0001, technical preferences | dependency review | static architecture check |
 
-Any implementation exception requires a CDD or ADR change before code merge. Passing this manifest is not claimed
-until future tests or static checks provide the listed evidence.
+Any implementation exception requires a CDD or ADR change before code merge. Executable evidence is indexed by
+[`../testing/ac-evidence.json`](../testing/ac-evidence.json); runtime acceptance is summarized in
+[`../testing/acceptance-report.json`](../testing/acceptance-report.json).

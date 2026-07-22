@@ -6,9 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `rc_wsman` is a **documentation-first** take-home assignment: an internal API notification-delivery service. Internal callers submit an already-formed vendor HTTP body; the service persists it in a PostgreSQL transactional outbox and delivers to operator-approved vendor HTTPS endpoints with at-least-once semantics, bounded retry, queryable dead-letter state, and guarded manual replay.
 
-The deliverable is the documentation set plus an owner-authorized MVP implementation in progress (batches B1–B6 per [`docs/development-plan.md`](docs/development-plan.md)). **B1 (engineering foundation) and B2 (Notification Store core) are complete and verified**: `migrations/` base schema (pending rows ARE the outbox, dead rows ARE the DLQ, append-only triggers), `internal/config` (env allowlist + fail-closed pepper), `internal/app` (chi v5 `/healthz` + `/metrics`, graceful shutdown), `cmd/server` (startup migrations + schema version check), `internal/notificationstore` (domain + pure state machine + PostgreSQL repository with `FOR UPDATE SKIP LOCKED` claim, OCC, HMAC-signed cursors), full unit + real-PostgreSQL integration tests run with `-race` via Docker. The authoritative stage is [`production/stage.txt`](production/stage.txt) = **`Implementation`**. B3 (Caller Access + Vendor Registry) onward has **not** been authorized.
+The deliverable is the documentation set plus the owner-authorized B1–B6 MVP described in
+[`docs/development-plan.md`](docs/development-plan.md). All six batches are implemented and batch-approved: Caller
+Access, Vendor Registry, Notification Store, Delivery, Operations Control, Reliability Observability, lifecycle,
+deployment and acceptance drills are present. The authoritative stage is
+[`production/stage.txt`](production/stage.txt) = **`Implementation`**. Final cross-batch review status is mirrored in
+`README.md` and `memory_bank/t0_core/current_state.md`.
 
-**Do not start B3+ work (caller/vendor APIs, delivery workers, operations endpoints) or run any stage gate without explicit owner authorization.** The project treats each batch as a separately-authorized step. The local shell has no Go toolchain — build/vet/test run in Docker (`golang:1.26.5`, `GOMODCACHE=.gomodcache`; DB integration tests need `docker compose up -d db` and `DATABASE_URL`).
+**Do not add a new implementation batch, feature surface, stage transition or retroactive gate without explicit owner
+authorization.** The local shell has no Go toolchain; build/vet/test run in the pinned `golang:1.26.5` container.
+Database tests use a real PostgreSQL 18.4 instance and an isolated schema per test process.
 
 ## Non-obvious working rules (read before editing)
 
@@ -19,7 +26,8 @@ Enforced by the project's CDD (Constitution-Driven-Development) methodology; eas
 - **Authority Rule** (`design/registry/entities.yaml` line 9): every identifier has exactly one behavioral authority. Architecture may select mechanisms but must not weaken a CDD invariant; a consumer reference (e.g. `architecture.md`) does not grant write ownership.
 - **Change Rule** (`docs/architecture/requirements-traceability.md`): adding or changing a CDD acceptance criterion requires updating `tr-registry.yaml` in the same change (component/ADR/test-type mappings). Family-level `planned_test_types` changes are NOT AC changes.
 - **CTRL-024** (`docs/architecture/control-manifest.md`): no Kafka, Redis, independent DLQ, scheduler platform, or service mesh in the MVP; no unbounded retry, lease renewal, automatic dead replay, or local fallback state.
-- **No SLA before implementation** (`docs/testing/test-strategy.md`): do not invent numeric latency/throughput/RPO/RTO targets — decided later at Architecture + load-test.
+- **No SLA from a local baseline** (`docs/testing/test-strategy.md`): capacity numbers are machine-specific evidence,
+  not latency/throughput/RPO/RTO commitments.
 - **Secrets are CTRL-016**: the API-key pepper *value* is never persisted (only the non-secret `pepper_id` label on `access_keys`); secret values never enter Store/logs/metrics/audit/responses.
 - **Style**: documentation is bilingual — Chinese prose with English technical terms. Match the surrounding file's density, headings, inline-code, and relative-path cross-references. AI assistance is recorded per stage in `docs/ai-usage.md` (append a new section when a new stage begins).
 
@@ -28,7 +36,9 @@ Enforced by the project's CDD (Constitution-Driven-Development) methodology; eas
 The repo manually follows an external CDD framework (no runtime installed; `memory_bank/t2_execution/workflow_contract.md` is a hand-maintained mirror).
 
 - **Layers**: `T0` laws (`memory_bank/t0_core/`, BL-01..06 constitution) → `T1` support context (`memory_bank/t1_axioms/`) → `T2` execution (`memory_bank/t2_execution/`) → `T3` archive (`memory_bank/t3_archive/`, review + gate evidence).
-- **Stages** (each transition gated): Concept → Specification → Architecture → Pre-Implementation → Implementation. Current: **Architecture**.
+- **Stages**: Concept → Specification → Architecture → Pre-Implementation → Implementation. Current:
+  **Implementation**. The historical Architecture→Pre-Implementation gate was not run; implementation proceeded by
+  explicit owner authorization and the repository must not claim that missed gate retroactively passed.
 - **CDDs** (Constitution-Driven Designs) in `design/cdd/` — six module contracts plus `product-concept.md` and `module-index.md`; each carries atomic GIVEN/WHEN/THEN acceptance criteria (290 canonical AC total).
 - **ADRs** in `docs/architecture/adr-NNNN-*.md`; inventory + ownership in `docs/architecture/adr-registry.yaml`.
 
@@ -41,9 +51,11 @@ One Go binary, one process; PostgreSQL is the only persistent truth and coordina
 - **Six logical modules** (packages, not services): Caller Access · Vendor Registry · Notification Store · Delivery · Operations Control · Reliability Observability (+ App lifecycle). Ownership table in `architecture.md`; DAG + dependency counts in `design/cdd/module-index.md` and `memory_bank/t1_axioms/knowledge_graph.md`. Only an owner writes its tables.
 - **Failure convergence**: 25 attempts or 24h ⇒ `dead`. B-01 ruling — a retryable result finishing at/after `cycle_send_cutoff` atomically dies in the *current* Store write (no second claim). See `design/cdd/reviews/delivery-deadline-adjudication.md` and `design/cdd/reviews/deadline-backlog-pressure-analysis-2026-07-20.md`.
 - **Security**: callers submit only `vendor_id` + payload; destinations/credentials are Registry-owned. SSRF-safe outbound (DNS pinning, no redirect, pinned-IP dial, no response-body consumption) — ADR-0004. API keys stored as `HMAC-SHA-256(pepper, key)` with a versioned pepper lifecycle (rotation/recovery/invalidation) — ADR-0003.
-- **Stack** (target, pinned in `standards/technical-preferences.md`): Go 1.26.5, chi v5, pgx v5, golang-migrate v4, Prometheus `client_golang` v1, PostgreSQL 18.4, OpenAPI 3.1.
+- **Stack** (implemented, pinned in `standards/technical-preferences.md`): Go 1.26.5, chi v5.2.0, pgx v5.7.1,
+  golang-migrate v4.18.1, Prometheus server v3.13.1 with direct text exposition, PostgreSQL 18.4, OpenAPI 3.1.
 
-Authoritative sources: `docs/architecture/architecture.md` (master), `data-model.md`, `control-manifest.md` (CTRL-001..024), and `docs/api/openapi.yaml` (the fixed contract — design authority until code exists).
+Authoritative sources: `docs/architecture/architecture.md` (master), `data-model.md`, `control-manifest.md`
+(CTRL-001..024), and `docs/api/openapi.yaml` (the implemented public-wire contract).
 
 ## Repository layout
 
@@ -59,20 +71,22 @@ design/cdd/             6 module CDDs + product-concept + module-index + reviews
 design/registry/        entities.yaml (schema/api/permission/config authority map)
 design/ux/              surface profile + interaction patterns
 design/accessibility-requirements.md  Basic-tier accessibility requirements (CP0)
-go.mod                  resolved manifest (chi/pgx/migrate/client_golang; go.sum tracked)
+go.mod                  resolved manifest (kin-openapi/chi/pgx/migrate/yaml; go.sum tracked)
 cmd/server/             binary entry: config → pool → migrations → HTTP lifecycle
-internal/app/           chi v5 HTTP lifecycle (healthz/metrics, graceful shutdown)
+internal/app/           chi v5 /v1 APIs, /health/live, /health/ready, /metrics, graceful shutdown
 internal/config/        env allowlist config + fail-closed pepper loading
-internal/delivery/      CP0 full-jitter backoff leaf + unit test (stdlib-only)
-internal/notificationstore/  B2 Store: domain + pure state machine + postgres adapter
-migrations/             golang-migrate SQL (000001 base schema, append-only triggers)
-tests/                  unit/ + integration/ (real PostgreSQL via DATABASE_URL; skip when unset)
+internal/delivery/      request builder, SSRF-safe transport, runner, worker, retry/dead policy
+internal/calleraccess/, internal/vendorregistry/  authenticated identity and vendor/config authority
+internal/notificationstore/  Store domain, state machine and PostgreSQL adapter
+internal/operationscontrol/, internal/reliability/, internal/leaserecovery/  operations and lifecycle
+migrations/             golang-migrate SQL 000001–000006 and append-only guards
+tests/                  contracts/ + integration/ (real PostgreSQL via DATABASE_URL)
 .github/workflows/      tests.yml CI (go mod tidy / go vet / go test -race)
 memory_bank/t0_core/    constitution (BL-01..06) + state mirrors
 memory_bank/t1_axioms/  tech/system/behavior/qa/architecture/ux/knowledge/module-support context
 memory_bank/t2_execution/  workflow contract (manual)
 memory_bank/t3_archive/    gate-archive + review index + amendments
-production/stage.txt   authoritative stage token (= Architecture)
+production/stage.txt   authoritative stage token (= Implementation)
 .aby/                   tooling state — NOT project documentation; ignore
 ```
 
@@ -88,11 +102,13 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$(pwd -W):/src" -w /src \
   golang:1.26.5 sh -c "go build ./... && go vet ./... && go test -race ./..."
 ```
 
-CI mirrors this in `.github/workflows/tests.yml` (`go mod tidy`, `go vet ./...`, `go test -race ./...` on push/PR). The repeatable documentation checks the reviews perform (from repo root, Git Bash):
+CI is configured to mirror this in `.github/workflows/tests.yml`; no GitHub-hosted run is claimed by the local
+acceptance report. Repeatable documentation checks include:
 
 - **YAML registries parse, no duplicate keys**: `python -c "import yaml; yaml.safe_load(open('docs/architecture/tr-registry.yaml'))"` — repeat for `docs/architecture/adr-registry.yaml` and `design/registry/entities.yaml`.
 - **Local Markdown links resolve**: confirm every `](...md...)` target exists.
 - **AC count unchanged**: `tr-registry.yaml` enumerates 290 canonical AC + 4 NSBR mappings across 24 requirement families.
 - **Artifact SHA-256**: `sha256sum <file>` — recorded per-file in review evidence (`docs/architecture/architecture-review-archive.md`).
 
-When implementation is eventually authorized, add the build/lint/test commands here.
+Full local evidence, including race ×5, Prometheus, Compose, fault, capacity, PITR and marker drills, is indexed in
+`docs/testing/acceptance-report.json` and `docs/testing/workspace-manifest.sha256`.

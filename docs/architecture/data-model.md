@@ -1,6 +1,7 @@
 # Logical Data Model
 
-> PostgreSQL 18.4 target. This is a logical contract, not DDL or migration code.
+> PostgreSQL 18.4 target. This is the logical contract implemented by the numbered files under `migrations/`;
+> those files, rather than this narrative, are the executable DDL authority.
 
 ## Ownership
 
@@ -69,12 +70,20 @@ Indexes: primary key `receipt_id` and unique `(actor_id, idempotency_key)`.
 ### `admin_audit_events`
 
 Append-only, globally increasing `audit_seq`, sanitized operation/outcome/authorization basis and optional receipt
-reference. Credential locator, secret, command fingerprint and raw caller fields are forbidden.
+reference. Credential locator, secret, command fingerprint and raw caller fields are forbidden. A successful event
+must reference its receipt and record the post-mutation revision; a rejected event has no receipt or post-mutation
+revision and uses one of the seven closed business-rejection reasons.
+
+An authorized `VENDOR_NOT_FOUND` rejection still requires an audit event even though no `vendors` row exists.
+Consequently `admin_audit_events.vendor_id` is an immutable logical target identifier, not a foreign key, and
+`owning_scope` is nullable only for that not-found history. This deliberate exception does not permit pre-authorization
+scope failures to write an audit event.
 
 Indexes: unique global `audit_seq`; keyset `(audit_seq DESC, event_id DESC)`; scope-qualified audit reads add
 `vendor_id`/owning-scope lookup support without changing the frozen sequence bound.
 
-Vendor mutation, optional version append, audit and receipt commit atomically.
+On success, vendor mutation, optional version append, audit and receipt commit atomically. An authorized business
+rejection writes its single sanitized audit in a standalone committed statement and writes no receipt or domain row.
 
 ## Caller Access
 
@@ -94,10 +103,9 @@ Indexes/constraints: primary key `key_id`; unique HMAC digest; `(principal_id, s
 Issue/rotation serializes the principal row and checks the fixed active-key cap atomically; an index alone is not
 treated as proof of the cap.
 
-`pepper_id` is an additive logical-schema column introduced per the Migration Principles (additive nullable first,
-backfill all existing rows to the initial generation id, then constrain NOT NULL); the unique-HMAC-digest constraint is
-unchanged. This is a logical design note only — no DDL or migration files are created in the documentation phase. The
-CDD-level `AccessKeyRecord.secret_hash` (opaque verifier) is unchanged; `pepper_id` and the HMAC mechanism live in this
+`pepper_id` follows the Migration Principles: additive nullable first, backfill existing rows to the initial generation
+id, then constrain NOT NULL; the unique-HMAC-digest constraint is unchanged. The CDD-level
+`AccessKeyRecord.secret_hash` (opaque verifier) is unchanged; `pepper_id` and the HMAC mechanism live in this
 Architecture storage projection (caller-access.md delegates physical schema, hash algorithm, indexes and key
 generation to Architecture).
 
@@ -118,8 +126,9 @@ triggers a shared limiter only when multiple replicas become required.
 - Additive nullable column first, backfill/verify, then constrain; never reinterpret existing enum values silently.
 - Append-only history and immutable identity fields survive every migration.
 - A migration changing state/union semantics requires CDD and ADR review before DDL.
-- Implementation must test upgrade from the immediately previous schema and a clean bootstrap; this document does not
-  create migration files.
+- Migration tests cover clean bootstrap, upgrade from `000001`, explicit failure on legacy non-bearer endpoint rows,
+  one-step down/up and full down/up. Production rollback remains conditional: a down migration must fail rather than
+  discard append-only history that cannot fit the previous schema.
 
 ## Retention
 

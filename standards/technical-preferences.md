@@ -1,8 +1,8 @@
 # Technical Preferences
 
-> **Status**: Approved documentation baseline
+> **Status**: Approved implementation baseline
 > **Domain**: internal headless API/worker service
-> **Last verified**: 2026-07-20
+> **Last verified**: 2026-07-22
 
 ## Version Baseline
 
@@ -10,11 +10,11 @@
 |---|---|---|
 | Language | Go 1.26.5 | exact toolchain patch |
 | Database | PostgreSQL 18.4 | exact server minor; follow supported minor security updates |
-| HTTP router | `go-chi/chi` v5 | exact latest stable v5 patch when implementation begins |
-| PostgreSQL driver | `jackc/pgx` v5 | exact latest stable v5 patch when implementation begins |
-| Migration tool | `golang-migrate/migrate` v4 | exact latest stable v4 patch when implementation begins |
-| Metrics | Prometheus `client_golang` v1 | exact stable patch when implementation begins |
-| API contract | OpenAPI 3.1 | `docs/api/openapi.yaml` is design authority until code exists |
+| HTTP router | `go-chi/chi` v5.2.0 | exact module patch in `go.mod`/`go.sum` |
+| PostgreSQL driver | `jackc/pgx` v5.7.1 | exact module patch in `go.mod`/`go.sum` |
+| Migration tool | `golang-migrate/migrate` v4.18.1 | exact module patch in `go.mod`/`go.sum` |
+| Metrics | Prometheus server v3.13.1 | Compose image pinned by tag and digest; service emits the text exposition directly |
+| API contract | OpenAPI 3.1 | `docs/api/openapi.yaml` is the implemented public-wire authority |
 
 Official verification sources:
 
@@ -24,8 +24,8 @@ Official verification sources:
 - pgx releases: <https://github.com/jackc/pgx/releases>
 - migrate releases: <https://github.com/golang-migrate/migrate/releases>
 
-No dependency manifest is created in the documentation phase. Exact module patches are recorded in `go.mod` only
-after implementation authorization, without changing the accepted majors above.
+Implementation dependencies are fixed in `go.mod`/`go.sum`; deployable PostgreSQL and Prometheus images are fixed
+by tag and immutable digest in `docker-compose.yml`.
 
 ## Deployment Shape
 
@@ -86,4 +86,3 @@ interfaces. `app` is the only composition root.
 - Cross-module direct table writes.
 - Logging or metric labels containing payload, secret, credential reference or unbounded vendor/error values.
 - Treating the six logical modules as six microservices in MVP.
-

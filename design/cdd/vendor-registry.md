@@ -435,7 +435,7 @@ EndpointVersion / AdminAuditEvent / AdminCommandReceipt 副作用，同 key 重�
 | `transport_auth_headers` | list<HeaderRule> | Y | 闭合判别联合（literal / credential_field） |
 | `outbound_idempotency_mapping` | OutboundIdempotencyMapping | Y | 闭合判别联合（none / header / body_field） |
 | `endpoint_policy` | EndpointPolicy | Y | 闭合子 schema（下） |
-| `auth_strategy` | enum | Y | `bearer`/`hmac`/`mTLS`/`aws_sig_v4`/`custom` |
+| `auth_strategy` | enum | Y | MVP 固定为 `bearer`；其他策略进入后续版本前须重新修订契约与 threat model |
 | `credential_ref` | CredentialRef | Y | opaque 字段组 |
 | `created_at` / `created_by_actor` | ts/string | Y | 服务端时钟 / actor_id |
 
