@@ -1,9 +1,7 @@
 // Package delivery contains the delivery module's leaf utilities.
 //
-// This file is the first real production leaf of the Pre-Implementation Test
-// Framework Baseline. It is stdlib-only (no external require) so the baseline
-// unit test compiles against the minimal go.mod. It is AUTHORED-BUT-NOT-COMPILED
-// in the current (Go-less) shell; compilation is verified in CI.
+// This file began as the stdlib-only leaf of the Pre-Implementation Test
+// Framework Baseline and remains independently testable without external I/O.
 package delivery
 
 import "time"
@@ -64,4 +62,47 @@ func exponentialBound(base time.Duration, attemptCount int, cap time.Duration) t
 		return cap
 	}
 	return bound
+}
+
+// NextAttemptTime computes the clamped next-attempt timestamp.
+// Returns nil if the result should be an actual-result die at cutoff.
+//
+// The algorithm is:
+//  1. jitter = FullJitter(rng, attemptCount, baseDelay, delayCap)
+//  2. if retryAfter is valid: effective = min(max(0, retryAfterAt - now), retryAfterCap); candidate = max(jitter, effective)
+//  3. else: candidate = jitter
+//  4. if now < cycleSendCutoff: next = min(cycleSendCutoff, now + candidate); return &next
+//  5. else return nil (B-01 atomic die at deadline_exceeded)
+func NextAttemptTime(
+	now, cycleSendCutoff time.Time,
+	attemptCount int,
+	retryAfter *time.Duration,
+	baseDelay, delayCap, retryAfterCap time.Duration,
+	rng RNG,
+) *time.Time {
+	if rng == nil {
+		panic("delivery: NextAttemptTime requires a non-nil RNG")
+	}
+	jitter := FullJitter(rng, attemptCount, baseDelay, delayCap)
+	candidate := jitter
+	if retryAfter != nil {
+		effective := *retryAfter
+		if effective > retryAfterCap {
+			effective = retryAfterCap
+		}
+		if effective < 0 {
+			effective = 0
+		}
+		if effective > candidate {
+			candidate = effective
+		}
+	}
+	if now.Before(cycleSendCutoff) {
+		next := now.Add(candidate)
+		if next.After(cycleSendCutoff) {
+			next = cycleSendCutoff
+		}
+		return &next
+	}
+	return nil
 }

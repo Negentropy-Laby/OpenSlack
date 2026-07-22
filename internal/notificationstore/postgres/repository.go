@@ -40,7 +40,7 @@ func New(pool *pgxpool.Pool, logger *slog.Logger) notificationstore.Repository {
 func txNow(ctx context.Context, tx pgx.Tx) (time.Time, error) {
 	var t time.Time
 	if err := tx.QueryRow(ctx, "SELECT now()").Scan(&t); err != nil {
-		return time.Time{}, fmt.Errorf("store now: %w", err)
+		return time.Time{}, notificationstore.Rejection{Category: notificationstore.RejectionClockUnavailable, Reason: "authoritative database clock unavailable"}
 	}
 	return t, nil
 }
@@ -80,14 +80,15 @@ func (r *Repository) Intake(ctx context.Context, in notificationstore.ValidatedI
 		// Conflict on unique key; read the existing row to apply the idempotency matrix.
 		var existingFP []byte
 		var existingID string
-		if err := tx.QueryRow(ctx, intakeSelectSQL, in.CallerID, in.IdempotencyKey).Scan(&existingID, &existingFP); err != nil {
+		var existingCreatedAt time.Time
+		if err := tx.QueryRow(ctx, intakeSelectSQL, in.CallerID, in.IdempotencyKey).Scan(&existingID, &existingFP, &existingCreatedAt); err != nil {
 			return notificationstore.IntakeResult{}, fmt.Errorf("intake conflict read: %w", err)
 		}
 		if string(existingFP) == string(fp) {
 			if err := tx.Commit(ctx); err != nil {
 				return notificationstore.IntakeResult{}, commitFailure(err)
 			}
-			return notificationstore.IntakeResult{NotificationID: existingID, IdempotentReplay: true}, nil
+			return notificationstore.IntakeResult{NotificationID: existingID, IdempotentReplay: true, AcceptedAt: existingCreatedAt}, nil
 		}
 		return notificationstore.IntakeResult{}, notificationstore.Rejection{
 			Category: notificationstore.RejectionIdempotencyConflict,
@@ -108,7 +109,7 @@ func (r *Repository) Intake(ctx context.Context, in notificationstore.ValidatedI
 	if err := tx.Commit(ctx); err != nil {
 		return notificationstore.IntakeResult{}, commitFailure(err)
 	}
-	return notificationstore.IntakeResult{NotificationID: id, IdempotentReplay: false}, nil
+	return notificationstore.IntakeResult{NotificationID: id, IdempotentReplay: false, AcceptedAt: createdAt}, nil
 }
 
 // ClaimNext selects the oldest eligible pending notification and issues a lease.
@@ -293,6 +294,14 @@ func (r *Repository) RecoverExpiredLeases(ctx context.Context, actor notificatio
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	var lockAcquired bool
+	if err := tx.QueryRow(ctx, recoveryTryLockSQL).Scan(&lockAcquired); err != nil {
+		return nil, fmt.Errorf("recover advisory lock: %w", err)
+	}
+	if !lockAcquired {
+		return []notificationstore.RecoveredLease{}, nil
+	}
+
 	now, err := txNow(ctx, tx)
 	if err != nil {
 		return nil, err
@@ -322,22 +331,25 @@ func (r *Repository) RecoverExpiredLeases(ctx context.Context, actor notificatio
 	var out []notificationstore.RecoveredLease
 	for _, n := range expired {
 		newVersion := n.Version + 1
-		newAttemptCount := n.AttemptCount + 1
+		newAttemptCount, err := nextAttemptCount(n.AttemptCount, 1)
+		if err != nil {
+			return nil, err
+		}
 		attemptSeq, err := nextAttemptSeq(ctx, tx, n.ID)
 		if err != nil {
 			return nil, err
 		}
 		decision := notificationstore.TransitionDecision{
-			NewState:         notificationstore.StatePending,
+			NewState:          notificationstore.StatePending,
 			AttemptCountDelta: 1,
-			ClearLease:       true,
-			SetNextAttemptAt: &now,
-			LastOutcomeClass: string(notificationstore.OutcomeClassRetryableFailure),
-			LastErrorCode:    notificationstore.ErrorCodeLeaseExpiredUnknownResult,
-			EventKind:        notificationstore.EventKindRecovery,
-			ResultKind:       notificationstore.ResultKindUnknownResult,
-			OutcomeClass:     notificationstore.OutcomeClassRetryableFailure,
-			Reason:           notificationstore.ErrorCodeLeaseExpiredUnknownResult,
+			ClearLease:        true,
+			SetNextAttemptAt:  &now,
+			LastOutcomeClass:  string(notificationstore.OutcomeClassRetryableFailure),
+			LastErrorCode:     notificationstore.ErrorCodeLeaseExpiredUnknownResult,
+			EventKind:         notificationstore.EventKindRecovery,
+			ResultKind:        notificationstore.ResultKindUnknownResult,
+			OutcomeClass:      notificationstore.OutcomeClassRetryableFailure,
+			Reason:            notificationstore.ErrorCodeLeaseExpiredUnknownResult,
 		}
 		if err := appendAttempt(ctx, tx, n.ID, attemptSeq, decision, actor.ActorID, n.LeaseID, n.LeaseExpiresAt, now); err != nil {
 			return nil, err
@@ -383,8 +395,17 @@ func (r *Repository) Get(ctx context.Context, actor notificationstore.ActorConte
 
 // QueryOutbox returns the BL-06 aggregate projection.
 func (r *Repository) QueryOutbox(ctx context.Context, actor notificationstore.ActorContext, vendorFilter []string) (notificationstore.OutboxProjection, error) {
-	if err := readActorValidate(actor); err != nil {
+	if err := actor.Validate(); err != nil {
 		return notificationstore.OutboxProjection{}, err
+	}
+	if actor.Kind != notificationstore.ActorOperator && actor.Kind != notificationstore.ActorSystem {
+		return notificationstore.OutboxProjection{}, notificationstore.Rejection{Category: notificationstore.RejectionForbiddenAction, Reason: "outbox read requires operator or system actor"}
+	}
+	if !actor.HasCapability(notificationstore.CapabilityReadNotifications) && !(actor.Kind == notificationstore.ActorSystem && actor.HasCapability(notificationstore.CapabilityReadAllNotifications)) {
+		return notificationstore.OutboxProjection{}, notificationstore.Rejection{Category: notificationstore.RejectionForbiddenAction, Reason: "missing outbox read capability"}
+	}
+	if actor.Kind == notificationstore.ActorSystem && len(vendorFilter) == 0 && len(actor.VendorScope) == 1 && actor.VendorScope[0] == "*" && !actor.HasCapability(notificationstore.CapabilityReadAllNotifications) {
+		return notificationstore.OutboxProjection{}, notificationstore.Rejection{Category: notificationstore.RejectionForbiddenAction, Reason: "global system query requires read_all_notifications"}
 	}
 	scope, global, err := readScope(actor, vendorFilter)
 	if err != nil {
@@ -398,56 +419,11 @@ func (r *Repository) QueryOutbox(ctx context.Context, actor notificationstore.Ac
 	}
 
 	var proj notificationstore.OutboxProjection
-	countsQuery := outboxCountsSQL
-	oldestQuery := oldestPendingSQL
-	countsArgs := []any{scope}
-	oldestArgs := []any{scope}
-	if global {
-		countsQuery = outboxCountsGlobalSQL
-		oldestQuery = oldestPendingGlobalSQL
-		countsArgs = nil
-		oldestArgs = nil
-	}
-	rows, err := r.pool.Query(ctx, countsQuery, countsArgs...)
-	if err != nil {
-		return proj, fmt.Errorf("outbox counts: %w", err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var state string
-		var count int
-		if err := rows.Scan(&state, &count); err != nil {
-			return proj, fmt.Errorf("scan outbox count: %w", err)
-		}
-		switch state {
-		case "pending":
-			proj.PendingCount = count
-		case "in_flight":
-			proj.InFlightCount = count
-		case "delivered":
-			proj.DeliveredCount = count
-		case "dead":
-			proj.DeadCount = count
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return proj, fmt.Errorf("outbox rows: %w", err)
-	}
-
-	var oldest *time.Time
-	if err := r.pool.QueryRow(ctx, oldestQuery, oldestArgs...).Scan(&oldest); err != nil {
-		return proj, fmt.Errorf("oldest pending: %w", err)
-	}
-	if oldest != nil {
-		var now time.Time
-		if err := r.pool.QueryRow(ctx, "SELECT now()").Scan(&now); err != nil {
-			return proj, fmt.Errorf("store now for age: %w", err)
-		}
-		age := now.Sub(*oldest).Seconds()
-		if age < 0 {
-			age = 0
-		}
-		proj.OldestPendingAgeSeconds = age
+	if err := r.pool.QueryRow(ctx, outboxProjectionSQL, global, scope).Scan(
+		&proj.PendingCount, &proj.InFlightCount, &proj.DeliveredCount,
+		&proj.DeadCount, &proj.OldestPendingAgeSeconds,
+	); err != nil {
+		return proj, fmt.Errorf("outbox projection: %w", err)
 	}
 	return proj, nil
 }
@@ -457,7 +433,8 @@ func (r *Repository) ListDead(ctx context.Context, actor notificationstore.Actor
 	if err := readActorValidate(actor); err != nil {
 		return notificationstore.DeadPage{}, err
 	}
-	if limit < notificationstore.ListPageMin || limit > notificationstore.ListPageMax {
+	limit, err := normalizePageLimit(limit)
+	if err != nil {
 		return notificationstore.DeadPage{}, notificationstore.Rejection{
 			Category: notificationstore.RejectionInvalidPageLimit,
 			Reason:   fmt.Sprintf("limit must be in [%d, %d]", notificationstore.ListPageMin, notificationstore.ListPageMax),
@@ -475,7 +452,6 @@ func (r *Repository) ListDead(ctx context.Context, actor notificationstore.Actor
 		}
 	}
 
-	now := time.Now().UTC()
 	var snapshotAt time.Time
 	var lastDeadAt *time.Time
 	var lastID string
@@ -507,7 +483,12 @@ func (r *Repository) ListDead(ctx context.Context, actor notificationstore.Actor
 			lastID = env.LastID
 		}
 	} else {
-		snapshotAt = now
+		if err := r.pool.QueryRow(ctx, "SELECT now()").Scan(&snapshotAt); err != nil {
+			return notificationstore.DeadPage{}, notificationstore.Rejection{
+				Category: notificationstore.RejectionClockUnavailable,
+				Reason:   "authoritative database clock unavailable",
+			}
+		}
 	}
 
 	rows, err := r.pool.Query(ctx, listDeadSQL, scope, snapshotAt, lastDeadAt, lastID, limit+1)
@@ -562,7 +543,8 @@ func (r *Repository) ListAttemptHistory(ctx context.Context, actor notifications
 	if err := readActorValidate(actor); err != nil {
 		return notificationstore.AttemptPage{}, err
 	}
-	if limit < notificationstore.ListPageMin || limit > notificationstore.ListPageMax {
+	limit, err := normalizePageLimit(limit)
+	if err != nil {
 		return notificationstore.AttemptPage{}, notificationstore.Rejection{
 			Category: notificationstore.RejectionInvalidPageLimit,
 			Reason:   fmt.Sprintf("limit must be in [%d, %d]", notificationstore.ListPageMin, notificationstore.ListPageMax),
@@ -677,6 +659,9 @@ func readActorValidate(actor notificationstore.ActorContext) error {
 	if err := actor.Validate(); err != nil {
 		return err
 	}
+	if actor.Kind != notificationstore.ActorOperator && actor.Kind != notificationstore.ActorSystem {
+		return notificationstore.Rejection{Category: notificationstore.RejectionForbiddenAction, Reason: "read requires operator or system actor"}
+	}
 	if !actor.HasCapability(notificationstore.CapabilityReadNotifications) {
 		return notificationstore.Rejection{Category: notificationstore.RejectionForbiddenAction, Reason: "missing read_notifications capability"}
 	}
@@ -760,6 +745,7 @@ func updateNotification(ctx context.Context, tx pgx.Tx, current notificationstor
 		d.NewState,
 		newVersion,
 		attemptCount,
+		current.ReplayCount+boolInt(d.SetReplayedAt),
 		newCycleStart,
 		deliveredAt,
 		deadAt,
@@ -838,10 +824,25 @@ func boolInt(b bool) int {
 
 // commitFailure maps a commit error to a stable rejection.
 func commitFailure(err error) error {
-	return notificationstore.Rejection{
-		Category: notificationstore.RejectionCommitOutcomeUnknown,
-		Reason:   err.Error(),
+	category := notificationstore.RejectionCommitOutcomeUnknown
+	var pgErr *pgconn.PgError
+	if errors.Is(err, pgx.ErrTxCommitRollback) || (errors.As(err, &pgErr) && pgErr.Code != "57P01" && pgErr.Code != "57P02" && pgErr.Code != "57P03" && pgErr.Code != "40003") {
+		category = notificationstore.RejectionCommitRolledBack
 	}
+	return notificationstore.Rejection{
+		Category: category,
+		Reason:   "database commit did not complete normally",
+	}
+}
+
+func normalizePageLimit(limit int) (int, error) {
+	if limit == 0 {
+		return notificationstore.ListPageDefault, nil
+	}
+	if limit < notificationstore.ListPageMin || limit > notificationstore.ListPageMax {
+		return 0, notificationstore.Rejection{Category: notificationstore.RejectionInvalidPageLimit, Reason: "page limit out of range"}
+	}
+	return limit, nil
 }
 
 var errNoRowsAffected = errors.New("no rows affected")

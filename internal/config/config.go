@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"rc_wsman/internal/calleraccess"
 )
 
 const (
@@ -22,7 +24,11 @@ const (
 	defaultLeaseDuration     = 30 * time.Second
 	defaultShutdownDeadline  = 30 * time.Second
 	defaultWorkerConcurrency = 5
-	defaultMigrationSource     = "migrations"
+	defaultMigrationSource   = "migrations"
+	defaultMetricsTimeout    = 2 * time.Second
+	defaultRecoveryInterval  = 5 * time.Second
+	defaultRecoveryBatchSize = 100
+	maxMetricsScrapeTimeout  = 5 * time.Second
 )
 
 var envNamePattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,127}$`)
@@ -38,6 +44,12 @@ func (p Pepper) String() string {
 	return fmt.Sprintf("Pepper{ID:%s}", p.ID)
 }
 
+// PepperID returns the non-secret pepper generation id; satisfies calleraccess.Pepper.
+func (p Pepper) PepperID() string { return p.ID }
+
+// PepperValue returns the secret pepper bytes; satisfies calleraccess.Pepper.
+func (p Pepper) PepperValue() []byte { return p.Value }
+
 // PepperSet exposes the loaded generations for runtime checks such as
 // "every non-revoked access_keys row has a known pepper_id".
 type PepperSet struct {
@@ -45,16 +57,16 @@ type PepperSet struct {
 	byID     map[string]Pepper
 }
 
-// Active returns the active pepper generation.
-func (ps PepperSet) Active() Pepper {
+// Active returns the active pepper generation as the calleraccess.Pepper interface.
+func (ps PepperSet) Active() calleraccess.Pepper {
 	return ps.byID[ps.activeID]
 }
 
-// Previous returns the optional grace-generation pepper, or nil.
-func (ps PepperSet) Previous() *Pepper {
+// Previous returns the optional grace-generation pepper as the calleraccess.Pepper interface, or nil.
+func (ps PepperSet) Previous() calleraccess.Pepper {
 	for id, p := range ps.byID {
 		if id != ps.activeID {
-			return &p
+			return p
 		}
 	}
 	return nil
@@ -69,17 +81,21 @@ func (ps PepperSet) Has(id string) bool {
 // Config is the validated, immutable startup configuration.
 // Pepper values live here only for the lifetime of the process.
 type Config struct {
-	DatabaseURL            string
-	HTTPBind               string
-	MetricsPath            string
-	WorkerInterval         time.Duration
-	LeaseDuration          time.Duration
-	ShutdownDeadline       time.Duration
-	WorkerConcurrency      int
-	MigrationSource        string
-	ActivePepper           Pepper
-	PreviousPepper         *Pepper
-	EnvCredentialAllowlist []string
+	DatabaseURL              string
+	HTTPBind                 string
+	MetricsPath              string
+	WorkerInterval           time.Duration
+	LeaseDuration            time.Duration
+	ShutdownDeadline         time.Duration
+	WorkerConcurrency        int
+	MetricsCollectionTimeout time.Duration
+	RecoveryInterval         time.Duration
+	RecoveryBatchSize        int
+	MigrationSource          string
+	ActivePepper             Pepper
+	PreviousPepper           *Pepper
+	EnvCredentialAllowlist   []string
+	WorkerVendorScope        []string
 }
 
 // Peppers returns a PepperSet for id-membership checks.
@@ -91,7 +107,9 @@ func (c *Config) Peppers() PepperSet {
 		},
 	}
 	if c.PreviousPepper != nil {
-		ps.byID[c.PreviousPepper.ID] = *c.PreviousPepper
+		if c.PreviousPepper.ID != c.ActivePepper.ID {
+			ps.byID[c.PreviousPepper.ID] = *c.PreviousPepper
+		}
 	}
 	return ps
 }
@@ -115,6 +133,9 @@ func Load() (*Config, error) {
 		p, err := parsePepper("API_KEY_PEPPER_PREVIOUS", v)
 		if err != nil {
 			return nil, err
+		}
+		if p.ID == activePepper.ID {
+			return nil, fmt.Errorf("API_KEY_PEPPER_ACTIVE and API_KEY_PEPPER_PREVIOUS must use distinct generation ids")
 		}
 		previousPepper = p
 	}
@@ -141,6 +162,7 @@ func Load() (*Config, error) {
 		ActivePepper:           *activePepper,
 		PreviousPepper:         previousPepper,
 		EnvCredentialAllowlist: credentialNames,
+		WorkerVendorScope:      parseList(strings.TrimSpace(os.Getenv("WORKER_VENDOR_SCOPE"))),
 	}
 
 	if cfg.WorkerInterval, err = durationOrDefault("WORKER_INTERVAL", defaultWorkerInterval); err != nil {
@@ -155,6 +177,15 @@ func Load() (*Config, error) {
 	if cfg.WorkerConcurrency, err = intOrDefault("WORKER_CONCURRENCY", defaultWorkerConcurrency); err != nil {
 		return nil, err
 	}
+	if cfg.MetricsCollectionTimeout, err = durationOrDefault("METRICS_COLLECTION_TIMEOUT", defaultMetricsTimeout); err != nil {
+		return nil, err
+	}
+	if cfg.RecoveryInterval, err = durationOrDefault("RECOVERY_INTERVAL", defaultRecoveryInterval); err != nil {
+		return nil, err
+	}
+	if cfg.RecoveryBatchSize, err = intOrDefault("RECOVERY_BATCH_SIZE", defaultRecoveryBatchSize); err != nil {
+		return nil, err
+	}
 
 	if cfg.WorkerInterval <= 0 {
 		return nil, fmt.Errorf("WORKER_INTERVAL must be positive")
@@ -167,6 +198,15 @@ func Load() (*Config, error) {
 	}
 	if cfg.WorkerConcurrency <= 0 {
 		return nil, fmt.Errorf("WORKER_CONCURRENCY must be positive")
+	}
+	if cfg.MetricsCollectionTimeout <= 0 || cfg.MetricsCollectionTimeout >= maxMetricsScrapeTimeout {
+		return nil, fmt.Errorf("METRICS_COLLECTION_TIMEOUT must be in (0, 5s)")
+	}
+	if cfg.RecoveryInterval <= 0 || cfg.RecoveryInterval > cfg.LeaseDuration {
+		return nil, fmt.Errorf("RECOVERY_INTERVAL must be in (0, LEASE_DURATION]")
+	}
+	if cfg.RecoveryBatchSize < 1 || cfg.RecoveryBatchSize > 100 {
+		return nil, fmt.Errorf("RECOVERY_BATCH_SIZE must be in [1, 100]")
 	}
 	if cfg.MetricsPath == "" || !strings.HasPrefix(cfg.MetricsPath, "/") {
 		return nil, fmt.Errorf("METRICS_PATH must be an absolute path")

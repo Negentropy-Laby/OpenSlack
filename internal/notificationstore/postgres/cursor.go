@@ -31,16 +31,16 @@ func newCursorSigner() *cursorSigner {
 
 // cursorEnvelope is the JSON payload carried in a cursor.
 type cursorEnvelope struct {
-	Op            string         `json:"op"`
-	Scope         []string       `json:"scope,omitempty"`
-	Limit         int            `json:"limit"`
-	SnapshotAt    string         `json:"snapshot_at,omitempty"` // RFC3339Nano
-	LastDeadAt    string         `json:"last_dead_at,omitempty"`
-	LastID        string         `json:"last_id,omitempty"`
-	NotificationID string        `json:"notification_id,omitempty"`
-	LastAttemptSeq int64         `json:"last_attempt_seq,omitempty"`
-	LastAttemptID  string        `json:"last_attempt_id,omitempty"`
-	Extra         map[string]any `json:"extra,omitempty"`
+	Op             string         `json:"op"`
+	Scope          []string       `json:"scope,omitempty"`
+	Limit          int            `json:"limit"`
+	SnapshotAt     string         `json:"snapshot_at,omitempty"` // RFC3339Nano
+	LastDeadAt     string         `json:"last_dead_at,omitempty"`
+	LastID         string         `json:"last_id,omitempty"`
+	NotificationID string         `json:"notification_id,omitempty"`
+	LastAttemptSeq int64          `json:"last_attempt_seq,omitempty"`
+	LastAttemptID  string         `json:"last_attempt_id,omitempty"`
+	Extra          map[string]any `json:"extra,omitempty"`
 }
 
 func (c *cursorSigner) sign(env cursorEnvelope) (string, error) {

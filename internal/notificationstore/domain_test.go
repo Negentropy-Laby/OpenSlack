@@ -22,10 +22,10 @@ func TestValidateIntake_Valid(t *testing.T) {
 
 func TestValidateIntake_MissingFields(t *testing.T) {
 	cases := map[string]ValidatedIntake{
-		"no caller":  {CallerID: "", VendorID: "v", Payload: []byte("x"), IdempotencyKey: "k"},
-		"no vendor":  {CallerID: "c", VendorID: "", Payload: []byte("x"), IdempotencyKey: "k"},
+		"no caller":   {CallerID: "", VendorID: "v", Payload: []byte("x"), IdempotencyKey: "k"},
+		"no vendor":   {CallerID: "c", VendorID: "", Payload: []byte("x"), IdempotencyKey: "k"},
 		"nil payload": {CallerID: "c", VendorID: "v", Payload: nil, IdempotencyKey: "k"},
-		"no key":     {CallerID: "c", VendorID: "v", Payload: []byte("x"), IdempotencyKey: ""},
+		"no key":      {CallerID: "c", VendorID: "v", Payload: []byte("x"), IdempotencyKey: ""},
 	}
 	for name, in := range cases {
 		if err := ValidateIntake(in); !IsRejection(err, RejectionInvalidIntake) {
@@ -86,10 +86,14 @@ func TestActorContext_Validate(t *testing.T) {
 		t.Fatalf("valid actor rejected: %v", err)
 	}
 	for name, a := range map[string]ActorContext{
-		"no kind":   {Kind: "", ActorID: "w", VendorScope: []string{"v"}, Capabilities: []Capability{CapabilityClaimDelivery}},
-		"no id":     {Kind: ActorWorker, ActorID: "", VendorScope: []string{"v"}, Capabilities: []Capability{CapabilityClaimDelivery}},
-		"no scope":  {Kind: ActorWorker, ActorID: "w", VendorScope: nil, Capabilities: []Capability{CapabilityClaimDelivery}},
-		"no caps":   {Kind: ActorWorker, ActorID: "w", VendorScope: []string{"v"}, Capabilities: nil},
+		"no kind":              {Kind: "", ActorID: "w", VendorScope: []string{"v"}, Capabilities: []Capability{CapabilityClaimDelivery}},
+		"no id":                {Kind: ActorWorker, ActorID: "", VendorScope: []string{"v"}, Capabilities: []Capability{CapabilityClaimDelivery}},
+		"no scope":             {Kind: ActorWorker, ActorID: "w", VendorScope: nil, Capabilities: []Capability{CapabilityClaimDelivery}},
+		"no caps":              {Kind: ActorWorker, ActorID: "w", VendorScope: []string{"v"}, Capabilities: nil},
+		"unknown kind":         {Kind: "rogue", ActorID: "w", VendorScope: []string{"v"}, Capabilities: []Capability{CapabilityClaimDelivery}},
+		"unknown capability":   {Kind: ActorWorker, ActorID: "w", VendorScope: []string{"v"}, Capabilities: []Capability{"root"}},
+		"duplicate scope":      {Kind: ActorWorker, ActorID: "w", VendorScope: []string{"v", "v"}, Capabilities: []Capability{CapabilityClaimDelivery}},
+		"duplicate capability": {Kind: ActorWorker, ActorID: "w", VendorScope: []string{"v"}, Capabilities: []Capability{CapabilityClaimDelivery, CapabilityClaimDelivery}},
 	} {
 		if err := a.Validate(); !IsRejection(err, RejectionInvalidActorContext) {
 			t.Fatalf("%s: expected invalid-actor-context, got %v", name, err)

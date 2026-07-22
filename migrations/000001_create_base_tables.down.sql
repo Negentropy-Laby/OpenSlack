@@ -22,6 +22,8 @@ DROP TABLE IF EXISTS vendors CASCADE;
 DROP TABLE IF EXISTS access_keys CASCADE;
 DROP TABLE IF EXISTS principals CASCADE;
 
-DROP EXTENSION IF EXISTS pgcrypto;
+-- pgcrypto is database-scoped and may be shared by other schemas/services.
+-- Rollback removes only rc_wsman-owned objects and deliberately leaves the
+-- extension installed.
 
 COMMIT;

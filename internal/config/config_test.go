@@ -16,6 +16,9 @@ func requiredEnvBase(t *testing.T) {
 	t.Setenv("API_KEY_PEPPER_ACTIVE", `{"id":"v1","value":"active-secret"}`)
 	t.Setenv("ENV_CREDENTIAL_ALLOWLIST", "VENDOR_A_TOKEN,VENDOR_B_TOKEN")
 	t.Setenv("API_KEY_PEPPER_PREVIOUS", "")
+	t.Setenv("METRICS_COLLECTION_TIMEOUT", "")
+	t.Setenv("RECOVERY_INTERVAL", "")
+	t.Setenv("RECOVERY_BATCH_SIZE", "")
 }
 
 func TestLoad_MissingDatabaseURL(t *testing.T) {
@@ -97,6 +100,25 @@ func TestLoad_Valid(t *testing.T) {
 	if cfg.PreviousPepper != nil {
 		t.Fatal("previous pepper should be nil when not set")
 	}
+	if cfg.MetricsCollectionTimeout.String() != "2s" || cfg.RecoveryInterval.String() != "5s" || cfg.RecoveryBatchSize != 100 {
+		t.Fatalf("B6 defaults mismatch: timeout=%s recovery=%s batch=%d", cfg.MetricsCollectionTimeout, cfg.RecoveryInterval, cfg.RecoveryBatchSize)
+	}
+}
+
+func TestLoad_RejectsInvalidObservabilityAndRecoveryConfig(t *testing.T) {
+	for name, value := range map[string]string{
+		"METRICS_COLLECTION_TIMEOUT": "5s",
+		"RECOVERY_INTERVAL":          "31s",
+		"RECOVERY_BATCH_SIZE":        "101",
+	} {
+		t.Run(name, func(t *testing.T) {
+			requiredEnvBase(t)
+			t.Setenv(name, value)
+			if _, err := Load(); err == nil {
+				t.Fatalf("%s=%s was accepted", name, value)
+			}
+		})
+	}
 }
 
 func TestLoad_PreviousPepperOptional(t *testing.T) {
@@ -118,6 +140,17 @@ func TestLoad_PreviousPepperOptional(t *testing.T) {
 	}
 	if !cfg.Peppers().Has("v0") {
 		t.Fatal("Peppers() should contain v0")
+	}
+}
+
+func TestLoad_RejectsDuplicatePepperGenerationIDs(t *testing.T) {
+	requiredEnvBase(t)
+	t.Setenv("API_KEY_PEPPER_PREVIOUS", `{"id":"v1","value":"previous-must-not-replace-active"}`)
+
+	if _, err := Load(); err == nil {
+		t.Fatal("duplicate active/previous pepper generation id was accepted")
+	} else if !strings.Contains(err.Error(), "distinct generation ids") || strings.Contains(err.Error(), "previous-must-not-replace-active") {
+		t.Fatalf("unexpected or secret-bearing error: %v", err)
 	}
 }
 

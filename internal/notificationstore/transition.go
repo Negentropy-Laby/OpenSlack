@@ -11,12 +11,12 @@ import (
 // validPolicyTerminationReasons lists the reasons allowed for a deterministic
 // pre-send policy termination.
 var validPolicyTerminationReasons = map[string]struct{}{
-	ReasonAttemptLimit:        {},
-	ReasonDeadlineExceeded:  {},
-	ReasonVendorUnavailable:   {},
-	ReasonDestinationRejected: {},
+	ReasonAttemptLimit:          {},
+	ReasonDeadlineExceeded:      {},
+	ReasonVendorUnavailable:     {},
+	ReasonDestinationRejected:   {},
 	ReasonCredentialUnavailable: {},
-	ReasonRequestUnbuildable:  {},
+	ReasonRequestUnbuildable:    {},
 }
 
 // validActualDieReasons lists the reasons allowed for an actual-result die.
@@ -41,7 +41,7 @@ func ValidateDeliveryResult(req TransitionRequest) (*DeliveryResult, error) {
 		if dr.OutcomeClass != OutcomeClassSuccess {
 			return nil, Rejection{Category: RejectionInvalidDeliveryResult, Reason: "succeed requires outcome_class=success"}
 		}
-		if dr.HTTPStatus == 0 {
+		if !validHTTPStatus(dr.HTTPStatus) {
 			return nil, Rejection{Category: RejectionInvalidDeliveryResult, Reason: "succeed requires http_status"}
 		}
 		if dr.ErrorCode != "" || dr.Reason != "" {
@@ -55,7 +55,7 @@ func ValidateDeliveryResult(req TransitionRequest) (*DeliveryResult, error) {
 		if dr.OutcomeClass != OutcomeClassRetryableFailure {
 			return nil, Rejection{Category: RejectionInvalidDeliveryResult, Reason: "retry requires outcome_class=retryable_failure"}
 		}
-		if dr.ResultKind == ResultKindHTTPResponse && dr.HTTPStatus == 0 {
+		if dr.ResultKind == ResultKindHTTPResponse && !validHTTPStatus(dr.HTTPStatus) {
 			return nil, Rejection{Category: RejectionInvalidDeliveryResult, Reason: "http_response requires http_status"}
 		}
 		if dr.ResultKind == ResultKindTransportFailure && dr.ErrorCode == "" {
@@ -77,7 +77,7 @@ func ValidateDeliveryResult(req TransitionRequest) (*DeliveryResult, error) {
 			if _, ok := validActualDieReasons[dr.Reason]; !ok {
 				return nil, Rejection{Category: RejectionInvalidDeliveryResult, Reason: "unrecognized die reason"}
 			}
-			if dr.ResultKind == ResultKindHTTPResponse && dr.HTTPStatus == 0 {
+			if dr.ResultKind == ResultKindHTTPResponse && !validHTTPStatus(dr.HTTPStatus) {
 				return nil, Rejection{Category: RejectionInvalidDeliveryResult, Reason: "http_response die requires http_status"}
 			}
 			if dr.ResultKind == ResultKindTransportFailure && dr.ErrorCode == "" {
@@ -103,27 +103,29 @@ func ValidateDeliveryResult(req TransitionRequest) (*DeliveryResult, error) {
 	}
 }
 
+func validHTTPStatus(status int) bool { return status >= 100 && status <= 999 }
+
 // TransitionDecision is the pure output of DecideTransition.
 type TransitionDecision struct {
-	NewState               State
-	AttemptCountDelta      int  // 0 or +1
-	ClearLease             bool
-	SetDeliveredAt         bool
-	SetDeadAt              bool
-	DeadReason             string
-	SetNextAttemptAt       *time.Time
-	SetReplayedAt          bool
-	ReplayActor            string
-	ReplayReason           string
-	ClearLastOutcome       bool
-	LastOutcomeClass       string
-	LastErrorCode          string
-	EventKind              EventKind
-	ResultKind             ResultKind
-	OutcomeClass           OutcomeClass
-	HTTPStatus             *int
-	ErrorCode              string
-	Reason                 string
+	NewState          State
+	AttemptCountDelta int // 0 or +1
+	ClearLease        bool
+	SetDeliveredAt    bool
+	SetDeadAt         bool
+	DeadReason        string
+	SetNextAttemptAt  *time.Time
+	SetReplayedAt     bool
+	ReplayActor       string
+	ReplayReason      string
+	ClearLastOutcome  bool
+	LastOutcomeClass  string
+	LastErrorCode     string
+	EventKind         EventKind
+	ResultKind        ResultKind
+	OutcomeClass      OutcomeClass
+	HTTPStatus        *int
+	ErrorCode         string
+	Reason            string
 }
 
 // DecideTransition validates the request against the current notification and

@@ -22,7 +22,7 @@ const PayloadMaxBytes = 262144
 
 // Idempotency key constraints per the CDD.
 const (
-	IdempotencyKeyMaxLen = 255
+	IdempotencyKeyMaxLen  = 255
 	IdempotencyKeyPattern = `^[A-Za-z0-9._\-]{1,255}$`
 )
 
@@ -53,10 +53,10 @@ type State string
 
 // Notification states.
 const (
-	StatePending    State = "pending"
-	StateInFlight   State = "in_flight"
-	StateDelivered  State = "delivered"
-	StateDead       State = "dead"
+	StatePending   State = "pending"
+	StateInFlight  State = "in_flight"
+	StateDelivered State = "delivered"
+	StateDead      State = "dead"
 )
 
 // ActorKind identifies the principal namespace of a server-internal actor.
@@ -74,12 +74,12 @@ type Capability string
 
 // Capabilities used by the Notification Store.
 const (
-	CapabilityClaimDelivery       Capability = "claim_delivery"
+	CapabilityClaimDelivery        Capability = "claim_delivery"
 	CapabilityRecordDeliveryResult Capability = "record_delivery_result"
-	CapabilityRecoverExpiredLeases  Capability = "recover_expired_leases"
-	CapabilityReadNotifications     Capability = "read_notifications"
-	CapabilityReadAllNotifications  Capability = "read_all_notifications"
-	CapabilityReplay                Capability = "replay"
+	CapabilityRecoverExpiredLeases Capability = "recover_expired_leases"
+	CapabilityReadNotifications    Capability = "read_notifications"
+	CapabilityReadAllNotifications Capability = "read_all_notifications"
+	CapabilityReplay               Capability = "replay"
 )
 
 // EventKind is the type of a delivery_attempts row.
@@ -96,9 +96,9 @@ const (
 type ResultKind string
 
 const (
-	ResultKindHTTPResponse     ResultKind = "http_response"
-	ResultKindTransportFailure ResultKind = "transport_failure"
-	ResultKindUnknownResult    ResultKind = "unknown_result"
+	ResultKindHTTPResponse      ResultKind = "http_response"
+	ResultKindTransportFailure  ResultKind = "transport_failure"
+	ResultKindUnknownResult     ResultKind = "unknown_result"
 	ResultKindPolicyTermination ResultKind = "policy_termination"
 )
 
@@ -106,7 +106,7 @@ const (
 type OutcomeClass string
 
 const (
-	OutcomeClassSuccess         OutcomeClass = "success"
+	OutcomeClassSuccess          OutcomeClass = "success"
 	OutcomeClassRetryableFailure OutcomeClass = "retryable_failure"
 	OutcomeClassPermanentFailure OutcomeClass = "permanent_failure"
 )
@@ -124,28 +124,28 @@ const (
 // Rejection categories returned by the Store. They are stable values that the
 // HTTP composition layer maps to public status codes.
 const (
-	RejectionInvalidActorContext  = "invalid-actor-context"
-	RejectionNotFound             = "not-found"
-	RejectionForbiddenAction      = "forbidden-action"
-	RejectionInvalidDeliveryResult = "invalid-delivery-result"
-	RejectionInvalidLeaseTTL      = "invalid-lease-ttl"
-	RejectionInvalidJustification = "invalid-justification"
+	RejectionInvalidActorContext    = "invalid-actor-context"
+	RejectionNotFound               = "not-found"
+	RejectionForbiddenAction        = "forbidden-action"
+	RejectionInvalidDeliveryResult  = "invalid-delivery-result"
+	RejectionInvalidLeaseTTL        = "invalid-lease-ttl"
+	RejectionInvalidJustification   = "invalid-justification"
 	RejectionInvalidRecoveryRequest = "invalid-recovery-request"
-	RejectionInvalidBatchLimit    = "invalid-batch-limit"
-	RejectionInvalidPageLimit     = "invalid-page-limit"
-	RejectionInvalidCursor        = "invalid-cursor"
-	RejectionClockUnavailable     = "clock-unavailable"
-	RejectionIllegalTransition    = "illegal-transition"
-	RejectionStaleVersion         = "stale-version"
-	RejectionInvalidLease         = "invalid-lease"
-	RejectionExpiredLease         = "expired-lease"
-	RejectionInvariantViolation   = "invariant-violation"
-	RejectionIdempotencyConflict  = "IdempotencyConflict"
-	RejectionInvalidIntake        = "invalid-intake"
-	RejectionPayloadTooLarge      = "payload-too-large"
-	RejectionInvalidIdempotencyKey = "invalid-idempotency-key"
-	RejectionCommitRolledBack     = "commit-rolled-back"
-	RejectionCommitOutcomeUnknown = "commit-outcome-unknown"
+	RejectionInvalidBatchLimit      = "invalid-batch-limit"
+	RejectionInvalidPageLimit       = "invalid-page-limit"
+	RejectionInvalidCursor          = "invalid-cursor"
+	RejectionClockUnavailable       = "clock-unavailable"
+	RejectionIllegalTransition      = "illegal-transition"
+	RejectionStaleVersion           = "stale-version"
+	RejectionInvalidLease           = "invalid-lease"
+	RejectionExpiredLease           = "expired-lease"
+	RejectionInvariantViolation     = "invariant-violation"
+	RejectionIdempotencyConflict    = "IdempotencyConflict"
+	RejectionInvalidIntake          = "invalid-intake"
+	RejectionPayloadTooLarge        = "payload-too-large"
+	RejectionInvalidIdempotencyKey  = "invalid-idempotency-key"
+	RejectionCommitRolledBack       = "commit-rolled-back"
+	RejectionCommitOutcomeUnknown   = "commit-outcome-unknown"
 )
 
 // Valid result reasons for worker die transitions.
@@ -157,11 +157,11 @@ const (
 
 // Valid policy-termination reasons.
 const (
-	ReasonAttemptLimit        = "attempt_limit"
-	ReasonVendorUnavailable   = "vendor_unavailable"
-	ReasonDestinationRejected = "destination_rejected"
+	ReasonAttemptLimit          = "attempt_limit"
+	ReasonVendorUnavailable     = "vendor_unavailable"
+	ReasonDestinationRejected   = "destination_rejected"
 	ReasonCredentialUnavailable = "credential_unavailable"
-	ReasonRequestUnbuildable  = "request_unbuildable"
+	ReasonRequestUnbuildable    = "request_unbuildable"
 )
 
 // Fixed recovery error code.
@@ -258,6 +258,34 @@ func (a ActorContext) Validate() error {
 	if a.Kind == "" || a.ActorID == "" || len(a.VendorScope) == 0 || len(a.Capabilities) == 0 {
 		return Rejection{Category: RejectionInvalidActorContext, Reason: "missing actor fields"}
 	}
+	if a.Kind != ActorWorker && a.Kind != ActorOperator && a.Kind != ActorSystem {
+		return Rejection{Category: RejectionInvalidActorContext, Reason: "unknown actor kind"}
+	}
+	seenVendors := make(map[string]struct{}, len(a.VendorScope))
+	for _, vendorID := range a.VendorScope {
+		if vendorID == "" {
+			return Rejection{Category: RejectionInvalidActorContext, Reason: "empty vendor scope member"}
+		}
+		if _, duplicate := seenVendors[vendorID]; duplicate {
+			return Rejection{Category: RejectionInvalidActorContext, Reason: "duplicate vendor scope member"}
+		}
+		seenVendors[vendorID] = struct{}{}
+	}
+	allowedCapabilities := map[Capability]struct{}{
+		CapabilityClaimDelivery: {}, CapabilityRecordDeliveryResult: {},
+		CapabilityRecoverExpiredLeases: {}, CapabilityReadNotifications: {},
+		CapabilityReadAllNotifications: {}, CapabilityReplay: {},
+	}
+	seenCapabilities := make(map[Capability]struct{}, len(a.Capabilities))
+	for _, capability := range a.Capabilities {
+		if _, allowed := allowedCapabilities[capability]; !allowed {
+			return Rejection{Category: RejectionInvalidActorContext, Reason: "unknown capability"}
+		}
+		if _, duplicate := seenCapabilities[capability]; duplicate {
+			return Rejection{Category: RejectionInvalidActorContext, Reason: "duplicate capability"}
+		}
+		seenCapabilities[capability] = struct{}{}
+	}
 	return nil
 }
 
@@ -266,38 +294,38 @@ type NotificationID string
 
 // Notification is the aggregate root of the Notification Store.
 type Notification struct {
-	ID                      NotificationID
-	CallerID                string
-	VendorID                string
-	IdempotencyKey          string
-	RequestFingerprint      []byte
-	Payload                 []byte
-	State                   State
-	Version                 int64
-	AttemptCount            int
-	DeliveryCycleStartedAt  time.Time
-	ReplayCount             int
-	CreatedAt               time.Time
-	UpdatedAt               time.Time
-	NextAttemptAt           *time.Time
-	LeaseID                 string
-	LeaseExpiresAt          *time.Time
-	LeaseActorID            string
-	DeliveredAt             *time.Time
-	DeadAt                  *time.Time
-	DeadReason              string
-	ReplayedAt              *time.Time
-	ReplayActor             string
-	ReplayReason            string
-	LastOutcomeClass        string
-	LastErrorCode           string
+	ID                     NotificationID
+	CallerID               string
+	VendorID               string
+	IdempotencyKey         string
+	RequestFingerprint     []byte
+	Payload                []byte
+	State                  State
+	Version                int64
+	AttemptCount           int
+	DeliveryCycleStartedAt time.Time
+	ReplayCount            int
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
+	NextAttemptAt          *time.Time
+	LeaseID                string
+	LeaseExpiresAt         *time.Time
+	LeaseActorID           string
+	DeliveredAt            *time.Time
+	DeadAt                 *time.Time
+	DeadReason             string
+	ReplayedAt             *time.Time
+	ReplayActor            string
+	ReplayReason           string
+	LastOutcomeClass       string
+	LastErrorCode          string
 }
 
 // Lease represents a claim lease on a notification.
 type Lease struct {
-	LeaseID     string
-	ExpiresAt   time.Time
-	ActorID     string
+	LeaseID   string
+	ExpiresAt time.Time
+	ActorID   string
 }
 
 // Attempt is one append-only row in delivery_attempts.
@@ -360,8 +388,9 @@ type LeaseClaim struct {
 
 // IntakeResult is the result of a successful or idempotent accept.
 type IntakeResult struct {
-	NotificationID     string
-	IdempotentReplay   bool
+	NotificationID   string
+	IdempotentReplay bool
+	AcceptedAt       time.Time
 }
 
 // TransitionResult is the result of a successful state transition.
@@ -383,11 +412,11 @@ type RecoveredLease struct {
 
 // OutboxProjection is the BL-06 aggregate over an effective scope.
 type OutboxProjection struct {
-	PendingCount             int
-	InFlightCount            int
-	DeliveredCount           int
-	DeadCount                int
-	OldestPendingAgeSeconds  float64
+	PendingCount            int
+	InFlightCount           int
+	DeliveredCount          int
+	DeadCount               int
+	OldestPendingAgeSeconds float64
 }
 
 // DeadPage is a snapshot-bounded page of dead notifications.
@@ -441,7 +470,16 @@ func ValidateIntake(in ValidatedIntake) error {
 	if len(in.Payload) > PayloadMaxBytes {
 		return Rejection{Category: RejectionPayloadTooLarge, Reason: fmt.Sprintf("payload exceeds %d bytes", PayloadMaxBytes)}
 	}
-	if len(in.IdempotencyKey) > IdempotencyKeyMaxLen || !idempotencyKeyRegex.MatchString(in.IdempotencyKey) {
+	if err := ValidateIdempotencyKey(in.IdempotencyKey); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ValidateIdempotencyKey validates the public Idempotency-Key syntax without
+// requiring the rest of an intake. Ingress uses it before doing vendor work.
+func ValidateIdempotencyKey(key string) error {
+	if len(key) > IdempotencyKeyMaxLen || !idempotencyKeyRegex.MatchString(key) {
 		return Rejection{Category: RejectionInvalidIdempotencyKey, Reason: "invalid idempotency key format"}
 	}
 	return nil

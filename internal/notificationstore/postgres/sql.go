@@ -11,7 +11,7 @@ const (
 ON CONFLICT (caller_id, idempotency_key) DO NOTHING
 RETURNING notification_id, created_at`
 
-	intakeSelectSQL = `SELECT notification_id, request_fingerprint
+	intakeSelectSQL = `SELECT notification_id, request_fingerprint, created_at
 FROM notifications
 WHERE caller_id = $1 AND idempotency_key = $2`
 
@@ -67,22 +67,16 @@ ORDER BY lease_expires_at ASC, notification_id ASC
 LIMIT $1
 FOR UPDATE`
 
-	outboxCountsSQL = `SELECT state, COUNT(*)
-FROM notifications
-WHERE vendor_id = ANY($1)
-GROUP BY state`
+	recoveryTryLockSQL = `SELECT pg_try_advisory_xact_lock(7277797366262101)`
 
-	outboxCountsGlobalSQL = `SELECT state, COUNT(*)
+	outboxProjectionSQL = `SELECT
+    COUNT(*) FILTER (WHERE state = 'pending'),
+    COUNT(*) FILTER (WHERE state = 'in_flight'),
+    COUNT(*) FILTER (WHERE state = 'delivered'),
+    COUNT(*) FILTER (WHERE state = 'dead'),
+    COALESCE(EXTRACT(EPOCH FROM (now() - MIN(created_at) FILTER (WHERE state = 'pending'))), 0)::float8
 FROM notifications
-GROUP BY state`
-
-	oldestPendingSQL = `SELECT MIN(created_at)
-FROM notifications
-WHERE state = 'pending' AND vendor_id = ANY($1)`
-
-	oldestPendingGlobalSQL = `SELECT MIN(created_at)
-FROM notifications
-WHERE state = 'pending'`
+WHERE $1::boolean OR vendor_id = ANY($2::text[])`
 
 	listDeadSQL = `SELECT ` + notificationColumns + `
 FROM notifications
@@ -117,19 +111,20 @@ WHERE notification_id = $1`
 SET state = $1,
     version = $2,
     attempt_count = $3,
-    delivery_cycle_started_at = $4,
-    delivered_at = $5,
-    dead_at = $6,
-    dead_reason = $7,
-    replayed_at = $8,
-    replay_actor = $9,
-    replay_reason = $10,
-    next_attempt_at = $11,
-    last_outcome_class = $12,
-    last_error_code = $13,
-    lease_id = $14,
-    lease_expires_at = $15,
-    lease_actor_id = $16,
-    updated_at = $17
-WHERE notification_id = $18 AND version = $19`
+    replay_count = $4,
+    delivery_cycle_started_at = $5,
+    delivered_at = $6,
+    dead_at = $7,
+    dead_reason = $8,
+    replayed_at = $9,
+    replay_actor = $10,
+    replay_reason = $11,
+    next_attempt_at = $12,
+    last_outcome_class = $13,
+    last_error_code = $14,
+    lease_id = $15,
+    lease_expires_at = $16,
+    lease_actor_id = $17,
+    updated_at = $18
+WHERE notification_id = $19 AND version = $20`
 )

@@ -118,3 +118,28 @@ func TestFullJitter_NilRNGPanics(t *testing.T) {
 	}()
 	FullJitter(nil, 1, 1*time.Second, 1*time.Hour)
 }
+
+func TestNextAttemptTimeComposesRetryAfterCapJitterAndCutoff(t *testing.T) {
+	now := time.Date(2026, 7, 22, 0, 0, 0, 0, time.UTC)
+	const base = 10 * time.Second
+	const delayCap = time.Hour
+	const retryAfterCap = time.Hour
+
+	twoHours := 2 * time.Hour
+	if got := NextAttemptTime(now, now.Add(2*time.Hour), 0, &twoHours, base, delayCap, retryAfterCap, &detRNG{seed: int64(3 * time.Second)}); got == nil || !got.Equal(now.Add(time.Hour)) {
+		t.Fatalf("Retry-After cap: got=%v want=%v", got, now.Add(time.Hour))
+	}
+	twoSeconds := 2 * time.Second
+	if got := NextAttemptTime(now, now.Add(2*time.Hour), 0, &twoSeconds, base, delayCap, retryAfterCap, &detRNG{seed: int64(3 * time.Second)}); got == nil || !got.Equal(now.Add(3*time.Second)) {
+		t.Fatalf("max(jitter, hint): got=%v want=%v", got, now.Add(3*time.Second))
+	}
+	if got := NextAttemptTime(now, now.Add(30*time.Minute), 0, &twoHours, base, delayCap, retryAfterCap, &detRNG{seed: int64(3 * time.Second)}); got == nil || !got.Equal(now.Add(30*time.Minute)) {
+		t.Fatalf("cutoff clamp: got=%v want=%v", got, now.Add(30*time.Minute))
+	}
+	if got := NextAttemptTime(now, now.Add(2*time.Hour), 0, nil, base, delayCap, retryAfterCap, &detRNG{seed: int64(3 * time.Second)}); got == nil || !got.Equal(now.Add(3*time.Second)) {
+		t.Fatalf("invalid/missing hint jitter fallback: got=%v want=%v", got, now.Add(3*time.Second))
+	}
+	if got := NextAttemptTime(now, now, 0, &twoHours, base, delayCap, retryAfterCap, &detRNG{seed: int64(3 * time.Second)}); got != nil {
+		t.Fatalf("at cutoff got=%v want=nil", got)
+	}
+}
