@@ -14,7 +14,7 @@
 ## Project Activation
 
 - **Domain**: Product
-- **Current stage source**: `../../production/stage.txt` = `Architecture`
+- **Current stage source**: `../../production/stage.txt` = `Implementation`
 - **Review mode**: lean（per-run override；repo 级 `review-mode.txt` **missing**）
 - **Strict QA mode**: off
 - **Workflow catalog checksum**: N/A（catalog missing）

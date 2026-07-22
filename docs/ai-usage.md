@@ -53,6 +53,42 @@ AI 输出不会因“听起来完整”而自动成为决定：每项绑定决�
 - B1–B6 AC 证据：`testing/ac-evidence.json`、`../tests/contracts/ac_evidence_test.go`
 - 实现评审：`../memory_bank/t3_archive/reviews/implementation-review-archive.md`
 
+## 规划输入与实际偏差
+
+> **Historical / non-authoritative**：本节只记录 B1/B2 完成后、B3/B4 实施前的 AI 辅助规划输入及其
+> 后续裁决，不覆盖 CDD、ADR、OpenAPI、当前开发计划、代码或验收证据。
+
+三份原始草稿位于本地忽略的 `.claude/`，不随仓库提交，也不作为后续同步源。本节只保留能说明
+工程判断的计划假设、实施偏差与结果；SQL 草图、文件清单、包布局、逐 AC 表、工作量估算、待办项和
+“授权后下一步”均不复制。
+
+### 输入溯源
+
+| 历史输入 | 形成时间 | 原始 SHA-256 | 当时用途 |
+|---|---|---|---|
+| `.claude/b3-b6-recon.md` | 2026-07-21 | `d7789caff9152a5a8d962612446ea082e739f2542ec72338632df07669254a69` | 在 B1/B2 完成后汇总 B3–B6 范围、依赖和控制约束 |
+| `.claude/plans/b3-plan.md` | 2026-07-21 | `50db46a95f1f6f1034b03326f27279c3f10d0e40fc745341531e67ce5c9b4cf7` | 规划 Caller Access、Vendor Registry、路由、迁移与测试 |
+| `.claude/plans/b4-plan.md` | 2026-07-21 | `a5d97799d08215bd23ffa319f6b73d42f2c9b0a65057fdab7429854a9cd08804` | 规划 Delivery、SSRF-safe transport、B-01、worker 与测试 |
+
+### 计划到实施的收敛
+
+| 输入 | 实际采纳 | 人工修正或拒绝 |
+|---|---|---|
+| B3–B6 reconnaissance | 保留单体、PostgreSQL 单一事实源、六个逻辑模块、290 AC + 4 NSBR 和公开契约边界 | 实际包名收敛为 `operationscontrol`、`reliability`；指标直接输出 Prometheus text exposition，不引入计划草稿中的 `client_golang` |
+| B3 计划 | 落地 API Key digest/pepper、scope attenuation、Vendor version、receipt/audit、闭合路由与真实 PostgreSQL 测试 | MVP 收窄为 bearer-only；按 CDD 修正错误映射、数据库锁和限流；测试改为进程独立 schema；不增加 key-admin HTTP API |
+| B4 计划 | 落地 B-01、DNS 双解析、pinned-IP TLS、no proxy/no redirect、request builder、runner 和有界 worker 生命周期 | attempt 联合约束使用前向 `000004` migration；禁止读取或 drain 响应体；Resolver/dialer 可注入；固定 worker pool 取代跨 tick goroutine；不增加第四项业务指标 |
+
+### B4 未决项的最终裁决
+
+1. `delivery_attempts` 的 result/outcome/reason 联合由 `000004_b4_delivery_result_contract` migration
+   约束，未回写或静默扩大早期 migration。
+2. 出站认证仅实现 `bearer`；HMAC、mTLS、AWS SigV4 与 custom 不进入 MVP 公开契约。
+3. worker health event 只保留去敏事件；可靠性表面固定为三项全局 gauge，不增加 counter。
+
+最终事实以[当前开发计划](development-plan.md)、[实现评审档案](../memory_bank/t3_archive/reviews/implementation-review-archive.md)
+和 [AC 证据清单](testing/ac-evidence.json)为准。下面的 B3/B4 章节记录实际实现与人工修正，不重复上述
+历史计划正文。
+
 ## B1 工程基座与数据层（2026-07-21）
 
 | 方面 | 记录 |

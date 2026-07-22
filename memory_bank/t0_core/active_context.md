@@ -4,7 +4,8 @@
 
 ## Repo Status
 - **Project**: `rc_wsman` — API 通知投递服务（内部系统，作业项目）
-- **Current working state**: Implementation 阶段 — 所有者于 2026-07-21 授权分批次开发 B1-B6；B1 已完成，B2 Notification Store 核心实现中。2026-07-21 经所有者授权完成文档 consolidation：逐模块 review log、cross-review、
+- **Current working state**: Implementation 阶段 — B1–B6 已完成实现与机械验收，五组逐批及最终
+  cross-batch fresh independent review 均为 Approved；本地 submission-ready。2026-07-21 经所有者授权完成文档 consolidation：逐模块 review log、cross-review、
   gate run 与 architecture review 原件已合并归档（`design/cdd/reviews/review-archive.md`、
   `docs/architecture/architecture-review-archive.md`、`memory_bank/t3_archive/gate-archive.md`），
   占位文件 `release_state.md` 与 `production/session-state/` 已退役
@@ -51,9 +52,10 @@
   （[OWASP SSRF Prevention](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html)）。
   完整 CIDR 清单与算法进 ADR。
 
-## Pending
-- **Implementation-stage 任务**：B2 Notification Store 核心实现中（已获授权）；B3-B6 后续按开发计划推进。
-- **触发指标基线**（演进用）：B2 完成后测量 outbox 深度、最老 pending 年龄和 dead 计数等可观测项。
+## Remaining External / Optional
+- **本地实现任务**：无 blocker；B1–B6 与 cross-batch closure 已 Approved 并冻结为
+  submission-ready。GitHub-hosted CI、commit/push 和生产部署未获执行授权，也不计入本地证据。
+- **触发指标基线**（演进用）：当前机器容量测量已归档；不外推 SLA/RPO/RTO。
 
 ## Active Risks
 - 供应商是否 honor 幂等键不受我方控制 —— 出站重复为公开风险，由调用方对账兜底
@@ -74,11 +76,11 @@
 | Delivery CDD | **Approved**（B-01 fresh focused review #4；20 AC） | `../../design/cdd/delivery.md`、`../../design/cdd/reviews/review-archive.md` | — |
 | Operations Control CDD | **Approved**（limited-exception re-review #3；14 AC） | `../../design/cdd/operations-control.md`、`../../design/cdd/reviews/review-archive.md` | — |
 | Reliability Observability CDD | **Approved**（limited-exception re-review #3；10 AC） | `../../design/cdd/reliability-observability.md`、`../../design/cdd/reviews/review-archive.md` | — |
-| T1 supporting context | tech / system / behavior + `qa_context.md`（Observability + C1–C15 checklist）+ `system_patterns.md` 5 BL 锚点；Architecture 阶段已补 `architecture_context.md` / `ux_accessibility_context.md`（N/A stub）/ `knowledge_graph.md` / `module_support_map.yaml` | `../t1_axioms/` | —（4 文件已建；`module_support_map.evidence` 待实现） |
-| Architecture / ADRs | **Approved**；stage = Architecture；四项 advisory 全部在 Architecture 范围闭合（#1 pepper 生命周期、#2 deadline backlog、#3 entities.yaml config_map 注册、#4 audit-trail SHA 基线） | `../../docs/architecture/`、`../../docs/api/openapi.yaml`、`../../docs/architecture/architecture-review-archive.md` | 实现未授权 |
+| T1 supporting context | tech / system / behavior + `qa_context.md`（Observability + C1–C15 checklist）+ `system_patterns.md` 5 BL 锚点；六模块实现证据已登记 | `../t1_axioms/` | — |
+| Architecture / ADRs | **Approved**；当前 stage = Implementation；四项 advisory 全部在 Architecture 范围闭合（#1 pepper 生命周期、#2 deadline backlog、#3 entities.yaml config_map 注册、#4 audit-trail SHA 基线） | `../../docs/architecture/`、`../../docs/api/openapi.yaml`、`../../docs/architecture/architecture-review-archive.md` | — |
 | README / 设计文档 | 已建立 | `../../README.md`、`../../docs/design.md` | 已随 Architecture 包审查覆盖 |
-| MVP 代码 | Pre-Impl 骨架已建（backoff leaf + 测试基线，authored-not-compiled，本地无 Go）；MVP 服务代码未开始 | `../../internal/delivery/backoff.go`、`../../internal/delivery/backoff_test.go`、`../../go.mod`、`../../.github/workflows/tests.yml` | MVP 服务代码仍待 Implementation 授权 |
-| AI 使用说明 | 已建立（含 CP0 记录） | `../../docs/ai-usage.md` | 编码后须追加实现阶段记录 |
+| MVP 代码 | B1–B6 已实现并在 Go 1.26.5 + PostgreSQL 18.4 通过全量机械验收；290 AC + 4 NSBR 映射通过；逐批及 cross-batch review Approved | `../../internal/`、`../../migrations/`、`../../tests/`、`../../docs/testing/ac-evidence.json` | — |
+| AI 使用说明 | 已建立并更新至 B1–B6 closure | `../../docs/ai-usage.md` | — |
 
 ## Constitution Changelog
 | Version | Date | Author | Changes |

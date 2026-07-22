@@ -43,7 +43,7 @@ jobs:
         run: go build ./...
       - name: migrate test database
         run: |
-          go install github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
+          go install -tags 'pgx5' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
           migrate -path migrations -database "$MIGRATION_DATABASE_URL" up
       - name: go vet
         run: go vet ./...

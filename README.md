@@ -62,6 +62,7 @@ Internal caller / operator
 | dead 行即 DLQ + 人工重放 | 状态可查询、恢复动作可授权和审计 | 自动重放可能在供应商仍异常时扩大副作用 |
 | 一个 Go 服务、六个逻辑模块 | 降低部署与运维面，同时保持状态/信任边界清晰 | day-1 微服务拆分 |
 | 配置端点 + DNS pinning | 阻止调用方把系统变成开放代理 | 调用方自定 URL、自动 redirect |
+| Prometheus pull + 三项全局指标 | 标准 exposition、告警规则和时序测试可在本地复现，且不引入业务标签 | 生产可由已有 Prometheus-compatible/托管监控抓取同一 `/metrics`；logs-only 不能等价替代告警时序，OpenTelemetry Collector 延后到确有统一遥测需求时 |
 
 ## 深入阅读
 
@@ -73,7 +74,7 @@ Internal caller / operator
 - [运维手册](docs/operations/runbook.md)
 - [测试策略](docs/testing/test-strategy.md)
 - [分批次开发计划](docs/development-plan.md)
-- [AI 使用说明](docs/ai-usage.md)
+- [AI 使用与规划演进说明](docs/ai-usage.md)
 - [六模块 CDD 索引](design/cdd/module-index.md)
 - [ADR 注册表](docs/architecture/adr-registry.yaml)
 

@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-22",
+  "stage": "Implementation",
+  "status": "APPROVED_SUBMISSION_READY",
+  "reviewed_workspace_manifest": {
+    "path": "docs/testing/workspace-manifest.sha256",
+    "entries": 161
+  },
+  "canonical_ac": {"expected": 290, "mapped": 290},
+  "boundary_mappings": {"expected": 4, "mapped": 4},
+  "final_cross_review": {
+    "verdict": "APPROVED",
+    "reviewed_manifest_sha256": "04dba3bcb23d1684397c0c45d2b5afb896fb6dda10a45ec38bb884e82a1b8cca",
+    "blocking_findings": 0,
+    "correction_status": "VERIFIED",
+    "non_blocking_limit": "capacity drain is a PostgreSQL claim/result-commit transactional-path baseline, not end-to-end vendor HTTP throughput or an SLA"
+  },
+  "mechanical_results": {
+    "go_mod_tidy": "PASS",
+    "go_build": "PASS",
+    "go_vet": "PASS",
+    "go_test_race": "PASS",
+    "go_test_race_count_5": "PASS",
+    "postgres_migrations": "PASS",
+    "openapi_contract": "PASS",
+    "promtool_config_rules_and_unit_tests": "PASS",
+    "compose_build_up_health": "PASS",
+    "bounded_graceful_shutdown": "PASS",
+    "postgres_restart_readiness": "PASS",
+    "crash_after_send_recovery": "PASS",
+    "pepper_rotation_revocation": "PASS",
+    "encrypted_pitr": "PASS",
+    "capacity_baseline": "PASS",
+    "marker_scan": "PASS"
+  },
+  "external_evidence": {
+    "github_actions_run": "NOT_RUN",
+    "production_deployment": "NOT_IN_SCOPE",
+    "rpo_rto_claim": "NONE"
+  }
+}

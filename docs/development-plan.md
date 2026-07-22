@@ -1,24 +1,33 @@
 # 分批次开发计划 — MVP 实现
 
 > 本计划把已批准的 Architecture（6 模块 CDD / 290 canonical AC / OpenAPI 3.1 / CTRL-001..024）
-> 映射为可逐批授权、逐批审查的实现批次。**本文件不授权任何代码**；每个批次开工前仍需所有者
-> 单独授权。当前 `production/stage.txt` = Implementation；B1、B2 已完成并归档，B3–B6 待授权后开工。
+> 映射为可逐批授权、逐批审查的实现批次。所有者已明确授权并完成 B1–B6 实施。当前
+> `production/stage.txt` = Implementation；全量机械验收、逐批 review 与最终 cross-batch fresh
+> independent re-review 已通过，当前为本地 submission-ready。
 
 ## 实现进度
 
 - CP0 — 已完成
-- B1 — 已完成并归档（`8cbd0eb`；机械核验 + `-race` 实证；评审方法见
-  [`implementation-review-archive.md`](../memory_bank/t3_archive/reviews/implementation-review-archive.md)）
-- B2 — 已完成并归档（`8cbd0eb`；同上；79 NS AC 核心路径有测试证据，边界组合归 B6 对账）
-- B3 — 未授权
-- B4 — 未授权
-- B5 — 未授权
-- B6 — 未授权
+- B1/B2 — `APPROVED`（fresh independent closure review）
+- B3 — `APPROVED`（15/15 CA + 152/152 VR）
+- B4 — `APPROVED`（20/20 DL）
+- B5 — `APPROVED`（14/14 OC + 10/10 RO）
+- B6 — `APPROVED`（部署、故障、容量、PITR、pepper 和 4/4 NSBR）
+- B1–B6 cross-batch closure — `APPROVED`（fresh independent re-review；0 blocker）
+
+B1–B6 共 290 项 canonical AC 与四项 NSBR 的逐项登记由
+[`ac-evidence.json`](testing/ac-evidence.json) 和 `tests/contracts/ac_evidence_test.go` 机械校验。
+2026-07-22 已在 Go 1.26.5 + PostgreSQL 18.4 完成 build/vet/race、OpenAPI、Prometheus、Compose、
+故障、容量与恢复验收；[`acceptance-report.json`](testing/acceptance-report.json) 不声称未运行的
+GitHub-hosted CI 或生产部署。
+
+B3/B4 实施前的 AI 辅助计划、最终采纳项与人工修正已精炼至
+[AI 使用与规划演进说明](ai-usage.md#规划输入与实际偏差)；本地 `.claude/` 原稿不具备设计或状态权威。
 
 ## 前置条件（任何批次开工前）
 
-1. Architecture → Pre-Implementation gate 未运行；B1–B2 经所有者逐批单独授权开工。
-   B3+ 开工前由所有者决定是否补跑该 gate 并记录证据。
+1. Architecture → Pre-Implementation gate 未运行；B1–B6 均由所有者明确授权实施。本轮不把
+   该历史缺口伪装成已运行 gate。
 2. Go 1.26.5 工具链环境就绪（本地或 CI runner）；`go mod tidy` 生成 `go.sum`，固化 patch 版本。
 3. 本批次范围冻结：列出本批覆盖的 AC ID 清单（引用 `architecture/tr-registry.yaml` 的 family），
    由所有者批准；范围外行为不得混入。
@@ -41,14 +50,15 @@
 
 ## 通用通过标准（每批）
 
-- [ ] CI 全绿（含 `-race`）
-- [ ] 本批映射 AC 100% 有通过中的测试证据（unit 或 integration），AC 数量与 tr-registry 对账无漂移
-- [ ] 无 NEEDS REVISION 残余；或残余经所有者书面裁决（记录进 archive）
-- [ ] OpenAPI contract test 通过（涉及公开端点的批次）
-- [ ] 无 CTRL-024 / CTRL-016 违规；无数值 SLA 承诺
-- [ ] 评审证据已归档；tr-registry 的 `planned_test_types` 如有实现证据更新，同批完成（Change Rule）
+- [x] CI 等价本地命令全绿（含 `-race`；GitHub 托管 run 尚未发生）
+- [x] B1–B6 的 290 AC + 4 NSBR 100% 有现存测试证据，数量与 tr-registry 对账无漂移
+- [x] 逐批 review 无未关闭 NEEDS REVISION blocker；修正链与最终 verdict 已追加归档
+- [x] OpenAPI contract test 通过（涉及公开端点的批次）
+- [x] 无 CTRL-024 / CTRL-016 违规；无数值 SLA 承诺
+- [x] 实现与机械验收证据已归档；290+4 证据映射已建立
 
-B1、B2 已实现并满足上述通过标准（B2 的 AC 覆盖估计见本节上方注释）。
+逐批及最终 cross-batch 独立评审均已完成；本地提交状态为 submission-ready。GitHub-hosted CI、
+commit/push 与生产部署仍不属于本轮已执行证据。
 
 ## 批次划分（沿模块依赖 DAG）
 
@@ -65,7 +75,7 @@ B1、B2 已实现并满足上述通过标准（B2 的 AC 覆盖估计见本节�
 ### B1 — 工程基座与数据层
 
 **交付物**：`go.sum` 固化；chi v5 路由骨架 + App 生命周期（启动配置加载、优雅关闭、
-`/healthz`、`/metrics` 占位）；pgx v5 连接池；golang-migrate v4 迁移（notifications、outbox
+`/health/live`、`/health/ready`、`/metrics`）；pgx v5 连接池；golang-migrate v4 迁移（notifications、outbox
 可见性、access_keys、vendors/endpoint_versions、attempt history、admin audit/receipt——按
 `data-model.md` 的逻辑模型与迁移不变量）；结构化配置（`env://` allowlist，含
 `API_KEY_PEPPER_ACTIVE/PREVIOUS` 的 fail-closed 启动校验）。
@@ -94,11 +104,13 @@ commit-outcome-unknown 重试收敛、replay 与 in-flight 的 OCC 竞态；`dea
 die 的 Store 写路径（为 B4 的 B-01 做准备）。
 
 **通过标准（增量）**：
-- [x] 79 条 NS AC 中核心行为路径有测试证据；并发竞态用例在 `-race` 下稳定通过（边界组合归 B6，见下注）
+- [x] 79/79 NS AC 有机器可校验的测试证据；并发竞态与每测试独立 PostgreSQL schema 在默认并行
+  `-race -count=5` 下稳定通过
 - [x] attempt history 任何路径不可 UPDATE/DELETE（触发器集成测试 + 代码扫描双重验证）
 - [x] not-found/越权统一响应不泄露存在性（负向测试）
 
-> 注：79 条 AC 中核心行为路径有单元/集成测试；clock-unavailable、cursor 漂移全矩阵、batch 边界全组合等边界项当前为 code-only，约定在 B6 端到端硬化时补齐对账（见评审档案 AC 覆盖估计）。
+> 原 B2 `code-only` / deferred 缺口已在 B1–B4 closure 中补齐：数据库时钟、commit taxonomy、
+> cursor/scope/page limit、claim/lease/OCC、replay 竞态、结果联合和 B-01 均纳入实际测试证据。
 
 ### B3 — Caller Access + Vendor Registry
 
@@ -113,9 +125,9 @@ die 的 Store 写路径（为 B4 的 B-01 做准备）。
 防枚举时序与错误体一致性；管理操作幂等重放（同 key 同结果、同 key 异指纹冲突）。
 
 **通过标准（增量）**：
-- [ ] 167/167 AC 有测试证据
-- [ ] OpenAPI contract test 覆盖全部管理端点与错误 schema
-- [ ] HMAC/pepper 生命周期（含 emergency bulk-revoke 单事务）有集成测试
+- [x] 167/167 AC 有机器可校验的实际测试证据
+- [x] OpenAPI request/response contract test 覆盖全部 B3 路由及主要错误分支
+- [x] HMAC/pepper 生命周期、撤销/轮换、权限、限流与并发有单元/集成测试
 
 ### B4 — Delivery
 
@@ -130,9 +142,10 @@ redirect 诱导、metadata endpoint）；B-01 决定性 trace 复现测试（cut
 20 条 DL AC；与 VR 快照、Store 写回的契约边界（mock 只用于进程内接口，数据库用真实实例）。
 
 **通过标准（增量）**：
-- [ ] 20/20 DL AC + B-01 回归测试通过
-- [ ] SSRF 负向用例全部拒绝且无响应体读取
-- [ ] 计时语义（cutoff、budget、退避上界）注入时钟测试，无 wall-clock sleep 脆弱用例
+- [x] 20/20 DL AC + B-01 回归测试通过
+- [x] SSRF 负向用例覆盖 DNS rebinding、地址类别、redirect、proxy、TLS hostname，且不读取响应体
+- [x] 计时语义（cutoff、budget、退避上界）使用注入时钟；worker 并发与 shutdown 路径有测试
+- [x] Delivery 与真实 PostgreSQL Store + Vendor Registry 的端到端集成测试通过
 
 ### B5 — Operations Control + Reliability Observability
 
@@ -145,9 +158,9 @@ gauge（pending 深度、最老 pending 年龄、dead 计数，no-pending=0）�
 scrape 失败窗口语义测试。
 
 **通过标准（增量）**：
-- [ ] 24/24 AC 有测试证据
-- [ ] 重放端到端（dead → preview → execute → 新 cycle）集成通过
-- [ ] 无任何自动恢复/自动重放路径（代码评审确认）
+- [x] 24/24 AC 有测试证据
+- [x] 重放端到端（dead → preview → execute → 新 cycle）集成通过
+- [x] 无任何自动恢复/自动重放路径（静态边界测试确认）
 
 ### B6 — 端到端硬化与部署包
 
@@ -160,11 +173,12 @@ send 后 commit 前、PostgreSQL 重启、worker 抢占）；容量基线测量�
 `ai-usage.md` 实现阶段记录完整性；README 运行说明与真实启动命令一致性。
 
 **通过标准（最终）**：
-- [ ] 290/290 canonical AC + 4/4 NSBR 有通过证据；CI 全绿且可复现
-- [ ] crash-after-send 不产生丢失，仅产生公开披露的重复（at-least-once 语义实证）
-- [ ] 24h 收敛在 N 行 backlog 下经验成立（或触发 Evolution Boundaries 记录）
-- [ ] docker-compose 一键启动；README 运行说明不再含"未建立"字样
-- [ ] 部署包实例化 pepper 生命周期（advisory 1 deferred 部分）完成并演练
+- [x] 290/290 canonical AC + 4/4 NSBR 有本地通过证据；GitHub-hosted CI 明确未运行
+- [x] crash-after-send 不产生丢失，仅产生公开披露的重复（at-least-once 实证）
+- [x] deadline Path A/B 的 blocking N=1、N=W 通过，并记录更高 N 的非 SLA 基线
+- [x] docker-compose 一键启动；app/PostgreSQL/Prometheus health 与 scrape 通过
+- [x] pepper active/previous、fail-closed、bulk revoke 和旧 key 失效完成演练
+- [x] physical backup + WAL + age v1.3.1 + target-time restore 完成隔离演练
 
 ## 风险与纪律
 

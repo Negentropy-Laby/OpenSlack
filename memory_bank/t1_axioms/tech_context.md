@@ -1,6 +1,6 @@
 # Tech Context
 
-> T1 supporting context。只记录已批准或当前可验证事实；实现仍未开始。
+> T1 supporting context。只记录已批准或当前可验证事实；B1–B6 已实现并完成本地机械验收。
 > 权威来源：T0 `../t0_core/basic_law_index.md`、`../t0_core/active_context.md`、`../../design/cdd/notification-store.md`。
 
 ## Domain / Platform
@@ -24,15 +24,15 @@
   来源：`../t0_core/active_context.md` Approved Architecture Decisions、BL-03。
   排除：SQLite（不作并发 worker 生产替代）、MySQL（技术上可行但无足够收益保留双实现）。
 - **Language / framework / driver**：Go 1.26.5 + chi v5 + pgx v5 + golang-migrate v4。
-  实施授权后从官方 release 固定各依赖的最新稳定 patch；当前不创建 `go.mod`。
-- **Knowledge risk**：LOW-MEDIUM — 栈已选；SSRF pinned-dial、迁移和并发仍须未来测试证明。
+  已在 `go.mod` 固定 patch 版本。
+- **Knowledge risk**：LOW-MEDIUM — SSRF pinned-dial、迁移、并发、故障与恢复已有本地测试；生产规模仍需部署测量。
 - **参考文档**：`../../standards/technical-preferences.md`、`../../docs/architecture/`。
 
 ## Performance Budgets
 
 - **当前没有批准的数值性能预算**（latency / throughput / memory ceiling 均未裁决）。
 - BL-06 的 outbox 深度、最老 pending 年龄、dead 计数是**运营可靠性指标**，不是性能预算。
-- 数值目标、负载模型与 measurement method 在实现前通过 Architecture + load test 决定（BL-01）。
+- 当前机器基线见 `../../docs/testing/capacity-report.md`；不转化为外部 SLA（BL-01）。
 
 ## External Dependencies
 

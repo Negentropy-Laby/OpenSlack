@@ -2,7 +2,7 @@
 
 > **Status**: Approved
 > **Created**: 2026-07-18
-> **Last Updated**: 2026-07-20
+> **Last Updated**: 2026-07-22
 > **Source Concept**: `design/cdd/product-concept.md`
 > **Method**: `/map-systems --review lean`（手动执行；rc_wsman 未安装 CDD）+ 可选 TD-SYSTEM-BOUNDARY 边界审查（CONCERNS 已处置）
 
@@ -15,8 +15,8 @@
 - **调用方 JTBD**：把通知丢给可靠中转，专注业务逻辑，不必自处理传输差异 / 重试 / 幂等 / 失败重放；
 - **宪法 BL-01..BL-06** 的绑定约束。
 
-模块边界按**独立状态 / 契约 / 信任边界 / 失败生命周期**划分，**不按代码包**。`Approved` 仅表示
-规格契约已批准，不表示源码或测试存在。六份 CDD 均已起草并通过独立复审；Delivery 的 24h
+模块边界按**独立状态 / 契约 / 信任边界 / 失败生命周期**划分，**不按代码包**。本表的 `Approved`
+仅表示规格契约已批准，不等同于实现批次批准。六份 CDD 均已起草并通过独立复审；Delivery 的 24h
 deadline B-01 已由所有者裁决为“当前 actual-result 写回原子终止”，Store 联合、公开 wire 与 Vendor
 method 来源也已分别通过 fresh focused review。栈机制与算法由 Architecture/ADR 文档承接。
 
@@ -151,9 +151,8 @@ method 来源也已分别通过 fresh focused review。栈机制与算法由 Arc
 
 ## Next Steps
 
-1. Run 03 consistency-check 与 fresh cross-review 已 PASS；290 canonical AC + 4 boundary mapping
-   已精确覆盖，Specification → Architecture gate 已 PASS。
-2. Architecture 包独立审查已 APPROVED，证据见
-   `../../docs/architecture/architecture-review-archive.md`。
-3. 停在 Architecture，等待新的实现授权；不运行 Architecture → Pre-Implementation gate，
-   不创建源码、测试、迁移或 CI。
+1. 规格与架构保持 Approved；B1–B6 实现已完成并建立 290 AC + 4 NSBR 机器证据。
+2. B1/B2 closure、B3、B4、B5、B6 及最终 cross-batch re-review 的 fresh independent review 均已
+   `APPROVED`；本地状态已冻结为 submission-ready。
+3. Architecture → Pre-Implementation gate 未补跑、GitHub-hosted CI 未运行的事实保持可见；不追溯
+   伪装为已执行。

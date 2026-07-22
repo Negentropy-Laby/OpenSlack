@@ -5,8 +5,8 @@
 
 ## Accessibility Baseline
 
-- **Accessibility tier**：`N/A` —— 内部 headless HTTP API 服务，无终端用户 UI。`design/ux/surface-profile.md`（Approved design classification）明确："No visual identity, accessibility UI requirements or prototype screen is applicable."
-- **Source**：`../../design/ux/surface-profile.md`；无 `design/accessibility-requirements.md`（WCAG 针对人类感官/感知的 web 内容，不适用于 Bearer-auth JSON/HTTP API 面）。
+- **Accessibility tier**：感官/UI 为 `N/A`；开发者与 operator 的 API 契约工效学为 `Basic` 且已实现。`design/ux/surface-profile.md`（Approved design classification）明确："No visual identity, accessibility UI requirements or prototype screen is applicable."
+- **Source**：`../../design/ux/surface-profile.md`、`../../design/accessibility-requirements.md`；后者覆盖稳定错误、幂等指导、sanitized status、preview/execute 与 partial-batch 等 API 工效学，不把 WCAG 错套到 headless JSON/HTTP 服务。
 - **Open risks**：MVP 无；若未来引入 CLI 或管理/重放 GUI，按 `product-concept.md` Visual Identity（"若未来引入管理 / 重放界面，再单独设计"）单独设计可达性。
 
 ## UX Surface Summary

@@ -1,12 +1,13 @@
 # Architecture Context
 
 > T1 supporting context。架构决策与组件所有权的索引层；不替代 `../../docs/architecture/architecture.md` 或
-> `../../docs/architecture/adr-*.md`（权威源）。实现尚未开始；只记录已独立审查通过的 Architecture 事实。
+> `../../docs/architecture/adr-*.md`（权威源）。Architecture 事实仍以已独立审查版本为准；
+> B1–B6 已实现，证据另见 `../../docs/testing/ac-evidence.json`。
 
 ## Architecture Summary
 
 - **架构文档**：`../../docs/architecture/architecture.md`（独立审查 PASS 2026-07-20）
-- **当前架构状态**：Approved（Stage = Architecture；实现未开始）
+- **当前架构状态**：Approved（Current stage = Implementation；B1–B6 mechanically verified；逐批及 final cross-review Approved；local submission-ready）
 - **栈**：Go 1.26.5 + chi v5 + pgx v5 + golang-migrate v4；PostgreSQL 18.4（见 `tech_context.md`）
 - **形态**：单二进制单进程；多副本与行锁/lease 兼容但非 day-1；逻辑模块非独立可部署服务
 - **核心承诺**：提交即忘、可靠送达——at-least-once + 有界重试（25 次 / 24h）+ 可查询 + 受守护人工重放

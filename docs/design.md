@@ -124,6 +124,20 @@ Go 的 `net/http`、自定义 `Transport`、`netip`、并发模型和单二进�
 包/接口边界。Python/TypeScript 能更快搭 CRUD，但在 pinned dial、worker 生命周期和类型化内部契约上
 需要更多运行时约束。Rust 提供更强静态安全，但对本 MVP 的迭代成本过高。
 
+### 选择 Prometheus
+
+MVP 只发布 pending 数、最老 pending 年龄和 dead 数三项无业务标签的全局 gauge。Prometheus 使用标准
+text exposition 与 pull scrape，能够用同一套配置在 Compose 中复现采集、`for` 告警时序和规则单测；
+应用本身不缓存指标，Store 查询失败时整个 scrape 返回 `503`，避免把未知状态伪装成健康零值。
+
+- 若部署环境已有 Prometheus-compatible 或云托管监控，可直接抓取相同 `/metrics`，无需运行仓库内的
+  Prometheus server；告警接收与通知渠道由部署方负责。
+- logs-only 便于故障取证，但不能等价提供积压趋势、连续 `for` 计时和 scrape availability 语义，因此
+  不是可靠性指标的替代品。
+- OpenTelemetry Collector 适合需要统一 metrics/traces/logs 或多后端导出时引入；本 MVP 没有 tracing
+  或多后端需求，day-1 增加 collector 只会扩大部署与故障面。
+- Alertmanager 解决告警路由而非指标采集；通知渠道不属于本服务边界，因此不随 MVP 部署。
+
 ## 演进
 
 演进由证据触发，不承诺固定顺序：
@@ -137,4 +151,3 @@ Go 的 `net/http`、自定义 `Transport`、`netip`、并发模型和单二进�
 | 单库/单区域成为已测瓶颈 | 分片；多区域须修改宪法与一致性模型 |
 
 没有基准测量前不承诺吞吐/延迟 SLA；测试策略先定义测量方法，实施阶段产生第一份基线。
-

@@ -19,6 +19,19 @@
 | cross-CDD corpus + registries | consistency-check + review-all-gdds (fresh independent) | PASS（6/6 Approved；290/290 AC + 4/4 NSBR） | 2026-07-20 | `../../../design/cdd/reviews/review-archive.md` §Cross-CDD Reviews run 03 |
 | `docs/architecture/architecture.md` | Architecture package review (fresh independent) | APPROVED（无 blocker；实现未开始） | 2026-07-20 | `../../../docs/architecture/architecture-review-archive.md` §Review #1 |
 | Architecture advisory closures | fresh independent re-review | APPROVED（4/4 advisories closed at Architecture scope） | 2026-07-20 | `../../../docs/architecture/architecture-review-archive.md` §Review #2 |
+| B1–B4 implementation corpus | implementation closure self-review + mechanical acceptance | READY FOR INDEPENDENT REVIEW（266/266 AC mapped；build/vet/race/race×5 PASS；不得视为 independent APPROVED） | 2026-07-22 | `implementation-review-archive.md` §B1–B4 Closure Self-Review |
+| B1–B4 implementation corpus（addendum） | closure hardening self-review + mechanical acceptance rerun | READY FOR INDEPENDENT REVIEW（266/266 AC explicitly registered；migration/OpenAPI/race×5 PASS；不得视为 independent APPROVED） | 2026-07-22 | `implementation-review-archive.md` §B1–B4 Closure Self-Review Addendum |
+| B1 + B2 implementation closure | fresh independent review | APPROVED（0 blocker） | 2026-07-22 | `implementation-review-archive.md` §B1 + B2 Fresh Independent Closure Review |
+| B3 Caller Access + Vendor Registry implementation | fresh independent re-review | APPROVED（0 blocker） | 2026-07-22 | `implementation-review-archive.md` §B3 Fresh Independent Re-Review |
+| B4 Delivery implementation | fresh independent review | APPROVED（0 blocker；后续 Delivery delta 纳入 B6/final cross-review） | 2026-07-22 | `implementation-review-archive.md` §B4 Fresh Independent Review |
+| B5 Operations Control + Reliability Observability | fresh independent review + bounded correction | APPROVED（0 blocker / 0 non-blocking） | 2026-07-22 | `implementation-review-archive.md` §B5 Fresh Independent Review |
+| B6 deployment / lifecycle / fault / capacity / PITR | fresh independent review + bounded correction | APPROVED（0 blocker / 0 non-blocking） | 2026-07-22 | `implementation-review-archive.md` §B6 Fresh Independent Review |
+| B1–B6 batch implementation corpus | final per-batch closure regression reviews | APPROVED（B1/B2、B3、B4、B5、B6 各 0 blocker；不替代 cross-batch verdict） | 2026-07-22 | `implementation-review-archive.md` §B1–B6 Batch Review Correction and Final Closure |
+| B1–B6 complete implementation corpus | fresh independent cross-batch review attempt 1 | NEEDS REVISION（仅 manifest drift blocker；实质 0 blocker；容量基线边界 1 non-blocking） | 2026-07-22 | `implementation-review-archive.md` §B1–B6 Cross-Batch Closure Attempt 1 |
+| B1–B6 complete implementation corpus | fresh independent final cross-batch review | APPROVED（0 blocker；1 disclosed capacity-baseline limit） | 2026-07-22 | `implementation-review-archive.md` §B1–B6 Cross-Batch Closure Final Review |
+| B1–B6 complete implementation corpus | fresh independent final truth/correctness audit | NEEDS REVISION（3 blockers corrected；awaiting new-manifest re-review；supersedes preceding final label） | 2026-07-22 | `implementation-review-archive.md` §B1–B6 Cross-Batch Final Review Correction |
+| B1–B6 complete implementation corpus | fresh independent cross-batch re-review attempt 3 | NEEDS REVISION（active truth-surface drift corrected；awaiting new manifest） | 2026-07-22 | `implementation-review-archive.md` §B1–B6 Cross-Batch Re-Review Attempt 3 |
+| B1–B6 complete implementation corpus | fresh independent final cross-batch re-review | APPROVED（0 blocker / 0 new non-blocking；local submission-ready） | 2026-07-22 | `implementation-review-archive.md` §B1–B6 Cross-Batch Closure Final Re-Review |
 
 ## 附录：Constitution Draft v0.1 Review — 2026-07-18
 

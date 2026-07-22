@@ -2,7 +2,7 @@
 # Index modules to the laws, CDDs, ADRs, and evidence that support them.
 # 权威来源：docs/architecture/requirements-traceability.md（Architecture-to-Requirement Matrix）
 #   + docs/architecture/tr-registry.yaml + design/cdd/module-index.md。
-# evidence 暂为空（实现未开始，production/qa/evidence/ 无产物）；不虚构证据。
+# B1-B6 evidence points only to executable tests and the machine-checked AC registry.
 
 modules:
   notification-store:
@@ -17,7 +17,10 @@ modules:
       - docs/architecture/adr-0001-postgresql-outbox.md
       - docs/architecture/adr-0002-idempotency-at-least-once.md
       - docs/architecture/adr-0003-api-key-authorization.md
-    evidence: []  # pending implementation
+    evidence:
+      - docs/testing/ac-evidence.json
+      - tests/integration/notificationstore_test.go
+      - internal/notificationstore/transition_test.go
   vendor-registry:
     laws:
       - BL-05
@@ -27,7 +30,10 @@ modules:
       - docs/architecture/adr-0001-postgresql-outbox.md
       - docs/architecture/adr-0003-api-key-authorization.md
       - docs/architecture/adr-0004-ssrf-safe-http.md
-    evidence: []  # pending implementation
+    evidence:
+      - docs/testing/ac-evidence.json
+      - tests/integration/vendorregistry_test.go
+      - internal/vendorregistry/postgres/repository_test.go
   caller-access:
     laws:
       - BL-02
@@ -36,7 +42,10 @@ modules:
       - design/cdd/caller-access.md
     adrs:
       - docs/architecture/adr-0003-api-key-authorization.md
-    evidence: []  # pending implementation
+    evidence:
+      - docs/testing/ac-evidence.json
+      - tests/integration/calleraccess_test.go
+      - internal/calleraccess/domain_test.go
   delivery:
     laws:
       - BL-03
@@ -48,7 +57,11 @@ modules:
       - docs/architecture/adr-0001-postgresql-outbox.md
       - docs/architecture/adr-0002-idempotency-at-least-once.md
       - docs/architecture/adr-0004-ssrf-safe-http.md
-    evidence: []  # pending implementation
+    evidence:
+      - docs/testing/ac-evidence.json
+      - tests/integration/delivery_test.go
+      - internal/delivery/runner_test.go
+      - internal/delivery/transport_test.go
   operations-control:
     laws:
       - BL-04
@@ -57,7 +70,11 @@ modules:
     adrs:
       - docs/architecture/adr-0001-postgresql-outbox.md
       - docs/architecture/adr-0003-api-key-authorization.md
-    evidence: []  # pending implementation
+    evidence:
+      - docs/testing/ac-evidence.json
+      - internal/operationscontrol/service_test.go
+      - internal/app/operations_handlers_test.go
+      - tests/integration/operations_observability_test.go
   reliability-observability:
     laws:
       - BL-06
@@ -66,4 +83,8 @@ modules:
     adrs:
       - docs/architecture/adr-0001-postgresql-outbox.md
       - docs/architecture/adr-0003-api-key-authorization.md
-    evidence: []  # pending implementation
+    evidence:
+      - docs/testing/ac-evidence.json
+      - internal/reliability/service_test.go
+      - tests/contracts/prometheus_artifacts_test.go
+      - deploy/prometheus/rules.test.yml
