@@ -18,21 +18,21 @@ invariants:
     severity: critical
     description: Agents cannot modify their own prompt or registry.
     protected_paths:
-      - ".openslack/agents/prompts/{agent_id}.md"
-      - ".openslack/agents/registry/{agent_id}.yaml"
+      - '.openslack/agents/prompts/{agent_id}.md'
+      - '.openslack/agents/registry/{agent_id}.yaml'
 
   - id: red_zone_human_approval
     severity: critical
     description: Red Zone files require human approval.
     paths:
-      - ".github/**"
-      - ".openslack/policies/**"
-      - ".openslack/agents/registry/**"
-      - ".openslack/agents/prompts/**"
-      - ".openslack/self/constitution.md"
-      - ".openslack/self/invariants.yaml"
-      - "packages/policy/src/**"
-      - "packages/self-evolution/src/core/**"
+      - '.github/**'
+      - '.openslack/policies/**'
+      - '.openslack/agents/registry/**'
+      - '.openslack/agents/prompts/**'
+      - '.openslack/self/constitution.md'
+      - '.openslack/self/invariants.yaml'
+      - 'packages/policy/src/**'
+      - 'packages/self-evolution/src/core/**'
 
   - id: validation_before_merge
     severity: high
