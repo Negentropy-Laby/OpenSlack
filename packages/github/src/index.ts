@@ -158,20 +158,27 @@ export type {
   GitHubWatchConfigV2,
   GitHubWatchNotificationServiceV2,
   GitHubWatchRepoV2,
+  GitHubWatchRouteRecordIdentityV2,
   GitHubWatchRouteDeliveryV2,
   GitHubWatchRouteV2,
   WatchConfigV2ParseResult,
 } from './watch-config-v2.js';
 export {
   NOTIFICATION_HANDOFF_DEPLOYMENT_DIGEST_PATTERN,
+  NOTIFICATION_HANDOFF_IDEMPOTENCY_KEY_PATTERN,
   NOTIFICATION_HANDOFF_NAMESPACE_V2,
   NOTIFICATION_HANDOFF_POLICY,
   NOTIFICATION_HANDOFF_ROUTE_ID_PATTERN,
   NOTIFICATION_HANDOFF_VENDOR_ID_PATTERN,
+  NOTIFICATION_ROUTE_RECORD_ID_PATTERN,
+  NOTIFICATION_ROUTE_RECORD_NAMESPACE_V2,
   createNotificationHandoffKeyV2,
+  createNotificationRouteRecordIdV2,
   isNotificationDeploymentDigest,
+  isNotificationHandoffIdempotencyKey,
   isNotificationHandoffRouteId,
   isNotificationHandoffVendorId,
+  isNotificationRouteRecordId,
 } from './notification-handoff-contracts.js';
 export type {
   AcceptedReceipt,
@@ -181,6 +188,8 @@ export type {
   MaterializedNotificationBody,
   NotificationBodyEncoderVersion,
   NotificationDeliveryBackend,
+  NotificationHandoffIdempotencyKey,
+  NotificationRouteRecordId,
   RemoteDeliveryState,
 } from './notification-handoff-contracts.js';
 export {

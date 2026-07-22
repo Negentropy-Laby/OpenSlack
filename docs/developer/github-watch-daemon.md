@@ -204,6 +204,11 @@ Use these keys in order:
 4. Poll cursor per repository: `lastSeenAt`, `lastIssueNumber`, and last
    processed idempotency key.
 
+The approved, not-yet-wired v2 queue derives each local `route_record_id` as lowercase hexadecimal SHA-256 over
+`openslack.watch.route-record.v2`, the already-lowercase canonical `owner/repo`, and the persisted route idempotency
+key, with NUL delimiters. Migrated v1 routes use their copied original key as input; they do not receive a new v2
+handoff key. The ID is derived queue identity and is never accepted from watch configuration.
+
 The queue accepts or rejects duplicates atomically. A successful route is
 marked completed immediately and is not resent when another route retries. If
 a process exits after a remote sink accepts a message but before the local

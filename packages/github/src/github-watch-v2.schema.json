@@ -48,6 +48,12 @@
     }
   ],
   "$defs": {
+    "routeRecordId": {
+      "description": "Read-only route record identity derived from canonical repository and persisted idempotency key; it is never accepted in watch config.",
+      "type": "string",
+      "readOnly": true,
+      "pattern": "^[0-9a-f]{64}$"
+    },
     "notificationService": {
       "type": "object",
       "additionalProperties": false,

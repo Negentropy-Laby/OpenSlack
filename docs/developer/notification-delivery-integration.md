@@ -131,6 +131,30 @@ pattern, and `routing_epoch` is canonical decimal ASCII, so the delimited preima
 The executable vectors live in
 `packages/github/src/__fixtures__/notification-handoff/key-vectors.v1.json`.
 
+## Route Record Identity
+
+The local v2 queue and acceptance ledger use one deterministic route-record identity. It is derived after the
+repository and route idempotency key have been frozen; it is not a user-configurable watch route field:
+
+```text
+preimage =
+  UTF8("openslack.watch.route-record.v2") || 0x00 ||
+  UTF8(canonical_repository)              || 0x00 ||
+  UTF8(persisted_idempotency_key)
+
+route_record_id = lowercase_hex(SHA-256(preimage))
+```
+
+`canonical_repository` must already equal the lowercase `canonicalFullName` returned by
+`canonicalizeRepositoryName`; the derivation rejects case variants, surrounding whitespace, extra path segments and
+U+0000 rather than normalizing them. `persisted_idempotency_key` must match the frozen lowercase UUID-like v5 handoff
+key contract. During per-route v1 migration, the original v1 route key is copied unchanged and used as this input; it
+is never recalculated with the v2 handoff-key formula.
+
+The result is exactly 64 lowercase hexadecimal characters and is used directly as the receipt filename. Executable
+vectors, including a copied-v1-key case, live in
+`packages/github/src/__fixtures__/notification-handoff/route-record-id-vectors.v1.json`.
+
 ## Final Vendor Bytes
 
 IB2 will materialize exactly once:
@@ -165,6 +189,9 @@ Receipt path:
 ```text
 .openslack.local/daemon/notification-acceptance/<route-record-id>.json
 ```
+
+`<route-record-id>` is the deterministic 64-character identity above; arbitrary filenames and config-supplied IDs
+are not accepted.
 
 The strict schema is `openslack.notification_acceptance.v1`. It contains route/repository/vendor/key identity,
 notification and request IDs, accepted/replay timestamps, deployment digest and watch-config digest. It contains no

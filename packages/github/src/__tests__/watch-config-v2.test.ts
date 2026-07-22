@@ -11,6 +11,12 @@ const watchV2Schema = JSON.parse(
   additionalProperties: boolean;
   required: string[];
   $defs: {
+    routeRecordId: {
+      description: string;
+      type: string;
+      readOnly: boolean;
+      pattern: string;
+    };
     repository: {
       properties: { events: { items: { enum: string[] } } };
     };
@@ -67,6 +73,14 @@ describe('GitHub watch v2 config contract', () => {
   it('declares a strict-shape JSON Schema 2020-12 contract', () => {
     expect(watchV2Schema.additionalProperties).toBe(false);
     expect(watchV2Schema.required).toEqual(['schema', 'repositories']);
+    expect(watchV2Schema.$defs.routeRecordId).toMatchObject({
+      type: 'string',
+      readOnly: true,
+      pattern: '^[0-9a-f]{64}$',
+    });
+    expect(watchV2Schema.$defs.routeRecordId.description).toContain(
+      'never accepted in watch config',
+    );
   });
 
   it('parses and normalizes a valid v2 config without changing the v1 parser', () => {

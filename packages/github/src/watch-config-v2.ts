@@ -14,8 +14,20 @@ import {
   isNotificationDeploymentDigest,
   isNotificationHandoffRouteId,
   isNotificationHandoffVendorId,
+  type NotificationHandoffIdempotencyKey,
   type NotificationDeliveryBackend,
+  type NotificationRouteRecordId,
 } from './notification-handoff-contracts.js';
+
+/**
+ * Read-only identity for a future v2 queue record. These fields are derived after config parsing
+ * and are deliberately absent from the user-authored watch schema and parser result.
+ */
+export interface GitHubWatchRouteRecordIdentityV2 {
+  readonly route_record_id: NotificationRouteRecordId;
+  readonly canonical_repository: string;
+  readonly persisted_idempotency_key: NotificationHandoffIdempotencyKey;
+}
 
 export interface GitHubWatchNotificationServiceV2 {
   endpoint: string;
