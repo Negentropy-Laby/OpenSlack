@@ -8,17 +8,35 @@ export type { MergeInput, ReviewResult as MergeReviewResult } from './self/merge
 export type { RiskZone, PolicyDefinition, PolicyResult, ZoneDefinition } from './types.js';
 
 export type {
-  ActionVerdict, AgentRegistryIdentity, AgentPermissions, AgentRegistryEntry,
-  AgentRuntimeIdentity, AgentPrincipal, AgentPermissionSnapshot,
-  AuthorizationDecision, AuthorizationEvidence, AuthorizationResult,
+  ActionVerdict,
+  AgentRegistryIdentity,
+  AgentPermissions,
+  AgentRegistryEntry,
+  AgentRuntimeIdentity,
+  AgentPrincipal,
+  AgentPermissionSnapshot,
+  AuthorizationDecision,
+  AuthorizationEvidence,
+  AuthorizationResult,
   SubagentDefinition,
   PermissionMode,
 } from './types.js';
 
 export type {
-  EvolutionTask, EvolutionExperiment, SelfValidationResult,
-  FitnessScore, EvolutionStatus, EvolutionSource, ProblemStatement,
-  Hypothesis, EvolutionRisk, EvolutionConstraints, ValidationPlan,
-  OutputContract, RollbackPlan, CheckResult, ProtectedPathResult,
+  EvolutionTask,
+  EvolutionExperiment,
+  SelfValidationResult,
+  FitnessScore,
+  EvolutionStatus,
+  EvolutionSource,
+  ProblemStatement,
+  Hypothesis,
+  EvolutionRisk,
+  EvolutionConstraints,
+  ValidationPlan,
+  OutputContract,
+  RollbackPlan,
+  CheckResult,
+  ProtectedPathResult,
   MergeDecision,
 } from './self/types.js';
