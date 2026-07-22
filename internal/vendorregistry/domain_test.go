@@ -23,7 +23,7 @@ func validEndpointInput() EndpointConfigInput {
 			MaxRequestBodyBytes:         65536,
 		},
 		AuthStrategy:  "bearer",
-		CredentialRef: CredentialRefInput{Scheme: "env", OpaqueHandle: "VENDOR_A_TOKEN", ReferenceVersion: "v1"},
+		CredentialRef: &CredentialRefInput{Scheme: "env", OpaqueHandle: "VENDOR_A_TOKEN", ReferenceVersion: "v1"},
 	}
 }
 
@@ -93,7 +93,7 @@ func TestValidateEndpointConfig_Valid(t *testing.T) {
 			MaxRequestBodyBytes:         65536,
 		},
 		AuthStrategy:  "bearer",
-		CredentialRef: CredentialRefInput{Scheme: "env", OpaqueHandle: "VENDOR_A_TOKEN", ReferenceVersion: "v1"},
+		CredentialRef: &CredentialRefInput{Scheme: "env", OpaqueHandle: "VENDOR_A_TOKEN", ReferenceVersion: "v1"},
 	}
 	version, err := ValidateEndpointConfig(cfg, input)
 	if err != nil {
@@ -107,6 +107,67 @@ func TestValidateEndpointConfig_Valid(t *testing.T) {
 	}
 	if version.CredentialRef.OpaqueHandle != "VENDOR_A_TOKEN" {
 		t.Fatalf("credential handle lost")
+	}
+	if version.ConfigSchemaVersion != ConfigSchemaVersionV1 || version.ResponsePolicy != ResponsePolicyHTTPStatusV1 {
+		t.Fatalf("legacy defaults changed: schema=%d response=%q", version.ConfigSchemaVersion, version.ResponsePolicy)
+	}
+}
+
+func TestValidateEndpointConfig_SchemaV2FrozenMatrix(t *testing.T) {
+	bearer := validEndpointInput()
+	bearer.ConfigSchemaVersion = ConfigSchemaVersionV2
+	bearer.ResponsePolicy = ResponsePolicyJSONAckV1
+	version, err := ValidateEndpointConfig(DefaultConfig(), bearer)
+	if err != nil || version.ConfigSchemaVersion != 2 || version.ResponsePolicy != ResponsePolicyJSONAckV1 || version.CredentialRef == nil {
+		t.Fatalf("valid v2 bearer rejected or drifted: version=%+v err=%v", version, err)
+	}
+
+	none := validEndpointInput()
+	none.ConfigSchemaVersion = ConfigSchemaVersionV2
+	none.ResponsePolicy = ResponsePolicyHTTPStatusV1
+	none.AuthStrategy = "none"
+	none.CredentialRef = nil
+	none.OutboundIdempotencyMapping = OutboundIdempotencyMapping{
+		Mode: "headers", Source: "ingress_idempotency_key", HeaderNames: []string{"idempotency-key", "x-openslack-idempotency-key"},
+	}
+	none.EndpointPolicy.AllowedRequestHeaderNames = slicePointer([]string{"content-type", "idempotency-key", "x-openslack-idempotency-key"})
+	version, err = ValidateEndpointConfig(DefaultConfig(), none)
+	if err != nil || version.AuthStrategy != "none" || version.CredentialRef != nil || len(version.OutboundIdempotencyMapping.HeaderNames) != 2 {
+		t.Fatalf("valid v2 none rejected or drifted: version=%+v err=%v", version, err)
+	}
+
+	tests := []struct {
+		name   string
+		mutate func(*EndpointConfigInput)
+	}{
+		{name: "partial discriminator", mutate: func(v *EndpointConfigInput) { v.ResponsePolicy = "" }},
+		{name: "explicit v1 is not v2 arm", mutate: func(v *EndpointConfigInput) { v.ConfigSchemaVersion = 1 }},
+		{name: "credential with none", mutate: func(v *EndpointConfigInput) {
+			v.CredentialRef = &CredentialRefInput{Scheme: "env", OpaqueHandle: "TOKEN"}
+		}},
+		{name: "credential header with none", mutate: func(v *EndpointConfigInput) {
+			v.TransportAuthHeaders = slicePointer([]HeaderRuleInput{{Kind: "credential_field", Name: "authorization", CredentialField: "token"}})
+			v.EndpointPolicy.AllowedRequestHeaderNames = slicePointer([]string{"authorization", "idempotency-key", "x-openslack-idempotency-key"})
+		}},
+		{name: "body rewrite", mutate: func(v *EndpointConfigInput) {
+			v.OutboundIdempotencyMapping = OutboundIdempotencyMapping{Mode: "body_field", FieldName: "id"}
+		}},
+		{name: "uppercase mapping header", mutate: func(v *EndpointConfigInput) { v.OutboundIdempotencyMapping.HeaderNames[0] = "Idempotency-Key" }},
+		{name: "duplicate mapping header", mutate: func(v *EndpointConfigInput) { v.OutboundIdempotencyMapping.HeaderNames[1] = "idempotency-key" }},
+		{name: "too many mapping headers", mutate: func(v *EndpointConfigInput) {
+			v.OutboundIdempotencyMapping.HeaderNames = []string{"x-one", "x-two", "x-three", "x-four", "x-five"}
+		}},
+		{name: "invalid mapping source", mutate: func(v *EndpointConfigInput) { v.OutboundIdempotencyMapping.Source = "payload" }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			candidate := none
+			candidate.OutboundIdempotencyMapping.HeaderNames = append([]string(nil), none.OutboundIdempotencyMapping.HeaderNames...)
+			tt.mutate(&candidate)
+			if _, err := ValidateEndpointConfig(DefaultConfig(), candidate); err == nil {
+				t.Fatal("invalid v2 endpoint accepted")
+			}
+		})
 	}
 }
 
@@ -144,7 +205,7 @@ func TestValidateEndpointConfig_MVPRejectsNonBearer(t *testing.T) {
 				AllowedRequestHeaderNames: &allowed, ForbiddenRequestHeaderNames: &forbidden, MaxRequestBodyBytes: 65536,
 			},
 			AuthStrategy:  strategy,
-			CredentialRef: CredentialRefInput{Scheme: "env", OpaqueHandle: "TOKEN"},
+			CredentialRef: &CredentialRefInput{Scheme: "env", OpaqueHandle: "TOKEN"},
 		}
 		if _, err := ValidateEndpointConfig(DefaultConfig(), input); !IsAdminCommandError(err, "INVALID_ENDPOINT_POLICY") {
 			t.Fatalf("strategy %s: got %v", strategy, err)
@@ -183,7 +244,7 @@ func TestValidateEndpointConfig_RejectsDisallowedPort(t *testing.T) {
 			MaxRequestBodyBytes:         65536,
 		},
 		AuthStrategy:  "bearer",
-		CredentialRef: CredentialRefInput{Scheme: "env", OpaqueHandle: "TOKEN"},
+		CredentialRef: &CredentialRefInput{Scheme: "env", OpaqueHandle: "TOKEN"},
 	}
 	if _, err := ValidateEndpointConfig(cfg, input); err == nil {
 		t.Fatal("expected disallowed port to be rejected")
@@ -205,7 +266,7 @@ func TestValidateEndpointConfig_RejectsForbiddenHeader(t *testing.T) {
 			MaxRequestBodyBytes:         65536,
 		},
 		AuthStrategy:  "bearer",
-		CredentialRef: CredentialRefInput{Scheme: "env", OpaqueHandle: "TOKEN"},
+		CredentialRef: &CredentialRefInput{Scheme: "env", OpaqueHandle: "TOKEN"},
 	}
 	if _, err := ValidateEndpointConfig(cfg, input); err == nil {
 		t.Fatal("expected header not in allowed set to be rejected")

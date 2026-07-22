@@ -253,6 +253,41 @@ func validReplacementPolicy() map[string]any {
 	}
 }
 
+func validV2BearerConfig() map[string]any {
+	config := validRegisterInput().Body["initial_config"].(map[string]any)
+	config["config_schema_version"] = 2
+	config["response_policy"] = ResponsePolicyJSONAckV1
+	return config
+}
+
+func validV2NoneConfig() map[string]any {
+	return map[string]any{
+		"config_schema_version": 2,
+		"response_policy":       ResponsePolicyHTTPStatusV1,
+		"endpoint_target":       map[string]any{"url": "https://example.com/webhook"},
+		"method":                "POST",
+		"transport_auth_headers": []any{
+			map[string]any{"kind": "literal", "name": "content-type", "value": "application/json"},
+		},
+		"outbound_idempotency_mapping": map[string]any{
+			"mode": "headers", "source": "ingress_idempotency_key",
+			"header_names": []any{"idempotency-key", "x-openslack-idempotency-key"},
+		},
+		"endpoint_policy": map[string]any{
+			"allowed_request_header_names":   []any{"content-type", "idempotency-key", "x-openslack-idempotency-key"},
+			"forbidden_request_header_names": []any{},
+			"max_request_body_bytes":         65536,
+		},
+		"auth_strategy": "none",
+	}
+}
+
+func registerWithConfig(config map[string]any) AdminCommand {
+	command := validRegisterInput()
+	command.Body["initial_config"] = config
+	return command
+}
+
 func TestService_Register_Success(t *testing.T) {
 	repo := newFakeRepo()
 	svc := NewService(repo, DefaultConfig())
@@ -278,6 +313,93 @@ func TestService_Register_Success(t *testing.T) {
 	version := repo.versions["vendor-a"][1]
 	if version.ConfigSchemaVersion != 1 || version.ResponsePolicy != ResponsePolicyHTTPStatusV1 {
 		t.Fatalf("management service emitted schema=%d response_policy=%q, want schema v1 http_status_v1", version.ConfigSchemaVersion, version.ResponsePolicy)
+	}
+}
+
+func TestService_RegisterSupportsExplicitSchemaV2Arms(t *testing.T) {
+	for name, config := range map[string]map[string]any{
+		"bearer json ack": validV2BearerConfig(),
+		"none webhook":    validV2NoneConfig(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo := newFakeRepo()
+			svc := NewService(repo, DefaultConfig())
+			actor := ActorContext{Kind: ActorKindOperator, ActorID: "op-1", VendorScope: VendorScope{Kind: "all"}, Capabilities: []string{CapabilityRegister}}
+			if _, err := svc.ExecuteCommand(t.Context(), actor, registerWithConfig(config)); err != nil {
+				t.Fatalf("register v2: %v", err)
+			}
+			version := repo.versions["vendor-a"][1]
+			if version.ConfigSchemaVersion != ConfigSchemaVersionV2 {
+				t.Fatalf("schema=%d", version.ConfigSchemaVersion)
+			}
+			if version.AuthStrategy == "none" && version.CredentialRef != nil {
+				t.Fatal("auth none persisted credential")
+			}
+		})
+	}
+}
+
+func TestService_UpdateAllowsV1ToV2AndRejectsV2ToV1(t *testing.T) {
+	repo := newFakeRepo()
+	svc := NewService(repo, DefaultConfig())
+	actor := ActorContext{Kind: ActorKindOperator, ActorID: "op-1", VendorScope: VendorScope{Kind: "all"}, Capabilities: []string{CapabilityRegister, CapabilityUpdate}}
+	if _, err := svc.ExecuteCommand(t.Context(), actor, validRegisterInput()); err != nil {
+		t.Fatal(err)
+	}
+	v2 := validV2NoneConfig()
+	update := AdminCommand{Operation: OpUpdateVersion, VendorID: "vendor-a", ExpectedRecordRevision: 1, IdempotencyKey: "update-v2", Body: map[string]any{"replacement_policy": v2}}
+	if _, err := svc.ExecuteCommand(t.Context(), actor, update); err != nil {
+		t.Fatalf("v1 to v2: %v", err)
+	}
+	version := repo.versions["vendor-a"][2]
+	if version.ConfigSchemaVersion != 2 || version.AuthStrategy != "none" || version.CredentialRef != nil || version.ResponsePolicy != ResponsePolicyHTTPStatusV1 {
+		t.Fatalf("v2 update drifted: %+v", version)
+	}
+	update = AdminCommand{Operation: OpUpdateVersion, VendorID: "vendor-a", ExpectedRecordRevision: 2, IdempotencyKey: "downgrade-v1", Body: map[string]any{"replacement_policy": validReplacementPolicy()}}
+	if _, err := svc.ExecuteCommand(t.Context(), actor, update); !IsAdminCommandError(err, ErrInvalidCommand) {
+		t.Fatalf("v2 to v1 downgrade error=%v", err)
+	}
+	if repo.vendors["vendor-a"].CurrentConfigVersion != 2 {
+		t.Fatal("downgrade wrote a new version")
+	}
+}
+
+func TestService_CredentialRotationPreservesV2AndRejectsAuthNone(t *testing.T) {
+	actor := ActorContext{Kind: ActorKindOperator, ActorID: "op-1", VendorScope: VendorScope{Kind: "all"}, Capabilities: []string{CapabilityRegister, CapabilityRotateCredentialRef}}
+
+	bearerRepo := newFakeRepo()
+	bearerService := NewService(bearerRepo, DefaultConfig())
+	if _, err := bearerService.ExecuteCommand(t.Context(), actor, registerWithConfig(validV2BearerConfig())); err != nil {
+		t.Fatal(err)
+	}
+	rotate := AdminCommand{Operation: OpRotateCredentialRef, VendorID: "vendor-a", ExpectedRecordRevision: 1, IdempotencyKey: "rotate-v2", Body: map[string]any{
+		"new_credential_ref": map[string]any{"scheme": "env", "opaque_handle": "VENDOR_B_TOKEN", "reference_version": "v2"},
+	}}
+	if _, err := bearerService.ExecuteCommand(t.Context(), actor, rotate); err != nil {
+		t.Fatalf("rotate v2 bearer: %v", err)
+	}
+	before, after := bearerRepo.versions["vendor-a"][1], bearerRepo.versions["vendor-a"][2]
+	if after.ConfigSchemaVersion != before.ConfigSchemaVersion || after.ResponsePolicy != before.ResponsePolicy ||
+		after.AuthStrategy != before.AuthStrategy || after.CanonicalURL != before.CanonicalURL ||
+		after.OutboundIdempotencyMapping.Mode != before.OutboundIdempotencyMapping.Mode ||
+		after.CredentialRef == nil || after.CredentialRef.OpaqueHandle != "VENDOR_B_TOKEN" {
+		t.Fatalf("rotation changed immutable policy: before=%+v after=%+v", before, after)
+	}
+
+	noneRepo := newFakeRepo()
+	noneService := NewService(noneRepo, DefaultConfig())
+	if _, err := noneService.ExecuteCommand(t.Context(), actor, registerWithConfig(validV2NoneConfig())); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := noneService.ExecuteCommand(t.Context(), actor, rotate); !IsAdminCommandError(err, ErrInvalidCredentialRef) {
+		t.Fatalf("auth none rotation error=%v", err)
+	}
+	if len(noneRepo.versions["vendor-a"]) != 1 {
+		t.Fatal("auth none rotation wrote a version")
+	}
+	historical := versionToHistoricalSnapshot(noneRepo.versions["vendor-a"][1])
+	if historical.CredentialDescriptor != nil {
+		t.Fatal("auth none historical projection exposed credential descriptor")
 	}
 }
 

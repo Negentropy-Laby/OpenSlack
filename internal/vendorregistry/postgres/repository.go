@@ -357,7 +357,7 @@ func (r *Repository) ListEndpointVersions(ctx context.Context, vendorID string, 
 
 	rows, err := r.pool.Query(ctx, `
 		SELECT vendor_id, config_version, config_schema_version, canonical_url, method, transport_kind,
-		       auth_strategy, credential_ref_scheme, credential_ref_version, created_at, created_by_actor
+		       auth_strategy, response_policy, credential_ref_scheme, credential_ref_version, created_at, created_by_actor
 		FROM endpoint_versions
 		WHERE vendor_id = $1 AND config_version <= $2 AND config_version > $3
 		ORDER BY config_version ASC
@@ -373,15 +373,19 @@ func (r *Repository) ListEndpointVersions(ctx context.Context, vendorID string, 
 		var it vendorregistry.EndpointVersionListItem
 		var credentialScheme, credentialVersion pgtype.Text
 		if err := rows.Scan(&it.VendorID, &it.ConfigVersion, &it.ConfigSchemaVersion, &it.CanonicalURL, &it.Method, &it.TransportKind,
-			&it.AuthStrategy, &credentialScheme, &credentialVersion, &it.CreatedAt, &it.CreatedByActor); err != nil {
+			&it.AuthStrategy, &it.ResponsePolicy, &credentialScheme, &credentialVersion, &it.CreatedAt, &it.CreatedByActor); err != nil {
 			return vendorregistry.Page[vendorregistry.EndpointVersionListItem]{}, 0, vendorregistry.ReadError{Code: "VENDOR_INACTIVE_OR_UNKNOWN", Err: err}
 		}
-		if credentialScheme.Valid {
+		if it.AuthStrategy == "none" {
+			if credentialScheme.Valid || credentialVersion.Valid {
+				return vendorregistry.Page[vendorregistry.EndpointVersionListItem]{}, 0, vendorregistry.ReadError{Code: "VENDOR_INACTIVE_OR_UNKNOWN", Err: errors.New("auth none has credential descriptor")}
+			}
+		} else if credentialScheme.Valid {
 			it.CredentialDescriptor = &vendorregistry.CredentialDescriptor{Scheme: credentialScheme.String}
 			if credentialVersion.Valid {
 				it.CredentialDescriptor.ReferenceVersion = credentialVersion.String
 			}
-		} else if credentialVersion.Valid {
+		} else if credentialVersion.Valid || it.AuthStrategy == "bearer" {
 			return vendorregistry.Page[vendorregistry.EndpointVersionListItem]{}, 0, vendorregistry.ReadError{Code: "VENDOR_INACTIVE_OR_UNKNOWN", Err: errors.New("partial credential descriptor")}
 		}
 		items = append(items, it)
@@ -640,6 +644,9 @@ func (r *Repository) scanEndpointVersion(row pgx.Row) (vendorregistry.EndpointVe
 		}
 	} else if credentialScheme.Valid || credentialHandle.Valid || credentialVersion.Valid {
 		return vendorregistry.EndpointVersion{}, vendorregistry.ReadError{Code: "VENDOR_INACTIVE_OR_UNKNOWN", Err: errors.New("partial credential reference")}
+	}
+	if (v.AuthStrategy == "none" && v.CredentialRef != nil) || (v.AuthStrategy == "bearer" && v.CredentialRef == nil) {
+		return vendorregistry.EndpointVersion{}, vendorregistry.ReadError{Code: "VENDOR_INACTIVE_OR_UNKNOWN", Err: errors.New("credential reference does not match auth strategy")}
 	}
 	if err := json.Unmarshal(policyJSON, &v.EndpointPolicy); err != nil {
 		return vendorregistry.EndpointVersion{}, fmt.Errorf("unmarshal endpoint_policy: %w", err)

@@ -97,8 +97,12 @@ func endpointVersionInput(version EndpointVersion) EndpointConfigInput {
 		},
 		AuthStrategy: version.AuthStrategy,
 	}
+	if version.ConfigSchemaVersion == ConfigSchemaVersionV2 {
+		input.ConfigSchemaVersion = ConfigSchemaVersionV2
+		input.ResponsePolicy = version.ResponsePolicy
+	}
 	if version.CredentialRef != nil {
-		input.CredentialRef = CredentialRefInput{Scheme: version.CredentialRef.Scheme, OpaqueHandle: version.CredentialRef.OpaqueHandle, ReferenceVersion: version.CredentialRef.ReferenceVersion}
+		input.CredentialRef = &CredentialRefInput{Scheme: version.CredentialRef.Scheme, OpaqueHandle: version.CredentialRef.OpaqueHandle, ReferenceVersion: version.CredentialRef.ReferenceVersion}
 	}
 	return input
 }

@@ -33,6 +33,8 @@ const (
 const (
 	ResponsePolicyHTTPStatusV1 = "http_status_v1"
 	ResponsePolicyJSONAckV1    = "json_ack_v1"
+	ConfigSchemaVersionV1      = int64(1)
+	ConfigSchemaVersionV2      = int64(2)
 )
 
 // Actor kinds.
@@ -114,7 +116,7 @@ var (
 	credentialHandleRegex = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,127}$`)
 	disableReasonRegex    = regexp.MustCompile(`^.+$`)
 	methods               = map[string]struct{}{"POST": {}, "PUT": {}, "PATCH": {}}
-	authStrategies        = map[string]struct{}{"bearer": {}}
+	authStrategies        = map[string]struct{}{"bearer": {}, "none": {}}
 	transportKinds        = map[string]struct{}{"https_public": {}, "https_private": {}}
 )
 
@@ -393,6 +395,7 @@ type EndpointVersionListItem struct {
 	Method               string                `json:"method"`
 	TransportKind        string                `json:"transport_kind"`
 	AuthStrategy         string                `json:"auth_strategy"`
+	ResponsePolicy       string                `json:"response_policy"`
 	CredentialDescriptor *CredentialDescriptor `json:"credential_descriptor,omitempty"`
 	CreatedAt            time.Time             `json:"created_at"`
 	CreatedByActor       string                `json:"created_by_actor"`
@@ -731,6 +734,24 @@ func ValidateEndpointConfig(cfg Config, ep EndpointConfigInput) (EndpointVersion
 	if ep.TransportAuthHeaders == nil || ep.EndpointPolicy.AllowedRequestHeaderNames == nil || ep.EndpointPolicy.ForbiddenRequestHeaderNames == nil {
 		return version, AdminCommandError{Code: "INVALID_COMMAND", Err: errors.New("missing required endpoint configuration field")}
 	}
+	schemaVersion, responsePolicy := ep.ConfigSchemaVersion, ep.ResponsePolicy
+	if schemaVersion == 0 && responsePolicy == "" {
+		// The legacy v1 wire shape remains byte-compatible and closed. Only the
+		// v2 arm carries explicit version/policy discriminators.
+		schemaVersion = ConfigSchemaVersionV1
+		responsePolicy = ResponsePolicyHTTPStatusV1
+	} else if schemaVersion != ConfigSchemaVersionV2 {
+		return version, AdminCommandError{Code: "INVALID_COMMAND", Err: errors.New("explicit config_schema_version must be 2")}
+	}
+	switch responsePolicy {
+	case ResponsePolicyHTTPStatusV1:
+	case ResponsePolicyJSONAckV1:
+		if schemaVersion != ConfigSchemaVersionV2 {
+			return version, AdminCommandError{Code: "INVALID_COMMAND", Err: errors.New("json_ack_v1 requires config schema v2")}
+		}
+	default:
+		return version, AdminCommandError{Code: "INVALID_COMMAND", Err: errors.New("response_policy invalid")}
+	}
 	if err := cfg.Validate(); err != nil {
 		return version, AdminCommandError{Code: "INVALID_ENDPOINT_POLICY", Err: fmt.Errorf("endpoint validator configuration invalid: %w", err)}
 	}
@@ -746,6 +767,9 @@ func ValidateEndpointConfig(cfg Config, ep EndpointConfigInput) (EndpointVersion
 	}
 	if _, ok := authStrategies[ep.AuthStrategy]; !ok {
 		return version, AdminCommandError{Code: "INVALID_ENDPOINT_POLICY", Err: fmt.Errorf("auth strategy %s not allowed", ep.AuthStrategy)}
+	}
+	if schemaVersion == ConfigSchemaVersionV1 && ep.AuthStrategy != "bearer" {
+		return version, AdminCommandError{Code: "INVALID_ENDPOINT_POLICY", Err: errors.New("schema v1 requires bearer auth")}
 	}
 	transportKind := "https_public"
 	var cidrException *CIDRException
@@ -811,6 +835,9 @@ func ValidateEndpointConfig(cfg Config, ep EndpointConfigInput) (EndpointVersion
 				return version, AdminCommandError{Code: "INVALID_ENDPOINT_POLICY", Err: fmt.Errorf("literal header value invalid: %s", h.Name)}
 			}
 		case "credential_field":
+			if ep.AuthStrategy == "none" {
+				return version, AdminCommandError{Code: "INVALID_ENDPOINT_POLICY", Err: errors.New("auth none forbids credential_field headers")}
+			}
 			if h.Value != "" {
 				return version, AdminCommandError{Code: "INVALID_ENDPOINT_POLICY", Err: errors.New("credential_field header must not contain literal value")}
 			}
@@ -824,19 +851,33 @@ func ValidateEndpointConfig(cfg Config, ep EndpointConfigInput) (EndpointVersion
 		headers = append(headers, HeaderRule{Kind: h.Kind, Name: name, Value: h.Value, CredentialField: h.CredentialField})
 	}
 
-	mapping, err := validateIdempotencyMapping(ep.OutboundIdempotencyMapping, allowed, forbidden, seen)
+	mapping, err := validateIdempotencyMapping(schemaVersion, ep.OutboundIdempotencyMapping, allowed, forbidden, seen)
 	if err != nil {
 		return version, AdminCommandError{Code: "INVALID_COMMAND", Err: err}
 	}
-	if _, ok := cfg.CredentialRefSchemeAllowlist[ep.CredentialRef.Scheme]; !ok {
-		return version, AdminCommandError{Code: "INVALID_CREDENTIAL_REF", Err: fmt.Errorf("credential scheme %s not allowed", ep.CredentialRef.Scheme)}
-	}
-	if ep.CredentialRef.Scheme == "env" {
-		if !credentialHandleRegex.MatchString(ep.CredentialRef.OpaqueHandle) {
+	var credentialRef *CredentialRef
+	switch ep.AuthStrategy {
+	case "bearer":
+		if ep.CredentialRef == nil {
+			return version, AdminCommandError{Code: "INVALID_CREDENTIAL_REF", Err: errors.New("bearer auth requires credential_ref")}
+		}
+		if _, ok := cfg.CredentialRefSchemeAllowlist[ep.CredentialRef.Scheme]; !ok {
+			return version, AdminCommandError{Code: "INVALID_CREDENTIAL_REF", Err: fmt.Errorf("credential scheme %s not allowed", ep.CredentialRef.Scheme)}
+		}
+		if ep.CredentialRef.Scheme == "env" && !credentialHandleRegex.MatchString(ep.CredentialRef.OpaqueHandle) {
 			return version, AdminCommandError{Code: "INVALID_CREDENTIAL_REF", Err: errors.New("opaque_handle invalid")}
+		}
+		credentialRef = &CredentialRef{Scheme: ep.CredentialRef.Scheme, OpaqueHandle: ep.CredentialRef.OpaqueHandle, ReferenceVersion: ep.CredentialRef.ReferenceVersion}
+	case "none":
+		if schemaVersion != ConfigSchemaVersionV2 {
+			return version, AdminCommandError{Code: "INVALID_ENDPOINT_POLICY", Err: errors.New("auth none requires config schema v2")}
+		}
+		if ep.CredentialRef != nil {
+			return version, AdminCommandError{Code: "INVALID_CREDENTIAL_REF", Err: errors.New("auth none forbids credential_ref")}
 		}
 	}
 	version = EndpointVersion{
+		ConfigSchemaVersion:        schemaVersion,
 		CanonicalURL:               canonicalURL,
 		Hostname:                   hostname,
 		Port:                       port,
@@ -851,13 +892,57 @@ func ValidateEndpointConfig(cfg Config, ep EndpointConfigInput) (EndpointVersion
 			MaxRequestBodyBytes:         ep.EndpointPolicy.MaxRequestBodyBytes,
 			CIDRException:               cidrException,
 		},
-		AuthStrategy:  ep.AuthStrategy,
-		CredentialRef: &CredentialRef{Scheme: ep.CredentialRef.Scheme, OpaqueHandle: ep.CredentialRef.OpaqueHandle, ReferenceVersion: ep.CredentialRef.ReferenceVersion},
+		AuthStrategy:   ep.AuthStrategy,
+		ResponsePolicy: responsePolicy,
+		CredentialRef:  credentialRef,
 	}
 	return version, nil
 }
 
-func validateIdempotencyMapping(m OutboundIdempotencyMapping, allowed, forbidden map[string]struct{}, seen map[string]struct{}) (OutboundIdempotencyMapping, error) {
+func validateIdempotencyMapping(schemaVersion int64, m OutboundIdempotencyMapping, allowed, forbidden map[string]struct{}, seen map[string]struct{}) (OutboundIdempotencyMapping, error) {
+	if schemaVersion == ConfigSchemaVersionV2 {
+		if m.HeaderName != "" || m.FieldName != "" {
+			return OutboundIdempotencyMapping{}, errors.New("schema v2 mapping must not contain schema v1 fields")
+		}
+		switch m.Mode {
+		case "none":
+			if m.Source != "" || len(m.HeaderNames) != 0 {
+				return OutboundIdempotencyMapping{}, errors.New("none mapping must not contain source or header_names")
+			}
+			return OutboundIdempotencyMapping{Mode: "none"}, nil
+		case "headers":
+			if m.Source != "notification_id" && m.Source != "ingress_idempotency_key" {
+				return OutboundIdempotencyMapping{}, errors.New("schema v2 idempotency source invalid")
+			}
+			if len(m.HeaderNames) < 1 || len(m.HeaderNames) > 4 {
+				return OutboundIdempotencyMapping{}, errors.New("schema v2 header count outside bounds")
+			}
+			names := make([]string, 0, len(m.HeaderNames))
+			mappingSeen := make(map[string]struct{}, len(m.HeaderNames))
+			for _, name := range m.HeaderNames {
+				if name != strings.ToLower(name) || !headerNameRegex.MatchString(name) || !isASCII(name) {
+					return OutboundIdempotencyMapping{}, fmt.Errorf("schema v2 idempotency header invalid: %s", name)
+				}
+				if _, exists := mappingSeen[name]; exists {
+					return OutboundIdempotencyMapping{}, fmt.Errorf("duplicate schema v2 idempotency header: %s", name)
+				}
+				if _, exists := seen[name]; exists {
+					return OutboundIdempotencyMapping{}, fmt.Errorf("idempotency header name conflicts: %s", name)
+				}
+				if _, ok := allowed[name]; !ok {
+					return OutboundIdempotencyMapping{}, fmt.Errorf("idempotency header %s not in allowed set", name)
+				}
+				if _, forbiddenName := forbidden[name]; forbiddenName {
+					return OutboundIdempotencyMapping{}, fmt.Errorf("idempotency header %s is forbidden", name)
+				}
+				mappingSeen[name] = struct{}{}
+				names = append(names, name)
+			}
+			return OutboundIdempotencyMapping{Mode: "headers", Source: m.Source, HeaderNames: names}, nil
+		default:
+			return OutboundIdempotencyMapping{}, fmt.Errorf("schema v2 idempotency mapping mode invalid: %s", m.Mode)
+		}
+	}
 	if m.Source != "" || len(m.HeaderNames) != 0 {
 		return OutboundIdempotencyMapping{}, errors.New("schema v1 mapping must not contain source or header_names")
 	}
@@ -978,13 +1063,15 @@ func keys(m map[string]struct{}) []string {
 
 // EndpointConfigInput is the wire/config input for an endpoint version.
 type EndpointConfigInput struct {
+	ConfigSchemaVersion        int64                      `json:"config_schema_version,omitempty"`
+	ResponsePolicy             string                     `json:"response_policy,omitempty"`
 	EndpointTarget             EndpointTargetInput        `json:"endpoint_target"`
 	Method                     string                     `json:"method"`
 	TransportAuthHeaders       *[]HeaderRuleInput         `json:"transport_auth_headers"`
 	OutboundIdempotencyMapping OutboundIdempotencyMapping `json:"outbound_idempotency_mapping"`
 	EndpointPolicy             EndpointPolicyInput        `json:"endpoint_policy"`
 	AuthStrategy               string                     `json:"auth_strategy"`
-	CredentialRef              CredentialRefInput         `json:"credential_ref"`
+	CredentialRef              *CredentialRefInput        `json:"credential_ref,omitempty"`
 }
 
 // EndpointTargetInput is the endpoint URL input.

@@ -1,6 +1,6 @@
 # Secret/Payload Marker 扫描报告 — 2026-07-22
 
-2026-07-22 在隔离 Compose project `rcwsman_b6_acceptance` 执行
+2026-07-22 在 migration `8:false` 的隔离 Compose project `rcwsman_b6_acceptance` 执行
 `scripts/acceptance/marker-scan.sh`，结果 `PASS`。
 
 脚本为本轮生成唯一 marker，只把 marker 的 SHA-256 写入结果；原值不会写入验收制品。扫描覆盖：
@@ -13,7 +13,7 @@
 机器摘要：
 
 ```text
-MARKER_SCAN_PASS project=rcwsman_b6_acceptance marker_sha256=e014392079ecfb0a1fe2e4ee968c797cd5854dd5eeb046ae4a8abbfc2074aaf6 surfaces=app_logs,metrics,api,attempts,audit,acceptance_artifacts,operator_projection,store_logs
+MARKER_SCAN_PASS project=rcwsman_b6_acceptance marker_sha256=c975f7d7062789da09ba06560b680a0f5399e2156739b2c8b9c44392cd8f9b42 surfaces=app_logs,metrics,api,attempts,audit,acceptance_artifacts,operator_projection,store_logs
 ```
 
 同时执行真实 PostgreSQL 集成测试

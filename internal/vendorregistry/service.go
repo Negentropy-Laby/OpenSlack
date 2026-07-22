@@ -343,8 +343,6 @@ func (s *Service) register(ctx context.Context, actor ActorContext, cmd AdminCom
 	}
 	version.VendorID = cmd.VendorID
 	version.ConfigVersion = 1
-	version.ConfigSchemaVersion = 1
-	version.ResponsePolicy = ResponsePolicyHTTPStatusV1
 	version.CreatedByActor = actor.ActorID
 	version.CreatedAt = s.now()
 
@@ -409,13 +407,22 @@ func (s *Service) updateVersion(ctx context.Context, actor ActorContext, cmd Adm
 	if err != nil {
 		return AdminResult{}, AdminCommandError{Code: "COMMIT_OUTCOME_UNKNOWN", Err: err}
 	}
-	if current.CredentialRef == nil {
-		return AdminResult{}, AdminCommandError{Code: "INVALID_CREDENTIAL_REF", Err: errors.New("current endpoint has no credential reference")}
+	requestedSchema := epInput.ConfigSchemaVersion
+	if requestedSchema == 0 && epInput.ResponsePolicy == "" {
+		requestedSchema = ConfigSchemaVersionV1
 	}
-	epInput.CredentialRef = CredentialRefInput{
-		Scheme:           current.CredentialRef.Scheme,
-		OpaqueHandle:     current.CredentialRef.OpaqueHandle,
-		ReferenceVersion: current.CredentialRef.ReferenceVersion,
+	if requestedSchema < current.ConfigSchemaVersion {
+		return AdminResult{}, AdminCommandError{Code: "INVALID_COMMAND", Err: errors.New("config schema downgrade forbidden")}
+	}
+	if epInput.AuthStrategy == "bearer" {
+		if current.CredentialRef == nil {
+			return AdminResult{}, AdminCommandError{Code: "INVALID_CREDENTIAL_REF", Err: errors.New("bearer update requires an existing credential reference")}
+		}
+		epInput.CredentialRef = &CredentialRefInput{
+			Scheme:           current.CredentialRef.Scheme,
+			OpaqueHandle:     current.CredentialRef.OpaqueHandle,
+			ReferenceVersion: current.CredentialRef.ReferenceVersion,
+		}
 	}
 	version, err := ValidateEndpointConfig(s.currentConfig(), epInput)
 	if err != nil {
@@ -423,8 +430,6 @@ func (s *Service) updateVersion(ctx context.Context, actor ActorContext, cmd Adm
 	}
 	version.VendorID = cmd.VendorID
 	version.ConfigVersion = vendor.CurrentConfigVersion + 1
-	version.ConfigSchemaVersion = 1
-	version.ResponsePolicy = ResponsePolicyHTTPStatusV1
 	version.CreatedByActor = actor.ActorID
 	version.CreatedAt = s.now()
 
@@ -528,13 +533,13 @@ func (s *Service) rotateCredentialRef(ctx context.Context, actor ActorContext, c
 	if err != nil {
 		return AdminResult{}, AdminCommandError{Code: "COMMIT_OUTCOME_UNKNOWN", Err: err}
 	}
-	if current.CredentialRef == nil {
-		return AdminResult{}, AdminCommandError{Code: "INVALID_CREDENTIAL_REF", Err: errors.New("current endpoint has no credential reference")}
+	if current.AuthStrategy != "bearer" || current.CredentialRef == nil {
+		return AdminResult{}, AdminCommandError{Code: "INVALID_CREDENTIAL_REF", Err: errors.New("credential rotation requires bearer auth")}
 	}
 	version := EndpointVersion{
 		VendorID:                   cmd.VendorID,
 		ConfigVersion:              vendor.CurrentConfigVersion + 1,
-		ConfigSchemaVersion:        1,
+		ConfigSchemaVersion:        current.ConfigSchemaVersion,
 		CanonicalURL:               current.CanonicalURL,
 		Method:                     current.Method,
 		Hostname:                   current.Hostname,
@@ -545,7 +550,7 @@ func (s *Service) rotateCredentialRef(ctx context.Context, actor ActorContext, c
 		OutboundIdempotencyMapping: current.OutboundIdempotencyMapping,
 		EndpointPolicy:             current.EndpointPolicy,
 		AuthStrategy:               current.AuthStrategy,
-		ResponsePolicy:             ResponsePolicyHTTPStatusV1,
+		ResponsePolicy:             current.ResponsePolicy,
 		CredentialRef:              &CredentialRef{Scheme: crefInput.Scheme, OpaqueHandle: crefInput.OpaqueHandle, ReferenceVersion: crefInput.ReferenceVersion},
 		CreatedByActor:             actor.ActorID,
 		CreatedAt:                  s.now(),
@@ -901,7 +906,7 @@ func versionToHistoricalSnapshot(v EndpointVersion) HistoricalConfigSnapshot {
 		AuthStrategy:               v.AuthStrategy,
 		ResponsePolicy:             v.ResponsePolicy,
 	}
-	if v.CredentialRef != nil {
+	if v.AuthStrategy == "bearer" && v.CredentialRef != nil {
 		snapshot.CredentialDescriptor = &CredentialDescriptor{Scheme: v.CredentialRef.Scheme, ReferenceVersion: v.CredentialRef.ReferenceVersion}
 	}
 	return snapshot

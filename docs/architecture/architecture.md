@@ -63,6 +63,13 @@ pepper. After durably creating a protected credential file, it acquires a dedica
 lock and atomically creates the fixed OpenSlack caller/auditor principals and their two key verifiers. It is not a
 general Caller Access administration surface.
 
+Vendor Registry administration exposes a closed endpoint-config union. Legacy v1 commands retain their original wire
+shape and are materialized as schema 1 with `http_status_v1`. Explicit schema v2 commands select response policy,
+`bearer|none` authentication and the v2 no-rewrite idempotency mapping. Version changes may stay at the current schema
+or move v1 to v2; they cannot downgrade. Credential rotation copies the current immutable version and replaces only
+the bearer credential reference. Auth-none versions contain NULL credential columns and omit credential descriptors
+from history/list projections.
+
 ## Startup and Shutdown
 
 Startup is fail-closed:

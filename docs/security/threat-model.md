@@ -32,6 +32,7 @@ Trust boundaries:
 | audit tampering | append-only records, restricted DB role, OCC/transactional writes | ADR-0001 |
 | denial of service | request/body/list/batch bounds, per-principal rate limits, hard HTTP timeout | CDD configs |
 | deployment identity spoof/drift | require an exact deployment-supplied OCI digest at startup; successful intake overwrites any caller header with the process value | ADR-0005 / OpenAPI |
+| endpoint schema downgrade or credential smuggling | closed v1/v2 admin union, explicit v2 discriminator/policy, monotonic schema update, auth-none credential/header rejection | ADR-0005 / OpenAPI |
 
 ## Safe Outbound Transport
 
@@ -60,6 +61,12 @@ an immediate symlink parent, writes a fixed JSON schema with mode `0600`, synchr
 then initializes PostgreSQL. Confirmed failures remove and synchronize the file. Commit-outcome-unknown and a process
 crash after file synchronization retain the file and require manual convergence; automatic overwrite or key
 regeneration is forbidden. The command never creates an HTTP route and is not run by normal service startup.
+
+Vendor config v2 treats credential absence as an authorization property, not a nullable convenience: `auth:none`
+rejects credential references and credential-derived headers at ingestion, stores NULL credential columns, skips the
+resolver at delivery, rejects credential rotation, and omits even the sanitized credential descriptor from read
+projections. Schema v2 body rewrite is forbidden; header mappings are bounded, lowercase, unique and endpoint-policy
+allowlisted. A v2 record cannot be rewritten as v1 by an update.
 
 ## Residual Risks
 
