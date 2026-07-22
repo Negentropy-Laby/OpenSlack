@@ -82,7 +82,7 @@
           "required": ["allow_insecure_loopback"],
           "properties": {
             "endpoint": {
-              "pattern": "^http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]+)?/?$"
+              "pattern": "^http://(?:127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]+)?/?$"
             },
             "allow_insecure_loopback": { "const": true }
           }

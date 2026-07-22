@@ -102,10 +102,8 @@ Rules:
 - Every route has a positive safe-integer `routing_epoch`, initially 1.
 - `console` uses only `local`; `slack` and `webhook` use `direct` or `notification_service`.
 - A service route requires a vendor ID matching `^[a-z0-9-]{1,64}$` and the root service block.
-- Service endpoint is an HTTPS origin without userinfo, path, query or fragment. HTTP is accepted only for loopback
-  when `allow_insecure_loopback: true` is explicit.
-- `localhost` is resolver-dependent even in development; prefer literal `127.0.0.1` or `[::1]` for an explicitly
-  enabled insecure loopback endpoint.
+- Service endpoint is an HTTPS origin without userinfo, path, query or fragment. HTTP is accepted only for literal
+  `127.0.0.1` or `[::1]` when `allow_insecure_loopback: true` is explicit. Resolver-dependent `localhost` is rejected.
 - Credential values never enter config. References use the existing `env:` or `keychain:` contract.
 - Backend, vendor, target, encoder, response policy, idempotency mapping or other incompatible delivery semantics
   require a higher epoch. Existing queue records retain their frozen values.
@@ -289,6 +287,28 @@ openslack-canary-auditor: read_notifications only
 The caller cannot query status and the auditor cannot submit, replay or administer. All 202 responses include
 `X-Notification-Service-Deployment-Digest: sha256:<64-lowercase-hex>`, injected from the verified OCI image. OpenSlack
 also records a secret-free RFC 8785/JCS watch-config digest and service-reported vendor config versions.
+
+The standalone client posts only `vendor_id` and the exact Blob bytes encoded as `payload_base64` to
+`/v1/notifications`, with the frozen route key in `Idempotency-Key`. It resolves the bearer credential reference
+through `CredentialStore.withSecret` on every attempt, uses `redirect: manual`, and returns `HandoffResult` rather
+than sink delivery success. A 202 body is read to at most 16384 bytes with fatal UTF-8 decoding, duplicate-key
+detection and an exact two-level envelope. Missing/unknown fields, trailing JSON, invalid IDs or RFC 3339 calendar
+dates, response loss, overflow and missing/invalid deployment headers are retryable protocol errors. A valid but
+unexpected deployment digest and every non-202 2xx are permanent protocol errors. The remaining classifications
+follow the frozen response table above, including delta-seconds and IMF-fixdate `Retry-After` parsing. Results and
+errors contain only closed codes and never contain the raw body, payload, token or endpoint value.
+
+The watch-config digest first rebuilds a normalized v2 value and then applies RFC 8785/JCS and SHA-256. Repository
+identity is lowercase canonical `owner/repo`; repositories sort by that identity, while events, label sets, agent IDs
+and routes sort by UTF-16 code-unit order (routes by `id`). Each normalized route includes sink, channel/name target,
+backend, vendor and epoch. The service block includes canonical endpoint origin, canonical credential reference,
+expected deployment digest and the explicit insecure-loopback policy. Absent versus empty set-like fields converge;
+comments, resolved secrets and YAML/object ordering never enter the digest. JCS rejects non-finite numbers, lone
+surrogates, sparse arrays, accessors and other non-JSON data. The result is `sha256:<64-lowercase-hex>`.
+
+IB2 exports these primitives for isolated verification only. A source-invariant test scans the daemon, delivery
+router, workspace launcher, `createSinks` implementation and CLI sources and fails if they reference the client, Blob
+store or receipt store. Network composition remains an IB3 concern.
 
 ## V1 Migration And Gates
 
