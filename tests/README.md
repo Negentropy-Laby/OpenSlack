@@ -1,6 +1,6 @@
 # Test Layout
 
-> Pre-Implementation CP0 — Test Framework Baseline.
+> Implementation-stage test corpus; CP0 established the original framework baseline.
 
 ## Strategy
 
@@ -23,7 +23,8 @@ dependency is resolved.
 | Path | Purpose | Status |
 |---|---|---|
 | `unit/` | Reserved for cross-package unit-test harness / shared fakes. | skeleton (`.gitkeep`); Go unit tests live next to source. |
-| `integration/` | DB-backed + HTTP-server integration tests (real PostgreSQL, chi router, safe transport). | skeleton (`.gitkeep`); populated at Implementation. |
+| `contracts/` | CDD AC evidence, OpenAPI, registries, links, manifest and Prometheus artifact checks. | implemented |
+| `integration/` | DB-backed + HTTP-server integration tests (real PostgreSQL, chi router, safe transport). | implemented |
 
 ## Running
 
@@ -31,8 +32,6 @@ dependency is resolved.
 go test -race ./...
 ```
 
-CI: [`.github/workflows/tests.yml`](../.github/workflows/tests.yml) runs
-`go mod tidy`, `go vet ./...`, and `go test -race ./...` on push and pull request.
-
-> NOTE: the local development shell currently has no Go toolchain; the baseline
-> is authored-but-not-compiled locally and is verified by CI.
+CI: [`.github/workflows/tests.yml`](../.github/workflows/tests.yml) is configured to run
+`go mod tidy`, `go vet ./...`, and `go test -race ./...` on push and pull request. The current acceptance evidence is
+from the local Go 1.26.5/PostgreSQL 18.4 environment; no GitHub-hosted Actions run is claimed.

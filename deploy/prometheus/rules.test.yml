@@ -1,0 +1,86 @@
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 15s
+
+tests:
+  - name: dead_fires_after_five_uninterrupted_minutes
+    interval: 15s
+    input_series:
+      - series: 'up{job="rc_wsman",instance="app:8080"}'
+        values: '1+0x24'
+      - series: 'rc_wsman_dead_notifications{job="rc_wsman",instance="app:8080"}'
+        values: '1+0x24'
+    alert_rule_test:
+      - eval_time: 4m45s
+        alertname: RcWsmanDeadNotifications
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: RcWsmanDeadNotifications
+        exp_alerts:
+          - exp_labels:
+              alertname: RcWsmanDeadNotifications
+              instance: app:8080
+              job: rc_wsman
+              severity: warning
+            exp_annotations:
+              summary: rc_wsman has dead notifications
+              description: At least one notification is dead; follow the manual replay runbook.
+              runbook: docs/operations/runbook.md
+
+  - name: failure_before_firing_resets_pending
+    interval: 15s
+    input_series:
+      - series: 'up{job="rc_wsman",instance="app:8080"}'
+        values: '1+0x10 0 1+0x19'
+      - series: 'rc_wsman_dead_notifications{job="rc_wsman",instance="app:8080"}'
+        values: '1+0x10 _ 1+0x19'
+    alert_rule_test:
+      - eval_time: 6m30s
+        alertname: RcWsmanDeadNotifications
+        exp_alerts: []
+
+  - name: successful_zero_resolves
+    interval: 15s
+    input_series:
+      - series: 'up{job="rc_wsman",instance="app:8080"}'
+        values: '1+0x21'
+      - series: 'rc_wsman_dead_notifications{job="rc_wsman",instance="app:8080"}'
+        values: '1+0x20 0'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: RcWsmanDeadNotifications
+        exp_alerts:
+          - exp_labels:
+              alertname: RcWsmanDeadNotifications
+              instance: app:8080
+              job: rc_wsman
+              severity: warning
+            exp_annotations:
+              summary: rc_wsman has dead notifications
+              description: At least one notification is dead; follow the manual replay runbook.
+              runbook: docs/operations/runbook.md
+      - eval_time: 5m15s
+        alertname: RcWsmanDeadNotifications
+        exp_alerts: []
+
+  - name: failure_after_firing_keeps_firing
+    interval: 15s
+    input_series:
+      - series: 'up{job="rc_wsman",instance="app:8080"}'
+        values: '1+0x20 0+0x4'
+      - series: 'rc_wsman_dead_notifications{job="rc_wsman",instance="app:8080"}'
+        values: '1+0x20 _x4'
+    alert_rule_test:
+      - eval_time: 5m30s
+        alertname: RcWsmanDeadNotifications
+        exp_alerts:
+          - exp_labels:
+              alertname: RcWsmanDeadNotifications
+              instance: app:8080
+              job: rc_wsman
+              severity: warning
+            exp_annotations:
+              summary: rc_wsman has dead notifications
+              description: At least one notification is dead; follow the manual replay runbook.
+              runbook: docs/operations/runbook.md

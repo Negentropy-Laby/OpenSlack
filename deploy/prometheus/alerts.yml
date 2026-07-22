@@ -1,0 +1,24 @@
+groups:
+  - name: rc_wsman_reliability
+    interval: 15s
+    rules:
+      - alert: RcWsmanDeadNotifications
+        expr: |
+          (
+            (rc_wsman_dead_notifications > 0)
+            and on(job, instance)
+            (up{job="rc_wsman"} == 1)
+          )
+          or on(job, instance)
+          (
+            (up{job="rc_wsman"} == 0)
+            and on(job, instance)
+            (ALERTS{alertname="RcWsmanDeadNotifications", alertstate="firing"} == 1)
+          )
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: rc_wsman has dead notifications
+          description: At least one notification is dead; follow the manual replay runbook.
+          runbook: docs/operations/runbook.md

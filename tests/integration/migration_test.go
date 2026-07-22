@@ -2,7 +2,6 @@ package integration_test
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -13,6 +12,8 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"rc_wsman/internal/testsupport"
 )
 
 // migrationsURL returns a file:// URL pointing to the module's migrations
@@ -23,14 +24,57 @@ func migrationsURL() string {
 	return "file://" + filepath.Join(root, "migrations")
 }
 
-// TestMigrationsUpDown exercises golang-migrate against the PostgreSQL service
-// configured by DATABASE_URL.  It verifies the B1 base migration can be
-// applied, rolled back and re-applied idempotently.
-func TestMigrationsUpDown(t *testing.T) {
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		t.Skip("DATABASE_URL not set; skipping DB integration test")
+func TestMigrationConstraintsRejectContractDrift(t *testing.T) {
+	pool := testsupport.OpenPostgres(t)
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx, `INSERT INTO vendors (vendor_id, owning_scope, lifecycle) VALUES ('vendor-migration', 'team-a', 'active')`); err != nil {
+		t.Fatal(err)
 	}
+	_, err := pool.Exec(ctx, `INSERT INTO endpoint_versions (
+		vendor_id, config_version, canonical_url, method, transport_kind, auth_strategy,
+		credential_ref_scheme, credential_ref_handle, created_by_actor, hostname, port
+	) VALUES ('vendor-migration', 1, 'https://example.com/hook', 'POST', 'https_public', 'hmac', 'env', 'TOKEN', 'operator-1', 'example.com', 443)`)
+	if err == nil {
+		t.Fatal("database accepted non-bearer endpoint version")
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO notifications (
+		notification_id, caller_id, vendor_id, idempotency_key, request_fingerprint, payload_bytes,
+		state, version, attempt_count, delivery_cycle_started_at, created_at, updated_at
+	) VALUES ('n-migration', 'caller-1', 'vendor-migration', 'key-1', decode('00','hex'), decode('7b7d','hex'), 'in_flight', 2, 0, now(), now(), now())`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO delivery_attempts (
+		notification_id, attempt_seq, event_kind, result_kind, outcome_class, http_status, reason
+	) VALUES ('n-migration', 1, 'outcome', 'http_response', 'permanent_failure', 503, 'deadline_exceeded')`); err != nil {
+		t.Fatalf("valid B-01 row rejected: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO delivery_attempts (
+		notification_id, attempt_seq, event_kind, result_kind, outcome_class
+	) VALUES ('n-migration', 2, 'outcome', 'transport_failure', 'retryable_failure')`); err == nil {
+		t.Fatal("database accepted transport failure without error_code")
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO admin_audit_events (
+		vendor_id, owning_scope, actor_id, authorization_basis, operation, outcome,
+		sanitized_request_digest, reject_reason
+	) VALUES ('missing-vendor', NULL, 'operator-1', 'vendor_id', 'update_version', 'rejected',
+		'0123456789abcdef', 'VENDOR_NOT_FOUND')`); err != nil {
+		t.Fatalf("authorized not-found audit rejected: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO admin_audit_events (
+		vendor_id, owning_scope, actor_id, authorization_basis, operation, outcome,
+		sanitized_request_digest, reject_reason
+	) VALUES ('missing-vendor', NULL, 'operator-1', 'vendor_id', 'update_version', 'rejected',
+		'0123456789abcdef', 'FORBIDDEN')`); err == nil {
+		t.Fatal("database accepted out-of-contract rejected audit reason")
+	}
+}
+
+// TestMigrationsUpDown exercises clean install, upgrade from 000001, one-step
+// rollback/reapply and full down/up against the configured PostgreSQL service.
+// It also proves the bearer-only upgrade fails closed instead of silently
+// converting an existing non-bearer endpoint.
+func TestMigrationsUpDown(t *testing.T) {
+	dbURL := testsupport.OpenMigrationSchemaURL(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -60,38 +104,112 @@ func TestMigrationsUpDown(t *testing.T) {
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
 		t.Fatalf("migrate up: %v", err)
 	}
-
-	version, dirty, err := m.Version()
-	if err != nil {
-		t.Fatalf("version after up: %v", err)
-	}
-	if version != 1 {
-		t.Fatalf("version after up = %d, want 1", version)
-	}
-	if dirty {
-		t.Fatal("migration marked dirty after up")
-	}
-
 	if err := m.Down(); err != nil {
-		t.Fatalf("migrate down: %v", err)
+		t.Fatalf("reset schema before migration matrix: %v", err)
 	}
-
 	if _, _, err := m.Version(); err != migrate.ErrNilVersion {
 		t.Fatalf("expected NilVersion after down, got %v", err)
 	}
-
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		t.Fatalf("migrate re-up: %v", err)
+	if err := m.Steps(1); err != nil {
+		t.Fatalf("install migration 000001: %v", err)
 	}
-
-	version, dirty, err = m.Version()
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO vendors (vendor_id, owning_scope, lifecycle)
+		VALUES ('vendor-upgrade', 'team-a', 'draft');
+		INSERT INTO endpoint_versions (
+			vendor_id, config_version, canonical_url, method, transport_kind,
+			auth_strategy, credential_ref_scheme, credential_ref_handle, created_by_actor
+		) VALUES (
+			'vendor-upgrade', 1, 'https://vendor.example/hook', 'POST', 'https_public',
+			'hmac', 'env', 'VENDOR_TOKEN', 'operator-1'
+		)`); err != nil {
+		t.Fatalf("seed v1 non-bearer row: %v", err)
+	}
+	if err := m.Up(); err == nil || err == migrate.ErrNoChange {
+		t.Fatal("upgrade silently accepted an existing non-bearer endpoint")
+	}
+	// The expected failure occurs inside migration 000003's explicit
+	// transaction. Reopen the migration connection so PostgreSQL can discard
+	// the aborted transaction before inspecting or repairing metadata.
+	_, _ = m.Close()
+	m, err = migrate.New(migrationsURL(), migrateURL)
 	if err != nil {
-		t.Fatalf("version after re-up: %v", err)
+		t.Fatalf("reopen migrate after expected upgrade failure: %v", err)
 	}
-	if version != 1 {
-		t.Fatalf("version after re-up = %d, want 1", version)
+	defer m.Close()
+	version, dirty, err := m.Version()
+	if err != nil {
+		t.Fatalf("version after rejected upgrade: %v", err)
+	}
+	if version < 2 || version > 3 {
+		t.Fatalf("rejected upgrade version=%d dirty=%v, want version 2 or 3", version, dirty)
 	}
 	if dirty {
-		t.Fatal("migration marked dirty after re-up")
+		if err := m.Force(2); err != nil {
+			t.Fatalf("restore migration metadata after expected failure: %v", err)
+		}
+	} else if version != 2 {
+		t.Fatalf("expected clean rollback to version 2, got version=%d", version)
+	}
+	// endpoint_versions is append-only, so an operator must not mutate the bad
+	// historical row in place. Reset this disposable test schema, then exercise
+	// a valid upgrade from 000001 with a bearer row.
+	if err := m.Down(); err != nil {
+		t.Fatalf("reset after expected non-bearer upgrade rejection: %v", err)
+	}
+	if err := m.Steps(1); err != nil {
+		t.Fatalf("reinstall migration 000001 for valid upgrade: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO vendors (vendor_id, owning_scope, lifecycle)
+		VALUES ('vendor-upgrade-valid', 'team-a', 'draft');
+		INSERT INTO endpoint_versions (
+			vendor_id, config_version, canonical_url, method, transport_kind,
+			auth_strategy, credential_ref_scheme, credential_ref_handle, created_by_actor
+		) VALUES (
+			'vendor-upgrade-valid', 1, 'https://vendor.example/hook', 'POST', 'https_public',
+			'bearer', 'env', 'VENDOR_TOKEN', 'operator-1'
+		)`); err != nil {
+		t.Fatalf("seed v1 bearer row: %v", err)
+	}
+
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		t.Fatalf("upgrade from 000001 after repair: %v", err)
+	}
+	version, dirty, err = m.Version()
+	if err != nil {
+		t.Fatalf("version after upgrade: %v", err)
+	}
+	if version != 6 {
+		t.Fatalf("version after upgrade = %d, want 6", version)
+	}
+	if dirty {
+		t.Fatal("migration marked dirty after valid upgrade")
+	}
+
+	if err := m.Steps(-1); err != nil {
+		t.Fatalf("step down 000006: %v", err)
+	}
+	if version, dirty, err = m.Version(); err != nil || version != 5 || dirty {
+		t.Fatalf("version after step down = %d dirty=%v err=%v, want clean 5", version, dirty, err)
+	}
+	if err := m.Steps(1); err != nil {
+		t.Fatalf("step reapply 000006: %v", err)
+	}
+	if version, dirty, err = m.Version(); err != nil || version != 6 || dirty {
+		t.Fatalf("version after step reapply = %d dirty=%v err=%v, want clean 6", version, dirty, err)
+	}
+
+	if err := m.Down(); err != nil {
+		t.Fatalf("full migrate down: %v", err)
+	}
+	if _, _, err := m.Version(); err != migrate.ErrNilVersion {
+		t.Fatalf("expected NilVersion after full down, got %v", err)
+	}
+	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
+		t.Fatalf("fresh re-install: %v", err)
+	}
+	if version, dirty, err = m.Version(); err != nil || version != 6 || dirty {
+		t.Fatalf("version after fresh re-install = %d dirty=%v err=%v, want clean 6", version, dirty, err)
 	}
 }

@@ -1,4 +1,4 @@
-# Pre-Implementation CP0 - Test Framework Baseline CI.
+# B1-B6 local-equivalent CI definition.
 # Runs on push and pull_request. Uses the pinned Go toolchain
 # (standards/technical-preferences.md: Go 1.26.5).
 name: tests
@@ -10,14 +10,51 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.4@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a
+        env:
+          POSTGRES_USER: rc_wsman
+          POSTGRES_PASSWORD: rc_wsman
+          POSTGRES_DB: rc_wsman
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U rc_wsman -d rc_wsman"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgres://rc_wsman:rc_wsman@localhost:5432/rc_wsman?sslmode=disable
+      MIGRATION_DATABASE_URL: pgx5://rc_wsman:rc_wsman@localhost:5432/rc_wsman?sslmode=disable
+      API_KEY_PEPPER_ACTIVE: '{"id":"v1","value":"ci-active-pepper"}'
+      API_KEY_PEPPER_PREVIOUS: '{"id":"v0","value":"ci-previous-pepper"}'
+      ENV_CREDENTIAL_ALLOWLIST: VENDOR_TEST_TOKEN
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26.5'
       - name: go mod tidy
-        run: go mod tidy
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+      - name: go build
+        run: go build ./...
+      - name: migrate test database
+        run: |
+          go install github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
+          migrate -path migrations -database "$MIGRATION_DATABASE_URL" up
       - name: go vet
         run: go vet ./...
       - name: go test -race
         run: go test -race ./...
+      - name: go test -race stability
+        run: go test -race ./... -count=5
+      - name: compose and Prometheus contracts
+        run: |
+          docker compose --env-file deploy/local.env.example config >/dev/null
+          docker run --rm --entrypoint promtool -v "$PWD/deploy/prometheus:/etc/prometheus:ro" prom/prometheus:v3.13.1@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893 check config /etc/prometheus/prometheus.yml
+          docker run --rm --entrypoint promtool -v "$PWD/deploy/prometheus:/etc/prometheus:ro" -w /etc/prometheus prom/prometheus:v3.13.1@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893 test rules rules.test.yml
+      - name: production image build
+        run: docker build --target app .

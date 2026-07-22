@@ -6,6 +6,8 @@
 # --- Project tooling state (NOT project documentation) ---
 # .aby/ is agent/tooling state (sessions, history, paste-cache, .credentials.json).
 .aby/
+# .claude/ contains local planning/recon state and is not a durable submission artifact.
+.claude/
 # Ephemeral CDD workflow adapter - "gitignored in CDD", not a durable artifact.
 # production/stage.txt (the authoritative stage token) is NOT ignored.
 production/session-state/
@@ -27,6 +29,8 @@ vendor/
 # go.sum is generated and IS tracked; nothing to ignore there.
 # Local module cache populated by Docker-based Go runs (GOMODCACHE).
 .gomodcache/
+# Local build cache populated by Docker-based Go runs (GOCACHE).
+.gocache/
 
 # --- Secrets / environment (CTRL-016: pepper value never persisted) ---
 .env
