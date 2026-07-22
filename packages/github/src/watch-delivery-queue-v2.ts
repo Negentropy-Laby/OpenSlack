@@ -3,12 +3,12 @@ import {
   closeSync,
   existsSync,
   fsyncSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
   renameSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -302,7 +302,7 @@ export class WatchDeliveryQueueV2 {
       );
     }
     return this.mutate((state, now) => {
-      expireProcessingLeases(state, now, this.policy);
+      expireProcessingLeases(state, now);
       exhaustUnclaimableServiceRoutes(state, now);
       const record = state.routes
         .filter(
@@ -448,8 +448,8 @@ export class WatchDeliveryQueueV2 {
     receiptStore: NotificationReceiptStore,
   ): WatchRouteRecordV2 {
     return this.withLock(() => {
-      const state = this.loadState(this.now());
       const now = this.now();
+      const state = this.loadState(now);
       const record = requireLease(state, id, leaseToken, 'notification_service');
       assertReceiptMatches(record, receipt);
       const existingReceipt = record.receipt;
@@ -477,8 +477,8 @@ export class WatchDeliveryQueueV2 {
       receiptStore.ensureFromEmbeddedReceipt(receipt);
       this.acceptanceCheckpoint?.('receipt_file_persisted', cloneRoute(record));
       record.receiptLedger = 'committed';
-      record.updatedAt = this.now().toISOString();
-      this.persistUpdatedState(state, this.now());
+      record.updatedAt = timestamp;
+      this.persistUpdatedState(state, now);
       return cloneRoute(record);
     });
   }
@@ -626,7 +626,7 @@ export class WatchDeliveryQueueV2 {
     return this.withLock(() => {
       const now = this.now();
       const state = this.loadState(now);
-      expireProcessingLeases(state, now, this.policy);
+      expireProcessingLeases(state, now);
       exhaustUnclaimableServiceRoutes(state, now);
       const result = operation(state, now);
       this.persistUpdatedState(state, now);
@@ -698,7 +698,8 @@ export class WatchDeliveryQueueV2 {
           closeSync(descriptor);
         }
         break;
-      } catch {
+      } catch (error) {
+        if (!isNodeError(error, 'EEXIST')) throw error;
         isolateStaleLock(this.lockPath, this.policy.lockStaleMs);
         if (Date.now() >= deadline) {
           throw queueError('QUEUE_LOCK_TIMEOUT', 'Timed out waiting for the watch v2 queue lock.');
@@ -1017,7 +1018,8 @@ function validateRecord(value: unknown): asserts value is WatchRouteRecordV2 {
     if (
       value.authority !== 'notification_service' ||
       !isRecord(value.receipt) ||
-      (value.receiptLedger !== 'pending' && value.receiptLedger !== 'committed')
+      (value.receiptLedger !== 'pending' && value.receiptLedger !== 'committed') ||
+      !['pending', 'delivered', 'dead'].includes(value.remoteDeliveryState)
     ) {
       invalidRecord();
     }
@@ -1113,11 +1115,7 @@ function requireLease(
   return record;
 }
 
-function expireProcessingLeases(
-  state: WatchDeliveryQueueV2State,
-  now: Date,
-  policy: WatchDeliveryQueueV2Policy,
-): void {
+function expireProcessingLeases(state: WatchDeliveryQueueV2State, now: Date): void {
   for (const record of state.routes) {
     if (
       record.authority !== 'openslack' ||
@@ -1163,7 +1161,6 @@ function expireProcessingLeases(
       delete record.lease;
     }
   }
-  void policy;
 }
 
 function exhaustUnclaimableServiceRoutes(state: WatchDeliveryQueueV2State, now: Date): void {
@@ -1540,13 +1537,57 @@ function queueError(
 }
 
 function isolateStaleLock(path: string, staleMs: number): void {
+  let status: ReturnType<typeof lstatSync>;
   try {
-    const age = Date.now() - statSync(path).mtimeMs;
-    if (age <= staleMs) return;
-    rmSync(path, { force: true });
-  } catch {
-    // Another process may have released the lock.
+    status = lstatSync(path);
+  } catch (error) {
+    if (isNodeError(error, 'ENOENT')) return;
+    throw error;
   }
+  if (status.isSymbolicLink() || !status.isFile()) {
+    throw queueError(
+      'QUEUE_STATE_INVALID',
+      'Watch delivery v2 queue lock is a link, junction or non-regular file.',
+    );
+  }
+  if (process.platform !== 'win32' && (status.mode & 0o777) !== 0o600) {
+    throw queueError(
+      'QUEUE_STATE_INVALID',
+      'Watch delivery v2 queue lock permissions must be 0600.',
+    );
+  }
+
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as { pid?: unknown };
+    const age = Date.now() - status.mtimeMs;
+    if (
+      typeof parsed.pid !== 'number' ||
+      !Number.isSafeInteger(parsed.pid) ||
+      parsed.pid < 1 ||
+      isProcessAlive(parsed.pid) ||
+      age <= staleMs
+    ) {
+      return;
+    }
+    rmSync(path, { force: true });
+  } catch (error) {
+    if (isNodeError(error, 'ENOENT')) return;
+    // A malformed or concurrently changed lock is unknown ownership and must
+    // remain in place so acquisition fails closed instead of risking split ownership.
+  }
+}
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return !isNodeError(error, 'ESRCH');
+  }
+}
+
+function isNodeError(error: unknown, code: string): error is NodeJS.ErrnoException {
+  return error instanceof Error && (error as NodeJS.ErrnoException).code === code;
 }
 
 function fsyncDirectoryBestEffort(path: string): void {

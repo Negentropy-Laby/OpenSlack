@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Ajv2020 } from 'ajv/dist/2020.js';
@@ -38,12 +46,18 @@ afterEach(() => {
 function queueV2(
   options: {
     acceptanceCheckpoint?: WatchDeliveryQueueV2Options['acceptanceCheckpoint'];
+    policy?: WatchDeliveryQueueV2Options['policy'];
   } = {},
 ): WatchDeliveryQueueV2 {
   return new WatchDeliveryQueueV2(root, {
     now: () => new Date(now),
     nonce: () => `v2-${++nonce}`,
-    policy: { leaseMs: 1_000, lockTimeoutMs: 100, lockStaleMs: 10_000 },
+    policy: {
+      leaseMs: 1_000,
+      lockTimeoutMs: 100,
+      lockStaleMs: 10_000,
+      ...options.policy,
+    },
     ...(options.acceptanceCheckpoint ? { acceptanceCheckpoint: options.acceptanceCheckpoint } : {}),
   });
 }
@@ -127,6 +141,25 @@ function enqueueService(store = queueV2()) {
   return { store, event, record: result.routes[0]! };
 }
 
+function acceptanceReceipt(record: ReturnType<typeof enqueueService>['record']) {
+  return {
+    schema: 'openslack.notification_acceptance.v1' as const,
+    route_record_id: record.id,
+    canonical_repository: record.canonicalRepository,
+    route_id: record.routeId,
+    routing_epoch: record.routingEpoch,
+    vendor_id: record.vendorId!,
+    idempotency_key: record.idempotencyKey,
+    notification_id: 'notification-42',
+    remote_request_id: 'request-42',
+    accepted_at: now.toISOString(),
+    idempotent_replay: false,
+    deployment_digest: `sha256:${'c'.repeat(64)}` as const,
+    watch_config_digest: watchConfigDigest,
+    recorded_at: now.toISOString(),
+  };
+}
+
 describe('WatchDeliveryQueueV2', () => {
   it('atomically enqueues route records with immutable service handoff identity', () => {
     const store = queueV2();
@@ -155,6 +188,73 @@ describe('WatchDeliveryQueueV2', () => {
     const state = JSON.parse(readFileSync(store.statePath, 'utf8')) as Record<string, unknown>;
     expect(validateQueueSchema(state)).toBe(true);
     expect(validateQueueSchema({ ...state, payload: 'must-not-be-accepted' })).toBe(false);
+  });
+
+  it('keeps the closed schema and runtime validator aligned on malformed record shapes', () => {
+    const { store } = enqueueService();
+    const valid = JSON.parse(readFileSync(store.statePath, 'utf8')) as {
+      routes: Array<Record<string, unknown>>;
+    };
+    const malformedCases: Array<{
+      name: string;
+      mutate: (route: Record<string, unknown>) => void;
+    }> = [
+      {
+        name: 'route record id',
+        mutate: (route) => {
+          route.id = 'not-a-record-id';
+        },
+      },
+      {
+        name: 'idempotency key',
+        mutate: (route) => {
+          route.idempotencyKey = 'not-a-key';
+        },
+      },
+      {
+        name: 'unknown payload field',
+        mutate: (route) => {
+          route.payload = 'forbidden';
+        },
+      },
+      {
+        name: 'missing service Blob',
+        mutate: (route) => {
+          delete route.blob;
+        },
+      },
+    ];
+
+    for (const malformed of malformedCases) {
+      const candidate = structuredClone(valid);
+      malformed.mutate(candidate.routes[0]!);
+      expect(validateQueueSchema(candidate), malformed.name).toBe(false);
+      writeFileSync(store.statePath, `${JSON.stringify(candidate, null, 2)}\n`, 'utf8');
+      expect(() => store.getStats(), malformed.name).toThrowError(
+        expect.objectContaining({ code: 'QUEUE_STATE_INVALID' }),
+      );
+    }
+  });
+
+  it('uses runtime validation for semantic receipt identity beyond JSON Schema structure', () => {
+    const { store, record } = enqueueService();
+    const claim = store.claimNext('worker', 'notification_service');
+    if (!claim) throw new Error('Expected claim');
+    store.acceptServiceRoute(
+      record.id,
+      claim.lease.token,
+      acceptanceReceipt(record),
+      new NotificationReceiptStore({ rootPath: join(root, 'notification-acceptance') }),
+    );
+    const conflicting = JSON.parse(readFileSync(store.statePath, 'utf8')) as {
+      routes: Array<{ receipt: { vendor_id: string } }>;
+    };
+    conflicting.routes[0]!.receipt.vendor_id = 'different-vendor';
+    expect(validateQueueSchema(conflicting)).toBe(true);
+    writeFileSync(store.statePath, `${JSON.stringify(conflicting, null, 2)}\n`, 'utf8');
+    expect(() => store.getStats()).toThrowError(
+      expect.objectContaining({ code: 'QUEUE_RECEIPT_CONFLICT' }),
+    );
   });
 
   it('fails closed on partial duplicate route sets and delivery id conflicts', () => {
@@ -253,6 +353,38 @@ describe('WatchDeliveryQueueV2', () => {
     });
   });
 
+  it('does not reclaim an old lock while its same-host owner process is alive', () => {
+    const store = queueV2({ policy: { lockTimeoutMs: 5, lockStaleMs: 1 } });
+    const lockPath = `${store.statePath}.lock`;
+    writeFileSync(
+      lockPath,
+      JSON.stringify({ pid: process.pid, nonce: 'active', createdAt: now.toISOString() }),
+      { encoding: 'utf8', mode: 0o600 },
+    );
+    const old = new Date(Date.now() - 60_000);
+    utimesSync(lockPath, old, old);
+
+    expect(() => store.getStats()).toThrowError(
+      expect.objectContaining({ code: 'QUEUE_LOCK_TIMEOUT' }),
+    );
+    expect(readFileSync(lockPath, 'utf8')).toContain('"nonce":"active"');
+  });
+
+  it('reclaims an old lock only after its same-host owner process is gone', () => {
+    const store = queueV2({ policy: { lockStaleMs: 1 } });
+    const lockPath = `${store.statePath}.lock`;
+    writeFileSync(
+      lockPath,
+      JSON.stringify({ pid: 999_999, nonce: 'stale', createdAt: now.toISOString() }),
+      { encoding: 'utf8', mode: 0o600 },
+    );
+    const old = new Date(Date.now() - 60_000);
+    utimesSync(lockPath, old, old);
+
+    expect(store.getStats()).toMatchObject({ count: 0, pending: 0 });
+    expect(existsSync(lockPath)).toBe(false);
+  });
+
   it('recovers an accepted embedded receipt without another POST', () => {
     const crashing = queueV2({
       acceptanceCheckpoint: (checkpoint) => {
@@ -266,22 +398,7 @@ describe('WatchDeliveryQueueV2', () => {
       rootPath: join(root, 'notification-acceptance'),
       nonce: () => `receipt-${++nonce}`,
     });
-    const receipt = {
-      schema: 'openslack.notification_acceptance.v1' as const,
-      route_record_id: record.id,
-      canonical_repository: record.canonicalRepository,
-      route_id: record.routeId,
-      routing_epoch: record.routingEpoch,
-      vendor_id: record.vendorId!,
-      idempotency_key: record.idempotencyKey,
-      notification_id: 'notification-42',
-      remote_request_id: 'request-42',
-      accepted_at: now.toISOString(),
-      idempotent_replay: false,
-      deployment_digest: `sha256:${'c'.repeat(64)}` as const,
-      watch_config_digest: watchConfigDigest,
-      recorded_at: now.toISOString(),
-    };
+    const receipt = acceptanceReceipt(record);
 
     expect(() =>
       crashing.acceptServiceRoute(record.id, claim.lease.token, receipt, receiptStore),
@@ -295,6 +412,36 @@ describe('WatchDeliveryQueueV2', () => {
     expect(queueV2().recoverAcceptedReceipts(receiptStore)).toBe(1);
     expect(queueV2().getRoute(record.id)).toMatchObject({ receiptLedger: 'committed' });
     expect(receiptStore.read(record.id)).toEqual(receipt);
+  });
+
+  it('uses one timestamp for all writes in an accepted transaction', () => {
+    const acceptedAt = now.toISOString();
+    const store = queueV2({
+      acceptanceCheckpoint: (checkpoint) => {
+        if (checkpoint === 'embedded_receipt_persisted') {
+          now = new Date('2026-07-23T00:01:00.000Z');
+        }
+      },
+    });
+    const { record } = enqueueService(store);
+    const claim = store.claimNext('worker', 'notification_service');
+    if (!claim) throw new Error('Expected claim');
+    const accepted = store.acceptServiceRoute(
+      record.id,
+      claim.lease.token,
+      acceptanceReceipt(record),
+      new NotificationReceiptStore({ rootPath: join(root, 'notification-acceptance') }),
+    );
+
+    expect(accepted).toMatchObject({
+      state: 'accepted',
+      receiptLedger: 'committed',
+      updatedAt: acceptedAt,
+    });
+    expect(JSON.parse(readFileSync(store.statePath, 'utf8'))).toMatchObject({
+      updatedAt: acceptedAt,
+      routes: [{ updatedAt: acceptedAt, receiptLedger: 'committed' }],
+    });
   });
 
   it('rejects conflicting accepted receipt identity without transferring authority', () => {

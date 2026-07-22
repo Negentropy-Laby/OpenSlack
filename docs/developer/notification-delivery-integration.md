@@ -225,6 +225,11 @@ queue-v2 lock -> Blob store lock or receipt store lock
 Blob and receipt stores never acquire the queue lock, and callers must release the storage lock before attempting any
 independent queue acquisition. This avoids lock inversion while preserving the frozen accepted persistence sequence.
 
+The queue lock is a same-host process lock, not a distributed or multi-host lease. Stale recovery requires both an
+expired `lockStaleMs` age and a dead owner PID; an old lock held by a live process is never reclaimed. Deployments must
+set `lockStaleMs` above the worst-case duration of a queue operation, including slow filesystem flushes. Unsafe,
+malformed or unprovable lock ownership fails closed.
+
 `WatchDeliveryQueueV2.acceptServiceRoute` implements accepted persistence in this order:
 
 ```text
@@ -233,6 +238,10 @@ validate receipt
 -> create-only receipt file; fsync
 -> queue ledger=committed; fsync
 ```
+
+The queue-v2 lock intentionally remains held across all three writes, including receipt-store fsync. This serializes
+acceptance commits and is accepted for the single-host, low-throughput daemon. Shortening that critical section would
+require a replacement transactional/fencing protocol; it must not be treated as a standalone performance refactor.
 
 A crash after the first queue write only repairs the receipt ledger; it never sends again. Blob GC eligibility begins
 only after `accepted + ledger=committed` and the seven-day accepted retention. Rejected, quarantined and handoff-dead
