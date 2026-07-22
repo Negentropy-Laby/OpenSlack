@@ -1,14 +1,15 @@
 # Notification Delivery Service Integration
 
-> **Status:** IB0 contract baseline — `PENDING_INDEPENDENT_REVIEW`
+> **Status:** IB0 contract baseline — `G0_CONTRACT_PASS_WITH_RC_REVIEW_WAIVER`
 >
 > **Runtime effect:** None. The v2 parser and protocol contracts are not wired into the watch daemon.
 >
 > **Target release:** OpenSlack 0.3.0
 
 This document freezes the boundary between OpenSlack's GitHub Watch queue and the process-isolated notification
-delivery service currently developed in `wsman/rc_wsman`. It is the OpenSlack half of Integration B0. Implementation
-cannot begin until this contract and the matching service ADR pass independent `G0-CONTRACT` review.
+delivery service currently developed in `wsman/rc_wsman`. It is the OpenSlack half of Integration B0. The contract
+gate passed with the narrowly scoped standalone-service review waiver described below; G1 service and G2 client
+implementation may proceed without changing the runtime authority boundary.
 
 ## Baselines And Release Isolation
 
@@ -22,6 +23,26 @@ The first value remains the 0.2.0 evidence anchor, not the integration branch po
 protected `integration/notification-delivery-0.3` branch while 0.2.0 finishes signing, npm publication,
 clean-machine delivery and live-capstone gates on `main`. Full service history is imported only after those release
 gates and the 14-day Canary pass.
+
+## G0 Review Governance
+
+The original contract changes entered their repositories through OpenSlack merge commit
+`5f71f91` and standalone-service merge commit `1b68cb6`. The service change passed its required CI but did not have
+an independent approval. The release owner accepted that absence as a temporary, repository-scoped waiver rather
+than representing it as independent review.
+
+While `wsman/rc_wsman` remains the standalone deployment source, its integration changes require a pull request,
+the configured required CI checks, an up-to-date head and a merge commit, but require zero approvals. Its protected
+`main` permits no direct pushes, squash or rebase merges, force pushes, deletion or bypass. This waiver does not relax
+technical tests, evidence requirements or any OpenSlack repository control.
+
+OpenSlack implementation pull requests are agent-authored and target the protected
+`integration/notification-delivery-0.3` branch. They require `wsman`'s independent current-head approval, all required
+checks and resolved review threads; a new head dismisses stale approval. Only merge commits are allowed, and the
+protected integration branch permits neither force push nor deletion. The waiver applies only to the standalone
+service repository and expires at IB6: once the service history is imported, all service changes are governed by the
+OpenSlack review policy. It cannot be used to bypass G1 through G8, CODEOWNERS, security review, release-owner
+authorization or destructive-operation approval.
 
 ## Authority Transfer
 
@@ -110,6 +131,30 @@ pattern, and `routing_epoch` is canonical decimal ASCII, so the delimited preima
 The executable vectors live in
 `packages/github/src/__fixtures__/notification-handoff/key-vectors.v1.json`.
 
+## Route Record Identity
+
+The local v2 queue and acceptance ledger use one deterministic route-record identity. It is derived after the
+repository and route idempotency key have been frozen; it is not a user-configurable watch route field:
+
+```text
+preimage =
+  UTF8("openslack.watch.route-record.v2") || 0x00 ||
+  UTF8(canonical_repository)              || 0x00 ||
+  UTF8(persisted_idempotency_key)
+
+route_record_id = lowercase_hex(SHA-256(preimage))
+```
+
+`canonical_repository` must already equal the lowercase `canonicalFullName` returned by
+`canonicalizeRepositoryName`; the derivation rejects case variants, surrounding whitespace, extra path segments and
+U+0000 rather than normalizing them. `persisted_idempotency_key` must match the frozen lowercase UUID-like v5 handoff
+key contract. During per-route v1 migration, the original v1 route key is copied unchanged and used as this input; it
+is never recalculated with the v2 handoff-key formula.
+
+The result is exactly 64 lowercase hexadecimal characters and is used directly as the receipt filename. Executable
+vectors, including a copied-v1-key case, live in
+`packages/github/src/__fixtures__/notification-handoff/route-record-id-vectors.v1.json`.
+
 ## Final Vendor Bytes
 
 IB2 will materialize exactly once:
@@ -144,6 +189,9 @@ Receipt path:
 ```text
 .openslack.local/daemon/notification-acceptance/<route-record-id>.json
 ```
+
+`<route-record-id>` is the deterministic 64-character identity above; arbitrary filenames and config-supplied IDs
+are not accepted.
 
 The strict schema is `openslack.notification_acceptance.v1`. It contains route/repository/vendor/key identity,
 notification and request IDs, accepted/replay timestamps, deployment digest and watch-config digest. It contains no
@@ -222,7 +270,7 @@ Mixed deliveries retain independent route ownership. No v2 record can be claimed
 The next phases remain blocked by gates:
 
 ```text
-G0-CONTRACT: both IB0 changes independently reviewed
+G0-CONTRACT: PASS_WITH_RC_REVIEW_WAIVER; OpenSlack independently reviewed, standalone service owner waiver + PR/CI
 G1-SERVICE: service v2 contract implemented and verified
 G2-CLIENT: body, Blob, receipt and client components verified but not wired
 G3-QUEUE: v2 queue/router and per-route migration verified
@@ -230,5 +278,6 @@ G4-E2E: two repositories x Slack and webhook fault matrix
 G5-CANARY: 336 continuous hours + 100 distinct non-replay accepted keys
 ```
 
-Only after G5 and the immutable 0.2.0 release may the full service history enter OpenSlack. This document makes no
-production-readiness, live-verification or integration-completion claim.
+G0 unlocks G1 and G2 only; it does not authorize daemon wiring or traffic. Only after G5 and the immutable 0.2.0
+release may the full service history enter OpenSlack. This document makes no production-readiness, live-verification
+or integration-completion claim.

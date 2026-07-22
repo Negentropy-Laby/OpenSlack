@@ -3,6 +3,14 @@
   "$id": "https://openslack.dev/schemas/notification-handoff-v2.schema.json",
   "title": "NotificationHandoffContractsV2",
   "$defs": {
+    "routeRecordId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-5[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+    },
     "acceptedEnvelope": {
       "type": "object",
       "additionalProperties": false,
@@ -43,7 +51,7 @@
       ],
       "properties": {
         "schema": { "const": "openslack.notification_acceptance.v1" },
-        "route_record_id": { "type": "string", "minLength": 1 },
+        "route_record_id": { "$ref": "#/$defs/routeRecordId" },
         "canonical_repository": {
           "type": "string",
           "pattern": "^[^/\\s]+/[^/\\s]+$"
@@ -54,10 +62,7 @@
         },
         "routing_epoch": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
         "vendor_id": { "type": "string", "pattern": "^[a-z0-9-]{1,64}$" },
-        "idempotency_key": {
-          "type": "string",
-          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-5[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
-        },
+        "idempotency_key": { "$ref": "#/$defs/idempotencyKey" },
         "notification_id": { "type": "string", "minLength": 1 },
         "remote_request_id": { "type": "string", "minLength": 1, "maxLength": 128 },
         "accepted_at": { "type": "string", "format": "date-time" },

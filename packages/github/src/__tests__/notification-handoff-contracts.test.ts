@@ -4,10 +4,14 @@ import { describe, expect, it } from 'vitest';
 import {
   NOTIFICATION_HANDOFF_NAMESPACE_V2,
   NOTIFICATION_HANDOFF_POLICY,
+  NOTIFICATION_ROUTE_RECORD_NAMESPACE_V2,
   createNotificationHandoffKeyV2,
+  createNotificationRouteRecordIdV2,
   isNotificationDeploymentDigest,
+  isNotificationHandoffIdempotencyKey,
   isNotificationHandoffRouteId,
   isNotificationHandoffVendorId,
+  isNotificationRouteRecordId,
 } from '../notification-handoff-contracts.js';
 
 interface KeyVectorFile {
@@ -22,6 +26,17 @@ interface KeyVectorFile {
   }>;
 }
 
+interface RouteRecordIdVectorFile {
+  schema: string;
+  namespace: string;
+  vectors: Array<{
+    name: string;
+    canonical_repository: string;
+    persisted_idempotency_key: string;
+    expected_route_record_id: string;
+  }>;
+}
+
 const keyVectors = JSON.parse(
   readFileSync(
     new URL('../__fixtures__/notification-handoff/key-vectors.v1.json', import.meta.url),
@@ -29,10 +44,23 @@ const keyVectors = JSON.parse(
   ),
 ) as KeyVectorFile;
 
+const routeRecordIdVectors = JSON.parse(
+  readFileSync(
+    new URL(
+      '../__fixtures__/notification-handoff/route-record-id-vectors.v1.json',
+      import.meta.url,
+    ),
+    'utf8',
+  ),
+) as RouteRecordIdVectorFile;
+
 const handoffSchema = JSON.parse(
   readFileSync(new URL('../notification-handoff-v2.schema.json', import.meta.url), 'utf8'),
 ) as {
+  $id: string;
   $defs: {
+    routeRecordId: { type: string; pattern: string };
+    idempotencyKey: { type: string; pattern: string };
     acceptedEnvelope: {
       additionalProperties: boolean;
       required: string[];
@@ -53,8 +81,13 @@ const handoffSchema = JSON.parse(
 };
 
 const schemaValidator = new Ajv2020({ strict: false, validateFormats: false });
-const validateAcceptedEnvelope = schemaValidator.compile(handoffSchema.$defs.acceptedEnvelope);
-const validateAcceptanceLedger = schemaValidator.compile(handoffSchema.$defs.acceptanceLedger);
+schemaValidator.addSchema(handoffSchema);
+const validateAcceptedEnvelope = schemaValidator.getSchema(
+  `${handoffSchema.$id}#/$defs/acceptedEnvelope`,
+)!;
+const validateAcceptanceLedger = schemaValidator.getSchema(
+  `${handoffSchema.$id}#/$defs/acceptanceLedger`,
+)!;
 
 describe('notification handoff v2 contracts', () => {
   it('keeps the bounded retry and storage policy frozen', () => {
@@ -86,6 +119,49 @@ describe('notification handoff v2 contracts', () => {
         vector.name,
       ).toBe(vector.expected_key);
     }
+  });
+
+  it('matches independently generated route-record ID vectors, including copied v1 keys', () => {
+    expect(routeRecordIdVectors.schema).toBe('openslack.notification_route_record_id_vectors.v1');
+    expect(routeRecordIdVectors.namespace).toBe(NOTIFICATION_ROUTE_RECORD_NAMESPACE_V2);
+    for (const vector of routeRecordIdVectors.vectors) {
+      expect(
+        createNotificationRouteRecordIdV2(
+          vector.canonical_repository,
+          vector.persisted_idempotency_key,
+        ),
+        vector.name,
+      ).toBe(vector.expected_route_record_id);
+      expect(isNotificationRouteRecordId(vector.expected_route_record_id), vector.name).toBe(true);
+    }
+  });
+
+  it('rejects non-canonical route-record inputs rather than normalizing them', () => {
+    const key = '480f3f0b-01e3-57fb-8f3a-6ffd3a16ecbe';
+    expect(() => createNotificationRouteRecordIdV2('Negentropy-Laby/OpenSlack', key)).toThrow(
+      'canonical lowercase owner/repo',
+    );
+    expect(() => createNotificationRouteRecordIdV2(' negentropy-laby/openslack', key)).toThrow(
+      'canonical lowercase owner/repo',
+    );
+    expect(() => createNotificationRouteRecordIdV2('negentropy-laby/open\0slack', key)).toThrow(
+      'must not contain NUL bytes',
+    );
+    expect(() => createNotificationRouteRecordIdV2('owner/team/repo', key)).toThrow(
+      'canonical lowercase owner/repo',
+    );
+    expect(() =>
+      createNotificationRouteRecordIdV2('negentropy-laby/openslack', 'legacy-free-form-key'),
+    ).toThrow('frozen handoff key contract');
+  });
+
+  it('strictly validates persisted handoff keys and route-record IDs', () => {
+    expect(isNotificationHandoffIdempotencyKey('480f3f0b-01e3-57fb-8f3a-6ffd3a16ecbe')).toBe(true);
+    expect(isNotificationHandoffIdempotencyKey('480F3F0B-01E3-57FB-8F3A-6FFD3A16ECBE')).toBe(false);
+    expect(isNotificationHandoffIdempotencyKey('480f3f0b-01e3-47fb-8f3a-6ffd3a16ecbe')).toBe(false);
+    expect(isNotificationRouteRecordId('a'.repeat(64))).toBe(true);
+    expect(isNotificationRouteRecordId('A'.repeat(64))).toBe(false);
+    expect(isNotificationRouteRecordId('a'.repeat(63))).toBe(false);
   });
 
   it('rejects embedded NUL bytes before constructing the delimited preimage', () => {
@@ -124,6 +200,13 @@ describe('notification handoff v2 contracts', () => {
   });
 
   it('freezes strict accepted-envelope and local-ledger schemas', () => {
+    expect(handoffSchema.$defs.routeRecordId).toEqual({
+      type: 'string',
+      pattern: '^[0-9a-f]{64}$',
+    });
+    expect(handoffSchema.$defs.idempotencyKey.pattern).toBe(
+      '^[a-f0-9]{8}-[a-f0-9]{4}-5[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$',
+    );
     const envelope = handoffSchema.$defs.acceptedEnvelope;
     expect(envelope.additionalProperties).toBe(false);
     expect(envelope.required).toEqual(['request_id', 'data']);
@@ -160,7 +243,7 @@ describe('notification handoff v2 contracts', () => {
 
     const ledger = {
       schema: 'openslack.notification_acceptance.v1',
-      route_record_id: 'route-record-1',
+      route_record_id: routeRecordIdVectors.vectors[0]!.expected_route_record_id,
       canonical_repository: 'negentropy-laby/openslack',
       route_id: 'slack-primary',
       routing_epoch: 1,
@@ -176,5 +259,6 @@ describe('notification handoff v2 contracts', () => {
     };
     expect(validateAcceptanceLedger(ledger)).toBe(true);
     expect(validateAcceptanceLedger({ ...ledger, payload: 'forbidden' })).toBe(false);
+    expect(validateAcceptanceLedger({ ...ledger, route_record_id: 'route-record-1' })).toBe(false);
   });
 });

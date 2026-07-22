@@ -160,9 +160,10 @@ as bounded completed tombstones during migration and is no longer written.
 ### Proposed 0.3.0 notification-service boundary
 
 The current v1 queue and direct sinks remain authoritative and unchanged. A separate
-`openslack.github_watch.v2` schema, route identity and pre-202 handoff contract are frozen for independent review in
-[`notification-delivery-integration.md`](notification-delivery-integration.md). Those types are not wired into this
-daemon. Do not interpret their presence as a new runtime path, completed integration or production evidence.
+`openslack.github_watch.v2` schema, route identity and pre-202 handoff contract passed G0 under the repository-scoped
+review policy recorded in [`notification-delivery-integration.md`](notification-delivery-integration.md). Those types
+are not wired into this daemon. Do not interpret their presence as a new runtime path, completed integration or
+production evidence.
 
 ## Event Model
 
@@ -202,6 +203,11 @@ Use these keys in order:
 3. Canonical route identity plus the event stable key for each sink effect.
 4. Poll cursor per repository: `lastSeenAt`, `lastIssueNumber`, and last
    processed idempotency key.
+
+The approved, not-yet-wired v2 queue derives each local `route_record_id` as lowercase hexadecimal SHA-256 over
+`openslack.watch.route-record.v2`, the already-lowercase canonical `owner/repo`, and the persisted route idempotency
+key, with NUL delimiters. Migrated v1 routes use their copied original key as input; they do not receive a new v2
+handoff key. The ID is derived queue identity and is never accepted from watch configuration.
 
 The queue accepts or rejects duplicates atomically. A successful route is
 marked completed immediately and is not resent when another route retries. If
