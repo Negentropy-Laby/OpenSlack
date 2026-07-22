@@ -57,6 +57,12 @@ day-1 requirement. Logical modules are not separately deployable services.
 
 No component except its owner may write an owned table. Cross-module calls use typed interfaces in the same process.
 
+The deployment tool `cmd/bootstrap-openslack` is a separate, one-shot binary. It does not start the HTTP server or
+workers and exposes no network listener. Its narrow configuration contains only `DATABASE_URL` and the active API-key
+pepper. After durably creating a protected credential file, it acquires a dedicated PostgreSQL advisory transaction
+lock and atomically creates the fixed OpenSlack caller/auditor principals and their two key verifiers. It is not a
+general Caller Access administration surface.
+
 ## Startup and Shutdown
 
 Startup is fail-closed:

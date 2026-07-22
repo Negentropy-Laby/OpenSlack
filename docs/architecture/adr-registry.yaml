@@ -54,3 +54,4 @@ records:
       - final vendor bytes and receipt protocol contract
       - two-repository, two-vendor Canary and full-history import gates
       - standalone review waiver and post-IB6 OpenSlack review-policy transition
+      - one-shot non-HTTP OpenSlack caller/auditor bootstrap and commit-convergence semantics

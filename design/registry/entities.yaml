@@ -87,6 +87,10 @@ schema_map:
     owner: Caller Access
     authority: design/cdd/caller-access.md
     storage_projection: docs/architecture/data-model.md#access_keys
+  OpenSlackBootstrapOutput:
+    owner: Caller Access
+    authority: docs/architecture/adr-0005-openslack-handoff-integration.md#principals-and-deployment-evidence
+    visibility: protected_deployment_file
   ActorContext:
     owner: Caller Access
     authority: design/cdd/caller-access.md
@@ -112,6 +116,11 @@ schema_map:
     visibility: deployment
 
 api_map:
+  bootstrapOpenSlack:
+    kind: deployment_cli
+    authority: docs/architecture/adr-0005-openslack-handoff-integration.md#principals-and-deployment-evidence
+    behavior: design/cdd/caller-access.md
+    public_http: false
   submitNotification:
     kind: public_http
     authority: docs/api/openapi.yaml#/paths/~1v1~1notifications/post

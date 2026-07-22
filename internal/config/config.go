@@ -100,6 +100,28 @@ type Config struct {
 	WorkerVendorScope        []string
 }
 
+// OpenSlackBootstrapConfig is the deliberately narrow configuration surface
+// for the one-shot OpenSlack identity bootstrap command. The command does not
+// initialize the HTTP server, delivery worker, or vendor credential resolver.
+type OpenSlackBootstrapConfig struct {
+	DatabaseURL  string
+	ActivePepper Pepper
+}
+
+// LoadOpenSlackBootstrap loads only the database locator and active API-key
+// pepper needed by cmd/bootstrap-openslack.
+func LoadOpenSlackBootstrap() (*OpenSlackBootstrapConfig, error) {
+	dbURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	if dbURL == "" {
+		return nil, fmt.Errorf("missing required env DATABASE_URL")
+	}
+	activePepper, err := loadPepper("API_KEY_PEPPER_ACTIVE")
+	if err != nil {
+		return nil, err
+	}
+	return &OpenSlackBootstrapConfig{DatabaseURL: dbURL, ActivePepper: *activePepper}, nil
+}
+
 // Peppers returns a PepperSet for id-membership checks.
 func (c *Config) Peppers() PepperSet {
 	ps := PepperSet{

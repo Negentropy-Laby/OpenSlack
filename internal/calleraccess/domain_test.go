@@ -269,15 +269,36 @@ func TestValidatePrincipal_CallerOk(t *testing.T) {
 	}
 }
 
-func TestValidatePrincipal_OperatorNeedsManagedScope(t *testing.T) {
-	p := PrincipalRecord{
-		PrincipalID:  "op-1",
-		Kind:         KindOperator,
-		Status:       "active",
-		VendorScope:  []string{"vendor-a"},
-		Capabilities: []string{CapabilityReadNotifications},
+func TestValidatePrincipal_ManagedScopeFollowsAccessKeyCapability(t *testing.T) {
+	base := PrincipalRecord{
+		PrincipalID: "op-1", Kind: KindOperator, Status: "active",
+		VendorScope: []string{"vendor-a"},
 	}
-	if err := ValidatePrincipal(p); err == nil {
-		t.Fatal("operator without managed_principal_scope must be rejected")
+	tests := []struct {
+		name         string
+		kind         string
+		capabilities []string
+		managed      []string
+		wantError    bool
+	}{
+		{name: "read-only auditor has empty scope", capabilities: []string{CapabilityReadNotifications}},
+		{name: "read-only auditor cannot carry managed scope", capabilities: []string{CapabilityReadNotifications}, managed: []string{"team-a"}, wantError: true},
+		{name: "key manager needs managed scope", capabilities: []string{CapabilityManageAccessKeys}, wantError: true},
+		{name: "key manager has managed scope", capabilities: []string{CapabilityManageAccessKeys}, managed: []string{"team-a"}},
+		{name: "caller cannot carry managed scope", kind: KindCaller, capabilities: []string{CapabilitySubmitNotification}, managed: []string{"team-a"}, wantError: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := base
+			if tt.kind != "" {
+				p.Kind = tt.kind
+			}
+			p.Capabilities = tt.capabilities
+			p.ManagedPrincipalScope = tt.managed
+			err := ValidatePrincipal(p)
+			if (err != nil) != tt.wantError {
+				t.Fatalf("ValidatePrincipal() error = %v, wantError %v", err, tt.wantError)
+			}
+		})
 	}
 }

@@ -196,6 +196,13 @@ openslack-canary-auditor
 The runtime caller cannot query operations. The Canary auditor cannot submit, replay or administer. Raw keys are
 returned once to an explicit `0600` create-only file and never appear in stdout or logs.
 
+`cmd/bootstrap-openslack` is the sole IB1 provisioning surface. It is a one-shot, non-HTTP command rather than a
+general key-administration interface. It accepts exactly two unique vendor IDs and always creates the fixed identities
+and capabilities above. The command durably creates and synchronizes the credential file before opening PostgreSQL,
+then uses a dedicated transaction-scoped advisory lock to insert both principals and both key verifiers in one
+transaction. A confirmed rollback removes and synchronizes the file; an indeterminate commit retains it for manual
+convergence. Existing output files or either existing principal fail closed and are never overwritten.
+
 Canary/production startup requires `NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST=sha256:<64 lowercase hex>`, supplied by
 the deployment system from the verified OCI image. All first and replayed 202 responses carry it. OpenSlack records
 it with a secret-free canonical watch-config digest and independently queried vendor config versions.

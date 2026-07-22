@@ -23,6 +23,7 @@ Trust boundaries:
 | redirect/proxy bypass | reject every redirect; environment proxy disabled | ADR-0004 |
 | credential leakage | opaque `env://` ref, attempt-scoped resolution, log/metric/API denylist | ADR-0004 |
 | API key theft | TLS, one-time display, HMAC digest+pepper, rotation/revocation, rate limit | ADR-0003 |
+| bootstrap key disclosure or partial provisioning | create-only `0600` file, file+directory fsync before DB access, two principals/two verifiers in one advisory-locked transaction, no raw key in stdout/logs | ADR-0005 |
 | caller/vendor enumeration | merged not-found/out-of-scope/disabled errors | CDD contracts |
 | privilege escalation | server-derived kind/scope/capability; attenuation per call | ADR-0003 |
 | replay abuse | preview read-only; execute re-authenticates; explicit IDs/versions; no query expansion | Operations CDD |
@@ -53,6 +54,12 @@ The deployment digest is non-secret evidence metadata, but remains deployment-au
 or accepts it from request input. Missing, uppercase or malformed values fail during configuration loading before
 database/network initialization. It is emitted only as the successful intake response header and is never written to
 notification payload, Store rows, logs or metrics.
+
+The OpenSlack bootstrap command writes raw API keys only to its explicit output file. It refuses an existing path and
+an immediate symlink parent, writes a fixed JSON schema with mode `0600`, synchronizes the file and directory, and only
+then initializes PostgreSQL. Confirmed failures remove and synchronize the file. Commit-outcome-unknown and a process
+crash after file synchronization retain the file and require manual convergence; automatic overwrite or key
+regeneration is forbidden. The command never creates an HTTP route and is not run by normal service startup.
 
 ## Residual Risks
 

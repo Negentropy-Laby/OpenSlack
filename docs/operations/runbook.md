@@ -73,12 +73,35 @@ Batch maximum is 100. Automatic replay and “replay all matching query” are f
 
 ## API-Key Pepper Rotation and Compromise
 
-生产 key-admin 接入不暴露为 HTTP API/CLI；部署方通过受控 harness 调用既有 KeyAdmin。仓库中的
-测试专用演练命令为：
+通用生产 key-admin 接入不暴露为 HTTP API/CLI；部署方通过受控 harness 调用既有 KeyAdmin。唯一例外是
+一次性的非 HTTP `bootstrap-openslack` 部署命令，它只能创建固定的 OpenSlack caller/auditor，不能执行
+通用 issue/rotate/revoke。仓库中的测试专用 rotation 演练命令为：
 
 ```bash
 go test ./tests/integration -run '^TestPepperRotationRunbookUsesKeyAdminAndFailsClosed$' -count=1 -v
 ```
+
+### OpenSlack identity bootstrap (IB1 fixture only)
+
+IB1 只允许两个唯一 fixture vendor ID；真实 Canary 身份推迟到 IB4 D4-0。预先创建受保护的输出目录，
+设置 `DATABASE_URL` 与 `API_KEY_PEPPER_ACTIVE`，然后运行：
+
+```bash
+go run ./cmd/bootstrap-openslack \
+  --output /secure/operator-handoff/openslack-keys.json \
+  --vendor-id fixture-slack \
+  --vendor-id fixture-webhook
+```
+
+命令拒绝已有输出文件、重复 vendor、已有任一固定 principal，并且绝不向 stdout/stderr 输出 raw key。
+成功时文件包含 caller/auditor 两把一次性 raw key，权限为 `0600`。将文件通过批准的 secret handoff
+导入后保持受控保存；IB5 报告封存后的撤销属于后续 gate，不由本命令执行。
+
+若命令报告 `commit_outcome_unknown`，或进程在文件 fsync 后退出，不得删除、覆盖或重新运行。使用文件中
+非秘密的两个 `key_id` 与固定 principal ID 查询 `principals`/`access_keys`：四行全部存在且 kind、scope、
+capability、pepper ID 与 verifier 均匹配时，保留该文件并把 bootstrap 视为已收敛；四行全部不存在时，
+经人工记录后安全删除文件、fsync 父目录并重新运行；任意部分存在或字段冲突时隔离文件并升级处理。
+已确认 rollback 的命令会自行删除并同步输出文件。
 
 - **Routine rotation** (planned): deploy `API_KEY_PEPPER_ACTIVE=new` with `API_KEY_PEPPER_PREVIOUS=old`, restart,
   rotate principal keys at leisure under the at-most-two-active-keys rule, confirm zero non-revoked keys still
