@@ -278,6 +278,13 @@ permission_map:
     authority: design/cdd/vendor-registry.md
 
 config_map:
+  NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST:
+    value: "sha256:<64 lowercase hex from deployment-verified OCI image digest>"
+    required: true
+    default: none
+    persistence: process-only; never notification storage
+    public_wire: docs/api/openapi.yaml#/components/headers/NotificationServiceDeploymentDigest
+    authority: docs/architecture/adr-0005-openslack-handoff-integration.md
   PAYLOAD_MAX_BYTES:
     value: 262144
     unit: bytes

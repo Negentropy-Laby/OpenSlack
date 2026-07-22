@@ -70,27 +70,29 @@ type Reliability interface {
 // Server is the HTTP lifecycle wrapper.  It exposes liveness, metrics/readiness
 // and the B3 business routes.
 type Server struct {
-	http        *http.Server
-	pool        *pgxpool.Pool
-	logger      *slog.Logger
-	metricsPath string
-	ready       func() bool
-	deps        Deps
+	http             *http.Server
+	pool             *pgxpool.Pool
+	logger           *slog.Logger
+	metricsPath      string
+	deploymentDigest string
+	ready            func() bool
+	deps             Deps
 }
 
 // NewServer builds a chi router with the B1 handlers.
 // ready defaults to true only when a non-nil pool has been supplied; callers
 // should override it with a real readiness predicate before accepting traffic.
-func NewServer(addr, metricsPath string, pool *pgxpool.Pool, logger *slog.Logger) *Server {
+func NewServer(addr, metricsPath, deploymentDigest string, pool *pgxpool.Pool, logger *slog.Logger) *Server {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Recoverer)
 
 	s := &Server{
-		pool:        pool,
-		logger:      logger,
-		metricsPath: metricsPath,
-		ready:       func() bool { return pool != nil },
+		pool:             pool,
+		logger:           logger,
+		metricsPath:      metricsPath,
+		deploymentDigest: deploymentDigest,
+		ready:            func() bool { return pool != nil },
 	}
 	r.Use(s.requestLogger)
 

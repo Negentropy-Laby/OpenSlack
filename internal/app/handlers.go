@@ -185,6 +185,7 @@ func (s *Server) handleSubmitNotification(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	w.Header().Set("X-Notification-Service-Deployment-Digest", s.deploymentDigest)
 	writeSuccess(w, http.StatusAccepted, requestID(r), map[string]any{
 		"notification_id":   result.NotificationID,
 		"state":             notificationstore.StatePending,

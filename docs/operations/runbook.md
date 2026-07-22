@@ -11,6 +11,21 @@ curl --fail http://127.0.0.1:8080/health/ready
 curl --fail http://127.0.0.1:8080/metrics
 ```
 
+The local env file supplies an explicit public non-production deployment-digest fixture. Canary/production must
+replace it with the deployment platform's verified OCI digest in exact `sha256:<64 lowercase hex>` form. Never use an
+application-generated value or a default. Missing/malformed values must terminate startup before PostgreSQL or any
+listener is initialized.
+
+After deployment, submit a scoped canary notification and verify that the accepted response contains exactly:
+
+```http
+X-Notification-Service-Deployment-Digest: sha256:<verified OCI digest hex>
+```
+
+Verify both a first acceptance and an idempotent replay. A caller-supplied header with the same name must not alter
+the response. A mismatch is a deployment/configuration incident; stop routing new intake and do not rewrite stored
+notifications.
+
 Compose 启动 PostgreSQL 18.4、非 root app image 和 Prometheus 3.13.1。`/metrics` 必须恰有三项
 `rc_wsman_*` 业务 gauge；Prometheus scrape timeout 为 5s，app collection timeout 为 2s。
 
@@ -153,6 +168,6 @@ manually marking delivered.
 
 ## Escalation and Evidence
 
-Capture request/notification/vendor IDs, stable result/reason, timestamps, config version and deployment version.
+Capture request/notification/vendor IDs, stable result/reason, timestamps, config version and deployment digest.
 Never capture raw API keys, credential refs, payloads or response bodies. Incident closure must state whether duplicate
 delivery was possible and whether a replay occurred.

@@ -202,7 +202,7 @@ func main() {
 		logger.Warn("delivery_worker_disabled", "reason", "WORKER_VENDOR_SCOPE empty")
 	}
 
-	srv := app.NewServer(cfg.HTTPBind, cfg.MetricsPath, pool, logger)
+	srv := app.NewServer(cfg.HTTPBind, cfg.MetricsPath, cfg.DeploymentDigest, pool, logger)
 	srv.SetDeps(app.Deps{
 		Store:          nsRepo,
 		Authenticator:  authenticator,

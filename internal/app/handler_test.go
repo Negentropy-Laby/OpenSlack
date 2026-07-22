@@ -18,6 +18,8 @@ import (
 	"rc_wsman/internal/vendorregistry"
 )
 
+const testDeploymentDigest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+
 type fakeStore struct {
 	intake notificationstore.ValidatedIntake
 	result notificationstore.IntakeResult
@@ -107,7 +109,7 @@ func (vr *fakeVendorRegistry) ListAdminAuditEvents(ctx context.Context, actor ve
 
 func newTestServer(t *testing.T, store *fakeStore, auth *fakeAuthenticator, vr *fakeVendorRegistry) *Server {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := NewServer(":0", "/metrics", nil, logger)
+	srv := NewServer(":0", "/metrics", testDeploymentDigest, nil, logger)
 	srv.SetDeps(Deps{
 		Store: store, Authenticator: auth, VendorRegistry: vr,
 		Operations:  &fakeOperations{},
@@ -298,11 +300,15 @@ func TestHandleSubmitNotification_Success(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer valid.key")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Idempotency-Key", "key-1")
+	req.Header.Set("X-Notification-Service-Deployment-Digest", "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, want 202", rec.Code)
+	}
+	if got := rec.Header().Get("X-Notification-Service-Deployment-Digest"); got != testDeploymentDigest {
+		t.Fatalf("deployment digest header = %q, want current deployment %q", got, testDeploymentDigest)
 	}
 	if store.intake.CallerID != "caller-1" {
 		t.Fatalf("caller id = %s, want caller-1", store.intake.CallerID)
@@ -332,6 +338,38 @@ func TestHandleSubmitNotification_Success(t *testing.T) {
 	}
 	if envelope.RequestID == "" || envelope.Data.NotificationID != "notif-1" || envelope.Data.State != "pending" || envelope.Data.AcceptedAt != acceptedAt.Format(time.RFC3339Nano) {
 		t.Fatalf("unexpected response: %+v", envelope)
+	}
+}
+
+func TestHandleSubmitNotification_ReplayReturnsCurrentDeploymentDigest(t *testing.T) {
+	acceptedAt := time.Date(2026, 7, 22, 1, 2, 3, 0, time.UTC)
+	store := &fakeStore{result: notificationstore.IntakeResult{NotificationID: "notif-existing", IdempotentReplay: true, AcceptedAt: acceptedAt}}
+	auth := &fakeAuthenticator{
+		caller: calleraccess.CallerPrincipal{PrincipalID: "caller-1", VendorScope: []string{"vendor-a"}, Capabilities: []string{calleraccess.CapabilitySubmitNotification}},
+	}
+	srv := newTestServer(t, store, auth, &fakeVendorRegistry{active: true})
+	req := httptest.NewRequest(http.MethodPost, "/v1/notifications", strings.NewReader(`{"vendor_id":"vendor-a","payload_base64":"e30="}`))
+	req.Header.Set("Authorization", "Bearer valid.key")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Idempotency-Key", "key-existing")
+	req.Header.Set("X-Notification-Service-Deployment-Digest", "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted || rec.Header().Get("X-Notification-Service-Deployment-Digest") != testDeploymentDigest {
+		t.Fatalf("replay response=%d digest=%q", rec.Code, rec.Header().Get("X-Notification-Service-Deployment-Digest"))
+	}
+	var envelope struct {
+		Data struct {
+			NotificationID   string `json:"notification_id"`
+			IdempotentReplay bool   `json:"idempotent_replay"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Data.NotificationID != "notif-existing" || !envelope.Data.IdempotentReplay {
+		t.Fatalf("replay envelope=%+v", envelope)
 	}
 }
 
