@@ -220,6 +220,21 @@ export {
   notificationReceiptStorePath,
   serializeNotificationAcceptanceReceipt,
 } from './notification-receipt-store.js';
+export {
+  NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST_HEADER,
+  NotificationServiceClient,
+  parseRetryAfterMs,
+} from './notification-service-client.js';
+export type {
+  NotificationServiceClientOptions,
+  NotificationServiceHandoffRequest,
+} from './notification-service-client.js';
+export {
+  canonicalizeJcs,
+  computeGitHubWatchConfigDigestV2,
+  normalizeGitHubWatchConfigV2,
+} from './watch-config-digest-v2.js';
+export type { NormalizedGitHubWatchConfigV2 } from './watch-config-digest-v2.js';
 export type {
   NotificationAcceptanceReceiptV1,
   NotificationReceiptEnsureResult,

@@ -92,7 +92,15 @@ export function withNotificationStorageLock<T>(
       break;
     } catch (error) {
       if (!isNodeError(error, 'EEXIST')) throw error;
-      const lockStatus = lstatSync(lockPath);
+      let lockStatus: ReturnType<typeof lstatSync>;
+      try {
+        lockStatus = lstatSync(lockPath);
+      } catch (statusError) {
+        // The previous owner may release the lock between our EEXIST result and
+        // this inspection. That is a normal hand-off race, so retry acquisition.
+        if (isNodeError(statusError, 'ENOENT')) continue;
+        throw statusError;
+      }
       if (lockStatus.isSymbolicLink() || !lockStatus.isFile()) {
         throw notificationStorageError(
           'STORAGE_PATH_UNSAFE',

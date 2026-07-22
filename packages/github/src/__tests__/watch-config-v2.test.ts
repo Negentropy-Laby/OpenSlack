@@ -218,6 +218,16 @@ repositories:
     expect(accepted.valid).toBe(true);
     expect(accepted.config?.notification_service?.endpoint).toBe('http://127.0.0.1:8080');
     expect(validateWatchV2Schema(accepted.config)).toBe(true);
+
+    const resolverDependent = parseGitHubWatchConfigV2(
+      validConfig
+        .replace('https://notification.internal', 'http://localhost:8080')
+        .replace(
+          'expected_deployment_digest:',
+          'allow_insecure_loopback: true\n  expected_deployment_digest:',
+        ),
+    );
+    expect(resolverDependent.valid).toBe(false);
   });
 
   it.each([
