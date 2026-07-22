@@ -26,7 +26,14 @@ export function classifySelfEvolutionPR(changedPaths: string[]): PRClassificatio
         riskZone: 'red',
         humanApprovalRequired: true,
         autoMergeAllowed: false,
-        requiredChecks: ['workspace-validate', 'typecheck', 'unit-tests', 'self-eval', 'security-scan', 'policy-audit'],
+        requiredChecks: [
+          'workspace-validate',
+          'typecheck',
+          'unit-tests',
+          'self-eval',
+          'security-scan',
+          'policy-audit',
+        ],
         requiredAgentReviews: 2,
       };
     case 'yellow':
@@ -34,7 +41,14 @@ export function classifySelfEvolutionPR(changedPaths: string[]): PRClassificatio
         riskZone: 'yellow',
         humanApprovalRequired: false,
         autoMergeAllowed: false,
-        requiredChecks: ['workspace-validate', 'typecheck', 'unit-tests', 'integration-tests', 'self-eval', 'security-scan'],
+        requiredChecks: [
+          'workspace-validate',
+          'typecheck',
+          'unit-tests',
+          'integration-tests',
+          'self-eval',
+          'security-scan',
+        ],
         requiredAgentReviews: 2,
       };
     case 'green':

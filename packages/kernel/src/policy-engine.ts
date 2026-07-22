@@ -1,20 +1,32 @@
 import type { PolicyDefinition, PolicyResult, RiskZone } from './types.js';
 
-export function evaluatePolicy(policy: PolicyDefinition, context: { zone: RiskZone }): PolicyResult {
+export function evaluatePolicy(
+  policy: PolicyDefinition,
+  context: { zone: RiskZone },
+): PolicyResult {
   const zoneDef = policy.zones[context.zone];
   if (!zoneDef) {
-    return { passed: false, zone: context.zone, violations: [`Unknown zone: ${context.zone}`], requiredActions: [] };
+    return {
+      passed: false,
+      zone: context.zone,
+      violations: [`Unknown zone: ${context.zone}`],
+      requiredActions: [],
+    };
   }
 
   const violations: string[] = [];
   const requiredActions: string[] = [];
 
   if (!zoneDef.auto_merge_allowed) {
-    requiredActions.push(context.zone === 'black' ? 'PR denied automatically' : 'Manual merge required');
+    requiredActions.push(
+      context.zone === 'black' ? 'PR denied automatically' : 'Manual merge required',
+    );
   }
 
   if (zoneDef.requires_independent_agent_review) {
-    requiredActions.push(`Requires ${policy.merge_rules[context.zone]?.required_agent_reviews ?? 1} independent agent review(s)`);
+    requiredActions.push(
+      `Requires ${policy.merge_rules[context.zone]?.required_agent_reviews ?? 1} independent agent review(s)`,
+    );
   }
 
   if (zoneDef.requires_human_approval) {

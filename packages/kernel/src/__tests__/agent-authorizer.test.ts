@@ -8,7 +8,9 @@ import type {
   AuthorizationResult,
 } from '../types.js';
 
-function makeSnapshot(overrides: Partial<AgentPermissionSnapshot['permissions']> = {}): AgentPermissionSnapshot {
+function makeSnapshot(
+  overrides: Partial<AgentPermissionSnapshot['permissions']> = {},
+): AgentPermissionSnapshot {
   const principal: AgentPrincipal = {
     registry_id: 'test_agent',
     runtime_uid: 'uid-001',
@@ -20,7 +22,12 @@ function makeSnapshot(overrides: Partial<AgentPermissionSnapshot['permissions']>
     registry_entry_agent_id: 'test_agent',
     permissions: {
       paths: { allow: ['**'], deny: ['.env'] },
-      actions: { 'task.claim': 'allow', 'pr.propose': 'allow', 'pr.merge': 'deny', 'task.sync': 'ask' },
+      actions: {
+        'task.claim': 'allow',
+        'pr.propose': 'allow',
+        'pr.merge': 'deny',
+        'task.sync': 'ask',
+      },
       github: { can_create_pr: true, can_comment: true, can_approve: false, can_merge: false },
       max_risk_zone: 'yellow',
       ...overrides,
@@ -38,26 +45,42 @@ describe('authorizeAgentAction', () => {
   });
 
   it('denies black zone unconditionally', () => {
-    const result = authorizeAgentAction({ snapshot: makeSnapshot(), action: 'task.claim', riskZone: 'black' });
+    const result = authorizeAgentAction({
+      snapshot: makeSnapshot(),
+      action: 'task.claim',
+      riskZone: 'black',
+    });
     expect(result.decision).toBe('deny');
     expect(result.evidence.rule).toBe('black_zone');
   });
 
   it('denies when risk zone exceeds max_risk_zone', () => {
-    const result = authorizeAgentAction({ snapshot: makeSnapshot(), action: 'task.claim', riskZone: 'red' });
+    const result = authorizeAgentAction({
+      snapshot: makeSnapshot(),
+      action: 'task.claim',
+      riskZone: 'red',
+    });
     expect(result.decision).toBe('deny');
     expect(result.evidence.rule).toBe('risk_ceiling');
   });
 
   it('denies when path matches deny glob', () => {
-    const result = authorizeAgentAction({ snapshot: makeSnapshot(), action: 'task.claim', changedPaths: ['.env'] });
+    const result = authorizeAgentAction({
+      snapshot: makeSnapshot(),
+      action: 'task.claim',
+      changedPaths: ['.env'],
+    });
     expect(result.decision).toBe('deny');
     expect(result.evidence.rule).toBe('path_denied');
   });
 
   it('denies when path outside allow list', () => {
     const snapshot = makeSnapshot({ paths: { allow: ['packages/runtime/**'], deny: [] } });
-    const result = authorizeAgentAction({ snapshot, action: 'task.claim', changedPaths: ['apps/cli/index.ts'] });
+    const result = authorizeAgentAction({
+      snapshot,
+      action: 'task.claim',
+      changedPaths: ['apps/cli/index.ts'],
+    });
     expect(result.decision).toBe('deny');
     expect(result.evidence.rule).toBe('path_not_allowed');
   });
@@ -107,13 +130,21 @@ describe('authorizeAgentAction', () => {
   });
 
   it('allows within risk zone ceiling', () => {
-    const result = authorizeAgentAction({ snapshot: makeSnapshot(), action: 'task.claim', riskZone: 'green' });
+    const result = authorizeAgentAction({
+      snapshot: makeSnapshot(),
+      action: 'task.claim',
+      riskZone: 'green',
+    });
     expect(result.decision).toBe('allow');
   });
 
   it('deny overrides allow for path globs', () => {
     const snapshot = makeSnapshot({ paths: { allow: ['**'], deny: ['secrets/**'] } });
-    const result = authorizeAgentAction({ snapshot, action: 'task.claim', changedPaths: ['secrets/key.pem'] });
+    const result = authorizeAgentAction({
+      snapshot,
+      action: 'task.claim',
+      changedPaths: ['secrets/key.pem'],
+    });
     expect(result.decision).toBe('deny');
     expect(result.evidence.rule).toBe('path_denied');
   });
@@ -151,7 +182,14 @@ describe('resolvePermissionSnapshot', () => {
       agent_id: 'test_agent',
       display_name: 'Test Agent',
       employee_type: 'ai_agent' as const,
-      identity: { uid: 'uid-001', principal_id: 'principal:test_agent', public_key_jwk: null, key_id: null, key_rotation: { last_rotated_at: null, rotation_interval_days: 90 }, status: 'active' as const },
+      identity: {
+        uid: 'uid-001',
+        principal_id: 'principal:test_agent',
+        public_key_jwk: null,
+        key_id: null,
+        key_rotation: { last_rotated_at: null, rotation_interval_days: 90 },
+        status: 'active' as const,
+      },
       vendor: { provider: 'test', runtime: 'test' },
       employment: { status: 'active' as const, hired_at: new Date().toISOString() },
       capabilities: { primary: ['testing'], secondary: [] },

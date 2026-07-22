@@ -2,7 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { decideMerge } from '../merge-decider.js';
 import type { SelfValidationResult } from '../../types.js';
 
-function makeValidation(decision: 'pass' | 'fail' | 'requires_human', overrides: Partial<SelfValidationResult> = {}): SelfValidationResult {
+function makeValidation(
+  decision: 'pass' | 'fail' | 'requires_human',
+  overrides: Partial<SelfValidationResult> = {},
+): SelfValidationResult {
   return {
     experimentId: 'EXP-001',
     prNumber: 1,
@@ -20,7 +23,9 @@ describe('decideMerge', () => {
     const result = decideMerge({
       riskZone: 'black',
       validation: makeValidation('pass'),
-      reviews: [{ reviewerAgent: 'r1', implementationAgent: 'i1', decision: 'approve', comments: '' }],
+      reviews: [
+        { reviewerAgent: 'r1', implementationAgent: 'i1', decision: 'approve', comments: '' },
+      ],
     });
     expect(result.decision).toBe('deny');
   });
@@ -34,7 +39,9 @@ describe('decideMerge', () => {
     const result = decideMerge({
       riskZone: 'red',
       validation: makeValidation('pass'),
-      reviews: [{ reviewerAgent: 'r1', implementationAgent: 'i1', decision: 'approve', comments: '' }],
+      reviews: [
+        { reviewerAgent: 'r1', implementationAgent: 'i1', decision: 'approve', comments: '' },
+      ],
     });
     expect(result.decision).toBe('require_human');
   });
@@ -43,7 +50,9 @@ describe('decideMerge', () => {
     const result = decideMerge({
       riskZone: 'red',
       validation: makeValidation('pass'),
-      reviews: [{ reviewerAgent: 'r1', implementationAgent: 'i1', decision: 'approve', comments: '' }],
+      reviews: [
+        { reviewerAgent: 'r1', implementationAgent: 'i1', decision: 'approve', comments: '' },
+      ],
       humanApproval: { approved: true, by: 'human:founder' },
     });
     expect(result.decision).toBe('merge_queue');
@@ -53,7 +62,14 @@ describe('decideMerge', () => {
     const result = decideMerge({
       riskZone: 'yellow',
       validation: makeValidation('pass'),
-      reviews: [{ reviewerAgent: 'agent1', implementationAgent: 'agent1', decision: 'approve', comments: '' }],
+      reviews: [
+        {
+          reviewerAgent: 'agent1',
+          implementationAgent: 'agent1',
+          decision: 'approve',
+          comments: '',
+        },
+      ],
     });
     expect(result.decision).toBe('wait');
     expect(result.reason).toContain('cannot review own PR');
@@ -63,13 +79,19 @@ describe('decideMerge', () => {
     const result = decideMerge({
       riskZone: 'green',
       validation: makeValidation('pass'),
-      reviews: [{ reviewerAgent: 'r1', implementationAgent: 'i1', decision: 'approve', comments: '' }],
+      reviews: [
+        { reviewerAgent: 'r1', implementationAgent: 'i1', decision: 'approve', comments: '' },
+      ],
     });
     expect(result.decision).toBe('merge_queue');
   });
 
   it('waits for green with no reviews', () => {
-    const result = decideMerge({ riskZone: 'green', validation: makeValidation('pass'), reviews: [] });
+    const result = decideMerge({
+      riskZone: 'green',
+      validation: makeValidation('pass'),
+      reviews: [],
+    });
     // Green zone has requiredAgentReviews: 1, but merge_decider only checks review presence for non-green
     expect(result.decision).toBe('merge_queue');
   });
@@ -78,7 +100,9 @@ describe('decideMerge', () => {
     const result = decideMerge({
       riskZone: 'yellow',
       validation: makeValidation('pass'),
-      reviews: [{ reviewerAgent: 'r1', implementationAgent: 'i1', decision: 'reject', comments: 'bad' }],
+      reviews: [
+        { reviewerAgent: 'r1', implementationAgent: 'i1', decision: 'reject', comments: 'bad' },
+      ],
     });
     expect(result.decision).toBe('wait');
   });

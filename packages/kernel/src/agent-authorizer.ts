@@ -85,7 +85,12 @@ export function authorizeAgentAction(args: {
     diagnostics.push('DENY: no permission snapshot (unknown principal)');
     return {
       decision: 'deny',
-      evidence: denyEvidence('unknown_principal', `No permission snapshot resolved for action "${action}"`, 'unknown', action),
+      evidence: denyEvidence(
+        'unknown_principal',
+        `No permission snapshot resolved for action "${action}"`,
+        'unknown',
+        action,
+      ),
       diagnostics,
     };
   }
@@ -102,17 +107,31 @@ export function authorizeAgentAction(args: {
     diagnostics.push('DENY: black zone — unconditional');
     return {
       decision: 'deny',
-      evidence: denyEvidence('black_zone', `Black zone paths can never be acted on directly by agent "${agentId}"`, agentId, action, { ...baseEvidence, risk_zone: 'black' }),
+      evidence: denyEvidence(
+        'black_zone',
+        `Black zone paths can never be acted on directly by agent "${agentId}"`,
+        agentId,
+        action,
+        { ...baseEvidence, risk_zone: 'black' },
+      ),
       diagnostics,
     };
   }
 
   // 4. Risk ceiling
   if (riskZone && riskRank(riskZone) > riskRank(permissions.max_risk_zone)) {
-    diagnostics.push(`DENY: risk zone "${riskZone}" exceeds max_risk_zone "${permissions.max_risk_zone}"`);
+    diagnostics.push(
+      `DENY: risk zone "${riskZone}" exceeds max_risk_zone "${permissions.max_risk_zone}"`,
+    );
     return {
       decision: 'deny',
-      evidence: denyEvidence('risk_ceiling', `Action requires "${riskZone}" zone but agent "${agentId}" ceiling is "${permissions.max_risk_zone}"`, agentId, action, { ...baseEvidence, risk_zone: riskZone }),
+      evidence: denyEvidence(
+        'risk_ceiling',
+        `Action requires "${riskZone}" zone but agent "${agentId}" ceiling is "${permissions.max_risk_zone}"`,
+        agentId,
+        action,
+        { ...baseEvidence, risk_zone: riskZone },
+      ),
       diagnostics,
     };
   }
@@ -125,7 +144,13 @@ export function authorizeAgentAction(args: {
           diagnostics.push(`DENY: path "${p}" matches deny glob "${denyGlob}"`);
           return {
             decision: 'deny',
-            evidence: denyEvidence('path_denied', `Path "${p}" is denied by pattern "${denyGlob}" for agent "${agentId}"`, agentId, action, { ...baseEvidence, risk_zone: riskZone }),
+            evidence: denyEvidence(
+              'path_denied',
+              `Path "${p}" is denied by pattern "${denyGlob}" for agent "${agentId}"`,
+              agentId,
+              action,
+              { ...baseEvidence, risk_zone: riskZone },
+            ),
             diagnostics,
           };
         }
@@ -139,7 +164,13 @@ export function authorizeAgentAction(args: {
         diagnostics.push(`DENY: path "${p}" not in allow list`);
         return {
           decision: 'deny',
-          evidence: denyEvidence('path_not_allowed', `Path "${p}" is outside allowed paths for agent "${agentId}"`, agentId, action, { ...baseEvidence, risk_zone: riskZone }),
+          evidence: denyEvidence(
+            'path_not_allowed',
+            `Path "${p}" is outside allowed paths for agent "${agentId}"`,
+            agentId,
+            action,
+            { ...baseEvidence, risk_zone: riskZone },
+          ),
           diagnostics,
         };
       }
@@ -151,7 +182,13 @@ export function authorizeAgentAction(args: {
     diagnostics.push('DENY: agents can never submit GitHub APPROVE reviews');
     return {
       decision: 'deny',
-      evidence: denyEvidence('github_approve_forbidden', `Agent "${agentId}" cannot approve PRs — agents never hold approval authority`, agentId, action, baseEvidence),
+      evidence: denyEvidence(
+        'github_approve_forbidden',
+        `Agent "${agentId}" cannot approve PRs — agents never hold approval authority`,
+        agentId,
+        action,
+        baseEvidence,
+      ),
       diagnostics,
     };
   }
@@ -161,7 +198,13 @@ export function authorizeAgentAction(args: {
     diagnostics.push('DENY: agent cannot merge');
     return {
       decision: 'deny',
-      evidence: denyEvidence('github_merge_forbidden', `Agent "${agentId}" does not have merge permission`, agentId, action, baseEvidence),
+      evidence: denyEvidence(
+        'github_merge_forbidden',
+        `Agent "${agentId}" does not have merge permission`,
+        agentId,
+        action,
+        baseEvidence,
+      ),
       diagnostics,
     };
   }
@@ -172,7 +215,13 @@ export function authorizeAgentAction(args: {
     diagnostics.push(`DENY: action "${action}" is explicitly denied`);
     return {
       decision: 'deny',
-      evidence: denyEvidence('action_denied', `Action "${action}" is denied for agent "${agentId}"`, agentId, action, { ...baseEvidence, risk_zone: riskZone }),
+      evidence: denyEvidence(
+        'action_denied',
+        `Action "${action}" is denied for agent "${agentId}"`,
+        agentId,
+        action,
+        { ...baseEvidence, risk_zone: riskZone },
+      ),
       diagnostics,
     };
   }
@@ -180,7 +229,14 @@ export function authorizeAgentAction(args: {
     diagnostics.push(`ASK: action "${action}" requires human confirmation`);
     return {
       decision: 'ask',
-      evidence: { rule: 'action_ask', reason: `Action "${action}" requires confirmation for agent "${agentId}"`, agent_id: agentId, action, ...baseEvidence, risk_zone: riskZone },
+      evidence: {
+        rule: 'action_ask',
+        reason: `Action "${action}" requires confirmation for agent "${agentId}"`,
+        agent_id: agentId,
+        action,
+        ...baseEvidence,
+        risk_zone: riskZone,
+      },
       prompt_message: `Agent "${agentId}" requests permission to execute "${action}". Allow?`,
       diagnostics,
     };
@@ -189,7 +245,14 @@ export function authorizeAgentAction(args: {
     diagnostics.push(`ALLOW: action "${action}" is explicitly allowed`);
     return {
       decision: 'allow',
-      evidence: { rule: 'action_allowed', reason: `Action "${action}" is allowed for agent "${agentId}"`, agent_id: agentId, action, ...baseEvidence, risk_zone: riskZone },
+      evidence: {
+        rule: 'action_allowed',
+        reason: `Action "${action}" is allowed for agent "${agentId}"`,
+        agent_id: agentId,
+        action,
+        ...baseEvidence,
+        risk_zone: riskZone,
+      },
       diagnostics,
     };
   }
@@ -198,7 +261,13 @@ export function authorizeAgentAction(args: {
   diagnostics.push(`DENY: unknown action "${action}"`);
   return {
     decision: 'deny',
-    evidence: denyEvidence('unknown_action', `Action "${action}" is not in the permissions list for agent "${agentId}"`, agentId, action, { ...baseEvidence, risk_zone: riskZone }),
+    evidence: denyEvidence(
+      'unknown_action',
+      `Action "${action}" is not in the permissions list for agent "${agentId}"`,
+      agentId,
+      action,
+      { ...baseEvidence, risk_zone: riskZone },
+    ),
     diagnostics,
   };
 }

@@ -6,9 +6,20 @@ export type { MergeInput, ReviewResult as MergeReviewResult } from './core/merge
 
 // Types
 export type {
-  EvolutionTask, EvolutionExperiment, SelfValidationResult,
-  FitnessScore, EvolutionStatus, EvolutionSource, ProblemStatement,
-  Hypothesis, EvolutionRisk, EvolutionConstraints, ValidationPlan,
-  OutputContract, RollbackPlan, CheckResult, ProtectedPathResult,
+  EvolutionTask,
+  EvolutionExperiment,
+  SelfValidationResult,
+  FitnessScore,
+  EvolutionStatus,
+  EvolutionSource,
+  ProblemStatement,
+  Hypothesis,
+  EvolutionRisk,
+  EvolutionConstraints,
+  ValidationPlan,
+  OutputContract,
+  RollbackPlan,
+  CheckResult,
+  ProtectedPathResult,
   MergeDecision,
 } from './types.js';
