@@ -162,6 +162,11 @@ restart; the pepper **value** is a CTRL-016 secret and only the non-secret `pepp
 returns bytes directly to an attempt-scoped buffer. Secret values never enter Store, logs, metrics, audit or API
 responses.
 
+Every process also requires `NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST=sha256:<64 lowercase hex>`. The deployment
+system must supply the verified OCI image digest; there is no application default. Configuration rejects a missing,
+uppercase or malformed value before database or network initialization. The value is process metadata, is not stored
+on notification rows, and is returned on every successful intake `202`, including idempotent replay.
+
 ## Failure Model
 
 | Failure | Behavior |

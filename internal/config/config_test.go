@@ -12,6 +12,7 @@ import (
 // across tests.
 func requiredEnvBase(t *testing.T) {
 	t.Helper()
+	t.Setenv("NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST", "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
 	t.Setenv("DATABASE_URL", "postgres://u:p@db:5432/rc_wsman?sslmode=disable")
 	t.Setenv("API_KEY_PEPPER_ACTIVE", `{"id":"v1","value":"active-secret"}`)
 	t.Setenv("ENV_CREDENTIAL_ALLOWLIST", "VENDOR_A_TOKEN,VENDOR_B_TOKEN")
@@ -19,6 +20,29 @@ func requiredEnvBase(t *testing.T) {
 	t.Setenv("METRICS_COLLECTION_TIMEOUT", "")
 	t.Setenv("RECOVERY_INTERVAL", "")
 	t.Setenv("RECOVERY_BATCH_SIZE", "")
+}
+
+func TestLoad_RequiresExactDeploymentDigest(t *testing.T) {
+	for name, value := range map[string]string{
+		"missing":          "",
+		"uppercase hex":    "sha256:0123456789ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef",
+		"uppercase prefix": "SHA256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		"short":            "sha256:0123456789abcdef",
+		"wrong algorithm":  "sha512:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		"whitespace":       "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcde ",
+	} {
+		t.Run(name, func(t *testing.T) {
+			requiredEnvBase(t)
+			t.Setenv("NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST", value)
+			_, err := Load()
+			if err == nil || !strings.Contains(err.Error(), "NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST") {
+				t.Fatalf("value accepted or wrong error: %v", err)
+			}
+			if value != "" && strings.Contains(err.Error(), value) {
+				t.Fatal("configuration error reflected the supplied digest")
+			}
+		})
+	}
 }
 
 func TestLoad_MissingDatabaseURL(t *testing.T) {
@@ -81,6 +105,9 @@ func TestLoad_Valid(t *testing.T) {
 	}
 	if cfg.DatabaseURL == "" {
 		t.Fatal("DATABASE_URL not set")
+	}
+	if cfg.DeploymentDigest != "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" {
+		t.Fatalf("deployment digest = %q", cfg.DeploymentDigest)
 	}
 	if cfg.ActivePepper.ID != "v1" {
 		t.Fatalf("active pepper id = %s, want v1", cfg.ActivePepper.ID)

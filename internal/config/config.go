@@ -32,6 +32,7 @@ const (
 )
 
 var envNamePattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]{0,127}$`)
+var deploymentDigestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 
 // Pepper is one generation of the API-key HMAC pepper.
 // String() returns only the non-secret ID label.
@@ -82,6 +83,7 @@ func (ps PepperSet) Has(id string) bool {
 // Pepper values live here only for the lifetime of the process.
 type Config struct {
 	DatabaseURL              string
+	DeploymentDigest         string
 	HTTPBind                 string
 	MetricsPath              string
 	WorkerInterval           time.Duration
@@ -118,6 +120,11 @@ func (c *Config) Peppers() PepperSet {
 // Missing required values or security-invariant violations return an error so
 // the caller can fail closed at startup.
 func Load() (*Config, error) {
+	deploymentDigest := os.Getenv("NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST")
+	if !deploymentDigestPattern.MatchString(deploymentDigest) {
+		return nil, fmt.Errorf("NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST must match sha256:<64 lowercase hex>")
+	}
+
 	dbURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 	if dbURL == "" {
 		return nil, fmt.Errorf("missing required env DATABASE_URL")
@@ -156,6 +163,7 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		DatabaseURL:            dbURL,
+		DeploymentDigest:       deploymentDigest,
 		HTTPBind:               stringOrDefault(strings.TrimSpace(os.Getenv("HTTP_BIND")), defaultHTTPBind),
 		MetricsPath:            stringOrDefault(strings.TrimSpace(os.Getenv("METRICS_PATH")), defaultMetricsPath),
 		MigrationSource:        stringOrDefault(strings.TrimSpace(os.Getenv("MIGRATION_SOURCE")), defaultMigrationSource),

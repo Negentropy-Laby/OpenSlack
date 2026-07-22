@@ -30,6 +30,7 @@ Trust boundaries:
 | payload/header injection | byte/size bounds, closed Header allowlist, CR/LF controls | Vendor/Delivery CDD |
 | audit tampering | append-only records, restricted DB role, OCC/transactional writes | ADR-0001 |
 | denial of service | request/body/list/batch bounds, per-principal rate limits, hard HTTP timeout | CDD configs |
+| deployment identity spoof/drift | require an exact deployment-supplied OCI digest at startup; successful intake overwrites any caller header with the process value | ADR-0005 / OpenAPI |
 
 ## Safe Outbound Transport
 
@@ -40,13 +41,18 @@ Trust boundaries:
 - Use a per-attempt transport or a pool whose key includes hostname+validated IP+policy generation; MVP chooses
   per-attempt, keep-alive-disabled transport for the simplest rebinding proof.
 - Reject redirects, implicit proxies, credentials in URLs, userinfo, fragments and non-approved ports.
-- Read status and bounded Retry-After only; never read or persist the response body.
+- `http_status_v1` reads no response body; `json_ack_v1` reads a bounded acknowledgement body and never persists it.
 
 ## Secret Handling
 
 Registry permits only allowlisted `env://NAME` references. The startup configuration maps approved names to process
 environment entries. Delivery resolves after snapshot authorization, keeps bytes in attempt scope, clears references
 after request construction and never returns them. Missing or invalid secrets fail before network access.
+
+The deployment digest is non-secret evidence metadata, but remains deployment-authoritative: the service never derives
+or accepts it from request input. Missing, uppercase or malformed values fail during configuration loading before
+database/network initialization. It is emitted only as the successful intake response header and is never written to
+notification payload, Store rows, logs or metrics.
 
 ## Residual Risks
 
@@ -56,4 +62,3 @@ after request construction and never returns them. Missing or invalid secrets fa
 - Compromised deployment/database administrators remain privileged.
 
 Each residual is accepted for MVP and has an evolution trigger; none is represented as eliminated.
-

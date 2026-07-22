@@ -24,7 +24,7 @@ func (f fixedReliability) Collect(context.Context) (reliability.Snapshot, error)
 
 func TestHealthLive(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := NewServer(":0", "/metrics", nil, logger)
+	srv := NewServer(":0", "/metrics", testDeploymentDigest, nil, logger)
 
 	req := httptest.NewRequest(http.MethodGet, "/health/live", nil)
 	rec := httptest.NewRecorder()
@@ -40,7 +40,7 @@ func TestHealthLive(t *testing.T) {
 
 func TestHealthReady(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := NewServer(":0", "/metrics", nil, logger)
+	srv := NewServer(":0", "/metrics", testDeploymentDigest, nil, logger)
 	srv.SetReady(func() bool { return false })
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health/ready", nil))
@@ -57,7 +57,7 @@ func TestHealthReady(t *testing.T) {
 
 func TestMetrics_NotReadyReturns503(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := NewServer(":0", "/metrics", nil, logger)
+	srv := NewServer(":0", "/metrics", testDeploymentDigest, nil, logger)
 	srv.SetReady(func() bool { return false })
 
 	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
@@ -71,7 +71,7 @@ func TestMetrics_NotReadyReturns503(t *testing.T) {
 
 func TestMetrics_ReadyReturns200(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := NewServer(":0", "/metrics", nil, logger)
+	srv := NewServer(":0", "/metrics", testDeploymentDigest, nil, logger)
 	srv.SetReady(func() bool { return true })
 	srv.SetDeps(Deps{Reliability: fixedReliability{snapshot: reliability.Snapshot{PendingCount: 1, ObservedAt: time.Now()}}})
 
@@ -92,7 +92,7 @@ func TestMetrics_ReadyReturns200(t *testing.T) {
 
 func TestMetrics_CollectorFailureReturns503WithoutBusinessSamples(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := NewServer(":0", "/metrics", nil, logger)
+	srv := NewServer(":0", "/metrics", testDeploymentDigest, nil, logger)
 	srv.SetReady(func() bool { return true })
 	srv.SetDeps(Deps{Reliability: fixedReliability{err: context.DeadlineExceeded}})
 

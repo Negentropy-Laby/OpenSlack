@@ -37,6 +37,9 @@ paths:
       responses:
         "202":
           description: Accepted or idempotent replay
+          headers:
+            X-Notification-Service-Deployment-Digest:
+              $ref: "#/components/headers/NotificationServiceDeploymentDigest"
           content:
             application/json:
               schema:
@@ -431,6 +434,14 @@ components:
       type: http
       scheme: bearer
       bearerFormat: opaque-api-key
+
+  headers:
+    NotificationServiceDeploymentDigest:
+      description: Current verified OCI deployment digest for this service process; identical replay receipts return the current deployment value
+      required: true
+      schema:
+        type: string
+        pattern: "^sha256:[0-9a-f]{64}$"
 
   parameters:
     IdempotencyKey:
