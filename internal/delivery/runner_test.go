@@ -151,7 +151,7 @@ func validSnapshot() vendorregistry.DeliveryConfigSnapshot {
 		VendorID: "vendor-a", ConfigVersion: 1, CanonicalURL: "https://vendor.example/hook", Method: "POST", Hostname: "vendor.example", Port: 443,
 		TransportKind:              "https_public",
 		OutboundIdempotencyMapping: vendorregistry.OutboundIdempotencyMapping{Mode: "none"}, EndpointPolicy: vendorregistry.EndpointPolicy{MaxRequestBodyBytes: 4096},
-		AuthStrategy: "bearer", CredentialRef: vendorregistry.CredentialRef{Scheme: "env", OpaqueHandle: "TOKEN"},
+		AuthStrategy: "bearer", CredentialRef: &vendorregistry.CredentialRef{Scheme: "env", OpaqueHandle: "TOKEN"},
 	}
 }
 

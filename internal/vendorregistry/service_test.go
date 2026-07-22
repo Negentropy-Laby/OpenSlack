@@ -275,6 +275,26 @@ func TestService_Register_Success(t *testing.T) {
 	if len(repo.auditEvents) != 1 {
 		t.Fatalf("expected 1 audit event, got %d", len(repo.auditEvents))
 	}
+	version := repo.versions["vendor-a"][1]
+	if version.ConfigSchemaVersion != 1 || version.ResponsePolicy != ResponsePolicyHTTPStatusV1 {
+		t.Fatalf("management service emitted schema=%d response_policy=%q, want schema v1 http_status_v1", version.ConfigSchemaVersion, version.ResponsePolicy)
+	}
+}
+
+func TestServiceSnapshotSchemasIncludeResponsePolicy(t *testing.T) {
+	version := EndpointVersion{
+		VendorID: "vendor-a", ConfigVersion: 1, ConfigSchemaVersion: 1,
+		AuthStrategy: "bearer", ResponsePolicy: ResponsePolicyHTTPStatusV1,
+		CredentialRef: &CredentialRef{Scheme: "env", OpaqueHandle: "TOKEN"},
+	}
+	delivery := versionToDeliverySnapshot(version)
+	if delivery.ProjectionSchema != "delivery-v2" || delivery.ResponsePolicy != ResponsePolicyHTTPStatusV1 {
+		t.Fatalf("delivery snapshot=%+v", delivery)
+	}
+	historical := versionToHistoricalSnapshot(version)
+	if historical.ProjectionSchema != "historical-v2" || historical.ResponsePolicy != ResponsePolicyHTTPStatusV1 {
+		t.Fatalf("historical snapshot=%+v", historical)
+	}
 }
 
 func TestService_Register_ForbiddenOwningScope(t *testing.T) {
