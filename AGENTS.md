@@ -229,18 +229,18 @@ Do not add a new top-level command unless it belongs to a clearly named product 
 
 Keep the docs simple and non-overlapping.
 
-| File | Purpose |
-|------|---------|
-| `README.md` | Short product overview, quick start, module summary, links. No dynamic metrics. |
+| File                      | Purpose                                                                                                                   |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `README.md`               | Short product overview, quick start, module summary, links. No dynamic metrics.                                           |
 | `AGENTS.md` / `CLAUDE.md` | Identical canonical instructions for all agents and contributors. Either file may be read; they contain the same content. |
-| `docs/README.md` | User-oriented documentation map for the docs directory. |
-| `.openslack/modules.yaml` | Source of truth for product modules, phases, CLI groups, packages, and test counts. |
-| `docs/status/current.md` | Generated status document. Do not hand-edit except through `openslack status generate`. |
-| `docs/user-guide.md` | Complete CLI reference. |
-| `docs/product/*.md` | Product/module specifications and acceptance docs. |
-| `docs/developer/*.md` | Implementation details, setup, runbooks, technical debt. |
-| `docs/security/*.md` | Security and guardrail documentation. |
-| `docs/archive/*.md` | Historical specs only. Not current operating guidance. |
+| `docs/README.md`          | User-oriented documentation map for the docs directory.                                                                   |
+| `.openslack/modules.yaml` | Source of truth for product modules, phases, CLI groups, packages, and test counts.                                       |
+| `docs/status/current.md`  | Generated status document. Do not hand-edit except through `openslack status generate`.                                   |
+| `docs/user-guide.md`      | Complete CLI reference.                                                                                                   |
+| `docs/product/*.md`       | Product/module specifications and acceptance docs.                                                                        |
+| `docs/developer/*.md`     | Implementation details, setup, runbooks, technical debt.                                                                  |
+| `docs/security/*.md`      | Security and guardrail documentation.                                                                                     |
+| `docs/archive/*.md`       | Historical specs only. Not current operating guidance.                                                                    |
 
 When module status, test counts, or CLI ownership changes:
 
@@ -407,6 +407,7 @@ powershell -ExecutionPolicy Bypass -File scripts\bot-gh.ps1 pr edit 117 --body "
 - `OPENSLACK_GITHUB_APP_PRIVATE_KEY` environment variable must be set.
 
 The wrapper:
+
 1. Generates a GitHub App installation token via `scripts/bot-gh-token.js`
 2. Removes `GITHUB_TOKEN` from the environment to prevent silent fallback to a human PAT
 3. Sets `GH_TOKEN` so the `gh` CLI authenticates as the bot
@@ -457,6 +458,7 @@ After completing review and confirming the PR is ready, the agent must:
 ### Forbidden patterns
 
 Agents must never:
+
 - Post a review comment saying "proceed to merge" without also stating that human approval is required.
 - Assume the user knows approval is needed.
 - Wait for the user to ask "what's next?" instead of proactively stating the gate.
@@ -522,15 +524,15 @@ openslack self classify-pr --paths "<paths>"
 
 ## Package Boundaries
 
-| Package | Boundary |
-|---------|----------|
-| `@openslack/kernel` | Pure policy: zones, merge decision, PR classification. No workspace/runtime imports. |
-| `@openslack/workspace` | Workspace schemas, validation, indexing, module registry. |
-| `@openslack/core` | Claim broker and shared primitives. |
-| `@openslack/runtime` | Operational workflows: self ops, golden evals, agent tick, worktree, task sync. |
-| `@openslack/github` | GitHub API access: issues, labels, claims, PRs, auth, repair, lifecycle. |
-| `@openslack/pr` | PRMS: PR fetch/classify/report/doctor/comment/watch/merge stewardship. |
-| `apps/cli` | User command surface. It should call package functions, not contain business logic. |
+| Package                | Boundary                                                                             |
+| ---------------------- | ------------------------------------------------------------------------------------ |
+| `@openslack/kernel`    | Pure policy: zones, merge decision, PR classification. No workspace/runtime imports. |
+| `@openslack/workspace` | Workspace schemas, validation, indexing, module registry.                            |
+| `@openslack/core`      | Claim broker and shared primitives.                                                  |
+| `@openslack/runtime`   | Operational workflows: self ops, golden evals, agent tick, worktree, task sync.      |
+| `@openslack/github`    | GitHub API access: issues, labels, claims, PRs, auth, repair, lifecycle.             |
+| `@openslack/pr`        | PRMS: PR fetch/classify/report/doctor/comment/watch/merge stewardship.               |
+| `apps/cli`             | User command surface. It should call package functions, not contain business logic.  |
 
 Do not reintroduce compatibility shims or old package names.
 
