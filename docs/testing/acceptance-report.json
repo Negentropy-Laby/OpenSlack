@@ -2,14 +2,15 @@
   "schema_version": 1,
   "generated_at": "2026-07-22",
   "stage": "Implementation",
-  "status": "APPROVED_SUBMISSION_READY",
+  "status": "G1_SERVICE_LOCAL_EVIDENCE_PASS",
   "reviewed_workspace_manifest": {
     "path": "docs/testing/workspace-manifest.sha256",
-    "entries": 161
+    "entries": 185
   },
   "canonical_ac": {"expected": 290, "mapped": 290},
   "boundary_mappings": {"expected": 4, "mapped": 4},
   "final_cross_review": {
+    "scope": "historical B1-B6 submission-ready baseline",
     "verdict": "APPROVED",
     "reviewed_manifest_sha256": "04dba3bcb23d1684397c0c45d2b5afb896fb6dda10a45ec38bb884e82a1b8cca",
     "blocking_findings": 0,
@@ -34,8 +35,30 @@
     "capacity_baseline": "PASS",
     "marker_scan": "PASS"
   },
+  "integration_g1": {
+    "gate": "G1-SERVICE",
+    "local_status": "PASS",
+    "database_schema": "8:false",
+    "migration_matrix": "clean install, 6->7->8, 000007/000008 fail-closed down guards",
+    "vendor_contracts": "schema v1 legacy plus explicit v2 bearer/none union",
+    "slack_ack": "PASS",
+    "webhook_exact_bytes_and_dual_ingress_headers": "PASS",
+    "caller_auditor_permission_isolation": "PASS",
+    "bootstrap_concurrency_and_secret_file": "PASS",
+    "postgres_integration": "PASS",
+    "compose_health": "PASS",
+    "fault_drill": "PASS",
+    "encrypted_pitr": "PASS",
+    "marker_scan": "PASS",
+    "go_module_integrity": "PASS",
+    "license_scan": "PASS",
+    "runtime_traffic_change": false,
+    "canary_identities_created": false,
+    "ib3_started": false,
+    "remote_ci": "recorded in the RC-IB1-04 gate receipt"
+  },
   "external_evidence": {
-    "github_actions_run": "NOT_RUN",
+    "github_actions_run": "RECORDED_IN_G1_GATE_RECEIPT",
     "production_deployment": "NOT_IN_SCOPE",
     "rpo_rto_claim": "NONE"
   }

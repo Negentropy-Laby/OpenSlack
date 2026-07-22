@@ -173,6 +173,17 @@ IB1 will add `config_schema_version: 2` while preserving v1 defaults:
 - outbound idempotency source: `notification_id` or `ingress_idempotency_key`;
 - one to four unique, lower-case, allowlisted header names.
 
+The vendor-admin wire contract is a closed union. Its v1 arm retains the pre-IB1 request shape byte-for-byte and
+continues to mean schema 1 + `http_status_v1`; it does not accept v2 discriminator fields. The v2 arm requires both
+`config_schema_version: 2` and an explicit `response_policy`. Registration accepts either arm. `update_version`
+accepts same-version replacement or v1-to-v2 upgrade but rejects v2-to-v1 downgrade. Credential rotation is valid
+only for bearer endpoints and changes only the credential reference while preserving the complete current endpoint,
+schema, response policy and idempotency mapping.
+
+Schema v2 `auth_strategy:none` forbids both `credential_ref` and `credential_field` transport headers. Its historical
+and list projections omit `credential_descriptor`. Schema v2 never permits `body_field`; it supports only `none` or
+one-to-four-header mapping sourced from `notification_id` or `ingress_idempotency_key`.
+
 Slack uses bearer auth, `json_ack_v1` and no idempotency mapping. On 2xx, `json_ack_v1` reads no more than 16 KiB:
 top-level `ok: true` succeeds; `ok: false` with `fatal_error`, `internal_error`, `ratelimited`, `request_timeout` or
 `service_unavailable` retries; other codes are permanent vendor rejection; malformed or oversized acknowledgements

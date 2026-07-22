@@ -5,7 +5,8 @@
 
 ## 最终结果
 
-2026-07-22 07:46:31 UTC 执行最终版 `scripts/acceptance/faults.sh`，结果 `PASS`：
+2026-07-22 17:54:51 UTC 在 migration `8:false` 的 clean Compose 环境执行
+`scripts/acceptance/faults.sh`，结果 `PASS`：
 
 - vendor stub 收到请求后，实际 Runner 进程在 Store 结果提交前以 exit 88 终止；原通知仍存在。
 - 两个独立 repository/recovery 实例竞争 advisory lock，恰有一个实例恢复 lease。
@@ -20,11 +21,11 @@
 机器摘要：
 
 ```text
-FAULT_DRILL_PASS started_at=2026-07-22T07:46:31Z project=rcwsman_b6_acceptance crash_after_send=runner_process_exit_88 duplicate=allowed recovery_instances=2 db_down_readiness=503 db_outage_notification=pending|0|0 db_recovered_readiness=200 db_resumed_notification=dead|0|vendor_unavailable|claimed,outcome shutdown_exit=0
+FAULT_DRILL_PASS started_at=2026-07-22T17:54:51Z project=rcwsman_b6_acceptance crash_after_send=runner_process_exit_88 duplicate=allowed recovery_instances=2 db_down_readiness=503 db_outage_notification=pending|0|0 db_recovered_readiness=200 db_resumed_notification=dead|0|vendor_unavailable|claimed,outcome shutdown_exit=0
 ```
 
-本次最终执行直接通过；过程中 readiness 轮询在 app 刚重启时收到一次空响应，脚本继续按有界轮询
-等待，并只在 readiness 明确返回 200 后判定恢复成功。
+本次 schema 8 最终执行直接通过，并在演练后再次确认数据库 migration 为 `8:false`、app readiness
+为 `ready`。
 
 ## 修正回合记录
 

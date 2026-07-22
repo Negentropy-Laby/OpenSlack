@@ -60,3 +60,25 @@ func TestConfigGenerationPublicationIsAtomicAndPreflightsActiveEndpoints(t *test
 		t.Fatalf("valid generation not published: generation=%d err=%v", service.ConfigGeneration(), err)
 	}
 }
+
+func TestEndpointVersionInputPreservesExplicitSchemaV2WithoutCredential(t *testing.T) {
+	var input EndpointConfigInput
+	if err := decodeStrict(validV2NoneConfig(), &input); err != nil {
+		t.Fatal(err)
+	}
+	version, err := ValidateEndpointConfig(DefaultConfig(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	roundTrip := endpointVersionInput(version)
+	if roundTrip.ConfigSchemaVersion != ConfigSchemaVersionV2 || roundTrip.ResponsePolicy != ResponsePolicyHTTPStatusV1 {
+		t.Fatalf("schema v2 discriminator drifted: %#v", roundTrip)
+	}
+	if roundTrip.AuthStrategy != "none" || roundTrip.CredentialRef != nil {
+		t.Fatalf("auth none gained a credential reference: %#v", roundTrip)
+	}
+	if _, err := ValidateEndpointConfig(DefaultConfig(), roundTrip); err != nil {
+		t.Fatalf("schema v2 endpoint failed config-generation preflight: %v", err)
+	}
+}

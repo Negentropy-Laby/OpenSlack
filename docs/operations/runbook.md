@@ -128,6 +128,18 @@ capability、pepper ID 与 verifier 均匹配时，保留该文件并把 bootstr
 - Confirmed rollback and commit-outcome-unknown are diagnosed differently.
 - Do not start an empty replacement database or write to local disk as a fallback.
 
+## OpenSlack vendor configuration v2
+
+Parameter-only registration templates live in [`../../deploy/vendor-examples/`](../../deploy/vendor-examples/).
+Render them outside the repository with deployment-owned values, validate the resulting admin command against the
+OpenAPI document, and register the vendor as `draft`. Do not activate it during IB1. If a rendered fixture is no longer
+needed, disable it through the ordinary governed admin command; do not delete endpoint history.
+
+Before activation in a later gate, verify that Slack is schema v2 + `json_ack_v1` + bearer + mapping `none`, and that
+Webhook is schema v2 + `http_status_v1` + `auth:none` + the two ingress-key headers. The list/history response must show
+`response_policy`; Webhook must omit `credential_descriptor`. Reject and investigate any v2-to-v1 update, auth-none
+credential descriptor, body-field mapping, or rotation request against an auth-none version.
+
 隔离的 crash-after-send、双 recovery 竞争、数据库停止/恢复和有界关闭演练命令为：
 
 ```bash

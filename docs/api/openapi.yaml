@@ -1247,7 +1247,7 @@ components:
           type: string
           pattern: "^[A-Za-z0-9_.-]{1,128}$"
 
-    IdempotencyMapping:
+    IdempotencyMappingV1:
       oneOf:
         - type: object
           additionalProperties: false
@@ -1269,7 +1269,35 @@ components:
               type: string
               pattern: "^[A-Za-z0-9_.-]{1,128}$"
 
+    IdempotencyMappingV2:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [mode]
+          properties:
+            mode: {const: none}
+        - type: object
+          additionalProperties: false
+          required: [mode, source, header_names]
+          properties:
+            mode: {const: headers}
+            source: {enum: [notification_id, ingress_idempotency_key]}
+            header_names:
+              type: array
+              minItems: 1
+              maxItems: 4
+              uniqueItems: true
+              items:
+                type: string
+                pattern: "^[!#$%&'*+.^_`|~0-9a-z-]{1,128}$"
+
     EndpointConfig:
+      oneOf:
+        - $ref: "#/components/schemas/EndpointConfigV1"
+        - $ref: "#/components/schemas/EndpointConfigV2Bearer"
+        - $ref: "#/components/schemas/EndpointConfigV2None"
+
+    EndpointConfigV1:
       type: object
       additionalProperties: false
       required:
@@ -1290,7 +1318,7 @@ components:
           maxItems: 32
           items: {$ref: "#/components/schemas/HeaderRule"}
         outbound_idempotency_mapping:
-          $ref: "#/components/schemas/IdempotencyMapping"
+          $ref: "#/components/schemas/IdempotencyMappingV1"
         endpoint_policy:
           $ref: "#/components/schemas/EndpointPolicy"
         auth_strategy:
@@ -1298,7 +1326,65 @@ components:
         credential_ref:
           $ref: "#/components/schemas/CredentialRefInput"
 
+    EndpointConfigV2Bearer:
+      type: object
+      additionalProperties: false
+      required:
+        - config_schema_version
+        - response_policy
+        - endpoint_target
+        - method
+        - transport_auth_headers
+        - outbound_idempotency_mapping
+        - endpoint_policy
+        - auth_strategy
+        - credential_ref
+      properties:
+        config_schema_version: {const: 2}
+        response_policy: {enum: [http_status_v1, json_ack_v1]}
+        endpoint_target: {$ref: "#/components/schemas/EndpointTargetInput"}
+        method: {enum: [POST, PUT, PATCH]}
+        transport_auth_headers:
+          type: array
+          maxItems: 32
+          items: {$ref: "#/components/schemas/HeaderRule"}
+        outbound_idempotency_mapping: {$ref: "#/components/schemas/IdempotencyMappingV2"}
+        endpoint_policy: {$ref: "#/components/schemas/EndpointPolicy"}
+        auth_strategy: {const: bearer}
+        credential_ref: {$ref: "#/components/schemas/CredentialRefInput"}
+
+    EndpointConfigV2None:
+      type: object
+      additionalProperties: false
+      required:
+        - config_schema_version
+        - response_policy
+        - endpoint_target
+        - method
+        - transport_auth_headers
+        - outbound_idempotency_mapping
+        - endpoint_policy
+        - auth_strategy
+      properties:
+        config_schema_version: {const: 2}
+        response_policy: {enum: [http_status_v1, json_ack_v1]}
+        endpoint_target: {$ref: "#/components/schemas/EndpointTargetInput"}
+        method: {enum: [POST, PUT, PATCH]}
+        transport_auth_headers:
+          type: array
+          maxItems: 32
+          items: {$ref: "#/components/schemas/LiteralHeaderRule"}
+        outbound_idempotency_mapping: {$ref: "#/components/schemas/IdempotencyMappingV2"}
+        endpoint_policy: {$ref: "#/components/schemas/EndpointPolicy"}
+        auth_strategy: {const: none}
+
     ReplacementEndpointPolicy:
+      oneOf:
+        - $ref: "#/components/schemas/ReplacementEndpointPolicyV1"
+        - $ref: "#/components/schemas/ReplacementEndpointPolicyV2Bearer"
+        - $ref: "#/components/schemas/ReplacementEndpointPolicyV2None"
+
+    ReplacementEndpointPolicyV1:
       type: object
       additionalProperties: false
       required:
@@ -1318,11 +1404,61 @@ components:
           maxItems: 32
           items: {$ref: "#/components/schemas/HeaderRule"}
         outbound_idempotency_mapping:
-          $ref: "#/components/schemas/IdempotencyMapping"
+          $ref: "#/components/schemas/IdempotencyMappingV1"
         endpoint_policy:
           $ref: "#/components/schemas/EndpointPolicy"
         auth_strategy:
           enum: [bearer]
+
+    ReplacementEndpointPolicyV2Bearer:
+      type: object
+      additionalProperties: false
+      required:
+        - config_schema_version
+        - response_policy
+        - endpoint_target
+        - method
+        - transport_auth_headers
+        - outbound_idempotency_mapping
+        - endpoint_policy
+        - auth_strategy
+      properties:
+        config_schema_version: {const: 2}
+        response_policy: {enum: [http_status_v1, json_ack_v1]}
+        endpoint_target: {$ref: "#/components/schemas/EndpointTargetInput"}
+        method: {enum: [POST, PUT, PATCH]}
+        transport_auth_headers:
+          type: array
+          maxItems: 32
+          items: {$ref: "#/components/schemas/HeaderRule"}
+        outbound_idempotency_mapping: {$ref: "#/components/schemas/IdempotencyMappingV2"}
+        endpoint_policy: {$ref: "#/components/schemas/EndpointPolicy"}
+        auth_strategy: {const: bearer}
+
+    ReplacementEndpointPolicyV2None:
+      type: object
+      additionalProperties: false
+      required:
+        - config_schema_version
+        - response_policy
+        - endpoint_target
+        - method
+        - transport_auth_headers
+        - outbound_idempotency_mapping
+        - endpoint_policy
+        - auth_strategy
+      properties:
+        config_schema_version: {const: 2}
+        response_policy: {enum: [http_status_v1, json_ack_v1]}
+        endpoint_target: {$ref: "#/components/schemas/EndpointTargetInput"}
+        method: {enum: [POST, PUT, PATCH]}
+        transport_auth_headers:
+          type: array
+          maxItems: 32
+          items: {$ref: "#/components/schemas/LiteralHeaderRule"}
+        outbound_idempotency_mapping: {$ref: "#/components/schemas/IdempotencyMappingV2"}
+        endpoint_policy: {$ref: "#/components/schemas/EndpointPolicy"}
+        auth_strategy: {const: none}
 
     EndpointTargetInput:
       type: object
@@ -1579,7 +1715,7 @@ components:
         - method
         - transport_kind
         - auth_strategy
-        - credential_descriptor
+        - response_policy
         - created_at
         - created_by_actor
       properties:
@@ -1589,10 +1725,23 @@ components:
         canonical_url: {type: string, format: uri, maxLength: 2048}
         method: {enum: [POST, PUT, PATCH]}
         transport_kind: {enum: [https_public, https_private]}
-        auth_strategy: {enum: [bearer]}
+        auth_strategy: {enum: [bearer, none]}
+        response_policy: {enum: [http_status_v1, json_ack_v1]}
         credential_descriptor: {$ref: "#/components/schemas/CredentialDescriptor"}
         created_at: {type: string, format: date-time}
         created_by_actor: {type: string, minLength: 1, maxLength: 128}
+      allOf:
+        - if:
+            properties:
+              auth_strategy: {const: bearer}
+          then:
+            required: [credential_descriptor]
+        - if:
+            properties:
+              auth_strategy: {const: none}
+          then:
+            not:
+              required: [credential_descriptor]
 
     EndpointVersionPage:
       type: object

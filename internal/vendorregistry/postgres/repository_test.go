@@ -281,11 +281,11 @@ func TestPostgresRepository_ReadsSchemaV2NoneAuthWithNullCredential(t *testing.T
 	if !found {
 		t.Fatalf("active endpoint %s not returned", vendorID)
 	}
-	page, _, err := repo.ListEndpointVersions(ctx, vendorID, "", 10)
-	if err != nil || len(page.Items) != 1 {
-		t.Fatalf("list endpoint versions=%+v err=%v", page, err)
+	page, snapshotCap, err := repo.ListEndpointVersions(ctx, vendorID, "", 10)
+	if err != nil || snapshotCap != 1 || len(page.Items) != 1 {
+		t.Fatalf("list endpoint versions=%+v cap=%d err=%v", page, snapshotCap, err)
 	}
-	if page.Items[0].CredentialDescriptor != nil {
+	if page.Items[0].CredentialDescriptor != nil || page.Items[0].ResponsePolicy != vendorregistry.ResponsePolicyHTTPStatusV1 || page.Items[0].AuthStrategy != "none" {
 		t.Fatalf("historical nullable credential drifted: %+v", page.Items[0])
 	}
 }

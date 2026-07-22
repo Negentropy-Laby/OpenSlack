@@ -9,13 +9,14 @@
 backup、WAL archive、age 加密导出/解密和 target-time recovery，最终结果 `PASS`：
 
 ```text
-PITR_PASS age=v1.3.1 target_time=2026-07-22 07:48:34.324828+00 archived_wal=000000010000000000000006 markers=before,target schema=6:false fixture=pitr-20260722t074830z-4633 invariants=notification,vendor_version,audit,access_key,attempt_append_only
+PITR_PASS age=v1.3.1 target_time=2026-07-22 17:56:43.016206+00 archived_wal=00000001000000000000000A markers=before,target schema=8:false fixture=pitr-20260722t175640z-41705 invariants=notification,vendor_version,audit,access_key,attempt_append_only
 ```
 
-恢复目标只包含 `before,target` marker，不包含 target 之后的 `after`。除 migration version 6/clean 外，
-脚本逐字段验证 fixture 的 notification 状态与不可变材料、attempt 次序、vendor/current endpoint
-version、admin receipt/audit、access-key status/pepper/hash；随后实际尝试更新 delivery attempt，并确认
-append-only trigger 拒绝更新。
+恢复目标只包含 `before,target` marker，不包含 target 之后的 `after`。除 migration version 8/clean 外，
+脚本逐字段验证 fixture 的 notification 状态与不可变材料、attempt 次序、admin receipt/audit、
+access-key status/pepper/hash，以及同一 vendor 的 schema v1 bearer 与 schema v2 `auth:none` 两个 endpoint
+version。v2 断言包含 nullable credential、`http_status_v1` 与双 ingress-key header mapping；随后实际尝试
+更新 delivery attempt，并确认 append-only trigger 拒绝更新。
 
 ## 运行中的失败记录
 

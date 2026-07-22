@@ -1,0 +1,31 @@
+# Parameterized template only. Registration creates a draft vendor; never auto-activate.
+operation: register
+vendor_id: ${OPENSLACK_SLACK_VENDOR_ID}
+expected_record_revision: 0
+idempotency_key: ${ADMIN_IDEMPOTENCY_KEY}
+body:
+  owning_scope: ${OPENSLACK_OWNING_SCOPE}
+  initial_config:
+    config_schema_version: 2
+    response_policy: json_ack_v1
+    endpoint_target:
+      url: ${SLACK_API_ENDPOINT}
+    method: POST
+    transport_auth_headers:
+      - kind: literal
+        name: content-type
+        value: application/json
+      - kind: credential_field
+        name: authorization
+        credential_field: bearerToken
+    outbound_idempotency_mapping:
+      mode: none
+    endpoint_policy:
+      allowed_request_header_names: [authorization, content-type]
+      forbidden_request_header_names: []
+      max_request_body_bytes: 262144
+    auth_strategy: bearer
+    credential_ref:
+      scheme: env
+      opaque_handle: ${OPENSLACK_SLACK_CREDENTIAL_ENV}
+      reference_version: ${OPENSLACK_SLACK_CREDENTIAL_VERSION}

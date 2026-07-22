@@ -40,7 +40,7 @@ docker exec "${source_container}" psql -U rc_wsman -d rc_wsman -v ON_ERROR_STOP=
   INSERT INTO access_keys (key_id,principal_id,secret_hash,pepper_id,status)
   VALUES ('${fixture_id}-key','${fixture_id}-principal',digest('${fixture_id}-key-material','sha256'),'local-v1','active');
   INSERT INTO vendors (vendor_id,owning_scope,lifecycle,record_revision,current_config_version,activated_at)
-  VALUES ('${fixture_id}-vendor','pitr-scope','active',1,1,now());
+  VALUES ('${fixture_id}-vendor','pitr-scope','active',1,2,now());
   INSERT INTO endpoint_versions (
     vendor_id,config_version,config_schema_version,canonical_url,method,hostname,port,
     transport_kind,auth_strategy,credential_ref_scheme,credential_ref_handle,credential_ref_version,
@@ -50,6 +50,19 @@ docker exec "${source_container}" psql -U rc_wsman -d rc_wsman -v ON_ERROR_STOP=
     'https_public','bearer','env','PITR_VENDOR_TOKEN','v1','[]'::jsonb,
     '{\"Mode\":\"none\"}'::jsonb,
     '{\"AllowedRequestHeaderNames\":[],\"ForbiddenRequestHeaderNames\":[],\"MaxRequestBodyBytes\":4096}'::jsonb,
+    'pitr-operator'
+  );
+  INSERT INTO endpoint_versions (
+    vendor_id,config_version,config_schema_version,canonical_url,method,hostname,port,
+    transport_kind,auth_strategy,response_policy,credential_ref_scheme,credential_ref_handle,
+    credential_ref_version,transport_auth_headers,outbound_idempotency_mapping,endpoint_policy,
+    created_by_actor
+  ) VALUES (
+    '${fixture_id}-vendor',2,2,'https://pitr.example/webhook','POST','pitr.example',443,
+    'https_public','none','http_status_v1',NULL,NULL,NULL,
+    '[{\"Kind\":\"literal\",\"Name\":\"content-type\",\"Value\":\"application/json\"}]'::jsonb,
+    '{\"Mode\":\"headers\",\"Source\":\"ingress_idempotency_key\",\"HeaderNames\":[\"idempotency-key\",\"x-openslack-idempotency-key\"]}'::jsonb,
+    '{\"AllowedRequestHeaderNames\":[\"content-type\",\"idempotency-key\",\"x-openslack-idempotency-key\"],\"ForbiddenRequestHeaderNames\":[],\"MaxRequestBodyBytes\":262144}'::jsonb,
     'pitr-operator'
   );
   INSERT INTO admin_command_receipts (receipt_id,actor_id,idempotency_key,command_fingerprint_hash,result)
@@ -147,7 +160,7 @@ docker exec "${restore_container}" pg_isready -U rc_wsman -d rc_wsman >/dev/null
 markers="$(docker exec "${restore_container}" psql -U rc_wsman -d rc_wsman -Atc "SELECT string_agg(marker, ',' ORDER BY marker) FROM acceptance_pitr_markers")"
 schema_version="$(docker exec "${restore_container}" psql -U rc_wsman -d rc_wsman -Atc "SELECT version || ':' || dirty FROM schema_migrations")"
 [[ "${markers}" == "before,target" ]] || { echo "unexpected restored markers: ${markers}" >&2; exit 1; }
-[[ "${schema_version}" == "6:false" ]] || { echo "unexpected schema version: ${schema_version}" >&2; exit 1; }
+[[ "${schema_version}" == "8:false" ]] || { echo "unexpected schema version: ${schema_version}" >&2; exit 1; }
 invariants="$(docker exec "${restore_container}" psql -U rc_wsman -d rc_wsman -v ON_ERROR_STOP=1 -Atc "
   SELECT
     EXISTS (SELECT 1 FROM notifications
@@ -158,9 +171,22 @@ invariants="$(docker exec "${restore_container}" psql -U rc_wsman -d rc_wsman -v
         AND convert_from(payload_bytes,'UTF8')='pitr-fixture-payload'),
     EXISTS (SELECT 1 FROM vendors v
       WHERE v.vendor_id='${fixture_id}-vendor' AND v.lifecycle='active'
-        AND v.record_revision=1 AND v.current_config_version=1
-        AND (SELECT count(*) FROM endpoint_versions e WHERE e.vendor_id=v.vendor_id)=1
-        AND (SELECT config_schema_version FROM endpoint_versions e WHERE e.vendor_id=v.vendor_id)=1),
+        AND v.record_revision=1 AND v.current_config_version=2
+        AND (SELECT count(*) FROM endpoint_versions e WHERE e.vendor_id=v.vendor_id)=2
+        AND EXISTS (SELECT 1 FROM endpoint_versions e
+          WHERE e.vendor_id=v.vendor_id AND e.config_version=1
+            AND e.config_schema_version=1 AND e.auth_strategy='bearer'
+            AND e.response_policy='http_status_v1'
+            AND e.credential_ref_scheme='env' AND e.credential_ref_handle='PITR_VENDOR_TOKEN')
+        AND EXISTS (SELECT 1 FROM endpoint_versions e
+          WHERE e.vendor_id=v.vendor_id AND e.config_version=2
+            AND e.config_schema_version=2 AND e.auth_strategy='none'
+            AND e.response_policy='http_status_v1'
+            AND e.credential_ref_scheme IS NULL AND e.credential_ref_handle IS NULL
+            AND e.credential_ref_version IS NULL
+            AND e.outbound_idempotency_mapping->>'Source'='ingress_idempotency_key'
+            AND e.outbound_idempotency_mapping->'HeaderNames' =
+              '[\"idempotency-key\",\"x-openslack-idempotency-key\"]'::jsonb)),
     EXISTS (SELECT 1 FROM admin_audit_events a
       JOIN admin_command_receipts r ON r.receipt_id=a.receipt_id
       WHERE a.vendor_id='${fixture_id}-vendor' AND a.operation='register'
