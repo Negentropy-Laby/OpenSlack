@@ -32,7 +32,7 @@
 ## Load-bearing Decisions
 
 - **PostgreSQL + transactional outbox（ADR-0001）**：PostgreSQL 18.4 为唯一持久真相与协调权威；intake/可见性/lease/状态/append-only attempt 原子耦合；worker 用 `FOR UPDATE SKIP LOCKED` 认领；pending 行即 outbox，dead 行即 DLQ（BL-03）。
-- **At-least-once + 入站强去重（ADR-0002）**：`(caller_id, Idempotency-Key)` 复合唯一 + 不可变 `request_fingerprint`（SHA-256，versioned length-prefixed）；同键同指纹→原通知 + `202`，同键异指纹→`409`；出站 at-least-once，重复为公开风险（BL-02）。
+- **At-least-once + 入站强去重（ADR-0002）**：`(caller_id, Idempotency-Key)` 复合唯一 + 不可变 `request_fingerprint`（SHA-256 of `vendor_id || NUL || caller_id || NUL || ingress key || NUL || payload`）；同键同指纹→原通知 + `202`，同键异指纹→`409`；出站 at-least-once，重复为公开风险（BL-02）。
 - **API Key + pepper（ADR-0003）**：`key_id.secret`；仅持久化 `HMAC-SHA-256(pepper_for(pepper_id), full_key)` + 非密 `pepper_id`；constant-time 比较；`Bearer` 为唯一业务/admin 认证；principal kind/scope/capability 仅来自权威记录；每 principal ≤2 active keys。2026-07-20 pepper-lifecycle 修订：`API_KEY_PEPPER_ACTIVE`/`_PREVIOUS` 双代（active + optional previous grace）、routine rotation + drain 前置、emergency bulk-revoke、pepper-loss fail-closed；pepper value 为 CTRL-016 secret（BL-02/05）。
 - **SSRF-safe HTTP（ADR-0004）**：调用方仅提交 `vendor_id` + payload；Registry 拥有 canonical scheme/host/port/path/Header 策略；强制 HTTPS；解析全部 A/AAAA 并校验策略；dial 单个 pinned `netip.Addr` + 原始 TLS `ServerName`；禁 env proxy、重定向一律失败；仅读 status + 有界 `Retry-After`，不读响应体（BL-05）。
 

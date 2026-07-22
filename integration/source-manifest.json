@@ -1,0 +1,28 @@
+{
+  "schema": "negentropy_laby.notification_delivery_source.v1",
+  "status": "IB0_BASELINE",
+  "review_status": "PENDING_INDEPENDENT_REVIEW",
+  "source_repository": "https://github.com/wsman/rc_wsman.git",
+  "source_commit": "7976962e7de1c6ffcd234d2962b89dc4b23c95c0",
+  "source_tree": "ad742f2295c70af27d67173b248f7ae151e7faf9",
+  "commit_count": 7,
+  "baseline_tag": "integration-baseline/rc-wsman-7976962",
+  "target_repository": "https://github.com/Negentropy-Laby/OpenSlack.git",
+  "target_path": "services/notification-delivery",
+  "target_release": "0.3.0",
+  "license": "Apache-2.0",
+  "copyright": "Copyright 2026 Negentropy-Laby",
+  "openslack_release_evidence_anchor": {
+    "commit": "e2eb615d37fe5e2861d6e90e6382ee6c34ff3ede",
+    "tree": "0db4739bfe63df46572db583baeaaaa727e1e2a1"
+  },
+  "openslack_integration_base": {
+    "commit": "cdf1cbc629273b89f1737a6efc4e8325e7c9ebfb",
+    "tree": "c62f6643c0f8fe966bb463c0b585b1b496fcdba2"
+  },
+  "runtime_change": false,
+  "notes": [
+    "The review baseline remains immutable evidence even after integration work adds later source commits.",
+    "IB6 must add the final standalone source tip, tree, archive tag, and import commit without replacing this baseline."
+  ]
+}
