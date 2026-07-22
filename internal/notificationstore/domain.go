@@ -376,6 +376,7 @@ type ClaimFilter struct {
 // LeaseClaim is the result of a successful claim.
 type LeaseClaim struct {
 	NotificationID         string
+	IngressIdempotencyKey  string
 	LeaseID                string
 	LeaseExpiresAt         time.Time
 	Version                int64

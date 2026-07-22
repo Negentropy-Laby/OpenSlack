@@ -123,19 +123,29 @@ func (r *Runner) RunOnce(ctx context.Context, storeCtx notificationstore.ActorCo
 		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonRequestUnbuildable)
 	}
 
-	if snapshot.CredentialRef == nil {
-		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonCredentialUnavailable)
-	}
-	cred, err := r.credentials.Resolve(ctx, *snapshot.CredentialRef)
-	if err != nil {
-		if _, ok := err.(*PolicyError); ok {
+	var cred Credential
+	switch snapshot.AuthStrategy {
+	case "bearer":
+		if snapshot.CredentialRef == nil {
 			return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonCredentialUnavailable)
 		}
-		transitionErr := r.transitionRetry(ctx, storeCtx, claim, cycleSendCutoff, ErrorCodeRegistryAccessFailure)
-		if transitionErr != nil {
-			return true, transitionErr
+		cred, err = r.credentials.Resolve(ctx, *snapshot.CredentialRef)
+		if err != nil {
+			if _, ok := err.(*PolicyError); ok {
+				return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonCredentialUnavailable)
+			}
+			transitionErr := r.transitionRetry(ctx, storeCtx, claim, cycleSendCutoff, ErrorCodeRegistryAccessFailure)
+			if transitionErr != nil {
+				return true, transitionErr
+			}
+			return true, newHealthSignal("credential_provider_failure", err)
 		}
-		return true, newHealthSignal("credential_provider_failure", err)
+	case "none":
+		if snapshot.ConfigSchemaVersion != 2 || snapshot.CredentialRef != nil {
+			return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonRequestUnbuildable)
+		}
+	default:
+		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonRequestUnbuildable)
 	}
 
 	addrs, err := r.resolveAddresses(ctx, snapshot.Hostname)
@@ -156,7 +166,21 @@ func (r *Runner) RunOnce(ctx context.Context, storeCtx notificationstore.ActorCo
 		return true, r.transitionRetry(ctx, storeCtx, claim, cycleSendCutoff, ErrorCodeDNSFailure)
 	}
 
-	req, err := BuildRequest(claim.NotificationID, claim.Payload, snapshot, cred, resolvedIP)
+	attempt := AttemptContext{
+		NotificationID:         claim.NotificationID,
+		IngressIdempotencyKey:  claim.IngressIdempotencyKey,
+		LeaseID:                claim.LeaseID,
+		Version:                claim.Version,
+		VendorID:               claim.VendorID,
+		Payload:                claim.Payload,
+		AttemptCount:           claim.AttemptCount,
+		DeliveryCycleStartedAt: claim.DeliveryCycleStartedAt,
+		CreatedAt:              claim.CreatedAt,
+		LeaseExpiresAt:         claim.LeaseExpiresAt,
+		ConfigVersion:          snapshot.ConfigVersion,
+		ResolvedIP:             resolvedIP,
+	}
+	req, err := BuildRequest(attempt.NotificationID, attempt.IngressIdempotencyKey, attempt.Payload, snapshot, cred, attempt.ResolvedIP)
 	if err != nil {
 		if pe, ok := err.(*PolicyError); ok {
 			reason := notificationstore.ReasonRequestUnbuildable

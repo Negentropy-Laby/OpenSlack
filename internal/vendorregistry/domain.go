@@ -267,9 +267,11 @@ type HeaderRule struct {
 
 // OutboundIdempotencyMapping is the outbound idempotency mode.
 type OutboundIdempotencyMapping struct {
-	Mode       string
-	HeaderName string
-	FieldName  string
+	Mode        string
+	Source      string `json:"source,omitempty"`
+	HeaderName  string
+	HeaderNames []string `json:"header_names,omitempty"`
+	FieldName   string
 }
 
 // EndpointPolicy is the per-vendor policy.
@@ -856,6 +858,9 @@ func ValidateEndpointConfig(cfg Config, ep EndpointConfigInput) (EndpointVersion
 }
 
 func validateIdempotencyMapping(m OutboundIdempotencyMapping, allowed, forbidden map[string]struct{}, seen map[string]struct{}) (OutboundIdempotencyMapping, error) {
+	if m.Source != "" || len(m.HeaderNames) != 0 {
+		return OutboundIdempotencyMapping{}, errors.New("schema v1 mapping must not contain source or header_names")
+	}
 	switch m.Mode {
 	case "none":
 		if m.HeaderName != "" || m.FieldName != "" {

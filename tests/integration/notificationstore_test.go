@@ -364,6 +364,9 @@ func TestStoreClaim_Concurrent(t *testing.T) {
 	if got[0].LeaseID == "" || got[0].LeaseExpiresAt.IsZero() {
 		t.Fatalf("lease not issued: %+v", got[0])
 	}
+	if got[0].IngressIdempotencyKey != "key-claim" {
+		t.Fatalf("claim ingress idempotency key=%q, want key-claim", got[0].IngressIdempotencyKey)
+	}
 }
 
 // TestStoreClaim_NotYetEligible verifies next_attempt_at gating.
