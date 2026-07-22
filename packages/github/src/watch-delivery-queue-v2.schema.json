@@ -1,0 +1,521 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/watch-delivery-queue-v2.schema.json",
+  "title": "OpenSlack GitHub Watch Delivery Queue v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "updatedAt", "routes", "legacyEventTombstones"],
+  "properties": {
+    "schema": { "const": "openslack.watch_delivery_queue.v2" },
+    "updatedAt": { "$ref": "#/$defs/timestamp" },
+    "routes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/routeRecord" }
+    },
+    "legacyEventTombstones": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/legacyEventTombstone" }
+    }
+  },
+  "$defs": {
+    "timestamp": { "type": "string", "format": "date-time" },
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "routeRecordId": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "routeId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z](?:[a-z0-9-]{0,62}[a-z0-9])?$"
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-5[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+    },
+    "repositoryIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner", "repo", "fullName", "canonicalFullName"],
+      "properties": {
+        "owner": { "type": "string", "minLength": 1 },
+        "repo": { "type": "string", "minLength": 1 },
+        "fullName": { "type": "string", "minLength": 3 },
+        "canonicalFullName": {
+          "type": "string",
+          "pattern": "^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?/[a-z0-9._-]{1,100}$"
+        }
+      }
+    },
+    "eventObject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "id"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "issue",
+            "push",
+            "pull_request",
+            "pull_request_review",
+            "check_run",
+            "check_suite"
+          ]
+        },
+        "id": { "type": "string", "minLength": 1 },
+        "number": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "eventMetadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["informational"],
+      "properties": { "informational": { "type": "boolean" } }
+    },
+    "issueEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "kind",
+        "eventKey",
+        "action",
+        "repository",
+        "object",
+        "source",
+        "deliveryId",
+        "stableKey",
+        "observedAt",
+        "metadata",
+        "issueNumber",
+        "updatedAt"
+      ],
+      "properties": {
+        "schema": { "const": "openslack.repository_event.v1" },
+        "kind": { "const": "issue" },
+        "eventKey": { "enum": ["issues.opened", "issues.reopened", "issues.labeled"] },
+        "action": { "enum": ["opened", "reopened", "labeled"] },
+        "repository": { "$ref": "#/$defs/repositoryIdentity" },
+        "object": { "$ref": "#/$defs/eventObject" },
+        "source": { "enum": ["webhook", "poll"] },
+        "deliveryId": { "type": "string" },
+        "stableKey": { "type": "string", "minLength": 1 },
+        "observedAt": { "$ref": "#/$defs/timestamp" },
+        "metadata": { "$ref": "#/$defs/eventMetadata" },
+        "issueNumber": { "type": "integer", "minimum": 1 },
+        "updatedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "pushEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "kind",
+        "eventKey",
+        "action",
+        "repository",
+        "object",
+        "source",
+        "deliveryId",
+        "stableKey",
+        "observedAt",
+        "metadata",
+        "ref",
+        "before",
+        "after"
+      ],
+      "properties": {
+        "schema": { "const": "openslack.repository_event.v1" },
+        "kind": { "const": "push" },
+        "eventKey": { "const": "push" },
+        "action": { "const": "push" },
+        "repository": { "$ref": "#/$defs/repositoryIdentity" },
+        "object": { "$ref": "#/$defs/eventObject" },
+        "source": { "const": "webhook" },
+        "deliveryId": { "type": "string" },
+        "stableKey": { "type": "string", "minLength": 1 },
+        "observedAt": { "$ref": "#/$defs/timestamp" },
+        "metadata": { "$ref": "#/$defs/eventMetadata" },
+        "ref": { "type": "string", "minLength": 1 },
+        "before": { "type": "string", "minLength": 1 },
+        "after": { "type": "string", "minLength": 1 }
+      }
+    },
+    "pullRequestEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "kind",
+        "eventKey",
+        "action",
+        "repository",
+        "object",
+        "source",
+        "deliveryId",
+        "stableKey",
+        "observedAt",
+        "metadata",
+        "pullRequestNumber",
+        "headSha",
+        "baseSha",
+        "updatedAt"
+      ],
+      "properties": {
+        "schema": { "const": "openslack.repository_event.v1" },
+        "kind": { "const": "pull_request" },
+        "eventKey": {
+          "enum": [
+            "pull_request.opened",
+            "pull_request.synchronize",
+            "pull_request.reopened",
+            "pull_request.closed",
+            "pull_request.ready_for_review"
+          ]
+        },
+        "action": {
+          "enum": ["opened", "synchronize", "reopened", "closed", "ready_for_review"]
+        },
+        "repository": { "$ref": "#/$defs/repositoryIdentity" },
+        "object": { "$ref": "#/$defs/eventObject" },
+        "source": { "const": "webhook" },
+        "deliveryId": { "type": "string" },
+        "stableKey": { "type": "string", "minLength": 1 },
+        "observedAt": { "$ref": "#/$defs/timestamp" },
+        "metadata": { "$ref": "#/$defs/eventMetadata" },
+        "pullRequestNumber": { "type": "integer", "minimum": 1 },
+        "headSha": { "type": "string", "minLength": 1 },
+        "baseSha": { "type": "string", "minLength": 1 },
+        "updatedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "pullRequestReviewEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "kind",
+        "eventKey",
+        "action",
+        "repository",
+        "object",
+        "source",
+        "deliveryId",
+        "stableKey",
+        "observedAt",
+        "metadata",
+        "pullRequestNumber",
+        "reviewId",
+        "headSha",
+        "commitId",
+        "submittedAt"
+      ],
+      "properties": {
+        "schema": { "const": "openslack.repository_event.v1" },
+        "kind": { "const": "pull_request_review" },
+        "eventKey": {
+          "enum": ["pull_request_review.submitted", "pull_request_review.dismissed"]
+        },
+        "action": { "enum": ["submitted", "dismissed"] },
+        "repository": { "$ref": "#/$defs/repositoryIdentity" },
+        "object": { "$ref": "#/$defs/eventObject" },
+        "source": { "const": "webhook" },
+        "deliveryId": { "type": "string" },
+        "stableKey": { "type": "string", "minLength": 1 },
+        "observedAt": { "$ref": "#/$defs/timestamp" },
+        "metadata": { "$ref": "#/$defs/eventMetadata" },
+        "pullRequestNumber": { "type": "integer", "minimum": 1 },
+        "reviewId": { "type": "integer", "minimum": 1 },
+        "headSha": { "type": "string", "minLength": 1 },
+        "commitId": { "type": "string", "minLength": 1 },
+        "submittedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "checkRunEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "kind",
+        "eventKey",
+        "action",
+        "repository",
+        "object",
+        "source",
+        "deliveryId",
+        "stableKey",
+        "observedAt",
+        "metadata",
+        "checkRunId",
+        "headSha",
+        "completedAt",
+        "pullRequestNumbers"
+      ],
+      "properties": {
+        "schema": { "const": "openslack.repository_event.v1" },
+        "kind": { "const": "check_run" },
+        "eventKey": { "const": "check_run.completed" },
+        "action": { "const": "completed" },
+        "repository": { "$ref": "#/$defs/repositoryIdentity" },
+        "object": { "$ref": "#/$defs/eventObject" },
+        "source": { "const": "webhook" },
+        "deliveryId": { "type": "string" },
+        "stableKey": { "type": "string", "minLength": 1 },
+        "observedAt": { "$ref": "#/$defs/timestamp" },
+        "metadata": { "$ref": "#/$defs/eventMetadata" },
+        "checkRunId": { "type": "integer", "minimum": 1 },
+        "headSha": { "type": "string", "minLength": 1 },
+        "completedAt": { "$ref": "#/$defs/timestamp" },
+        "pullRequestNumbers": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "checkSuiteEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "kind",
+        "eventKey",
+        "action",
+        "repository",
+        "object",
+        "source",
+        "deliveryId",
+        "stableKey",
+        "observedAt",
+        "metadata",
+        "checkSuiteId",
+        "headSha",
+        "updatedAt",
+        "pullRequestNumbers"
+      ],
+      "properties": {
+        "schema": { "const": "openslack.repository_event.v1" },
+        "kind": { "const": "check_suite" },
+        "eventKey": { "const": "check_suite.completed" },
+        "action": { "const": "completed" },
+        "repository": { "$ref": "#/$defs/repositoryIdentity" },
+        "object": { "$ref": "#/$defs/eventObject" },
+        "source": { "const": "webhook" },
+        "deliveryId": { "type": "string" },
+        "stableKey": { "type": "string", "minLength": 1 },
+        "observedAt": { "$ref": "#/$defs/timestamp" },
+        "metadata": { "$ref": "#/$defs/eventMetadata" },
+        "checkSuiteId": { "type": "integer", "minimum": 1 },
+        "headSha": { "type": "string", "minLength": 1 },
+        "updatedAt": { "$ref": "#/$defs/timestamp" },
+        "pullRequestNumbers": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    "event": {
+      "oneOf": [
+        { "$ref": "#/$defs/issueEvent" },
+        { "$ref": "#/$defs/pushEvent" },
+        { "$ref": "#/$defs/pullRequestEvent" },
+        { "$ref": "#/$defs/pullRequestReviewEvent" },
+        { "$ref": "#/$defs/checkRunEvent" },
+        { "$ref": "#/$defs/checkSuiteEvent" }
+      ]
+    },
+    "route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "sink", "delivery"],
+      "properties": {
+        "id": { "$ref": "#/$defs/routeId" },
+        "sink": { "enum": ["slack", "webhook"] },
+        "channel": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "delivery": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["backend", "routing_epoch"],
+          "properties": {
+            "backend": { "enum": ["direct", "notification_service"] },
+            "routing_epoch": { "type": "integer", "minimum": 1 },
+            "vendor_id": { "type": "string", "pattern": "^[a-z0-9-]{1,64}$" }
+          }
+        }
+      }
+    },
+    "blob": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest", "size", "mediaType", "encoderVersion"],
+      "properties": {
+        "digest": { "$ref": "#/$defs/sha256" },
+        "size": { "type": "integer", "minimum": 0, "maximum": 262144 },
+        "mediaType": { "const": "application/json" },
+        "encoderVersion": {
+          "enum": ["openslack.slack_chat_post_message.v1", "openslack.webhook_notification.v1"]
+        }
+      }
+    },
+    "lease": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["token", "workerId", "acquiredAt", "expiresAt"],
+      "properties": {
+        "token": { "type": "string", "minLength": 1 },
+        "workerId": { "type": "string", "minLength": 1 },
+        "acquiredAt": { "$ref": "#/$defs/timestamp" },
+        "expiresAt": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "diagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "retryable", "recordedAt"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[A-Z0-9_]{1,80}$" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "retryable": { "type": "boolean" },
+        "recordedAt": { "$ref": "#/$defs/timestamp" },
+        "status": { "type": "integer", "minimum": 100, "maximum": 599 }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "route_record_id",
+        "canonical_repository",
+        "route_id",
+        "routing_epoch",
+        "vendor_id",
+        "idempotency_key",
+        "notification_id",
+        "remote_request_id",
+        "accepted_at",
+        "idempotent_replay",
+        "deployment_digest",
+        "watch_config_digest",
+        "recorded_at"
+      ],
+      "properties": {
+        "schema": { "const": "openslack.notification_acceptance.v1" },
+        "route_record_id": { "$ref": "#/$defs/routeRecordId" },
+        "canonical_repository": { "type": "string", "minLength": 3 },
+        "route_id": { "$ref": "#/$defs/routeId" },
+        "routing_epoch": { "type": "integer", "minimum": 1 },
+        "vendor_id": { "type": "string", "pattern": "^[a-z0-9-]{1,64}$" },
+        "idempotency_key": { "$ref": "#/$defs/idempotencyKey" },
+        "notification_id": { "type": "string", "minLength": 1 },
+        "remote_request_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "accepted_at": { "$ref": "#/$defs/timestamp" },
+        "idempotent_replay": { "type": "boolean" },
+        "deployment_digest": { "$ref": "#/$defs/sha256" },
+        "watch_config_digest": { "$ref": "#/$defs/sha256" },
+        "recorded_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "routeRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "canonicalRepository",
+        "stableKey",
+        "deliveryIds",
+        "event",
+        "routeId",
+        "routingEpoch",
+        "backend",
+        "route",
+        "idempotencyKey",
+        "state",
+        "authority",
+        "attemptCount",
+        "availableAt",
+        "firstPersistedAt",
+        "updatedAt",
+        "remoteDeliveryState",
+        "recoveryCycle"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/routeRecordId" },
+        "canonicalRepository": { "type": "string", "minLength": 3 },
+        "stableKey": { "type": "string", "minLength": 1 },
+        "deliveryIds": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "type": "string" }
+        },
+        "event": { "$ref": "#/$defs/event" },
+        "routeId": { "$ref": "#/$defs/routeId" },
+        "routingEpoch": { "type": "integer", "minimum": 1 },
+        "backend": { "enum": ["direct", "notification_service"] },
+        "route": { "$ref": "#/$defs/route" },
+        "vendorId": { "type": "string", "pattern": "^[a-z0-9-]{1,64}$" },
+        "idempotencyKey": { "$ref": "#/$defs/idempotencyKey" },
+        "blob": { "$ref": "#/$defs/blob" },
+        "watchConfigDigest": { "$ref": "#/$defs/sha256" },
+        "state": {
+          "enum": [
+            "pending",
+            "processing",
+            "retryable",
+            "accepted",
+            "rejected",
+            "quarantined",
+            "handoff_dead",
+            "completed",
+            "failed"
+          ]
+        },
+        "authority": {
+          "enum": ["openslack", "notification_service", "legacy_v1", "terminal"]
+        },
+        "attemptCount": { "type": "integer", "minimum": 0 },
+        "availableAt": { "$ref": "#/$defs/timestamp" },
+        "firstPersistedAt": { "$ref": "#/$defs/timestamp" },
+        "deadlineAt": { "$ref": "#/$defs/timestamp" },
+        "updatedAt": { "$ref": "#/$defs/timestamp" },
+        "lease": { "$ref": "#/$defs/lease" },
+        "receipt": { "$ref": "#/$defs/receipt" },
+        "receiptLedger": { "enum": ["pending", "committed"] },
+        "remoteDeliveryState": { "enum": ["unknown", "pending", "delivered", "dead"] },
+        "terminalReason": {
+          "enum": [
+            "attempts_exhausted",
+            "deadline_exhausted",
+            "deterministic_rejection",
+            "protocol_redirect",
+            "unexpected_client_error",
+            "unexpected_success_status",
+            "deployment_digest_mismatch",
+            "idempotency_conflict",
+            "receipt_conflict",
+            "blob_digest_mismatch",
+            "blob_size_mismatch",
+            "blob_not_available"
+          ]
+        },
+        "terminalAt": { "$ref": "#/$defs/timestamp" },
+        "completedAt": { "$ref": "#/$defs/timestamp" },
+        "lastDiagnostic": { "$ref": "#/$defs/diagnostic" },
+        "recoveryCycle": { "type": "integer", "minimum": 0 },
+        "migrationDisposition": {
+          "enum": ["legacy_owned", "completed_tombstone", "terminal_archive"]
+        }
+      }
+    },
+    "legacyEventTombstone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["deliveryId", "stableKey", "recordedAt"],
+      "properties": {
+        "deliveryId": { "type": "string" },
+        "stableKey": { "type": "string", "minLength": 1 },
+        "recordedAt": { "$ref": "#/$defs/timestamp" }
+      }
+    }
+  }
+}

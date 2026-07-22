@@ -1,6 +1,6 @@
 # Notification Delivery Service Integration
 
-> **Status:** IB0 contract baseline — `G0_CONTRACT_PASS_WITH_RC_REVIEW_WAIVER`
+> **Status:** IB3-A queue/migration primitives implemented — `G3_QUEUE_IN_PROGRESS`
 >
 > **Runtime effect:** None. The v2 parser and protocol contracts are not wired into the watch daemon.
 >
@@ -206,7 +206,7 @@ Receipt path:
 `<route-record-id>` is the deterministic 64-character identity above; arbitrary filenames and config-supplied IDs
 are not accepted.
 
-The strict schema is `openslack.notification_acceptance.v1`. It contains route/repository/vendor/key identity,
+The strict receipt schema is `openslack.notification_acceptance.v1`. It contains route/repository/vendor/key identity,
 notification and request IDs, accepted/replay timestamps, deployment digest and watch-config digest. It contains no
 payload, endpoint or credential. The executable schema is
 `packages/github/src/notification-handoff-v2.schema.json`.
@@ -216,7 +216,7 @@ uses the same `wx` temp, file fsync, create-only hard link and directory fsync d
 non-canonical bytes, `verify` compares an expected receipt, and `ensureFromEmbeddedReceipt` creates a missing ledger
 or accepts only byte-identical existing evidence. These primitives do not implement the accepted queue transaction.
 
-Future IB3 callers must acquire locks only in this order:
+IB3 queue callers acquire locks only in this order:
 
 ```text
 queue-v2 lock -> Blob store lock or receipt store lock
@@ -225,7 +225,7 @@ queue-v2 lock -> Blob store lock or receipt store lock
 Blob and receipt stores never acquire the queue lock, and callers must release the storage lock before attempting any
 independent queue acquisition. This avoids lock inversion while preserving the frozen accepted persistence sequence.
 
-Accepted persistence is ordered:
+`WatchDeliveryQueueV2.acceptServiceRoute` implements accepted persistence in this order:
 
 ```text
 validate receipt
@@ -306,15 +306,25 @@ expected deployment digest and the explicit insecure-loopback policy. Absent ver
 comments, resolved secrets and YAML/object ordering never enter the digest. JCS rejects non-finite numbers, lone
 surrogates, sparse arrays, accessors and other non-JSON data. The result is `sha256:<64-lowercase-hex>`.
 
-IB2 exports these primitives for isolated verification only. A source-invariant test scans the daemon, delivery
-router, workspace launcher, `createSinks` implementation and CLI sources and fails if they reference the client, Blob
-store or receipt store. Network composition remains an IB3 concern.
+IB3-A adds the route-centric `openslack.watch_delivery_queue.v2` store and its closed executable schema without
+composing it into the daemon. It freezes each route's repository, route/epoch/backend/vendor identity, copied or v2
+idempotency key, Blob/encoder reference, attempt/deadline state, embedded receipt, remote projection and recovery
+cycle. Processing intent is fsynced before a caller may POST; lease loss consumes that attempt; the service retry
+schedule is deterministic at 5 seconds through the one-hour cap and terminates on attempt 25 or the 24-hour deadline.
+
+The queue owns the accepted three-write transaction and recovery of `ledger=pending`; recovered accepted records are
+never claimable for another POST. Direct records keep their existing five-attempt policy and terminal states, while
+service records use the handoff states above. IB3-B remains responsible for daemon/router composition.
 
 ## V1 Migration And Gates
 
-Migration is per route: completed becomes a tombstone, failed becomes a terminal archive, pending/retryable remains
-v1 direct-owned, and processing waits for lease recovery before v1 drain. Legacy keys are copied, never recalculated.
-Mixed deliveries retain independent route ownership. No v2 record can be claimed by both routers.
+Migration is per route: completed becomes a tombstone, failed becomes a terminal archive, and
+pending/retryable/processing remains `legacy_v1` direct-owned until v1 drain. Legacy keys are copied, never
+recalculated. Mixed deliveries retain independent route ownership. Dry-run does not write; unchanged apply runs keep
+the v2 state and migration marker byte-identical. The marker fences new v1 admission, but the v1 worker may continue
+to drain active ownership. After all active v1 routes reach terminal state, finalization writes a SHA-256-named
+read-only backup and replaces the old path with deliberately non-JSON migrated sentinel bytes so an older binary
+cannot silently recreate v1 authority.
 
 The next phases remain blocked by gates:
 
@@ -322,7 +332,7 @@ The next phases remain blocked by gates:
 G0-CONTRACT: PASS_WITH_RC_REVIEW_WAIVER; OpenSlack independently reviewed, standalone service owner waiver + PR/CI
 G1-SERVICE: service v2 contract implemented and verified
 G2-CLIENT: body, Blob, receipt and client components verified but not wired
-G3-QUEUE: v2 queue/router and per-route migration verified
+G3-QUEUE: IN PROGRESS; IB3-A queue/migration implemented, daemon/router and governed CLI pending
 G4-E2E: two repositories x Slack and webhook fault matrix
 G5-CANARY: 336 continuous hours + 100 distinct non-replay accepted keys
 ```
