@@ -193,6 +193,12 @@ export type {
   RemoteDeliveryState,
 } from './notification-handoff-contracts.js';
 export {
+  materializeSlackNotificationBody,
+  materializeWebhookNotificationBody,
+  validateNotificationBodyForHandoff,
+} from './notification-body.js';
+export type { NotificationBodyHandoffValidation } from './notification-body.js';
+export {
   GITHUB_WATCH_EVENT_KEYS,
   GITHUB_WEBHOOK_EVENT_NAMES,
   canonicalWatchRouteKey,

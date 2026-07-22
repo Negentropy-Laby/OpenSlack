@@ -157,7 +157,7 @@ vectors, including a copied-v1-key case, live in
 
 ## Final Vendor Bytes
 
-IB2 will materialize exactly once:
+IB2 materializes final vendor bodies through pure, exported functions:
 
 ```text
 Slack encoder:   openslack.slack_chat_post_message.v1
@@ -166,7 +166,15 @@ Webhook encoder: openslack.webhook_notification.v1
 
 Slack uses UTF-8 `JSON.stringify({channel,text,client_msg_id})`; webhook uses UTF-8
 `JSON.stringify(NotificationPayload)`. There is no BOM, trailing newline, reformatting or service-side
-canonicalization. The maximum decoded body is 262144 bytes.
+canonicalization. Slack field insertion order is exactly `channel`, `text`, `client_msg_id`; webhook stringifies the
+original payload object directly without cloning, spreading, JCS or reparsing. Both materializers return the raw
+bytes, SHA-256 digest, byte size, `application/json` media type and frozen encoder version.
+
+Existing direct Slack and webhook sinks send those same bytes while retaining their existing URL, headers,
+acknowledgement classification, v1 idempotency key and size behavior. The separate handoff admission validator
+accepts at most 262144 decoded bytes, but no direct sink calls it. Exact Unicode, escaping, field-order and
+262144/262145-byte vectors live in
+`packages/github/src/__fixtures__/notification-handoff/final-body-vectors.v1.json`.
 
 The service Slack endpoint uses bearer auth, `json_ack_v1` and no outbound idempotency mapping because
 `client_msg_id` is already in the body. The webhook endpoint uses no auth, status-only acknowledgement, and maps the

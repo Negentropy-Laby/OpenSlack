@@ -1,4 +1,8 @@
 import type { GitHubWatchRoute } from './watch-config.js';
+import {
+  materializeSlackNotificationBody,
+  materializeWebhookNotificationBody,
+} from './notification-body.js';
 import { formatNotification, type NotificationPayload } from './notification-payload.js';
 
 export type SinkResult =
@@ -62,19 +66,15 @@ export class SlackSink implements NotificationSink {
     if (!channel) {
       return permanentFailure('SLACK_CHANNEL_MISSING', 'Slack route missing channel.');
     }
-    const text = formatNotification(payload);
     try {
+      const body = materializeSlackNotificationBody(payload, channel, context.idempotencyKey);
       const resp = await fetch('https://slack.com/api/chat.postMessage', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${this.botToken}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          channel,
-          text,
-          client_msg_id: context.idempotencyKey,
-        }),
+        body: body.bytes,
         signal: context.signal,
       });
       if (!resp.ok) {
@@ -108,6 +108,7 @@ export class WebhookSink implements NotificationSink {
     context: NotificationDeliveryContext = fallbackContext(payload),
   ): Promise<SinkResult> {
     try {
+      const body = materializeWebhookNotificationBody(payload);
       const resp = await fetch(this.url, {
         method: 'POST',
         headers: {
@@ -116,7 +117,7 @@ export class WebhookSink implements NotificationSink {
           'Idempotency-Key': context.idempotencyKey,
           'X-OpenSlack-Idempotency-Key': context.idempotencyKey,
         },
-        body: JSON.stringify(payload),
+        body: body.bytes,
         signal: context.signal,
       });
       if (!resp.ok) {

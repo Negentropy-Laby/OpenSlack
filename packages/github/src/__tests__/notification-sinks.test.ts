@@ -1,4 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
+import {
+  materializeSlackNotificationBody,
+  materializeWebhookNotificationBody,
+} from '../notification-body.js';
 import { ConsoleSink, SlackSink, WebhookSink, createSinks } from '../notification-sinks.js';
 import type { NotificationPayload } from '../watch-daemon.js';
 import type { GitHubWatchRoute } from '../watch-config.js';
@@ -64,10 +68,38 @@ describe('SlackSink', () => {
         },
       }),
     );
-    const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string);
+    const requestBody = requestBodyBytes((mockFetch.mock.calls[0][1] as RequestInit).body);
+    const expectedBody = materializeSlackNotificationBody(
+      testPayload,
+      '#test',
+      deliveryContext.idempotencyKey,
+    );
+    expect(requestBody.equals(Buffer.from(expectedBody.bytes))).toBe(true);
+    const body = JSON.parse(requestBody.toString('utf8')) as Record<string, unknown>;
     expect(body.channel).toBe('#test');
     expect(body.text).toContain('Negentropy-Laby/OpenSlack#42');
     expect(body.client_msg_id).toBe(deliveryContext.idempotencyKey);
+    vi.restoreAllMocks();
+  });
+
+  it('preserves direct delivery behavior above the future handoff body limit', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ ok: true }),
+    });
+    vi.stubGlobal('fetch', mockFetch);
+    const oversizedPayload = { ...testPayload, title: 'x'.repeat(262_145) };
+
+    const result = await new SlackSink('xoxb-test-token').send(
+      oversizedPayload,
+      slackRoute,
+      deliveryContext,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(
+      requestBodyBytes((mockFetch.mock.calls[0][1] as RequestInit).body).byteLength,
+    ).toBeGreaterThan(262_144);
     vi.restoreAllMocks();
   });
 
@@ -145,9 +177,30 @@ describe('WebhookSink', () => {
         },
       }),
     );
-    const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string);
+    const requestBody = requestBodyBytes((mockFetch.mock.calls[0][1] as RequestInit).body);
+    const expectedBody = materializeWebhookNotificationBody(testPayload);
+    expect(requestBody.equals(Buffer.from(expectedBody.bytes))).toBe(true);
+    const body = JSON.parse(requestBody.toString('utf8')) as Record<string, unknown>;
     expect(body.repo).toBe('Negentropy-Laby/OpenSlack');
     expect(body.issueNumber).toBe(42);
+    vi.restoreAllMocks();
+  });
+
+  it('preserves direct delivery behavior above the future handoff body limit', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', mockFetch);
+    const oversizedPayload = { ...testPayload, title: 'x'.repeat(262_145) };
+
+    const result = await new WebhookSink('https://example.com/hook').send(
+      oversizedPayload,
+      webhookRoute,
+      deliveryContext,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(
+      requestBodyBytes((mockFetch.mock.calls[0][1] as RequestInit).body).byteLength,
+    ).toBeGreaterThan(262_144);
     vi.restoreAllMocks();
   });
 
@@ -212,3 +265,12 @@ describe('createSinks', () => {
     expect(sinks.has('webhook')).toBe(true);
   });
 });
+
+function requestBodyBytes(body: RequestInit['body']): Buffer {
+  if (typeof body === 'string') return Buffer.from(body, 'utf8');
+  if (ArrayBuffer.isView(body)) {
+    return Buffer.from(body.buffer, body.byteOffset, body.byteLength);
+  }
+  if (body instanceof ArrayBuffer) return Buffer.from(body);
+  throw new TypeError('Expected an in-memory request body');
+}

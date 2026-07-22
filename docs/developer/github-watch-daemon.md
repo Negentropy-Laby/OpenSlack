@@ -233,6 +233,10 @@ Every sink receives a stable delivery context:
   `X-OpenSlack-Idempotency-Key`.
 - Console output includes the same key for replay diagnosis.
 
+Slack and webhook direct delivery share the frozen pure final-body materializers with the future service handoff.
+This keeps their outbound bytes identical without connecting the service client or applying the service-only 256 KiB
+admission limit to direct delivery.
+
 Sink network errors, timeouts, HTTP 408/429, and 5xx responses are retryable.
 Permanent configuration or other 4xx failures terminate only that route.
 
