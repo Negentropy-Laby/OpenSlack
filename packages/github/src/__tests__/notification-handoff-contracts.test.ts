@@ -88,19 +88,10 @@ describe('notification handoff v2 contracts', () => {
     }
   });
 
-  it('does not include payload bytes in the handoff key', () => {
-    const input = keyVectors.vectors[0]!;
-    const beforePayloadChange = createNotificationHandoffKeyV2(
-      input.event_stable_key,
-      input.route_id,
-      input.routing_epoch,
+  it('rejects embedded NUL bytes before constructing the delimited preimage', () => {
+    expect(() => createNotificationHandoffKeyV2('stable\0suffix', 'slack-primary', 1)).toThrow(
+      'event_stable_key must not contain NUL bytes',
     );
-    const afterPayloadChange = createNotificationHandoffKeyV2(
-      input.event_stable_key,
-      input.route_id,
-      input.routing_epoch,
-    );
-    expect(afterPayloadChange).toBe(beforePayloadChange);
   });
 
   it.each(['a', 'slack-primary', 'a1', `a${'-b'.repeat(31)}c`])(

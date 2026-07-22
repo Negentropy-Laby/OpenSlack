@@ -83,6 +83,8 @@ Rules:
 - A service route requires a vendor ID matching `^[a-z0-9-]{1,64}$` and the root service block.
 - Service endpoint is an HTTPS origin without userinfo, path, query or fragment. HTTP is accepted only for loopback
   when `allow_insecure_loopback: true` is explicit.
+- `localhost` is resolver-dependent even in development; prefer literal `127.0.0.1` or `[::1]` for an explicitly
+  enabled insecure loopback endpoint.
 - Credential values never enter config. References use the existing `env:` or `keychain:` contract.
 - Backend, vendor, target, encoder, response policy, idempotency mapping or other incompatible delivery semantics
   require a higher epoch. Existing queue records retain their frozen values.
@@ -101,6 +103,9 @@ ASCII(routing_epoch without leading zeroes)
 Hash with SHA-256, use the first 16 bytes, set RFC 4122 variant and version nibble 5, then render lowercase
 `8-4-4-4-12`. The payload digest is deliberately absent. A route/backend/vendor/encoder incompatibility changes the
 epoch; a changed body under the same frozen key is an integrity conflict and must result in service 409.
+
+`event_stable_key` must be non-empty and must not contain U+0000. `route_id` is already NUL-free by its canonical
+pattern, and `routing_epoch` is canonical decimal ASCII, so the delimited preimage remains unambiguous.
 
 The executable vectors live in
 `packages/github/src/__fixtures__/notification-handoff/key-vectors.v1.json`.

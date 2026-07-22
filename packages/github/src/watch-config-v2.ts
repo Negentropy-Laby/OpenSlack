@@ -1,3 +1,7 @@
+/**
+ * CONTRACT FREEZE: this standalone v2 parser is not loaded by the watch daemon.
+ * Do not add runtime consumers before the G2/G3 gates in notification-delivery-integration.md.
+ */
 import { parseSecretReference } from '@openslack/credentials';
 import { parse as parseYaml } from 'yaml';
 import {
@@ -195,6 +199,8 @@ function parseNotificationService(
   if (endpoint) {
     try {
       const url = new URL(endpoint);
+      // `localhost` is development-only and depends on local resolver integrity; prefer literal
+      // 127.0.0.1 or [::1] when an insecure loopback endpoint is unavoidable.
       const isLoopback = ['localhost', '127.0.0.1', '[::1]', '::1'].includes(url.hostname);
       const schemeAllowed =
         url.protocol === 'https:' ||

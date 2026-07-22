@@ -1,3 +1,7 @@
+/**
+ * CONTRACT FREEZE: these v2 handoff contracts are not wired into the watch daemon.
+ * Do not add runtime consumers before the G2/G3 gates in notification-delivery-integration.md.
+ */
 import { createHash } from 'node:crypto';
 
 export const NOTIFICATION_HANDOFF_NAMESPACE_V2 = 'openslack.watch.handoff.v2';
@@ -58,6 +62,10 @@ export interface MaterializedNotificationBody {
   encoderVersion: NotificationBodyEncoderVersion;
 }
 
+/**
+ * The state is the service outbox state. Receiving this receipt transfers handoff authority to
+ * the service and maps the local route state to `accepted`.
+ */
 export interface AcceptedReceipt {
   requestId: string;
   notificationId: string;
@@ -93,6 +101,9 @@ export function createNotificationHandoffKeyV2(
 ): string {
   if (typeof eventStableKey !== 'string' || !eventStableKey) {
     throw new TypeError('event_stable_key must be a non-empty string');
+  }
+  if (eventStableKey.includes('\0')) {
+    throw new TypeError('event_stable_key must not contain NUL bytes');
   }
   if (!isNotificationHandoffRouteId(routeId)) {
     throw new TypeError('route_id must match the notification handoff v2 route ID contract');
