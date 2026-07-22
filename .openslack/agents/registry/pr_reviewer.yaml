@@ -27,12 +27,12 @@ capabilities:
 
 workspace_permissions:
   allow:
-    - ".openslack/tasks/**"
-    - ".openslack/outbox/**"
+    - '.openslack/tasks/**'
+    - '.openslack/outbox/**'
   deny:
-    - ".openslack/agents/**"
-    - ".openslack/policies/**"
-    - ".github/**"
+    - '.openslack/agents/**'
+    - '.openslack/policies/**'
+    - '.github/**'
 
 execution:
   max_parallel_tasks: 3
