@@ -188,9 +188,16 @@ Future Blob path:
 .openslack.local/daemon/blobs/sha256/<first-2-hex>/<64-hex>
 ```
 
-The publish sequence is create-only temp, write, file fsync, create-only publish, directory fsync, reopen and verify.
-Directories are `0700`, files `0600`, symlinks and non-regular files are rejected. Queue metadata remains capped at
-16 MiB; Blob storage defaults to 1 GiB with warning at 80%. A live reference is never evicted.
+The implemented CAS publish sequence is same-directory `wx` temp, write, file fsync, hard-link create-only publish,
+directory fsync, reopen and verify. There is no rename or overwrite fallback. An `EEXIST` result succeeds only after
+the existing regular file's size and digest are reverified. Directories are `0700`, files `0600`, and existing
+permissions fail closed on platforms with POSIX mode bits. Symlinks, Windows junctions, FIFOs, directories and path
+escape are rejected.
+
+Queue metadata remains capped at 16 MiB. Blob storage defaults to 1 GiB and reports a warning at 80%; quota checks,
+publish, reads and GC share a cross-process lock. GC receives explicit caller-supplied active and eligible digest
+sets, never infers queue authority, never removes an active digest and never sweeps unlisted content. Concurrent
+read/GC operations therefore return verified full bytes or a safe not-found result, never torn content.
 
 Receipt path:
 
@@ -205,6 +212,20 @@ The strict schema is `openslack.notification_acceptance.v1`. It contains route/r
 notification and request IDs, accepted/replay timestamps, deployment digest and watch-config digest. It contains no
 payload, endpoint or credential. The executable schema is
 `packages/github/src/notification-handoff-v2.schema.json`.
+
+Receipt serialization uses the schema field order above as compact UTF-8 JSON with no trailing newline. Publication
+uses the same `wx` temp, file fsync, create-only hard link and directory fsync discipline. `read` rejects unsafe or
+non-canonical bytes, `verify` compares an expected receipt, and `ensureFromEmbeddedReceipt` creates a missing ledger
+or accepts only byte-identical existing evidence. These primitives do not implement the accepted queue transaction.
+
+Future IB3 callers must acquire locks only in this order:
+
+```text
+queue-v2 lock -> Blob store lock or receipt store lock
+```
+
+Blob and receipt stores never acquire the queue lock, and callers must release the storage lock before attempting any
+independent queue acquisition. This avoids lock inversion while preserving the frozen accepted persistence sequence.
 
 Accepted persistence is ordered:
 
