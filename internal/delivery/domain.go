@@ -37,6 +37,7 @@ const (
 // the attempt and never persisted.
 type AttemptContext struct {
 	NotificationID         string
+	IngressIdempotencyKey  string
 	LeaseID                string
 	Version                int64
 	VendorID               string

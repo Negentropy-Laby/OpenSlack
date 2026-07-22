@@ -247,8 +247,8 @@ func TestPostgresRepository_ReadsSchemaV2NoneAuthWithNullCredential(t *testing.T
 		) VALUES (
 			$1, 1, 2, 'https://example.com/webhook', 'POST', 'example.com', 443,
 			'https_public', 'none', 'http_status_v1', NULL, NULL, NULL, '[]'::jsonb,
-			'{"Mode":"none"}'::jsonb,
-			'{"AllowedRequestHeaderNames":[],"ForbiddenRequestHeaderNames":[],"MaxRequestBodyBytes":65536}'::jsonb,
+			'{"Mode":"headers","source":"ingress_idempotency_key","header_names":["idempotency-key","x-openslack-idempotency-key"]}'::jsonb,
+			'{"AllowedRequestHeaderNames":["idempotency-key","x-openslack-idempotency-key"],"ForbiddenRequestHeaderNames":[],"MaxRequestBodyBytes":65536}'::jsonb,
 			$2
 		)`, vendorID, actor); err != nil {
 		t.Fatalf("seed endpoint with no credential: %v", err)
@@ -261,6 +261,9 @@ func TestPostgresRepository_ReadsSchemaV2NoneAuthWithNullCredential(t *testing.T
 	}
 	if version.AuthStrategy != "none" || version.ResponsePolicy != vendorregistry.ResponsePolicyHTTPStatusV1 || version.CredentialRef != nil {
 		t.Fatalf("nullable credential scan drifted: %+v", version)
+	}
+	if version.OutboundIdempotencyMapping.Mode != "headers" || version.OutboundIdempotencyMapping.Source != "ingress_idempotency_key" || len(version.OutboundIdempotencyMapping.HeaderNames) != 2 {
+		t.Fatalf("schema v2 mapping scan drifted: %+v", version.OutboundIdempotencyMapping)
 	}
 	active, err := repo.ListActiveEndpointVersions(ctx)
 	if err != nil {

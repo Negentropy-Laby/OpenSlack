@@ -77,6 +77,13 @@ func (r fixedCredentialResolver) Resolve(context.Context, vendorregistry.Credent
 	return Credential{BearerToken: "secret"}, nil
 }
 
+type countingCredentialResolver struct{ calls int }
+
+func (r *countingCredentialResolver) Resolve(context.Context, vendorregistry.CredentialRef) (Credential, error) {
+	r.calls++
+	return Credential{BearerToken: "must-not-be-used"}, nil
+}
+
 type sequenceResolver struct {
 	mu      sync.Mutex
 	answers [][]netip.Addr
@@ -148,7 +155,7 @@ func runnerActor() notificationstore.ActorContext {
 
 func validSnapshot() vendorregistry.DeliveryConfigSnapshot {
 	return vendorregistry.DeliveryConfigSnapshot{
-		VendorID: "vendor-a", ConfigVersion: 1, CanonicalURL: "https://vendor.example/hook", Method: "POST", Hostname: "vendor.example", Port: 443,
+		VendorID: "vendor-a", ConfigVersion: 1, ConfigSchemaVersion: 1, CanonicalURL: "https://vendor.example/hook", Method: "POST", Hostname: "vendor.example", Port: 443,
 		TransportKind:              "https_public",
 		OutboundIdempotencyMapping: vendorregistry.OutboundIdempotencyMapping{Mode: "none"}, EndpointPolicy: vendorregistry.EndpointPolicy{MaxRequestBodyBytes: 4096},
 		AuthStrategy: "bearer", CredentialRef: &vendorregistry.CredentialRef{Scheme: "env", OpaqueHandle: "TOKEN"},
@@ -384,6 +391,31 @@ func TestRunnerAttemptLimitStopsBeforeDependenciesAndNetwork(t *testing.T) {
 	}
 	if dns.calls != 0 || transport.calls != 0 || store.transition.RequestedTransition != notificationstore.TransitionDie || store.transition.DeliveryResult.Reason != notificationstore.ReasonAttemptLimit {
 		t.Fatalf("dns=%d http=%d transition=%+v", dns.calls, transport.calls, store.transition)
+	}
+}
+
+func TestRunnerAuthNoneDoesNotResolveCredential(t *testing.T) {
+	start := time.Date(2026, 7, 22, 0, 0, 0, 0, time.UTC)
+	dns := &sequenceResolver{answers: [][]netip.Addr{{netip.MustParseAddr("8.8.8.8")}, {netip.MustParseAddr("8.8.8.8")}}}
+	transport := &fakeHTTPTransport{status: 204}
+	runner, store, _, _ := newRunnerFixture(t, start, dns, transport)
+	snapshot := validSnapshot()
+	snapshot.ConfigSchemaVersion = 2
+	snapshot.AuthStrategy = "none"
+	snapshot.CredentialRef = nil
+	snapshot.OutboundIdempotencyMapping = vendorregistry.OutboundIdempotencyMapping{Mode: "none"}
+	runner.vr = snapshotReader{snapshot: snapshot}
+	resolver := &countingCredentialResolver{}
+	runner.credentials = resolver
+	store.claim.IngressIdempotencyKey = "ingress-key"
+	if _, err := runner.RunOnce(context.Background(), runnerActor()); err != nil {
+		t.Fatal(err)
+	}
+	if resolver.calls != 0 {
+		t.Fatalf("auth none called credential resolver %d times", resolver.calls)
+	}
+	if transport.calls != 1 || store.transition.RequestedTransition != notificationstore.TransitionSucceed {
+		t.Fatalf("http=%d transition=%+v", transport.calls, store.transition)
 	}
 }
 

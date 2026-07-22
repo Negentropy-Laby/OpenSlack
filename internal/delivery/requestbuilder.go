@@ -81,6 +81,7 @@ type BuiltRequest struct {
 // idempotency mapping, and bearer auth, then validates the body budget.
 func BuildRequest(
 	notificationID string,
+	ingressIdempotencyKey string,
 	payload []byte,
 	snapshot vendorregistry.DeliveryConfigSnapshot,
 	cred Credential,
@@ -150,6 +151,9 @@ func BuildRequest(
 			}
 			header.Set(rule.Name, rule.Value)
 		case "credential_field":
+			if snapshot.AuthStrategy == "none" {
+				return nil, NewPolicyError(ReasonRequestUnbuildable)
+			}
 			value, err := resolveCredentialField(cred, rule.CredentialField)
 			if err != nil {
 				return nil, err
@@ -163,50 +167,16 @@ func BuildRequest(
 		}
 	}
 
-	// Apply idempotency mapping.
-	switch snapshot.OutboundIdempotencyMapping.Mode {
-	case "none":
-		// No change.
-	case "header":
-		name := strings.ToLower(snapshot.OutboundIdempotencyMapping.HeaderName)
-		if !safeSnapshotHeader(name) || !headerAllowedByPolicy(name, snapshot.EndpointPolicy) {
-			return nil, NewPolicyError(ReasonRequestUnbuildable)
-		}
-		if _, duplicate := seenHeaders[name]; duplicate {
-			return nil, NewPolicyError(ReasonRequestUnbuildable)
-		}
-		seenHeaders[name] = struct{}{}
-		header.Set(name, notificationID)
-	case "body_field":
-		field := snapshot.OutboundIdempotencyMapping.FieldName
-		if field == "" {
-			return nil, NewPolicyError(ReasonRequestUnbuildable)
-		}
-		mediaType, _, err := mime.ParseMediaType(header.Get("Content-Type"))
-		if err != nil || mediaType != "application/json" {
-			return nil, NewPolicyError(ReasonRequestUnbuildable)
-		}
-		payloadMap, err := decodeJSONObject(body)
-		if err != nil {
-			return nil, NewPolicyError(ReasonRequestUnbuildable)
-		}
-		if _, ok := payloadMap[field]; ok {
-			return nil, NewPolicyError(ReasonRequestUnbuildable)
-		}
-		encodedID, _ := json.Marshal(notificationID)
-		payloadMap[field] = encodedID
-		newBody, err := json.Marshal(payloadMap)
-		if err != nil {
-			return nil, NewPolicyError(ReasonRequestUnbuildable)
-		}
-		body = newBody
-	default:
+	if err := applyIdempotencyMapping(snapshot, notificationID, ingressIdempotencyKey, header, seenHeaders, &body); err != nil {
 		return nil, NewPolicyError(ReasonRequestUnbuildable)
 	}
 
 	// Apply auth strategy.
 	switch snapshot.AuthStrategy {
 	case "bearer":
+		if (snapshot.ConfigSchemaVersion != 1 && snapshot.ConfigSchemaVersion != 2) || snapshot.CredentialRef == nil {
+			return nil, NewPolicyError(ReasonRequestUnbuildable)
+		}
 		if header.Get("authorization") != "" {
 			return nil, NewPolicyError(ReasonRequestUnbuildable)
 		}
@@ -214,6 +184,10 @@ func BuildRequest(
 			return nil, NewPolicyError(ReasonCredentialUnavailable)
 		}
 		header.Set("authorization", "Bearer "+cred.BearerToken)
+	case "none":
+		if snapshot.ConfigSchemaVersion != 2 || snapshot.CredentialRef != nil || cred != (Credential{}) {
+			return nil, NewPolicyError(ReasonRequestUnbuildable)
+		}
 	default:
 		return nil, NewPolicyError(ReasonRequestUnbuildable)
 	}
@@ -231,6 +205,116 @@ func BuildRequest(
 		ResolvedIP:   resolvedIP,
 		AuthStrategy: snapshot.AuthStrategy,
 	}, nil
+}
+
+func applyIdempotencyMapping(
+	snapshot vendorregistry.DeliveryConfigSnapshot,
+	notificationID string,
+	ingressIdempotencyKey string,
+	header http.Header,
+	seenHeaders map[string]struct{},
+	body *[]byte,
+) error {
+	mapping := snapshot.OutboundIdempotencyMapping
+	switch snapshot.ConfigSchemaVersion {
+	case 1:
+		if mapping.Source != "" || len(mapping.HeaderNames) != 0 {
+			return errors.New("schema v1 mapping contains schema v2 fields")
+		}
+		switch mapping.Mode {
+		case "none":
+			if mapping.HeaderName != "" || mapping.FieldName != "" {
+				return errors.New("none mapping contains fields")
+			}
+			return nil
+		case "header":
+			if mapping.FieldName != "" {
+				return errors.New("header mapping contains body field")
+			}
+			return setIdempotencyHeader(mapping.HeaderName, notificationID, snapshot.EndpointPolicy, header, seenHeaders, false)
+		case "body_field":
+			if mapping.HeaderName != "" || mapping.FieldName == "" {
+				return errors.New("body field mapping is invalid")
+			}
+			mediaType, _, err := mime.ParseMediaType(header.Get("Content-Type"))
+			if err != nil || mediaType != "application/json" {
+				return errors.New("body field mapping requires JSON")
+			}
+			payloadMap, err := decodeJSONObject(*body)
+			if err != nil {
+				return err
+			}
+			if _, ok := payloadMap[mapping.FieldName]; ok {
+				return errors.New("body field already exists")
+			}
+			encodedID, _ := json.Marshal(notificationID)
+			payloadMap[mapping.FieldName] = encodedID
+			newBody, err := json.Marshal(payloadMap)
+			if err != nil {
+				return err
+			}
+			*body = newBody
+			return nil
+		default:
+			return errors.New("invalid schema v1 mapping mode")
+		}
+	case 2:
+		if mapping.HeaderName != "" || mapping.FieldName != "" {
+			return errors.New("schema v2 mapping contains schema v1 fields")
+		}
+		switch mapping.Mode {
+		case "none":
+			if mapping.Source != "" || len(mapping.HeaderNames) != 0 {
+				return errors.New("none mapping contains fields")
+			}
+			return nil
+		case "headers":
+			if len(mapping.HeaderNames) < 1 || len(mapping.HeaderNames) > 4 {
+				return errors.New("schema v2 header count outside bounds")
+			}
+			var value string
+			switch mapping.Source {
+			case "notification_id":
+				value = notificationID
+			case "ingress_idempotency_key":
+				value = ingressIdempotencyKey
+			default:
+				return errors.New("invalid schema v2 idempotency source")
+			}
+			if value == "" {
+				return errors.New("idempotency source value is empty")
+			}
+			for _, name := range mapping.HeaderNames {
+				if err := setIdempotencyHeader(name, value, snapshot.EndpointPolicy, header, seenHeaders, true); err != nil {
+					return err
+				}
+			}
+			return nil
+		default:
+			return errors.New("invalid schema v2 mapping mode")
+		}
+	default:
+		return errors.New("unsupported endpoint config schema version")
+	}
+}
+
+func setIdempotencyHeader(name, value string, policy vendorregistry.EndpointPolicy, header http.Header, seenHeaders map[string]struct{}, requireLowercase bool) error {
+	if !safeSnapshotHeaderValue(value) {
+		return errors.New("idempotency value is unsafe")
+	}
+	if requireLowercase && name != strings.ToLower(name) {
+		return errors.New("schema v2 header name must be lowercase")
+	}
+	name = strings.ToLower(name)
+	if !safeSnapshotHeader(name) || !headerAllowedByPolicy(name, policy) {
+		return errors.New("idempotency header is not allowed")
+	}
+	if _, duplicate := seenHeaders[name]; duplicate {
+		return errors.New("duplicate idempotency header")
+	}
+	seenHeaders[name] = struct{}{}
+	header.Set(name, value)
+	return nil
 }
 
 func safeSnapshotHeader(name string) bool {

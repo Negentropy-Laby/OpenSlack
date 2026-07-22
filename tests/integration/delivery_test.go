@@ -55,6 +55,21 @@ func (integrationHTTPTransport) Do(context.Context, *http.Request, netip.Addr, t
 	}, nil
 }
 
+type captureIntegrationTransport struct {
+	body   []byte
+	header http.Header
+}
+
+func (t *captureIntegrationTransport) Do(_ context.Context, req *http.Request, _ netip.Addr, _ time.Duration) (*http.Response, error) {
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		return nil, err
+	}
+	t.body = body
+	t.header = req.Header.Clone()
+	return &http.Response{StatusCode: http.StatusNoContent, Header: make(http.Header), Body: io.NopCloser(&emptyIntegrationBody{})}, nil
+}
+
 type sequenceIntegrationTransport struct {
 	mu       sync.Mutex
 	statuses []int
@@ -227,6 +242,66 @@ func TestDeliveryRunner_PostgresEndToEnd(t *testing.T) {
 	result := history.Items[1]
 	if result.ResultKind != string(notificationstore.ResultKindHTTPResponse) || result.OutcomeClass != string(notificationstore.OutcomeClassSuccess) || result.HTTPStatus == nil || *result.HTTPStatus != http.StatusNoContent {
 		t.Fatalf("delivery result history: %+v", result)
+	}
+}
+
+func TestDeliveryRunnerSchemaV2PreservesIngressKeyAndExactBodyWithoutCredentialResolution(t *testing.T) {
+	pool := testsupport.OpenPostgres(t)
+	ctx := context.Background()
+	const vendorID = "vendor-delivery-v2-continuity"
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO vendors (vendor_id, owning_scope, lifecycle, record_revision, current_config_version)
+		VALUES ($1, 'scope-delivery', 'active', 1, 1)`, vendorID); err != nil {
+		t.Fatalf("seed v2 vendor record: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO endpoint_versions (
+			vendor_id, config_version, config_schema_version, canonical_url, method, hostname, port,
+			transport_kind, auth_strategy, response_policy, credential_ref_scheme, credential_ref_handle,
+			credential_ref_version, transport_auth_headers, outbound_idempotency_mapping, endpoint_policy,
+			created_by_actor
+		) VALUES (
+			$1, 1, 2, 'https://vendor.example/hook', 'POST', 'vendor.example', 443,
+			'https_public', 'none', 'http_status_v1', NULL, NULL, NULL,
+			'[{"Kind":"literal","Name":"content-type","Value":"application/octet-stream"}]'::jsonb,
+			'{"Mode":"headers","source":"ingress_idempotency_key","header_names":["idempotency-key","x-openslack-idempotency-key"]}'::jsonb,
+			'{"AllowedRequestHeaderNames":["content-type","idempotency-key","x-openslack-idempotency-key"],"ForbiddenRequestHeaderNames":[],"MaxRequestBodyBytes":4096}'::jsonb,
+			'integration-test'
+		)`, vendorID); err != nil {
+		t.Fatalf("seed v2 endpoint: %v", err)
+	}
+	payload := []byte("exact\x00vendor\nbody")
+	const ingressKey = "openslack-ingress-key"
+	store := notificationstorepostgres.New(pool, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if _, err := store.Intake(ctx, notificationstore.ValidatedIntake{
+		CallerID: "caller-v2-continuity", VendorID: vendorID, Payload: payload, IdempotencyKey: ingressKey,
+	}); err != nil {
+		t.Fatalf("intake: %v", err)
+	}
+	credentials := &recordingCredentialResolver{}
+	transport := &captureIntegrationTransport{}
+	registry := vendorregistry.NewService(vendorregistrypostgres.New(pool), vendorregistry.DefaultConfig())
+	runner := newIntegrationRunner(t, store, registry, credentials, transport, delivery.RealClock{})
+	worker := notificationstore.ActorContext{
+		Kind: notificationstore.ActorWorker, ActorID: "worker-v2-continuity", VendorScope: []string{vendorID},
+		Capabilities: []notificationstore.Capability{notificationstore.CapabilityClaimDelivery, notificationstore.CapabilityRecordDeliveryResult},
+	}
+	if claimed, err := runner.RunOnce(ctx, worker); err != nil || !claimed {
+		t.Fatalf("run once: claimed=%v err=%v", claimed, err)
+	}
+	if string(transport.body) != string(payload) {
+		t.Fatalf("vendor body changed: got %q want %q", transport.body, payload)
+	}
+	if transport.header.Get("Idempotency-Key") != ingressKey || transport.header.Get("X-OpenSlack-Idempotency-Key") != ingressKey {
+		t.Fatalf("idempotency headers=%v", transport.header)
+	}
+	if transport.header.Get("Authorization") != "" {
+		t.Fatalf("auth none emitted authorization header")
+	}
+	credentials.mu.Lock()
+	defer credentials.mu.Unlock()
+	if len(credentials.handles) != 0 {
+		t.Fatalf("auth none resolved credentials: %v", credentials.handles)
 	}
 }
 

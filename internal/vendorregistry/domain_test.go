@@ -259,6 +259,8 @@ func TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift(t *testing.T) 
 			(*v.TransportAuthHeaders)[0] = HeaderRuleInput{Kind: "credential_field", Name: "content-type", CredentialField: "password"}
 		}, ErrInvalidEndpointPolicy},
 		{"none with header", func(v *EndpointConfigInput) { v.OutboundIdempotencyMapping.HeaderName = "x-idempotency-key" }, ErrInvalidCommand},
+		{"v2 source on v1 input", func(v *EndpointConfigInput) { v.OutboundIdempotencyMapping.Source = "notification_id" }, ErrInvalidCommand},
+		{"v2 headers on v1 input", func(v *EndpointConfigInput) { v.OutboundIdempotencyMapping.HeaderNames = []string{"x-idempotency-key"} }, ErrInvalidCommand},
 		{"header with body field", func(v *EndpointConfigInput) {
 			v.EndpointPolicy.AllowedRequestHeaderNames = slicePointer([]string{"content-type", "x-idempotency-key"})
 			v.OutboundIdempotencyMapping = OutboundIdempotencyMapping{Mode: "header", HeaderName: "x-idempotency-key", FieldName: "id"}

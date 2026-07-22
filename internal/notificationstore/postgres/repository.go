@@ -170,6 +170,7 @@ func (r *Repository) ClaimNext(ctx context.Context, actor notificationstore.Acto
 
 	return notificationstore.LeaseClaim{
 		NotificationID:         string(n.ID),
+		IngressIdempotencyKey:  n.IdempotencyKey,
 		LeaseID:                leaseID,
 		LeaseExpiresAt:         expiresAt,
 		Version:                n.Version + 1,
