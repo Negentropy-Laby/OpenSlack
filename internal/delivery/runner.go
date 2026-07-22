@@ -122,6 +122,9 @@ func (r *Runner) RunOnce(ctx context.Context, storeCtx notificationstore.ActorCo
 	if !ok {
 		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonRequestUnbuildable)
 	}
+	if snapshot.ResponsePolicy != vendorregistry.ResponsePolicyHTTPStatusV1 && snapshot.ResponsePolicy != vendorregistry.ResponsePolicyJSONAckV1 {
+		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonRequestUnbuildable)
+	}
 
 	var cred Credential
 	switch snapshot.AuthStrategy {
@@ -232,7 +235,7 @@ func (r *Runner) RunOnce(ctx context.Context, storeCtx notificationstore.ActorCo
 	// Once the request has been sent, process shutdown stops new claims but lets
 	// this bounded attempt and its result commit finish.
 	attemptCtx, cancelAttempt := context.WithTimeout(context.WithoutCancel(ctx), r.cfg.HTTPHardTimeout)
-	resp, err := r.transport.Do(attemptCtx, httpReq, resolvedIP, r.cfg.HTTPHardTimeout)
+	resp, err := r.transport.Do(attemptCtx, httpReq, resolvedIP, r.cfg.HTTPHardTimeout, snapshot.ResponsePolicy)
 	cancelAttempt()
 	now = r.clock.Now()
 
@@ -241,7 +244,7 @@ func (r *Runner) RunOnce(ctx context.Context, storeCtx notificationstore.ActorCo
 		outcome = Classify(0, err, nil)
 	} else {
 		retryAfter := ParseRetryAfter(resp.Header.Get("Retry-After"), now)
-		outcome = Classify(resp.StatusCode, nil, retryAfter)
+		outcome = ClassifyResponse(snapshot.ResponsePolicy, resp, retryAfter)
 	}
 
 	outcome = ApplyB01Cutoff(outcome, now, cycleSendCutoff)

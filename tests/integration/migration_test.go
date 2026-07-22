@@ -216,24 +216,24 @@ func TestMigrationsUpDown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("version after upgrade: %v", err)
 	}
-	if version != 7 {
-		t.Fatalf("version after upgrade = %d, want 7", version)
+	if version != 8 {
+		t.Fatalf("version after upgrade = %d, want 8", version)
 	}
 	if dirty {
 		t.Fatal("migration marked dirty after valid upgrade")
 	}
 
 	if err := m.Steps(-1); err != nil {
-		t.Fatalf("step down 000007: %v", err)
-	}
-	if version, dirty, err = m.Version(); err != nil || version != 6 || dirty {
-		t.Fatalf("version after step down = %d dirty=%v err=%v, want clean 6", version, dirty, err)
-	}
-	if err := m.Steps(1); err != nil {
-		t.Fatalf("step reapply 000007: %v", err)
+		t.Fatalf("step down 000008: %v", err)
 	}
 	if version, dirty, err = m.Version(); err != nil || version != 7 || dirty {
-		t.Fatalf("version after step reapply = %d dirty=%v err=%v, want clean 7", version, dirty, err)
+		t.Fatalf("version after step down = %d dirty=%v err=%v, want clean 7", version, dirty, err)
+	}
+	if err := m.Steps(1); err != nil {
+		t.Fatalf("step reapply 000008: %v", err)
+	}
+	if version, dirty, err = m.Version(); err != nil || version != 8 || dirty {
+		t.Fatalf("version after step reapply = %d dirty=%v err=%v, want clean 8", version, dirty, err)
 	}
 
 	if err := m.Down(); err != nil {
@@ -245,8 +245,8 @@ func TestMigrationsUpDown(t *testing.T) {
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
 		t.Fatalf("fresh re-install: %v", err)
 	}
-	if version, dirty, err = m.Version(); err != nil || version != 7 || dirty {
-		t.Fatalf("version after fresh re-install = %d dirty=%v err=%v, want clean 7", version, dirty, err)
+	if version, dirty, err = m.Version(); err != nil || version != 8 || dirty {
+		t.Fatalf("version after fresh re-install = %d dirty=%v err=%v, want clean 8", version, dirty, err)
 	}
 }
 
@@ -317,4 +317,94 @@ func TestMigration000007StorageContractAndDownGuard(t *testing.T) {
 	if err := m.Steps(-1); err == nil {
 		t.Fatal("000007 down accepted v2-only endpoint data")
 	}
+}
+
+func TestMigration000008ClosedCodesAndGuards(t *testing.T) {
+	t.Run("historical anomaly blocks upgrade", func(t *testing.T) {
+		dbURL := testsupport.OpenMigrationSchemaURL(t)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		pool, err := pgxpool.New(ctx, dbURL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer pool.Close()
+		migrateURL := strings.Replace(dbURL, "postgres://", "pgx5://", 1)
+		m, err := migrate.New(migrationsURL(), migrateURL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer m.Close()
+		if err := m.Steps(7); err != nil {
+			t.Fatalf("install through 000007: %v", err)
+		}
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO vendors (vendor_id, owning_scope, lifecycle)
+			VALUES ('vendor-000008-bad', 'team-a', 'active');
+			INSERT INTO notifications (
+				notification_id, caller_id, vendor_id, idempotency_key, request_fingerprint,
+				payload_bytes, state, version, attempt_count, delivery_cycle_started_at, created_at, updated_at
+			) VALUES (
+				'n-000008-bad', 'caller-1', 'vendor-000008-bad', 'key-000008-bad', decode('00','hex'),
+				decode('7b7d','hex'), 'pending', 2, 1, now(), now(), now()
+			);
+			INSERT INTO delivery_attempts (
+				notification_id, attempt_seq, event_kind, result_kind, outcome_class, http_status, error_code
+			) VALUES (
+				'n-000008-bad', 1, 'outcome', 'http_response', 'retryable_failure', 200, 'raw-vendor-secret'
+			)`); err != nil {
+			t.Fatalf("seed anomaly accepted by old broad contract: %v", err)
+		}
+		if err := m.Steps(1); err == nil {
+			t.Fatal("000008 accepted incompatible historical error code")
+		}
+	})
+
+	t.Run("closed constraint and down guard", func(t *testing.T) {
+		dbURL := testsupport.OpenMigrationSchemaURL(t)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		pool, err := pgxpool.New(ctx, dbURL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer pool.Close()
+		migrateURL := strings.Replace(dbURL, "postgres://", "pgx5://", 1)
+		m, err := migrate.New(migrationsURL(), migrateURL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer m.Close()
+		if err := m.Steps(8); err != nil {
+			t.Fatalf("install through 000008: %v", err)
+		}
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO vendors (vendor_id, owning_scope, lifecycle)
+			VALUES ('vendor-000008-good', 'team-a', 'active');
+			INSERT INTO notifications (
+				notification_id, caller_id, vendor_id, idempotency_key, request_fingerprint,
+				payload_bytes, state, version, attempt_count, delivery_cycle_started_at, created_at, updated_at
+			) VALUES (
+				'n-000008-good', 'caller-1', 'vendor-000008-good', 'key-000008-good', decode('00','hex'),
+				decode('7b7d','hex'), 'dead', 2, 1, now(), now(), now()
+			);
+			INSERT INTO delivery_attempts (
+				notification_id, attempt_seq, event_kind, result_kind, outcome_class, http_status, reason
+			) VALUES (
+				'n-000008-good', 1, 'outcome', 'http_response', 'permanent_failure', 200, 'vendor_protocol_error'
+			)`); err != nil {
+			t.Fatalf("new sanitized terminal reason rejected: %v", err)
+		}
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO delivery_attempts (
+				notification_id, attempt_seq, event_kind, result_kind, outcome_class, http_status, error_code
+			) VALUES (
+				'n-000008-good', 2, 'outcome', 'http_response', 'retryable_failure', 200, 'raw-vendor-secret'
+			)`); err == nil {
+			t.Fatal("closed constraint accepted unknown vendor error")
+		}
+		if err := m.Steps(-1); err == nil {
+			t.Fatal("000008 down accepted v2 acknowledgement history")
+		}
+	})
 }

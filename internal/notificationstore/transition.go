@@ -24,6 +24,25 @@ var validActualDieReasons = map[string]struct{}{
 	ReasonNonRetryableHTTPStatus: {},
 	ReasonVendorUnreachable:      {},
 	ReasonDeadlineExceeded:       {},
+	ReasonVendorRejected:         {},
+	ReasonVendorProtocolError:    {},
+}
+
+var validTransportErrorCodes = map[string]struct{}{
+	"dns_failure":             {},
+	"connection_failure":      {},
+	"tls_failure":             {},
+	"timeout":                 {},
+	"preflight_timeout":       {},
+	"registry_access_failure": {},
+}
+
+var validJSONAckRetryErrorCodes = map[string]struct{}{
+	"fatal_error":         {},
+	"internal_error":      {},
+	"ratelimited":         {},
+	"request_timeout":     {},
+	"service_unavailable": {},
 }
 
 // ValidateDeliveryResult checks the delivery result matrix and returns the
@@ -58,8 +77,14 @@ func ValidateDeliveryResult(req TransitionRequest) (*DeliveryResult, error) {
 		if dr.ResultKind == ResultKindHTTPResponse && !validHTTPStatus(dr.HTTPStatus) {
 			return nil, Rejection{Category: RejectionInvalidDeliveryResult, Reason: "http_response requires http_status"}
 		}
-		if dr.ResultKind == ResultKindTransportFailure && dr.ErrorCode == "" {
-			return nil, Rejection{Category: RejectionInvalidDeliveryResult, Reason: "transport_failure requires error_code"}
+		if dr.ResultKind == ResultKindTransportFailure {
+			if _, ok := validTransportErrorCodes[dr.ErrorCode]; !ok {
+				return nil, Rejection{Category: RejectionInvalidDeliveryResult, Reason: "transport_failure requires a closed error_code"}
+			}
+		} else if dr.ErrorCode != "" {
+			if _, ok := validJSONAckRetryErrorCodes[dr.ErrorCode]; !ok {
+				return nil, Rejection{Category: RejectionInvalidDeliveryResult, Reason: "http_response retry has unrecognized error_code"}
+			}
 		}
 		if dr.Reason != "" {
 			return nil, Rejection{Category: RejectionInvalidDeliveryResult, Reason: "retry forbids reason"}
@@ -77,11 +102,29 @@ func ValidateDeliveryResult(req TransitionRequest) (*DeliveryResult, error) {
 			if _, ok := validActualDieReasons[dr.Reason]; !ok {
 				return nil, Rejection{Category: RejectionInvalidDeliveryResult, Reason: "unrecognized die reason"}
 			}
-			if dr.ResultKind == ResultKindHTTPResponse && !validHTTPStatus(dr.HTTPStatus) {
-				return nil, Rejection{Category: RejectionInvalidDeliveryResult, Reason: "http_response die requires http_status"}
-			}
-			if dr.ResultKind == ResultKindTransportFailure && dr.ErrorCode == "" {
-				return nil, Rejection{Category: RejectionInvalidDeliveryResult, Reason: "transport_failure die requires error_code"}
+			if dr.ResultKind == ResultKindHTTPResponse {
+				if !validHTTPStatus(dr.HTTPStatus) {
+					return nil, Rejection{Category: RejectionInvalidDeliveryResult, Reason: "http_response die requires http_status"}
+				}
+				if dr.Reason == ReasonVendorRejected || dr.Reason == ReasonVendorProtocolError {
+					if dr.ErrorCode != "" {
+						return nil, Rejection{Category: RejectionInvalidDeliveryResult, Reason: "vendor terminal reason forbids error_code"}
+					}
+				} else if dr.ErrorCode != "" {
+					if dr.Reason != ReasonDeadlineExceeded {
+						return nil, Rejection{Category: RejectionInvalidDeliveryResult, Reason: "http_response die error_code requires deadline_exceeded"}
+					}
+					if _, ok := validJSONAckRetryErrorCodes[dr.ErrorCode]; !ok {
+						return nil, Rejection{Category: RejectionInvalidDeliveryResult, Reason: "http_response die has unrecognized error_code"}
+					}
+				}
+			} else {
+				if dr.Reason == ReasonVendorRejected || dr.Reason == ReasonVendorProtocolError || dr.Reason == ReasonNonRetryableHTTPStatus {
+					return nil, Rejection{Category: RejectionInvalidDeliveryResult, Reason: "transport_failure has incompatible die reason"}
+				}
+				if _, ok := validTransportErrorCodes[dr.ErrorCode]; !ok {
+					return nil, Rejection{Category: RejectionInvalidDeliveryResult, Reason: "transport_failure die requires a closed error_code"}
+				}
 			}
 			return dr, nil
 		case ResultKindPolicyTermination:

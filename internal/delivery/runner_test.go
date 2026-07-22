@@ -3,7 +3,6 @@ package delivery
 import (
 	"context"
 	"errors"
-	"io"
 	"net/http"
 	"net/netip"
 	"sync"
@@ -123,31 +122,29 @@ type fixedRNG struct{}
 func (fixedRNG) Int63n(int64) int64 { return 0 }
 
 type fakeHTTPTransport struct {
-	calls  int
-	status int
-	err    error
-	after  func()
-	header http.Header
+	calls    int
+	status   int
+	err      error
+	after    func()
+	header   http.Header
+	body     []byte
+	overflow bool
 }
 
-func (t *fakeHTTPTransport) Do(context.Context, *http.Request, netip.Addr, time.Duration) (*http.Response, error) {
+func (t *fakeHTTPTransport) Do(context.Context, *http.Request, netip.Addr, time.Duration, string) (TransportResponse, error) {
 	t.calls++
 	if t.after != nil {
 		t.after()
 	}
 	if t.err != nil {
-		return nil, t.err
+		return TransportResponse{}, t.err
 	}
 	header := t.header
 	if header == nil {
 		header = make(http.Header)
 	}
-	return &http.Response{StatusCode: t.status, Header: header, Body: io.NopCloser(&emptyReader{})}, nil
+	return TransportResponse{StatusCode: t.status, Header: header, AckBody: append([]byte(nil), t.body...), AckBodyOverflow: t.overflow}, nil
 }
-
-type emptyReader struct{}
-
-func (*emptyReader) Read([]byte) (int, error) { return 0, io.EOF }
 
 func runnerActor() notificationstore.ActorContext {
 	return notificationstore.ActorContext{Kind: notificationstore.ActorWorker, ActorID: "worker-1", VendorScope: []string{"vendor-a"}, Capabilities: []notificationstore.Capability{notificationstore.CapabilityClaimDelivery, notificationstore.CapabilityRecordDeliveryResult}}
@@ -157,6 +154,7 @@ func validSnapshot() vendorregistry.DeliveryConfigSnapshot {
 	return vendorregistry.DeliveryConfigSnapshot{
 		VendorID: "vendor-a", ConfigVersion: 1, ConfigSchemaVersion: 1, CanonicalURL: "https://vendor.example/hook", Method: "POST", Hostname: "vendor.example", Port: 443,
 		TransportKind:              "https_public",
+		ResponsePolicy:             vendorregistry.ResponsePolicyHTTPStatusV1,
 		OutboundIdempotencyMapping: vendorregistry.OutboundIdempotencyMapping{Mode: "none"}, EndpointPolicy: vendorregistry.EndpointPolicy{MaxRequestBodyBytes: 4096},
 		AuthStrategy: "bearer", CredentialRef: &vendorregistry.CredentialRef{Scheme: "env", OpaqueHandle: "TOKEN"},
 	}
@@ -364,6 +362,48 @@ func TestRunnerRegistryInvalidCommandCommitsThenSignalsHealth(t *testing.T) {
 	}
 	if transport.calls != 0 {
 		t.Fatal("invalid command reached network")
+	}
+}
+
+func TestRunnerUnknownResponsePolicyFailsBeforeCredentialDNSAndNetwork(t *testing.T) {
+	start := time.Date(2026, 7, 22, 0, 0, 0, 0, time.UTC)
+	dns := &sequenceResolver{answers: [][]netip.Addr{{netip.MustParseAddr("8.8.8.8")}}}
+	transport := &fakeHTTPTransport{status: http.StatusOK}
+	runner, store, _, _ := newRunnerFixture(t, start, dns, transport)
+	snapshot := validSnapshot()
+	snapshot.ResponsePolicy = "unknown_policy"
+	credentials := &countingCredentialResolver{}
+	runner.vr = snapshotReader{snapshot: snapshot}
+	runner.credentials = credentials
+
+	claimed, err := runner.RunOnce(context.Background(), runnerActor())
+	if err != nil || !claimed {
+		t.Fatalf("run: claimed=%v err=%v", claimed, err)
+	}
+	if credentials.calls != 0 || dns.calls != 0 || transport.calls != 0 {
+		t.Fatalf("policy reached dependencies: credentials=%d dns=%d network=%d", credentials.calls, dns.calls, transport.calls)
+	}
+	if result := store.transition.DeliveryResult; store.transition.RequestedTransition != notificationstore.TransitionDie || result == nil || result.ResultKind != notificationstore.ResultKindPolicyTermination || result.Reason != notificationstore.ReasonRequestUnbuildable {
+		t.Fatalf("transition=%+v", store.transition)
+	}
+}
+
+func TestRunnerJSONAckRetryPreservesFrozenCode(t *testing.T) {
+	start := time.Date(2026, 7, 22, 0, 0, 0, 0, time.UTC)
+	dns := &sequenceResolver{answers: [][]netip.Addr{{netip.MustParseAddr("8.8.8.8")}, {netip.MustParseAddr("8.8.8.8")}}}
+	transport := &fakeHTTPTransport{status: http.StatusOK, body: []byte(`{"ok":false,"error":"ratelimited"}`)}
+	runner, store, _, _ := newRunnerFixture(t, start, dns, transport)
+	snapshot := validSnapshot()
+	snapshot.ResponsePolicy = vendorregistry.ResponsePolicyJSONAckV1
+	runner.vr = snapshotReader{snapshot: snapshot}
+
+	claimed, err := runner.RunOnce(context.Background(), runnerActor())
+	if err != nil || !claimed {
+		t.Fatalf("run: claimed=%v err=%v", claimed, err)
+	}
+	result := store.transition.DeliveryResult
+	if store.transition.RequestedTransition != notificationstore.TransitionRetry || result == nil || result.ResultKind != notificationstore.ResultKindHTTPResponse || result.HTTPStatus != http.StatusOK || result.ErrorCode != "ratelimited" || result.Reason != "" {
+		t.Fatalf("transition=%+v", store.transition)
 	}
 }
 

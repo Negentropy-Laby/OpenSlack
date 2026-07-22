@@ -1,8 +1,11 @@
 package delivery
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/netip"
@@ -11,6 +14,7 @@ import (
 	"time"
 
 	"rc_wsman/internal/notificationstore"
+	"rc_wsman/internal/vendorregistry"
 )
 
 // Reason constants for policy terminations and actual-result dies.
@@ -24,6 +28,8 @@ const (
 
 	ReasonNonRetryableHTTPStatus = "non_retryable_http_status"
 	ReasonVendorUnreachable      = "vendor_unreachable"
+	ReasonVendorRejected         = "vendor_rejected"
+	ReasonVendorProtocolError    = "vendor_protocol_error"
 
 	ErrorCodeDNSFailure            = "dns_failure"
 	ErrorCodeConnectionFailure     = "connection_failure"
@@ -32,6 +38,14 @@ const (
 	ErrorCodePreflightTimeout      = "preflight_timeout"
 	ErrorCodeRegistryAccessFailure = "registry_access_failure"
 )
+
+var retryableJSONAckCodes = map[string]struct{}{
+	"fatal_error":         {},
+	"internal_error":      {},
+	"ratelimited":         {},
+	"request_timeout":     {},
+	"service_unavailable": {},
+}
 
 // AttemptContext captures the per-attempt mutable state. It is discarded after
 // the attempt and never persisted.
@@ -106,6 +120,99 @@ func Classify(httpStatus int, transportErr error, retryAfter *time.Duration) Out
 		return classifyTransportError(transportErr)
 	}
 	return classifyHTTPStatus(httpStatus, retryAfter)
+}
+
+// ClassifyResponse applies the immutable endpoint response policy to a bounded
+// transport response. It never returns or persists raw acknowledgement bytes.
+func ClassifyResponse(responsePolicy string, response TransportResponse, retryAfter *time.Duration) Outcome {
+	switch responsePolicy {
+	case vendorregistry.ResponsePolicyHTTPStatusV1:
+		return classifyHTTPStatus(response.StatusCode, retryAfter)
+	case vendorregistry.ResponsePolicyJSONAckV1:
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			return classifyHTTPStatus(response.StatusCode, retryAfter)
+		}
+		if response.AckBodyOverflow {
+			return vendorProtocolErrorOutcome(response.StatusCode)
+		}
+		ok, code, err := parseJSONAck(response.AckBody)
+		if err != nil {
+			return vendorProtocolErrorOutcome(response.StatusCode)
+		}
+		if ok {
+			return Outcome{ResultKind: notificationstore.ResultKindHTTPResponse, OutcomeClass: notificationstore.OutcomeClassSuccess, HTTPStatus: response.StatusCode}
+		}
+		if _, retryable := retryableJSONAckCodes[code]; retryable {
+			return Outcome{ResultKind: notificationstore.ResultKindHTTPResponse, OutcomeClass: notificationstore.OutcomeClassRetryableFailure, HTTPStatus: response.StatusCode, ErrorCode: code, RetryAfter: retryAfter}
+		}
+		return Outcome{ResultKind: notificationstore.ResultKindHTTPResponse, OutcomeClass: notificationstore.OutcomeClassPermanentFailure, HTTPStatus: response.StatusCode, Reason: ReasonVendorRejected}
+	default:
+		return PolicyTerminationOutcome(ReasonRequestUnbuildable)
+	}
+}
+
+func vendorProtocolErrorOutcome(status int) Outcome {
+	return Outcome{ResultKind: notificationstore.ResultKindHTTPResponse, OutcomeClass: notificationstore.OutcomeClassPermanentFailure, HTTPStatus: status, Reason: ReasonVendorProtocolError}
+}
+
+func parseJSONAck(body []byte) (bool, string, error) {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	token, err := decoder.Token()
+	if err != nil || token != json.Delim('{') {
+		return false, "", errors.New("ack is not an object")
+	}
+	fields := make(map[string]json.RawMessage)
+	for decoder.More() {
+		keyToken, err := decoder.Token()
+		if err != nil {
+			return false, "", errors.New("ack key invalid")
+		}
+		key, ok := keyToken.(string)
+		if !ok {
+			return false, "", errors.New("ack key type invalid")
+		}
+		if _, duplicate := fields[key]; duplicate {
+			return false, "", errors.New("ack contains duplicate field")
+		}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return false, "", errors.New("ack value invalid")
+		}
+		fields[key] = value
+	}
+	if token, err = decoder.Token(); err != nil || token != json.Delim('}') {
+		return false, "", errors.New("ack object unterminated")
+	}
+	if decoder.More() {
+		return false, "", errors.New("ack contains trailing value")
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err == nil {
+		return false, "", errors.New("ack contains trailing value")
+	} else if !errors.Is(err, io.EOF) {
+		return false, "", errors.New("ack trailing data invalid")
+	}
+	okRaw, exists := fields["ok"]
+	if !exists {
+		return false, "", errors.New("ack missing ok")
+	}
+	var acknowledged bool
+	if err := json.Unmarshal(okRaw, &acknowledged); err != nil {
+		return false, "", errors.New("ack ok type invalid")
+	}
+	if acknowledged {
+		return true, "", nil
+	}
+	code := ""
+	if errorRaw, exists := fields["error"]; exists {
+		if err := json.Unmarshal(errorRaw, &code); err != nil {
+			return false, "", errors.New("ack error type invalid")
+		}
+	}
+	if code == "" {
+		return false, "", errors.New("negative ack missing error")
+	}
+	return false, code, nil
 }
 
 func classifyTransportError(err error) Outcome {

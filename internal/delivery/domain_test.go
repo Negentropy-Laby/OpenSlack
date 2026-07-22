@@ -4,10 +4,12 @@ import (
 	"errors"
 	"net/http"
 	"net/netip"
+	"strings"
 	"testing"
 	"time"
 
 	"rc_wsman/internal/notificationstore"
+	"rc_wsman/internal/vendorregistry"
 )
 
 func TestClassifyClosedMatrix(t *testing.T) {
@@ -49,6 +51,88 @@ func TestApplyB01CutoffPreservesActualResult(t *testing.T) {
 	}, cutoff, cutoff)
 	if out.ResultKind != notificationstore.ResultKindHTTPResponse || out.HTTPStatus != 503 || out.OutcomeClass != notificationstore.OutcomeClassPermanentFailure || out.Reason != ReasonDeadlineExceeded {
 		t.Fatalf("B-01 outcome: %+v", out)
+	}
+}
+
+func TestClassifyJSONAckV1ClosedMatrix(t *testing.T) {
+	for _, code := range []string{"fatal_error", "internal_error", "ratelimited", "request_timeout", "service_unavailable"} {
+		t.Run("retryable_"+code, func(t *testing.T) {
+			hint := 30 * time.Second
+			out := ClassifyResponse(vendorregistry.ResponsePolicyJSONAckV1, TransportResponse{
+				StatusCode: http.StatusOK,
+				AckBody:    []byte(`{"ok":false,"error":"` + code + `"}`),
+			}, &hint)
+			if out.ResultKind != notificationstore.ResultKindHTTPResponse || out.OutcomeClass != notificationstore.OutcomeClassRetryableFailure || out.ErrorCode != code || out.Reason != "" || out.RetryAfter == nil || *out.RetryAfter != hint {
+				t.Fatalf("outcome=%+v", out)
+			}
+		})
+	}
+
+	success := ClassifyResponse(vendorregistry.ResponsePolicyJSONAckV1, TransportResponse{
+		StatusCode: http.StatusOK,
+		AckBody:    []byte(`{"ok":true,"error":{"arbitrary":"ignored"},"extra":[1,2,3]}`),
+	}, nil)
+	if success.OutcomeClass != notificationstore.OutcomeClassSuccess || success.ErrorCode != "" || success.Reason != "" {
+		t.Fatalf("success outcome=%+v", success)
+	}
+
+	const sensitiveVendorCode = "workspace-secret-vendor-message"
+	rejected := ClassifyResponse(vendorregistry.ResponsePolicyJSONAckV1, TransportResponse{
+		StatusCode: http.StatusOK,
+		AckBody:    []byte(`{"ok":false,"error":"` + sensitiveVendorCode + `"}`),
+	}, nil)
+	if rejected.OutcomeClass != notificationstore.OutcomeClassPermanentFailure || rejected.Reason != ReasonVendorRejected || rejected.ErrorCode != "" {
+		t.Fatalf("rejected outcome=%+v", rejected)
+	}
+	if strings.Contains(rejected.Reason+rejected.ErrorCode, sensitiveVendorCode) {
+		t.Fatal("raw vendor error escaped the classifier")
+	}
+}
+
+func TestClassifyJSONAckV1MalformedAndOverflow(t *testing.T) {
+	malformed := [][]byte{
+		nil,
+		[]byte(`[]`),
+		[]byte(`{}`),
+		[]byte(`{"ok":"true"}`),
+		[]byte(`{"ok":false}`),
+		[]byte(`{"ok":false,"error":1}`),
+		[]byte(`{"ok":false,"error":""}`),
+		[]byte(`{"ok":true,"ok":false}`),
+		[]byte(`{"ok":true,"extra":1,"extra":2}`),
+		[]byte(`{"ok":true} {"ok":true}`),
+		[]byte(`{"ok":true} trailing`),
+	}
+	for i, body := range malformed {
+		out := ClassifyResponse(vendorregistry.ResponsePolicyJSONAckV1, TransportResponse{StatusCode: http.StatusOK, AckBody: body}, nil)
+		if out.OutcomeClass != notificationstore.OutcomeClassPermanentFailure || out.Reason != ReasonVendorProtocolError || out.ErrorCode != "" {
+			t.Errorf("case %d outcome=%+v", i, out)
+		}
+	}
+	overflow := ClassifyResponse(vendorregistry.ResponsePolicyJSONAckV1, TransportResponse{StatusCode: http.StatusOK, AckBodyOverflow: true}, nil)
+	if overflow.Reason != ReasonVendorProtocolError || overflow.ErrorCode != "" {
+		t.Fatalf("overflow outcome=%+v", overflow)
+	}
+}
+
+func TestClassifyJSONAckV1Non2xxUsesHTTPStatusOnly(t *testing.T) {
+	out := ClassifyResponse(vendorregistry.ResponsePolicyJSONAckV1, TransportResponse{
+		StatusCode: http.StatusServiceUnavailable,
+		AckBody:    []byte(`{"ok":true}`),
+	}, nil)
+	if out.OutcomeClass != notificationstore.OutcomeClassRetryableFailure || out.HTTPStatus != http.StatusServiceUnavailable || out.ErrorCode != "" {
+		t.Fatalf("outcome=%+v", out)
+	}
+}
+
+func TestApplyB01CutoffPreservesFrozenJSONAckCode(t *testing.T) {
+	cutoff := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+	out := ApplyB01Cutoff(Outcome{
+		ResultKind: notificationstore.ResultKindHTTPResponse, OutcomeClass: notificationstore.OutcomeClassRetryableFailure,
+		HTTPStatus: http.StatusOK, ErrorCode: "ratelimited",
+	}, cutoff, cutoff)
+	if out.OutcomeClass != notificationstore.OutcomeClassPermanentFailure || out.Reason != ReasonDeadlineExceeded || out.ErrorCode != "ratelimited" {
+		t.Fatalf("B-01 outcome=%+v", out)
 	}
 }
 

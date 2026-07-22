@@ -3,7 +3,6 @@ package delivery
 import (
 	"context"
 	"errors"
-	"io"
 	"net/http"
 	"net/netip"
 	"strconv"
@@ -48,10 +47,10 @@ type shutdownTransport struct {
 	release chan struct{}
 }
 
-func (t *shutdownTransport) Do(context.Context, *http.Request, netip.Addr, time.Duration) (*http.Response, error) {
+func (t *shutdownTransport) Do(context.Context, *http.Request, netip.Addr, time.Duration, string) (TransportResponse, error) {
 	close(t.started)
 	<-t.release
-	return &http.Response{StatusCode: http.StatusNoContent, Header: make(http.Header), Body: io.NopCloser(&emptyReader{})}, nil
+	return TransportResponse{StatusCode: http.StatusNoContent, Header: make(http.Header)}, nil
 }
 
 type shutdownStore struct {
@@ -64,7 +63,7 @@ func (s *shutdownStore) Transition(context.Context, notificationstore.ActorConte
 	return notificationstore.TransitionResult{}, nil
 }
 
-func (t *concurrencyTransport) Do(context.Context, *http.Request, netip.Addr, time.Duration) (*http.Response, error) {
+func (t *concurrencyTransport) Do(context.Context, *http.Request, netip.Addr, time.Duration, string) (TransportResponse, error) {
 	active := t.active.Add(1)
 	for {
 		old := t.max.Load()
@@ -74,7 +73,7 @@ func (t *concurrencyTransport) Do(context.Context, *http.Request, netip.Addr, ti
 	}
 	time.Sleep(10 * time.Millisecond)
 	t.active.Add(-1)
-	return &http.Response{StatusCode: http.StatusNoContent, Header: make(http.Header), Body: io.NopCloser(&emptyReader{})}, nil
+	return TransportResponse{StatusCode: http.StatusNoContent, Header: make(http.Header)}, nil
 }
 
 func TestWorkerGlobalConcurrencyBound(t *testing.T) {

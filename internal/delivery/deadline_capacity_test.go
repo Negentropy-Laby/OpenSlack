@@ -2,7 +2,6 @@ package delivery
 
 import (
 	"context"
-	"io"
 	"net/http"
 	"net/netip"
 	"sync"
@@ -53,7 +52,7 @@ type deadlineBarrierTransport struct {
 	release chan struct{}
 }
 
-func (t *deadlineBarrierTransport) Do(context.Context, *http.Request, netip.Addr, time.Duration) (*http.Response, error) {
+func (t *deadlineBarrierTransport) Do(context.Context, *http.Request, netip.Addr, time.Duration, string) (TransportResponse, error) {
 	t.mu.Lock()
 	t.started++
 	if t.started == t.total {
@@ -62,7 +61,7 @@ func (t *deadlineBarrierTransport) Do(context.Context, *http.Request, netip.Addr
 	}
 	t.mu.Unlock()
 	<-t.release
-	return &http.Response{StatusCode: http.StatusServiceUnavailable, Header: make(http.Header), Body: io.NopCloser(&emptyReader{})}, nil
+	return TransportResponse{StatusCode: http.StatusServiceUnavailable, Header: make(http.Header)}, nil
 }
 
 func itoa(v int) string {

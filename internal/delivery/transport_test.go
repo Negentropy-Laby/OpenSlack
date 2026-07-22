@@ -13,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"rc_wsman/internal/vendorregistry"
 )
 
 func TestAddressPolicyRejectsMixedAndMappedAnswers(t *testing.T) {
@@ -43,7 +45,7 @@ func TestSafeTransportClassifiesCertificateFailureAsTLSFailure(t *testing.T) {
 		return dialer.DialContext(ctx, network, server.Listener.Addr().String())
 	})
 	req, _ := http.NewRequest(http.MethodGet, "https://vendor.example/", nil)
-	_, err := transport.Do(context.Background(), req, netip.MustParseAddr("8.8.8.8"), time.Second)
+	_, err := transport.Do(context.Background(), req, netip.MustParseAddr("8.8.8.8"), time.Second, vendorregistry.ResponsePolicyHTTPStatusV1)
 	if !IsTransportError(err, ErrorCodeTLSFailure) {
 		t.Fatalf("certificate failure=%v, want %s", err, ErrorCodeTLSFailure)
 	}
@@ -106,12 +108,133 @@ func TestSafeTransportDoesNotReadResponseBody(t *testing.T) {
 	}()
 	req, _ := http.NewRequest(http.MethodPost, "https://vendor.example/hook", strings.NewReader("{}"))
 	start := time.Now()
-	resp, err := st.Do(context.Background(), req, netip.MustParseAddr("8.8.8.8"), time.Second)
+	resp, err := st.Do(context.Background(), req, netip.MustParseAddr("8.8.8.8"), time.Second, vendorregistry.ResponsePolicyHTTPStatusV1)
 	if err != nil || resp.StatusCode != 200 {
 		t.Fatalf("response: %v %v", resp, err)
 	}
 	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
 		t.Fatalf("response body was read; elapsed %s", elapsed)
+	}
+}
+
+func TestSafeTransportJSONAckBodyBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		size       int
+		overflow   bool
+		storedSize int
+	}{
+		{name: "limit", size: maxJSONAckBodyBytes, storedSize: maxJSONAckBodyBytes},
+		{name: "limit_plus_one", size: maxJSONAckBodyBytes + 1, overflow: true, storedSize: maxJSONAckBodyBytes},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client, server := net.Pipe()
+			defer client.Close()
+			st := NewSafeTransportWithDialer(func(context.Context, string, string) (net.Conn, error) { return client, nil })
+			go func() {
+				defer server.Close()
+				br := bufio.NewReader(server)
+				for {
+					line, err := br.ReadString('\n')
+					if err != nil {
+						return
+					}
+					if line == "\r\n" {
+						break
+					}
+				}
+				_, _ = fmt.Fprintf(server, "HTTP/1.1 200 OK\r\nContent-Length: %d\r\n\r\n", tc.size)
+				_, _ = fmt.Fprint(server, strings.Repeat("x", tc.size))
+			}()
+			req, _ := http.NewRequest(http.MethodPost, "http://vendor.example/hook", strings.NewReader("{}"))
+			resp, err := st.Do(context.Background(), req, netip.MustParseAddr("8.8.8.8"), time.Second, vendorregistry.ResponsePolicyJSONAckV1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resp.AckBodyOverflow != tc.overflow || len(resp.AckBody) != tc.storedSize {
+				t.Fatalf("response=%+v body_len=%d", resp, len(resp.AckBody))
+			}
+		})
+	}
+}
+
+func TestSafeTransportJSONAckReadFailureIsRetryableTransportError(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	st := NewSafeTransportWithDialer(func(context.Context, string, string) (net.Conn, error) { return client, nil })
+	go func() {
+		defer server.Close()
+		br := bufio.NewReader(server)
+		for {
+			line, err := br.ReadString('\n')
+			if err != nil {
+				return
+			}
+			if line == "\r\n" {
+				break
+			}
+		}
+		_, _ = fmt.Fprint(server, "HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nx")
+	}()
+	req, _ := http.NewRequest(http.MethodPost, "http://vendor.example/hook", strings.NewReader("{}"))
+	_, err := st.Do(context.Background(), req, netip.MustParseAddr("8.8.8.8"), time.Second, vendorregistry.ResponsePolicyJSONAckV1)
+	if !IsTransportError(err, ErrorCodeConnectionFailure) {
+		t.Fatalf("read failure=%v, want %s", err, ErrorCodeConnectionFailure)
+	}
+}
+
+func TestSafeTransportJSONAckReadTimeoutIsRetryableTimeout(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+	st := NewSafeTransportWithDialer(func(context.Context, string, string) (net.Conn, error) { return client, nil })
+	go func() {
+		br := bufio.NewReader(server)
+		for {
+			line, err := br.ReadString('\n')
+			if err != nil {
+				return
+			}
+			if line == "\r\n" {
+				break
+			}
+		}
+		_, _ = fmt.Fprint(server, "HTTP/1.1 200 OK\r\nContent-Length: 10\r\n\r\nx")
+	}()
+	req, _ := http.NewRequest(http.MethodPost, "http://vendor.example/hook", strings.NewReader("{}"))
+	_, err := st.Do(context.Background(), req, netip.MustParseAddr("8.8.8.8"), 20*time.Millisecond, vendorregistry.ResponsePolicyJSONAckV1)
+	if !IsTransportError(err, ErrorCodeTimeout) {
+		t.Fatalf("read timeout=%v, want %s", err, ErrorCodeTimeout)
+	}
+}
+
+func TestSafeTransportJSONAckDoesNotReadNon2xxBody(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	st := NewSafeTransportWithDialer(func(context.Context, string, string) (net.Conn, error) { return client, nil })
+	go func() {
+		defer server.Close()
+		br := bufio.NewReader(server)
+		for {
+			line, err := br.ReadString('\n')
+			if err != nil {
+				return
+			}
+			if line == "\r\n" {
+				break
+			}
+		}
+		_, _ = fmt.Fprint(server, "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 1000000\r\n\r\nx")
+		<-time.After(2 * time.Second)
+	}()
+	req, _ := http.NewRequest(http.MethodPost, "http://vendor.example/hook", strings.NewReader("{}"))
+	start := time.Now()
+	resp, err := st.Do(context.Background(), req, netip.MustParseAddr("8.8.8.8"), time.Second, vendorregistry.ResponsePolicyJSONAckV1)
+	if err != nil || resp.StatusCode != http.StatusServiceUnavailable || len(resp.AckBody) != 0 {
+		t.Fatalf("response=%+v err=%v", resp, err)
+	}
+	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+		t.Fatalf("non-2xx body was read; elapsed %s", elapsed)
 	}
 }
 
@@ -138,7 +261,7 @@ func TestSafeTransportDoesNotFollowRedirect(t *testing.T) {
 		_, _ = fmt.Fprint(server, "HTTP/1.1 302 Found\r\nLocation: http://redirect.example/private\r\nContent-Length: 0\r\n\r\n")
 	}()
 	req, _ := http.NewRequest(http.MethodPost, "http://vendor.example/hook", strings.NewReader("{}"))
-	resp, err := st.Do(context.Background(), req, netip.MustParseAddr("8.8.8.8"), time.Second)
+	resp, err := st.Do(context.Background(), req, netip.MustParseAddr("8.8.8.8"), time.Second, vendorregistry.ResponsePolicyHTTPStatusV1)
 	if err != nil {
 		t.Fatalf("redirect response: %v", err)
 	}
@@ -175,7 +298,7 @@ func TestSafeTransportIgnoresProxyEnvironment(t *testing.T) {
 		_, _ = fmt.Fprint(server, "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
 	}()
 	req, _ := http.NewRequest(http.MethodPost, "http://vendor.example/hook", strings.NewReader("{}"))
-	resp, err := st.Do(context.Background(), req, netip.MustParseAddr("8.8.8.8"), time.Second)
+	resp, err := st.Do(context.Background(), req, netip.MustParseAddr("8.8.8.8"), time.Second, vendorregistry.ResponsePolicyHTTPStatusV1)
 	if err != nil || resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("request through proxy-disabled transport: response=%v err=%v", resp, err)
 	}
@@ -197,7 +320,7 @@ func TestSafeTransportTimeoutIsClosedTransportFailure(t *testing.T) {
 		return client, nil
 	})
 	req, _ := http.NewRequest(http.MethodPost, "http://vendor.example/hook", strings.NewReader("{}"))
-	_, err := st.Do(context.Background(), req, netip.MustParseAddr("8.8.8.8"), 20*time.Millisecond)
+	_, err := st.Do(context.Background(), req, netip.MustParseAddr("8.8.8.8"), 20*time.Millisecond, vendorregistry.ResponsePolicyHTTPStatusV1)
 	if !IsTransportError(err, ErrorCodeTimeout) {
 		t.Fatalf("timeout = %v, want %s", err, ErrorCodeTimeout)
 	}
@@ -229,7 +352,7 @@ func TestSafeTransportPreservesTLSHostname(t *testing.T) {
 		return dialer.DialContext(ctx, network, listener.Addr().String())
 	}, &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: true}) // test-only
 	req, _ := http.NewRequest(http.MethodGet, "https://vendor.example/", nil)
-	_, _ = st.Do(context.Background(), req, netip.MustParseAddr("8.8.8.8"), time.Second)
+	_, _ = st.Do(context.Background(), req, netip.MustParseAddr("8.8.8.8"), time.Second, vendorregistry.ResponsePolicyHTTPStatusV1)
 	select {
 	case got := <-serverName:
 		if got != "vendor.example" {
