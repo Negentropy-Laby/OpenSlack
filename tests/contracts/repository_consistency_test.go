@@ -157,9 +157,9 @@ func TestWorkspaceManifestMatchesFiles(t *testing.T) {
 	}
 	allowedTopLevel := map[string]bool{
 		".github": true, ".dockerignore": true, ".gitignore": true, "CLAUDE.md": true,
-		"README.md": true, "Dockerfile": true, "cmd": true, "deploy": true, "design": true,
+		"README.md": true, "Dockerfile": true, "LICENSE": true, "NOTICE": true, "cmd": true, "deploy": true, "design": true,
 		"docker-compose.yml": true, "docs": true, "go.mod": true, "go.sum": true, "internal": true,
-		"memory_bank": true, "migrations": true, "production": true, "scripts": true, "standards": true, "tests": true,
+		"integration": true, "memory_bank": true, "migrations": true, "production": true, "scripts": true, "standards": true, "tests": true,
 	}
 	expectedPaths := make(map[string]bool)
 	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {

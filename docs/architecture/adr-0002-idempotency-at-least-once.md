@@ -23,8 +23,13 @@ applied a request; refusing to retry would lose critical notifications.
 ## Decision
 
 - Unique key: `(caller_id, Idempotency-Key)`.
-- Fingerprint inputs: caller ID, vendor ID and decoded payload bytes from `ValidatedIntake`, encoded with a versioned
-  length-prefixed binary format and SHA-256. Idempotency key and outbound Content-Type are not fingerprint inputs.
+- Fingerprint v1 is the SHA-256 of the exact byte sequence
+  `vendor_id || 0x00 || caller_id || 0x00 || ingress_idempotency_key || 0x00 || decoded_payload_bytes`. The ingress
+  idempotency key is therefore an input; outbound Content-Type is not. This documents the shipped algorithm and does
+  not authorize changing existing fingerprints or historical rows. Golden vectors freeze ordinary, empty, embedded
+  NUL, UTF-8 and non-UTF-8 payload cases. The delimiter framing relies on a contract precondition: caller/principal
+  IDs, vendor IDs and ingress idempotency keys pass their authoritative NUL-free regex validation before
+  `ValidatedIntake`; `ValidateIntake` alone does not establish that precondition.
 - Same key/fingerprint returns the original notification and `202`; same key/different fingerprint returns
   `409 IdempotencyConflict`.
 - Outbound retry/recovery is at-least-once; unknown results count as attempts.

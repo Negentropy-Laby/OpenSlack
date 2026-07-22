@@ -1,6 +1,6 @@
 version: 1
 status: approved
-last_updated: 2026-07-20
+last_updated: 2026-07-22
 records:
   ADR-0001:
     title: PostgreSQL Transactional Outbox and Concurrency
@@ -43,3 +43,13 @@ records:
       - all-address validation and DNS pinning
       - disabled proxy and rejected redirects
       - original-host TLS verification and response-body exclusion
+  ADR-0005:
+    title: OpenSlack Notification Handoff Integration
+    status: Proposed
+    date: 2026-07-22
+    path: docs/architecture/adr-0005-openslack-handoff-integration.md
+    owns:
+      - OpenSlack-to-service authority transfer at a durable valid 202 receipt
+      - route ID, routing epoch and handoff idempotency-key v2 contract
+      - final vendor bytes and receipt protocol contract
+      - two-repository, two-vendor Canary and full-history import gates
