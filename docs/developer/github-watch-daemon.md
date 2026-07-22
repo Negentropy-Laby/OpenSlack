@@ -157,6 +157,13 @@ does not store raw webhook bodies, Issue/review prose, sender handles,
 credentials, or outbound webhook URLs. A legacy `dedupe.jsonl` file is imported
 as bounded completed tombstones during migration and is no longer written.
 
+### Proposed 0.3.0 notification-service boundary
+
+The current v1 queue and direct sinks remain authoritative and unchanged. A separate
+`openslack.github_watch.v2` schema, route identity and pre-202 handoff contract are frozen for independent review in
+[`notification-delivery-integration.md`](notification-delivery-integration.md). Those types are not wired into this
+daemon. Do not interpret their presence as a new runtime path, completed integration or production evidence.
+
 ## Event Model
 
 First implementation can map matching task Issues to existing task events:

@@ -153,6 +153,36 @@ export type {
   GitHubWatchRoute,
   WatchConfigParseResult,
 } from './watch-config.js';
+export { parseGitHubWatchConfigV2 } from './watch-config-v2.js';
+export type {
+  GitHubWatchConfigV2,
+  GitHubWatchNotificationServiceV2,
+  GitHubWatchRepoV2,
+  GitHubWatchRouteDeliveryV2,
+  GitHubWatchRouteV2,
+  WatchConfigV2ParseResult,
+} from './watch-config-v2.js';
+export {
+  NOTIFICATION_HANDOFF_DEPLOYMENT_DIGEST_PATTERN,
+  NOTIFICATION_HANDOFF_NAMESPACE_V2,
+  NOTIFICATION_HANDOFF_POLICY,
+  NOTIFICATION_HANDOFF_ROUTE_ID_PATTERN,
+  NOTIFICATION_HANDOFF_VENDOR_ID_PATTERN,
+  createNotificationHandoffKeyV2,
+  isNotificationDeploymentDigest,
+  isNotificationHandoffRouteId,
+  isNotificationHandoffVendorId,
+} from './notification-handoff-contracts.js';
+export type {
+  AcceptedReceipt,
+  HandoffResult,
+  HandoffRouteState,
+  HandoffTerminalReason,
+  MaterializedNotificationBody,
+  NotificationBodyEncoderVersion,
+  NotificationDeliveryBackend,
+  RemoteDeliveryState,
+} from './notification-handoff-contracts.js';
 export {
   GITHUB_WATCH_EVENT_KEYS,
   GITHUB_WEBHOOK_EVENT_NAMES,

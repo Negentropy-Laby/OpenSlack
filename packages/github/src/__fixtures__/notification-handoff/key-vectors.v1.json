@@ -1,0 +1,41 @@
+{
+  "schema": "openslack.notification_handoff_key_vectors.v1",
+  "namespace": "openslack.watch.handoff.v2",
+  "vectors": [
+    {
+      "name": "standard",
+      "event_stable_key": "github:issues.opened:negentropy-laby/openslack:issue:42:2026-07-22T00:00:00.000Z",
+      "route_id": "slack-primary",
+      "routing_epoch": 1,
+      "expected_key": "480f3f0b-01e3-57fb-8f3a-6ffd3a16ecbe"
+    },
+    {
+      "name": "unicode-stable-key",
+      "event_stable_key": "github:issues.opened:acme/项目:issue:7:2026-07-22T01:02:03.000Z",
+      "route_id": "webhook-primary",
+      "routing_epoch": 1,
+      "expected_key": "0e3c1e6d-0fa7-5fed-94c2-2e373fa1bd21"
+    },
+    {
+      "name": "route-change",
+      "event_stable_key": "github:issues.opened:negentropy-laby/openslack:issue:42:2026-07-22T00:00:00.000Z",
+      "route_id": "slack-secondary",
+      "routing_epoch": 1,
+      "expected_key": "af1e61fe-1e4d-5294-827c-b91abb95c27c"
+    },
+    {
+      "name": "epoch-change",
+      "event_stable_key": "github:issues.opened:negentropy-laby/openslack:issue:42:2026-07-22T00:00:00.000Z",
+      "route_id": "slack-primary",
+      "routing_epoch": 2,
+      "expected_key": "d958c654-36c9-52b0-9da9-dc87558076aa"
+    },
+    {
+      "name": "large-epoch",
+      "event_stable_key": "github:push:negentropy-laby/openslack:refs/heads/main:0123456789abcdef",
+      "route_id": "webhook-primary",
+      "routing_epoch": 9007199254740991,
+      "expected_key": "1fc62e70-8a79-5359-a962-5eb6e7ec822b"
+    }
+  ]
+}
