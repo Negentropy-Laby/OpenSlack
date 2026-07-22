@@ -567,15 +567,18 @@ func ValidatePrincipal(p PrincipalRecord) error {
 	if len(p.Capabilities) == 0 {
 		return Rejection{Category: RejectionInvalidActorContext, Reason: "capabilities empty"}
 	}
-	if p.Kind == KindOperator {
+	managesAccessKeys := p.HasCapability(CapabilityManageAccessKeys)
+	if p.Kind == KindOperator && managesAccessKeys {
 		if len(p.ManagedPrincipalScope) == 0 || len(p.ManagedPrincipalScope) > 32 {
-			return Rejection{Category: RejectionInvalidActorContext, Reason: "managed_principal_scope required for operator"}
+			return Rejection{Category: RejectionInvalidActorContext, Reason: "managed_principal_scope required for access-key manager"}
 		}
 		for _, s := range p.ManagedPrincipalScope {
 			if !scopeRegex.MatchString(s) {
 				return Rejection{Category: RejectionInvalidActorContext, Reason: "managed_principal_scope member invalid"}
 			}
 		}
+	} else if len(p.ManagedPrincipalScope) != 0 {
+		return Rejection{Category: RejectionInvalidActorContext, Reason: "managed_principal_scope requires operator manage_access_keys capability"}
 	}
 	return nil
 }

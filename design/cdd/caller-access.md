@@ -160,7 +160,8 @@ TLS、hash 算法、认证中间件、计数器实现和可信网络来源策略
 - 调用方 envelope 只允许 `vendor_id` 与 base64 字符串 `payload_base64`，另有 `Idempotency-Key` Header；
   ingress composition 严格解码后才把原始 bytes 放入 `ValidatedIntake.payload`；自报
   `caller_id`、scope、URL、kind 或 capability 必须拒绝，不能静默忽略。
-- Key 管理只定义内部行为契约；MVP 不设计 CLI 或管理 UI。
+- Key 管理只定义内部行为契约；MVP 不设计通用 CLI 或管理 UI。IB1 的一次性、固定身份
+  `bootstrap-openslack` 部署命令是唯一例外，不暴露 HTTP，且不能执行通用 issue/rotate/revoke。
 
 ## UI Requirements
 

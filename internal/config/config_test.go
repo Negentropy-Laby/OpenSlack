@@ -197,6 +197,35 @@ func TestLoad_PepperValueNotLogged(t *testing.T) {
 	}
 }
 
+func TestLoadOpenSlackBootstrap_UsesOnlyDatabaseAndActivePepper(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://u:p@db:5432/rc_wsman?sslmode=disable")
+	t.Setenv("API_KEY_PEPPER_ACTIVE", `{"id":"bootstrap-v1","value":"bootstrap-secret"}`)
+	t.Setenv("NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST", "")
+	t.Setenv("ENV_CREDENTIAL_ALLOWLIST", "")
+
+	cfg, err := LoadOpenSlackBootstrap()
+	if err != nil {
+		t.Fatalf("LoadOpenSlackBootstrap(): %v", err)
+	}
+	if cfg.DatabaseURL == "" || cfg.ActivePepper.ID != "bootstrap-v1" || string(cfg.ActivePepper.Value) != "bootstrap-secret" {
+		t.Fatalf("unexpected bootstrap config: database=%t pepper=%s", cfg.DatabaseURL != "", cfg.ActivePepper.ID)
+	}
+}
+
+func TestLoadOpenSlackBootstrap_FailsClosedWithoutRequiredInputs(t *testing.T) {
+	for _, missing := range []string{"DATABASE_URL", "API_KEY_PEPPER_ACTIVE"} {
+		t.Run(missing, func(t *testing.T) {
+			t.Setenv("DATABASE_URL", "postgres://u:p@db:5432/rc_wsman?sslmode=disable")
+			t.Setenv("API_KEY_PEPPER_ACTIVE", `{"id":"bootstrap-v1","value":"do-not-reflect"}`)
+			t.Setenv(missing, "")
+			_, err := LoadOpenSlackBootstrap()
+			if err == nil || !strings.Contains(err.Error(), missing) || strings.Contains(err.Error(), "do-not-reflect") {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
 // Ensure a stray secret value from another test does not accidentally leak into
 // the test process output.
 func TestMain(m *testing.M) {

@@ -17,9 +17,10 @@ RUN go mod download
 # pre-existing go.sum.
 COPY . .
 
-# Build target: compiles the single production server binary.
+# Build target: compiles the server and the one-shot non-HTTP bootstrap tool.
 FROM builder AS build
 RUN CGO_ENABLED=0 go build -o /bin/server ./cmd/server
+RUN CGO_ENABLED=0 go build -o /bin/bootstrap-openslack ./cmd/bootstrap-openslack
 
 # Production image: minimal Debian base with CA certificates.
 FROM debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818 AS app
@@ -29,6 +30,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /bin/server /server
+COPY --from=build /bin/bootstrap-openslack /bootstrap-openslack
 COPY migrations /migrations
 
 USER nobody:nogroup
