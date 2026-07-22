@@ -105,7 +105,7 @@ func TestDecideTransition_Retry(t *testing.T) {
 		DeliveryResult: &DeliveryResult{
 			ResultKind:   ResultKindTransportFailure,
 			OutcomeClass: OutcomeClassRetryableFailure,
-			ErrorCode:    "dial_timeout",
+			ErrorCode:    "timeout",
 		},
 	}, inFlightNotification())
 	if err != nil {
@@ -117,7 +117,7 @@ func TestDecideTransition_Retry(t *testing.T) {
 	if d.SetNextAttemptAt == nil || !d.SetNextAttemptAt.Equal(next) {
 		t.Fatalf("expected next_attempt_at %v, got %+v", next, d.SetNextAttemptAt)
 	}
-	if d.ErrorCode != "dial_timeout" {
+	if d.ErrorCode != "timeout" {
 		t.Fatalf("expected error code preserved, got %q", d.ErrorCode)
 	}
 }
@@ -200,7 +200,7 @@ func TestDecideTransition_Die_B01DeadlineExceededCountsAttempt(t *testing.T) {
 		DeliveryResult: &DeliveryResult{
 			ResultKind:   ResultKindTransportFailure,
 			OutcomeClass: OutcomeClassPermanentFailure,
-			ErrorCode:    "dial_timeout",
+			ErrorCode:    "timeout",
 			Reason:       ReasonDeadlineExceeded,
 		},
 	}, inFlightNotification())
@@ -215,6 +215,49 @@ func TestDecideTransition_Die_B01DeadlineExceededCountsAttempt(t *testing.T) {
 	}
 	if d.DeadReason != ReasonDeadlineExceeded {
 		t.Fatalf("expected deadline_exceeded reason, got %q", d.DeadReason)
+	}
+	if d.ErrorCode != "timeout" {
+		t.Fatalf("B-01 must preserve the frozen error code, got %q", d.ErrorCode)
+	}
+}
+
+func TestValidateDeliveryResultClosedAckAndTransportCodes(t *testing.T) {
+	next := time.Now().Add(time.Minute)
+	for _, tc := range []struct {
+		name   string
+		result DeliveryResult
+	}{
+		{
+			name: "unknown transport code",
+			result: DeliveryResult{ResultKind: ResultKindTransportFailure, OutcomeClass: OutcomeClassRetryableFailure,
+				ErrorCode: "raw-network-error"},
+		},
+		{
+			name: "unknown ack code",
+			result: DeliveryResult{ResultKind: ResultKindHTTPResponse, OutcomeClass: OutcomeClassRetryableFailure,
+				HTTPStatus: 200, ErrorCode: "raw-vendor-error"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := baseRequest(TransitionRetry)
+			req.NextAttemptAt = &next
+			req.DeliveryResult = &tc.result
+			if _, err := ValidateDeliveryResult(req); !IsRejection(err, RejectionInvalidDeliveryResult) {
+				t.Fatalf("result accepted: err=%v", err)
+			}
+		})
+	}
+
+	for _, reason := range []string{ReasonVendorRejected, ReasonVendorProtocolError} {
+		req := baseRequest(TransitionDie)
+		req.DeliveryResult = &DeliveryResult{ResultKind: ResultKindHTTPResponse, OutcomeClass: OutcomeClassPermanentFailure, HTTPStatus: 200, Reason: reason}
+		if _, err := ValidateDeliveryResult(req); err != nil {
+			t.Fatalf("reason %s rejected: %v", reason, err)
+		}
+		req.DeliveryResult.ErrorCode = reason
+		if _, err := ValidateDeliveryResult(req); !IsRejection(err, RejectionInvalidDeliveryResult) {
+			t.Fatalf("reason %s accepted persisted error code: %v", reason, err)
+		}
 	}
 }
 

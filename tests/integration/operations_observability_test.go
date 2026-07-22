@@ -64,6 +64,7 @@ func (s acceptanceSnapshotReader) Snapshot(context.Context, vendorregistry.Actor
 		ProjectionSchema: "delivery-v1", VendorID: s.vendorID, ConfigVersion: 1, ConfigSchemaVersion: 1,
 		CanonicalURL: "https://vendor.example/hook", Method: http.MethodPost, Hostname: "vendor.example", Port: 443,
 		TransportKind: "https_public", OutboundIdempotencyMapping: vendorregistry.OutboundIdempotencyMapping{Mode: "none"},
+		ResponsePolicy: vendorregistry.ResponsePolicyHTTPStatusV1,
 		EndpointPolicy: vendorregistry.EndpointPolicy{AllowedRequestHeaderNames: []string{}, ForbiddenRequestHeaderNames: []string{}, MaxRequestBodyBytes: 4096},
 		AuthStrategy:   "bearer", CredentialRef: &vendorregistry.CredentialRef{Scheme: "env", OpaqueHandle: "ACCEPTANCE_VENDOR_TOKEN", ReferenceVersion: "v1"},
 	}, nil
@@ -75,15 +76,15 @@ type callbackTransport struct {
 	crashAfterSend bool
 }
 
-func (t *callbackTransport) Do(ctx context.Context, _ *http.Request, _ netip.Addr, _ time.Duration) (*http.Response, error) {
+func (t *callbackTransport) Do(ctx context.Context, _ *http.Request, _ netip.Addr, _ time.Duration, _ string) (delivery.TransportResponse, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.vendorURL, bytes.NewBufferString(`{"event":"paid"}`))
 	if err != nil {
-		return nil, err
+		return delivery.TransportResponse{}, err
 	}
 	req.Header.Set("X-Notification-ID", t.notificationID)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, err
+		return delivery.TransportResponse{}, err
 	}
 	_ = resp.Body.Close()
 	if t.crashAfterSend {
@@ -91,7 +92,7 @@ func (t *callbackTransport) Do(ctx context.Context, _ *http.Request, _ netip.Add
 		// vendor accepted the request and before Runner can write the outcome.
 		os.Exit(88)
 	}
-	return &http.Response{StatusCode: http.StatusNoContent, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(nil))}, nil
+	return delivery.TransportResponse{StatusCode: http.StatusNoContent, Header: make(http.Header)}, nil
 }
 
 func operationsPrincipal(vendorID string) calleraccess.OperatorPrincipal {

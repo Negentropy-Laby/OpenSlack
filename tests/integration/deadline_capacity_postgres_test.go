@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/netip"
 	"sync"
@@ -21,9 +20,9 @@ type countingDeadlineTransport struct {
 	calls  atomic.Int64
 }
 
-func (t *countingDeadlineTransport) Do(context.Context, *http.Request, netip.Addr, time.Duration) (*http.Response, error) {
+func (t *countingDeadlineTransport) Do(context.Context, *http.Request, netip.Addr, time.Duration, string) (delivery.TransportResponse, error) {
 	t.calls.Add(1)
-	return &http.Response{StatusCode: t.status, Header: make(http.Header), Body: io.NopCloser(&emptyIntegrationBody{})}, nil
+	return delivery.TransportResponse{StatusCode: t.status, Header: make(http.Header)}, nil
 }
 
 type postgresDeadlineBarrierTransport struct {
@@ -35,13 +34,13 @@ type postgresDeadlineBarrierTransport struct {
 	release chan struct{}
 }
 
-func (t *postgresDeadlineBarrierTransport) Do(context.Context, *http.Request, netip.Addr, time.Duration) (*http.Response, error) {
+func (t *postgresDeadlineBarrierTransport) Do(context.Context, *http.Request, netip.Addr, time.Duration, string) (delivery.TransportResponse, error) {
 	if t.started.Add(1) == t.total {
 		t.clock.Set(t.cutoff)
 		t.once.Do(func() { close(t.release) })
 	}
 	<-t.release
-	return &http.Response{StatusCode: http.StatusServiceUnavailable, Header: make(http.Header), Body: io.NopCloser(&emptyIntegrationBody{})}, nil
+	return delivery.TransportResponse{StatusCode: http.StatusServiceUnavailable, Header: make(http.Header)}, nil
 }
 
 func TestDeadlineBacklogPostgresMatrixPersistsInvariants(t *testing.T) {

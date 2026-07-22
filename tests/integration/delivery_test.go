@@ -2,11 +2,13 @@ package integration_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/netip"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -47,12 +49,8 @@ func (integrationDNSResolver) ResolveAll(context.Context, string) ([]netip.Addr,
 
 type integrationHTTPTransport struct{}
 
-func (integrationHTTPTransport) Do(context.Context, *http.Request, netip.Addr, time.Duration) (*http.Response, error) {
-	return &http.Response{
-		StatusCode: http.StatusNoContent,
-		Header:     make(http.Header),
-		Body:       io.NopCloser(&emptyIntegrationBody{}),
-	}, nil
+func (integrationHTTPTransport) Do(context.Context, *http.Request, netip.Addr, time.Duration, string) (delivery.TransportResponse, error) {
+	return delivery.TransportResponse{StatusCode: http.StatusNoContent, Header: make(http.Header)}, nil
 }
 
 type captureIntegrationTransport struct {
@@ -60,14 +58,22 @@ type captureIntegrationTransport struct {
 	header http.Header
 }
 
-func (t *captureIntegrationTransport) Do(_ context.Context, req *http.Request, _ netip.Addr, _ time.Duration) (*http.Response, error) {
+type ackIntegrationTransport struct {
+	body []byte
+}
+
+func (t ackIntegrationTransport) Do(context.Context, *http.Request, netip.Addr, time.Duration, string) (delivery.TransportResponse, error) {
+	return delivery.TransportResponse{StatusCode: http.StatusOK, Header: make(http.Header), AckBody: append([]byte(nil), t.body...)}, nil
+}
+
+func (t *captureIntegrationTransport) Do(_ context.Context, req *http.Request, _ netip.Addr, _ time.Duration, _ string) (delivery.TransportResponse, error) {
 	body, err := io.ReadAll(req.Body)
 	if err != nil {
-		return nil, err
+		return delivery.TransportResponse{}, err
 	}
 	t.body = body
 	t.header = req.Header.Clone()
-	return &http.Response{StatusCode: http.StatusNoContent, Header: make(http.Header), Body: io.NopCloser(&emptyIntegrationBody{})}, nil
+	return delivery.TransportResponse{StatusCode: http.StatusNoContent, Header: make(http.Header)}, nil
 }
 
 type sequenceIntegrationTransport struct {
@@ -93,13 +99,13 @@ type blockingIntegrationTransport struct {
 	status  int
 }
 
-func (t *blockingIntegrationTransport) Do(context.Context, *http.Request, netip.Addr, time.Duration) (*http.Response, error) {
+func (t *blockingIntegrationTransport) Do(context.Context, *http.Request, netip.Addr, time.Duration, string) (delivery.TransportResponse, error) {
 	t.once.Do(func() { close(t.started) })
 	<-t.release
-	return &http.Response{StatusCode: t.status, Header: make(http.Header), Body: io.NopCloser(&emptyIntegrationBody{})}, nil
+	return delivery.TransportResponse{StatusCode: t.status, Header: make(http.Header)}, nil
 }
 
-func (t *deadlineIntegrationBarrierTransport) Do(context.Context, *http.Request, netip.Addr, time.Duration) (*http.Response, error) {
+func (t *deadlineIntegrationBarrierTransport) Do(context.Context, *http.Request, netip.Addr, time.Duration, string) (delivery.TransportResponse, error) {
 	t.mu.Lock()
 	t.started++
 	if t.started == t.total {
@@ -108,10 +114,10 @@ func (t *deadlineIntegrationBarrierTransport) Do(context.Context, *http.Request,
 	}
 	t.mu.Unlock()
 	<-t.release
-	return &http.Response{StatusCode: http.StatusServiceUnavailable, Header: make(http.Header), Body: io.NopCloser(&emptyIntegrationBody{})}, nil
+	return delivery.TransportResponse{StatusCode: http.StatusServiceUnavailable, Header: make(http.Header)}, nil
 }
 
-func (t *sequenceIntegrationTransport) Do(context.Context, *http.Request, netip.Addr, time.Duration) (*http.Response, error) {
+func (t *sequenceIntegrationTransport) Do(context.Context, *http.Request, netip.Addr, time.Duration, string) (delivery.TransportResponse, error) {
 	t.mu.Lock()
 	index := t.calls
 	t.calls++
@@ -121,7 +127,7 @@ func (t *sequenceIntegrationTransport) Do(context.Context, *http.Request, netip.
 	if after != nil {
 		after(index + 1)
 	}
-	return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(&emptyIntegrationBody{})}, nil
+	return delivery.TransportResponse{StatusCode: status, Header: make(http.Header)}, nil
 }
 
 type integrationMutableClock struct {
@@ -302,6 +308,69 @@ func TestDeliveryRunnerSchemaV2PreservesIngressKeyAndExactBodyWithoutCredentialR
 	defer credentials.mu.Unlock()
 	if len(credentials.handles) != 0 {
 		t.Fatalf("auth none resolved credentials: %v", credentials.handles)
+	}
+}
+
+func TestDeliveryRunnerJSONAckPersistsOnlyFrozenRetryCode(t *testing.T) {
+	pool := testsupport.OpenPostgres(t)
+	ctx := context.Background()
+	const vendorID = "vendor-delivery-json-ack"
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO vendors (vendor_id, owning_scope, lifecycle, record_revision, current_config_version)
+		VALUES ($1, 'scope-delivery', 'active', 1, 1)`, vendorID); err != nil {
+		t.Fatalf("seed json-ack vendor: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO endpoint_versions (
+			vendor_id, config_version, config_schema_version, canonical_url, method, hostname, port,
+			transport_kind, auth_strategy, response_policy, credential_ref_scheme, credential_ref_handle,
+			credential_ref_version, transport_auth_headers, outbound_idempotency_mapping, endpoint_policy,
+			created_by_actor
+		) VALUES (
+			$1, 1, 2, 'https://vendor.example/hook', 'POST', 'vendor.example', 443,
+			'https_public', 'bearer', 'json_ack_v1', 'env', 'DELIVERY_ACK_TOKEN', 'v1',
+			'[]'::jsonb, '{"Mode":"none"}'::jsonb,
+			'{"AllowedRequestHeaderNames":[],"ForbiddenRequestHeaderNames":[],"MaxRequestBodyBytes":4096}'::jsonb,
+			'integration-test'
+		)`, vendorID); err != nil {
+		t.Fatalf("seed json-ack endpoint: %v", err)
+	}
+	store := notificationstorepostgres.New(pool, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	accepted, err := store.Intake(ctx, notificationstore.ValidatedIntake{
+		CallerID: "caller-json-ack", VendorID: vendorID, Payload: []byte(`{"event":"paid"}`), IdempotencyKey: "key-json-ack",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	registry := vendorregistry.NewService(vendorregistrypostgres.New(pool), vendorregistry.DefaultConfig())
+	runner := newIntegrationRunner(t, store, registry, integrationCredentialResolver{}, ackIntegrationTransport{
+		body: []byte(`{"ok":false,"error":"ratelimited","vendor_detail":"must-not-persist"}`),
+	}, delivery.RealClock{})
+	worker := notificationstore.ActorContext{
+		Kind: notificationstore.ActorWorker, ActorID: "worker-json-ack", VendorScope: []string{vendorID},
+		Capabilities: []notificationstore.Capability{notificationstore.CapabilityClaimDelivery, notificationstore.CapabilityRecordDeliveryResult},
+	}
+	if claimed, err := runner.RunOnce(ctx, worker); err != nil || !claimed {
+		t.Fatalf("run once: claimed=%v err=%v", claimed, err)
+	}
+	operator := notificationstore.ActorContext{
+		Kind: notificationstore.ActorOperator, ActorID: "op-json-ack", VendorScope: []string{vendorID},
+		Capabilities: []notificationstore.Capability{notificationstore.CapabilityReadNotifications},
+	}
+	history, err := store.ListAttemptHistory(ctx, operator, notificationstore.NotificationID(accepted.NotificationID), 20, "")
+	if err != nil || len(history.Items) != 2 {
+		t.Fatalf("history=%+v err=%v", history, err)
+	}
+	result := history.Items[1]
+	if result.ResultKind != string(notificationstore.ResultKindHTTPResponse) || result.OutcomeClass != string(notificationstore.OutcomeClassRetryableFailure) || result.ErrorCode != "ratelimited" || result.Reason != "" {
+		t.Fatalf("ack result=%+v", result)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "must-not-persist") {
+		t.Fatal("raw vendor acknowledgement escaped into history")
 	}
 }
 

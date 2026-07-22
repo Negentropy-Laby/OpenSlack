@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/netip"
@@ -23,7 +24,19 @@ type Resolver interface {
 
 // HTTPTransport sends one request to a policy-approved pinned address.
 type HTTPTransport interface {
-	Do(ctx context.Context, req *http.Request, pinned netip.Addr, timeout time.Duration) (*http.Response, error)
+	Do(ctx context.Context, req *http.Request, pinned netip.Addr, timeout time.Duration, responsePolicy string) (TransportResponse, error)
+}
+
+const maxJSONAckBodyBytes = 16 * 1024
+
+// TransportResponse is the bounded, sanitized response surface exposed to the
+// classifier. AckBody is populated only for json_ack_v1 2xx responses and is
+// never persisted or logged.
+type TransportResponse struct {
+	StatusCode      int
+	Header          http.Header
+	AckBody         []byte
+	AckBodyOverflow bool
 }
 
 // NetResolver is the production DNS resolver using net.Resolver.
@@ -297,9 +310,12 @@ func isTLSFailure(err error) bool {
 }
 
 // Do executes a request with the pinned IP address and a hard timeout. It does
-// not follow redirects, does not use proxies, and does not read the response
-// body. The response body is closed after reading only the status and headers.
-func (t *SafeTransport) Do(ctx context.Context, req *http.Request, pinned netip.Addr, timeout time.Duration) (*http.Response, error) {
+// not follow redirects or use proxies. http_status_v1 never reads the response
+// body; json_ack_v1 reads at most 16 KiB plus one overflow sentinel on 2xx.
+func (t *SafeTransport) Do(ctx context.Context, req *http.Request, pinned netip.Addr, timeout time.Duration, responsePolicy string) (TransportResponse, error) {
+	if responsePolicy != vendorregistry.ResponsePolicyHTTPStatusV1 && responsePolicy != vendorregistry.ResponsePolicyJSONAckV1 {
+		return TransportResponse{}, NewPolicyError(ReasonRequestUnbuildable)
+	}
 	ctx = WithPinnedIP(ctx, pinned)
 	req = req.Clone(ctx)
 
@@ -311,22 +327,44 @@ func (t *SafeTransport) Do(ctx context.Context, req *http.Request, pinned netip.
 	resp, err := client.Do(req)
 	if err != nil {
 		if errors.Is(err, http.ErrUseLastResponse) {
-			return nil, NewPolicyError(ReasonDestinationRejected)
+			return TransportResponse{}, NewPolicyError(ReasonDestinationRejected)
 		}
 		var transportError *TransportError
 		if errors.As(err, &transportError) {
-			return nil, transportError
+			return TransportResponse{}, transportError
 		}
 		var netErr net.Error
 		if errors.As(err, &netErr) && netErr.Timeout() {
-			return nil, NewTransportError(ErrorCodeTimeout)
+			return TransportResponse{}, NewTransportError(ErrorCodeTimeout)
 		}
-		return nil, NewTransportError(ErrorCodeConnectionFailure)
+		return TransportResponse{}, NewTransportError(ErrorCodeConnectionFailure)
 	}
-	if resp != nil && resp.Body != nil {
-		_ = resp.Body.Close()
+	if resp == nil {
+		return TransportResponse{}, NewTransportError(ErrorCodeConnectionFailure)
 	}
-	return resp, nil
+	result := TransportResponse{StatusCode: resp.StatusCode, Header: resp.Header.Clone()}
+	if resp.Body == nil {
+		return result, nil
+	}
+	defer resp.Body.Close()
+	if responsePolicy != vendorregistry.ResponsePolicyJSONAckV1 || resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return result, nil
+	}
+	body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxJSONAckBodyBytes+1))
+	if readErr != nil {
+		var netErr net.Error
+		if errors.As(readErr, &netErr) && netErr.Timeout() {
+			return TransportResponse{}, NewTransportError(ErrorCodeTimeout)
+		}
+		return TransportResponse{}, NewTransportError(ErrorCodeConnectionFailure)
+	}
+	if len(body) > maxJSONAckBodyBytes {
+		result.AckBody = append([]byte(nil), body[:maxJSONAckBodyBytes]...)
+		result.AckBodyOverflow = true
+	} else {
+		result.AckBody = append([]byte(nil), body...)
+	}
+	return result, nil
 }
 
 func noRedirect(req *http.Request, via []*http.Request) error {

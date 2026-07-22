@@ -153,6 +153,8 @@ const (
 	ReasonNonRetryableHTTPStatus = "non_retryable_http_status"
 	ReasonVendorUnreachable      = "vendor_unreachable"
 	ReasonDeadlineExceeded       = "deadline_exceeded"
+	ReasonVendorRejected         = "vendor_rejected"
+	ReasonVendorProtocolError    = "vendor_protocol_error"
 )
 
 // Valid policy-termination reasons.
