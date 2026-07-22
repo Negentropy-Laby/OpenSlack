@@ -1,14 +1,15 @@
 # Notification Delivery Service Integration
 
-> **Status:** IB0 contract baseline — `PENDING_INDEPENDENT_REVIEW`
+> **Status:** IB0 contract baseline — `G0_CONTRACT_PASS_WITH_RC_REVIEW_WAIVER`
 >
 > **Runtime effect:** None. The v2 parser and protocol contracts are not wired into the watch daemon.
 >
 > **Target release:** OpenSlack 0.3.0
 
 This document freezes the boundary between OpenSlack's GitHub Watch queue and the process-isolated notification
-delivery service currently developed in `wsman/rc_wsman`. It is the OpenSlack half of Integration B0. Implementation
-cannot begin until this contract and the matching service ADR pass independent `G0-CONTRACT` review.
+delivery service currently developed in `wsman/rc_wsman`. It is the OpenSlack half of Integration B0. The contract
+gate passed with the narrowly scoped standalone-service review waiver described below; G1 service and G2 client
+implementation may proceed without changing the runtime authority boundary.
 
 ## Baselines And Release Isolation
 
@@ -22,6 +23,26 @@ The first value remains the 0.2.0 evidence anchor, not the integration branch po
 protected `integration/notification-delivery-0.3` branch while 0.2.0 finishes signing, npm publication,
 clean-machine delivery and live-capstone gates on `main`. Full service history is imported only after those release
 gates and the 14-day Canary pass.
+
+## G0 Review Governance
+
+The original contract changes entered their repositories through OpenSlack merge commit
+`5f71f91` and standalone-service merge commit `1b68cb6`. The service change passed its required CI but did not have
+an independent approval. The release owner accepted that absence as a temporary, repository-scoped waiver rather
+than representing it as independent review.
+
+While `wsman/rc_wsman` remains the standalone deployment source, its integration changes require a pull request,
+the configured required CI checks, an up-to-date head and a merge commit, but require zero approvals. Its protected
+`main` permits no direct pushes, squash or rebase merges, force pushes, deletion or bypass. This waiver does not relax
+technical tests, evidence requirements or any OpenSlack repository control.
+
+OpenSlack implementation pull requests are agent-authored and target the protected
+`integration/notification-delivery-0.3` branch. They require `wsman`'s independent current-head approval, all required
+checks and resolved review threads; a new head dismisses stale approval. Only merge commits are allowed, and the
+protected integration branch permits neither force push nor deletion. The waiver applies only to the standalone
+service repository and expires at IB6: once the service history is imported, all service changes are governed by the
+OpenSlack review policy. It cannot be used to bypass G1 through G8, CODEOWNERS, security review, release-owner
+authorization or destructive-operation approval.
 
 ## Authority Transfer
 
@@ -222,7 +243,7 @@ Mixed deliveries retain independent route ownership. No v2 record can be claimed
 The next phases remain blocked by gates:
 
 ```text
-G0-CONTRACT: both IB0 changes independently reviewed
+G0-CONTRACT: PASS_WITH_RC_REVIEW_WAIVER; OpenSlack independently reviewed, standalone service owner waiver + PR/CI
 G1-SERVICE: service v2 contract implemented and verified
 G2-CLIENT: body, Blob, receipt and client components verified but not wired
 G3-QUEUE: v2 queue/router and per-route migration verified
@@ -230,5 +251,6 @@ G4-E2E: two repositories x Slack and webhook fault matrix
 G5-CANARY: 336 continuous hours + 100 distinct non-replay accepted keys
 ```
 
-Only after G5 and the immutable 0.2.0 release may the full service history enter OpenSlack. This document makes no
-production-readiness, live-verification or integration-completion claim.
+G0 unlocks G1 and G2 only; it does not authorize daemon wiring or traffic. Only after G5 and the immutable 0.2.0
+release may the full service history enter OpenSlack. This document makes no production-readiness, live-verification
+or integration-completion claim.
