@@ -385,7 +385,8 @@ The next phases remain blocked by gates:
 G0-CONTRACT: PASS_WITH_RC_REVIEW_WAIVER; OpenSlack independently reviewed, standalone service owner waiver + PR/CI
 G1-SERVICE: service v2 contract implemented and verified
 G2-CLIENT: body, Blob, receipt and client components verified
-G3-QUEUE: IN PROGRESS; IB3-A queue/migration, IB3-B daemon/router and IB3-C governed operations implemented; merge receipts pending
+G3-QUEUE: IN PROGRESS; IB3-A queue/migration, IB3-B daemon/router and IB3-C governed operations implemented;
+OS-IB3-C is anchored by integration merge `9414509`, with protected-branch synchronization receipts in progress
 G4-E2E: two repositories x Slack and webhook fault matrix
 G5-CANARY: 336 continuous hours + 100 distinct non-replay accepted keys
 ```
