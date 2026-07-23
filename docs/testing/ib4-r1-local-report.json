@@ -1,9 +1,14 @@
 {
   "schema": "negentropy_laby.rc_ib4_r1_local_evidence.v1",
   "status": "PASS_LOCAL",
-  "recorded_at": "2026-07-23T05:42:39Z",
-  "tested_commit": "05f1f537b17e968089719a6dd9e96abcfe53b0b6",
-  "tested_tree": "750acae93072e0eee59b80188b595bb3179a2246",
+  "recorded_at": "2026-07-23T05:58:06Z",
+  "tested_commit": "35f5801b340ac8a90b1a5848405fdc73c41dbfad",
+  "tested_tree": "dc93dc977d404c151379cdfb3423332abf320dc4",
+  "integrated_main_commit": "19dc65bfb89d6d7a902af502e58a72be40c98f08",
+  "supersedes": {
+    "evidence_commit": "e1dc4465589490d89917092787f0fc09da6b26bb",
+    "reason": "PITR fixture used Go-only JSON field names and failed active-vendor preflight after restart"
+  },
   "scope": {
     "health_version": true,
     "notification_vendor_projection": true,
@@ -30,7 +35,8 @@
   "pitr": {
     "schema_version": "9:false",
     "markers": "before,target",
-    "attempt_config_version_invariant": "claim:null,outcome:2"
+    "attempt_config_version_invariant": "claim:null,outcome:2",
+    "post_fixture_service_restart": "PASS"
   },
   "boundaries": {
     "external_g4_e2e": "NOT_RUN",
