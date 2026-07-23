@@ -48,7 +48,7 @@ docker exec "${source_container}" psql -U rc_wsman -d rc_wsman -v ON_ERROR_STOP=
   ) VALUES (
     '${fixture_id}-vendor',1,1,'https://pitr.example/hook','POST','pitr.example',443,
     'https_public','bearer','env','PITR_VENDOR_TOKEN','v1','[]'::jsonb,
-    '{\"Mode\":\"none\"}'::jsonb,
+    '{\"mode\":\"none\"}'::jsonb,
     '{\"AllowedRequestHeaderNames\":[],\"ForbiddenRequestHeaderNames\":[],\"MaxRequestBodyBytes\":4096}'::jsonb,
     'pitr-operator'
   );
@@ -61,7 +61,7 @@ docker exec "${source_container}" psql -U rc_wsman -d rc_wsman -v ON_ERROR_STOP=
     '${fixture_id}-vendor',2,2,'https://pitr.example/webhook','POST','pitr.example',443,
     'https_public','none','http_status_v1',NULL,NULL,NULL,
     '[{\"Kind\":\"literal\",\"Name\":\"content-type\",\"Value\":\"application/json\"}]'::jsonb,
-    '{\"Mode\":\"headers\",\"Source\":\"ingress_idempotency_key\",\"HeaderNames\":[\"idempotency-key\",\"x-openslack-idempotency-key\"]}'::jsonb,
+    '{\"mode\":\"headers\",\"source\":\"ingress_idempotency_key\",\"header_names\":[\"idempotency-key\",\"x-openslack-idempotency-key\"]}'::jsonb,
     '{\"AllowedRequestHeaderNames\":[\"content-type\",\"idempotency-key\",\"x-openslack-idempotency-key\"],\"ForbiddenRequestHeaderNames\":[],\"MaxRequestBodyBytes\":262144}'::jsonb,
     'pitr-operator'
   );
@@ -184,8 +184,8 @@ invariants="$(docker exec "${restore_container}" psql -U rc_wsman -d rc_wsman -v
             AND e.response_policy='http_status_v1'
             AND e.credential_ref_scheme IS NULL AND e.credential_ref_handle IS NULL
             AND e.credential_ref_version IS NULL
-            AND e.outbound_idempotency_mapping->>'Source'='ingress_idempotency_key'
-            AND e.outbound_idempotency_mapping->'HeaderNames' =
+            AND e.outbound_idempotency_mapping->>'source'='ingress_idempotency_key'
+            AND e.outbound_idempotency_mapping->'header_names' =
               '[\"idempotency-key\",\"x-openslack-idempotency-key\"]'::jsonb)),
     EXISTS (SELECT 1 FROM admin_audit_events a
       JOIN admin_command_receipts r ON r.receipt_id=a.receipt_id

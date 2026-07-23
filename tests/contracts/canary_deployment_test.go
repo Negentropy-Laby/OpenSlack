@@ -58,3 +58,33 @@ func TestCanaryDeploymentPackIsParameterizedAndClosed(t *testing.T) {
 		t.Fatal("webhook record schema is not an object")
 	}
 }
+
+func TestPITRFixtureUsesPersistedMappingFieldNames(t *testing.T) {
+	root := repositoryRoot(t)
+	script, err := os.ReadFile(filepath.Join(root, "scripts", "acceptance", "pitr.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(script)
+	for _, required := range []string{
+		`{\"mode\":\"none\"}`,
+		`{\"mode\":\"headers\",\"source\":\"ingress_idempotency_key\",\"header_names\":`,
+		`outbound_idempotency_mapping->>'source'`,
+		`outbound_idempotency_mapping->'header_names'`,
+	} {
+		if !strings.Contains(text, required) {
+			t.Errorf("PITR fixture missing persisted mapping form %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		`{\"Mode\":`,
+		`\"Source\":`,
+		`\"HeaderNames\":`,
+		`outbound_idempotency_mapping->>'Source'`,
+		`outbound_idempotency_mapping->'HeaderNames'`,
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Errorf("PITR fixture contains Go-only mapping field %q", forbidden)
+		}
+	}
+}
