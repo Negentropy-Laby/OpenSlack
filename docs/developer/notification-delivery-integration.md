@@ -1,7 +1,7 @@
 # Notification Delivery Service Integration
 
 > **Status:** IB3-B daemon/router composition and IB3-C governed operations implemented —
-> `G3_QUEUE_IN_PROGRESS`
+> `G3_QUEUE_PASS`
 >
 > **Runtime effect:** v1 is unchanged; v2 service admission is fail-closed unless the explicit new-record gate is on.
 >
@@ -385,12 +385,12 @@ The next phases remain blocked by gates:
 G0-CONTRACT: PASS_WITH_RC_REVIEW_WAIVER; OpenSlack independently reviewed, standalone service owner waiver + PR/CI
 G1-SERVICE: service v2 contract implemented and verified
 G2-CLIENT: body, Blob, receipt and client components verified
-G3-QUEUE: IN PROGRESS; IB3-A queue/migration, IB3-B daemon/router and IB3-C governed operations implemented;
-OS-IB3-C is anchored by integration merge `9414509`, with protected-branch synchronization receipts in progress
+G3-QUEUE: PASS; IB3-A queue/migration, IB3-B daemon/router and IB3-C governed operations are bound to
+`a912cb4` / tree `89e4b38` by `docs/testing/integration-gates/g3-queue.json`
 G4-E2E: two repositories x Slack and webhook fault matrix
 G5-CANARY: 336 continuous hours + 100 distinct non-replay accepted keys
 ```
 
-G0 unlocks G1 and G2 only; it does not authorize daemon wiring or traffic. Only after G5 and the immutable 0.2.0
-release may the full service history enter OpenSlack. This document makes no production-readiness, live-verification
-or integration-completion claim.
+G0 unlocks G1 and G2 only; it does not authorize daemon wiring or traffic. G3 closes the local queue, migration,
+router and governed-recovery gate only; its receipt explicitly does not claim G4, G5, live verification or production
+readiness. Only after G5 and the immutable 0.2.0 release may the full service history enter OpenSlack.
