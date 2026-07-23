@@ -1,5 +1,8 @@
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http';
-import type { GitHubWatchConfig } from './watch-config.js';
+import { join } from 'node:path';
+import { createDefaultCredentialStore, type CredentialStore } from '@openslack/credentials';
+import type { GitHubWatchConfig, GitHubWatchRoute } from './watch-config.js';
+import type { GitHubWatchConfigV2, GitHubWatchRouteV2 } from './watch-config-v2.js';
 import { verifyGitHubWebhookSignature } from './webhook-verify.js';
 import {
   normalizeIssueEvent,
@@ -10,6 +13,23 @@ import {
 import { WatchDeliveryQueue, WatchDeliveryQueueError } from './watch-delivery-queue.js';
 import { createSinks, type NotificationSink } from './notification-sinks.js';
 import { WatchDeliveryRouter } from './watch-delivery-router.js';
+import {
+  WatchDeliveryRouterV2,
+  type WatchDeliveryV2AdmissionResult,
+} from './watch-delivery-router-v2.js';
+import {
+  WatchDeliveryQueueV2,
+  WatchDeliveryQueueV2Error,
+  migrateWatchDeliveryQueueV1ToV2,
+  type LegacyWatchRouteBindingV2,
+} from './watch-delivery-queue-v2.js';
+import { NotificationBlobStore, notificationBlobStorePath } from './notification-blob-store.js';
+import {
+  NotificationReceiptStore,
+  notificationReceiptStorePath,
+} from './notification-receipt-store.js';
+import { NotificationServiceClient } from './notification-service-client.js';
+import { computeGitHubWatchConfigDigestV2 } from './watch-config-digest-v2.js';
 import { WatchCursorStore } from './watch-cursor.js';
 import { pollRepoIssues } from './watch-poller.js';
 import { normalizePollIssue } from './poll-normalizer.js';
@@ -28,6 +48,7 @@ import { normalizeRepositoryEvent } from './repository-normalizer.js';
 import {
   githubWebhookEventKey,
   isGitHubWebhookEventName,
+  canonicalWatchRouteKey,
   canonicalizeRepositoryName,
   repositoriesMatch,
   toPersistableRepositoryEvent,
@@ -69,6 +90,14 @@ export interface WatchDaemonDependencies {
   ) => Promise<RepositoryLiveStateProjection>;
   deliveryWorkerIntervalMs?: number;
   deliverySinkTimeoutMs?: number;
+  deliveryQueueV2?: WatchDeliveryQueueV2;
+  deliveryRouterV2?: WatchDeliveryRouterV2;
+  notificationBlobStore?: NotificationBlobStore;
+  notificationReceiptStore?: NotificationReceiptStore;
+  notificationServiceClient?: NotificationServiceClient;
+  credentialStore?: Pick<CredentialStore, 'withSecret'>;
+  allowNewNotificationServiceRecords?: boolean;
+  workspaceRoot?: string;
 }
 
 function jsonResponse(res: ServerResponse, status: number, data: Record<string, unknown>): void {
@@ -98,10 +127,15 @@ export function formatConsoleNotification(payload: NotificationPayload): string 
 }
 
 export class WatchDaemon {
-  private config: GitHubWatchConfig;
+  private config: GitHubWatchConfig | GitHubWatchConfigV2;
   private secret: string;
   private deliveryQueue: WatchDeliveryQueue;
   private deliveryRouter: WatchDeliveryRouter;
+  private deliveryQueueV2: WatchDeliveryQueueV2 | null = null;
+  private deliveryRouterV2: WatchDeliveryRouterV2 | null = null;
+  private notificationReceiptStore: NotificationReceiptStore | null = null;
+  private migrationBindings: LegacyWatchRouteBindingV2[] = [];
+  private v2Prepared = false;
   private sinks: Map<string, NotificationSink>;
   private cursorStore: WatchCursorStore;
   private authorityResolver: RepositoryAuthorityResolver;
@@ -114,7 +148,7 @@ export class WatchDaemon {
   private profileSyncWorker: ProfileSyncWorker | null = null;
 
   constructor(
-    config: GitHubWatchConfig,
+    config: GitHubWatchConfig | GitHubWatchConfigV2,
     secret: string,
     deliveryQueue?: WatchDeliveryQueue,
     sinkOptions?: { slackBotToken?: string; webhookUrl?: string },
@@ -141,10 +175,57 @@ export class WatchDaemon {
       intervalMs: dependencies.deliveryWorkerIntervalMs,
       sinkTimeoutMs: dependencies.deliverySinkTimeoutMs,
     });
+    if (isWatchConfigV2(config)) {
+      const workspaceRoot = dependencies.workspaceRoot ?? process.cwd();
+      const queueV2 =
+        dependencies.deliveryQueueV2 ??
+        new WatchDeliveryQueueV2(join(workspaceRoot, '.openslack.local', 'daemon'));
+      const blobStore =
+        dependencies.notificationBlobStore ??
+        new NotificationBlobStore({ rootPath: notificationBlobStorePath(workspaceRoot) });
+      const receiptStore =
+        dependencies.notificationReceiptStore ??
+        new NotificationReceiptStore({ rootPath: notificationReceiptStorePath(workspaceRoot) });
+      const notificationClient =
+        dependencies.notificationServiceClient ??
+        (config.notification_service
+          ? new NotificationServiceClient({
+              endpoint: config.notification_service.endpoint,
+              credentialRef: config.notification_service.credential_ref,
+              expectedDeploymentDigest: config.notification_service.expected_deployment_digest,
+              credentialStore:
+                dependencies.credentialStore ?? createDefaultCredentialStore(process.env),
+              allowInsecureLoopback: config.notification_service.allow_insecure_loopback === true,
+            })
+          : undefined);
+      this.deliveryQueueV2 = queueV2;
+      this.notificationReceiptStore = receiptStore;
+      this.migrationBindings = migrationBindingsForConfig(config);
+      this.deliveryRouterV2 =
+        dependencies.deliveryRouterV2 ??
+        new WatchDeliveryRouterV2({
+          queue: queueV2,
+          blobStore,
+          receiptStore,
+          ...(notificationClient ? { notificationClient } : {}),
+          sinks: this.sinks,
+          watchConfigDigest: computeGitHubWatchConfigDigestV2(config),
+          allowNewServiceRecords:
+            dependencies.allowNewNotificationServiceRecords ??
+            parseNotificationServiceAdmission(process.env),
+          recordEvent: this.recordEventFn ?? undefined,
+          authorityResolver: this.authorityResolver,
+          refreshLiveState: dependencies.refreshLiveState,
+          intervalMs: dependencies.deliveryWorkerIntervalMs,
+          sinkTimeoutMs: dependencies.deliverySinkTimeoutMs,
+        });
+    }
   }
 
   async start(port: number): Promise<void> {
+    this.prepareV2Runtime();
     this.deliveryRouter.start();
+    this.deliveryRouterV2?.start();
     // Start profile-sync worker if auto-pr mode may be used
     try {
       const { ProfileSyncWorker } = await import('./profile-sync-worker.js');
@@ -169,7 +250,9 @@ export class WatchDaemon {
             return;
           }
           const code =
-            error instanceof WatchDeliveryQueueError ? error.code : 'WATCH_DELIVERY_FAILED';
+            error instanceof WatchDeliveryQueueError || error instanceof WatchDeliveryQueueV2Error
+              ? error.code
+              : 'WATCH_DELIVERY_FAILED';
           jsonResponse(res, 503, {
             error: 'Repository event could not be durably accepted.',
             code,
@@ -186,6 +269,7 @@ export class WatchDaemon {
   async stop(): Promise<void> {
     this.stopPolling();
     await this.deliveryRouter.stop();
+    await this.deliveryRouterV2?.stop();
     if (this.profileSyncWorker) {
       this.profileSyncWorker.stop();
       this.profileSyncWorker = null;
@@ -204,6 +288,7 @@ export class WatchDaemon {
     sourceRef: string = 'github.watch.webhook',
     awaitDelivery = true,
   ): Promise<CollaborationEventRecord | null> {
+    this.prepareV2Runtime();
     return (await this.processIssueEvent(event, sourceRef, awaitDelivery)).collabEvent;
   }
 
@@ -221,28 +306,14 @@ export class WatchDaemon {
 
     const matches = matchesRepoConfig(event, repoConfig);
     const repositoryEvent = asIssueRepositoryEvent(event, sourceRef);
-    const routes = matches ? (repoConfig.routes ?? [{ sink: 'console' as const }]) : [];
-    const enqueue = this.deliveryQueue.claimAndEnqueue(
-      toPersistableRepositoryEvent(repositoryEvent),
-      routes,
-    );
-    if (enqueue.outcome === 'conflict') {
-      throw new WatchDeliveryQueueError(
-        'QUEUE_TRANSITION_INVALID',
-        'A GitHub delivery identity was reused for a different event.',
-      );
-    }
+    const routes = matches ? configuredRoutes(this.config, repoConfig.routes) : [];
+    const enqueue = await this.admitRepositoryEvent(repositoryEvent, routes, awaitDelivery);
     if (enqueue.outcome === 'duplicate') {
       return {
         accepted: false,
-        deliveryId: enqueue.delivery?.id,
+        deliveryId: enqueue.deliveryId,
         collabEvent: null,
       };
-    }
-    if (routes.length > 0) {
-      this.deliveryRouter.remember(repositoryEvent);
-      if (awaitDelivery) await this.deliveryRouter.drainOnce();
-      else this.deliveryRouter.scheduleDrain();
     }
 
     const eventType = matches ? 'task.created' : 'task.blocked';
@@ -301,34 +372,30 @@ export class WatchDaemon {
 
     return {
       accepted: true,
-      deliveryId: enqueue.delivery.id,
+      deliveryId: enqueue.deliveryId,
       collabEvent,
     };
   }
 
   async observeRepositoryEvent(
     event: Exclude<RepositoryEvent, { kind: 'issue' | 'push' }>,
-    repoConfig: GitHubWatchConfig['repositories'][number],
+    repoConfig:
+      | GitHubWatchConfig['repositories'][number]
+      | GitHubWatchConfigV2['repositories'][number],
     awaitDelivery = false,
   ): Promise<boolean> {
-    const enqueue = this.deliveryQueue.claimAndEnqueue(
-      toPersistableRepositoryEvent(event),
-      repoConfig.routes ?? [{ sink: 'console' as const }],
+    this.prepareV2Runtime();
+    const enqueue = await this.admitRepositoryEvent(
+      event,
+      configuredRoutes(this.config, repoConfig.routes),
+      awaitDelivery,
     );
-    if (enqueue.outcome === 'conflict') {
-      throw new WatchDeliveryQueueError(
-        'QUEUE_TRANSITION_INVALID',
-        'A GitHub delivery identity was reused for a different event.',
-      );
-    }
     if (enqueue.outcome === 'duplicate') return false;
-    this.deliveryRouter.remember(event);
-    if (awaitDelivery) await this.deliveryRouter.drainOnce();
-    else this.deliveryRouter.scheduleDrain();
     return true;
   }
 
   async pollAll(): Promise<{ reposPolled: number; eventsDispatched: number; errors: string[] }> {
+    this.prepareV2Runtime();
     const result = { reposPolled: 0, eventsDispatched: 0, errors: [] as string[] };
 
     for (const repoConfig of this.config.repositories) {
@@ -371,13 +438,19 @@ export class WatchDaemon {
       this.cursorStore.updateCursor(repoKey, pollResult.newCursor);
     }
 
-    await this.deliveryRouter.drainOnce();
+    if (this.deliveryRouterV2) {
+      await Promise.all([this.deliveryRouter.drainOnce(), this.deliveryRouterV2.drainOnce()]);
+    } else {
+      await this.deliveryRouter.drainOnce();
+    }
 
     return result;
   }
 
   async startPolling(intervalSeconds: number = 300): Promise<void> {
+    this.prepareV2Runtime();
     this.deliveryRouter.start();
+    this.deliveryRouterV2?.start();
     const firstResult = await this.pollAll();
     console.log(
       `[Poll] Initial poll complete: ${firstResult.reposPolled} repos, ${firstResult.eventsDispatched} events`,
@@ -582,6 +655,7 @@ export class WatchDaemon {
     event: NormalizedPushEvent,
     awaitDelivery = true,
   ): Promise<CollaborationEventRecord | null> {
+    this.prepareV2Runtime();
     return (await this.processPushEvent(event, awaitDelivery)).collabEvent;
   }
 
@@ -599,29 +673,15 @@ export class WatchDaemon {
     );
     const routes =
       repoConfig?.events.includes('push') === true
-        ? (repoConfig.routes ?? [{ sink: 'console' as const }])
+        ? configuredRoutes(this.config, repoConfig.routes)
         : [];
-    const enqueue = this.deliveryQueue.claimAndEnqueue(
-      toPersistableRepositoryEvent(repositoryEvent),
-      routes,
-    );
-    if (enqueue.outcome === 'conflict') {
-      throw new WatchDeliveryQueueError(
-        'QUEUE_TRANSITION_INVALID',
-        'A GitHub delivery identity was reused for a different event.',
-      );
-    }
+    const enqueue = await this.admitRepositoryEvent(repositoryEvent, routes, awaitDelivery);
     if (enqueue.outcome === 'duplicate') {
       return {
         accepted: false,
-        deliveryId: enqueue.delivery?.id,
+        deliveryId: enqueue.deliveryId,
         collabEvent: null,
       };
-    }
-    if (routes.length > 0) {
-      this.deliveryRouter.remember(repositoryEvent);
-      if (awaitDelivery) await this.deliveryRouter.drainOnce();
-      else this.deliveryRouter.scheduleDrain();
     }
 
     const hasPostChanges = event.commits.length > 0;
@@ -673,7 +733,7 @@ export class WatchDaemon {
     if (!configMatches || !psConfig) {
       return {
         accepted: true,
-        deliveryId: enqueue.delivery.id,
+        deliveryId: enqueue.deliveryId,
         collabEvent,
       };
     }
@@ -682,7 +742,7 @@ export class WatchDaemon {
     if (psConfig.mode === 'manual') {
       return {
         accepted: true,
-        deliveryId: enqueue.delivery.id,
+        deliveryId: enqueue.deliveryId,
         collabEvent,
       };
     }
@@ -694,7 +754,7 @@ export class WatchDaemon {
       );
       return {
         accepted: true,
-        deliveryId: enqueue.delivery.id,
+        deliveryId: enqueue.deliveryId,
         collabEvent,
       };
     }
@@ -717,7 +777,7 @@ export class WatchDaemon {
           console.log(`[Profile Sync Auto-PR] Duplicate delivery ${event.deliveryId}, skipping.`);
           return {
             accepted: true,
-            deliveryId: enqueue.delivery.id,
+            deliveryId: enqueue.deliveryId,
             collabEvent,
           };
         }
@@ -753,10 +813,112 @@ export class WatchDaemon {
 
     return {
       accepted: true,
-      deliveryId: enqueue.delivery.id,
+      deliveryId: enqueue.deliveryId,
       collabEvent,
     };
   }
+
+  private prepareV2Runtime(): void {
+    if (this.v2Prepared || !this.deliveryQueueV2 || !this.notificationReceiptStore) return;
+    this.deliveryQueueV2.recoverAcceptedReceipts(this.notificationReceiptStore);
+    migrateWatchDeliveryQueueV1ToV2({
+      v1: this.deliveryQueue,
+      v2: this.deliveryQueueV2,
+      bindings: this.migrationBindings,
+    });
+    this.v2Prepared = true;
+  }
+
+  private async admitRepositoryEvent(
+    event: RepositoryEvent,
+    routes: GitHubWatchRoute[] | GitHubWatchRouteV2[],
+    awaitDelivery: boolean,
+  ): Promise<{ outcome: 'enqueued' | 'duplicate'; deliveryId?: string }> {
+    this.prepareV2Runtime();
+    if (this.deliveryRouterV2) {
+      const result: WatchDeliveryV2AdmissionResult = await this.deliveryRouterV2.admit(
+        event,
+        routes as GitHubWatchRouteV2[],
+      );
+      if (result.outcome === 'conflict') {
+        throw new WatchDeliveryQueueV2Error(
+          'QUEUE_TRANSITION_INVALID',
+          'A GitHub delivery identity was reused for a different event.',
+        );
+      }
+      if (awaitDelivery) {
+        await Promise.all([this.deliveryRouter.drainOnce(), this.deliveryRouterV2.drainOnce()]);
+      } else {
+        this.deliveryRouter.scheduleDrain();
+        this.deliveryRouterV2.scheduleDrain();
+      }
+      return {
+        outcome: result.outcome,
+        deliveryId: result.routeRecordIds[0],
+      };
+    }
+
+    const enqueue = this.deliveryQueue.claimAndEnqueue(
+      toPersistableRepositoryEvent(event),
+      routes as GitHubWatchRoute[],
+    );
+    if (enqueue.outcome === 'conflict') {
+      throw new WatchDeliveryQueueError(
+        'QUEUE_TRANSITION_INVALID',
+        'A GitHub delivery identity was reused for a different event.',
+      );
+    }
+    if (enqueue.outcome === 'duplicate') {
+      return { outcome: 'duplicate', deliveryId: enqueue.delivery?.id };
+    }
+    if (routes.length > 0) {
+      this.deliveryRouter.remember(event);
+      if (awaitDelivery) await this.deliveryRouter.drainOnce();
+      else this.deliveryRouter.scheduleDrain();
+    }
+    return { outcome: 'enqueued', deliveryId: enqueue.delivery.id };
+  }
+}
+
+function isWatchConfigV2(
+  config: GitHubWatchConfig | GitHubWatchConfigV2,
+): config is GitHubWatchConfigV2 {
+  return config.schema === 'openslack.github_watch.v2';
+}
+
+function configuredRoutes(
+  config: GitHubWatchConfig | GitHubWatchConfigV2,
+  routes:
+    | GitHubWatchConfig['repositories'][number]['routes']
+    | GitHubWatchConfigV2['repositories'][number]['routes'],
+): GitHubWatchRoute[] | GitHubWatchRouteV2[] {
+  if (isWatchConfigV2(config)) return (routes ?? []) as GitHubWatchRouteV2[];
+  return (routes ?? [{ sink: 'console' as const }]) as GitHubWatchRoute[];
+}
+
+function migrationBindingsForConfig(config: GitHubWatchConfigV2): LegacyWatchRouteBindingV2[] {
+  const bindings: LegacyWatchRouteBindingV2[] = [];
+  for (const repository of config.repositories) {
+    for (const route of repository.routes ?? []) {
+      const routeKey = canonicalWatchRouteKey(repository, route);
+      if (!routeKey) {
+        throw new TypeError('A v2 route could not be canonicalized for legacy migration.');
+      }
+      bindings.push({
+        routeKey,
+        routeId: route.id,
+        routingEpoch: route.delivery.routing_epoch,
+      });
+    }
+  }
+  return bindings;
+}
+
+export function parseNotificationServiceAdmission(env: NodeJS.ProcessEnv): boolean {
+  const value = env.OPENSLACK_NOTIFICATION_SERVICE_NEW_RECORDS;
+  if (value === undefined || value === '' || value === 'false') return false;
+  if (value === 'true') return true;
+  throw new TypeError('OPENSLACK_NOTIFICATION_SERVICE_NEW_RECORDS must be exactly true or false.');
 }
 
 function asIssueRepositoryEvent(

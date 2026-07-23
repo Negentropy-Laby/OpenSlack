@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
-import { loadGitHubWatchConfig } from './watch-config.js';
+import { loadGitHubWatchConfig, type GitHubWatchConfig } from './watch-config.js';
+import { loadGitHubWatchConfigV2, type GitHubWatchConfigV2 } from './watch-config-v2.js';
 import {
   WatchDaemon,
   type AutoClaimFn,
@@ -22,7 +23,7 @@ export interface StartWorkspaceWatchDaemonOptions {
   recordEvent?: RecordEventFn;
   daemonDependencies?: WatchDaemonDependencies;
   daemonFactory?: (
-    config: NonNullable<ReturnType<typeof loadGitHubWatchConfig>['config']>,
+    config: GitHubWatchConfig | GitHubWatchConfigV2,
     secret: string,
     options: StartWorkspaceWatchDaemonOptions,
   ) => Pick<WatchDaemon, 'start' | 'startPolling' | 'stop'>;
@@ -55,11 +56,15 @@ export async function startWorkspaceWatchDaemon(
   options: StartWorkspaceWatchDaemonOptions,
 ): Promise<WorkspaceWatchDaemonHandle> {
   const configPath = resolve(options.configPath);
-  const parsed = loadGitHubWatchConfig(configPath);
+  const parsedV2 = loadGitHubWatchConfigV2(configPath);
+  const parsed = parsedV2.valid ? parsedV2 : loadGitHubWatchConfig(configPath);
   if (!parsed.valid || !parsed.config) {
     throw new WorkspaceWatchDaemonStartError(
       'WATCH_CONFIG_INVALID',
-      `GitHub Watch config is invalid: ${parsed.errors.join('; ')}`,
+      `GitHub Watch config is invalid: ${[
+        ...(parsedV2.valid ? [] : parsedV2.errors),
+        ...parsed.errors,
+      ].join('; ')}`,
     );
   }
   const secret = options.webhookSecret?.trim() ?? '';

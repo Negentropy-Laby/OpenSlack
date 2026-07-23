@@ -1,8 +1,6 @@
-/**
- * CONTRACT FREEZE: this standalone v2 parser is not loaded by the watch daemon.
- * Do not add runtime consumers before the G2/G3 gates in notification-delivery-integration.md.
- */
+/** Closed v2 GitHub Watch configuration loaded only when its schema is explicitly selected. */
 import { parseSecretReference } from '@openslack/credentials';
+import { readFileSync } from 'node:fs';
 import { parse as parseYaml } from 'yaml';
 import {
   GITHUB_WATCH_EVENT_KEYS,
@@ -172,6 +170,17 @@ export function parseGitHubWatchConfigV2(yaml: string): WatchConfigV2ParseResult
     },
     errors: [],
   };
+}
+
+export function loadGitHubWatchConfigV2(path: string): WatchConfigV2ParseResult {
+  try {
+    return parseGitHubWatchConfigV2(readFileSync(path, 'utf8'));
+  } catch (error) {
+    return {
+      valid: false,
+      errors: [`Failed to read config: ${(error as Error).message}`],
+    };
+  }
 }
 
 function parseNotificationService(
