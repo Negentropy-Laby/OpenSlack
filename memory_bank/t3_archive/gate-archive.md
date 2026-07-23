@@ -60,3 +60,25 @@
   不授权源码/迁移/测试/构建，不授权 Architecture → Pre-Implementation gate。
 - **Handoff**：fresh 独立 Architecture package review（结果见
   `docs/architecture/architecture-review-archive.md`）；停在 Architecture。
+
+## Integration Gate Supersession — 2026-07-24 — OWNER_AUTHORIZED
+
+- **Owner authorization**：`wsman`，记录时间 `2026-07-24T00:46:29+08:00`。
+- **Superseded gate**：`G5-CANARY=SUPERSEDED_NOT_RUN`；不追溯声明长期 Canary 已执行或通过。
+- **Replacement**：`G5-IMPORT-QUALIFICATION`，仅作为 IB6 exact-history import 的资格门禁。
+- **Run contract**：单个 `notification-canary` protected run；无最短持续时间；hard timeout 60 分钟；
+  至少 8 个 distinct non-replay accepted keys，覆盖
+  `2 repositories × {issue,push} × 2 vendor IDs` 的八个 cell；每条在 accepted 后 600 秒内 delivered。
+- **前置与阻塞条件**：`G3-QUEUE=PASS`、`G4-E2E=PASS`、OpenSlack `v0.2.0` immutable release；frozen
+  commit/tree/image/config/route identities；restart/response-loss、权限隔离、receipt/DB/vendor 对账与
+  payload/secret scan 均通过；unresolved duplicate/conflict/dead/correctness/security blocker 全部为零。
+- **授权边界**：只授权在其余 IB6 preconditions 也满足后执行 `IB6_HISTORY_IMPORT_ONLY`。不授权
+  `LIVE_VERIFIED`、IB7/default cutover、OpenSlack 0.3.0、production-ready 或任何 destructive retirement。
+- **Append-only discipline**：`docs/testing/ib4-r1-local-report.json` 和
+  `docs/testing/acceptance-report.json` 保持原样；未来 qualification 结果创建新
+  `negentropy_laby.ib6_preconditions.v2` receipt，不回写历史 evidence。
+- **Machine receipt**：
+  `integration/gates/g5-import-qualification-supersession.json`，SHA-256
+  `2d1ee8da4bf3433732384bc1b70afd264b3455c9c8a0764e7c16b24f65ba54d6`。
+
+此条目记录 contract supersession，不是 `G5-IMPORT-QUALIFICATION=PASS` 运行证据，也不推进项目 stage。

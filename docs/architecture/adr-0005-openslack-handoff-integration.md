@@ -264,3 +264,39 @@ that point, this service and all later changes are governed by OpenSlack's indep
 - No production-readiness or live-verification claim is made.
 - G0 is recorded as `G0_CONTRACT_PASS_WITH_RC_REVIEW_WAIVER`; the service-side exception is limited to the
   standalone review policy defined above.
+
+## Owner Amendment — 2026-07-24 — Pre-IB6 Gate Supersession
+
+Owner authorization `wsman` supersedes the 14-day / 336-hour / 100-accepted `G5-CANARY` requirement in
+**Provenance And Release Boundary** and **Canary And History Gates** only as a prerequisite for the IB6 exact-history
+import. The superseded gate is recorded as:
+
+```text
+gate: G5-CANARY
+status: SUPERSEDED_NOT_RUN
+replacement: G5-IMPORT-QUALIFICATION
+```
+
+`G5-IMPORT-QUALIFICATION` is one protected, externally backed run with no minimum duration and a hard timeout of
+60 minutes. It must produce at least eight distinct, non-replay accepted keys covering the exact Cartesian product:
+
+```text
+2 repositories × {issue, push} × 2 vendor IDs = 8 route-event cells
+```
+
+Every accepted key must reconcile to the same service notification and reach `delivered` within 10 minutes. The run
+also requires `G3-QUEUE=PASS`, `G4-E2E=PASS`, immutable OpenSlack `v0.2.0`, frozen source/image/config identities,
+caller/auditor permission isolation, clean receipt/database/vendor reconciliation, the required restart and
+response-loss drills, and zero unresolved duplicate, conflict, delivery-dead, correctness, security, payload-leak or
+secret-leak blocker.
+
+The decision receipt is
+[`../../integration/gates/g5-import-qualification-supersession.json`](../../integration/gates/g5-import-qualification-supersession.json).
+The decision and eventual run receipt must respectively validate against
+`negentropy_laby.integration_gate_supersession.v1` and `negentropy_laby.ib6_preconditions.v2`.
+
+This amendment authorizes only the IB6 full-history import after a conforming `G5-IMPORT-QUALIFICATION=PASS` receipt
+and the remaining IB6 preconditions. It does **not** authorize `LIVE_VERIFIED`, IB7/default cutover, OpenSlack 0.3.0,
+production readiness or any destructive retirement/archive/database action. Those outcomes require separately
+recorded gates and owner authorization. All delivery authority, idempotency, receipt, retry, migration, security and
+history-preservation contracts above remain unchanged.

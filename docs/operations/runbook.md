@@ -172,6 +172,44 @@ replay 和 snapshot 前失败则保持缺省。不得用 payload、credential de
 [`../testing/ib4-r1-local-report.json`](../testing/ib4-r1-local-report.json)；该报告明确不等价于真实
 `G4-E2E` 或 `G5-CANARY`。
 
+### Pre-IB6 import qualification
+
+2026-07-24 owner amendment 将未运行的长期 `G5-CANARY` 记为 `SUPERSEDED_NOT_RUN`，只针对 IB6 history
+import 替换为 `G5-IMPORT-QUALIFICATION`。这不是 production Canary，也不得写成
+`G5-CANARY=PASS`。
+
+资格运行必须通过 `notification-canary` protected environment 启动，使用上文 digest-pinned
+service/receiver images、真实 external TLS origins、两个 repository 和两个 vendor。单次 run 从首个
+admission 到 evidence 封存最长 60 分钟，不设最短持续时间；超时即 `FAIL`，不得拼接多个 run 或复用
+旧 accepted。
+
+运行在同一冻结 config 下各触发：
+
+```text
+repository A: issue + push -> Slack + Webhook
+repository B: issue + push -> Slack + Webhook
+```
+
+必须得到至少八个 distinct、`idempotent_replay=false` 的 accepted keys，八个
+repository/event-kind/vendor cell 各至少一个。每个 key 从 `accepted_at` 起 600 秒内必须由只读 auditor
+确认同一 `notification_id` 为 `delivered`；receipt、notification status、attempt config version 和
+Slack/Webhook metadata 必须一致。
+
+封存前还必须证明：
+
+- `G3-QUEUE=PASS`、`G4-E2E=PASS`，且 OpenSlack `v0.2.0` 已 immutable release；
+- source commit/tree、service image digest、watch config digest、vendor config versions、route ID/epoch
+  在 run 内不漂移；
+- caller 不能查询，auditor 不能 submit/replay/admin；
+- restart 与 202 response-loss drills 通过，replay 不计入八条；
+- unexplained duplicate/conflict/dead、correctness/security blocker、payload/secret marker 均为零。
+
+结果必须写入一个 create-only receipt，符合
+[`../../integration/schemas/ib6-preconditions.v2.schema.json`](../../integration/schemas/ib6-preconditions.v2.schema.json)，
+并引用 immutable evidence SHA-256。`PASS` 只解锁 IB6 exact-history import；不得据此提升
+`LIVE_VERIFIED`、执行 IB7、发布 0.3.0、声明 production ready 或执行 archive/credential/DB destructive
+action。
+
 隔离的 crash-after-send、双 recovery 竞争、数据库停止/恢复和有界关闭演练命令为：
 
 ```bash
