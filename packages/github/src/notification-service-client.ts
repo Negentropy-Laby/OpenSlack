@@ -35,7 +35,7 @@ export interface NotificationServiceHandoffRequest {
 }
 
 /**
- * Standalone pre-IB3 client. This deliberately does not implement NotificationSink:
+ * Dedicated handoff client. This deliberately does not implement NotificationSink:
  * a valid 202 means durable service acceptance, not vendor delivery.
  */
 export class NotificationServiceClient {

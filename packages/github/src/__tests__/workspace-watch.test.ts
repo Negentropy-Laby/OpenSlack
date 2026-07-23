@@ -57,6 +57,78 @@ describe('typed workspace watch daemon startup', () => {
     });
   });
 
+  it('loads explicit v2 config without creating an implicit backend', async () => {
+    const configPath = watchConfigV2();
+    const startPolling = vi.fn().mockResolvedValue(undefined);
+    let schema = '';
+
+    const handle = await startWorkspaceWatchDaemon({
+      configPath,
+      daemonFactory: (config) => {
+        schema = config.schema;
+        return {
+          start: vi.fn(),
+          startPolling,
+          stop: vi.fn().mockResolvedValue(undefined),
+        };
+      },
+    });
+
+    expect(schema).toBe('openslack.github_watch.v2');
+    expect(startPolling).toHaveBeenCalledWith(300);
+    expect(handle.repositories).toBe(1);
+  });
+
+  it('loads the closed v2 config without silently falling back to v1', async () => {
+    const root = temporaryRoot();
+    const configPath = join(root, 'github-watch-v2.yaml');
+    writeFileSync(
+      configPath,
+      stringifyYaml({
+        schema: 'openslack.github_watch.v2',
+        notification_service: {
+          endpoint: 'https://notifications.example.test',
+          credential_ref: 'env:OPENSLACK_NOTIFICATION_SERVICE_KEY',
+          expected_deployment_digest: `sha256:${'a'.repeat(64)}`,
+        },
+        repositories: [
+          {
+            owner: 'Acme',
+            repo: 'Project',
+            events: ['issues.opened'],
+            routes: [
+              {
+                id: 'service-primary',
+                sink: 'webhook',
+                delivery: {
+                  backend: 'notification_service',
+                  routing_epoch: 1,
+                  vendor_id: 'webhook-canary',
+                },
+              },
+            ],
+          },
+        ],
+      }),
+      'utf8',
+    );
+    const startPolling = vi.fn().mockResolvedValue(undefined);
+    const handle = await startWorkspaceWatchDaemon({
+      configPath,
+      daemonFactory: (config) => {
+        expect(config.schema).toBe('openslack.github_watch.v2');
+        return {
+          start: vi.fn(),
+          startPolling,
+          stop: vi.fn().mockResolvedValue(undefined),
+        };
+      },
+    });
+
+    expect(startPolling).toHaveBeenCalled();
+    expect(handle.repositories).toBe(1);
+  });
+
   it('fails with stable codes for invalid config and bounded numeric options', async () => {
     const root = temporaryRoot();
     const invalid = join(root, 'invalid.yaml');
@@ -114,6 +186,33 @@ function watchConfig(): string {
           events: ['issues.opened', 'pull_request.opened', 'check_run.completed'],
           routes: [{ sink: 'console' }],
           auto_claim: { enabled: false },
+        },
+      ],
+    }),
+    'utf8',
+  );
+  return path;
+}
+
+function watchConfigV2(): string {
+  const root = temporaryRoot();
+  const path = join(root, 'github-watch-v2.yaml');
+  writeFileSync(
+    path,
+    stringifyYaml({
+      schema: 'openslack.github_watch.v2',
+      repositories: [
+        {
+          owner: 'Acme',
+          repo: 'Project',
+          events: ['issues.opened'],
+          routes: [
+            {
+              id: 'console-local',
+              sink: 'console',
+              delivery: { backend: 'local', routing_epoch: 1 },
+            },
+          ],
         },
       ],
     }),

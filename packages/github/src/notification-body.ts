@@ -1,7 +1,4 @@
-/**
- * Pure final-vendor-body materializers. These functions do not perform I/O and are not wired to
- * the notification-service client or Blob store before their respective integration gates.
- */
+/** Pure final-vendor-body materializers shared by direct and service delivery. */
 import { createHash } from 'node:crypto';
 import {
   NOTIFICATION_HANDOFF_POLICY,
@@ -44,9 +41,7 @@ export function materializeWebhookNotificationBody(
   return materializedBody(bytes, 'openslack.webhook_notification.v1');
 }
 
-/**
- * Future handoff/Blob admission check. Direct sinks deliberately do not call this validator.
- */
+/** Handoff/Blob admission check. Direct sinks deliberately do not call this validator. */
 export function validateNotificationBodyForHandoff(
   body: Pick<MaterializedNotificationBody, 'bytes' | 'size'>,
 ): NotificationBodyHandoffValidation {
