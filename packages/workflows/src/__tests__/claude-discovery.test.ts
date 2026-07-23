@@ -2,8 +2,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { discoverWorkflows, discoverJsWorkflows } from '../loader.js';
+import {
+  discoverWorkflows as discoverWorkflowsWithUserHome,
+  discoverJsWorkflows as discoverJsWorkflowsWithUserHome,
+} from '../loader.js';
 import type { WorkflowSource } from '../types.js';
+
+const discoverWorkflows = (cwd: string) =>
+  discoverWorkflowsWithUserHome(cwd, { userHomeDir: null });
+const discoverJsWorkflows = (cwd: string) =>
+  discoverJsWorkflowsWithUserHome(cwd, { userHomeDir: null });
 
 describe('claude-discovery', () => {
   let tmpDir: string;
@@ -108,12 +116,17 @@ export const meta = { name: 'c', description: 'C', phases: [{ title: 'Scan', det
     });
 
     it('labels ~/.claude/workflows as "claude-user"', async () => {
-      // We cannot easily test real home dir scanning, so we test via discoverJsWorkflows
-      // which uses the same source mapping. Instead, we verify the source mapping logic
-      // by checking that a project-local .claude/workflows gets "claude-project".
-      writeWorkflow(join(tmpDir, '.claude', 'workflows'), 'home.js', 'home');
-      const result = withoutBuiltins(await discoverWorkflows(tmpDir));
-      expect(result[0].source).toBe('claude-project');
+      const userHome = join(tmpDir, 'user-home');
+      writeWorkflow(join(userHome, '.claude', 'workflows'), 'home.js', 'home');
+      const result = withoutBuiltins(
+        await discoverWorkflowsWithUserHome(tmpDir, { userHomeDir: userHome }),
+      );
+      expect(result).toEqual([
+        expect.objectContaining({
+          name: 'home',
+          source: 'claude-user',
+        }),
+      ]);
     });
   });
 
