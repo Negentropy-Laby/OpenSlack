@@ -1,0 +1,26 @@
+services:
+  app:
+    image: "rc-wsman-canary-app:${CANARY_SOURCE_COMMIT:?set CANARY_SOURCE_COMMIT}"
+    build:
+      context: .
+      target: app
+      labels:
+        org.opencontainers.image.revision: "${CANARY_SOURCE_COMMIT:?set CANARY_SOURCE_COMMIT}"
+        io.negentropy-laby.source-tree: "${CANARY_SOURCE_TREE:?set CANARY_SOURCE_TREE}"
+        io.negentropy-laby.canary.image-mode: "verified-local-build"
+    pull_policy: build
+    labels:
+      io.negentropy-laby.canary.image-mode: "verified-local-build"
+
+  webhook-receiver:
+    image: "rc-wsman-canary-webhook-receiver:${CANARY_SOURCE_COMMIT:?set CANARY_SOURCE_COMMIT}"
+    build:
+      context: .
+      target: canary-webhook-receiver
+      labels:
+        org.opencontainers.image.revision: "${CANARY_SOURCE_COMMIT:?set CANARY_SOURCE_COMMIT}"
+        io.negentropy-laby.source-tree: "${CANARY_SOURCE_TREE:?set CANARY_SOURCE_TREE}"
+        io.negentropy-laby.canary.image-mode: "verified-local-build"
+    pull_policy: build
+    labels:
+      io.negentropy-laby.canary.image-mode: "verified-local-build"

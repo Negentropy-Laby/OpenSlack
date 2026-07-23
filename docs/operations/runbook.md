@@ -146,11 +146,24 @@ Webhook is schema v2 + `http_status_v1` + `auth:none` + the two ingress-key head
 credential descriptor, body-field mapping, or rotation request against an auth-none version.
 
 IB4/IB5 单主机部署使用
-[`../../deploy/canary/README.md`](../../deploy/canary/README.md) 中的 two-file Compose pack。真实 secret 只能
-从 `notification-canary` protected environment 写入主机 mode-`0600` env file。Webhook receiver 只保存
-request ID、两个 idempotency header、body digest/size 和时间；查询必须用独立 audit token。任何 payload、
-raw vendor response、caller/auditor key 或 Slack token 出现在 receiver record、日志或 evidence 都是
-G4 blocker。
+[`../../deploy/canary/README.md`](../../deploy/canary/README.md) 中的
+common + mode-specific Compose pack。真实 secret 只能从 `notification-canary`
+protected environment 写入主机 owner-only mode-`0600` env file；必须先运行
+`deploy/canary/preflight.sh`，且只允许其 stable code-only 输出进入 evidence。
+真实 G4/G5 只接受 digest-pinned service/receiver image；service image digest
+必须等于 deployment digest。`verified-local-build` 会绑定 clean commit/tree
+和 deterministic rehearsal digest，但只能用于 G4 前预演。
+
+Canary Compose 不发布 database port，app、Prometheus 和 receiver 只绑定
+host loopback。deployment-owned reverse proxy 是唯一 external listener，只能
+在 TLS/443 暴露 service/receiver origin，必须使用受信 CA certificate、关闭
+redirect 和 request/body access log。开始 G4 前从 OpenSlack host 验证 external
+TLS chain/hostname 和 health endpoints，并负向确认 public 8080/8090 不可达。
+
+Webhook receiver 只保存 request ID、两个 idempotency header、body
+digest/size 和时间；查询必须用独立 audit token。任何 payload、raw vendor
+response、caller/auditor key、database password 或 Slack token 出现在
+receiver record、日志、rendered Compose output 或 evidence 都是 G4 blocker。
 
 Operations reconciliation 以 receipt 中的 `notification_id` 查询 notification status 和 attempt history。
 status 必须返回匹配的 `vendor_id`；snapshot 后的 outcome 必须返回实际 `config_version`，claim/recovery、

@@ -12,7 +12,8 @@ Trust boundaries:
 3. Delivery to secret provider;
 4. Delivery to DNS and external vendor HTTPS;
 5. metrics/health endpoints to deployment network;
-6. Canary vendor traffic to the metadata-only Webhook receiver and its independently authenticated query endpoint.
+6. deployment-owned TLS/443 reverse proxy to the host-loopback service and Canary receiver listeners;
+7. Canary vendor traffic to the metadata-only Webhook receiver and its independently authenticated query endpoint.
 
 ## Threats and Controls
 
@@ -33,6 +34,8 @@ Trust boundaries:
 | audit tampering | append-only records, restricted DB role, OCC/transactional writes | ADR-0001 |
 | denial of service | request/body/list/batch bounds, per-principal rate limits, hard HTTP timeout | CDD configs |
 | deployment identity spoof/drift | require an exact deployment-supplied OCI digest at startup; successful intake overwrites any caller header with the process value | ADR-0005 / OpenAPI |
+| Canary image/config substitution | fail-closed preflight couples the service RepoDigest to deployment digest, rejects tag-only or mixed build modes, and accepts clean commit/tree local builds only as non-gating rehearsal | IB4 deployment pack |
+| cleartext/public Canary listener | Compose binds app/receiver/metrics to loopback, publishes no database port, and requires a deployment-owned trusted-CA TLS/443 reverse proxy with redirect/access-body logging disabled | IB4 deployment pack |
 | endpoint schema downgrade or credential smuggling | closed v1/v2 admin union, explicit v2 discriminator/policy, monotonic schema update, auth-none credential/header rejection | ADR-0005 / OpenAPI |
 | Canary evidence leaks payload or becomes a sender | receiver hashes a bounded body in memory, stores only closed metadata in a dedicated `0700` directory/`0600` files, has no outbound transport, and protects queries with a separate audit token | IB4 deployment pack |
 
@@ -69,6 +72,11 @@ from `WEBHOOK_AUDIT_TOKEN`, compared without logging, and is distinct from notif
 Receiver records may contain the two non-secret idempotency identifiers needed for reconciliation. The evidence
 directory is a deployment-owned bind mount, not a repository path, home directory or shared volume.
 
+Canary Go listeners terminate cleartext only on host loopback. They are not external security boundaries. The
+deployment-owned reverse proxy is the only public ingress, exposes TLS/443 with a trusted certificate, and forwards to
+the loopback ports without redirect or request/body logging. G4 evidence must validate the certificate chain and
+hostname through the external origins and must prove that database, 8080 and 8090 are not publicly reachable.
+
 Vendor config v2 treats credential absence as an authorization property, not a nullable convenience: `auth:none`
 rejects credential references and credential-derived headers at ingestion, stores NULL credential columns, skips the
 resolver at delivery, rejects credential rotation, and omits even the sanitized credential descriptor from read
@@ -81,5 +89,7 @@ allowlisted. A v2 record cannot be rewritten as v1 by an update.
 - Environment-based MVP secrets require process restart for rotation and are weaker than managed KMS/Vault.
 - In-memory rate limits are per process.
 - Compromised deployment/database administrators remain privileged.
+- Reverse-proxy certificate lifecycle, host firewall and access-log configuration remain deployment-owned controls;
+  repository preflight can validate origins and Compose bindings but cannot attest the external network by itself.
 
 Each residual is accepted for MVP and has an evolution trigger; none is represented as eliminated.
