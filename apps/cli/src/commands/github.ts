@@ -11,6 +11,7 @@ import {
   heartbeatClaim,
   loadGitHubWatchConfig,
   loadGitHubWatchConfigV2,
+  NotificationDeliveryOperations,
   queryReadyItems,
   readGitHubAppLocalConfig,
   renderClaimLifecycleResult,
@@ -934,6 +935,280 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
     });
 
   cmd.addCommand(watch);
+
+  const notifications = new Command('notifications').description(
+    'Inspect and govern route-centric notification delivery',
+  );
+
+  notifications
+    .command('doctor')
+    .description('Validate local notification-delivery readiness without sending')
+    .option('--config <path>', 'GitHub Watch v2 config path')
+    .action(async (options: { config?: string }) => {
+      try {
+        const root = findRepoRoot();
+        const operations = new NotificationDeliveryOperations({
+          workspaceRoot: root,
+          credentialStore:
+            dependencies.credentialStore ?? createDefaultCredentialStore(process.env),
+        });
+        const report = await operations.doctor(options.config);
+        console.log(`Notification Delivery Doctor: ${report.ready ? 'PASS' : 'FAIL'}`);
+        for (const check of report.checks) {
+          console.log(`[${check.passed ? 'PASS' : 'FAIL'}] ${check.name}: ${check.detail}`);
+        }
+        if (!report.ready) process.exitCode = 1;
+      } catch {
+        console.error('NOTIFICATION_DOCTOR_FAILED: readiness could not be verified safely.');
+        process.exitCode = 1;
+      }
+    });
+
+  notifications
+    .command('status')
+    .description('Show payload-blind notification queue status')
+    .action(() => {
+      try {
+        const status = new NotificationDeliveryOperations({
+          workspaceRoot: findRepoRoot(),
+        }).status();
+        console.log('Notification Delivery');
+        console.log(`V2 records: ${status.queue.count}`);
+        console.log(
+          `Pending=${status.queue.pending} Processing=${status.queue.processing} Retryable=${status.queue.retryable}`,
+        );
+        console.log(
+          `Accepted=${status.queue.accepted} Rejected=${status.queue.rejected} Quarantined=${status.queue.quarantined} Dead=${status.queue.handoffDead}`,
+        );
+        console.log(
+          `Direct completed=${status.queue.completed} failed=${status.queue.failed}; legacy-owned=${status.queue.legacyOwned}`,
+        );
+        console.log(`Pending receipt ledgers: ${status.queue.pendingReceiptLedgers}`);
+        console.log(
+          `Legacy v1: pending=${status.legacy.pending} processing=${status.legacy.processing} retryable=${status.legacy.retryable}`,
+        );
+      } catch {
+        console.error('NOTIFICATION_STATUS_FAILED: local state could not be validated.');
+        process.exitCode = 1;
+      }
+    });
+
+  notifications
+    .command('queue')
+    .description('List payload-blind route records')
+    .option('--state <state>', 'Filter by exact route state')
+    .action((options: { state?: string }) => {
+      try {
+        const routes = new NotificationDeliveryOperations({
+          workspaceRoot: findRepoRoot(),
+        })
+          .listRoutes()
+          .filter((route) => !options.state || route.state === options.state);
+        if (routes.length === 0) {
+          console.log('No matching notification route records.');
+          return;
+        }
+        for (const route of routes) console.log(JSON.stringify(route));
+      } catch {
+        console.error('NOTIFICATION_QUEUE_FAILED: local state could not be validated.');
+        process.exitCode = 1;
+      }
+    });
+
+  notifications
+    .command('drain')
+    .description('Preview or run one legacy and v2 delivery drain cycle')
+    .option(
+      '--config <path>',
+      'GitHub Watch v2 config path',
+      '.openslack/monitors/github-watch.yaml',
+    )
+    .option('--apply', 'Perform network delivery and migration finalization')
+    .action(async (options: { config: string; apply?: boolean }) => {
+      try {
+        const root = findRepoRoot();
+        const operations = new NotificationDeliveryOperations({ workspaceRoot: root });
+        if (!options.apply) {
+          console.log(JSON.stringify(operations.status()));
+          console.log('Preview only. Re-run with --apply to perform a drain cycle.');
+          return;
+        }
+        const parsed = loadWatchRuntimeConfig(options.config);
+        if (!parsed.valid || parsed.config.schema !== 'openslack.github_watch.v2') {
+          throw new Error('WATCH_CONFIG_V2_REQUIRED');
+        }
+        const { WatchDaemon } = await import('@openslack/github');
+        const daemon = new WatchDaemon(
+          parsed.config,
+          '',
+          operations.queueV1,
+          {
+            slackBotToken: process.env.OPENSLACK_SLACK_BOT_TOKEN,
+            webhookUrl: process.env.OPENSLACK_DAEMON_WEBHOOK_URL,
+          },
+          undefined,
+          undefined,
+          undefined,
+          {
+            deliveryQueueV2: operations.queueV2,
+            notificationBlobStore: operations.blobStore,
+            notificationReceiptStore: operations.receiptStore,
+            credentialStore:
+              dependencies.credentialStore ?? createDefaultCredentialStore(process.env),
+            allowNewNotificationServiceRecords: false,
+            workspaceRoot: root,
+          },
+        );
+        const result = await daemon.drainDeliveryOnce();
+        await daemon.stop();
+        console.log(JSON.stringify(result));
+        const current = operations.status();
+        if (
+          current.legacy.pending === 0 &&
+          current.legacy.processing === 0 &&
+          current.legacy.retryable === 0 &&
+          current.queue.legacyOwned === 0
+        ) {
+          console.log(JSON.stringify(operations.finalizeLegacyMigration(true)));
+        }
+      } catch {
+        console.error('NOTIFICATION_DRAIN_FAILED: drain stopped safely.');
+        process.exitCode = 1;
+      }
+    });
+
+  notifications
+    .command('retry')
+    .description('Preview or apply a governed recovery cycle with immutable identity')
+    .argument('<route-record-id>')
+    .requiredOption('--reason <text>', 'Operator reason')
+    .option('--operator <id>', 'Operator identity', 'local-operator')
+    .option('--apply', 'Apply the recovery cycle')
+    .action((id: string, options: { reason: string; operator: string; apply?: boolean }) => {
+      try {
+        const route = new NotificationDeliveryOperations({
+          workspaceRoot: findRepoRoot(),
+        }).retry(id, {
+          reason: options.reason,
+          operator: options.operator,
+          apply: Boolean(options.apply),
+        });
+        console.log(
+          `${options.apply ? 'Applied' : 'Preview'} recovery for ${route.id}; immutable route ${route.routeId} epoch ${route.routingEpoch}.`,
+        );
+      } catch (error) {
+        const safeCodes = new Set([
+          'BLOB_NOT_AVAILABLE',
+          'BLOB_INTEGRITY_FAILED',
+          'BLOB_STORAGE_UNSAFE',
+          'BLOB_STORAGE_BUSY',
+          'NOTIFICATION_LOCAL_STATE_INVALID',
+        ]);
+        const safeCode =
+          error instanceof Error && safeCodes.has(error.message) ? error.message : null;
+        console.error(safeCode ?? 'NOTIFICATION_RETRY_FAILED: governed recovery was rejected.');
+        process.exitCode = 1;
+      }
+    });
+
+  const quarantine = new Command('quarantine').description(
+    'Inspect and resolve quarantined routes',
+  );
+  quarantine
+    .command('show')
+    .argument('<route-record-id>')
+    .action((id: string) => {
+      const route = new NotificationDeliveryOperations({
+        workspaceRoot: findRepoRoot(),
+      }).getRoute(id);
+      if (!route || route.state !== 'quarantined') {
+        console.error('QUARANTINE_NOT_FOUND');
+        process.exitCode = 1;
+        return;
+      }
+      console.log(JSON.stringify(route));
+    });
+
+  quarantine
+    .command('resolve')
+    .argument('<route-record-id>')
+    .requiredOption('--decision <retry|archive>', 'Resolution decision')
+    .requiredOption('--reason <text>', 'Operator reason')
+    .option('--operator <id>', 'Operator identity', 'local-operator')
+    .option('--apply', 'Apply the resolution')
+    .action(
+      (
+        id: string,
+        options: {
+          decision: string;
+          reason: string;
+          operator: string;
+          apply?: boolean;
+        },
+      ) => {
+        try {
+          if (options.decision !== 'retry' && options.decision !== 'archive') {
+            throw new Error('INVALID_DECISION');
+          }
+          const operations = new NotificationDeliveryOperations({
+            workspaceRoot: findRepoRoot(),
+          });
+          const reconciliation = operations.reconcile(id);
+          if (reconciliation.outcome !== 'remote_required') {
+            throw new Error('RECONCILIATION_DECISION_UNAVAILABLE');
+          }
+          console.log(
+            'REMOTE_RECONCILIATION_REQUIRED: IB4 read-only service reconciliation must complete before quarantine resolution.',
+          );
+          process.exitCode = 1;
+        } catch {
+          console.error('QUARANTINE_RESOLUTION_FAILED: reconcile before applying a decision.');
+          process.exitCode = 1;
+        }
+      },
+    );
+  notifications.addCommand(quarantine);
+
+  notifications
+    .command('reconcile')
+    .description('Verify local accepted receipt consistency')
+    .argument('<route-record-id>')
+    .action((id: string) => {
+      try {
+        const result = new NotificationDeliveryOperations({
+          workspaceRoot: findRepoRoot(),
+        }).reconcile(id);
+        console.log(JSON.stringify(result));
+        if (result.outcome !== 'consistent') process.exitCode = 1;
+      } catch {
+        console.error('NOTIFICATION_RECONCILIATION_FAILED');
+        process.exitCode = 1;
+      }
+    });
+
+  const canary = new Command('canary').description('Read sealed notification Canary artifacts');
+  for (const name of ['status', 'report'] as const) {
+    canary
+      .command(name)
+      .description(`Show the local Canary ${name} artifact`)
+      .action(() => {
+        try {
+          const artifact = new NotificationDeliveryOperations({
+            workspaceRoot: findRepoRoot(),
+          }).readCanaryArtifact(name);
+          if (artifact === null) {
+            console.log('CANARY_NOT_STARTED');
+            return;
+          }
+          console.log(JSON.stringify(artifact));
+        } catch {
+          console.error('CANARY_ARTIFACT_INVALID');
+          process.exitCode = 1;
+        }
+      });
+  }
+  notifications.addCommand(canary);
+  cmd.addCommand(notifications);
 
   cmd
     .command('metrics')

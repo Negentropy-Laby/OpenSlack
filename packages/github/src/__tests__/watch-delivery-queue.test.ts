@@ -290,7 +290,7 @@ describe('WatchDeliveryQueue', () => {
     writeFileSync(
       join(tempDir, 'delivery-state.v1.json.lock'),
       JSON.stringify({ pid: 1, nonce: 'active', createdAt: now.toISOString() }),
-      'utf-8',
+      { encoding: 'utf-8', mode: 0o600 },
     );
     const store = queue({ lockTimeoutMs: 5, lockStaleMs: 60_000 });
     expect(() =>
@@ -305,7 +305,7 @@ describe('WatchDeliveryQueue', () => {
     writeFileSync(
       lockPath,
       JSON.stringify({ pid: 999999, nonce: 'stale', createdAt: now.toISOString() }),
-      'utf-8',
+      { encoding: 'utf-8', mode: 0o600 },
     );
     const stale = new Date(Date.now() - 60_000);
     utimesSync(lockPath, stale, stale);
