@@ -164,6 +164,32 @@ export type {
   WatchConfigV2ParseResult,
 } from './watch-config-v2.js';
 export {
+  WATCH_DELIVERY_QUEUE_V2_RELATIVE_PATH,
+  WATCH_DELIVERY_QUEUE_V2_SCHEMA,
+  WatchDeliveryQueueV2,
+  WatchDeliveryQueueV2Error,
+  migrateWatchDeliveryQueueV1ToV2,
+} from './watch-delivery-queue-v2.js';
+export type {
+  ClaimedWatchRouteV2,
+  LegacyWatchRouteBindingV2,
+  WatchDeliveryMigrationV2Report,
+  WatchDeliveryQueueV2Options,
+  WatchDeliveryQueueV2Policy,
+  WatchDeliveryQueueV2State,
+  WatchDeliveryQueueV2Stats,
+  WatchRouteAuthorityV2,
+  WatchRouteBlobReferenceV2,
+  WatchRouteDiagnosticV2,
+  WatchRouteEnqueueInputV2,
+  WatchRouteEnqueueResultV2,
+  WatchRouteLeaseV2,
+  WatchRouteMigrationDispositionV2,
+  WatchRouteReceiptLedgerStateV2,
+  WatchRouteRecordV2,
+  WatchRouteStateV2,
+} from './watch-delivery-queue-v2.js';
+export {
   NOTIFICATION_HANDOFF_DEPLOYMENT_DIGEST_PATTERN,
   NOTIFICATION_HANDOFF_IDEMPOTENCY_KEY_PATTERN,
   NOTIFICATION_HANDOFF_NAMESPACE_V2,
@@ -297,9 +323,12 @@ export type {
   WatchDeliveryLease,
   WatchDeliveryPolicy,
   WatchDeliveryQueueOptions,
+  WatchDeliveryQueueSnapshotV1,
   WatchDeliveryRecord,
   WatchDeliveryState,
   WatchDeliveryStats,
+  WatchDeliveryV1FinalizationResult,
+  WatchDeliveryV2MigrationMarker,
   WatchRouteDelivery,
 } from './watch-delivery-queue.js';
 export { WatchDeliveryRouter } from './watch-delivery-router.js';
