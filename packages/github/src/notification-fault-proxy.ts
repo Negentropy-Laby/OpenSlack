@@ -141,7 +141,12 @@ export class NotificationFaultProxy {
       }
       await upstream.body?.cancel();
       this.record(scenario, 'RESPONSE_LOST_AFTER_UPSTREAM', true);
-      response.destroy();
+      // Destroy the accepted downstream request's transport directly. Bun's
+      // ServerResponse.destroy() compatibility path can synthesize an empty
+      // HTTP 200 before teardown when no headers have been written. Closing
+      // the socket itself guarantees that no proxy response becomes visible
+      // after the upstream has durably accepted the request.
+      request.socket.destroy();
       return;
     }
     const synthetic = syntheticResponse(scenario, this.fixture);
