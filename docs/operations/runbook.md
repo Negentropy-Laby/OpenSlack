@@ -8,6 +8,7 @@
 ```bash
 docker compose --env-file deploy/local.env.example up --build --wait
 curl --fail http://127.0.0.1:8080/health/ready
+curl --fail http://127.0.0.1:8080/health/version
 curl --fail http://127.0.0.1:8080/metrics
 ```
 
@@ -25,6 +26,10 @@ X-Notification-Service-Deployment-Digest: sha256:<verified OCI digest hex>
 Verify both a first acceptance and an idempotent replay. A caller-supplied header with the same name must not alter
 the response. A mismatch is a deployment/configuration incident; stop routing new intake and do not rewrite stored
 notifications.
+
+`GET /health/version` returns a closed JSON object with only `ready` and `deployment_digest`; it is 200 only while
+ready and 503 otherwise. Canary automation must compare this value with the frozen OCI digest before enabling new
+OpenSlack route admission.
 
 Compose 启动 PostgreSQL 18.4、非 root app image 和 Prometheus 3.13.1。`/metrics` 必须恰有三项
 `rc_wsman_*` 业务 gauge；Prometheus scrape timeout 为 5s，app collection timeout 为 2s。
@@ -81,16 +86,16 @@ Batch maximum is 100. Automatic replay and “replay all matching query” are f
 go test ./tests/integration -run '^TestPepperRotationRunbookUsesKeyAdminAndFailsClosed$' -count=1 -v
 ```
 
-### OpenSlack identity bootstrap (IB1 fixture only)
+### OpenSlack identity bootstrap
 
-IB1 只允许两个唯一 fixture vendor ID；真实 Canary 身份推迟到 IB4 D4-0。预先创建受保护的输出目录，
-设置 `DATABASE_URL` 与 `API_KEY_PEPPER_ACTIVE`，然后运行：
+IB1 验收只使用两个唯一 fixture vendor ID。IB4 D4-0 对两个真实、仍为 draft 的 Canary vendor 执行同一
+一次性 bootstrap；先预创建受保护输出目录，设置 `DATABASE_URL` 与 `API_KEY_PEPPER_ACTIVE`，然后运行：
 
 ```bash
 go run ./cmd/bootstrap-openslack \
   --output /secure/operator-handoff/openslack-keys.json \
-  --vendor-id fixture-slack \
-  --vendor-id fixture-webhook
+  --vendor-id "$CANARY_VENDOR_SLACK" \
+  --vendor-id "$CANARY_VENDOR_WEBHOOK"
 ```
 
 命令拒绝已有输出文件、重复 vendor、已有任一固定 principal，并且绝不向 stdout/stderr 输出 raw key。
@@ -139,6 +144,18 @@ Before activation in a later gate, verify that Slack is schema v2 + `json_ack_v1
 Webhook is schema v2 + `http_status_v1` + `auth:none` + the two ingress-key headers. The list/history response must show
 `response_policy`; Webhook must omit `credential_descriptor`. Reject and investigate any v2-to-v1 update, auth-none
 credential descriptor, body-field mapping, or rotation request against an auth-none version.
+
+IB4/IB5 单主机部署使用
+[`../../deploy/canary/README.md`](../../deploy/canary/README.md) 中的 two-file Compose pack。真实 secret 只能
+从 `notification-canary` protected environment 写入主机 mode-`0600` env file。Webhook receiver 只保存
+request ID、两个 idempotency header、body digest/size 和时间；查询必须用独立 audit token。任何 payload、
+raw vendor response、caller/auditor key 或 Slack token 出现在 receiver record、日志或 evidence 都是
+G4 blocker。
+
+Operations reconciliation 以 receipt 中的 `notification_id` 查询 notification status 和 attempt history。
+status 必须返回匹配的 `vendor_id`；snapshot 后的 outcome 必须返回实际 `config_version`，claim/recovery、
+replay 和 snapshot 前失败则保持缺省。不得用 payload、credential descriptor 或 vendor response body
+补充对账。
 
 隔离的 crash-after-send、双 recovery 竞争、数据库停止/恢复和有界关闭演练命令为：
 

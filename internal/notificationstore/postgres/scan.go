@@ -78,6 +78,7 @@ func scanAttempt(rows pgx.Rows, a *notificationstore.Attempt) error {
 		&a.NotificationID,
 		&a.AttemptSeq,
 		&a.EventKind,
+		&a.ConfigVersion,
 		&claimedAt,
 		&outcomeClass,
 		&resultKind,

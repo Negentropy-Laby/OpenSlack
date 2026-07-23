@@ -1,0 +1,15 @@
+# Variable names only. Real values are supplied by the notification-canary
+# protected environment and rendered into a host-local mode-0600 file.
+NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST=sha256:<verified-oci-digest>
+API_KEY_PEPPER_ACTIVE=<secret-json>
+API_KEY_PEPPER_PREVIOUS=
+CANARY_SLACK_BOT_TOKEN=<secret>
+WEBHOOK_AUDIT_TOKEN=<secret>
+CANARY_VENDOR_SLACK=<vendor-id>
+CANARY_VENDOR_WEBHOOK=<vendor-id>
+WORKER_VENDOR_SCOPE=<vendor-id>,<vendor-id>
+DB_PORT=5432
+APP_PORT=8080
+PROMETHEUS_PORT=9090
+WEBHOOK_RECEIVER_PORT=8090
+WEBHOOK_RECEIVER_EVIDENCE_DIR=/srv/openslack-notification-canary/webhook-evidence

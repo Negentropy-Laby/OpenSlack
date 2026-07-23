@@ -11,7 +11,8 @@ Trust boundaries:
 2. application to PostgreSQL;
 3. Delivery to secret provider;
 4. Delivery to DNS and external vendor HTTPS;
-5. metrics/health endpoints to deployment network.
+5. metrics/health endpoints to deployment network;
+6. Canary vendor traffic to the metadata-only Webhook receiver and its independently authenticated query endpoint.
 
 ## Threats and Controls
 
@@ -33,6 +34,7 @@ Trust boundaries:
 | denial of service | request/body/list/batch bounds, per-principal rate limits, hard HTTP timeout | CDD configs |
 | deployment identity spoof/drift | require an exact deployment-supplied OCI digest at startup; successful intake overwrites any caller header with the process value | ADR-0005 / OpenAPI |
 | endpoint schema downgrade or credential smuggling | closed v1/v2 admin union, explicit v2 discriminator/policy, monotonic schema update, auth-none credential/header rejection | ADR-0005 / OpenAPI |
+| Canary evidence leaks payload or becomes a sender | receiver hashes a bounded body in memory, stores only closed metadata in a dedicated `0700` directory/`0600` files, has no outbound transport, and protects queries with a separate audit token | IB4 deployment pack |
 
 ## Safe Outbound Transport
 
@@ -61,6 +63,11 @@ an immediate symlink parent, writes a fixed JSON schema with mode `0600`, synchr
 then initializes PostgreSQL. Confirmed failures remove and synchronize the file. Commit-outcome-unknown and a process
 crash after file synchronization retain the file and require manual convergence; automatic overwrite or key
 regeneration is forbidden. The command never creates an HTTP route and is not run by normal service startup.
+
+The Canary Webhook receiver never persists request bodies or authorization headers. Its query token is loaded only
+from `WEBHOOK_AUDIT_TOKEN`, compared without logging, and is distinct from notification-service caller/auditor keys.
+Receiver records may contain the two non-secret idempotency identifiers needed for reconciliation. The evidence
+directory is a deployment-owned bind mount, not a repository path, home directory or shared volume.
 
 Vendor config v2 treats credential absence as an authorization property, not a nullable convenience: `auth:none`
 rejects credential references and credential-derived headers at ingestion, stores NULL credential columns, skips the
