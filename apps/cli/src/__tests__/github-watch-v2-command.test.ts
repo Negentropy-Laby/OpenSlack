@@ -75,6 +75,7 @@ repositories:
       'canary',
       'doctor',
       'drain',
+      'qualification',
       'quarantine',
       'queue',
       'reconcile',
@@ -90,6 +91,12 @@ repositories:
     expect(
       notifications!.commands
         .find((command) => command.name() === 'canary')!
+        .commands.map((command) => command.name())
+        .sort(),
+    ).toEqual(['report', 'status']);
+    expect(
+      notifications!.commands
+        .find((command) => command.name() === 'qualification')!
         .commands.map((command) => command.name())
         .sort(),
     ).toEqual(['report', 'status']);

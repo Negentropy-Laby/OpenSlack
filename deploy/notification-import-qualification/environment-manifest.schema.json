@@ -1,0 +1,192 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/notification-import-qualification-environment-manifest.v1.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "status",
+    "recorded_at",
+    "gate",
+    "scope",
+    "workflow",
+    "timeout_minutes",
+    "repositories",
+    "environment",
+    "fixed_variables",
+    "pending_variables",
+    "required_secrets",
+    "preflight",
+    "does_not_claim"
+  ],
+  "properties": {
+    "schema": {
+      "const": "openslack.notification_import_qualification_environment_manifest.v1"
+    },
+    "status": {
+      "const": "PENDING_EXTERNAL"
+    },
+    "recorded_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "gate": {
+      "const": "G5-IMPORT-QUALIFICATION"
+    },
+    "scope": {
+      "const": "IB6_HISTORY_IMPORT_ONLY"
+    },
+    "workflow": {
+      "const": ".github/workflows/notification-import-qualification.yml"
+    },
+    "timeout_minutes": {
+      "const": 60
+    },
+    "repositories": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["full_name", "visibility", "event_branch", "issues_required"],
+        "properties": {
+          "full_name": {
+            "enum": [
+              "Negentropy-Laby/openslack-notification-canary-a",
+              "Negentropy-Laby/openslack-notification-canary-b"
+            ]
+          },
+          "visibility": {
+            "const": "private"
+          },
+          "event_branch": {
+            "const": "canary-events"
+          },
+          "issues_required": {
+            "const": true
+          }
+        }
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "name", "required_reviewer", "deployment_branch"],
+      "properties": {
+        "repository": {
+          "const": "Negentropy-Laby/OpenSlack"
+        },
+        "name": {
+          "const": "notification-canary"
+        },
+        "required_reviewer": {
+          "const": "wsman"
+        },
+        "deployment_branch": {
+          "const": "integration/notification-delivery-0.3"
+        }
+      }
+    },
+    "fixed_variables": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "CANARY_REPO_A",
+        "CANARY_REPO_B",
+        "CANARY_VENDOR_SLACK",
+        "CANARY_VENDOR_WEBHOOK",
+        "CANARY_ROUTE_SLACK",
+        "CANARY_ROUTE_WEBHOOK",
+        "CANARY_ROUTING_EPOCH"
+      ],
+      "properties": {
+        "CANARY_REPO_A": {
+          "const": "Negentropy-Laby/openslack-notification-canary-a"
+        },
+        "CANARY_REPO_B": {
+          "const": "Negentropy-Laby/openslack-notification-canary-b"
+        },
+        "CANARY_VENDOR_SLACK": {
+          "const": "openslack-slack"
+        },
+        "CANARY_VENDOR_WEBHOOK": {
+          "const": "openslack-webhook"
+        },
+        "CANARY_ROUTE_SLACK": {
+          "const": "slack-primary"
+        },
+        "CANARY_ROUTE_WEBHOOK": {
+          "const": "webhook-primary"
+        },
+        "CANARY_ROUTING_EPOCH": {
+          "const": "1"
+        }
+      }
+    },
+    "pending_variables": {
+      "$ref": "#/$defs/nonEmptyUniqueTextArray"
+    },
+    "required_secrets": {
+      "$ref": "#/$defs/nonEmptyUniqueTextArray"
+    },
+    "preflight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "linux_host",
+        "postgresql",
+        "prometheus",
+        "webhook_receiver",
+        "slack_app_channel",
+        "caller_auditor_scope",
+        "two_vendors_active"
+      ],
+      "properties": {
+        "linux_host": {
+          "const": "PENDING_EXTERNAL"
+        },
+        "postgresql": {
+          "const": "PENDING_EXTERNAL"
+        },
+        "prometheus": {
+          "const": "PENDING_EXTERNAL"
+        },
+        "webhook_receiver": {
+          "const": "PENDING_EXTERNAL"
+        },
+        "slack_app_channel": {
+          "const": "PENDING_EXTERNAL"
+        },
+        "caller_auditor_scope": {
+          "const": "PENDING_EXTERNAL"
+        },
+        "two_vendors_active": {
+          "const": "PENDING_EXTERNAL"
+        }
+      }
+    },
+    "does_not_claim": {
+      "const": [
+        "G5_CANARY_PASS",
+        "LIVE_VERIFIED",
+        "IB7_CUTOVER",
+        "OPENSLACK_0_3_0",
+        "PRODUCTION_READY"
+      ]
+    }
+  },
+  "$defs": {
+    "nonEmptyUniqueTextArray": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[A-Z][A-Z0-9_]*$"
+      }
+    }
+  }
+}

@@ -26,6 +26,10 @@ import {
   type NotificationReconciliationReport,
   type NotificationVendorEvidenceSource,
 } from './notification-reconciliation.js';
+import {
+  readNotificationImportQualificationReport,
+  type NotificationImportQualificationReport,
+} from './notification-import-qualification.js';
 
 export const NOTIFICATION_AUDITOR_CREDENTIAL_REF_ENV =
   'OPENSLACK_NOTIFICATION_SERVICE_AUDITOR_CREDENTIAL_REF';
@@ -423,6 +427,17 @@ export class NotificationDeliveryOperations {
     } catch {
       throw new Error('CANARY_ARTIFACT_INVALID');
     }
+  }
+
+  readImportQualificationReport(): NotificationImportQualificationReport | null {
+    const root = join(
+      this.workspaceRoot,
+      '.openslack.local',
+      'daemon',
+      'notification-import-qualification',
+    );
+    if (!existsSync(root)) return null;
+    return readNotificationImportQualificationReport(root);
   }
 
   private createOpsClient(service: {

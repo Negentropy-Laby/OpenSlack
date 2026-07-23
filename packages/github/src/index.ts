@@ -236,6 +236,22 @@ export {
   type NotificationFaultRunWriteResult,
 } from './notification-fault-run.js';
 export {
+  NOTIFICATION_IMPORT_QUALIFICATION_REQUIRED_DRILLS,
+  NOTIFICATION_IMPORT_QUALIFICATION_SCHEMA,
+  createNotificationImportQualificationReport,
+  ensureNotificationImportQualificationReport,
+  readNotificationImportQualificationReport,
+  type NotificationImportQualificationDrill,
+  type NotificationImportQualificationDrillKind,
+  type NotificationImportQualificationInput,
+  type NotificationImportQualificationObservation,
+  type NotificationImportQualificationPrincipalScope,
+  type NotificationImportQualificationReport,
+  type NotificationImportQualificationRoute,
+  type NotificationImportQualificationVendorConfig,
+  type NotificationImportQualificationWriteResult,
+} from './notification-import-qualification.js';
+export {
   NOTIFICATION_AUDITOR_CREDENTIAL_REF_ENV,
   NOTIFICATION_VENDOR_EVIDENCE_DIR_ENV,
   NotificationDeliveryOperations,

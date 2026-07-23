@@ -361,7 +361,7 @@ function daysInMonth(year: number, month: number): number {
 }
 
 /** JSON.parse accepts duplicate member names; the frozen receipt envelope does not. */
-function assertNoDuplicateJsonKeys(text: string): void {
+export function assertNoDuplicateJsonKeys(text: string): void {
   const scanner = new JsonKeyScanner(text);
   scanner.scan();
 }
