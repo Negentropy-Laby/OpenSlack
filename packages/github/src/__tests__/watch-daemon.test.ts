@@ -9,6 +9,7 @@ import {
   WatchDaemon,
   createNotificationPayload,
   formatConsoleNotification,
+  parseNotificationServiceAdmission,
   type WatchDaemonDependencies,
 } from '../watch-daemon.js';
 import type { GitHubWatchConfig } from '../watch-config.js';
@@ -322,6 +323,27 @@ async function waitFor(predicate: () => boolean, timeoutMs = 1_000): Promise<voi
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
 }
+
+describe('notification-service admission policy', () => {
+  it('defaults closed and accepts only exact boolean spellings', () => {
+    expect(parseNotificationServiceAdmission({})).toBe(false);
+    expect(
+      parseNotificationServiceAdmission({
+        OPENSLACK_NOTIFICATION_SERVICE_NEW_RECORDS: 'false',
+      }),
+    ).toBe(false);
+    expect(
+      parseNotificationServiceAdmission({
+        OPENSLACK_NOTIFICATION_SERVICE_NEW_RECORDS: 'true',
+      }),
+    ).toBe(true);
+    expect(() =>
+      parseNotificationServiceAdmission({
+        OPENSLACK_NOTIFICATION_SERVICE_NEW_RECORDS: 'TRUE',
+      }),
+    ).toThrow(/exactly true or false/u);
+  });
+});
 
 describe('WatchDaemon', () => {
   it('handles a valid webhook and returns event_id', async () => {
