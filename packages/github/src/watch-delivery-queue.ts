@@ -1,7 +1,10 @@
 import {
+  chmodSync,
   closeSync,
   existsSync,
   fsyncSync,
+  linkSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -148,13 +151,40 @@ export interface WatchDeliveryStats {
   lastFailure?: WatchDeliveryDiagnostic;
 }
 
+export interface WatchDeliveryQueueSnapshotV1 {
+  schema: 'openslack.watch_delivery_queue.v1';
+  updatedAt: string;
+  deliveries: WatchDeliveryRecord[];
+  legacyTombstones: Array<{
+    deliveryId: string;
+    stableKey: string;
+    recordedAt: string;
+  }>;
+}
+
+export interface WatchDeliveryV2MigrationMarker {
+  schema: 'openslack.watch_delivery_v2_migration.v1';
+  state: 'draining' | 'finalized';
+  startedAt: string;
+  updatedAt: string;
+  v2StatePath: string;
+  backupPath?: string;
+  backupDigest?: `sha256:${string}`;
+}
+
+export interface WatchDeliveryV1FinalizationResult {
+  backupPath: string;
+  backupDigest: `sha256:${string}`;
+}
+
 export class WatchDeliveryQueueError extends Error {
   readonly code:
     | 'QUEUE_LOCK_TIMEOUT'
     | 'QUEUE_STATE_INVALID'
     | 'QUEUE_CAPACITY_EXCEEDED'
     | 'QUEUE_STATE_TOO_LARGE'
-    | 'QUEUE_TRANSITION_INVALID';
+    | 'QUEUE_TRANSITION_INVALID'
+    | 'QUEUE_MIGRATED';
 
   constructor(code: WatchDeliveryQueueError['code'], message: string) {
     super(message);
@@ -167,6 +197,7 @@ export class WatchDeliveryQueue {
   private readonly stateDir: string;
   private readonly statePath: string;
   private readonly legacyPath: string;
+  private readonly migrationMarkerPath: string;
   private readonly lockPath: string;
   private readonly policy: WatchDeliveryPolicy;
   private readonly now: () => Date;
@@ -176,6 +207,7 @@ export class WatchDeliveryQueue {
     this.stateDir = stateDir ?? join(process.cwd(), '.openslack.local', 'daemon');
     this.statePath = join(this.stateDir, 'delivery-state.v1.json');
     this.legacyPath = join(this.stateDir, 'dedupe.jsonl');
+    this.migrationMarkerPath = join(this.stateDir, 'delivery-state.v2-migration.json');
     this.lockPath = `${this.statePath}.lock`;
     this.policy = {
       ...DEFAULT_WATCH_DELIVERY_POLICY,
@@ -192,6 +224,12 @@ export class WatchDeliveryQueue {
     routes: GitHubWatchRoute[],
   ): ClaimAndEnqueueResult {
     return this.mutate((state, now) => {
+      if (existsSync(this.migrationMarkerPath)) {
+        throw new WatchDeliveryQueueError(
+          'QUEUE_MIGRATED',
+          'GitHub watch delivery v1 admission is fenced after v2 migration starts.',
+        );
+      }
       const conflictingDelivery = event.deliveryId
         ? (state.deliveries.find((delivery) => delivery.deliveryIds.includes(event.deliveryId)) ??
           null)
@@ -629,6 +667,96 @@ export class WatchDeliveryQueue {
     // Compatibility no-op. Every operation re-reads the authoritative state under a lock.
   }
 
+  readV2MigrationSnapshot(): WatchDeliveryQueueSnapshotV1 {
+    return this.withLock(() => cloneQueueState(this.loadState(this.now())));
+  }
+
+  startOrRefreshV2Migration<T>(
+    v2StatePath: string,
+    operation: (snapshot: WatchDeliveryQueueSnapshotV1) => T,
+  ): T {
+    if (!v2StatePath.trim()) {
+      throw new WatchDeliveryQueueError(
+        'QUEUE_TRANSITION_INVALID',
+        'A non-empty v2 queue state path is required for migration.',
+      );
+    }
+    return this.withLock(() => {
+      const now = this.now();
+      const snapshot = cloneQueueState(this.loadState(now));
+      const result = operation(snapshot);
+      const existing = this.loadV2MigrationMarker();
+      const timestamp = now.toISOString();
+      if (existing && existing.v2StatePath !== v2StatePath) {
+        throw new WatchDeliveryQueueError(
+          'QUEUE_TRANSITION_INVALID',
+          'The v1 queue is already bound to a different v2 migration target.',
+        );
+      }
+      if (!existing) {
+        this.persistV2MigrationMarker({
+          schema: 'openslack.watch_delivery_v2_migration.v1',
+          state: 'draining',
+          startedAt: timestamp,
+          updatedAt: timestamp,
+          v2StatePath,
+        });
+      }
+      return result;
+    });
+  }
+
+  finalizeV2Migration(v2StatePath: string): WatchDeliveryV1FinalizationResult {
+    return this.withLock(() => {
+      const marker = this.loadV2MigrationMarker();
+      if (!marker || marker.v2StatePath !== v2StatePath) {
+        throw new WatchDeliveryQueueError(
+          'QUEUE_TRANSITION_INVALID',
+          'The v1 queue cannot be finalized without its matching v2 migration marker.',
+        );
+      }
+      if (marker.state === 'finalized' && marker.backupPath && marker.backupDigest) {
+        return { backupPath: marker.backupPath, backupDigest: marker.backupDigest };
+      }
+
+      const state = this.loadState(this.now());
+      if (
+        state.deliveries.some((delivery) =>
+          delivery.routes.some((route) =>
+            ['pending', 'processing', 'retryable'].includes(route.state),
+          ),
+        )
+      ) {
+        throw new WatchDeliveryQueueError(
+          'QUEUE_TRANSITION_INVALID',
+          'The v1 queue still contains active route ownership and cannot be finalized.',
+        );
+      }
+
+      const bytes = existsSync(this.statePath)
+        ? readFileSync(this.statePath)
+        : Buffer.from(`${JSON.stringify(state, null, 2)}\n`, 'utf8');
+      const backupDigest = `sha256:${createHash('sha256').update(bytes).digest('hex')}` as const;
+      const backupPath = join(
+        this.stateDir,
+        `delivery-state.v1.${backupDigest.slice('sha256:'.length)}.readonly.json`,
+      );
+      publishCreateOnlyFile(backupPath, bytes, this.nonce);
+      if (process.platform !== 'win32') chmodSync(backupPath, 0o400);
+
+      const timestamp = this.now().toISOString();
+      this.persistV2MigrationMarker({
+        ...marker,
+        state: 'finalized',
+        updatedAt: timestamp,
+        backupPath,
+        backupDigest,
+      });
+      this.persistMigratedSentinel(backupPath, backupDigest);
+      return { backupPath, backupDigest };
+    });
+  }
+
   private backoffMs(attempt: number): number {
     return Math.min(
       this.policy.maxBackoffMs,
@@ -748,6 +876,44 @@ export class WatchDeliveryQueue {
       rmSync(temporaryPath, { force: true });
       throw error;
     }
+  }
+
+  private loadV2MigrationMarker(): WatchDeliveryV2MigrationMarker | null {
+    if (!existsSync(this.migrationMarkerPath)) return null;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(readFileSync(this.migrationMarkerPath, 'utf8')) as unknown;
+    } catch {
+      throw new WatchDeliveryQueueError(
+        'QUEUE_STATE_INVALID',
+        'GitHub watch delivery v2 migration marker is not valid JSON.',
+      );
+    }
+    validateV2MigrationMarker(parsed);
+    return parsed;
+  }
+
+  private persistV2MigrationMarker(marker: WatchDeliveryV2MigrationMarker): void {
+    validateV2MigrationMarker(marker);
+    persistAtomicFile(
+      this.migrationMarkerPath,
+      Buffer.from(`${JSON.stringify(marker, null, 2)}\n`, 'utf8'),
+      this.nonce,
+    );
+  }
+
+  private persistMigratedSentinel(backupPath: string, backupDigest: `sha256:${string}`): void {
+    const body = Buffer.from(
+      [
+        'OPENSLACK_DELIVERY_QUEUE_V1_MIGRATED',
+        `backup=${backupPath}`,
+        `digest=${backupDigest}`,
+        'This sentinel is intentionally not JSON so older binaries fail closed.',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    persistAtomicFile(this.statePath, body, this.nonce);
   }
 
   private withLock<T>(operation: () => T): T {
@@ -1129,6 +1295,40 @@ function validateQueueState(value: unknown): asserts value is WatchDeliveryQueue
   }
 }
 
+function validateV2MigrationMarker(
+  value: unknown,
+): asserts value is WatchDeliveryV2MigrationMarker {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, [
+      'schema',
+      'state',
+      'startedAt',
+      'updatedAt',
+      'v2StatePath',
+      'backupPath',
+      'backupDigest',
+    ]) ||
+    value.schema !== 'openslack.watch_delivery_v2_migration.v1' ||
+    (value.state !== 'draining' && value.state !== 'finalized') ||
+    !isTimestamp(value.startedAt) ||
+    !isTimestamp(value.updatedAt) ||
+    typeof value.v2StatePath !== 'string' ||
+    value.v2StatePath.length === 0 ||
+    (value.backupPath !== undefined && typeof value.backupPath !== 'string') ||
+    (value.backupDigest !== undefined &&
+      (typeof value.backupDigest !== 'string' ||
+        !/^sha256:[a-f0-9]{64}$/u.test(value.backupDigest))) ||
+    (value.state === 'finalized' &&
+      (typeof value.backupPath !== 'string' || typeof value.backupDigest !== 'string'))
+  ) {
+    throw new WatchDeliveryQueueError(
+      'QUEUE_STATE_INVALID',
+      'GitHub watch delivery v2 migration marker is invalid.',
+    );
+  }
+}
+
 function validateDelivery(value: unknown): asserts value is WatchDeliveryRecord {
   if (
     !isRecord(value) ||
@@ -1176,7 +1376,7 @@ function validateDelivery(value: unknown): asserts value is WatchDeliveryRecord 
       'GitHub watch delivery queue contains an invalid delivery record.',
     );
   }
-  validatePersistableEvent(value.event);
+  validatePersistableRepositoryEvent(value.event);
   if (value.event.stableKey !== value.stableKey) {
     throw new WatchDeliveryQueueError(
       'QUEUE_STATE_INVALID',
@@ -1296,7 +1496,9 @@ function validateDiagnostic(value: unknown): asserts value is WatchDeliveryDiagn
   }
 }
 
-function validatePersistableEvent(value: unknown): asserts value is PersistableRepositoryEvent {
+export function validatePersistableRepositoryEvent(
+  value: unknown,
+): asserts value is PersistableRepositoryEvent {
   if (
     !isRecord(value) ||
     value.schema !== 'openslack.repository_event.v1' ||
@@ -1568,6 +1770,63 @@ function invalidPersistableEvent(): never {
 
 function cloneDelivery(delivery: WatchDeliveryRecord): WatchDeliveryRecord {
   return structuredClone(delivery);
+}
+
+function cloneQueueState(state: WatchDeliveryQueueState): WatchDeliveryQueueSnapshotV1 {
+  return structuredClone(state);
+}
+
+function publishCreateOnlyFile(path: string, bytes: Buffer, nonce: () => string): void {
+  if (existsSync(path)) {
+    verifyMigrationBackup(path, bytes);
+    return;
+  }
+  const temporaryPath = `${path}.${process.pid}.${nonce()}.tmp`;
+  let descriptor: number | null = null;
+  try {
+    descriptor = openSync(temporaryPath, 'wx', 0o600);
+    writeFileSync(descriptor, bytes);
+    fsyncSync(descriptor);
+    closeSync(descriptor);
+    descriptor = null;
+    try {
+      linkSync(temporaryPath, path);
+    } catch (error) {
+      if (!existsSync(path)) throw error;
+    }
+    verifyMigrationBackup(path, bytes);
+    fsyncDirectoryBestEffort(dirname(path));
+  } finally {
+    if (descriptor !== null) closeSync(descriptor);
+    rmSync(temporaryPath, { force: true });
+  }
+}
+
+function verifyMigrationBackup(path: string, expected: Buffer): void {
+  const status = lstatSync(path);
+  if (status.isSymbolicLink() || !status.isFile() || !readFileSync(path).equals(expected)) {
+    throw new WatchDeliveryQueueError(
+      'QUEUE_STATE_INVALID',
+      'The v1 migration backup conflicts with existing bytes.',
+    );
+  }
+}
+
+function persistAtomicFile(path: string, bytes: Buffer, nonce: () => string): void {
+  const temporaryPath = `${path}.${process.pid}.${nonce()}.tmp`;
+  let descriptor: number | null = null;
+  try {
+    descriptor = openSync(temporaryPath, 'wx', 0o600);
+    writeFileSync(descriptor, bytes);
+    fsyncSync(descriptor);
+    closeSync(descriptor);
+    descriptor = null;
+    renameSync(temporaryPath, path);
+    fsyncDirectoryBestEffort(dirname(path));
+  } finally {
+    if (descriptor !== null) closeSync(descriptor);
+    rmSync(temporaryPath, { force: true });
+  }
 }
 
 function cloneRoute(route: WatchRouteDelivery): WatchRouteDelivery {

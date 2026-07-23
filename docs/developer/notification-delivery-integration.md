@@ -1,6 +1,6 @@
 # Notification Delivery Service Integration
 
-> **Status:** IB0 contract baseline — `G0_CONTRACT_PASS_WITH_RC_REVIEW_WAIVER`
+> **Status:** IB3-A queue/migration primitives implemented — `G3_QUEUE_IN_PROGRESS`
 >
 > **Runtime effect:** None. The v2 parser and protocol contracts are not wired into the watch daemon.
 >
@@ -102,10 +102,8 @@ Rules:
 - Every route has a positive safe-integer `routing_epoch`, initially 1.
 - `console` uses only `local`; `slack` and `webhook` use `direct` or `notification_service`.
 - A service route requires a vendor ID matching `^[a-z0-9-]{1,64}$` and the root service block.
-- Service endpoint is an HTTPS origin without userinfo, path, query or fragment. HTTP is accepted only for loopback
-  when `allow_insecure_loopback: true` is explicit.
-- `localhost` is resolver-dependent even in development; prefer literal `127.0.0.1` or `[::1]` for an explicitly
-  enabled insecure loopback endpoint.
+- Service endpoint is an HTTPS origin without userinfo, path, query or fragment. HTTP is accepted only for literal
+  `127.0.0.1` or `[::1]` when `allow_insecure_loopback: true` is explicit. Resolver-dependent `localhost` is rejected.
 - Credential values never enter config. References use the existing `env:` or `keychain:` contract.
 - Backend, vendor, target, encoder, response policy, idempotency mapping or other incompatible delivery semantics
   require a higher epoch. Existing queue records retain their frozen values.
@@ -131,9 +129,33 @@ pattern, and `routing_epoch` is canonical decimal ASCII, so the delimited preima
 The executable vectors live in
 `packages/github/src/__fixtures__/notification-handoff/key-vectors.v1.json`.
 
+## Route Record Identity
+
+The local v2 queue and acceptance ledger use one deterministic route-record identity. It is derived after the
+repository and route idempotency key have been frozen; it is not a user-configurable watch route field:
+
+```text
+preimage =
+  UTF8("openslack.watch.route-record.v2") || 0x00 ||
+  UTF8(canonical_repository)              || 0x00 ||
+  UTF8(persisted_idempotency_key)
+
+route_record_id = lowercase_hex(SHA-256(preimage))
+```
+
+`canonical_repository` must already equal the lowercase `canonicalFullName` returned by
+`canonicalizeRepositoryName`; the derivation rejects case variants, surrounding whitespace, extra path segments and
+U+0000 rather than normalizing them. `persisted_idempotency_key` must match the frozen lowercase UUID-like v5 handoff
+key contract. During per-route v1 migration, the original v1 route key is copied unchanged and used as this input; it
+is never recalculated with the v2 handoff-key formula.
+
+The result is exactly 64 lowercase hexadecimal characters and is used directly as the receipt filename. Executable
+vectors, including a copied-v1-key case, live in
+`packages/github/src/__fixtures__/notification-handoff/route-record-id-vectors.v1.json`.
+
 ## Final Vendor Bytes
 
-IB2 will materialize exactly once:
+IB2 materializes final vendor bodies through pure, exported functions:
 
 ```text
 Slack encoder:   openslack.slack_chat_post_message.v1
@@ -142,7 +164,15 @@ Webhook encoder: openslack.webhook_notification.v1
 
 Slack uses UTF-8 `JSON.stringify({channel,text,client_msg_id})`; webhook uses UTF-8
 `JSON.stringify(NotificationPayload)`. There is no BOM, trailing newline, reformatting or service-side
-canonicalization. The maximum decoded body is 262144 bytes.
+canonicalization. Slack field insertion order is exactly `channel`, `text`, `client_msg_id`; webhook stringifies the
+original payload object directly without cloning, spreading, JCS or reparsing. Both materializers return the raw
+bytes, SHA-256 digest, byte size, `application/json` media type and frozen encoder version.
+
+Existing direct Slack and webhook sinks send those same bytes while retaining their existing URL, headers,
+acknowledgement classification, v1 idempotency key and size behavior. The separate handoff admission validator
+accepts at most 262144 decoded bytes, but no direct sink calls it. Exact Unicode, escaping, field-order and
+262144/262145-byte vectors live in
+`packages/github/src/__fixtures__/notification-handoff/final-body-vectors.v1.json`.
 
 The service Slack endpoint uses bearer auth, `json_ack_v1` and no outbound idempotency mapping because
 `client_msg_id` is already in the body. The webhook endpoint uses no auth, status-only acknowledgement, and maps the
@@ -156,9 +186,16 @@ Future Blob path:
 .openslack.local/daemon/blobs/sha256/<first-2-hex>/<64-hex>
 ```
 
-The publish sequence is create-only temp, write, file fsync, create-only publish, directory fsync, reopen and verify.
-Directories are `0700`, files `0600`, symlinks and non-regular files are rejected. Queue metadata remains capped at
-16 MiB; Blob storage defaults to 1 GiB with warning at 80%. A live reference is never evicted.
+The implemented CAS publish sequence is same-directory `wx` temp, write, file fsync, hard-link create-only publish,
+directory fsync, reopen and verify. There is no rename or overwrite fallback. An `EEXIST` result succeeds only after
+the existing regular file's size and digest are reverified. Directories are `0700`, files `0600`, and existing
+permissions fail closed on platforms with POSIX mode bits. Symlinks, Windows junctions, FIFOs, directories and path
+escape are rejected.
+
+Queue metadata remains capped at 16 MiB. Blob storage defaults to 1 GiB and reports a warning at 80%; quota checks,
+publish, reads and GC share a cross-process lock. GC receives explicit caller-supplied active and eligible digest
+sets, never infers queue authority, never removes an active digest and never sweeps unlisted content. Concurrent
+read/GC operations therefore return verified full bytes or a safe not-found result, never torn content.
 
 Receipt path:
 
@@ -166,12 +203,34 @@ Receipt path:
 .openslack.local/daemon/notification-acceptance/<route-record-id>.json
 ```
 
-The strict schema is `openslack.notification_acceptance.v1`. It contains route/repository/vendor/key identity,
+`<route-record-id>` is the deterministic 64-character identity above; arbitrary filenames and config-supplied IDs
+are not accepted.
+
+The strict receipt schema is `openslack.notification_acceptance.v1`. It contains route/repository/vendor/key identity,
 notification and request IDs, accepted/replay timestamps, deployment digest and watch-config digest. It contains no
 payload, endpoint or credential. The executable schema is
 `packages/github/src/notification-handoff-v2.schema.json`.
 
-Accepted persistence is ordered:
+Receipt serialization uses the schema field order above as compact UTF-8 JSON with no trailing newline. Publication
+uses the same `wx` temp, file fsync, create-only hard link and directory fsync discipline. `read` rejects unsafe or
+non-canonical bytes, `verify` compares an expected receipt, and `ensureFromEmbeddedReceipt` creates a missing ledger
+or accepts only byte-identical existing evidence. These primitives do not implement the accepted queue transaction.
+
+IB3 queue callers acquire locks only in this order:
+
+```text
+queue-v2 lock -> Blob store lock or receipt store lock
+```
+
+Blob and receipt stores never acquire the queue lock, and callers must release the storage lock before attempting any
+independent queue acquisition. This avoids lock inversion while preserving the frozen accepted persistence sequence.
+
+The queue lock is a same-host process lock, not a distributed or multi-host lease. Stale recovery requires both an
+expired `lockStaleMs` age and a dead owner PID; an old lock held by a live process is never reclaimed. Deployments must
+set `lockStaleMs` above the worst-case duration of a queue operation, including slow filesystem flushes. Unsafe,
+malformed or unprovable lock ownership fails closed.
+
+`WatchDeliveryQueueV2.acceptServiceRoute` implements accepted persistence in this order:
 
 ```text
 validate receipt
@@ -179,6 +238,10 @@ validate receipt
 -> create-only receipt file; fsync
 -> queue ledger=committed; fsync
 ```
+
+The queue-v2 lock intentionally remains held across all three writes, including receipt-store fsync. This serializes
+acceptance commits and is accepted for the single-host, low-throughput daemon. Shortening that critical section would
+require a replacement transactional/fencing protocol; it must not be treated as a standalone performance refactor.
 
 A crash after the first queue write only repairs the receipt ledger; it never sends again. Blob GC eligibility begins
 only after `accepted + ledger=committed` and the seven-day accepted retention. Rejected, quarantined and handoff-dead
@@ -234,11 +297,43 @@ The caller cannot query status and the auditor cannot submit, replay or administ
 `X-Notification-Service-Deployment-Digest: sha256:<64-lowercase-hex>`, injected from the verified OCI image. OpenSlack
 also records a secret-free RFC 8785/JCS watch-config digest and service-reported vendor config versions.
 
+The standalone client posts only `vendor_id` and the exact Blob bytes encoded as `payload_base64` to
+`/v1/notifications`, with the frozen route key in `Idempotency-Key`. It resolves the bearer credential reference
+through `CredentialStore.withSecret` on every attempt, uses `redirect: manual`, and returns `HandoffResult` rather
+than sink delivery success. A 202 body is read to at most 16384 bytes with fatal UTF-8 decoding, duplicate-key
+detection and an exact two-level envelope. Missing/unknown fields, trailing JSON, invalid IDs or RFC 3339 calendar
+dates, response loss, overflow and missing/invalid deployment headers are retryable protocol errors. A valid but
+unexpected deployment digest and every non-202 2xx are permanent protocol errors. The remaining classifications
+follow the frozen response table above, including delta-seconds and IMF-fixdate `Retry-After` parsing. Results and
+errors contain only closed codes and never contain the raw body, payload, token or endpoint value.
+
+The watch-config digest first rebuilds a normalized v2 value and then applies RFC 8785/JCS and SHA-256. Repository
+identity is lowercase canonical `owner/repo`; repositories sort by that identity, while events, label sets, agent IDs
+and routes sort by UTF-16 code-unit order (routes by `id`). Each normalized route includes sink, channel/name target,
+backend, vendor and epoch. The service block includes canonical endpoint origin, canonical credential reference,
+expected deployment digest and the explicit insecure-loopback policy. Absent versus empty set-like fields converge;
+comments, resolved secrets and YAML/object ordering never enter the digest. JCS rejects non-finite numbers, lone
+surrogates, sparse arrays, accessors and other non-JSON data. The result is `sha256:<64-lowercase-hex>`.
+
+IB3-A adds the route-centric `openslack.watch_delivery_queue.v2` store and its closed executable schema without
+composing it into the daemon. It freezes each route's repository, route/epoch/backend/vendor identity, copied or v2
+idempotency key, Blob/encoder reference, attempt/deadline state, embedded receipt, remote projection and recovery
+cycle. Processing intent is fsynced before a caller may POST; lease loss consumes that attempt; the service retry
+schedule is deterministic at 5 seconds through the one-hour cap and terminates on attempt 25 or the 24-hour deadline.
+
+The queue owns the accepted three-write transaction and recovery of `ledger=pending`; recovered accepted records are
+never claimable for another POST. Direct records keep their existing five-attempt policy and terminal states, while
+service records use the handoff states above. IB3-B remains responsible for daemon/router composition.
+
 ## V1 Migration And Gates
 
-Migration is per route: completed becomes a tombstone, failed becomes a terminal archive, pending/retryable remains
-v1 direct-owned, and processing waits for lease recovery before v1 drain. Legacy keys are copied, never recalculated.
-Mixed deliveries retain independent route ownership. No v2 record can be claimed by both routers.
+Migration is per route: completed becomes a tombstone, failed becomes a terminal archive, and
+pending/retryable/processing remains `legacy_v1` direct-owned until v1 drain. Legacy keys are copied, never
+recalculated. Mixed deliveries retain independent route ownership. Dry-run does not write; unchanged apply runs keep
+the v2 state and migration marker byte-identical. The marker fences new v1 admission, but the v1 worker may continue
+to drain active ownership. After all active v1 routes reach terminal state, finalization writes a SHA-256-named
+read-only backup and replaces the old path with deliberately non-JSON migrated sentinel bytes so an older binary
+cannot silently recreate v1 authority.
 
 The next phases remain blocked by gates:
 
@@ -246,7 +341,7 @@ The next phases remain blocked by gates:
 G0-CONTRACT: PASS_WITH_RC_REVIEW_WAIVER; OpenSlack independently reviewed, standalone service owner waiver + PR/CI
 G1-SERVICE: service v2 contract implemented and verified
 G2-CLIENT: body, Blob, receipt and client components verified but not wired
-G3-QUEUE: v2 queue/router and per-route migration verified
+G3-QUEUE: IN PROGRESS; IB3-A queue/migration implemented, daemon/router and governed CLI pending
 G4-E2E: two repositories x Slack and webhook fault matrix
 G5-CANARY: 336 continuous hours + 100 distinct non-replay accepted keys
 ```

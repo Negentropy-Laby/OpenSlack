@@ -1,0 +1,48 @@
+{
+  "schema": "openslack.notification_final_body_vectors.v1",
+  "vectors": [
+    {
+      "name": "unicode-escaping-and-field-order",
+      "payload": {
+        "schema": "openslack.github_watch_notification.v1",
+        "type": "openslack.issue.detected",
+        "objectKind": "issue",
+        "eventKey": "issues.opened",
+        "eventStableKey": "github:issues.opened:negentropy-laby/项目:issue:42:2026-07-23T00:00:00.000Z",
+        "repo": "Negentropy-Laby/项目",
+        "objectId": "negentropy-laby/项目#42",
+        "issueNumber": 42,
+        "title": "修复 \"quotes\" \\ path\n第二行",
+        "url": "https://github.com/Negentropy-Laby/项目/issues/42",
+        "labels": ["标签", "slash\\quote\""],
+        "nextAction": "openslack ask \"下一步\" \\ safely",
+        "informational": false,
+        "observedAt": "2026-07-23T00:00:00.000Z"
+      },
+      "channel": "C-测试\"\\",
+      "idempotency_key": "480f3f0b-01e3-57fb-8f3a-6ffd3a16ecbe",
+      "expected_slack_body_utf8": "{\"channel\":\"C-测试\\\"\\\\\",\"text\":\"[GitHub Watch] Negentropy-Laby/项目#42: 修复 \\\"quotes\\\" \\\\ path\\n第二行\\nhttps://github.com/Negentropy-Laby/项目/issues/42\\nLabels: 标签, slash\\\\quote\\\"\\nNext: openslack ask \\\"下一步\\\" \\\\ safely\",\"client_msg_id\":\"480f3f0b-01e3-57fb-8f3a-6ffd3a16ecbe\"}",
+      "expected_slack_size": 299,
+      "expected_slack_digest": "sha256:0dcefec7eb33b43be8fb1904ccd65427de91467fc8894a45e3309118ecd3c177",
+      "expected_webhook_body_utf8": "{\"schema\":\"openslack.github_watch_notification.v1\",\"type\":\"openslack.issue.detected\",\"objectKind\":\"issue\",\"eventKey\":\"issues.opened\",\"eventStableKey\":\"github:issues.opened:negentropy-laby/项目:issue:42:2026-07-23T00:00:00.000Z\",\"repo\":\"Negentropy-Laby/项目\",\"objectId\":\"negentropy-laby/项目#42\",\"issueNumber\":42,\"title\":\"修复 \\\"quotes\\\" \\\\ path\\n第二行\",\"url\":\"https://github.com/Negentropy-Laby/项目/issues/42\",\"labels\":[\"标签\",\"slash\\\\quote\\\"\"],\"nextAction\":\"openslack ask \\\"下一步\\\" \\\\ safely\",\"informational\":false,\"observedAt\":\"2026-07-23T00:00:00.000Z\"}",
+      "expected_webhook_size": 577,
+      "expected_webhook_digest": "sha256:fd37de25f74f9fc4e6a92754804fd1de2678cacefa2faecf675bac219c97c055"
+    }
+  ],
+  "boundary_vectors": [
+    {
+      "name": "exactly-262144-bytes",
+      "title_repeat_count": 261603,
+      "expected_size": 262144,
+      "expected_digest": "sha256:6d58ba14322786dffd28f930916361f2419838565b342b7edbb5dd6cba743e44",
+      "valid_for_handoff": true
+    },
+    {
+      "name": "262145-bytes",
+      "title_repeat_count": 261604,
+      "expected_size": 262145,
+      "expected_digest": "sha256:283a1a08b4b17e75b41fc6e8596238faa8b2dd547f9c7cc52187378e4b74e213",
+      "valid_for_handoff": false
+    }
+  ]
+}

@@ -14,8 +14,21 @@ import {
   isNotificationDeploymentDigest,
   isNotificationHandoffRouteId,
   isNotificationHandoffVendorId,
+  type NotificationHandoffIdempotencyKey,
   type NotificationDeliveryBackend,
+  type NotificationRouteRecordId,
 } from './notification-handoff-contracts.js';
+import { normalizeNotificationServiceOrigin } from './notification-service-endpoint.js';
+
+/**
+ * Read-only identity for a future v2 queue record. These fields are derived after config parsing
+ * and are deliberately absent from the user-authored watch schema and parser result.
+ */
+export interface GitHubWatchRouteRecordIdentityV2 {
+  readonly route_record_id: NotificationRouteRecordId;
+  readonly canonical_repository: string;
+  readonly persisted_idempotency_key: NotificationHandoffIdempotencyKey;
+}
 
 export interface GitHubWatchNotificationServiceV2 {
   endpoint: string;
@@ -198,29 +211,13 @@ function parseNotificationService(
   let normalizedEndpoint: string | undefined;
   if (endpoint) {
     try {
-      const url = new URL(endpoint);
-      // `localhost` is development-only and depends on local resolver integrity; prefer literal
-      // 127.0.0.1 or [::1] when an insecure loopback endpoint is unavoidable.
-      const isLoopback = ['localhost', '127.0.0.1', '[::1]', '::1'].includes(url.hostname);
-      const schemeAllowed =
-        url.protocol === 'https:' ||
-        (url.protocol === 'http:' && allowInsecureLoopback && isLoopback);
-      if (
-        !schemeAllowed ||
-        url.username ||
-        url.password ||
-        url.pathname !== '/' ||
-        url.search ||
-        url.hash
-      ) {
-        errors.push(
-          'notification_service.endpoint must be an HTTPS origin without userinfo, path, query or fragment; HTTP requires explicit loopback development policy',
-        );
-      } else {
-        normalizedEndpoint = url.origin;
-      }
+      normalizedEndpoint = normalizeNotificationServiceOrigin(endpoint, {
+        allowInsecureLoopback,
+      });
     } catch {
-      errors.push('notification_service.endpoint must be a valid absolute URL origin');
+      errors.push(
+        'notification_service.endpoint must be an HTTPS origin without userinfo, path, query or fragment; HTTP requires explicit literal-loopback development policy',
+      );
     }
   }
 

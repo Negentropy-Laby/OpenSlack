@@ -158,20 +158,53 @@ export type {
   GitHubWatchConfigV2,
   GitHubWatchNotificationServiceV2,
   GitHubWatchRepoV2,
+  GitHubWatchRouteRecordIdentityV2,
   GitHubWatchRouteDeliveryV2,
   GitHubWatchRouteV2,
   WatchConfigV2ParseResult,
 } from './watch-config-v2.js';
 export {
+  WATCH_DELIVERY_QUEUE_V2_RELATIVE_PATH,
+  WATCH_DELIVERY_QUEUE_V2_SCHEMA,
+  WatchDeliveryQueueV2,
+  WatchDeliveryQueueV2Error,
+  migrateWatchDeliveryQueueV1ToV2,
+} from './watch-delivery-queue-v2.js';
+export type {
+  ClaimedWatchRouteV2,
+  LegacyWatchRouteBindingV2,
+  WatchDeliveryMigrationV2Report,
+  WatchDeliveryQueueV2Options,
+  WatchDeliveryQueueV2Policy,
+  WatchDeliveryQueueV2State,
+  WatchDeliveryQueueV2Stats,
+  WatchRouteAuthorityV2,
+  WatchRouteBlobReferenceV2,
+  WatchRouteDiagnosticV2,
+  WatchRouteEnqueueInputV2,
+  WatchRouteEnqueueResultV2,
+  WatchRouteLeaseV2,
+  WatchRouteMigrationDispositionV2,
+  WatchRouteReceiptLedgerStateV2,
+  WatchRouteRecordV2,
+  WatchRouteStateV2,
+} from './watch-delivery-queue-v2.js';
+export {
   NOTIFICATION_HANDOFF_DEPLOYMENT_DIGEST_PATTERN,
+  NOTIFICATION_HANDOFF_IDEMPOTENCY_KEY_PATTERN,
   NOTIFICATION_HANDOFF_NAMESPACE_V2,
   NOTIFICATION_HANDOFF_POLICY,
   NOTIFICATION_HANDOFF_ROUTE_ID_PATTERN,
   NOTIFICATION_HANDOFF_VENDOR_ID_PATTERN,
+  NOTIFICATION_ROUTE_RECORD_ID_PATTERN,
+  NOTIFICATION_ROUTE_RECORD_NAMESPACE_V2,
   createNotificationHandoffKeyV2,
+  createNotificationRouteRecordIdV2,
   isNotificationDeploymentDigest,
+  isNotificationHandoffIdempotencyKey,
   isNotificationHandoffRouteId,
   isNotificationHandoffVendorId,
+  isNotificationRouteRecordId,
 } from './notification-handoff-contracts.js';
 export type {
   AcceptedReceipt,
@@ -181,8 +214,59 @@ export type {
   MaterializedNotificationBody,
   NotificationBodyEncoderVersion,
   NotificationDeliveryBackend,
+  NotificationHandoffIdempotencyKey,
+  NotificationRouteRecordId,
   RemoteDeliveryState,
 } from './notification-handoff-contracts.js';
+export {
+  materializeSlackNotificationBody,
+  materializeWebhookNotificationBody,
+  validateNotificationBodyForHandoff,
+} from './notification-body.js';
+export type { NotificationBodyHandoffValidation } from './notification-body.js';
+export {
+  NOTIFICATION_BLOB_STORE_RELATIVE_PATH,
+  NotificationBlobStore,
+  NotificationBlobStoreError,
+  notificationBlobStorePath,
+} from './notification-blob-store.js';
+export type {
+  NotificationBlobGcInput,
+  NotificationBlobGcResult,
+  NotificationBlobInput,
+  NotificationBlobPutResult,
+  NotificationBlobReadResult,
+  NotificationBlobStoreErrorCode,
+  NotificationBlobStoreOptions,
+} from './notification-blob-store.js';
+export {
+  NOTIFICATION_RECEIPT_STORE_RELATIVE_PATH,
+  NotificationReceiptStore,
+  NotificationReceiptStoreError,
+  notificationReceiptStorePath,
+  serializeNotificationAcceptanceReceipt,
+} from './notification-receipt-store.js';
+export {
+  NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST_HEADER,
+  NotificationServiceClient,
+  parseRetryAfterMs,
+} from './notification-service-client.js';
+export type {
+  NotificationServiceClientOptions,
+  NotificationServiceHandoffRequest,
+} from './notification-service-client.js';
+export {
+  canonicalizeJcs,
+  computeGitHubWatchConfigDigestV2,
+  normalizeGitHubWatchConfigV2,
+} from './watch-config-digest-v2.js';
+export type { NormalizedGitHubWatchConfigV2 } from './watch-config-digest-v2.js';
+export type {
+  NotificationAcceptanceReceiptV1,
+  NotificationReceiptEnsureResult,
+  NotificationReceiptStoreErrorCode,
+  NotificationReceiptStoreOptions,
+} from './notification-receipt-store.js';
 export {
   GITHUB_WATCH_EVENT_KEYS,
   GITHUB_WEBHOOK_EVENT_NAMES,
@@ -239,9 +323,12 @@ export type {
   WatchDeliveryLease,
   WatchDeliveryPolicy,
   WatchDeliveryQueueOptions,
+  WatchDeliveryQueueSnapshotV1,
   WatchDeliveryRecord,
   WatchDeliveryState,
   WatchDeliveryStats,
+  WatchDeliveryV1FinalizationResult,
+  WatchDeliveryV2MigrationMarker,
   WatchRouteDelivery,
 } from './watch-delivery-queue.js';
 export { WatchDeliveryRouter } from './watch-delivery-router.js';

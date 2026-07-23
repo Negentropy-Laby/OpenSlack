@@ -48,6 +48,12 @@
     }
   ],
   "$defs": {
+    "routeRecordId": {
+      "description": "Read-only route record identity derived from canonical repository and persisted idempotency key; it is never accepted in watch config.",
+      "type": "string",
+      "readOnly": true,
+      "pattern": "^[0-9a-f]{64}$"
+    },
     "notificationService": {
       "type": "object",
       "additionalProperties": false,
@@ -76,7 +82,7 @@
           "required": ["allow_insecure_loopback"],
           "properties": {
             "endpoint": {
-              "pattern": "^http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]+)?/?$"
+              "pattern": "^http://(?:127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]+)?/?$"
             },
             "allow_insecure_loopback": { "const": true }
           }

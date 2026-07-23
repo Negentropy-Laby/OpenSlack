@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - main
+      - integration/notification-delivery-0.3
 
 permissions:
   contents: read

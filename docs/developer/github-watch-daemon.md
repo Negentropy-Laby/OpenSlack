@@ -204,6 +204,16 @@ Use these keys in order:
 4. Poll cursor per repository: `lastSeenAt`, `lastIssueNumber`, and last
    processed idempotency key.
 
+The approved, not-yet-wired v2 queue derives each local `route_record_id` as lowercase hexadecimal SHA-256 over
+`openslack.watch.route-record.v2`, the already-lowercase canonical `owner/repo`, and the persisted route idempotency
+key, with NUL delimiters. Migrated v1 routes use their copied original key as input; they do not receive a new v2
+handoff key. The ID is derived queue identity and is never accepted from watch configuration.
+
+The standalone v2 Blob store, receipt store and `NotificationServiceClient` are also not wired here yet. The client
+is not a `NotificationSink`, and `createSinks`, this daemon, the delivery router and CLI composition roots do not
+reference it. IB3 must acquire `queue-v2` before either storage lock; neither storage primitive may acquire the queue
+lock. Receipt repair from an embedded accepted record must not POST again.
+
 The queue accepts or rejects duplicates atomically. A successful route is
 marked completed immediately and is not resent when another route retries. If
 a process exits after a remote sink accepts a message but before the local
@@ -227,6 +237,10 @@ Every sink receives a stable delivery context:
 - Outbound webhooks receive `Idempotency-Key` and
   `X-OpenSlack-Idempotency-Key`.
 - Console output includes the same key for replay diagnosis.
+
+Slack and webhook direct delivery share the frozen pure final-body materializers with the future service handoff.
+This keeps their outbound bytes identical without connecting the service client or applying the service-only 256 KiB
+admission limit to direct delivery.
 
 Sink network errors, timeouts, HTTP 408/429, and 5xx responses are retryable.
 Permanent configuration or other 4xx failures terminate only that route.

@@ -1,0 +1,24 @@
+{
+  "schema": "openslack.notification_route_record_id_vectors.v1",
+  "namespace": "openslack.watch.route-record.v2",
+  "vectors": [
+    {
+      "name": "v2-standard",
+      "canonical_repository": "negentropy-laby/openslack",
+      "persisted_idempotency_key": "480f3f0b-01e3-57fb-8f3a-6ffd3a16ecbe",
+      "expected_route_record_id": "17c7b8783376cca1e133a80d767c5ef9c705e6ebeada0e8f9d07323ca247c57f"
+    },
+    {
+      "name": "v2-second-repository",
+      "canonical_repository": "acme/widgets",
+      "persisted_idempotency_key": "0e3c1e6d-0fa7-5fed-94c2-2e373fa1bd21",
+      "expected_route_record_id": "51ebb24f8f2f7d4f82653a44c88a901dd069334d96bb82236be85ca8f69ffcb6"
+    },
+    {
+      "name": "legacy-copied-v1-key",
+      "canonical_repository": "negentropy-laby/openslack",
+      "persisted_idempotency_key": "11ae13ea-1fd7-5d9c-b5a9-103678acd30f",
+      "expected_route_record_id": "ad31d3e0aab3b8349cdb849c812b47268b7b44ae9ea36fb3996d6c37415bc182"
+    }
+  ]
+}
