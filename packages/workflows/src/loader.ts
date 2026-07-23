@@ -17,6 +17,15 @@ export const DISCOVERY_PATHS = [
   '.claude/workflows', // Anthropic-compatible legacy
 ] as const;
 
+export interface WorkflowDiscoveryOptions {
+  /**
+   * Override the user home used for ~/.claude/workflows discovery.
+   * Undefined preserves production behavior; null disables user-home discovery
+   * for isolated callers such as tests.
+   */
+  userHomeDir?: string | null;
+}
+
 /**
  * Built-in workflows shipped with @openslack/workflows.
  */
@@ -62,6 +71,7 @@ function stripWorkflowExtension(entry: string): string {
  */
 export async function discoverWorkflows(
   cwd: string = process.cwd(),
+  options: WorkflowDiscoveryOptions = {},
 ): Promise<Array<{ name: string; path: string; source: WorkflowSource }>> {
   const seen = new Set<string>();
   const results: Array<{ name: string; path: string; source: WorkflowSource }> = [];
@@ -87,20 +97,23 @@ export async function discoverWorkflows(
   }
 
   // Discover user-home workflows (~/.claude/workflows)
-  const homeClaudeDir = join(homedir(), '.claude', 'workflows');
-  try {
-    const entries = await readdir(homeClaudeDir);
-    for (const entry of entries) {
-      if (!hasWorkflowExtension(entry)) continue;
+  const userHomeDir = options.userHomeDir === undefined ? homedir() : options.userHomeDir;
+  if (userHomeDir !== null) {
+    const homeClaudeDir = join(userHomeDir, '.claude', 'workflows');
+    try {
+      const entries = await readdir(homeClaudeDir);
+      for (const entry of entries) {
+        if (!hasWorkflowExtension(entry)) continue;
 
-      const name = stripWorkflowExtension(entry);
-      if (seen.has(name)) continue;
-      seen.add(name);
+        const name = stripWorkflowExtension(entry);
+        if (seen.has(name)) continue;
+        seen.add(name);
 
-      results.push({ name, path: join(homeClaudeDir, entry), source: 'claude-user' });
+        results.push({ name, path: join(homeClaudeDir, entry), source: 'claude-user' });
+      }
+    } catch {
+      // home workflows dir doesn't exist, that's fine
     }
-  } catch {
-    // home workflows dir doesn't exist, that's fine
   }
 
   // Also discover built-in workflows
@@ -682,8 +695,9 @@ function tokenizeJs(js: string): Token[] | null {
 export async function findWorkflow(
   name: string,
   cwd: string = process.cwd(),
+  options: WorkflowDiscoveryOptions = {},
 ): Promise<{ name: string; path: string; source: WorkflowSource } | undefined> {
-  const all = await discoverWorkflows(cwd);
+  const all = await discoverWorkflows(cwd, options);
   return all.find((w) => w.name === name);
 }
 
@@ -754,8 +768,11 @@ export async function discoverYamlTemplates(templatesDir: string): Promise<Workf
 /**
  * Discover all JS/TS workflow modules and return categorized summaries.
  */
-export async function discoverJsWorkflows(cwd: string = process.cwd()): Promise<WorkflowSummary[]> {
-  const discovered = await discoverWorkflows(cwd);
+export async function discoverJsWorkflows(
+  cwd: string = process.cwd(),
+  options: WorkflowDiscoveryOptions = {},
+): Promise<WorkflowSummary[]> {
+  const discovered = await discoverWorkflows(cwd, options);
   const results: WorkflowSummary[] = [];
 
   for (const { name, path: filePath, source: wfSource } of discovered) {
