@@ -422,3 +422,9 @@ G0 unlocks G1 and G2 only; it does not authorize daemon wiring or traffic. Only 
 `G5-IMPORT-QUALIFICATION=PASS`, the immutable 0.2.0 release and every other IB6 prerequisite may the full service
 history enter OpenSlack. This replacement gate applies only to history-import eligibility and makes no
 production-readiness, live-verification, IB7, 0.3.0-release or integration-completion claim.
+
+The default branch contains only a fail-closed `workflow_dispatch` locator at
+`.github/workflows/notification-import-qualification.yml`, because GitHub requires the path to exist on the default
+branch before it can be dispatched. The protected qualification must be invoked with
+`--ref integration/notification-delivery-0.3`; that ref supplies the complete reviewed workflow. The locator itself
+has no environment or secret access and always fails.
