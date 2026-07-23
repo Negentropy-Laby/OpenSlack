@@ -317,7 +317,19 @@ export class NotificationBlobStore {
   private scanUsage(): number {
     let total = 0;
     for (const entry of readdirSync(this.rootPath, { withFileTypes: true })) {
-      if (entry.name === '.blob-store.lock') continue;
+      if (entry.name === '.blob-store.lock' || entry.name === '.blob-store.lock.reclaim') {
+        const lockStatus = lstatSync(join(this.rootPath, entry.name));
+        if (
+          entry.isSymbolicLink() ||
+          lockStatus.isSymbolicLink() ||
+          !entry.isFile() ||
+          !lockStatus.isFile() ||
+          (process.platform !== 'win32' && (lockStatus.mode & 0o777) !== 0o600)
+        ) {
+          throw blobError('BLOB_PATH_UNSAFE', 'Notification Blob store lock path is unsafe.');
+        }
+        continue;
+      }
       const prefixPath = join(this.rootPath, entry.name);
       const prefixStatus = lstatSync(prefixPath);
       if (
