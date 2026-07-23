@@ -155,7 +155,9 @@ G4 blocker。
 Operations reconciliation 以 receipt 中的 `notification_id` 查询 notification status 和 attempt history。
 status 必须返回匹配的 `vendor_id`；snapshot 后的 outcome 必须返回实际 `config_version`，claim/recovery、
 replay 和 snapshot 前失败则保持缺省。不得用 payload、credential descriptor 或 vendor response body
-补充对账。
+补充对账。本地 RC-IB4-R1 机械证据见
+[`../testing/ib4-r1-local-report.json`](../testing/ib4-r1-local-report.json)；该报告明确不等价于真实
+`G4-E2E` 或 `G5-CANARY`。
 
 隔离的 crash-after-send、双 recovery 竞争、数据库停止/恢复和有界关闭演练命令为：
 

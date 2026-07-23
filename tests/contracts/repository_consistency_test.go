@@ -113,6 +113,7 @@ func TestAcceptanceArtifactsContainNoSecretOrPayloadMarkers(t *testing.T) {
 	for _, relative := range []string{
 		"docs/testing/acceptance-report.json", "docs/testing/capacity-report.md", "docs/testing/ac-evidence.json",
 		"docs/testing/fault-drill-report.md", "docs/testing/pitr-report.md", "docs/testing/marker-scan-report.md",
+		"docs/testing/ib4-r1-local-report.json",
 	} {
 		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(relative)))
 		if err != nil {
