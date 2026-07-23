@@ -16,7 +16,19 @@ if [ ! -f "$ROOT/openslack.yaml" ]; then
   echo "FAIL (not found)"
   FAILED=1
 else
-  if python -c "import yaml; yaml.safe_load(open('$ROOT/openslack.yaml', encoding='utf-8'))" 2>/dev/null; then
+  PYTHON_BIN=""
+  if command -v python >/dev/null 2>&1; then
+    PYTHON_BIN="python"
+  elif command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+  fi
+
+  if [ -z "$PYTHON_BIN" ]; then
+    echo "FAIL (python with PyYAML not found)"
+    FAILED=1
+  elif "$PYTHON_BIN" -c \
+    'import sys, yaml; yaml.safe_load(open(sys.argv[1], encoding="utf-8"))' \
+    "$ROOT/openslack.yaml" 2>/dev/null; then
     echo "PASS"
   else
     echo "FAIL (invalid YAML)"
