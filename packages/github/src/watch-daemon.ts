@@ -283,6 +283,17 @@ export class WatchDaemon {
     });
   }
 
+  async drainDeliveryOnce(): Promise<{
+    legacy: Awaited<ReturnType<WatchDeliveryRouter['drainOnce']>>;
+    v2?: Awaited<ReturnType<WatchDeliveryRouterV2['drainOnce']>>;
+  }> {
+    this.prepareV2Runtime();
+    const legacy = await this.deliveryRouter.drainOnce();
+    if (!this.deliveryRouterV2) return { legacy };
+    this.refreshV1Migration();
+    return { legacy, v2: await this.deliveryRouterV2.drainOnce() };
+  }
+
   async once(
     event: NormalizedIssueEvent,
     sourceRef: string = 'github.watch.webhook',
@@ -438,10 +449,10 @@ export class WatchDaemon {
       this.cursorStore.updateCursor(repoKey, pollResult.newCursor);
     }
 
+    await this.deliveryRouter.drainOnce();
     if (this.deliveryRouterV2) {
-      await Promise.all([this.deliveryRouter.drainOnce(), this.deliveryRouterV2.drainOnce()]);
-    } else {
-      await this.deliveryRouter.drainOnce();
+      this.refreshV1Migration();
+      await this.deliveryRouterV2.drainOnce();
     }
 
     return result;
@@ -821,12 +832,17 @@ export class WatchDaemon {
   private prepareV2Runtime(): void {
     if (this.v2Prepared || !this.deliveryQueueV2 || !this.notificationReceiptStore) return;
     this.deliveryQueueV2.recoverAcceptedReceipts(this.notificationReceiptStore);
+    this.refreshV1Migration();
+    this.v2Prepared = true;
+  }
+
+  private refreshV1Migration(): void {
+    if (!this.deliveryQueueV2) return;
     migrateWatchDeliveryQueueV1ToV2({
       v1: this.deliveryQueue,
       v2: this.deliveryQueueV2,
       bindings: this.migrationBindings,
     });
-    this.v2Prepared = true;
   }
 
   private async admitRepositoryEvent(
@@ -847,7 +863,9 @@ export class WatchDaemon {
         );
       }
       if (awaitDelivery) {
-        await Promise.all([this.deliveryRouter.drainOnce(), this.deliveryRouterV2.drainOnce()]);
+        await this.deliveryRouter.drainOnce();
+        this.refreshV1Migration();
+        await this.deliveryRouterV2.drainOnce();
       } else {
         this.deliveryRouter.scheduleDrain();
         this.deliveryRouterV2.scheduleDrain();

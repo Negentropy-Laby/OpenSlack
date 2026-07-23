@@ -194,8 +194,18 @@ export type {
   WatchRouteMigrationDispositionV2,
   WatchRouteReceiptLedgerStateV2,
   WatchRouteRecordV2,
+  WatchRouteRecoveryEntryV2,
+  WatchRouteRecoveryRequestV2,
   WatchRouteStateV2,
 } from './watch-delivery-queue-v2.js';
+export {
+  NotificationDeliveryOperations,
+  type NotificationDeliveryDoctorCheck,
+  type NotificationDeliveryDoctorReport,
+  type NotificationDeliveryOperationsOptions,
+  type NotificationDeliveryReconciliation,
+  type NotificationDeliveryRouteView,
+} from './notification-delivery-operations.js';
 export {
   NOTIFICATION_HANDOFF_DEPLOYMENT_DIGEST_PATTERN,
   NOTIFICATION_HANDOFF_IDEMPOTENCY_KEY_PATTERN,

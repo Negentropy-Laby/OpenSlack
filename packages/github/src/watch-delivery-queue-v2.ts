@@ -74,6 +74,19 @@ export interface WatchRouteDiagnosticV2 {
   status?: number;
 }
 
+export interface WatchRouteRecoveryEntryV2 {
+  cycle: number;
+  decision: 'retry' | 'archive';
+  operator: string;
+  reason: string;
+  previousState: Extract<WatchRouteStateV2, 'rejected' | 'quarantined' | 'handoff_dead'>;
+  recordedAt: string;
+  reconciliation?: {
+    outcome: 'safe_to_retry' | 'archive_only';
+    checkedAt: string;
+  };
+}
+
 export interface WatchRouteBlobReferenceV2 {
   digest: `sha256:${string}`;
   size: number;
@@ -111,6 +124,7 @@ export interface WatchRouteRecordV2 {
   completedAt?: string;
   lastDiagnostic?: WatchRouteDiagnosticV2;
   recoveryCycle: number;
+  recoveryHistory?: WatchRouteRecoveryEntryV2[];
   migrationDisposition?: WatchRouteMigrationDispositionV2;
 }
 
@@ -174,6 +188,13 @@ export interface WatchDeliveryQueueV2Stats {
   pendingReceiptLedgers: number;
   oldestPendingAt?: string;
   nextRetryAt?: string;
+}
+
+export interface WatchRouteRecoveryRequestV2 {
+  decision: 'retry' | 'archive';
+  operator: string;
+  reason: string;
+  reconciliation?: WatchRouteRecoveryEntryV2['reconciliation'];
 }
 
 export interface LegacyWatchRouteBindingV2 {
@@ -578,6 +599,56 @@ export class WatchDeliveryQueueV2 {
     });
   }
 
+  planRecovery(id: string, request: WatchRouteRecoveryRequestV2): WatchRouteRecordV2 {
+    return this.read((state) => {
+      const record = requireRecoverableRoute(state, id);
+      validateRecoveryRequest(record, request);
+      return cloneRoute(record);
+    });
+  }
+
+  applyRecovery(id: string, request: WatchRouteRecoveryRequestV2): WatchRouteRecordV2 {
+    return this.mutate((state, now) => {
+      const record = requireRecoverableRoute(state, id);
+      validateRecoveryRequest(record, request);
+      const previousState = record.state as WatchRouteRecoveryEntryV2['previousState'];
+      const timestamp = now.toISOString();
+      const nextCycle =
+        request.decision === 'retry' ? record.recoveryCycle + 1 : record.recoveryCycle;
+      (record.recoveryHistory ??= []).push({
+        cycle: nextCycle,
+        decision: request.decision,
+        operator: request.operator.trim(),
+        reason: request.reason.trim(),
+        previousState,
+        recordedAt: timestamp,
+        ...(request.reconciliation
+          ? { reconciliation: structuredClone(request.reconciliation) }
+          : {}),
+      });
+      if (request.decision === 'archive') {
+        record.updatedAt = timestamp;
+        return cloneRoute(record);
+      }
+
+      record.recoveryCycle = nextCycle;
+      record.state = 'pending';
+      record.authority = 'openslack';
+      record.attemptCount = 0;
+      record.availableAt = timestamp;
+      record.deadlineAt = new Date(
+        now.getTime() + NOTIFICATION_HANDOFF_POLICY.deadlineMs,
+      ).toISOString();
+      record.updatedAt = timestamp;
+      record.remoteDeliveryState = 'unknown';
+      delete record.terminalReason;
+      delete record.terminalAt;
+      delete record.completedAt;
+      delete record.lastDiagnostic;
+      return cloneRoute(record);
+    });
+  }
+
   planV1Migration(
     snapshot: WatchDeliveryQueueSnapshotV1,
     bindings: LegacyWatchRouteBindingV2[],
@@ -798,6 +869,7 @@ function buildRouteRecord(
     updatedAt: timestamp,
     remoteDeliveryState: 'unknown',
     recoveryCycle: 0,
+    recoveryHistory: [],
   };
 }
 
@@ -917,6 +989,7 @@ function migratedRoute(
     updatedAt: route.updatedAt,
     remoteDeliveryState: route.state === 'completed' ? 'delivered' : 'unknown',
     recoveryCycle: 0,
+    recoveryHistory: [],
     migrationDisposition: disposition,
     ...(route.completedAt ? { completedAt: route.completedAt } : {}),
     ...(route.terminalAt ? { terminalAt: route.terminalAt } : {}),
@@ -986,7 +1059,8 @@ function validateRecord(value: unknown): asserts value is WatchRouteRecordV2 {
     !isTimestamp(value.updatedAt) ||
     !isRemoteState(value.remoteDeliveryState) ||
     !Number.isSafeInteger(value.recoveryCycle) ||
-    (value.recoveryCycle as number) < 0
+    (value.recoveryCycle as number) < 0 ||
+    (value.recoveryHistory !== undefined && !Array.isArray(value.recoveryHistory))
   ) {
     invalidRecord();
   }
@@ -1036,6 +1110,7 @@ function validateRecord(value: unknown): asserts value is WatchRouteRecordV2 {
   if (value.terminalAt !== undefined && !isTimestamp(value.terminalAt)) invalidRecord();
   if (value.completedAt !== undefined && !isTimestamp(value.completedAt)) invalidRecord();
   if (value.lastDiagnostic !== undefined) validateDiagnostic(value.lastDiagnostic);
+  for (const entry of (value.recoveryHistory ?? []) as unknown[]) validateRecoveryEntry(entry);
   if (
     value.migrationDisposition !== undefined &&
     !['legacy_owned', 'completed_tombstone', 'terminal_archive'].includes(
@@ -1076,8 +1151,105 @@ const RECORD_KEYS = [
   'completedAt',
   'lastDiagnostic',
   'recoveryCycle',
+  'recoveryHistory',
   'migrationDisposition',
 ] as const;
+
+function requireRecoverableRoute(state: WatchDeliveryQueueV2State, id: string): WatchRouteRecordV2 {
+  const record = state.routes.find((candidate) => candidate.id === id);
+  if (
+    !record ||
+    record.backend !== 'notification_service' ||
+    record.authority !== 'terminal' ||
+    !['rejected', 'quarantined', 'handoff_dead'].includes(record.state)
+  ) {
+    throw queueError(
+      'QUEUE_TRANSITION_INVALID',
+      'Only terminal notification-service routes can enter governed recovery.',
+    );
+  }
+  return record;
+}
+
+function validateRecoveryRequest(
+  record: WatchRouteRecordV2,
+  request: WatchRouteRecoveryRequestV2,
+): void {
+  if (
+    (request.decision !== 'retry' && request.decision !== 'archive') ||
+    !request.operator.trim() ||
+    request.operator.trim().length > 128 ||
+    !request.reason.trim() ||
+    request.reason.trim().length > 500
+  ) {
+    throw queueError(
+      'QUEUE_TRANSITION_INVALID',
+      'Recovery requires a bounded operator, reason and supported decision.',
+    );
+  }
+  if (request.decision === 'archive' && record.state !== 'quarantined') {
+    throw queueError(
+      'QUEUE_TRANSITION_INVALID',
+      'Archive resolution is only valid for quarantined routes.',
+    );
+  }
+  if (record.state === 'quarantined') {
+    if (
+      !request.reconciliation ||
+      request.reconciliation.outcome !==
+        (request.decision === 'retry' ? 'safe_to_retry' : 'archive_only') ||
+      !isTimestamp(request.reconciliation.checkedAt)
+    ) {
+      throw queueError(
+        'QUEUE_TRANSITION_INVALID',
+        'Quarantine resolution requires a matching reconciliation decision.',
+      );
+    }
+  } else if (request.reconciliation !== undefined) {
+    throw queueError(
+      'QUEUE_TRANSITION_INVALID',
+      'Reconciliation evidence is only accepted for quarantined routes.',
+    );
+  }
+}
+
+function validateRecoveryEntry(value: unknown): asserts value is WatchRouteRecoveryEntryV2 {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, [
+      'cycle',
+      'decision',
+      'operator',
+      'reason',
+      'previousState',
+      'recordedAt',
+      'reconciliation',
+    ]) ||
+    !Number.isSafeInteger(value.cycle) ||
+    (value.cycle as number) < 0 ||
+    (value.decision !== 'retry' && value.decision !== 'archive') ||
+    typeof value.operator !== 'string' ||
+    !value.operator.trim() ||
+    value.operator.length > 128 ||
+    typeof value.reason !== 'string' ||
+    !value.reason.trim() ||
+    value.reason.length > 500 ||
+    !['rejected', 'quarantined', 'handoff_dead'].includes(String(value.previousState)) ||
+    !isTimestamp(value.recordedAt)
+  ) {
+    invalidRecord();
+  }
+  if (value.reconciliation !== undefined) {
+    if (
+      !isRecord(value.reconciliation) ||
+      !hasOnlyKeys(value.reconciliation, ['outcome', 'checkedAt']) ||
+      !['safe_to_retry', 'archive_only'].includes(String(value.reconciliation.outcome)) ||
+      !isTimestamp(value.reconciliation.checkedAt)
+    ) {
+      invalidRecord();
+    }
+  }
+}
 
 function assertReceiptMatches(
   record: WatchRouteRecordV2,

@@ -190,6 +190,33 @@ describe('WatchDeliveryQueueV2', () => {
     expect(validateQueueSchema({ ...state, payload: 'must-not-be-accepted' })).toBe(false);
   });
 
+  it('accepts pre-IB3-C records without recovery history and adds it on first recovery', () => {
+    const { store, record } = enqueueService();
+    const legacyState = JSON.parse(readFileSync(store.statePath, 'utf8')) as {
+      routes: Array<Record<string, unknown>>;
+    };
+    delete legacyState.routes[0]!.recoveryHistory;
+    writeFileSync(store.statePath, `${JSON.stringify(legacyState, null, 2)}\n`, 'utf8');
+    const claim = store.claimNext('worker', 'notification_service');
+    if (!claim) throw new Error('Expected claim');
+    store.markRejected(record.id, claim.lease.token, 'deterministic_rejection', {
+      code: 'UNAUTHORIZED',
+      message: 'Rejected.',
+      status: 401,
+    });
+
+    expect(
+      store.applyRecovery(record.id, {
+        decision: 'retry',
+        operator: 'operator-1',
+        reason: 'Credential rotation verified.',
+      }),
+    ).toMatchObject({
+      recoveryCycle: 1,
+      recoveryHistory: [{ cycle: 1, decision: 'retry' }],
+    });
+  });
+
   it('keeps the closed schema and runtime validator aligned on malformed record shapes', () => {
     const { store } = enqueueService();
     const valid = JSON.parse(readFileSync(store.statePath, 'utf8')) as {
@@ -481,6 +508,126 @@ describe('WatchDeliveryQueueV2', () => {
       state: 'processing',
       authority: 'openslack',
     });
+  });
+
+  it('opens a governed recovery cycle without changing immutable handoff identity', () => {
+    const { store, record } = enqueueService();
+    const claim = store.claimNext('worker', 'notification_service');
+    if (!claim) throw new Error('Expected claim');
+    store.markRejected(record.id, claim.lease.token, 'deterministic_rejection', {
+      code: 'UNAUTHORIZED',
+      message: 'Rejected.',
+      status: 401,
+    });
+    const before = store.getRoute(record.id)!;
+    const preview = store.planRecovery(record.id, {
+      decision: 'retry',
+      operator: 'operator-1',
+      reason: 'Credential was rotated and verified.',
+    });
+    expect(preview).toEqual(before);
+
+    now = new Date('2026-07-23T01:00:00.000Z');
+    const recovered = store.applyRecovery(record.id, {
+      decision: 'retry',
+      operator: 'operator-1',
+      reason: 'Credential was rotated and verified.',
+    });
+    expect(recovered).toMatchObject({
+      id: before.id,
+      vendorId: before.vendorId,
+      idempotencyKey: before.idempotencyKey,
+      blob: before.blob,
+      routingEpoch: before.routingEpoch,
+      state: 'pending',
+      authority: 'openslack',
+      attemptCount: 0,
+      recoveryCycle: 1,
+      deadlineAt: '2026-07-24T01:00:00.000Z',
+      recoveryHistory: [
+        {
+          cycle: 1,
+          decision: 'retry',
+          operator: 'operator-1',
+          reason: 'Credential was rotated and verified.',
+          previousState: 'rejected',
+          recordedAt: '2026-07-23T01:00:00.000Z',
+        },
+      ],
+    });
+  });
+
+  it('requires matching reconciliation evidence before resolving quarantine', () => {
+    const { store, record } = enqueueService();
+    const claim = store.claimNext('worker', 'notification_service');
+    if (!claim) throw new Error('Expected claim');
+    store.markQuarantined(record.id, claim.lease.token, 'idempotency_conflict', {
+      code: 'IDEMPOTENCY_CONFLICT',
+      message: 'Conflict.',
+      status: 409,
+    });
+
+    expect(() =>
+      store.planRecovery(record.id, {
+        decision: 'retry',
+        operator: 'operator-1',
+        reason: 'Investigated.',
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'QUEUE_TRANSITION_INVALID' }));
+    expect(() =>
+      store.planRecovery(record.id, {
+        decision: 'archive',
+        operator: 'operator-1',
+        reason: 'Remote notification owns delivery.',
+        reconciliation: {
+          outcome: 'safe_to_retry',
+          checkedAt: '2026-07-23T00:30:00.000Z',
+        },
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'QUEUE_TRANSITION_INVALID' }));
+
+    const archived = store.applyRecovery(record.id, {
+      decision: 'archive',
+      operator: 'operator-1',
+      reason: 'Remote notification owns delivery.',
+      reconciliation: {
+        outcome: 'archive_only',
+        checkedAt: '2026-07-23T00:30:00.000Z',
+      },
+    });
+    expect(archived).toMatchObject({
+      state: 'quarantined',
+      authority: 'terminal',
+      recoveryCycle: 0,
+      recoveryHistory: [
+        {
+          cycle: 0,
+          decision: 'archive',
+          previousState: 'quarantined',
+          reconciliation: { outcome: 'archive_only' },
+        },
+      ],
+    });
+  });
+
+  it('never permits accepted authority to enter governed recovery', () => {
+    const { store, record } = enqueueService();
+    const claim = store.claimNext('worker', 'notification_service');
+    if (!claim) throw new Error('Expected claim');
+    store.acceptServiceRoute(
+      record.id,
+      claim.lease.token,
+      acceptanceReceipt(record),
+      new NotificationReceiptStore({ rootPath: join(root, 'notification-acceptance') }),
+    );
+
+    expect(() =>
+      store.applyRecovery(record.id, {
+        decision: 'retry',
+        operator: 'operator-1',
+        reason: 'Must remain service-owned.',
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'QUEUE_TRANSITION_INVALID' }));
   });
 });
 

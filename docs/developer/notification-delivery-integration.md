@@ -1,6 +1,7 @@
 # Notification Delivery Service Integration
 
-> **Status:** IB3-B daemon/router composition implemented — `G3_QUEUE_IN_PROGRESS`
+> **Status:** IB3-B daemon/router composition and IB3-C governed operations implemented —
+> `G3_QUEUE_IN_PROGRESS`
 >
 > **Runtime effect:** v1 is unchanged; v2 service admission is fail-closed unless the explicit new-record gate is on.
 >
@@ -268,6 +269,9 @@ pending -> processing -> accepted
 - Attempt 25 failure or the deadline, whichever occurs first, produces `handoff_dead`.
 - A processing crash consumes the attempt because the request may have escaped.
 - Governed recovery keeps the original key, vendor, Blob and encoder.
+- Every manual decision records the operator, bounded reason, previous state, timestamp and recovery cycle.
+- Quarantine cannot be retried or archived without read-only reconciliation evidence matching the decision.
+- A missing or corrupt retained Blob returns `BLOB_NOT_AVAILABLE`; recovery never re-renders bytes.
 
 | Response                                     | State/result                 |
 | -------------------------------------------- | ---------------------------- |
@@ -336,6 +340,15 @@ processing intent before reading the Blob and calling the dedicated service clie
 gate closed, a new service route fails before Blob or queue admission and polling cannot advance its cursor. Existing
 service records and legacy v1 ownership continue to drain; no setting enables automatic fallback.
 
+IB3-C exposes the payload-blind operational surface under `openslack github notifications`: `doctor`, `status`,
+`queue`, `drain`, `retry`, `quarantine show/resolve`, `reconcile`, and `canary status/report`. Mutating recovery and
+drain actions default to preview and require `--apply`. Retry resets only the attempt/deadline window for a new
+recovery cycle; route ID, epoch, vendor, idempotency key, Blob and encoder remain immutable. Local reconciliation can
+prove an accepted embedded/file receipt match. Quarantine remains fail-closed with
+`REMOTE_RECONCILIATION_REQUIRED` until the IB4 read-only service client supplies a safe-to-retry or archive-only
+decision. Commands and their JSON views omit persisted event data, payload bytes, credentials and raw vendor
+responses.
+
 ## V1 Migration And Gates
 
 Migration is per route: completed becomes a tombstone, failed becomes a terminal archive, and
@@ -352,7 +365,7 @@ The next phases remain blocked by gates:
 G0-CONTRACT: PASS_WITH_RC_REVIEW_WAIVER; OpenSlack independently reviewed, standalone service owner waiver + PR/CI
 G1-SERVICE: service v2 contract implemented and verified
 G2-CLIENT: body, Blob, receipt and client components verified
-G3-QUEUE: IN PROGRESS; IB3-A queue/migration and IB3-B daemon/router implemented; governed CLI pending
+G3-QUEUE: IN PROGRESS; IB3-A queue/migration, IB3-B daemon/router and IB3-C governed operations implemented; merge receipts pending
 G4-E2E: two repositories x Slack and webhook fault matrix
 G5-CANARY: 336 continuous hours + 100 distinct non-replay accepted keys
 ```
