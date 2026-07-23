@@ -366,6 +366,21 @@ Only that complete agreement may project `remoteDeliveryState=delivered`; missin
 evidence, and conflicts fail closed. A delivered projection cannot regress. Quarantined routes still cannot be
 silently retried because they lack a committed accepted receipt that could authorize transfer or recovery.
 
+IB4-O2 provides a loopback-only, bounded fault proxy for the intake boundary. Each process receives an immutable
+scenario and injection count; it has no runtime admin endpoint. It can pass through exact intake bytes, drop the
+client response only after the upstream call returns, or inject the frozen malformed-202, unexpected-2xx, redirect,
+deterministic-4xx, 409, 429/5xx and deployment-digest cases. It forwards only the allowlisted intake/auth headers,
+never follows redirects, and retains only a sequence number, scenario, closed outcome code, upstream-called flag and
+timestamp. Bodies, headers, credentials and endpoint values are never written to its observation log.
+
+Process restart, disk-boundary and proxy operations are supplied as explicit deployment callbacks to the sequential
+fault harness; it does not accept or execute shell text. Thrown callback errors become the closed
+`FAULT_STEP_FAILED` code rather than persisted error prose. A completed run is sealed as the closed
+`openslack.notification_fault_run.v1` JSON contract plus SHA-256 under a protected evidence directory. Both files
+are create-only, mode `0600`, byte-verified and idempotently repairable; a different rerun with the same run ID fails
+closed. The manifest contains only correlation, commit/tree/digest, repo/route/vendor identity and closed check
+codes. Its schema is `packages/github/src/notification-fault-run.schema.json`.
+
 ## V1 Migration And Gates
 
 Migration is per route: completed becomes a tombstone, failed becomes a terminal archive, and

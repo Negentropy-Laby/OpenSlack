@@ -217,6 +217,25 @@ export {
   type NotificationVendorEvidenceSource,
 } from './notification-reconciliation.js';
 export {
+  NotificationFaultProxy,
+  type NotificationFaultAcceptedFixture,
+  type NotificationFaultProxyObservation,
+  type NotificationFaultProxyOptions,
+  type NotificationFaultScenario,
+} from './notification-fault-proxy.js';
+export {
+  NOTIFICATION_FAULT_RUN_SCHEMA,
+  ensureNotificationFaultRun,
+  runNotificationFaultHarness,
+  type NotificationFaultHarnessOptions,
+  type NotificationFaultHarnessResult,
+  type NotificationFaultHarnessStep,
+  type NotificationFaultRunCheck,
+  type NotificationFaultRunIdentity,
+  type NotificationFaultRunManifest,
+  type NotificationFaultRunWriteResult,
+} from './notification-fault-run.js';
+export {
   NOTIFICATION_AUDITOR_CREDENTIAL_REF_ENV,
   NOTIFICATION_VENDOR_EVIDENCE_DIR_ENV,
   NotificationDeliveryOperations,
