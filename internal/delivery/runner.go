@@ -80,10 +80,10 @@ func (r *Runner) RunOnce(ctx context.Context, storeCtx notificationstore.ActorCo
 	now := r.clock.Now()
 
 	if !now.Before(cycleSendCutoff) {
-		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonDeadlineExceeded)
+		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonDeadlineExceeded, nil)
 	}
 	if claim.AttemptCount >= r.cfg.MaxAttempts {
-		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonAttemptLimit)
+		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonAttemptLimit, nil)
 	}
 
 	vrCtx := vendorregistry.ActorContext{
@@ -102,16 +102,16 @@ func (r *Runner) RunOnce(ctx context.Context, storeCtx notificationstore.ActorCo
 	rawSnapshot, err := r.vr.Snapshot(ctx, vrCtx, claim.VendorID, nil)
 	if err != nil {
 		if vendorregistry.IsReadError(err, vendorregistry.ReadErrVendorInactiveOrUnknown) {
-			return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonVendorUnavailable)
+			return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonVendorUnavailable, nil)
 		}
 		if vendorregistry.IsReadError(err, vendorregistry.ReadErrInvalidCommand) {
-			transitionErr := r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonRequestUnbuildable)
+			transitionErr := r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonRequestUnbuildable, nil)
 			if transitionErr != nil {
 				return true, transitionErr
 			}
 			return true, newHealthSignal("registry_invalid_command", nil)
 		}
-		transitionErr := r.transitionRetry(ctx, storeCtx, claim, cycleSendCutoff, ErrorCodeRegistryAccessFailure)
+		transitionErr := r.transitionRetry(ctx, storeCtx, claim, cycleSendCutoff, ErrorCodeRegistryAccessFailure, nil)
 		if transitionErr != nil {
 			return true, transitionErr
 		}
@@ -120,24 +120,26 @@ func (r *Runner) RunOnce(ctx context.Context, storeCtx notificationstore.ActorCo
 
 	snapshot, ok := rawSnapshot.(vendorregistry.DeliveryConfigSnapshot)
 	if !ok {
-		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonRequestUnbuildable)
+		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonRequestUnbuildable, nil)
 	}
+	configVersion := snapshot.ConfigVersion
+	configVersionEvidence := &configVersion
 	if snapshot.ResponsePolicy != vendorregistry.ResponsePolicyHTTPStatusV1 && snapshot.ResponsePolicy != vendorregistry.ResponsePolicyJSONAckV1 {
-		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonRequestUnbuildable)
+		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonRequestUnbuildable, configVersionEvidence)
 	}
 
 	var cred Credential
 	switch snapshot.AuthStrategy {
 	case "bearer":
 		if snapshot.CredentialRef == nil {
-			return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonCredentialUnavailable)
+			return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonCredentialUnavailable, configVersionEvidence)
 		}
 		cred, err = r.credentials.Resolve(ctx, *snapshot.CredentialRef)
 		if err != nil {
 			if _, ok := err.(*PolicyError); ok {
-				return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonCredentialUnavailable)
+				return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonCredentialUnavailable, configVersionEvidence)
 			}
-			transitionErr := r.transitionRetry(ctx, storeCtx, claim, cycleSendCutoff, ErrorCodeRegistryAccessFailure)
+			transitionErr := r.transitionRetry(ctx, storeCtx, claim, cycleSendCutoff, ErrorCodeRegistryAccessFailure, configVersionEvidence)
 			if transitionErr != nil {
 				return true, transitionErr
 			}
@@ -145,28 +147,28 @@ func (r *Runner) RunOnce(ctx context.Context, storeCtx notificationstore.ActorCo
 		}
 	case "none":
 		if snapshot.ConfigSchemaVersion != 2 || snapshot.CredentialRef != nil {
-			return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonRequestUnbuildable)
+			return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonRequestUnbuildable, configVersionEvidence)
 		}
 	default:
-		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonRequestUnbuildable)
+		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonRequestUnbuildable, configVersionEvidence)
 	}
 
 	addrs, err := r.resolveAddresses(ctx, snapshot.Hostname)
 	if err != nil {
-		return true, r.transitionRetry(ctx, storeCtx, claim, cycleSendCutoff, ErrorCodeDNSFailure)
+		return true, r.transitionRetry(ctx, storeCtx, claim, cycleSendCutoff, ErrorCodeDNSFailure, configVersionEvidence)
 	}
 
 	exception, err := ToCIDRException(snapshot.CIDRException)
 	if err != nil {
-		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonRequestUnbuildable)
+		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonRequestUnbuildable, configVersionEvidence)
 	}
 
 	resolvedIP, err := r.policy.Evaluate(snapshot.Hostname, snapshot.Port, addrs, exception)
 	if err != nil {
 		if _, ok := err.(*PolicyError); ok {
-			return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonDestinationRejected)
+			return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonDestinationRejected, configVersionEvidence)
 		}
-		return true, r.transitionRetry(ctx, storeCtx, claim, cycleSendCutoff, ErrorCodeDNSFailure)
+		return true, r.transitionRetry(ctx, storeCtx, claim, cycleSendCutoff, ErrorCodeDNSFailure, configVersionEvidence)
 	}
 
 	attempt := AttemptContext{
@@ -190,46 +192,46 @@ func (r *Runner) RunOnce(ctx context.Context, storeCtx notificationstore.ActorCo
 			if pe.Reason == ReasonCredentialUnavailable {
 				reason = notificationstore.ReasonCredentialUnavailable
 			}
-			return true, r.transitionDie(ctx, storeCtx, claim, reason)
+			return true, r.transitionDie(ctx, storeCtx, claim, reason, configVersionEvidence)
 		}
-		return true, r.transitionRetry(ctx, storeCtx, claim, cycleSendCutoff, ErrorCodeRegistryAccessFailure)
+		return true, r.transitionRetry(ctx, storeCtx, claim, cycleSendCutoff, ErrorCodeRegistryAccessFailure, configVersionEvidence)
 	}
 
 	now = r.clock.Now()
 	if !now.Before(cycleSendCutoff) {
-		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonDeadlineExceeded)
+		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonDeadlineExceeded, configVersionEvidence)
 	}
 	preflightCutoff := claim.LeaseExpiresAt.Add(-r.cfg.HTTPHardTimeout).Add(-r.cfg.ResultCommitMargin)
 	if !now.Before(preflightCutoff) {
-		return true, r.transitionRetry(ctx, storeCtx, claim, cycleSendCutoff, ErrorCodePreflightTimeout)
+		return true, r.transitionRetry(ctx, storeCtx, claim, cycleSendCutoff, ErrorCodePreflightTimeout, configVersionEvidence)
 	}
 
 	httpReq, err := req.HTTPRequest()
 	if err != nil {
-		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonRequestUnbuildable)
+		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonRequestUnbuildable, configVersionEvidence)
 	}
 
 	// Re-resolve immediately before connect. Any address-set drift or newly
 	// forbidden address is treated as DNS rebinding and no request is sent.
 	rechecked, err := r.resolveAddresses(ctx, snapshot.Hostname)
 	if err != nil {
-		return true, r.transitionRetry(ctx, storeCtx, claim, cycleSendCutoff, ErrorCodeDNSFailure)
+		return true, r.transitionRetry(ctx, storeCtx, claim, cycleSendCutoff, ErrorCodeDNSFailure, configVersionEvidence)
 	}
 	if !sameAddressSet(addrs, rechecked) {
-		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonDestinationRejected)
+		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonDestinationRejected, configVersionEvidence)
 	}
 	if _, err := r.policy.Evaluate(snapshot.Hostname, snapshot.Port, rechecked, exception); err != nil {
-		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonDestinationRejected)
+		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonDestinationRejected, configVersionEvidence)
 	}
 	// DNS is an external dependency and may consume the remaining send/lease
 	// budget. Re-check both cutoffs after the second resolution so an unchanged
 	// address set cannot be sent after its authorization window has expired.
 	now = r.clock.Now()
 	if !now.Before(cycleSendCutoff) {
-		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonDeadlineExceeded)
+		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonDeadlineExceeded, configVersionEvidence)
 	}
 	if !now.Before(preflightCutoff) {
-		return true, r.transitionRetry(ctx, storeCtx, claim, cycleSendCutoff, ErrorCodePreflightTimeout)
+		return true, r.transitionRetry(ctx, storeCtx, claim, cycleSendCutoff, ErrorCodePreflightTimeout, configVersionEvidence)
 	}
 
 	// Once the request has been sent, process shutdown stops new claims but lets
@@ -253,19 +255,19 @@ func (r *Runner) RunOnce(ctx context.Context, storeCtx notificationstore.ActorCo
 
 	switch outcome.OutcomeClass {
 	case notificationstore.OutcomeClassSuccess:
-		return true, r.transitionSucceed(commitCtx, storeCtx, claim, outcome)
+		return true, r.transitionSucceed(commitCtx, storeCtx, claim, outcome, configVersionEvidence)
 	case notificationstore.OutcomeClassRetryableFailure:
 		nextAt := NextAttemptTime(now, cycleSendCutoff, claim.AttemptCount, outcome.RetryAfter, r.cfg.RetryBaseDelay, r.cfg.RetryDelayCap, r.cfg.RetryAfterCap, r.rng)
 		if nextAt == nil {
 			outcome.OutcomeClass = notificationstore.OutcomeClassPermanentFailure
 			outcome.Reason = notificationstore.ReasonDeadlineExceeded
-			return true, r.transition(commitCtx, storeCtx, claim, notificationstore.TransitionDie, outcome, nil)
+			return true, r.transition(commitCtx, storeCtx, claim, notificationstore.TransitionDie, outcome, nil, configVersionEvidence)
 		}
-		return true, r.transitionRetryAt(commitCtx, storeCtx, claim, outcome, *nextAt)
+		return true, r.transitionRetryAt(commitCtx, storeCtx, claim, outcome, *nextAt, configVersionEvidence)
 	case notificationstore.OutcomeClassPermanentFailure:
-		return true, r.transition(commitCtx, storeCtx, claim, notificationstore.TransitionDie, outcome, nil)
+		return true, r.transition(commitCtx, storeCtx, claim, notificationstore.TransitionDie, outcome, nil, configVersionEvidence)
 	default:
-		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonRequestUnbuildable)
+		return true, r.transitionDie(ctx, storeCtx, claim, notificationstore.ReasonRequestUnbuildable, configVersionEvidence)
 	}
 }
 
@@ -290,11 +292,11 @@ func sameAddressSet(a, b []netip.Addr) bool {
 	return true
 }
 
-func (r *Runner) transitionSucceed(ctx context.Context, actor notificationstore.ActorContext, claim notificationstore.LeaseClaim, outcome Outcome) error {
-	return r.transition(ctx, actor, claim, notificationstore.TransitionSucceed, outcome, nil)
+func (r *Runner) transitionSucceed(ctx context.Context, actor notificationstore.ActorContext, claim notificationstore.LeaseClaim, outcome Outcome, configVersion *int64) error {
+	return r.transition(ctx, actor, claim, notificationstore.TransitionSucceed, outcome, nil, configVersion)
 }
 
-func (r *Runner) transitionRetry(ctx context.Context, actor notificationstore.ActorContext, claim notificationstore.LeaseClaim, cycleSendCutoff time.Time, errorCode string) error {
+func (r *Runner) transitionRetry(ctx context.Context, actor notificationstore.ActorContext, claim notificationstore.LeaseClaim, cycleSendCutoff time.Time, errorCode string, configVersion *int64) error {
 	outcome := Outcome{
 		ResultKind:   notificationstore.ResultKindTransportFailure,
 		OutcomeClass: notificationstore.OutcomeClassRetryableFailure,
@@ -304,25 +306,26 @@ func (r *Runner) transitionRetry(ctx context.Context, actor notificationstore.Ac
 	if nextAt == nil {
 		outcome.OutcomeClass = notificationstore.OutcomeClassPermanentFailure
 		outcome.Reason = notificationstore.ReasonDeadlineExceeded
-		return r.transition(ctx, actor, claim, notificationstore.TransitionDie, outcome, nil)
+		return r.transition(ctx, actor, claim, notificationstore.TransitionDie, outcome, nil, configVersion)
 	}
-	return r.transition(ctx, actor, claim, notificationstore.TransitionRetry, outcome, nextAt)
+	return r.transition(ctx, actor, claim, notificationstore.TransitionRetry, outcome, nextAt, configVersion)
 }
 
-func (r *Runner) transitionRetryAt(ctx context.Context, actor notificationstore.ActorContext, claim notificationstore.LeaseClaim, outcome Outcome, nextAt time.Time) error {
-	return r.transition(ctx, actor, claim, notificationstore.TransitionRetry, outcome, &nextAt)
+func (r *Runner) transitionRetryAt(ctx context.Context, actor notificationstore.ActorContext, claim notificationstore.LeaseClaim, outcome Outcome, nextAt time.Time, configVersion *int64) error {
+	return r.transition(ctx, actor, claim, notificationstore.TransitionRetry, outcome, &nextAt, configVersion)
 }
 
-func (r *Runner) transitionDie(ctx context.Context, actor notificationstore.ActorContext, claim notificationstore.LeaseClaim, reason string) error {
+func (r *Runner) transitionDie(ctx context.Context, actor notificationstore.ActorContext, claim notificationstore.LeaseClaim, reason string, configVersion *int64) error {
 	outcome := Outcome{
 		ResultKind:   notificationstore.ResultKindPolicyTermination,
 		OutcomeClass: notificationstore.OutcomeClassPermanentFailure,
 		Reason:       reason,
 	}
-	return r.transition(ctx, actor, claim, notificationstore.TransitionDie, outcome, nil)
+	return r.transition(ctx, actor, claim, notificationstore.TransitionDie, outcome, nil, configVersion)
 }
 
-func (r *Runner) transition(ctx context.Context, actor notificationstore.ActorContext, claim notificationstore.LeaseClaim, transition notificationstore.Transition, outcome Outcome, nextAt *time.Time) error {
+func (r *Runner) transition(ctx context.Context, actor notificationstore.ActorContext, claim notificationstore.LeaseClaim, transition notificationstore.Transition, outcome Outcome, nextAt *time.Time, configVersion *int64) error {
+	outcome.ConfigVersion = configVersion
 	dr := outcome.ToDeliveryResult()
 	req := notificationstore.TransitionRequest{
 		NotificationID:      claim.NotificationID,

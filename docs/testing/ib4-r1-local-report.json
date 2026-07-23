@@ -1,0 +1,43 @@
+{
+  "schema": "negentropy_laby.rc_ib4_r1_local_evidence.v1",
+  "status": "PASS_LOCAL",
+  "recorded_at": "2026-07-23T05:42:39Z",
+  "tested_commit": "05f1f537b17e968089719a6dd9e96abcfe53b0b6",
+  "tested_tree": "750acae93072e0eee59b80188b595bb3179a2246",
+  "scope": {
+    "health_version": true,
+    "notification_vendor_projection": true,
+    "attempt_config_version": true,
+    "migration": 9,
+    "canary_deployment_pack": true,
+    "metadata_only_webhook_receiver": true
+  },
+  "verification": {
+    "go_build": "PASS",
+    "go_vet": "PASS",
+    "go_test_race": "PASS",
+    "go_test_race_count_5": "PASS",
+    "postgresql_integration": "PASS",
+    "migration_1_to_9": "PASS",
+    "migration_9_down_guard": "PASS",
+    "openapi_contract": "PASS",
+    "compose_readiness": "PASS",
+    "canary_receiver_container_smoke": "PASS",
+    "fault_drill": "PASS",
+    "marker_scan": "PASS",
+    "pitr": "PASS"
+  },
+  "pitr": {
+    "schema_version": "9:false",
+    "markers": "before,target",
+    "attempt_config_version_invariant": "claim:null,outcome:2"
+  },
+  "boundaries": {
+    "external_g4_e2e": "NOT_RUN",
+    "g4_e2e": "NOT_PASSED",
+    "g5_canary": "NOT_STARTED",
+    "production_ready": false,
+    "contains_payload": false,
+    "contains_secret": false
+  }
+}

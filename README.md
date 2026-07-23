@@ -96,7 +96,7 @@ Internal caller / operator
 - 设计状态：以 [`design/cdd/module-index.md`](design/cdd/module-index.md) 为准
 - 实现状态：B1–B6 代码、迁移、全部公开 HTTP 契约、worker/recovery、Prometheus、部署与隔离演练
   已机械闭合；B1/B2、B3、B4、B5、B6 及最终 cross-batch re-review 均为 **APPROVED**（0 blocker）。
-- 平台入口：`/health/live`、`/health/ready`、`/metrics`；业务入口以
+- 平台入口：`/health/live`、`/health/ready`、`/health/version`、`/metrics`；业务入口以
   [`docs/api/openapi.yaml`](docs/api/openapi.yaml) 为准。
 - 一键运行：`docker compose --env-file deploy/local.env.example up --build --wait`。示例 secret 仅供
   本地验收；生产必须外部注入。

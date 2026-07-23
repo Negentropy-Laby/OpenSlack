@@ -52,6 +52,9 @@ func ValidateDeliveryResult(req TransitionRequest) (*DeliveryResult, error) {
 	if dr == nil {
 		return nil, Rejection{Category: RejectionInvalidDeliveryResult, Reason: "missing delivery_result"}
 	}
+	if dr.ConfigVersion != nil && *dr.ConfigVersion < 1 {
+		return nil, Rejection{Category: RejectionInvalidDeliveryResult, Reason: "config_version must be positive"}
+	}
 	switch req.RequestedTransition {
 	case TransitionSucceed:
 		if dr.ResultKind != ResultKindHTTPResponse {

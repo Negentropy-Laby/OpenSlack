@@ -76,6 +76,20 @@ func TestDecideTransition_Succeed(t *testing.T) {
 	}
 }
 
+func TestDecideTransitionRejectsNonPositiveConfigVersion(t *testing.T) {
+	invalid := int64(0)
+	req := baseRequest(TransitionSucceed)
+	req.DeliveryResult = &DeliveryResult{
+		ResultKind:    ResultKindHTTPResponse,
+		OutcomeClass:  OutcomeClassSuccess,
+		HTTPStatus:    200,
+		ConfigVersion: &invalid,
+	}
+	if _, err := DecideTransition(workerActor(), req, inFlightNotification()); !IsRejection(err, RejectionInvalidDeliveryResult) {
+		t.Fatalf("expected invalid-delivery-result, got %v", err)
+	}
+}
+
 func TestDecideTransition_Succeed_RejectsWrongKind(t *testing.T) {
 	_, err := DecideTransition(workerActor(), TransitionRequest{
 		NotificationID:      "n-1",

@@ -89,9 +89,9 @@ docker exec "${source_container}" psql -U rc_wsman -d rc_wsman -v ON_ERROR_STOP=
     '${fixture_id}-notification',1,'claimed',now()-interval '30 seconds','pitr-worker','pitr-lease',now()+interval '30 seconds'
   );
   INSERT INTO delivery_attempts (
-    notification_id,attempt_seq,event_kind,outcome_class,result_kind,http_status,recorded_at
+    notification_id,attempt_seq,event_kind,outcome_class,result_kind,http_status,config_version,recorded_at
   ) VALUES (
-    '${fixture_id}-notification',2,'outcome','success','http_response',204,now()
+    '${fixture_id}-notification',2,'outcome','success','http_response',204,2,now()
   );
 " >/dev/null
 
@@ -160,7 +160,7 @@ docker exec "${restore_container}" pg_isready -U rc_wsman -d rc_wsman >/dev/null
 markers="$(docker exec "${restore_container}" psql -U rc_wsman -d rc_wsman -Atc "SELECT string_agg(marker, ',' ORDER BY marker) FROM acceptance_pitr_markers")"
 schema_version="$(docker exec "${restore_container}" psql -U rc_wsman -d rc_wsman -Atc "SELECT version || ':' || dirty FROM schema_migrations")"
 [[ "${markers}" == "before,target" ]] || { echo "unexpected restored markers: ${markers}" >&2; exit 1; }
-[[ "${schema_version}" == "8:false" ]] || { echo "unexpected schema version: ${schema_version}" >&2; exit 1; }
+[[ "${schema_version}" == "9:false" ]] || { echo "unexpected schema version: ${schema_version}" >&2; exit 1; }
 invariants="$(docker exec "${restore_container}" psql -U rc_wsman -d rc_wsman -v ON_ERROR_STOP=1 -Atc "
   SELECT
     EXISTS (SELECT 1 FROM notifications
@@ -194,15 +194,16 @@ invariants="$(docker exec "${restore_container}" psql -U rc_wsman -d rc_wsman -v
     EXISTS (SELECT 1 FROM access_keys k
       WHERE k.key_id='${fixture_id}-key' AND k.principal_id='${fixture_id}-principal'
         AND k.status='active' AND k.pepper_id='local-v1' AND octet_length(k.secret_hash)=32),
-    (SELECT string_agg(attempt_seq::text || ':' || event_kind, ',' ORDER BY attempt_seq)
+    (SELECT string_agg(attempt_seq::text || ':' || event_kind || ':' ||
+      COALESCE(config_version::text,'null'), ',' ORDER BY attempt_seq)
        FROM delivery_attempts WHERE notification_id='${fixture_id}-notification');
 ")"
-[[ "${invariants}" == "t|t|t|t|1:claimed,2:outcome" ]] || { echo "restored business invariants failed: ${invariants}" >&2; exit 1; }
+[[ "${invariants}" == "t|t|t|t|1:claimed:null,2:outcome:2" ]] || { echo "restored business invariants failed: ${invariants}" >&2; exit 1; }
 if docker exec "${restore_container}" psql -U rc_wsman -d rc_wsman -v ON_ERROR_STOP=1 -c \
   "UPDATE delivery_attempts SET reason='mutation-must-fail' WHERE notification_id='${fixture_id}-notification';" >/dev/null 2>&1; then
   echo "restored delivery_attempts append-only guard did not reject mutation" >&2
   exit 1
 fi
 
-printf 'PITR_PASS age=v1.3.1 target_time=%s archived_wal=%s markers=%s schema=%s fixture=%s invariants=notification,vendor_version,audit,access_key,attempt_append_only\n' \
+printf 'PITR_PASS age=v1.3.1 target_time=%s archived_wal=%s markers=%s schema=%s fixture=%s invariants=notification,vendor_version,audit,access_key,attempt_config_version,attempt_append_only\n' \
   "${target_time}" "${archived}" "${markers}" "${schema_version}" "${fixture_id}"

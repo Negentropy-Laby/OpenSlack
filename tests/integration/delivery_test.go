@@ -245,8 +245,11 @@ func TestDeliveryRunner_PostgresEndToEnd(t *testing.T) {
 	if len(history.Items) != 2 {
 		t.Fatalf("attempt history length = %d, want claim+result", len(history.Items))
 	}
+	if history.Items[0].ConfigVersion != nil {
+		t.Fatalf("claim unexpectedly recorded config version: %+v", history.Items[0])
+	}
 	result := history.Items[1]
-	if result.ResultKind != string(notificationstore.ResultKindHTTPResponse) || result.OutcomeClass != string(notificationstore.OutcomeClassSuccess) || result.HTTPStatus == nil || *result.HTTPStatus != http.StatusNoContent {
+	if result.ResultKind != string(notificationstore.ResultKindHTTPResponse) || result.OutcomeClass != string(notificationstore.OutcomeClassSuccess) || result.HTTPStatus == nil || *result.HTTPStatus != http.StatusNoContent || result.ConfigVersion == nil || *result.ConfigVersion != 1 {
 		t.Fatalf("delivery result history: %+v", result)
 	}
 }
@@ -362,7 +365,7 @@ func TestDeliveryRunnerJSONAckPersistsOnlyFrozenRetryCode(t *testing.T) {
 		t.Fatalf("history=%+v err=%v", history, err)
 	}
 	result := history.Items[1]
-	if result.ResultKind != string(notificationstore.ResultKindHTTPResponse) || result.OutcomeClass != string(notificationstore.OutcomeClassRetryableFailure) || result.ErrorCode != "ratelimited" || result.Reason != "" {
+	if result.ResultKind != string(notificationstore.ResultKindHTTPResponse) || result.OutcomeClass != string(notificationstore.OutcomeClassRetryableFailure) || result.ErrorCode != "ratelimited" || result.Reason != "" || result.ConfigVersion == nil || *result.ConfigVersion != 1 {
 		t.Fatalf("ack result=%+v", result)
 	}
 	encoded, err := json.Marshal(result)

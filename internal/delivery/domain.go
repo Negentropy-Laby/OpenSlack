@@ -67,12 +67,13 @@ type AttemptContext struct {
 
 // Outcome is the normalized result of a delivery attempt.
 type Outcome struct {
-	ResultKind   notificationstore.ResultKind
-	OutcomeClass notificationstore.OutcomeClass
-	HTTPStatus   int
-	ErrorCode    string
-	Reason       string
-	RetryAfter   *time.Duration // parsed retryable-HTTP Retry-After hint, not a scheduled time
+	ResultKind    notificationstore.ResultKind
+	OutcomeClass  notificationstore.OutcomeClass
+	HTTPStatus    int
+	ErrorCode     string
+	Reason        string
+	RetryAfter    *time.Duration // parsed retryable-HTTP Retry-After hint, not a scheduled time
+	ConfigVersion *int64
 }
 
 // HealthSignalError asks the worker lifecycle to emit a sanitized health event.
@@ -105,11 +106,12 @@ func (o Outcome) IsRetryable() bool {
 // ToDeliveryResult converts an Outcome to the notificationstore DeliveryResult.
 func (o Outcome) ToDeliveryResult() notificationstore.DeliveryResult {
 	return notificationstore.DeliveryResult{
-		ResultKind:   o.ResultKind,
-		OutcomeClass: o.OutcomeClass,
-		HTTPStatus:   o.HTTPStatus,
-		ErrorCode:    o.ErrorCode,
-		Reason:       o.Reason,
+		ResultKind:    o.ResultKind,
+		OutcomeClass:  o.OutcomeClass,
+		HTTPStatus:    o.HTTPStatus,
+		ErrorCode:     o.ErrorCode,
+		Reason:        o.Reason,
+		ConfigVersion: o.ConfigVersion,
 	}
 }
 

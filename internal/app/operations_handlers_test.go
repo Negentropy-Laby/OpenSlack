@@ -214,7 +214,7 @@ func TestOpsRoutesMatchClosedResponseShapes(t *testing.T) {
 	}}}
 	ops := &fakeOperations{
 		outbox:   operationscontrol.OutboxProjection{},
-		status:   operationscontrol.NotificationStatus{NotificationID: "n-1", State: "dead", Version: 2, DeliveryCycleStartedAt: now, CreatedAt: now},
+		status:   operationscontrol.NotificationStatus{NotificationID: "n-1", VendorID: "vendor-a", State: "dead", Version: 2, DeliveryCycleStartedAt: now, CreatedAt: now},
 		dead:     operationscontrol.DeadPage{Items: []operationscontrol.DeadProjection{{NotificationID: "n-1", VendorID: "vendor-a", State: "dead", Version: 2, DeadAt: now, DeadReason: "deadline_exceeded"}}},
 		attempts: operationscontrol.AttemptPage{Items: []operationscontrol.AttemptProjection{{AttemptSeq: 1, EventKind: "claimed", RecordedAt: now}}},
 		preview:  []operationscontrol.ReplayPreviewItem{{InputIndex: 0, NotificationID: "n-1", Outcome: "eligible", CurrentState: "dead", ExpectedVersion: 2}},

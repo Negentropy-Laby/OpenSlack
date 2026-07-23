@@ -412,6 +412,26 @@ paths:
         "503":
           description: Dependency/config/schema readiness failed
 
+  /health/version:
+    get:
+      tags: [Platform]
+      operationId: deploymentVersion
+      security: []
+      x-network-boundary: deployment-only
+      responses:
+        "200":
+          description: Process is ready and reports the verified deployment digest
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentVersion"
+        "503":
+          description: Process is not ready; deployment identity is still reported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentVersion"
+
   /metrics:
     get:
       tags: [Platform]
@@ -1007,6 +1027,7 @@ components:
       additionalProperties: false
       required:
         - notification_id
+        - vendor_id
         - state
         - version
         - attempt_count
@@ -1015,6 +1036,7 @@ components:
         - created_at
       properties:
         notification_id: {type: string}
+        vendor_id: {$ref: "#/components/schemas/VendorId"}
         state:
           enum: [pending, in_flight, delivered, dead]
         version: {type: integer, minimum: 1}
@@ -1061,6 +1083,7 @@ components:
         attempt_seq: {type: integer, minimum: 1}
         event_kind:
           enum: [claimed, outcome, recovery, replay]
+        config_version: {type: integer, minimum: 1}
         result_kind:
           enum: [http_response, transport_failure, unknown_result, policy_termination]
         outcome_class:
@@ -1069,6 +1092,16 @@ components:
         error_code: {type: string, maxLength: 128}
         reason: {type: string, maxLength: 128}
         recorded_at: {type: string, format: date-time}
+
+    DeploymentVersion:
+      type: object
+      additionalProperties: false
+      required: [ready, deployment_digest]
+      properties:
+        ready: {type: boolean}
+        deployment_digest:
+          type: string
+          pattern: "^sha256:[0-9a-f]{64}$"
 
     AttemptPage:
       type: object

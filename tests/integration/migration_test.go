@@ -216,24 +216,24 @@ func TestMigrationsUpDown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("version after upgrade: %v", err)
 	}
-	if version != 8 {
-		t.Fatalf("version after upgrade = %d, want 8", version)
+	if version != 9 {
+		t.Fatalf("version after upgrade = %d, want 9", version)
 	}
 	if dirty {
 		t.Fatal("migration marked dirty after valid upgrade")
 	}
 
 	if err := m.Steps(-1); err != nil {
-		t.Fatalf("step down 000008: %v", err)
-	}
-	if version, dirty, err = m.Version(); err != nil || version != 7 || dirty {
-		t.Fatalf("version after step down = %d dirty=%v err=%v, want clean 7", version, dirty, err)
-	}
-	if err := m.Steps(1); err != nil {
-		t.Fatalf("step reapply 000008: %v", err)
+		t.Fatalf("step down 000009: %v", err)
 	}
 	if version, dirty, err = m.Version(); err != nil || version != 8 || dirty {
-		t.Fatalf("version after step reapply = %d dirty=%v err=%v, want clean 8", version, dirty, err)
+		t.Fatalf("version after step down = %d dirty=%v err=%v, want clean 8", version, dirty, err)
+	}
+	if err := m.Steps(1); err != nil {
+		t.Fatalf("step reapply 000009: %v", err)
+	}
+	if version, dirty, err = m.Version(); err != nil || version != 9 || dirty {
+		t.Fatalf("version after step reapply = %d dirty=%v err=%v, want clean 9", version, dirty, err)
 	}
 
 	if err := m.Down(); err != nil {
@@ -245,8 +245,58 @@ func TestMigrationsUpDown(t *testing.T) {
 	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
 		t.Fatalf("fresh re-install: %v", err)
 	}
-	if version, dirty, err = m.Version(); err != nil || version != 8 || dirty {
-		t.Fatalf("version after fresh re-install = %d dirty=%v err=%v, want clean 8", version, dirty, err)
+	if version, dirty, err = m.Version(); err != nil || version != 9 || dirty {
+		t.Fatalf("version after fresh re-install = %d dirty=%v err=%v, want clean 9", version, dirty, err)
+	}
+}
+
+func TestMigration000009AttemptConfigVersionAndDownGuard(t *testing.T) {
+	dbURL := testsupport.OpenMigrationSchemaURL(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	pool, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	migrateURL := strings.Replace(dbURL, "postgres://", "pgx5://", 1)
+	m, err := migrate.New(migrationsURL(), migrateURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	if err := m.Steps(9); err != nil {
+		t.Fatalf("install through 000009: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO vendors (vendor_id, owning_scope, lifecycle)
+		VALUES ('vendor-000009', 'team-a', 'active');
+		INSERT INTO notifications (
+			notification_id, caller_id, vendor_id, idempotency_key, request_fingerprint,
+			payload_bytes, state, version, attempt_count, delivery_cycle_started_at, created_at, updated_at
+		) VALUES (
+			'n-000009', 'caller-1', 'vendor-000009', 'key-000009', decode('00','hex'),
+			decode('7b7d','hex'), 'delivered', 2, 1, now(), now(), now()
+		);
+		INSERT INTO delivery_attempts (
+			notification_id, attempt_seq, event_kind, result_kind, outcome_class,
+			http_status, config_version
+		) VALUES (
+			'n-000009', 1, 'outcome', 'http_response', 'success', 204, 1
+		)`); err != nil {
+		t.Fatalf("seed config-version evidence: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO delivery_attempts (
+			notification_id, attempt_seq, event_kind, result_kind, outcome_class,
+			http_status, config_version
+		) VALUES (
+			'n-000009', 2, 'outcome', 'http_response', 'success', 204, 0
+		)`); err == nil {
+		t.Fatal("000009 accepted non-positive config version")
+	}
+	if err := m.Steps(-1); err == nil {
+		t.Fatal("000009 down accepted persisted config-version evidence")
 	}
 }
 

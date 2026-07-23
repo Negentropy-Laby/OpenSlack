@@ -59,6 +59,7 @@ type OutboxProjection struct {
 
 type NotificationStatus struct {
 	NotificationID         string     `json:"notification_id"`
+	VendorID               string     `json:"vendor_id"`
 	State                  string     `json:"state"`
 	Version                int64      `json:"version"`
 	AttemptCount           int        `json:"attempt_count"`
@@ -89,14 +90,15 @@ type DeadPage struct {
 }
 
 type AttemptProjection struct {
-	AttemptSeq   int64     `json:"attempt_seq"`
-	EventKind    string    `json:"event_kind"`
-	ResultKind   string    `json:"result_kind,omitempty"`
-	OutcomeClass string    `json:"outcome_class,omitempty"`
-	HTTPStatus   *int      `json:"http_status,omitempty"`
-	ErrorCode    string    `json:"error_code,omitempty"`
-	Reason       string    `json:"reason,omitempty"`
-	RecordedAt   time.Time `json:"recorded_at"`
+	AttemptSeq    int64     `json:"attempt_seq"`
+	EventKind     string    `json:"event_kind"`
+	ConfigVersion *int64    `json:"config_version,omitempty"`
+	ResultKind    string    `json:"result_kind,omitempty"`
+	OutcomeClass  string    `json:"outcome_class,omitempty"`
+	HTTPStatus    *int      `json:"http_status,omitempty"`
+	ErrorCode     string    `json:"error_code,omitempty"`
+	Reason        string    `json:"reason,omitempty"`
+	RecordedAt    time.Time `json:"recorded_at"`
 }
 
 type AttemptPage struct {
@@ -200,7 +202,12 @@ func (s *Service) ListAttemptHistory(ctx context.Context, op calleraccess.Operat
 	}
 	items := make([]AttemptProjection, 0, len(page.Items))
 	for _, item := range page.Items {
-		items = append(items, AttemptProjection{item.AttemptSeq, string(item.EventKind), item.ResultKind, item.OutcomeClass, item.HTTPStatus, item.ErrorCode, item.Reason, item.RecordedAt})
+		items = append(items, AttemptProjection{
+			AttemptSeq: item.AttemptSeq, EventKind: string(item.EventKind),
+			ConfigVersion: item.ConfigVersion, ResultKind: item.ResultKind,
+			OutcomeClass: item.OutcomeClass, HTTPStatus: item.HTTPStatus,
+			ErrorCode: item.ErrorCode, Reason: item.Reason, RecordedAt: item.RecordedAt,
+		})
 	}
 	return AttemptPage{Items: items, NextCursor: page.NextCursor}, nil
 }
@@ -302,7 +309,14 @@ func storeActor(actor calleraccess.AttenuatedContext) notificationstore.ActorCon
 }
 
 func projectNotification(n notificationstore.Notification) NotificationStatus {
-	return NotificationStatus{string(n.ID), string(n.State), n.Version, n.AttemptCount, n.DeliveryCycleStartedAt, n.ReplayCount, n.LastOutcomeClass, n.LastErrorCode, n.CreatedAt, n.DeliveredAt, n.DeadAt, n.ReplayedAt}
+	return NotificationStatus{
+		NotificationID: string(n.ID), VendorID: n.VendorID, State: string(n.State),
+		Version: n.Version, AttemptCount: n.AttemptCount,
+		DeliveryCycleStartedAt: n.DeliveryCycleStartedAt, ReplayCount: n.ReplayCount,
+		LastOutcomeClass: n.LastOutcomeClass, LastErrorCode: n.LastErrorCode,
+		CreatedAt: n.CreatedAt, DeliveredAt: n.DeliveredAt, DeadAt: n.DeadAt,
+		ReplayedAt: n.ReplayedAt,
+	}
 }
 
 func validateReplayIDs(ids []string, justification string) error {

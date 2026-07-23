@@ -63,6 +63,11 @@ pepper. After durably creating a protected credential file, it acquires a dedica
 lock and atomically creates the fixed OpenSlack caller/auditor principals and their two key verifiers. It is not a
 general Caller Access administration surface.
 
+The IB4 `cmd/canary-webhook-receiver` is a separate evidence-only deployment binary. It is never a delivery authority
+and does not share the service database. It hashes a bounded vendor body in memory, discards the bytes and persists
+only request/idempotency identifiers, digest, size and receive time in a dedicated deployment-owned directory.
+Authenticated queries expose only that closed metadata record.
+
 Vendor Registry administration exposes a closed endpoint-config union. Legacy v1 commands retain their original wire
 shape and are materialized as schema 1 with `http_status_v1`. Explicit schema v2 commands select response policy,
 `bearer|none` authentication and the v2 no-rewrite idempotency mapping. Version changes may stay at the current schema
@@ -179,6 +184,10 @@ Every process also requires `NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST=sha256:<64 l
 system must supply the verified OCI image digest; there is no application default. Configuration rejects a missing,
 uppercase or malformed value before database or network initialization. The value is process metadata, is not stored
 on notification rows, and is returned on every successful intake `202`, including idempotent replay.
+
+Deployment tooling may query `GET /health/version`. It returns only readiness and the same deployment digest, with
+HTTP 200 when ready and 503 otherwise. The endpoint is unauthenticated only inside the deployment network and cannot
+read notification, vendor or credential state.
 
 ## Failure Model
 

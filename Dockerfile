@@ -21,6 +21,7 @@ COPY . .
 FROM builder AS build
 RUN CGO_ENABLED=0 go build -o /bin/server ./cmd/server
 RUN CGO_ENABLED=0 go build -o /bin/bootstrap-openslack ./cmd/bootstrap-openslack
+RUN CGO_ENABLED=0 go build -o /bin/canary-webhook-receiver ./cmd/canary-webhook-receiver
 
 # Production image: minimal Debian base with CA certificates.
 FROM debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818 AS app
@@ -40,3 +41,10 @@ HEALTHCHECK --interval=5s --timeout=3s --start-period=10s --retries=12 \
     CMD ["curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8080/health/ready"]
 
 ENTRYPOINT ["/server"]
+
+FROM app AS canary-webhook-receiver
+COPY --from=build /bin/canary-webhook-receiver /canary-webhook-receiver
+EXPOSE 8090
+HEALTHCHECK --interval=5s --timeout=3s --start-period=5s --retries=12 \
+    CMD ["curl", "--fail", "--silent", "--show-error", "http://127.0.0.1:8090/health/ready"]
+ENTRYPOINT ["/canary-webhook-receiver"]

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/wsman/rc_wsman/deploy/canary/webhook-record.schema.json",
+  "title": "Canary Webhook Evidence Record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "record_id",
+    "request_id",
+    "idempotency_key",
+    "openslack_idempotency_key",
+    "body_digest",
+    "body_size",
+    "received_at"
+  ],
+  "properties": {
+    "schema": {
+      "const": "rc_wsman.canary_webhook_record.v1"
+    },
+    "record_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "idempotency_key": {
+      "type": "string",
+      "maxLength": 255
+    },
+    "openslack_idempotency_key": {
+      "type": "string",
+      "maxLength": 255
+    },
+    "body_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "body_size": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 262144
+    },
+    "received_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

@@ -243,7 +243,7 @@ func (r *Repository) Transition(ctx context.Context, actor notificationstore.Act
 		return notificationstore.TransitionResult{}, err
 	}
 
-	if err := appendAttempt(ctx, tx, n.ID, attemptSeq, decision, actor.ActorID, n.LeaseID, n.LeaseExpiresAt, now); err != nil {
+	if err := appendAttempt(ctx, tx, n.ID, attemptSeq, decision, actor.ActorID, n.LeaseID, n.LeaseExpiresAt, req.DeliveryResult, now); err != nil {
 		return notificationstore.TransitionResult{}, err
 	}
 
@@ -352,7 +352,7 @@ func (r *Repository) RecoverExpiredLeases(ctx context.Context, actor notificatio
 			OutcomeClass:      notificationstore.OutcomeClassRetryableFailure,
 			Reason:            notificationstore.ErrorCodeLeaseExpiredUnknownResult,
 		}
-		if err := appendAttempt(ctx, tx, n.ID, attemptSeq, decision, actor.ActorID, n.LeaseID, n.LeaseExpiresAt, now); err != nil {
+		if err := appendAttempt(ctx, tx, n.ID, attemptSeq, decision, actor.ActorID, n.LeaseID, n.LeaseExpiresAt, nil, now); err != nil {
 			return nil, err
 		}
 		if err := updateNotification(ctx, tx, n, decision, newAttemptCount, newVersion, n.DeliveryCycleStartedAt, actor.ActorID, now); err != nil {
@@ -685,7 +685,7 @@ func applyClaim(ctx context.Context, tx pgx.Tx, id notificationstore.Notificatio
 }
 
 // appendAttempt inserts a delivery_attempts row for a transition.
-func appendAttempt(ctx context.Context, tx pgx.Tx, id notificationstore.NotificationID, seq int64, d notificationstore.TransitionDecision, actorID, leaseID string, leaseExpiresAt *time.Time, recordedAt time.Time) error {
+func appendAttempt(ctx context.Context, tx pgx.Tx, id notificationstore.NotificationID, seq int64, d notificationstore.TransitionDecision, actorID, leaseID string, leaseExpiresAt *time.Time, deliveryResult *notificationstore.DeliveryResult, recordedAt time.Time) error {
 	var httpStatus interface{}
 	if d.HTTPStatus != nil {
 		httpStatus = *d.HTTPStatus
@@ -694,8 +694,12 @@ func appendAttempt(ctx context.Context, tx pgx.Tx, id notificationstore.Notifica
 	if d.EventKind == notificationstore.EventKindClaimed {
 		claimedAt = recordedAt
 	}
+	var configVersion interface{}
+	if deliveryResult != nil && deliveryResult.ConfigVersion != nil {
+		configVersion = *deliveryResult.ConfigVersion
+	}
 	_, err := tx.Exec(ctx, appendAttemptSQL, id, seq, d.EventKind, nullableString(string(d.ResultKind)), nullableString(string(d.OutcomeClass)),
-		httpStatus, nullableString(d.ErrorCode), nullableString(d.Reason), actorID, leaseID, leaseExpiresAt, recordedAt, claimedAt)
+		httpStatus, nullableString(d.ErrorCode), nullableString(d.Reason), actorID, leaseID, leaseExpiresAt, recordedAt, claimedAt, configVersion)
 	if err != nil {
 		return fmt.Errorf("append attempt: %w", err)
 	}

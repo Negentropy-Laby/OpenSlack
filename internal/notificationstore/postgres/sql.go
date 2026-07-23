@@ -88,7 +88,7 @@ ORDER BY dead_at ASC, notification_id ASC
 LIMIT $5`
 
 	listHistorySQL = `SELECT
-    attempt_id, notification_id, attempt_seq, event_kind, claimed_at,
+    attempt_id, notification_id, attempt_seq, event_kind, config_version, claimed_at,
     outcome_class, result_kind, http_status, error_code, reason,
     actor_id, lease_id, lease_expires_at, recorded_at
 FROM delivery_attempts
@@ -104,8 +104,8 @@ WHERE notification_id = $1`
 	appendAttemptSQL = `INSERT INTO delivery_attempts (
     notification_id, attempt_seq, event_kind, result_kind, outcome_class,
     http_status, error_code, reason, actor_id, lease_id, lease_expires_at,
-    recorded_at, claimed_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`
+    recorded_at, claimed_at, config_version
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`
 
 	transitionUpdateSQL = `UPDATE notifications
 SET state = $1,

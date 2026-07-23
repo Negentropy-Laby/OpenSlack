@@ -1,0 +1,34 @@
+services:
+  app:
+    environment:
+      ENV_CREDENTIAL_ALLOWLIST: "CANARY_SLACK_BOT_TOKEN"
+      CANARY_SLACK_BOT_TOKEN: "${CANARY_SLACK_BOT_TOKEN}"
+      WORKER_VENDOR_SCOPE: "${CANARY_VENDOR_SLACK},${CANARY_VENDOR_WEBHOOK}"
+    restart: unless-stopped
+
+  db:
+    restart: unless-stopped
+
+  prometheus:
+    restart: unless-stopped
+
+  webhook-receiver:
+    build:
+      context: ../..
+      target: canary-webhook-receiver
+    environment:
+      WEBHOOK_RECEIVER_BIND: ":8090"
+      WEBHOOK_RECEIVER_STORE: "/evidence"
+      WEBHOOK_AUDIT_TOKEN: "${WEBHOOK_AUDIT_TOKEN}"
+    ports:
+      - "${WEBHOOK_RECEIVER_PORT:-8090}:8090"
+    volumes:
+      - "${WEBHOOK_RECEIVER_EVIDENCE_DIR}:/evidence"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped

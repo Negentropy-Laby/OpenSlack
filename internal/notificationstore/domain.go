@@ -336,6 +336,7 @@ type Attempt struct {
 	NotificationID string
 	AttemptSeq     int64
 	EventKind      EventKind
+	ConfigVersion  *int64
 	ClaimedAt      *time.Time
 	OutcomeClass   string
 	ResultKind     string
@@ -350,11 +351,12 @@ type Attempt struct {
 
 // DeliveryResult is the worker-provided outcome of an attempt.
 type DeliveryResult struct {
-	ResultKind   ResultKind
-	OutcomeClass OutcomeClass
-	HTTPStatus   int    // required for http_response
-	ErrorCode    string // required for transport_failure; optional for http_response
-	Reason       string // required for die variants
+	ResultKind    ResultKind
+	OutcomeClass  OutcomeClass
+	HTTPStatus    int    // required for http_response
+	ErrorCode     string // required for transport_failure; optional for http_response
+	Reason        string // required for die variants
+	ConfigVersion *int64 // set only after the immutable vendor snapshot is acquired
 }
 
 // TransitionRequest is the canonical state-transition command.

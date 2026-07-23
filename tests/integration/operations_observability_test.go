@@ -134,7 +134,7 @@ func TestOperationsDeadPreviewExecuteStartsNewDeliveryCycle(t *testing.T) {
 		t.Fatalf("execute=%+v err=%v", executed, err)
 	}
 	status, err := service.QueryNotification(ctx, op, res.NotificationID)
-	if err != nil || status.State != "pending" || status.AttemptCount != 0 || status.ReplayCount != 1 || !status.DeliveryCycleStartedAt.After(claim.DeliveryCycleStartedAt) {
+	if err != nil || status.VendorID != vendorID || status.State != "pending" || status.AttemptCount != 0 || status.ReplayCount != 1 || !status.DeliveryCycleStartedAt.After(claim.DeliveryCycleStartedAt) {
 		t.Fatalf("status=%+v err=%v", status, err)
 	}
 	history, err := service.ListAttemptHistory(ctx, op, res.NotificationID, 100, "")

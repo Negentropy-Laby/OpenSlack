@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -52,6 +53,44 @@ func TestHealthReady(t *testing.T) {
 	srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health/ready", nil))
 	if rec.Code != http.StatusOK || rec.Body.String() != "ready" {
 		t.Fatalf("ready response = %d %q", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHealthVersionReportsReadinessAndDeploymentDigest(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	srv := NewServer(":0", "/metrics", testDeploymentDigest, nil, logger)
+
+	for _, tc := range []struct {
+		name       string
+		ready      bool
+		wantStatus int
+	}{
+		{name: "not ready", ready: false, wantStatus: http.StatusServiceUnavailable},
+		{name: "ready", ready: true, wantStatus: http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv.SetReady(func() bool { return tc.ready })
+			rec := httptest.NewRecorder()
+			srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health/version", nil))
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d", rec.Code, tc.wantStatus)
+			}
+			if got := rec.Header().Get("Content-Type"); got != "application/json" {
+				t.Fatalf("content type = %q", got)
+			}
+			var body struct {
+				Ready            bool   `json:"ready"`
+				DeploymentDigest string `json:"deployment_digest"`
+			}
+			dec := json.NewDecoder(rec.Body)
+			dec.DisallowUnknownFields()
+			if err := dec.Decode(&body); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if body.Ready != tc.ready || body.DeploymentDigest != testDeploymentDigest {
+				t.Fatalf("body = %+v", body)
+			}
+		})
 	}
 }
 

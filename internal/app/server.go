@@ -7,6 +7,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net"
@@ -98,6 +99,7 @@ func NewServer(addr, metricsPath, deploymentDigest string, pool *pgxpool.Pool, l
 
 	r.Get("/health/live", s.handleLive)
 	r.Get("/health/ready", s.handleReady)
+	r.Get("/health/version", s.handleVersion)
 	r.Get(s.metricsPath, s.handleMetrics)
 
 	// Business routes.
@@ -205,6 +207,27 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ready"))
+}
+
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	ready := s.ready != nil && s.ready()
+	status := http.StatusOK
+	if !ready {
+		status = http.StatusServiceUnavailable
+	}
+	writeJSON(w, status, struct {
+		Ready            bool   `json:"ready"`
+		DeploymentDigest string `json:"deployment_digest"`
+	}{
+		Ready:            ready,
+		DeploymentDigest: s.deploymentDigest,
+	})
+}
+
+func writeJSON(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(value)
 }
 
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {

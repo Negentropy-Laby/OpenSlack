@@ -195,6 +195,9 @@ func TestRunnerB01ActualHTTPResultDiesAtomically(t *testing.T) {
 	if req.DeliveryResult.ResultKind != notificationstore.ResultKindHTTPResponse || req.DeliveryResult.HTTPStatus != 503 || req.DeliveryResult.OutcomeClass != notificationstore.OutcomeClassPermanentFailure || req.DeliveryResult.Reason != notificationstore.ReasonDeadlineExceeded {
 		t.Fatalf("B-01 result: %+v", req.DeliveryResult)
 	}
+	if req.DeliveryResult.ConfigVersion == nil || *req.DeliveryResult.ConfigVersion != 1 {
+		t.Fatalf("B-01 result config version: %+v", req.DeliveryResult)
+	}
 }
 
 func TestRunnerRetryable503HonorsRetryAfterAndCutoff(t *testing.T) {
@@ -360,6 +363,9 @@ func TestRunnerRegistryInvalidCommandCommitsThenSignalsHealth(t *testing.T) {
 	if store.transition.RequestedTransition != notificationstore.TransitionDie || store.transition.DeliveryResult == nil || store.transition.DeliveryResult.Reason != notificationstore.ReasonRequestUnbuildable {
 		t.Fatalf("transition: %+v", store.transition)
 	}
+	if store.transition.DeliveryResult.ConfigVersion != nil {
+		t.Fatalf("pre-snapshot failure recorded config version: %+v", store.transition)
+	}
 	if transport.calls != 0 {
 		t.Fatal("invalid command reached network")
 	}
@@ -385,6 +391,9 @@ func TestRunnerUnknownResponsePolicyFailsBeforeCredentialDNSAndNetwork(t *testin
 	}
 	if result := store.transition.DeliveryResult; store.transition.RequestedTransition != notificationstore.TransitionDie || result == nil || result.ResultKind != notificationstore.ResultKindPolicyTermination || result.Reason != notificationstore.ReasonRequestUnbuildable {
 		t.Fatalf("transition=%+v", store.transition)
+	}
+	if result := store.transition.DeliveryResult; result.ConfigVersion == nil || *result.ConfigVersion != 1 {
+		t.Fatalf("typed snapshot failure omitted config version: %+v", store.transition)
 	}
 }
 
@@ -456,6 +465,9 @@ func TestRunnerAuthNoneDoesNotResolveCredential(t *testing.T) {
 	}
 	if transport.calls != 1 || store.transition.RequestedTransition != notificationstore.TransitionSucceed {
 		t.Fatalf("http=%d transition=%+v", transport.calls, store.transition)
+	}
+	if result := store.transition.DeliveryResult; result.ConfigVersion == nil || *result.ConfigVersion != 1 {
+		t.Fatalf("auth-none result config version: %+v", store.transition)
 	}
 }
 

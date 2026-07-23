@@ -32,8 +32,11 @@ Operations and Observability own no tables. Delivery owns no persistent state.
 ### `delivery_attempts`
 
 Append-only. Unique `(notification_id, attempt_seq)` and opaque attempt ID. Stores claimed/outcome/recovery/replay
-events, actor, lease, result union, sanitized summary and recorded time. Database roles deny UPDATE/DELETE to the
-application role; corrections append a new event.
+events, actor, lease, result union, sanitized summary and recorded time. `config_version` is nullable: claim,
+lease-recovery, replay and failures before Vendor Registry snapshot acquisition keep it NULL; every outcome after a
+valid immutable snapshot records that snapshot's positive version. This permits Canary reconciliation without
+persisting a credential locator, vendor response or payload. Database roles deny UPDATE/DELETE to the application
+role; corrections append a new event.
 
 Primary query index: unique `(notification_id, attempt_seq)` plus
 `(notification_id, attempt_seq, attempt_id)` for stable ascending history pagination.
