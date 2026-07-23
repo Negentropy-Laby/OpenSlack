@@ -50,6 +50,17 @@ describeOnBashHosts('genesis validation Python selection', () => {
     expect(result.stdout).not.toContain('FAIL (invalid YAML)');
   });
 
+  it('fails closed with a distinct diagnostic when no interpreter exists', () => {
+    const fixture = createFixture();
+
+    const result = runGenesis(fixture);
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain('[1/5] openslack.yaml ... FAIL (python/python3 not found)');
+    expect(result.stdout).not.toContain('FAIL (PyYAML not installed)');
+    expect(result.stdout).not.toContain('FAIL (invalid YAML)');
+  });
+
   it('still reports invalid YAML after selecting a PyYAML-capable interpreter', () => {
     const fixture = createFixture();
     writePythonFixture(fixture.bin, 'python3', { yamlAvailable: true, parseSucceeds: false });
