@@ -103,6 +103,96 @@ describe('notification fault run evidence', () => {
     expect(readFileSync(result.evidence.manifestPath, 'utf8')).not.toContain('secret');
   });
 
+  it('validates identity and create-only run ownership before executing fault steps', async () => {
+    const root = temporaryRoot();
+    let executions = 0;
+    const step = {
+      name: 'restart-service',
+      execute: async () => {
+        executions += 1;
+        return { passed: true, code: 'SERVICE_RESTARTED' };
+      },
+    };
+    const identity = {
+      run_id: 'process-restart-preflight',
+      correlation_id: 'canary-2026-07-23',
+      fault_case: 'process_restart' as const,
+      openslack_commit: 'a'.repeat(40),
+      openslack_tree: 'b'.repeat(40),
+      service_commit: 'c'.repeat(40),
+      service_tree: 'd'.repeat(40),
+      service_deployment_digest: `sha256:${'e'.repeat(64)}` as const,
+      watch_config_digest: `sha256:${'f'.repeat(64)}` as const,
+      repository: 'negentropy-laby/openslack-notification-canary-a',
+      route_id: 'webhook-primary',
+      routing_epoch: 1,
+      vendor_id: 'openslack-webhook',
+    };
+
+    await expect(
+      runNotificationFaultHarness({
+        rootPath: root,
+        identity: { ...identity, service_commit: 'invalid' },
+        steps: [step],
+      }),
+    ).rejects.toThrow(TypeError);
+    expect(executions).toBe(0);
+
+    await expect(
+      runNotificationFaultHarness({
+        rootPath: root,
+        identity,
+        steps: [step],
+        now: () => new Date('2026-07-23T00:00:00Z'),
+      }),
+    ).resolves.toMatchObject({ manifest: { status: 'PASS' } });
+    expect(executions).toBe(1);
+
+    await expect(
+      runNotificationFaultHarness({
+        rootPath: root,
+        identity,
+        steps: [step],
+        now: () => new Date('2026-07-23T00:00:00Z'),
+      }),
+    ).rejects.toThrow('FAULT_RUN_ALREADY_SEALED');
+    expect(executions).toBe(1);
+  });
+
+  it('seals invalid adapter result shapes as closed failure codes', async () => {
+    const root = temporaryRoot();
+    const result = await runNotificationFaultHarness({
+      rootPath: root,
+      identity: {
+        run_id: 'invalid-step-result',
+        correlation_id: 'canary-2026-07-23',
+        fault_case: 'disk_boundary',
+        openslack_commit: 'a'.repeat(40),
+        openslack_tree: 'b'.repeat(40),
+        service_commit: 'c'.repeat(40),
+        service_tree: 'd'.repeat(40),
+        service_deployment_digest: `sha256:${'e'.repeat(64)}`,
+        watch_config_digest: `sha256:${'f'.repeat(64)}`,
+        repository: 'negentropy-laby/openslack-notification-canary-a',
+        route_id: 'webhook-primary',
+        routing_epoch: 1,
+        vendor_id: 'openslack-webhook',
+      },
+      steps: [
+        {
+          name: 'disk-checkpoint',
+          execute: async () => ({ passed: true, code: 'invalid prose' }),
+        },
+      ],
+      now: () => new Date('2026-07-23T00:00:00Z'),
+    });
+
+    expect(result.manifest).toMatchObject({
+      status: 'FAIL',
+      checks: [{ passed: false, code: 'FAULT_STEP_RESULT_INVALID' }],
+    });
+  });
+
   it.skipIf(process.platform === 'win32')('fails closed on permissive evidence files', () => {
     const root = temporaryRoot();
     const written = ensureNotificationFaultRun(root, manifest());

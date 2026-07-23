@@ -88,16 +88,9 @@ export interface NotificationFaultHarnessResult {
 export async function runNotificationFaultHarness(
   options: NotificationFaultHarnessOptions,
 ): Promise<NotificationFaultHarnessResult> {
-  if (
-    !Array.isArray(options.steps) ||
-    options.steps.length < 1 ||
-    options.steps.length > 100 ||
-    new Set(options.steps.map((step) => step.name)).size !== options.steps.length
-  ) {
-    throw new TypeError('Fault harness requires one through 100 uniquely named steps.');
-  }
   const now = options.now ?? (() => new Date());
   const startedAt = now().toISOString();
+  preflightNotificationFaultHarness(options, startedAt);
   const checks: NotificationFaultRunCheck[] = [];
   for (const step of options.steps) {
     if (options.signal?.aborted) {
@@ -111,6 +104,19 @@ export async function runNotificationFaultHarness(
     }
     try {
       const result = await step.execute(options.signal);
+      if (
+        typeof result?.passed !== 'boolean' ||
+        typeof result.code !== 'string' ||
+        !/^[A-Z][A-Z0-9_]{0,127}$/u.test(result.code)
+      ) {
+        checks.push({
+          name: step.name,
+          passed: false,
+          code: 'FAULT_STEP_RESULT_INVALID',
+          recorded_at: now().toISOString(),
+        });
+        continue;
+      }
       checks.push({
         name: step.name,
         passed: result.passed,
@@ -141,6 +147,50 @@ export async function runNotificationFaultHarness(
     manifest,
     evidence: ensureNotificationFaultRun(options.rootPath, manifest),
   };
+}
+
+function preflightNotificationFaultHarness(
+  options: NotificationFaultHarnessOptions,
+  startedAt: string,
+): void {
+  if (
+    !Array.isArray(options.steps) ||
+    options.steps.length < 1 ||
+    options.steps.length > 100 ||
+    options.steps.some(
+      (step) =>
+        !isRecord(step) ||
+        !hasExactKeys(step, ['name', 'execute']) ||
+        !isBounded(step.name, 64) ||
+        typeof step.execute !== 'function',
+    ) ||
+    new Set(options.steps.map((step) => step.name)).size !== options.steps.length
+  ) {
+    throw new TypeError('Fault harness requires one through 100 uniquely named valid steps.');
+  }
+
+  validateAndOrderManifest({
+    schema: NOTIFICATION_FAULT_RUN_SCHEMA,
+    ...options.identity,
+    status: 'FAIL',
+    started_at: startedAt,
+    completed_at: startedAt,
+    checks: [
+      {
+        name: 'preflight',
+        passed: false,
+        code: 'FAULT_PREFLIGHT_PENDING',
+        recorded_at: startedAt,
+      },
+    ],
+  });
+
+  const root = ensureSecureNotificationDirectory(options.rootPath);
+  const manifestPath = join(root, `${options.identity.run_id}.json`);
+  const checksumPath = join(root, `${options.identity.run_id}.sha256`);
+  if (existsSync(manifestPath) || existsSync(checksumPath)) {
+    throw new Error('FAULT_RUN_ALREADY_SEALED');
+  }
 }
 
 export function ensureNotificationFaultRun(
