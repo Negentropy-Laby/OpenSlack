@@ -3,11 +3,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NotificationBlobStore } from '../notification-blob-store.js';
+import {
+  createNotificationHandoffKeyV2,
+  createNotificationRouteRecordIdV2,
+} from '../notification-handoff-contracts.js';
 import { createNotificationPayload } from '../notification-payload.js';
 import { NotificationReceiptStore } from '../notification-receipt-store.js';
 import type { NotificationServiceClient } from '../notification-service-client.js';
 import type { NotificationSink } from '../notification-sinks.js';
-import type { IssueRepositoryEvent } from '../repository-event.js';
+import { repositoryEventStableKey, type IssueRepositoryEvent } from '../repository-event.js';
 import type { GitHubWatchRouteV2 } from '../watch-config-v2.js';
 import { WatchDeliveryQueueV2 } from '../watch-delivery-queue-v2.js';
 import { WatchDeliveryRouterV2 } from '../watch-delivery-router-v2.js';
@@ -137,6 +141,31 @@ describe('WatchDeliveryRouterV2', () => {
       'Body is materialized into the protected Blob only.',
     );
   });
+
+  it('derives local projection identity from the persisted canonical repository', async () => {
+    const fixture = createFixture(false);
+    const event = issueEvent();
+
+    await fixture.router.admit(event, [localRoute()]);
+
+    const idempotencyKey = createNotificationHandoffKeyV2(
+      repositoryEventStableKey(event),
+      'console-local',
+      1,
+    );
+    const sent = fixture.events.find((entry) => entry.type === 'notification.sent') as
+      | {
+          object?: { id?: unknown };
+          metadata?: { repository?: unknown };
+        }
+      | undefined;
+    expect(sent).toMatchObject({
+      object: {
+        id: createNotificationRouteRecordIdV2(event.repository.canonicalFullName, idempotencyKey),
+      },
+      metadata: { repository: event.repository.canonicalFullName },
+    });
+  });
 });
 
 function createFixture(
@@ -205,6 +234,17 @@ function directRoute(id = 'webhook-direct'): GitHubWatchRouteV2 {
     sink: 'webhook',
     delivery: {
       backend: 'direct',
+      routing_epoch: 1,
+    },
+  };
+}
+
+function localRoute(): GitHubWatchRouteV2 {
+  return {
+    id: 'console-local',
+    sink: 'webhook',
+    delivery: {
+      backend: 'local',
       routing_epoch: 1,
     },
   };
