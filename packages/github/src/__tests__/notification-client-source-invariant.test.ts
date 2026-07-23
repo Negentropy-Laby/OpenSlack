@@ -46,6 +46,30 @@ describe('notification handoff G3 source invariant', () => {
     expect(v2Router).not.toContain('implements NotificationSink');
     expect(v2Router).not.toContain("type: 'notification.sent'");
   });
+
+  it('keeps read-only reconciliation out of daemon and sender composition', () => {
+    for (const path of [
+      join(githubSource, 'watch-daemon.ts'),
+      join(githubSource, 'watch-delivery-router.ts'),
+      join(githubSource, 'watch-delivery-router-v2.ts'),
+      join(githubSource, 'notification-sinks.ts'),
+    ]) {
+      const source = readFileSync(path, 'utf8');
+      expect(source, `${path} must not instantiate the ops client`).not.toContain(
+        'NotificationServiceOpsClient',
+      );
+      expect(source, `${path} must not instantiate reconciliation`).not.toContain(
+        'NotificationDeliveryReconciler',
+      );
+    }
+
+    const operations = readFileSync(
+      join(githubSource, 'notification-delivery-operations.ts'),
+      'utf8',
+    );
+    expect(operations).toContain('new NotificationServiceOpsClient');
+    expect(operations).toContain('new NotificationDeliveryReconciler');
+  });
 });
 
 function typescriptFiles(root: string): string[] {

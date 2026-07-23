@@ -93,5 +93,10 @@ repositories:
         .commands.map((command) => command.name())
         .sort(),
     ).toEqual(['report', 'status']);
+    expect(
+      notifications!.commands
+        .find((command) => command.name() === 'reconcile')!
+        .options.some((option) => option.long === '--config'),
+    ).toBe(true);
   });
 });

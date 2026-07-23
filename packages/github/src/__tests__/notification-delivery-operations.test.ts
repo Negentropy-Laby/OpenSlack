@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { NotificationDeliveryOperations } from '../notification-delivery-operations.js';
+import type { NotificationVendorEvidence } from '../notification-reconciliation.js';
 import type { NotificationAcceptanceReceiptV1 } from '../notification-receipt-store.js';
+import { NotificationServiceOpsClient } from '../notification-service-ops-client.js';
 import {
   canonicalizeRepositoryName,
   toPersistableRepositoryEvent,
@@ -138,8 +140,15 @@ describe('NotificationDeliveryOperations', () => {
     expect(operations.queueV2.getRoute(record.id)?.state).toBe('rejected');
   });
 
-  it('verifies accepted local receipt identity without reading payload bytes', () => {
-    const operations = new NotificationDeliveryOperations({ workspaceRoot: workspace() });
+  it('reconciles accepted receipt, remote state and vendor metadata without reading payload bytes', async () => {
+    const root = workspace();
+    writeConfig(root, `sha256:${'c'.repeat(64)}`);
+    let evidence: NotificationVendorEvidence | null = null;
+    const operations = new NotificationDeliveryOperations({
+      workspaceRoot: root,
+      opsClient: deliveredOpsClient(`sha256:${'c'.repeat(64)}`),
+      vendorEvidence: { read: () => evidence },
+    });
     const record = enqueue(operations);
     const claim = operations.queueV2.claimNext('worker', 'notification_service');
     if (!claim) throw new Error('Expected claim');
@@ -165,42 +174,36 @@ describe('NotificationDeliveryOperations', () => {
       receipt,
       operations.receiptStore,
     );
+    evidence = {
+      schema: 'openslack.notification_vendor_evidence.v1',
+      route_record_id: record.id,
+      vendor_id: record.vendorId!,
+      idempotency_key: record.idempotencyKey,
+      body_digest: record.blob!.digest,
+      body_size: record.blob!.size,
+      source: 'webhook',
+      delivered_at: '2026-07-23T00:00:02.000Z',
+      recorded_at: '2026-07-23T00:00:03.000Z',
+    };
 
-    expect(operations.reconcile(record.id)).toMatchObject({
+    await expect(operations.reconcile(record.id)).resolves.toMatchObject({
       outcome: 'consistent',
       notificationId: 'notification-1',
-      remoteDeliveryState: 'pending',
+      remoteDeliveryState: 'delivered',
     });
   });
 
   it('validates v2 config, queue, Blob, receipt and credential reference in doctor', async () => {
     const root = workspace();
-    writeFileSync(
-      join(root, '.openslack', 'monitors', 'github-watch.yaml'),
-      `schema: openslack.github_watch.v2
-notification_service:
-  endpoint: https://notifications.example.test
-  credential_ref: env:OPENSLACK_NOTIFICATION_SERVICE_KEY
-  expected_deployment_digest: sha256:${'d'.repeat(64)}
-repositories:
-  - owner: Negentropy-Laby
-    repo: canary
-    events: [issues.opened]
-    routes:
-      - id: webhook-primary
-        sink: webhook
-        delivery:
-          backend: notification_service
-          vendor_id: openslack-webhook
-          routing_epoch: 1
-`,
-      'utf8',
-    );
+    writeConfig(root, `sha256:${'d'.repeat(64)}`);
     const operations = new NotificationDeliveryOperations({
       workspaceRoot: root,
       credentialStore: {
         withSecret: (_reference, operation) => operation('fixture-secret'),
       },
+      auditorCredentialRef: 'env:OPENSLACK_CANARY_AUDITOR_KEY',
+      opsClient: deliveredOpsClient(`sha256:${'d'.repeat(64)}`),
+      vendorEvidence: { read: () => null },
     });
     enqueue(operations);
 
@@ -228,3 +231,84 @@ repositories:
     expect(() => operations.readCanaryArtifact('status')).toThrow('CANARY_ARTIFACT_INVALID');
   });
 });
+
+function writeConfig(root: string, deploymentDigest: `sha256:${string}`): void {
+  writeFileSync(
+    join(root, '.openslack', 'monitors', 'github-watch.yaml'),
+    `schema: openslack.github_watch.v2
+notification_service:
+  endpoint: https://notifications.example.test
+  credential_ref: env:OPENSLACK_NOTIFICATION_SERVICE_KEY
+  expected_deployment_digest: ${deploymentDigest}
+repositories:
+  - owner: Negentropy-Laby
+    repo: canary
+    events: [issues.opened]
+    routes:
+      - id: webhook-primary
+        sink: webhook
+        delivery:
+          backend: notification_service
+          vendor_id: openslack-webhook
+          routing_epoch: 1
+`,
+    'utf8',
+  );
+}
+
+function deliveredOpsClient(deploymentDigest: `sha256:${string}`): NotificationServiceOpsClient {
+  return new NotificationServiceOpsClient({
+    endpoint: 'https://notifications.example.test',
+    credentialRef: 'env:OPENSLACK_CANARY_AUDITOR_KEY',
+    expectedDeploymentDigest: deploymentDigest,
+    credentialStore: {
+      withSecret: (_reference, operation) => operation('fixture-auditor-key'),
+    },
+    fetch: async (input) => {
+      const url = String(input);
+      if (url.endsWith('/health/version')) {
+        return response({ ready: true, deployment_digest: deploymentDigest });
+      }
+      if (url.includes('/attempts?')) {
+        return response({
+          request_id: 'request-attempts',
+          data: {
+            items: [
+              {
+                attempt_seq: 1,
+                event_kind: 'outcome',
+                config_version: 2,
+                result_kind: 'http_response',
+                outcome_class: 'success',
+                http_status: 200,
+                recorded_at: '2026-07-23T00:00:02.000Z',
+              },
+            ],
+          },
+        });
+      }
+      return response({
+        request_id: 'request-status',
+        data: {
+          notification_id: 'notification-1',
+          vendor_id: 'openslack-webhook',
+          state: 'delivered',
+          version: 3,
+          attempt_count: 1,
+          delivery_cycle_started_at: '2026-07-23T00:00:00.000Z',
+          replay_count: 0,
+          last_outcome_class: 'success',
+          created_at: '2026-07-23T00:00:00.000Z',
+          delivered_at: '2026-07-23T00:00:02.000Z',
+        },
+      });
+    },
+  });
+}
+
+function response(value: unknown): Response {
+  return new Response(JSON.stringify(value), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}

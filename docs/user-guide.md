@@ -582,11 +582,27 @@ normal delivery or product branches.
 | `openslack github claim review --issue-number <n> --agent-id <id> --pr-url <url>`            | Verify the owner and move a claimed Issue to review                                           |
 | `openslack github claim complete --issue-number <n> --agent-id <id> --pr-url <url>`          | Complete a merged Issue and verify claim-ref removal                                          |
 | `openslack github issue-done --issue-number <n> --agent-id <id> --pr-url <url>`              | Deprecated strict alias for `claim complete`                                                  |
+| `openslack github notifications doctor [--config <path>]`                                    | Verify v2 queue, Blob/receipt, caller, read-only auditor, service digest, and vendor evidence |
+| `openslack github notifications status`                                                      | Show payload-blind v1/v2 handoff state                                                        |
+| `openslack github notifications queue [--state <state>]`                                     | List payload-blind route records                                                              |
+| `openslack github notifications drain [--apply]`                                             | Preview or run one legacy/v2 drain cycle                                                      |
+| `openslack github notifications retry <id> --reason <text> [--apply]`                        | Preview or start a recovery cycle without changing route identity                             |
+| `openslack github notifications quarantine show <id>`                                        | Inspect a quarantined route without displaying payload                                        |
+| `openslack github notifications reconcile <id> [--config <path>]`                            | Reconcile receipt, service status/attempts, and metadata-only vendor evidence                 |
+| `openslack github notifications canary status\|report`                                       | Read a closed local Canary evidence artifact                                                  |
 
 Claim lifecycle commands require live GitHub evidence and return
 `openslack.claim_lifecycle.v1`. They fail closed on missing/conflicting owner
 markers or unverifiable ref, comment, label, PR, and completion postconditions;
 transport failures are reported with fixed, secret-safe codes.
+
+Notification reconciliation uses a principal separate from the handoff caller.
+Set `OPENSLACK_NOTIFICATION_SERVICE_AUDITOR_CREDENTIAL_REF` to an `env:` or
+`keychain:` reference for a read-only auditor, and set
+`OPENSLACK_NOTIFICATION_VENDOR_EVIDENCE_DIR` to a protected directory of
+create-only mode-`0600` metadata records. The files contain route/vendor/key
+identity, digest, size and timestamps only; commands never read or display Blob
+bytes, raw vendor responses, endpoints, tokens, or resolved credentials.
 
 ## PR Review & Merge Steward (PRMS)
 

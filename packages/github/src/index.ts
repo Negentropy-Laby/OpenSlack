@@ -199,6 +199,26 @@ export type {
   WatchRouteStateV2,
 } from './watch-delivery-queue-v2.js';
 export {
+  NotificationServiceOpsClient,
+  type NotificationOpsResult,
+  type NotificationRemoteState,
+  type NotificationServiceAttempt,
+  type NotificationServiceOpsClientOptions,
+  type NotificationServiceStatus,
+  type NotificationServiceVersionResult,
+} from './notification-service-ops-client.js';
+export {
+  NOTIFICATION_VENDOR_EVIDENCE_SCHEMA,
+  NotificationDeliveryReconciler,
+  NotificationVendorEvidenceStore,
+  type NotificationDeliveryReconcilerOptions,
+  type NotificationReconciliationReport,
+  type NotificationVendorEvidence,
+  type NotificationVendorEvidenceSource,
+} from './notification-reconciliation.js';
+export {
+  NOTIFICATION_AUDITOR_CREDENTIAL_REF_ENV,
+  NOTIFICATION_VENDOR_EVIDENCE_DIR_ENV,
   NotificationDeliveryOperations,
   type NotificationDeliveryDoctorCheck,
   type NotificationDeliveryDoctorReport,

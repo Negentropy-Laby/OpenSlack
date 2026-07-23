@@ -1,7 +1,7 @@
 # Notification Delivery Service Integration
 
-> **Status:** IB3-B daemon/router composition and IB3-C governed operations implemented —
-> `G3_QUEUE_IN_PROGRESS`
+> **Status:** IB3-B daemon/router composition and IB3-C governed operations implemented;
+> IB4-O1 read-only reconciliation is implemented on its stacked branch — `G3_QUEUE_IN_PROGRESS`
 >
 > **Runtime effect:** v1 is unchanged; v2 service admission is fail-closed unless the explicit new-record gate is on.
 >
@@ -348,6 +348,23 @@ prove an accepted embedded/file receipt match. Quarantine remains fail-closed wi
 `REMOTE_RECONCILIATION_REQUIRED` until the IB4 read-only service client supplies a safe-to-retry or archive-only
 decision. Commands and their JSON views omit persisted event data, payload bytes, credentials and raw vendor
 responses.
+
+IB4-O1 adds that independent read-only client and replaces local-only accepted checks with three-party
+reconciliation. `OPENSLACK_NOTIFICATION_SERVICE_AUDITOR_CREDENTIAL_REF` names the `env:` or `keychain:` reference
+for a principal that has `read_notifications` but cannot submit, replay or administer.
+`OPENSLACK_NOTIFICATION_VENDOR_EVIDENCE_DIR` names a protected directory containing one create-only, mode `0600`
+metadata record per route-record ID. Each closed `openslack.notification_vendor_evidence.v1` record contains only
+route/vendor/idempotency identity, body digest and size, sink kind, delivery time and record time; it never contains
+payload bytes, response bodies, endpoint data or credentials. Its executable closed contract is
+`packages/github/src/notification-vendor-evidence.schema.json`.
+
+`doctor` verifies the independently resolved auditor reference, `/health/version` readiness and the frozen
+deployment digest in addition to local queue/Blob/receipt checks. `reconcile` verifies the committed local receipt,
+queries the exact notification and paginated attempt history, requires the successful attempt's actual positive
+vendor `config_version`, and compares the metadata-only Slack or webhook evidence with the frozen queue identity.
+Only that complete agreement may project `remoteDeliveryState=delivered`; missing vendor evidence remains pending
+evidence, and conflicts fail closed. A delivered projection cannot regress. Quarantined routes still cannot be
+silently retried because they lack a committed accepted receipt that could authorize transfer or recovery.
 
 ## V1 Migration And Gates
 
