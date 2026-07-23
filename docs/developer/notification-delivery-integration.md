@@ -340,6 +340,16 @@ processing intent before reading the Blob and calling the dedicated service clie
 gate closed, a new service route fails before Blob or queue admission and polling cannot advance its cursor. Existing
 service records and legacy v1 ownership continue to drain; no setting enables automatic fallback.
 
+Full GitHub event prose is deliberately transient. If a direct v2 route survives a process restart, the worker
+renders it from the redacted persisted event plus fresh live state where that projection exists; issue and push
+notifications can therefore be less rich than an uninterrupted delivery. This bounded fidelity loss avoids
+persisting raw issue, review or commit prose. Service routes are unaffected because their final vendor bytes were
+already persisted in the protected Blob before admission.
+
+Transient-event cleanup reads the route queue once after each bounded drain, rather than once per claimed route.
+An absent composed service client remains a bounded retryable operational failure under the same 25-attempt/24-hour
+horizon and never transfers the route to the direct sender.
+
 IB3-C exposes the payload-blind operational surface under `openslack github notifications`: `doctor`, `status`,
 `queue`, `drain`, `retry`, `quarantine show/resolve`, `reconcile`, and `canary status/report`. Mutating recovery and
 drain actions default to preview and require `--apply`. Retry resets only the attempt/deadline window for a new
@@ -347,7 +357,17 @@ recovery cycle; route ID, epoch, vendor, idempotency key, Blob and encoder remai
 prove an accepted embedded/file receipt match. Quarantine remains fail-closed with
 `REMOTE_RECONCILIATION_REQUIRED` until the IB4 read-only service client supplies a safe-to-retry or archive-only
 decision. Commands and their JSON views omit persisted event data, payload bytes, credentials and raw vendor
-responses.
+responses. Doctor and recovery preflight call the Blob store's full digest-and-size verifier without returning bytes
+to the operations layer; a stat-only size check would miss same-size corruption. An `archive` decision is an
+append-only terminal disposition: it records reconciliation evidence in recovery history while the route remains
+quarantined and terminal, and does not delete the route or transfer delivery authority.
+
+Governed retry and Blob GC share the `queue-v2 → Blob` critical protocol: whichever obtains queue ownership first
+determines whether the terminal Blob is collected or atomically reactivated. Canary artifacts are read through a
+bounded, no-follow regular-file descriptor with pre/post identity checks. A pending acceptance ledger makes
+`doctor` fail with `ACCEPTED_RECEIPT_RECOVERY_REQUIRED` until startup recovery commits the receipt file. After v1
+finalization, v2-aware runtimes validate the final marker, backup and sentinel and skip all legacy reads; direct v1
+readers still fail closed on the deliberately non-JSON sentinel.
 
 IB4-O1 adds that independent read-only client and replaces local-only accepted checks with three-party
 reconciliation. `OPENSLACK_NOTIFICATION_SERVICE_AUDITOR_CREDENTIAL_REF` names the `env:` or `keychain:` reference
@@ -382,7 +402,8 @@ The next phases remain blocked by gates:
 G0-CONTRACT: PASS_WITH_RC_REVIEW_WAIVER; OpenSlack independently reviewed, standalone service owner waiver + PR/CI
 G1-SERVICE: service v2 contract implemented and verified
 G2-CLIENT: body, Blob, receipt and client components verified
-G3-QUEUE: IN PROGRESS; IB3-A queue/migration, IB3-B daemon/router and IB3-C governed operations implemented; merge receipts pending
+G3-QUEUE: IN PROGRESS; IB3-A queue/migration, IB3-B daemon/router and IB3-C governed operations implemented;
+OS-IB3-C is anchored by integration merge `9414509`, with protected-branch synchronization receipts in progress
 G4-E2E: two repositories x Slack and webhook fault matrix
 G5-CANARY: 336 continuous hours + 100 distinct non-replay accepted keys
 ```

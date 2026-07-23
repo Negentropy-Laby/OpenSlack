@@ -1,0 +1,128 @@
+{
+  "schema": "openslack.legacy_branch_disposition.v1",
+  "audit_date": "2026-07-23",
+  "audit_base": "df36ca1d3ab20f5de6cda27778b8638fc79331c0",
+  "source_baseline": "e2eb615d37fe5e2861d6e90e6382ee6c34ff3ede",
+  "issue": "https://github.com/Negentropy-Laby/OpenSlack/issues/251",
+  "status": "REJECTED_OUT_OF_SCOPE",
+  "policy": {
+    "retain_remote_refs": true,
+    "merge_or_rebase_wholesale": false,
+    "future_reuse_requires_fresh_pr_from_current_main": true,
+    "reason": "The branches are historical, mutually stacked experiments based on the 0.2.0 evidence anchor. They are not release-head or notification-integration inputs."
+  },
+  "summary": {
+    "branch_count": 15,
+    "unique_commit_count": 31
+  },
+  "branches": [
+    {
+      "ref": "agent/codex/p1-owner-audit/20260718",
+      "tip": "52abeb11baab095a55427523a127f4f5b1415403",
+      "commits_not_in_audit_base": 21
+    },
+    {
+      "ref": "agent/codex/p1-provider-adapter/20260718",
+      "tip": "629b7f50abc405586112e1ba320a4fc988bd60eb",
+      "commits_not_in_audit_base": 15
+    },
+    {
+      "ref": "agent/codex/p1-provider-api/20260718",
+      "tip": "3948b618cfc3edb4b5d6336fa697c505c312bdb9",
+      "commits_not_in_audit_base": 4
+    },
+    {
+      "ref": "agent/codex/p1-provider-schema/20260718",
+      "tip": "f0f8b2ed1f9d07af49af33918edeaeeb87ae02cf",
+      "commits_not_in_audit_base": 20
+    },
+    {
+      "ref": "agent/codex/p1-repository-monitor/20260718",
+      "tip": "9086142c20e852ded071926664e799d4979d58d0",
+      "commits_not_in_audit_base": 14
+    },
+    {
+      "ref": "agent/codex/p1-sidecar-cli/20260718",
+      "tip": "9698396ef40d42fcb0eba0c09d7323bb93ec5295",
+      "commits_not_in_audit_base": 18
+    },
+    {
+      "ref": "agent/codex/p1-sidecar-docs/20260718",
+      "tip": "e7652710d0a9f1afaabeb0dabac21f3098bb22be",
+      "commits_not_in_audit_base": 19
+    },
+    {
+      "ref": "agent/codex/p1-sidecar-platform/20260718",
+      "tip": "b8a8906ab54bc601f4c13287c522695bf479257d",
+      "commits_not_in_audit_base": 17
+    },
+    {
+      "ref": "agent/codex/p1-sidecar-service/20260718",
+      "tip": "23344bc64508fcbc600f11e224190fd7d86a15d0",
+      "commits_not_in_audit_base": 16
+    },
+    {
+      "ref": "agent/codex/wave1-attach-clean/20260718",
+      "tip": "a613533d41cf1f279d10f7aafcc92eba9dd64e13",
+      "commits_not_in_audit_base": 2
+    },
+    {
+      "ref": "agent/codex/wave1-prms-authority/20260718",
+      "tip": "dd1647adde4f1439fcf87de7be279643ad76e3f1",
+      "commits_not_in_audit_base": 1
+    },
+    {
+      "ref": "agent/codex/wave1-prms-ux/20260718",
+      "tip": "c298502c1765845a427f0881591730cf1e720052",
+      "commits_not_in_audit_base": 2
+    },
+    {
+      "ref": "agent/codex/wave1-public-pack-red/20260718",
+      "tip": "89702df2cd0981dbc73a9cae29971ae9d76f3c0a",
+      "commits_not_in_audit_base": 4
+    },
+    {
+      "ref": "agent/codex/wave1-public-pack/20260718",
+      "tip": "dd778bbfa4dca8f896f5dab18386eb08034b2e42",
+      "commits_not_in_audit_base": 2
+    },
+    {
+      "ref": "agent/codex/wave1-release-docs/20260718",
+      "tip": "43c144bab08d035642c52ce7feb178d93982d453",
+      "commits_not_in_audit_base": 2
+    }
+  ],
+  "rejected_commits": [
+    "00f8a8fde82bfbd6c91b53548d2af187c5b1fabe",
+    "16be797a3ded7d13e2a30ea141cb109b5f84896e",
+    "23344bc64508fcbc600f11e224190fd7d86a15d0",
+    "258f447cde76c4deb8901e3707c990eb3bf353ba",
+    "270d585b6cbad742ce3a17f203aa3cc205cad7b0",
+    "383185e43bad08ebbef0f27675d6f922e5faa445",
+    "3948b618cfc3edb4b5d6336fa697c505c312bdb9",
+    "43c144bab08d035642c52ce7feb178d93982d453",
+    "471f9a5e06769189cb698a926107567b17cbfe02",
+    "4bbdd071f88429ba61e5e89708dea3ef674f3e51",
+    "52abeb11baab095a55427523a127f4f5b1415403",
+    "533a5032e242994de80284f87b166cf480a7a6e6",
+    "5586bd13c641279af085142309bc8e94f2a1419c",
+    "629b7f50abc405586112e1ba320a4fc988bd60eb",
+    "748dd9bdee7f5efc5c8ea4b60c3157eefd434704",
+    "863df765dc0751dfb350ba19c174cf1c8c7f0a26",
+    "89702df2cd0981dbc73a9cae29971ae9d76f3c0a",
+    "8c83b6ed779047075d76cf26cf49a99778be16c5",
+    "9086142c20e852ded071926664e799d4979d58d0",
+    "9351a0f444d8c00321e38b271542349d10ea96cc",
+    "9698396ef40d42fcb0eba0c09d7323bb93ec5295",
+    "a613533d41cf1f279d10f7aafcc92eba9dd64e13",
+    "b8a8906ab54bc601f4c13287c522695bf479257d",
+    "c298502c1765845a427f0881591730cf1e720052",
+    "ce0d90eb3cdcc504547611acdf8f4d10cc775d5f",
+    "dd1647adde4f1439fcf87de7be279643ad76e3f1",
+    "dd778bbfa4dca8f896f5dab18386eb08034b2e42",
+    "e1bd4b7c10587bcc5fbcde6e4c5cd3b88b03d7f9",
+    "e7652710d0a9f1afaabeb0dabac21f3098bb22be",
+    "f0f8b2ed1f9d07af49af33918edeaeeb87ae02cf",
+    "f190098b6e0550afbdce1948a2c6fb9f01de42b0"
+  ]
+}

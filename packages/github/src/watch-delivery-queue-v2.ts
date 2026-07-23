@@ -3,7 +3,6 @@ import {
   closeSync,
   existsSync,
   fsyncSync,
-  lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -11,7 +10,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import {
   NOTIFICATION_HANDOFF_POLICY,
   createNotificationHandoffKeyV2,
@@ -31,8 +30,10 @@ import type {
   NotificationAcceptanceReceiptV1,
   NotificationReceiptStore,
 } from './notification-receipt-store.js';
+import type { NotificationBlobGcResult, NotificationBlobStore } from './notification-blob-store.js';
 import type { PersistableRepositoryEvent } from './repository-event.js';
 import type { GitHubWatchRouteV2 } from './watch-config-v2.js';
+import { withNotificationStorageLock } from './notification-storage-fs.js';
 import {
   validatePersistableRepositoryEvent,
   type WatchDeliveryQueue,
@@ -242,7 +243,6 @@ const DEFAULT_POLICY: WatchDeliveryQueueV2Policy = Object.freeze({
 export class WatchDeliveryQueueV2 {
   readonly statePath: string;
   private readonly stateDir: string;
-  private readonly lockPath: string;
   private readonly policy: WatchDeliveryQueueV2Policy;
   private readonly now: () => Date;
   private readonly nonce: () => string;
@@ -251,7 +251,6 @@ export class WatchDeliveryQueueV2 {
   constructor(stateDir?: string, options: WatchDeliveryQueueV2Options = {}) {
     this.stateDir = resolve(stateDir ?? join(process.cwd(), '.openslack.local', 'daemon'));
     this.statePath = join(this.stateDir, 'delivery-state.v2.json');
-    this.lockPath = `${this.statePath}.lock`;
     this.policy = { ...DEFAULT_POLICY, ...options.policy };
     validatePolicy(this.policy);
     this.now = options.now ?? (() => new Date());
@@ -640,45 +639,56 @@ export class WatchDeliveryQueueV2 {
     });
   }
 
-  applyRecovery(id: string, request: WatchRouteRecoveryRequestV2): WatchRouteRecordV2 {
-    return this.mutate((state, now) => {
+  applyRecovery(
+    id: string,
+    request: WatchRouteRecoveryRequestV2,
+    blobStore?: NotificationBlobStore,
+  ): WatchRouteRecordV2 {
+    return this.withLock(() => {
+      const now = this.now();
+      const state = this.loadState(now);
+      expireProcessingLeases(state, now);
+      exhaustUnclaimableServiceRoutes(state, now);
       const record = requireRecoverableRoute(state, id);
       validateRecoveryRequest(record, request);
-      const previousState = record.state as WatchRouteRecoveryEntryV2['previousState'];
-      const timestamp = now.toISOString();
-      const nextCycle =
-        request.decision === 'retry' ? record.recoveryCycle + 1 : record.recoveryCycle;
-      (record.recoveryHistory ??= []).push({
-        cycle: nextCycle,
-        decision: request.decision,
-        operator: request.operator.trim(),
-        reason: request.reason.trim(),
-        previousState,
-        recordedAt: timestamp,
-        ...(request.reconciliation
-          ? { reconciliation: structuredClone(request.reconciliation) }
-          : {}),
-      });
       if (request.decision === 'archive') {
-        record.updatedAt = timestamp;
-        return cloneRoute(record);
+        const result = applyRecoveryTransition(record, request, now);
+        this.persistUpdatedState(state, now);
+        return result;
       }
+      if (!blobStore || !record.blob) {
+        throw queueError(
+          'QUEUE_TRANSITION_INVALID',
+          'Retry recovery requires the original Blob and its guarded store.',
+        );
+      }
+      return blobStore.withVerifiedBlob(record.blob.digest, record.blob.size, () => {
+        const result = applyRecoveryTransition(record, request, now);
+        this.persistUpdatedState(state, now);
+        return result;
+      });
+    });
+  }
 
-      record.recoveryCycle = nextCycle;
-      record.state = 'pending';
-      record.authority = 'openslack';
-      record.attemptCount = 0;
-      record.availableAt = timestamp;
-      record.deadlineAt = new Date(
-        now.getTime() + NOTIFICATION_HANDOFF_POLICY.deadlineMs,
-      ).toISOString();
-      record.updatedAt = timestamp;
-      record.remoteDeliveryState = 'unknown';
-      delete record.terminalReason;
-      delete record.terminalAt;
-      delete record.completedAt;
-      delete record.lastDiagnostic;
-      return cloneRoute(record);
+  /**
+   * Queue-aware GC serializes eligibility against governed recovery using the
+   * frozen queue-v2 -> Blob lock order.
+   */
+  collectBlobGarbage(
+    blobStore: NotificationBlobStore,
+    eligibleDigests: ReadonlySet<string>,
+  ): NotificationBlobGcResult {
+    return this.withLock(() => {
+      const state = this.loadState(this.now());
+      const activeDigests = new Set(
+        state.routes
+          .filter(
+            (record) =>
+              record.blob && (record.authority === 'openslack' || record.authority === 'legacy_v1'),
+          )
+          .map((record) => record.blob!.digest),
+      );
+      return blobStore.collectGarbage({ activeDigests, eligibleDigests });
     });
   }
 
@@ -786,41 +796,25 @@ export class WatchDeliveryQueueV2 {
   }
 
   private withLock<T>(operation: () => T): T {
-    mkdirSync(this.stateDir, { recursive: true, mode: 0o700 });
-    const deadline = Date.now() + this.policy.lockTimeoutMs;
-    const owner = {
-      pid: process.pid,
-      nonce: this.nonce(),
-      createdAt: new Date().toISOString(),
-    };
-    while (true) {
-      try {
-        const descriptor = openSync(this.lockPath, 'wx', 0o600);
-        try {
-          writeFileSync(descriptor, JSON.stringify(owner), 'utf8');
-          fsyncSync(descriptor);
-        } finally {
-          closeSync(descriptor);
-        }
-        break;
-      } catch (error) {
-        if (!isNodeError(error, 'EEXIST')) throw error;
-        isolateStaleLock(this.lockPath, this.policy.lockStaleMs);
-        if (Date.now() >= deadline) {
-          throw queueError('QUEUE_LOCK_TIMEOUT', 'Timed out waiting for the watch v2 queue lock.');
-        }
-        blockFor(Math.min(25, Math.max(1, deadline - Date.now())));
-      }
-    }
     try {
-      return operation();
-    } finally {
-      try {
-        const current = JSON.parse(readFileSync(this.lockPath, 'utf8')) as { nonce?: unknown };
-        if (current.nonce === owner.nonce) rmSync(this.lockPath, { force: true });
-      } catch {
-        // Never remove a lock whose ownership cannot be proven.
+      return withNotificationStorageLock(
+        this.stateDir,
+        basename(`${this.statePath}.lock`),
+        {
+          lockTimeoutMs: this.policy.lockTimeoutMs,
+          lockStaleMs: this.policy.lockStaleMs,
+          nonce: this.nonce,
+        },
+        operation,
+      );
+    } catch (error) {
+      if ((error as { code?: unknown }).code === 'STORAGE_LOCK_TIMEOUT') {
+        throw queueError('QUEUE_LOCK_TIMEOUT', 'Timed out waiting for the watch v2 queue lock.');
       }
+      if ((error as { code?: unknown }).code === 'STORAGE_PATH_UNSAFE') {
+        throw queueError('QUEUE_STATE_INVALID', 'Watch delivery v2 queue lock path is unsafe.');
+      }
+      throw error;
     }
   }
 }
@@ -1244,6 +1238,45 @@ function validateRecoveryRequest(
       'Reconciliation evidence is only accepted for quarantined routes.',
     );
   }
+}
+
+function applyRecoveryTransition(
+  record: WatchRouteRecordV2,
+  request: WatchRouteRecoveryRequestV2,
+  now: Date,
+): WatchRouteRecordV2 {
+  const previousState = record.state as WatchRouteRecoveryEntryV2['previousState'];
+  const timestamp = now.toISOString();
+  const nextCycle = request.decision === 'retry' ? record.recoveryCycle + 1 : record.recoveryCycle;
+  (record.recoveryHistory ??= []).push({
+    cycle: nextCycle,
+    decision: request.decision,
+    operator: request.operator.trim(),
+    reason: request.reason.trim(),
+    previousState,
+    recordedAt: timestamp,
+    ...(request.reconciliation ? { reconciliation: structuredClone(request.reconciliation) } : {}),
+  });
+  if (request.decision === 'archive') {
+    record.updatedAt = timestamp;
+    return cloneRoute(record);
+  }
+
+  record.recoveryCycle = nextCycle;
+  record.state = 'pending';
+  record.authority = 'openslack';
+  record.attemptCount = 0;
+  record.availableAt = timestamp;
+  record.deadlineAt = new Date(
+    now.getTime() + NOTIFICATION_HANDOFF_POLICY.deadlineMs,
+  ).toISOString();
+  record.updatedAt = timestamp;
+  record.remoteDeliveryState = 'unknown';
+  delete record.terminalReason;
+  delete record.terminalAt;
+  delete record.completedAt;
+  delete record.lastDiagnostic;
+  return cloneRoute(record);
 }
 
 function validateRecoveryEntry(value: unknown): asserts value is WatchRouteRecoveryEntryV2 {
@@ -1742,60 +1775,6 @@ function queueError(
   return new WatchDeliveryQueueV2Error(code, message);
 }
 
-function isolateStaleLock(path: string, staleMs: number): void {
-  let status: ReturnType<typeof lstatSync>;
-  try {
-    status = lstatSync(path);
-  } catch (error) {
-    if (isNodeError(error, 'ENOENT')) return;
-    throw error;
-  }
-  if (status.isSymbolicLink() || !status.isFile()) {
-    throw queueError(
-      'QUEUE_STATE_INVALID',
-      'Watch delivery v2 queue lock is a link, junction or non-regular file.',
-    );
-  }
-  if (process.platform !== 'win32' && (status.mode & 0o777) !== 0o600) {
-    throw queueError(
-      'QUEUE_STATE_INVALID',
-      'Watch delivery v2 queue lock permissions must be 0600.',
-    );
-  }
-
-  try {
-    const parsed = JSON.parse(readFileSync(path, 'utf8')) as { pid?: unknown };
-    const age = Date.now() - status.mtimeMs;
-    if (
-      typeof parsed.pid !== 'number' ||
-      !Number.isSafeInteger(parsed.pid) ||
-      parsed.pid < 1 ||
-      isProcessAlive(parsed.pid) ||
-      age <= staleMs
-    ) {
-      return;
-    }
-    rmSync(path, { force: true });
-  } catch (error) {
-    if (isNodeError(error, 'ENOENT')) return;
-    // A malformed or concurrently changed lock is unknown ownership and must
-    // remain in place so acquisition fails closed instead of risking split ownership.
-  }
-}
-
-function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return !isNodeError(error, 'ESRCH');
-  }
-}
-
-function isNodeError(error: unknown, code: string): error is NodeJS.ErrnoException {
-  return error instanceof Error && (error as NodeJS.ErrnoException).code === code;
-}
-
 function fsyncDirectoryBestEffort(path: string): void {
   if (process.platform === 'win32') return;
   try {
@@ -1808,9 +1787,4 @@ function fsyncDirectoryBestEffort(path: string): void {
   } catch {
     // Some filesystems do not support directory fsync.
   }
-}
-
-function blockFor(milliseconds: number): void {
-  const state = new Int32Array(new SharedArrayBuffer(4));
-  Atomics.wait(state, 0, 0, milliseconds);
 }

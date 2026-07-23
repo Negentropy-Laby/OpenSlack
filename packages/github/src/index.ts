@@ -275,6 +275,7 @@ export type {
   NotificationBlobReadResult,
   NotificationBlobStoreErrorCode,
   NotificationBlobStoreOptions,
+  NotificationBlobVerifyResult,
 } from './notification-blob-store.js';
 export {
   NOTIFICATION_RECEIPT_STORE_RELATIVE_PATH,

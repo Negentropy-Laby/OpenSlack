@@ -4,6 +4,7 @@ import {
   NotificationReceiptStore,
   type NotificationAcceptanceReceiptV1,
 } from '../notification-receipt-store.js';
+import { withNotificationStorageLock } from '../notification-storage-fs.js';
 
 const [mode, rootPath, encoded, option] = process.argv.slice(2);
 if (!mode || !rootPath || !encoded) throw new Error('Missing notification storage worker input.');
@@ -41,6 +42,12 @@ if (mode === 'blob-put') {
   ) as NotificationAcceptanceReceiptV1;
   const result = new NotificationReceiptStore({ rootPath }).ensureFromEmbeddedReceipt(receipt);
   process.stdout.write(JSON.stringify({ ok: true, created: result.created }));
+} else if (mode === 'storage-lock') {
+  withNotificationStorageLock(rootPath, encoded, { lockStaleMs: 1, lockTimeoutMs: 2_000 }, () => {
+    const state = new Int32Array(new SharedArrayBuffer(4));
+    Atomics.wait(state, 0, 0, Number(option));
+  });
+  process.stdout.write(JSON.stringify({ ok: true }));
 } else {
   throw new Error(`Unknown notification storage worker mode: ${mode}`);
 }

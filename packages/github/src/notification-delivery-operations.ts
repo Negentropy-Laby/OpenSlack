@@ -1,14 +1,19 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import type { CredentialStore } from '@openslack/credentials';
 import { createDefaultCredentialStore } from '@openslack/credentials';
-import { NotificationBlobStore, notificationBlobStorePath } from './notification-blob-store.js';
+import {
+  NotificationBlobStore,
+  NotificationBlobStoreError,
+  notificationBlobStorePath,
+} from './notification-blob-store.js';
 import {
   NotificationReceiptStore,
   notificationReceiptStorePath,
 } from './notification-receipt-store.js';
 import {
   WatchDeliveryQueueV2,
+  WatchDeliveryQueueV2Error,
   type WatchDeliveryQueueV2Stats,
   type WatchRouteRecordV2,
   type WatchRouteRecoveryEntryV2,
@@ -26,6 +31,7 @@ import {
   type NotificationReconciliationReport,
   type NotificationVendorEvidenceSource,
 } from './notification-reconciliation.js';
+import { ensureSecureNotificationDirectory } from './notification-storage-fs.js';
 
 export const NOTIFICATION_AUDITOR_CREDENTIAL_REF_ENV =
   'OPENSLACK_NOTIFICATION_SERVICE_AUDITOR_CREDENTIAL_REF';
@@ -82,6 +88,7 @@ export interface NotificationDeliveryOperationsOptions {
   vendorEvidenceRoot?: string;
   opsClient?: NotificationServiceOpsClient;
   vendorEvidence?: NotificationVendorEvidenceSource;
+  canaryReadCheckpoint?: (checkpoint: 'opened', path: string) => void;
 }
 
 /**
@@ -101,6 +108,7 @@ export class NotificationDeliveryOperations {
   private readonly vendorEvidenceRoot?: string;
   private readonly injectedOpsClient?: NotificationServiceOpsClient;
   private readonly injectedVendorEvidence?: NotificationVendorEvidenceSource;
+  private readonly canaryReadCheckpoint?: NotificationDeliveryOperationsOptions['canaryReadCheckpoint'];
 
   constructor(options: NotificationDeliveryOperationsOptions = {}) {
     this.workspaceRoot = resolve(options.workspaceRoot ?? process.cwd());
@@ -121,13 +129,20 @@ export class NotificationDeliveryOperations {
       options.vendorEvidenceRoot ?? process.env[NOTIFICATION_VENDOR_EVIDENCE_DIR_ENV]?.trim();
     this.injectedOpsClient = options.opsClient;
     this.injectedVendorEvidence = options.vendorEvidence;
+    this.canaryReadCheckpoint = options.canaryReadCheckpoint;
   }
 
   status(): {
     queue: WatchDeliveryQueueV2Stats;
     legacy: ReturnType<WatchDeliveryQueue['getStats']>;
+    legacyMigration: 'active' | 'finalized';
   } {
-    return { queue: this.queueV2.getStats(), legacy: this.queueV1.getStats() };
+    const finalized = this.queueV1.isV2MigrationFinalized(this.queueV2.statePath);
+    return {
+      queue: this.queueV2.getStats(),
+      legacy: finalized ? emptyLegacyStats() : this.queueV1.getStats(),
+      legacyMigration: finalized ? 'finalized' : 'active',
+    };
   }
 
   listRoutes(): NotificationDeliveryRouteView[] {
@@ -151,8 +166,14 @@ export class NotificationDeliveryOperations {
       detail: parsed.valid ? 'Explicit v2 schema selected.' : parsed.errors.join('; '),
     });
 
+    let routes: WatchRouteRecordV2[] = [];
+    let queueReadable = false;
+    let pendingReceiptLedgers = 0;
     try {
       const stats = this.queueV2.getStats();
+      routes = this.queueV2.listRoutes();
+      queueReadable = true;
+      pendingReceiptLedgers = stats.pendingReceiptLedgers;
       checks.push({
         name: 'queue_v2',
         passed: true,
@@ -170,15 +191,14 @@ export class NotificationDeliveryOperations {
 
     let blobFailures = 0;
     let receiptFailures = 0;
-    for (const route of this.queueV2.listRoutes()) {
+    for (const route of routes) {
       if (
         route.backend === 'notification_service' &&
         route.blob &&
         route.authority === 'openslack'
       ) {
         try {
-          const blob = this.blobStore.read(route.blob.digest);
-          if (blob.size !== route.blob.size) blobFailures += 1;
+          this.blobStore.verify(route.blob.digest, route.blob.size);
         } catch {
           blobFailures += 1;
         }
@@ -193,15 +213,31 @@ export class NotificationDeliveryOperations {
     }
     checks.push({
       name: 'active_blobs',
-      passed: blobFailures === 0,
-      code: blobFailures === 0 ? 'ACTIVE_BLOBS_VALID' : 'ACTIVE_BLOBS_INVALID',
-      detail: `${blobFailures} active Blob verification failure(s).`,
+      passed: queueReadable && blobFailures === 0,
+      code: !queueReadable
+        ? 'ACTIVE_BLOBS_UNAVAILABLE'
+        : blobFailures === 0
+          ? 'ACTIVE_BLOBS_VALID'
+          : 'ACTIVE_BLOBS_INVALID',
+      detail: queueReadable
+        ? `${blobFailures} active Blob verification failure(s).`
+        : 'Active Blob references could not be enumerated from queue v2.',
     });
     checks.push({
       name: 'accepted_receipts',
-      passed: receiptFailures === 0,
-      code: receiptFailures === 0 ? 'ACCEPTED_RECEIPTS_VALID' : 'ACCEPTED_RECEIPTS_INVALID',
-      detail: `${receiptFailures} committed receipt verification failure(s).`,
+      passed: queueReadable && pendingReceiptLedgers === 0 && receiptFailures === 0,
+      code: !queueReadable
+        ? 'ACCEPTED_RECEIPTS_UNAVAILABLE'
+        : pendingReceiptLedgers > 0
+          ? 'ACCEPTED_RECEIPT_RECOVERY_REQUIRED'
+          : receiptFailures === 0
+            ? 'ACCEPTED_RECEIPTS_VALID'
+            : 'ACCEPTED_RECEIPTS_INVALID',
+      detail: !queueReadable
+        ? 'Committed receipt references could not be enumerated from queue v2.'
+        : pendingReceiptLedgers > 0
+          ? `${pendingReceiptLedgers} accepted receipt ledger(s) require local crash recovery.`
+          : `${receiptFailures} committed receipt verification failure(s).`,
     });
 
     if (parsed.valid && parsed.config?.notification_service) {
@@ -360,19 +396,36 @@ export class NotificationDeliveryOperations {
       reconciliation?: WatchRouteRecoveryEntryV2['reconciliation'];
     },
   ): WatchRouteRecordV2 {
-    const route = this.queueV2.getRoute(id);
+    let route: WatchRouteRecordV2 | null;
+    try {
+      route = this.queueV2.getRoute(id);
+    } catch (error) {
+      if (error instanceof WatchDeliveryQueueV2Error) {
+        throw new Error('NOTIFICATION_LOCAL_STATE_INVALID');
+      }
+      throw error;
+    }
     if (!route?.blob) throw new Error('BLOB_NOT_AVAILABLE');
-    const blob = this.blobStore.read(route.blob.digest);
-    if (blob.size !== route.blob.size) throw new Error('BLOB_NOT_AVAILABLE');
     const request: WatchRouteRecoveryRequestV2 = {
       decision: 'retry',
       operator: options.operator,
       reason: options.reason,
       ...(options.reconciliation ? { reconciliation: options.reconciliation } : {}),
     };
-    return options.apply
-      ? this.queueV2.applyRecovery(id, request)
-      : this.queueV2.planRecovery(id, request);
+    if (!options.apply) {
+      try {
+        this.blobStore.verify(route.blob.digest, route.blob.size);
+      } catch (error) {
+        throw safeBlobRecoveryError(error);
+      }
+      return this.queueV2.planRecovery(id, request);
+    }
+    try {
+      return this.queueV2.applyRecovery(id, request, this.blobStore);
+    } catch (error) {
+      if (error instanceof NotificationBlobStoreError) throw safeBlobRecoveryError(error);
+      throw error;
+    }
   }
 
   resolveQuarantine(
@@ -416,10 +469,10 @@ export class NotificationDeliveryOperations {
       'notification-canary',
       `${name}.json`,
     );
-    if (!existsSync(path)) return null;
     try {
-      if (statSync(path).size > 64 * 1024) throw new Error('CANARY_ARTIFACT_INVALID');
-      return sanitizeCanaryArtifact(JSON.parse(readFileSync(path, 'utf8')) as unknown, name);
+      const bytes = readSecureCanaryArtifact(path, 64 * 1024, this.canaryReadCheckpoint);
+      if (bytes === null) return null;
+      return sanitizeCanaryArtifact(JSON.parse(bytes.toString('utf8')) as unknown, name);
     } catch {
       throw new Error('CANARY_ARTIFACT_INVALID');
     }
@@ -449,6 +502,66 @@ export class NotificationDeliveryOperations {
     return this.vendorEvidenceRoot
       ? new NotificationVendorEvidenceStore(this.vendorEvidenceRoot)
       : null;
+  }
+}
+
+function readSecureCanaryArtifact(
+  path: string,
+  maximumBytes: number,
+  checkpoint?: NotificationDeliveryOperationsOptions['canaryReadCheckpoint'],
+): Buffer | null {
+  let pathBefore: ReturnType<typeof lstatSync>;
+  try {
+    pathBefore = lstatSync(path, { bigint: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+  if (
+    pathBefore.isSymbolicLink() ||
+    !pathBefore.isFile() ||
+    (process.platform !== 'win32' && (Number(pathBefore.mode) & 0o777) !== 0o600)
+  ) {
+    throw new Error('CANARY_ARTIFACT_UNSAFE');
+  }
+  ensureSecureNotificationDirectory(dirname(path));
+  const noFollow = typeof constants.O_NOFOLLOW === 'number' ? constants.O_NOFOLLOW : 0;
+  const descriptor = openSync(path, constants.O_RDONLY | noFollow);
+  try {
+    const before = fstatSync(descriptor, { bigint: true });
+    if (
+      !before.isFile() ||
+      before.dev !== pathBefore.dev ||
+      before.ino !== pathBefore.ino ||
+      before.size > BigInt(maximumBytes)
+    ) {
+      throw new Error('CANARY_ARTIFACT_UNSAFE');
+    }
+    checkpoint?.('opened', path);
+    const bytes = Buffer.alloc(maximumBytes + 1);
+    let offset = 0;
+    while (offset < bytes.byteLength) {
+      const count = readSync(descriptor, bytes, offset, bytes.byteLength - offset, null);
+      if (count === 0) break;
+      offset += count;
+    }
+    const after = fstatSync(descriptor, { bigint: true });
+    const pathAfter = lstatSync(path, { bigint: true });
+    if (
+      offset > maximumBytes ||
+      after.size !== before.size ||
+      after.mtimeNs !== before.mtimeNs ||
+      after.ctimeNs !== before.ctimeNs ||
+      pathAfter.isSymbolicLink() ||
+      !pathAfter.isFile() ||
+      pathAfter.dev !== before.dev ||
+      pathAfter.ino !== before.ino
+    ) {
+      throw new Error('CANARY_ARTIFACT_READ_RACE');
+    }
+    return bytes.subarray(0, offset);
+  } finally {
+    closeSync(descriptor);
   }
 }
 
@@ -513,5 +626,40 @@ function routeView(route: WatchRouteRecordV2): NotificationDeliveryRouteView {
     remoteDeliveryState: route.remoteDeliveryState,
     ...(route.terminalReason ? { terminalReason: route.terminalReason } : {}),
     recoveryCycle: route.recoveryCycle,
+  };
+}
+
+function safeBlobRecoveryError(error: unknown): Error {
+  if (!(error instanceof NotificationBlobStoreError)) {
+    return new Error('BLOB_STORAGE_UNSAFE');
+  }
+  switch (error.code) {
+    case 'BLOB_NOT_FOUND':
+      return new Error('BLOB_NOT_AVAILABLE');
+    case 'BLOB_SIZE_MISMATCH':
+    case 'BLOB_DIGEST_MISMATCH':
+      return new Error('BLOB_INTEGRITY_FAILED');
+    case 'BLOB_LOCK_TIMEOUT':
+      return new Error('BLOB_STORAGE_BUSY');
+    case 'BLOB_DIGEST_INVALID':
+    case 'BLOB_FILE_UNSAFE':
+    case 'BLOB_PATH_UNSAFE':
+    case 'BLOB_READ_RACE':
+    case 'BLOB_QUOTA_EXCEEDED':
+      return new Error('BLOB_STORAGE_UNSAFE');
+  }
+}
+
+function emptyLegacyStats(): ReturnType<WatchDeliveryQueue['getStats']> {
+  return {
+    count: 0,
+    pending: 0,
+    processing: 0,
+    retryable: 0,
+    completed: 0,
+    failed: 0,
+    exhausted: 0,
+    activeLeases: 0,
+    legacyTombstones: 0,
   };
 }

@@ -230,7 +230,7 @@ export class WatchDeliveryRouterV2 {
     this.transientEvents.set(repositoryEventStableKey(event), event);
     if (payload) {
       for (const route of routes.filter((candidate) => candidate.delivery.backend === 'local')) {
-        await this.sendLocal(route, payload, persisted.stableKey);
+        await this.sendLocal(route, payload, persisted);
       }
     }
     return { outcome: 'enqueued', routeRecordIds: enqueue.routes.map((route) => route.id) };
@@ -297,8 +297,8 @@ export class WatchDeliveryRouterV2 {
           ? await this.processServiceClaim(claim)
           : await this.processDirectClaim(claim);
       result[outcome] += 1;
-      this.forgetIfSettled(claim.route.stableKey);
     }
+    this.pruneSettledTransientEvents();
     return result;
   }
 
@@ -554,13 +554,13 @@ export class WatchDeliveryRouterV2 {
   private async sendLocal(
     route: GitHubWatchRouteV2,
     payload: NotificationPayload,
-    stableKey: string,
+    event: WatchRouteRecordV2['event'],
   ): Promise<void> {
     const sink = this.sinks.get(route.sink);
     if (!sink) return;
     const result = await sink.send(payload, directRoute(route), {
       idempotencyKey: createNotificationHandoffKeyV2(
-        stableKey,
+        event.stableKey,
         route.id,
         route.delivery.routing_epoch,
       ),
@@ -568,18 +568,15 @@ export class WatchDeliveryRouterV2 {
     });
     if (result.ok) {
       const idempotencyKey = createNotificationHandoffKeyV2(
-        stableKey,
+        event.stableKey,
         route.id,
         route.delivery.routing_epoch,
       );
       this.recordRouteEvent('notification.sent', {
-        id: createNotificationRouteRecordIdV2(
-          payload.repo.toLocaleLowerCase('en-US'),
-          idempotencyKey,
-        ),
+        id: createNotificationRouteRecordIdV2(event.repository.canonicalFullName, idempotencyKey),
         routeId: route.id,
-        canonicalRepository: payload.repo.toLocaleLowerCase('en-US'),
-        stableKey,
+        canonicalRepository: event.repository.canonicalFullName,
+        stableKey: event.stableKey,
         backend: 'direct',
       });
     }
@@ -662,16 +659,21 @@ export class WatchDeliveryRouterV2 {
     }
   }
 
-  private forgetIfSettled(stableKey: string): void {
-    const active = this.queue
-      .listRoutes()
-      .some(
-        (route) =>
-          route.stableKey === stableKey &&
-          route.authority === 'openslack' &&
-          ['pending', 'processing', 'retryable'].includes(route.state),
-      );
-    if (!active) this.transientEvents.delete(stableKey);
+  private pruneSettledTransientEvents(): void {
+    if (this.transientEvents.size === 0) return;
+    const activeStableKeys = new Set(
+      this.queue
+        .listRoutes()
+        .filter(
+          (route) =>
+            route.authority === 'openslack' &&
+            ['pending', 'processing', 'retryable'].includes(route.state),
+        )
+        .map((route) => route.stableKey),
+    );
+    for (const stableKey of this.transientEvents.keys()) {
+      if (!activeStableKeys.has(stableKey)) this.transientEvents.delete(stableKey);
+    }
   }
 }
 
