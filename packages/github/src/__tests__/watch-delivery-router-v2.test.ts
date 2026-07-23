@@ -91,6 +91,52 @@ describe('WatchDeliveryRouterV2', () => {
     expect(fixture.events.map((entry) => entry.type)).toContain('notification.sent');
     expect(fixture.handoff).not.toHaveBeenCalled();
   });
+
+  it('scans route settlement once after draining multiple route claims', async () => {
+    const fixture = createFixture(false);
+    await fixture.router.admit(issueEvent(), [
+      directRoute('webhook-direct-a'),
+      directRoute('webhook-direct-b'),
+    ]);
+    const listRoutes = vi.spyOn(fixture.queue, 'listRoutes');
+
+    const drained = await fixture.router.drainOnce();
+
+    expect(drained).toMatchObject({ claimed: 2, completed: 2 });
+    expect(listRoutes).toHaveBeenCalledOnce();
+  });
+
+  it('degrades direct delivery safely to the redacted persisted event after restart', async () => {
+    const fixture = createFixture(false);
+    await fixture.router.admit(issueEvent(), [directRoute()]);
+    const restartedSend = vi.fn().mockResolvedValue({ ok: true, outcome: 'delivered' });
+    const restartedRouter = new WatchDeliveryRouterV2({
+      queue: fixture.queue,
+      blobStore: fixture.blobStore,
+      receiptStore: fixture.receiptStore,
+      sinks: new Map<string, NotificationSink>([
+        ['webhook', { name: 'webhook', send: restartedSend }],
+      ]),
+      watchConfigDigest: `sha256:${'b'.repeat(64)}`,
+      allowNewServiceRecords: false,
+      now: () => new Date('2026-07-23T00:00:03.000Z'),
+    });
+
+    const drained = await restartedRouter.drainOnce();
+
+    expect(drained).toMatchObject({ claimed: 1, completed: 1 });
+    expect(restartedSend).toHaveBeenCalledOnce();
+    const payload = restartedSend.mock.calls[0]![0];
+    expect(payload).toMatchObject({
+      repo: 'Acme/Project',
+      title: 'Issue #42 observed',
+      labels: [],
+    });
+    expect(JSON.stringify(payload)).not.toContain('Notification delivery integration');
+    expect(JSON.stringify(payload)).not.toContain(
+      'Body is materialized into the protected Blob only.',
+    );
+  });
 });
 
 function createFixture(
@@ -153,9 +199,9 @@ function serviceRoute(): GitHubWatchRouteV2 {
   };
 }
 
-function directRoute(): GitHubWatchRouteV2 {
+function directRoute(id = 'webhook-direct'): GitHubWatchRouteV2 {
   return {
-    id: 'webhook-direct',
+    id,
     sink: 'webhook',
     delivery: {
       backend: 'direct',
