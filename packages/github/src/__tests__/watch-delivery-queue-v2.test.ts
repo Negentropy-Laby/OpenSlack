@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   existsSync,
@@ -13,6 +14,7 @@ import { join } from 'node:path';
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import { createNotificationRouteRecordIdV2 } from '../notification-handoff-contracts.js';
 import { NotificationReceiptStore } from '../notification-receipt-store.js';
+import { NotificationBlobStore } from '../notification-blob-store.js';
 import {
   WatchDeliveryQueueV2,
   migrateWatchDeliveryQueueV1ToV2,
@@ -117,8 +119,9 @@ const directRoute: GitHubWatchRouteV2 = {
   delivery: { backend: 'direct', routing_epoch: 1 },
 };
 
+const blobBytes = Buffer.alloc(128, 'a');
 const blob: WatchRouteBlobReferenceV2 = {
-  digest: `sha256:${'a'.repeat(64)}`,
+  digest: `sha256:${createHash('sha256').update(blobBytes).digest('hex')}`,
   size: 128,
   mediaType: 'application/json',
   encoderVersion: 'openslack.slack_chat_post_message.v1',
@@ -139,6 +142,12 @@ function enqueueService(store = queueV2()) {
     throw new Error('Expected one route');
   }
   return { store, event, record: result.routes[0]! };
+}
+
+function blobStore(): NotificationBlobStore {
+  const store = new NotificationBlobStore({ rootPath: join(root, 'blobs', 'sha256') });
+  store.put({ bytes: blobBytes, digest: blob.digest, size: blob.size });
+  return store;
 }
 
 function acceptanceReceipt(record: ReturnType<typeof enqueueService>['record']) {
@@ -188,6 +197,37 @@ describe('WatchDeliveryQueueV2', () => {
     const state = JSON.parse(readFileSync(store.statePath, 'utf8')) as Record<string, unknown>;
     expect(validateQueueSchema(state)).toBe(true);
     expect(validateQueueSchema({ ...state, payload: 'must-not-be-accepted' })).toBe(false);
+  });
+
+  it('accepts pre-IB3-C records without recovery history and adds it on first recovery', () => {
+    const { store, record } = enqueueService();
+    const legacyState = JSON.parse(readFileSync(store.statePath, 'utf8')) as {
+      routes: Array<Record<string, unknown>>;
+    };
+    delete legacyState.routes[0]!.recoveryHistory;
+    writeFileSync(store.statePath, `${JSON.stringify(legacyState, null, 2)}\n`, 'utf8');
+    const claim = store.claimNext('worker', 'notification_service');
+    if (!claim) throw new Error('Expected claim');
+    store.markRejected(record.id, claim.lease.token, 'deterministic_rejection', {
+      code: 'UNAUTHORIZED',
+      message: 'Rejected.',
+      status: 401,
+    });
+
+    expect(
+      store.applyRecovery(
+        record.id,
+        {
+          decision: 'retry',
+          operator: 'operator-1',
+          reason: 'Credential rotation verified.',
+        },
+        blobStore(),
+      ),
+    ).toMatchObject({
+      recoveryCycle: 1,
+      recoveryHistory: [{ cycle: 1, decision: 'retry' }],
+    });
   });
 
   it('keeps the closed schema and runtime validator aligned on malformed record shapes', () => {
@@ -482,6 +522,180 @@ describe('WatchDeliveryQueueV2', () => {
       authority: 'openslack',
     });
   });
+
+  it('opens a governed recovery cycle without changing immutable handoff identity', () => {
+    const { store, record } = enqueueService();
+    const claim = store.claimNext('worker', 'notification_service');
+    if (!claim) throw new Error('Expected claim');
+    store.markRejected(record.id, claim.lease.token, 'deterministic_rejection', {
+      code: 'UNAUTHORIZED',
+      message: 'Rejected.',
+      status: 401,
+    });
+    const before = store.getRoute(record.id)!;
+    const preview = store.planRecovery(record.id, {
+      decision: 'retry',
+      operator: 'operator-1',
+      reason: 'Credential was rotated and verified.',
+    });
+    expect(preview).toEqual(before);
+
+    now = new Date('2026-07-23T01:00:00.000Z');
+    const recovered = store.applyRecovery(
+      record.id,
+      {
+        decision: 'retry',
+        operator: 'operator-1',
+        reason: 'Credential was rotated and verified.',
+      },
+      blobStore(),
+    );
+    expect(recovered).toMatchObject({
+      id: before.id,
+      vendorId: before.vendorId,
+      idempotencyKey: before.idempotencyKey,
+      blob: before.blob,
+      routingEpoch: before.routingEpoch,
+      state: 'pending',
+      authority: 'openslack',
+      attemptCount: 0,
+      recoveryCycle: 1,
+      deadlineAt: '2026-07-24T01:00:00.000Z',
+      recoveryHistory: [
+        {
+          cycle: 1,
+          decision: 'retry',
+          operator: 'operator-1',
+          reason: 'Credential was rotated and verified.',
+          previousState: 'rejected',
+          recordedAt: '2026-07-23T01:00:00.000Z',
+        },
+      ],
+    });
+  });
+
+  it('serializes governed recovery and Blob GC under queue-v2 then Blob locks', () => {
+    const { store, record } = enqueueService();
+    const blobs = blobStore();
+    const claim = store.claimNext('worker', 'notification_service');
+    if (!claim) throw new Error('Expected claim');
+    store.markRejected(record.id, claim.lease.token, 'deterministic_rejection', {
+      code: 'UNAUTHORIZED',
+      message: 'Rejected.',
+      status: 401,
+    });
+    expect(store.collectBlobGarbage(blobs, new Set([record.blob!.digest])).removedDigests).toEqual([
+      record.blob!.digest,
+    ]);
+    expect(() =>
+      store.applyRecovery(
+        record.id,
+        {
+          decision: 'retry',
+          operator: 'operator-1',
+          reason: 'GC completed before recovery.',
+        },
+        blobs,
+      ),
+    ).toThrowError(expect.objectContaining({ code: 'BLOB_NOT_FOUND' }));
+    expect(store.getRoute(record.id)).toMatchObject({
+      state: 'rejected',
+      authority: 'terminal',
+      recoveryCycle: 0,
+    });
+
+    blobs.put({ bytes: blobBytes, digest: blob.digest, size: blob.size });
+    expect(
+      store.applyRecovery(
+        record.id,
+        {
+          decision: 'retry',
+          operator: 'operator-1',
+          reason: 'Recovery acquired the queue lock first.',
+        },
+        blobs,
+      ),
+    ).toMatchObject({ state: 'pending', authority: 'openslack', recoveryCycle: 1 });
+    expect(store.collectBlobGarbage(blobs, new Set([record.blob!.digest])).removedDigests).toEqual(
+      [],
+    );
+    expect(blobs.verify(record.blob!.digest, record.blob!.size)).toMatchObject({
+      digest: record.blob!.digest,
+    });
+  });
+
+  it('requires matching reconciliation evidence before resolving quarantine', () => {
+    const { store, record } = enqueueService();
+    const claim = store.claimNext('worker', 'notification_service');
+    if (!claim) throw new Error('Expected claim');
+    store.markQuarantined(record.id, claim.lease.token, 'idempotency_conflict', {
+      code: 'IDEMPOTENCY_CONFLICT',
+      message: 'Conflict.',
+      status: 409,
+    });
+
+    expect(() =>
+      store.planRecovery(record.id, {
+        decision: 'retry',
+        operator: 'operator-1',
+        reason: 'Investigated.',
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'QUEUE_TRANSITION_INVALID' }));
+    expect(() =>
+      store.planRecovery(record.id, {
+        decision: 'archive',
+        operator: 'operator-1',
+        reason: 'Remote notification owns delivery.',
+        reconciliation: {
+          outcome: 'safe_to_retry',
+          checkedAt: '2026-07-23T00:30:00.000Z',
+        },
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'QUEUE_TRANSITION_INVALID' }));
+
+    const archived = store.applyRecovery(record.id, {
+      decision: 'archive',
+      operator: 'operator-1',
+      reason: 'Remote notification owns delivery.',
+      reconciliation: {
+        outcome: 'archive_only',
+        checkedAt: '2026-07-23T00:30:00.000Z',
+      },
+    });
+    expect(archived).toMatchObject({
+      state: 'quarantined',
+      authority: 'terminal',
+      recoveryCycle: 0,
+      recoveryHistory: [
+        {
+          cycle: 0,
+          decision: 'archive',
+          previousState: 'quarantined',
+          reconciliation: { outcome: 'archive_only' },
+        },
+      ],
+    });
+  });
+
+  it('never permits accepted authority to enter governed recovery', () => {
+    const { store, record } = enqueueService();
+    const claim = store.claimNext('worker', 'notification_service');
+    if (!claim) throw new Error('Expected claim');
+    store.acceptServiceRoute(
+      record.id,
+      claim.lease.token,
+      acceptanceReceipt(record),
+      new NotificationReceiptStore({ rootPath: join(root, 'notification-acceptance') }),
+    );
+
+    expect(() =>
+      store.applyRecovery(record.id, {
+        decision: 'retry',
+        operator: 'operator-1',
+        reason: 'Must remain service-owned.',
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'QUEUE_TRANSITION_INVALID' }));
+  });
 });
 
 describe('v1 per-route migration', () => {
@@ -580,6 +794,7 @@ describe('v1 per-route migration', () => {
     expect(readFileSync(join(root, 'delivery-state.v1.json'), 'utf8')).toContain(
       'OPENSLACK_DELIVERY_QUEUE_V1_MIGRATED',
     );
+    expect(v1.isV2MigrationFinalized(v2.statePath)).toBe(true);
     expect(() => queueV1().getStats()).toThrowError(
       expect.objectContaining({ code: 'QUEUE_STATE_INVALID' }),
     );

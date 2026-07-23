@@ -3,7 +3,6 @@ import {
   closeSync,
   existsSync,
   fsyncSync,
-  lstatSync,
   mkdirSync,
   openSync,
   readFileSync,
@@ -11,7 +10,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import {
   NOTIFICATION_HANDOFF_POLICY,
   createNotificationHandoffKeyV2,
@@ -31,8 +30,10 @@ import type {
   NotificationAcceptanceReceiptV1,
   NotificationReceiptStore,
 } from './notification-receipt-store.js';
+import type { NotificationBlobGcResult, NotificationBlobStore } from './notification-blob-store.js';
 import type { PersistableRepositoryEvent } from './repository-event.js';
 import type { GitHubWatchRouteV2 } from './watch-config-v2.js';
+import { withNotificationStorageLock } from './notification-storage-fs.js';
 import {
   validatePersistableRepositoryEvent,
   type WatchDeliveryQueue,
@@ -74,6 +75,19 @@ export interface WatchRouteDiagnosticV2 {
   status?: number;
 }
 
+export interface WatchRouteRecoveryEntryV2 {
+  cycle: number;
+  decision: 'retry' | 'archive';
+  operator: string;
+  reason: string;
+  previousState: Extract<WatchRouteStateV2, 'rejected' | 'quarantined' | 'handoff_dead'>;
+  recordedAt: string;
+  reconciliation?: {
+    outcome: 'safe_to_retry' | 'archive_only';
+    checkedAt: string;
+  };
+}
+
 export interface WatchRouteBlobReferenceV2 {
   digest: `sha256:${string}`;
   size: number;
@@ -111,6 +125,7 @@ export interface WatchRouteRecordV2 {
   completedAt?: string;
   lastDiagnostic?: WatchRouteDiagnosticV2;
   recoveryCycle: number;
+  recoveryHistory?: WatchRouteRecoveryEntryV2[];
   migrationDisposition?: WatchRouteMigrationDispositionV2;
 }
 
@@ -176,6 +191,13 @@ export interface WatchDeliveryQueueV2Stats {
   nextRetryAt?: string;
 }
 
+export interface WatchRouteRecoveryRequestV2 {
+  decision: 'retry' | 'archive';
+  operator: string;
+  reason: string;
+  reconciliation?: WatchRouteRecoveryEntryV2['reconciliation'];
+}
+
 export interface LegacyWatchRouteBindingV2 {
   routeKey: string;
   routeId: string;
@@ -221,7 +243,6 @@ const DEFAULT_POLICY: WatchDeliveryQueueV2Policy = Object.freeze({
 export class WatchDeliveryQueueV2 {
   readonly statePath: string;
   private readonly stateDir: string;
-  private readonly lockPath: string;
   private readonly policy: WatchDeliveryQueueV2Policy;
   private readonly now: () => Date;
   private readonly nonce: () => string;
@@ -230,7 +251,6 @@ export class WatchDeliveryQueueV2 {
   constructor(stateDir?: string, options: WatchDeliveryQueueV2Options = {}) {
     this.stateDir = resolve(stateDir ?? join(process.cwd(), '.openslack.local', 'daemon'));
     this.statePath = join(this.stateDir, 'delivery-state.v2.json');
-    this.lockPath = `${this.statePath}.lock`;
     this.policy = { ...DEFAULT_POLICY, ...options.policy };
     validatePolicy(this.policy);
     this.now = options.now ?? (() => new Date());
@@ -578,6 +598,67 @@ export class WatchDeliveryQueueV2 {
     });
   }
 
+  planRecovery(id: string, request: WatchRouteRecoveryRequestV2): WatchRouteRecordV2 {
+    return this.read((state) => {
+      const record = requireRecoverableRoute(state, id);
+      validateRecoveryRequest(record, request);
+      return cloneRoute(record);
+    });
+  }
+
+  applyRecovery(
+    id: string,
+    request: WatchRouteRecoveryRequestV2,
+    blobStore?: NotificationBlobStore,
+  ): WatchRouteRecordV2 {
+    return this.withLock(() => {
+      const now = this.now();
+      const state = this.loadState(now);
+      expireProcessingLeases(state, now);
+      exhaustUnclaimableServiceRoutes(state, now);
+      const record = requireRecoverableRoute(state, id);
+      validateRecoveryRequest(record, request);
+      if (request.decision === 'archive') {
+        const result = applyRecoveryTransition(record, request, now);
+        this.persistUpdatedState(state, now);
+        return result;
+      }
+      if (!blobStore || !record.blob) {
+        throw queueError(
+          'QUEUE_TRANSITION_INVALID',
+          'Retry recovery requires the original Blob and its guarded store.',
+        );
+      }
+      return blobStore.withVerifiedBlob(record.blob.digest, record.blob.size, () => {
+        const result = applyRecoveryTransition(record, request, now);
+        this.persistUpdatedState(state, now);
+        return result;
+      });
+    });
+  }
+
+  /**
+   * Queue-aware GC serializes eligibility against governed recovery using the
+   * frozen queue-v2 -> Blob lock order.
+   */
+  collectBlobGarbage(
+    blobStore: NotificationBlobStore,
+    eligibleDigests: ReadonlySet<string>,
+  ): NotificationBlobGcResult {
+    return this.withLock(() => {
+      const state = this.loadState(this.now());
+      const activeDigests = new Set(
+        state.routes
+          .filter(
+            (record) =>
+              record.blob && (record.authority === 'openslack' || record.authority === 'legacy_v1'),
+          )
+          .map((record) => record.blob!.digest),
+      );
+      return blobStore.collectGarbage({ activeDigests, eligibleDigests });
+    });
+  }
+
   planV1Migration(
     snapshot: WatchDeliveryQueueSnapshotV1,
     bindings: LegacyWatchRouteBindingV2[],
@@ -682,41 +763,25 @@ export class WatchDeliveryQueueV2 {
   }
 
   private withLock<T>(operation: () => T): T {
-    mkdirSync(this.stateDir, { recursive: true, mode: 0o700 });
-    const deadline = Date.now() + this.policy.lockTimeoutMs;
-    const owner = {
-      pid: process.pid,
-      nonce: this.nonce(),
-      createdAt: new Date().toISOString(),
-    };
-    while (true) {
-      try {
-        const descriptor = openSync(this.lockPath, 'wx', 0o600);
-        try {
-          writeFileSync(descriptor, JSON.stringify(owner), 'utf8');
-          fsyncSync(descriptor);
-        } finally {
-          closeSync(descriptor);
-        }
-        break;
-      } catch (error) {
-        if (!isNodeError(error, 'EEXIST')) throw error;
-        isolateStaleLock(this.lockPath, this.policy.lockStaleMs);
-        if (Date.now() >= deadline) {
-          throw queueError('QUEUE_LOCK_TIMEOUT', 'Timed out waiting for the watch v2 queue lock.');
-        }
-        blockFor(Math.min(25, Math.max(1, deadline - Date.now())));
-      }
-    }
     try {
-      return operation();
-    } finally {
-      try {
-        const current = JSON.parse(readFileSync(this.lockPath, 'utf8')) as { nonce?: unknown };
-        if (current.nonce === owner.nonce) rmSync(this.lockPath, { force: true });
-      } catch {
-        // Never remove a lock whose ownership cannot be proven.
+      return withNotificationStorageLock(
+        this.stateDir,
+        basename(`${this.statePath}.lock`),
+        {
+          lockTimeoutMs: this.policy.lockTimeoutMs,
+          lockStaleMs: this.policy.lockStaleMs,
+          nonce: this.nonce,
+        },
+        operation,
+      );
+    } catch (error) {
+      if ((error as { code?: unknown }).code === 'STORAGE_LOCK_TIMEOUT') {
+        throw queueError('QUEUE_LOCK_TIMEOUT', 'Timed out waiting for the watch v2 queue lock.');
       }
+      if ((error as { code?: unknown }).code === 'STORAGE_PATH_UNSAFE') {
+        throw queueError('QUEUE_STATE_INVALID', 'Watch delivery v2 queue lock path is unsafe.');
+      }
+      throw error;
     }
   }
 }
@@ -798,6 +863,7 @@ function buildRouteRecord(
     updatedAt: timestamp,
     remoteDeliveryState: 'unknown',
     recoveryCycle: 0,
+    recoveryHistory: [],
   };
 }
 
@@ -917,6 +983,7 @@ function migratedRoute(
     updatedAt: route.updatedAt,
     remoteDeliveryState: route.state === 'completed' ? 'delivered' : 'unknown',
     recoveryCycle: 0,
+    recoveryHistory: [],
     migrationDisposition: disposition,
     ...(route.completedAt ? { completedAt: route.completedAt } : {}),
     ...(route.terminalAt ? { terminalAt: route.terminalAt } : {}),
@@ -986,7 +1053,8 @@ function validateRecord(value: unknown): asserts value is WatchRouteRecordV2 {
     !isTimestamp(value.updatedAt) ||
     !isRemoteState(value.remoteDeliveryState) ||
     !Number.isSafeInteger(value.recoveryCycle) ||
-    (value.recoveryCycle as number) < 0
+    (value.recoveryCycle as number) < 0 ||
+    (value.recoveryHistory !== undefined && !Array.isArray(value.recoveryHistory))
   ) {
     invalidRecord();
   }
@@ -1036,6 +1104,7 @@ function validateRecord(value: unknown): asserts value is WatchRouteRecordV2 {
   if (value.terminalAt !== undefined && !isTimestamp(value.terminalAt)) invalidRecord();
   if (value.completedAt !== undefined && !isTimestamp(value.completedAt)) invalidRecord();
   if (value.lastDiagnostic !== undefined) validateDiagnostic(value.lastDiagnostic);
+  for (const entry of (value.recoveryHistory ?? []) as unknown[]) validateRecoveryEntry(entry);
   if (
     value.migrationDisposition !== undefined &&
     !['legacy_owned', 'completed_tombstone', 'terminal_archive'].includes(
@@ -1076,8 +1145,144 @@ const RECORD_KEYS = [
   'completedAt',
   'lastDiagnostic',
   'recoveryCycle',
+  'recoveryHistory',
   'migrationDisposition',
 ] as const;
+
+function requireRecoverableRoute(state: WatchDeliveryQueueV2State, id: string): WatchRouteRecordV2 {
+  const record = state.routes.find((candidate) => candidate.id === id);
+  if (
+    !record ||
+    record.backend !== 'notification_service' ||
+    record.authority !== 'terminal' ||
+    !['rejected', 'quarantined', 'handoff_dead'].includes(record.state)
+  ) {
+    throw queueError(
+      'QUEUE_TRANSITION_INVALID',
+      'Only terminal notification-service routes can enter governed recovery.',
+    );
+  }
+  return record;
+}
+
+function validateRecoveryRequest(
+  record: WatchRouteRecordV2,
+  request: WatchRouteRecoveryRequestV2,
+): void {
+  if (
+    (request.decision !== 'retry' && request.decision !== 'archive') ||
+    !request.operator.trim() ||
+    request.operator.trim().length > 128 ||
+    !request.reason.trim() ||
+    request.reason.trim().length > 500
+  ) {
+    throw queueError(
+      'QUEUE_TRANSITION_INVALID',
+      'Recovery requires a bounded operator, reason and supported decision.',
+    );
+  }
+  if (request.decision === 'archive' && record.state !== 'quarantined') {
+    throw queueError(
+      'QUEUE_TRANSITION_INVALID',
+      'Archive resolution is only valid for quarantined routes.',
+    );
+  }
+  if (record.state === 'quarantined') {
+    if (
+      !request.reconciliation ||
+      request.reconciliation.outcome !==
+        (request.decision === 'retry' ? 'safe_to_retry' : 'archive_only') ||
+      !isTimestamp(request.reconciliation.checkedAt)
+    ) {
+      throw queueError(
+        'QUEUE_TRANSITION_INVALID',
+        'Quarantine resolution requires a matching reconciliation decision.',
+      );
+    }
+  } else if (request.reconciliation !== undefined) {
+    throw queueError(
+      'QUEUE_TRANSITION_INVALID',
+      'Reconciliation evidence is only accepted for quarantined routes.',
+    );
+  }
+}
+
+function applyRecoveryTransition(
+  record: WatchRouteRecordV2,
+  request: WatchRouteRecoveryRequestV2,
+  now: Date,
+): WatchRouteRecordV2 {
+  const previousState = record.state as WatchRouteRecoveryEntryV2['previousState'];
+  const timestamp = now.toISOString();
+  const nextCycle = request.decision === 'retry' ? record.recoveryCycle + 1 : record.recoveryCycle;
+  (record.recoveryHistory ??= []).push({
+    cycle: nextCycle,
+    decision: request.decision,
+    operator: request.operator.trim(),
+    reason: request.reason.trim(),
+    previousState,
+    recordedAt: timestamp,
+    ...(request.reconciliation ? { reconciliation: structuredClone(request.reconciliation) } : {}),
+  });
+  if (request.decision === 'archive') {
+    record.updatedAt = timestamp;
+    return cloneRoute(record);
+  }
+
+  record.recoveryCycle = nextCycle;
+  record.state = 'pending';
+  record.authority = 'openslack';
+  record.attemptCount = 0;
+  record.availableAt = timestamp;
+  record.deadlineAt = new Date(
+    now.getTime() + NOTIFICATION_HANDOFF_POLICY.deadlineMs,
+  ).toISOString();
+  record.updatedAt = timestamp;
+  record.remoteDeliveryState = 'unknown';
+  delete record.terminalReason;
+  delete record.terminalAt;
+  delete record.completedAt;
+  delete record.lastDiagnostic;
+  return cloneRoute(record);
+}
+
+function validateRecoveryEntry(value: unknown): asserts value is WatchRouteRecoveryEntryV2 {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, [
+      'cycle',
+      'decision',
+      'operator',
+      'reason',
+      'previousState',
+      'recordedAt',
+      'reconciliation',
+    ]) ||
+    !Number.isSafeInteger(value.cycle) ||
+    (value.cycle as number) < 0 ||
+    (value.decision !== 'retry' && value.decision !== 'archive') ||
+    typeof value.operator !== 'string' ||
+    !value.operator.trim() ||
+    value.operator.length > 128 ||
+    typeof value.reason !== 'string' ||
+    !value.reason.trim() ||
+    value.reason.length > 500 ||
+    !['rejected', 'quarantined', 'handoff_dead'].includes(String(value.previousState)) ||
+    !isTimestamp(value.recordedAt)
+  ) {
+    invalidRecord();
+  }
+  if (value.reconciliation !== undefined) {
+    if (
+      !isRecord(value.reconciliation) ||
+      !hasOnlyKeys(value.reconciliation, ['outcome', 'checkedAt']) ||
+      !['safe_to_retry', 'archive_only'].includes(String(value.reconciliation.outcome)) ||
+      !isTimestamp(value.reconciliation.checkedAt)
+    ) {
+      invalidRecord();
+    }
+  }
+}
 
 function assertReceiptMatches(
   record: WatchRouteRecordV2,
@@ -1537,60 +1742,6 @@ function queueError(
   return new WatchDeliveryQueueV2Error(code, message);
 }
 
-function isolateStaleLock(path: string, staleMs: number): void {
-  let status: ReturnType<typeof lstatSync>;
-  try {
-    status = lstatSync(path);
-  } catch (error) {
-    if (isNodeError(error, 'ENOENT')) return;
-    throw error;
-  }
-  if (status.isSymbolicLink() || !status.isFile()) {
-    throw queueError(
-      'QUEUE_STATE_INVALID',
-      'Watch delivery v2 queue lock is a link, junction or non-regular file.',
-    );
-  }
-  if (process.platform !== 'win32' && (status.mode & 0o777) !== 0o600) {
-    throw queueError(
-      'QUEUE_STATE_INVALID',
-      'Watch delivery v2 queue lock permissions must be 0600.',
-    );
-  }
-
-  try {
-    const parsed = JSON.parse(readFileSync(path, 'utf8')) as { pid?: unknown };
-    const age = Date.now() - status.mtimeMs;
-    if (
-      typeof parsed.pid !== 'number' ||
-      !Number.isSafeInteger(parsed.pid) ||
-      parsed.pid < 1 ||
-      isProcessAlive(parsed.pid) ||
-      age <= staleMs
-    ) {
-      return;
-    }
-    rmSync(path, { force: true });
-  } catch (error) {
-    if (isNodeError(error, 'ENOENT')) return;
-    // A malformed or concurrently changed lock is unknown ownership and must
-    // remain in place so acquisition fails closed instead of risking split ownership.
-  }
-}
-
-function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return !isNodeError(error, 'ESRCH');
-  }
-}
-
-function isNodeError(error: unknown, code: string): error is NodeJS.ErrnoException {
-  return error instanceof Error && (error as NodeJS.ErrnoException).code === code;
-}
-
 function fsyncDirectoryBestEffort(path: string): void {
   if (process.platform === 'win32') return;
   try {
@@ -1603,9 +1754,4 @@ function fsyncDirectoryBestEffort(path: string): void {
   } catch {
     // Some filesystems do not support directory fsync.
   }
-}
-
-function blockFor(milliseconds: number): void {
-  const state = new Int32Array(new SharedArrayBuffer(4));
-  Atomics.wait(state, 0, 0, milliseconds);
 }

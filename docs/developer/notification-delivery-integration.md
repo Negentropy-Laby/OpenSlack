@@ -1,6 +1,7 @@
 # Notification Delivery Service Integration
 
-> **Status:** IB3-B daemon/router composition implemented — `G3_QUEUE_IN_PROGRESS`
+> **Status:** IB3-B daemon/router composition and IB3-C governed operations implemented —
+> `G3_QUEUE_IN_PROGRESS`
 >
 > **Runtime effect:** v1 is unchanged; v2 service admission is fail-closed unless the explicit new-record gate is on.
 >
@@ -268,6 +269,9 @@ pending -> processing -> accepted
 - Attempt 25 failure or the deadline, whichever occurs first, produces `handoff_dead`.
 - A processing crash consumes the attempt because the request may have escaped.
 - Governed recovery keeps the original key, vendor, Blob and encoder.
+- Every manual decision records the operator, bounded reason, previous state, timestamp and recovery cycle.
+- Quarantine cannot be retried or archived without read-only reconciliation evidence matching the decision.
+- A missing or corrupt retained Blob returns `BLOB_NOT_AVAILABLE`; recovery never re-renders bytes.
 
 | Response                                     | State/result                 |
 | -------------------------------------------- | ---------------------------- |
@@ -346,6 +350,25 @@ Transient-event cleanup reads the route queue once after each bounded drain, rat
 An absent composed service client remains a bounded retryable operational failure under the same 25-attempt/24-hour
 horizon and never transfers the route to the direct sender.
 
+IB3-C exposes the payload-blind operational surface under `openslack github notifications`: `doctor`, `status`,
+`queue`, `drain`, `retry`, `quarantine show/resolve`, `reconcile`, and `canary status/report`. Mutating recovery and
+drain actions default to preview and require `--apply`. Retry resets only the attempt/deadline window for a new
+recovery cycle; route ID, epoch, vendor, idempotency key, Blob and encoder remain immutable. Local reconciliation can
+prove an accepted embedded/file receipt match. Quarantine remains fail-closed with
+`REMOTE_RECONCILIATION_REQUIRED` until the IB4 read-only service client supplies a safe-to-retry or archive-only
+decision. Commands and their JSON views omit persisted event data, payload bytes, credentials and raw vendor
+responses. Doctor and recovery preflight call the Blob store's full digest-and-size verifier without returning bytes
+to the operations layer; a stat-only size check would miss same-size corruption. An `archive` decision is an
+append-only terminal disposition: it records reconciliation evidence in recovery history while the route remains
+quarantined and terminal, and does not delete the route or transfer delivery authority.
+
+Governed retry and Blob GC share the `queue-v2 → Blob` critical protocol: whichever obtains queue ownership first
+determines whether the terminal Blob is collected or atomically reactivated. Canary artifacts are read through a
+bounded, no-follow regular-file descriptor with pre/post identity checks. A pending acceptance ledger makes
+`doctor` fail with `ACCEPTED_RECEIPT_RECOVERY_REQUIRED` until startup recovery commits the receipt file. After v1
+finalization, v2-aware runtimes validate the final marker, backup and sentinel and skip all legacy reads; direct v1
+readers still fail closed on the deliberately non-JSON sentinel.
+
 ## V1 Migration And Gates
 
 Migration is per route: completed becomes a tombstone, failed becomes a terminal archive, and
@@ -362,7 +385,7 @@ The next phases remain blocked by gates:
 G0-CONTRACT: PASS_WITH_RC_REVIEW_WAIVER; OpenSlack independently reviewed, standalone service owner waiver + PR/CI
 G1-SERVICE: service v2 contract implemented and verified
 G2-CLIENT: body, Blob, receipt and client components verified
-G3-QUEUE: IN PROGRESS; IB3-A queue/migration and IB3-B daemon/router implemented; governed CLI pending
+G3-QUEUE: IN PROGRESS; IB3-A queue/migration, IB3-B daemon/router and IB3-C governed operations implemented; merge receipts pending
 G4-E2E: two repositories x Slack and webhook fault matrix
 G5-CANARY: 336 continuous hours + 100 distinct non-replay accepted keys
 ```

@@ -562,8 +562,34 @@
         "completedAt": { "$ref": "#/$defs/timestamp" },
         "lastDiagnostic": { "$ref": "#/$defs/diagnostic" },
         "recoveryCycle": { "type": "integer", "minimum": 0 },
+        "recoveryHistory": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/recoveryEntry" }
+        },
         "migrationDisposition": {
           "enum": ["legacy_owned", "completed_tombstone", "terminal_archive"]
+        }
+      }
+    },
+    "recoveryEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cycle", "decision", "operator", "reason", "previousState", "recordedAt"],
+      "properties": {
+        "cycle": { "type": "integer", "minimum": 0 },
+        "decision": { "enum": ["retry", "archive"] },
+        "operator": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "reason": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "previousState": { "enum": ["rejected", "quarantined", "handoff_dead"] },
+        "recordedAt": { "$ref": "#/$defs/timestamp" },
+        "reconciliation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["outcome", "checkedAt"],
+          "properties": {
+            "outcome": { "enum": ["safe_to_retry", "archive_only"] },
+            "checkedAt": { "$ref": "#/$defs/timestamp" }
+          }
         }
       }
     },

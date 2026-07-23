@@ -71,11 +71,24 @@ export function withNotificationStorageLock<T>(
 ): T {
   const root = ensureSecureNotificationDirectory(rootPath);
   const lockPath = join(root, lockName);
+  const reclaimPath = `${lockPath}.reclaim`;
   const timeout = options.lockTimeoutMs ?? 5_000;
   const stale = options.lockStaleMs ?? 30_000;
-  const nonce = (options.nonce ?? randomUUID)();
+  const nonceFactory = options.nonce ?? randomUUID;
+  const nonce = nonceFactory();
   const deadline = Date.now() + timeout;
   while (true) {
+    if (existsSync(reclaimPath)) {
+      assertSecureLockFile(reclaimPath);
+      if (Date.now() >= deadline) {
+        throw notificationStorageError(
+          'STORAGE_LOCK_TIMEOUT',
+          'Timed out waiting for notification storage lock reclamation.',
+        );
+      }
+      blockFor(Math.min(25, Math.max(1, deadline - Date.now())));
+      continue;
+    }
     try {
       const descriptor = openSync(lockPath, 'wx', 0o600);
       try {
@@ -92,28 +105,15 @@ export function withNotificationStorageLock<T>(
       break;
     } catch (error) {
       if (!isNodeError(error, 'EEXIST')) throw error;
-      let lockStatus: ReturnType<typeof lstatSync>;
       try {
-        lockStatus = lstatSync(lockPath);
+        assertSecureLockFile(lockPath);
       } catch (statusError) {
         // The previous owner may release the lock between our EEXIST result and
         // this inspection. That is a normal hand-off race, so retry acquisition.
         if (isNodeError(statusError, 'ENOENT')) continue;
         throw statusError;
       }
-      if (lockStatus.isSymbolicLink() || !lockStatus.isFile()) {
-        throw notificationStorageError(
-          'STORAGE_PATH_UNSAFE',
-          'Notification storage lock path is a link, junction or non-regular file.',
-        );
-      }
-      if (process.platform !== 'win32' && (lockStatus.mode & 0o777) !== 0o600) {
-        throw notificationStorageError(
-          'STORAGE_PATH_UNSAFE',
-          'Notification storage lock permissions must be 0600.',
-        );
-      }
-      isolateStaleLock(lockPath, stale);
+      isolateStaleLock(lockPath, reclaimPath, root, stale, nonceFactory());
       if (Date.now() >= deadline) {
         throw notificationStorageError(
           'STORAGE_LOCK_TIMEOUT',
@@ -159,22 +159,138 @@ export function notificationStorageError(code: string, message: string): Error &
   return Object.assign(new Error(message), { code });
 }
 
-function isolateStaleLock(path: string, staleMs: number): void {
+function isolateStaleLock(
+  path: string,
+  reclaimPath: string,
+  root: string,
+  staleMs: number,
+  reclaimNonce: string,
+): void {
+  let reclaimDescriptor: number | null = null;
   try {
-    const status = lstatSync(path);
-    if (status.isSymbolicLink() || !status.isFile()) return;
-    const parsed = JSON.parse(readFileSync(path, 'utf8')) as { pid?: unknown };
-    const age = Date.now() - status.mtimeMs;
+    try {
+      reclaimDescriptor = openSync(reclaimPath, 'wx', 0o600);
+      writeFileSync(
+        reclaimDescriptor,
+        JSON.stringify({
+          pid: process.pid,
+          nonce: reclaimNonce,
+          created_at: new Date().toISOString(),
+        }),
+        'utf8',
+      );
+      fsyncSync(reclaimDescriptor);
+      closeSync(reclaimDescriptor);
+      reclaimDescriptor = null;
+      fsyncNotificationDirectory(root);
+    } catch (error) {
+      if (reclaimDescriptor !== null) closeSync(reclaimDescriptor);
+      if (isNodeError(error, 'EEXIST')) return;
+      throw error;
+    }
+
+    const before = readLockIdentity(path);
+    if (!before) return;
+    const age = Date.now() - before.mtimeMs;
     if (
-      typeof parsed.pid === 'number' &&
-      Number.isSafeInteger(parsed.pid) &&
-      (isProcessAlive(parsed.pid) || age < staleMs)
+      !Number.isSafeInteger(before.pid) ||
+      before.pid < 1 ||
+      isProcessAlive(before.pid) ||
+      age < staleMs
+    ) {
+      return;
+    }
+    const current = readLockIdentity(path);
+    if (
+      !current ||
+      current.dev !== before.dev ||
+      current.ino !== before.ino ||
+      current.pid !== before.pid ||
+      current.nonce !== before.nonce
     ) {
       return;
     }
     unlinkSync(path);
+    fsyncNotificationDirectory(root);
   } catch {
     // A concurrent owner may have changed the lock. Retry without deleting unknown state.
+  } finally {
+    if (reclaimDescriptor !== null) {
+      try {
+        closeSync(reclaimDescriptor);
+      } catch {
+        // Best-effort descriptor cleanup.
+      }
+    }
+    try {
+      const current = JSON.parse(readFileSync(reclaimPath, 'utf8')) as { nonce?: unknown };
+      if (current.nonce === reclaimNonce) {
+        unlinkSync(reclaimPath);
+        fsyncNotificationDirectory(root);
+      }
+    } catch {
+      // Never remove a reclaim gate whose ownership cannot be proven.
+    }
+  }
+}
+
+function assertSecureLockFile(path: string): void {
+  const status = lstatSync(path);
+  if (status.isSymbolicLink() || !status.isFile()) {
+    throw notificationStorageError(
+      'STORAGE_PATH_UNSAFE',
+      'Notification storage lock path is a link, junction or non-regular file.',
+    );
+  }
+  if (process.platform !== 'win32' && (status.mode & 0o777) !== 0o600) {
+    throw notificationStorageError(
+      'STORAGE_PATH_UNSAFE',
+      'Notification storage lock permissions must be 0600.',
+    );
+  }
+}
+
+function readLockIdentity(path: string): {
+  dev: number;
+  ino: number;
+  mtimeMs: number;
+  pid: number;
+  nonce: string;
+} | null {
+  try {
+    assertSecureLockFile(path);
+    const status = lstatSync(path);
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as {
+      pid?: unknown;
+      nonce?: unknown;
+    };
+    if (
+      typeof parsed.pid !== 'number' ||
+      !Number.isSafeInteger(parsed.pid) ||
+      typeof parsed.nonce !== 'string' ||
+      parsed.nonce.length === 0
+    ) {
+      return null;
+    }
+    const after = lstatSync(path);
+    if (
+      after.isSymbolicLink() ||
+      !after.isFile() ||
+      after.dev !== status.dev ||
+      after.ino !== status.ino
+    ) {
+      return null;
+    }
+    return {
+      dev: after.dev,
+      ino: after.ino,
+      mtimeMs: after.mtimeMs,
+      pid: parsed.pid,
+      nonce: parsed.nonce,
+    };
+  } catch (error) {
+    if (isNodeError(error, 'ENOENT')) return null;
+    throw error;
   }
 }
 

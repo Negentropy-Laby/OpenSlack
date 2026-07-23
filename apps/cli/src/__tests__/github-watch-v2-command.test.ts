@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { loadWatchRuntimeConfig } from '../commands/github.js';
+import { githubCommands, loadWatchRuntimeConfig } from '../commands/github.js';
 
 const roots: string[] = [];
 
@@ -65,5 +65,33 @@ repositories:
 
     expect(result.valid).toBe(false);
     expect(result.errors.length).toBeGreaterThan(1);
+  });
+
+  it('publishes the complete governed notification operations surface', () => {
+    const root = githubCommands();
+    const notifications = root.commands.find((command) => command.name() === 'notifications');
+    expect(notifications).toBeDefined();
+    expect(notifications!.commands.map((command) => command.name()).sort()).toEqual([
+      'canary',
+      'doctor',
+      'drain',
+      'quarantine',
+      'queue',
+      'reconcile',
+      'retry',
+      'status',
+    ]);
+    expect(
+      notifications!.commands
+        .find((command) => command.name() === 'quarantine')!
+        .commands.map((command) => command.name())
+        .sort(),
+    ).toEqual(['resolve', 'show']);
+    expect(
+      notifications!.commands
+        .find((command) => command.name() === 'canary')!
+        .commands.map((command) => command.name())
+        .sort(),
+    ).toEqual(['report', 'status']);
   });
 });
