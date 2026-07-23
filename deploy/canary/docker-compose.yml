@@ -1,29 +1,66 @@
 services:
-  app:
-    environment:
-      ENV_CREDENTIAL_ALLOWLIST: "CANARY_SLACK_BOT_TOKEN"
-      CANARY_SLACK_BOT_TOKEN: "${CANARY_SLACK_BOT_TOKEN}"
-      WORKER_VENDOR_SCOPE: "${CANARY_VENDOR_SLACK},${CANARY_VENDOR_WEBHOOK}"
+  db:
+    environment: !override
+      POSTGRES_USER: "${CANARY_POSTGRES_USER:?set CANARY_POSTGRES_USER}"
+      POSTGRES_PASSWORD: "${CANARY_POSTGRES_PASSWORD:?set CANARY_POSTGRES_PASSWORD}"
+      POSTGRES_DB: "${CANARY_POSTGRES_DB:?set CANARY_POSTGRES_DB}"
+    ports: !reset []
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     restart: unless-stopped
 
-  db:
+  app:
+    build: !reset null
+    environment: !override
+      DATABASE_URL: "${CANARY_DATABASE_URL:?set CANARY_DATABASE_URL}"
+      NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST: "${NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST:?set NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST}"
+      API_KEY_PEPPER_ACTIVE: "${API_KEY_PEPPER_ACTIVE:?set API_KEY_PEPPER_ACTIVE}"
+      API_KEY_PEPPER_PREVIOUS: "${API_KEY_PEPPER_PREVIOUS:-}"
+      ENV_CREDENTIAL_ALLOWLIST: "CANARY_SLACK_BOT_TOKEN"
+      CREDENTIAL_REF_SCHEME_ALLOWLIST: "env"
+      CREDENTIAL_PROFILE_VALIDATOR: "bearer-env-v1"
+      CANARY_SLACK_BOT_TOKEN: "${CANARY_SLACK_BOT_TOKEN:?set CANARY_SLACK_BOT_TOKEN}"
+      HTTP_BIND: ":8080"
+      METRICS_PATH: "/metrics"
+      METRICS_COLLECTION_TIMEOUT: "2s"
+      WORKER_INTERVAL: "5s"
+      LEASE_DURATION: "30s"
+      RECOVERY_INTERVAL: "5s"
+      RECOVERY_BATCH_SIZE: "100"
+      SHUTDOWN_DEADLINE: "30s"
+      WORKER_CONCURRENCY: "5"
+      WORKER_VENDOR_SCOPE: "${CANARY_VENDOR_SLACK:?set CANARY_VENDOR_SLACK},${CANARY_VENDOR_WEBHOOK:?set CANARY_VENDOR_WEBHOOK}"
+      MIGRATION_SOURCE: "/migrations"
+    ports: !override
+      - "127.0.0.1:${APP_PORT:-8080}:8080"
+    labels:
+      io.negentropy-laby.canary.external-origin: "${CANARY_SERVICE_ORIGIN:?set CANARY_SERVICE_ORIGIN}"
     restart: unless-stopped
 
   prometheus:
+    ports: !override
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
     restart: unless-stopped
 
   webhook-receiver:
-    build:
-      context: ../..
-      target: canary-webhook-receiver
     environment:
       WEBHOOK_RECEIVER_BIND: ":8090"
       WEBHOOK_RECEIVER_STORE: "/evidence"
-      WEBHOOK_AUDIT_TOKEN: "${WEBHOOK_AUDIT_TOKEN}"
+      WEBHOOK_AUDIT_TOKEN: "${WEBHOOK_AUDIT_TOKEN:?set WEBHOOK_AUDIT_TOKEN}"
     ports:
-      - "${WEBHOOK_RECEIVER_PORT:-8090}:8090"
+      - "127.0.0.1:${WEBHOOK_RECEIVER_PORT:-8090}:8090"
+    labels:
+      io.negentropy-laby.canary.external-origin: "${CANARY_WEBHOOK_ORIGIN:?set CANARY_WEBHOOK_ORIGIN}"
     volumes:
-      - "${WEBHOOK_RECEIVER_EVIDENCE_DIR}:/evidence"
+      - "${WEBHOOK_RECEIVER_EVIDENCE_DIR:?set WEBHOOK_RECEIVER_EVIDENCE_DIR}:/evidence"
     read_only: true
     tmpfs:
       - /tmp
