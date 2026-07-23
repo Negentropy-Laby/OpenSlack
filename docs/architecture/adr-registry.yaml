@@ -1,6 +1,6 @@
 version: 1
 status: approved
-last_updated: 2026-07-22
+last_updated: 2026-07-24
 records:
   ADR-0001:
     title: PostgreSQL Transactional Outbox and Concurrency
@@ -52,6 +52,6 @@ records:
       - OpenSlack-to-service authority transfer at a durable valid 202 receipt
       - route ID, routing epoch and handoff idempotency-key v2 contract
       - final vendor bytes and receipt protocol contract
-      - two-repository, two-vendor Canary and full-history import gates
+      - two-repository, two-vendor G5-IMPORT-QUALIFICATION and full-history import gate, including the 2026-07-24 owner-authorized G5-CANARY supersession
       - standalone review waiver and post-IB6 OpenSlack review-policy transition
       - one-shot non-HTTP OpenSlack caller/auditor bootstrap and commit-convergence semantics

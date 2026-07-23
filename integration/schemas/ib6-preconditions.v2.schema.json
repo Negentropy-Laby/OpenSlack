@@ -1,0 +1,553 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:negentropy-laby:schema:ib6-preconditions:v2",
+  "title": "Negentropy-Laby IB6 Import Qualification Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "gate",
+    "status",
+    "recorded_at",
+    "owner_authorization",
+    "run",
+    "frozen_bindings",
+    "openslack_release",
+    "history_freeze",
+    "coverage",
+    "checks",
+    "evidence",
+    "scope"
+  ],
+  "properties": {
+    "schema": {
+      "const": "negentropy_laby.ib6_preconditions.v2"
+    },
+    "gate": {
+      "const": "G5-IMPORT-QUALIFICATION"
+    },
+    "status": {
+      "enum": ["PASS", "FAIL"]
+    },
+    "recorded_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "owner_authorization": {
+      "const": "wsman"
+    },
+    "run": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "protected_environment",
+        "started_at",
+        "completed_at",
+        "elapsed_seconds",
+        "minimum_duration_required",
+        "timeout_minutes"
+      ],
+      "properties": {
+        "run_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$"
+        },
+        "protected_environment": {
+          "const": "notification-canary"
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "completed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "elapsed_seconds": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3600
+        },
+        "minimum_duration_required": {
+          "const": false
+        },
+        "timeout_minutes": {
+          "const": 60
+        }
+      }
+    },
+    "frozen_bindings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "openslack_commit",
+        "openslack_tree",
+        "rc_wsman_commit",
+        "rc_wsman_tree",
+        "service_image_digest",
+        "watch_config_digest",
+        "vendor_config_versions",
+        "route_epochs"
+      ],
+      "properties": {
+        "openslack_commit": {
+          "$ref": "#/$defs/sha1"
+        },
+        "openslack_tree": {
+          "$ref": "#/$defs/sha1"
+        },
+        "rc_wsman_commit": {
+          "$ref": "#/$defs/sha1"
+        },
+        "rc_wsman_tree": {
+          "$ref": "#/$defs/sha1"
+        },
+        "service_image_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "watch_config_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "vendor_config_versions": {
+          "type": "array",
+          "minItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["vendor_id", "config_version"],
+            "properties": {
+              "vendor_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "config_version": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        },
+        "route_epochs": {
+          "type": "array",
+          "minItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["canonical_repository", "route_id", "routing_epoch"],
+            "properties": {
+              "canonical_repository": {
+                "type": "string",
+                "pattern": "^[a-z0-9_.-]+/[a-z0-9_.-]+$"
+              },
+              "route_id": {
+                "type": "string",
+                "pattern": "^[a-z](?:[a-z0-9-]{0,62}[a-z0-9])?$"
+              },
+              "routing_epoch": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "openslack_release": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tag", "commit", "release_url", "immutable"],
+      "properties": {
+        "tag": {
+          "const": "v0.2.0"
+        },
+        "commit": {
+          "$ref": "#/$defs/sha1"
+        },
+        "release_url": {
+          "type": "string",
+          "pattern": "^https://github\\.com/Negentropy-Laby/OpenSlack/releases/tag/v0\\.2\\.0$"
+        },
+        "immutable": {
+          "const": true
+        }
+      }
+    },
+    "history_freeze": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "review_baseline_commit",
+        "final_standalone_commit",
+        "final_standalone_tree",
+        "reachable_commit_count",
+        "archive_tag",
+        "archive_tag_commit",
+        "open_pull_request_count",
+        "standalone_ci"
+      ],
+      "properties": {
+        "review_baseline_commit": {
+          "const": "7976962e7de1c6ffcd234d2962b89dc4b23c95c0"
+        },
+        "final_standalone_commit": {
+          "$ref": "#/$defs/sha1"
+        },
+        "final_standalone_tree": {
+          "$ref": "#/$defs/sha1"
+        },
+        "reachable_commit_count": {
+          "type": "integer",
+          "minimum": 7
+        },
+        "archive_tag": {
+          "const": "integration-archive/rc-wsman-pre-ib6"
+        },
+        "archive_tag_commit": {
+          "$ref": "#/$defs/sha1"
+        },
+        "open_pull_request_count": {
+          "const": 0
+        },
+        "standalone_ci": {
+          "const": "PASS"
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "distinct_non_replay_accepted",
+        "repository_count",
+        "vendor_id_count",
+        "event_kinds",
+        "cartesian_cell_count",
+        "all_accepted_delivered",
+        "cells"
+      ],
+      "properties": {
+        "distinct_non_replay_accepted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "repository_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "vendor_id_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "event_kinds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": ["issue", "push"]
+          }
+        },
+        "cartesian_cell_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "all_accepted_delivered": {
+          "type": "boolean"
+        },
+        "cells": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "canonical_repository",
+              "event_kind",
+              "vendor_id",
+              "accepted_count",
+              "delivered_count",
+              "max_delivery_latency_seconds"
+            ],
+            "properties": {
+              "canonical_repository": {
+                "type": "string",
+                "pattern": "^[a-z0-9_.-]+/[a-z0-9_.-]+$"
+              },
+              "event_kind": {
+                "enum": ["issue", "push"]
+              },
+              "vendor_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              },
+              "accepted_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "delivered_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "max_delivery_latency_seconds": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    "checks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "g3_queue",
+        "g4_e2e",
+        "openslack_v0_2_0_immutable_release",
+        "receipt_database_vendor_reconciliation",
+        "caller_auditor_permission_isolation",
+        "restart_drill",
+        "response_loss_drill",
+        "payload_secret_scan",
+        "unresolved_duplicate_count",
+        "unresolved_conflict_count",
+        "delivery_dead_count",
+        "correctness_blocker_count",
+        "security_blocker_count"
+      ],
+      "properties": {
+        "g3_queue": {
+          "enum": ["PASS", "FAIL"]
+        },
+        "g4_e2e": {
+          "enum": ["PASS", "FAIL"]
+        },
+        "openslack_v0_2_0_immutable_release": {
+          "enum": ["PASS", "FAIL"]
+        },
+        "receipt_database_vendor_reconciliation": {
+          "enum": ["PASS", "FAIL"]
+        },
+        "caller_auditor_permission_isolation": {
+          "enum": ["PASS", "FAIL"]
+        },
+        "restart_drill": {
+          "enum": ["PASS", "FAIL"]
+        },
+        "response_loss_drill": {
+          "enum": ["PASS", "FAIL"]
+        },
+        "payload_secret_scan": {
+          "enum": ["PASS", "FAIL"]
+        },
+        "unresolved_duplicate_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unresolved_conflict_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "delivery_dead_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "correctness_blocker_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "security_blocker_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["artifact", "sha256"],
+        "properties": {
+          "artifact": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "sha256": {
+            "$ref": "#/$defs/sha256"
+          }
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authorizes", "does_not_authorize"],
+      "properties": {
+        "authorizes": {
+          "const": "IB6_HISTORY_IMPORT_ONLY"
+        },
+        "does_not_authorize": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "const": "LIVE_VERIFIED"
+            },
+            {
+              "const": "IB7_CUTOVER"
+            },
+            {
+              "const": "OPENSLACK_0.3.0_RELEASE"
+            },
+            {
+              "const": "PRODUCTION_READY"
+            },
+            {
+              "const": "DESTRUCTIVE_RETIREMENT"
+            }
+          ],
+          "items": false,
+          "minItems": 5,
+          "maxItems": 5
+        }
+      }
+    }
+  },
+  "$defs": {
+    "sha1": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "PASS"
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "coverage": {
+            "type": "object",
+            "properties": {
+              "distinct_non_replay_accepted": {
+                "type": "integer",
+                "minimum": 8
+              },
+              "repository_count": {
+                "type": "integer",
+                "minimum": 2
+              },
+              "vendor_id_count": {
+                "type": "integer",
+                "minimum": 2
+              },
+              "event_kinds": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "contains": {
+                  "const": "issue"
+                },
+                "allOf": [
+                  {
+                    "type": "array",
+                    "contains": {
+                      "const": "push"
+                    }
+                  }
+                ]
+              },
+              "cartesian_cell_count": {
+                "const": 8
+              },
+              "all_accepted_delivered": {
+                "const": true
+              },
+              "cells": {
+                "type": "array",
+                "minItems": 8,
+                "maxItems": 8,
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "accepted_count": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "delivered_count": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "max_delivery_latency_seconds": {
+                      "type": "integer",
+                      "maximum": 600
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "checks": {
+            "type": "object",
+            "properties": {
+              "g3_queue": {
+                "const": "PASS"
+              },
+              "g4_e2e": {
+                "const": "PASS"
+              },
+              "openslack_v0_2_0_immutable_release": {
+                "const": "PASS"
+              },
+              "receipt_database_vendor_reconciliation": {
+                "const": "PASS"
+              },
+              "caller_auditor_permission_isolation": {
+                "const": "PASS"
+              },
+              "restart_drill": {
+                "const": "PASS"
+              },
+              "response_loss_drill": {
+                "const": "PASS"
+              },
+              "payload_secret_scan": {
+                "const": "PASS"
+              },
+              "unresolved_duplicate_count": {
+                "const": 0
+              },
+              "unresolved_conflict_count": {
+                "const": 0
+              },
+              "delivery_dead_count": {
+                "const": 0
+              },
+              "correctness_blocker_count": {
+                "const": 0
+              },
+              "security_blocker_count": {
+                "const": 0
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

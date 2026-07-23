@@ -100,3 +100,39 @@ amendment_log `2e00d212…`；workflow_contract `432adc77…`；stage.txt `e8c56
 ADR-0003 当前 SHA 不再等于上文 pinned `1de7da07…`；其余 pinned artifact 均未受影响。
 `memory_bank/t3_archive/amendments/amendment-v1.0-2026-07-18.md` 作为 2026-07-18 历史记录，
 保留其对 `release_state.md` 与 constitution-draft review 原件的当时路径引用，不做回溯改写。
+
+## Owner Amendment Record — ADR-0005 Pre-IB6 Gate Supersession — 2026-07-24
+
+- **Authority**：owner `wsman`，`2026-07-24T00:46:29+08:00`。
+- **Disposition**：`G5-CANARY=SUPERSEDED_NOT_RUN`；replacement =
+  `G5-IMPORT-QUALIFICATION`。
+- **Scope**：仅改变 IB6 history import 的前置 Gate；不改变 runtime、wire/schema、delivery authority、
+  idempotency、retry、receipt、migration 或 security contract。
+- **Non-authorization**：不授权 `LIVE_VERIFIED`、IB7、OpenSlack 0.3.0、production readiness 或
+  destructive retirement。
+- **Evidence discipline**：旧 IB4/G1 evidence 未修改；Gate archive 只追加；qualification 运行尚未发生，
+  本记录不签发 `G5-IMPORT-QUALIFICATION=PASS`。
+- **Traceability**：该变更是 integration/release Gate governance，不新增或修改 290 个 canonical CDD AC，
+  因此不触发 `tr-registry.yaml` / `ac-evidence.json` Change Rule。
+- **Review characterization**：owner-authorized contract amendment + mechanical author verification；不是
+  independent live/production review。
+
+### Supersession artifact snapshot
+
+| Artifact | SHA-256 |
+|---|---|
+| `docs/architecture/adr-0005-openslack-handoff-integration.md` | `1827b5337fbf1f11ee0e9f5d38866b03750d3d596c957b42460521db7c940bf8` |
+| `docs/architecture/adr-registry.yaml` | `ce6e116b7bf2d048aba702d305be674c630f5ec1eb333b7bf5c3b200576c1482` |
+| `docs/operations/runbook.md` | `2119418e3103d8c8d95c494fe4d7fd65dd10be5b26aea014e2843cb3761b9a6a` |
+| `integration/schemas/integration-gate-supersession.v1.schema.json` | `23e756e1160a569c145b8dd38059089b7607727532ca21f7faa97c68ca95940c` |
+| `integration/schemas/ib6-preconditions.v2.schema.json` | `0ed86c4d40bc6784275f3b8213eca83fde50fa31fb757fa78dc6bdb71b18e133` |
+| `integration/gates/g5-import-qualification-supersession.json` | `2d1ee8da4bf3433732384bc1b70afd264b3455c9c8a0764e7c16b24f65ba54d6` |
+| `memory_bank/t3_archive/gate-archive.md` | `f3e481ccf3a6c9e995dc5e900afec2b70d89deb4c765bd0aaf00f99c65512b32` |
+
+### Mechanical verification
+
+- decision receipt validates against `negentropy_laby.integration_gate_supersession.v1`;
+- both JSON schemas compile as JSON Schema Draft 2020-12;
+- YAML registries parse with no duplicate keys;
+- local Markdown links resolve;
+- historical `ib4-r1-local-report.json` and `acceptance-report.json` remain byte-identical to `main`.
