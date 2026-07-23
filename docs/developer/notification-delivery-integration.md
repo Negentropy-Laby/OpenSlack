@@ -340,6 +340,16 @@ processing intent before reading the Blob and calling the dedicated service clie
 gate closed, a new service route fails before Blob or queue admission and polling cannot advance its cursor. Existing
 service records and legacy v1 ownership continue to drain; no setting enables automatic fallback.
 
+Full GitHub event prose is deliberately transient. If a direct v2 route survives a process restart, the worker
+renders it from the redacted persisted event plus fresh live state where that projection exists; issue and push
+notifications can therefore be less rich than an uninterrupted delivery. This bounded fidelity loss avoids
+persisting raw issue, review or commit prose. Service routes are unaffected because their final vendor bytes were
+already persisted in the protected Blob before admission.
+
+Transient-event cleanup reads the route queue once after each bounded drain, rather than once per claimed route.
+An absent composed service client remains a bounded retryable operational failure under the same 25-attempt/24-hour
+horizon and never transfers the route to the direct sender.
+
 IB3-C exposes the payload-blind operational surface under `openslack github notifications`: `doctor`, `status`,
 `queue`, `drain`, `retry`, `quarantine show/resolve`, `reconcile`, and `canary status/report`. Mutating recovery and
 drain actions default to preview and require `--apply`. Retry resets only the attempt/deadline window for a new

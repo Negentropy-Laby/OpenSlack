@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Genesis Validate — check OpenSlack repo integrity without any OpenSlack runtime dependency.
-# Runs on: bash, python (with PyYAML), git (no node, no pnpm, no OpenSlack packages).
+# Runs on: bash, python or python3 (with PyYAML), git (no node, no pnpm, no OpenSlack packages).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd -W 2>/dev/null || pwd)"
 
@@ -16,7 +16,27 @@ if [ ! -f "$ROOT/openslack.yaml" ]; then
   echo "FAIL (not found)"
   FAILED=1
 else
-  if python -c "import yaml; yaml.safe_load(open('$ROOT/openslack.yaml', encoding='utf-8'))" 2>/dev/null; then
+  PYTHON_BIN=""
+  PYTHON_FOUND=0
+  for candidate in python python3; do
+    if command -v "$candidate" >/dev/null 2>&1; then
+      PYTHON_FOUND=1
+      if "$candidate" -c 'import yaml; assert callable(yaml.safe_load)' >/dev/null 2>&1; then
+        PYTHON_BIN="$candidate"
+        break
+      fi
+    fi
+  done
+
+  if [ "$PYTHON_FOUND" -eq 0 ]; then
+    echo "FAIL (python/python3 not found)"
+    FAILED=1
+  elif [ -z "$PYTHON_BIN" ]; then
+    echo "FAIL (PyYAML not installed)"
+    FAILED=1
+  elif "$PYTHON_BIN" -c \
+    'import sys, yaml; yaml.safe_load(open(sys.argv[1], encoding="utf-8"))' \
+    "$ROOT/openslack.yaml" 2>/dev/null; then
     echo "PASS"
   else
     echo "FAIL (invalid YAML)"
