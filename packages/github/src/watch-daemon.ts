@@ -133,6 +133,7 @@ export class WatchDaemon {
   private deliveryRouter: WatchDeliveryRouter;
   private deliveryQueueV2: WatchDeliveryQueueV2 | null = null;
   private deliveryRouterV2: WatchDeliveryRouterV2 | null = null;
+  private legacyMigrationFinalized = false;
   private notificationReceiptStore: NotificationReceiptStore | null = null;
   private migrationBindings: LegacyWatchRouteBindingV2[] = [];
   private v2Prepared = false;
@@ -224,7 +225,7 @@ export class WatchDaemon {
 
   async start(port: number): Promise<void> {
     this.prepareV2Runtime();
-    this.deliveryRouter.start();
+    if (!this.legacyMigrationFinalized) this.deliveryRouter.start();
     this.deliveryRouterV2?.start();
     // Start profile-sync worker if auto-pr mode may be used
     try {
@@ -288,7 +289,9 @@ export class WatchDaemon {
     v2?: Awaited<ReturnType<WatchDeliveryRouterV2['drainOnce']>>;
   }> {
     this.prepareV2Runtime();
-    const legacy = await this.deliveryRouter.drainOnce();
+    const legacy = this.legacyMigrationFinalized
+      ? emptyLegacyDrainResult()
+      : await this.deliveryRouter.drainOnce();
     if (!this.deliveryRouterV2) return { legacy };
     this.refreshV1Migration();
     return { legacy, v2: await this.deliveryRouterV2.drainOnce() };
@@ -449,7 +452,7 @@ export class WatchDaemon {
       this.cursorStore.updateCursor(repoKey, pollResult.newCursor);
     }
 
-    await this.deliveryRouter.drainOnce();
+    if (!this.legacyMigrationFinalized) await this.deliveryRouter.drainOnce();
     if (this.deliveryRouterV2) {
       this.refreshV1Migration();
       await this.deliveryRouterV2.drainOnce();
@@ -460,7 +463,7 @@ export class WatchDaemon {
 
   async startPolling(intervalSeconds: number = 300): Promise<void> {
     this.prepareV2Runtime();
-    this.deliveryRouter.start();
+    if (!this.legacyMigrationFinalized) this.deliveryRouter.start();
     this.deliveryRouterV2?.start();
     const firstResult = await this.pollAll();
     console.log(
@@ -832,12 +835,15 @@ export class WatchDaemon {
   private prepareV2Runtime(): void {
     if (this.v2Prepared || !this.deliveryQueueV2 || !this.notificationReceiptStore) return;
     this.deliveryQueueV2.recoverAcceptedReceipts(this.notificationReceiptStore);
-    this.refreshV1Migration();
+    this.legacyMigrationFinalized = this.deliveryQueue.isV2MigrationFinalized(
+      this.deliveryQueueV2.statePath,
+    );
+    if (!this.legacyMigrationFinalized) this.refreshV1Migration();
     this.v2Prepared = true;
   }
 
   private refreshV1Migration(): void {
-    if (!this.deliveryQueueV2) return;
+    if (!this.deliveryQueueV2 || this.legacyMigrationFinalized) return;
     migrateWatchDeliveryQueueV1ToV2({
       v1: this.deliveryQueue,
       v2: this.deliveryQueueV2,
@@ -863,11 +869,11 @@ export class WatchDaemon {
         );
       }
       if (awaitDelivery) {
-        await this.deliveryRouter.drainOnce();
+        if (!this.legacyMigrationFinalized) await this.deliveryRouter.drainOnce();
         this.refreshV1Migration();
         await this.deliveryRouterV2.drainOnce();
       } else {
-        this.deliveryRouter.scheduleDrain();
+        if (!this.legacyMigrationFinalized) this.deliveryRouter.scheduleDrain();
         this.deliveryRouterV2.scheduleDrain();
       }
       return {
@@ -896,6 +902,10 @@ export class WatchDaemon {
     }
     return { outcome: 'enqueued', deliveryId: enqueue.delivery.id };
   }
+}
+
+function emptyLegacyDrainResult(): Awaited<ReturnType<WatchDeliveryRouter['drainOnce']>> {
+  return { claimed: 0, completed: 0, retryable: 0, failed: 0 };
 }
 
 function isWatchConfigV2(

@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { NotificationDeliveryOperations } from '../notification-delivery-operations.js';
 import type { NotificationAcceptanceReceiptV1 } from '../notification-receipt-store.js';
+import { WatchDeliveryQueueV2 } from '../watch-delivery-queue-v2.js';
 import {
   canonicalizeRepositoryName,
   toPersistableRepositoryEvent,
@@ -134,8 +135,34 @@ describe('NotificationDeliveryOperations', () => {
         reason: 'Attempted recovery.',
         apply: true,
       }),
-    ).toThrow();
+    ).toThrow('BLOB_NOT_AVAILABLE');
     expect(operations.queueV2.getRoute(record.id)?.state).toBe('rejected');
+  });
+
+  it('reports Blob integrity failure without exposing storage diagnostics', () => {
+    const operations = new NotificationDeliveryOperations({ workspaceRoot: workspace() });
+    const record = enqueue(operations);
+    const claim = operations.queueV2.claimNext('worker', 'notification_service');
+    if (!claim) throw new Error('Expected claim');
+    operations.queueV2.markRejected(record.id, claim.lease.token, 'deterministic_rejection', {
+      code: 'BAD_REQUEST',
+      message: 'Rejected.',
+      status: 400,
+    });
+    writeFileSync(operations.blobStore.pathFor(record.blob!.digest), '{"canary":null}', 'utf8');
+
+    expect(() =>
+      operations.retry(record.id, {
+        operator: 'operator-1',
+        reason: 'Attempted recovery.',
+        apply: true,
+      }),
+    ).toThrow('BLOB_INTEGRITY_FAILED');
+    expect(operations.queueV2.getRoute(record.id)).toMatchObject({
+      state: 'rejected',
+      authority: 'terminal',
+      recoveryCycle: 0,
+    });
   });
 
   it('verifies accepted local receipt identity without reading payload bytes', () => {
@@ -175,9 +202,215 @@ describe('NotificationDeliveryOperations', () => {
 
   it('validates v2 config, queue, Blob, receipt and credential reference in doctor', async () => {
     const root = workspace();
+    writeWatchConfig(root);
+    const operations = new NotificationDeliveryOperations({
+      workspaceRoot: root,
+      credentialStore: {
+        withSecret: (_reference, operation) => operation('fixture-secret'),
+      },
+    });
+    enqueue(operations);
+
+    const report = await operations.doctor();
+    expect(report.ready).toBe(true);
+    expect(report.checks.every((check) => check.passed)).toBe(true);
+    expect(JSON.stringify(report)).not.toContain('fixture-secret');
+  });
+
+  it('fails doctor closed when queue references cannot be enumerated', async () => {
+    const root = workspace();
+    writeWatchConfig(root);
+    const operations = new NotificationDeliveryOperations({
+      workspaceRoot: root,
+      credentialStore: {
+        withSecret: (_reference, operation) => operation('fixture-secret'),
+      },
+    });
+    writeFileSync(operations.queueV2.statePath, '{"schema":', 'utf8');
+
+    const report = await operations.doctor();
+
+    expect(report.ready).toBe(false);
+    expect(report.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: 'queue_v2', code: 'QUEUE_V2_INVALID', passed: false }),
+        expect.objectContaining({
+          name: 'active_blobs',
+          code: 'ACTIVE_BLOBS_UNAVAILABLE',
+          passed: false,
+        }),
+        expect.objectContaining({
+          name: 'accepted_receipts',
+          code: 'ACCEPTED_RECEIPTS_UNAVAILABLE',
+          passed: false,
+        }),
+      ]),
+    );
+    expect(JSON.stringify(report)).not.toContain('fixture-secret');
+  });
+
+  it('requires accepted receipt crash recovery before doctor can pass', async () => {
+    const root = workspace();
+    writeWatchConfig(root);
+    const operations = new NotificationDeliveryOperations({
+      workspaceRoot: root,
+      credentialStore: {
+        withSecret: (_reference, operation) => operation('fixture-secret'),
+      },
+    });
+    const record = enqueue(operations);
+    const crashingQueue = new WatchDeliveryQueueV2(join(root, '.openslack.local', 'daemon'), {
+      acceptanceCheckpoint: (checkpoint) => {
+        if (checkpoint === 'embedded_receipt_persisted') throw new Error('CRASH');
+      },
+    });
+    const claim = crashingQueue.claimNext('worker', 'notification_service');
+    if (!claim) throw new Error('Expected claim');
+    expect(() =>
+      crashingQueue.acceptServiceRoute(
+        record.id,
+        claim.lease.token,
+        acceptanceReceipt(record),
+        operations.receiptStore,
+      ),
+    ).toThrow('CRASH');
+
+    const beforeRecovery = await operations.doctor();
+    expect(beforeRecovery.ready).toBe(false);
+    expect(beforeRecovery.checks).toContainEqual(
+      expect.objectContaining({
+        name: 'accepted_receipts',
+        code: 'ACCEPTED_RECEIPT_RECOVERY_REQUIRED',
+        passed: false,
+      }),
+    );
+
+    expect(operations.queueV2.recoverAcceptedReceipts(operations.receiptStore)).toBe(1);
+    const afterRecovery = await operations.doctor();
+    expect(afterRecovery.checks).toContainEqual(
+      expect.objectContaining({
+        name: 'accepted_receipts',
+        code: 'ACCEPTED_RECEIPTS_VALID',
+        passed: true,
+      }),
+    );
+  });
+
+  it('detects same-size active Blob corruption instead of trusting metadata size', async () => {
+    const root = workspace();
+    writeWatchConfig(root);
+    const operations = new NotificationDeliveryOperations({
+      workspaceRoot: root,
+      credentialStore: {
+        withSecret: (_reference, operation) => operation('fixture-secret'),
+      },
+    });
+    const record = enqueue(operations);
+    writeFileSync(operations.blobStore.pathFor(record.blob!.digest), '{"canary":null}', 'utf8');
+
+    const report = await operations.doctor();
+
+    expect(report.ready).toBe(false);
+    expect(report.checks).toContainEqual(
+      expect.objectContaining({
+        name: 'active_blobs',
+        code: 'ACTIVE_BLOBS_INVALID',
+        passed: false,
+      }),
+    );
+  });
+
+  it('rejects Canary artifacts that could expose payload fields', () => {
+    const root = workspace();
+    const artifactRoot = join(root, '.openslack.local', 'daemon', 'notification-canary');
+    mkdirSync(artifactRoot, { recursive: true, mode: 0o700 });
     writeFileSync(
-      join(root, '.openslack', 'monitors', 'github-watch.yaml'),
-      `schema: openslack.github_watch.v2
+      join(artifactRoot, 'status.json'),
+      JSON.stringify({
+        schema: 'openslack.notification_canary_status.v1',
+        status: 'running',
+        payload: 'must-not-be-rendered',
+      }),
+      'utf8',
+    );
+    if (process.platform !== 'win32') chmodSync(join(artifactRoot, 'status.json'), 0o600);
+    const operations = new NotificationDeliveryOperations({ workspaceRoot: root });
+
+    expect(() => operations.readCanaryArtifact('status')).toThrow('CANARY_ARTIFACT_INVALID');
+  });
+
+  it('reads a bounded regular Canary artifact and rejects a symlink', () => {
+    const root = workspace();
+    const artifactRoot = join(root, '.openslack.local', 'daemon', 'notification-canary');
+    mkdirSync(artifactRoot, { recursive: true, mode: 0o700 });
+    const target = join(artifactRoot, 'sealed.json');
+    const statusPath = join(artifactRoot, 'status.json');
+    writeFileSync(
+      target,
+      JSON.stringify({
+        schema: 'openslack.notification_canary_status.v1',
+        status: 'running',
+        distinct_accepted: 8,
+      }),
+      { encoding: 'utf8', mode: 0o600 },
+    );
+    try {
+      symlinkSync(target, statusPath, 'file');
+    } catch {
+      return;
+    }
+
+    const operations = new NotificationDeliveryOperations({ workspaceRoot: root });
+    expect(() => operations.readCanaryArtifact('status')).toThrow('CANARY_ARTIFACT_INVALID');
+  });
+
+  it('rejects a Canary artifact that grows after its descriptor is opened', () => {
+    const root = workspace();
+    const artifactRoot = join(root, '.openslack.local', 'daemon', 'notification-canary');
+    mkdirSync(artifactRoot, { recursive: true, mode: 0o700 });
+    const statusPath = join(artifactRoot, 'status.json');
+    writeFileSync(
+      statusPath,
+      JSON.stringify({
+        schema: 'openslack.notification_canary_status.v1',
+        status: 'running',
+      }),
+      { encoding: 'utf8', mode: 0o600 },
+    );
+    const operations = new NotificationDeliveryOperations({
+      workspaceRoot: root,
+      canaryReadCheckpoint: () => {
+        writeFileSync(statusPath, Buffer.alloc(64 * 1024 + 1, 'x'), { mode: 0o600 });
+      },
+    });
+
+    expect(() => operations.readCanaryArtifact('status')).toThrow('CANARY_ARTIFACT_INVALID');
+  });
+});
+
+function acceptanceReceipt(record: ReturnType<typeof enqueue>): NotificationAcceptanceReceiptV1 {
+  return {
+    schema: 'openslack.notification_acceptance.v1',
+    route_record_id: record.id,
+    canonical_repository: record.canonicalRepository,
+    route_id: record.routeId,
+    routing_epoch: record.routingEpoch,
+    vendor_id: record.vendorId!,
+    idempotency_key: record.idempotencyKey,
+    notification_id: 'notification-crash-recovery',
+    remote_request_id: 'request-crash-recovery',
+    accepted_at: '2026-07-23T00:00:00.000Z',
+    idempotent_replay: false,
+    deployment_digest: `sha256:${'c'.repeat(64)}`,
+    watch_config_digest: record.watchConfigDigest!,
+    recorded_at: '2026-07-23T00:00:00.000Z',
+  };
+}
+
+function writeWatchConfig(root: string): void {
+  writeFileSync(
+    join(root, '.openslack', 'monitors', 'github-watch.yaml'),
+    `schema: openslack.github_watch.v2
 notification_service:
   endpoint: https://notifications.example.test
   credential_ref: env:OPENSLACK_NOTIFICATION_SERVICE_KEY
@@ -194,37 +427,6 @@ repositories:
           vendor_id: openslack-webhook
           routing_epoch: 1
 `,
-      'utf8',
-    );
-    const operations = new NotificationDeliveryOperations({
-      workspaceRoot: root,
-      credentialStore: {
-        withSecret: (_reference, operation) => operation('fixture-secret'),
-      },
-    });
-    enqueue(operations);
-
-    const report = await operations.doctor();
-    expect(report.ready).toBe(true);
-    expect(report.checks.every((check) => check.passed)).toBe(true);
-    expect(JSON.stringify(report)).not.toContain('fixture-secret');
-  });
-
-  it('rejects Canary artifacts that could expose payload fields', () => {
-    const root = workspace();
-    const artifactRoot = join(root, '.openslack.local', 'daemon', 'notification-canary');
-    mkdirSync(artifactRoot, { recursive: true });
-    writeFileSync(
-      join(artifactRoot, 'status.json'),
-      JSON.stringify({
-        schema: 'openslack.notification_canary_status.v1',
-        status: 'running',
-        payload: 'must-not-be-rendered',
-      }),
-      'utf8',
-    );
-    const operations = new NotificationDeliveryOperations({ workspaceRoot: root });
-
-    expect(() => operations.readCanaryArtifact('status')).toThrow('CANARY_ARTIFACT_INVALID');
-  });
-});
+    'utf8',
+  );
+}

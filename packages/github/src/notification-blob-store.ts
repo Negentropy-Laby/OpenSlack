@@ -80,6 +80,11 @@ export interface NotificationBlobReadResult {
   size: number;
 }
 
+export interface NotificationBlobVerifyResult {
+  digest: `sha256:${string}`;
+  size: number;
+}
+
 export interface NotificationBlobGcInput {
   activeDigests: ReadonlySet<string>;
   eligibleDigests: ReadonlySet<string>;
@@ -210,6 +215,43 @@ export class NotificationBlobStore {
       }
       const verified = verifyBlobFile(path, checked);
       return { digest: checked, bytes: verified.bytes, size: verified.bytes.byteLength };
+    });
+  }
+
+  /**
+   * Verifies the complete content-addressed Blob without returning its bytes to
+   * payload-blind callers such as doctor and governed recovery.
+   */
+  verify(digest: string, expectedSize?: number): NotificationBlobVerifyResult {
+    return this.withVerifiedBlob(digest, expectedSize, (verified) => verified);
+  }
+
+  /**
+   * Keeps the Blob-store lock held while a queue owner commits a transition
+   * that makes the verified Blob active. Callers must acquire queue-v2 before
+   * entering this method.
+   */
+  withVerifiedBlob<T>(
+    digest: string,
+    expectedSize: number | undefined,
+    operation: (verified: NotificationBlobVerifyResult) => T,
+  ): T {
+    const checked = checkedDigest(digest);
+    if (expectedSize !== undefined && (!Number.isSafeInteger(expectedSize) || expectedSize < 0)) {
+      throw blobError('BLOB_SIZE_MISMATCH', 'Expected Notification Blob size is invalid.');
+    }
+    return this.withLock(() => {
+      const path = this.pathFor(checked);
+      const directory = join(this.rootPath, checked.slice(7, 9));
+      if (!existsSync(directory)) {
+        throw blobError('BLOB_NOT_FOUND', 'Notification Blob is not available.');
+      }
+      ensureSecureNotificationDirectory(directory);
+      if (!existsSync(path)) {
+        throw blobError('BLOB_NOT_FOUND', 'Notification Blob is not available.');
+      }
+      const verified = verifyBlobFile(path, checked, expectedSize);
+      return operation({ digest: checked, size: verified.bytes.byteLength });
     });
   }
 

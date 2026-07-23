@@ -357,7 +357,17 @@ recovery cycle; route ID, epoch, vendor, idempotency key, Blob and encoder remai
 prove an accepted embedded/file receipt match. Quarantine remains fail-closed with
 `REMOTE_RECONCILIATION_REQUIRED` until the IB4 read-only service client supplies a safe-to-retry or archive-only
 decision. Commands and their JSON views omit persisted event data, payload bytes, credentials and raw vendor
-responses.
+responses. Doctor and recovery preflight call the Blob store's full digest-and-size verifier without returning bytes
+to the operations layer; a stat-only size check would miss same-size corruption. An `archive` decision is an
+append-only terminal disposition: it records reconciliation evidence in recovery history while the route remains
+quarantined and terminal, and does not delete the route or transfer delivery authority.
+
+Governed retry and Blob GC share the `queue-v2 → Blob` critical protocol: whichever obtains queue ownership first
+determines whether the terminal Blob is collected or atomically reactivated. Canary artifacts are read through a
+bounded, no-follow regular-file descriptor with pre/post identity checks. A pending acceptance ledger makes
+`doctor` fail with `ACCEPTED_RECEIPT_RECOVERY_REQUIRED` until startup recovery commits the receipt file. After v1
+finalization, v2-aware runtimes validate the final marker, backup and sentinel and skip all legacy reads; direct v1
+readers still fail closed on the deliberately non-JSON sentinel.
 
 ## V1 Migration And Gates
 
