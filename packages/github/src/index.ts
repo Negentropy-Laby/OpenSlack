@@ -153,7 +153,7 @@ export type {
   GitHubWatchRoute,
   WatchConfigParseResult,
 } from './watch-config.js';
-export { parseGitHubWatchConfigV2 } from './watch-config-v2.js';
+export { loadGitHubWatchConfigV2, parseGitHubWatchConfigV2 } from './watch-config-v2.js';
 export type {
   GitHubWatchConfigV2,
   GitHubWatchNotificationServiceV2,
@@ -170,6 +170,13 @@ export {
   WatchDeliveryQueueV2Error,
   migrateWatchDeliveryQueueV1ToV2,
 } from './watch-delivery-queue-v2.js';
+export { WatchDeliveryRouterV2 } from './watch-delivery-router-v2.js';
+export type {
+  WatchDeliveryRouterV2Options,
+  WatchDeliveryV2AdmissionResult,
+  WatchDeliveryV2DrainResult,
+  WatchDeliveryV2RecordEventFn,
+} from './watch-delivery-router-v2.js';
 export type {
   ClaimedWatchRouteV2,
   LegacyWatchRouteBindingV2,
@@ -356,7 +363,11 @@ export type {
   RepositoryPullRequestLiveState,
   RepositoryReviewStateSummary,
 } from './repository-live-state.js';
-export { WatchDaemon, formatConsoleNotification } from './watch-daemon.js';
+export {
+  WatchDaemon,
+  formatConsoleNotification,
+  parseNotificationServiceAdmission,
+} from './watch-daemon.js';
 export type {
   AutoClaimFn,
   RecordEventFn,

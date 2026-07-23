@@ -9,11 +9,15 @@ import {
   diagnoseGitHubAppInstallation,
   getClient,
   heartbeatClaim,
+  loadGitHubWatchConfig,
+  loadGitHubWatchConfigV2,
   queryReadyItems,
   readGitHubAppLocalConfig,
   renderClaimLifecycleResult,
   resolveGitHubRepoTarget,
   reviewClaim,
+  type GitHubWatchConfig,
+  type GitHubWatchConfigV2,
 } from '@openslack/github';
 import type {
   ClaimLifecycleResult,
@@ -90,6 +94,22 @@ function recordGithubRepair(
 function positiveInteger(value: string): number | null {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+export function loadWatchRuntimeConfig(
+  path: string,
+):
+  | { valid: true; config: GitHubWatchConfig | GitHubWatchConfigV2; errors: [] }
+  | { valid: false; config?: undefined; errors: string[] } {
+  const parsedV2 = loadGitHubWatchConfigV2(path);
+  if (parsedV2.valid && parsedV2.config) {
+    return { valid: true, config: parsedV2.config, errors: [] };
+  }
+  const parsedV1 = loadGitHubWatchConfig(path);
+  if (parsedV1.valid && parsedV1.config) {
+    return { valid: true, config: parsedV1.config, errors: [] };
+  }
+  return { valid: false, errors: [...parsedV2.errors, ...parsedV1.errors] };
 }
 
 function printClaimLifecycleResult(result: ClaimLifecycleResult): void {
@@ -711,10 +731,10 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
     .option('--poll', 'Use polling instead of webhooks')
     .option('--poll-interval <seconds>', 'Polling interval in seconds', '300')
     .action(async (options: { config: string; poll?: boolean; pollInterval?: string }) => {
-      const { loadGitHubWatchConfig, WatchDaemon } = await import('@openslack/github');
+      const { WatchDaemon } = await import('@openslack/github');
       const { recordEvent: _rec } = await import('@openslack/collaboration');
       const recordEvent = _rec as unknown as import('@openslack/github').RecordEventFn;
-      const result = loadGitHubWatchConfig(options.config);
+      const result = loadWatchRuntimeConfig(options.config);
       if (!result.valid) {
         console.error('Invalid watch config:');
         for (const err of result.errors) console.error(`  ${err}`);
@@ -798,11 +818,11 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
         issueNumber: string;
         action: string;
       }) => {
-        const { loadGitHubWatchConfig, WatchDaemon } = await import('@openslack/github');
+        const { WatchDaemon } = await import('@openslack/github');
         const { recordEvent: _rec } = await import('@openslack/collaboration');
         const recordEvent = _rec as unknown as import('@openslack/github').RecordEventFn;
         type NormalizedIssueEvent = import('@openslack/github').NormalizedIssueEvent;
-        const result = loadGitHubWatchConfig(options.config);
+        const result = loadWatchRuntimeConfig(options.config);
         if (!result.valid) {
           console.error('Invalid watch config:');
           for (const err of result.errors) console.error(`  ${err}`);
@@ -845,10 +865,10 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
     .description('Run a single polling cycle across all configured repos')
     .requiredOption('--config <path>', 'Config file path')
     .action(async (options: { config: string }) => {
-      const { loadGitHubWatchConfig, WatchDaemon } = await import('@openslack/github');
+      const { WatchDaemon } = await import('@openslack/github');
       const { recordEvent: _rec } = await import('@openslack/collaboration');
       const recordEvent = _rec as unknown as import('@openslack/github').RecordEventFn;
-      const result = loadGitHubWatchConfig(options.config);
+      const result = loadWatchRuntimeConfig(options.config);
       if (!result.valid) {
         console.error('Invalid watch config:');
         for (const err of result.errors) console.error(`  ${err}`);

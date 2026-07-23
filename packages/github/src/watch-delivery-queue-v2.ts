@@ -435,6 +435,7 @@ export class WatchDeliveryQueueV2 {
       | 'receipt_conflict'
       | 'blob_digest_mismatch'
       | 'blob_size_mismatch'
+      | 'blob_not_available'
     >,
     diagnostic: Omit<WatchRouteDiagnosticV2, 'retryable' | 'recordedAt'>,
   ): WatchRouteRecordV2 {

@@ -1,8 +1,8 @@
 # Notification Delivery Service Integration
 
-> **Status:** IB3-A queue/migration primitives implemented — `G3_QUEUE_IN_PROGRESS`
+> **Status:** IB3-B daemon/router composition implemented — `G3_QUEUE_IN_PROGRESS`
 >
-> **Runtime effect:** None. The v2 parser and protocol contracts are not wired into the watch daemon.
+> **Runtime effect:** v1 is unchanged; v2 service admission is fail-closed unless the explicit new-record gate is on.
 >
 > **Target release:** OpenSlack 0.3.0
 
@@ -68,8 +68,8 @@ GitHub event
 
 ## V2 Watch Configuration
 
-The v1 parser and `github-watch.schema.json` remain unchanged. IB0 adds a separate
-`openslack.github_watch.v2` parser and schema, but the daemon does not load them yet.
+The v1 parser and `github-watch.schema.json` remain unchanged. The daemon selects the separate
+`openslack.github_watch.v2` parser only when that explicit schema is present; v2 does not infer a delivery backend.
 
 ```yaml
 schema: openslack.github_watch.v2
@@ -323,7 +323,28 @@ schedule is deterministic at 5 seconds through the one-hour cap and terminates o
 
 The queue owns the accepted three-write transaction and recovery of `ledger=pending`; recovered accepted records are
 never claimable for another POST. Direct records keep their existing five-attempt policy and terminal states, while
-service records use the handoff states above. IB3-B remains responsible for daemon/router composition.
+service records use the handoff states above.
+
+IB3-B composes a separate v2 route worker rather than changing the v1 router. Startup recovers pending receipt
+ledgers, applies the per-route v1 migration under the frozen lock order, starts the legacy direct drain, then starts
+the v2 direct and service workers. Service admission materializes final bytes once, verifies the handoff size, writes
+the content-addressed Blob, durably enqueues the route reference, and only then permits POST. The worker persists its
+processing intent before reading the Blob and calling the dedicated service client. A valid 202 emits
+`notification.accepted`; `notification.sent` remains exclusive to direct vendor success.
+
+`OPENSLACK_NOTIFICATION_SERVICE_NEW_RECORDS` defaults to false and accepts only exact `true` or `false`. With the
+gate closed, a new service route fails before Blob or queue admission and polling cannot advance its cursor. Existing
+service records and legacy v1 ownership continue to drain; no setting enables automatic fallback.
+
+Full GitHub event prose is deliberately transient. If a direct v2 route survives a process restart, the worker
+renders it from the redacted persisted event plus fresh live state where that projection exists; issue and push
+notifications can therefore be less rich than an uninterrupted delivery. This bounded fidelity loss avoids
+persisting raw issue, review or commit prose. Service routes are unaffected because their final vendor bytes were
+already persisted in the protected Blob before admission.
+
+Transient-event cleanup reads the route queue once after each bounded drain, rather than once per claimed route.
+An absent composed service client remains a bounded retryable operational failure under the same 25-attempt/24-hour
+horizon and never transfers the route to the direct sender.
 
 ## V1 Migration And Gates
 
@@ -340,8 +361,8 @@ The next phases remain blocked by gates:
 ```text
 G0-CONTRACT: PASS_WITH_RC_REVIEW_WAIVER; OpenSlack independently reviewed, standalone service owner waiver + PR/CI
 G1-SERVICE: service v2 contract implemented and verified
-G2-CLIENT: body, Blob, receipt and client components verified but not wired
-G3-QUEUE: IN PROGRESS; IB3-A queue/migration implemented, daemon/router and governed CLI pending
+G2-CLIENT: body, Blob, receipt and client components verified
+G3-QUEUE: IN PROGRESS; IB3-A queue/migration and IB3-B daemon/router implemented; governed CLI pending
 G4-E2E: two repositories x Slack and webhook fault matrix
 G5-CANARY: 336 continuous hours + 100 distinct non-replay accepted keys
 ```

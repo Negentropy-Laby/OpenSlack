@@ -11,10 +11,9 @@ const forbiddenModules = [
   'notification-receipt-store',
 ];
 
-describe('notification handoff G2 source invariant', () => {
-  it('keeps the client, Blob and receipt primitives out of all composition roots', () => {
+describe('notification handoff G3 source invariant', () => {
+  it('limits handoff composition to the v2 daemon and route worker', () => {
     const compositionFiles = [
-      join(githubSource, 'watch-daemon.ts'),
       join(githubSource, 'watch-delivery-router.ts'),
       join(githubSource, 'workspace-watch.ts'),
       join(githubSource, 'notification-sinks.ts'),
@@ -35,6 +34,17 @@ describe('notification handoff G2 source invariant', () => {
         'NotificationReceiptStore',
       );
     }
+
+    const daemon = readFileSync(join(githubSource, 'watch-daemon.ts'), 'utf8');
+    expect(daemon).toContain('new NotificationServiceClient');
+    expect(daemon).toContain('new NotificationBlobStore');
+    expect(daemon).toContain('new NotificationReceiptStore');
+    expect(daemon).toContain('parseNotificationServiceAdmission');
+
+    const v2Router = readFileSync(join(githubSource, 'watch-delivery-router-v2.ts'), 'utf8');
+    expect(v2Router).toContain('notificationClient.handoff');
+    expect(v2Router).not.toContain('implements NotificationSink');
+    expect(v2Router).not.toContain("type: 'notification.sent'");
   });
 });
 

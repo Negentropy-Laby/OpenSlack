@@ -1,7 +1,4 @@
-/**
- * CONTRACT FREEZE: these v2 handoff contracts are not wired into the watch daemon.
- * Do not add runtime consumers before the G2/G3 gates in notification-delivery-integration.md.
- */
+/** Frozen v2 handoff contracts used by the route-centric daemon integration. */
 import { createHash } from 'node:crypto';
 import { canonicalizeRepositoryName } from './repository-event.js';
 
