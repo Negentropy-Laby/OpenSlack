@@ -328,8 +328,7 @@ function isProcessAlive(pid: number): boolean {
 
 function isTransientLockInspectionRace(error: unknown): boolean {
   return (
-    isNodeError(error, 'ENOENT') ||
-    (process.platform === 'win32' && isNodeError(error, 'EPERM'))
+    isNodeError(error, 'ENOENT') || (process.platform === 'win32' && isNodeError(error, 'EPERM'))
   );
 }
 
