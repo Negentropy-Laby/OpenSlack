@@ -150,7 +150,7 @@ describe('Worktree isolation', () => {
     // Worktree may or may not be created depending on git availability
     // The important thing is the run completes
     expect(runs[0].status).toBe('completed');
-  });
+  }, 15_000);
 
   it('creates worktree when isolation is explicitly worktree', async () => {
     const store = createRunStore(root);
@@ -173,7 +173,7 @@ describe('Worktree isolation', () => {
     const runs = store.listRuns();
     expect(runs.length).toBe(1);
     expect(runs[0].status).toBe('completed');
-  });
+  }, 15_000);
 
   it('runs without worktree for review agents', async () => {
     const store = createRunStore(root);

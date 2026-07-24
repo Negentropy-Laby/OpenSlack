@@ -1,0 +1,43 @@
+{
+  "schema": "negentropy_laby.integration_gate_supersession.v1",
+  "decision_id": "g5-canary-to-g5-import-qualification-2026-07-24",
+  "recorded_at": "2026-07-24T00:46:29+08:00",
+  "owner_authorization": "wsman",
+  "superseded_gate": {
+    "gate": "G5-CANARY",
+    "status": "SUPERSEDED_NOT_RUN",
+    "executed": false
+  },
+  "replacement_gate": {
+    "gate": "G5-IMPORT-QUALIFICATION",
+    "status": "ACTIVE_PENDING_EXECUTION"
+  },
+  "qualification": {
+    "minimum_duration_required": false,
+    "protected_single_run": true,
+    "run_timeout_minutes": 60,
+    "distinct_non_replay_accepted_minimum": 8,
+    "repository_minimum": 2,
+    "required_event_kinds": ["issue", "push"],
+    "vendor_id_minimum": 2,
+    "required_cartesian_cell_count": 8,
+    "delivery_deadline_seconds": 600,
+    "prerequisite_gates": ["G3-QUEUE", "G4-E2E", "OPENSLACK-V0.2.0-IMMUTABLE-RELEASE"],
+    "unresolved_blocker_maximum": 0
+  },
+  "scope": {
+    "authorizes": ["IB6_HISTORY_IMPORT_ONLY"],
+    "does_not_authorize": [
+      "LIVE_VERIFIED",
+      "IB7_CUTOVER",
+      "OPENSLACK_0.3.0_RELEASE",
+      "PRODUCTION_READY",
+      "DESTRUCTIVE_RETIREMENT"
+    ]
+  },
+  "evidence_policy": {
+    "historical_evidence_mutable": false,
+    "qualification_receipt_schema": "negentropy_laby.ib6_preconditions.v2",
+    "qualification_receipt_required": true
+  }
+}

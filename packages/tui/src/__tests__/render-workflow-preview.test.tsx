@@ -1,35 +1,28 @@
 import { describe, it, expect } from 'vitest';
 import { mapWorkflowPreviewToViewModel } from '../view-models/workflow-preview.js';
+import { renderWorkflowPreviewTui } from '../views/render-workflow-preview.js';
+import WorkflowPreviewView from '../views/WorkflowPreviewView.js';
+import * as tuiIndex from '../index.js';
 import type { WorkflowPreview } from '@openslack/collaboration';
 
 // Tests for the render-workflow-preview module (mapper + export wiring)
 // Since renderTui requires a real TTY, we test the mapper and module structure.
 
 describe('renderWorkflowPreviewTui module wiring', () => {
-  it('exports mapWorkflowPreviewToViewModel from view-models', async () => {
-    const mod = await import('../view-models/workflow-preview.js');
-    expect(typeof mod.mapWorkflowPreviewToViewModel).toBe('function');
+  it('exports mapWorkflowPreviewToViewModel from view-models', () => {
+    expect(typeof mapWorkflowPreviewToViewModel).toBe('function');
   });
 
-  it('exports WorkflowPreviewViewModel type (structural)', async () => {
-    const mod = await import('../view-models/workflow-preview.js');
-    // Type export check: ensure the module loaded without errors
-    expect(mod).toBeDefined();
+  it('exports renderWorkflowPreviewTui from views', () => {
+    expect(typeof renderWorkflowPreviewTui).toBe('function');
   });
 
-  it('exports renderWorkflowPreviewTui from views', async () => {
-    const mod = await import('../views/render-workflow-preview.js');
-    expect(typeof mod.renderWorkflowPreviewTui).toBe('function');
+  it('exports WorkflowPreviewView from views', () => {
+    expect(typeof WorkflowPreviewView).toBe('function');
   });
 
-  it('exports WorkflowPreviewView from views', async () => {
-    const mod = await import('../views/WorkflowPreviewView.js');
-    expect(typeof mod.default).toBe('function');
-  });
-
-  it('index.ts exports renderWorkflowPreviewTui', async () => {
-    const mod = await import('../index.js');
-    expect(typeof mod.renderWorkflowPreviewTui).toBe('function');
+  it('index.ts exports renderWorkflowPreviewTui', () => {
+    expect(typeof tuiIndex.renderWorkflowPreviewTui).toBe('function');
   });
 });
 

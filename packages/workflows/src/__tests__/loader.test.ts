@@ -6,10 +6,15 @@ import {
   DISCOVERY_PATHS,
   detectFormat,
   analyzeStaticMeta,
-  findWorkflow,
+  findWorkflow as findWorkflowWithUserHome,
   discoverYamlTemplates,
-  discoverJsWorkflows,
+  discoverJsWorkflows as discoverJsWorkflowsWithUserHome,
 } from '../loader.js';
+
+const discoverJsWorkflows = (cwd: string) =>
+  discoverJsWorkflowsWithUserHome(cwd, { userHomeDir: null });
+const findWorkflow = (name: string, cwd: string) =>
+  findWorkflowWithUserHome(name, cwd, { userHomeDir: null });
 
 describe('DISCOVERY_PATHS', () => {
   it('includes .openslack/workflows', () => {
