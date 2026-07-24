@@ -535,6 +535,39 @@ export class WatchDeliveryQueueV2 {
     });
   }
 
+  projectRemoteDelivery(
+    id: string,
+    notificationId: string,
+    remoteState: Exclude<RemoteDeliveryState, 'unknown'>,
+  ): WatchRouteRecordV2 {
+    return this.mutate((state, now) => {
+      const record = state.routes.find((candidate) => candidate.id === id);
+      if (
+        !record ||
+        record.backend !== 'notification_service' ||
+        record.state !== 'accepted' ||
+        record.authority !== 'notification_service' ||
+        record.receiptLedger !== 'committed' ||
+        record.receipt?.notification_id !== notificationId
+      ) {
+        throw queueError(
+          'QUEUE_TRANSITION_INVALID',
+          'Only a committed accepted receipt can receive a remote delivery projection.',
+        );
+      }
+      if (record.remoteDeliveryState === 'delivered' && remoteState !== 'delivered') {
+        throw queueError(
+          'QUEUE_TRANSITION_INVALID',
+          'A delivered remote projection cannot regress.',
+        );
+      }
+      if (record.remoteDeliveryState === remoteState) return cloneRoute(record);
+      record.remoteDeliveryState = remoteState;
+      record.updatedAt = now.toISOString();
+      return cloneRoute(record);
+    });
+  }
+
   listRoutes(): WatchRouteRecordV2[] {
     return this.read((state) => cloneRoutes(state.routes));
   }

@@ -79,7 +79,15 @@ export function withNotificationStorageLock<T>(
   const deadline = Date.now() + timeout;
   while (true) {
     if (existsSync(reclaimPath)) {
-      assertSecureLockFile(reclaimPath);
+      try {
+        assertSecureLockFile(reclaimPath);
+      } catch (error) {
+        // The elected reclaimer may finish between the existence probe and
+        // this inspection. Retry acquisition, but continue to fail closed for
+        // links, non-regular files, or unsafe permissions.
+        if (isTransientLockInspectionRace(error)) continue;
+        throw error;
+      }
       if (Date.now() >= deadline) {
         throw notificationStorageError(
           'STORAGE_LOCK_TIMEOUT',
@@ -104,13 +112,28 @@ export function withNotificationStorageLock<T>(
       fsyncNotificationDirectory(root);
       break;
     } catch (error) {
-      if (!isNodeError(error, 'EEXIST')) throw error;
+      if (
+        !isNodeError(error, 'EEXIST') &&
+        !(process.platform === 'win32' && isNodeError(error, 'EPERM'))
+      ) {
+        throw error;
+      }
       try {
         assertSecureLockFile(lockPath);
       } catch (statusError) {
         // The previous owner may release the lock between our EEXIST result and
-        // this inspection. That is a normal hand-off race, so retry acquisition.
-        if (isNodeError(statusError, 'ENOENT')) continue;
+        // this inspection. Windows may surface the same delete-sharing window
+        // as EPERM. Both cases are bounded by the acquisition deadline.
+        if (isTransientLockInspectionRace(statusError)) {
+          if (Date.now() >= deadline) {
+            throw notificationStorageError(
+              'STORAGE_LOCK_TIMEOUT',
+              'Timed out waiting for the notification storage lock.',
+            );
+          }
+          blockFor(Math.min(25, Math.max(1, deadline - Date.now())));
+          continue;
+        }
         throw statusError;
       }
       isolateStaleLock(lockPath, reclaimPath, root, stale, nonceFactory());
@@ -301,6 +324,13 @@ function isProcessAlive(pid: number): boolean {
   } catch (error) {
     return !isNodeError(error, 'ESRCH');
   }
+}
+
+function isTransientLockInspectionRace(error: unknown): boolean {
+  return (
+    isNodeError(error, 'ENOENT') ||
+    (process.platform === 'win32' && isNodeError(error, 'EPERM'))
+  );
 }
 
 function blockFor(milliseconds: number): void {

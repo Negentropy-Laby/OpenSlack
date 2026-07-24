@@ -578,15 +578,17 @@ normal delivery or product branches.
 | `openslack github repair-claims`                                                                             | Compatibility alias for claim repair; default is dry-run                                      |
 | `openslack github repair-all`                                                                                | Compatibility alias for all GitHub repairs; default is dry-run                                |
 | `openslack github metrics`                                                                                   | Task loop metrics                                                                             |
-| `openslack github notifications doctor [--config <path>]`                                                    | Validate v2 queue, Blob, receipt, config, and credential-reference readiness without sending  |
+| `openslack github notifications doctor [--config <path>]`                                                    | Verify v2 queue, Blob/receipt, caller, read-only auditor, service digest, and vendor evidence |
 | `openslack github notifications status`                                                                      | Show payload-blind v2 and legacy delivery counts                                              |
 | `openslack github notifications queue [--state <state>]`                                                     | List whitelisted route projections without event prose, keys, Blob references, or payloads    |
 | `openslack github notifications drain [--config <path>] [--apply]`                                           | Preview or run one legacy/v2 drain cycle without admitting new service records                |
 | `openslack github notifications retry <id> --reason <text> [--operator <id>] [--apply]`                      | Preview or open a governed recovery cycle using the immutable key, vendor, Blob, and encoder  |
 | `openslack github notifications quarantine show <id>`                                                        | Show a payload-blind quarantined route projection                                             |
 | `openslack github notifications quarantine resolve <id> --decision retry\|archive --reason <text> [--apply]` | Require IB4 read-only reconciliation before recording a quarantine decision                   |
-| `openslack github notifications reconcile <id>`                                                              | Verify local accepted receipt consistency; remote reconciliation is added by IB4              |
+| `openslack github notifications reconcile <id> [--config <path>]`                                            | Reconcile receipt, service status/attempts, and metadata-only vendor evidence                 |
 | `openslack github notifications canary status\|report`                                                       | Read a sealed, whitelisted local Canary artifact                                              |
+| `openslack github notifications qualification status`                                                        | Read the sealed metadata-only IB6 import qualification status                                 |
+| `openslack github notifications qualification report`                                                        | Read the complete sealed metadata-only IB6 import qualification report                        |
 | `openslack github claim heartbeat --issue-number <n> --agent-id <id> --ttl-minutes <1..120>`                 | Extend and verify a claim lease                                                               |
 | `openslack github claim review --issue-number <n> --agent-id <id> --pr-url <url>`                            | Verify the owner and move a claimed Issue to review                                           |
 | `openslack github claim complete --issue-number <n> --agent-id <id> --pr-url <url>`                          | Complete a merged Issue and verify claim-ref removal                                          |
@@ -596,6 +598,20 @@ Claim lifecycle commands require live GitHub evidence and return
 `openslack.claim_lifecycle.v1`. They fail closed on missing/conflicting owner
 markers or unverifiable ref, comment, label, PR, and completion postconditions;
 transport failures are reported with fixed, secret-safe codes.
+
+Notification reconciliation uses a principal separate from the handoff caller.
+Set `OPENSLACK_NOTIFICATION_SERVICE_AUDITOR_CREDENTIAL_REF` to an `env:` or
+`keychain:` reference for a read-only auditor, and set
+`OPENSLACK_NOTIFICATION_VENDOR_EVIDENCE_DIR` to a protected directory of
+create-only mode-`0600` metadata records. The files contain route/vendor/key
+identity, digest, size and timestamps only; commands never read or display Blob
+bytes, raw vendor responses, endpoints, tokens, or resolved credentials.
+
+Qualification commands return a nonzero process status when the run has not
+occurred, the sealed evidence is invalid, or the report is `FAIL`. A `PASS`
+authorizes only IB6 history-import eligibility; it does not claim the superseded
+long-duration Canary, `LIVE_VERIFIED`, IB7 cutover, OpenSlack 0.3.0, production
+readiness, or destructive retirement.
 
 Notification recovery commands are preview-first; only `--apply` may mutate
 local state. `drain --apply` continues existing v1/v2 ownership but forces new

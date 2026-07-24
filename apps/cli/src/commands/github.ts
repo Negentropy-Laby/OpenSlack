@@ -1134,14 +1134,20 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
     .argument('<route-record-id>')
     .requiredOption('--decision <retry|archive>', 'Resolution decision')
     .requiredOption('--reason <text>', 'Operator reason')
+    .option(
+      '--config <path>',
+      'GitHub Watch v2 config path',
+      '.openslack/monitors/github-watch.yaml',
+    )
     .option('--operator <id>', 'Operator identity', 'local-operator')
     .option('--apply', 'Apply the resolution')
     .action(
-      (
+      async (
         id: string,
         options: {
           decision: string;
           reason: string;
+          config: string;
           operator: string;
           apply?: boolean;
         },
@@ -1153,12 +1159,13 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
           const operations = new NotificationDeliveryOperations({
             workspaceRoot: findRepoRoot(),
           });
-          const reconciliation = operations.reconcile(id);
-          if (reconciliation.outcome !== 'remote_required') {
+          const reconciliation = await operations.reconcile(id, options.config);
+          console.log(JSON.stringify(reconciliation));
+          if (reconciliation.outcome !== 'consistent') {
             throw new Error('RECONCILIATION_DECISION_UNAVAILABLE');
           }
-          console.log(
-            'REMOTE_RECONCILIATION_REQUIRED: IB4 read-only service reconciliation must complete before quarantine resolution.',
+          console.error(
+            'QUARANTINE_RESOLUTION_FAILED: accepted-route evidence cannot authorize a quarantined-route transition.',
           );
           process.exitCode = 1;
         } catch {
@@ -1171,13 +1178,18 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
 
   notifications
     .command('reconcile')
-    .description('Verify local accepted receipt consistency')
+    .description('Reconcile local receipt, service state and metadata-only vendor evidence')
     .argument('<route-record-id>')
-    .action((id: string) => {
+    .option(
+      '--config <path>',
+      'GitHub Watch v2 config path',
+      '.openslack/monitors/github-watch.yaml',
+    )
+    .action(async (id: string, options: { config: string }) => {
       try {
-        const result = new NotificationDeliveryOperations({
+        const result = await new NotificationDeliveryOperations({
           workspaceRoot: findRepoRoot(),
-        }).reconcile(id);
+        }).reconcile(id, options.config);
         console.log(JSON.stringify(result));
         if (result.outcome !== 'consistent') process.exitCode = 1;
       } catch {
@@ -1208,6 +1220,65 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
       });
   }
   notifications.addCommand(canary);
+
+  const qualification = new Command('qualification').description(
+    'Read the sealed single-run IB6 import qualification',
+  );
+  qualification
+    .command('status')
+    .description('Show the qualification status without payload data')
+    .action(() => {
+      try {
+        const report = new NotificationDeliveryOperations({
+          workspaceRoot: findRepoRoot(),
+        }).readImportQualificationReport();
+        if (report === null) {
+          console.log('QUALIFICATION_NOT_RUN');
+          process.exitCode = 1;
+          return;
+        }
+        console.log(
+          JSON.stringify({
+            schema: report.schema,
+            status: report.status,
+            correlation_id: report.correlation_id,
+            started_at: report.started_at,
+            completed_at: report.completed_at,
+            distinct_non_replay_accepted: report.distinct_non_replay_accepted,
+            repositories: report.repositories,
+            vendor_ids: report.vendor_ids,
+            maximum_convergence_seconds: report.maximum_convergence_seconds,
+            failed_requirements: report.failed_requirements,
+            does_not_claim: report.does_not_claim,
+          }),
+        );
+        if (report.status !== 'PASS') process.exitCode = 1;
+      } catch {
+        console.error('QUALIFICATION_ARTIFACT_INVALID');
+        process.exitCode = 1;
+      }
+    });
+  qualification
+    .command('report')
+    .description('Show the complete metadata-only qualification report')
+    .action(() => {
+      try {
+        const report = new NotificationDeliveryOperations({
+          workspaceRoot: findRepoRoot(),
+        }).readImportQualificationReport();
+        if (report === null) {
+          console.log('QUALIFICATION_NOT_RUN');
+          process.exitCode = 1;
+          return;
+        }
+        console.log(JSON.stringify(report));
+        if (report.status !== 'PASS') process.exitCode = 1;
+      } catch {
+        console.error('QUALIFICATION_ARTIFACT_INVALID');
+        process.exitCode = 1;
+      }
+    });
+  notifications.addCommand(qualification);
   cmd.addCommand(notifications);
 
   cmd

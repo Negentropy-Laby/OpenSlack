@@ -199,6 +199,61 @@ export type {
   WatchRouteStateV2,
 } from './watch-delivery-queue-v2.js';
 export {
+  NotificationServiceOpsClient,
+  type NotificationOpsResult,
+  type NotificationRemoteState,
+  type NotificationServiceAttempt,
+  type NotificationServiceOpsClientOptions,
+  type NotificationServiceStatus,
+  type NotificationServiceVersionResult,
+} from './notification-service-ops-client.js';
+export {
+  NOTIFICATION_VENDOR_EVIDENCE_SCHEMA,
+  NotificationDeliveryReconciler,
+  NotificationVendorEvidenceStore,
+  type NotificationDeliveryReconcilerOptions,
+  type NotificationReconciliationReport,
+  type NotificationVendorEvidence,
+  type NotificationVendorEvidenceSource,
+} from './notification-reconciliation.js';
+export {
+  NotificationFaultProxy,
+  type NotificationFaultAcceptedFixture,
+  type NotificationFaultProxyObservation,
+  type NotificationFaultProxyOptions,
+  type NotificationFaultScenario,
+} from './notification-fault-proxy.js';
+export {
+  NOTIFICATION_FAULT_RUN_SCHEMA,
+  ensureNotificationFaultRun,
+  runNotificationFaultHarness,
+  type NotificationFaultHarnessOptions,
+  type NotificationFaultHarnessResult,
+  type NotificationFaultHarnessStep,
+  type NotificationFaultRunCheck,
+  type NotificationFaultRunIdentity,
+  type NotificationFaultRunManifest,
+  type NotificationFaultRunWriteResult,
+} from './notification-fault-run.js';
+export {
+  NOTIFICATION_IMPORT_QUALIFICATION_REQUIRED_DRILLS,
+  NOTIFICATION_IMPORT_QUALIFICATION_SCHEMA,
+  createNotificationImportQualificationReport,
+  ensureNotificationImportQualificationReport,
+  readNotificationImportQualificationReport,
+  type NotificationImportQualificationDrill,
+  type NotificationImportQualificationDrillKind,
+  type NotificationImportQualificationInput,
+  type NotificationImportQualificationObservation,
+  type NotificationImportQualificationPrincipalScope,
+  type NotificationImportQualificationReport,
+  type NotificationImportQualificationRoute,
+  type NotificationImportQualificationVendorConfig,
+  type NotificationImportQualificationWriteResult,
+} from './notification-import-qualification.js';
+export {
+  NOTIFICATION_AUDITOR_CREDENTIAL_REF_ENV,
+  NOTIFICATION_VENDOR_EVIDENCE_DIR_ENV,
   NotificationDeliveryOperations,
   type NotificationDeliveryDoctorCheck,
   type NotificationDeliveryDoctorReport,

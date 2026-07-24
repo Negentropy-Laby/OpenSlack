@@ -1,0 +1,404 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/notification-import-qualification-report.v1.json",
+  "title": "OpenSlack notification import qualification report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "status",
+    "correlation_id",
+    "started_at",
+    "completed_at",
+    "openslack_commit",
+    "openslack_tree",
+    "service_commit",
+    "service_tree",
+    "service_deployment_digest",
+    "watch_config_digest",
+    "routes",
+    "vendor_configs",
+    "caller_scope",
+    "auditor_scope",
+    "observations",
+    "drills",
+    "caller_read_ops_denied",
+    "auditor_submit_denied",
+    "final_pending",
+    "final_dead",
+    "final_unexplained_conflicts",
+    "final_authority_fallbacks",
+    "unexplained_vendor_duplicates",
+    "explained_vendor_duplicates",
+    "response_loss_replay_same_key",
+    "response_loss_replay_same_notification_id",
+    "response_loss_vendor_duplicates",
+    "explained_duplicates_same_key_and_body_digest",
+    "external_timeout_count",
+    "payload_secret_marker_findings",
+    "receipt_reconciliation_sha256",
+    "security_review_sha256",
+    "distinct_non_replay_accepted",
+    "repositories",
+    "vendor_ids",
+    "maximum_convergence_seconds",
+    "failed_requirements",
+    "does_not_claim"
+  ],
+  "properties": {
+    "schema": {
+      "const": "openslack.notification_import_qualification_report.v1"
+    },
+    "status": {
+      "enum": ["PASS", "FAIL"]
+    },
+    "correlation_id": {
+      "$ref": "#/$defs/boundedText"
+    },
+    "started_at": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "completed_at": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "openslack_commit": {
+      "$ref": "#/$defs/gitObject"
+    },
+    "openslack_tree": {
+      "$ref": "#/$defs/gitObject"
+    },
+    "service_commit": {
+      "$ref": "#/$defs/gitObject"
+    },
+    "service_tree": {
+      "$ref": "#/$defs/gitObject"
+    },
+    "service_deployment_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "watch_config_digest": {
+      "$ref": "#/$defs/digest"
+    },
+    "routes": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/route"
+      }
+    },
+    "vendor_configs": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/vendorConfig"
+      }
+    },
+    "caller_scope": {
+      "$ref": "#/$defs/principalScope"
+    },
+    "auditor_scope": {
+      "$ref": "#/$defs/principalScope"
+    },
+    "observations": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 1000,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/observation"
+      }
+    },
+    "drills": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/drill"
+      }
+    },
+    "caller_read_ops_denied": {
+      "type": "boolean"
+    },
+    "auditor_submit_denied": {
+      "type": "boolean"
+    },
+    "final_pending": {
+      "$ref": "#/$defs/count"
+    },
+    "final_dead": {
+      "$ref": "#/$defs/count"
+    },
+    "final_unexplained_conflicts": {
+      "$ref": "#/$defs/count"
+    },
+    "final_authority_fallbacks": {
+      "$ref": "#/$defs/count"
+    },
+    "unexplained_vendor_duplicates": {
+      "$ref": "#/$defs/count"
+    },
+    "explained_vendor_duplicates": {
+      "$ref": "#/$defs/count"
+    },
+    "response_loss_replay_same_key": {
+      "type": "boolean"
+    },
+    "response_loss_replay_same_notification_id": {
+      "type": "boolean"
+    },
+    "response_loss_vendor_duplicates": {
+      "$ref": "#/$defs/count"
+    },
+    "explained_duplicates_same_key_and_body_digest": {
+      "type": "boolean"
+    },
+    "external_timeout_count": {
+      "$ref": "#/$defs/count"
+    },
+    "payload_secret_marker_findings": {
+      "$ref": "#/$defs/count"
+    },
+    "receipt_reconciliation_sha256": {
+      "$ref": "#/$defs/digest"
+    },
+    "security_review_sha256": {
+      "$ref": "#/$defs/digest"
+    },
+    "distinct_non_replay_accepted": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "repositories": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/repository"
+      }
+    },
+    "vendor_ids": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/vendorId"
+      }
+    },
+    "maximum_convergence_seconds": {
+      "type": "number",
+      "minimum": 0
+    },
+    "failed_requirements": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Z][A-Z0-9_]{0,127}$"
+      }
+    },
+    "does_not_claim": {
+      "const": [
+        "G5_CANARY_PASS",
+        "LIVE_VERIFIED",
+        "IB7_CUTOVER",
+        "OPENSLACK_0_3_0",
+        "PRODUCTION_READY"
+      ]
+    }
+  },
+  "$defs": {
+    "boundedText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "gitObject": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?/[a-z0-9._-]{1,100}$"
+    },
+    "routeId": {
+      "type": "string",
+      "pattern": "^[a-z](?:[a-z0-9-]{0,62}[a-z0-9])?$"
+    },
+    "vendorId": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,64}$"
+    },
+    "safeId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "canonical_repository",
+        "route_id",
+        "routing_epoch",
+        "vendor_id",
+        "encoder_version"
+      ],
+      "properties": {
+        "canonical_repository": {
+          "$ref": "#/$defs/repository"
+        },
+        "route_id": {
+          "$ref": "#/$defs/routeId"
+        },
+        "routing_epoch": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "vendor_id": {
+          "$ref": "#/$defs/vendorId"
+        },
+        "encoder_version": {
+          "enum": ["openslack.slack_chat_post_message.v1", "openslack.webhook_notification.v1"]
+        }
+      }
+    },
+    "vendorConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vendor_id", "config_version"],
+      "properties": {
+        "vendor_id": {
+          "$ref": "#/$defs/vendorId"
+        },
+        "config_version": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "principalScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["principal_id", "capabilities", "vendor_ids"],
+      "properties": {
+        "principal_id": {
+          "$ref": "#/$defs/safeId"
+        },
+        "capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["submit_notification", "read_notifications"]
+          }
+        },
+        "vendor_ids": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/vendorId"
+          }
+        }
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "route_record_id",
+        "notification_id",
+        "idempotency_key_sha256",
+        "canonical_repository",
+        "event_kind",
+        "vendor_id",
+        "accepted_at",
+        "delivered_at",
+        "idempotent_replay",
+        "reconciliation"
+      ],
+      "properties": {
+        "route_record_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "notification_id": {
+          "$ref": "#/$defs/safeId"
+        },
+        "idempotency_key_sha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "canonical_repository": {
+          "$ref": "#/$defs/repository"
+        },
+        "event_kind": {
+          "enum": ["issue", "push"]
+        },
+        "vendor_id": {
+          "$ref": "#/$defs/vendorId"
+        },
+        "accepted_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "delivered_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "idempotent_replay": {
+          "const": false
+        },
+        "reconciliation": {
+          "const": "consistent"
+        }
+      }
+    },
+    "drill": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "status", "evidence_sha256"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "openslack_restart",
+            "response_loss",
+            "accepted_ledger_recovery",
+            "blob_queue_pre_post_boundary",
+            "service_restart_pending_outbox",
+            "vendor_result_commit_ambiguity",
+            "http_protocol_matrix",
+            "integrity_identity_permissions"
+          ]
+        },
+        "status": {
+          "enum": ["PASS", "FAIL"]
+        },
+        "evidence_sha256": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    }
+  }
+}

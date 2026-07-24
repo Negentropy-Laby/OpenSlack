@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/notification-fault-run.v1.json",
+  "title": "OpenSlack notification fault run v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "run_id",
+    "correlation_id",
+    "fault_case",
+    "status",
+    "started_at",
+    "completed_at",
+    "openslack_commit",
+    "openslack_tree",
+    "service_commit",
+    "service_tree",
+    "service_deployment_digest",
+    "watch_config_digest",
+    "repository",
+    "route_id",
+    "routing_epoch",
+    "vendor_id",
+    "checks"
+  ],
+  "properties": {
+    "schema": {
+      "const": "openslack.notification_fault_run.v1"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$"
+    },
+    "correlation_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "fault_case": {
+      "enum": [
+        "passthrough",
+        "response_loss_after_upstream",
+        "malformed_202",
+        "extra_field_202",
+        "conflicting_notification_id_202",
+        "unexpected_success_200",
+        "redirect_302",
+        "rejected_400",
+        "rejected_401",
+        "rejected_403",
+        "rejected_404",
+        "rejected_413",
+        "conflict_409",
+        "retryable_429",
+        "retryable_500",
+        "retryable_503",
+        "deployment_digest_drift_202",
+        "process_restart",
+        "disk_boundary",
+        "dual_restart"
+      ]
+    },
+    "status": {
+      "enum": ["PASS", "FAIL"]
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "openslack_commit": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "openslack_tree": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "service_commit": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "service_tree": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "service_deployment_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "watch_config_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?/[a-z0-9._-]{1,100}$"
+    },
+    "route_id": {
+      "type": "string",
+      "pattern": "^[a-z](?:[a-z0-9-]{0,62}[a-z0-9])?$"
+    },
+    "routing_epoch": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "vendor_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,64}$"
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "passed", "code", "recorded_at"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "passed": {
+            "type": "boolean"
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{0,127}$"
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  }
+}

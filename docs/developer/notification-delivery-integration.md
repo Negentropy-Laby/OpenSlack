@@ -1,7 +1,7 @@
 # Notification Delivery Service Integration
 
 > **Status:** IB3-B daemon/router composition and IB3-C governed operations implemented —
-> `G3_QUEUE_IN_PROGRESS`
+> `G3_QUEUE_PASS`; IB4-O1 read-only reconciliation is implemented on its stacked branch
 >
 > **Runtime effect:** v1 is unchanged; v2 service admission is fail-closed unless the explicit new-record gate is on.
 >
@@ -394,6 +394,38 @@ bounded, no-follow regular-file descriptor with pre/post identity checks. A pend
 finalization, v2-aware runtimes validate the final marker, backup and sentinel and skip all legacy reads; direct v1
 readers still fail closed on the deliberately non-JSON sentinel.
 
+IB4-O1 adds that independent read-only client and replaces local-only accepted checks with three-party
+reconciliation. `OPENSLACK_NOTIFICATION_SERVICE_AUDITOR_CREDENTIAL_REF` names the `env:` or `keychain:` reference
+for a principal that has `read_notifications` but cannot submit, replay or administer.
+`OPENSLACK_NOTIFICATION_VENDOR_EVIDENCE_DIR` names a protected directory containing one create-only, mode `0600`
+metadata record per route-record ID. Each closed `openslack.notification_vendor_evidence.v1` record contains only
+route/vendor/idempotency identity, body digest and size, sink kind, delivery time and record time; it never contains
+payload bytes, response bodies, endpoint data or credentials. Its executable closed contract is
+`packages/github/src/notification-vendor-evidence.schema.json`.
+
+`doctor` verifies the independently resolved auditor reference, `/health/version` readiness and the frozen
+deployment digest in addition to local queue/Blob/receipt checks. `reconcile` verifies the committed local receipt,
+queries the exact notification and paginated attempt history, requires the successful attempt's actual positive
+vendor `config_version`, and compares the metadata-only Slack or webhook evidence with the frozen queue identity.
+Only that complete agreement may project `remoteDeliveryState=delivered`; missing vendor evidence remains pending
+evidence, and conflicts fail closed. A delivered projection cannot regress. Quarantined routes still cannot be
+silently retried because they lack a committed accepted receipt that could authorize transfer or recovery.
+
+IB4-O2 provides a loopback-only, bounded fault proxy for the intake boundary. Each process receives an immutable
+scenario and injection count; it has no runtime admin endpoint. It can pass through exact intake bytes, drop the
+client response only after the upstream call returns, or inject the frozen malformed-202, unexpected-2xx, redirect,
+deterministic-4xx, 409, 429/5xx and deployment-digest cases. It forwards only the allowlisted intake/auth headers,
+never follows redirects, and retains only a sequence number, scenario, closed outcome code, upstream-called flag and
+timestamp. Bodies, headers, credentials and endpoint values are never written to its observation log.
+
+Process restart, disk-boundary and proxy operations are supplied as explicit deployment callbacks to the sequential
+fault harness; it does not accept or execute shell text. Thrown callback errors become the closed
+`FAULT_STEP_FAILED` code rather than persisted error prose. A completed run is sealed as the closed
+`openslack.notification_fault_run.v1` JSON contract plus SHA-256 under a protected evidence directory. Both files
+are create-only, mode `0600`, byte-verified and idempotently repairable; a different rerun with the same run ID fails
+closed. The manifest contains only correlation, commit/tree/digest, repo/route/vendor identity and closed check
+codes. Its schema is `packages/github/src/notification-fault-run.schema.json`.
+
 ## V1 Migration And Gates
 
 Migration is per route: completed becomes a tombstone, failed becomes a terminal archive, and
@@ -410,20 +442,22 @@ The next phases remain blocked by gates:
 G0-CONTRACT: PASS_WITH_RC_REVIEW_WAIVER; OpenSlack independently reviewed, standalone service owner waiver + PR/CI
 G1-SERVICE: service v2 contract implemented and verified
 G2-CLIENT: body, Blob, receipt and client components verified
-G3-QUEUE: IN PROGRESS; IB3-A queue/migration, IB3-B daemon/router and IB3-C governed operations implemented;
-OS-IB3-C is anchored by integration merge `9414509`, with protected-branch synchronization receipts in progress
+G3-QUEUE: PASS; IB3-A queue/migration, IB3-B daemon/router and IB3-C governed operations are bound to
+`a912cb4` / tree `89e4b38` by `docs/testing/integration-gates/g3-queue.json`
 G4-E2E: two repositories x Slack and webhook fault matrix
 G5-CANARY: SUPERSEDED_NOT_RUN; historical 336-hour/100-accepted prerequisite retained without a PASS claim
 G5-IMPORT-QUALIFICATION: PENDING; one protected run, no minimum elapsed duration, 60-minute timeout,
 8 distinct non-replay accepted keys across 2 repositories x issue/push x 2 vendors, each delivered within 10 minutes
 ```
 
-G0 unlocks G1 and G2 only; it does not authorize daemon wiring or traffic. Only after
-`G5-IMPORT-QUALIFICATION=PASS`, the immutable 0.2.0 release and every other IB6 prerequisite may the full service
-history enter OpenSlack. This replacement gate applies only to history-import eligibility and makes no
-production-readiness, live-verification, IB7, 0.3.0-release or integration-completion claim.
+G0 unlocks G1 and G2 only; it does not authorize daemon wiring or traffic. G3 closes the local queue, migration,
+router and governed-recovery gate only; its receipt explicitly does not claim G4, G5, live verification or production
+readiness. Only after `G5-IMPORT-QUALIFICATION=PASS`, the immutable 0.2.0 release and every other IB6 prerequisite
+may the full service history enter OpenSlack. This replacement gate applies only to history-import eligibility and
+makes no production-readiness, live-verification, IB7, 0.3.0-release or integration-completion claim.
 
-The default branch contains only a fail-closed `workflow_dispatch` locator at
-`.github/workflows/notification-import-qualification.yml`. The protected qualification must be invoked with
-`--ref integration/notification-delivery-0.3`; that ref supplies the complete reviewed workflow. The locator has no
-environment or secret access and always fails.
+The default branch contains the reviewed `workflow_dispatch` definition at
+`.github/workflows/notification-import-qualification.yml`, but its first job is a hosted, one-minute, environment-free
+ref gate. The protected qualification must be invoked with `--ref integration/notification-delivery-0.3`; dispatches
+from `main` or any other ref fail before the protected environment, self-hosted runner, or credential-materialization
+job can start.

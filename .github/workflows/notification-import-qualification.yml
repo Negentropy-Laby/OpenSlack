@@ -1,4 +1,4 @@
-name: Notification Import Qualification Locator
+name: Notification Import Qualification
 
 on:
   workflow_dispatch:
@@ -6,15 +6,224 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: notification-import-qualification
+  cancel-in-progress: false
+
 jobs:
-  refuse-default-branch:
-    name: Refuse qualification from the default-branch locator
+  require-frozen-integration-ref:
+    name: Refuse qualification outside the frozen integration ref
     runs-on: ubuntu-latest
     timeout-minutes: 1
     steps:
-      - name: Fail closed until the integration workflow is selected
+      - name: Require the frozen integration branch
         shell: bash
         run: |
-          echo "This default-branch file is only a workflow_dispatch locator." >&2
-          echo "Run it with --ref integration/notification-delivery-0.3 after the full integration workflow is merged." >&2
-          exit 1
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/integration/notification-delivery-0.3" ]]; then
+            echo "Qualification is available only from the frozen integration ref." >&2
+            exit 1
+          fi
+
+  qualification:
+    name: Run protected IB6 import qualification
+    needs: require-frozen-integration-ref
+    runs-on: [self-hosted, linux, openslack-notification-canary]
+    environment: notification-canary
+    timeout-minutes: 60
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      OPENSLACK_GITHUB_APP_ID: ${{ vars.CANARY_GITHUB_APP_ID }}
+      OPENSLACK_GITHUB_APP_INSTALLATION_ID: ${{ vars.CANARY_GITHUB_APP_INSTALLATION_ID }}
+      OPENSLACK_NOTIFICATION_QUALIFICATION_RUNNER: ${{ vars.CANARY_QUALIFICATION_RUNNER }}
+      OPENSLACK_NOTIFICATION_QUALIFICATION_WORKSPACE_ROOT: ${{ vars.CANARY_WORKSPACE_ROOT }}
+      OPENSLACK_NOTIFICATION_QUALIFICATION_EVIDENCE_ROOT: ${{ vars.CANARY_EVIDENCE_ROOT }}
+      OPENSLACK_NOTIFICATION_QUALIFICATION_CONFIG_PATH: ${{ vars.CANARY_WATCH_CONFIG_PATH }}
+      OPENSLACK_NOTIFICATION_VENDOR_EVIDENCE_DIR: ${{ vars.CANARY_VENDOR_EVIDENCE_DIR }}
+      OPENSLACK_NOTIFICATION_SERVICE_ORIGIN: ${{ vars.NOTIFICATION_SERVICE_ORIGIN }}
+      OPENSLACK_NOTIFICATION_SERVICE_COMMIT: ${{ vars.NOTIFICATION_SERVICE_COMMIT }}
+      OPENSLACK_NOTIFICATION_SERVICE_TREE: ${{ vars.NOTIFICATION_SERVICE_TREE }}
+      OPENSLACK_NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST: ${{ vars.NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST }}
+      OPENSLACK_NOTIFICATION_CANARY_REPO_A: ${{ vars.CANARY_REPO_A }}
+      OPENSLACK_NOTIFICATION_CANARY_REPO_B: ${{ vars.CANARY_REPO_B }}
+      OPENSLACK_NOTIFICATION_CANARY_VENDOR_SLACK: ${{ vars.CANARY_VENDOR_SLACK }}
+      OPENSLACK_NOTIFICATION_CANARY_VENDOR_WEBHOOK: ${{ vars.CANARY_VENDOR_WEBHOOK }}
+      OPENSLACK_NOTIFICATION_CANARY_ROUTE_SLACK: ${{ vars.CANARY_ROUTE_SLACK }}
+      OPENSLACK_NOTIFICATION_CANARY_ROUTE_WEBHOOK: ${{ vars.CANARY_ROUTE_WEBHOOK }}
+      OPENSLACK_NOTIFICATION_CANARY_ROUTING_EPOCH: ${{ vars.CANARY_ROUTING_EPOCH }}
+      OPENSLACK_NOTIFICATION_QUALIFICATION_CREDENTIAL_DIR: ${{ runner.temp }}/notification-qualification-credentials-${{ github.run_id }}-${{ github.run_attempt }}
+
+    steps:
+      # actions/checkout v6.0.2
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      # oven-sh/setup-bun v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.14
+
+      - name: Require the frozen integration branch and complete deployment inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/integration/notification-delivery-0.3"
+          required=(
+            OPENSLACK_GITHUB_APP_ID
+            OPENSLACK_GITHUB_APP_INSTALLATION_ID
+            OPENSLACK_NOTIFICATION_QUALIFICATION_RUNNER
+            OPENSLACK_NOTIFICATION_QUALIFICATION_WORKSPACE_ROOT
+            OPENSLACK_NOTIFICATION_QUALIFICATION_EVIDENCE_ROOT
+            OPENSLACK_NOTIFICATION_QUALIFICATION_CONFIG_PATH
+            OPENSLACK_NOTIFICATION_VENDOR_EVIDENCE_DIR
+            OPENSLACK_NOTIFICATION_SERVICE_ORIGIN
+            OPENSLACK_NOTIFICATION_SERVICE_COMMIT
+            OPENSLACK_NOTIFICATION_SERVICE_TREE
+            OPENSLACK_NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST
+            OPENSLACK_NOTIFICATION_CANARY_REPO_A
+            OPENSLACK_NOTIFICATION_CANARY_REPO_B
+            OPENSLACK_NOTIFICATION_CANARY_VENDOR_SLACK
+            OPENSLACK_NOTIFICATION_CANARY_VENDOR_WEBHOOK
+            OPENSLACK_NOTIFICATION_CANARY_ROUTE_SLACK
+            OPENSLACK_NOTIFICATION_CANARY_ROUTE_WEBHOOK
+            OPENSLACK_NOTIFICATION_CANARY_ROUTING_EPOCH
+          )
+          for name in "${required[@]}"; do
+            test -n "${!name}"
+          done
+          require_safe_directory() {
+            local path="$1"
+            test "${path#/}" != "$path"
+            test -d "$path"
+            test ! -L "$path"
+            test "$(realpath -e -- "$path")" = "$path"
+            local mode owner
+            mode="$(stat -c '%a' "$path")"
+            owner="$(stat -c '%u' "$path")"
+            test $((8#$mode & 0022)) -eq 0
+            test "$owner" -eq 0 || test "$owner" -eq "$(id -u)"
+          }
+          require_safe_file() {
+            local path="$1"
+            test "${path#/}" != "$path"
+            test -f "$path"
+            test ! -L "$path"
+            test "$(realpath -e -- "$path")" = "$path"
+            local mode owner
+            mode="$(stat -c '%a' "$path")"
+            owner="$(stat -c '%u' "$path")"
+            test $((8#$mode & 0022)) -eq 0
+            test "$owner" -eq 0 || test "$owner" -eq "$(id -u)"
+          }
+          require_safe_directory "$OPENSLACK_NOTIFICATION_QUALIFICATION_WORKSPACE_ROOT"
+          require_safe_directory "$OPENSLACK_NOTIFICATION_QUALIFICATION_EVIDENCE_ROOT"
+          require_safe_directory "$OPENSLACK_NOTIFICATION_VENDOR_EVIDENCE_DIR"
+          require_safe_file "$OPENSLACK_NOTIFICATION_QUALIFICATION_RUNNER"
+          require_safe_file "$OPENSLACK_NOTIFICATION_QUALIFICATION_CONFIG_PATH"
+          test -x "$OPENSLACK_NOTIFICATION_QUALIFICATION_RUNNER"
+          test "$OPENSLACK_NOTIFICATION_CANARY_REPO_A" = \
+            "Negentropy-Laby/openslack-notification-canary-a"
+          test "$OPENSLACK_NOTIFICATION_CANARY_REPO_B" = \
+            "Negentropy-Laby/openslack-notification-canary-b"
+          test "$OPENSLACK_NOTIFICATION_CANARY_VENDOR_SLACK" = "openslack-slack"
+          test "$OPENSLACK_NOTIFICATION_CANARY_VENDOR_WEBHOOK" = "openslack-webhook"
+          test "$OPENSLACK_NOTIFICATION_CANARY_ROUTE_SLACK" = "slack-primary"
+          test "$OPENSLACK_NOTIFICATION_CANARY_ROUTE_WEBHOOK" = "webhook-primary"
+          test "$OPENSLACK_NOTIFICATION_CANARY_ROUTING_EPOCH" = "1"
+          [[ "$OPENSLACK_NOTIFICATION_SERVICE_ORIGIN" =~ ^https://[^/]+(:[0-9]+)?$ ]]
+          [[ "$OPENSLACK_NOTIFICATION_SERVICE_COMMIT" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]]
+          [[ "$OPENSLACK_NOTIFICATION_SERVICE_TREE" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]]
+          [[ "$OPENSLACK_NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+
+      - name: Materialize run-scoped credentials
+        shell: bash
+        env:
+          GITHUB_APP_PRIVATE_KEY: ${{ secrets.CANARY_GITHUB_APP_PRIVATE_KEY }}
+          HANDOFF_CALLER_KEY: ${{ secrets.HANDOFF_CALLER_KEY }}
+          QUALIFICATION_AUDITOR_KEY: ${{ secrets.CANARY_AUDITOR_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$GITHUB_APP_PRIVATE_KEY"
+          test -n "$HANDOFF_CALLER_KEY"
+          test -n "$QUALIFICATION_AUDITOR_KEY"
+          credential_dir="$OPENSLACK_NOTIFICATION_QUALIFICATION_CREDENTIAL_DIR"
+          test ! -e "$credential_dir"
+          test ! -L "$credential_dir"
+          umask 077
+          install -d -m 0700 "$credential_dir"
+          printf '%s' "$GITHUB_APP_PRIVATE_KEY" > "$credential_dir/github-app.pem"
+          printf '%s' "$HANDOFF_CALLER_KEY" > "$credential_dir/handoff-caller.key"
+          printf '%s' "$QUALIFICATION_AUDITOR_KEY" > "$credential_dir/auditor.key"
+          chmod 0600 "$credential_dir"/*
+          {
+            echo "OPENSLACK_GITHUB_APP_PRIVATE_KEY_FILE=$credential_dir/github-app.pem"
+            echo "OPENSLACK_NOTIFICATION_SERVICE_CALLER_KEY_FILE=$credential_dir/handoff-caller.key"
+            echo "OPENSLACK_NOTIFICATION_SERVICE_AUDITOR_KEY_FILE=$credential_dir/auditor.key"
+          } >> "$GITHUB_ENV"
+
+      - run: bun install --frozen-lockfile
+
+      - name: Run the external 2x2 and fault qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+          correlation_id="qualification-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          evidence_root="$OPENSLACK_NOTIFICATION_QUALIFICATION_EVIDENCE_ROOT/$correlation_id"
+          input_path="$evidence_root/qualification-input.json"
+          umask 077
+          test ! -e "$evidence_root"
+          test ! -L "$evidence_root"
+          install -d -m 0700 "$evidence_root"
+          install -d -m 0700 "$evidence_root/fault-runs"
+          timeout --signal=TERM --kill-after=30s 50m \
+            "$OPENSLACK_NOTIFICATION_QUALIFICATION_RUNNER" \
+              --correlation-id "$correlation_id" \
+              --input "$input_path" \
+              --evidence-root "$evidence_root"
+          chmod 0600 "$input_path" \
+            "$evidence_root/receipt-reconciliation.json" \
+            "$evidence_root/security-review.json" \
+            "$evidence_root"/fault-runs/*.json \
+            "$evidence_root"/fault-runs/*.sha256
+          bun run notification:qualification -- \
+            seal \
+            --input "$input_path" \
+            --evidence-root "$evidence_root"
+          echo "OPENSLACK_NOTIFICATION_QUALIFICATION_RUN_ROOT=$evidence_root" >> "$GITHUB_ENV"
+
+      - name: Upload metadata-only qualification evidence
+        if: ${{ always() && env.OPENSLACK_NOTIFICATION_QUALIFICATION_RUN_ROOT != '' }}
+        # actions/upload-artifact v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: notification-import-qualification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.OPENSLACK_NOTIFICATION_QUALIFICATION_RUN_ROOT }}/qualification-report.json
+            ${{ env.OPENSLACK_NOTIFICATION_QUALIFICATION_RUN_ROOT }}/qualification-report.sha256
+            ${{ env.OPENSLACK_NOTIFICATION_QUALIFICATION_RUN_ROOT }}/fault-runs/*.json
+            ${{ env.OPENSLACK_NOTIFICATION_QUALIFICATION_RUN_ROOT }}/fault-runs/*.sha256
+            ${{ env.OPENSLACK_NOTIFICATION_QUALIFICATION_RUN_ROOT }}/receipt-reconciliation.json
+            ${{ env.OPENSLACK_NOTIFICATION_QUALIFICATION_RUN_ROOT }}/security-review.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Remove run-scoped credential files
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          credential_dir="${OPENSLACK_NOTIFICATION_QUALIFICATION_CREDENTIAL_DIR:-}"
+          if [[ "$credential_dir" != "$RUNNER_TEMP"/notification-qualification-credentials-* ]]; then
+            echo "Qualification credential directory is outside the runner temp boundary." >&2
+            exit 1
+          fi
+          if [[ -d "$credential_dir" && ! -L "$credential_dir" ]]; then
+            find "$credential_dir" -maxdepth 1 -type f \
+              \( -name 'github-app.pem' -o -name 'handoff-caller.key' -o -name 'auditor.key' \) \
+              -delete
+            rmdir "$credential_dir"
+          elif [[ -e "$credential_dir" || -L "$credential_dir" ]]; then
+            echo "Qualification credential directory is not a safe directory." >&2
+            exit 1
+          fi

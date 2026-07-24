@@ -1,0 +1,181 @@
+{
+  "schema": "negentropy_laby.integration_gate.v1",
+  "gate": "G3-QUEUE",
+  "status": "PASS",
+  "closed": true,
+  "recorded_at": "2026-07-23T16:51:06Z",
+  "repository": "https://github.com/Negentropy-Laby/OpenSlack",
+  "code": {
+    "commit": "a912cb4cd277a00cdd733bec86988a478fc0a914",
+    "tree": "89e4b388fa72cc928f1b88f84e44bd4698f23159"
+  },
+  "pull_requests": [
+    {
+      "number": 273,
+      "url": "https://github.com/Negentropy-Laby/OpenSlack/pull/273",
+      "head": "9219202528167c78c1c5ca3ea7a96978a91edfc7",
+      "head_url": "https://github.com/Negentropy-Laby/OpenSlack/commit/9219202528167c78c1c5ca3ea7a96978a91edfc7",
+      "merge": "4a9e2395b50c3b47402175f704e7bf2436f384c7",
+      "merge_url": "https://github.com/Negentropy-Laby/OpenSlack/commit/4a9e2395b50c3b47402175f704e7bf2436f384c7",
+      "checks": [
+        {
+          "name": "canary",
+          "status": "SUCCESS",
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/29989112816/job/89147593025"
+        },
+        {
+          "name": "classify",
+          "status": "SUCCESS",
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/29989112944/job/89147593293"
+        },
+        {
+          "name": "validate / validate",
+          "status": "SUCCESS",
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/29989112944/job/89147710509"
+        },
+        {
+          "name": "Build and smoke linux-x64",
+          "status": "SUCCESS",
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/29989112894/job/89147593199"
+        },
+        {
+          "name": "Build and smoke windows-x64",
+          "status": "SUCCESS",
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/29989112894/job/89147593160"
+        }
+      ]
+    },
+    {
+      "number": 279,
+      "url": "https://github.com/Negentropy-Laby/OpenSlack/pull/279",
+      "head": "dae4eeff6dca628eb24925afa7e035a7a536776c",
+      "head_url": "https://github.com/Negentropy-Laby/OpenSlack/commit/dae4eeff6dca628eb24925afa7e035a7a536776c",
+      "merge": "9414509de26040df8923d6e4c9bdec1ccb28d922",
+      "merge_url": "https://github.com/Negentropy-Laby/OpenSlack/commit/9414509de26040df8923d6e4c9bdec1ccb28d922",
+      "checks": [
+        {
+          "name": "canary",
+          "status": "SUCCESS",
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/30009274455/job/89212917273"
+        },
+        {
+          "name": "classify",
+          "status": "SUCCESS",
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/30009274612/job/89212918058"
+        },
+        {
+          "name": "validate / validate",
+          "status": "SUCCESS",
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/30009274612/job/89213092251"
+        }
+      ]
+    },
+    {
+      "number": 282,
+      "url": "https://github.com/Negentropy-Laby/OpenSlack/pull/282",
+      "head": "a912cb4cd277a00cdd733bec86988a478fc0a914",
+      "head_url": "https://github.com/Negentropy-Laby/OpenSlack/commit/a912cb4cd277a00cdd733bec86988a478fc0a914",
+      "merge": "5c7b3f842b429c34ad7244780720fb38570081d2",
+      "merge_url": "https://github.com/Negentropy-Laby/OpenSlack/commit/5c7b3f842b429c34ad7244780720fb38570081d2",
+      "checks": [
+        {
+          "name": "canary",
+          "status": "SUCCESS",
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/30018990660/job/89246430646"
+        },
+        {
+          "name": "classify",
+          "status": "SUCCESS",
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/30018995709/job/89246449387"
+        },
+        {
+          "name": "validate / validate",
+          "status": "SUCCESS",
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/30018995709/job/89246694776"
+        },
+        {
+          "name": "Build and smoke linux-x64",
+          "status": "SUCCESS",
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/30018990588/job/89246430657"
+        },
+        {
+          "name": "Build and smoke windows-x64",
+          "status": "SUCCESS",
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/30018990588/job/89246430747"
+        }
+      ]
+    }
+  ],
+  "verification": [
+    {
+      "kind": "local_targeted_tests",
+      "status": "PASS",
+      "command": "bun x vitest run packages/github/src/__tests__/watch-delivery-queue-v2.test.ts packages/github/src/__tests__/watch-delivery-router-v2.test.ts packages/github/src/__tests__/watch-daemon-v2.test.ts",
+      "test_files": 3,
+      "tests": 32
+    },
+    {
+      "kind": "local_legacy_regression_tests",
+      "status": "PASS",
+      "command": "bun x vitest run packages/github/src/__tests__/watch-daemon.test.ts packages/github/src/__tests__/watch-delivery-queue.test.ts",
+      "test_files": 2,
+      "tests": 64
+    }
+  ],
+  "claims": {
+    "mixed_route_v1_migration": {
+      "status": "PASS",
+      "test": "watch-delivery-queue-v2.test.ts: dry-runs without writes then migrates each route independently and byte-stably"
+    },
+    "old_binary_fence": {
+      "status": "PASS",
+      "test": "watch-delivery-queue-v2.test.ts: fences new v1 admission, drains legacy ownership, and installs an old-binary sentinel"
+    },
+    "retry_horizon": {
+      "status": "PASS",
+      "tests": [
+        "watch-delivery-queue-v2.test.ts: persists processing intent before POST and applies deterministic 5-second retry",
+        "watch-delivery-queue-v2.test.ts: caps retry delay at one hour and terminates after attempt 25",
+        "watch-delivery-queue-v2.test.ts: terminates at the exact 24-hour deadline before a new POST"
+      ]
+    },
+    "accepted_never_direct": {
+      "status": "PASS",
+      "tests": [
+        "watch-delivery-queue-v2.test.ts: recovers an accepted embedded receipt without another POST",
+        "watch-delivery-queue-v2.test.ts: never permits accepted authority to enter governed recovery",
+        "watch-delivery-router-v2.test.ts: materializes once, commits a receipt, and never reports a 202 as notification.sent"
+      ]
+    },
+    "admission_gate": {
+      "status": "PASS",
+      "tests": [
+        "watch-daemon-v2.test.ts: does not durably accept a new service route while admission is disabled",
+        "watch-daemon-v2.test.ts: parses the admission gate strictly and defaults it off",
+        "watch-delivery-router-v2.test.ts: fails closed before Blob or queue admission while new service records are disabled"
+      ]
+    },
+    "existing_records_drain": {
+      "status": "PASS",
+      "source_invariant": "WatchDeliveryRouterV2 applies allowNewServiceRecords only during admit(); drainOnce() claims existing direct and notification_service records independently of that admission flag.",
+      "tests": [
+        "watch-delivery-router-v2.test.ts: materializes once, commits a receipt, and never reports a 202 as notification.sent",
+        "watch-delivery-router-v2.test.ts: degrades direct delivery safely to the redacted persisted event after restart",
+        "watch-daemon-v2.test.ts: keeps the new runtime operational after v1 finalization while old v1 reads fail"
+      ]
+    },
+    "no_dual_owner": {
+      "status": "PASS",
+      "tests": [
+        "watch-delivery-queue-v2.test.ts: dry-runs without writes then migrates each route independently and byte-stably",
+        "watch-delivery-router-v2.test.ts: keeps authority local and retries the same key after response loss"
+      ]
+    }
+  },
+  "not_claimed": {
+    "G4-E2E": "NOT_RUN",
+    "G5-CANARY": "NOT_RUN",
+    "LIVE_VERIFIED": false,
+    "production_ready": false
+  }
+}

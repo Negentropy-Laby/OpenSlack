@@ -46,6 +46,72 @@ describe('notification handoff G3 source invariant', () => {
     expect(v2Router).not.toContain('implements NotificationSink');
     expect(v2Router).not.toContain("type: 'notification.sent'");
   });
+
+  it('keeps read-only reconciliation out of daemon and sender composition', () => {
+    for (const path of [
+      join(githubSource, 'watch-daemon.ts'),
+      join(githubSource, 'watch-delivery-router.ts'),
+      join(githubSource, 'watch-delivery-router-v2.ts'),
+      join(githubSource, 'notification-sinks.ts'),
+    ]) {
+      const source = readFileSync(path, 'utf8');
+      expect(source, `${path} must not instantiate the ops client`).not.toContain(
+        'NotificationServiceOpsClient',
+      );
+      expect(source, `${path} must not instantiate reconciliation`).not.toContain(
+        'NotificationDeliveryReconciler',
+      );
+    }
+
+    const operations = readFileSync(
+      join(githubSource, 'notification-delivery-operations.ts'),
+      'utf8',
+    );
+    expect(operations).toContain('new NotificationServiceOpsClient');
+    expect(operations).toContain('new NotificationDeliveryReconciler');
+  });
+
+  it('keeps the controlled fault harness out of production composition', () => {
+    for (const path of [
+      join(githubSource, 'watch-daemon.ts'),
+      join(githubSource, 'watch-delivery-router.ts'),
+      join(githubSource, 'watch-delivery-router-v2.ts'),
+      join(githubSource, 'notification-sinks.ts'),
+      ...typescriptFiles(join(repositoryRoot, 'apps/cli/src')),
+    ]) {
+      const source = readFileSync(path, 'utf8');
+      expect(source, `${path} must not instantiate the fault proxy`).not.toContain(
+        'NotificationFaultProxy',
+      );
+      expect(source, `${path} must not run the fault harness`).not.toContain(
+        'runNotificationFaultHarness',
+      );
+      expect(source, `${path} must not import the fault proxy module`).not.toContain(
+        'notification-fault-proxy',
+      );
+      expect(source, `${path} must not import the fault-run module`).not.toContain(
+        'notification-fault-run',
+      );
+    }
+  });
+
+  it('keeps import-qualification sealing out of production composition', () => {
+    for (const path of [
+      join(githubSource, 'watch-daemon.ts'),
+      join(githubSource, 'watch-delivery-router.ts'),
+      join(githubSource, 'watch-delivery-router-v2.ts'),
+      join(githubSource, 'notification-sinks.ts'),
+      ...typescriptFiles(join(repositoryRoot, 'apps/cli/src')),
+    ]) {
+      const source = readFileSync(path, 'utf8');
+      expect(source, `${path} must not verify qualification evidence`).not.toContain(
+        'verifyNotificationQualification',
+      );
+      expect(source, `${path} must not import the qualification verifier`).not.toContain(
+        'notification-import-qualification-verifier',
+      );
+    }
+  });
 });
 
 function typescriptFiles(root: string): string[] {
