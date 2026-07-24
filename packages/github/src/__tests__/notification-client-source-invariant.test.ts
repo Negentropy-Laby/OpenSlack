@@ -70,6 +70,30 @@ describe('notification handoff G3 source invariant', () => {
     expect(operations).toContain('new NotificationServiceOpsClient');
     expect(operations).toContain('new NotificationDeliveryReconciler');
   });
+
+  it('keeps the controlled fault harness out of production composition', () => {
+    for (const path of [
+      join(githubSource, 'watch-daemon.ts'),
+      join(githubSource, 'watch-delivery-router.ts'),
+      join(githubSource, 'watch-delivery-router-v2.ts'),
+      join(githubSource, 'notification-sinks.ts'),
+      ...typescriptFiles(join(repositoryRoot, 'apps/cli/src')),
+    ]) {
+      const source = readFileSync(path, 'utf8');
+      expect(source, `${path} must not instantiate the fault proxy`).not.toContain(
+        'NotificationFaultProxy',
+      );
+      expect(source, `${path} must not run the fault harness`).not.toContain(
+        'runNotificationFaultHarness',
+      );
+      expect(source, `${path} must not import the fault proxy module`).not.toContain(
+        'notification-fault-proxy',
+      );
+      expect(source, `${path} must not import the fault-run module`).not.toContain(
+        'notification-fault-run',
+      );
+    }
+  });
 });
 
 function typescriptFiles(root: string): string[] {
