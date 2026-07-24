@@ -1,5 +1,8 @@
 import type { PRReviewPolicy, PRReviewReport } from './types.js';
 
+export const CANONICAL_PR_BASE_REF = 'main' as const;
+export const CANONICAL_PR_BASE_EFFECTIVE_AFTER_PR = 296 as const;
+
 export interface PRBasePolicyViolation {
   decision: 'BLOCKED_BASE_BRANCH';
   reason: string;
@@ -8,13 +11,13 @@ export interface PRBasePolicyViolation {
 
 export function evaluatePRBasePolicy(
   report: Pick<PRReviewReport, 'prNumber' | 'baseRef'>,
-  policy: Pick<PRReviewPolicy, 'required_base_ref'>,
+  _policy: Pick<PRReviewPolicy, 'required_base_ref'>,
 ): PRBasePolicyViolation | null {
-  if (report.baseRef === policy.required_base_ref) return null;
+  if (report.baseRef === CANONICAL_PR_BASE_REF) return null;
 
   return {
     decision: 'BLOCKED_BASE_BRANCH',
-    reason: `PR targets base branch "${report.baseRef}"; policy requires "${policy.required_base_ref}".`,
-    recommendation: `Run gh pr edit ${report.prNumber} --base ${policy.required_base_ref}, then refresh checks and request a new review if required.`,
+    reason: `PR targets base branch "${report.baseRef}"; policy requires "${CANONICAL_PR_BASE_REF}".`,
+    recommendation: `Run gh pr edit ${report.prNumber} --base ${CANONICAL_PR_BASE_REF}, then refresh checks and request a new review if required.`,
   };
 }

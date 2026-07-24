@@ -33,6 +33,20 @@ const DEFAULT_POLICY: PRReviewPolicy = {
 };
 
 describe('checkMergeReadiness', () => {
+  it('enforces main even when a caller attempts to reconfigure the runtime policy', () => {
+    const policy = { ...DEFAULT_POLICY, required_base_ref: 'release/0.3' };
+
+    expect(checkMergeReadiness(makeReport({ baseRef: 'main' }), policy).decision).toBe(
+      'READY_TO_MERGE',
+    );
+    const blocked = checkMergeReadiness(
+      makeReport({ prNumber: 411, baseRef: 'release/0.3' }),
+      policy,
+    );
+    expect(blocked.decision).toBe('BLOCKED_BASE_BRANCH');
+    expect(blocked.recommendation).toContain('gh pr edit 411 --base main');
+  });
+
   it.each(['integration/notification-delivery-0.3', 'release/0.3', 'feature/topic'])(
     'blocks the non-canonical %s base before checks, approval, and risk gates',
     (baseRef) => {

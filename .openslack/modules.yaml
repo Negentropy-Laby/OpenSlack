@@ -1,5 +1,5 @@
 schema: openslack.modules.v2
-vitest_tests: 4502
+vitest_tests: 4503
 vitest_files: 363
 modules:
   - id: self_evolution
@@ -150,7 +150,7 @@ modules:
       - '@openslack/pr'
       - '@openslack/github'
       - '@openslack/kernel'
-    tests: 675
+    tests: 676
     test_files: 59
     notes: Phase 2C chat report and action confirmation active. Supports status/review/recommend/doctor/queue/merge/watch, review/doctor comments, governance audit, operational decision summaries, deadlock detection, Red Zone author-risk preflight, and chat-friendly PR summaries with confirm-merge flow. The queue now has a separate bounded multi-repository projection mode with repeatable explicit repositories or the configured GitHub Watch repository set, a global concurrency/API budget, atomic display-only cache and independent cursor, and informational synthetic PR-state/check-summary changes. Cached and synthetic projection state never enters doctor, approval, merge, Workflow Trust, or governance. Repository-event notifications refresh current PR/review/check observations from an explicitly repository-bound live client, but the projection stamps human approval and merge readiness as not evaluated; webhook or live review state never becomes PRMS authority. Workflow artifact governance is bound to deterministic base/head tree evidence and a single current-head human approval carrying Workflow-Trust.
 

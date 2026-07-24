@@ -46,16 +46,29 @@ describe('loadPRReviewPolicy canonical base', () => {
     });
   });
 
-  it('does not permit disabling or blanking the canonical rule', () => {
+  it('pins the canonical rule while preserving independent sibling overrides', () => {
     const root = tempRoot();
     const policyDir = join(root, '.openslack', 'policies');
     mkdirSync(policyDir, { recursive: true });
     writeFileSync(
       join(policyDir, 'pr_review.yaml'),
-      'rules:\n  canonical_pr_base:\n    enabled: false\n    required_base_ref: integration\n',
+      [
+        'rules:',
+        '  no_auto_approval:',
+        '    enabled: false',
+        '  red_zone_human_required:',
+        '    enabled: false',
+        '  canonical_pr_base:',
+        '    enabled: false',
+        '    required_base_ref: release/0.3',
+        '    effective_after_pr: 999999',
+        '',
+      ].join('\n'),
     );
 
     expect(loadPRReviewPolicy(root)).toMatchObject({
+      no_auto_approval: false,
+      red_zone_human_required: false,
       required_base_ref: 'main',
       effective_after_pr: 296,
     });

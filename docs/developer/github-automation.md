@@ -151,6 +151,20 @@ Git target to the API owner/repository, verifies local/remote/PR head SHAs again
 before querying checks by the synchronized SHA, and returns `AWAITING_GATES`;
 PRMS remains the owner of review, approval, readiness, and merge.
 
+GitHub rulesets and required checks apply to the branch targeted by a PR. The
+`PR Base Policy / canonical-base` check is required on `main`, but that main
+ruleset cannot itself govern a PR aimed at an unprotected branch. OpenSlack
+therefore keeps non-`main` PRs open for retargeting while PRMS, Delivery, Profile
+Sync, and Merge Steward fail closed; `governance audit` detects any post-#296
+non-`main` merge. Retire obsolete protected integration or release branches and
+their dedicated rulesets when their lineage is archived so the platform-level
+surface matches the canonical-base policy.
+
+`openslack governance audit` requires authenticated `gh` access to retrieve
+merged-PR `baseRefName` evidence. If that evidence is unavailable or malformed,
+the audit exits non-zero with `BASE_REF_EVIDENCE_UNAVAILABLE`; it never reports
+the canonical-base check as passed from local Git history alone.
+
 In an initialized workspace, `delivery doctor`, `delivery probe`, and
 `delivery publish` all resolve the same `.openslack.local/github-app.json` and
 keychain reference. The private key is used only to create the short-lived App
