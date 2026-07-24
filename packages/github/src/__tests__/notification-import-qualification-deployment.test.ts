@@ -49,6 +49,7 @@ describe('notification import qualification deployment', () => {
         };
         qualification: {
           environment: string;
+          env: Record<string, string | boolean>;
           needs: string;
           'timeout-minutes': number;
           steps: Array<{ run?: string; uses?: string }>;
@@ -67,9 +68,16 @@ describe('notification import qualification deployment', () => {
     expect(workflow.jobs.qualification.environment).toBe('notification-canary');
     expect(workflow.jobs.qualification['timeout-minutes']).toBe(60);
     const serialized = JSON.stringify(workflow);
+    const credentialDirFormula =
+      'credential_dir="$RUNNER_TEMP/notification-qualification-credentials-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"';
     expect(serialized).toContain('timeout --signal=TERM --kill-after=30s 50m');
     expect(serialized).toContain('notification:qualification');
-    expect(source).toContain('${{ runner.temp }}/notification-qualification-credentials-');
+    expect(workflow.jobs.qualification.env).not.toHaveProperty(
+      'OPENSLACK_NOTIFICATION_QUALIFICATION_CREDENTIAL_DIR',
+    );
+    expect(JSON.stringify(workflow.jobs.qualification.env)).not.toContain('runner.temp');
+    expect(source).not.toContain('${{ runner.temp }}');
+    expect(source.split(credentialDirFormula)).toHaveLength(3);
     expect(source).toContain('test ! -e "$credential_dir"');
     expect(source).toContain('test ! -e "$evidence_root"');
     expect(source).toContain('require_safe_directory');
