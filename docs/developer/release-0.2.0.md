@@ -341,6 +341,41 @@ identity for bot delivery.
 
 ### Gate P6 — full release-head validation
 
+Gate P6 produces the four tarball hashes that Phase B1 later compares
+byte-for-byte with the registry packages. Its public-pack toolchain must
+therefore match `.github/workflows/npm-stage-publish.yml` exactly:
+
+```text
+Node 22.14.0
+npm 11.15.0
+Bun 1.3.14
+```
+
+Verify the versions before generating P6 artifacts.
+
+#### Bash
+
+```bash
+set -euo pipefail
+test "$(node --version)" = "v22.14.0"
+test "$(npm --version)" = "11.15.0"
+test "$(bun --version)" = "1.3.14"
+```
+
+#### PowerShell
+
+```powershell
+if ((node --version).Trim() -ne "v22.14.0") {
+  throw "STOP: P6 Node version does not match npm-stage-publish.yml"
+}
+if ((npm --version).Trim() -ne "11.15.0") {
+  throw "STOP: P6 npm version does not match npm-stage-publish.yml"
+}
+if ((bun --version).Trim() -ne "1.3.14") {
+  throw "STOP: P6 Bun version does not match npm-stage-publish.yml"
+}
+```
+
 Run from the clean source checkout:
 
 ```bash
@@ -359,16 +394,16 @@ bash scripts/genesis-validate.sh
 git status --short
 ```
 
-At the current audit baseline, the repository-wide `bun run format:check` has a
-known pre-existing failure, including an invalid Windows backslash escape in
-`.openslack/agents/onboarding/operator/identity.yaml` and broader formatting
-drift. This is a release-head **STOP**, not a waiver. Repair it through a
-separately scoped series of governed PRs, rerun the complete suite on the merged
-head, and only then select `TESTED_COMMIT`. Do not combine agent identity,
-registry, prompt, constitutional, generated-status, and ordinary package
-formatting into one mechanical change; each protected boundary keeps its own
-authority and review requirements. A targeted check of this runbook is useful
-authoring evidence but is not a substitute for the repository-wide gate.
+Known failures receive no waiver at this gate. Treat the exact candidate head
+and the repository-wide command output as authoritative rather than carrying
+forward a historical drift list. Any `bun run format:check` failure is a
+release-head **STOP**. Repair it through a separately scoped governed PR, rerun
+the complete suite on the merged head, and only then select `TESTED_COMMIT`. Do
+not combine agent identity, registry, prompt, constitutional, generated-status,
+and ordinary package formatting into one mechanical change; each protected
+boundary keeps its own authority and review requirements. A targeted check of
+this runbook or one repaired file is useful authoring evidence but is not a
+substitute for the repository-wide gate.
 
 On Windows, use Git for Windows Bash when `bash` resolves to the WSL launcher:
 
@@ -388,8 +423,11 @@ Inspect
 - four artifact records with `tarballSha256`, `manifestSha256`, and bounded file
   lists.
 
-Retain the report hash and four tarball hashes in the external operator
-checklist. Do not commit `.openslack.local/**`.
+Retain the report hash, four tarball hashes, and exact Node/npm/Bun versions in
+the external operator checklist. Do not accept hashes produced by a different
+toolchain, and do not commit `.openslack.local/**`. The tag archive workflow's
+separately pinned toolchain and PR build-smoke do not replace this public-pack
+identity check.
 
 **GO:** every command exits zero, generated status has no diff, and final
 `git status --short` is empty.
