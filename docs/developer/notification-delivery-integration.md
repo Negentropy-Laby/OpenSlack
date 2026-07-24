@@ -6,6 +6,9 @@
 > **Runtime effect:** v1 is unchanged; v2 service admission is fail-closed unless the explicit new-record gate is on.
 >
 > **Target release:** OpenSlack 0.3.0
+>
+> **Pre-IB6 qualification:** `G5-CANARY=SUPERSEDED_NOT_RUN`;
+> `G5-IMPORT-QUALIFICATION=PENDING`
 
 This document freezes the boundary between OpenSlack's GitHub Watch queue and the process-isolated notification
 delivery service currently developed in `wsman/rc_wsman`. It is the OpenSlack half of Integration B0. The contract
@@ -20,10 +23,32 @@ implementation may proceed without changing the runtime authority boundary.
 | OpenSlack integration development base        | `cdf1cbc629273b89f1737a6efc4e8325e7c9ebfb` | `c62f6643c0f8fe966bb463c0b585b1b496fcdba2` |
 | notification service review baseline          | `7976962e7de1c6ffcd234d2962b89dc4b23c95c0` | `ad742f2295c70af27d67173b248f7ae151e7faf9` |
 
-The first value remains the 0.2.0 evidence anchor, not the integration branch point. IB0 through IB5 stay on the
-protected `integration/notification-delivery-0.3` branch while 0.2.0 finishes signing, npm publication,
-clean-machine delivery and live-capstone gates on `main`. Full service history is imported only after those release
-gates and the 14-day Canary pass.
+The first value remains the historical 0.2.0 evidence anchor, not a current release-tested commit. IB0 through IB3
+runtime work was synchronized to `main` through PR #282 and merge commit
+`5c7b3f842b429c34ad7244780720fb38570081d2`; that runtime is retained and new service-record admission remains
+fail-closed by default. The `main` commit produced by merging the pre-IB6 governance amendment becomes the next
+0.2.0 `TESTED_COMMIT` candidate, but the complete release suite must be rerun at that exact commit. Prior evidence
+does not cover the new candidate.
+
+## Pre-IB6 Gate Supersession
+
+Owner authorization recorded at `2026-07-24T00:46:29+08:00` prospectively replaces the unexecuted
+`G5-CANARY` prerequisite with `G5-IMPORT-QUALIFICATION`. The former 336-hour/100-accepted requirement is preserved
+as `SUPERSEDED_NOT_RUN`; it is not represented as passed and its historical branches and evidence are not rewritten.
+
+The replacement is one protected run with no minimum elapsed duration and a 60-minute timeout. It requires at least
+eight distinct non-replay accepted keys covering two repositories, issue and push events, and two vendors, with at
+least one accepted key in every matrix cell. Every accepted notification must become delivered within 10 minutes.
+The same run exercises OpenSlack restart, successful-202 response loss and service restart with a pending outbox,
+while retaining receipt/database/vendor reconciliation, same-key identity, no-duplicate, no-fallback, permission
+isolation and secret/payload-exclusion invariants.
+
+The governed amendment is
+[`notification-delivery-pre-ib6-gate-amendment.md`](../integration/notification-delivery-pre-ib6-gate-amendment.md).
+The cross-repository-neutral decision receipt is
+[`integration/gates/g5-import-qualification-supersession.json`](../../integration/gates/g5-import-qualification-supersession.json).
+This replacement can qualify only IB6 exact-history import eligibility after all other prerequisites pass. It does
+not authorize `LIVE_VERIFIED`, IB7 default cutover, OpenSlack 0.3.0 release or production readiness.
 
 ## G0 Review Governance
 
@@ -405,9 +430,18 @@ G2-CLIENT: body, Blob, receipt and client components verified
 G3-QUEUE: PASS; IB3-A queue/migration, IB3-B daemon/router and IB3-C governed operations are bound to
 `a912cb4` / tree `89e4b38` by `docs/testing/integration-gates/g3-queue.json`
 G4-E2E: two repositories x Slack and webhook fault matrix
-G5-CANARY: 336 continuous hours + 100 distinct non-replay accepted keys
+G5-CANARY: SUPERSEDED_NOT_RUN; historical 336-hour/100-accepted prerequisite retained without a PASS claim
+G5-IMPORT-QUALIFICATION: PENDING; one protected run, no minimum elapsed duration, 60-minute timeout,
+8 distinct non-replay accepted keys across 2 repositories x issue/push x 2 vendors, each delivered within 10 minutes
 ```
 
 G0 unlocks G1 and G2 only; it does not authorize daemon wiring or traffic. G3 closes the local queue, migration,
 router and governed-recovery gate only; its receipt explicitly does not claim G4, G5, live verification or production
-readiness. Only after G5 and the immutable 0.2.0 release may the full service history enter OpenSlack.
+readiness. Only after `G5-IMPORT-QUALIFICATION=PASS`, the immutable 0.2.0 release and every other IB6 prerequisite
+may the full service history enter OpenSlack. This replacement gate applies only to history-import eligibility and
+makes no production-readiness, live-verification, IB7, 0.3.0-release or integration-completion claim.
+
+The default branch contains only a fail-closed `workflow_dispatch` locator at
+`.github/workflows/notification-import-qualification.yml`. The protected qualification must be invoked with
+`--ref integration/notification-delivery-0.3`; that ref supplies the complete reviewed workflow. The locator has no
+environment or secret access and always fails.
