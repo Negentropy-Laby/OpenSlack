@@ -423,3 +423,8 @@ router and governed-recovery gate only; its receipt explicitly does not claim G4
 readiness. Only after `G5-IMPORT-QUALIFICATION=PASS`, the immutable 0.2.0 release and every other IB6 prerequisite
 may the full service history enter OpenSlack. This replacement gate applies only to history-import eligibility and
 makes no production-readiness, live-verification, IB7, 0.3.0-release or integration-completion claim.
+
+The default branch contains only a fail-closed `workflow_dispatch` locator at
+`.github/workflows/notification-import-qualification.yml`. The protected qualification must be invoked with
+`--ref integration/notification-delivery-0.3`; that ref supplies the complete reviewed workflow. The locator has no
+environment or secret access and always fails.
