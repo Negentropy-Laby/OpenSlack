@@ -15,6 +15,11 @@ export {
   mergePR,
   GitHubEvidenceUnavailableError,
 } from './pr.js';
+export {
+  assertCanonicalPRBase,
+  CANONICAL_PR_BASE_REF,
+  PRBasePolicyError,
+} from './pr-base-policy.js';
 export type {
   CreatePRResult,
   PRDetail,

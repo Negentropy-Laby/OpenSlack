@@ -20,6 +20,7 @@ export interface PRChatSummary {
 
 const BLOCKED_DECISIONS: PRReviewState[] = [
   'BLOCKED_DRAFT',
+  'BLOCKED_BASE_BRANCH',
   'BLOCKED_POLICY',
   'BLOCKED_BLACK_ZONE',
   'BLOCKED_SELF_REVIEW',
@@ -41,6 +42,8 @@ function getBlockerLabel(decision: PRReviewState): string {
   switch (decision) {
     case 'BLOCKED_DRAFT':
       return 'PR is in draft state';
+    case 'BLOCKED_BASE_BRANCH':
+      return 'PR targets a non-canonical base branch';
     case 'BLOCKED_POLICY':
       return 'Policy violation';
     case 'BLOCKED_BLACK_ZONE':
@@ -72,6 +75,8 @@ function getNextAction(decision: PRReviewState): string {
   switch (decision) {
     case 'BLOCKED_DRAFT':
       return 'Mark the PR as ready for review.';
+    case 'BLOCKED_BASE_BRANCH':
+      return 'Retarget the PR to main, then refresh checks and review.';
     case 'BLOCKED_POLICY':
       return 'Resolve the policy issue (state, conflicts).';
     case 'BLOCKED_BLACK_ZONE':

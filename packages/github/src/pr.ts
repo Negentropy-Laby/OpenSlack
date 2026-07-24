@@ -1,5 +1,6 @@
 import { getClient } from './client.js';
 import type { GitHubClientOptions } from './client.js';
+import { assertCanonicalPRBase } from './pr-base-policy.js';
 
 const RETRY_ATTEMPTS = 2;
 const RETRY_DELAY_MS = 75;
@@ -213,6 +214,7 @@ export async function createDraftPR(
   body: string,
   options?: GitHubClientOptions,
 ): Promise<CreatePRResult> {
+  assertCanonicalPRBase(base);
   const client = await getClient(options);
   if (client.isDryRun) {
     const dryResult = {

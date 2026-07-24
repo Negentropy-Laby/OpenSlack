@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { recordEvent } from '@openslack/collaboration';
+import { loadPRReviewPolicy } from '@openslack/pr';
 import { renderFindingsPlain } from '@openslack/runtime';
 import type { PlainFinding } from '@openslack/runtime';
 
@@ -63,24 +64,76 @@ function getRecentCommits(root: string, count: number): CommitAudit[] {
   });
 }
 
-function fetchMergedPRShas(root: string): Map<string, number> {
+export interface MergedPRAuditEvidence {
+  number: number;
+  baseRefName: string;
+  mergeCommitOid?: string;
+}
+
+interface MergedPREvidenceResult {
+  available: boolean;
+  pullRequests: MergedPRAuditEvidence[];
+  prShas: Map<string, number>;
+}
+
+export function parseMergedPRAuditEvidence(output: string): MergedPRAuditEvidence[] {
+  const parsed: unknown = JSON.parse(output);
+  if (!Array.isArray(parsed)) throw new Error('Merged PR evidence must be an array.');
+  return parsed.map((entry) => {
+    if (
+      !entry ||
+      typeof entry !== 'object' ||
+      !Number.isSafeInteger((entry as { number?: unknown }).number) ||
+      typeof (entry as { baseRefName?: unknown }).baseRefName !== 'string' ||
+      (entry as { baseRefName: string }).baseRefName.trim().length === 0
+    ) {
+      throw new Error('Merged PR evidence is missing number or baseRefName.');
+    }
+    const mergeCommit = (entry as { mergeCommit?: unknown }).mergeCommit;
+    const mergeCommitOid =
+      mergeCommit &&
+      typeof mergeCommit === 'object' &&
+      typeof (mergeCommit as { oid?: unknown }).oid === 'string'
+        ? (mergeCommit as { oid: string }).oid
+        : undefined;
+    return {
+      number: (entry as { number: number }).number,
+      baseRefName: (entry as { baseRefName: string }).baseRefName,
+      mergeCommitOid,
+    };
+  });
+}
+
+export function findNonCanonicalMergedPRs(
+  pullRequests: readonly MergedPRAuditEvidence[],
+  requiredBaseRef: string,
+  effectiveAfterPR: number,
+): MergedPRAuditEvidence[] {
+  return pullRequests.filter(
+    (pr) => pr.number > effectiveAfterPR && pr.baseRefName !== requiredBaseRef,
+  );
+}
+
+function fetchMergedPREvidence(root: string): MergedPREvidenceResult {
   try {
-    const output = execSync('gh pr list --state merged --limit 100 --json mergeCommit,number', {
-      cwd: root,
-      encoding: 'utf-8',
-      stdio: 'pipe',
-    }).trim();
-    if (!output) return new Map();
-    const prs = JSON.parse(output) as Array<{ mergeCommit?: { oid?: string }; number: number }>;
+    const output = execSync(
+      'gh pr list --state merged --limit 10000 --json mergeCommit,number,baseRefName',
+      {
+        cwd: root,
+        encoding: 'utf-8',
+        stdio: 'pipe',
+      },
+    ).trim();
+    const pullRequests = parseMergedPRAuditEvidence(output || '[]');
     const map = new Map<string, number>();
-    for (const pr of prs) {
-      if (pr.mergeCommit?.oid) {
-        map.set(pr.mergeCommit.oid, pr.number);
+    for (const pr of pullRequests) {
+      if (pr.mergeCommitOid) {
+        map.set(pr.mergeCommitOid, pr.number);
       }
     }
-    return map;
+    return { available: true, pullRequests, prShas: map };
   } catch {
-    return new Map();
+    return { available: false, pullRequests: [], prShas: new Map() };
   }
 }
 
@@ -150,8 +203,16 @@ export function governanceCommands(): Command {
       const count = parseInt(options.count, 10);
       const commits = getRecentCommits(root, count);
       const exceptions = findExceptions(root);
-      const prShas = fetchMergedPRShas(root);
-      const hasGhAccess = prShas.size > 0;
+      const policy = loadPRReviewPolicy(root);
+      const mergedPREvidence = fetchMergedPREvidence(root);
+      const prShas = mergedPREvidence.prShas;
+      const hasGhAccess = mergedPREvidence.available;
+      const nonCanonicalMergedPRs = findNonCanonicalMergedPRs(
+        mergedPREvidence.pullRequests,
+        policy.required_base_ref,
+        policy.effective_after_pr,
+      );
+      const baseRefEvidenceUnavailable = !mergedPREvidence.available;
 
       const commitsAfterBaseline = getCommitsAfterBaseline(root, ATTRIBUTION_BASELINE);
 
@@ -180,20 +241,33 @@ export function governanceCommands(): Command {
       const auditFailed =
         directCommits.length > 0 ||
         (!hasGhAccess && unverifiedCommits.length > 0) ||
-        attributedCommits.length > 0;
+        attributedCommits.length > 0 ||
+        baseRefEvidenceUnavailable ||
+        nonCanonicalMergedPRs.length > 0;
 
       try {
         let summary: string;
         const directCommitFailed =
           directCommits.length > 0 || (!hasGhAccess && unverifiedCommits.length > 0);
-        if (directCommitFailed && attributedCommits.length > 0) {
-          summary = `Governance audit failed: ${directCommits.length} unexplained direct commits, ${attributedCommits.length} AI attribution violations`;
-        } else if (directCommitFailed) {
-          summary = `Governance audit failed: ${directCommits.length} unexplained direct commits`;
-        } else if (attributedCommits.length > 0) {
-          summary = `Governance audit failed: ${attributedCommits.length} AI attribution violations`;
-        } else {
+        const failures: string[] = [];
+        if (directCommitFailed) {
+          failures.push(`${directCommits.length} unexplained direct commits`);
+        }
+        if (attributedCommits.length > 0) {
+          failures.push(`${attributedCommits.length} AI attribution violations`);
+        }
+        if (baseRefEvidenceUnavailable) {
+          failures.push('BASE_REF_EVIDENCE_UNAVAILABLE');
+        }
+        if (nonCanonicalMergedPRs.length > 0) {
+          failures.push(
+            `${nonCanonicalMergedPRs.length} non-main PR merges after PR #${policy.effective_after_pr}`,
+          );
+        }
+        if (failures.length === 0) {
           summary = `Governance audit passed: ${commits.length} commits checked`;
+        } else {
+          summary = `Governance audit failed: ${failures.join(', ')}`;
         }
 
         let nextAction;
@@ -209,6 +283,16 @@ export function governanceCommands(): Command {
           };
         } else if (attributedCommits.length > 0) {
           nextAction = { owner: 'human', action: 'Remove AI attribution from commit messages' };
+        } else if (baseRefEvidenceUnavailable) {
+          nextAction = {
+            owner: 'human',
+            action: 'Restore authenticated gh access and rerun the governance audit',
+          };
+        } else if (nonCanonicalMergedPRs.length > 0) {
+          nextAction = {
+            owner: 'human',
+            action: 'Investigate and record the non-canonical PR merge governance incident',
+          };
         }
 
         recordEvent({
@@ -263,6 +347,25 @@ export function governanceCommands(): Command {
             title: `Attribution: ${c.shortSha}`,
             detail: c.subject,
             nextAction: 'Remove AI attribution',
+          });
+        if (baseRefEvidenceUnavailable)
+          findings.push({
+            status: 'FAIL',
+            title: 'BASE_REF_EVIDENCE_UNAVAILABLE',
+            detail: 'GitHub merged-PR baseRefName metadata could not be retrieved.',
+            nextAction: 'Restore authenticated gh access and rerun governance audit.',
+          });
+        for (const pr of nonCanonicalMergedPRs)
+          findings.push({
+            status: 'FAIL',
+            title: `Non-canonical PR base: #${pr.number}`,
+            detail: `Merged into ${pr.baseRefName}; required base is ${policy.required_base_ref}.`,
+          });
+        if (!baseRefEvidenceUnavailable && nonCanonicalMergedPRs.length === 0)
+          findings.push({
+            status: 'PASS',
+            title: 'Canonical PR base',
+            detail: `All audited PRs after #${policy.effective_after_pr} target ${policy.required_base_ref}.`,
           });
         if (!auditFailed)
           findings.push({
@@ -332,6 +435,21 @@ export function governanceCommands(): Command {
           console.log(
             'Action required: remove AI attribution from commit messages. See AGENTS.md hard prohibitions.',
           );
+        }
+        if (baseRefEvidenceUnavailable) {
+          console.log('BASE_REF_EVIDENCE_UNAVAILABLE');
+          console.log('GitHub merged-PR baseRefName metadata could not be retrieved.');
+          console.log('');
+        } else if (nonCanonicalMergedPRs.length > 0) {
+          console.log(`Non-canonical merged PRs: ${nonCanonicalMergedPRs.length}`);
+          for (const pr of nonCanonicalMergedPRs) {
+            console.log(
+              `  PR #${pr.number} merged into ${pr.baseRefName}; required base is ${policy.required_base_ref}`,
+            );
+          }
+          console.log('');
+        } else {
+          console.log(`Canonical PR base violations after #${policy.effective_after_pr}: 0`);
         }
         if (!auditFailed) {
           console.log('Unexplained direct commits: 0');

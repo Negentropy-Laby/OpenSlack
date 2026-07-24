@@ -39,13 +39,19 @@ describe('notification import qualification deployment', () => {
       'utf8',
     );
     const workflow = parse(source) as {
-      on: Record<string, unknown>;
+      on: {
+        workflow_dispatch: {
+          inputs: {
+            expected_commit: { required: boolean; type: string };
+          };
+        };
+      };
       permissions: Record<string, string>;
       concurrency: { 'cancel-in-progress': boolean };
       jobs: {
-        'require-frozen-integration-ref': {
+        'require-main-ref': {
           'timeout-minutes': number;
-          steps: Array<{ run?: string }>;
+          steps: Array<{ env?: Record<string, string>; run?: string }>;
         };
         qualification: {
           environment: string;
@@ -58,15 +64,24 @@ describe('notification import qualification deployment', () => {
     };
 
     expect(Object.keys(workflow.on)).toEqual(['workflow_dispatch']);
+    expect(workflow.on.workflow_dispatch.inputs.expected_commit).toMatchObject({
+      required: true,
+      type: 'string',
+    });
     expect(workflow.permissions).toEqual({ contents: 'read' });
     expect(workflow.concurrency['cancel-in-progress']).toBe(false);
-    expect(workflow.jobs['require-frozen-integration-ref']['timeout-minutes']).toBe(1);
-    expect(workflow.jobs['require-frozen-integration-ref'].steps[0]?.run).toContain(
-      'refs/heads/integration/notification-delivery-0.3',
+    expect(workflow.jobs['require-main-ref']['timeout-minutes']).toBe(1);
+    expect(workflow.jobs['require-main-ref'].steps[0]?.run).toContain('refs/heads/main');
+    expect(workflow.jobs['require-main-ref'].steps[0]?.run).toContain(
+      '"$EXPECTED_COMMIT" != "$GITHUB_SHA"',
     );
-    expect(workflow.jobs.qualification.needs).toBe('require-frozen-integration-ref');
+    expect(workflow.jobs.qualification.needs).toBe('require-main-ref');
     expect(workflow.jobs.qualification.environment).toBe('notification-canary');
     expect(workflow.jobs.qualification['timeout-minutes']).toBe(60);
+    expect(workflow.jobs.qualification.env).toHaveProperty(
+      'OPENSLACK_NOTIFICATION_QUALIFICATION_EXPECTED_COMMIT',
+      '${{ inputs.expected_commit }}',
+    );
     const serialized = JSON.stringify(workflow);
     const credentialDirFormula =
       'credential_dir="$RUNNER_TEMP/notification-qualification-credentials-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"';
@@ -203,6 +218,7 @@ describe('notification import qualification deployment', () => {
     expect(manifest).toMatchObject({
       status: 'PENDING_EXTERNAL',
       timeout_minutes: 60,
+      environment: { deployment_branch: 'main' },
       does_not_claim: expect.arrayContaining(['LIVE_VERIFIED', 'IB7_CUTOVER']),
     });
   });

@@ -30,9 +30,29 @@ const DEFAULT_POLICY: PRReviewPolicy = {
   no_self_review: true,
   red_zone_human_required: true,
   black_zone_never_merge: true,
+  required_base_ref: 'main',
+  effective_after_pr: 296,
 };
 
 describe('diagnosePR', () => {
+  it.each(['integration/notification-delivery-0.3', 'release/0.3', 'feature/topic'])(
+    'blocks the non-canonical %s base before mergeability, workflow trust, checks, and approval',
+    (baseRef) => {
+      const report = makeReport({
+        prNumber: 413,
+        baseRef,
+        mergeable: false,
+        riskZone: 'red',
+        changedFiles: ['templates/workflows/feature.yaml'],
+        checks: [{ name: 'ci', status: 'completed', conclusion: 'failure' }],
+        reviews: [{ user: 'alice', state: 'APPROVED' }],
+      });
+      const result = diagnosePR(report, DEFAULT_POLICY, []);
+      expect(result.decision).toBe('BLOCKED_BASE_BRANCH');
+      expect(result.recommendation).toContain('gh pr edit 413 --base main');
+    },
+  );
+
   it('blocks draft PRs', () => {
     const report = makeReport({ draft: true });
     const result = diagnosePR(report, DEFAULT_POLICY, []);

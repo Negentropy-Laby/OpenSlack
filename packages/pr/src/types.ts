@@ -9,6 +9,7 @@ export type PRReviewState =
   | 'NEEDS_HUMAN_APPROVAL'
   | 'NEEDS_CODEOWNER_APPROVAL'
   | 'NEEDS_CHANGES'
+  | 'BLOCKED_BASE_BRANCH'
   | 'BLOCKED_POLICY'
   | 'BLOCKED_SELF_REVIEW'
   | 'BLOCKED_BLACK_ZONE'
@@ -124,4 +125,6 @@ export interface PRReviewPolicy {
   no_self_review: boolean;
   red_zone_human_required: boolean;
   black_zone_never_merge: boolean;
+  required_base_ref: string;
+  effective_after_pr: number;
 }

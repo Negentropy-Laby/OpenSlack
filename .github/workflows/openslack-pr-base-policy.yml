@@ -1,0 +1,25 @@
+name: PR Base Policy
+
+on:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  canonical-base:
+    name: canonical-base
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Require the canonical main base
+        shell: bash
+        env:
+          PR_BASE_REF: ${{ github.base_ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [[ "$PR_BASE_REF" != "main" ]]; then
+            echo "PR #$PR_NUMBER targets '$PR_BASE_REF'; only 'main' is allowed." >&2
+            echo "Run: gh pr edit $PR_NUMBER --base main" >&2
+            exit 1
+          fi

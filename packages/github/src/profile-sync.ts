@@ -1,4 +1,5 @@
 import { getClient } from './client.js';
+import { assertCanonicalPRBase } from './pr-base-policy.js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -245,6 +246,7 @@ export async function createProfileSyncPR(
   body: string,
   baseRef: string = 'main',
 ): Promise<ProfileSyncPRResult> {
+  assertCanonicalPRBase(baseRef);
   const client = await getClient();
   if (client.isDryRun) {
     console.log(`[DRY RUN] Would create draft PR in ${owner}/${repo}: "${title}"`);

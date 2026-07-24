@@ -93,6 +93,25 @@ describe('proposeWorkspacePR authorization', () => {
     expect(result.errors[0]).toContain('red');
   });
 
+  it('blocks a non-main base before delivery or workspace mutation', async () => {
+    const publish = vi.fn();
+    const result = await proposeWorkspacePR({
+      agentId: 'test_agent',
+      taskId: 'TASK-1',
+      runId: 'RUN-001',
+      changedPaths: ['docs/readme.md'],
+      baseBranch: 'release/0.3',
+      deliveryService: { publish },
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      riskZone: 'unknown',
+      errors: [expect.stringContaining('DELIVERY_BASE_FORBIDDEN')],
+    });
+    expect(publish).not.toHaveBeenCalled();
+  });
+
   it('commits locally and delegates publication to GitHubDeliveryService', async () => {
     const root = mkdtempSync(join(tmpdir(), 'openslack-propose-delivery-'));
     try {

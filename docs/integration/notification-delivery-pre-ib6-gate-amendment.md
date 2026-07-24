@@ -92,18 +92,19 @@ branch. The default branch therefore keeps the fail-closed locator at:
 .github/workflows/notification-import-qualification.yml
 ```
 
-The locator has no environment, secrets, deployment authority or qualification implementation and always fails.
-After the full workflow is independently reviewed and merged on `integration/notification-delivery-0.3`, the
-authorized operator must dispatch the same path with:
+The workflow is reviewed on `main`. The authorized operator must resolve the live `main` SHA and dispatch the
+same commit explicitly:
 
 ```bash
+MAIN_SHA="$(gh api repos/Negentropy-Laby/OpenSlack/commits/main --jq .sha)"
 gh workflow run notification-import-qualification.yml \
   --repo Negentropy-Laby/OpenSlack \
-  --ref integration/notification-delivery-0.3
+  --ref main \
+  -f expected_commit="$MAIN_SHA"
 ```
 
-GitHub then executes the workflow version from the selected integration ref. Dispatching the default-branch locator
-itself can never satisfy this gate.
+The hosted one-minute preflight requires `GITHUB_REF == refs/heads/main` and
+`expected_commit == GITHUB_SHA` before the protected environment or self-hosted runner can start.
 
 ## Runtime And Release Disposition
 

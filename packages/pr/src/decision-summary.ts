@@ -6,6 +6,7 @@ import { diagnosePR } from './doctor.js';
 import { loadPRReviewPolicy } from './policy.js';
 import { fetchPRDetails } from './fetch.js';
 import { loadPRCodeownerEvidence } from './codeowners.js';
+import { evaluatePRBasePolicy } from './base-policy.js';
 
 export type PRBlockerCategory =
   | 'none'
@@ -58,6 +59,8 @@ function categoryFor(decision: PRReviewState): PRBlockerCategory {
       return 'deadlock';
     case 'BLOCKED_DRAFT':
       return 'draft';
+    case 'BLOCKED_BASE_BRANCH':
+      return 'branch_policy';
     case 'BLOCKED_POLICY':
       return 'mergeability';
     default:
@@ -67,6 +70,7 @@ function categoryFor(decision: PRReviewState): PRBlockerCategory {
 
 function ownerFor(category: PRBlockerCategory, decision: PRReviewState): PRDecisionOwner {
   if (decision === 'READY_TO_MERGE') return 'human';
+  if (decision === 'BLOCKED_BASE_BRANCH') return 'agent';
   if (category === 'checks') return 'agent';
   if (category === 'codeowners' || category === 'deadlock') return 'codeowner';
   if (category === 'approvals') return 'human';
@@ -91,6 +95,9 @@ function nextActionFor(report: PRReviewReport, owner: PRDecisionOwner): string {
   if (report.decision === 'NEEDS_CODEOWNER_APPROVAL') {
     return 'Request CODEOWNER approval on GitHub.';
   }
+  if (report.decision === 'BLOCKED_BASE_BRANCH') {
+    return report.recommendation;
+  }
   if (owner === 'github_admin') {
     return 'A GitHub repository admin must fix the branch policy or ruleset.';
   }
@@ -111,6 +118,7 @@ function evidenceFor(report: PRReviewReport, codeowners: string[]): string[] {
   const evidence: string[] = [
     `Risk zone: ${report.riskZone}`,
     `Author: @${report.author}`,
+    `Base branch: ${report.baseRef}`,
     `Valid human approvals: ${validApprovers.length}`,
   ];
   if (codeowners.length > 0) evidence.push(`CODEOWNERS: ${codeowners.join(', ')}`);
@@ -162,7 +170,8 @@ async function diagnoseForQueue(prNumber: number): Promise<PRQueueItem> {
   const report = await fetchPRDetails(prNumber);
   const classified = classifyPRReport(report);
   const policy = loadPRReviewPolicy();
-  const { owners: codeowners } = await loadPRCodeownerEvidence(classified);
+  const baseViolation = evaluatePRBasePolicy(classified, policy);
+  const codeowners = baseViolation ? [] : (await loadPRCodeownerEvidence(classified)).owners;
   const diagnosed = diagnosePR(classified, policy, codeowners);
   return {
     ...summarizePRDecision(diagnosed, codeowners),

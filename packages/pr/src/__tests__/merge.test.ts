@@ -21,6 +21,8 @@ const DEFAULT_POLICY: PRReviewPolicy = {
   no_self_review: true,
   red_zone_human_required: true,
   black_zone_never_merge: true,
+  required_base_ref: 'main',
+  effective_after_pr: 296,
 };
 
 function makeReport(overrides: Partial<PRReviewReport> = {}): PRReviewReport {
@@ -127,6 +129,24 @@ describe('mergeIfReady', () => {
     const result = await mergeIfReady(1, DEFAULT_POLICY);
     expect(result.merged).toBe(false);
     expect(result.decision).toBe('NEEDS_HUMAN_APPROVAL');
+  });
+
+  it('never calls Merge Steward for a non-main PR even when checks and approval pass', async () => {
+    const { fetchPRDetails } = await import('../fetch.js');
+    const { getCODEOWNERS, mergePR } = await import('@openslack/github');
+    vi.mocked(mergePR).mockClear();
+    vi.mocked(getCODEOWNERS).mockClear();
+    vi.mocked(fetchPRDetails).mockResolvedValue(
+      makeReport({ prNumber: 414, baseRef: 'release/0.3' }),
+    );
+
+    const result = await mergeIfReady(414, DEFAULT_POLICY);
+
+    expect(result.merged).toBe(false);
+    expect(result.decision).toBe('BLOCKED_BASE_BRANCH');
+    expect(result.message).toContain('gh pr edit 414 --base main');
+    expect(mergePR).not.toHaveBeenCalled();
+    expect(getCODEOWNERS).not.toHaveBeenCalled();
   });
 
   it('merges when all gates pass', async () => {

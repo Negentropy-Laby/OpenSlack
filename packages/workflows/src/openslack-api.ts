@@ -194,7 +194,7 @@ export function createOpenSlackAPI(options: OpenSlackAPIOptions = {}) {
               detail: diagnosed.reason,
             },
             mergeability: {
-              passed: decision !== 'BLOCKED_POLICY',
+              passed: !['BLOCKED_POLICY', 'BLOCKED_BASE_BRANCH'].includes(decision),
               detail: diagnosed.reason,
             },
           };

@@ -24,7 +24,7 @@
     "repository": "Negentropy-Laby/OpenSlack",
     "name": "notification-canary",
     "required_reviewer": "wsman",
-    "deployment_branch": "integration/notification-delivery-0.3"
+    "deployment_branch": "main"
   },
   "fixed_variables": {
     "CANARY_REPO_A": "Negentropy-Laby/openslack-notification-canary-a",

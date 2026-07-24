@@ -20,6 +20,27 @@ const baseInput = {
 };
 
 describe('GitHubDeliveryService', () => {
+  it('rejects a non-main base before token, push, or API side effects', async () => {
+    const tokenProvider = tokens();
+    const publisher = gitPublisher();
+    const apiFactory = vi.fn(() => githubApi());
+    const service = new GitHubDeliveryService({
+      tokenProvider,
+      gitPublisher: publisher,
+      githubApiFactory: apiFactory,
+    });
+
+    await expect(
+      service.publish({ ...baseInput, base: 'integration/notification-delivery-0.3' }),
+    ).rejects.toMatchObject({
+      code: 'DELIVERY_BASE_FORBIDDEN',
+      retryable: false,
+    });
+    expect(tokenProvider.acquire).not.toHaveBeenCalled();
+    expect(publisher.push).not.toHaveBeenCalled();
+    expect(apiFactory).not.toHaveBeenCalled();
+  });
+
   it('creates once, synchronizes all SHAs, and returns empty checks as awaiting gates', async () => {
     const api = githubApi();
     const service = createService({ api });

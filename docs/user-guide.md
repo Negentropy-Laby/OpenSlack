@@ -535,10 +535,11 @@ creates a second PR.
 ```bash
 openslack delivery publish \
   --branch agent/topic \
-  --base main \
   --title "runtime: deliver topic" \
   --body-file pr-body.md
 ```
+
+Delivery always targets the canonical `main` base. The public command does not accept a configurable PR base.
 
 Before the first real delivery, run the read-only installation/permission
 diagnostic, then explicitly apply the temporary-ref write probe:

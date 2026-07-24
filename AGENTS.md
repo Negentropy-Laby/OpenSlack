@@ -262,7 +262,7 @@ All non-trivial changes follow this path:
 3. Keep logic in packages; CLI commands should orchestrate package functions.
 4. Add or update tests for package behavior.
 5. Run validation.
-6. Open a PR under the configured bot/agent GitHub author identity for OpenSlack-authored or delegated agent work.
+6. Open a PR targeting `main` under the configured bot/agent GitHub author identity for OpenSlack-authored or delegated agent work.
 7. Use PRMS to diagnose merge readiness.
 8. Human approval is collected and recorded when required.
 9. Required review conversations are resolved after the blocking findings are fixed.
@@ -431,6 +431,7 @@ These rules come from `.openslack/self/constitution.md`, `.openslack/self/invari
 8. **No protected path modification without human approval.** Red Zone changes require human approval.
 9. **No secret access.** Agents cannot read, write, create, copy, or summarize `.env`, `*.pem`, `*.key`, `secrets/**`, `credentials/**`, or equivalent credential material.
 10. **Black Zone is never mergeable.** Black Zone PRs are rejected, not escalated.
+11. **Canonical PR target.** Every PR must target the canonical `main` branch. PRs targeting integration, release, staging, or feature branches must be retargeted or recreated and must not be approved or merged.
 
 Violation means immediate task failure and governance review.
 

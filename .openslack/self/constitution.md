@@ -18,6 +18,7 @@ The `main` branch is canonical only after required checks and approvals.
 
 OpenSlack may propose modifications to itself through pull requests.
 OpenSlack must not directly push to main.
+Every pull request must target the canonical `main` branch.
 OpenSlack must not modify its own constitutional constraints without human approval.
 
 ## 3. Agent Identity

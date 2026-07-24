@@ -20,7 +20,7 @@ import { buildPRQueue } from '../decision-summary.js';
 import type { PRReviewReport } from '../types.js';
 import { watchPR } from '../watch.js';
 
-function report(): PRReviewReport {
+function report(overrides: Partial<PRReviewReport> = {}): PRReviewReport {
   return {
     prNumber: 42,
     title: 'PR without CODEOWNERS evidence',
@@ -39,6 +39,7 @@ function report(): PRReviewReport {
     reason: '',
     recommendation: '',
     mergeable: true,
+    ...overrides,
   };
 }
 
@@ -69,5 +70,28 @@ describe('strict CODEOWNERS evidence consumers', () => {
     expect(hoisted.getCODEOWNERS).toHaveBeenCalledWith('immutable-base-sha', {
       strictEvidence: true,
     });
+  });
+
+  it('makes watch stop on a non-main base before loading CODEOWNERS', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    hoisted.fetchPRDetails.mockResolvedValue(report({ baseRef: 'release/0.3' }));
+
+    const result = await watchPR(42, { timeoutSeconds: 1, intervalSeconds: 0 });
+
+    expect(result.finalState).toBe('BLOCKED_BASE_BRANCH');
+    expect(hoisted.getCODEOWNERS).not.toHaveBeenCalled();
+    logSpy.mockRestore();
+  });
+
+  it('makes queue diagnosis skip CODEOWNERS for a non-main base', async () => {
+    hoisted.fetchPRDetails.mockResolvedValue(report({ baseRef: 'feature/topic' }));
+
+    const items = await buildPRQueue(20);
+
+    expect(items[0]).toMatchObject({
+      decision: 'BLOCKED_BASE_BRANCH',
+      blockerCategory: 'branch_policy',
+    });
+    expect(hoisted.getCODEOWNERS).not.toHaveBeenCalled();
   });
 });

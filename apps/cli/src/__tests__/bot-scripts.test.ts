@@ -159,11 +159,12 @@ describe('bot-auth wrapper scripts', () => {
       'delivery title',
       '--body-file',
       'pr-body.md',
-      '--base',
-      'main',
       '--branch',
       'agent/topic',
     ]);
+    expect(() =>
+      compatibility.mapCreateArgs(['--base', 'release/0.3', '--head', 'agent/topic']),
+    ).toThrow('DELIVERY_BASE_FORBIDDEN');
     expect(() => compatibility.mapCreateArgs(['--unknown'])).toThrow(
       'Unsupported bot PR compatibility argument',
     );

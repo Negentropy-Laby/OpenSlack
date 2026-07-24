@@ -136,7 +136,7 @@ Agents and automation must **never** call `gh pr create` directly. The `gh` CLI 
 The canonical product path is now package-backed delivery:
 
 ```bash
-openslack delivery publish --branch <branch> --base main \
+openslack delivery publish --branch <branch> \
   --title "runtime: deliver change" --body-file pr-body.md
 ```
 
@@ -145,7 +145,8 @@ Git push and Pull Request API calls. Git runs with `credential.helper=` and an
 empty `core.hooksPath`; its child environment is allowlisted, global/system Git
 configuration and trace output are disabled, and human token, SSH, and App-key
 variables are excluded. The token exists only in the push and remote-verification
-askpass children. Delivery rejects multiple or mismatched push URLs, binds the
+askpass children. Delivery fixes every created or updated PR to the canonical
+`main` base, rejects multiple or mismatched push URLs, binds the
 Git target to the API owner/repository, verifies local/remote/PR head SHAs again
 before querying checks by the synchronized SHA, and returns `AWAITING_GATES`;
 PRMS remains the owner of review, approval, readiness, and merge.

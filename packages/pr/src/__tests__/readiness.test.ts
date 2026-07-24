@@ -28,9 +28,27 @@ const DEFAULT_POLICY: PRReviewPolicy = {
   no_self_review: true,
   red_zone_human_required: true,
   black_zone_never_merge: true,
+  required_base_ref: 'main',
+  effective_after_pr: 296,
 };
 
 describe('checkMergeReadiness', () => {
+  it.each(['integration/notification-delivery-0.3', 'release/0.3', 'feature/topic'])(
+    'blocks the non-canonical %s base before checks, approval, and risk gates',
+    (baseRef) => {
+      const report = makeReport({
+        prNumber: 412,
+        baseRef,
+        riskZone: 'black',
+        checks: [{ name: 'ci', status: 'completed', conclusion: 'failure' }],
+        humanApprovals: [{ user: 'wsman' }],
+      });
+      const result = checkMergeReadiness(report, DEFAULT_POLICY);
+      expect(result.decision).toBe('BLOCKED_BASE_BRANCH');
+      expect(result.recommendation).toContain('gh pr edit 412 --base main');
+    },
+  );
+
   it('blocks black zone PRs', () => {
     const report = makeReport({ riskZone: 'black' });
     const result = checkMergeReadiness(report, DEFAULT_POLICY);

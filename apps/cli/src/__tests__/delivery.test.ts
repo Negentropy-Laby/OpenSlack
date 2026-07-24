@@ -40,7 +40,7 @@ describe('delivery command', () => {
   });
 
   it('publishes through the package-backed service', async () => {
-    const publish = vi.fn(async () => result);
+    const publish = vi.fn(async (_input: unknown) => result);
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
       await deliveryCommands({ publish }).parseAsync(
@@ -67,6 +67,7 @@ describe('delivery command', () => {
           body: 'body',
         }),
       );
+      expect(publish.mock.calls[0]?.[0]).not.toHaveProperty('base');
     } finally {
       log.mockRestore();
     }

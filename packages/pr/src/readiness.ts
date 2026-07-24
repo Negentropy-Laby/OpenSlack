@@ -1,4 +1,5 @@
 import type { PRReviewReport, PRReviewPolicy, PRReviewState } from './types.js';
+import { evaluatePRBasePolicy } from './base-policy.js';
 
 export function checkMergeReadiness(
   report: PRReviewReport,
@@ -7,6 +8,9 @@ export function checkMergeReadiness(
   let decision: PRReviewState = report.decision;
   let reason = report.reason;
   let recommendation = report.recommendation;
+
+  const baseViolation = evaluatePRBasePolicy(report, policy);
+  if (baseViolation) return { ...report, ...baseViolation };
 
   // Black zone gate
   if (policy.black_zone_never_merge && report.riskZone === 'black') {
