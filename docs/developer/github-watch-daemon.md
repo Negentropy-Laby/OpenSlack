@@ -157,13 +157,23 @@ does not store raw webhook bodies, Issue/review prose, sender handles,
 credentials, or outbound webhook URLs. A legacy `dedupe.jsonl` file is imported
 as bounded completed tombstones during migration and is no longer written.
 
-### Proposed 0.3.0 notification-service boundary
+### Gated 0.3.0 notification-service boundary
 
-The current v1 queue and direct sinks remain authoritative and unchanged. A separate
-`openslack.github_watch.v2` schema, route identity and pre-202 handoff contract passed G0 under the repository-scoped
-review policy recorded in [`notification-delivery-integration.md`](notification-delivery-integration.md). Those types
-are not wired into this daemon. Do not interpret their presence as a new runtime path, completed integration or
-production evidence.
+The v1 queue remains the authority for migrated `legacyOwned` routes until its direct drain reaches terminal state.
+The explicit `openslack.github_watch.v2` schema now composes separate direct and notification-service workers under
+the repository-scoped review policy recorded in
+[`notification-delivery-integration.md`](notification-delivery-integration.md). New notification-service admission
+remains fail-closed unless `OPENSLACK_NOTIFICATION_SERVICE_NEW_RECORDS=true`; closing that gate does not stop already
+durable v2 service records from draining. A valid 202 transfers only that route's authority to the service and never
+emits `notification.sent`.
+
+The runtime wiring and read-only reconciliation primitives do not establish G4/G5 or production readiness. Real
+two-repository/two-vendor E2E, the 14-day Canary, immutable release evidence and their independent reviews remain
+separate gates.
+
+When a notification-service block is configured, `openslack github notifications doctor` performs a bounded,
+unauthenticated, read-only `GET /health/version` probe and verifies the configured deployment digest; otherwise its
+checks remain local.
 
 ## Event Model
 
@@ -204,15 +214,15 @@ Use these keys in order:
 4. Poll cursor per repository: `lastSeenAt`, `lastIssueNumber`, and last
    processed idempotency key.
 
-The approved, not-yet-wired v2 queue derives each local `route_record_id` as lowercase hexadecimal SHA-256 over
+The v2 queue derives each local `route_record_id` as lowercase hexadecimal SHA-256 over
 `openslack.watch.route-record.v2`, the already-lowercase canonical `owner/repo`, and the persisted route idempotency
 key, with NUL delimiters. Migrated v1 routes use their copied original key as input; they do not receive a new v2
 handoff key. The ID is derived queue identity and is never accepted from watch configuration.
 
-The standalone v2 Blob store, receipt store and `NotificationServiceClient` are also not wired here yet. The client
-is not a `NotificationSink`, and `createSinks`, this daemon, the delivery router and CLI composition roots do not
-reference it. IB3 must acquire `queue-v2` before either storage lock; neither storage primitive may acquire the queue
-lock. Receipt repair from an embedded accepted record must not POST again.
+The v2 Blob store, receipt store and `NotificationServiceClient` remain distinct from `NotificationSink`; a service
+202 is accepted, not vendor-delivered. The v2 router composes them without adding them to `createSinks`. Queue
+operations acquire `queue-v2` before either storage lock; neither storage primitive acquires the queue lock. Receipt
+repair from an embedded accepted record never POSTs again.
 
 The queue accepts or rejects duplicates atomically. A successful route is
 marked completed immediately and is not resent when another route retries. If

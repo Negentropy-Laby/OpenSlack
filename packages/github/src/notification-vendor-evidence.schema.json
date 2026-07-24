@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/notification-vendor-evidence.v1.json",
+  "title": "OpenSlack metadata-only notification vendor evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "route_record_id",
+    "vendor_id",
+    "idempotency_key",
+    "body_digest",
+    "body_size",
+    "source",
+    "delivered_at",
+    "recorded_at"
+  ],
+  "properties": {
+    "schema": {
+      "const": "openslack.notification_vendor_evidence.v1"
+    },
+    "route_record_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "vendor_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,64}$"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-5[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$"
+    },
+    "body_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "body_size": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 262144
+    },
+    "source": {
+      "enum": ["slack", "webhook"]
+    },
+    "delivered_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "recorded_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

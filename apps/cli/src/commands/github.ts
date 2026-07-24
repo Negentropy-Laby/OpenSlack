@@ -1134,14 +1134,20 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
     .argument('<route-record-id>')
     .requiredOption('--decision <retry|archive>', 'Resolution decision')
     .requiredOption('--reason <text>', 'Operator reason')
+    .option(
+      '--config <path>',
+      'GitHub Watch v2 config path',
+      '.openslack/monitors/github-watch.yaml',
+    )
     .option('--operator <id>', 'Operator identity', 'local-operator')
     .option('--apply', 'Apply the resolution')
     .action(
-      (
+      async (
         id: string,
         options: {
           decision: string;
           reason: string;
+          config: string;
           operator: string;
           apply?: boolean;
         },
@@ -1153,12 +1159,13 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
           const operations = new NotificationDeliveryOperations({
             workspaceRoot: findRepoRoot(),
           });
-          const reconciliation = operations.reconcile(id);
-          if (reconciliation.outcome !== 'remote_required') {
+          const reconciliation = await operations.reconcile(id, options.config);
+          console.log(JSON.stringify(reconciliation));
+          if (reconciliation.outcome !== 'consistent') {
             throw new Error('RECONCILIATION_DECISION_UNAVAILABLE');
           }
-          console.log(
-            'REMOTE_RECONCILIATION_REQUIRED: IB4 read-only service reconciliation must complete before quarantine resolution.',
+          console.error(
+            'QUARANTINE_RESOLUTION_FAILED: accepted-route evidence cannot authorize a quarantined-route transition.',
           );
           process.exitCode = 1;
         } catch {
@@ -1171,13 +1178,18 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
 
   notifications
     .command('reconcile')
-    .description('Verify local accepted receipt consistency')
+    .description('Reconcile local receipt, service state and metadata-only vendor evidence')
     .argument('<route-record-id>')
-    .action((id: string) => {
+    .option(
+      '--config <path>',
+      'GitHub Watch v2 config path',
+      '.openslack/monitors/github-watch.yaml',
+    )
+    .action(async (id: string, options: { config: string }) => {
       try {
-        const result = new NotificationDeliveryOperations({
+        const result = await new NotificationDeliveryOperations({
           workspaceRoot: findRepoRoot(),
-        }).reconcile(id);
+        }).reconcile(id, options.config);
         console.log(JSON.stringify(result));
         if (result.outcome !== 'consistent') process.exitCode = 1;
       } catch {

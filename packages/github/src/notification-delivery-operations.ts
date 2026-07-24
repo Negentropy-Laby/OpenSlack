@@ -9,7 +9,6 @@ import {
 } from './notification-blob-store.js';
 import {
   NotificationReceiptStore,
-  NotificationReceiptStoreError,
   notificationReceiptStorePath,
 } from './notification-receipt-store.js';
 import {
@@ -22,7 +21,21 @@ import {
 } from './watch-delivery-queue-v2.js';
 import { WatchDeliveryQueue } from './watch-delivery-queue.js';
 import { loadGitHubWatchConfigV2 } from './watch-config-v2.js';
+import {
+  NotificationServiceOpsClient,
+  type NotificationServiceOpsClientOptions,
+} from './notification-service-ops-client.js';
+import {
+  NotificationDeliveryReconciler,
+  NotificationVendorEvidenceStore,
+  type NotificationReconciliationReport,
+  type NotificationVendorEvidenceSource,
+} from './notification-reconciliation.js';
 import { ensureSecureNotificationDirectory } from './notification-storage-fs.js';
+
+export const NOTIFICATION_AUDITOR_CREDENTIAL_REF_ENV =
+  'OPENSLACK_NOTIFICATION_SERVICE_AUDITOR_CREDENTIAL_REF';
+export const NOTIFICATION_VENDOR_EVIDENCE_DIR_ENV = 'OPENSLACK_NOTIFICATION_VENDOR_EVIDENCE_DIR';
 
 export interface NotificationDeliveryRouteView {
   id: string;
@@ -54,33 +67,34 @@ export interface NotificationDeliveryDoctorReport {
 }
 
 export type NotificationDeliveryReconciliation =
+  | NotificationReconciliationReport
   | {
-      outcome: 'consistent';
+      schema: 'openslack.notification_reconciliation.v1';
+      outcome: 'unavailable' | 'conflict';
       checkedAt: string;
-      notificationId: string;
-      remoteDeliveryState: WatchRouteRecordV2['remoteDeliveryState'];
-    }
-  | {
-      outcome: 'remote_required';
-      checkedAt: string;
-      code: 'REMOTE_RECONCILIATION_REQUIRED';
-    }
-  | {
-      outcome: 'conflict';
-      checkedAt: string;
-      code: 'LOCAL_RECEIPT_CONFLICT' | 'LOCAL_RECEIPT_MISSING';
+      routeRecordId: string;
+      code:
+        | 'WATCH_CONFIG_V2_INVALID'
+        | 'NOTIFICATION_SERVICE_NOT_CONFIGURED'
+        | 'AUDITOR_CREDENTIAL_REF_NOT_CONFIGURED'
+        | 'VENDOR_EVIDENCE_NOT_CONFIGURED';
     };
 
 export interface NotificationDeliveryOperationsOptions {
   workspaceRoot?: string;
   credentialStore?: Pick<CredentialStore, 'withSecret'>;
   now?: () => Date;
+  auditorCredentialRef?: string;
+  vendorEvidenceRoot?: string;
+  opsClient?: NotificationServiceOpsClient;
+  vendorEvidence?: NotificationVendorEvidenceSource;
   canaryReadCheckpoint?: (checkpoint: 'opened', path: string) => void;
 }
 
 /**
- * Local, payload-blind operational surface for queue inspection and governed recovery.
- * Remote service reconciliation is deliberately added by IB4 rather than inferred here.
+ * Payload-blind operational surface for local queue governance and explicitly
+ * configured IB4 read-only reconciliation. It never reuses the handoff caller
+ * credential for service status.
  */
 export class NotificationDeliveryOperations {
   readonly workspaceRoot: string;
@@ -90,6 +104,10 @@ export class NotificationDeliveryOperations {
   readonly receiptStore: NotificationReceiptStore;
   private readonly credentialStore: Pick<CredentialStore, 'withSecret'>;
   private readonly now: () => Date;
+  private readonly auditorCredentialRef?: string;
+  private readonly vendorEvidenceRoot?: string;
+  private readonly injectedOpsClient?: NotificationServiceOpsClient;
+  private readonly injectedVendorEvidence?: NotificationVendorEvidenceSource;
   private readonly canaryReadCheckpoint?: NotificationDeliveryOperationsOptions['canaryReadCheckpoint'];
 
   constructor(options: NotificationDeliveryOperationsOptions = {}) {
@@ -105,6 +123,12 @@ export class NotificationDeliveryOperations {
     });
     this.credentialStore = options.credentialStore ?? createDefaultCredentialStore(process.env);
     this.now = options.now ?? (() => new Date());
+    this.auditorCredentialRef =
+      options.auditorCredentialRef ?? process.env[NOTIFICATION_AUDITOR_CREDENTIAL_REF_ENV]?.trim();
+    this.vendorEvidenceRoot =
+      options.vendorEvidenceRoot ?? process.env[NOTIFICATION_VENDOR_EVIDENCE_DIR_ENV]?.trim();
+    this.injectedOpsClient = options.opsClient;
+    this.injectedVendorEvidence = options.vendorEvidence;
     this.canaryReadCheckpoint = options.canaryReadCheckpoint;
   }
 
@@ -236,6 +260,74 @@ export class NotificationDeliveryOperations {
           ? 'Credential reference resolved without exposing its value.'
           : 'Credential reference did not resolve.',
       });
+
+      let auditorResolved = false;
+      if (this.auditorCredentialRef) {
+        try {
+          await this.credentialStore.withSecret(this.auditorCredentialRef, (secret) => {
+            auditorResolved = secret.trim().length > 0;
+          });
+        } catch {
+          auditorResolved = false;
+        }
+      }
+      checks.push({
+        name: 'status_auditor_credential',
+        passed: auditorResolved,
+        code: auditorResolved
+          ? 'STATUS_AUDITOR_CREDENTIAL_VALID'
+          : 'STATUS_AUDITOR_CREDENTIAL_UNAVAILABLE',
+        detail: auditorResolved
+          ? 'Independent read-only auditor credential resolved without exposing its value.'
+          : `Set ${NOTIFICATION_AUDITOR_CREDENTIAL_REF_ENV} to an env: or keychain: reference.`,
+      });
+
+      let versionCheck: NotificationDeliveryDoctorCheck;
+      try {
+        const opsClient = this.createOpsClient(parsed.config.notification_service);
+        const version = opsClient ? await opsClient.version() : null;
+        versionCheck =
+          version?.kind === 'ok'
+            ? {
+                name: 'service_version',
+                passed: true,
+                code: 'SERVICE_VERSION_VALID',
+                detail: `Ready deployment ${version.deploymentDigest}.`,
+              }
+            : {
+                name: 'service_version',
+                passed: false,
+                code:
+                  version?.kind === 'protocol_error'
+                    ? version.code
+                    : version?.kind === 'not_ready'
+                      ? 'SERVICE_NOT_READY'
+                      : 'SERVICE_VERSION_UNAVAILABLE',
+                detail: 'Read-only service version evidence is unavailable or inconsistent.',
+              };
+      } catch {
+        versionCheck = {
+          name: 'service_version',
+          passed: false,
+          code: 'SERVICE_VERSION_UNAVAILABLE',
+          detail: 'Read-only service version evidence could not be verified safely.',
+        };
+      }
+      checks.push(versionCheck);
+
+      const vendorEvidenceConfigured = Boolean(
+        this.injectedVendorEvidence ?? this.vendorEvidenceRoot,
+      );
+      checks.push({
+        name: 'vendor_evidence',
+        passed: vendorEvidenceConfigured,
+        code: vendorEvidenceConfigured
+          ? 'VENDOR_EVIDENCE_CONFIGURED'
+          : 'VENDOR_EVIDENCE_NOT_CONFIGURED',
+        detail: vendorEvidenceConfigured
+          ? 'Metadata-only vendor evidence source is configured.'
+          : `Set ${NOTIFICATION_VENDOR_EVIDENCE_DIR_ENV} to a protected metadata-only directory.`,
+      });
     } else {
       checks.push({
         name: 'service_credential',
@@ -248,37 +340,51 @@ export class NotificationDeliveryOperations {
     return { ready: checks.every((check) => check.passed), checks };
   }
 
-  reconcile(id: string): NotificationDeliveryReconciliation {
+  async reconcile(
+    id: string,
+    configPath: string = join(this.workspaceRoot, '.openslack', 'monitors', 'github-watch.yaml'),
+  ): Promise<NotificationDeliveryReconciliation> {
     const checkedAt = this.now().toISOString();
-    const route = this.queueV2.getRoute(id);
-    if (!route) {
-      return { outcome: 'conflict', checkedAt, code: 'LOCAL_RECEIPT_MISSING' };
+    const base = {
+      schema: 'openslack.notification_reconciliation.v1' as const,
+      checkedAt,
+      routeRecordId: id,
+    };
+    const parsed = loadGitHubWatchConfigV2(configPath);
+    if (!parsed.valid || !parsed.config) {
+      return { ...base, outcome: 'conflict', code: 'WATCH_CONFIG_V2_INVALID' };
     }
-    if (route.state !== 'accepted' || !route.receipt || route.receiptLedger !== 'committed') {
+    const service = parsed.config.notification_service;
+    if (!service) {
       return {
-        outcome: 'remote_required',
-        checkedAt,
-        code: 'REMOTE_RECONCILIATION_REQUIRED',
-      };
-    }
-    try {
-      this.receiptStore.verify(route.receipt);
-      return {
-        outcome: 'consistent',
-        checkedAt,
-        notificationId: route.receipt.notification_id,
-        remoteDeliveryState: route.remoteDeliveryState,
-      };
-    } catch (error) {
-      return {
+        ...base,
         outcome: 'conflict',
-        checkedAt,
-        code:
-          error instanceof NotificationReceiptStoreError && error.code === 'RECEIPT_NOT_FOUND'
-            ? 'LOCAL_RECEIPT_MISSING'
-            : 'LOCAL_RECEIPT_CONFLICT',
+        code: 'NOTIFICATION_SERVICE_NOT_CONFIGURED',
       };
     }
+    const opsClient = this.createOpsClient(service);
+    if (!opsClient) {
+      return {
+        ...base,
+        outcome: 'unavailable',
+        code: 'AUDITOR_CREDENTIAL_REF_NOT_CONFIGURED',
+      };
+    }
+    const vendorEvidence = this.createVendorEvidence();
+    if (!vendorEvidence) {
+      return {
+        ...base,
+        outcome: 'unavailable',
+        code: 'VENDOR_EVIDENCE_NOT_CONFIGURED',
+      };
+    }
+    return new NotificationDeliveryReconciler({
+      queue: this.queueV2,
+      receiptStore: this.receiptStore,
+      opsClient,
+      vendorEvidence,
+      now: this.now,
+    }).reconcile(id);
   }
 
   retry(
@@ -370,6 +476,32 @@ export class NotificationDeliveryOperations {
     } catch {
       throw new Error('CANARY_ARTIFACT_INVALID');
     }
+  }
+
+  private createOpsClient(service: {
+    endpoint: string;
+    expected_deployment_digest: `sha256:${string}`;
+    allow_insecure_loopback?: boolean;
+  }): NotificationServiceOpsClient | null {
+    if (this.injectedOpsClient) return this.injectedOpsClient;
+    if (!this.auditorCredentialRef) return null;
+    const options: NotificationServiceOpsClientOptions = {
+      endpoint: service.endpoint,
+      credentialRef: this.auditorCredentialRef,
+      expectedDeploymentDigest: service.expected_deployment_digest,
+      credentialStore: this.credentialStore,
+      ...(service.allow_insecure_loopback === undefined
+        ? {}
+        : { allowInsecureLoopback: service.allow_insecure_loopback }),
+    };
+    return new NotificationServiceOpsClient(options);
+  }
+
+  private createVendorEvidence(): NotificationVendorEvidenceSource | null {
+    if (this.injectedVendorEvidence) return this.injectedVendorEvidence;
+    return this.vendorEvidenceRoot
+      ? new NotificationVendorEvidenceStore(this.vendorEvidenceRoot)
+      : null;
   }
 }
 
