@@ -83,6 +83,28 @@ Its closed contract is
 [`notification-delivery-gate-supersession.v1.schema.json`](notification-delivery-gate-supersession.v1.schema.json).
 A separate run receipt is required before `G5-IMPORT-QUALIFICATION` can become `PASS`.
 
+## Default-branch workflow locator
+
+GitHub accepts `workflow_dispatch` only when a workflow with the requested path exists on the repository default
+branch. The default branch therefore keeps the fail-closed locator at:
+
+```text
+.github/workflows/notification-import-qualification.yml
+```
+
+The locator has no environment, secrets, deployment authority or qualification implementation and always fails.
+After the full workflow is independently reviewed and merged on `integration/notification-delivery-0.3`, the
+authorized operator must dispatch the same path with:
+
+```bash
+gh workflow run notification-import-qualification.yml \
+  --repo Negentropy-Laby/OpenSlack \
+  --ref integration/notification-delivery-0.3
+```
+
+GitHub then executes the workflow version from the selected integration ref. Dispatching the default-branch locator
+itself can never satisfy this gate.
+
 ## Runtime And Release Disposition
 
 PR [#282](https://github.com/Negentropy-Laby/OpenSlack/pull/282) and merge commit
