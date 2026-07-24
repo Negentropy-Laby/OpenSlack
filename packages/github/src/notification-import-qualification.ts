@@ -182,6 +182,15 @@ export function createNotificationImportQualificationReport(
     'DELIVERY_CONVERGENCE_EXCEEDED',
     failedRequirements,
   );
+  requireCondition(
+    normalized.observations.every(
+      (observation) =>
+        Date.parse(observation.accepted_at) >= Date.parse(normalized.started_at) &&
+        Date.parse(observation.delivered_at) <= Date.parse(normalized.completed_at),
+    ),
+    'OBSERVATION_OUTSIDE_RUN_WINDOW',
+    failedRequirements,
+  );
   requireCondition(runDurationSeconds <= 60 * 60, 'RUN_DURATION_EXCEEDED', failedRequirements);
   requireCondition(
     coversFrozenRoutes(normalized.routes, repositories, vendorIds),
@@ -318,11 +327,28 @@ export function readNotificationImportQualificationReport(
     const before = fstatSync(descriptor, { bigint: true });
     const bytes = readFileSync(descriptor);
     const after = fstatSync(descriptor, { bigint: true });
+    let pathAfter;
+    try {
+      pathAfter = lstatSync(reportPath, { bigint: true });
+    } catch {
+      throw new Error('QUALIFICATION_REPORT_READ_RACE');
+    }
     if (
+      !before.isFile() ||
       before.dev !== status.dev ||
       before.ino !== status.ino ||
       before.size !== after.size ||
-      before.mtimeNs !== after.mtimeNs
+      before.mtimeNs !== after.mtimeNs ||
+      before.ctimeNs !== after.ctimeNs ||
+      pathAfter.isSymbolicLink() ||
+      !pathAfter.isFile() ||
+      pathAfter.dev !== before.dev ||
+      pathAfter.ino !== before.ino ||
+      pathAfter.size !== after.size ||
+      pathAfter.mtimeNs !== after.mtimeNs ||
+      pathAfter.ctimeNs !== after.ctimeNs ||
+      (process.platform !== 'win32' && (Number(pathAfter.mode) & 0o777) !== 0o600) ||
+      BigInt(bytes.length) !== after.size
     ) {
       throw new Error('QUALIFICATION_REPORT_READ_RACE');
     }
@@ -398,9 +424,13 @@ function validateAndOrderInput(
     !isDigest(value.service_deployment_digest) ||
     !isDigest(value.watch_config_digest) ||
     !Array.isArray(value.routes) ||
+    value.routes.length > 4 ||
     !Array.isArray(value.vendor_configs) ||
+    value.vendor_configs.length > 2 ||
     !Array.isArray(value.observations) ||
+    value.observations.length > 1_000 ||
     !Array.isArray(value.drills) ||
+    value.drills.length > 8 ||
     typeof value.caller_read_ops_denied !== 'boolean' ||
     typeof value.auditor_submit_denied !== 'boolean' ||
     !isCount(value.final_pending) ||
@@ -836,11 +866,27 @@ function verifyPublished(path: string, expected: Buffer): void {
     const before = fstatSync(descriptor, { bigint: true });
     const actual = readFileSync(descriptor);
     const after = fstatSync(descriptor, { bigint: true });
+    let pathAfter;
+    try {
+      pathAfter = lstatSync(path, { bigint: true });
+    } catch {
+      throw new Error('QUALIFICATION_REPORT_CONFLICT');
+    }
     if (
+      !before.isFile() ||
       before.dev !== status.dev ||
       before.ino !== status.ino ||
       before.size !== after.size ||
       before.mtimeNs !== after.mtimeNs ||
+      before.ctimeNs !== after.ctimeNs ||
+      pathAfter.isSymbolicLink() ||
+      !pathAfter.isFile() ||
+      pathAfter.dev !== before.dev ||
+      pathAfter.ino !== before.ino ||
+      pathAfter.size !== after.size ||
+      pathAfter.mtimeNs !== after.mtimeNs ||
+      pathAfter.ctimeNs !== after.ctimeNs ||
+      (process.platform !== 'win32' && (Number(pathAfter.mode) & 0o777) !== 0o600) ||
       !actual.equals(expected)
     ) {
       throw new Error('QUALIFICATION_REPORT_CONFLICT');

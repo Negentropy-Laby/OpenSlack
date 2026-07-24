@@ -93,6 +93,37 @@ describe('notification import qualification', () => {
     });
   });
 
+  it('fails when accepted or delivered observations fall outside the sealed run window', () => {
+    const before = input();
+    before.observations[0]!.accepted_at = '2026-07-23T23:59:59Z';
+    expect(createNotificationImportQualificationReport(before)).toMatchObject({
+      status: 'FAIL',
+      failed_requirements: expect.arrayContaining(['OBSERVATION_OUTSIDE_RUN_WINDOW']),
+    });
+
+    const after = input();
+    after.observations[0]!.delivered_at = '2026-07-24T00:20:01Z';
+    expect(createNotificationImportQualificationReport(after)).toMatchObject({
+      status: 'FAIL',
+      failed_requirements: expect.arrayContaining(['OBSERVATION_OUTSIDE_RUN_WINDOW']),
+    });
+  });
+
+  it('enforces the same bounded array sizes as the closed report schema', () => {
+    const tooManyRoutes = input();
+    tooManyRoutes.routes.push({ ...tooManyRoutes.routes[0]!, route_id: 'extra-route' });
+    expect(() => createNotificationImportQualificationReport(tooManyRoutes)).toThrow(TypeError);
+
+    const tooManyObservations = input();
+    tooManyObservations.observations = Array.from(
+      { length: 1_001 },
+      () => tooManyObservations.observations[0]!,
+    );
+    expect(() => createNotificationImportQualificationReport(tooManyObservations)).toThrow(
+      TypeError,
+    );
+  });
+
   it('publishes a byte-stable create-only report and checksum', () => {
     const root = temporaryRoot();
     const report = createNotificationImportQualificationReport(input());

@@ -1,4 +1,12 @@
-import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from 'node:fs';
+import {
+  closeSync,
+  constants,
+  existsSync,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readSync,
+} from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import type { CredentialStore } from '@openslack/credentials';
 import { createDefaultCredentialStore } from '@openslack/credentials';

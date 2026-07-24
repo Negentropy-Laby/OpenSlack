@@ -587,6 +587,8 @@ normal delivery or product branches.
 | `openslack github notifications quarantine resolve <id> --decision retry\|archive --reason <text> [--apply]` | Require IB4 read-only reconciliation before recording a quarantine decision                   |
 | `openslack github notifications reconcile <id> [--config <path>]`                                            | Reconcile receipt, service status/attempts, and metadata-only vendor evidence                 |
 | `openslack github notifications canary status\|report`                                                       | Read a sealed, whitelisted local Canary artifact                                              |
+| `openslack github notifications qualification status`                                                        | Read the sealed metadata-only IB6 import qualification status                                 |
+| `openslack github notifications qualification report`                                                        | Read the complete sealed metadata-only IB6 import qualification report                        |
 | `openslack github claim heartbeat --issue-number <n> --agent-id <id> --ttl-minutes <1..120>`                 | Extend and verify a claim lease                                                               |
 | `openslack github claim review --issue-number <n> --agent-id <id> --pr-url <url>`                            | Verify the owner and move a claimed Issue to review                                           |
 | `openslack github claim complete --issue-number <n> --agent-id <id> --pr-url <url>`                          | Complete a merged Issue and verify claim-ref removal                                          |
@@ -604,6 +606,12 @@ Set `OPENSLACK_NOTIFICATION_SERVICE_AUDITOR_CREDENTIAL_REF` to an `env:` or
 create-only mode-`0600` metadata records. The files contain route/vendor/key
 identity, digest, size and timestamps only; commands never read or display Blob
 bytes, raw vendor responses, endpoints, tokens, or resolved credentials.
+
+Qualification commands return a nonzero process status when the run has not
+occurred, the sealed evidence is invalid, or the report is `FAIL`. A `PASS`
+authorizes only IB6 history-import eligibility; it does not claim the superseded
+long-duration Canary, `LIVE_VERIFIED`, IB7 cutover, OpenSlack 0.3.0, production
+readiness, or destructive retirement.
 
 Notification recovery commands are preview-first; only `--apply` may mutate
 local state. `drain --apply` continues existing v1/v2 ownership but forces new

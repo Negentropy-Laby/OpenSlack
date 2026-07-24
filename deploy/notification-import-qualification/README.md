@@ -15,12 +15,16 @@ The runner must create, within its run-specific evidence directory:
 - `qualification-input.json`;
 - `receipt-reconciliation.json`;
 - `security-review.json`;
-- one `fault-runs/<drill>.json` file for every required drill.
+- one `fault-runs/<drill>.json` file and its `fault-runs/<drill>.sha256` sidecar for every
+  required drill.
 
 All files are metadata-only, mode `0600`, and immutable for the run. The repository sealer verifies
-their SHA-256 bindings, derives PASS or FAIL from the closed qualification contract, and publishes
-`qualification-report.json` plus `qualification-report.sha256` create-only. A timeout or missing
-external artifact fails the workflow; it is never replaced with mock evidence.
+their SHA-256 bindings and fault sidecars, binds the input to the checked-out commit and protected
+environment's exact clean checkout tree, watch config, service commit/tree/image digest,
+repositories, vendors, routes, and epochs, derives PASS or FAIL from the closed qualification
+contract, and publishes `qualification-report.json` plus `qualification-report.sha256` create-only.
+A timeout or missing or mismatched external artifact fails the workflow; it is never replaced with
+mock evidence.
 
 The checked-in environment manifest intentionally remains `PENDING_EXTERNAL` until the protected
 environment, Linux host, Slack App/channel, service, database, receiver, vendor versions, and

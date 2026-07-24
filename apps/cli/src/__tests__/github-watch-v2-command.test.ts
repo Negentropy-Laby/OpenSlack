@@ -1,13 +1,15 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { githubCommands, loadWatchRuntimeConfig } from '../commands/github.js';
 
 const roots: string[] = [];
 
 afterEach(() => {
   while (roots.length > 0) rmSync(roots.pop()!, { recursive: true, force: true });
+  process.exitCode = undefined;
+  vi.restoreAllMocks();
 });
 
 function configFile(contents: string): string {
@@ -105,5 +107,16 @@ repositories:
         .find((command) => command.name() === 'reconcile')!
         .options.some((option) => option.long === '--config'),
     ).toBe(true);
+  });
+
+  it('returns a failing process status when qualification evidence is not sealed', async () => {
+    const output = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await githubCommands().parseAsync(['notifications', 'qualification', 'status'], {
+      from: 'user',
+    });
+
+    expect(output).toHaveBeenCalledWith('QUALIFICATION_NOT_RUN');
+    expect(process.exitCode).toBe(1);
   });
 });

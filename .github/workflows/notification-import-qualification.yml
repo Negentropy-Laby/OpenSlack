@@ -26,6 +26,8 @@ jobs:
       OPENSLACK_NOTIFICATION_QUALIFICATION_CONFIG_PATH: ${{ vars.CANARY_WATCH_CONFIG_PATH }}
       OPENSLACK_NOTIFICATION_VENDOR_EVIDENCE_DIR: ${{ vars.CANARY_VENDOR_EVIDENCE_DIR }}
       OPENSLACK_NOTIFICATION_SERVICE_ORIGIN: ${{ vars.NOTIFICATION_SERVICE_ORIGIN }}
+      OPENSLACK_NOTIFICATION_SERVICE_COMMIT: ${{ vars.NOTIFICATION_SERVICE_COMMIT }}
+      OPENSLACK_NOTIFICATION_SERVICE_TREE: ${{ vars.NOTIFICATION_SERVICE_TREE }}
       OPENSLACK_NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST: ${{ vars.NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST }}
       OPENSLACK_NOTIFICATION_CANARY_REPO_A: ${{ vars.CANARY_REPO_A }}
       OPENSLACK_NOTIFICATION_CANARY_REPO_B: ${{ vars.CANARY_REPO_B }}
@@ -34,6 +36,7 @@ jobs:
       OPENSLACK_NOTIFICATION_CANARY_ROUTE_SLACK: ${{ vars.CANARY_ROUTE_SLACK }}
       OPENSLACK_NOTIFICATION_CANARY_ROUTE_WEBHOOK: ${{ vars.CANARY_ROUTE_WEBHOOK }}
       OPENSLACK_NOTIFICATION_CANARY_ROUTING_EPOCH: ${{ vars.CANARY_ROUTING_EPOCH }}
+      OPENSLACK_NOTIFICATION_QUALIFICATION_CREDENTIAL_DIR: ${{ runner.temp }}/notification-qualification-credentials-${{ github.run_id }}-${{ github.run_attempt }}
 
     steps:
       # actions/checkout v6.0.2
@@ -60,6 +63,8 @@ jobs:
             OPENSLACK_NOTIFICATION_QUALIFICATION_CONFIG_PATH
             OPENSLACK_NOTIFICATION_VENDOR_EVIDENCE_DIR
             OPENSLACK_NOTIFICATION_SERVICE_ORIGIN
+            OPENSLACK_NOTIFICATION_SERVICE_COMMIT
+            OPENSLACK_NOTIFICATION_SERVICE_TREE
             OPENSLACK_NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST
             OPENSLACK_NOTIFICATION_CANARY_REPO_A
             OPENSLACK_NOTIFICATION_CANARY_REPO_B
@@ -72,12 +77,49 @@ jobs:
           for name in "${required[@]}"; do
             test -n "${!name}"
           done
-          test "${OPENSLACK_NOTIFICATION_QUALIFICATION_RUNNER#/}" != \
-            "$OPENSLACK_NOTIFICATION_QUALIFICATION_RUNNER"
-          test -f "$OPENSLACK_NOTIFICATION_QUALIFICATION_RUNNER"
-          test ! -L "$OPENSLACK_NOTIFICATION_QUALIFICATION_RUNNER"
-          runner_mode="$(stat -c '%a' "$OPENSLACK_NOTIFICATION_QUALIFICATION_RUNNER")"
-          test $((8#$runner_mode & 0022)) -eq 0
+          require_safe_directory() {
+            local path="$1"
+            test "${path#/}" != "$path"
+            test -d "$path"
+            test ! -L "$path"
+            test "$(realpath -e -- "$path")" = "$path"
+            local mode owner
+            mode="$(stat -c '%a' "$path")"
+            owner="$(stat -c '%u' "$path")"
+            test $((8#$mode & 0022)) -eq 0
+            test "$owner" -eq 0 || test "$owner" -eq "$(id -u)"
+          }
+          require_safe_file() {
+            local path="$1"
+            test "${path#/}" != "$path"
+            test -f "$path"
+            test ! -L "$path"
+            test "$(realpath -e -- "$path")" = "$path"
+            local mode owner
+            mode="$(stat -c '%a' "$path")"
+            owner="$(stat -c '%u' "$path")"
+            test $((8#$mode & 0022)) -eq 0
+            test "$owner" -eq 0 || test "$owner" -eq "$(id -u)"
+          }
+          require_safe_directory "$OPENSLACK_NOTIFICATION_QUALIFICATION_WORKSPACE_ROOT"
+          require_safe_directory "$OPENSLACK_NOTIFICATION_QUALIFICATION_EVIDENCE_ROOT"
+          require_safe_directory "$OPENSLACK_NOTIFICATION_VENDOR_EVIDENCE_DIR"
+          require_safe_file "$OPENSLACK_NOTIFICATION_QUALIFICATION_RUNNER"
+          require_safe_file "$OPENSLACK_NOTIFICATION_QUALIFICATION_CONFIG_PATH"
+          test -x "$OPENSLACK_NOTIFICATION_QUALIFICATION_RUNNER"
+          test "$OPENSLACK_NOTIFICATION_CANARY_REPO_A" = \
+            "Negentropy-Laby/openslack-notification-canary-a"
+          test "$OPENSLACK_NOTIFICATION_CANARY_REPO_B" = \
+            "Negentropy-Laby/openslack-notification-canary-b"
+          test "$OPENSLACK_NOTIFICATION_CANARY_VENDOR_SLACK" = "openslack-slack"
+          test "$OPENSLACK_NOTIFICATION_CANARY_VENDOR_WEBHOOK" = "openslack-webhook"
+          test "$OPENSLACK_NOTIFICATION_CANARY_ROUTE_SLACK" = "slack-primary"
+          test "$OPENSLACK_NOTIFICATION_CANARY_ROUTE_WEBHOOK" = "webhook-primary"
+          test "$OPENSLACK_NOTIFICATION_CANARY_ROUTING_EPOCH" = "1"
+          [[ "$OPENSLACK_NOTIFICATION_SERVICE_ORIGIN" =~ ^https://[^/]+(:[0-9]+)?$ ]]
+          [[ "$OPENSLACK_NOTIFICATION_SERVICE_COMMIT" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]]
+          [[ "$OPENSLACK_NOTIFICATION_SERVICE_TREE" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]]
+          [[ "$OPENSLACK_NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
 
       - name: Materialize run-scoped credentials
         shell: bash
@@ -90,7 +132,9 @@ jobs:
           test -n "$GITHUB_APP_PRIVATE_KEY"
           test -n "$HANDOFF_CALLER_KEY"
           test -n "$QUALIFICATION_AUDITOR_KEY"
-          credential_dir="$RUNNER_TEMP/notification-qualification-credentials-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          credential_dir="$OPENSLACK_NOTIFICATION_QUALIFICATION_CREDENTIAL_DIR"
+          test ! -e "$credential_dir"
+          test ! -L "$credential_dir"
           umask 077
           install -d -m 0700 "$credential_dir"
           printf '%s' "$GITHUB_APP_PRIVATE_KEY" > "$credential_dir/github-app.pem"
@@ -101,7 +145,6 @@ jobs:
             echo "OPENSLACK_GITHUB_APP_PRIVATE_KEY_FILE=$credential_dir/github-app.pem"
             echo "OPENSLACK_NOTIFICATION_SERVICE_CALLER_KEY_FILE=$credential_dir/handoff-caller.key"
             echo "OPENSLACK_NOTIFICATION_SERVICE_AUDITOR_KEY_FILE=$credential_dir/auditor.key"
-            echo "OPENSLACK_NOTIFICATION_QUALIFICATION_CREDENTIAL_DIR=$credential_dir"
           } >> "$GITHUB_ENV"
 
       - run: bun install --frozen-lockfile
@@ -114,6 +157,9 @@ jobs:
           evidence_root="$OPENSLACK_NOTIFICATION_QUALIFICATION_EVIDENCE_ROOT/$correlation_id"
           input_path="$evidence_root/qualification-input.json"
           umask 077
+          test ! -e "$evidence_root"
+          test ! -L "$evidence_root"
+          install -d -m 0700 "$evidence_root"
           install -d -m 0700 "$evidence_root/fault-runs"
           timeout --signal=TERM --kill-after=30s 50m \
             "$OPENSLACK_NOTIFICATION_QUALIFICATION_RUNNER" \
@@ -123,7 +169,8 @@ jobs:
           chmod 0600 "$input_path" \
             "$evidence_root/receipt-reconciliation.json" \
             "$evidence_root/security-review.json" \
-            "$evidence_root"/fault-runs/*.json
+            "$evidence_root"/fault-runs/*.json \
+            "$evidence_root"/fault-runs/*.sha256
           bun run notification:qualification -- \
             seal \
             --input "$input_path" \
@@ -140,6 +187,7 @@ jobs:
             ${{ env.OPENSLACK_NOTIFICATION_QUALIFICATION_RUN_ROOT }}/qualification-report.json
             ${{ env.OPENSLACK_NOTIFICATION_QUALIFICATION_RUN_ROOT }}/qualification-report.sha256
             ${{ env.OPENSLACK_NOTIFICATION_QUALIFICATION_RUN_ROOT }}/fault-runs/*.json
+            ${{ env.OPENSLACK_NOTIFICATION_QUALIFICATION_RUN_ROOT }}/fault-runs/*.sha256
             ${{ env.OPENSLACK_NOTIFICATION_QUALIFICATION_RUN_ROOT }}/receipt-reconciliation.json
             ${{ env.OPENSLACK_NOTIFICATION_QUALIFICATION_RUN_ROOT }}/security-review.json
           if-no-files-found: error
@@ -151,9 +199,16 @@ jobs:
         run: |
           set -euo pipefail
           credential_dir="${OPENSLACK_NOTIFICATION_QUALIFICATION_CREDENTIAL_DIR:-}"
-          if [[ "$credential_dir" == "$RUNNER_TEMP"/notification-qualification-credentials-* ]]; then
+          if [[ "$credential_dir" != "$RUNNER_TEMP"/notification-qualification-credentials-* ]]; then
+            echo "Qualification credential directory is outside the runner temp boundary." >&2
+            exit 1
+          fi
+          if [[ -d "$credential_dir" && ! -L "$credential_dir" ]]; then
             find "$credential_dir" -maxdepth 1 -type f \
               \( -name 'github-app.pem' -o -name 'handoff-caller.key' -o -name 'auditor.key' \) \
               -delete
             rmdir "$credential_dir"
+          elif [[ -e "$credential_dir" || -L "$credential_dir" ]]; then
+            echo "Qualification credential directory is not a safe directory." >&2
+            exit 1
           fi

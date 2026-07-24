@@ -1234,6 +1234,7 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
         }).readImportQualificationReport();
         if (report === null) {
           console.log('QUALIFICATION_NOT_RUN');
+          process.exitCode = 1;
           return;
         }
         console.log(
@@ -1267,6 +1268,7 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
         }).readImportQualificationReport();
         if (report === null) {
           console.log('QUALIFICATION_NOT_RUN');
+          process.exitCode = 1;
           return;
         }
         console.log(JSON.stringify(report));

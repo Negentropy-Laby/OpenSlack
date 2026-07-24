@@ -6,6 +6,10 @@ import {
   ensureNotificationImportQualificationReport,
   type NotificationImportQualificationInput,
 } from '../../packages/github/src/index.js';
+import {
+  verifyNotificationQualificationFaultEvidence,
+  verifyNotificationQualificationFrozenRun,
+} from '../../packages/github/src/notification-import-qualification-verifier.js';
 import { assertNoDuplicateJsonKeys } from '../../packages/github/src/notification-service-client.js';
 
 void main().catch(() => {
@@ -17,13 +21,14 @@ async function main(): Promise<void> {
   const { inputPath, evidenceRoot } = parseArguments(process.argv.slice(2));
   const input = readInput(inputPath);
   const report = createNotificationImportQualificationReport(input);
+  verifyNotificationQualificationFrozenRun(report);
   verifyEvidenceDigest(
     join(evidenceRoot, 'receipt-reconciliation.json'),
     report.receipt_reconciliation_sha256,
   );
   verifyEvidenceDigest(join(evidenceRoot, 'security-review.json'), report.security_review_sha256);
   for (const drill of report.drills) {
-    verifyEvidenceDigest(
+    verifyNotificationQualificationFaultEvidence(
       join(evidenceRoot, 'fault-runs', `${drill.kind}.json`),
       drill.evidence_sha256,
     );
@@ -94,12 +99,28 @@ function readSafeFile(path: string, maximumBytes: number): Buffer {
     const before = fstatSync(descriptor, { bigint: true });
     const bytes = readFileSync(descriptor);
     const after = fstatSync(descriptor, { bigint: true });
+    let pathAfter;
+    try {
+      pathAfter = lstatSync(path, { bigint: true });
+    } catch {
+      throw new Error('QUALIFICATION_EVIDENCE_READ_RACE');
+    }
     if (
+      !before.isFile() ||
       before.dev !== status.dev ||
       before.ino !== status.ino ||
       before.size !== after.size ||
       before.mtimeNs !== after.mtimeNs ||
-      BigInt(bytes.length) !== status.size
+      before.ctimeNs !== after.ctimeNs ||
+      pathAfter.isSymbolicLink() ||
+      !pathAfter.isFile() ||
+      pathAfter.dev !== before.dev ||
+      pathAfter.ino !== before.ino ||
+      pathAfter.size !== after.size ||
+      pathAfter.mtimeNs !== after.mtimeNs ||
+      pathAfter.ctimeNs !== after.ctimeNs ||
+      (process.platform !== 'win32' && (Number(pathAfter.mode) & 0o777) !== 0o600) ||
+      BigInt(bytes.length) !== after.size
     ) {
       throw new Error('QUALIFICATION_EVIDENCE_READ_RACE');
     }
