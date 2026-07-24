@@ -32,7 +32,6 @@ export function deliveryCommands(dependencies: DeliveryCommandDependencies = {})
     .requiredOption('--title <title>', 'Draft pull request title')
     .option('--body <body>', 'Draft pull request body')
     .option('--body-file <path>', 'Read the draft pull request body from a file')
-    .option('--base <branch>', 'Base branch', 'main')
     .option('--remote <name>', 'Git remote', 'origin')
     .option('--repo <owner/repo>', 'Explicit GitHub repository')
     .option('--require-issues-write', 'Require full task-loop issues:write permission')
@@ -56,7 +55,6 @@ export function deliveryCommands(dependencies: DeliveryCommandDependencies = {})
           owner: target.owner,
           repo: target.repo,
           branch: String(options.branch),
-          base: String(options.base),
           remote: String(options.remote),
           title: String(options.title),
           body,

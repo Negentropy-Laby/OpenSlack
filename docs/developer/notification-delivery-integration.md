@@ -62,10 +62,9 @@ the configured required CI checks, an up-to-date head and a merge commit, but re
 `main` permits no direct pushes, squash or rebase merges, force pushes, deletion or bypass. This waiver does not relax
 technical tests, evidence requirements or any OpenSlack repository control.
 
-OpenSlack implementation pull requests are agent-authored and target the protected
-`integration/notification-delivery-0.3` branch. They require `wsman`'s independent current-head approval, all required
-checks and resolved review threads; a new head dismisses stale approval. Only merge commits are allowed, and the
-protected integration branch permits neither force push nor deletion. The waiver applies only to the standalone
+OpenSlack implementation pull requests are agent-authored and target the protected `main` branch. They require
+`wsman`'s independent current-head approval, all required checks and resolved review threads; a new head dismisses
+stale approval. Only merge commits are allowed. The waiver applies only to the standalone
 service repository and expires at IB6: once the service history is imported, all service changes are governed by the
 OpenSlack review policy. It cannot be used to bypass G1 through G8, CODEOWNERS, security review, release-owner
 authorization or destructive-operation approval.
@@ -457,7 +456,7 @@ may the full service history enter OpenSlack. This replacement gate applies only
 makes no production-readiness, live-verification, IB7, 0.3.0-release or integration-completion claim.
 
 The default branch contains the reviewed `workflow_dispatch` definition at
-`.github/workflows/notification-import-qualification.yml`, but its first job is a hosted, one-minute, environment-free
-ref gate. The protected qualification must be invoked with `--ref integration/notification-delivery-0.3`; dispatches
-from `main` or any other ref fail before the protected environment, self-hosted runner, or credential-materialization
-job can start.
+`.github/workflows/notification-import-qualification.yml`. Its first job is a hosted, one-minute,
+environment-free ref-and-commit gate. The protected qualification must be invoked with `--ref main` and the
+resolved main SHA supplied as `expected_commit`; a ref or SHA mismatch fails before the protected environment,
+self-hosted runner, or credential-materialization job can start.

@@ -3,6 +3,7 @@ import { classifyPRReport } from './classify.js';
 import { loadPRReviewPolicy } from './policy.js';
 import { loadPRCodeownerEvidence } from './codeowners.js';
 import { diagnosePR } from './doctor.js';
+import { evaluatePRBasePolicy } from './base-policy.js';
 import type { PRReviewState } from './types.js';
 
 export interface WatchOptions {
@@ -39,7 +40,8 @@ export async function watchPR(prNumber: number, options: WatchOptions = {}): Pro
     const report = await fetchPRDetails(prNumber);
     const classified = classifyPRReport(report);
 
-    const { owners: codeowners } = await loadPRCodeownerEvidence(classified);
+    const baseViolation = evaluatePRBasePolicy(classified, policy);
+    const codeowners = baseViolation ? [] : (await loadPRCodeownerEvidence(classified)).owners;
 
     const diagnosed = diagnosePR(classified, policy, codeowners);
     lastDecision = diagnosed.decision;
@@ -59,6 +61,7 @@ export async function watchPR(prNumber: number, options: WatchOptions = {}): Pro
 
     if (
       diagnosed.decision === 'BLOCKED_BLACK_ZONE' ||
+      diagnosed.decision === 'BLOCKED_BASE_BRANCH' ||
       diagnosed.decision === 'BLOCKED_DRAFT' ||
       diagnosed.decision === 'BLOCKED_AUTHOR_IS_SOLE_CODEOWNER' ||
       diagnosed.decision === 'BLOCKED_SINGLE_MAINTAINER'

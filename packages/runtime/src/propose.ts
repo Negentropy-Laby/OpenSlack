@@ -90,6 +90,12 @@ export async function proposeWorkspacePR(input: PRProposalInput): Promise<PRProp
     errors.push('No changed paths provided');
     return { success: false, prBody: '', branchName: '', riskZone: 'unknown', errors };
   }
+  if (input.baseBranch !== undefined && input.baseBranch !== 'main') {
+    errors.push(
+      `DELIVERY_BASE_FORBIDDEN: pull requests must target "main"; received "${input.baseBranch}".`,
+    );
+    return { success: false, prBody: '', branchName: '', riskZone: 'unknown', errors };
+  }
   if (
     input.issueNumber !== undefined &&
     (!Number.isSafeInteger(input.issueNumber) || input.issueNumber <= 0)
@@ -261,7 +267,7 @@ ${riskZone === 'red' ? '- [ ] **Human approval required** (Red Zone files modifi
       owner: target.owner,
       repo: target.repo,
       branch: branchName,
-      base: input.baseBranch ?? 'main',
+      base: 'main',
       remote: input.remote ?? 'origin',
       title: commitMsg,
       body: prBody,

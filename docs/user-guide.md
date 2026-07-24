@@ -535,10 +535,11 @@ creates a second PR.
 ```bash
 openslack delivery publish \
   --branch agent/topic \
-  --base main \
   --title "runtime: deliver topic" \
   --body-file pr-body.md
 ```
+
+Delivery always targets the canonical `main` base. The public command does not accept a configurable PR base.
 
 Before the first real delivery, run the read-only installation/permission
 diagnostic, then explicitly apply the temporary-ref write probe:
@@ -1008,6 +1009,13 @@ permission profiles, trust levels, PRMS gates, or human approval.
 | ---------------------------------------- | ---------------------------------------------------- |
 | `openslack governance audit`             | Audit recent main commits for direct-push compliance |
 | `openslack governance audit --count <n>` | Audit last N commits                                 |
+
+The audit also verifies that merged PRs after #296 targeted `main`. It requires
+authenticated `gh` access for merged-PR `baseRefName` evidence and fails closed
+with `BASE_REF_EVIDENCE_UNAVAILABLE` when that evidence cannot be retrieved or
+validated. GitHub rulesets apply per target branch, so PRMS and this audit remain
+the backstops for a manually created PR aimed at an unprotected non-`main`
+branch.
 
 ## Negentropy-Lab Integration
 

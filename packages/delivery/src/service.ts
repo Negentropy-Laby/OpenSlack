@@ -52,7 +52,7 @@ export class GitHubDeliveryService {
 
   async publish(input: GitHubDeliveryInput): Promise<GitHubDeliveryResult> {
     validateInput(input);
-    const base = input.base ?? 'main';
+    const base = 'main';
     const remote = input.remote ?? 'origin';
     const timeoutMs = input.timeoutMs ?? 30_000;
     let history: DeliveryState[] = ['PREPARED'];
@@ -357,6 +357,13 @@ export class GitHubDeliveryService {
 }
 
 function validateInput(input: GitHubDeliveryInput): void {
+  if (input.base !== undefined && input.base !== 'main') {
+    throw new DeliveryError(
+      'DELIVERY_BASE_FORBIDDEN',
+      `Pull requests must target "main"; received "${input.base}".`,
+      false,
+    );
+  }
   if (
     !input.rootDir ||
     !input.owner ||

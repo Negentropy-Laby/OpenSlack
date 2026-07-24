@@ -3,6 +3,7 @@ import { filterValidApprovals, isBotUser } from './approvals.js';
 import { detectDeadlock } from './deadlock.js';
 import { evaluateWorkflowGate, isCoreWorkflowArtifactPath } from './workflow-gate.js';
 import { evaluateProfileSyncGate } from './profile-sync-gate.js';
+import { evaluatePRBasePolicy } from './base-policy.js';
 
 export function diagnosePR(
   report: PRReviewReport,
@@ -44,7 +45,11 @@ export function diagnosePR(
     return { ...report, decision, reason, recommendation, workflowGate };
   }
 
-  // 3. Merge conflicts
+  // 3. Canonical base branch
+  const baseViolation = evaluatePRBasePolicy(report, policy);
+  if (baseViolation) return { ...report, ...baseViolation, workflowGate };
+
+  // 4. Merge conflicts
   if (report.mergeable === false) {
     decision = 'BLOCKED_POLICY';
     reason = 'PR has merge conflicts and cannot be merged.';
@@ -52,7 +57,7 @@ export function diagnosePR(
     return { ...report, decision, reason, recommendation, workflowGate };
   }
 
-  // 4. Workflow gate (for PRs that modify workflow files)
+  // 5. Workflow gate (for PRs that modify workflow files)
   if (workflowGate.overall === 'FAIL') {
     const failedCriteria = workflowGate.criteria
       .filter((c) => c.status === 'FAIL')
@@ -81,7 +86,7 @@ export function diagnosePR(
     return { ...report, decision, reason, recommendation, workflowGate };
   }
 
-  // 5. Profile-sync gate (for PRs that are profile-sync PRs)
+  // 6. Profile-sync gate (for PRs that are profile-sync PRs)
   const profileSyncGate = evaluateProfileSyncGate(
     report.changedFiles,
     report.body ?? '',
@@ -100,7 +105,7 @@ export function diagnosePR(
     return { ...report, decision, reason, recommendation, workflowGate, profileSyncGate };
   }
 
-  // 6. Black zone
+  // 7. Black zone
   if (policy.black_zone_never_merge && report.riskZone === 'black') {
     decision = 'BLOCKED_BLACK_ZONE';
     reason = 'Policy: Black Zone PRs are never mergeable.';
@@ -108,7 +113,7 @@ export function diagnosePR(
     return { ...report, decision, reason, recommendation, workflowGate, profileSyncGate };
   }
 
-  // 7. Checks pending
+  // 8. Checks pending
   const pendingChecks = report.checks.filter((c) => c.status !== 'completed');
   if (pendingChecks.length > 0) {
     decision = 'CHECKS_PENDING';
@@ -117,7 +122,7 @@ export function diagnosePR(
     return { ...report, decision, reason, recommendation, workflowGate, profileSyncGate };
   }
 
-  // 8. Checks failed
+  // 9. Checks failed
   const failingChecks = report.checks.filter(
     (c) =>
       c.conclusion &&
@@ -132,7 +137,7 @@ export function diagnosePR(
     return { ...report, decision, reason, recommendation, workflowGate, profileSyncGate };
   }
 
-  // 9. Deadlock detection (author is sole CODEOWNER / single maintainer)
+  // 10. Deadlock detection (author is sole CODEOWNER / single maintainer)
   const deadlock = detectDeadlock(report.author, codeowners, validApprovers);
   if (deadlock.deadlocked) {
     if (deadlock.type === 'AUTHOR_IS_SOLE_CODEOWNER') {
@@ -145,7 +150,7 @@ export function diagnosePR(
     return { ...report, decision, reason, recommendation, workflowGate, profileSyncGate };
   }
 
-  // 10. Self-review detection
+  // 11. Self-review detection
   if (policy.no_self_review) {
     const selfReview = report.reviews.find(
       (r) => r.user === report.author && r.state === 'APPROVED',
@@ -158,7 +163,7 @@ export function diagnosePR(
     }
   }
 
-  // 11. Missing human approval
+  // 12. Missing human approval
   if (validApprovers.length === 0) {
     const botApprovals = report.reviews.filter((r) => r.state === 'APPROVED' && isBotUser(r.user));
     if (botApprovals.length > 0) {
@@ -173,7 +178,7 @@ export function diagnosePR(
     return { ...report, decision, reason, recommendation, workflowGate, profileSyncGate };
   }
 
-  // 12. Missing CODEOWNER approval for Red Zone when the immutable base
+  // 13. Missing CODEOWNER approval for Red Zone when the immutable base
   // actually assigns one. An empty owner set must not create an impossible
   // approval requirement; the independent human gate above remains mandatory.
   const hasAssignedCodeowners = codeowners.length > 0;
@@ -189,7 +194,7 @@ export function diagnosePR(
     }
   }
 
-  // 13. All gates pass
+  // 14. All gates pass
   if (report.riskZone === 'green' || report.riskZone === 'yellow') {
     decision = 'READY_TO_MERGE';
     reason = `${report.riskZone.charAt(0).toUpperCase() + report.riskZone.slice(1)} Zone. All checks passed. Valid approvals found.`;

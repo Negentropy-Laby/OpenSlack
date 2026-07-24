@@ -84,7 +84,7 @@
           "const": "wsman"
         },
         "deployment_branch": {
-          "const": "integration/notification-delivery-0.3"
+          "const": "main"
         }
       }
     },

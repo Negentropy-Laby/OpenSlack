@@ -134,6 +134,8 @@ export async function executeApproval(
             no_self_review: true,
             red_zone_human_required: true,
             black_zone_never_merge: true,
+            required_base_ref: 'main',
+            effective_after_pr: 296,
           });
 
           recordDecision({

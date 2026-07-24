@@ -13,6 +13,11 @@ rules:
   black_zone_never_merge:
     enabled: true
     description: Black Zone PRs are auto-denied.
+  canonical_pr_base:
+    enabled: true
+    required_base_ref: main
+    effective_after_pr: 296
+    description: PRs created after the historical integration lineage must target main.
   required_checks:
     enabled: true
     checks:

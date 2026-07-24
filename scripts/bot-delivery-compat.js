@@ -11,7 +11,6 @@ const valueFlags = new Map([
   ['--title', '--title'],
   ['--body', '--body'],
   ['--body-file', '--body-file'],
-  ['--base', '--base'],
   ['--head', '--branch'],
   ['--branch', '--branch'],
   ['--repo', '--repo'],
@@ -23,6 +22,19 @@ function mapCreateArgs(args) {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === '--draft') continue;
+    if (arg === '--base') {
+      const base = args[index + 1];
+      if (base === undefined) {
+        throw new Error('Unsupported bot PR compatibility argument: --base');
+      }
+      if (base !== 'main') {
+        throw new Error(
+          `DELIVERY_BASE_FORBIDDEN: pull requests must target "main"; received "${base}".`,
+        );
+      }
+      index += 1;
+      continue;
+    }
     const mappedFlag = valueFlags.get(arg);
     if (!mappedFlag || index + 1 >= args.length) {
       throw new Error(`Unsupported bot PR compatibility argument: ${arg}`);

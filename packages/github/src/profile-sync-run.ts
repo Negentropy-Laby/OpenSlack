@@ -2,6 +2,7 @@ import type { ProfileSyncConfig } from './profile-sync-config.js';
 import { publishProfileSyncFailure } from './profile-sync-issue-publisher.js';
 import type { ProfileSyncFailureIssue } from './profile-sync-issues.js';
 import { listOpenPRs } from './pr.js';
+import { assertCanonicalPRBase } from './pr-base-policy.js';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -41,6 +42,7 @@ export async function runProfileSync(
   options: ProfileSyncRunOptions,
 ): Promise<ProfileSyncRunResult> {
   const { config, runId = `local-${Date.now()}`, sourceSha = 'unknown' } = options;
+  assertCanonicalPRBase(config.target.branch);
 
   const source = parseRepoString(config.source.repo);
   const target = parseRepoString(config.target.repo);

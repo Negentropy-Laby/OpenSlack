@@ -8,6 +8,16 @@ invariants:
       github_branch_protection: true
       openslack_policy: true
 
+  - id: canonical_pr_base
+    severity: critical
+    description: Every pull request must target the canonical main branch.
+    required_base_ref: main
+    effective_after_pr: 296
+    enforcement:
+      github_required_check: true
+      openslack_policy: true
+      delivery_service: true
+
   - id: no_agent_self_approval
     severity: critical
     description: An agent cannot review or merge its own PR.

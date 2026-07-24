@@ -2,6 +2,11 @@ name: Notification Import Qualification
 
 on:
   workflow_dispatch:
+    inputs:
+      expected_commit:
+        description: Exact main commit to qualify
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -11,28 +16,39 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  require-frozen-integration-ref:
-    name: Refuse qualification outside the frozen integration ref
+  require-main-ref:
+    name: Refuse qualification outside the expected main commit
     runs-on: ubuntu-latest
     timeout-minutes: 1
     steps:
-      - name: Require the frozen integration branch
+      - name: Require main and the explicitly expected commit
         shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
         run: |
           set -euo pipefail
-          if [[ "$GITHUB_REF" != "refs/heads/integration/notification-delivery-0.3" ]]; then
-            echo "Qualification is available only from the frozen integration ref." >&2
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Qualification is available only from refs/heads/main." >&2
+            exit 1
+          fi
+          if [[ ! "$EXPECTED_COMMIT" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]]; then
+            echo "expected_commit must be a full Git commit SHA." >&2
+            exit 1
+          fi
+          if [[ "$EXPECTED_COMMIT" != "$GITHUB_SHA" ]]; then
+            echo "expected_commit does not match the dispatched main commit." >&2
             exit 1
           fi
 
   qualification:
     name: Run protected IB6 import qualification
-    needs: require-frozen-integration-ref
+    needs: require-main-ref
     runs-on: [self-hosted, linux, openslack-notification-canary]
     environment: notification-canary
     timeout-minutes: 60
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      OPENSLACK_NOTIFICATION_QUALIFICATION_EXPECTED_COMMIT: ${{ inputs.expected_commit }}
       OPENSLACK_GITHUB_APP_ID: ${{ vars.CANARY_GITHUB_APP_ID }}
       OPENSLACK_GITHUB_APP_INSTALLATION_ID: ${{ vars.CANARY_GITHUB_APP_INSTALLATION_ID }}
       OPENSLACK_NOTIFICATION_QUALIFICATION_RUNNER: ${{ vars.CANARY_QUALIFICATION_RUNNER }}
@@ -63,12 +79,14 @@ jobs:
         with:
           bun-version: 1.3.14
 
-      - name: Require the frozen integration branch and complete deployment inputs
+      - name: Require the expected main commit and complete deployment inputs
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF" = "refs/heads/integration/notification-delivery-0.3"
+          test "$GITHUB_REF" = "refs/heads/main"
+          test "$OPENSLACK_NOTIFICATION_QUALIFICATION_EXPECTED_COMMIT" = "$GITHUB_SHA"
           required=(
+            OPENSLACK_NOTIFICATION_QUALIFICATION_EXPECTED_COMMIT
             OPENSLACK_GITHUB_APP_ID
             OPENSLACK_GITHUB_APP_INSTALLATION_ID
             OPENSLACK_NOTIFICATION_QUALIFICATION_RUNNER

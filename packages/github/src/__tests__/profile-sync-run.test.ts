@@ -78,6 +78,21 @@ describe('runProfileSync', () => {
     vi.clearAllMocks();
   });
 
+  it('rejects a non-main PR base before any read or write side effect', async () => {
+    const config = {
+      ...mockConfig,
+      target: { ...mockConfig.target, branch: 'release/0.3' },
+    };
+
+    await expect(runProfileSync({ config, runId: 'run-123' })).rejects.toThrow('PR_BASE_FORBIDDEN');
+    expect(mockReadRepoDirectory).not.toHaveBeenCalled();
+    expect(mockReadRepoFile).not.toHaveBeenCalled();
+    expect(mockListOpenPRs).not.toHaveBeenCalled();
+    expect(mockCreateBranch).not.toHaveBeenCalled();
+    expect(mockCommitFileToBranch).not.toHaveBeenCalled();
+    expect(mockCreateProfileSyncPR).not.toHaveBeenCalled();
+  });
+
   it('completes successfully on happy path', async () => {
     mockReadRepoDirectory.mockResolvedValue([
       { name: 'post-1.md', path: 'posts/post-1.md', type: 'file', sha: 'a' },

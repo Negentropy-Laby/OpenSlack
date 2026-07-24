@@ -21,6 +21,7 @@ import {
   generateDoctorReport,
   loadPRReviewPolicy,
   diagnosePR,
+  evaluatePRBasePolicy,
   loadPRCodeownerEvidence,
   PRCodeownerEvidenceUnavailableError,
   postReviewComment,
@@ -369,6 +370,7 @@ export function prCommands(): Command {
         }
 
         const evidenceBanner = renderDoctorEvidenceBanner(client);
+        const policy = loadPRReviewPolicy();
         let report: PRReviewReport;
         let codeowners: string[];
         try {
@@ -381,7 +383,9 @@ export function prCommands(): Command {
             return;
           }
           const classified = classifyPRReport(report);
-          ({ owners: codeowners } = await loadPRCodeownerEvidence(classified, clientOptions));
+          codeowners = evaluatePRBasePolicy(classified, policy)
+            ? []
+            : (await loadPRCodeownerEvidence(classified, clientOptions)).owners;
           report = classified;
         } catch (error) {
           if (
@@ -394,8 +398,6 @@ export function prCommands(): Command {
           }
           throw error;
         }
-        const policy = loadPRReviewPolicy();
-
         const diagnosed = diagnosePR(report, policy, codeowners);
         const doctorOutput = `${evidenceBanner}\n\n${generateDoctorReport(diagnosed, codeowners)}`;
 

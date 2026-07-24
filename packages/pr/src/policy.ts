@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse } from 'yaml';
 import type { PRReviewPolicy } from './types.js';
+import { CANONICAL_PR_BASE_EFFECTIVE_AFTER_PR, CANONICAL_PR_BASE_REF } from './base-policy.js';
 
 function findRepoRoot(): string {
   let dir = process.cwd();
@@ -19,6 +20,8 @@ const DEFAULT_POLICY: PRReviewPolicy = {
   no_self_review: true,
   red_zone_human_required: true,
   black_zone_never_merge: true,
+  required_base_ref: CANONICAL_PR_BASE_REF,
+  effective_after_pr: CANONICAL_PR_BASE_EFFECTIVE_AFTER_PR,
 };
 
 export function loadPRReviewPolicy(rootDir?: string): PRReviewPolicy {
@@ -36,6 +39,8 @@ export function loadPRReviewPolicy(rootDir?: string): PRReviewPolicy {
       no_self_review: rules.no_self_review?.enabled ?? true,
       red_zone_human_required: rules.red_zone_human_required?.enabled ?? true,
       black_zone_never_merge: rules.black_zone_never_merge?.enabled ?? true,
+      required_base_ref: CANONICAL_PR_BASE_REF,
+      effective_after_pr: CANONICAL_PR_BASE_EFFECTIVE_AFTER_PR,
     };
   } catch {
     return DEFAULT_POLICY;

@@ -4,6 +4,7 @@ import type { AgentPrincipal, AgentPermissionSnapshot } from '@openslack/kernel'
 import { authorizeAgentAction } from '@openslack/kernel';
 import { diagnosePR } from './doctor.js';
 import { loadPRCodeownerEvidence } from './codeowners.js';
+import { evaluatePRBasePolicy } from './base-policy.js';
 
 export interface MergeStewardResult {
   merged: boolean;
@@ -30,6 +31,15 @@ export async function mergeIfReady(
   const { classifyPRReport } = await import('./classify.js');
   const report = await fetchPRDetails(prNumber, { requireLive: true, strictEvidence: true });
   const classified = classifyPRReport(report);
+  const baseViolation = evaluatePRBasePolicy(classified, policy);
+  if (baseViolation) {
+    return {
+      merged: false,
+      decision: baseViolation.decision,
+      reason: baseViolation.reason,
+      message: `Merge blocked: ${baseViolation.decision}\n${baseViolation.reason}\nRecommendation: ${baseViolation.recommendation}`,
+    };
+  }
 
   const { owners: codeowners } = await loadPRCodeownerEvidence(classified, {
     requireLive: true,
