@@ -43,8 +43,13 @@ describe('notification import qualification deployment', () => {
       permissions: Record<string, string>;
       concurrency: { 'cancel-in-progress': boolean };
       jobs: {
+        'require-frozen-integration-ref': {
+          'timeout-minutes': number;
+          steps: Array<{ run?: string }>;
+        };
         qualification: {
           environment: string;
+          needs: string;
           'timeout-minutes': number;
           steps: Array<{ run?: string; uses?: string }>;
         };
@@ -54,6 +59,11 @@ describe('notification import qualification deployment', () => {
     expect(Object.keys(workflow.on)).toEqual(['workflow_dispatch']);
     expect(workflow.permissions).toEqual({ contents: 'read' });
     expect(workflow.concurrency['cancel-in-progress']).toBe(false);
+    expect(workflow.jobs['require-frozen-integration-ref']['timeout-minutes']).toBe(1);
+    expect(workflow.jobs['require-frozen-integration-ref'].steps[0]?.run).toContain(
+      'refs/heads/integration/notification-delivery-0.3',
+    );
+    expect(workflow.jobs.qualification.needs).toBe('require-frozen-integration-ref');
     expect(workflow.jobs.qualification.environment).toBe('notification-canary');
     expect(workflow.jobs.qualification['timeout-minutes']).toBe(60);
     const serialized = JSON.stringify(workflow);

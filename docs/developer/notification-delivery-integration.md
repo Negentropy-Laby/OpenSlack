@@ -456,7 +456,8 @@ readiness. Only after `G5-IMPORT-QUALIFICATION=PASS`, the immutable 0.2.0 releas
 may the full service history enter OpenSlack. This replacement gate applies only to history-import eligibility and
 makes no production-readiness, live-verification, IB7, 0.3.0-release or integration-completion claim.
 
-The default branch contains only a fail-closed `workflow_dispatch` locator at
-`.github/workflows/notification-import-qualification.yml`. The protected qualification must be invoked with
-`--ref integration/notification-delivery-0.3`; that ref supplies the complete reviewed workflow. The locator has no
-environment or secret access and always fails.
+The default branch contains the reviewed `workflow_dispatch` definition at
+`.github/workflows/notification-import-qualification.yml`, but its first job is a hosted, one-minute, environment-free
+ref gate. The protected qualification must be invoked with `--ref integration/notification-delivery-0.3`; dispatches
+from `main` or any other ref fail before the protected environment, self-hosted runner, or credential-materialization
+job can start.

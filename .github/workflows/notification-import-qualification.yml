@@ -11,8 +11,23 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  require-frozen-integration-ref:
+    name: Refuse qualification outside the frozen integration ref
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - name: Require the frozen integration branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/integration/notification-delivery-0.3" ]]; then
+            echo "Qualification is available only from the frozen integration ref." >&2
+            exit 1
+          fi
+
   qualification:
     name: Run protected IB6 import qualification
+    needs: require-frozen-integration-ref
     runs-on: [self-hosted, linux, openslack-notification-canary]
     environment: notification-canary
     timeout-minutes: 60
