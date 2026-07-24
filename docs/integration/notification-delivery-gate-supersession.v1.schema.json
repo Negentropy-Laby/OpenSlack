@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:negentropy-laby:schema:integration-gate-supersession:v1",
+  "title": "Negentropy-Laby Integration Gate Supersession",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "decision_id",
+    "recorded_at",
+    "owner_authorization",
+    "superseded_gate",
+    "replacement_gate",
+    "qualification",
+    "scope",
+    "evidence_policy"
+  ],
+  "properties": {
+    "schema": {
+      "const": "negentropy_laby.integration_gate_supersession.v1"
+    },
+    "decision_id": {
+      "const": "g5-canary-to-g5-import-qualification-2026-07-24"
+    },
+    "recorded_at": {
+      "const": "2026-07-24T00:46:29+08:00"
+    },
+    "owner_authorization": {
+      "const": "wsman"
+    },
+    "superseded_gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gate", "status", "executed"],
+      "properties": {
+        "gate": {
+          "const": "G5-CANARY"
+        },
+        "status": {
+          "const": "SUPERSEDED_NOT_RUN"
+        },
+        "executed": {
+          "const": false
+        }
+      }
+    },
+    "replacement_gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gate", "status"],
+      "properties": {
+        "gate": {
+          "const": "G5-IMPORT-QUALIFICATION"
+        },
+        "status": {
+          "const": "ACTIVE_PENDING_EXECUTION"
+        }
+      }
+    },
+    "qualification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "minimum_duration_required",
+        "protected_single_run",
+        "run_timeout_minutes",
+        "distinct_non_replay_accepted_minimum",
+        "repository_minimum",
+        "required_event_kinds",
+        "vendor_id_minimum",
+        "required_cartesian_cell_count",
+        "delivery_deadline_seconds",
+        "prerequisite_gates",
+        "unresolved_blocker_maximum"
+      ],
+      "properties": {
+        "minimum_duration_required": {
+          "const": false
+        },
+        "protected_single_run": {
+          "const": true
+        },
+        "run_timeout_minutes": {
+          "const": 60
+        },
+        "distinct_non_replay_accepted_minimum": {
+          "const": 8
+        },
+        "repository_minimum": {
+          "const": 2
+        },
+        "required_event_kinds": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "const": "issue"
+            },
+            {
+              "const": "push"
+            }
+          ],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "vendor_id_minimum": {
+          "const": 2
+        },
+        "required_cartesian_cell_count": {
+          "const": 8
+        },
+        "delivery_deadline_seconds": {
+          "const": 600
+        },
+        "prerequisite_gates": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "const": "G3-QUEUE"
+            },
+            {
+              "const": "G4-E2E"
+            },
+            {
+              "const": "OPENSLACK-V0.2.0-IMMUTABLE-RELEASE"
+            }
+          ],
+          "items": false,
+          "minItems": 3,
+          "maxItems": 3
+        },
+        "unresolved_blocker_maximum": {
+          "const": 0
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authorizes", "does_not_authorize"],
+      "properties": {
+        "authorizes": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "const": "IB6_HISTORY_IMPORT_ONLY"
+            }
+          ],
+          "items": false,
+          "minItems": 1,
+          "maxItems": 1
+        },
+        "does_not_authorize": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "const": "LIVE_VERIFIED"
+            },
+            {
+              "const": "IB7_CUTOVER"
+            },
+            {
+              "const": "OPENSLACK_0.3.0_RELEASE"
+            },
+            {
+              "const": "PRODUCTION_READY"
+            },
+            {
+              "const": "DESTRUCTIVE_RETIREMENT"
+            }
+          ],
+          "items": false,
+          "minItems": 5,
+          "maxItems": 5
+        }
+      }
+    },
+    "evidence_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "historical_evidence_mutable",
+        "qualification_receipt_schema",
+        "qualification_receipt_required"
+      ],
+      "properties": {
+        "historical_evidence_mutable": {
+          "const": false
+        },
+        "qualification_receipt_schema": {
+          "const": "negentropy_laby.ib6_preconditions.v2"
+        },
+        "qualification_receipt_required": {
+          "const": true
+        }
+      }
+    }
+  }
+}

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { NotificationBlobStore } from '../notification-blob-store.js';
+import { NotificationDeliveryOperations } from '../notification-delivery-operations.js';
 import { NotificationReceiptStore } from '../notification-receipt-store.js';
 import type { NotificationServiceClient } from '../notification-service-client.js';
 import { toPersistableRepositoryEvent, type IssueRepositoryEvent } from '../repository-event.js';
@@ -61,12 +62,38 @@ describe('WatchDaemon v2 composition', () => {
       }),
     ).toThrowError('OPENSLACK_NOTIFICATION_SERVICE_NEW_RECORDS must be exactly true or false.');
   });
+
+  it('keeps the new runtime operational after v1 finalization while old v1 reads fail', async () => {
+    const fixture = createDaemon(true);
+    await fixture.daemon.once(issueEvent(), 'github.watch.webhook', true);
+    fixture.queueV1.finalizeV2Migration(fixture.queueV2.statePath);
+
+    expect(() => new WatchDeliveryQueue(fixture.stateDir).getStats()).toThrowError(
+      expect.objectContaining({ code: 'QUEUE_STATE_INVALID' }),
+    );
+    const operations = new NotificationDeliveryOperations({ workspaceRoot: fixture.root });
+    expect(operations.status()).toMatchObject({
+      legacyMigration: 'finalized',
+      legacy: { count: 0, pending: 0, processing: 0, retryable: 0 },
+      queue: { accepted: 1 },
+    });
+
+    const restarted = createDaemon(true, fixture.root);
+    await expect(restarted.daemon.drainDeliveryOnce()).resolves.toMatchObject({
+      legacy: { claimed: 0, completed: 0, retryable: 0, failed: 0 },
+    });
+    await expect(restarted.daemon.drainDeliveryOnce()).resolves.toMatchObject({
+      legacy: { claimed: 0, completed: 0, retryable: 0, failed: 0 },
+    });
+    expect(restarted.queueV2.getStats()).toMatchObject({ accepted: 1 });
+    expect(restarted.handoff).not.toHaveBeenCalled();
+  });
 });
 
-function createDaemon(allowNewNotificationServiceRecords: boolean) {
-  const root = mkdtempSync(join(tmpdir(), 'openslack-daemon-v2-'));
-  roots.push(root);
-  const stateDir = join(root, 'daemon');
+function createDaemon(allowNewNotificationServiceRecords: boolean, existingRoot?: string) {
+  const root = existingRoot ?? mkdtempSync(join(tmpdir(), 'openslack-daemon-v2-'));
+  if (!existingRoot) roots.push(root);
+  const stateDir = join(root, '.openslack.local', 'daemon');
   const queueV1 = new WatchDeliveryQueue(stateDir);
   const queueV2 = new WatchDeliveryQueueV2(stateDir);
   const blobStore = new NotificationBlobStore({
@@ -111,7 +138,7 @@ function createDaemon(allowNewNotificationServiceRecords: boolean) {
       workspaceRoot: root,
     },
   );
-  return { daemon, queueV1, queueV2, handoff, events };
+  return { daemon, queueV1, queueV2, handoff, events, root, stateDir };
 }
 
 function configV2(): GitHubWatchConfigV2 {

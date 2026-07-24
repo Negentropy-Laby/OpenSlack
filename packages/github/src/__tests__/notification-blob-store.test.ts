@@ -8,6 +8,7 @@ import {
   mkdtempSync,
   rmSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -48,6 +49,10 @@ describe('NotificationBlobStore', () => {
       warning: false,
     });
     expect(result.path).toBe(join(store.rootPath, input.digest.slice(7, 9), input.digest.slice(7)));
+    expect(store.verify(input.digest, input.size)).toEqual({
+      digest: input.digest,
+      size: input.size,
+    });
     expect(Buffer.from(store.read(input.digest).bytes).toString('utf8')).toBe('hello blob');
     expect(lstatSync(result.path).isFile()).toBe(true);
     expect(lstatSync(result.path).nlink).toBe(1);
@@ -80,6 +85,9 @@ describe('NotificationBlobStore', () => {
     );
     const result = store.put(input);
     writeFileSync(result.path, 'tampered', 'utf8');
+    expect(() => store.verify(input.digest, input.size)).toThrowError(
+      expect.objectContaining({ code: 'BLOB_DIGEST_MISMATCH' }),
+    );
     expect(() => store.put(input)).toThrowError(
       expect.objectContaining({ code: 'BLOB_DIGEST_MISMATCH' }),
     );
@@ -239,6 +247,30 @@ describe('NotificationBlobStore', () => {
     expect(collector.code, collector.stderr).toBe(0);
     const readResult = JSON.parse(reader.stdout) as { reads: number; missing: number };
     expect(readResult.reads + readResult.missing).toBe(30);
+  });
+
+  it('elects one stale-lock reclaimer without deleting a successor lock', async () => {
+    const root = temporaryRoot();
+    const lockName = '.stale-reclaim.lock';
+    const lockPath = join(root, lockName);
+    writeFileSync(
+      lockPath,
+      JSON.stringify({ pid: 999_999, nonce: 'stale-owner', created_at: new Date().toISOString() }),
+      { encoding: 'utf8', mode: 0o600 },
+    );
+    const old = new Date(Date.now() - 60_000);
+    utimesSync(lockPath, old, old);
+
+    const results = await Promise.all(
+      Array.from({ length: 4 }, () => runWorker(['storage-lock', root, lockName, '25'])),
+    );
+
+    expect(
+      results.every((result) => result.code === 0),
+      JSON.stringify(results),
+    ).toBe(true);
+    expect(existsSync(lockPath)).toBe(false);
+    expect(existsSync(`${lockPath}.reclaim`)).toBe(false);
   });
 });
 

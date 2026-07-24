@@ -24,10 +24,15 @@ import { validateWorkflowTemplate } from '@openslack/collaboration';
 import type { WorkflowTemplate } from '@openslack/collaboration';
 import {
   discoverYamlTemplates,
-  discoverJsWorkflows,
-  findWorkflow,
+  discoverJsWorkflows as discoverJsWorkflowsWithUserHome,
+  findWorkflow as findWorkflowWithUserHome,
   loadWorkflow,
 } from '@openslack/workflows';
+
+const discoverJsWorkflows = (cwd: string) =>
+  discoverJsWorkflowsWithUserHome(cwd, { userHomeDir: null });
+const findWorkflow = (name: string, cwd: string) =>
+  findWorkflowWithUserHome(name, cwd, { userHomeDir: null });
 // ─── Helper: filter builtins from discovery results ───────────────────────────
 
 function withoutBuiltins<T extends { source: string }>(results: T[]): T[] {
