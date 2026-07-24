@@ -354,13 +354,29 @@ function verifyPublished(path: string, expected: Buffer): void {
   const descriptor = openSync(path, 'r');
   try {
     const before = fstatSync(descriptor, { bigint: true });
+    if (!before.isFile() || before.dev !== pathStatus.dev || before.ino !== pathStatus.ino) {
+      throw new Error('FAULT_RUN_CONFLICT');
+    }
     const actual = readFileSync(descriptor);
     const after = fstatSync(descriptor, { bigint: true });
+    let afterPath;
+    try {
+      afterPath = lstatSync(path, { bigint: true });
+    } catch {
+      throw new Error('FAULT_RUN_CONFLICT');
+    }
     if (
-      before.dev !== pathStatus.dev ||
-      before.ino !== pathStatus.ino ||
       before.size !== after.size ||
       before.mtimeNs !== after.mtimeNs ||
+      before.ctimeNs !== after.ctimeNs ||
+      !afterPath.isFile() ||
+      afterPath.isSymbolicLink() ||
+      afterPath.dev !== before.dev ||
+      afterPath.ino !== before.ino ||
+      afterPath.size !== before.size ||
+      afterPath.mtimeNs !== before.mtimeNs ||
+      afterPath.ctimeNs !== before.ctimeNs ||
+      (process.platform !== 'win32' && (Number(afterPath.mode) & 0o777) !== 0o600) ||
       !actual.equals(expected)
     ) {
       throw new Error('FAULT_RUN_CONFLICT');
