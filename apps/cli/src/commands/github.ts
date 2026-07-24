@@ -1220,6 +1220,65 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
       });
   }
   notifications.addCommand(canary);
+
+  const qualification = new Command('qualification').description(
+    'Read the sealed single-run IB6 import qualification',
+  );
+  qualification
+    .command('status')
+    .description('Show the qualification status without payload data')
+    .action(() => {
+      try {
+        const report = new NotificationDeliveryOperations({
+          workspaceRoot: findRepoRoot(),
+        }).readImportQualificationReport();
+        if (report === null) {
+          console.log('QUALIFICATION_NOT_RUN');
+          process.exitCode = 1;
+          return;
+        }
+        console.log(
+          JSON.stringify({
+            schema: report.schema,
+            status: report.status,
+            correlation_id: report.correlation_id,
+            started_at: report.started_at,
+            completed_at: report.completed_at,
+            distinct_non_replay_accepted: report.distinct_non_replay_accepted,
+            repositories: report.repositories,
+            vendor_ids: report.vendor_ids,
+            maximum_convergence_seconds: report.maximum_convergence_seconds,
+            failed_requirements: report.failed_requirements,
+            does_not_claim: report.does_not_claim,
+          }),
+        );
+        if (report.status !== 'PASS') process.exitCode = 1;
+      } catch {
+        console.error('QUALIFICATION_ARTIFACT_INVALID');
+        process.exitCode = 1;
+      }
+    });
+  qualification
+    .command('report')
+    .description('Show the complete metadata-only qualification report')
+    .action(() => {
+      try {
+        const report = new NotificationDeliveryOperations({
+          workspaceRoot: findRepoRoot(),
+        }).readImportQualificationReport();
+        if (report === null) {
+          console.log('QUALIFICATION_NOT_RUN');
+          process.exitCode = 1;
+          return;
+        }
+        console.log(JSON.stringify(report));
+        if (report.status !== 'PASS') process.exitCode = 1;
+      } catch {
+        console.error('QUALIFICATION_ARTIFACT_INVALID');
+        process.exitCode = 1;
+      }
+    });
+  notifications.addCommand(qualification);
   cmd.addCommand(notifications);
 
   cmd

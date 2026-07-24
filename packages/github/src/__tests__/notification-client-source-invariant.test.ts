@@ -94,6 +94,24 @@ describe('notification handoff G3 source invariant', () => {
       );
     }
   });
+
+  it('keeps import-qualification sealing out of production composition', () => {
+    for (const path of [
+      join(githubSource, 'watch-daemon.ts'),
+      join(githubSource, 'watch-delivery-router.ts'),
+      join(githubSource, 'watch-delivery-router-v2.ts'),
+      join(githubSource, 'notification-sinks.ts'),
+      ...typescriptFiles(join(repositoryRoot, 'apps/cli/src')),
+    ]) {
+      const source = readFileSync(path, 'utf8');
+      expect(source, `${path} must not verify qualification evidence`).not.toContain(
+        'verifyNotificationQualification',
+      );
+      expect(source, `${path} must not import the qualification verifier`).not.toContain(
+        'notification-import-qualification-verifier',
+      );
+    }
+  });
 });
 
 function typescriptFiles(root: string): string[] {

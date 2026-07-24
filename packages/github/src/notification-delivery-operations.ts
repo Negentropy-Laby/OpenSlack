@@ -1,4 +1,12 @@
-import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from 'node:fs';
+import {
+  closeSync,
+  constants,
+  existsSync,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readSync,
+} from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import type { CredentialStore } from '@openslack/credentials';
 import { createDefaultCredentialStore } from '@openslack/credentials';
@@ -31,6 +39,10 @@ import {
   type NotificationReconciliationReport,
   type NotificationVendorEvidenceSource,
 } from './notification-reconciliation.js';
+import {
+  readNotificationImportQualificationReport,
+  type NotificationImportQualificationReport,
+} from './notification-import-qualification.js';
 import { ensureSecureNotificationDirectory } from './notification-storage-fs.js';
 
 export const NOTIFICATION_AUDITOR_CREDENTIAL_REF_ENV =
@@ -476,6 +488,17 @@ export class NotificationDeliveryOperations {
     } catch {
       throw new Error('CANARY_ARTIFACT_INVALID');
     }
+  }
+
+  readImportQualificationReport(): NotificationImportQualificationReport | null {
+    const root = join(
+      this.workspaceRoot,
+      '.openslack.local',
+      'daemon',
+      'notification-import-qualification',
+    );
+    if (!existsSync(root)) return null;
+    return readNotificationImportQualificationReport(root);
   }
 
   private createOpsClient(service: {
