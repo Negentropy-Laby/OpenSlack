@@ -565,31 +565,32 @@ normal delivery or product branches.
 
 ## GitHub
 
-| Command                                                                                      | Purpose                                                                                       |
-| -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `openslack github doctor`                                                                    | Check GitHub auth, App installation permissions/events, repository scope, and workspace setup |
-| `openslack github repair labels`                                                             | Preview required label repair                                                                 |
-| `openslack github repair labels --apply`                                                     | Apply required label repair                                                                   |
-| `openslack github repair claims`                                                             | Preview stale claim repair                                                                    |
-| `openslack github repair claims --apply`                                                     | Apply stale claim repair                                                                      |
-| `openslack github repair all`                                                                | Preview all GitHub repairs                                                                    |
-| `openslack github repair all --apply`                                                        | Apply all GitHub repairs                                                                      |
-| `openslack github repair-labels`                                                             | Compatibility alias for label repair; default is dry-run                                      |
-| `openslack github repair-claims`                                                             | Compatibility alias for claim repair; default is dry-run                                      |
-| `openslack github repair-all`                                                                | Compatibility alias for all GitHub repairs; default is dry-run                                |
-| `openslack github metrics`                                                                   | Task loop metrics                                                                             |
-| `openslack github claim heartbeat --issue-number <n> --agent-id <id> --ttl-minutes <1..120>` | Extend and verify a claim lease                                                               |
-| `openslack github claim review --issue-number <n> --agent-id <id> --pr-url <url>`            | Verify the owner and move a claimed Issue to review                                           |
-| `openslack github claim complete --issue-number <n> --agent-id <id> --pr-url <url>`          | Complete a merged Issue and verify claim-ref removal                                          |
-| `openslack github issue-done --issue-number <n> --agent-id <id> --pr-url <url>`              | Deprecated strict alias for `claim complete`                                                  |
-| `openslack github notifications doctor [--config <path>]`                                    | Verify v2 queue, Blob/receipt, caller, read-only auditor, service digest, and vendor evidence |
-| `openslack github notifications status`                                                      | Show payload-blind v1/v2 handoff state                                                        |
-| `openslack github notifications queue [--state <state>]`                                     | List payload-blind route records                                                              |
-| `openslack github notifications drain [--apply]`                                             | Preview or run one legacy/v2 drain cycle                                                      |
-| `openslack github notifications retry <id> --reason <text> [--apply]`                        | Preview or start a recovery cycle without changing route identity                             |
-| `openslack github notifications quarantine show <id>`                                        | Inspect a quarantined route without displaying payload                                        |
-| `openslack github notifications reconcile <id> [--config <path>]`                            | Reconcile receipt, service status/attempts, and metadata-only vendor evidence                 |
-| `openslack github notifications canary status\|report`                                       | Read a closed local Canary evidence artifact                                                  |
+| Command                                                                                                      | Purpose                                                                                       |
+| ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `openslack github doctor`                                                                                    | Check GitHub auth, App installation permissions/events, repository scope, and workspace setup |
+| `openslack github repair labels`                                                                             | Preview required label repair                                                                 |
+| `openslack github repair labels --apply`                                                                     | Apply required label repair                                                                   |
+| `openslack github repair claims`                                                                             | Preview stale claim repair                                                                    |
+| `openslack github repair claims --apply`                                                                     | Apply stale claim repair                                                                      |
+| `openslack github repair all`                                                                                | Preview all GitHub repairs                                                                    |
+| `openslack github repair all --apply`                                                                        | Apply all GitHub repairs                                                                      |
+| `openslack github repair-labels`                                                                             | Compatibility alias for label repair; default is dry-run                                      |
+| `openslack github repair-claims`                                                                             | Compatibility alias for claim repair; default is dry-run                                      |
+| `openslack github repair-all`                                                                                | Compatibility alias for all GitHub repairs; default is dry-run                                |
+| `openslack github metrics`                                                                                   | Task loop metrics                                                                             |
+| `openslack github notifications doctor [--config <path>]`                                                    | Verify v2 queue, Blob/receipt, caller, read-only auditor, service digest, and vendor evidence |
+| `openslack github notifications status`                                                                      | Show payload-blind v2 and legacy delivery counts                                              |
+| `openslack github notifications queue [--state <state>]`                                                     | List whitelisted route projections without event prose, keys, Blob references, or payloads    |
+| `openslack github notifications drain [--config <path>] [--apply]`                                           | Preview or run one legacy/v2 drain cycle without admitting new service records                |
+| `openslack github notifications retry <id> --reason <text> [--operator <id>] [--apply]`                      | Preview or open a governed recovery cycle using the immutable key, vendor, Blob, and encoder  |
+| `openslack github notifications quarantine show <id>`                                                        | Show a payload-blind quarantined route projection                                             |
+| `openslack github notifications quarantine resolve <id> --decision retry\|archive --reason <text> [--apply]` | Require IB4 read-only reconciliation before recording a quarantine decision                   |
+| `openslack github notifications reconcile <id> [--config <path>]`                                            | Reconcile receipt, service status/attempts, and metadata-only vendor evidence                 |
+| `openslack github notifications canary status\|report`                                                       | Read a sealed, whitelisted local Canary artifact                                              |
+| `openslack github claim heartbeat --issue-number <n> --agent-id <id> --ttl-minutes <1..120>`                 | Extend and verify a claim lease                                                               |
+| `openslack github claim review --issue-number <n> --agent-id <id> --pr-url <url>`                            | Verify the owner and move a claimed Issue to review                                           |
+| `openslack github claim complete --issue-number <n> --agent-id <id> --pr-url <url>`                          | Complete a merged Issue and verify claim-ref removal                                          |
+| `openslack github issue-done --issue-number <n> --agent-id <id> --pr-url <url>`                              | Deprecated strict alias for `claim complete`                                                  |
 
 Claim lifecycle commands require live GitHub evidence and return
 `openslack.claim_lifecycle.v1`. They fail closed on missing/conflicting owner
@@ -603,6 +604,22 @@ Set `OPENSLACK_NOTIFICATION_SERVICE_AUDITOR_CREDENTIAL_REF` to an `env:` or
 create-only mode-`0600` metadata records. The files contain route/vendor/key
 identity, digest, size and timestamps only; commands never read or display Blob
 bytes, raw vendor responses, endpoints, tokens, or resolved credentials.
+
+Notification recovery commands are preview-first; only `--apply` may mutate
+local state. `drain --apply` continues existing v1/v2 ownership but forces new
+notification-service admission off. IB3-C deliberately keeps
+`quarantine resolve` fail-closed with `REMOTE_RECONCILIATION_REQUIRED`, even
+when `--apply` is present, until the IB4 read-only service query supplies a
+matching `safe_to_retry` or `archive_only` decision. An `archive` decision is
+an append-only terminal disposition: it records operator, reason, time, and
+reconciliation evidence while the route remains quarantined and terminal; it
+does not delete the route or transfer delivery authority.
+
+Payload-blind doctor and retry preflight use the Blob store's full
+digest-and-size verification without returning bytes to the operations layer.
+A stat-only size check is insufficient because same-size corruption must fail
+closed. CLI failures remain closed codes and never include queue error prose,
+payloads, endpoints, credentials, or vendor responses.
 
 ## PR Review & Merge Steward (PRMS)
 

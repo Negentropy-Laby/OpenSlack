@@ -1097,11 +1097,16 @@ export function githubCommands(dependencies: GitHubCommandDependencies = {}): Co
           `${options.apply ? 'Applied' : 'Preview'} recovery for ${route.id}; immutable route ${route.routeId} epoch ${route.routingEpoch}.`,
         );
       } catch (error) {
-        console.error(
-          error instanceof Error && error.message === 'BLOB_NOT_AVAILABLE'
-            ? 'BLOB_NOT_AVAILABLE'
-            : 'NOTIFICATION_RETRY_FAILED: governed recovery was rejected.',
-        );
+        const safeCodes = new Set([
+          'BLOB_NOT_AVAILABLE',
+          'BLOB_INTEGRITY_FAILED',
+          'BLOB_STORAGE_UNSAFE',
+          'BLOB_STORAGE_BUSY',
+          'NOTIFICATION_LOCAL_STATE_INVALID',
+        ]);
+        const safeCode =
+          error instanceof Error && safeCodes.has(error.message) ? error.message : null;
+        console.error(safeCode ?? 'NOTIFICATION_RETRY_FAILED: governed recovery was rejected.');
         process.exitCode = 1;
       }
     });

@@ -10,17 +10,17 @@ import {
   readFileSync,
   renameSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import type { GitHubWatchRoute } from './watch-config.js';
 import {
   canonicalizeRepositoryName,
   canonicalWatchRouteKey,
   type PersistableRepositoryEvent,
 } from './repository-event.js';
+import { withNotificationStorageLock } from './notification-storage-fs.js';
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
@@ -198,7 +198,6 @@ export class WatchDeliveryQueue {
   private readonly statePath: string;
   private readonly legacyPath: string;
   private readonly migrationMarkerPath: string;
-  private readonly lockPath: string;
   private readonly policy: WatchDeliveryPolicy;
   private readonly now: () => Date;
   private readonly nonce: () => string;
@@ -208,7 +207,6 @@ export class WatchDeliveryQueue {
     this.statePath = join(this.stateDir, 'delivery-state.v1.json');
     this.legacyPath = join(this.stateDir, 'dedupe.jsonl');
     this.migrationMarkerPath = join(this.stateDir, 'delivery-state.v2-migration.json');
-    this.lockPath = `${this.statePath}.lock`;
     this.policy = {
       ...DEFAULT_WATCH_DELIVERY_POLICY,
       ...options.policy,
@@ -216,7 +214,7 @@ export class WatchDeliveryQueue {
     validatePolicy(this.policy);
     this.now = options.now ?? (() => new Date());
     this.nonce = options.nonce ?? randomUUID;
-    mkdirSync(this.stateDir, { recursive: true });
+    mkdirSync(this.stateDir, { recursive: true, mode: 0o700 });
   }
 
   claimAndEnqueue(
@@ -716,6 +714,8 @@ export class WatchDeliveryQueue {
         );
       }
       if (marker.state === 'finalized' && marker.backupPath && marker.backupDigest) {
+        this.verifyFinalizedV2Migration(marker, v2StatePath, false);
+        this.persistMigratedSentinel(marker.backupPath, marker.backupDigest);
         return { backupPath: marker.backupPath, backupDigest: marker.backupDigest };
       }
 
@@ -754,6 +754,33 @@ export class WatchDeliveryQueue {
       });
       this.persistMigratedSentinel(backupPath, backupDigest);
       return { backupPath, backupDigest };
+    });
+  }
+
+  /**
+   * New v2-aware runtimes use the finalized marker to skip legacy reads. The
+   * v1 APIs intentionally continue parsing the non-JSON sentinel and fail
+   * closed when called by an older binary.
+   */
+  isV2MigrationFinalized(v2StatePath: string): boolean {
+    if (!v2StatePath.trim()) {
+      throw new WatchDeliveryQueueError(
+        'QUEUE_TRANSITION_INVALID',
+        'A non-empty v2 queue state path is required for migration status.',
+      );
+    }
+    return this.withLock(() => {
+      const marker = this.loadV2MigrationMarker();
+      if (!marker) return false;
+      if (marker.v2StatePath !== v2StatePath) {
+        throw new WatchDeliveryQueueError(
+          'QUEUE_TRANSITION_INVALID',
+          'The v1 queue is bound to a different v2 migration target.',
+        );
+      }
+      if (marker.state !== 'finalized') return false;
+      this.verifyFinalizedV2Migration(marker, v2StatePath, true);
+      return true;
     });
   }
 
@@ -903,73 +930,84 @@ export class WatchDeliveryQueue {
   }
 
   private persistMigratedSentinel(backupPath: string, backupDigest: `sha256:${string}`): void {
-    const body = Buffer.from(
-      [
-        'OPENSLACK_DELIVERY_QUEUE_V1_MIGRATED',
-        `backup=${backupPath}`,
-        `digest=${backupDigest}`,
-        'This sentinel is intentionally not JSON so older binaries fail closed.',
-        '',
-      ].join('\n'),
-      'utf8',
-    );
+    const body = migratedSentinelBytes(backupPath, backupDigest);
     persistAtomicFile(this.statePath, body, this.nonce);
   }
 
-  private withLock<T>(operation: () => T): T {
-    mkdirSync(this.stateDir, { recursive: true });
-    const deadline = Date.now() + this.policy.lockTimeoutMs;
-    const owner = {
-      pid: process.pid,
-      nonce: this.nonce(),
-      createdAt: new Date().toISOString(),
-    };
-    let acquired = false;
-    while (!acquired) {
-      try {
-        const fd = openSync(this.lockPath, 'wx', 0o600);
-        try {
-          writeFileSync(fd, JSON.stringify(owner), 'utf-8');
-          fsyncSync(fd);
-        } finally {
-          closeSync(fd);
-        }
-        acquired = true;
-      } catch {
-        this.isolateStaleLock();
-        if (Date.now() >= deadline) {
-          throw new WatchDeliveryQueueError(
-            'QUEUE_LOCK_TIMEOUT',
-            'Timed out waiting for the GitHub watch delivery queue lock.',
-          );
-        }
-        blockFor(Math.min(25, Math.max(1, deadline - Date.now())));
-      }
+  private verifyFinalizedV2Migration(
+    marker: WatchDeliveryV2MigrationMarker,
+    v2StatePath: string,
+    requireSentinel: boolean,
+  ): void {
+    if (
+      marker.state !== 'finalized' ||
+      marker.v2StatePath !== v2StatePath ||
+      !marker.backupPath ||
+      !marker.backupDigest
+    ) {
+      throw new WatchDeliveryQueueError(
+        'QUEUE_STATE_INVALID',
+        'GitHub watch delivery v2 finalization evidence is incomplete.',
+      );
     }
-
-    try {
-      return operation();
-    } finally {
-      try {
-        const current = JSON.parse(readFileSync(this.lockPath, 'utf-8')) as {
-          nonce?: unknown;
-        };
-        if (current.nonce === owner.nonce) rmSync(this.lockPath, { force: true });
-      } catch {
-        // Do not remove a lock whose ownership cannot be proven.
-      }
+    const expectedBackupPath = join(
+      this.stateDir,
+      `delivery-state.v1.${marker.backupDigest.slice('sha256:'.length)}.readonly.json`,
+    );
+    if (marker.backupPath !== expectedBackupPath || !existsSync(marker.backupPath)) {
+      throw new WatchDeliveryQueueError(
+        'QUEUE_STATE_INVALID',
+        'GitHub watch delivery v1 migration backup path is invalid.',
+      );
+    }
+    const backup = readFileSync(marker.backupPath);
+    verifyMigrationBackup(marker.backupPath, backup);
+    if (`sha256:${createHash('sha256').update(backup).digest('hex')}` !== marker.backupDigest) {
+      throw new WatchDeliveryQueueError(
+        'QUEUE_STATE_INVALID',
+        'GitHub watch delivery v1 migration backup digest is invalid.',
+      );
+    }
+    if (
+      requireSentinel &&
+      (!existsSync(this.statePath) ||
+        !readFileSync(this.statePath).equals(
+          migratedSentinelBytes(marker.backupPath, marker.backupDigest),
+        ))
+    ) {
+      throw new WatchDeliveryQueueError(
+        'QUEUE_STATE_INVALID',
+        'GitHub watch delivery v1 migrated sentinel is missing or invalid.',
+      );
     }
   }
 
-  private isolateStaleLock(): void {
+  private withLock<T>(operation: () => T): T {
     try {
-      const ageMs = Date.now() - statSync(this.lockPath).mtimeMs;
-      if (ageMs <= this.policy.lockStaleMs) return;
-      const isolated = `${this.lockPath}.stale.${process.pid}.${this.nonce()}`;
-      renameSync(this.lockPath, isolated);
-      rmSync(isolated, { force: true });
-    } catch {
-      // Another process may have released or replaced the lock.
+      return withNotificationStorageLock(
+        this.stateDir,
+        basename(`${this.statePath}.lock`),
+        {
+          lockTimeoutMs: this.policy.lockTimeoutMs,
+          lockStaleMs: this.policy.lockStaleMs,
+          nonce: this.nonce,
+        },
+        operation,
+      );
+    } catch (error) {
+      if ((error as { code?: unknown }).code === 'STORAGE_LOCK_TIMEOUT') {
+        throw new WatchDeliveryQueueError(
+          'QUEUE_LOCK_TIMEOUT',
+          'Timed out waiting for the GitHub watch delivery queue lock.',
+        );
+      }
+      if ((error as { code?: unknown }).code === 'STORAGE_PATH_UNSAFE') {
+        throw new WatchDeliveryQueueError(
+          'QUEUE_STATE_INVALID',
+          'GitHub watch delivery queue lock path is unsafe.',
+        );
+      }
+      throw error;
     }
   }
 }
@@ -1812,6 +1850,19 @@ function verifyMigrationBackup(path: string, expected: Buffer): void {
   }
 }
 
+function migratedSentinelBytes(backupPath: string, backupDigest: `sha256:${string}`): Buffer {
+  return Buffer.from(
+    [
+      'OPENSLACK_DELIVERY_QUEUE_V1_MIGRATED',
+      `backup=${backupPath}`,
+      `digest=${backupDigest}`,
+      'This sentinel is intentionally not JSON so older binaries fail closed.',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+}
+
 function persistAtomicFile(path: string, bytes: Buffer, nonce: () => string): void {
   const temporaryPath = `${path}.${process.pid}.${nonce()}.tmp`;
   let descriptor: number | null = null;
@@ -1887,12 +1938,6 @@ function currentStableKeyFromLegacy(stableKey: string): string {
   }
 
   return stableKey;
-}
-
-function blockFor(ms: number): void {
-  if (typeof Atomics.wait === 'function') {
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
-  }
 }
 
 function fsyncDirectoryBestEffort(path: string): void {

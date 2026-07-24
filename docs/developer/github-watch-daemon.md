@@ -171,6 +171,10 @@ The runtime wiring and read-only reconciliation primitives do not establish G4/G
 two-repository/two-vendor E2E, the 14-day Canary, immutable release evidence and their independent reviews remain
 separate gates.
 
+When a notification-service block is configured, `openslack github notifications doctor` performs a bounded,
+unauthenticated, read-only `GET /health/version` probe and verifies the configured deployment digest; otherwise its
+checks remain local.
+
 ## Event Model
 
 First implementation can map matching task Issues to existing task events:

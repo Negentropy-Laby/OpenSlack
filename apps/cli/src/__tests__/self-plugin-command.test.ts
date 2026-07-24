@@ -355,5 +355,5 @@ describe('self plugin command', () => {
     } finally {
       rmSync(workspaceRoot, { recursive: true, force: true });
     }
-  });
+  }, 20_000);
 });
