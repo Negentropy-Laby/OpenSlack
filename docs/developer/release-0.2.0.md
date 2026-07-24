@@ -341,6 +341,11 @@ identity for bot delivery.
 
 ### Gate P6 — full release-head validation
 
+`.github/workflows/npm-stage-publish.yml` is authoritative for the public-pack
+toolchain pins. The values below record its current pins. If the workflow
+differs, treat this runbook as stale: **STOP** and update it through a governed
+PR before running P6.
+
 Gate P6 produces the four tarball hashes that Phase B1 later compares
 byte-for-byte with the registry packages. Its public-pack toolchain must
 therefore match `.github/workflows/npm-stage-publish.yml` exactly:
