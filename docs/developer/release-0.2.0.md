@@ -1701,6 +1701,16 @@ The path list from `TESTED_COMMIT` through `HEAD` must match only:
 docs/status/current.md
 ```
 
+This exact eight-path block is the authoritative expansion of the promotion
+allowlist declared at the start of Section 10. It excludes test source, Vitest
+configuration, package manifests, workspace dependency configuration, and every
+other test-discovery input. Within `.openslack/modules.yaml`, change only the
+count and promotion metadata fields described in this subsection; do not change
+`packages`, Module 02 project ownership, or another field that could change the
+recount scope. If any test-affecting path or field must change, stop, deliver
+that change as a separate prerequisite, select a new `TESTED_COMMIT`, and rerun
+the frozen hosted baseline before promotion.
+
 Then rerun:
 
 ```bash
@@ -1721,8 +1731,9 @@ synthetic merge commit rather than the literal PR head. In that case, record
 the base SHA, PR head SHA/tree, and synthetic checkout SHA/tree. Require the
 synthetic parents to be exactly `TESTED_COMMIT` followed by the current remote
 PR head, require the synthetic tree to equal the PR head tree, and require the
-run to be the current check associated with that head. Because the promotion
-allowlist contains no test source, the final-head counts must equal the frozen
+run to be the current check associated with that head. Because the authoritative
+path and field allowlists immediately above exclude test-affecting inputs and
+Module 02 ownership changes, the final-head counts must equal the frozen
 `TESTED_COMMIT` counts and the registry/generated status values. If another
 promotion commit is needed, discard the old final-head result and repeat this
 check on the new head.
