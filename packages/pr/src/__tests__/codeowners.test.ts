@@ -90,6 +90,7 @@ describe('resolveCodeowners', () => {
       '.openslack/plugins/example/plugin.json',
       '.openslack/plugins.lock',
       'packages/plugin-host/package.json',
+      'services/notification-delivery/internal/app/server.go',
       'packages/workflows/src/builtins/profile-sync.ts',
       'packages/workflows/src/workflow-catalog.ts',
       'packages/workflows/src/pattern-registry.ts',
