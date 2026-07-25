@@ -19,13 +19,13 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"rc_wsman/internal/calleraccess"
-	"rc_wsman/internal/delivery"
-	"rc_wsman/internal/notificationstore"
-	notificationstorepostgres "rc_wsman/internal/notificationstore/postgres"
-	"rc_wsman/internal/operationscontrol"
-	"rc_wsman/internal/reliability"
-	"rc_wsman/internal/vendorregistry"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/calleraccess"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/delivery"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/notificationstore"
+	notificationstorepostgres "github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/notificationstore/postgres"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/operationscontrol"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/reliability"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/vendorregistry"
 )
 
 func TestCrashSendHelper(t *testing.T) {

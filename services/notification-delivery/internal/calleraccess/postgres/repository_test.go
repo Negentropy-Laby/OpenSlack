@@ -12,9 +12,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"rc_wsman/internal/calleraccess"
-	"rc_wsman/internal/calleraccess/postgres"
-	"rc_wsman/internal/testsupport"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/calleraccess"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/calleraccess/postgres"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/testsupport"
 )
 
 type testPepper struct {

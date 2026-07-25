@@ -11,9 +11,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"rc_wsman/internal/testsupport"
-	"rc_wsman/internal/vendorregistry"
-	"rc_wsman/internal/vendorregistry/postgres"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/testsupport"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/vendorregistry"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/vendorregistry/postgres"
 )
 
 func openVRPool(t *testing.T) *pgxpool.Pool {

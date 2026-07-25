@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"rc_wsman/internal/notificationstore"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/notificationstore"
 )
 
 type fakeStore struct {

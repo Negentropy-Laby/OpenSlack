@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	"rc_wsman/internal/vendorregistry"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/vendorregistry"
 )
 
 // Credential is the in-memory credential material resolved by a

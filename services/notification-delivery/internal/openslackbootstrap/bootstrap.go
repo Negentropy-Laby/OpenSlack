@@ -10,7 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"rc_wsman/internal/calleraccess"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/calleraccess"
 )
 
 const (

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"rc_wsman/internal/reliability"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/reliability"
 )
 
 type fixedReliability struct {

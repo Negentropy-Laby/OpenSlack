@@ -12,9 +12,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"rc_wsman/internal/calleraccess"
-	calleraccesspostgres "rc_wsman/internal/calleraccess/postgres"
-	"rc_wsman/internal/testsupport"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/calleraccess"
+	calleraccesspostgres "github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/calleraccess/postgres"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/testsupport"
 )
 
 var integrationCallerSequence atomic.Uint64

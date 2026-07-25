@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"rc_wsman/internal/calleraccess"
-	"rc_wsman/internal/notificationstore"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/calleraccess"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/notificationstore"
 )
 
 const ReplayBatchMax = 100

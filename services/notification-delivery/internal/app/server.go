@@ -14,14 +14,14 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/calleraccess"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/notificationstore"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/operationscontrol"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/reliability"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/vendorregistry"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"rc_wsman/internal/calleraccess"
-	"rc_wsman/internal/notificationstore"
-	"rc_wsman/internal/operationscontrol"
-	"rc_wsman/internal/reliability"
-	"rc_wsman/internal/vendorregistry"
 )
 
 // Deps holds the B3 business-layer dependencies injected into the HTTP server.

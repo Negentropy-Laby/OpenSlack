@@ -16,9 +16,9 @@ import (
 	"github.com/getkin/kin-openapi/routers"
 	"github.com/getkin/kin-openapi/routers/legacy"
 
-	"rc_wsman/internal/calleraccess"
-	"rc_wsman/internal/notificationstore"
-	"rc_wsman/internal/vendorregistry"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/calleraccess"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/notificationstore"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/vendorregistry"
 )
 
 func loadContractRouter(t *testing.T) routers.Router {

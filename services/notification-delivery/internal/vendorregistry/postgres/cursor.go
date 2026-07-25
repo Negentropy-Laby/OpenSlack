@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"rc_wsman/internal/vendorregistry"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/vendorregistry"
 )
 
 type cursorSigner struct {

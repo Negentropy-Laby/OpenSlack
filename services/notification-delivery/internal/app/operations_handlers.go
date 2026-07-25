@@ -7,9 +7,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"rc_wsman/internal/calleraccess"
-	"rc_wsman/internal/notificationstore"
-	"rc_wsman/internal/operationscontrol"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/calleraccess"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/notificationstore"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/operationscontrol"
 )
 
 func (s *Server) handleOpsOutbox(w http.ResponseWriter, r *http.Request) {

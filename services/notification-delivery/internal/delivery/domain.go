@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"rc_wsman/internal/notificationstore"
-	"rc_wsman/internal/vendorregistry"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/notificationstore"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/vendorregistry"
 )
 
 // Reason constants for policy terminations and actual-result dies.

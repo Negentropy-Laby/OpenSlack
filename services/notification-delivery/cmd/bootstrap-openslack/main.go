@@ -14,9 +14,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	calleraccesspostgres "rc_wsman/internal/calleraccess/postgres"
-	"rc_wsman/internal/config"
-	"rc_wsman/internal/openslackbootstrap"
+	calleraccesspostgres "github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/calleraccess/postgres"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/config"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/openslackbootstrap"
 )
 
 type repeatedStrings []string

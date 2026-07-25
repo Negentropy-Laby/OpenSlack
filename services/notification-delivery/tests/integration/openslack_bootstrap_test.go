@@ -8,10 +8,10 @@ import (
 	"sync"
 	"testing"
 
-	"rc_wsman/internal/calleraccess"
-	calleraccesspostgres "rc_wsman/internal/calleraccess/postgres"
-	"rc_wsman/internal/openslackbootstrap"
-	"rc_wsman/internal/testsupport"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/calleraccess"
+	calleraccesspostgres "github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/calleraccess/postgres"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/openslackbootstrap"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/testsupport"
 )
 
 type bootstrapPepper struct {

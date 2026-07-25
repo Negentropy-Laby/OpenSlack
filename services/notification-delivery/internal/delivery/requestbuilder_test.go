@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"rc_wsman/internal/vendorregistry"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/vendorregistry"
 )
 
 func requestSnapshot() vendorregistry.DeliveryConfigSnapshot {

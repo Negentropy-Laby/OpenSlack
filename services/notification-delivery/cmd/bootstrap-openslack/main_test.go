@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"rc_wsman/internal/config"
-	"rc_wsman/internal/openslackbootstrap"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/config"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/openslackbootstrap"
 )
 
 func testDependencies(execute func(context.Context, *config.OpenSlackBootstrapConfig, string, []string) (openslackbootstrap.Result, error)) commandDependencies {
