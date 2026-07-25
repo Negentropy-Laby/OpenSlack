@@ -1599,6 +1599,59 @@ contains the six paths.
 
 ### 10.3 Commit 2 — registry and generated status
 
+Before editing the registry, bind its test counts to one canonical hosted
+Vitest run for the exact `TESTED_COMMIT`. The local P6 run proves release-head
+behavior, but its console summary is not the count source for promotion.
+Likewise, `openslack status verify` proves that `.openslack/modules.yaml` and
+the generated status document agree with each other; it does not read a
+Vitest result and cannot prove that either count is true.
+
+Use the required hosted validation job that runs the repository-wide
+`npx vitest run`. Record the following in the promotion PR validation or job
+summary, not in a new repository evidence file:
+
+```text
+validation workflow/run id
+validation job id and check name
+checked-out full commit SHA
+checked-out tree SHA
+passing tests and skipped tests
+passing files and skipped files
+per-project passing tests and files for Module 02
+the deterministic extraction command or parser version
+```
+
+The checked-out commit and tree must equal the frozen `TESTED_COMMIT` and its
+tree. Strip ANSI control sequences before parsing a text log. Prefer
+machine-readable Vitest output when the hosted job exposes it. For the text
+fallback, use only the final `Tests` and `Test Files` summary lines for the raw
+passing/skipped totals. Compute Module 02 mechanically from passing test-file
+result lines for exactly these project roots:
+
+```text
+@openslack/github
+@openslack/runtime
+@openslack/core
+@openslack/delivery
+```
+
+For each project, count passing test-file result lines and sum the test count
+printed on those lines. Keep skipped tests and files separate. Do not infer a
+count from changed paths, historical PR prose, a local partially passing run,
+or a previous registry value. The validation record must include this table:
+
+| Project               | Passing tests | Passing files |
+| --------------------- | ------------: | ------------: |
+| `@openslack/github`   |         `<n>` |         `<n>` |
+| `@openslack/runtime`  |         `<n>` |         `<n>` |
+| `@openslack/core`     |         `<n>` |         `<n>` |
+| `@openslack/delivery` |         `<n>` |         `<n>` |
+| Module 02 total       |       `<sum>` |       `<sum>` |
+
+Set the registry raw Vitest passing counts and Module 02 passing counts to
+those hosted results before generating status. The generated document must
+show the same values.
+
 Edit `.openslack/modules.yaml`:
 
 - append `commit:<EVIDENCE_COMMIT>` and the owner's exact
@@ -1649,13 +1702,29 @@ bash scripts/genesis-validate.sh
 git status --short
 ```
 
-**GO:** six valid committed records, only proved blocker removals, cap-consistent
-maturity, exactly generated status, and no non-allowlisted path since
-`TESTED_COMMIT`.
+After pushing Commit 2, require the same repository-wide hosted validation on
+the final promotion PR head. Record its run/job/head/tree and repeat the raw
+and per-project extraction. A `pull_request` job may check out GitHub's
+synthetic merge commit rather than the literal PR head. In that case, record
+the base SHA, PR head SHA/tree, and synthetic checkout SHA/tree; require the
+base to remain `TESTED_COMMIT`, the PR head to match the current remote branch,
+and the run to be the current check associated with that head. Because the
+promotion allowlist contains no test source, the final-head counts must equal
+the frozen `TESTED_COMMIT` counts and the registry/generated status values. If
+another promotion commit is needed, discard the old final-head result and
+repeat this check on the new head.
+
+**GO:** six valid committed records, only proved blocker removals,
+cap-consistent maturity, exactly generated status, no non-allowlisted path
+since `TESTED_COMMIT`, and frozen-head/final-head hosted Vitest counts that
+mechanically match the registry and generated status.
 
 **STOP:** stale product change, expired evidence, owner/revision mismatch,
 registry reference to the wrong commit, component cap, remaining blocker hidden,
-or `production_ready` while unconfigured/blocked.
+`production_ready` while unconfigured/blocked, missing or ambiguous hosted
+test evidence, incomplete Module 02 mapping, skipped results folded into
+passing counts, checked-out head/tree mismatch, a non-green final-head run, or
+any difference among hosted counts, registry counts, and generated status.
 
 ### 10.4 Govern the promotion PR
 
