@@ -1,0 +1,15 @@
+.git
+.github
+.claude
+.gomodcache
+.gocache
+memory_bank
+docs
+design
+deploy
+tests
+**/*_test.go
+*.md
+*.log
+tmp
+coverage*

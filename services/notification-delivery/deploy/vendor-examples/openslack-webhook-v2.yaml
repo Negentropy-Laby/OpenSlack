@@ -1,0 +1,31 @@
+# Parameterized template only. Registration creates a draft vendor; never auto-activate.
+operation: register
+vendor_id: ${OPENSLACK_WEBHOOK_VENDOR_ID}
+expected_record_revision: 0
+idempotency_key: ${ADMIN_IDEMPOTENCY_KEY}
+body:
+  owning_scope: ${OPENSLACK_OWNING_SCOPE}
+  initial_config:
+    config_schema_version: 2
+    response_policy: http_status_v1
+    endpoint_target:
+      url: ${WEBHOOK_ENDPOINT}
+    method: POST
+    transport_auth_headers:
+      - kind: literal
+        name: content-type
+        value: application/json
+    outbound_idempotency_mapping:
+      mode: headers
+      source: ingress_idempotency_key
+      header_names:
+        - idempotency-key
+        - x-openslack-idempotency-key
+    endpoint_policy:
+      allowed_request_header_names:
+        - content-type
+        - idempotency-key
+        - x-openslack-idempotency-key
+      forbidden_request_header_names: []
+      max_request_body_bytes: 262144
+    auth_strategy: none

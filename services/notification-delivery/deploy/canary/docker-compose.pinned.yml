@@ -1,0 +1,12 @@
+services:
+  app:
+    image: "${NOTIFICATION_SERVICE_IMAGE:?set digest-pinned NOTIFICATION_SERVICE_IMAGE}"
+    pull_policy: always
+    labels:
+      io.negentropy-laby.canary.image-mode: "pinned-image"
+
+  webhook-receiver:
+    image: "${CANARY_WEBHOOK_RECEIVER_IMAGE:?set digest-pinned CANARY_WEBHOOK_RECEIVER_IMAGE}"
+    pull_policy: always
+    labels:
+      io.negentropy-laby.canary.image-mode: "pinned-image"

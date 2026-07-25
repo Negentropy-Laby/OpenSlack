@@ -1,0 +1,49 @@
+{
+  "schema": "negentropy_laby.rc_ib4_r1_local_evidence.v1",
+  "status": "PASS_LOCAL",
+  "recorded_at": "2026-07-23T05:58:06Z",
+  "tested_commit": "35f5801b340ac8a90b1a5848405fdc73c41dbfad",
+  "tested_tree": "dc93dc977d404c151379cdfb3423332abf320dc4",
+  "integrated_main_commit": "19dc65bfb89d6d7a902af502e58a72be40c98f08",
+  "supersedes": {
+    "evidence_commit": "e1dc4465589490d89917092787f0fc09da6b26bb",
+    "reason": "PITR fixture used Go-only JSON field names and failed active-vendor preflight after restart"
+  },
+  "scope": {
+    "health_version": true,
+    "notification_vendor_projection": true,
+    "attempt_config_version": true,
+    "migration": 9,
+    "canary_deployment_pack": true,
+    "metadata_only_webhook_receiver": true
+  },
+  "verification": {
+    "go_build": "PASS",
+    "go_vet": "PASS",
+    "go_test_race": "PASS",
+    "go_test_race_count_5": "PASS",
+    "postgresql_integration": "PASS",
+    "migration_1_to_9": "PASS",
+    "migration_9_down_guard": "PASS",
+    "openapi_contract": "PASS",
+    "compose_readiness": "PASS",
+    "canary_receiver_container_smoke": "PASS",
+    "fault_drill": "PASS",
+    "marker_scan": "PASS",
+    "pitr": "PASS"
+  },
+  "pitr": {
+    "schema_version": "9:false",
+    "markers": "before,target",
+    "attempt_config_version_invariant": "claim:null,outcome:2",
+    "post_fixture_service_restart": "PASS"
+  },
+  "boundaries": {
+    "external_g4_e2e": "NOT_RUN",
+    "g4_e2e": "NOT_PASSED",
+    "g5_canary": "NOT_STARTED",
+    "production_ready": false,
+    "contains_payload": false,
+    "contains_secret": false
+  }
+}

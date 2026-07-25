@@ -1,0 +1,84 @@
+services:
+  db:
+    image: postgres:18.4@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a
+    environment:
+      POSTGRES_USER: rc_wsman
+      POSTGRES_PASSWORD: rc_wsman
+      POSTGRES_DB: rc_wsman
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - db_data:/var/lib/postgresql
+    command:
+      - postgres
+      - -c
+      - wal_level=replica
+      - -c
+      - archive_mode=on
+      - -c
+      - archive_command=mkdir -p /var/lib/postgresql/wal-archive && test ! -f /var/lib/postgresql/wal-archive/%f && cp %p /var/lib/postgresql/wal-archive/%f
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rc_wsman -d rc_wsman"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  app:
+    build:
+      context: .
+      target: app
+    environment:
+      DATABASE_URL: postgres://rc_wsman:rc_wsman@db:5432/rc_wsman?sslmode=disable
+      NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST: "${NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST}"
+      API_KEY_PEPPER_ACTIVE: "${API_KEY_PEPPER_ACTIVE}"
+      API_KEY_PEPPER_PREVIOUS: "${API_KEY_PEPPER_PREVIOUS:-}"
+      ENV_CREDENTIAL_ALLOWLIST: "VENDOR_A_TOKEN,VENDOR_B_TOKEN"
+      CREDENTIAL_REF_SCHEME_ALLOWLIST: "env"
+      CREDENTIAL_PROFILE_VALIDATOR: "bearer-env-v1"
+      VENDOR_A_TOKEN: "${VENDOR_A_TOKEN}"
+      VENDOR_B_TOKEN: "${VENDOR_B_TOKEN}"
+      HTTP_BIND: ":8080"
+      METRICS_PATH: "/metrics"
+      METRICS_COLLECTION_TIMEOUT: "2s"
+      WORKER_INTERVAL: "5s"
+      LEASE_DURATION: "30s"
+      RECOVERY_INTERVAL: "5s"
+      RECOVERY_BATCH_SIZE: "100"
+      SHUTDOWN_DEADLINE: "30s"
+      WORKER_CONCURRENCY: "5"
+      WORKER_VENDOR_SCOPE: "${WORKER_VENDOR_SCOPE:-vendor-demo}"
+      MIGRATION_SOURCE: "/migrations"
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  prometheus:
+    image: prom/prometheus:v3.13.1@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    depends_on:
+      app:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  db_data:
+  prometheus_data:

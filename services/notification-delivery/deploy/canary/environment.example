@@ -1,0 +1,28 @@
+# Template only. Copy to a host-local mode-0600 file and replace every
+# placeholder from the notification-canary protected environment.
+CANARY_DEPLOYMENT_MODE=pinned-image
+NOTIFICATION_SERVICE_IMAGE=<registry/repository@sha256:64-lowercase-hex>
+CANARY_WEBHOOK_RECEIVER_IMAGE=<registry/repository@sha256:64-lowercase-hex>
+NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST=sha256:<64-lowercase-hex-matching-service-image>
+API_KEY_PEPPER_ACTIVE=<secret-json>
+API_KEY_PEPPER_PREVIOUS=
+CANARY_SLACK_BOT_TOKEN=<secret>
+WEBHOOK_AUDIT_TOKEN=<secret>
+CANARY_VENDOR_SLACK=<vendor-id>
+CANARY_VENDOR_WEBHOOK=<vendor-id>
+CANARY_POSTGRES_USER=<database-user>
+CANARY_POSTGRES_PASSWORD=<32-or-more-url-safe-random-characters>
+CANARY_POSTGRES_DB=<database-name>
+CANARY_DATABASE_URL=<postgres://same-user:same-password@db:5432/same-name?sslmode=disable>
+CANARY_SERVICE_ORIGIN=<https://service.example:443>
+CANARY_WEBHOOK_ORIGIN=<https://receiver.example:443>
+DB_PORT=5432
+APP_PORT=8080
+PROMETHEUS_PORT=9090
+WEBHOOK_RECEIVER_PORT=8090
+WEBHOOK_RECEIVER_EVIDENCE_DIR=/srv/openslack-notification-canary/webhook-evidence
+
+# verified-local-build is for pre-deployment rehearsal only. When selected,
+# remove the two *_IMAGE entries above and add the exact clean checkout values:
+# CANARY_SOURCE_COMMIT=<40-lowercase-hex>
+# CANARY_SOURCE_TREE=<40-lowercase-hex>

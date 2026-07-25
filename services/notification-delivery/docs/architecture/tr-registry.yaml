@@ -1,0 +1,440 @@
+version: 1
+status: approved
+last_updated: 2026-07-22
+scope: six approved module CDDs
+source_of_test_taxonomy: docs/testing/test-strategy.md
+coverage_rule: >
+  Every canonical acceptance criterion listed below inherits the architecture
+  components, ADRs and planned test types of its requirement family. Four
+  additional NSBR identifiers are non-AC boundary coverage mappings. B1-B6
+  implementation evidence is maintained in docs/testing/ac-evidence.json;
+  this registry remains the canonical AC inventory and architecture mapping.
+implementation_evidence:
+  B1-B6: docs/testing/ac-evidence.json
+
+requirement_families:
+  NS-INTAKE:
+    source: design/cdd/notification-store.md
+    acceptance_criteria:
+      - AC-INTAKE-01
+      - AC-INTAKE-02
+      - AC-INTAKE-03
+      - AC-INTAKE-04
+      - AC-INTAKE-05
+      - AC-INTAKE-05b
+      - AC-INTAKE-06a
+      - AC-INTAKE-06b
+      - AC-INTAKE-07
+    architecture_components: [HTTP API, Caller Access, Vendor Registry, Notification Store, PostgreSQL]
+    adrs: [ADR-0001, ADR-0002, ADR-0003]
+    planned_test_types: [contract, integration, concurrency, fault_injection, security_negative]
+  NS-ATOMICITY:
+    source: design/cdd/notification-store.md
+    acceptance_criteria: [AC-ATOM-01, AC-ATOM-02, AC-ATOM-03]
+    architecture_components: [Notification Store, PostgreSQL]
+    adrs: [ADR-0001, ADR-0002]
+    planned_test_types: [integration, fault_injection]
+  NS-STATE:
+    source: design/cdd/notification-store.md
+    acceptance_criteria:
+      - AC-STATE-01
+      - AC-STATE-02
+      - AC-STATE-03
+      - AC-STATE-04a
+      - AC-STATE-04b
+      - AC-STATE-05
+      - AC-STATE-06
+      - AC-STATE-07
+      - AC-STATE-08
+      - AC-STATE-09
+      - AC-STATE-10
+      - AC-STATE-11
+      - AC-STATE-12
+      - AC-STATE-13
+      - AC-STATE-14
+      - AC-STATE-15
+      - AC-STATE-16
+      - AC-STATE-17
+    architecture_components: [Notification Store, Delivery, Operations Control, PostgreSQL]
+    adrs: [ADR-0001, ADR-0002, ADR-0003]
+    planned_test_types: [contract, logic, integration, concurrency, fault_injection, security_negative]
+  NS-LEASE:
+    source: design/cdd/notification-store.md
+    acceptance_criteria:
+      - AC-LEASE-01
+      - AC-LEASE-02
+      - AC-LEASE-03
+      - AC-LEASE-04
+      - AC-LEASE-05
+      - AC-LEASE-06
+      - AC-LEASE-07
+      - AC-LEASE-08
+      - AC-LEASE-09
+      - AC-LEASE-10
+    architecture_components: [Notification Store, Delivery, Lease Recovery, PostgreSQL]
+    adrs: [ADR-0001, ADR-0002]
+    planned_test_types: [contract, integration, concurrency, fault_injection]
+  NS-ATTEMPT:
+    source: design/cdd/notification-store.md
+    acceptance_criteria:
+      - AC-ATT-01
+      - AC-ATT-02
+      - AC-ATT-03
+      - AC-ATT-04
+      - AC-ATT-05
+      - AC-ATT-06
+      - AC-ATT-07
+      - AC-ATT-08
+      - AC-ATT-09
+      - AC-ATT-10
+      - AC-ATT-11
+      - AC-ATT-12
+      - AC-ATT-13
+    architecture_components: [Notification Store, PostgreSQL]
+    adrs: [ADR-0001, ADR-0002]
+    planned_test_types: [contract, logic, integration, migration, fault_injection]
+  NS-QUERY:
+    source: design/cdd/notification-store.md
+    acceptance_criteria:
+      - AC-HIST-01
+      - AC-HIST-02
+      - AC-HIST-03
+      - AC-LIST-01
+      - AC-LIST-02
+      - AC-LIST-03
+    architecture_components: [Notification Store, Operations Control, PostgreSQL]
+    adrs: [ADR-0001, ADR-0003]
+    planned_test_types: [contract, integration, security_negative]
+  NS-IMMUTABILITY:
+    source: design/cdd/notification-store.md
+    acceptance_criteria: [AC-IMM-01, AC-IMM-02, AC-IMM-03, AC-IMM-04]
+    architecture_components: [Notification Store, PostgreSQL]
+    adrs: [ADR-0001, ADR-0002]
+    planned_test_types: [logic, integration, migration]
+  NS-SECURITY:
+    source: design/cdd/notification-store.md
+    acceptance_criteria:
+      - AC-SEC-01
+      - AC-SEC-02
+      - AC-SEC-03
+      - AC-SEC-04
+      - AC-SEC-05
+      - AC-SEC-06
+      - AC-SEC-07
+      - AC-SEC-08
+    architecture_components: [HTTP API, Caller Access, Notification Store, PostgreSQL]
+    adrs: [ADR-0001, ADR-0002, ADR-0003]
+    planned_test_types: [contract, integration, security_negative]
+  NS-METRICS:
+    source: design/cdd/notification-store.md
+    acceptance_criteria: [AC-MET-01, AC-MET-02, AC-MET-03, AC-MET-04, AC-MET-05, AC-MET-06]
+    architecture_components: [Notification Store, Reliability Observability, PostgreSQL]
+    adrs: [ADR-0001, ADR-0003]
+    planned_test_types: [contract, integration, fault_injection, security_negative]
+  NS-BOUNDARY:
+    source: design/cdd/notification-store.md
+    acceptance_criteria: [AC-DL-01, AC-DL-02]
+    boundary_coverage_mappings: [NSBR-05a, NSBR-05b, NSBR-05c, NSBR-05d]
+    architecture_components: [Notification Store, Delivery, Operations Control, Reliability Observability]
+    adrs: [ADR-0001, ADR-0002, ADR-0003]
+    planned_test_types: [contract, integration, security_negative]
+
+  VR-INTAKE:
+    source: design/cdd/vendor-registry.md
+    acceptance_criteria:
+      - VR-INTAKE-01
+      - VR-INTAKE-02
+      - VR-INTAKE-03
+      - VR-INTAKE-04
+      - VR-INTAKE-05
+      - VR-INTAKE-06
+      - VR-INTAKE-07
+      - VR-INTAKE-08
+      - VR-INTAKE-09
+      - VR-INTAKE-10
+    architecture_components: [HTTP API, Caller Access, Vendor Registry, PostgreSQL]
+    adrs: [ADR-0001, ADR-0003, ADR-0004]
+    planned_test_types: [contract, integration, security_negative]
+  VR-LIFECYCLE:
+    source: design/cdd/vendor-registry.md
+    acceptance_criteria:
+      - VR-LIFE-01
+      - VR-LIFE-02
+      - VR-LIFE-03
+      - VR-LIFE-04
+      - VR-LIFE-05
+      - VR-LIFE-06
+      - VR-LIFE-07
+      - VR-LIFE-08
+    architecture_components: [Vendor Registry, PostgreSQL]
+    adrs: [ADR-0001, ADR-0003]
+    planned_test_types: [logic, integration, concurrency]
+  VR-SNAPSHOT:
+    source: design/cdd/vendor-registry.md
+    acceptance_criteria:
+      - VR-SNAPSHOT-01
+      - VR-SNAPSHOT-02
+      - VR-SNAPSHOT-03
+      - VR-SNAPSHOT-04
+      - VR-SNAPSHOT-05
+      - VR-SNAPSHOT-06
+      - VR-SNAPSHOT-07
+      - VR-SNAPSHOT-08
+      - VR-PROJ-01
+      - VR-PROJ-02
+      - VR-PROJ-03
+    architecture_components: [Vendor Registry, Delivery, PostgreSQL]
+    adrs: [ADR-0001, ADR-0003, ADR-0004]
+    planned_test_types: [contract, integration, security_negative]
+  VR-QUERY:
+    source: design/cdd/vendor-registry.md
+    acceptance_criteria:
+      - VR-QUERY-01
+      - VR-QUERY-02
+      - VR-QUERY-03
+      - VR-QUERY-04
+      - VR-QUERY-05
+      - VR-QUERY-06
+      - VR-QUERY-07
+      - VR-QUERY-08
+      - VR-QUERY-09
+      - VR-QUERY-10
+      - VR-QUERY-11
+      - VR-QUERY-12
+      - VR-QUERY-13
+      - VR-QUERY-14
+      - VR-QUERY-15
+      - VR-QUERY-16
+      - VR-QUERY-17
+      - VR-QUERY-18
+      - VR-QUERY-19
+      - VR-QUERY-20
+      - VR-QUERY-21
+      - VR-QUERY-22
+      - VR-QUERY-23
+      - VR-QUERY-24
+      - VR-QUERY-25
+    architecture_components: [HTTP API, Vendor Registry, PostgreSQL]
+    adrs: [ADR-0001, ADR-0003]
+    planned_test_types: [contract, integration, security_negative, capacity_baseline]
+  VR-CONCURRENCY:
+    source: design/cdd/vendor-registry.md
+    acceptance_criteria:
+      - VR-CONCURRENCY-01
+      - VR-CONCURRENCY-02
+      - VR-CONCURRENCY-03
+      - VR-CONCURRENCY-04
+      - VR-CONCURRENCY-05
+      - VR-CONCURRENCY-06
+      - VR-CONCURRENCY-07
+      - VR-CONCURRENCY-08
+    architecture_components: [Vendor Registry, PostgreSQL]
+    adrs: [ADR-0001, ADR-0003]
+    planned_test_types: [integration, concurrency, fault_injection, security_negative]
+  VR-SECURITY:
+    source: design/cdd/vendor-registry.md
+    acceptance_criteria:
+      - VR-SEC-01
+      - VR-SEC-02
+      - VR-SEC-03
+      - VR-SEC-04
+      - VR-SEC-05
+      - VR-SEC-06
+      - VR-SEC-07
+      - VR-CRED-01
+      - VR-CRED-02
+      - VR-CRED-03
+      - VR-CRED-04
+      - VR-CRED-05
+      - VR-CRED-06
+      - VR-CRED-07
+      - VR-CRED-08
+      - VR-BL05-01
+      - VR-BL05-02
+      - VR-BL05-03
+      - VR-BL05-04
+      - VR-BL05-05
+      - VR-BL05-06
+      - VR-BL05-07
+      - VR-BL05-08
+      - VR-BL05-09
+      - VR-BL05-10
+      - VR-BL05-11
+      - VR-BL05-12
+      - VR-URL-01
+      - VR-URL-02
+      - VR-URL-03
+      - VR-URL-04
+      - VR-POLICY-01
+      - VR-POLICY-02
+      - VR-POLICY-03
+      - VR-POLICY-04
+      - VR-POLICY-05
+      - VR-POLICY-06
+      - VR-POLICY-07
+      - VR-POLICY-08
+      - VR-POLICY-09
+      - VR-POLICY-10
+      - VR-POLICY-11
+    architecture_components: [Vendor Registry, Delivery, Safe HTTP Transport, Secret Resolver, PostgreSQL]
+    adrs: [ADR-0003, ADR-0004]
+    planned_test_types: [contract, logic, integration, security_negative, fault_injection]
+  VR-TIME-IMMUTABILITY:
+    source: design/cdd/vendor-registry.md
+    acceptance_criteria:
+      - VR-CLOCK-01
+      - VR-CLOCK-02
+      - VR-IMM-01
+      - VR-IMM-02
+      - VR-IMM-03
+      - VR-IMM-04
+    architecture_components: [Vendor Registry, PostgreSQL]
+    adrs: [ADR-0001]
+    planned_test_types: [logic, integration, migration]
+  VR-AUDIT:
+    source: design/cdd/vendor-registry.md
+    acceptance_criteria:
+      - VR-AUDIT-01
+      - VR-AUDIT-02
+      - VR-AUDIT-03
+      - VR-AUDIT-04
+      - VR-AUDIT-05
+      - VR-AUDIT-06
+      - VR-AUDIT-07
+      - VR-AUDIT-08
+    architecture_components: [Vendor Registry, PostgreSQL]
+    adrs: [ADR-0001, ADR-0003]
+    planned_test_types: [contract, integration, fault_injection, security_negative]
+  VR-ACTOR-SCOPE:
+    source: design/cdd/vendor-registry.md
+    acceptance_criteria:
+      - VR-ACTOR-01
+      - VR-ACTOR-02
+      - VR-ACTOR-03
+      - VR-ACTOR-04
+      - VR-SCOPE-01
+      - VR-SCOPE-02
+      - VR-SCOPE-03
+      - VR-SCOPE-04
+      - VR-SCOPE-05
+      - VR-SCOPE-06
+    architecture_components: [Caller Access, Vendor Registry]
+    adrs: [ADR-0003]
+    planned_test_types: [contract, integration, security_negative]
+  VR-ADMIN-MODEL-CONFIG:
+    source: design/cdd/vendor-registry.md
+    acceptance_criteria:
+      - VR-ADMIN-01
+      - VR-ADMIN-02
+      - VR-ADMIN-03
+      - VR-MODEL-01
+      - VR-MODEL-02
+      - VR-MODEL-03
+      - VR-CFG-01
+      - VR-CFG-02
+      - VR-CFG-03
+      - VR-CFG-04
+      - VR-CFG-05
+      - VR-CFG-06
+      - VR-CFG-07
+      - VR-CFG-08
+      - VR-CFG-09
+      - VR-CFG-10
+      - VR-CFG-11
+      - VR-CFG-12
+      - VR-CFG-13
+      - VR-CFG-14
+      - VR-CFG-15
+      - VR-ERR-01
+      - VR-ERR-02
+      - VR-ERR-03
+    architecture_components: [HTTP API, Vendor Registry, PostgreSQL]
+    adrs: [ADR-0001, ADR-0003, ADR-0004]
+    planned_test_types: [contract, logic, integration, migration, security_negative]
+
+  CALLER-ACCESS:
+    source: design/cdd/caller-access.md
+    acceptance_criteria:
+      - CA-01
+      - CA-02
+      - CA-03
+      - CA-04
+      - CA-05
+      - CA-06
+      - CA-07
+      - CA-08
+      - CA-09
+      - CA-10
+      - CA-11
+      - CA-12
+      - CA-13
+      - CA-14
+      - CA-15
+    architecture_components: [HTTP API, Caller Access, Vendor Registry, Notification Store, PostgreSQL]
+    adrs: [ADR-0003]
+    planned_test_types: [contract, integration, concurrency, fault_injection, migration, security_negative]
+
+  DELIVERY:
+    source: design/cdd/delivery.md
+    acceptance_criteria:
+      - DL-01
+      - DL-02
+      - DL-03
+      - DL-04
+      - DL-05
+      - DL-06
+      - DL-07
+      - DL-08
+      - DL-09
+      - DL-10
+      - DL-11
+      - DL-12
+      - DL-13
+      - DL-14
+      - DL-15
+      - DL-16
+      - DL-17
+      - DL-18
+      - DL-19
+      - DL-20
+    architecture_components: [Delivery, Notification Store, Vendor Registry, Safe HTTP Transport, Secret Resolver]
+    adrs: [ADR-0001, ADR-0002, ADR-0004]
+    planned_test_types: [contract, logic, integration, concurrency, fault_injection, security_negative]
+
+  OPERATIONS-CONTROL:
+    source: design/cdd/operations-control.md
+    acceptance_criteria:
+      - OC-01
+      - OC-02
+      - OC-03
+      - OC-04
+      - OC-05
+      - OC-06
+      - OC-07
+      - OC-08
+      - OC-09
+      - OC-10
+      - OC-11
+      - OC-12
+      - OC-13
+      - OC-14
+    architecture_components: [HTTP API, Caller Access, Operations Control, Notification Store]
+    adrs: [ADR-0001, ADR-0003]
+    planned_test_types: [contract, integration, concurrency, fault_injection, security_negative]
+
+  RELIABILITY-OBSERVABILITY:
+    source: design/cdd/reliability-observability.md
+    acceptance_criteria:
+      - RO-01
+      - RO-02
+      - RO-03
+      - RO-04
+      - RO-05
+      - RO-06
+      - RO-07
+      - RO-08
+      - RO-09
+      - RO-10
+    architecture_components: [Reliability Observability, Notification Store, Metrics Endpoint]
+    adrs: [ADR-0001, ADR-0003]
+    planned_test_types: [contract, logic, integration, fault_injection, security_negative]
