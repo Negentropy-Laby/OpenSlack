@@ -1134,7 +1134,7 @@ describe('WatchDaemon sink dispatch', () => {
 });
 
 describe('WatchDaemon polling', () => {
-  it('pollAll() returns dry-run error without credentials', async () => {
+  it('pollAll() returns AUTH_REQUIRED without credentials', async () => {
     const dedupe = new WatchDedupeStore(tempDir);
     const authorityResolver = new RepositoryAuthorityResolver({
       getClientFn: async () => {
