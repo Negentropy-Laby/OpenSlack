@@ -6,6 +6,11 @@ import { createReleaseArchive, extractReleaseArchive } from '../archive.js';
 
 describe('release archive creation', () => {
   let root: string | undefined;
+  const legalFiles = [
+    ['LICENSE', 'license fixture bytes\n'],
+    ['NOTICE', 'notice fixture bytes\n'],
+    ['THIRD_PARTY_NOTICES.md', 'third-party fixture bytes\n'],
+  ] as const;
 
   afterEach(() => {
     if (root) rmSync(root, { recursive: true, force: true });
@@ -21,6 +26,9 @@ describe('release archive creation', () => {
       const extracted = join(root, 'extracted');
       mkdirSync(bundle);
       writeFileSync(join(bundle, 'build-info.json'), '{"version":"0.1.1"}\n', 'utf-8');
+      for (const [file, contents] of legalFiles) {
+        writeFileSync(join(bundle, file), contents, 'utf-8');
+      }
 
       createReleaseArchive(bundle, archive, 'linux-x64');
       expect([...readFileSync(archive).subarray(0, 3)]).toEqual([0x1f, 0x8b, 0x08]);
@@ -28,6 +36,11 @@ describe('release archive creation', () => {
       expect(
         readFileSync(join(extracted, 'openslack-v0.1.1-linux-x64', 'build-info.json'), 'utf-8'),
       ).toBe('{"version":"0.1.1"}\n');
+      for (const [file, contents] of legalFiles) {
+        expect(readFileSync(join(extracted, 'openslack-v0.1.1-linux-x64', file), 'utf-8')).toBe(
+          contents,
+        );
+      }
     },
   );
 
@@ -40,6 +53,9 @@ describe('release archive creation', () => {
       const extracted = join(root, 'extracted');
       mkdirSync(bundle);
       writeFileSync(join(bundle, 'build-info.json'), '{"version":"0.1.1"}\n', 'utf-8');
+      for (const [file, contents] of legalFiles) {
+        writeFileSync(join(bundle, file), contents, 'utf-8');
+      }
 
       createReleaseArchive(bundle, archive, 'windows-x64');
       expect([...readFileSync(archive).subarray(0, 4)]).toEqual([0x50, 0x4b, 0x03, 0x04]);
@@ -47,6 +63,11 @@ describe('release archive creation', () => {
       expect(
         readFileSync(join(extracted, 'openslack-v0.1.1-windows-x64', 'build-info.json'), 'utf-8'),
       ).toBe('{"version":"0.1.1"}\n');
+      for (const [file, contents] of legalFiles) {
+        expect(readFileSync(join(extracted, 'openslack-v0.1.1-windows-x64', file), 'utf-8')).toBe(
+          contents,
+        );
+      }
     },
   );
 
@@ -61,12 +82,21 @@ describe('release archive creation', () => {
     const source = readFileSync(resolve(import.meta.dirname, '..', 'build.ts'), 'utf-8');
     expect(source).toContain("mkdtempSync(join(tmpdir(), 'openslack-bundle-smoke-'))");
     expect(source).toContain('cpSync(bundleDir, smokeBundleDir');
-    expect(source).toContain('smokeBundle(smokeBundleDir, target)');
-    expect(source).not.toContain('smokeBundle(bundleDir, target)');
+    expect(source).toContain('smokeBundle(smokeBundleDir, target, root)');
+    expect(source).not.toContain('smokeBundle(bundleDir, target, root)');
+    expect(source).toContain("for (const file of ['LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md'])");
+    expect(source).toContain('copyFileSync(join(root, file), join(bundleDir, file))');
 
     const smokeSource = readFileSync(resolve(import.meta.dirname, '..', 'smoke.ts'), 'utf-8');
     expect(smokeSource).toContain("'Lifecycle: ACTIVE | Maturity: LOCAL_READY'");
     expect(smokeSource).not.toContain("'Deferred (excluded)'");
+    expect(smokeSource).toContain(
+      "for (const file of ['LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md'])",
+    );
+    expect(smokeSource).toContain(
+      'readFileSync(join(bundleDir, file)).equals(readFileSync(join(sourceRoot, file)))',
+    );
+    expect(smokeSource).toContain("checks.push('root-legal-files')");
 
     const attributes = readFileSync(
       resolve(import.meta.dirname, '..', '..', '..', '.gitattributes'),

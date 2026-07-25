@@ -1,0 +1,326 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/notification-delivery-source-manifest.v2.schema.json",
+  "title": "Notification Delivery Source Manifest v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema",
+    "status",
+    "historical_binding",
+    "import_binding",
+    "relocation",
+    "container_inputs",
+    "legal_inputs",
+    "phase_f_receipt",
+    "scope"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "./schemas/source-manifest.v2.schema.json"
+    },
+    "schema": {
+      "const": "negentropy_laby.notification_delivery_source.v2"
+    },
+    "status": {
+      "const": "REPOSITORY_IMPORTED_UNRELEASED"
+    },
+    "historical_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["v1_manifest", "review_baseline", "archive_tag", "frozen_source"],
+      "properties": {
+        "v1_manifest": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "sha256"],
+          "properties": {
+            "path": {
+              "const": "integration/source-manifest.json"
+            },
+            "sha256": {
+              "const": "11ca033a6dc07677ed315e676728e18b2ea4be39835b1afdc2d36d2b44c3d87c"
+            }
+          }
+        },
+        "review_baseline": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["commit"],
+          "properties": {
+            "commit": {
+              "const": "7976962e7de1c6ffcd234d2962b89dc4b23c95c0"
+            }
+          }
+        },
+        "archive_tag": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "object"],
+          "properties": {
+            "name": {
+              "const": "integration-archive/rc-wsman-pre-ib6"
+            },
+            "object": {
+              "const": "b3d87f5074eb6ac7733e21d240bd5e2cf8e27a97"
+            }
+          }
+        },
+        "frozen_source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repository", "commit", "tree", "commit_count"],
+          "properties": {
+            "repository": {
+              "const": "https://github.com/wsman/rc_wsman.git"
+            },
+            "commit": {
+              "const": "982db466b2ba2c20bec150b7688bd398e4f52714"
+            },
+            "tree": {
+              "const": "7ac5144aeab9d453f39e2b6d2fbea828e7a89017"
+            },
+            "commit_count": {
+              "const": 36
+            }
+          }
+        }
+      }
+    },
+    "import_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pure_import", "openslack_merge", "target_repository", "target_path"],
+      "properties": {
+        "pure_import": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["commit", "tree", "first_parent", "second_parent"],
+          "properties": {
+            "commit": {
+              "const": "141caadc2541490c32f3d5940f057de7bf703410"
+            },
+            "tree": {
+              "const": "f9c7c835e9385db1500a66b7fa5f354a07410695"
+            },
+            "first_parent": {
+              "const": "4eefd75abf490257c226bd596cfd58122edd879f"
+            },
+            "second_parent": {
+              "const": "982db466b2ba2c20bec150b7688bd398e4f52714"
+            }
+          }
+        },
+        "openslack_merge": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["commit", "tree", "first_parent", "second_parent"],
+          "properties": {
+            "commit": {
+              "const": "bb3f234f93a9a86602693ee6dc3717f930c87213"
+            },
+            "tree": {
+              "const": "f9c7c835e9385db1500a66b7fa5f354a07410695"
+            },
+            "first_parent": {
+              "const": "4eefd75abf490257c226bd596cfd58122edd879f"
+            },
+            "second_parent": {
+              "const": "141caadc2541490c32f3d5940f057de7bf703410"
+            }
+          }
+        },
+        "target_repository": {
+          "const": "https://github.com/Negentropy-Laby/OpenSlack.git"
+        },
+        "target_path": {
+          "const": "services/notification-delivery"
+        }
+      }
+    },
+    "relocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["go_module", "registry_relocation"],
+      "properties": {
+        "go_module": {
+          "const": "github.com/Negentropy-Laby/OpenSlack/services/notification-delivery"
+        },
+        "registry_relocation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "next"],
+          "properties": {
+            "status": {
+              "const": "N/A_CURRENT_BASELINE"
+            },
+            "next": {
+              "const": "DEFERRED_TO_PX0"
+            }
+          }
+        }
+      }
+    },
+    "container_inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dockerfile_frontend", "builder_image", "runtime_image", "go_version"],
+      "properties": {
+        "dockerfile_frontend": {
+          "const": "docker/dockerfile:1.24.0@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89"
+        },
+        "builder_image": {
+          "const": "golang:1.26.5@sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647"
+        },
+        "runtime_image": {
+          "const": "debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818"
+        },
+        "go_version": {
+          "const": "1.26.5"
+        }
+      }
+    },
+    "legal_inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "license",
+        "notice",
+        "third_party_notices",
+        "dependency_license_inventory",
+        "repository_sbom_input"
+      ],
+      "properties": {
+        "license": {
+          "$ref": "#/$defs/license"
+        },
+        "notice": {
+          "$ref": "#/$defs/notice"
+        },
+        "third_party_notices": {
+          "$ref": "#/$defs/thirdPartyNotices"
+        },
+        "dependency_license_inventory": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "sha256", "production_module_count"],
+          "properties": {
+            "path": {
+              "const": "THIRD_PARTY_NOTICES.md"
+            },
+            "sha256": {
+              "const": "b537ef415b68027b321ca7db0a3dc065d74241e03829f5f7f70393a1c9f5d43f"
+            },
+            "production_module_count": {
+              "const": 13
+            }
+          }
+        },
+        "repository_sbom_input": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "sha256", "scope", "attestation"],
+          "properties": {
+            "path": {
+              "const": "SBOM.cdx.json"
+            },
+            "sha256": {
+              "const": "a22c503aaf5efeec6c36d9a8e3362cebf37280aea3a43e45093516e5141727b7"
+            },
+            "scope": {
+              "const": "REPOSITORY_SOURCE_AND_BUILD_INPUTS"
+            },
+            "attestation": {
+              "const": "UNSIGNED"
+            }
+          }
+        }
+      }
+    },
+    "phase_f_receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "path_base", "expected_path"],
+      "properties": {
+        "status": {
+          "const": "PENDING_PHASE_F"
+        },
+        "path_base": {
+          "const": "OPENSLACK_REPOSITORY_ROOT"
+        },
+        "expected_path": {
+          "const": "integration/gates/ib6-history-import.json"
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authorizes", "non_claims"],
+      "properties": {
+        "authorizes": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "non_claims": {
+          "const": [
+            "RELEASE",
+            "REGISTRY_INCLUSION",
+            "SIGNED_PROVENANCE",
+            "EXTERNAL_READINESS",
+            "LIVE_VERIFIED",
+            "G4",
+            "G5_POST_IMPORT_QUALIFICATION",
+            "IB7",
+            "PRODUCTION",
+            "CLI_ARCHIVE_INCLUSION",
+            "STANDALONE_REPOSITORY_ARCHIVE",
+            "DESTRUCTIVE_CLEANUP"
+          ]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "license": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {
+          "const": "LICENSE"
+        },
+        "sha256": {
+          "const": "04f9674553a402c48856e9cc3f813a70bb59eb6033f33344980c8fd3a710c8f2"
+        }
+      }
+    },
+    "notice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {
+          "const": "NOTICE"
+        },
+        "sha256": {
+          "const": "1009b641213efcdef8aea6307ea9745c0473e42cf160d6c6c8530a0b61a575d1"
+        }
+      }
+    },
+    "thirdPartyNotices": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {
+          "const": "THIRD_PARTY_NOTICES.md"
+        },
+        "sha256": {
+          "const": "b537ef415b68027b321ca7db0a3dc065d74241e03829f5f7f70393a1c9f5d43f"
+        }
+      }
+    }
+  }
+}

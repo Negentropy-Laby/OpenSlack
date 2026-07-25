@@ -21,10 +21,14 @@ export interface ReleaseVerifierSmokeInput {
   trustedPublicKey?: string;
 }
 
-export function smokeBundle(bundleDir: string, target: ReleaseTarget): ArtifactSmokeResult {
+export function smokeBundle(
+  bundleDir: string,
+  target: ReleaseTarget,
+  repositoryRoot: string,
+): ArtifactSmokeResult {
   const definition = TARGETS[target];
   const executable = join(bundleDir, definition.executable);
-  const sourceRoot = resolve(process.cwd());
+  const sourceRoot = resolve(repositoryRoot);
   if (readFileSync(executable).includes(Buffer.from(sourceRoot))) {
     throw new Error('Packaged executable embeds the source checkout path.');
   }
@@ -33,6 +37,11 @@ export function smokeBundle(bundleDir: string, target: ReleaseTarget): ArtifactS
     commit: string;
     target: string;
   };
+  for (const file of ['LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md']) {
+    if (!readFileSync(join(bundleDir, file)).equals(readFileSync(join(sourceRoot, file)))) {
+      throw new Error(`Packaged legal file ${file} does not match the source checkout.`);
+    }
+  }
   const git = findExecutable('git');
   const workspace = mkdtempSync(join(tmpdir(), 'OpenSlack Artifact Smoke 空格-'));
   const checks: string[] = [];
@@ -51,6 +60,7 @@ export function smokeBundle(bundleDir: string, target: ReleaseTarget): ArtifactS
       throw new Error('Executable build info does not match build-info.json.');
     }
     checks.push('version');
+    checks.push('root-legal-files');
 
     run(
       executable,
@@ -274,5 +284,6 @@ if (import.meta.main) {
   if (!bundle || !target || !TARGETS[target]) {
     throw new Error('Usage: bun scripts/release/smoke.ts --bundle <dir> --target <target>');
   }
-  console.log(JSON.stringify(smokeBundle(resolve(bundle), target), null, 2));
+  const repositoryRoot = resolve(import.meta.dirname, '..', '..');
+  console.log(JSON.stringify(smokeBundle(resolve(bundle), target, repositoryRoot), null, 2));
 }

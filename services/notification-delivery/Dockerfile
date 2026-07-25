@@ -40,6 +40,9 @@ RUN --network=none set -eu; \
 FROM debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818 AS app
 
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --chmod=0444 LICENSE NOTICE THIRD_PARTY_NOTICES.md SBOM.cdx.json /usr/share/doc/openslack-notification-delivery/
+COPY --chmod=0444 integration/source-manifest.v2.json /usr/share/doc/openslack-notification-delivery/source-manifest.v2.json
+COPY --chmod=0444 integration/schemas/source-manifest.v2.schema.json /usr/share/doc/openslack-notification-delivery/schemas/source-manifest.v2.schema.json
 COPY --from=build /usr/local/bin/server /server
 COPY --from=build /usr/local/bin/bootstrap-openslack /bootstrap-openslack
 COPY --from=build /usr/local/bin/container-healthcheck /container-healthcheck

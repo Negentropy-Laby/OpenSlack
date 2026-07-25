@@ -53,6 +53,9 @@ func TestDockerfileInputsArePinnedAndClosed(t *testing.T) {
 		"COPY cmd ./cmd",
 		"COPY internal ./internal",
 		"COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt",
+		"COPY --chmod=0444 LICENSE NOTICE THIRD_PARTY_NOTICES.md SBOM.cdx.json /usr/share/doc/openslack-notification-delivery/",
+		"COPY --chmod=0444 integration/source-manifest.v2.json /usr/share/doc/openslack-notification-delivery/source-manifest.v2.json",
+		"COPY --chmod=0444 integration/schemas/source-manifest.v2.schema.json /usr/share/doc/openslack-notification-delivery/schemas/source-manifest.v2.schema.json",
 		"COPY --from=build /usr/local/bin/server /server",
 		"COPY --from=build /usr/local/bin/bootstrap-openslack /bootstrap-openslack",
 		"COPY --from=build /usr/local/bin/container-healthcheck /container-healthcheck",
@@ -61,6 +64,9 @@ func TestDockerfileInputsArePinnedAndClosed(t *testing.T) {
 	}
 	if !reflect.DeepEqual(copyLines, wantCopy) {
 		t.Fatalf("Dockerfile COPY contract=%q, want %q", copyLines, wantCopy)
+	}
+	if got := strings.Count(text, "COPY --chmod=0444 "); got != 3 {
+		t.Fatalf("fixed non-executable legal/provenance COPY instructions=%d, want 3", got)
 	}
 
 	required := []string{
@@ -121,9 +127,17 @@ func TestDockerBuildContextIsAnExactAllowlist(t *testing.T) {
 		"!.dockerignore",
 		"!go.mod",
 		"!go.sum",
+		"!LICENSE",
+		"!NOTICE",
+		"!THIRD_PARTY_NOTICES.md",
+		"!SBOM.cdx.json",
 		"!cmd/",
 		"!cmd/**/",
 		"!cmd/**/*.go",
+		"!integration/",
+		"!integration/source-manifest.v2.json",
+		"!integration/schemas/",
+		"!integration/schemas/source-manifest.v2.schema.json",
 		"!internal/",
 		"!internal/**/",
 		"!internal/**/*.go",

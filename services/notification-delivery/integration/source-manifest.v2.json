@@ -1,0 +1,100 @@
+{
+  "$schema": "./schemas/source-manifest.v2.schema.json",
+  "schema": "negentropy_laby.notification_delivery_source.v2",
+  "status": "REPOSITORY_IMPORTED_UNRELEASED",
+  "historical_binding": {
+    "v1_manifest": {
+      "path": "integration/source-manifest.json",
+      "sha256": "11ca033a6dc07677ed315e676728e18b2ea4be39835b1afdc2d36d2b44c3d87c"
+    },
+    "review_baseline": {
+      "commit": "7976962e7de1c6ffcd234d2962b89dc4b23c95c0"
+    },
+    "archive_tag": {
+      "name": "integration-archive/rc-wsman-pre-ib6",
+      "object": "b3d87f5074eb6ac7733e21d240bd5e2cf8e27a97"
+    },
+    "frozen_source": {
+      "repository": "https://github.com/wsman/rc_wsman.git",
+      "commit": "982db466b2ba2c20bec150b7688bd398e4f52714",
+      "tree": "7ac5144aeab9d453f39e2b6d2fbea828e7a89017",
+      "commit_count": 36
+    }
+  },
+  "import_binding": {
+    "pure_import": {
+      "commit": "141caadc2541490c32f3d5940f057de7bf703410",
+      "tree": "f9c7c835e9385db1500a66b7fa5f354a07410695",
+      "first_parent": "4eefd75abf490257c226bd596cfd58122edd879f",
+      "second_parent": "982db466b2ba2c20bec150b7688bd398e4f52714"
+    },
+    "openslack_merge": {
+      "commit": "bb3f234f93a9a86602693ee6dc3717f930c87213",
+      "tree": "f9c7c835e9385db1500a66b7fa5f354a07410695",
+      "first_parent": "4eefd75abf490257c226bd596cfd58122edd879f",
+      "second_parent": "141caadc2541490c32f3d5940f057de7bf703410"
+    },
+    "target_repository": "https://github.com/Negentropy-Laby/OpenSlack.git",
+    "target_path": "services/notification-delivery"
+  },
+  "relocation": {
+    "go_module": "github.com/Negentropy-Laby/OpenSlack/services/notification-delivery",
+    "registry_relocation": {
+      "status": "N/A_CURRENT_BASELINE",
+      "next": "DEFERRED_TO_PX0"
+    }
+  },
+  "container_inputs": {
+    "dockerfile_frontend": "docker/dockerfile:1.24.0@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89",
+    "builder_image": "golang:1.26.5@sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647",
+    "runtime_image": "debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818",
+    "go_version": "1.26.5"
+  },
+  "legal_inputs": {
+    "license": {
+      "path": "LICENSE",
+      "sha256": "04f9674553a402c48856e9cc3f813a70bb59eb6033f33344980c8fd3a710c8f2"
+    },
+    "notice": {
+      "path": "NOTICE",
+      "sha256": "1009b641213efcdef8aea6307ea9745c0473e42cf160d6c6c8530a0b61a575d1"
+    },
+    "third_party_notices": {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "sha256": "b537ef415b68027b321ca7db0a3dc065d74241e03829f5f7f70393a1c9f5d43f"
+    },
+    "dependency_license_inventory": {
+      "path": "THIRD_PARTY_NOTICES.md",
+      "sha256": "b537ef415b68027b321ca7db0a3dc065d74241e03829f5f7f70393a1c9f5d43f",
+      "production_module_count": 13
+    },
+    "repository_sbom_input": {
+      "path": "SBOM.cdx.json",
+      "sha256": "a22c503aaf5efeec6c36d9a8e3362cebf37280aea3a43e45093516e5141727b7",
+      "scope": "REPOSITORY_SOURCE_AND_BUILD_INPUTS",
+      "attestation": "UNSIGNED"
+    }
+  },
+  "phase_f_receipt": {
+    "status": "PENDING_PHASE_F",
+    "path_base": "OPENSLACK_REPOSITORY_ROOT",
+    "expected_path": "integration/gates/ib6-history-import.json"
+  },
+  "scope": {
+    "authorizes": [],
+    "non_claims": [
+      "RELEASE",
+      "REGISTRY_INCLUSION",
+      "SIGNED_PROVENANCE",
+      "EXTERNAL_READINESS",
+      "LIVE_VERIFIED",
+      "G4",
+      "G5_POST_IMPORT_QUALIFICATION",
+      "IB7",
+      "PRODUCTION",
+      "CLI_ARCHIVE_INCLUSION",
+      "STANDALONE_REPOSITORY_ARCHIVE",
+      "DESTRUCTIVE_CLEANUP"
+    ]
+  }
+}

@@ -110,6 +110,9 @@ copyFileSync(
   join(dirname(keyringPackage), 'LICENSE'),
   join(bundleDir, 'LICENSES', 'napi-rs-keyring-LICENSE'),
 );
+for (const file of ['LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md']) {
+  copyFileSync(join(root, file), join(bundleDir, file));
+}
 for (const file of readdirSync(join(root, 'templates', 'workflows'))) {
   if (file.endsWith('.yaml') || file.endsWith('.yml')) {
     copyFileSync(
@@ -165,7 +168,7 @@ try {
   // flow because executing bundleDir directly can reintroduce Windows locks.
   const smokeBundleDir = join(smokeRoot, bundleName);
   cpSync(bundleDir, smokeBundleDir, { recursive: true, errorOnExist: true });
-  smoke = smokeBundle(smokeBundleDir, target);
+  smoke = smokeBundle(smokeBundleDir, target, root);
 } finally {
   rmSync(smokeRoot, { recursive: true, force: true });
 }
@@ -181,7 +184,7 @@ const extractionRoot = mkdtempSync(join(tmpdir(), 'openslack-release-extract-'))
 let archiveSmoke: ArtifactSmokeResult;
 try {
   extractReleaseArchive(archivePath, extractionRoot, target);
-  archiveSmoke = smokeBundle(join(extractionRoot, bundleName), target);
+  archiveSmoke = smokeBundle(join(extractionRoot, bundleName), target, root);
 } finally {
   rmSync(extractionRoot, { recursive: true, force: true });
 }

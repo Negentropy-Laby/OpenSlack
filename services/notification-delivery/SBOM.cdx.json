@@ -1,0 +1,407 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "bom-ref": "pkg:golang/github.com/negentropy-laby/openslack/services/notification-delivery@unreleased",
+      "group": "github.com/Negentropy-Laby/OpenSlack/services",
+      "name": "notification-delivery",
+      "version": "unreleased",
+      "purl": "pkg:golang/github.com/negentropy-laby/openslack/services/notification-delivery@unreleased"
+    },
+    "properties": [
+      {
+        "name": "openslack:inventory-scope",
+        "value": "repository-source-and-build-inputs"
+      },
+      {
+        "name": "openslack:release-status",
+        "value": "unreleased"
+      },
+      {
+        "name": "openslack:attestation-status",
+        "value": "unsigned-repository-input"
+      },
+      {
+        "name": "openslack:final-oci-filesystem",
+        "value": "not-inventoried"
+      },
+      {
+        "name": "openslack:registry-status",
+        "value": "not-published"
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/github.com/go-chi/chi/v5@v5.2.0",
+      "name": "github.com/go-chi/chi/v5",
+      "version": "v5.2.0",
+      "scope": "required",
+      "purl": "pkg:golang/github.com/go-chi/chi/v5@v5.2.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "openslack:upstream-license-file-sha256",
+          "value": "a2d51b7515acfaff2f7a88688650f2fc4fd99561383e72bba2305e3db59a1647"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/github.com/golang-migrate/migrate/v4@v4.18.1",
+      "name": "github.com/golang-migrate/migrate/v4",
+      "version": "v4.18.1",
+      "scope": "required",
+      "purl": "pkg:golang/github.com/golang-migrate/migrate/v4@v4.18.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "openslack:upstream-license-file-sha256",
+          "value": "4c250e1d2cb21c738d5ec785f6fb1e03cd1e9adecfab46feb9494847872455be"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/github.com/hashicorp/errwrap@v1.1.0",
+      "name": "github.com/hashicorp/errwrap",
+      "version": "v1.1.0",
+      "scope": "required",
+      "purl": "pkg:golang/github.com/hashicorp/errwrap@v1.1.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "MPL-2.0"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "openslack:upstream-license-file-sha256",
+          "value": "bef1747eda88b9ed46e94830b0d978c3499dad5dfe38d364971760881901dadd"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/github.com/hashicorp/go-multierror@v1.1.1",
+      "name": "github.com/hashicorp/go-multierror",
+      "version": "v1.1.1",
+      "scope": "required",
+      "purl": "pkg:golang/github.com/hashicorp/go-multierror@v1.1.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "MPL-2.0"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "openslack:upstream-license-file-sha256",
+          "value": "a830016911a348a54e89bd54f2f8b0d8fffdeac20aecfba8e36ebbf38a03f5ff"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/github.com/jackc/pgerrcode@v0.0.0-20220416144525-469b46aa5efa",
+      "name": "github.com/jackc/pgerrcode",
+      "version": "v0.0.0-20220416144525-469b46aa5efa",
+      "scope": "required",
+      "purl": "pkg:golang/github.com/jackc/pgerrcode@v0.0.0-20220416144525-469b46aa5efa",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        },
+        {
+          "license": {
+            "id": "PostgreSQL"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "openslack:upstream-license-file-sha256",
+          "value": "ba651777b8362b30d778d60f7a0fcd1f01cdac79aa713d1a6f0a53bf5372fa2f"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/github.com/jackc/pgpassfile@v1.0.0",
+      "name": "github.com/jackc/pgpassfile",
+      "version": "v1.0.0",
+      "scope": "required",
+      "purl": "pkg:golang/github.com/jackc/pgpassfile@v1.0.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "openslack:upstream-license-file-sha256",
+          "value": "adb1663fda031df8f4344aa68f299fd87d80353e31339406742ded21dae65702"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/github.com/jackc/pgservicefile@v0.0.0-20240606120523-5a60cdf6a761",
+      "name": "github.com/jackc/pgservicefile",
+      "version": "v0.0.0-20240606120523-5a60cdf6a761",
+      "scope": "required",
+      "purl": "pkg:golang/github.com/jackc/pgservicefile@v0.0.0-20240606120523-5a60cdf6a761",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "openslack:upstream-license-file-sha256",
+          "value": "fc505773403fe869ed64cc2235cdd13988a427bb7e3a7e7004a3f4b27420f8fc"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/github.com/jackc/pgx/v5@v5.7.1",
+      "name": "github.com/jackc/pgx/v5",
+      "version": "v5.7.1",
+      "scope": "required",
+      "purl": "pkg:golang/github.com/jackc/pgx/v5@v5.7.1",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "openslack:upstream-license-file-sha256",
+          "value": "467f95e074fe23079a5623ed652619682692041b8551da27e3c2ddb9659a1507"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/github.com/jackc/puddle/v2@v2.2.2",
+      "name": "github.com/jackc/puddle/v2",
+      "version": "v2.2.2",
+      "scope": "required",
+      "purl": "pkg:golang/github.com/jackc/puddle/v2@v2.2.2",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "openslack:upstream-license-file-sha256",
+          "value": "2d50e98a4900b4d6457a38d39c1432fdc156fc2f7b365f2e33ec9344acbb0057"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/go.uber.org/atomic@v1.7.0",
+      "name": "go.uber.org/atomic",
+      "version": "v1.7.0",
+      "scope": "required",
+      "purl": "pkg:golang/go.uber.org/atomic@v1.7.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "openslack:upstream-license-file-sha256",
+          "value": "edbb5a4d165ac69376c765b551c0662ff42bea87e1f1eda85f42ac90c34b09d0"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/golang.org/x/crypto@v0.27.0",
+      "name": "golang.org/x/crypto",
+      "version": "v0.27.0",
+      "scope": "required",
+      "purl": "pkg:golang/golang.org/x/crypto@v0.27.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "openslack:upstream-license-file-sha256",
+          "value": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/golang.org/x/sync@v0.8.0",
+      "name": "golang.org/x/sync",
+      "version": "v0.8.0",
+      "scope": "required",
+      "purl": "pkg:golang/golang.org/x/sync@v0.8.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "openslack:upstream-license-file-sha256",
+          "value": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:golang/golang.org/x/text@v0.18.0",
+      "name": "golang.org/x/text",
+      "version": "v0.18.0",
+      "scope": "required",
+      "purl": "pkg:golang/golang.org/x/text@v0.18.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "BSD-3-Clause"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "openslack:upstream-license-file-sha256",
+          "value": "911f8f5782931320f5b8d1160a76365b83aea6447ee6c04fa6d5591467db9dad"
+        }
+      ]
+    },
+    {
+      "type": "platform",
+      "bom-ref": "pkg:generic/go@1.26.5",
+      "name": "Go toolchain",
+      "version": "1.26.5",
+      "purl": "pkg:generic/go@1.26.5",
+      "properties": [
+        {
+          "name": "openslack:role",
+          "value": "compiler"
+        }
+      ]
+    },
+    {
+      "type": "container",
+      "bom-ref": "pkg:oci/docker/dockerfile@sha256%3A87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89",
+      "name": "docker/dockerfile",
+      "version": "1.24.0@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89",
+      "purl": "pkg:oci/docker/dockerfile@sha256%3A87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89"
+        }
+      ],
+      "properties": [
+        {
+          "name": "openslack:role",
+          "value": "dockerfile-frontend"
+        }
+      ]
+    },
+    {
+      "type": "container",
+      "bom-ref": "pkg:oci/golang@sha256%3A3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647",
+      "name": "golang",
+      "version": "1.26.5@sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647",
+      "purl": "pkg:oci/golang@sha256%3A3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647"
+        }
+      ],
+      "properties": [
+        {
+          "name": "openslack:role",
+          "value": "builder-image"
+        }
+      ]
+    },
+    {
+      "type": "container",
+      "bom-ref": "pkg:oci/debian@sha256%3A7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818",
+      "name": "debian",
+      "version": "bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818",
+      "purl": "pkg:oci/debian@sha256%3A7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818"
+        }
+      ],
+      "properties": [
+        {
+          "name": "openslack:role",
+          "value": "runtime-image"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "pkg:golang/github.com/negentropy-laby/openslack/services/notification-delivery@unreleased",
+      "dependsOn": [
+        "pkg:golang/github.com/go-chi/chi/v5@v5.2.0",
+        "pkg:golang/github.com/golang-migrate/migrate/v4@v4.18.1",
+        "pkg:golang/github.com/hashicorp/errwrap@v1.1.0",
+        "pkg:golang/github.com/hashicorp/go-multierror@v1.1.1",
+        "pkg:golang/github.com/jackc/pgerrcode@v0.0.0-20220416144525-469b46aa5efa",
+        "pkg:golang/github.com/jackc/pgpassfile@v1.0.0",
+        "pkg:golang/github.com/jackc/pgservicefile@v0.0.0-20240606120523-5a60cdf6a761",
+        "pkg:golang/github.com/jackc/pgx/v5@v5.7.1",
+        "pkg:golang/github.com/jackc/puddle/v2@v2.2.2",
+        "pkg:golang/go.uber.org/atomic@v1.7.0",
+        "pkg:golang/golang.org/x/crypto@v0.27.0",
+        "pkg:golang/golang.org/x/sync@v0.8.0",
+        "pkg:golang/golang.org/x/text@v0.18.0"
+      ]
+    }
+  ]
+}
