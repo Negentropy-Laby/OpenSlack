@@ -16,6 +16,7 @@ import type { GitHubWatchConfig } from '../watch-config.js';
 import type { NormalizedIssueEvent } from '../issue-normalizer.js';
 import type { NormalizedPushEvent } from '../push-normalizer.js';
 import { githubWebhookEventKey } from '../repository-event.js';
+import { RepositoryAuthorityResolver } from '../repository-authority.js';
 import { WatchDedupeStore } from '../watch-dedupe.js';
 import { WatchCursorStore } from '../watch-cursor.js';
 
@@ -1133,16 +1134,29 @@ describe('WatchDaemon sink dispatch', () => {
 });
 
 describe('WatchDaemon polling', () => {
-  it('pollAll() returns dry-run error without credentials', async () => {
-    const getClient = await import('@openslack/github').then((m) => m.getClient);
-    // getClient in test env returns isDryRun when no GITHUB_TOKEN is set
+  it('pollAll() returns AUTH_REQUIRED without credentials', async () => {
     const dedupe = new WatchDedupeStore(tempDir);
-    const daemon = new WatchDaemon(config, '', dedupe, undefined, undefined, mockRecordEvent);
+    const authorityResolver = new RepositoryAuthorityResolver({
+      getClientFn: async () => {
+        throw new Error('test credentials unavailable');
+      },
+    });
+    const daemon = new WatchDaemon(
+      config,
+      '',
+      dedupe,
+      undefined,
+      undefined,
+      mockRecordEvent,
+      {},
+      { authorityResolver },
+    );
     const result = await daemon.pollAll();
-    // If the environment has no token, this will be a dry-run error
-    // If it has a token, reposPolled could be > 0 but the test still passes
-    expect(typeof result.reposPolled).toBe('number');
-    expect(typeof result.eventsDispatched).toBe('number');
+    expect(result).toEqual({
+      reposPolled: 1,
+      eventsDispatched: 0,
+      errors: ['AUTH_REQUIRED: Negentropy-Laby/OpenSlack'],
+    });
   });
 
   it('pollAll() deduplicates polled events across calls', async () => {

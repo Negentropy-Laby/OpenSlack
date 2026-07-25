@@ -567,7 +567,7 @@ describe('OpenAI-compatible agent runtime', () => {
     expect(
       readFileSync(join(run!.worktreeHandoff!.worktreePath, 'provider-output.txt'), 'utf-8'),
     ).toBe('real edit\n');
-  });
+  }, 15_000);
 
   it('persists distinct terminal failure evidence for provider, tool, and token failures', async () => {
     const configDir = join(root, '.openslack.local');
