@@ -7,8 +7,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"rc_wsman/internal/calleraccess"
-	"rc_wsman/internal/openslackbootstrap"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/calleraccess"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/openslackbootstrap"
 )
 
 func TestClassifyBootstrapCommitFailure(t *testing.T) {

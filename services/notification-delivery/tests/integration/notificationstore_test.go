@@ -12,9 +12,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"rc_wsman/internal/notificationstore"
-	"rc_wsman/internal/notificationstore/postgres"
-	"rc_wsman/internal/testsupport"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/notificationstore"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/notificationstore/postgres"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/testsupport"
 )
 
 // storeFixture wires a real PostgreSQL-backed repository for integration tests.

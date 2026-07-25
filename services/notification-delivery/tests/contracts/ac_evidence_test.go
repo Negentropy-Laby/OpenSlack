@@ -51,6 +51,24 @@ func repositoryRoot(t *testing.T) string {
 	return filepath.Join(filepath.Dir(file), "..", "..")
 }
 
+func TestModulePathMatchesMonorepoLocation(t *testing.T) {
+	root := repositoryRoot(t)
+	data, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const expected = "module github.com/Negentropy-Laby/OpenSlack/services/notification-delivery"
+	moduleDirective := regexp.MustCompile(`(?m)^[\t ]*module[\t ]+.*$`)
+	directives := moduleDirective.FindAllString(string(data), -1)
+	if len(directives) != 1 {
+		t.Fatalf("module directive count=%d want=1: %v", len(directives), directives)
+	}
+	actual := strings.TrimSpace(directives[0])
+	if actual != expected {
+		t.Fatalf("module directive=%q want=%q", actual, expected)
+	}
+}
+
 func TestB1B6ACEvidenceIsComplete(t *testing.T) {
 	root := repositoryRoot(t)
 	var reg registry

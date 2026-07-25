@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"rc_wsman/internal/vendorregistry"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/vendorregistry"
 )
 
 func TestAddressPolicyRejectsMixedAndMappedAnswers(t *testing.T) {

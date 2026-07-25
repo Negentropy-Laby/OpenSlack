@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"time"
 
-	"rc_wsman/internal/notificationstore"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/notificationstore"
 )
 
 type Store interface {

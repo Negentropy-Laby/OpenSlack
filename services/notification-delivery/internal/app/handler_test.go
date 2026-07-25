@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"rc_wsman/internal/calleraccess"
-	"rc_wsman/internal/notificationstore"
-	"rc_wsman/internal/reliability"
-	"rc_wsman/internal/vendorregistry"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/calleraccess"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/notificationstore"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/reliability"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/vendorregistry"
 )
 
 const testDeploymentDigest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"

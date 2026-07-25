@@ -4,7 +4,7 @@
 // standards/technical-preferences.md.  The patch versions below are the ones
 // selected by `go mod tidy` in the Go-equipped Docker image; they are recorded
 // in go.sum so the exact resolution is reproducible.
-module rc_wsman
+module github.com/Negentropy-Laby/OpenSlack/services/notification-delivery
 
 go 1.26.5
 

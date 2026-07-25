@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"rc_wsman/internal/calleraccess"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/calleraccess"
 )
 
 type testPepper struct {

@@ -15,12 +15,12 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"rc_wsman/internal/delivery"
-	"rc_wsman/internal/notificationstore"
-	notificationstorepostgres "rc_wsman/internal/notificationstore/postgres"
-	"rc_wsman/internal/testsupport"
-	"rc_wsman/internal/vendorregistry"
-	vendorregistrypostgres "rc_wsman/internal/vendorregistry/postgres"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/delivery"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/notificationstore"
+	notificationstorepostgres "github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/notificationstore/postgres"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/testsupport"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/vendorregistry"
+	vendorregistrypostgres "github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/vendorregistry/postgres"
 )
 
 type integrationCredentialResolver struct{}

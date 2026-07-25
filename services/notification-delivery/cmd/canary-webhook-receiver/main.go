@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"rc_wsman/internal/canaryreceiver"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/canaryreceiver"
 )
 
 func main() {

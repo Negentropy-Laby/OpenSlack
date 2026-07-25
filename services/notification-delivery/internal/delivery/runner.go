@@ -7,8 +7,8 @@ import (
 	"net/netip"
 	"time"
 
-	"rc_wsman/internal/notificationstore"
-	"rc_wsman/internal/vendorregistry"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/notificationstore"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/vendorregistry"
 )
 
 // Runner orchestrates a single delivery attempt from claim to result commit.

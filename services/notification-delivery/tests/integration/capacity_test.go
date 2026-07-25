@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"rc_wsman/internal/notificationstore"
+	"github.com/Negentropy-Laby/OpenSlack/services/notification-delivery/internal/notificationstore"
 )
 
 // TestCapacityBaseline is deliberately opt-in: it writes 1,100 samples to its
