@@ -1,0 +1,124 @@
+{
+  "schema": "openslack.notification_delivery_ib6_order_supersession.v1",
+  "decision_id": "ib6-repository-import-before-external-qualification-2026-07-25",
+  "recorded_at": "2026-07-25T17:25:00+08:00",
+  "effectivity": {
+    "status": "EFFECTIVE_ON_GOVERNED_MAIN_MERGE",
+    "canonical_base": "main",
+    "activation": "MERGED_TO_CANONICAL_MAIN_AFTER_EXACT_HEAD_HUMAN_APPROVAL",
+    "exact_head_human_approval_required": true,
+    "separate_import_authorization_required": true
+  },
+  "supersedes": {
+    "decision_id": "g5-canary-to-g5-import-qualification-2026-07-24",
+    "schema": "negentropy_laby.integration_gate_supersession.v1",
+    "path": "integration/gates/g5-import-qualification-supersession.json",
+    "superseded_role": {
+      "gate": "G5-IMPORT-QUALIFICATION",
+      "role": "PRE_IB6_AUTHORIZATION_GATE",
+      "status": "SUPERSEDED_UNEXECUTED",
+      "executed": false
+    },
+    "preserved_gate": {
+      "gate": "G5-CANARY",
+      "status": "SUPERSEDED_NOT_RUN",
+      "executed": false
+    }
+  },
+  "order": {
+    "replacement_pre_import_gate": {
+      "gate": "IB6-REPOSITORY-IMPORT-READINESS",
+      "status": "PENDING_REPOSITORY_READINESS",
+      "role": "TECHNICAL_READINESS_ONLY",
+      "result_authorizes_import": false
+    },
+    "import_authorization": {
+      "scope": "IB6_HISTORY_IMPORT_ONLY",
+      "status": "NOT_GRANTED",
+      "required_decision": "SEPARATE_EXACT_HUMAN_AUTHORIZATION"
+    },
+    "deferred_gate": {
+      "gate": "G5-POST-IMPORT-QUALIFICATION",
+      "status": "DEFERRED_UNTIL_IB6_MERGE_TRAIN_PX2_EXIT",
+      "scope": "IB7_EVALUATION_ONLY",
+      "authorizes_ib7": false,
+      "qualification": {
+        "minimum_duration_required": false,
+        "protected_single_run": true,
+        "run_timeout_minutes": 60,
+        "distinct_non_replay_accepted_minimum": 8,
+        "repository_minimum": 2,
+        "required_event_kinds": ["issue", "push"],
+        "vendor_id_minimum": 2,
+        "required_cartesian_cell_count": 8,
+        "delivery_deadline_seconds": 600,
+        "prerequisite_gates": [
+          "G3-QUEUE",
+          "IB6-HISTORY-IMPORT",
+          "IB6-MERGE-TRAIN/PX2-EXIT",
+          "OPENSLACK-V0.2.0-IMMUTABLE-RELEASE",
+          "G4-E2E"
+        ],
+        "unresolved_blocker_maximum": 0
+      }
+    },
+    "external_inputs_after": "IB6-MERGE-TRAIN/PX2-EXIT",
+    "external_inputs_terminal_gate": "PX2-EXIT",
+    "v0_2_0_release_source": "POST_IB6_MAIN",
+    "v0_2_0_release_policy": {
+      "status": "DEFERRED_PENDING_PX2_EXIT",
+      "requires_refreeze": true,
+      "prior_evidence_reusable": false
+    }
+  },
+  "historical_bindings": [
+    {
+      "role": "PRIOR_DECISION",
+      "path": "integration/gates/g5-import-qualification-supersession.json",
+      "sha256": "sha256:2d1ee8da4bf3433732384bc1b70afd264b3455c9c8a0764e7c16b24f65ba54d6"
+    },
+    {
+      "role": "PRIOR_DECISION_SCHEMA",
+      "path": "docs/integration/notification-delivery-gate-supersession.v1.schema.json",
+      "sha256": "sha256:23e756e1160a569c145b8dd38059089b7607727532ca21f7faa97c68ca95940c"
+    },
+    {
+      "role": "PRIOR_AMENDMENT",
+      "path": "docs/integration/notification-delivery-pre-ib6-gate-amendment.md",
+      "sha256": "sha256:d36e0d0303303c07e6ed7b057294605d44577aec4d5595f10c97f013d597f154"
+    },
+    {
+      "role": "PRIOR_ENVIRONMENT_MANIFEST",
+      "path": "deploy/notification-import-qualification/environment-manifest.v1.json",
+      "sha256": "sha256:818851072f5d9705242ba2825fe47afc2ce4d937b22e22141a76d62db7d8b760"
+    },
+    {
+      "role": "PRIOR_ENVIRONMENT_MANIFEST_SCHEMA",
+      "path": "deploy/notification-import-qualification/environment-manifest.schema.json",
+      "sha256": "sha256:c8b53ff58c3aa9c6cc51a8b6888e486026e856a0093957783f47f533facf1c79"
+    }
+  ],
+  "scope": {
+    "authorizes": [],
+    "does_not_authorize": [
+      "IB6_HISTORY_IMPORT_ONLY",
+      "G4_E2E_PASS",
+      "G5_POST_IMPORT_QUALIFICATION_PASS",
+      "IB7_CUTOVER",
+      "LIVE_VERIFIED",
+      "OPENSLACK_0.2.0_RELEASE",
+      "OPENSLACK_0.3.0_RELEASE",
+      "PRODUCTION_READY",
+      "REPOSITORY_ARCHIVE",
+      "DESTRUCTIVE_RETIREMENT"
+    ]
+  },
+  "evidence_policy": {
+    "historical_evidence_mutable": false,
+    "exact_human_ib6_authorization_required": true,
+    "future_post_import_receipt_required": true,
+    "future_post_import_receipt_schema": "openslack.notification_import_qualification_report.v1",
+    "future_post_import_receipt_schema_path": "packages/github/src/notification-import-qualification.schema.json",
+    "canonical_pr_base": "main"
+  }
+}
