@@ -1621,12 +1621,20 @@ per-project passing tests and files for Module 02
 the deterministic extraction command or parser version
 ```
 
-The checked-out commit and tree must equal the frozen `TESTED_COMMIT` and its
-tree. Strip ANSI control sequences before parsing a text log. Prefer
-machine-readable Vitest output when the hosted job exposes it. For the text
-fallback, use only the final `Tests` and `Test Files` summary lines for the raw
-passing/skipped totals. Compute Module 02 mechanically from passing test-file
-result lines for exactly these project roots:
+The current full hosted validation runs for `pull_request` and may check out
+GitHub's synthetic merge commit rather than a literal release commit. Record
+the run's base SHA, PR head SHA/tree, and synthetic checkout SHA/tree. Verify
+that the synthetic commit has those exact base/head parents, that the check is
+associated with the current remote PR head, and that its checkout tree equals
+the frozen `TESTED_COMMIT` tree. Literal commit equality is not required when
+the reviewed synthetic merge and the eventual governed merge have the same
+tree.
+
+Strip ANSI control sequences before parsing a text log. Prefer machine-readable
+Vitest output when the hosted job exposes it. For the text fallback, use only
+the final `Tests` and `Test Files` summary lines for the raw passing/skipped
+totals. Compute Module 02 mechanically from test-file result lines for exactly
+these project roots:
 
 ```text
 @openslack/github
@@ -1635,10 +1643,14 @@ result lines for exactly these project roots:
 @openslack/delivery
 ```
 
-For each project, count passing test-file result lines and sum the test count
-printed on those lines. Keep skipped tests and files separate. Do not infer a
-count from changed paths, historical PR prose, a local partially passing run,
-or a previous registry value. The validation record must include this table:
+For each project result line, parse both the total test count and its optional
+skipped count. Set `passing tests = total tests - skipped tests`; never treat
+the printed total as the passing count when the line includes skipped tests.
+Count the file as passing only when its passing test count is greater than
+zero, and do not count a fully skipped file as passing. Keep skipped tests and
+fully skipped files separate. Do not infer a count from changed paths,
+historical PR prose, a local partially passing run, or a previous registry
+value. The validation record must include this table:
 
 | Project               | Passing tests | Passing files |
 | --------------------- | ------------: | ------------: |
@@ -1706,13 +1718,14 @@ After pushing Commit 2, require the same repository-wide hosted validation on
 the final promotion PR head. Record its run/job/head/tree and repeat the raw
 and per-project extraction. A `pull_request` job may check out GitHub's
 synthetic merge commit rather than the literal PR head. In that case, record
-the base SHA, PR head SHA/tree, and synthetic checkout SHA/tree; require the
-base to remain `TESTED_COMMIT`, the PR head to match the current remote branch,
-and the run to be the current check associated with that head. Because the
-promotion allowlist contains no test source, the final-head counts must equal
-the frozen `TESTED_COMMIT` counts and the registry/generated status values. If
-another promotion commit is needed, discard the old final-head result and
-repeat this check on the new head.
+the base SHA, PR head SHA/tree, and synthetic checkout SHA/tree. Require the
+synthetic parents to be exactly `TESTED_COMMIT` followed by the current remote
+PR head, require the synthetic tree to equal the PR head tree, and require the
+run to be the current check associated with that head. Because the promotion
+allowlist contains no test source, the final-head counts must equal the frozen
+`TESTED_COMMIT` counts and the registry/generated status values. If another
+promotion commit is needed, discard the old final-head result and repeat this
+check on the new head.
 
 **GO:** six valid committed records, only proved blocker removals,
 cap-consistent maturity, exactly generated status, no non-allowlisted path
