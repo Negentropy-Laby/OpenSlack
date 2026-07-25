@@ -1,0 +1,481 @@
+version: 1
+status: approved
+last_updated: 2026-07-22
+purpose: >
+  Cross-document authority map for the approved Specification and Architecture
+  documents. Implementation evidence for B1-B4 is linked separately and does
+  not change behavioral ownership.
+implementation_evidence: docs/testing/b1-b4-ac-evidence.json
+
+authority_rules:
+  - Each identifier has exactly one behavioral authority.
+  - OpenAPI owns public HTTP wire shapes; CDD owns behavior and internal contracts.
+  - Architecture may select mechanisms but may not weaken a CDD invariant.
+  - A consumer reference does not grant write ownership.
+
+schema_map:
+  ValidatedIntake:
+    owner: Notification Store
+    authority: design/cdd/notification-store.md
+    public_wire: docs/api/openapi.yaml#/components/schemas/NotificationSubmit
+    referenced_by:
+      - design/cdd/caller-access.md
+      - docs/architecture/architecture.md
+  Notification:
+    owner: Notification Store
+    authority: design/cdd/notification-store.md
+    storage_projection: docs/architecture/data-model.md#notifications
+    public_projection: docs/api/openapi.yaml#/components/schemas/NotificationStatus
+    referenced_by:
+      - design/cdd/delivery.md
+      - design/cdd/operations-control.md
+      - design/cdd/reliability-observability.md
+  DeliveryAttempt:
+    owner: Notification Store
+    authority: design/cdd/notification-store.md
+    storage_projection: docs/architecture/data-model.md#delivery_attempts
+    public_projection: docs/api/openapi.yaml#/components/schemas/AttemptItem
+    referenced_by:
+      - design/cdd/delivery.md
+      - design/cdd/operations-control.md
+  TransitionRequest:
+    owner: Notification Store
+    authority: design/cdd/notification-store.md
+    visibility: internal
+    referenced_by:
+      - design/cdd/delivery.md
+      - design/cdd/operations-control.md
+      - docs/architecture/architecture.md
+  DeliveryResult:
+    owner: Notification Store
+    authority: design/cdd/notification-store.md
+    classification_owner: design/cdd/delivery.md
+    visibility: internal
+  VendorRecord:
+    owner: Vendor Registry
+    authority: design/cdd/vendor-registry.md
+    storage_projection: docs/architecture/data-model.md#vendors
+    public_projection:
+      list: docs/api/openapi.yaml#/components/schemas/VendorListItem
+      detail: docs/api/openapi.yaml#/components/schemas/VendorStateSummary
+  EndpointVersion:
+    owner: Vendor Registry
+    authority: design/cdd/vendor-registry.md
+    storage_projection: docs/architecture/data-model.md#endpoint_versions
+    public_projection: docs/api/openapi.yaml#/components/schemas/EndpointVersionListItem
+  DeliveryConfigSnapshot:
+    owner: Vendor Registry
+    authority: design/cdd/vendor-registry.md
+    visibility: internal
+    referenced_by:
+      - design/cdd/delivery.md
+      - docs/architecture/adr-0004-ssrf-safe-http.md
+  AdminCommand:
+    owner: Vendor Registry
+    authority: design/cdd/vendor-registry.md
+    public_wire: docs/api/openapi.yaml#/components/schemas/AdminCommand
+  AdminAuditEvent:
+    owner: Vendor Registry
+    authority: design/cdd/vendor-registry.md
+    storage_projection: docs/architecture/data-model.md#admin_audit_events
+    public_projection: docs/api/openapi.yaml#/components/schemas/AuditItem
+  PrincipalRecord:
+    owner: Caller Access
+    authority: design/cdd/caller-access.md
+    storage_projection: docs/architecture/data-model.md#principals
+  AccessKeyRecord:
+    owner: Caller Access
+    authority: design/cdd/caller-access.md
+    storage_projection: docs/architecture/data-model.md#access_keys
+  OpenSlackBootstrapOutput:
+    owner: Caller Access
+    authority: docs/architecture/adr-0005-openslack-handoff-integration.md#principals-and-deployment-evidence
+    visibility: protected_deployment_file
+  ActorContext:
+    owner: Caller Access
+    authority: design/cdd/caller-access.md
+    visibility: internal
+    specialized_contracts:
+      Store: design/cdd/notification-store.md
+      VendorRegistry: design/cdd/vendor-registry.md
+    referenced_by:
+      - design/cdd/delivery.md
+      - design/cdd/operations-control.md
+      - design/cdd/reliability-observability.md
+  ReplayPreview:
+    owner: Operations Control
+    authority: design/cdd/operations-control.md
+    public_wire: docs/api/openapi.yaml#/components/schemas/ReplayPreviewResponse
+  ReplayExecution:
+    owner: Operations Control
+    authority: design/cdd/operations-control.md
+    public_wire: docs/api/openapi.yaml#/components/schemas/ReplayExecuteResponse
+  MetricSnapshot:
+    owner: Reliability Observability
+    authority: design/cdd/reliability-observability.md
+    visibility: deployment
+
+api_map:
+  bootstrapOpenSlack:
+    kind: deployment_cli
+    authority: docs/architecture/adr-0005-openslack-handoff-integration.md#principals-and-deployment-evidence
+    behavior: design/cdd/caller-access.md
+    public_http: false
+  submitNotification:
+    kind: public_http
+    authority: docs/api/openapi.yaml#/paths/~1v1~1notifications/post
+    behavior: design/cdd/notification-store.md
+    composition:
+      - design/cdd/caller-access.md
+      - design/cdd/vendor-registry.md
+  queryOutbox:
+    kind: operator_http
+    authority: docs/api/openapi.yaml#/paths/~1v1~1ops~1outbox/get
+    behavior: design/cdd/operations-control.md
+  queryNotification:
+    kind: operator_http
+    authority: docs/api/openapi.yaml#/paths/~1v1~1ops~1notifications~1{notification_id}/get
+    behavior: design/cdd/operations-control.md
+  listDeadNotifications:
+    kind: operator_http
+    authority: docs/api/openapi.yaml#/paths/~1v1~1ops~1dead/get
+    behavior: design/cdd/operations-control.md
+  listAttemptHistory:
+    kind: operator_http
+    authority: docs/api/openapi.yaml#/paths/~1v1~1ops~1notifications~1{notification_id}~1attempts/get
+    behavior: design/cdd/operations-control.md
+  previewReplay:
+    kind: operator_http
+    authority: docs/api/openapi.yaml#/paths/~1v1~1ops~1replays~1preview/post
+    behavior: design/cdd/operations-control.md
+  executeReplay:
+    kind: operator_http
+    authority: docs/api/openapi.yaml#/paths/~1v1~1ops~1replays~1execute/post
+    behavior: design/cdd/operations-control.md
+  executeVendorAdminCommand:
+    kind: admin_http
+    authority: docs/api/openapi.yaml#/paths/~1v1~1vendor-admin~1commands/post
+    behavior: design/cdd/vendor-registry.md
+  listVendors:
+    kind: admin_http
+    authority: docs/api/openapi.yaml#/paths/~1v1~1vendors/get
+    behavior: design/cdd/vendor-registry.md
+  describeVendor:
+    kind: admin_http
+    authority: docs/api/openapi.yaml#/paths/~1v1~1vendors~1{vendor_id}/get
+    behavior: design/cdd/vendor-registry.md
+  listVendorEndpointVersions:
+    kind: admin_http
+    authority: docs/api/openapi.yaml#/paths/~1v1~1vendors~1{vendor_id}~1versions/get
+    behavior: design/cdd/vendor-registry.md
+  listVendorAdminAuditEvents:
+    kind: admin_http
+    authority: docs/api/openapi.yaml#/paths/~1v1~1vendor-admin~1audit-events/get
+    behavior: design/cdd/vendor-registry.md
+  liveness:
+    kind: deployment_http
+    authority: docs/api/openapi.yaml#/paths/~1health~1live/get
+  readiness:
+    kind: deployment_http
+    authority: docs/api/openapi.yaml#/paths/~1health~1ready/get
+  metrics:
+    kind: deployment_http
+    authority: docs/api/openapi.yaml#/paths/~1metrics/get
+    behavior: design/cdd/reliability-observability.md
+  Store.accept:
+    kind: internal_go
+    authority: design/cdd/notification-store.md
+  Store.claim:
+    kind: internal_go
+    authority: design/cdd/notification-store.md
+  Store.transition:
+    kind: internal_go
+    authority: design/cdd/notification-store.md
+  Store.recoverExpired:
+    kind: internal_go
+    authority: design/cdd/notification-store.md
+  Store.query:
+    kind: internal_go
+    authority: design/cdd/notification-store.md
+  VendorRegistry.isActive:
+    kind: internal_go
+    authority: design/cdd/vendor-registry.md
+  VendorRegistry.snapshot:
+    kind: internal_go
+    authority: design/cdd/vendor-registry.md
+  VendorRegistry.admin:
+    kind: internal_go
+    authority: design/cdd/vendor-registry.md
+
+permission_map:
+  submit_notification:
+    owner: Caller Access
+    authority: design/cdd/caller-access.md
+    allowed_kind: caller
+  read_notifications:
+    owner: Caller Access
+    authority: design/cdd/caller-access.md
+    allowed_kind: operator
+  replay_preview:
+    owner: Caller Access
+    authority: design/cdd/caller-access.md
+    allowed_kind: operator
+  replay_execute:
+    owner: Caller Access
+    authority: design/cdd/caller-access.md
+    allowed_kind: operator
+  replay_batch:
+    owner: Caller Access
+    authority: design/cdd/caller-access.md
+    allowed_kind: operator
+  manage_access_keys:
+    owner: Caller Access
+    authority: design/cdd/caller-access.md
+    allowed_kind: operator
+  claim_delivery:
+    owner: Notification Store
+    authority: design/cdd/notification-store.md
+    allowed_kind: worker
+  record_delivery_result:
+    owner: Notification Store
+    authority: design/cdd/notification-store.md
+    allowed_kind: worker
+  replay:
+    owner: Notification Store
+    authority: design/cdd/notification-store.md
+    allowed_kind: operator
+  recover_expired_leases:
+    owner: Notification Store
+    authority: design/cdd/notification-store.md
+    allowed_kind: system
+  read_all_notifications:
+    owner: Notification Store
+    authority: design/cdd/notification-store.md
+    allowed_kind: system
+  vendor:read-active:
+    owner: Vendor Registry
+    authority: design/cdd/vendor-registry.md
+  vendor:snapshot-latest:
+    owner: Vendor Registry
+    authority: design/cdd/vendor-registry.md
+  vendor:read-credential-locator:
+    owner: Vendor Registry
+    authority: design/cdd/vendor-registry.md
+  vendor:read:
+    owner: Vendor Registry
+    authority: design/cdd/vendor-registry.md
+  vendor:read-history:
+    owner: Vendor Registry
+    authority: design/cdd/vendor-registry.md
+  vendor:read-audit:
+    owner: Vendor Registry
+    authority: design/cdd/vendor-registry.md
+  vendor:register:
+    owner: Vendor Registry
+    authority: design/cdd/vendor-registry.md
+  vendor:update:
+    owner: Vendor Registry
+    authority: design/cdd/vendor-registry.md
+  vendor:activate:
+    owner: Vendor Registry
+    authority: design/cdd/vendor-registry.md
+  vendor:disable:
+    owner: Vendor Registry
+    authority: design/cdd/vendor-registry.md
+  vendor:rotate-credential-ref:
+    owner: Vendor Registry
+    authority: design/cdd/vendor-registry.md
+
+config_map:
+  NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST:
+    value: "sha256:<64 lowercase hex from deployment-verified OCI image digest>"
+    required: true
+    default: none
+    persistence: process-only; never notification storage
+    public_wire: docs/api/openapi.yaml#/components/headers/NotificationServiceDeploymentDigest
+    authority: docs/architecture/adr-0005-openslack-handoff-integration.md
+  PAYLOAD_MAX_BYTES:
+    value: 262144
+    unit: bytes
+    authority: design/cdd/notification-store.md
+  IDEMPOTENCY_KEY_MAX_LEN:
+    value: 255
+    authority: design/cdd/notification-store.md
+  IDEMPOTENCY_KEY_CHARSET:
+    value: "^[A-Za-z0-9._-]{1,255}$"
+    authority: design/cdd/notification-store.md
+  JUSTIFICATION_MIN_LEN:
+    value: 20
+    authority: design/cdd/notification-store.md
+  JUSTIFICATION_MAX_LEN:
+    value: 1024
+    authority: design/cdd/notification-store.md
+  LEASE_TTL_MAX:
+    value: 30s
+    authority: design/cdd/delivery.md
+    resolves: design/cdd/notification-store.md provisional maximum
+  LEASE_TTL:
+    value: 30s
+    authority: design/cdd/delivery.md
+  RECOVERY_BATCH_MAX:
+    value: 100
+    authority: design/cdd/notification-store.md
+  RECOVERY_BATCH_SIZE:
+    value: 100
+    range: 1..100
+    authority: docs/architecture/architecture.md
+  RECOVERY_INTERVAL:
+    value: 5s
+    range: "(0, LEASE_TTL]"
+    authority: docs/architecture/architecture.md
+  METRICS_COLLECTION_TIMEOUT:
+    value: 2s
+    constraint: less than Prometheus 5s scrape timeout
+    authority: design/cdd/reliability-observability.md
+  STORE_LIST_PAGE_DEFAULT:
+    value: 100
+    source_name: LIST_PAGE_DEFAULT
+    authority: design/cdd/notification-store.md
+  STORE_LIST_PAGE_MAX:
+    value: 500
+    source_name: LIST_PAGE_MAX
+    authority: design/cdd/notification-store.md
+  VENDOR_LIST_PAGE_DEFAULT:
+    value: 50
+    source_name: LIST_PAGE_DEFAULT
+    authority: design/cdd/vendor-registry.md
+  VENDOR_LIST_PAGE_MAX:
+    value: 200
+    source_name: LIST_PAGE_MAX
+    authority: design/cdd/vendor-registry.md
+  MAX_ACTIVE_KEYS_PER_PRINCIPAL:
+    value: 2
+    authority: design/cdd/caller-access.md
+  API_KEY_PEPPER_ACTIVE:
+    value: <deployment secret; env-supplied via startup allowlist; never persisted (CTRL-016)>
+    authority: docs/architecture/adr-0003-api-key-authorization.md
+  API_KEY_PEPPER_PREVIOUS:
+    value: <deployment secret; env-supplied via startup allowlist; never persisted (CTRL-016); optional grace generation>
+    authority: docs/architecture/adr-0003-api-key-authorization.md
+  CALLER_RATE_PER_MINUTE:
+    value: 60
+    authority: design/cdd/caller-access.md
+  OPERATOR_READ_RATE_PER_MINUTE:
+    value: 60
+    authority: design/cdd/caller-access.md
+  OPERATOR_MUTATION_RATE_PER_MINUTE:
+    value: 10
+    authority: design/cdd/caller-access.md
+  RATE_LIMIT_RETRY_AFTER_MAX:
+    value: 60s
+    authority: design/cdd/caller-access.md
+  VENDOR_ID_CHARSET:
+    value: "^[a-z0-9-]{1,64}$"
+    authority: design/cdd/vendor-registry.md
+  ENDPOINT_PORT_ALLOWLIST:
+    value: [443]
+    authority: design/cdd/vendor-registry.md
+  ENDPOINT_METHOD_ALLOWLIST:
+    value: [POST]
+    allowed_expansion: [POST, PUT, PATCH]
+    authority: design/cdd/vendor-registry.md
+  ENDPOINT_AUTH_STRATEGY_ALLOWLIST:
+    value: [bearer]
+    authority: design/cdd/vendor-registry.md
+    public_wire: docs/api/openapi.yaml#/components/schemas/EndpointConfigInput/properties/auth_strategy
+  CREDENTIAL_REF_SCHEME_ALLOWLIST:
+    value: [env]
+    authority: design/cdd/vendor-registry.md
+    architecture_resolution: docs/architecture/adr-0004-ssrf-safe-http.md
+  CREDENTIAL_PROFILE_VALIDATOR:
+    value: bearer-env-v1
+    required: true
+    authority: design/cdd/vendor-registry.md
+  STATIC_HEADER_NAME_ALLOWLIST:
+    value: [accept, content-type, user-agent]
+    authority: design/cdd/vendor-registry.md
+  FORBIDDEN_CIDR_EXCEPTION_RANGES:
+    value:
+      - loopback
+      - link_local
+      - metadata
+      - multicast
+      - unspecified
+      - documentation
+      - reserved
+    authority: design/cdd/vendor-registry.md
+    architecture_resolution: docs/architecture/adr-0004-ssrf-safe-http.md
+  MIN_CIDR_EXCEPTION_PREFIX_LENGTH_V4:
+    value: 8
+    authority: design/cdd/vendor-registry.md
+  MIN_CIDR_EXCEPTION_PREFIX_LENGTH_V6:
+    value: 48
+    authority: design/cdd/vendor-registry.md
+  OWNING_SCOPE_CHARSET:
+    value: "^[a-z0-9._-]{1,128}$"
+    authority: design/cdd/vendor-registry.md
+  ACTOR_SCOPE_SET_MAX:
+    value: 32
+    authority: design/cdd/vendor-registry.md
+  ENDPOINT_URL_MAX_BYTES:
+    value: 2048
+    authority: design/cdd/vendor-registry.md
+  TRANSPORT_AUTH_HEADERS_MAX:
+    value: 32
+    authority: design/cdd/vendor-registry.md
+  ADMIN_IDEMPOTENCY_KEY_CHARSET:
+    value: "^[A-Za-z0-9._-]{1,255}$"
+    authority: design/cdd/vendor-registry.md
+  DISABLE_REASON_MAX_BYTES:
+    value: 1024
+    authority: design/cdd/vendor-registry.md
+  ENDPOINT_MAX_REQUEST_BODY_BYTES:
+    value: 262144
+    authority: design/cdd/vendor-registry.md
+  MAX_ATTEMPTS:
+    value: 25
+    authority: design/cdd/delivery.md
+  MAX_AGE:
+    value: 24h
+    authority: design/cdd/delivery.md
+  RETRY_BASE_DELAY:
+    value: 1s
+    authority: design/cdd/delivery.md
+  RETRY_DELAY_CAP:
+    value: 1h
+    authority: design/cdd/delivery.md
+  RETRY_AFTER_CAP:
+    value: 1h
+    authority: design/cdd/delivery.md
+  HTTP_HARD_TIMEOUT:
+    value: 10s
+    authority: design/cdd/delivery.md
+  RESULT_COMMIT_MARGIN:
+    value: 5s
+    authority: design/cdd/delivery.md
+  DEADLINE_CLAIM_BUDGET:
+    value: 5s
+    authority: design/cdd/delivery.md
+  DESTINATION_ADDRESS_POLICY:
+    value:
+      default: deny_non_public
+      validate_all_A_AAAA: true
+      dial_pinned_address: true
+    authority: design/cdd/delivery.md
+    architecture_resolution: docs/architecture/adr-0004-ssrf-safe-http.md
+  REPLAY_BATCH_MAX:
+    value: 100
+    authority: design/cdd/operations-control.md
+  DEAD_ALERT_THRESHOLD:
+    value: 0
+    predicate: dead_count > value
+    authority: design/cdd/reliability-observability.md
+  DEAD_ALERT_FOR:
+    value: 5m
+    authority: design/cdd/reliability-observability.md
+  GO_TOOLCHAIN:
+    value: 1.26.5
+    authority: standards/technical-preferences.md
+  POSTGRESQL_SERVER:
+    value: "18.4"
+    authority: standards/technical-preferences.md

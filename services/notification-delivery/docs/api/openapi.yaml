@@ -1,0 +1,1829 @@
+openapi: 3.1.0
+info:
+  title: rc_wsman API Notification Delivery Service
+  version: 1.0.0-design
+  description: |
+    MVP contract. All B1-B5 public routes are implemented and mechanically
+    verified; deployment and recovery acceptance is recorded under docs/testing.
+    A 202 response means durable acceptance, not vendor delivery.
+    Error codes are stable public wire values. Vendor Registry command/read
+    responses narrow them per HTTP status; authentication and rate limiting
+    happen before a request enters the Vendor Registry domain contract.
+servers:
+  - url: https://rc-wsman.internal
+    description: Deployment-provided internal TLS endpoint
+security:
+  - bearerApiKey: []
+tags:
+  - name: Notifications
+  - name: Operations
+  - name: Vendor Admin
+  - name: Platform
+
+paths:
+  /v1/notifications:
+    post:
+      tags: [Notifications]
+      operationId: submitNotification
+      summary: Durably accept one outbound notification
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationSubmit"
+      responses:
+        "202":
+          description: Accepted or idempotent replay
+          headers:
+            X-Notification-Service-Deployment-Digest:
+              $ref: "#/components/headers/NotificationServiceDeploymentDigest"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationAcceptedEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: Vendor unknown, inactive or outside authorized scope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VendorUnavailableError"
+        "409":
+          description: Idempotency key exists with a different request fingerprint
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IdempotencyConflictError"
+        "413":
+          description: Decoded payload exceeds 262144 bytes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PayloadTooLargeError"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/ops/outbox:
+    get:
+      tags: [Operations]
+      operationId: queryOutbox
+      summary: Return the authorized outbox projection
+      parameters:
+        - $ref: "#/components/parameters/VendorFilter"
+      responses:
+        "200":
+          description: Authorized projection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OutboxProjectionEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/ops/notifications/{notification_id}:
+    get:
+      tags: [Operations]
+      operationId: queryNotification
+      summary: Return one sanitized notification status
+      parameters:
+        - $ref: "#/components/parameters/NotificationId"
+      responses:
+        "200":
+          description: Notification status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationStatusEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/ops/dead:
+    get:
+      tags: [Operations]
+      operationId: listDeadNotifications
+      summary: List authorized dead notifications
+      parameters:
+        - $ref: "#/components/parameters/VendorFilter"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/StoreLimit"
+      responses:
+        "200":
+          description: Stable cursor page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeadPageEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/ops/notifications/{notification_id}/attempts:
+    get:
+      tags: [Operations]
+      operationId: listAttemptHistory
+      summary: List sanitized append-only attempt history
+      parameters:
+        - $ref: "#/components/parameters/NotificationId"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/StoreLimit"
+      responses:
+        "200":
+          description: Stable cursor page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttemptPageEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/ops/replays/preview:
+    post:
+      tags: [Operations]
+      operationId: previewReplay
+      summary: Read-only eligibility preview for explicit notifications
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplayPreviewRequest"
+      responses:
+        "200":
+          description: Per-input preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplayPreviewResponseEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/ops/replays/execute:
+    post:
+      tags: [Operations]
+      operationId: executeReplay
+      summary: Best-effort replay of explicit notification versions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReplayExecuteRequest"
+      responses:
+        "200":
+          description: Per-input succeeded, skipped or failed results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplayExecuteResponseEnvelope"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/vendor-admin/commands:
+    post:
+      tags: [Vendor Admin]
+      operationId: executeVendorAdminCommand
+      summary: Execute one closed, idempotent vendor administration command
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminCommand"
+      responses:
+        "200":
+          description: Command applied or idempotently replayed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminResultEnvelope"
+        "400":
+          $ref: "#/components/responses/VendorAdminBadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/VendorAdminNotFound"
+        "409":
+          description: Expected revision, transition or idempotency conflict
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VendorAdminConflictError"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/VendorAdminCommitFailure"
+
+  /v1/vendors:
+    get:
+      tags: [Vendor Admin]
+      operationId: listVendors
+      parameters:
+        - $ref: "#/components/parameters/ScopeFilterKind"
+        - $ref: "#/components/parameters/ScopeFilterVendorIds"
+        - $ref: "#/components/parameters/ScopeFilterOwningScopes"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/VendorLimit"
+      responses:
+        "200":
+          description: Authorized vendor page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VendorPageEnvelope"
+        "400":
+          $ref: "#/components/responses/VendorReadBadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/VendorReadForbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/vendors/{vendor_id}:
+    get:
+      tags: [Vendor Admin]
+      operationId: describeVendor
+      parameters:
+        - $ref: "#/components/parameters/VendorId"
+      responses:
+        "200":
+          description: Authorized vendor state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VendorStateSummaryEnvelope"
+        "400":
+          $ref: "#/components/responses/VendorReadBadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/VendorReadForbidden"
+        "404":
+          $ref: "#/components/responses/VendorReadNotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/vendors/{vendor_id}/versions:
+    get:
+      tags: [Vendor Admin]
+      operationId: listVendorEndpointVersions
+      parameters:
+        - $ref: "#/components/parameters/VendorId"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/VendorLimit"
+      responses:
+        "200":
+          description: Immutable endpoint version page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EndpointVersionPageEnvelope"
+        "400":
+          $ref: "#/components/responses/VendorReadBadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/VendorReadForbidden"
+        "404":
+          $ref: "#/components/responses/VendorReadNotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /v1/vendor-admin/audit-events:
+    get:
+      tags: [Vendor Admin]
+      operationId: listVendorAdminAuditEvents
+      parameters:
+        - $ref: "#/components/parameters/ScopeFilterKind"
+        - $ref: "#/components/parameters/ScopeFilterVendorIds"
+        - $ref: "#/components/parameters/ScopeFilterOwningScopes"
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/VendorLimit"
+      responses:
+        "200":
+          description: Snapshot-bounded audit page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditPageEnvelope"
+        "400":
+          $ref: "#/components/responses/VendorReadBadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/VendorReadForbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /health/live:
+    get:
+      tags: [Platform]
+      operationId: liveness
+      security: []
+      x-network-boundary: deployment-only
+      responses:
+        "200":
+          description: Process is alive
+
+  /health/ready:
+    get:
+      tags: [Platform]
+      operationId: readiness
+      security: []
+      x-network-boundary: deployment-only
+      responses:
+        "200":
+          description: Process can accept traffic
+        "503":
+          description: Dependency/config/schema readiness failed
+
+  /health/version:
+    get:
+      tags: [Platform]
+      operationId: deploymentVersion
+      security: []
+      x-network-boundary: deployment-only
+      responses:
+        "200":
+          description: Process is ready and reports the verified deployment digest
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentVersion"
+        "503":
+          description: Process is not ready; deployment identity is still reported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeploymentVersion"
+
+  /metrics:
+    get:
+      tags: [Platform]
+      operationId: metrics
+      security: []
+      x-network-boundary: deployment-only
+      responses:
+        "200":
+          description: Prometheus exposition
+          content:
+            text/plain:
+              schema:
+                type: string
+        "503":
+          description: Current Store projection unavailable; no false business zeros
+
+components:
+  securitySchemes:
+    bearerApiKey:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-api-key
+
+  headers:
+    NotificationServiceDeploymentDigest:
+      description: Current verified OCI deployment digest for this service process; identical replay receipts return the current deployment value
+      required: true
+      schema:
+        type: string
+        pattern: "^sha256:[0-9a-f]{64}$"
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9._-]{1,255}$"
+    NotificationId:
+      name: notification_id
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    VendorId:
+      name: vendor_id
+      in: path
+      required: true
+      schema:
+        $ref: "#/components/schemas/VendorId"
+    VendorFilter:
+      name: vendor_id
+      in: query
+      required: false
+      schema:
+        $ref: "#/components/schemas/VendorId"
+    ScopeFilterKind:
+      name: scope_filter[kind]
+      in: query
+      required: false
+      description: Discriminator for the closed scope-filter union; when present, exactly one matching value parameter is required
+      schema:
+        type: string
+        enum: [vendor_ids, owning_scopes]
+    ScopeFilterVendorIds:
+      name: scope_filter[vendor_ids]
+      in: query
+      required: false
+      description: Repeated vendor IDs; valid only when scope_filter[kind] is vendor_ids and may only attenuate the authenticated actor scope
+      style: form
+      explode: true
+      schema:
+        type: array
+        minItems: 1
+        maxItems: 32
+        uniqueItems: true
+        items:
+          $ref: "#/components/schemas/VendorId"
+    ScopeFilterOwningScopes:
+      name: scope_filter[owning_scopes]
+      in: query
+      required: false
+      description: Repeated owning scopes; valid only when scope_filter[kind] is owning_scopes and may only attenuate the authenticated actor scope
+      style: form
+      explode: true
+      schema:
+        type: array
+        minItems: 1
+        maxItems: 32
+        uniqueItems: true
+        items:
+          type: string
+          pattern: "^[a-z0-9._-]{1,128}$"
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: Opaque integrity-protected cursor bound to operation, effective scope and snapshot
+      schema:
+        type: string
+        maxLength: 4096
+    StoreLimit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 500
+        default: 100
+    VendorLimit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+
+  responses:
+    BadRequest:
+      description: Closed schema or validation failure
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Missing or invalid credential
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/UnauthenticatedError"
+    Forbidden:
+      description: Authenticated but capability/scope rejected
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ForbiddenError"
+    NotFound:
+      description: Missing or outside authorized scope; response does not distinguish
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/NotFoundError"
+    Unavailable:
+      description: Authoritative dependency or commit outcome unavailable
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RateLimited:
+      description: Principal operation bucket exhausted
+      headers:
+        Retry-After:
+          required: true
+          description: Bounded whole-second retry delay
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 60
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/RateLimitedError"
+    VendorAdminBadRequest:
+      description: Invalid actor context, command, endpoint policy or credential reference
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/VendorAdminBadRequestError"
+    VendorAdminNotFound:
+      description: Target is missing or outside the authorized owning scope; response does not distinguish
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/VendorAdminNotFoundError"
+    VendorAdminCommitFailure:
+      description: Transaction rollback is confirmed or commit outcome is unknown
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/VendorAdminCommitFailureError"
+    VendorReadBadRequest:
+      description: Invalid actor context, command, cursor or page limit
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/VendorReadBadRequestError"
+    VendorReadForbidden:
+      description: Capability or requested scope filter is forbidden
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/VendorReadForbiddenError"
+    VendorReadNotFound:
+      description: Vendor/version is missing, inactive or outside authorized scope; response does not distinguish
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/VendorReadNotFoundError"
+
+  schemas:
+    VendorId:
+      type: string
+      pattern: "^[a-z0-9-]{1,64}$"
+
+    Error:
+      type: object
+      additionalProperties: false
+      required: [request_id, error]
+      properties:
+        request_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        error:
+          $ref: "#/components/schemas/ErrorDetail"
+
+    ErrorDetail:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum:
+            - INVALID_REQUEST
+            - INVALID_ACTOR_CONTEXT
+            - UNAUTHENTICATED
+            - FORBIDDEN
+            - VENDOR_UNAVAILABLE
+            - VENDOR_INACTIVE_OR_UNKNOWN
+            - VENDOR_ID_UNAVAILABLE
+            - VENDOR_NOT_FOUND
+            - NOT_FOUND
+            - IDEMPOTENCY_CONFLICT
+            - PAYLOAD_TOO_LARGE
+            - RATE_LIMITED
+            - SERVICE_UNAVAILABLE
+            - COMMIT_OUTCOME_UNKNOWN
+            - COMMIT_ROLLED_BACK
+            - INVALID_CURSOR
+            - INVALID_PAGE_LIMIT
+            - INVALID_JUSTIFICATION
+            - INVALID_BATCH
+            - STALE_VERSION
+            - ILLEGAL_TRANSITION
+            - OUTCOME_UNKNOWN
+            - INVALID_COMMAND
+            - EXPECTED_VERSION_MISMATCH
+            - INVALID_ENDPOINT_POLICY
+            - INVALID_CREDENTIAL_REF
+            - INVALID_TRANSITION
+            - VENDOR_DISABLED_UPDATE_FORBIDDEN
+            - FORBIDDEN_SCOPE_FILTER
+            - VERSION_NOT_FOUND
+        message:
+          type: string
+          maxLength: 512
+
+    VendorUnavailableError:
+      $ref: "#/components/schemas/VendorUnavailableErrorEnvelope"
+
+    VendorUnavailableErrorEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          properties:
+            error:
+              allOf:
+                - $ref: "#/components/schemas/ErrorDetail"
+                - type: object
+                  properties:
+                    code:
+                      const: VENDOR_UNAVAILABLE
+
+    IdempotencyConflictError:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          properties:
+            error:
+              allOf:
+                - $ref: "#/components/schemas/ErrorDetail"
+                - type: object
+                  properties:
+                    code:
+                      const: IDEMPOTENCY_CONFLICT
+
+    PayloadTooLargeError:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          properties:
+            error:
+              allOf:
+                - $ref: "#/components/schemas/ErrorDetail"
+                - type: object
+                  properties:
+                    code:
+                      const: PAYLOAD_TOO_LARGE
+
+    RateLimitedError:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          properties:
+            error:
+              allOf:
+                - $ref: "#/components/schemas/ErrorDetail"
+                - type: object
+                  properties:
+                    code:
+                      const: RATE_LIMITED
+
+    UnauthenticatedError:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          properties:
+            error:
+              allOf:
+                - $ref: "#/components/schemas/ErrorDetail"
+                - type: object
+                  properties:
+                    code:
+                      const: UNAUTHENTICATED
+
+    ForbiddenError:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          properties:
+            error:
+              allOf:
+                - $ref: "#/components/schemas/ErrorDetail"
+                - type: object
+                  properties:
+                    code:
+                      const: FORBIDDEN
+
+    NotFoundError:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          properties:
+            error:
+              allOf:
+                - $ref: "#/components/schemas/ErrorDetail"
+                - type: object
+                  properties:
+                    code:
+                      const: NOT_FOUND
+
+    VendorAdminBadRequestError:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          properties:
+            error:
+              allOf:
+                - $ref: "#/components/schemas/ErrorDetail"
+                - type: object
+                  properties:
+                    code:
+                      enum:
+                        - INVALID_ACTOR_CONTEXT
+                        - INVALID_COMMAND
+                        - INVALID_ENDPOINT_POLICY
+                        - INVALID_CREDENTIAL_REF
+
+    VendorAdminNotFoundError:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          properties:
+            error:
+              allOf:
+                - $ref: "#/components/schemas/ErrorDetail"
+                - type: object
+                  properties:
+                    code:
+                      const: VENDOR_NOT_FOUND
+
+    VendorAdminConflictError:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          properties:
+            error:
+              allOf:
+                - $ref: "#/components/schemas/ErrorDetail"
+                - type: object
+                  properties:
+                    code:
+                      enum:
+                        - VENDOR_ID_UNAVAILABLE
+                        - EXPECTED_VERSION_MISMATCH
+                        - INVALID_TRANSITION
+                        - VENDOR_DISABLED_UPDATE_FORBIDDEN
+                        - IDEMPOTENCY_CONFLICT
+
+    VendorAdminCommitFailureError:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          properties:
+            error:
+              allOf:
+                - $ref: "#/components/schemas/ErrorDetail"
+                - type: object
+                  properties:
+                    code:
+                      enum:
+                        - COMMIT_ROLLED_BACK
+                        - COMMIT_OUTCOME_UNKNOWN
+
+    VendorReadBadRequestError:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          properties:
+            error:
+              allOf:
+                - $ref: "#/components/schemas/ErrorDetail"
+                - type: object
+                  properties:
+                    code:
+                      enum:
+                        - INVALID_ACTOR_CONTEXT
+                        - INVALID_COMMAND
+                        - INVALID_CURSOR
+                        - INVALID_PAGE_LIMIT
+
+    VendorReadForbiddenError:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          properties:
+            error:
+              allOf:
+                - $ref: "#/components/schemas/ErrorDetail"
+                - type: object
+                  properties:
+                    code:
+                      enum:
+                        - FORBIDDEN
+                        - FORBIDDEN_SCOPE_FILTER
+
+    VendorReadNotFoundError:
+      allOf:
+        - $ref: "#/components/schemas/Error"
+        - type: object
+          properties:
+            error:
+              allOf:
+                - $ref: "#/components/schemas/ErrorDetail"
+                - type: object
+                  properties:
+                    code:
+                      enum:
+                        - VENDOR_INACTIVE_OR_UNKNOWN
+                        - VENDOR_NOT_FOUND
+                        - VERSION_NOT_FOUND
+
+    SuccessEnvelope:
+      type: object
+      additionalProperties: false
+      required: [request_id, data]
+      properties:
+        request_id:
+          type: string
+          minLength: 1
+          maxLength: 128
+        data: {}
+
+    NotificationAcceptedEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - properties:
+            data: {$ref: "#/components/schemas/NotificationAccepted"}
+
+    OutboxProjectionEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - properties:
+            data: {$ref: "#/components/schemas/OutboxProjection"}
+
+    NotificationStatusEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - properties:
+            data: {$ref: "#/components/schemas/NotificationStatus"}
+
+    DeadPageEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - properties:
+            data: {$ref: "#/components/schemas/DeadPage"}
+
+    AttemptPageEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - properties:
+            data: {$ref: "#/components/schemas/AttemptPage"}
+
+    ReplayPreviewResponseEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - properties:
+            data: {$ref: "#/components/schemas/ReplayPreviewResponse"}
+
+    ReplayExecuteResponseEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - properties:
+            data: {$ref: "#/components/schemas/ReplayExecuteResponse"}
+
+    AdminResultEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - properties:
+            data: {$ref: "#/components/schemas/AdminResult"}
+
+    VendorPageEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - properties:
+            data: {$ref: "#/components/schemas/VendorPage"}
+
+    VendorStateSummaryEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - properties:
+            data: {$ref: "#/components/schemas/VendorStateSummary"}
+
+    EndpointVersionPageEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - properties:
+            data: {$ref: "#/components/schemas/EndpointVersionPage"}
+
+    AuditPageEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/SuccessEnvelope"
+        - properties:
+            data: {$ref: "#/components/schemas/AuditPage"}
+
+    NotificationSubmit:
+      type: object
+      additionalProperties: false
+      required: [vendor_id, payload_base64]
+      properties:
+        vendor_id:
+          $ref: "#/components/schemas/VendorId"
+        payload_base64:
+          type: string
+          contentEncoding: base64
+          description: Decoded body maximum is 262144 bytes
+
+    NotificationAccepted:
+      type: object
+      additionalProperties: false
+      required: [notification_id, state, accepted_at, idempotent_replay]
+      properties:
+        notification_id:
+          type: string
+        state:
+          const: pending
+        accepted_at:
+          type: string
+          format: date-time
+        idempotent_replay:
+          type: boolean
+
+    OutboxProjection:
+      type: object
+      additionalProperties: false
+      required: [pending_count, in_flight_count, delivered_count, dead_count, oldest_pending_age_seconds]
+      properties:
+        pending_count: {type: integer, minimum: 0}
+        in_flight_count: {type: integer, minimum: 0}
+        delivered_count: {type: integer, minimum: 0}
+        dead_count: {type: integer, minimum: 0}
+        oldest_pending_age_seconds: {type: number, minimum: 0}
+
+    NotificationStatus:
+      type: object
+      additionalProperties: false
+      required:
+        - notification_id
+        - vendor_id
+        - state
+        - version
+        - attempt_count
+        - delivery_cycle_started_at
+        - replay_count
+        - created_at
+      properties:
+        notification_id: {type: string}
+        vendor_id: {$ref: "#/components/schemas/VendorId"}
+        state:
+          enum: [pending, in_flight, delivered, dead]
+        version: {type: integer, minimum: 1}
+        attempt_count: {type: integer, minimum: 0}
+        delivery_cycle_started_at: {type: string, format: date-time}
+        replay_count: {type: integer, minimum: 0}
+        last_outcome_class:
+          enum: [success, retryable_failure, permanent_failure]
+        last_error_code: {type: string, maxLength: 128}
+        created_at: {type: string, format: date-time}
+        delivered_at: {type: string, format: date-time}
+        dead_at: {type: string, format: date-time}
+        replayed_at: {type: string, format: date-time}
+
+    DeadItem:
+      type: object
+      additionalProperties: false
+      required: [notification_id, vendor_id, state, version, attempt_count, replay_count, dead_at, dead_reason]
+      properties:
+        notification_id: {type: string}
+        vendor_id: {$ref: "#/components/schemas/VendorId"}
+        state: {const: dead}
+        version: {type: integer, minimum: 1}
+        attempt_count: {type: integer, minimum: 0}
+        replay_count: {type: integer, minimum: 0}
+        dead_at: {type: string, format: date-time}
+        dead_reason: {type: string, maxLength: 128}
+
+    DeadPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/DeadItem"}
+        next_cursor: {type: string}
+
+    AttemptItem:
+      type: object
+      additionalProperties: false
+      required: [attempt_seq, event_kind, recorded_at]
+      properties:
+        attempt_seq: {type: integer, minimum: 1}
+        event_kind:
+          enum: [claimed, outcome, recovery, replay]
+        config_version: {type: integer, minimum: 1}
+        result_kind:
+          enum: [http_response, transport_failure, unknown_result, policy_termination]
+        outcome_class:
+          enum: [success, retryable_failure, permanent_failure]
+        http_status: {type: integer, minimum: 100, maximum: 599}
+        error_code: {type: string, maxLength: 128}
+        reason: {type: string, maxLength: 128}
+        recorded_at: {type: string, format: date-time}
+
+    DeploymentVersion:
+      type: object
+      additionalProperties: false
+      required: [ready, deployment_digest]
+      properties:
+        ready: {type: boolean}
+        deployment_digest:
+          type: string
+          pattern: "^sha256:[0-9a-f]{64}$"
+
+    AttemptPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/AttemptItem"}
+        next_cursor: {type: string}
+
+    ReplayPreviewRequest:
+      type: object
+      additionalProperties: false
+      required: [notification_ids, justification]
+      properties:
+        notification_ids:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          items: {type: string}
+        justification:
+          type: string
+          minLength: 20
+          maxLength: 1024
+
+    ReplayPreviewItem:
+      oneOf:
+        - $ref: "#/components/schemas/ReplayPreviewEligible"
+        - $ref: "#/components/schemas/ReplayPreviewNotFound"
+        - $ref: "#/components/schemas/ReplayPreviewNotDead"
+
+    ReplayPreviewEligible:
+      type: object
+      additionalProperties: false
+      required: [input_index, notification_id, outcome, current_state, expected_version]
+      properties:
+        input_index: {type: integer, minimum: 0}
+        notification_id: {type: string}
+        outcome: {const: eligible}
+        current_state: {const: dead}
+        expected_version: {type: integer, minimum: 1}
+
+    ReplayPreviewNotFound:
+      type: object
+      additionalProperties: false
+      required: [input_index, notification_id, outcome, reason]
+      properties:
+        input_index: {type: integer, minimum: 0}
+        notification_id: {type: string}
+        outcome: {const: skipped}
+        reason: {const: not_found}
+
+    ReplayPreviewNotDead:
+      type: object
+      additionalProperties: false
+      required: [input_index, notification_id, outcome, reason, current_state]
+      properties:
+        input_index: {type: integer, minimum: 0}
+        notification_id: {type: string}
+        outcome: {const: skipped}
+        reason: {const: not_dead}
+        current_state:
+          enum: [pending, in_flight, delivered]
+
+    ReplayPreviewResponse:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/ReplayPreviewItem"}
+
+    ReplayExecuteInput:
+      type: object
+      additionalProperties: false
+      required: [notification_id, expected_version]
+      properties:
+        notification_id: {type: string}
+        expected_version: {type: integer, minimum: 1}
+
+    ReplayExecuteRequest:
+      type: object
+      additionalProperties: false
+      required: [items, justification]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          uniqueItems: true
+          description: Entries must also have unique notification_id values, regardless of expected_version
+          x-unique-by: notification_id
+          items: {$ref: "#/components/schemas/ReplayExecuteInput"}
+        justification:
+          type: string
+          minLength: 20
+          maxLength: 1024
+
+    ReplaySucceeded:
+      type: object
+      additionalProperties: false
+      required: [input_index, notification_id, state, version]
+      properties:
+        input_index: {type: integer, minimum: 0}
+        notification_id: {type: string}
+        state: {const: pending}
+        version: {type: integer, minimum: 1}
+
+    ReplaySkipped:
+      type: object
+      additionalProperties: false
+      required: [input_index, notification_id, reason]
+      properties:
+        input_index: {type: integer, minimum: 0}
+        notification_id: {type: string}
+        reason:
+          enum: [not_found, stale_version, illegal_transition]
+
+    ReplayFailed:
+      type: object
+      additionalProperties: false
+      required: [input_index, notification_id, reason]
+      properties:
+        input_index: {type: integer, minimum: 0}
+        notification_id: {type: string}
+        reason:
+          enum: [forbidden, unavailable, outcome_unknown]
+
+    ReplayExecuteResponse:
+      type: object
+      additionalProperties: false
+      required: [succeeded, skipped, failed]
+      properties:
+        succeeded:
+          type: array
+          items: {$ref: "#/components/schemas/ReplaySucceeded"}
+        skipped:
+          type: array
+          items: {$ref: "#/components/schemas/ReplaySkipped"}
+        failed:
+          type: array
+          items: {$ref: "#/components/schemas/ReplayFailed"}
+
+    HeaderRule:
+      oneOf:
+        - $ref: "#/components/schemas/LiteralHeaderRule"
+        - $ref: "#/components/schemas/CredentialHeaderRule"
+
+    LiteralHeaderRule:
+      type: object
+      additionalProperties: false
+      required: [kind, name, value]
+      properties:
+        kind: {const: literal}
+        name:
+          type: string
+          pattern: "^[!#$%&'*+.^_`|~0-9a-z-]{1,128}$"
+        value:
+          type: string
+          maxLength: 1024
+          pattern: "^[^\\u0000\\r\\n]*$"
+
+    CredentialHeaderRule:
+      type: object
+      additionalProperties: false
+      required: [kind, name, credential_field]
+      properties:
+        kind: {const: credential_field}
+        name:
+          type: string
+          pattern: "^[!#$%&'*+.^_`|~0-9a-z-]{1,128}$"
+        credential_field:
+          type: string
+          pattern: "^[A-Za-z0-9_.-]{1,128}$"
+
+    IdempotencyMappingV1:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [mode]
+          properties:
+            mode: {const: none}
+        - type: object
+          additionalProperties: false
+          required: [mode, header_name]
+          properties:
+            mode: {const: header}
+            header_name: {type: string, maxLength: 128}
+        - type: object
+          additionalProperties: false
+          required: [mode, field_name]
+          properties:
+            mode: {const: body_field}
+            field_name:
+              type: string
+              pattern: "^[A-Za-z0-9_.-]{1,128}$"
+
+    IdempotencyMappingV2:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [mode]
+          properties:
+            mode: {const: none}
+        - type: object
+          additionalProperties: false
+          required: [mode, source, header_names]
+          properties:
+            mode: {const: headers}
+            source: {enum: [notification_id, ingress_idempotency_key]}
+            header_names:
+              type: array
+              minItems: 1
+              maxItems: 4
+              uniqueItems: true
+              items:
+                type: string
+                pattern: "^[!#$%&'*+.^_`|~0-9a-z-]{1,128}$"
+
+    EndpointConfig:
+      oneOf:
+        - $ref: "#/components/schemas/EndpointConfigV1"
+        - $ref: "#/components/schemas/EndpointConfigV2Bearer"
+        - $ref: "#/components/schemas/EndpointConfigV2None"
+
+    EndpointConfigV1:
+      type: object
+      additionalProperties: false
+      required:
+        - endpoint_target
+        - method
+        - transport_auth_headers
+        - outbound_idempotency_mapping
+        - endpoint_policy
+        - auth_strategy
+        - credential_ref
+      properties:
+        endpoint_target:
+          $ref: "#/components/schemas/EndpointTargetInput"
+        method:
+          enum: [POST, PUT, PATCH]
+        transport_auth_headers:
+          type: array
+          maxItems: 32
+          items: {$ref: "#/components/schemas/HeaderRule"}
+        outbound_idempotency_mapping:
+          $ref: "#/components/schemas/IdempotencyMappingV1"
+        endpoint_policy:
+          $ref: "#/components/schemas/EndpointPolicy"
+        auth_strategy:
+          enum: [bearer]
+        credential_ref:
+          $ref: "#/components/schemas/CredentialRefInput"
+
+    EndpointConfigV2Bearer:
+      type: object
+      additionalProperties: false
+      required:
+        - config_schema_version
+        - response_policy
+        - endpoint_target
+        - method
+        - transport_auth_headers
+        - outbound_idempotency_mapping
+        - endpoint_policy
+        - auth_strategy
+        - credential_ref
+      properties:
+        config_schema_version: {const: 2}
+        response_policy: {enum: [http_status_v1, json_ack_v1]}
+        endpoint_target: {$ref: "#/components/schemas/EndpointTargetInput"}
+        method: {enum: [POST, PUT, PATCH]}
+        transport_auth_headers:
+          type: array
+          maxItems: 32
+          items: {$ref: "#/components/schemas/HeaderRule"}
+        outbound_idempotency_mapping: {$ref: "#/components/schemas/IdempotencyMappingV2"}
+        endpoint_policy: {$ref: "#/components/schemas/EndpointPolicy"}
+        auth_strategy: {const: bearer}
+        credential_ref: {$ref: "#/components/schemas/CredentialRefInput"}
+
+    EndpointConfigV2None:
+      type: object
+      additionalProperties: false
+      required:
+        - config_schema_version
+        - response_policy
+        - endpoint_target
+        - method
+        - transport_auth_headers
+        - outbound_idempotency_mapping
+        - endpoint_policy
+        - auth_strategy
+      properties:
+        config_schema_version: {const: 2}
+        response_policy: {enum: [http_status_v1, json_ack_v1]}
+        endpoint_target: {$ref: "#/components/schemas/EndpointTargetInput"}
+        method: {enum: [POST, PUT, PATCH]}
+        transport_auth_headers:
+          type: array
+          maxItems: 32
+          items: {$ref: "#/components/schemas/LiteralHeaderRule"}
+        outbound_idempotency_mapping: {$ref: "#/components/schemas/IdempotencyMappingV2"}
+        endpoint_policy: {$ref: "#/components/schemas/EndpointPolicy"}
+        auth_strategy: {const: none}
+
+    ReplacementEndpointPolicy:
+      oneOf:
+        - $ref: "#/components/schemas/ReplacementEndpointPolicyV1"
+        - $ref: "#/components/schemas/ReplacementEndpointPolicyV2Bearer"
+        - $ref: "#/components/schemas/ReplacementEndpointPolicyV2None"
+
+    ReplacementEndpointPolicyV1:
+      type: object
+      additionalProperties: false
+      required:
+        - endpoint_target
+        - method
+        - transport_auth_headers
+        - outbound_idempotency_mapping
+        - endpoint_policy
+        - auth_strategy
+      properties:
+        endpoint_target:
+          $ref: "#/components/schemas/EndpointTargetInput"
+        method:
+          enum: [POST, PUT, PATCH]
+        transport_auth_headers:
+          type: array
+          maxItems: 32
+          items: {$ref: "#/components/schemas/HeaderRule"}
+        outbound_idempotency_mapping:
+          $ref: "#/components/schemas/IdempotencyMappingV1"
+        endpoint_policy:
+          $ref: "#/components/schemas/EndpointPolicy"
+        auth_strategy:
+          enum: [bearer]
+
+    ReplacementEndpointPolicyV2Bearer:
+      type: object
+      additionalProperties: false
+      required:
+        - config_schema_version
+        - response_policy
+        - endpoint_target
+        - method
+        - transport_auth_headers
+        - outbound_idempotency_mapping
+        - endpoint_policy
+        - auth_strategy
+      properties:
+        config_schema_version: {const: 2}
+        response_policy: {enum: [http_status_v1, json_ack_v1]}
+        endpoint_target: {$ref: "#/components/schemas/EndpointTargetInput"}
+        method: {enum: [POST, PUT, PATCH]}
+        transport_auth_headers:
+          type: array
+          maxItems: 32
+          items: {$ref: "#/components/schemas/HeaderRule"}
+        outbound_idempotency_mapping: {$ref: "#/components/schemas/IdempotencyMappingV2"}
+        endpoint_policy: {$ref: "#/components/schemas/EndpointPolicy"}
+        auth_strategy: {const: bearer}
+
+    ReplacementEndpointPolicyV2None:
+      type: object
+      additionalProperties: false
+      required:
+        - config_schema_version
+        - response_policy
+        - endpoint_target
+        - method
+        - transport_auth_headers
+        - outbound_idempotency_mapping
+        - endpoint_policy
+        - auth_strategy
+      properties:
+        config_schema_version: {const: 2}
+        response_policy: {enum: [http_status_v1, json_ack_v1]}
+        endpoint_target: {$ref: "#/components/schemas/EndpointTargetInput"}
+        method: {enum: [POST, PUT, PATCH]}
+        transport_auth_headers:
+          type: array
+          maxItems: 32
+          items: {$ref: "#/components/schemas/LiteralHeaderRule"}
+        outbound_idempotency_mapping: {$ref: "#/components/schemas/IdempotencyMappingV2"}
+        endpoint_policy: {$ref: "#/components/schemas/EndpointPolicy"}
+        auth_strategy: {const: none}
+
+    EndpointTargetInput:
+      type: object
+      additionalProperties: false
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+          maxLength: 2048
+        private_network_exception:
+          $ref: "#/components/schemas/PrivateNetworkException"
+
+    PrivateNetworkException:
+      type: object
+      additionalProperties: false
+      required: [hostname, port, cidr]
+      properties:
+        hostname: {type: string, minLength: 1, maxLength: 253}
+        port: {type: integer, minimum: 1, maximum: 65535}
+        cidr: {type: string, minLength: 3, maxLength: 64}
+
+    EndpointPolicy:
+      type: object
+      additionalProperties: false
+      required: [allowed_request_header_names, forbidden_request_header_names, max_request_body_bytes]
+      properties:
+        allowed_request_header_names:
+          type: array
+          maxItems: 32
+          uniqueItems: true
+          items:
+            type: string
+            pattern: "^[!#$%&'*+.^_`|~0-9a-z-]{1,128}$"
+        forbidden_request_header_names:
+          type: array
+          maxItems: 32
+          uniqueItems: true
+          items:
+            type: string
+            pattern: "^[!#$%&'*+.^_`|~0-9a-z-]{1,128}$"
+        max_request_body_bytes:
+          type: integer
+          minimum: 1
+          maximum: 262144
+
+    CredentialRefInput:
+      type: object
+      additionalProperties: false
+      required: [scheme, opaque_handle]
+      properties:
+        scheme: {const: env}
+        opaque_handle:
+          type: string
+          pattern: "^[A-Z][A-Z0-9_]{0,127}$"
+        reference_version:
+          type: string
+          minLength: 1
+          maxLength: 128
+
+    ScopeFilter:
+      oneOf:
+        - type: object
+          additionalProperties: false
+          required: [kind, vendor_ids]
+          properties:
+            kind: {const: vendor_ids}
+            vendor_ids:
+              type: array
+              minItems: 1
+              maxItems: 32
+              uniqueItems: true
+              items: {$ref: "#/components/schemas/VendorId"}
+        - type: object
+          additionalProperties: false
+          required: [kind, owning_scopes]
+          properties:
+            kind: {const: owning_scopes}
+            owning_scopes:
+              type: array
+              minItems: 1
+              maxItems: 32
+              uniqueItems: true
+              items:
+                type: string
+                pattern: "^[a-z0-9._-]{1,128}$"
+
+    AdminCommand:
+      oneOf:
+        - $ref: "#/components/schemas/RegisterVendorCommand"
+        - $ref: "#/components/schemas/UpdateVendorCommand"
+        - $ref: "#/components/schemas/ActivateVendorCommand"
+        - $ref: "#/components/schemas/DisableVendorCommand"
+        - $ref: "#/components/schemas/RotateCredentialCommand"
+      discriminator:
+        propertyName: operation
+
+    RegisterVendorCommand:
+      type: object
+      additionalProperties: false
+      required: [operation, vendor_id, expected_record_revision, idempotency_key, body]
+      properties:
+        operation: {const: register}
+        vendor_id: {$ref: "#/components/schemas/VendorId"}
+        expected_record_revision: {const: 0}
+        idempotency_key: {type: string, pattern: "^[A-Za-z0-9._-]{1,255}$"}
+        body:
+          type: object
+          additionalProperties: false
+          required: [owning_scope, initial_config]
+          properties:
+            owning_scope: {type: string, pattern: "^[a-z0-9._-]{1,128}$"}
+            initial_config: {$ref: "#/components/schemas/EndpointConfig"}
+
+    UpdateVendorCommand:
+      type: object
+      additionalProperties: false
+      required: [operation, vendor_id, expected_record_revision, idempotency_key, body]
+      properties:
+        operation: {const: update_version}
+        vendor_id: {$ref: "#/components/schemas/VendorId"}
+        expected_record_revision: {type: integer, minimum: 1}
+        idempotency_key: {type: string, pattern: "^[A-Za-z0-9._-]{1,255}$"}
+        body:
+          type: object
+          additionalProperties: false
+          required: [replacement_policy]
+          properties:
+            replacement_policy: {$ref: "#/components/schemas/ReplacementEndpointPolicy"}
+
+    ActivateVendorCommand:
+      type: object
+      additionalProperties: false
+      required: [operation, vendor_id, expected_record_revision, idempotency_key, body]
+      properties:
+        operation: {const: activate}
+        vendor_id: {$ref: "#/components/schemas/VendorId"}
+        expected_record_revision: {type: integer, minimum: 1}
+        idempotency_key: {type: string, pattern: "^[A-Za-z0-9._-]{1,255}$"}
+        body:
+          type: object
+          additionalProperties: false
+
+    DisableVendorCommand:
+      type: object
+      additionalProperties: false
+      required: [operation, vendor_id, expected_record_revision, idempotency_key, body]
+      properties:
+        operation: {const: disable}
+        vendor_id: {$ref: "#/components/schemas/VendorId"}
+        expected_record_revision: {type: integer, minimum: 1}
+        idempotency_key: {type: string, pattern: "^[A-Za-z0-9._-]{1,255}$"}
+        body:
+          type: object
+          additionalProperties: false
+          required: [reason]
+          properties:
+            reason: {type: string, minLength: 1, maxLength: 1024}
+
+    RotateCredentialCommand:
+      type: object
+      additionalProperties: false
+      required: [operation, vendor_id, expected_record_revision, idempotency_key, body]
+      properties:
+        operation: {const: rotate_credential_ref}
+        vendor_id: {$ref: "#/components/schemas/VendorId"}
+        expected_record_revision: {type: integer, minimum: 1}
+        idempotency_key: {type: string, pattern: "^[A-Za-z0-9._-]{1,255}$"}
+        body:
+          type: object
+          additionalProperties: false
+          required: [new_credential_ref]
+          properties:
+            new_credential_ref:
+              $ref: "#/components/schemas/CredentialRefInput"
+
+    AdminResult:
+      type: object
+      additionalProperties: false
+      required: [operation, vendor_id, lifecycle, record_revision, current_config_version]
+      properties:
+        operation:
+          enum: [register, update_version, activate, disable, rotate_credential_ref]
+        vendor_id: {$ref: "#/components/schemas/VendorId"}
+        lifecycle:
+          enum: [draft, active, disabled]
+        record_revision: {type: integer, minimum: 1}
+        current_config_version: {type: integer, minimum: 1}
+
+    VendorListItem:
+      type: object
+      additionalProperties: false
+      required: [vendor_id, lifecycle, owning_scope, record_revision, current_config_version, created_at]
+      properties:
+        vendor_id: {$ref: "#/components/schemas/VendorId"}
+        lifecycle:
+          enum: [draft, active, disabled]
+        owning_scope: {type: string, pattern: "^[a-z0-9._-]{1,128}$"}
+        record_revision: {type: integer, minimum: 1}
+        current_config_version: {type: integer, minimum: 1}
+        created_at: {type: string, format: date-time}
+
+    VendorPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/VendorListItem"}
+        next_cursor: {type: string}
+
+    VendorStateSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - vendor_id
+        - lifecycle
+        - owning_scope
+        - record_revision
+        - current_config_version
+        - config_version_count
+        - audit_event_count
+        - created_at
+      properties:
+        vendor_id: {$ref: "#/components/schemas/VendorId"}
+        lifecycle: {enum: [draft, active, disabled]}
+        owning_scope: {type: string, pattern: "^[a-z0-9._-]{1,128}$"}
+        record_revision: {type: integer, minimum: 1}
+        current_config_version: {type: integer, minimum: 1}
+        config_version_count: {type: integer, minimum: 1}
+        audit_event_count: {type: integer, minimum: 0}
+        created_at: {type: string, format: date-time}
+        activated_at: {type: string, format: date-time}
+        disabled_at: {type: string, format: date-time}
+        disabled_reason: {type: string, minLength: 1, maxLength: 1024}
+
+    CredentialDescriptor:
+      type: object
+      additionalProperties: false
+      required: [scheme]
+      properties:
+        scheme: {const: env}
+        reference_version: {type: string, minLength: 1, maxLength: 128}
+
+    EndpointVersionListItem:
+      type: object
+      additionalProperties: false
+      required:
+        - vendor_id
+        - config_version
+        - config_schema_version
+        - canonical_url
+        - method
+        - transport_kind
+        - auth_strategy
+        - response_policy
+        - created_at
+        - created_by_actor
+      properties:
+        vendor_id: {$ref: "#/components/schemas/VendorId"}
+        config_version: {type: integer, minimum: 1}
+        config_schema_version: {type: integer, minimum: 1}
+        canonical_url: {type: string, format: uri, maxLength: 2048}
+        method: {enum: [POST, PUT, PATCH]}
+        transport_kind: {enum: [https_public, https_private]}
+        auth_strategy: {enum: [bearer, none]}
+        response_policy: {enum: [http_status_v1, json_ack_v1]}
+        credential_descriptor: {$ref: "#/components/schemas/CredentialDescriptor"}
+        created_at: {type: string, format: date-time}
+        created_by_actor: {type: string, minLength: 1, maxLength: 128}
+      allOf:
+        - if:
+            properties:
+              auth_strategy: {const: bearer}
+          then:
+            required: [credential_descriptor]
+        - if:
+            properties:
+              auth_strategy: {const: none}
+          then:
+            not:
+              required: [credential_descriptor]
+
+    EndpointVersionPage:
+      type: object
+      additionalProperties: false
+      required: [items, snapshot_max_config_version]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/EndpointVersionListItem"}
+        next_cursor: {type: string}
+        snapshot_max_config_version: {type: integer, minimum: 1}
+
+    AuditItem:
+      type: object
+      additionalProperties: false
+      required:
+        - event_id
+        - audit_seq
+        - vendor_id
+        - actor_id
+        - authorization_basis
+        - operation
+        - outcome
+        - sanitized_request_digest
+        - occurred_at
+      properties:
+        event_id: {type: string}
+        audit_seq: {type: integer, minimum: 1}
+        vendor_id: {$ref: "#/components/schemas/VendorId"}
+        actor_id: {type: string}
+        authorization_basis: {enum: [all, vendor_id, owning_scope]}
+        operation: {enum: [register, update_version, activate, disable, rotate_credential_ref]}
+        outcome: {enum: [success, rejected]}
+        expected_record_revision_before: {type: integer, minimum: 0}
+        record_revision_after: {type: integer, minimum: 1}
+        sanitized_request_digest: {type: string, minLength: 1, maxLength: 128}
+        receipt_id: {type: string, minLength: 1, maxLength: 128}
+        reject_reason: {type: string}
+        occurred_at: {type: string, format: date-time}
+
+    AuditPage:
+      type: object
+      additionalProperties: false
+      required: [items, snapshot_max_audit_seq]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/AuditItem"}
+        next_cursor: {type: string}
+        snapshot_max_audit_seq:
+          type: [integer, "null"]
+          minimum: 1

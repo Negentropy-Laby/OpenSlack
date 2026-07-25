@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-07-22",
+  "stage": "Implementation",
+  "status": "G1_SERVICE_LOCAL_EVIDENCE_PASS",
+  "reviewed_workspace_manifest": {
+    "path": "docs/testing/workspace-manifest.sha256",
+    "entries": 185
+  },
+  "canonical_ac": {"expected": 290, "mapped": 290},
+  "boundary_mappings": {"expected": 4, "mapped": 4},
+  "final_cross_review": {
+    "scope": "historical B1-B6 submission-ready baseline",
+    "verdict": "APPROVED",
+    "reviewed_manifest_sha256": "04dba3bcb23d1684397c0c45d2b5afb896fb6dda10a45ec38bb884e82a1b8cca",
+    "blocking_findings": 0,
+    "correction_status": "VERIFIED",
+    "non_blocking_limit": "capacity drain is a PostgreSQL claim/result-commit transactional-path baseline, not end-to-end vendor HTTP throughput or an SLA"
+  },
+  "mechanical_results": {
+    "go_mod_tidy": "PASS",
+    "go_build": "PASS",
+    "go_vet": "PASS",
+    "go_test_race": "PASS",
+    "go_test_race_count_5": "PASS",
+    "postgres_migrations": "PASS",
+    "openapi_contract": "PASS",
+    "promtool_config_rules_and_unit_tests": "PASS",
+    "compose_build_up_health": "PASS",
+    "bounded_graceful_shutdown": "PASS",
+    "postgres_restart_readiness": "PASS",
+    "crash_after_send_recovery": "PASS",
+    "pepper_rotation_revocation": "PASS",
+    "encrypted_pitr": "PASS",
+    "capacity_baseline": "PASS",
+    "marker_scan": "PASS"
+  },
+  "integration_g1": {
+    "gate": "G1-SERVICE",
+    "local_status": "PASS",
+    "database_schema": "8:false",
+    "migration_matrix": "clean install, 6->7->8, 000007/000008 fail-closed down guards",
+    "vendor_contracts": "schema v1 legacy plus explicit v2 bearer/none union",
+    "slack_ack": "PASS",
+    "webhook_exact_bytes_and_dual_ingress_headers": "PASS",
+    "caller_auditor_permission_isolation": "PASS",
+    "bootstrap_concurrency_and_secret_file": "PASS",
+    "postgres_integration": "PASS",
+    "compose_health": "PASS",
+    "fault_drill": "PASS",
+    "encrypted_pitr": "PASS",
+    "marker_scan": "PASS",
+    "go_module_integrity": "PASS",
+    "license_scan": "PASS",
+    "runtime_traffic_change": false,
+    "canary_identities_created": false,
+    "ib3_started": false,
+    "remote_ci": "recorded in the RC-IB1-04 gate receipt"
+  },
+  "external_evidence": {
+    "github_actions_run": "RECORDED_IN_G1_GATE_RECEIPT",
+    "production_deployment": "NOT_IN_SCOPE",
+    "rpo_rto_claim": "NONE"
+  }
+}

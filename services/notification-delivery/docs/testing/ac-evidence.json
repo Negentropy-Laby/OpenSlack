@@ -1,0 +1,4007 @@
+{
+  "schema_version": 3,
+  "scope": "B1-B6",
+  "expected_ac_count": 290,
+  "expected_boundary_mapping_count": 4,
+  "evidence_model": "Every canonical acceptance criterion has its own explicit evidence entry; no criterion inherits tests from a family.",
+  "families": [
+    {
+      "family": "NS-INTAKE",
+      "type": "integration",
+      "acceptance_criteria": [
+        "AC-INTAKE-01",
+        "AC-INTAKE-02",
+        "AC-INTAKE-03",
+        "AC-INTAKE-04",
+        "AC-INTAKE-05",
+        "AC-INTAKE-05b",
+        "AC-INTAKE-06a",
+        "AC-INTAKE-06b",
+        "AC-INTAKE-07"
+      ],
+      "tests": [
+        "TestStoreIntake_Idempotency",
+        "TestHandleSubmitNotification_Success",
+        "TestHandleSubmitNotification_RequiresIdempotencyKey",
+        "TestValidateIntake_IdempotencyKeyCharset",
+        "TestValidateIntake_PayloadBound"
+      ]
+    },
+    {
+      "family": "NS-ATOMICITY",
+      "type": "integration+fault_injection",
+      "acceptance_criteria": [
+        "AC-ATOM-01",
+        "AC-ATOM-02",
+        "AC-ATOM-03"
+      ],
+      "tests": [
+        "TestStoreIntake_Idempotency",
+        "TestMigrationsUpDown",
+        "TestCommitFailureTaxonomy"
+      ]
+    },
+    {
+      "family": "NS-STATE",
+      "type": "logic+integration",
+      "acceptance_criteria": [
+        "AC-STATE-01",
+        "AC-STATE-02",
+        "AC-STATE-03",
+        "AC-STATE-04a",
+        "AC-STATE-04b",
+        "AC-STATE-05",
+        "AC-STATE-06",
+        "AC-STATE-07",
+        "AC-STATE-08",
+        "AC-STATE-09",
+        "AC-STATE-10",
+        "AC-STATE-11",
+        "AC-STATE-12",
+        "AC-STATE-13",
+        "AC-STATE-14",
+        "AC-STATE-15",
+        "AC-STATE-16",
+        "AC-STATE-17"
+      ],
+      "tests": [
+        "TestDecideTransition_Succeed",
+        "TestDecideTransition_Retry",
+        "TestDecideTransition_Die_B01DeadlineExceededCountsAttempt",
+        "TestDecideTransition_Die_PolicyTerminationDoesNotCount",
+        "TestStoreTransition_SucceedFlow"
+      ]
+    },
+    {
+      "family": "NS-LEASE",
+      "type": "concurrency+integration",
+      "acceptance_criteria": [
+        "AC-LEASE-01",
+        "AC-LEASE-02",
+        "AC-LEASE-03",
+        "AC-LEASE-04",
+        "AC-LEASE-05",
+        "AC-LEASE-06",
+        "AC-LEASE-07",
+        "AC-LEASE-08",
+        "AC-LEASE-09",
+        "AC-LEASE-10"
+      ],
+      "tests": [
+        "TestStoreClaim_Concurrent",
+        "TestStoreRecoverExpiredLeases",
+        "TestStoreTransition_WrongLeaseHolder",
+        "TestStoreBoundaryValidation"
+      ]
+    },
+    {
+      "family": "NS-ATTEMPT",
+      "type": "logic+migration+integration",
+      "acceptance_criteria": [
+        "AC-ATT-01",
+        "AC-ATT-02",
+        "AC-ATT-03",
+        "AC-ATT-04",
+        "AC-ATT-05",
+        "AC-ATT-06",
+        "AC-ATT-07",
+        "AC-ATT-08",
+        "AC-ATT-09",
+        "AC-ATT-10",
+        "AC-ATT-11",
+        "AC-ATT-12",
+        "AC-ATT-13"
+      ],
+      "tests": [
+        "TestStoreAttempts_AppendOnly",
+        "TestStoreDeadListAndReplay",
+        "TestMigrationConstraintsRejectContractDrift",
+        "TestDecideTransition_Die_UnknownResultRejected"
+      ]
+    },
+    {
+      "family": "NS-QUERY",
+      "type": "integration+security_negative",
+      "acceptance_criteria": [
+        "AC-HIST-01",
+        "AC-HIST-02",
+        "AC-HIST-03",
+        "AC-LIST-01",
+        "AC-LIST-02",
+        "AC-LIST-03"
+      ],
+      "tests": [
+        "TestStoreDeadListAndReplay",
+        "TestStoreQueryOutbox_Scope",
+        "TestStoreBoundaryValidation",
+        "TestCursorSigner_TamperRejected"
+      ]
+    },
+    {
+      "family": "NS-IMMUTABILITY",
+      "type": "migration+integration",
+      "acceptance_criteria": [
+        "AC-IMM-01",
+        "AC-IMM-02",
+        "AC-IMM-03",
+        "AC-IMM-04"
+      ],
+      "tests": [
+        "TestStoreAttempts_AppendOnly",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "family": "NS-SECURITY",
+      "type": "security_negative",
+      "acceptance_criteria": [
+        "AC-SEC-01",
+        "AC-SEC-02",
+        "AC-SEC-03",
+        "AC-SEC-04",
+        "AC-SEC-05",
+        "AC-SEC-06",
+        "AC-SEC-07",
+        "AC-SEC-08"
+      ],
+      "tests": [
+        "TestHandleSubmitNotification_MissingAuth",
+        "TestHandleSubmitNotification_SelfReportedIdentity",
+        "TestActorContext_EffectiveScope",
+        "TestHandleSubmitNotification_StrictJSON"
+      ]
+    },
+    {
+      "family": "NS-METRICS",
+      "type": "integration+fault_injection",
+      "acceptance_criteria": [
+        "AC-MET-01",
+        "AC-MET-02",
+        "AC-MET-03",
+        "AC-MET-04",
+        "AC-MET-05",
+        "AC-MET-06"
+      ],
+      "tests": [
+        "TestStoreQueryOutbox_Scope",
+        "TestMetrics_ReadyReturns200",
+        "TestMetrics_NotReadyReturns503"
+      ]
+    },
+    {
+      "family": "NS-BOUNDARY",
+      "type": "static+contract",
+      "acceptance_criteria": [
+        "AC-DL-01",
+        "AC-DL-02"
+      ],
+      "tests": [
+        "TestB1B6StaticArchitectureBoundaries",
+        "TestB3RoutesMatchOpenAPI",
+        "TestOpsRoutesMatchClosedResponseShapes"
+      ]
+    },
+    {
+      "family": "VR-INTAKE",
+      "type": "contract+integration",
+      "acceptance_criteria": [
+        "VR-INTAKE-01",
+        "VR-INTAKE-02",
+        "VR-INTAKE-03",
+        "VR-INTAKE-04",
+        "VR-INTAKE-05",
+        "VR-INTAKE-06",
+        "VR-INTAKE-07",
+        "VR-INTAKE-08",
+        "VR-INTAKE-09",
+        "VR-INTAKE-10"
+      ],
+      "tests": [
+        "TestService_Register_Success",
+        "TestService_Register_IdempotencyConflict",
+        "TestVendorRegistry_EndToEnd_RegisterConflict",
+        "TestService_ReauthorizesBeforeReceiptReplay"
+      ]
+    },
+    {
+      "family": "VR-LIFECYCLE",
+      "type": "logic+integration",
+      "acceptance_criteria": [
+        "VR-LIFE-01",
+        "VR-LIFE-02",
+        "VR-LIFE-03",
+        "VR-LIFE-04",
+        "VR-LIFE-05",
+        "VR-LIFE-06",
+        "VR-LIFE-07",
+        "VR-LIFE-08"
+      ],
+      "tests": [
+        "TestService_Activate_Success",
+        "TestService_Activate_InvalidTransition",
+        "TestVendorRegistry_EndToEnd_RegisterActivateDescribe"
+      ]
+    },
+    {
+      "family": "VR-SNAPSHOT",
+      "type": "integration+security_negative",
+      "acceptance_criteria": [
+        "VR-SNAPSHOT-01",
+        "VR-SNAPSHOT-02",
+        "VR-SNAPSHOT-03",
+        "VR-SNAPSHOT-04",
+        "VR-SNAPSHOT-05",
+        "VR-SNAPSHOT-06",
+        "VR-SNAPSHOT-07",
+        "VR-SNAPSHOT-08",
+        "VR-PROJ-01",
+        "VR-PROJ-02",
+        "VR-PROJ-03"
+      ],
+      "tests": [
+        "TestService_IsVendorActive",
+        "TestVendorRegistry_EndToEnd_RegisterActivateDescribe",
+        "TestValidateEndpointConfig_Valid"
+      ]
+    },
+    {
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "acceptance_criteria": [
+        "VR-QUERY-01",
+        "VR-QUERY-02",
+        "VR-QUERY-03",
+        "VR-QUERY-04",
+        "VR-QUERY-05",
+        "VR-QUERY-06",
+        "VR-QUERY-07",
+        "VR-QUERY-08",
+        "VR-QUERY-09",
+        "VR-QUERY-10",
+        "VR-QUERY-11",
+        "VR-QUERY-12",
+        "VR-QUERY-13",
+        "VR-QUERY-14",
+        "VR-QUERY-15",
+        "VR-QUERY-16",
+        "VR-QUERY-17",
+        "VR-QUERY-18",
+        "VR-QUERY-19",
+        "VR-QUERY-20",
+        "VR-QUERY-21",
+        "VR-QUERY-22",
+        "VR-QUERY-23",
+        "VR-QUERY-24",
+        "VR-QUERY-25"
+      ],
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "family": "VR-CONCURRENCY",
+      "type": "concurrency+integration",
+      "acceptance_criteria": [
+        "VR-CONCURRENCY-01",
+        "VR-CONCURRENCY-02",
+        "VR-CONCURRENCY-03",
+        "VR-CONCURRENCY-04",
+        "VR-CONCURRENCY-05",
+        "VR-CONCURRENCY-06",
+        "VR-CONCURRENCY-07",
+        "VR-CONCURRENCY-08"
+      ],
+      "tests": [
+        "TestPostgresRepository_RegisterVendor_Duplicate",
+        "TestVendorRegistry_EndToEnd_RegisterConflict",
+        "TestService_ClosedNestedSchemaAndAuditFailure"
+      ]
+    },
+    {
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "acceptance_criteria": [
+        "VR-SEC-01",
+        "VR-SEC-02",
+        "VR-SEC-03",
+        "VR-SEC-04",
+        "VR-SEC-05",
+        "VR-SEC-06",
+        "VR-SEC-07",
+        "VR-CRED-01",
+        "VR-CRED-02",
+        "VR-CRED-03",
+        "VR-CRED-04",
+        "VR-CRED-05",
+        "VR-CRED-06",
+        "VR-CRED-07",
+        "VR-CRED-08",
+        "VR-BL05-01",
+        "VR-BL05-02",
+        "VR-BL05-03",
+        "VR-BL05-04",
+        "VR-BL05-05",
+        "VR-BL05-06",
+        "VR-BL05-07",
+        "VR-BL05-08",
+        "VR-BL05-09",
+        "VR-BL05-10",
+        "VR-BL05-11",
+        "VR-BL05-12",
+        "VR-URL-01",
+        "VR-URL-02",
+        "VR-URL-03",
+        "VR-URL-04",
+        "VR-POLICY-01",
+        "VR-POLICY-02",
+        "VR-POLICY-03",
+        "VR-POLICY-04",
+        "VR-POLICY-05",
+        "VR-POLICY-06",
+        "VR-POLICY-07",
+        "VR-POLICY-08",
+        "VR-POLICY-09",
+        "VR-POLICY-10",
+        "VR-POLICY-11"
+      ],
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "family": "VR-TIME-IMMUTABILITY",
+      "type": "migration+integration",
+      "acceptance_criteria": [
+        "VR-CLOCK-01",
+        "VR-CLOCK-02",
+        "VR-IMM-01",
+        "VR-IMM-02",
+        "VR-IMM-03",
+        "VR-IMM-04"
+      ],
+      "tests": [
+        "TestMigrationConstraintsRejectContractDrift",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap"
+      ]
+    },
+    {
+      "family": "VR-AUDIT",
+      "type": "integration+fault_injection",
+      "acceptance_criteria": [
+        "VR-AUDIT-01",
+        "VR-AUDIT-02",
+        "VR-AUDIT-03",
+        "VR-AUDIT-04",
+        "VR-AUDIT-05",
+        "VR-AUDIT-06",
+        "VR-AUDIT-07",
+        "VR-AUDIT-08"
+      ],
+      "tests": [
+        "TestVendorRegistry_EndToEnd_ListAndAudit",
+        "TestPostgresRepository_ListAdminAuditEvents",
+        "TestService_AuthorizedBusinessRejectionsAreAuditedWithoutReceipt",
+        "TestService_ClosedNestedSchemaAndAuditFailure",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "family": "VR-ACTOR-SCOPE",
+      "type": "security_negative+integration",
+      "acceptance_criteria": [
+        "VR-ACTOR-01",
+        "VR-ACTOR-02",
+        "VR-ACTOR-03",
+        "VR-ACTOR-04",
+        "VR-SCOPE-01",
+        "VR-SCOPE-02",
+        "VR-SCOPE-03",
+        "VR-SCOPE-04",
+        "VR-SCOPE-05",
+        "VR-SCOPE-06"
+      ],
+      "tests": [
+        "TestVendorScope_CoversVendorID",
+        "TestVendorScope_CoversOwningScope",
+        "TestService_ListVendors_ForbiddenScopeFilter",
+        "TestService_ListVendors_OmittedFilterAttenuatesToActorScope",
+        "TestService_RejectsInvalidActorMatrixAndDuplicateScope",
+        "TestService_ReauthorizesBeforeReceiptReplay",
+        "TestHandleListVendorsParsesOpenAPIDeepObjectScopeFilter"
+      ]
+    },
+    {
+      "family": "VR-ADMIN-MODEL-CONFIG",
+      "type": "contract+migration+security_negative",
+      "acceptance_criteria": [
+        "VR-ADMIN-01",
+        "VR-ADMIN-02",
+        "VR-ADMIN-03",
+        "VR-MODEL-01",
+        "VR-MODEL-02",
+        "VR-MODEL-03",
+        "VR-CFG-01",
+        "VR-CFG-02",
+        "VR-CFG-03",
+        "VR-CFG-04",
+        "VR-CFG-05",
+        "VR-CFG-06",
+        "VR-CFG-07",
+        "VR-CFG-08",
+        "VR-CFG-09",
+        "VR-CFG-10",
+        "VR-CFG-11",
+        "VR-CFG-12",
+        "VR-CFG-13",
+        "VR-CFG-14",
+        "VR-CFG-15",
+        "VR-ERR-01",
+        "VR-ERR-02",
+        "VR-ERR-03"
+      ],
+      "tests": [
+        "TestHandleVendorAdminCommand_Success",
+        "TestValidateAdminCommand_ClosedOperationBodies",
+        "TestValidateEndpointConfig_Valid",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestService_UpdateRejectsCredentialFieldEvenWhenEmpty",
+        "TestVendorRegistryConfigFailsClosed",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "family": "CALLER-ACCESS",
+      "type": "security+integration+concurrency+fault_injection",
+      "acceptance_criteria": [
+        "CA-01",
+        "CA-02",
+        "CA-03",
+        "CA-04",
+        "CA-05",
+        "CA-06",
+        "CA-07",
+        "CA-08",
+        "CA-09",
+        "CA-10",
+        "CA-11",
+        "CA-12",
+        "CA-13",
+        "CA-14",
+        "CA-15"
+      ],
+      "tests": [
+        "TestAuthenticateCaller_DerivesPrincipal",
+        "TestAuthenticateCaller_PreviousPepperVerifies",
+        "TestAuthenticateOperator_MissingCapability",
+        "TestCallerAccess_EndToEnd_AuthenticateAndRevoke",
+        "TestPostgresRepository_IssueKey_Concurrency",
+        "TestCallerAccess_EndToEnd_RateLimit",
+        "TestVendorAdminRateLimitPreventsRegistryCall",
+        "TestAuthenticationAuthorityFailureIsServiceUnavailable",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "family": "DELIVERY",
+      "type": "logic+integration+security+concurrency+fault_injection",
+      "acceptance_criteria": [
+        "DL-01",
+        "DL-02",
+        "DL-03",
+        "DL-04",
+        "DL-05",
+        "DL-06",
+        "DL-07",
+        "DL-08",
+        "DL-09",
+        "DL-10",
+        "DL-11",
+        "DL-12",
+        "DL-13",
+        "DL-14",
+        "DL-15",
+        "DL-16",
+        "DL-17",
+        "DL-18",
+        "DL-19",
+        "DL-20"
+      ],
+      "tests": [
+        "TestClassifyClosedMatrix",
+        "TestRunnerB01ActualHTTPResultDiesAtomically",
+        "TestRunnerDeadlineBeforeSendIsUncountedPolicyTermination",
+        "TestRunnerDeadlineTakesPriorityOverAttemptLimit",
+        "TestRunnerDNSRebindingFailsBeforeSend",
+        "TestRunnerSecondDNSFailureRetriesWithoutSending",
+        "TestRunnerPreSendPolicyFailuresAreUncountedAndDoNotSend",
+        "TestRunnerStoreCommitFailureSignalsHealth",
+        "TestBuildRequestBearerAndBodyField",
+        "TestBuildRequestMappingModesPreserveOrExtendBodyDeterministically",
+        "TestBuildRequestRejectsAuthorityAndAuthDrift",
+        "TestBuildRequestRejectsHeaderInjectionDuplicatesAndFinalBodyOverflow",
+        "TestAddressPolicyPrivateExceptionIsTupleBoundAndNeverAllowsSpecialRanges",
+        "TestSafeTransportDoesNotReadResponseBody",
+        "TestSafeTransportDoesNotFollowRedirect",
+        "TestSafeTransportIgnoresProxyEnvironment",
+        "TestSafeTransportTimeoutIsClosedTransportFailure",
+        "TestSafeTransportPreservesTLSHostname",
+        "TestWorkerGlobalConcurrencyBound",
+        "TestWorkerRejectsIntervalBeyondDeadlineClaimBudget",
+        "TestWorkerShutdownWaitsForSentAttemptResultCommit",
+        "TestDeliveryRunner_PostgresEndToEnd",
+        "TestDeadlineBacklogPathAMatrixTerminatesOnceWithoutSend",
+        "TestDeadlineBacklogPathBMatrixPreservesActualResultAndTerminatesOnce",
+        "TestDeadlineBacklogPostgresMatrixPersistsInvariants",
+        "TestB1B6StaticArchitectureBoundaries"
+      ]
+    },
+    {
+      "family": "OPERATIONS-CONTROL",
+      "type": "contract+integration+concurrency+fault_injection+security_negative",
+      "acceptance_criteria": [
+        "OC-01",
+        "OC-02",
+        "OC-03",
+        "OC-04",
+        "OC-05",
+        "OC-06",
+        "OC-07",
+        "OC-08",
+        "OC-09",
+        "OC-10",
+        "OC-11",
+        "OC-12",
+        "OC-13",
+        "OC-14"
+      ],
+      "tests": [
+        "TestServiceQueriesUseClosedScopedProjection",
+        "TestPreviewReplayIsReadOnlyOrderedAndDeenumerated",
+        "TestExecuteReplayBestEffortClassifiesEveryInput",
+        "TestReplayValidationAndCapabilityPreventsStoreCalls",
+        "TestOpsHandlersAuthenticateRateLimitAndReturnStableEnvelope",
+        "TestOpsReplayHandlersRejectOpenEndedAndMalformedWrites",
+        "TestOpsHandlersMapStoreErrorsWithoutExistenceLeak",
+        "TestOpsRoutesMatchClosedResponseShapes",
+        "TestOperationsDeadPreviewExecuteStartsNewDeliveryCycle"
+      ]
+    },
+    {
+      "family": "RELIABILITY-OBSERVABILITY",
+      "type": "contract+logic+integration+fault_injection+security_negative",
+      "acceptance_criteria": [
+        "RO-01",
+        "RO-02",
+        "RO-03",
+        "RO-04",
+        "RO-05",
+        "RO-06",
+        "RO-07",
+        "RO-08",
+        "RO-09",
+        "RO-10"
+      ],
+      "tests": [
+        "TestCollectPublishesOneGlobalSnapshotAndExactlyThreeMetrics",
+        "TestCollectFailureAndInvalidProjectionPublishNothing",
+        "TestCollectTimeoutFailsWithoutStaleFallback",
+        "TestReliabilityCollectsRealGlobalSnapshot",
+        "TestMetrics_CollectorFailureReturns503WithoutBusinessSamples",
+        "TestPrometheusReliabilityArtifactsAreFixedAndComplete",
+        "TestPlatformRoutesMatchOpenAPI"
+      ]
+    }
+  ],
+  "criteria": [
+    {
+      "id": "AC-INTAKE-01",
+      "family": "NS-INTAKE",
+      "type": "integration",
+      "tests": [
+        "TestStoreIntake_Idempotency",
+        "TestHandleSubmitNotification_Success",
+        "TestHandleSubmitNotification_RequiresIdempotencyKey",
+        "TestValidateIntake_IdempotencyKeyCharset",
+        "TestValidateIntake_PayloadBound"
+      ]
+    },
+    {
+      "id": "AC-INTAKE-02",
+      "family": "NS-INTAKE",
+      "type": "integration",
+      "tests": [
+        "TestStoreIntake_Idempotency",
+        "TestHandleSubmitNotification_Success",
+        "TestHandleSubmitNotification_RequiresIdempotencyKey",
+        "TestValidateIntake_IdempotencyKeyCharset",
+        "TestValidateIntake_PayloadBound"
+      ]
+    },
+    {
+      "id": "AC-INTAKE-03",
+      "family": "NS-INTAKE",
+      "type": "integration",
+      "tests": [
+        "TestStoreIntake_Idempotency",
+        "TestHandleSubmitNotification_Success",
+        "TestHandleSubmitNotification_RequiresIdempotencyKey",
+        "TestValidateIntake_IdempotencyKeyCharset",
+        "TestValidateIntake_PayloadBound"
+      ]
+    },
+    {
+      "id": "AC-INTAKE-04",
+      "family": "NS-INTAKE",
+      "type": "integration",
+      "tests": [
+        "TestStoreIntake_ConcurrentSameKeyConvergesToOneRow"
+      ]
+    },
+    {
+      "id": "AC-INTAKE-05",
+      "family": "NS-INTAKE",
+      "type": "integration",
+      "tests": [
+        "TestStoreIntake_Idempotency",
+        "TestHandleSubmitNotification_Success",
+        "TestHandleSubmitNotification_RequiresIdempotencyKey",
+        "TestValidateIntake_IdempotencyKeyCharset",
+        "TestValidateIntake_PayloadBound"
+      ]
+    },
+    {
+      "id": "AC-INTAKE-05b",
+      "family": "NS-INTAKE",
+      "type": "integration",
+      "tests": [
+        "TestStoreIntake_Idempotency",
+        "TestHandleSubmitNotification_Success",
+        "TestHandleSubmitNotification_RequiresIdempotencyKey",
+        "TestValidateIntake_IdempotencyKeyCharset",
+        "TestValidateIntake_PayloadBound"
+      ]
+    },
+    {
+      "id": "AC-INTAKE-06a",
+      "family": "NS-INTAKE",
+      "type": "integration",
+      "tests": [
+        "TestStoreIntake_DeferredCommitFailureRollsBackAtomically"
+      ]
+    },
+    {
+      "id": "AC-INTAKE-06b",
+      "family": "NS-INTAKE",
+      "type": "integration",
+      "tests": [
+        "TestStoreIntake_ConnectionLostDuringCommitIsOutcomeUnknown"
+      ]
+    },
+    {
+      "id": "AC-INTAKE-07",
+      "family": "NS-INTAKE",
+      "type": "integration",
+      "tests": [
+        "TestStoreIntake_Idempotency",
+        "TestHandleSubmitNotification_Success",
+        "TestHandleSubmitNotification_RequiresIdempotencyKey",
+        "TestValidateIntake_IdempotencyKeyCharset",
+        "TestValidateIntake_PayloadBound"
+      ]
+    },
+    {
+      "id": "AC-ATOM-01",
+      "family": "NS-ATOMICITY",
+      "type": "integration+fault_injection",
+      "tests": [
+        "TestStoreIntake_Idempotency",
+        "TestMigrationsUpDown",
+        "TestCommitFailureTaxonomy"
+      ]
+    },
+    {
+      "id": "AC-ATOM-02",
+      "family": "NS-ATOMICITY",
+      "type": "integration+fault_injection",
+      "tests": [
+        "TestStoreIntake_DeferredCommitFailureRollsBackAtomically"
+      ]
+    },
+    {
+      "id": "AC-ATOM-03",
+      "family": "NS-ATOMICITY",
+      "type": "integration+fault_injection",
+      "tests": [
+        "TestStoreTransition_DeferredCommitFailurePreservesPriorStateAndHistory"
+      ]
+    },
+    {
+      "id": "AC-STATE-01",
+      "family": "NS-STATE",
+      "type": "logic+integration",
+      "tests": [
+        "TestDecideTransition_Succeed",
+        "TestDecideTransition_Retry",
+        "TestDecideTransition_Die_B01DeadlineExceededCountsAttempt",
+        "TestDecideTransition_Die_PolicyTerminationDoesNotCount",
+        "TestStoreTransition_SucceedFlow"
+      ]
+    },
+    {
+      "id": "AC-STATE-02",
+      "family": "NS-STATE",
+      "type": "logic+integration",
+      "tests": [
+        "TestDecideTransition_Succeed",
+        "TestDecideTransition_Retry",
+        "TestDecideTransition_Die_B01DeadlineExceededCountsAttempt",
+        "TestDecideTransition_Die_PolicyTerminationDoesNotCount",
+        "TestStoreTransition_SucceedFlow"
+      ]
+    },
+    {
+      "id": "AC-STATE-03",
+      "family": "NS-STATE",
+      "type": "logic+integration",
+      "tests": [
+        "TestDecideTransition_Succeed",
+        "TestDecideTransition_Retry",
+        "TestDecideTransition_Die_B01DeadlineExceededCountsAttempt",
+        "TestDecideTransition_Die_PolicyTerminationDoesNotCount",
+        "TestStoreTransition_SucceedFlow"
+      ]
+    },
+    {
+      "id": "AC-STATE-04a",
+      "family": "NS-STATE",
+      "type": "logic+integration",
+      "tests": [
+        "TestDecideTransition_Succeed",
+        "TestDecideTransition_Retry",
+        "TestDecideTransition_Die_B01DeadlineExceededCountsAttempt",
+        "TestDecideTransition_Die_PolicyTerminationDoesNotCount",
+        "TestStoreTransition_SucceedFlow"
+      ]
+    },
+    {
+      "id": "AC-STATE-04b",
+      "family": "NS-STATE",
+      "type": "logic+integration",
+      "tests": [
+        "TestDecideTransition_Succeed",
+        "TestDecideTransition_Retry",
+        "TestDecideTransition_Die_B01DeadlineExceededCountsAttempt",
+        "TestDecideTransition_Die_PolicyTerminationDoesNotCount",
+        "TestStoreTransition_SucceedFlow"
+      ]
+    },
+    {
+      "id": "AC-STATE-05",
+      "family": "NS-STATE",
+      "type": "logic+integration",
+      "tests": [
+        "TestDecideTransition_Succeed",
+        "TestDecideTransition_Retry",
+        "TestDecideTransition_Die_B01DeadlineExceededCountsAttempt",
+        "TestDecideTransition_Die_PolicyTerminationDoesNotCount",
+        "TestStoreTransition_SucceedFlow"
+      ]
+    },
+    {
+      "id": "AC-STATE-06",
+      "family": "NS-STATE",
+      "type": "logic+integration",
+      "tests": [
+        "TestDecideTransition_Succeed",
+        "TestDecideTransition_Retry",
+        "TestDecideTransition_Die_B01DeadlineExceededCountsAttempt",
+        "TestDecideTransition_Die_PolicyTerminationDoesNotCount",
+        "TestStoreTransition_SucceedFlow"
+      ]
+    },
+    {
+      "id": "AC-STATE-07",
+      "family": "NS-STATE",
+      "type": "logic+integration",
+      "tests": [
+        "TestDecideTransition_Succeed",
+        "TestDecideTransition_Retry",
+        "TestDecideTransition_Die_B01DeadlineExceededCountsAttempt",
+        "TestDecideTransition_Die_PolicyTerminationDoesNotCount",
+        "TestStoreTransition_SucceedFlow"
+      ]
+    },
+    {
+      "id": "AC-STATE-08",
+      "family": "NS-STATE",
+      "type": "logic+integration",
+      "tests": [
+        "TestDecideTransition_Succeed",
+        "TestDecideTransition_Retry",
+        "TestDecideTransition_Die_B01DeadlineExceededCountsAttempt",
+        "TestDecideTransition_Die_PolicyTerminationDoesNotCount",
+        "TestStoreTransition_SucceedFlow"
+      ]
+    },
+    {
+      "id": "AC-STATE-09",
+      "family": "NS-STATE",
+      "type": "logic+integration",
+      "tests": [
+        "TestDecideTransition_Succeed",
+        "TestDecideTransition_Retry",
+        "TestDecideTransition_Die_B01DeadlineExceededCountsAttempt",
+        "TestDecideTransition_Die_PolicyTerminationDoesNotCount",
+        "TestStoreTransition_SucceedFlow"
+      ]
+    },
+    {
+      "id": "AC-STATE-10",
+      "family": "NS-STATE",
+      "type": "logic+integration",
+      "tests": [
+        "TestDecideTransition_Succeed",
+        "TestDecideTransition_Retry",
+        "TestDecideTransition_Die_B01DeadlineExceededCountsAttempt",
+        "TestDecideTransition_Die_PolicyTerminationDoesNotCount",
+        "TestStoreTransition_SucceedFlow"
+      ]
+    },
+    {
+      "id": "AC-STATE-11",
+      "family": "NS-STATE",
+      "type": "logic+integration",
+      "tests": [
+        "TestStoreReadRejectsUnknownAndWorkerActorKinds",
+        "TestActorContext_Validate"
+      ]
+    },
+    {
+      "id": "AC-STATE-12",
+      "family": "NS-STATE",
+      "type": "logic+integration",
+      "tests": [
+        "TestStoreTransition_ConcurrentSameVersionHasOneWinner"
+      ]
+    },
+    {
+      "id": "AC-STATE-13",
+      "family": "NS-STATE",
+      "type": "logic+integration",
+      "tests": [
+        "TestDecideTransition_Succeed",
+        "TestDecideTransition_Retry",
+        "TestDecideTransition_Die_B01DeadlineExceededCountsAttempt",
+        "TestDecideTransition_Die_PolicyTerminationDoesNotCount",
+        "TestStoreTransition_SucceedFlow"
+      ]
+    },
+    {
+      "id": "AC-STATE-14",
+      "family": "NS-STATE",
+      "type": "logic+integration",
+      "tests": [
+        "TestDecideTransition_Succeed",
+        "TestDecideTransition_Retry",
+        "TestDecideTransition_Die_B01DeadlineExceededCountsAttempt",
+        "TestDecideTransition_Die_PolicyTerminationDoesNotCount",
+        "TestStoreTransition_SucceedFlow"
+      ]
+    },
+    {
+      "id": "AC-STATE-15",
+      "family": "NS-STATE",
+      "type": "logic+integration",
+      "tests": [
+        "TestDecideTransition_Succeed",
+        "TestDecideTransition_Retry",
+        "TestDecideTransition_Die_B01DeadlineExceededCountsAttempt",
+        "TestDecideTransition_Die_PolicyTerminationDoesNotCount",
+        "TestStoreTransition_SucceedFlow"
+      ]
+    },
+    {
+      "id": "AC-STATE-16",
+      "family": "NS-STATE",
+      "type": "logic+integration",
+      "tests": [
+        "TestDecideTransition_Succeed",
+        "TestDecideTransition_Retry",
+        "TestDecideTransition_Die_B01DeadlineExceededCountsAttempt",
+        "TestDecideTransition_Die_PolicyTerminationDoesNotCount",
+        "TestStoreTransition_SucceedFlow"
+      ]
+    },
+    {
+      "id": "AC-STATE-17",
+      "family": "NS-STATE",
+      "type": "logic+integration",
+      "tests": [
+        "TestDecideTransition_Succeed",
+        "TestDecideTransition_Retry",
+        "TestDecideTransition_Die_B01DeadlineExceededCountsAttempt",
+        "TestDecideTransition_Die_PolicyTerminationDoesNotCount",
+        "TestStoreTransition_SucceedFlow"
+      ]
+    },
+    {
+      "id": "AC-LEASE-01",
+      "family": "NS-LEASE",
+      "type": "concurrency+integration",
+      "tests": [
+        "TestStoreClaim_Concurrent",
+        "TestStoreRecoverExpiredLeases",
+        "TestStoreTransition_WrongLeaseHolder",
+        "TestStoreBoundaryValidation"
+      ]
+    },
+    {
+      "id": "AC-LEASE-02",
+      "family": "NS-LEASE",
+      "type": "concurrency+integration",
+      "tests": [
+        "TestStoreClaim_Concurrent",
+        "TestStoreRecoverExpiredLeases",
+        "TestStoreTransition_WrongLeaseHolder",
+        "TestStoreBoundaryValidation"
+      ]
+    },
+    {
+      "id": "AC-LEASE-03",
+      "family": "NS-LEASE",
+      "type": "concurrency+integration",
+      "tests": [
+        "TestStoreClaim_Concurrent",
+        "TestStoreRecoverExpiredLeases",
+        "TestStoreTransition_WrongLeaseHolder",
+        "TestStoreBoundaryValidation"
+      ]
+    },
+    {
+      "id": "AC-LEASE-04",
+      "family": "NS-LEASE",
+      "type": "concurrency+integration",
+      "tests": [
+        "TestStoreClaim_Concurrent",
+        "TestStoreRecoverExpiredLeases",
+        "TestStoreTransition_WrongLeaseHolder",
+        "TestStoreBoundaryValidation"
+      ]
+    },
+    {
+      "id": "AC-LEASE-05",
+      "family": "NS-LEASE",
+      "type": "concurrency+integration",
+      "tests": [
+        "TestStoreClaim_Concurrent",
+        "TestStoreRecoverExpiredLeases",
+        "TestStoreTransition_WrongLeaseHolder",
+        "TestStoreBoundaryValidation"
+      ]
+    },
+    {
+      "id": "AC-LEASE-06",
+      "family": "NS-LEASE",
+      "type": "concurrency+integration",
+      "tests": [
+        "TestStoreClaim_Concurrent",
+        "TestStoreRecoverExpiredLeases",
+        "TestStoreTransition_WrongLeaseHolder",
+        "TestStoreBoundaryValidation"
+      ]
+    },
+    {
+      "id": "AC-LEASE-07",
+      "family": "NS-LEASE",
+      "type": "concurrency+integration",
+      "tests": [
+        "TestStoreClaim_Concurrent",
+        "TestStoreRecoverExpiredLeases",
+        "TestStoreTransition_WrongLeaseHolder",
+        "TestStoreBoundaryValidation"
+      ]
+    },
+    {
+      "id": "AC-LEASE-08",
+      "family": "NS-LEASE",
+      "type": "concurrency+integration",
+      "tests": [
+        "TestStoreClaim_Concurrent",
+        "TestStoreRecoverExpiredLeases",
+        "TestStoreTransition_WrongLeaseHolder",
+        "TestStoreBoundaryValidation"
+      ]
+    },
+    {
+      "id": "AC-LEASE-09",
+      "family": "NS-LEASE",
+      "type": "concurrency+integration",
+      "tests": [
+        "TestStoreClaim_Concurrent",
+        "TestStoreRecoverExpiredLeases",
+        "TestStoreTransition_WrongLeaseHolder",
+        "TestStoreBoundaryValidation"
+      ]
+    },
+    {
+      "id": "AC-LEASE-10",
+      "family": "NS-LEASE",
+      "type": "concurrency+integration",
+      "tests": [
+        "TestStoreClaim_Concurrent",
+        "TestStoreRecoverExpiredLeases",
+        "TestStoreTransition_WrongLeaseHolder",
+        "TestStoreBoundaryValidation"
+      ]
+    },
+    {
+      "id": "AC-ATT-01",
+      "family": "NS-ATTEMPT",
+      "type": "logic+migration+integration",
+      "tests": [
+        "TestStoreAttempts_AppendOnly",
+        "TestStoreDeadListAndReplay",
+        "TestMigrationConstraintsRejectContractDrift",
+        "TestDecideTransition_Die_UnknownResultRejected"
+      ]
+    },
+    {
+      "id": "AC-ATT-02",
+      "family": "NS-ATTEMPT",
+      "type": "logic+migration+integration",
+      "tests": [
+        "TestStoreAttempts_AppendOnly",
+        "TestStoreDeadListAndReplay",
+        "TestMigrationConstraintsRejectContractDrift",
+        "TestDecideTransition_Die_UnknownResultRejected"
+      ]
+    },
+    {
+      "id": "AC-ATT-03",
+      "family": "NS-ATTEMPT",
+      "type": "logic+migration+integration",
+      "tests": [
+        "TestStoreAttempts_AppendOnly",
+        "TestStoreDeadListAndReplay",
+        "TestMigrationConstraintsRejectContractDrift",
+        "TestDecideTransition_Die_UnknownResultRejected"
+      ]
+    },
+    {
+      "id": "AC-ATT-04",
+      "family": "NS-ATTEMPT",
+      "type": "logic+migration+integration",
+      "tests": [
+        "TestStoreAttempts_AppendOnly",
+        "TestStoreDeadListAndReplay",
+        "TestMigrationConstraintsRejectContractDrift",
+        "TestDecideTransition_Die_UnknownResultRejected"
+      ]
+    },
+    {
+      "id": "AC-ATT-05",
+      "family": "NS-ATTEMPT",
+      "type": "logic+migration+integration",
+      "tests": [
+        "TestStoreAttempts_AppendOnly",
+        "TestStoreDeadListAndReplay",
+        "TestMigrationConstraintsRejectContractDrift",
+        "TestDecideTransition_Die_UnknownResultRejected"
+      ]
+    },
+    {
+      "id": "AC-ATT-06",
+      "family": "NS-ATTEMPT",
+      "type": "logic+migration+integration",
+      "tests": [
+        "TestStoreAttempts_AppendOnly",
+        "TestStoreDeadListAndReplay",
+        "TestMigrationConstraintsRejectContractDrift",
+        "TestDecideTransition_Die_UnknownResultRejected"
+      ]
+    },
+    {
+      "id": "AC-ATT-07",
+      "family": "NS-ATTEMPT",
+      "type": "logic+migration+integration",
+      "tests": [
+        "TestStoreAttempts_AppendOnly",
+        "TestStoreDeadListAndReplay",
+        "TestMigrationConstraintsRejectContractDrift",
+        "TestDecideTransition_Die_UnknownResultRejected"
+      ]
+    },
+    {
+      "id": "AC-ATT-08",
+      "family": "NS-ATTEMPT",
+      "type": "logic+migration+integration",
+      "tests": [
+        "TestStoreAttempts_AppendOnly",
+        "TestStoreDeadListAndReplay",
+        "TestMigrationConstraintsRejectContractDrift",
+        "TestDecideTransition_Die_UnknownResultRejected"
+      ]
+    },
+    {
+      "id": "AC-ATT-09",
+      "family": "NS-ATTEMPT",
+      "type": "logic+migration+integration",
+      "tests": [
+        "TestStoreRecoverExpiredLeaseRejectsAttemptCountOverflowAtomically"
+      ]
+    },
+    {
+      "id": "AC-ATT-10",
+      "family": "NS-ATTEMPT",
+      "type": "logic+migration+integration",
+      "tests": [
+        "TestStoreAttempts_AppendOnly",
+        "TestStoreDeadListAndReplay",
+        "TestMigrationConstraintsRejectContractDrift",
+        "TestDecideTransition_Die_UnknownResultRejected"
+      ]
+    },
+    {
+      "id": "AC-ATT-11",
+      "family": "NS-ATTEMPT",
+      "type": "logic+migration+integration",
+      "tests": [
+        "TestStoreAttempts_AppendOnly",
+        "TestStoreDeadListAndReplay",
+        "TestMigrationConstraintsRejectContractDrift",
+        "TestDecideTransition_Die_UnknownResultRejected"
+      ]
+    },
+    {
+      "id": "AC-ATT-12",
+      "family": "NS-ATTEMPT",
+      "type": "logic+migration+integration",
+      "tests": [
+        "TestStoreAttempts_AppendOnly",
+        "TestStoreDeadListAndReplay",
+        "TestMigrationConstraintsRejectContractDrift",
+        "TestDecideTransition_Die_UnknownResultRejected"
+      ]
+    },
+    {
+      "id": "AC-ATT-13",
+      "family": "NS-ATTEMPT",
+      "type": "logic+migration+integration",
+      "tests": [
+        "TestStoreAttempts_AppendOnly",
+        "TestStoreDeadListAndReplay",
+        "TestMigrationConstraintsRejectContractDrift",
+        "TestDecideTransition_Die_UnknownResultRejected"
+      ]
+    },
+    {
+      "id": "AC-HIST-01",
+      "family": "NS-QUERY",
+      "type": "integration+security_negative",
+      "tests": [
+        "TestStoreDeadListAndReplay",
+        "TestStoreQueryOutbox_Scope",
+        "TestStoreBoundaryValidation",
+        "TestCursorSigner_TamperRejected"
+      ]
+    },
+    {
+      "id": "AC-HIST-02",
+      "family": "NS-QUERY",
+      "type": "integration+security_negative",
+      "tests": [
+        "TestStoreAttemptHistoryCrossPageIncludesLaterAppendWithoutDuplicates"
+      ]
+    },
+    {
+      "id": "AC-HIST-03",
+      "family": "NS-QUERY",
+      "type": "integration+security_negative",
+      "tests": [
+        "TestStoreDeadListAndReplay",
+        "TestStoreQueryOutbox_Scope",
+        "TestStoreBoundaryValidation",
+        "TestCursorSigner_TamperRejected"
+      ]
+    },
+    {
+      "id": "AC-LIST-01",
+      "family": "NS-QUERY",
+      "type": "integration+security_negative",
+      "tests": [
+        "TestStoreDeadPaginationUsesDatabaseSnapshotAndExcludesReplayAndNewDead"
+      ]
+    },
+    {
+      "id": "AC-LIST-02",
+      "family": "NS-QUERY",
+      "type": "integration+security_negative",
+      "tests": [
+        "TestStoreDeadPaginationUsesDatabaseSnapshotAndExcludesReplayAndNewDead"
+      ]
+    },
+    {
+      "id": "AC-LIST-03",
+      "family": "NS-QUERY",
+      "type": "integration+security_negative",
+      "tests": [
+        "TestStoreDeadListAndReplay",
+        "TestStoreQueryOutbox_Scope",
+        "TestStoreBoundaryValidation",
+        "TestCursorSigner_TamperRejected"
+      ]
+    },
+    {
+      "id": "AC-IMM-01",
+      "family": "NS-IMMUTABILITY",
+      "type": "migration+integration",
+      "tests": [
+        "TestStoreAttempts_AppendOnly",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "AC-IMM-02",
+      "family": "NS-IMMUTABILITY",
+      "type": "migration+integration",
+      "tests": [
+        "TestStoreAttempts_AppendOnly",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "AC-IMM-03",
+      "family": "NS-IMMUTABILITY",
+      "type": "migration+integration",
+      "tests": [
+        "TestStoreAttempts_AppendOnly",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "AC-IMM-04",
+      "family": "NS-IMMUTABILITY",
+      "type": "migration+integration",
+      "tests": [
+        "TestStoreAttempts_AppendOnly",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "AC-SEC-01",
+      "family": "NS-SECURITY",
+      "type": "security_negative",
+      "tests": [
+        "TestHandleSubmitNotification_MissingAuth",
+        "TestHandleSubmitNotification_SelfReportedIdentity",
+        "TestActorContext_EffectiveScope",
+        "TestHandleSubmitNotification_StrictJSON"
+      ]
+    },
+    {
+      "id": "AC-SEC-02",
+      "family": "NS-SECURITY",
+      "type": "security_negative",
+      "tests": [
+        "TestHandleSubmitNotification_MissingAuth",
+        "TestHandleSubmitNotification_SelfReportedIdentity",
+        "TestActorContext_EffectiveScope",
+        "TestHandleSubmitNotification_StrictJSON"
+      ]
+    },
+    {
+      "id": "AC-SEC-03",
+      "family": "NS-SECURITY",
+      "type": "security_negative",
+      "tests": [
+        "TestHandleSubmitNotification_MissingAuth",
+        "TestHandleSubmitNotification_SelfReportedIdentity",
+        "TestActorContext_EffectiveScope",
+        "TestHandleSubmitNotification_StrictJSON"
+      ]
+    },
+    {
+      "id": "AC-SEC-04",
+      "family": "NS-SECURITY",
+      "type": "security_negative",
+      "tests": [
+        "TestHandleSubmitNotification_MissingAuth",
+        "TestHandleSubmitNotification_SelfReportedIdentity",
+        "TestActorContext_EffectiveScope",
+        "TestHandleSubmitNotification_StrictJSON"
+      ]
+    },
+    {
+      "id": "AC-SEC-05",
+      "family": "NS-SECURITY",
+      "type": "security_negative",
+      "tests": [
+        "TestHandleSubmitNotification_MissingAuth",
+        "TestHandleSubmitNotification_SelfReportedIdentity",
+        "TestActorContext_EffectiveScope",
+        "TestHandleSubmitNotification_StrictJSON"
+      ]
+    },
+    {
+      "id": "AC-SEC-06",
+      "family": "NS-SECURITY",
+      "type": "security_negative",
+      "tests": [
+        "TestHandleSubmitNotification_MissingAuth",
+        "TestHandleSubmitNotification_SelfReportedIdentity",
+        "TestActorContext_EffectiveScope",
+        "TestHandleSubmitNotification_StrictJSON"
+      ]
+    },
+    {
+      "id": "AC-SEC-07",
+      "family": "NS-SECURITY",
+      "type": "security_negative",
+      "tests": [
+        "TestHandleSubmitNotification_MissingAuth",
+        "TestHandleSubmitNotification_SelfReportedIdentity",
+        "TestActorContext_EffectiveScope",
+        "TestHandleSubmitNotification_StrictJSON"
+      ]
+    },
+    {
+      "id": "AC-SEC-08",
+      "family": "NS-SECURITY",
+      "type": "security_negative",
+      "tests": [
+        "TestHandleSubmitNotification_MissingAuth",
+        "TestHandleSubmitNotification_SelfReportedIdentity",
+        "TestActorContext_EffectiveScope",
+        "TestHandleSubmitNotification_StrictJSON"
+      ]
+    },
+    {
+      "id": "AC-MET-01",
+      "family": "NS-METRICS",
+      "type": "integration+fault_injection",
+      "tests": [
+        "TestStoreQueryOutbox_Scope",
+        "TestMetrics_ReadyReturns200",
+        "TestMetrics_NotReadyReturns503"
+      ]
+    },
+    {
+      "id": "AC-MET-02",
+      "family": "NS-METRICS",
+      "type": "integration+fault_injection",
+      "tests": [
+        "TestStoreQueryOutbox_Scope",
+        "TestMetrics_ReadyReturns200",
+        "TestMetrics_NotReadyReturns503"
+      ]
+    },
+    {
+      "id": "AC-MET-03",
+      "family": "NS-METRICS",
+      "type": "integration+fault_injection",
+      "tests": [
+        "TestStoreQueryOutbox_Scope",
+        "TestMetrics_ReadyReturns200",
+        "TestMetrics_NotReadyReturns503"
+      ]
+    },
+    {
+      "id": "AC-MET-04",
+      "family": "NS-METRICS",
+      "type": "integration+fault_injection",
+      "tests": [
+        "TestStoreQueryOutbox_Scope",
+        "TestMetrics_ReadyReturns200",
+        "TestMetrics_NotReadyReturns503"
+      ]
+    },
+    {
+      "id": "AC-MET-05",
+      "family": "NS-METRICS",
+      "type": "integration+fault_injection",
+      "tests": [
+        "TestStoreQueryOutbox_Scope",
+        "TestMetrics_ReadyReturns200",
+        "TestMetrics_NotReadyReturns503"
+      ]
+    },
+    {
+      "id": "AC-MET-06",
+      "family": "NS-METRICS",
+      "type": "integration+fault_injection",
+      "tests": [
+        "TestStoreQueryOutbox_Scope",
+        "TestMetrics_ReadyReturns200",
+        "TestMetrics_NotReadyReturns503"
+      ]
+    },
+    {
+      "id": "AC-DL-01",
+      "family": "NS-BOUNDARY",
+      "type": "static+contract",
+      "tests": [
+        "TestB1B6StaticArchitectureBoundaries",
+        "TestB3RoutesMatchOpenAPI",
+        "TestOpsRoutesMatchClosedResponseShapes"
+      ]
+    },
+    {
+      "id": "AC-DL-02",
+      "family": "NS-BOUNDARY",
+      "type": "static+contract",
+      "tests": [
+        "TestB1B6StaticArchitectureBoundaries",
+        "TestB3RoutesMatchOpenAPI",
+        "TestOpsRoutesMatchClosedResponseShapes"
+      ]
+    },
+    {
+      "id": "VR-INTAKE-01",
+      "family": "VR-INTAKE",
+      "type": "contract+integration",
+      "tests": [
+        "TestService_Register_Success",
+        "TestService_Register_IdempotencyConflict",
+        "TestVendorRegistry_EndToEnd_RegisterConflict",
+        "TestService_ReauthorizesBeforeReceiptReplay",
+        "TestService_RegisterRejectsOmittedRequiredEndpointCollections"
+      ]
+    },
+    {
+      "id": "VR-INTAKE-02",
+      "family": "VR-INTAKE",
+      "type": "contract+integration",
+      "tests": [
+        "TestService_Register_Success",
+        "TestService_Register_IdempotencyConflict",
+        "TestVendorRegistry_EndToEnd_RegisterConflict",
+        "TestService_ReauthorizesBeforeReceiptReplay"
+      ]
+    },
+    {
+      "id": "VR-INTAKE-03",
+      "family": "VR-INTAKE",
+      "type": "contract+integration",
+      "tests": [
+        "TestService_Register_Success",
+        "TestService_Register_IdempotencyConflict",
+        "TestVendorRegistry_EndToEnd_RegisterConflict",
+        "TestService_ReauthorizesBeforeReceiptReplay"
+      ]
+    },
+    {
+      "id": "VR-INTAKE-04",
+      "family": "VR-INTAKE",
+      "type": "contract+integration",
+      "tests": [
+        "TestService_ClosedNestedSchemaAndAuditFailure",
+        "TestService_RegisterRejectsOmittedRequiredEndpointCollections"
+      ]
+    },
+    {
+      "id": "VR-INTAKE-05",
+      "family": "VR-INTAKE",
+      "type": "contract+integration",
+      "tests": [
+        "TestService_Register_Success",
+        "TestService_Register_IdempotencyConflict",
+        "TestVendorRegistry_EndToEnd_RegisterConflict",
+        "TestService_ReauthorizesBeforeReceiptReplay"
+      ]
+    },
+    {
+      "id": "VR-INTAKE-06",
+      "family": "VR-INTAKE",
+      "type": "contract+integration",
+      "tests": [
+        "TestService_Register_Success",
+        "TestService_Register_IdempotencyConflict",
+        "TestVendorRegistry_EndToEnd_RegisterConflict",
+        "TestService_ReauthorizesBeforeReceiptReplay"
+      ]
+    },
+    {
+      "id": "VR-INTAKE-07",
+      "family": "VR-INTAKE",
+      "type": "contract+integration",
+      "tests": [
+        "TestService_Register_Success",
+        "TestService_Register_IdempotencyConflict",
+        "TestVendorRegistry_EndToEnd_RegisterConflict",
+        "TestService_ReauthorizesBeforeReceiptReplay"
+      ]
+    },
+    {
+      "id": "VR-INTAKE-08",
+      "family": "VR-INTAKE",
+      "type": "contract+integration",
+      "tests": [
+        "TestService_Register_Success",
+        "TestService_Register_IdempotencyConflict",
+        "TestVendorRegistry_EndToEnd_RegisterConflict",
+        "TestService_ReauthorizesBeforeReceiptReplay"
+      ]
+    },
+    {
+      "id": "VR-INTAKE-09",
+      "family": "VR-INTAKE",
+      "type": "contract+integration",
+      "tests": [
+        "TestService_Register_Success",
+        "TestService_Register_IdempotencyConflict",
+        "TestVendorRegistry_EndToEnd_RegisterConflict",
+        "TestService_ReauthorizesBeforeReceiptReplay"
+      ]
+    },
+    {
+      "id": "VR-INTAKE-10",
+      "family": "VR-INTAKE",
+      "type": "contract+integration",
+      "tests": [
+        "TestService_Register_Success",
+        "TestService_Register_IdempotencyConflict",
+        "TestVendorRegistry_EndToEnd_RegisterConflict",
+        "TestService_ReauthorizesBeforeReceiptReplay"
+      ]
+    },
+    {
+      "id": "VR-LIFE-01",
+      "family": "VR-LIFECYCLE",
+      "type": "logic+integration",
+      "tests": [
+        "TestService_Activate_Success",
+        "TestService_Activate_InvalidTransition",
+        "TestVendorRegistry_EndToEnd_RegisterActivateDescribe"
+      ]
+    },
+    {
+      "id": "VR-LIFE-02",
+      "family": "VR-LIFECYCLE",
+      "type": "logic+integration",
+      "tests": [
+        "TestService_Activate_Success",
+        "TestService_Activate_InvalidTransition",
+        "TestVendorRegistry_EndToEnd_RegisterActivateDescribe"
+      ]
+    },
+    {
+      "id": "VR-LIFE-03",
+      "family": "VR-LIFECYCLE",
+      "type": "logic+integration",
+      "tests": [
+        "TestService_Activate_Success",
+        "TestService_Activate_InvalidTransition",
+        "TestVendorRegistry_EndToEnd_RegisterActivateDescribe"
+      ]
+    },
+    {
+      "id": "VR-LIFE-04",
+      "family": "VR-LIFECYCLE",
+      "type": "logic+integration",
+      "tests": [
+        "TestService_Activate_Success",
+        "TestService_Activate_InvalidTransition",
+        "TestVendorRegistry_EndToEnd_RegisterActivateDescribe"
+      ]
+    },
+    {
+      "id": "VR-LIFE-05",
+      "family": "VR-LIFECYCLE",
+      "type": "logic+integration",
+      "tests": [
+        "TestService_Activate_Success",
+        "TestService_Activate_InvalidTransition",
+        "TestVendorRegistry_EndToEnd_RegisterActivateDescribe"
+      ]
+    },
+    {
+      "id": "VR-LIFE-06",
+      "family": "VR-LIFECYCLE",
+      "type": "logic+integration",
+      "tests": [
+        "TestService_Activate_Success",
+        "TestService_Activate_InvalidTransition",
+        "TestVendorRegistry_EndToEnd_RegisterActivateDescribe"
+      ]
+    },
+    {
+      "id": "VR-LIFE-07",
+      "family": "VR-LIFECYCLE",
+      "type": "logic+integration",
+      "tests": [
+        "TestService_Activate_Success",
+        "TestService_Activate_InvalidTransition",
+        "TestVendorRegistry_EndToEnd_RegisterActivateDescribe"
+      ]
+    },
+    {
+      "id": "VR-LIFE-08",
+      "family": "VR-LIFECYCLE",
+      "type": "logic+integration",
+      "tests": [
+        "TestService_Activate_Success",
+        "TestService_Activate_InvalidTransition",
+        "TestVendorRegistry_EndToEnd_RegisterActivateDescribe"
+      ]
+    },
+    {
+      "id": "VR-SNAPSHOT-01",
+      "family": "VR-SNAPSHOT",
+      "type": "integration+security_negative",
+      "tests": [
+        "TestService_IsVendorActive",
+        "TestVendorRegistry_EndToEnd_RegisterActivateDescribe",
+        "TestValidateEndpointConfig_Valid"
+      ]
+    },
+    {
+      "id": "VR-SNAPSHOT-02",
+      "family": "VR-SNAPSHOT",
+      "type": "integration+security_negative",
+      "tests": [
+        "TestService_IsVendorActive",
+        "TestVendorRegistry_EndToEnd_RegisterActivateDescribe",
+        "TestValidateEndpointConfig_Valid"
+      ]
+    },
+    {
+      "id": "VR-SNAPSHOT-03",
+      "family": "VR-SNAPSHOT",
+      "type": "integration+security_negative",
+      "tests": [
+        "TestService_IsVendorActive",
+        "TestVendorRegistry_EndToEnd_RegisterActivateDescribe",
+        "TestValidateEndpointConfig_Valid"
+      ]
+    },
+    {
+      "id": "VR-SNAPSHOT-04",
+      "family": "VR-SNAPSHOT",
+      "type": "integration+security_negative",
+      "tests": [
+        "TestService_IsVendorActive",
+        "TestVendorRegistry_EndToEnd_RegisterActivateDescribe",
+        "TestValidateEndpointConfig_Valid"
+      ]
+    },
+    {
+      "id": "VR-SNAPSHOT-05",
+      "family": "VR-SNAPSHOT",
+      "type": "integration+security_negative",
+      "tests": [
+        "TestService_IsVendorActive",
+        "TestVendorRegistry_EndToEnd_RegisterActivateDescribe",
+        "TestValidateEndpointConfig_Valid"
+      ]
+    },
+    {
+      "id": "VR-SNAPSHOT-06",
+      "family": "VR-SNAPSHOT",
+      "type": "integration+security_negative",
+      "tests": [
+        "TestService_IsVendorActive",
+        "TestVendorRegistry_EndToEnd_RegisterActivateDescribe",
+        "TestValidateEndpointConfig_Valid"
+      ]
+    },
+    {
+      "id": "VR-SNAPSHOT-07",
+      "family": "VR-SNAPSHOT",
+      "type": "integration+security_negative",
+      "tests": [
+        "TestService_IsVendorActive",
+        "TestVendorRegistry_EndToEnd_RegisterActivateDescribe",
+        "TestValidateEndpointConfig_Valid"
+      ]
+    },
+    {
+      "id": "VR-SNAPSHOT-08",
+      "family": "VR-SNAPSHOT",
+      "type": "integration+security_negative",
+      "tests": [
+        "TestService_IsVendorActive",
+        "TestVendorRegistry_EndToEnd_RegisterActivateDescribe",
+        "TestValidateEndpointConfig_Valid"
+      ]
+    },
+    {
+      "id": "VR-PROJ-01",
+      "family": "VR-SNAPSHOT",
+      "type": "integration+security_negative",
+      "tests": [
+        "TestService_IsVendorActive",
+        "TestVendorRegistry_EndToEnd_RegisterActivateDescribe",
+        "TestValidateEndpointConfig_Valid"
+      ]
+    },
+    {
+      "id": "VR-PROJ-02",
+      "family": "VR-SNAPSHOT",
+      "type": "integration+security_negative",
+      "tests": [
+        "TestService_IsVendorActive",
+        "TestVendorRegistry_EndToEnd_RegisterActivateDescribe",
+        "TestValidateEndpointConfig_Valid"
+      ]
+    },
+    {
+      "id": "VR-PROJ-03",
+      "family": "VR-SNAPSHOT",
+      "type": "integration+security_negative",
+      "tests": [
+        "TestService_IsVendorActive",
+        "TestVendorRegistry_EndToEnd_RegisterActivateDescribe",
+        "TestValidateEndpointConfig_Valid"
+      ]
+    },
+    {
+      "id": "VR-QUERY-01",
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "id": "VR-QUERY-02",
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "id": "VR-QUERY-03",
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "id": "VR-QUERY-04",
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "id": "VR-QUERY-05",
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "id": "VR-QUERY-06",
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "id": "VR-QUERY-07",
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "id": "VR-QUERY-08",
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "id": "VR-QUERY-09",
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "id": "VR-QUERY-10",
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "id": "VR-QUERY-11",
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "id": "VR-QUERY-12",
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "id": "VR-QUERY-13",
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "id": "VR-QUERY-14",
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "id": "VR-QUERY-15",
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "id": "VR-QUERY-16",
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "id": "VR-QUERY-17",
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "id": "VR-QUERY-18",
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "id": "VR-QUERY-19",
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "id": "VR-QUERY-20",
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "id": "VR-QUERY-21",
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "id": "VR-QUERY-22",
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "id": "VR-QUERY-23",
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "id": "VR-QUERY-24",
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "id": "VR-QUERY-25",
+      "family": "VR-QUERY",
+      "type": "integration+contract+security_negative",
+      "tests": [
+        "TestPostgresRepository_ListVendors",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_DescribeVendorState",
+        "TestPostgresRepository_CursorIsTamperEvidentAndScopeBound",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap",
+        "TestPostgresRepository_EmptyAuditSnapshotUsesNull",
+        "TestVendorReadHandlersRejectMalformedClosedQuery",
+        "TestB3RoutesMatchOpenAPI"
+      ]
+    },
+    {
+      "id": "VR-CONCURRENCY-01",
+      "family": "VR-CONCURRENCY",
+      "type": "concurrency+integration",
+      "tests": [
+        "TestPostgresRepository_RegisterVendor_Duplicate",
+        "TestVendorRegistry_EndToEnd_RegisterConflict",
+        "TestService_ClosedNestedSchemaAndAuditFailure"
+      ]
+    },
+    {
+      "id": "VR-CONCURRENCY-02",
+      "family": "VR-CONCURRENCY",
+      "type": "concurrency+integration",
+      "tests": [
+        "TestPostgresRepository_RegisterVendor_Duplicate",
+        "TestVendorRegistry_EndToEnd_RegisterConflict",
+        "TestService_ClosedNestedSchemaAndAuditFailure"
+      ]
+    },
+    {
+      "id": "VR-CONCURRENCY-03",
+      "family": "VR-CONCURRENCY",
+      "type": "concurrency+integration",
+      "tests": [
+        "TestPostgresRepository_RegisterVendor_Duplicate",
+        "TestVendorRegistry_EndToEnd_RegisterConflict",
+        "TestService_ClosedNestedSchemaAndAuditFailure"
+      ]
+    },
+    {
+      "id": "VR-CONCURRENCY-04",
+      "family": "VR-CONCURRENCY",
+      "type": "concurrency+integration",
+      "tests": [
+        "TestPostgresRepository_RegisterVendor_Duplicate",
+        "TestVendorRegistry_EndToEnd_RegisterConflict",
+        "TestService_ClosedNestedSchemaAndAuditFailure"
+      ]
+    },
+    {
+      "id": "VR-CONCURRENCY-05",
+      "family": "VR-CONCURRENCY",
+      "type": "concurrency+integration",
+      "tests": [
+        "TestPostgresRepository_RegisterVendor_Duplicate",
+        "TestVendorRegistry_EndToEnd_RegisterConflict",
+        "TestService_ClosedNestedSchemaAndAuditFailure"
+      ]
+    },
+    {
+      "id": "VR-CONCURRENCY-06",
+      "family": "VR-CONCURRENCY",
+      "type": "concurrency+integration",
+      "tests": [
+        "TestPostgresRepository_RegisterVendor_Duplicate",
+        "TestVendorRegistry_EndToEnd_RegisterConflict",
+        "TestService_ClosedNestedSchemaAndAuditFailure"
+      ]
+    },
+    {
+      "id": "VR-CONCURRENCY-07",
+      "family": "VR-CONCURRENCY",
+      "type": "concurrency+integration",
+      "tests": [
+        "TestPostgresRepository_RegisterVendor_Duplicate",
+        "TestVendorRegistry_EndToEnd_RegisterConflict",
+        "TestService_ClosedNestedSchemaAndAuditFailure"
+      ]
+    },
+    {
+      "id": "VR-CONCURRENCY-08",
+      "family": "VR-CONCURRENCY",
+      "type": "concurrency+integration",
+      "tests": [
+        "TestPostgresRepository_RegisterVendor_Duplicate",
+        "TestVendorRegistry_EndToEnd_RegisterConflict",
+        "TestService_ClosedNestedSchemaAndAuditFailure"
+      ]
+    },
+    {
+      "id": "VR-SEC-01",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestValidateEndpointConfig_RejectsOmittedRequiredCollections",
+        "TestService_RegisterRejectsOmittedRequiredEndpointCollections",
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-SEC-02",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-SEC-03",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-SEC-04",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-SEC-05",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-SEC-06",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-SEC-07",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-CRED-01",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-CRED-02",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-CRED-03",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-CRED-04",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-CRED-05",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-CRED-06",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-CRED-07",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-CRED-08",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-BL05-01",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-BL05-02",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-BL05-03",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-BL05-04",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-BL05-05",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-BL05-06",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-BL05-07",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-BL05-08",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-BL05-09",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-BL05-10",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-BL05-11",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-BL05-12",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-URL-01",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-URL-02",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-URL-03",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-URL-04",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-POLICY-01",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-POLICY-02",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-POLICY-03",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-POLICY-04",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-POLICY-05",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-POLICY-06",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-POLICY-07",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-POLICY-08",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-POLICY-09",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-POLICY-10",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-POLICY-11",
+      "family": "VR-SECURITY",
+      "type": "security_negative+fault_injection",
+      "tests": [
+        "TestValidateEndpointConfig_RejectsOmittedRequiredCollections",
+        "TestService_RegisterRejectsOmittedRequiredEndpointCollections",
+        "TestNormalizeURL_CanonicalizesHostAndRejectsInvalidFQDN",
+        "TestValidateEndpointConfig_RejectsForbiddenHeader",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestValidateEndpointConfig_PrivateCIDRIsCanonicalAndBoundToAuthority",
+        "TestValidateEndpointConfig_RejectsHeaderAndMappingUnionDrift",
+        "TestService_Register_ForbiddenOwningScope",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-CLOCK-01",
+      "family": "VR-TIME-IMMUTABILITY",
+      "type": "migration+integration",
+      "tests": [
+        "TestMigrationConstraintsRejectContractDrift",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap"
+      ]
+    },
+    {
+      "id": "VR-CLOCK-02",
+      "family": "VR-TIME-IMMUTABILITY",
+      "type": "migration+integration",
+      "tests": [
+        "TestMigrationConstraintsRejectContractDrift",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap"
+      ]
+    },
+    {
+      "id": "VR-IMM-01",
+      "family": "VR-TIME-IMMUTABILITY",
+      "type": "migration+integration",
+      "tests": [
+        "TestMigrationConstraintsRejectContractDrift",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap"
+      ]
+    },
+    {
+      "id": "VR-IMM-02",
+      "family": "VR-TIME-IMMUTABILITY",
+      "type": "migration+integration",
+      "tests": [
+        "TestMigrationConstraintsRejectContractDrift",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap"
+      ]
+    },
+    {
+      "id": "VR-IMM-03",
+      "family": "VR-TIME-IMMUTABILITY",
+      "type": "migration+integration",
+      "tests": [
+        "TestMigrationConstraintsRejectContractDrift",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap"
+      ]
+    },
+    {
+      "id": "VR-IMM-04",
+      "family": "VR-TIME-IMMUTABILITY",
+      "type": "migration+integration",
+      "tests": [
+        "TestMigrationConstraintsRejectContractDrift",
+        "TestPostgresRepository_ListEndpointVersions",
+        "TestPostgresRepository_EndpointCursorFreezesSnapshotCap"
+      ]
+    },
+    {
+      "id": "VR-AUDIT-01",
+      "family": "VR-AUDIT",
+      "type": "integration+fault_injection",
+      "tests": [
+        "TestVendorRegistry_EndToEnd_ListAndAudit",
+        "TestPostgresRepository_ListAdminAuditEvents",
+        "TestService_AuthorizedBusinessRejectionsAreAuditedWithoutReceipt",
+        "TestService_ClosedNestedSchemaAndAuditFailure",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-AUDIT-02",
+      "family": "VR-AUDIT",
+      "type": "integration+fault_injection",
+      "tests": [
+        "TestVendorRegistry_EndToEnd_ListAndAudit",
+        "TestPostgresRepository_ListAdminAuditEvents",
+        "TestService_AuthorizedBusinessRejectionsAreAuditedWithoutReceipt",
+        "TestService_ClosedNestedSchemaAndAuditFailure",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-AUDIT-03",
+      "family": "VR-AUDIT",
+      "type": "integration+fault_injection",
+      "tests": [
+        "TestServiceEmitsOneSanitizedRuntimeEventForPreconditionAndStoreFailure",
+        "TestService_ClosedNestedSchemaAndAuditFailure"
+      ]
+    },
+    {
+      "id": "VR-AUDIT-04",
+      "family": "VR-AUDIT",
+      "type": "integration+fault_injection",
+      "tests": [
+        "TestVendorRegistry_EndToEnd_ListAndAudit",
+        "TestPostgresRepository_ListAdminAuditEvents",
+        "TestService_AuthorizedBusinessRejectionsAreAuditedWithoutReceipt",
+        "TestService_ClosedNestedSchemaAndAuditFailure",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-AUDIT-05",
+      "family": "VR-AUDIT",
+      "type": "integration+fault_injection",
+      "tests": [
+        "TestVendorRegistry_EndToEnd_ListAndAudit",
+        "TestPostgresRepository_ListAdminAuditEvents",
+        "TestService_AuthorizedBusinessRejectionsAreAuditedWithoutReceipt",
+        "TestService_ClosedNestedSchemaAndAuditFailure",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-AUDIT-06",
+      "family": "VR-AUDIT",
+      "type": "integration+fault_injection",
+      "tests": [
+        "TestServiceEmitsOneSanitizedRuntimeEventForPreconditionAndStoreFailure"
+      ]
+    },
+    {
+      "id": "VR-AUDIT-07",
+      "family": "VR-AUDIT",
+      "type": "integration+fault_injection",
+      "tests": [
+        "TestVendorRegistry_EndToEnd_ListAndAudit",
+        "TestPostgresRepository_ListAdminAuditEvents",
+        "TestService_AuthorizedBusinessRejectionsAreAuditedWithoutReceipt",
+        "TestService_ClosedNestedSchemaAndAuditFailure",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-AUDIT-08",
+      "family": "VR-AUDIT",
+      "type": "integration+fault_injection",
+      "tests": [
+        "TestVendorRegistry_EndToEnd_ListAndAudit",
+        "TestPostgresRepository_ListAdminAuditEvents",
+        "TestService_AuthorizedBusinessRejectionsAreAuditedWithoutReceipt",
+        "TestService_ClosedNestedSchemaAndAuditFailure",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-ACTOR-01",
+      "family": "VR-ACTOR-SCOPE",
+      "type": "security_negative+integration",
+      "tests": [
+        "TestVendorScope_CoversVendorID",
+        "TestVendorScope_CoversOwningScope",
+        "TestService_ListVendors_ForbiddenScopeFilter",
+        "TestService_ListVendors_OmittedFilterAttenuatesToActorScope",
+        "TestService_RejectsInvalidActorMatrixAndDuplicateScope",
+        "TestService_ReauthorizesBeforeReceiptReplay",
+        "TestHandleListVendorsParsesOpenAPIDeepObjectScopeFilter"
+      ]
+    },
+    {
+      "id": "VR-ACTOR-02",
+      "family": "VR-ACTOR-SCOPE",
+      "type": "security_negative+integration",
+      "tests": [
+        "TestVendorScope_CoversVendorID",
+        "TestVendorScope_CoversOwningScope",
+        "TestService_ListVendors_ForbiddenScopeFilter",
+        "TestService_ListVendors_OmittedFilterAttenuatesToActorScope",
+        "TestService_RejectsInvalidActorMatrixAndDuplicateScope",
+        "TestService_ReauthorizesBeforeReceiptReplay",
+        "TestHandleListVendorsParsesOpenAPIDeepObjectScopeFilter"
+      ]
+    },
+    {
+      "id": "VR-ACTOR-03",
+      "family": "VR-ACTOR-SCOPE",
+      "type": "security_negative+integration",
+      "tests": [
+        "TestVendorScope_CoversVendorID",
+        "TestVendorScope_CoversOwningScope",
+        "TestService_ListVendors_ForbiddenScopeFilter",
+        "TestService_ListVendors_OmittedFilterAttenuatesToActorScope",
+        "TestService_RejectsInvalidActorMatrixAndDuplicateScope",
+        "TestService_ReauthorizesBeforeReceiptReplay",
+        "TestHandleListVendorsParsesOpenAPIDeepObjectScopeFilter"
+      ]
+    },
+    {
+      "id": "VR-ACTOR-04",
+      "family": "VR-ACTOR-SCOPE",
+      "type": "security_negative+integration",
+      "tests": [
+        "TestVendorScope_CoversVendorID",
+        "TestVendorScope_CoversOwningScope",
+        "TestService_ListVendors_ForbiddenScopeFilter",
+        "TestService_ListVendors_OmittedFilterAttenuatesToActorScope",
+        "TestService_RejectsInvalidActorMatrixAndDuplicateScope",
+        "TestService_ReauthorizesBeforeReceiptReplay",
+        "TestHandleListVendorsParsesOpenAPIDeepObjectScopeFilter"
+      ]
+    },
+    {
+      "id": "VR-SCOPE-01",
+      "family": "VR-ACTOR-SCOPE",
+      "type": "security_negative+integration",
+      "tests": [
+        "TestVendorScope_CoversVendorID",
+        "TestVendorScope_CoversOwningScope",
+        "TestService_ListVendors_ForbiddenScopeFilter",
+        "TestService_ListVendors_OmittedFilterAttenuatesToActorScope",
+        "TestService_RejectsInvalidActorMatrixAndDuplicateScope",
+        "TestService_ReauthorizesBeforeReceiptReplay",
+        "TestHandleListVendorsParsesOpenAPIDeepObjectScopeFilter"
+      ]
+    },
+    {
+      "id": "VR-SCOPE-02",
+      "family": "VR-ACTOR-SCOPE",
+      "type": "security_negative+integration",
+      "tests": [
+        "TestVendorScope_CoversVendorID",
+        "TestVendorScope_CoversOwningScope",
+        "TestService_ListVendors_ForbiddenScopeFilter",
+        "TestService_ListVendors_OmittedFilterAttenuatesToActorScope",
+        "TestService_RejectsInvalidActorMatrixAndDuplicateScope",
+        "TestService_ReauthorizesBeforeReceiptReplay",
+        "TestHandleListVendorsParsesOpenAPIDeepObjectScopeFilter"
+      ]
+    },
+    {
+      "id": "VR-SCOPE-03",
+      "family": "VR-ACTOR-SCOPE",
+      "type": "security_negative+integration",
+      "tests": [
+        "TestVendorScope_CoversVendorID",
+        "TestVendorScope_CoversOwningScope",
+        "TestService_ListVendors_ForbiddenScopeFilter",
+        "TestService_ListVendors_OmittedFilterAttenuatesToActorScope",
+        "TestService_RejectsInvalidActorMatrixAndDuplicateScope",
+        "TestService_ReauthorizesBeforeReceiptReplay",
+        "TestHandleListVendorsParsesOpenAPIDeepObjectScopeFilter"
+      ]
+    },
+    {
+      "id": "VR-SCOPE-04",
+      "family": "VR-ACTOR-SCOPE",
+      "type": "security_negative+integration",
+      "tests": [
+        "TestVendorScope_CoversVendorID",
+        "TestVendorScope_CoversOwningScope",
+        "TestService_ListVendors_ForbiddenScopeFilter",
+        "TestService_ListVendors_OmittedFilterAttenuatesToActorScope",
+        "TestService_RejectsInvalidActorMatrixAndDuplicateScope",
+        "TestService_ReauthorizesBeforeReceiptReplay",
+        "TestHandleListVendorsParsesOpenAPIDeepObjectScopeFilter"
+      ]
+    },
+    {
+      "id": "VR-SCOPE-05",
+      "family": "VR-ACTOR-SCOPE",
+      "type": "security_negative+integration",
+      "tests": [
+        "TestVendorScope_CoversVendorID",
+        "TestVendorScope_CoversOwningScope",
+        "TestService_ListVendors_ForbiddenScopeFilter",
+        "TestService_ListVendors_OmittedFilterAttenuatesToActorScope",
+        "TestService_RejectsInvalidActorMatrixAndDuplicateScope",
+        "TestService_ReauthorizesBeforeReceiptReplay",
+        "TestHandleListVendorsParsesOpenAPIDeepObjectScopeFilter"
+      ]
+    },
+    {
+      "id": "VR-SCOPE-06",
+      "family": "VR-ACTOR-SCOPE",
+      "type": "security_negative+integration",
+      "tests": [
+        "TestVendorScope_CoversVendorID",
+        "TestVendorScope_CoversOwningScope",
+        "TestService_ListVendors_ForbiddenScopeFilter",
+        "TestService_ListVendors_OmittedFilterAttenuatesToActorScope",
+        "TestService_RejectsInvalidActorMatrixAndDuplicateScope",
+        "TestService_ReauthorizesBeforeReceiptReplay",
+        "TestHandleListVendorsParsesOpenAPIDeepObjectScopeFilter"
+      ]
+    },
+    {
+      "id": "VR-ADMIN-01",
+      "family": "VR-ADMIN-MODEL-CONFIG",
+      "type": "contract+migration+security_negative",
+      "tests": [
+        "TestHandleVendorAdminCommand_RejectsMissingRequiredFields",
+        "TestValidateAdminCommand_ClosedOperationBodies",
+        "TestService_RegisterRejectsOmittedRequiredEndpointCollections"
+      ]
+    },
+    {
+      "id": "VR-ADMIN-02",
+      "family": "VR-ADMIN-MODEL-CONFIG",
+      "type": "contract+migration+security_negative",
+      "tests": [
+        "TestHandleVendorAdminCommand_Success",
+        "TestValidateAdminCommand_ClosedOperationBodies",
+        "TestValidateEndpointConfig_Valid",
+        "TestValidateEndpointConfig_RejectsOmittedRequiredCollections",
+        "TestService_RegisterRejectsOmittedRequiredEndpointCollections",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestService_UpdateRejectsCredentialFieldEvenWhenEmpty",
+        "TestVendorRegistryConfigFailsClosed",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-ADMIN-03",
+      "family": "VR-ADMIN-MODEL-CONFIG",
+      "type": "contract+migration+security_negative",
+      "tests": [
+        "TestHandleVendorAdminCommand_Success",
+        "TestValidateAdminCommand_ClosedOperationBodies",
+        "TestValidateEndpointConfig_Valid",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestService_UpdateRejectsCredentialFieldEvenWhenEmpty",
+        "TestVendorRegistryConfigFailsClosed",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-MODEL-01",
+      "family": "VR-ADMIN-MODEL-CONFIG",
+      "type": "contract+migration+security_negative",
+      "tests": [
+        "TestHandleVendorAdminCommand_Success",
+        "TestValidateAdminCommand_ClosedOperationBodies",
+        "TestValidateEndpointConfig_Valid",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestService_UpdateRejectsCredentialFieldEvenWhenEmpty",
+        "TestVendorRegistryConfigFailsClosed",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-MODEL-02",
+      "family": "VR-ADMIN-MODEL-CONFIG",
+      "type": "contract+migration+security_negative",
+      "tests": [
+        "TestHandleVendorAdminCommand_Success",
+        "TestValidateAdminCommand_ClosedOperationBodies",
+        "TestValidateEndpointConfig_Valid",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestService_UpdateRejectsCredentialFieldEvenWhenEmpty",
+        "TestVendorRegistryConfigFailsClosed",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-MODEL-03",
+      "family": "VR-ADMIN-MODEL-CONFIG",
+      "type": "contract+migration+security_negative",
+      "tests": [
+        "TestHandleVendorAdminCommand_Success",
+        "TestValidateAdminCommand_ClosedOperationBodies",
+        "TestValidateEndpointConfig_Valid",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestService_UpdateRejectsCredentialFieldEvenWhenEmpty",
+        "TestVendorRegistryConfigFailsClosed",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-CFG-01",
+      "family": "VR-ADMIN-MODEL-CONFIG",
+      "type": "contract+migration+security_negative",
+      "tests": [
+        "TestLoadConfigFromEnvironmentRequiresCredentialPolicy"
+      ]
+    },
+    {
+      "id": "VR-CFG-02",
+      "family": "VR-ADMIN-MODEL-CONFIG",
+      "type": "contract+migration+security_negative",
+      "tests": [
+        "TestConfigGenerationPublicationIsAtomicAndPreflightsActiveEndpoints"
+      ]
+    },
+    {
+      "id": "VR-CFG-03",
+      "family": "VR-ADMIN-MODEL-CONFIG",
+      "type": "contract+migration+security_negative",
+      "tests": [
+        "TestConfigGenerationPublicationIsAtomicAndPreflightsActiveEndpoints"
+      ]
+    },
+    {
+      "id": "VR-CFG-04",
+      "family": "VR-ADMIN-MODEL-CONFIG",
+      "type": "contract+migration+security_negative",
+      "tests": [
+        "TestHandleVendorAdminCommand_Success",
+        "TestValidateAdminCommand_ClosedOperationBodies",
+        "TestValidateEndpointConfig_Valid",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestService_UpdateRejectsCredentialFieldEvenWhenEmpty",
+        "TestVendorRegistryConfigFailsClosed",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-CFG-05",
+      "family": "VR-ADMIN-MODEL-CONFIG",
+      "type": "contract+migration+security_negative",
+      "tests": [
+        "TestHandleVendorAdminCommand_Success",
+        "TestValidateAdminCommand_ClosedOperationBodies",
+        "TestValidateEndpointConfig_Valid",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestService_UpdateRejectsCredentialFieldEvenWhenEmpty",
+        "TestVendorRegistryConfigFailsClosed",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-CFG-06",
+      "family": "VR-ADMIN-MODEL-CONFIG",
+      "type": "contract+migration+security_negative",
+      "tests": [
+        "TestHandleVendorAdminCommand_Success",
+        "TestValidateAdminCommand_ClosedOperationBodies",
+        "TestValidateEndpointConfig_Valid",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestService_UpdateRejectsCredentialFieldEvenWhenEmpty",
+        "TestVendorRegistryConfigFailsClosed",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-CFG-07",
+      "family": "VR-ADMIN-MODEL-CONFIG",
+      "type": "contract+migration+security_negative",
+      "tests": [
+        "TestHandleVendorAdminCommand_Success",
+        "TestValidateAdminCommand_ClosedOperationBodies",
+        "TestValidateEndpointConfig_Valid",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestService_UpdateRejectsCredentialFieldEvenWhenEmpty",
+        "TestVendorRegistryConfigFailsClosed",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-CFG-08",
+      "family": "VR-ADMIN-MODEL-CONFIG",
+      "type": "contract+migration+security_negative",
+      "tests": [
+        "TestHandleVendorAdminCommand_Success",
+        "TestValidateAdminCommand_ClosedOperationBodies",
+        "TestValidateEndpointConfig_Valid",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestService_UpdateRejectsCredentialFieldEvenWhenEmpty",
+        "TestVendorRegistryConfigFailsClosed",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-CFG-09",
+      "family": "VR-ADMIN-MODEL-CONFIG",
+      "type": "contract+migration+security_negative",
+      "tests": [
+        "TestHandleVendorAdminCommand_Success",
+        "TestValidateAdminCommand_ClosedOperationBodies",
+        "TestValidateEndpointConfig_Valid",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestService_UpdateRejectsCredentialFieldEvenWhenEmpty",
+        "TestVendorRegistryConfigFailsClosed",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-CFG-10",
+      "family": "VR-ADMIN-MODEL-CONFIG",
+      "type": "contract+migration+security_negative",
+      "tests": [
+        "TestHandleVendorAdminCommand_Success",
+        "TestValidateAdminCommand_ClosedOperationBodies",
+        "TestValidateEndpointConfig_Valid",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestService_UpdateRejectsCredentialFieldEvenWhenEmpty",
+        "TestVendorRegistryConfigFailsClosed",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-CFG-11",
+      "family": "VR-ADMIN-MODEL-CONFIG",
+      "type": "contract+migration+security_negative",
+      "tests": [
+        "TestHandleVendorAdminCommand_Success",
+        "TestValidateAdminCommand_ClosedOperationBodies",
+        "TestValidateEndpointConfig_Valid",
+        "TestValidateEndpointConfig_RejectsOmittedRequiredCollections",
+        "TestService_RegisterRejectsOmittedRequiredEndpointCollections",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestService_UpdateRejectsCredentialFieldEvenWhenEmpty",
+        "TestVendorRegistryConfigFailsClosed",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-CFG-12",
+      "family": "VR-ADMIN-MODEL-CONFIG",
+      "type": "contract+migration+security_negative",
+      "tests": [
+        "TestHandleVendorAdminCommand_Success",
+        "TestValidateAdminCommand_ClosedOperationBodies",
+        "TestValidateEndpointConfig_Valid",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestService_UpdateRejectsCredentialFieldEvenWhenEmpty",
+        "TestVendorRegistryConfigFailsClosed",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-CFG-13",
+      "family": "VR-ADMIN-MODEL-CONFIG",
+      "type": "contract+migration+security_negative",
+      "tests": [
+        "TestHandleVendorAdminCommand_Success",
+        "TestValidateAdminCommand_ClosedOperationBodies",
+        "TestValidateEndpointConfig_Valid",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestService_UpdateRejectsCredentialFieldEvenWhenEmpty",
+        "TestVendorRegistryConfigFailsClosed",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-CFG-14",
+      "family": "VR-ADMIN-MODEL-CONFIG",
+      "type": "contract+migration+security_negative",
+      "tests": [
+        "TestHandleVendorAdminCommand_Success",
+        "TestValidateAdminCommand_ClosedOperationBodies",
+        "TestValidateEndpointConfig_Valid",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestService_UpdateRejectsCredentialFieldEvenWhenEmpty",
+        "TestVendorRegistryConfigFailsClosed",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-CFG-15",
+      "family": "VR-ADMIN-MODEL-CONFIG",
+      "type": "contract+migration+security_negative",
+      "tests": [
+        "TestHandleVendorAdminCommand_Success",
+        "TestValidateAdminCommand_ClosedOperationBodies",
+        "TestValidateEndpointConfig_Valid",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestService_UpdateRejectsCredentialFieldEvenWhenEmpty",
+        "TestVendorRegistryConfigFailsClosed",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-ERR-01",
+      "family": "VR-ADMIN-MODEL-CONFIG",
+      "type": "contract+migration+security_negative",
+      "tests": [
+        "TestHandleVendorAdminCommand_Success",
+        "TestValidateAdminCommand_ClosedOperationBodies",
+        "TestValidateEndpointConfig_Valid",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestService_UpdateRejectsCredentialFieldEvenWhenEmpty",
+        "TestVendorRegistryConfigFailsClosed",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-ERR-02",
+      "family": "VR-ADMIN-MODEL-CONFIG",
+      "type": "contract+migration+security_negative",
+      "tests": [
+        "TestHandleVendorAdminCommand_Success",
+        "TestValidateAdminCommand_ClosedOperationBodies",
+        "TestValidateEndpointConfig_Valid",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestService_UpdateRejectsCredentialFieldEvenWhenEmpty",
+        "TestVendorRegistryConfigFailsClosed",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "VR-ERR-03",
+      "family": "VR-ADMIN-MODEL-CONFIG",
+      "type": "contract+migration+security_negative",
+      "tests": [
+        "TestHandleVendorAdminCommand_Success",
+        "TestValidateAdminCommand_ClosedOperationBodies",
+        "TestValidateEndpointConfig_Valid",
+        "TestValidateEndpointConfig_MVPRejectsNonBearer",
+        "TestService_UpdateRejectsCredentialFieldEvenWhenEmpty",
+        "TestVendorRegistryConfigFailsClosed",
+        "TestMigrationConstraintsRejectContractDrift"
+      ]
+    },
+    {
+      "id": "CA-01",
+      "family": "CALLER-ACCESS",
+      "type": "api_contract+integration",
+      "tests": [
+        "TestAuthenticateCaller_DerivesPrincipal",
+        "TestHandleSubmitNotification_Success"
+      ]
+    },
+    {
+      "id": "CA-02",
+      "family": "CALLER-ACCESS",
+      "type": "security_negative+integration",
+      "tests": [
+        "TestHandleSubmitNotification_MissingAuth",
+        "TestHandleSubmitNotification_InvalidCredentialsUseUniform401WithoutDownstream",
+        "TestAuthenticateCaller_MissingBearerPrefix",
+        "TestAuthenticateCaller_RevokedKey",
+        "TestAuthenticateCaller_WrongSecret"
+      ]
+    },
+    {
+      "id": "CA-03",
+      "family": "CALLER-ACCESS",
+      "type": "security_negative+api_contract",
+      "tests": [
+        "TestHandleSubmitNotification_SelfReportedIdentity",
+        "TestHandleVendorAdminCommand_SelfReportedIdentity"
+      ]
+    },
+    {
+      "id": "CA-04",
+      "family": "CALLER-ACCESS",
+      "type": "security_negative+integration",
+      "tests": [
+        "TestCallerPrincipal_AuthorizeVendor_OutOfScope",
+        "TestHandleSubmitNotification_OutOfScopeDoesNotCallVendorRegistry"
+      ]
+    },
+    {
+      "id": "CA-05",
+      "family": "CALLER-ACCESS",
+      "type": "integration",
+      "tests": [
+        "TestHandleSubmitNotification_Success"
+      ]
+    },
+    {
+      "id": "CA-06",
+      "family": "CALLER-ACCESS",
+      "type": "integration+security_negative",
+      "tests": [
+        "TestHandleSubmitNotification_VendorInactive"
+      ]
+    },
+    {
+      "id": "CA-07",
+      "family": "CALLER-ACCESS",
+      "type": "security_negative+integration",
+      "tests": [
+        "TestAuthenticateOperator_MissingCapability",
+        "TestHandleListVendors_ForbiddenCapability",
+        "TestReplayValidationAndCapabilityPreventsStoreCalls",
+        "TestServiceQueriesUseClosedScopedProjection"
+      ]
+    },
+    {
+      "id": "CA-08",
+      "family": "CALLER-ACCESS",
+      "type": "security_negative+marker_scan",
+      "tests": [
+        "TestDigestKey_UsesHMACSHA256",
+        "TestLoad_PepperValueNotLogged",
+        "TestAcceptanceArtifactsContainNoSecretOrPayloadMarkers"
+      ]
+    },
+    {
+      "id": "CA-09",
+      "family": "CALLER-ACCESS",
+      "type": "integration",
+      "tests": [
+        "TestKeyAdmin_RotateKey"
+      ]
+    },
+    {
+      "id": "CA-10",
+      "family": "CALLER-ACCESS",
+      "type": "integration+security_negative",
+      "tests": [
+        "TestCallerAccess_EndToEnd_AuthenticateAndRevoke",
+        "TestKeyAdmin_RevokeKey"
+      ]
+    },
+    {
+      "id": "CA-11",
+      "family": "CALLER-ACCESS",
+      "type": "concurrency+integration",
+      "tests": [
+        "TestPostgresRepository_IssueKey_Concurrency"
+      ]
+    },
+    {
+      "id": "CA-12",
+      "family": "CALLER-ACCESS",
+      "type": "integration+rate_limit",
+      "tests": [
+        "TestCallerAccess_EndToEnd_RateLimit",
+        "TestKeyRotationDoesNotResetPrincipalRateLimit",
+        "TestVendorAdminRateLimitPreventsRegistryCall"
+      ]
+    },
+    {
+      "id": "CA-13",
+      "family": "CALLER-ACCESS",
+      "type": "fault_injection+integration",
+      "tests": [
+        "TestAuthenticationAuthorityFailureIsServiceUnavailable"
+      ]
+    },
+    {
+      "id": "CA-14",
+      "family": "CALLER-ACCESS",
+      "type": "security_negative+marker_scan",
+      "tests": [
+        "TestLoad_PepperValueNotLogged",
+        "TestAcceptanceArtifactsContainNoSecretOrPayloadMarkers"
+      ]
+    },
+    {
+      "id": "CA-15",
+      "family": "CALLER-ACCESS",
+      "type": "security+integration+concurrency+fault_injection",
+      "tests": [
+        "TestKeyAdmin_CommitOutcomeUnknownReturnsOnlyKeyIDForConvergence"
+      ]
+    },
+    {
+      "id": "DL-01",
+      "family": "DELIVERY",
+      "type": "logic+integration+security+concurrency+fault_injection",
+      "tests": [
+        "TestDeliveryRunner_PostgresEndToEnd",
+        "TestStoreTransition_SucceedFlow"
+      ]
+    },
+    {
+      "id": "DL-02",
+      "family": "DELIVERY",
+      "type": "logic+integration+security+concurrency+fault_injection",
+      "tests": [
+        "TestDeliveryRunnerPostgresB01PersistsDeadBeforeCycleDeadline",
+        "TestDeadlineBacklogPathAMatrixTerminatesOnceWithoutSend",
+        "TestDeadlineBacklogPathBMatrixPreservesActualResultAndTerminatesOnce",
+        "TestDeadlineBacklogPostgresMatrixPersistsInvariants"
+      ]
+    },
+    {
+      "id": "DL-03",
+      "family": "DELIVERY",
+      "type": "logic+integration+security+concurrency+fault_injection",
+      "tests": [
+        "TestRunnerAttemptLimitStopsBeforeDependenciesAndNetwork",
+        "TestRunnerDeadlineTakesPriorityOverAttemptLimit"
+      ]
+    },
+    {
+      "id": "DL-04",
+      "family": "DELIVERY",
+      "type": "logic+integration+security+concurrency+fault_injection",
+      "tests": [
+        "TestDeliveryRunnerRefreshesCredentialVersionAndVendorDisableAcrossAttempts"
+      ]
+    },
+    {
+      "id": "DL-05",
+      "family": "DELIVERY",
+      "type": "logic+integration+security+concurrency+fault_injection",
+      "tests": [
+        "TestDeliveryRunnerRefreshesCredentialVersionAndVendorDisableAcrossAttempts",
+        "TestDeliveryRunnerCommitsCurrentHTTPResultWhenVendorDisabledAfterSend"
+      ]
+    },
+    {
+      "id": "DL-06",
+      "family": "DELIVERY",
+      "type": "logic+integration+security+concurrency+fault_injection",
+      "tests": [
+        "TestRunnerPreSendPolicyFailuresAreUncountedAndDoNotSend",
+        "TestRunnerRegistryInvalidCommandCommitsThenSignalsHealth"
+      ]
+    },
+    {
+      "id": "DL-07",
+      "family": "DELIVERY",
+      "type": "logic+integration+security+concurrency+fault_injection",
+      "tests": [
+        "TestClassifyClosedMatrix",
+        "TestRunnerSecondDNSFailureRetriesWithoutSending",
+        "TestRunnerB01ActualHTTPResultDiesAtomically",
+        "TestSafeTransportTimeoutIsClosedTransportFailure"
+      ]
+    },
+    {
+      "id": "DL-08",
+      "family": "DELIVERY",
+      "type": "logic+integration+security+concurrency+fault_injection",
+      "tests": [
+        "TestParseRetryAfterAndConfigBounds",
+        "TestRetryableHTTPStatusesPreserveRetryAfter",
+        "TestNextAttemptTimeComposesRetryAfterCapJitterAndCutoff",
+        "TestRunnerRetryable503HonorsRetryAfterAndCutoff",
+        "TestRunnerOverflowRetryAfterFallsBackToJitter",
+        "TestExponentialBound",
+        "TestFullJitter_WithinRange"
+      ]
+    },
+    {
+      "id": "DL-09",
+      "family": "DELIVERY",
+      "type": "logic+integration+security+concurrency+fault_injection",
+      "tests": [
+        "TestClassifyClosedMatrix",
+        "TestSafeTransportDoesNotFollowRedirect"
+      ]
+    },
+    {
+      "id": "DL-10",
+      "family": "DELIVERY",
+      "type": "logic+integration+security+concurrency+fault_injection",
+      "tests": [
+        "TestAddressPolicyRejectsMixedAndMappedAnswers",
+        "TestAddressPolicyPrivateExceptionIsTupleBoundAndNeverAllowsSpecialRanges",
+        "TestRunnerDNSRebindingFailsBeforeSend"
+      ]
+    },
+    {
+      "id": "DL-11",
+      "family": "DELIVERY",
+      "type": "logic+integration+security+concurrency+fault_injection",
+      "tests": [
+        "TestRunnerDNSRebindingFailsBeforeSend",
+        "TestSafeTransportPreservesTLSHostname",
+        "TestSafeTransportClassifiesCertificateFailureAsTLSFailure"
+      ]
+    },
+    {
+      "id": "DL-12",
+      "family": "DELIVERY",
+      "type": "logic+integration+security+concurrency+fault_injection",
+      "tests": [
+        "TestBuildRequestRejectsNonObjectDuplicateAndWrongContentType",
+        "TestBuildRequestRejectsAuthorityAndAuthDrift",
+        "TestBuildRequestRejectsHeaderInjectionDuplicatesAndFinalBodyOverflow"
+      ]
+    },
+    {
+      "id": "DL-13",
+      "family": "DELIVERY",
+      "type": "logic+integration+security+concurrency+fault_injection",
+      "tests": [
+        "TestSensitiveMarkerIsExcludedFromAttemptsAuditLogsAndOperatorProjections",
+        "TestSafeTransportDoesNotReadResponseBody",
+        "TestOpsRequestLoggingExcludesKeyPayloadJustificationAndStoreFields"
+      ]
+    },
+    {
+      "id": "DL-14",
+      "family": "DELIVERY",
+      "type": "logic+integration+security+concurrency+fault_injection",
+      "tests": [
+        "TestStoreClaim_Concurrent",
+        "TestWorkerGlobalConcurrencyBound"
+      ]
+    },
+    {
+      "id": "DL-15",
+      "family": "DELIVERY",
+      "type": "logic+integration+security+concurrency+fault_injection",
+      "tests": [
+        "TestStoreTransition_WrongLeaseHolder",
+        "TestStoreRecoverExpiredLeases",
+        "TestCrashAfterSendBeforeCommitConvergesWithoutLossAndMayDuplicate",
+        "TestRecoveryAdvisoryLockAllowsOnlyOneActiveSweeper"
+      ]
+    },
+    {
+      "id": "DL-16",
+      "family": "DELIVERY",
+      "type": "logic+integration+security+concurrency+fault_injection",
+      "tests": [
+        "TestB1B6StaticArchitectureBoundaries",
+        "TestStoreAttempts_AppendOnly"
+      ]
+    },
+    {
+      "id": "DL-17",
+      "family": "DELIVERY",
+      "type": "logic+integration+security+concurrency+fault_injection",
+      "tests": [
+        "TestBuildRequestMappingModesPreserveOrExtendBodyDeterministically",
+        "TestBuildRequestBearerAndBodyField",
+        "TestDeliveryRunner_PostgresEndToEnd"
+      ]
+    },
+    {
+      "id": "DL-18",
+      "family": "DELIVERY",
+      "type": "logic+integration+security+concurrency+fault_injection",
+      "tests": [
+        "TestValidateTransitionActor",
+        "TestValidateClaimActor",
+        "TestDeliveryRunner_PostgresEndToEnd"
+      ]
+    },
+    {
+      "id": "DL-19",
+      "family": "DELIVERY",
+      "type": "logic+integration+security+concurrency+fault_injection",
+      "tests": [
+        "TestRunnerSecondDNSCannotCrossCutoffAndSend",
+        "TestRunnerSecondDNSCannotCrossLeaseCommitBudgetAndSend"
+      ]
+    },
+    {
+      "id": "DL-20",
+      "family": "DELIVERY",
+      "type": "logic+integration+security+concurrency+fault_injection",
+      "tests": [
+        "TestClassifyClosedMatrix",
+        "TestRunnerRegistryInvalidCommandCommitsThenSignalsHealth",
+        "TestHealthErrorCodePreservesSanitizedSignal"
+      ]
+    },
+    {
+      "id": "OC-01",
+      "family": "OPERATIONS-CONTROL",
+      "type": "security_negative+http_integration",
+      "tests": [
+        "TestOpsRoutesRejectMissingInvalidAndRevokedAuthenticationBeforeOperations"
+      ]
+    },
+    {
+      "id": "OC-02",
+      "family": "OPERATIONS-CONTROL",
+      "type": "security_negative+integration",
+      "tests": [
+        "TestServiceRejectsMissingCapabilitiesAndOutOfScopeBeforeStore",
+        "TestOperationsVendorScopeDeenumeratesQueryPreviewAndExecute",
+        "TestOpsHandlersMapStoreErrorsWithoutExistenceLeak"
+      ]
+    },
+    {
+      "id": "OC-03",
+      "family": "OPERATIONS-CONTROL",
+      "type": "integration+pagination",
+      "tests": [
+        "TestServicePassesPaginationAndPreservesStoreOrdering",
+        "TestStoreDeadPaginationUsesDatabaseSnapshotAndExcludesReplayAndNewDead",
+        "TestStoreAttemptHistoryCrossPageIncludesLaterAppendWithoutDuplicates"
+      ]
+    },
+    {
+      "id": "OC-04",
+      "family": "OPERATIONS-CONTROL",
+      "type": "security_negative+api_contract",
+      "tests": [
+        "TestServiceQueriesUseClosedScopedProjection",
+        "TestOpsRoutesMatchClosedResponseShapes"
+      ]
+    },
+    {
+      "id": "OC-05",
+      "family": "OPERATIONS-CONTROL",
+      "type": "integration",
+      "tests": [
+        "TestPreviewReplayIsReadOnlyOrderedAndDeenumerated",
+        "TestOperationsDeadPreviewExecuteStartsNewDeliveryCycle"
+      ]
+    },
+    {
+      "id": "OC-06",
+      "family": "OPERATIONS-CONTROL",
+      "type": "security_negative+http_integration",
+      "tests": [
+        "TestOpsExecuteReauthenticatesAfterPreviewRevocation"
+      ]
+    },
+    {
+      "id": "OC-07",
+      "family": "OPERATIONS-CONTROL",
+      "type": "integration",
+      "tests": [
+        "TestExecuteReplayBestEffortClassifiesEveryInput",
+        "TestOperationsDeadPreviewExecuteStartsNewDeliveryCycle"
+      ]
+    },
+    {
+      "id": "OC-08",
+      "family": "OPERATIONS-CONTROL",
+      "type": "concurrency+integration",
+      "tests": [
+        "TestOperationsPreviewThenConcurrentReplayMakesStaleExecuteNonDestructive"
+      ]
+    },
+    {
+      "id": "OC-09",
+      "family": "OPERATIONS-CONTROL",
+      "type": "integration+fault_injection",
+      "tests": [
+        "TestExecuteReplayBestEffortClassifiesEveryInput"
+      ]
+    },
+    {
+      "id": "OC-10",
+      "family": "OPERATIONS-CONTROL",
+      "type": "api_contract+security_negative",
+      "tests": [
+        "TestReplayRejectsCompleteInvalidBatchMatrixBeforeStore",
+        "TestOpsReplayHandlersRejectOpenEndedAndMalformedWrites"
+      ]
+    },
+    {
+      "id": "OC-11",
+      "family": "OPERATIONS-CONTROL",
+      "type": "api_contract+security_negative",
+      "tests": [
+        "TestOpsReplayHandlersRejectOpenEndedAndMalformedWrites"
+      ]
+    },
+    {
+      "id": "OC-12",
+      "family": "OPERATIONS-CONTROL",
+      "type": "fault_injection+integration",
+      "tests": [
+        "TestExecuteReplayBestEffortClassifiesEveryInput",
+        "TestOperationsDeadPreviewExecuteStartsNewDeliveryCycle"
+      ]
+    },
+    {
+      "id": "OC-13",
+      "family": "OPERATIONS-CONTROL",
+      "type": "static+contract",
+      "tests": [
+        "TestB1B6StaticArchitectureBoundaries"
+      ]
+    },
+    {
+      "id": "OC-14",
+      "family": "OPERATIONS-CONTROL",
+      "type": "security_negative+marker_scan",
+      "tests": [
+        "TestOpsRequestLoggingExcludesKeyPayloadJustificationAndStoreFields",
+        "TestSensitiveMarkerIsExcludedFromAttemptsAuditLogsAndOperatorProjections"
+      ]
+    },
+    {
+      "id": "RO-01",
+      "family": "RELIABILITY-OBSERVABILITY",
+      "type": "integration",
+      "tests": [
+        "TestCollectMapsPendingAgeAndDeadCountsIncludingEmptyOutbox",
+        "TestReliabilityCollectsRealGlobalSnapshot"
+      ]
+    },
+    {
+      "id": "RO-02",
+      "family": "RELIABILITY-OBSERVABILITY",
+      "type": "integration",
+      "tests": [
+        "TestCollectMapsPendingAgeAndDeadCountsIncludingEmptyOutbox",
+        "TestReliabilityCollectsRealGlobalSnapshot"
+      ]
+    },
+    {
+      "id": "RO-03",
+      "family": "RELIABILITY-OBSERVABILITY",
+      "type": "integration",
+      "tests": [
+        "TestCollectMapsPendingAgeAndDeadCountsIncludingEmptyOutbox",
+        "TestReliabilityCollectsRealGlobalSnapshot"
+      ]
+    },
+    {
+      "id": "RO-04",
+      "family": "RELIABILITY-OBSERVABILITY",
+      "type": "security_negative+postgres_integration",
+      "tests": [
+        "TestReliabilityGlobalQueryRejectsMissingReadAllCapabilityWithoutProjection",
+        "TestMetrics_CollectorFailureReturns503WithoutBusinessSamples"
+      ]
+    },
+    {
+      "id": "RO-05",
+      "family": "RELIABILITY-OBSERVABILITY",
+      "type": "fault_injection+integration",
+      "tests": [
+        "TestCollectFailureAndInvalidProjectionPublishNothing",
+        "TestCollectTimeoutFailsWithoutStaleFallback",
+        "TestCollectDoesNotReusePreviousSnapshotAfterFailure",
+        "TestMetrics_CollectorFailureReturns503WithoutBusinessSamples"
+      ]
+    },
+    {
+      "id": "RO-06",
+      "family": "RELIABILITY-OBSERVABILITY",
+      "type": "security_negative+contract",
+      "tests": [
+        "TestCollectPublishesOneGlobalSnapshotAndExactlyThreeMetrics",
+        "TestSensitiveMarkerIsExcludedFromAttemptsAuditLogsAndOperatorProjections"
+      ]
+    },
+    {
+      "id": "RO-07",
+      "family": "RELIABILITY-OBSERVABILITY",
+      "type": "logic+promtool_contract",
+      "tests": [
+        "TestPrometheusRuleUnitTestsEncodeFiringResetHoldAndResolve",
+        "TestPrometheusReliabilityArtifactsAreFixedAndComplete"
+      ]
+    },
+    {
+      "id": "RO-08",
+      "family": "RELIABILITY-OBSERVABILITY",
+      "type": "logic+promtool_contract",
+      "tests": [
+        "TestPrometheusRuleUnitTestsEncodeFiringResetHoldAndResolve",
+        "TestPrometheusReliabilityArtifactsAreFixedAndComplete"
+      ]
+    },
+    {
+      "id": "RO-09",
+      "family": "RELIABILITY-OBSERVABILITY",
+      "type": "static+contract",
+      "tests": [
+        "TestB1B6StaticArchitectureBoundaries"
+      ]
+    },
+    {
+      "id": "RO-10",
+      "family": "RELIABILITY-OBSERVABILITY",
+      "type": "deployment_contract+integration",
+      "tests": [
+        "TestPrometheusReliabilityArtifactsAreFixedAndComplete",
+        "TestPlatformRoutesMatchOpenAPI"
+      ]
+    }
+  ],
+  "boundary_mappings": [
+    {
+      "id": "NSBR-05a",
+      "tests": [
+        "TestValidateIntake_MissingFields",
+        "TestValidateIntake_PayloadBound",
+        "TestValidateIntake_IdempotencyKeyCharset",
+        "TestStoreBoundaryValidation"
+      ]
+    },
+    {
+      "id": "NSBR-05b",
+      "tests": [
+        "TestStoreIntake_Idempotency",
+        "TestStoreIntake_ConcurrentSameKeyConvergesToOneRow",
+        "TestStoreClaim_Concurrent",
+        "TestStoreQueryOutbox_Scope"
+      ]
+    },
+    {
+      "id": "NSBR-05c",
+      "tests": [
+        "TestDecideTransition_Succeed",
+        "TestDecideTransition_Die_B01DeadlineExceededCountsAttempt",
+        "TestStoreTransition_ConcurrentSameVersionHasOneWinner"
+      ]
+    },
+    {
+      "id": "NSBR-05d",
+      "tests": [
+        "TestStoreAttempts_AppendOnly",
+        "TestStoreAttemptHistoryCrossPageIncludesLaterAppendWithoutDuplicates"
+      ]
+    }
+  ]
+}

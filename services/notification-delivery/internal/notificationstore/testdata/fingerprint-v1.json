@@ -1,0 +1,78 @@
+{
+  "schema": "rc_wsman.notification_fingerprint_vectors.v1",
+  "algorithm": "sha256(vendor_id || 0x00 || caller_id || 0x00 || idempotency_key || 0x00 || payload_bytes)",
+  "vectors": [
+    {
+      "name": "ordinary-json",
+      "vendor_id": "vendor-a",
+      "caller_id": "caller-1",
+      "idempotency_key": "key-001",
+      "payload_base64": "eyJldmVudCI6InNpZ251cCJ9",
+      "expected_sha256": "d8afa8a54927401b2f63cd248299054e34c124a25a6f39c13a25840edaf0ca08"
+    },
+    {
+      "name": "empty-payload",
+      "vendor_id": "vendor-a",
+      "caller_id": "caller-1",
+      "idempotency_key": "key-empty",
+      "payload_base64": "",
+      "expected_sha256": "46533421096c655e9810b00b6e7a2ae311bd8c52b5a7f869dcc0559ecf53c632"
+    },
+    {
+      "name": "nul-payload",
+      "vendor_id": "vendor-a",
+      "caller_id": "caller-1",
+      "idempotency_key": "key-nul",
+      "payload_base64": "YQBi",
+      "expected_sha256": "0dae263977e0c614e2fe071f472f50ca1b970e5908c8b934cab42ea8d23d2ccb"
+    },
+    {
+      "name": "utf8-payload",
+      "vendor_id": "vendor-unicode",
+      "caller_id": "caller-unicode",
+      "idempotency_key": "key-utf8",
+      "payload_base64": "6YCa55+l5bey5o6l5Y+X4pyF",
+      "expected_sha256": "4d158583554aa20d92a78c636f8b476142086dddb0a2fedbd2ad4162052665cb"
+    },
+    {
+      "name": "binary-payload",
+      "vendor_id": "vendor-bin",
+      "caller_id": "caller-bin",
+      "idempotency_key": "key-bin",
+      "payload_base64": "/wCAfwE=",
+      "expected_sha256": "37c2190c880db594c1c81e03c24feab4f9b333b4e1570fc6c8d46ba8f3b09b6e"
+    },
+    {
+      "name": "changed-vendor",
+      "vendor_id": "vendor-b",
+      "caller_id": "caller-1",
+      "idempotency_key": "key-001",
+      "payload_base64": "eyJldmVudCI6InNpZ251cCJ9",
+      "expected_sha256": "2b74e0382b2e5d426bb599367ec5ca24e86da9d3e2df3697a042153cfe637694"
+    },
+    {
+      "name": "changed-caller",
+      "vendor_id": "vendor-a",
+      "caller_id": "caller-2",
+      "idempotency_key": "key-001",
+      "payload_base64": "eyJldmVudCI6InNpZ251cCJ9",
+      "expected_sha256": "b8d443a59e3bf87400c5c479010ac95a48049299ba28a396ee7f9f11ea336a96"
+    },
+    {
+      "name": "changed-key",
+      "vendor_id": "vendor-a",
+      "caller_id": "caller-1",
+      "idempotency_key": "key-002",
+      "payload_base64": "eyJldmVudCI6InNpZ251cCJ9",
+      "expected_sha256": "d91aa413377fec8b2ede999c31e77497a95156a747fdd56aca7644232950844d"
+    },
+    {
+      "name": "changed-payload",
+      "vendor_id": "vendor-a",
+      "caller_id": "caller-1",
+      "idempotency_key": "key-001",
+      "payload_base64": "eyJldmVudCI6Im90aGVyIn0=",
+      "expected_sha256": "3f8be18c91cc9cfc6f1d97ff0773d55737c0b2082af0a33c4dd4c2310af7b08c"
+    }
+  ]
+}
