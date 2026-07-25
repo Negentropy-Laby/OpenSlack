@@ -1,6 +1,7 @@
-# API 通知投递服务 — 设计说明
+# Notification Delivery Service（通知投递服务）— 设计说明
 
-> 面向作业评审者的集中说明。模块级确定性契约见 `../design/cdd/`；本文件解释问题拆解与工程判断。
+> 本文件源自 standalone 历史设计基线，现用于说明 OpenSlack monorepo 内该独立服务源码的问题拆解
+> 与工程判断；模块级确定性契约仍见 `../design/cdd/`。
 
 ## 问题理解
 
@@ -114,7 +115,7 @@ operator query -> preview explicit ids -> execute explicit id+version
 `FOR UPDATE SKIP LOCKED` 支持多个 worker 安全竞争。
 
 - 不选 SQLite：不作为并发 worker 的生产方案。
-- 不同时支持 MySQL：技术可行，但双实现没有作业级收益。
+- 不同时支持 MySQL：技术可行，但双实现对当前独立服务边界没有足够收益。
 - 不在 day-1 使用 Kafka/RabbitMQ：若直接作为工作队列会产生数据库/队列双写；若增加 outbox relay，
   则引入当前流量尚未证明需要的基础设施。
 

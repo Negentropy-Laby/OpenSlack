@@ -1,8 +1,13 @@
-# rc_wsman — API 通知投递服务
+# Notification Delivery Service（通知投递服务）
 
-> 文档先行的 take-home assignment。B1–B6 已实现、完成本地机械验收，并通过逐批及最终
-> cross-batch fresh independent review；当前为本地 submission-ready。GitHub-hosted CI 与生产部署
-> 不在本地证据范围内。
+> 独立仓库阶段的 B1–B6 实现、本地机械验收和独立评审结果已作为历史基线导入 OpenSlack
+> monorepo。当前产品化与发布边界仍是仓库内源码与验证：OpenSlack client/queue 集成代码已经
+> 存在，但该独立进程和 Go module 尚未完成 registry registration、外部配置、service
+> admission/activation、live deployment 或 release。集成状态与治理边界见
+> [OpenSlack 集成指南](../../docs/developer/notification-delivery-integration.md)。
+
+`rc_wsman` 仅作为既有数据库/迁移、指标与告警、wire schema/fingerprint、测试 fixture、
+Canary/OpenAPI 示例及历史 provenance 标识保留；它不是当前 display name。
 
 ## 30 秒了解
 
@@ -73,12 +78,12 @@ Internal caller / operator
 - [安全威胁模型](docs/security/threat-model.md)
 - [运维手册](docs/operations/runbook.md)
 - [测试策略](docs/testing/test-strategy.md)
-- [分批次开发计划](docs/development-plan.md)
+- [Standalone 历史分批次开发计划](docs/development-plan.md)
 - [AI 使用与规划演进说明](docs/ai-usage.md)
 - [六模块 CDD 索引](design/cdd/module-index.md)
 - [ADR 注册表](docs/architecture/adr-registry.yaml)
 
-## 作业要求对照
+## Standalone 历史要求与证据入口
 
 | 要求 | 入口 |
 |---|---|
@@ -90,12 +95,13 @@ Internal caller / operator
 | AI 帮助、未采纳建议、自主决策 | [AI 使用说明](docs/ai-usage.md) |
 | MVP 代码与运行说明 | B1–B6 已落地；290+4 映射见 [AC 证据清单](docs/testing/ac-evidence.json)，运行证据见 [验收报告](docs/testing/acceptance-report.json) |
 
-## 当前状态
+## 当前仓库边界
 
-- 权威阶段：[`production/stage.txt`](production/stage.txt)（= Implementation）
-- 设计状态：以 [`design/cdd/module-index.md`](design/cdd/module-index.md) 为准
-- 实现状态：B1–B6 代码、迁移、全部公开 HTTP 契约、worker/recovery、Prometheus、部署与隔离演练
-  已机械闭合；B1/B2、B3、B4、B5、B6 及最终 cross-batch re-review 均为 **APPROVED**（0 blocker）。
+- Standalone 历史阶段：[`production/stage.txt`](production/stage.txt)（= Implementation）
+- Standalone 历史设计状态：以 [`design/cdd/module-index.md`](design/cdd/module-index.md) 为准
+- Standalone 历史实现状态：B1–B6 代码、迁移、全部公开 HTTP 契约、worker/recovery、
+  Prometheus、部署与隔离演练已机械闭合；B1/B2、B3、B4、B5、B6 及最终 cross-batch
+  re-review 均为 **APPROVED**（0 blocker）。
 - 平台入口：`/health/live`、`/health/ready`、`/health/version`、`/metrics`；业务入口以
   [`docs/api/openapi.yaml`](docs/api/openapi.yaml) 为准。
 - 一键运行：`docker compose --env-file deploy/local.env.example up --build --wait`。示例 secret 仅供

@@ -129,11 +129,19 @@ OpenSlack/
 │   ├── integration-negentropy/ # Private SHADOW preview and verification bridge
 │   ├── tui/                  # Ink TUI views, layout primitives, terminal workbench
 │   └── workflows/           # Workflow engine: load, validate, execute, checkpoint, resume
+├── services/
+│   └── notification-delivery/ # Independent Notification Delivery Service source
 ├── apps/cli/                # User command surface and module command groups
 ├── templates/new-agent/     # 9 onboarding template files
 ├── scripts/                 # genesis-validate.sh, genesis-rollback.sh, setup-gh.sh
 └── docs/                    # Full acceptance, developer, security documentation
 ```
+
+The [`Notification Delivery Service`](services/notification-delivery/README.md) is stored in this
+repository as source for an independent process and Go module. See the
+[integration contract and governance status](docs/developer/notification-delivery-integration.md).
+It is not a sixth OpenSlack module, is not registered in `.openslack/modules.yaml`, has not been
+admitted or activated by the OpenSlack runtime, and is not a released artifact.
 
 The public embedding surface consists of `@openslack/plugin-api`,
 `@openslack/plugin-host`, `@openslack/sdk`, and `@openslack/plugin-testkit`.

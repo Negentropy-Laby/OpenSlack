@@ -1,11 +1,10 @@
-# 分批次开发计划 — MVP 实现
+# Notification Delivery Service — Standalone 历史分批次开发计划
 
-> 本计划把已批准的 Architecture（6 模块 CDD / 290 canonical AC / OpenAPI 3.1 / CTRL-001..024）
-> 映射为可逐批授权、逐批审查的实现批次。所有者已明确授权并完成 B1–B6 实施。当前
-> `production/stage.txt` = Implementation；全量机械验收、逐批 review 与最终 cross-batch fresh
-> independent re-review 已通过，当前为本地 submission-ready。
+> 本文件记录独立仓库阶段已完成的 B1–B6 实施计划。以下日期、AC/NSBR 数量、评审结果、
+> checklist 与命令均作为导入的 standalone 历史事实保留，不是当前 registry/runtime/release
+> 授权；当前验证边界是 OpenSlack monorepo 内的独立服务源码。
 
-## 实现进度
+## Standalone 历史实现进度
 
 - CP0 — 已完成
 - B1/B2 — `APPROVED`（fresh independent closure review）
@@ -17,9 +16,9 @@
 
 B1–B6 共 290 项 canonical AC 与四项 NSBR 的逐项登记由
 [`ac-evidence.json`](testing/ac-evidence.json) 和 `tests/contracts/ac_evidence_test.go` 机械校验。
-2026-07-22 已在 Go 1.26.5 + PostgreSQL 18.4 完成 build/vet/race、OpenAPI、Prometheus、Compose、
-故障、容量与恢复验收；[`acceptance-report.json`](testing/acceptance-report.json) 不声称未运行的
-GitHub-hosted CI 或生产部署。
+Standalone 历史记录：2026-07-22 已在 Go 1.26.5 + PostgreSQL 18.4 完成 build/vet/race、
+OpenAPI、Prometheus、Compose、故障、容量与恢复验收；
+[`acceptance-report.json`](testing/acceptance-report.json) 不声称未运行的 GitHub-hosted CI 或生产部署。
 
 B3/B4 实施前的 AI 辅助计划、最终采纳项与人工修正已精炼至
 [AI 使用与规划演进说明](ai-usage.md#规划输入与实际偏差)；本地 `.claude/` 原稿不具备设计或状态权威。
@@ -57,8 +56,8 @@ B3/B4 实施前的 AI 辅助计划、最终采纳项与人工修正已精炼至
 - [x] 无 CTRL-024 / CTRL-016 违规；无数值 SLA 承诺
 - [x] 实现与机械验收证据已归档；290+4 证据映射已建立
 
-逐批及最终 cross-batch 独立评审均已完成；本地提交状态为 submission-ready。GitHub-hosted CI、
-commit/push 与生产部署仍不属于本轮已执行证据。
+在 standalone 阶段结束时，逐批及最终 cross-batch 独立评审与本地机械验收均已完成；该结果现作为
+导入的历史基线保留。当时未执行 GitHub-hosted CI、commit/push 或生产部署。
 
 ## 批次划分（沿模块依赖 DAG）
 
@@ -173,7 +172,8 @@ send 后 commit 前、PostgreSQL 重启、worker 抢占）；容量基线测量�
 `ai-usage.md` 实现阶段记录完整性；README 运行说明与真实启动命令一致性。
 
 **通过标准（最终）**：
-- [x] 290/290 canonical AC + 4/4 NSBR 有本地通过证据；GitHub-hosted CI 明确未运行
+- [x] Standalone 历史记录：290/290 canonical AC + 4/4 NSBR 有本地通过证据；当时
+  GitHub-hosted CI 明确未运行
 - [x] crash-after-send 不产生丢失，仅产生公开披露的重复（at-least-once 实证）
 - [x] deadline Path A/B 的 blocking N=1、N=W 通过，并记录更高 N 的非 SLA 基线
 - [x] docker-compose 一键启动；app/PostgreSQL/Prometheus health 与 scrape 通过
