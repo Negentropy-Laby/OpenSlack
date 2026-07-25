@@ -7,8 +7,8 @@
 >
 > **Target release:** OpenSlack 0.3.0
 >
-> **Pre-IB6 qualification:** `G5-CANARY=SUPERSEDED_NOT_RUN`;
-> `G5-IMPORT-QUALIFICATION=PENDING`
+> **Repository order:** `IB6-REPOSITORY-IMPORT-READINESS=PENDING_REPOSITORY_READINESS`;
+> `G5-POST-IMPORT-QUALIFICATION=DEFERRED_UNTIL_IB6_MERGE_TRAIN_PX2_EXIT`
 
 This document freezes the boundary between OpenSlack's GitHub Watch queue and the process-isolated notification
 delivery service currently developed in `wsman/rc_wsman`. It is the OpenSlack half of Integration B0. The contract
@@ -26,29 +26,39 @@ implementation may proceed without changing the runtime authority boundary.
 The first value remains the historical 0.2.0 evidence anchor, not a current release-tested commit. IB0 through IB3
 runtime work was synchronized to `main` through PR #282 and merge commit
 `5c7b3f842b429c34ad7244780720fb38570081d2`; that runtime is retained and new service-record admission remains
-fail-closed by default. The `main` commit produced by merging the pre-IB6 governance amendment becomes the next
-0.2.0 `TESTED_COMMIT` candidate, but the complete release suite must be rerun at that exact commit. Prior evidence
-does not cover the new candidate.
+fail-closed by default. OpenSlack 0.2.0 is re-frozen only from post-IB6 `main` after PX2 Exit. The
+complete release suite must be rerun at that exact new `TESTED_COMMIT`; prior evidence does not
+cover or authorize the new candidate.
 
-## Pre-IB6 Gate Supersession
+## Repository Import Order Supersession
 
-Owner authorization recorded at `2026-07-24T00:46:29+08:00` prospectively replaces the unexecuted
-`G5-CANARY` prerequisite with `G5-IMPORT-QUALIFICATION`. The former 336-hour/100-accepted requirement is preserved
-as `SUPERSEDED_NOT_RUN`; it is not represented as passed and its historical branches and evidence are not rewritten.
+The 2026-07-24 amendment prospectively replaced the unexecuted `G5-CANARY` prerequisite with
+`G5-IMPORT-QUALIFICATION` for IB6 eligibility. That amendment, decision, schema and v1 environment
+manifest are immutable historical records. `G5-CANARY` remains `SUPERSEDED_NOT_RUN`, and the
+replacement qualification was never run.
 
-The replacement is one protected run with no minimum elapsed duration and a 60-minute timeout. It requires at least
-eight distinct non-replay accepted keys covering two repositories, issue and push events, and two vendors, with at
-least one accepted key in every matrix cell. Every accepted notification must become delivered within 10 minutes.
-The same run exercises OpenSlack restart, successful-202 response loss and service restart with a pending outbox,
-while retaining receipt/database/vendor reconciliation, same-key identity, no-duplicate, no-fallback, permission
-isolation and secret/payload-exclusion invariants.
+The current append-only decision supersedes only that old gate's role as a pre-IB6 authorization
+gate. Pre-import work now stops at technical
+`IB6-REPOSITORY-IMPORT-READINESS`; a separate exact-base human decision is still required before
+the import branch exists. External inputs and `G5-POST-IMPORT-QUALIFICATION` remain deferred until
+`IB6-MERGE-TRAIN/PX2-EXIT`, whose terminal unlock is PX2 Exit.
 
-The governed amendment is
+The historical governed amendment is
 [`notification-delivery-pre-ib6-gate-amendment.md`](../integration/notification-delivery-pre-ib6-gate-amendment.md).
-The cross-repository-neutral decision receipt is
+Its historical cross-repository-neutral decision receipt is
 [`integration/gates/g5-import-qualification-supersession.json`](../../integration/gates/g5-import-qualification-supersession.json).
-This replacement can qualify only IB6 exact-history import eligibility after all other prerequisites pass. It does
-not authorize `LIVE_VERIFIED`, IB7 default cutover, OpenSlack 0.3.0 release or production readiness.
+The current order decision and explanation are
+[`integration/gates/ib6-repository-import-order-supersession.json`](../../integration/gates/ib6-repository-import-order-supersession.json)
+and
+[`notification-delivery-ib6-order-supersession.md`](../integration/notification-delivery-ib6-order-supersession.md).
+They do not authorize IB6 import, G4 or G5 PASS, `LIVE_VERIFIED`, IB7 default cutover, either
+release, production readiness, repository archive or destructive retirement.
+
+The old qualification contract remains the payload contract for the future post-import run: one
+protected run, no minimum elapsed duration, a 60-minute timeout, at least eight distinct non-replay
+accepted keys across two repositories, issue and push events, and two vendors, with delivery
+within 10 minutes. Its fault and reconciliation invariants remain unchanged. The renamed
+post-import gate evaluates IB7 only and does not authorize IB7.
 
 ## G0 Review Governance
 
@@ -445,18 +455,25 @@ G3-QUEUE: PASS; IB3-A queue/migration, IB3-B daemon/router and IB3-C governed op
 `a912cb4` / tree `89e4b38` by `docs/testing/integration-gates/g3-queue.json`
 G4-E2E: two repositories x Slack and webhook fault matrix
 G5-CANARY: SUPERSEDED_NOT_RUN; historical 336-hour/100-accepted prerequisite retained without a PASS claim
-G5-IMPORT-QUALIFICATION: PENDING; one protected run, no minimum elapsed duration, 60-minute timeout,
-8 distinct non-replay accepted keys across 2 repositories x issue/push x 2 vendors, each delivered within 10 minutes
+G5-IMPORT-QUALIFICATION: SUPERSEDED_UNEXECUTED; historical pre-IB6 role retained without a PASS claim
+IB6-REPOSITORY-IMPORT-READINESS: PENDING_REPOSITORY_READINESS; technical evidence only, import not authorized
+G5-POST-IMPORT-QUALIFICATION: DEFERRED_UNTIL_IB6_MERGE_TRAIN_PX2_EXIT; PENDING_EXTERNAL,
+IB7_EVALUATION_ONLY; one protected run, no minimum elapsed duration, 60-minute timeout
 ```
 
 G0 unlocks G1 and G2 only; it does not authorize daemon wiring or traffic. G3 closes the local queue, migration,
 router and governed-recovery gate only; its receipt explicitly does not claim G4, G5, live verification or production
-readiness. Only after `G5-IMPORT-QUALIFICATION=PASS`, the immutable 0.2.0 release and every other IB6 prerequisite
-may the full service history enter OpenSlack. This replacement gate applies only to history-import eligibility and
-makes no production-readiness, live-verification, IB7, 0.3.0-release or integration-completion claim.
+readiness. Repository readiness is not import authorization. The full service history may enter
+OpenSlack only after the separate exact-base `IB6_HISTORY_IMPORT_ONLY` human decision. PX2 Exit
+then unlocks external inputs, the post-IB6 immutable 0.2.0 release freeze, G4 and
+`G5-POST-IMPORT-QUALIFICATION`. A G5 PASS supplies IB7 evaluation evidence only and makes no
+production-readiness, live-verification, IB7, 0.3.0-release or integration-completion claim.
 
 The default branch contains the reviewed `workflow_dispatch` definition at
 `.github/workflows/notification-import-qualification.yml`. Its first job is a hosted, one-minute,
-environment-free ref-and-commit gate. The protected qualification must be invoked with `--ref main` and the
-resolved main SHA supplied as `expected_commit`; a ref or SHA mismatch fails before the protected environment,
-self-hosted runner, or credential-materialization job can start.
+environment-free ref-and-commit gate. It checks out `expected_commit` without persisted credentials
+and requires both `services/notification-delivery` and the governed
+`integration/gates/ib6-history-import.json` receipt at that exact commit. The protected
+qualification must be invoked with `--ref main` and the resolved main SHA supplied as
+`expected_commit`; it checks out the same commit and reconfirms the two paths before setup or
+credential materialization. A ref, SHA, Git object type, path or symlink mismatch fails closed.

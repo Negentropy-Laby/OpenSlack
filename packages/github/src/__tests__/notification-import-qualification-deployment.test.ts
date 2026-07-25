@@ -39,6 +39,7 @@ describe('notification import qualification deployment', () => {
       'utf8',
     );
     const workflow = parse(source) as {
+      name: string;
       on: {
         workflow_dispatch: {
           inputs: {
@@ -50,19 +51,33 @@ describe('notification import qualification deployment', () => {
       concurrency: { 'cancel-in-progress': boolean };
       jobs: {
         'require-main-ref': {
+          name: string;
           'timeout-minutes': number;
-          steps: Array<{ env?: Record<string, string>; run?: string }>;
+          steps: Array<{
+            env?: Record<string, string>;
+            name?: string;
+            run?: string;
+            uses?: string;
+            with?: Record<string, string | boolean>;
+          }>;
         };
         qualification: {
           environment: string;
           env: Record<string, string | boolean>;
+          name: string;
           needs: string;
           'timeout-minutes': number;
-          steps: Array<{ run?: string; uses?: string }>;
+          steps: Array<{
+            name?: string;
+            run?: string;
+            uses?: string;
+            with?: Record<string, string | boolean>;
+          }>;
         };
       };
     };
 
+    expect(workflow.name).toBe('Notification Post-Import Qualification');
     expect(Object.keys(workflow.on)).toEqual(['workflow_dispatch']);
     expect(workflow.on.workflow_dispatch.inputs.expected_commit).toMatchObject({
       required: true,
@@ -75,12 +90,94 @@ describe('notification import qualification deployment', () => {
     expect(workflow.jobs['require-main-ref'].steps[0]?.run).toContain(
       '"$EXPECTED_COMMIT" != "$GITHUB_SHA"',
     );
+    expect(workflow.jobs['require-main-ref'].name).toContain('post-import qualification');
+    const hostedCheckoutIndex = workflow.jobs['require-main-ref'].steps.findIndex(
+      (step) => step.uses === 'actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd',
+    );
+    const hostedGuardIndex = workflow.jobs['require-main-ref'].steps.findIndex(
+      (step) => step.name === 'Require the imported service and governed IB6 receipt',
+    );
+    expect(hostedCheckoutIndex).toBeGreaterThan(0);
+    expect(hostedGuardIndex).toBe(hostedCheckoutIndex + 1);
+    expect(workflow.jobs['require-main-ref'].steps[hostedCheckoutIndex]?.with).toEqual({
+      ref: '${{ inputs.expected_commit }}',
+      'persist-credentials': false,
+    });
+    const hostedGuard = workflow.jobs['require-main-ref'].steps[hostedGuardIndex]?.run ?? '';
+    expect(hostedGuard).toContain("rev-parse --verify 'HEAD^{commit}'");
+    expect(hostedGuard).toContain('test "$checkout_commit" = "$GITHUB_SHA"');
+    expect(hostedGuard).toContain('test "$checkout_commit" = "$EXPECTED_COMMIT"');
+    expect(hostedGuard).toContain('"${checkout_commit}:services/notification-delivery"');
+    expect(hostedGuard).toContain('"${checkout_commit}:integration/gates/ib6-history-import.json"');
+    expect(hostedGuard).toMatch(
+      /"\$\{checkout_commit\}:services\/notification-delivery"\s+\)" = "tree"/u,
+    );
+    expect(hostedGuard).toMatch(
+      /"\$\{checkout_commit\}:integration\/gates\/ib6-history-import\.json"\s+\)" = "blob"/u,
+    );
+    expect(hostedGuard).toContain('test -d "$GITHUB_WORKSPACE/services/notification-delivery"');
+    expect(hostedGuard).toContain(
+      'test -f "$GITHUB_WORKSPACE/integration/gates/ib6-history-import.json"',
+    );
+    expect(hostedGuard).toContain('test ! -L "$GITHUB_WORKSPACE/services/notification-delivery"');
+    expect(hostedGuard).toContain(
+      'test ! -L "$GITHUB_WORKSPACE/integration/gates/ib6-history-import.json"',
+    );
     expect(workflow.jobs.qualification.needs).toBe('require-main-ref');
+    expect(workflow.jobs.qualification.name).toBe('Run protected G5 post-import qualification');
     expect(workflow.jobs.qualification.environment).toBe('notification-canary');
     expect(workflow.jobs.qualification['timeout-minutes']).toBe(60);
     expect(workflow.jobs.qualification.env).toHaveProperty(
       'OPENSLACK_NOTIFICATION_QUALIFICATION_EXPECTED_COMMIT',
       '${{ inputs.expected_commit }}',
+    );
+    const protectedCheckoutIndex = workflow.jobs.qualification.steps.findIndex(
+      (step) => step.uses === 'actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd',
+    );
+    const protectedGuardIndex = workflow.jobs.qualification.steps.findIndex(
+      (step) => step.name === 'Reconfirm the imported service and governed IB6 receipt',
+    );
+    const protectedInputGuardIndex = workflow.jobs.qualification.steps.findIndex(
+      (step) => step.name === 'Require the expected main commit and complete deployment inputs',
+    );
+    const protectedSetupIndex = workflow.jobs.qualification.steps.findIndex(
+      (step) => step.uses === 'oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6',
+    );
+    const protectedCredentialIndex = workflow.jobs.qualification.steps.findIndex(
+      (step) => step.name === 'Materialize run-scoped credentials',
+    );
+    expect(protectedCheckoutIndex).toBe(0);
+    expect(protectedGuardIndex).toBe(1);
+    expect(protectedGuardIndex).toBeLessThan(protectedSetupIndex);
+    expect(protectedGuardIndex).toBeLessThan(protectedInputGuardIndex);
+    expect(protectedGuardIndex).toBeLessThan(protectedCredentialIndex);
+    expect(workflow.jobs.qualification.steps[protectedCheckoutIndex]?.with).toEqual({
+      ref: '${{ inputs.expected_commit }}',
+      'persist-credentials': false,
+    });
+    const protectedGuard = workflow.jobs.qualification.steps[protectedGuardIndex]?.run ?? '';
+    expect(protectedGuard).toContain("rev-parse --verify 'HEAD^{commit}'");
+    expect(protectedGuard).toContain('test "$checkout_commit" = "$GITHUB_SHA"');
+    expect(protectedGuard).toContain('"$OPENSLACK_NOTIFICATION_QUALIFICATION_EXPECTED_COMMIT"');
+    expect(protectedGuard).toContain('"${checkout_commit}:services/notification-delivery"');
+    expect(protectedGuard).toContain(
+      '"${checkout_commit}:integration/gates/ib6-history-import.json"',
+    );
+    expect(protectedGuard).toMatch(
+      /"\$\{checkout_commit\}:services\/notification-delivery"\s+\)" = "tree"/u,
+    );
+    expect(protectedGuard).toMatch(
+      /"\$\{checkout_commit\}:integration\/gates\/ib6-history-import\.json"\s+\)" = "blob"/u,
+    );
+    expect(protectedGuard).toContain('test -d "$GITHUB_WORKSPACE/services/notification-delivery"');
+    expect(protectedGuard).toContain(
+      'test -f "$GITHUB_WORKSPACE/integration/gates/ib6-history-import.json"',
+    );
+    expect(protectedGuard).toContain(
+      'test ! -L "$GITHUB_WORKSPACE/services/notification-delivery"',
+    );
+    expect(protectedGuard).toContain(
+      'test ! -L "$GITHUB_WORKSPACE/integration/gates/ib6-history-import.json"',
     );
     const serialized = JSON.stringify(workflow);
     const credentialDirFormula =
@@ -100,6 +197,8 @@ describe('notification import qualification deployment', () => {
     expect(source).toContain('"$evidence_root"/fault-runs/*.sha256');
     expect(serialized).not.toMatch(/336|14\s*day|sleep\s+[1-9][0-9]{3,}/iu);
     expect(serialized).not.toMatch(/id-token|contents["']?\s*:\s*write/iu);
+    expect(source).not.toContain('Run protected IB6 import qualification');
+    expect(source).not.toContain('IB6_HISTORY_IMPORT_ONLY');
   });
 
   it('binds the sealer to checkout, watch config, deployment and fault sidecars', () => {
@@ -192,7 +291,7 @@ describe('notification import qualification deployment', () => {
     );
   });
 
-  it('publishes a closed pending-external environment manifest', () => {
+  it('preserves the closed historical v1 pending-external environment manifest', () => {
     const manifest = JSON.parse(
       readFileSync(
         new URL(
@@ -218,9 +317,258 @@ describe('notification import qualification deployment', () => {
     expect(manifest).toMatchObject({
       status: 'PENDING_EXTERNAL',
       timeout_minutes: 60,
+      gate: 'G5-IMPORT-QUALIFICATION',
+      scope: 'IB6_HISTORY_IMPORT_ONLY',
       environment: { deployment_branch: 'main' },
       does_not_claim: expect.arrayContaining(['LIVE_VERIFIED', 'IB7_CUTOVER']),
     });
+  });
+
+  it('publishes a closed post-import v2 manifest without premature authorization', () => {
+    type Manifest = {
+      [key: string]: unknown;
+      does_not_claim: string[];
+      environment: Record<string, unknown>;
+      pending_variables: string[];
+      repositories: Array<Record<string, unknown>>;
+      required_secrets: string[];
+    };
+    const manifest = readRepositoryJson(
+      'deploy/notification-import-qualification/environment-manifest.v2.json',
+    ) as Manifest;
+    const schema = readRepositoryJson(
+      'deploy/notification-import-qualification/environment-manifest.v2.schema.json',
+    );
+    const validate = new Ajv2020({ strict: false, validateFormats: false }).compile(schema);
+
+    expect(validate(manifest), JSON.stringify(validate.errors)).toBe(true);
+    expect(validate({ ...manifest, authorizes: ['IB7_CUTOVER'] })).toBe(false);
+    expect(
+      validate({
+        ...manifest,
+        environment: { ...manifest.environment, secret_value: 'forbidden' },
+      }),
+    ).toBe(false);
+    expect(
+      validate({
+        ...manifest,
+        repositories: [manifest.repositories[0], manifest.repositories[0]],
+      }),
+    ).toBe(false);
+    expect(
+      validate({
+        ...manifest,
+        pending_variables: manifest.pending_variables.slice(0, -1),
+      }),
+    ).toBe(false);
+    expect(
+      validate({
+        ...manifest,
+        required_secrets: [...manifest.required_secrets].reverse(),
+      }),
+    ).toBe(false);
+    expect(
+      validate({
+        ...manifest,
+        does_not_claim: manifest.does_not_claim.filter((claim) => claim !== 'IB7_CUTOVER'),
+      }),
+    ).toBe(false);
+    expect(validate({ ...manifest, gate: 'G5-IMPORT-QUALIFICATION' })).toBe(false);
+    expect(validate({ ...manifest, scope: 'IB6_HISTORY_IMPORT_ONLY' })).toBe(false);
+    expect(validate({ ...manifest, status: 'PASS' })).toBe(false);
+    expect(manifest).toMatchObject({
+      schema: 'openslack.notification_import_qualification_environment_manifest.v2',
+      status: 'PENDING_EXTERNAL',
+      gate: 'G5-POST-IMPORT-QUALIFICATION',
+      scope: 'IB7_EVALUATION_ONLY',
+      prerequisite_gates: [
+        'G3-QUEUE',
+        'IB6-HISTORY-IMPORT',
+        'IB6-MERGE-TRAIN/PX2-EXIT',
+        'OPENSLACK-V0.2.0-IMMUTABLE-RELEASE',
+        'G4-E2E',
+      ],
+      external_inputs_after: 'IB6-MERGE-TRAIN/PX2-EXIT',
+      repository_preflight: {
+        required_ref: 'refs/heads/main',
+        checkout_ref_source: 'expected_commit',
+        checkout_persist_credentials: false,
+        required_directory: 'services/notification-delivery',
+        required_receipt: 'integration/gates/ib6-history-import.json',
+      },
+      does_not_claim: expect.arrayContaining([
+        'G5_POST_IMPORT_QUALIFICATION_PASS',
+        'IB7_CUTOVER',
+        'LIVE_VERIFIED',
+      ]),
+    });
+    expect(Object.hasOwn(manifest, 'authorizes')).toBe(false);
+    expect(JSON.stringify(manifest)).not.toContain('"authorizes"');
+  });
+
+  it('validates the append-only order decision and its historical byte bindings', () => {
+    type OrderDecision = {
+      [key: string]: unknown;
+      historical_bindings: Array<{
+        path: string;
+        role: string;
+        sha256: string;
+      }>;
+      scope: {
+        authorizes: string[];
+        does_not_authorize: string[];
+      };
+      supersedes: {
+        preserved_gate: { executed: boolean; gate: string; status: string };
+        superseded_role: { executed: boolean; gate: string; role: string; status: string };
+      };
+    };
+    const historicalDecisionBytes = readRepositoryBytes(
+      'integration/gates/g5-import-qualification-supersession.json',
+    );
+    const historicalDecision = JSON.parse(historicalDecisionBytes.toString('utf8')) as object;
+    const historicalSchema = readRepositoryJson(
+      'docs/integration/notification-delivery-gate-supersession.v1.schema.json',
+    );
+    const validateHistorical = new Ajv2020({
+      strict: false,
+      validateFormats: false,
+    }).compile(historicalSchema);
+    expect(validateHistorical(historicalDecision), JSON.stringify(validateHistorical.errors)).toBe(
+      true,
+    );
+    expect(historicalDecision).toMatchObject({
+      superseded_gate: {
+        gate: 'G5-CANARY',
+        status: 'SUPERSEDED_NOT_RUN',
+        executed: false,
+      },
+      replacement_gate: {
+        gate: 'G5-IMPORT-QUALIFICATION',
+        status: 'ACTIVE_PENDING_EXECUTION',
+      },
+      scope: { authorizes: ['IB6_HISTORY_IMPORT_ONLY'] },
+    });
+
+    const decision = readRepositoryJson(
+      'integration/gates/ib6-repository-import-order-supersession.json',
+    ) as OrderDecision;
+    const schema = readRepositoryJson(
+      'docs/integration/notification-delivery-ib6-order-supersession.v1.schema.json',
+    );
+    const validate = new Ajv2020({ strict: false, validateFormats: false }).compile(schema);
+    expect(validate(decision), JSON.stringify(validate.errors)).toBe(true);
+    expect(validate({ ...decision, premature_authorization: true })).toBe(false);
+    expect(
+      validate({
+        ...decision,
+        scope: { ...decision.scope, authorizes: ['IB6_HISTORY_IMPORT_ONLY'] },
+      }),
+    ).toBe(false);
+
+    for (const binding of decision.historical_bindings) {
+      const digest = `sha256:${createHash('sha256')
+        .update(readRepositoryBytes(binding.path))
+        .digest('hex')}`;
+      expect(digest, `STOP: HISTORICAL_GATE_BYTES_DRIFT: ${binding.path}`).toBe(binding.sha256);
+    }
+
+    expect(decision.historical_bindings).toEqual([
+      {
+        role: 'PRIOR_DECISION',
+        path: 'integration/gates/g5-import-qualification-supersession.json',
+        sha256: 'sha256:2d1ee8da4bf3433732384bc1b70afd264b3455c9c8a0764e7c16b24f65ba54d6',
+      },
+      {
+        role: 'PRIOR_DECISION_SCHEMA',
+        path: 'docs/integration/notification-delivery-gate-supersession.v1.schema.json',
+        sha256: 'sha256:23e756e1160a569c145b8dd38059089b7607727532ca21f7faa97c68ca95940c',
+      },
+      {
+        role: 'PRIOR_AMENDMENT',
+        path: 'docs/integration/notification-delivery-pre-ib6-gate-amendment.md',
+        sha256: 'sha256:d36e0d0303303c07e6ed7b057294605d44577aec4d5595f10c97f013d597f154',
+      },
+      {
+        role: 'PRIOR_ENVIRONMENT_MANIFEST',
+        path: 'deploy/notification-import-qualification/environment-manifest.v1.json',
+        sha256: 'sha256:818851072f5d9705242ba2825fe47afc2ce4d937b22e22141a76d62db7d8b760',
+      },
+      {
+        role: 'PRIOR_ENVIRONMENT_MANIFEST_SCHEMA',
+        path: 'deploy/notification-import-qualification/environment-manifest.schema.json',
+        sha256: 'sha256:c8b53ff58c3aa9c6cc51a8b6888e486026e856a0093957783f47f533facf1c79',
+      },
+    ]);
+    expect(decision).toMatchObject({
+      effectivity: {
+        status: 'EFFECTIVE_ON_GOVERNED_MAIN_MERGE',
+        canonical_base: 'main',
+        exact_head_human_approval_required: true,
+        separate_import_authorization_required: true,
+      },
+      order: {
+        replacement_pre_import_gate: {
+          gate: 'IB6-REPOSITORY-IMPORT-READINESS',
+          role: 'TECHNICAL_READINESS_ONLY',
+          result_authorizes_import: false,
+        },
+        import_authorization: {
+          scope: 'IB6_HISTORY_IMPORT_ONLY',
+          status: 'NOT_GRANTED',
+        },
+        deferred_gate: {
+          gate: 'G5-POST-IMPORT-QUALIFICATION',
+          scope: 'IB7_EVALUATION_ONLY',
+          authorizes_ib7: false,
+        },
+        external_inputs_after: 'IB6-MERGE-TRAIN/PX2-EXIT',
+        external_inputs_terminal_gate: 'PX2-EXIT',
+        v0_2_0_release_source: 'POST_IB6_MAIN',
+        v0_2_0_release_policy: {
+          requires_refreeze: true,
+          prior_evidence_reusable: false,
+        },
+      },
+    });
+    expect(decision.supersedes).toEqual({
+      decision_id: 'g5-canary-to-g5-import-qualification-2026-07-24',
+      schema: 'negentropy_laby.integration_gate_supersession.v1',
+      path: 'integration/gates/g5-import-qualification-supersession.json',
+      superseded_role: {
+        gate: 'G5-IMPORT-QUALIFICATION',
+        role: 'PRE_IB6_AUTHORIZATION_GATE',
+        status: 'SUPERSEDED_UNEXECUTED',
+        executed: false,
+      },
+      preserved_gate: {
+        gate: 'G5-CANARY',
+        status: 'SUPERSEDED_NOT_RUN',
+        executed: false,
+      },
+    });
+    expect(decision.scope.authorizes).toEqual([]);
+    expect(decision.scope.does_not_authorize).toEqual(
+      expect.arrayContaining([
+        'IB6_HISTORY_IMPORT_ONLY',
+        'IB7_CUTOVER',
+        'LIVE_VERIFIED',
+        'REPOSITORY_ARCHIVE',
+      ]),
+    );
+
+    const currentTruth = [
+      readRepositoryBytes('docs/developer/notification-delivery-integration.md'),
+      readRepositoryBytes('docs/user-guide.md'),
+      readRepositoryBytes('deploy/notification-import-qualification/README.md'),
+    ]
+      .map((bytes) => bytes.toString('utf8'))
+      .join('\n');
+    expect(currentTruth).toContain('G5-POST-IMPORT-QUALIFICATION');
+    expect(currentTruth).toContain('IB7_EVALUATION_ONLY');
+    expect(currentTruth).toContain('IB6-MERGE-TRAIN/PX2-EXIT');
+    expect(currentTruth).not.toMatch(/PASS[` ]+authorizes only IB6 history-import eligibility/u);
+    expect(currentTruth).not.toContain('G5-IMPORT-QUALIFICATION=PENDING');
   });
 });
 
@@ -235,6 +583,14 @@ function setEnvironment(values: Record<string, string>): void {
     if (!frozenEnvironment.has(name)) frozenEnvironment.set(name, process.env[name]);
     process.env[name] = value;
   }
+}
+
+function readRepositoryBytes(path: string): Buffer {
+  return readFileSync(new URL(`../../../../${path}`, import.meta.url));
+}
+
+function readRepositoryJson(path: string): object {
+  return JSON.parse(readRepositoryBytes(path).toString('utf8')) as object;
 }
 
 function configYaml(digest: `sha256:${string}`): string {

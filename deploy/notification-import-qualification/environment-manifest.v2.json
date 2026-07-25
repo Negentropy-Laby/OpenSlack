@@ -1,0 +1,92 @@
+{
+  "schema": "openslack.notification_import_qualification_environment_manifest.v2",
+  "status": "PENDING_EXTERNAL",
+  "recorded_at": "2026-07-25T17:25:00+08:00",
+  "gate": "G5-POST-IMPORT-QUALIFICATION",
+  "scope": "IB7_EVALUATION_ONLY",
+  "prerequisite_gates": [
+    "G3-QUEUE",
+    "IB6-HISTORY-IMPORT",
+    "IB6-MERGE-TRAIN/PX2-EXIT",
+    "OPENSLACK-V0.2.0-IMMUTABLE-RELEASE",
+    "G4-E2E"
+  ],
+  "workflow": ".github/workflows/notification-import-qualification.yml",
+  "timeout_minutes": 60,
+  "order_decision": "integration/gates/ib6-repository-import-order-supersession.json",
+  "external_inputs_after": "IB6-MERGE-TRAIN/PX2-EXIT",
+  "repository_preflight": {
+    "required_ref": "refs/heads/main",
+    "checkout_ref_source": "expected_commit",
+    "checkout_persist_credentials": false,
+    "required_directory": "services/notification-delivery",
+    "required_receipt": "integration/gates/ib6-history-import.json"
+  },
+  "repositories": [
+    {
+      "full_name": "Negentropy-Laby/openslack-notification-canary-a",
+      "visibility": "private",
+      "event_branch": "canary-events",
+      "issues_required": true
+    },
+    {
+      "full_name": "Negentropy-Laby/openslack-notification-canary-b",
+      "visibility": "private",
+      "event_branch": "canary-events",
+      "issues_required": true
+    }
+  ],
+  "environment": {
+    "repository": "Negentropy-Laby/OpenSlack",
+    "name": "notification-canary",
+    "required_reviewer": "wsman",
+    "deployment_branch": "main"
+  },
+  "fixed_variables": {
+    "CANARY_REPO_A": "Negentropy-Laby/openslack-notification-canary-a",
+    "CANARY_REPO_B": "Negentropy-Laby/openslack-notification-canary-b",
+    "CANARY_VENDOR_SLACK": "openslack-slack",
+    "CANARY_VENDOR_WEBHOOK": "openslack-webhook",
+    "CANARY_ROUTE_SLACK": "slack-primary",
+    "CANARY_ROUTE_WEBHOOK": "webhook-primary",
+    "CANARY_ROUTING_EPOCH": "1"
+  },
+  "pending_variables": [
+    "CANARY_GITHUB_APP_ID",
+    "CANARY_GITHUB_APP_INSTALLATION_ID",
+    "CANARY_QUALIFICATION_RUNNER",
+    "CANARY_WORKSPACE_ROOT",
+    "CANARY_EVIDENCE_ROOT",
+    "CANARY_WATCH_CONFIG_PATH",
+    "CANARY_VENDOR_EVIDENCE_DIR",
+    "CANARY_HOST",
+    "CANARY_HOST_USER",
+    "CANARY_WEBHOOK_ORIGIN",
+    "CANARY_IMAGE",
+    "CANARY_SLACK_CHANNEL",
+    "NOTIFICATION_SERVICE_ORIGIN",
+    "NOTIFICATION_SERVICE_COMMIT",
+    "NOTIFICATION_SERVICE_TREE",
+    "NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST"
+  ],
+  "required_secrets": ["CANARY_GITHUB_APP_PRIVATE_KEY", "HANDOFF_CALLER_KEY", "CANARY_AUDITOR_KEY"],
+  "preflight": {
+    "linux_host": "PENDING_EXTERNAL",
+    "postgresql": "PENDING_EXTERNAL",
+    "prometheus": "PENDING_EXTERNAL",
+    "webhook_receiver": "PENDING_EXTERNAL",
+    "slack_app_channel": "PENDING_EXTERNAL",
+    "caller_auditor_scope": "PENDING_EXTERNAL",
+    "two_vendors_active": "PENDING_EXTERNAL"
+  },
+  "does_not_claim": [
+    "G5_POST_IMPORT_QUALIFICATION_PASS",
+    "LIVE_VERIFIED",
+    "IB7_CUTOVER",
+    "OPENSLACK_0_2_0_RELEASE",
+    "OPENSLACK_0_3_0_RELEASE",
+    "PRODUCTION_READY",
+    "REPOSITORY_ARCHIVE",
+    "DESTRUCTIVE_RETIREMENT"
+  ]
+}
