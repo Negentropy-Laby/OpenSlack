@@ -2,7 +2,9 @@ package contracts_test
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -236,6 +238,113 @@ func TestCanaryPreflightRejectsUnsafeConfigWithoutLeakingValues(t *testing.T) {
 	})
 }
 
+func TestCanaryVerifiedLocalBuildBindsTheRelocatedServiceTree(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Canary deployment preflight targets the Linux Docker host")
+	}
+	serviceRoot := repositoryRoot(t)
+	scriptData, err := os.ReadFile(filepath.Join(serviceRoot, "deploy", "canary", "preflight.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fixtureParent := t.TempDir()
+	gitRoot := filepath.Join(fixtureParent, "repository")
+	fixtureServiceRoot := filepath.Join(gitRoot, "services", "notification-delivery")
+	fixtureScript := filepath.Join(fixtureServiceRoot, "deploy", "canary", "preflight.sh")
+	if err := os.MkdirAll(filepath.Dir(fixtureScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fixtureScript, scriptData, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fixtureServiceRoot, "service-marker.txt"), []byte("service\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gitRoot, "root-marker.txt"), []byte("root\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	runFixtureGit(t, gitRoot, "init", "--initial-branch=main")
+	runFixtureGit(t, gitRoot, "config", "user.name", "Canary Contract")
+	runFixtureGit(t, gitRoot, "config", "user.email", "canary-contract@example.invalid")
+	runFixtureGit(t, gitRoot, "add", ".")
+	runFixtureGit(t, gitRoot, "commit", "-m", "fixture")
+	commit := strings.TrimSpace(runFixtureGit(t, gitRoot, "rev-parse", "HEAD^{commit}"))
+	serviceTree := strings.TrimSpace(runFixtureGit(t, gitRoot, "rev-parse", "HEAD:services/notification-delivery"))
+	repositoryTree := strings.TrimSpace(runFixtureGit(t, gitRoot, "rev-parse", "HEAD^{tree}"))
+	if serviceTree == repositoryTree {
+		t.Fatal("fixture service tree unexpectedly equals the whole repository tree")
+	}
+
+	fakeBin := filepath.Join(fixtureParent, "bin")
+	if err := os.MkdirAll(fakeBin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakeDocker := filepath.Join(fakeBin, "docker")
+	if err := os.WriteFile(fakeDocker, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run := func(t *testing.T, tree string) (string, error) {
+		t.Helper()
+		envFile := filepath.Join(t.TempDir(), "runtime.env")
+		if err := os.WriteFile(envFile, []byte(canaryLocalBuildEnvironment(commit, tree)), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		command := exec.Command("bash", fixtureScript, "--env-file", envFile)
+		command.Env = append(os.Environ(), "PATH="+fakeBin+string(os.PathListSeparator)+os.Getenv("PATH"))
+		output, err := command.CombinedOutput()
+		return string(output), err
+	}
+
+	t.Run("service subtree passes", func(t *testing.T) {
+		output, err := run(t, serviceTree)
+		if err != nil {
+			t.Fatalf("service subtree binding failed: %v output=%s", err, output)
+		}
+		if !strings.Contains(output, "CANARY_PREFLIGHT_PASS mode=verified-local-build") {
+			t.Fatalf("service subtree binding lacks stable PASS output: %s", output)
+		}
+	})
+
+	t.Run("whole repository tree fails", func(t *testing.T) {
+		output, err := run(t, repositoryTree)
+		if err == nil || !strings.Contains(output, "CANARY_PREFLIGHT_FAIL code=source_tree_mismatch") {
+			t.Fatalf("whole repository tree did not fail closed: err=%v output=%s", err, output)
+		}
+	})
+
+	t.Run("dirty whole worktree fails", func(t *testing.T) {
+		if err := os.WriteFile(filepath.Join(gitRoot, "dirty.txt"), []byte("dirty\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		output, err := run(t, serviceTree)
+		if err == nil || !strings.Contains(output, "CANARY_PREFLIGHT_FAIL code=source_worktree_dirty") {
+			t.Fatalf("dirty whole worktree did not fail closed: err=%v output=%s", err, output)
+		}
+	})
+
+	t.Run("git status failure fails", func(t *testing.T) {
+		fakeGit := filepath.Join(fakeBin, "git")
+		wrapper := fmt.Sprintf(
+			"#!/bin/sh\nif [ \"${3:-}\" = \"status\" ]; then exit 23; fi\nexec %q \"$@\"\n",
+			realGit,
+		)
+		if err := os.WriteFile(fakeGit, []byte(wrapper), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		output, err := run(t, serviceTree)
+		if err == nil || !strings.Contains(output, "CANARY_PREFLIGHT_FAIL code=source_worktree_status_unavailable") {
+			t.Fatalf("git status failure did not fail closed: err=%v output=%s", err, output)
+		}
+	})
+}
+
 func TestCanaryPinnedComposeResolvesWithoutBuildOrPublicPorts(t *testing.T) {
 	docker, err := exec.LookPath("docker")
 	if err != nil {
@@ -354,6 +463,46 @@ func canaryPinnedEnvironment(secretMarker string) string {
 		"WEBHOOK_RECEIVER_EVIDENCE_DIR=/srv/openslack-notification-canary/webhook-evidence",
 		"",
 	}, "\n")
+}
+
+func canaryLocalBuildEnvironment(commit string, tree string) string {
+	const secretMarker = "CANARY_LOCAL_FIXTURE_SECRET"
+	const databasePassword = "0123456789abcdef0123456789abcdef"
+	fingerprint := sha256.Sum256([]byte("rc_wsman.canary.local-build.v1\x00" + commit + "\x00" + tree))
+	return strings.Join([]string{
+		"CANARY_DEPLOYMENT_MODE=verified-local-build",
+		"NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST=sha256:" + fmt.Sprintf("%x", fingerprint),
+		"CANARY_SOURCE_COMMIT=" + commit,
+		"CANARY_SOURCE_TREE=" + tree,
+		`API_KEY_PEPPER_ACTIVE={"id":"fixture","value":"` + secretMarker + `"}`,
+		"API_KEY_PEPPER_PREVIOUS=",
+		"CANARY_SLACK_BOT_TOKEN=" + secretMarker,
+		"WEBHOOK_AUDIT_TOKEN=" + secretMarker,
+		"CANARY_VENDOR_SLACK=vendor-slack",
+		"CANARY_VENDOR_WEBHOOK=vendor-webhook",
+		"CANARY_POSTGRES_USER=canary_db",
+		"CANARY_POSTGRES_PASSWORD=" + databasePassword,
+		"CANARY_POSTGRES_DB=canary_db",
+		"CANARY_DATABASE_URL=postgres://canary_db:" + databasePassword + "@db:5432/canary_db?sslmode=disable",
+		"CANARY_SERVICE_ORIGIN=https://service.example.test:443",
+		"CANARY_WEBHOOK_ORIGIN=https://receiver.example.test:443",
+		"DB_PORT=5432",
+		"APP_PORT=8080",
+		"PROMETHEUS_PORT=9090",
+		"WEBHOOK_RECEIVER_PORT=8090",
+		"WEBHOOK_RECEIVER_EVIDENCE_DIR=/srv/openslack-notification-canary/webhook-evidence",
+		"",
+	}, "\n")
+}
+
+func runFixtureGit(t *testing.T, directory string, args ...string) string {
+	t.Helper()
+	command := exec.Command("git", append([]string{"-C", directory}, args...)...)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s failed: %v output=%s", strings.Join(args, " "), err, output)
+	}
+	return string(output)
 }
 
 func TestPITRFixtureUsesPersistedMappingFieldNames(t *testing.T) {

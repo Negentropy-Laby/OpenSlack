@@ -123,10 +123,10 @@ evidence_dir="${values[WEBHOOK_RECEIVER_EVIDENCE_DIR]}"
 [[ "${evidence_dir}" == /* && "${evidence_dir}" != "/" && "${evidence_dir}" != "/root" && "${evidence_dir}" != "/home" ]] ||
   fail evidence_directory_path
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
+service_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 compose_files=(
-  -f "${repo_root}/docker-compose.yml"
-  -f "${repo_root}/deploy/canary/docker-compose.yml"
+  -f "${service_root}/docker-compose.yml"
+  -f "${service_root}/deploy/canary/docker-compose.yml"
 )
 
 case "${values[CANARY_DEPLOYMENT_MODE]}" in
@@ -140,7 +140,7 @@ case "${values[CANARY_DEPLOYMENT_MODE]}" in
     [[ "${service_image##*@}" == "${deployment_digest}" ]] || fail service_image_digest_mismatch
     [[ -z "${values[CANARY_SOURCE_COMMIT]:-}${values[CANARY_SOURCE_TREE]:-}" ]] ||
       fail mixed_image_modes
-    compose_files+=(-f "${repo_root}/deploy/canary/docker-compose.pinned.yml")
+    compose_files+=(-f "${service_root}/deploy/canary/docker-compose.pinned.yml")
     ;;
   verified-local-build)
     require_value CANARY_SOURCE_COMMIT
@@ -151,18 +151,31 @@ case "${values[CANARY_DEPLOYMENT_MODE]}" in
     source_tree="${values[CANARY_SOURCE_TREE]}"
     [[ "${source_commit}" =~ ^[0-9a-f]{40}$ ]] || fail source_commit_format
     [[ "${source_tree}" =~ ^[0-9a-f]{40}$ ]] || fail source_tree_format
-    actual_commit="$(git -C "${repo_root}" rev-parse HEAD 2>/dev/null)" || fail source_commit_unavailable
-    actual_tree="$(git -C "${repo_root}" rev-parse HEAD^{tree} 2>/dev/null)" || fail source_tree_unavailable
+    git_root="$(git -C "${service_root}" rev-parse --show-toplevel 2>/dev/null)" ||
+      fail source_repository_unavailable
+    service_prefix="$(git -C "${service_root}" rev-parse --show-prefix 2>/dev/null)" ||
+      fail source_path_unavailable
+    [[ "${service_prefix}" == "services/notification-delivery/" ]] || fail source_path_mismatch
+    service_path="${service_prefix%/}"
+    actual_commit="$(git -C "${git_root}" rev-parse HEAD^{commit} 2>/dev/null)" ||
+      fail source_commit_unavailable
+    actual_tree="$(git -C "${git_root}" rev-parse "${actual_commit}:${service_path}" 2>/dev/null)" ||
+      fail source_tree_unavailable
+    actual_tree_type="$(git -C "${git_root}" cat-file -t "${actual_tree}" 2>/dev/null)" ||
+      fail source_tree_unavailable
+    [[ "${actual_tree_type}" == "tree" ]] || fail source_tree_not_tree
     [[ "${actual_commit}" == "${source_commit}" ]] || fail source_commit_mismatch
     [[ "${actual_tree}" == "${source_tree}" ]] || fail source_tree_mismatch
-    [[ -z "$(git -C "${repo_root}" status --porcelain=v1 --untracked-files=all 2>/dev/null)" ]] ||
-      fail source_worktree_dirty
+    worktree_status="$(
+      git -C "${git_root}" status --porcelain=v1 --untracked-files=all 2>/dev/null
+    )" || fail source_worktree_status_unavailable
+    [[ -z "${worktree_status}" ]] || fail source_worktree_dirty
     expected_local_digest="$(
       printf 'rc_wsman.canary.local-build.v1\0%s\0%s' "${source_commit}" "${source_tree}" |
         sha256sum | cut -d' ' -f1
     )"
     [[ "${deployment_digest}" == "sha256:${expected_local_digest}" ]] || fail local_deployment_digest_mismatch
-    compose_files+=(-f "${repo_root}/deploy/canary/docker-compose.local-build.yml")
+    compose_files+=(-f "${service_root}/deploy/canary/docker-compose.local-build.yml")
     ;;
   *)
     fail deployment_mode
