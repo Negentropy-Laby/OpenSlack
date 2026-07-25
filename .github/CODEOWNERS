@@ -12,6 +12,9 @@ CLAUDE.md                                       @wsman
 packages/kernel/src/**                         @wsman
 packages/plugin-host/**                        @wsman
 
+# Notification Delivery Service — explicit service ownership
+services/notification-delivery/**              @wsman
+
 # Core workflow artifacts — Workflow-Trust: core requires a CODEOWNER review
 packages/workflows/src/builtins/**             @wsman
 packages/workflows/src/workflow-catalog.ts     @wsman
