@@ -23,12 +23,12 @@ native binary wrapper. The upstream yoga-layout is MIT-licensed.
 
 ## License Status
 
-| Component                                                  | Upstream license             | Aby status               | OpenSlack status                            |
-| ---------------------------------------------------------- | ---------------------------- | ------------------------ | ------------------------------------------- |
-| Ink engine (`src/ink/`)                                    | MIT (vadimdemedes/ink)       | Forked, heavily modified | **Confirmed (2026-05-27)**                  |
-| yoga-layout TS (`src/native-ts/yoga-layout/`)              | MIT (Meta yoga-layout)       | Pure TS port             | **Confirmed (2026-05-27)**                  |
-| Design system components (`src/components/design-system/`) | Aby-authored                 | `"UNLICENSED"`           | **Gated for PR 2** — not included in PR #93 |
-| pretext-derived code (`terminal-text-layout.ts`)           | MIT (nicolo-ribaudo/pretext) | Used with attribution    | **Confirmed (2026-05-27)**                  |
+| Component                                                  | Upstream license             | Aby status               | OpenSlack status                                            |
+| ---------------------------------------------------------- | ---------------------------- | ------------------------ | ----------------------------------------------------------- |
+| Ink engine (`src/ink/`)                                    | MIT (vadimdemedes/ink)       | Forked, heavily modified | **Confirmed (2026-05-27)**                                  |
+| yoga-layout TS (`src/native-ts/yoga-layout/`)              | MIT (Meta yoga-layout)       | Pure TS port             | **Confirmed (2026-05-27)**                                  |
+| Design system components (`src/components/design-system/`) | Aby-authored                 | `"UNLICENSED"`           | **Excluded** — current OpenSlack components are native code |
+| pretext-derived code (`terminal-text-layout.ts`)           | MIT (nicolo-ribaudo/pretext) | Used with attribution    | **Confirmed (2026-05-27)**                                  |
 
 ### Required Before Merge
 
@@ -36,7 +36,11 @@ Before any code PR merges, the following must be confirmed:
 
 1. ~~Whether Aby's ink engine fork can be used in OpenSlack~~ **Confirmed 2026-05-27.**
 2. ~~Whether the yoga-layout TS port has its own license terms or follows upstream MIT.~~ **Confirmed 2026-05-27.**
-3. Whether design-system components can be extracted and relicensed. **Gated for PR 2** — not included in PR #93.
+3. ~~Whether design-system components can be extracted and relicensed.~~
+   **Resolved without extraction:** commit
+   `082be66f5fb604b7ad4c16828ea3f1ac5fd30590` added the current
+   design-system components as OpenSlack-native implementations. The excluded
+   Aby files remain excluded and are not relicensed.
 4. All copied files must retain original license headers where they exist.
 5. `THIRD_PARTY_NOTICES.md` at repository root must document all third-party code provenance and license status.
 
@@ -122,14 +126,15 @@ Tests must prove the shim never outputs OSC sequences to stdout/stderr.
 - `index.ts` — Pure TypeScript flexbox engine (~2579 lines)
 - `enums.ts` — Layout enums
 
-### Design System (from `src/components/design-system/`)
+### OpenSlack-Native Design System
 
-Tier 1 (ported directly):
+The current primitives were implemented in OpenSlack rather than copied from
+Aby's excluded design-system directory:
 
 - `ThemeProvider`, `ThemedBox`, `ThemedText`, `ProgressBar`, `StatusIcon`,
-  `Byline`, `KeyboardShortcutHint`
+  `KeyboardShortcutHint`
 
-Tier 2 (adapted):
+Additional OpenSlack-native primitives:
 
 - `ListItem`, `Divider`, `Pane` (modal context dependency removed)
 
@@ -237,7 +242,7 @@ packages/tui/
       env-utils.ts
       intl.ts
 
-    design-system/              — ported + adapted primitives
+    design-system/              — OpenSlack-native primitives
       ThemeProvider.tsx
       theme.ts
       ThemedBox.tsx

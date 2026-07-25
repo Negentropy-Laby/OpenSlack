@@ -1,8 +1,9 @@
-# Third-Party Notices — @openslack/tui
+# Third-Party Notices — OpenSlack
 
-This document lists third-party code used in `packages/tui/` and its
-provenance. Each entry must be confirmed before the corresponding code
-can be merged.
+This document records repository third-party code and provenance. Each
+attribution must be reviewed before the affected bytes are released;
+repository-only source inclusion is not a release claim, and release
+packaging must still describe only the bytes that it ships.
 
 ## 1. Ink Terminal UI Engine
 
@@ -78,23 +79,44 @@ are used under the MIT License.
 **Confirmed (2026-05-27):** Attribution is correct and compatible. MIT
 license terms satisfied.
 
-## 4. Aby Design System Components
+## 4. OpenSlack Design System Components
 
-**Source:** `src/components/design-system/` in Aby's repository
+**Source:** `packages/tui/src/design-system/` in this repository, introduced
+by OpenSlack commit `082be66f5fb604b7ad4c16828ea3f1ac5fd30590`.
 
 **Use:** ThemeProvider, ThemedBox, ThemedText, ProgressBar, StatusIcon,
-Byline, KeyboardShortcutHint, ListItem, Divider, Pane. Planned for porting
-in PR 2.
+KeyboardShortcutHint, ListItem, Divider, and Pane.
 
-**Status:** Aby-authored code, `"license": "UNLICENSED"`.
-**Not included in PR #93.** License gate deferred to PR 2 (design-system
-port). Permission for design-system components will be confirmed separately
-before PR 2 merges.
+**Status:** The current components are OpenSlack-native implementations. They
+are not copies of Aby's excluded `src/components/design-system/` files. This
+statement does not relicense, import, or make any claim about that excluded
+Aby-authored code.
 
-## License Gate
+## 5. Notification Delivery Service
 
-Per `docs/developer/tui-porting-notes.md`, no code PR (PR 1+) merges until
-the license status of all ported code is confirmed. This document serves as
-the tracking file for that confirmation.
+**Current source:** `services/notification-delivery/` in this repository.
 
-**Status:** CONFIRMED (2026-05-27) for Ink engine, yoga-layout TS port, and pretext-derived code. Design-system components gated for PR 2.
+**Historical source:** [wsman/rc_wsman](https://github.com/wsman/rc_wsman),
+frozen at commit `982db466b2ba2c20bec150b7688bd398e4f52714`
+and tree `7ac5144aeab9d453f39e2b6d2fbea828e7a89017`, then imported with
+history preserved by PR #301.
+
+**License and production dependency notices:** The service retains its
+byte-preserved Apache-2.0 `LICENSE` and `NOTICE`. Its exact production Go
+module attribution and complete upstream license texts are recorded in
+`services/notification-delivery/THIRD_PARTY_NOTICES.md`; its deterministic
+repository source/build-input inventory is recorded in
+`services/notification-delivery/SBOM.cdx.json`.
+
+**Release status:** Repository membership is not a release claim. The service
+is not included in the current OpenSlack CLI archive or CLI CycloneDX SBOM.
+
+## TUI License Gate
+
+For the TUI port governed by `docs/developer/tui-porting-notes.md`, no ported
+code PR (PR 1+) merges until the license status of all ported code is
+confirmed. This document serves as the tracking file for that confirmation.
+
+**Status:** CONFIRMED (2026-05-27) for the Ink engine, yoga-layout TS port,
+and pretext-derived code. The current design-system components are
+OpenSlack-native and do not consume the excluded Aby design-system source.

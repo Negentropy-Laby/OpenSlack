@@ -4,9 +4,17 @@
 !.dockerignore
 !go.mod
 !go.sum
+!LICENSE
+!NOTICE
+!THIRD_PARTY_NOTICES.md
+!SBOM.cdx.json
 !cmd/
 !cmd/**/
 !cmd/**/*.go
+!integration/
+!integration/source-manifest.v2.json
+!integration/schemas/
+!integration/schemas/source-manifest.v2.schema.json
 !internal/
 !internal/**/
 !internal/**/*.go
