@@ -1599,6 +1599,71 @@ contains the six paths.
 
 ### 10.3 Commit 2 — registry and generated status
 
+Before editing the registry, bind its test counts to one canonical hosted
+Vitest run for the exact `TESTED_COMMIT`. The local P6 run proves release-head
+behavior, but its console summary is not the count source for promotion.
+Likewise, `openslack status verify` proves that `.openslack/modules.yaml` and
+the generated status document agree with each other; it does not read a
+Vitest result and cannot prove that either count is true.
+
+Use the required hosted validation job that runs the repository-wide
+`npx vitest run`. Record the following in the promotion PR validation or job
+summary, not in a new repository evidence file:
+
+```text
+validation workflow/run id
+validation job id and check name
+checked-out full commit SHA
+checked-out tree SHA
+passing tests and skipped tests
+passing files and skipped files
+per-project passing tests and files for Module 02
+the deterministic extraction command or parser version
+```
+
+The current full hosted validation runs for `pull_request` and may check out
+GitHub's synthetic merge commit rather than a literal release commit. Record
+the run's base SHA, PR head SHA/tree, and synthetic checkout SHA/tree. Verify
+that the synthetic commit has those exact base/head parents, that the check is
+associated with the current remote PR head, and that its checkout tree equals
+the frozen `TESTED_COMMIT` tree. Literal commit equality is not required when
+the reviewed synthetic merge and the eventual governed merge have the same
+tree.
+
+Strip ANSI control sequences before parsing a text log. Prefer machine-readable
+Vitest output when the hosted job exposes it. For the text fallback, use only
+the final `Tests` and `Test Files` summary lines for the raw passing/skipped
+totals. Compute Module 02 mechanically from test-file result lines for exactly
+these project roots:
+
+```text
+@openslack/github
+@openslack/runtime
+@openslack/core
+@openslack/delivery
+```
+
+For each project result line, parse both the total test count and its optional
+skipped count. Set `passing tests = total tests - skipped tests`; never treat
+the printed total as the passing count when the line includes skipped tests.
+Count the file as passing only when its passing test count is greater than
+zero, and do not count a fully skipped file as passing. Keep skipped tests and
+fully skipped files separate. Do not infer a count from changed paths,
+historical PR prose, a local partially passing run, or a previous registry
+value. The validation record must include this table:
+
+| Project               | Passing tests | Passing files |
+| --------------------- | ------------: | ------------: |
+| `@openslack/github`   |         `<n>` |         `<n>` |
+| `@openslack/runtime`  |         `<n>` |         `<n>` |
+| `@openslack/core`     |         `<n>` |         `<n>` |
+| `@openslack/delivery` |         `<n>` |         `<n>` |
+| Module 02 total       |       `<sum>` |       `<sum>` |
+
+Set the registry raw Vitest passing counts and Module 02 passing counts to
+those hosted results before generating status. The generated document must
+show the same values.
+
 Edit `.openslack/modules.yaml`:
 
 - append `commit:<EVIDENCE_COMMIT>` and the owner's exact
@@ -1636,6 +1701,16 @@ The path list from `TESTED_COMMIT` through `HEAD` must match only:
 docs/status/current.md
 ```
 
+This exact eight-path block is the authoritative expansion of the promotion
+allowlist declared at the start of Section 10. It excludes test source, Vitest
+configuration, package manifests, workspace dependency configuration, and every
+other test-discovery input. Within `.openslack/modules.yaml`, change only the
+count and promotion metadata fields described in this subsection; do not change
+`packages`, Module 02 project ownership, or another field that could change the
+recount scope. If any test-affecting path or field must change, stop, deliver
+that change as a separate prerequisite, select a new `TESTED_COMMIT`, and rerun
+the frozen hosted baseline before promotion.
+
 Then rerun:
 
 ```bash
@@ -1649,13 +1724,31 @@ bash scripts/genesis-validate.sh
 git status --short
 ```
 
-**GO:** six valid committed records, only proved blocker removals, cap-consistent
-maturity, exactly generated status, and no non-allowlisted path since
-`TESTED_COMMIT`.
+After pushing Commit 2, require the same repository-wide hosted validation on
+the final promotion PR head. Record its run/job/head/tree and repeat the raw
+and per-project extraction. A `pull_request` job may check out GitHub's
+synthetic merge commit rather than the literal PR head. In that case, record
+the base SHA, PR head SHA/tree, and synthetic checkout SHA/tree. Require the
+synthetic parents to be exactly `TESTED_COMMIT` followed by the current remote
+PR head, require the synthetic tree to equal the PR head tree, and require the
+run to be the current check associated with that head. Because the authoritative
+path and field allowlists immediately above exclude test-affecting inputs and
+Module 02 ownership changes, the final-head counts must equal the frozen
+`TESTED_COMMIT` counts and the registry/generated status values. If another
+promotion commit is needed, discard the old final-head result and repeat this
+check on the new head.
+
+**GO:** six valid committed records, only proved blocker removals,
+cap-consistent maturity, exactly generated status, no non-allowlisted path
+since `TESTED_COMMIT`, and frozen-head/final-head hosted Vitest counts that
+mechanically match the registry and generated status.
 
 **STOP:** stale product change, expired evidence, owner/revision mismatch,
 registry reference to the wrong commit, component cap, remaining blocker hidden,
-or `production_ready` while unconfigured/blocked.
+`production_ready` while unconfigured/blocked, missing or ambiguous hosted
+test evidence, incomplete Module 02 mapping, skipped results folded into
+passing counts, checked-out head/tree mismatch, a non-green final-head run, or
+any difference among hosted counts, registry counts, and generated status.
 
 ### 10.4 Govern the promotion PR
 
