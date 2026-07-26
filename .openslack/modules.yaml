@@ -1,6 +1,6 @@
 schema: openslack.modules.v2
-vitest_tests: 4868
-vitest_files: 390
+vitest_tests: 4967
+vitest_files: 401
 modules:
   - id: self_evolution
     name: Self-Evolution Kernel
@@ -131,6 +131,13 @@ modules:
       - repo:integrations/qoder-work/skills/openslack-organization-control/SKILL.md
       - commit:7dd09ad0a702a3e5d4267a3f4c5cddf7beb4abe2
       - repo:docs/testing/qoder-work-evidence.md
+      - commit:99ee0bfc6f597f4ed3dbd797219ccb0a2717f9cf
+      - test:packages/operator/src/__tests__/governed-plan-service.test.ts
+      - test:packages/operator/src/__tests__/governed-plan-store.test.ts
+      - commit:94b53a4ad4d8ce1b937a06aeaac504d49c753678
+      - test:apps/mcp/src/__tests__/mutation-tools.test.ts
+      - test:apps/mcp/src/__tests__/audit.test.ts
+      - test:packages/qoder-adapter/src/__tests__/tool-catalog.test.ts
     phase: '2A/2B/2C'
     cli:
       - openslack ask
@@ -149,9 +156,9 @@ modules:
       - '@openslack/credentials'
       - '@openslack/qoder-adapter'
       - '@openslack/mcp'
-    tests: 1018
-    test_files: 124
-    notes: Structured planner active. Webhook and Slack chat adapters active with actor mapping. PRMS chat cards and action confirmation active. The typed Operator action registry is instance-scoped, preserves the closed 30-action built-in default, accepts explicit planner/executor injection, and canonical-revalidates frozen PlanSteps at execution. The CLI application composition root constructs one sealed PluginHost and instance-scoped Operator action, LLM-provider, conversation-store, and plugin-action bindings per process. The read-only Qoder MCP frontend uses that same composition context, publishes an exact 12-tool business and Organization Graph catalog over local stdio, returns the versioned openslack.mcp_result.v2 envelope, applies bounded schemas, graph limits, evidence allowlists, nested-data rejection, and redaction, and exposes no shell, approval, merge, generic command, or mutation surface. The repository Qoder Skill is progressively disclosed, validates independently, and requires Status, Owner, Blocker, Next, and Evidence reporting; direct MCP SDK qualification is LOCAL_PASS, while authenticated Qoder CLI and desktop qualification remain external blockers and QODER_VERIFIED is not claimed. Its host target catalog exposes only the audited bounded github.metrics returned-item count under the exact github.issues.read capability; SHADOW plugin actions remain visibility-only, while ENFORCE proof plans are rebuilt through the same canonical registry before execution. All other built-ins and all unconfigured plugin authority remain fail-closed until complete behavior contracts, policy, activation evidence, and a durable audit sink are explicitly composed. Setup attach provides preview-first read-only-monitor and full-agent modes backed by a virtual validation plan, persistent rollback journal, workspace lock, before-hash/realpath/symlink/containment checks, atomic writes, exact byte/mode rollback, crash recovery, and idempotent apply; the foreground watcher starts only after commit and validation. Generated agents cannot approve or merge. LLM-first intent routing with deterministic keyword fallback, setup report, and 24h pending plan store active. Session-based conversation memory with multi-turn context resolution and progressive clarification. Doctor --format plain for non-technical output. Conversation-first TUI workbench with Ask OpenSlack, Operator recommendation cards, workflow draft-first cards, profile sync recommendations, and subagent mention dispatch. TUI setup report view and PR doctor view via --format tui. Versioned Windows x64 and Linux x64 archive builds embed the CLI, workflow assets, native keychain binding, build metadata, SBOM, checksums, and provenance; native build and unpacked smoke are enforced by the release matrix. The installed CLI verifies stable release artifacts and trusted signatures without a source checkout, Bun, or Node.js. Agent Runtime credentials can be previewed and imported atomically into the native keychain without writing secret values to workspace configuration.
+    tests: 1074
+    test_files: 131
+    notes: Structured planner active. Webhook and Slack chat adapters active with actor mapping. PRMS chat cards and action confirmation active. The typed Operator action registry is instance-scoped, preserves the closed 30-action built-in default, accepts explicit planner/executor injection, and canonical-revalidates frozen PlanSteps at execution. The CLI application composition root constructs one sealed PluginHost and instance-scoped Operator action, LLM-provider, conversation-store, and plugin-action bindings per process. The stock Qoder MCP frontend uses that same composition context and publishes an exact 12-tool projection-only business and Organization Graph catalog over local stdio. Explicit nominal composition ports may instead expose an exact 16-tool governed agent profile or a separately human-attested 17-tool profile; local demo adds only its bounded reset tool. Every mutation is compiled into one immutable host-owned plan, returns a root-only one-time confirmation capability whose hash alone is persisted, revalidates actor/workspace/source/permission/catalog/executor/build/process bindings, and uses an atomic execution claim with reconciliation-required timeout semantics. Workflow-effect decisions require a fresh independently authenticated per-decision attestation and remain distinct from GitHub review. Their terminal CAS persists a deterministic pending audit projection; the sink writes through one composition-bound O_APPEND descriptor and advances it to recorded only after durable Collaboration append. All profiles return openslack.mcp_result.v2, reject client authority and executable steps, and expose no shell, GitHub approval, direct merge, policy, registry, permission, or generic command surface. The repository Qoder Skill is progressively disclosed, validates independently, and requires Status, Owner, Blocker, Next, and Evidence reporting; direct MCP SDK qualification is LOCAL_PASS, while authenticated Qoder CLI and desktop qualification remain external blockers and QODER_VERIFIED is not claimed. Its host target catalog exposes only the audited bounded github.metrics returned-item count under the exact github.issues.read capability; SHADOW plugin actions remain visibility-only, while ENFORCE proof plans are rebuilt through the same canonical registry before execution. All other built-ins and all unconfigured plugin authority remain fail-closed until complete behavior contracts, policy, activation evidence, and a durable audit sink are explicitly composed. Setup attach provides preview-first read-only-monitor and full-agent modes backed by a virtual validation plan, persistent rollback journal, workspace lock, before-hash/realpath/symlink/containment checks, atomic writes, exact byte/mode rollback, crash recovery, and idempotent apply; the foreground watcher starts only after commit and validation. Generated agents cannot approve or merge. LLM-first intent routing with deterministic keyword fallback, setup report, and 24h pending plan store active. Session-based conversation memory with multi-turn context resolution and progressive clarification. Doctor --format plain for non-technical output. Conversation-first TUI workbench with Ask OpenSlack, Operator recommendation cards, workflow draft-first cards, profile sync recommendations, and subagent mention dispatch. TUI setup report view and PR doctor view via --format tui. Versioned Windows x64 and Linux x64 archive builds embed the CLI, workflow assets, native keychain binding, build metadata, SBOM, checksums, and provenance; native build and unpacked smoke are enforced by the release matrix. The installed CLI verifies stable release artifacts and trusted signatures without a source checkout, Bun, or Node.js. Agent Runtime credentials can be previewed and imported atomically into the native keychain without writing secret values to workspace configuration.
 
   - id: pr_review_merge
     name: PR Review & Merge Steward
@@ -221,6 +228,13 @@ modules:
       - test:packages/scenario-runtime/src/__tests__/planner-instance.test.ts
       - test:packages/scenario-runtime/src/__tests__/store.test.ts
       - repo:scenarios/software-delivery/scenario.yaml
+      - commit:7fae07dd8b18e148a6bca1179574ca3b0b003e2c
+      - test:packages/scenario-runtime/src/__tests__/persisted-plan.test.ts
+      - test:packages/workflows/src/__tests__/governed-plan.test.ts
+      - test:packages/workflows/src/__tests__/workflow-effect-approval-store.test.ts
+      - test:packages/workflows/src/__tests__/workflow-effect-approval.test.ts
+      - commit:94b53a4ad4d8ce1b937a06aeaac504d49c753678
+      - test:packages/collaboration/src/__tests__/events.test.ts
     phase: '2D/2E'
     cli:
       - openslack collaboration activity
@@ -283,8 +297,8 @@ modules:
       - '@openslack/integration-negentropy'
       - '@openslack/organization-graph'
       - '@openslack/scenario-runtime'
-    tests: 2220
-    test_files: 177
+    tests: 2263
+    test_files: 181
     components:
       - id: agent_runtime
         name: Agent Runtime
@@ -303,3 +317,4 @@ modules:
       Organization Graph Core v1 is active as a pure, rebuildable projection package with closed snapshot/delta contracts, derived stable identities, deterministic integrity hashes, bounded query/explain, and an adversarially checked local atomic store. It performs no network or authoritative business mutation.
       Software Delivery Projector v1 is active as a deterministic, side-effect-free projection over injected and explicitly complete/incomplete/missing source batches. Current GitHub authority requires live observations and current-head bindings; only completed current-head checks become verification evidence, while cache, synthetic, stale-review, self-review, non-terminal-check, missing-target, expired-lease, and incomplete evidence remain informational or incomplete. The projector does not alter existing GitHub task, claim, PR, review, merge, or watch behavior.
       Scenario Runtime v1 is active as a projection-first, code-free Scenario Pack loader and local instance runtime. It uses an exact-byte closed lock, sealed host-owned projector/capability catalogs, deterministic legacy permission normalization, preview-only canonical plans, nominally trusted instances, bounded global idempotency/CAS, and fail-closed crash recovery. The initial software-delivery Pack registers only the existing projector, declares its complete current/informational/provenance vocabulary, and grants no workflow, notification, deep-link, or mutation authority.
+      Scenario and sealed Workflow planners now compile bounded intent into immutable governed-plan effects without accepting raw commands, module paths, arbitrary URLs, or unattended flags. Scenario instantiation precedes any referenced Workflow starts, and each source/catalog/input binding is rehydrated and revalidated before execution. The isolated workflow-effect approval v2 store keeps its business correlation, exact effect hashes, per-decision human attestation, one-winner CAS, and deterministic pending/recorded audit projection separate from legacy Workflow run approvals.
