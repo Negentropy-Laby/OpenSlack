@@ -1,5 +1,11 @@
 # Current State — T0 Core
 
+> **Imported historical record.**
+>
+> Imported history is retained for provenance.
+> It is not the current OpenSlack roadmap, module status, runtime admission,
+> release authority, or production-readiness source.
+
 > 镜像 `../../production/stage.txt`。当前阶段、阻塞项、下一步。
 
 ## Snapshot

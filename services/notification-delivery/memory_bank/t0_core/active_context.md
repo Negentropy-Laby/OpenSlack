@@ -1,5 +1,11 @@
 # Active Context — T0 Core
 
+> **Imported historical record.**
+>
+> Imported history is retained for provenance.
+> It is not the current OpenSlack roadmap, module status, runtime admission,
+> release authority, or production-readiness source.
+
 > 项目当前工作状态快照。与 `basic_law_index.md` 配套；宪法的批准与修订记录在此登记。
 
 ## Repo Status
