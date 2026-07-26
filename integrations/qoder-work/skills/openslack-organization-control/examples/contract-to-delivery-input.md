@@ -8,7 +8,7 @@ This is a structural example, not live evidence.
 > security-review milestone, GitHub integration work, demo-material deliverable, current owner,
 > blockers, next action, and evidence.
 
-## Read sequence
+## Foundation read sequence
 
 ```text
 openslack_get_executive_overview
@@ -45,5 +45,20 @@ openslack_get_notification_status
 - `<workflow/PRMS evidenceRef>`
 - `<outcome/notification evidenceRef>`
 
-If the scenario instance does not exist, say that the current catalog is read-only. Do not pretend
-to instantiate it.
+If the scenario instance does not exist and the current profile is read-only, report that boundary.
+Do not pretend to instantiate it.
+
+If `tools/list` is the exact governed profile and the user asks to create it:
+
+```text
+openslack_get_executive_overview
+openslack_list_scenarios
+openslack_preview_scenario
+show immutable plan/effects/risk/owner/expiry/evidence
+wait for explicit confirmation
+openslack_confirm_plan with returned root planId + confirmationToken
+openslack_query_graph
+openslack_explain_graph
+```
+
+Never include the one-time token in the response or example output.

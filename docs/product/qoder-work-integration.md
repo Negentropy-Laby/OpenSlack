@@ -2,15 +2,15 @@
 
 | Field             | Value                                                                  |
 | ----------------- | ---------------------------------------------------------------------- |
-| Status            | `READ PATH IMPLEMENTED — GOVERNED MUTATION AND QUALIFICATION PENDING`  |
+| Status            | `READ AND GOVERNED MUTATION CONTRACTS IMPLEMENTED — REHEARSAL PENDING` |
 | Product direction | Qoder-first, MCP-first, projection-first                               |
 | MVP transport     | Local STDIO MCP                                                        |
 | Authority owner   | OpenSlack for plans and governance; external systems for their records |
 | Evidence ceiling  | Contract documentation alone proves no implementation or qualification |
 
 This document defines the product boundary between Qoder Work and OpenSlack. Current local
-graph/scenario reads and the checked-in Skill do not claim governed QG5 mutation, a formal
-Workbench, a remote Connector, or interview qualification.
+graph/scenario reads, optional governed mutation ports, and the checked-in Skill do not claim a
+formal Workbench, a remote Connector, Qoder desktop qualification, or interview readiness.
 
 ## Product outcome
 
@@ -85,11 +85,20 @@ does not execute CLI text or parse CLI output. It exposes no shell, generic comm
 merge, policy, permission, or other production mutation tool. The frozen
 `openslack.mcp_result.v1` type remains an internal compatibility boundary for these nine handlers.
 
-The production QG4 milestone adds three graph/scenario reads, producing exactly 12 read-only
-tools. An explicitly injected local demo profile adds only `openslack_demo_reset` as the exact
-13th tool. Every advertised production/demo result is `openslack.mcp_result.v2`; the stock STDIO
-command does not advertise the demo tool. This product document does not duplicate or
-independently extend the canonical catalog.
+The production QG4 catalog adds exactly three graph/scenario reads:
+
+```text
+openslack_list_scenarios
+openslack_query_graph
+openslack_explain_graph
+```
+
+The stock local production catalog is therefore exactly 12 read-only tools. A nominal agent-bound
+composition appends exactly four preview/confirm tools for a 16-tool profile. A separately
+human-attested workflow-effect decision port appends one more for a 17-tool profile. An explicitly
+injected local demo profile adds only `openslack_demo_reset` to one of those profiles. Every
+advertised production/demo result is `openslack.mcp_result.v2`; the stock STDIO command advertises
+neither mutation nor demo tools.
 
 ## Authority boundary
 
@@ -122,8 +131,9 @@ STDIO is chosen because it keeps the local demonstration free of a public domain
 OAuth deployment, or Connector marketplace review. The process opens no network listener and
 reserves stdout for MCP protocol frames.
 
-The planned Skill guides tool selection, business-language presentation, preview-before-mutation,
-and recovery. Whether Qoder renders a static response or an advanced interactive Skill component
+The checked-in Skill guides tool selection, business-language presentation,
+preview-before-mutation, explicit confirmation, and recovery. Whether Qoder renders a static
+response or an advanced interactive Skill component
 does not change authority: UI controls may request a tool call but cannot approve GitHub, mint an
 OpenSlack plan, or mutate an external system directly.
 
@@ -144,7 +154,7 @@ Connector must not reuse the local STDIO actor assumption.
 
 ## Canonical mutation contract
 
-Governed mutations are a later milestone. They follow one path:
+Implemented governed mutations follow one path:
 
 ```text
 preview
@@ -159,11 +169,36 @@ Qoder sends business inputs, not executable steps. OpenSlack resolves the scenar
 capabilities, targets, actor, and current evidence. A confirmation is invalid after plan expiry,
 input change, actor change, permission change, target change, or plan-hash change.
 
-The planned mutation catalog is separate from the 12 read-only tools and is defined only in the
-[Qoder MCP Catalog Evolution contract](../developer/qoder-mcp-contract.md#catalog-evolution).
+The agent-governed mutation catalog appends these four tools to the 12 read-only tools:
+
+```text
+openslack_preview_scenario
+openslack_preview_workflow
+openslack_confirm_plan
+openslack_cancel_plan
+```
 
 Scenario instantiation and workflow start are effects of a confirmed canonical plan, not duplicate
 unbound execution tools.
+
+A fifth tool is present only in a separately human-attested 17-tool profile:
+
+```text
+openslack_decide_workflow_approval
+```
+
+Preview persists only the confirmation capability hash. The root v2 preview result returns the
+one-time capability, but `nextActions`, evidence, audit, and durable records never contain its raw
+value. Confirmation revalidates source, permission, catalog, executor, build, and process bindings,
+then uses one atomic execution claim. A claimed timeout requires reconciliation and cannot be
+replayed.
+
+Workflow-effect decisions use an isolated v2 CAS store and a fresh independently authenticated
+host attestation for the exact run, approval, decision, reason hash, required capability,
+correlation, and expiry. The original business correlation remains authoritative. The terminal CAS
+persists a deterministic pending audit projection; a successful append records its receipt. A
+failed projection remains visible for projection-only reconciliation and never invites repetition
+of the already terminal business decision.
 
 ## Approval vocabulary
 
@@ -193,9 +228,11 @@ STDIO establishes a local process transport boundary; it does not authenticate a
 - A tool argument never supplies mutation authority.
 - Mutation mode requires a server-startup binding to an active OpenSlack registry/runtime
   principal and permission snapshot.
-- An agent-bound principal cannot confirm a human-owned workflow effect;
-  `openslack_confirm_workflow_effect` requires a separately host-attested authorized human
-  binding, otherwise that tool is absent or blocked.
+- An agent-bound principal cannot decide a human-owned workflow effect;
+  `openslack_decide_workflow_approval` requires a separately authenticated host attestation for
+  each exact decision, otherwise that tool is absent or blocked.
+- Explicit user wording is necessary presentation intent, but Qoder permission, IM identity, and
+  client actor text are not the attestation.
 - Missing, inactive, mismatched, or unauthorized principals fail closed.
 - The server creates the correlation ID; clients cannot select a colliding ID.
 - Scenario instance, workflow run, GitHub objects, graph snapshot, notifications, and final report

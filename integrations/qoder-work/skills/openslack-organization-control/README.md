@@ -1,17 +1,17 @@
 # OpenSlack Organization Control Skill
 
-This Qoder Work Skill turns the OpenSlack read-only MCP catalog into a governed organization-status
-workflow. It explains current state, ownership, blockers, next actions, business outcomes,
-notification lifecycle, scenarios, and Organization Graph provenance.
+This Qoder Work Skill turns exact OpenSlack MCP profiles into a governed organization-control
+workflow. It reads and explains current state and, when a nominal mutation profile is present,
+previews and confirms one immutable OpenSlack plan.
 
 It is a presentation and tool-selection guide. OpenSlack remains the plan, governance, evidence,
 and projection backend. GitHub and other enterprise systems remain authoritative for the records
 they own.
 
-## Current boundary
+## Current profiles
 
-The production Skill uses exactly 12 read-only tools. Every advertised tool returns
-`openslack.mcp_result.v2`:
+The default production profile uses exactly 12 read-only tools. Every advertised tool returns
+`openslack.mcp_result.v2`.
 
 ```text
 openslack_get_executive_overview
@@ -28,13 +28,23 @@ openslack_query_graph
 openslack_explain_graph
 ```
 
-It exposes no scenario instantiation, workflow start, approval decision, merge, shell, or
-external-system write. A Qoder tool permission is not an OpenSlack confirmation or GitHub review.
+An opt-in governed profile appends exactly four tools:
 
-An explicitly injected local demo MCP composition may advertise exactly one additional tool,
-`openslack_demo_reset`, for an injected fixture root. The stock production server and this Skill
-remain bound to the exact 12 read tools. The demo tool is not a QG5 mutation and never touches live
-GitHub objects.
+```text
+openslack_preview_scenario
+openslack_preview_workflow
+openslack_confirm_plan
+openslack_cancel_plan
+```
+
+A separately human-attested profile appends `openslack_decide_workflow_approval`. Its host obtains
+a fresh independently authenticated attestation for the exact run, approval, decision, and reason
+hash. It decides one OpenSlack v2 workflow effect and is never a GitHub review. Exact production
+counts are 12, 16, and 17.
+
+An explicitly injected local demo composition may append only `openslack_demo_reset`; it never
+touches live GitHub objects. A Qoder tool permission remains distinct from OpenSlack confirmation,
+workflow-effect approval, GitHub review, and merge authority.
 
 Every answer uses:
 
@@ -124,6 +134,11 @@ Explain the current delivery status, owner, blocker, next action, and evidence.
 For a complex goal, the Skill reads the executive overview, lists scenarios, queries the selected
 graph, and explains provenance before presenting conclusions.
 
+When the connected profile includes mutations, the Skill reads first, calls a preview tool, shows
+the immutable effects and risk, waits for explicit confirmation, and passes the returned root
+`planId` and one-time root `confirmationToken` to `openslack_confirm_plan`. It never persists or
+echoes the token. An uncertain execution is reconciled, not retried.
+
 Missing or stale current graph evidence fails closed as `SOURCE_EVIDENCE_UNAVAILABLE` or
 `SOURCE_EVIDENCE_STALE`; it is not rendered as an empty authoritative graph.
 
@@ -138,5 +153,5 @@ Missing or stale current graph evidence fails closed as `SOURCE_EVIDENCE_UNAVAIL
 
 See [SKILL.md](SKILL.md) for the operating workflow, `references/` for detailed boundaries, and
 the [MCP developer guide](../../../../docs/developer/qoder-mcp.md) for connector setup, exact
-12/13 catalog rules, and the current-build acceptance record. No `QODER_VERIFIED` claim is made
+profile rules, and the current-build acceptance record. No `QODER_VERIFIED` claim is made
 here.

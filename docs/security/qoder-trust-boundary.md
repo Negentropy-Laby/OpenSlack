@@ -1,10 +1,11 @@
 # Qoder Work Trust Boundary
 
-Status: design security contract. The current local production boundary is the exact 12-tool,
+Status: implemented local security contract. The stock local boundary is the exact 12-tool,
 read-only STDIO server with v2 results documented in
-[Qoder Work MCP integration](../developer/qoder-mcp.md). An injected local demo profile may add
-only its bounded reset tool as number 13. No Qoder desktop qualification or QG5 mutation is
-claimed.
+[Qoder Work MCP integration](../developer/qoder-mcp.md). Nominal composition can enable an
+agent-governed 16-tool profile or separately human-attested 17-tool profile. An injected local demo
+profile may append only its bounded reset tool. No Qoder desktop qualification or Scenario
+rehearsal is claimed.
 
 ## Security Position
 
@@ -50,10 +51,12 @@ STDIO authenticates neither the desktop user nor an enterprise identity. Read ca
 transport actor. Mutation mode is disabled unless server startup binds one active OpenSlack
 principal, workspace, and permission snapshot.
 
-An agent principal cannot confirm a human-owned workflow effect. The
-`openslack_confirm_workflow_effect` tool is registered only with a separately host-attested,
-authorized human binding; otherwise it is absent or returns `blocked`. A Qoder permission prompt,
-IM sender label, or client-provided actor string is not that attestation.
+An agent principal cannot decide a human-owned workflow effect. The
+`openslack_decide_workflow_approval` tool is registered only with a separately authenticated
+per-decision host attestation port; otherwise it is absent or returns `blocked`. The host must
+attest the exact run, approval, decision, reason hash, capability, business correlation, and
+expiry. A Qoder permission prompt, explicit wording, IM sender label, or client-provided actor
+string is not that attestation.
 
 Client arguments cannot select an actor, installation identity, workspace root, capability,
 approval source, or collision-prone correlation ID. Missing or stale binding fails closed.
@@ -63,19 +66,22 @@ bounded transport metadata while the existing runtime identity remains authorita
 
 ## Threats and Controls
 
-| Threat                                                      | Required control                                                     |
-| ----------------------------------------------------------- | -------------------------------------------------------------------- |
-| Prompt injection requests a shell or direct GitHub mutation | explicit tool catalog; no generic dispatcher                         |
-| Qoder invents executable plan steps                         | OpenSlack rebuilds a canonical plan from sealed registries           |
-| Client replays or edits confirmation                        | actor/workspace/hash/expiry/source binding and atomic single claim   |
-| Client claims another correlation                           | server-generated collision-resistant correlation ID                  |
-| Skill or UI fabricates authority                            | evidence-labelled result envelope; authority sources are typed       |
-| Oversized graph floods model context                        | depth/item/byte limits, deterministic truncation, query-bound cursor |
-| Raw evidence leaks secrets                                  | bounded projection, secret scan, no raw transcripts/vendor bodies    |
-| Stale PR review is presented as approval                    | current-head PRMS evidence required                                  |
-| Missing source appears as success                           | explicit blocked/unknown and completeness gaps                       |
-| STDIO diagnostics corrupt JSON-RPC                          | stdout frames only; diagnostics on stderr                            |
-| Local reset deletes live objects                            | demo-only registration and fixture-root containment                  |
+| Threat                                                      | Required control                                                                           |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Prompt injection requests a shell or direct GitHub mutation | explicit tool catalog; no generic dispatcher                                               |
+| Qoder invents executable plan steps                         | OpenSlack rebuilds a canonical plan from sealed registries                                 |
+| Client replays or edits confirmation                        | actor/workspace/hash/expiry/source/catalog/executor/build/process binding and atomic claim |
+| Client injects approval identity or capability              | nominal per-decision attestation port; closed schema omits authority                       |
+| Approval audit projection fails after terminal CAS          | durable pending event; projection-only retry; no decision retry                            |
+| Audit directory is replaced between check and append        | composition-bound O_APPEND descriptor; pre/post identity checks                            |
+| Client claims another correlation                           | server-generated collision-resistant correlation ID                                        |
+| Skill or UI fabricates authority                            | evidence-labelled result envelope; authority sources are typed                             |
+| Oversized graph floods model context                        | depth/item/byte limits, deterministic truncation, query-bound cursor                       |
+| Raw evidence leaks secrets                                  | bounded projection, secret scan, no raw transcripts/vendor bodies                          |
+| Stale PR review is presented as approval                    | current-head PRMS evidence required                                                        |
+| Missing source appears as success                           | explicit blocked/unknown and completeness gaps                                             |
+| STDIO diagnostics corrupt JSON-RPC                          | stdout frames only; diagnostics on stderr                                                  |
+| Local reset deletes live objects                            | demo-only registration and fixture-root containment                                        |
 
 ## Tool and Output Boundary
 
@@ -84,7 +90,7 @@ MCP tools are explicit, sealed, schema-bounded package functions. The server nev
 - forwards arbitrary commands to Operator;
 - executes CLI and parses stdout;
 - imports private CLI command modules;
-- exposes shell, policy, permission, registry, approval, or direct-merge tools;
+- exposes shell, policy, permission, registry, GitHub approval, or direct-merge tools;
 - returns credentials, tokens, arbitrary source prose, webhook payloads, or vendor bodies.
 
 Structured and text MCP content derive from the same sanitized object. Evidence references are
@@ -103,6 +109,15 @@ OpenSlack resolves:
 
 Confirmation revalidates every binding immediately before a single execution claim. Expiry, drift,
 replay, partial failure, and ambiguous remote outcomes require reconciliation and a new preview.
+The one-time confirmation capability is emitted only at the root of the preview result; only its
+hash reaches durable state.
+
+Workflow-effect decisions are different from plan confirmation. Only a fresh independently
+authenticated attestation bound to the exact decision can move the isolated v2 record from pending
+to approved or rejected, and only one CAS wins. The tool cannot accept client actor, workspace,
+capability, correlation, plan step, or command fields. The CAS stores a deterministic pending
+audit event. A post-decision Collaboration append failure does not undo the decision or make it
+safe to retry; reconciliation replays only that event and records its receipt.
 
 No direct MCP action approves or merges a GitHub PR. Existing PRMS and Merge Steward remain the
 only merge path.
