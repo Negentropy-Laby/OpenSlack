@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { types as nodeTypes } from 'node:util';
 import { canonicalJson, type AuthorityRef } from '@openslack/organization-graph';
 
 export const SCENARIO_INSTANCE_SCHEMA = 'openslack.scenario_instance.v1' as const;
@@ -63,6 +64,11 @@ function invalid(message: string): never {
 }
 
 function asDataRecord(value: unknown, fields: readonly string[], label: string): DataRecord {
+  if ((typeof value === 'object' || typeof value === 'function') && value !== null) {
+    if (nodeTypes.isProxy(value)) {
+      return invalid(`${label} cannot be a Proxy.`);
+    }
+  }
   if (
     typeof value !== 'object' ||
     value === null ||
@@ -148,6 +154,9 @@ function date(value: unknown, label: string): string {
 }
 
 function denseArray(value: unknown, label: string, max: number): readonly unknown[] {
+  if (nodeTypes.isProxy(value)) {
+    return invalid(`${label} cannot be a Proxy.`);
+  }
   if (
     !Array.isArray(value) ||
     Object.getPrototypeOf(value) !== Array.prototype ||

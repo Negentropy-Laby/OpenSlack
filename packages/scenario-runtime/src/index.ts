@@ -83,14 +83,19 @@ export type { ScenarioInstance, ScenarioInstanceState } from './instance.js';
 export {
   assertScenarioInstantiationPlan,
   createPreviewedScenarioInstance,
+  normalizeScenarioPlanInput,
   previewScenario,
+  rehydrateScenarioInstantiationPlan,
   ScenarioPlannerError,
 } from './planner.js';
 export type {
+  PersistedScenarioPlanBinding,
   PreviewScenarioInput,
   ScenarioInstantiationPlan,
+  ScenarioInstantiateEffect,
   ScenarioPlanCapability,
   ScenarioPlanEffect,
+  ScenarioWorkflowStartEffect,
   ScenarioPlanWorkflow,
 } from './planner.js';
 export { LocalScenarioInstanceStore, ScenarioInstanceStoreError } from './store.js';

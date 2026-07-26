@@ -238,6 +238,27 @@ describe('scenario capability compatibility', () => {
     expect(invoked).toBe(false);
   });
 
+  it('rejects catalog proxies before invoking any reflection trap', () => {
+    let traps = 0;
+    const proxy = new Proxy(
+      {},
+      {
+        getPrototypeOf() {
+          traps += 1;
+          return Object.prototype;
+        },
+        ownKeys() {
+          traps += 1;
+          return [];
+        },
+      },
+    );
+    expect(() => sealScenarioHostCatalog(proxy as never)).toThrowError(
+      expect.objectContaining({ code: 'SCENARIO_CATALOG_INVALID' }),
+    );
+    expect(traps).toBe(0);
+  });
+
   it.each(['sparse', 'named', 'iterator'] as const)(
     'rejects %s outer catalog arrays without iterating them',
     (shape) => {
