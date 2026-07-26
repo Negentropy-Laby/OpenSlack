@@ -89,6 +89,28 @@ export async function publishWorkflowGovernance(
   return { issueNumber: result.issueNumber, url: result.url };
 }
 
+export async function refreshWorkflowGovernance(
+  issueNumber: number,
+  governance: WorkflowGovernanceIssue,
+  options?: GitHubClientOptions,
+): Promise<{ issueNumber: number; url: string }> {
+  if (!Number.isSafeInteger(issueNumber) || issueNumber <= 0) {
+    throw new Error('WORKFLOW_GOVERNANCE_ISSUE_NUMBER_INVALID');
+  }
+  const client = await getClient(options);
+  if (client.isDryRun) {
+    throw new Error('WORKFLOW_GOVERNANCE_REFRESH_REQUIRES_LIVE_GITHUB');
+  }
+  const { data } = await client.octokit.issues.update({
+    owner: client.owner,
+    repo: client.repo,
+    issue_number: issueNumber,
+    body: renderWorkflowGovernanceBody(governance),
+    request: { signal: options?.signal },
+  });
+  return { issueNumber: data.number, url: data.html_url };
+}
+
 export async function findWorkflowGovernanceIssue(
   prNumber: number,
   options?: GitHubClientOptions,

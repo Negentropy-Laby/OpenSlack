@@ -14,6 +14,7 @@ import { createTaskIssue } from '../issue-tasks.js';
 import {
   publishWorkflowProposal,
   publishWorkflowGovernance,
+  refreshWorkflowGovernance,
   findWorkflowGovernanceIssue,
   publishWorkflowReviewRequest,
   publishWorkflowRunAudit,
@@ -114,6 +115,40 @@ describe('workflow issue publishers', () => {
       author: 'openslack-agent-operator[bot]',
     });
     expect(listForRepo).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 2 }));
+  });
+
+  it('refreshes one existing governance issue with current-head evidence', async () => {
+    const update = vi.fn().mockResolvedValue({
+      data: {
+        number: 176,
+        html_url: 'issue-url',
+      },
+    });
+    mockGetClient.mockResolvedValue({
+      owner: 'org',
+      repo: 'repo',
+      isDryRun: false,
+      octokit: { issues: { update } },
+    } as never);
+
+    await expect(
+      refreshWorkflowGovernance(176, {
+        schema: 'openslack.workflow_governance.v1',
+        prNumber: 313,
+        artifactFiles: ['.openslack/workflows/ai-org-transformation.ts'],
+        changeKind: 'added',
+        baseSha: 'base',
+        headSha: 'current-head',
+        evidenceHash: 'sha256:current',
+        requestedBy: 'openslack-agent-operator',
+      }),
+    ).resolves.toEqual({ issueNumber: 176, url: 'issue-url' });
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        issue_number: 176,
+        body: expect.stringContaining('head_sha: "current-head"'),
+      }),
+    );
   });
 
   describe('publishWorkflowProposal', () => {

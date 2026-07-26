@@ -57,6 +57,7 @@ const hoisted = vi.hoisted(() => {
     mockLoadPRCodeownerEvidence: vi.fn(),
     mockCommentOnPR: vi.fn(),
     mockPublishWorkflowGovernance: vi.fn(),
+    mockRefreshWorkflowGovernance: vi.fn(),
     mockFindWorkflowGovernanceIssue: vi.fn(),
     mockUpdatePRBody: vi.fn(),
     mockBuildRepositoryPRProjection: vi.fn(),
@@ -72,6 +73,7 @@ vi.mock('@openslack/github', () => ({
   getCODEOWNERS: (...args: unknown[]) => hoisted.mockGetCODEOWNERS(...args),
   commentOnPR: (...args: unknown[]) => hoisted.mockCommentOnPR(...args),
   publishWorkflowGovernance: (...args: unknown[]) => hoisted.mockPublishWorkflowGovernance(...args),
+  refreshWorkflowGovernance: (...args: unknown[]) => hoisted.mockRefreshWorkflowGovernance(...args),
   findWorkflowGovernanceIssue: (...args: unknown[]) =>
     hoisted.mockFindWorkflowGovernanceIssue(...args),
   updatePRBody: (...args: unknown[]) => hoisted.mockUpdatePRBody(...args),
@@ -383,6 +385,48 @@ describe('pr workflow-governance command', () => {
       42,
       expect.stringContaining('Workflow governance #177'),
     );
+    logSpy.mockRestore();
+  });
+
+  it('refreshes the single linked governance issue for the current PR head', async () => {
+    hoisted.mockGetClient.mockResolvedValue({
+      authMode: 'github_app_installation',
+      isDryRun: false,
+    });
+    hoisted.mockFetchPRDetails.mockResolvedValue(
+      makeReport({
+        body: '## Workflow governance\n\n- Workflow governance #314',
+        workflowEvidence: {
+          schema: 'openslack.workflow-evidence.v1',
+          baseSha: 'base',
+          headSha: 'current-head',
+          evidenceHash: 'sha256:current',
+          artifactFiles: ['.openslack/workflows/demo.ts'],
+          addedFiles: ['.openslack/workflows/demo.ts'],
+          modifiedFiles: [],
+          deletedFiles: [],
+          changeKind: 'added',
+        },
+      }),
+    );
+    hoisted.mockFindWorkflowGovernanceIssue.mockResolvedValue({
+      issueNumber: 314,
+      url: 'issue-url',
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await runPrCommand(['workflow-governance', '42']);
+
+    expect(hoisted.mockRefreshWorkflowGovernance).toHaveBeenCalledWith(
+      314,
+      expect.objectContaining({
+        prNumber: 42,
+        headSha: 'current-head',
+        evidenceHash: 'sha256:current',
+      }),
+    );
+    expect(hoisted.mockPublishWorkflowGovernance).not.toHaveBeenCalled();
+    expect(hoisted.mockUpdatePRBody).not.toHaveBeenCalled();
     logSpy.mockRestore();
   });
 });

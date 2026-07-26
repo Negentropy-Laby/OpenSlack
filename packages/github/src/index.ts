@@ -486,6 +486,7 @@ export { normalizePollIssue } from './poll-normalizer.js';
 export {
   publishWorkflowProposal,
   publishWorkflowGovernance,
+  refreshWorkflowGovernance,
   findWorkflowGovernanceIssue,
   publishWorkflowReviewRequest,
   publishWorkflowRunAudit,
