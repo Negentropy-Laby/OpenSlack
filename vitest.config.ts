@@ -8,6 +8,7 @@ export default defineConfig({
       'scripts/release',
       'scripts/public-pack',
       'scripts/live-capstone',
+      'scripts/notification-docs',
     ],
     exclude: ['**/node_modules/**', '**/dist/**', '**/.worktrees/**'],
   },

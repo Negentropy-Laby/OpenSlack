@@ -49,15 +49,30 @@ type ServiceWorkflow = {
   };
 };
 
+type ReusableValidateWorkflow = {
+  jobs: {
+    validate: {
+      steps: WorkflowStep[];
+    };
+  };
+};
+
 const workflowUrl = new URL(
   '../../../../.github/workflows/notification-delivery-service.yml',
   import.meta.url,
 );
 const source = readFileSync(workflowUrl, 'utf8');
 const workflow = parse(source) as ServiceWorkflow;
+const reusableWorkflowUrl = new URL(
+  '../../../../.github/workflows/openslack-reusable-validate.yml',
+  import.meta.url,
+);
+const reusableSource = readFileSync(reusableWorkflowUrl, 'utf8');
+const reusableWorkflow = parse(reusableSource) as ReusableValidateWorkflow;
 
 const checkoutAction = 'actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd';
 const setupGoAction = 'actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16';
+const setupBunAction = 'oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6';
 const postgresImage =
   'postgres:18.4@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a';
 const prometheusImage =
@@ -65,7 +80,24 @@ const prometheusImage =
 const exactHeadExpression = '${{ github.event.pull_request.head.sha || github.sha }}';
 const triggerPaths = [
   'services/notification-delivery/**',
+  'README.md',
+  'docs/README.md',
+  'docs/product/openslack-product-current.md',
+  'docs/product/notification-delivery.md',
+  'docs/guides/notification-delivery-operations.md',
+  'docs/guides/core-workflows.md',
+  'docs/user-guide.md',
+  'docs/developer/notification-delivery-integration.md',
+  'docs/developer/notification-delivery/**',
+  'docs/security/notification-delivery-boundary.md',
+  'docs/testing/notification-delivery-evidence.md',
+  'integration/gates/ib6-history-import.json',
+  '.openslack/modules.yaml',
+  'package.json',
+  'vitest.config.ts',
+  'scripts/notification-docs/**',
   '.github/workflows/notification-delivery-service.yml',
+  '.github/workflows/openslack-reusable-validate.yml',
   'packages/github/src/__tests__/notification-delivery-service-workflow.test.ts',
 ];
 
@@ -121,7 +153,10 @@ describe('notification delivery service workflow', () => {
     const headGuardIndex = stepIndex('Require the exact source head');
     const setupGoIndex = job.steps.findIndex((step) => step.uses === setupGoAction);
     const goGuardIndex = stepIndex('Require the exact Go toolchain');
-    const actionlintIndex = stepIndex('Validate the root service workflow');
+    const actionlintIndex = stepIndex('Validate the notification workflows');
+    const setupBunIndex = job.steps.findIndex((step) => step.uses === setupBunAction);
+    const installIndex = stepIndex('Install root dependencies');
+    const docsIndex = stepIndex('Verify notification delivery documentation');
     const firstServiceCommandIndex = stepIndex('Verify module files');
 
     expect(checkoutIndex).toBe(0);
@@ -129,7 +164,10 @@ describe('notification delivery service workflow', () => {
     expect(setupGoIndex).toBe(headGuardIndex + 1);
     expect(goGuardIndex).toBe(setupGoIndex + 1);
     expect(actionlintIndex).toBe(goGuardIndex + 1);
-    expect(firstServiceCommandIndex).toBe(actionlintIndex + 1);
+    expect(setupBunIndex).toBe(actionlintIndex + 1);
+    expect(installIndex).toBe(setupBunIndex + 1);
+    expect(docsIndex).toBe(installIndex + 1);
+    expect(firstServiceCommandIndex).toBe(docsIndex + 1);
     expect(job.steps[checkoutIndex]?.with).toEqual({
       ref: exactHeadExpression,
       'persist-credentials': false,
@@ -147,11 +185,26 @@ describe('notification delivery service workflow', () => {
     expect(job.steps[goGuardIndex]?.run).toContain('test "$(go env GOVERSION)" = "go1.26.5"');
     expect(job.steps[actionlintIndex]).toMatchObject({
       'working-directory': '.',
-      run: 'go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/notification-delivery-service.yml',
+      run: 'go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/notification-delivery-service.yml .github/workflows/openslack-reusable-validate.yml',
+    });
+    expect(job.steps[setupBunIndex]).toEqual({
+      name: 'Set up the exact Bun toolchain',
+      uses: setupBunAction,
+      with: { 'bun-version': '1.3.11' },
+    });
+    expect(job.steps[installIndex]).toEqual({
+      name: 'Install root dependencies',
+      'working-directory': '.',
+      run: 'bun install --frozen-lockfile',
+    });
+    expect(job.steps[docsIndex]).toEqual({
+      name: 'Verify notification delivery documentation',
+      'working-directory': '.',
+      run: 'bun run docs:notification-verify',
     });
 
     const actionUses = job.steps.flatMap((step) => (step.uses === undefined ? [] : [step.uses]));
-    expect(actionUses).toEqual([checkoutAction, setupGoAction]);
+    expect(actionUses).toEqual([checkoutAction, setupGoAction, setupBunAction]);
     expect(actionUses.every((action) => /@[0-9a-f]{40}$/u.test(action))).toBe(true);
   });
 
@@ -184,7 +237,10 @@ describe('notification delivery service workflow', () => {
       'Require the exact source head',
       'Set up the exact Go toolchain',
       'Require the exact Go toolchain',
-      'Validate the root service workflow',
+      'Validate the notification workflows',
+      'Set up the exact Bun toolchain',
+      'Install root dependencies',
+      'Verify notification delivery documentation',
       'Verify module files',
       'Verify Go formatting',
       'Build all packages',
@@ -210,8 +266,10 @@ describe('notification delivery service workflow', () => {
         'set -euo pipefail',
         'test "$(go env GOVERSION)" = "go1.26.5"',
       ),
-      'Validate the root service workflow':
-        'go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/notification-delivery-service.yml',
+      'Validate the notification workflows':
+        'go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/notification-delivery-service.yml .github/workflows/openslack-reusable-validate.yml',
+      'Install root dependencies': 'bun install --frozen-lockfile',
+      'Verify notification delivery documentation': 'bun run docs:notification-verify',
       'Verify module files': lines(
         'set -euo pipefail',
         'go mod tidy',
@@ -251,7 +309,7 @@ describe('notification delivery service workflow', () => {
     for (const step of job.steps) {
       if (step.uses !== undefined) {
         expect(Object.keys(step).sort()).toEqual(['name', 'uses', 'with']);
-      } else if (step.name === 'Validate the root service workflow') {
+      } else if (step['working-directory'] !== undefined) {
         expect(Object.keys(step).sort()).toEqual(['name', 'run', 'working-directory']);
       } else {
         expect(Object.keys(step).sort()).toEqual(['name', 'run']);
@@ -267,9 +325,35 @@ describe('notification delivery service workflow', () => {
     expect(serialized).not.toMatch(/write-all|id-token|contents["']?\s*:\s*["']?write/iu);
     expect(source).not.toMatch(/\bdocker\s+(?:login|push)\b/iu);
     expect(source).not.toMatch(/\bdocker\s+compose\s+up\b/iu);
-    expect(source).not.toMatch(/\b(?:npm|npx|bun|pnpm|yarn)\b/iu);
+    expect(source).not.toMatch(/\b(?:npm|npx|pnpm|yarn)\b/iu);
     expect(source).not.toMatch(/\b(?:curl|wget|gh|kubectl|helm|terraform|aws|az|gcloud)\b/iu);
     expect(source).not.toMatch(/\b(?:slack|webhook|canary)\b/iu);
     expect(source).not.toContain('services/notification-delivery/.github/workflows/tests.yml');
+  });
+
+  it('runs the docs verifier beside status consistency in reusable validation', () => {
+    const steps = reusableWorkflow.jobs.validate.steps;
+    const regenerateIndex = steps.findIndex((step) => step.name === 'Regenerate status doc');
+    const diffIndex = steps.findIndex(
+      (step) => step.name === 'Check for uncommitted status changes',
+    );
+    const statusIndex = steps.findIndex((step) => step.name === 'Status consistency check');
+    const docsIndex = steps.findIndex(
+      (step) => step.name === 'Notification delivery documentation consistency',
+    );
+    const workspaceIndex = steps.findIndex((step) => step.name === 'Workspace validate');
+
+    expect(regenerateIndex).toBeGreaterThan(-1);
+    expect(diffIndex).toBe(regenerateIndex + 1);
+    expect(statusIndex).toBe(diffIndex + 1);
+    expect(docsIndex).toBe(statusIndex + 1);
+    expect(workspaceIndex).toBe(docsIndex + 1);
+    expect(steps[docsIndex]).toEqual({
+      name: 'Notification delivery documentation consistency',
+      run: 'bun run docs:notification-verify',
+    });
+    expect(reusableSource).toContain('run: bun run openslack status generate');
+    expect(reusableSource).toContain('run: git diff --exit-code docs/status/current.md');
+    expect(reusableSource).toContain('run: bun run openslack status verify');
   });
 });

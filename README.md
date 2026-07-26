@@ -83,22 +83,22 @@ See [Advanced Setup](#advanced-setup) for development mode, production builds, a
 
 ## What Should I Run?
 
-| Goal                                    | Command                                                                                     |
-| --------------------------------------- | ------------------------------------------------------------------------------------------- |
-| First local health check                | `bun run openslack setup`                                                                   |
-| Initialize an ordinary Git repository   | `bun run openslack init --root <repo> --repo <owner/name>`                                  |
-| Preview a guided sidecar attach         | `bun run openslack setup attach --repo <owner/name>`                                        |
-| Check status without guessing modules   | `bun run openslack status`                                                                  |
-| Inspect durable notification readiness  | [`Notification Delivery operations guide`](docs/guides/notification-delivery-operations.md) |
-| Ask in natural language                 | `bun run openslack ask "检查系统状态"`                                                      |
-| Create a task preview                   | `bun run openslack task create --title "Fix docs" --path "docs/**" --preview`               |
-| Diagnose a PR                           | `bun run openslack pr doctor <PR_NUMBER>`                                                   |
-| See team activity                       | `bun run openslack collaboration dashboard`                                                 |
-| Start a conversation thread             | `bun run openslack conversation start --title "Review PR #42"`                              |
-| Launch the conversation-first workbench | `bun run openslack tui`                                                                     |
-| Maintain organization profile           | `bun run openslack collaboration workflow profile-sync status`                              |
-| Export a Negentropy SHADOW preview      | `bun run openslack collaboration integration negentropy export-slot --format json`          |
-| Find the full CLI reference             | [`docs/user-guide.md`](docs/user-guide.md)                                                  |
+| Goal                                    | Command                                                                                                                                         |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| First local health check                | `bun run openslack setup`                                                                                                                       |
+| Initialize an ordinary Git repository   | `bun run openslack init --root <repo> --repo <owner/name>`                                                                                      |
+| Preview a guided sidecar attach         | `bun run openslack setup attach --repo <owner/name>`                                                                                            |
+| Check status without guessing modules   | `bun run openslack status`                                                                                                                      |
+| Inspect durable notification readiness  | [`Notification Delivery product`](docs/product/notification-delivery.md), [`operations guide`](docs/guides/notification-delivery-operations.md) |
+| Ask in natural language                 | `bun run openslack ask "检查系统状态"`                                                                                                          |
+| Create a task preview                   | `bun run openslack task create --title "Fix docs" --path "docs/**" --preview`                                                                   |
+| Diagnose a PR                           | `bun run openslack pr doctor <PR_NUMBER>`                                                                                                       |
+| See team activity                       | `bun run openslack collaboration dashboard`                                                                                                     |
+| Start a conversation thread             | `bun run openslack conversation start --title "Review PR #42"`                                                                                  |
+| Launch the conversation-first workbench | `bun run openslack tui`                                                                                                                         |
+| Maintain organization profile           | `bun run openslack collaboration workflow profile-sync status`                                                                                  |
+| Export a Negentropy SHADOW preview      | `bun run openslack collaboration integration negentropy export-slot --format json`                                                              |
+| Find the full CLI reference             | [`docs/user-guide.md`](docs/user-guide.md)                                                                                                      |
 
 Mutation-oriented commands default to preview or require explicit confirmation flags where possible. Chat confirmations are never GitHub approvals, and PR merges still require PRMS and GitHub governance gates.
 

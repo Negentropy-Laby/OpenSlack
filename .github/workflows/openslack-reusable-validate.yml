@@ -44,6 +44,9 @@ jobs:
       - name: Status consistency check
         run: bun run openslack status verify
 
+      - name: Notification delivery documentation consistency
+        run: bun run docs:notification-verify
+
       - name: Workspace validate
         run: bun run openslack workspace validate
 
