@@ -5,6 +5,7 @@ import type {
   WorkflowMeta,
   WorkflowRuntime,
 } from '@openslack/workflows';
+import { getSecretPatterns } from '../../packages/collaboration/src/redact.ts';
 
 export const meta: WorkflowMeta = {
   name: 'ai-org-transformation',
@@ -379,6 +380,7 @@ const deliveryPlanSchema: JSONSchemaDefinition = {
 };
 
 const SENSITIVE_VALUE_PATTERNS: Array<{ name: string; pattern: RegExp }> = [
+  ...getSecretPatterns(),
   { name: 'bearer credential', pattern: /\bbearer\s+[a-z0-9._~+/=-]{8,}/i },
   { name: 'basic credential', pattern: /\bbasic\s+[a-z0-9+/=]{8,}/i },
   { name: 'GitHub token', pattern: /\b(?:ghp_[a-z0-9]{20,}|github_pat_[a-z0-9_]{20,})\b/i },
@@ -1128,6 +1130,16 @@ async function executeContract(
     roiChallengeRaw,
     roiAnalysisSchema,
   );
+
+  if (risk.decision === 'stop') {
+    const evidenceRefs = risk.evidenceRefs.join(', ');
+    const terminalReason =
+      'Workflow blocked: status=failed; phase=Validate; decision=stop; ' +
+      'reason=risk_review_stop; delivery=not_started; ' +
+      `agent=delivery-planner-agent:not_invoked; evidenceRefs=${evidenceRefs}`;
+    ctx.log(terminalReason);
+    throw new Error(terminalReason);
+  }
 
   ctx.phase('Deliver');
   const delivery = assertAgentResult(

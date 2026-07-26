@@ -274,6 +274,79 @@ describe('ai-org-transformation workflow', () => {
     }
   });
 
+  it.each([
+    ['AWS secret', { objective: 'AWS_SECRET_ACCESS_KEY=not-a-real-secret' }],
+    ['OpenSlack secret', { organization: 'OPENSLACK_VENDOR_SECRET=not-a-real-secret' }],
+  ])(
+    'rejects %s in workflow input before preview or execute can construct an agent prompt',
+    async (secretName: string, args: Record<string, unknown>) => {
+      const workflow = await loadProjectWorkflow();
+      const launcher: AgentLauncher = vi.fn(async () => {
+        throw new Error('secret-bearing input must not reach an agent prompt');
+      });
+
+      await expect(
+        executePreview(workflow, {
+          manifest: workflow.meta,
+          args,
+          agentLauncher: launcher,
+          budget: { tokens: 10000, costUsd: 0 },
+        }),
+      ).rejects.toThrow(secretName);
+
+      const runtime = createRuntime({
+        runId: 'demo-sensitive-input',
+        mode: 'execute',
+        manifest: workflow.meta,
+        budget: { tokens: 64000, costUsd: 1 },
+        agentLauncher: launcher,
+        onConfirm: async () => false,
+      });
+      await expect(workflow.run!(runtime, args)).rejects.toThrow(secretName);
+      expect(launcher).not.toHaveBeenCalled();
+    },
+  );
+
+  it('fails closed in Validate when risk review decides stop and never invokes delivery', async () => {
+    const workflow = await loadProjectWorkflow();
+    const roles: string[] = [];
+    const launcher: AgentLauncher = vi.fn(
+      async (_prompt: string, options: Parameters<AgentLauncher>[1]) => {
+        const fixture = structuredClone(loadAgentFixture(String(options.agentType))) as Record<
+          string,
+          unknown
+        >;
+        roles.push(String(options.agentType));
+        if (options.label === 'validate:risk-review') {
+          fixture.decision = 'stop';
+        }
+        return { data: fixture, tokenUsage: 100 };
+      },
+    );
+    const runtime = createRuntime({
+      runId: 'demo-risk-stop',
+      mode: 'execute',
+      manifest: workflow.meta,
+      budget: { tokens: 64000, costUsd: 1 },
+      agentLauncher: launcher,
+      onConfirm: async () => false,
+    });
+    const phase = vi.spyOn(runtime, 'phase');
+    const log = vi.spyOn(runtime, 'log');
+    const terminalReason =
+      'Workflow blocked: status=failed; phase=Validate; decision=stop; ' +
+      'reason=risk_review_stop; delivery=not_started; ' +
+      'agent=delivery-planner-agent:not_invoked; ' +
+      'evidenceRefs=fixture:risk-workshop-01, repo:docs/security/human-approval.md';
+
+    await expect(workflow.run!(runtime, {})).rejects.toThrow(terminalReason);
+    expect(roles).toContain('risk-reviewer-agent');
+    expect(roles).not.toContain('delivery-planner-agent');
+    expect(phase).toHaveBeenLastCalledWith('Validate');
+    expect(phase).not.toHaveBeenCalledWith('Deliver');
+    expect(log).toHaveBeenCalledWith(terminalReason);
+  });
+
   it('rejects scenarios longer than the fixed 90-day boundary before any agent call', async () => {
     const workflow = await loadProjectWorkflow();
     const launcher: AgentLauncher = vi.fn();

@@ -1,6 +1,8 @@
 import { getSecretPatterns } from '@openslack/collaboration';
 
 const MAX_PERCENT_DECODE_PASSES = 3;
+const MAX_TYPED_EVIDENCE_REF_LENGTH = 512;
+const MAX_VERSIONED_REPO_PATH_LENGTH = 374;
 
 const URL_WITH_USERINFO = /\b[A-Za-z][A-Za-z0-9+.-]*:\/\/[^/?#\s"'<>@]+@[^\s"'<>]+/gi;
 const ABSOLUTE_URL = /\b[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s"'<>]+/gi;
@@ -20,6 +22,9 @@ const SENSITIVE_VALUE_PATTERNS = [
 ] as const;
 const TYPED_EVIDENCE_REF =
   /^(?:event|query|artifact|test|repo|workflow-run|run|plan|issue|pr|decision|handoff|notification|assumption|fixture):[A-Za-z0-9][A-Za-z0-9._~:/@+?%=&-]{0,499}$/;
+const VERSIONED_REPO_EVIDENCE_REF =
+  /^repo:([A-Za-z0-9._/-]+)#([A-Za-z0-9][A-Za-z0-9._-]{0,63})@([A-Za-z0-9][A-Za-z0-9._-]{0,63})$/;
+const REPOSITORY_PATH_SEGMENT = /^[A-Za-z0-9._-]+$/;
 
 function fresh(pattern: RegExp): RegExp {
   return new RegExp(pattern.source, pattern.flags);
@@ -76,10 +81,30 @@ export function isUnsafeEvidenceReference(value: string): boolean {
   );
 }
 
+function isVersionedRepoEvidenceReference(value: string): boolean {
+  const match = VERSIONED_REPO_EVIDENCE_REF.exec(value);
+  if (!match) return false;
+  const repositoryPath = match[1];
+  if (
+    repositoryPath.length > MAX_VERSIONED_REPO_PATH_LENGTH ||
+    repositoryPath.startsWith('/') ||
+    repositoryPath.endsWith('/')
+  ) {
+    return false;
+  }
+  return repositoryPath
+    .split('/')
+    .every(
+      (segment) => segment !== '.' && segment !== '..' && REPOSITORY_PATH_SEGMENT.test(segment),
+    );
+}
+
 export function normalizeTypedEvidenceReference(value: string): string | undefined {
   const reference = value.trim();
+  if (reference.length === 0 || reference.length > MAX_TYPED_EVIDENCE_REF_LENGTH) return undefined;
   if (isUnsafeEvidenceReference(reference)) return undefined;
   if (/^commit:[0-9a-f]{40}$/i.test(reference)) return reference.toLowerCase();
+  if (isVersionedRepoEvidenceReference(reference)) return reference;
   return TYPED_EVIDENCE_REF.test(reference) ? reference : undefined;
 }
 
