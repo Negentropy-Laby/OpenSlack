@@ -429,4 +429,39 @@ describe('pr workflow-governance command', () => {
     expect(hoisted.mockUpdatePRBody).not.toHaveBeenCalled();
     logSpy.mockRestore();
   });
+
+  it('rejects multiple governance links before canonical issue lookup or mutation', async () => {
+    hoisted.mockGetClient.mockResolvedValue({
+      authMode: 'github_app_installation',
+      isDryRun: false,
+    });
+    hoisted.mockFetchPRDetails.mockResolvedValue(
+      makeReport({
+        body: '## Workflow governance\n\n- Workflow governance #314\n- Workflow governance #315',
+        workflowEvidence: {
+          schema: 'openslack.workflow-evidence.v1',
+          baseSha: 'base',
+          headSha: 'current-head',
+          evidenceHash: 'sha256:current',
+          artifactFiles: ['.openslack/workflows/demo.ts'],
+          addedFiles: ['.openslack/workflows/demo.ts'],
+          modifiedFiles: [],
+          deletedFiles: [],
+          changeKind: 'added',
+        },
+      }),
+    );
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await runPrCommand(['workflow-governance', '42']);
+
+    expect(process.exitCode).toBe(1);
+    expect(errorSpy.mock.calls.flat().join('\n')).toContain(
+      'WORKFLOW_GOVERNANCE_BINDING_AMBIGUOUS',
+    );
+    expect(hoisted.mockFindWorkflowGovernanceIssue).not.toHaveBeenCalled();
+    expect(hoisted.mockRefreshWorkflowGovernance).not.toHaveBeenCalled();
+    expect(hoisted.mockPublishWorkflowGovernance).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
 });

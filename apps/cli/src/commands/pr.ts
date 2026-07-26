@@ -302,7 +302,15 @@ export function prCommands(): Command {
         evidenceHash: evidence.evidenceHash,
         requestedBy: 'openslack-agent-operator',
       };
-      const linked = report.body?.match(/workflow\s+governance\s+#(\d+)/i);
+      const linkedMatches = [...(report.body ?? '').matchAll(/workflow\s+governance\s+#(\d+)/gi)];
+      if (linkedMatches.length > 1) {
+        console.error(
+          `WORKFLOW_GOVERNANCE_BINDING_AMBIGUOUS: PR #${prNumber} contains multiple governance links.`,
+        );
+        process.exitCode = 1;
+        return;
+      }
+      const linked = linkedMatches[0];
       const found = await findWorkflowGovernanceIssue(prNumber);
       if (linked) {
         const linkedIssueNumber = Number.parseInt(linked[1], 10);
