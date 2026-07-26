@@ -236,7 +236,21 @@ export async function executePlan(
     }
 
     // Per-step confirmation hook
-    if (step.confirmationRequired && options.confirmStep && !authorizationConfirmed) {
+    if (step.confirmationRequired && !authorizationConfirmed) {
+      if (!options.confirmStep) {
+        results.push({
+          stepId: step.id,
+          status: 'skipped',
+          output: 'Explicit confirmation is required but no confirmation path is available',
+        });
+        return {
+          planId,
+          status: 'blocked',
+          steps: results,
+          summary: `Explicit confirmation is required for step "${step.description}"`,
+          nextActions: ['Re-run with an explicit confirmation path'],
+        };
+      }
       const confirmed = await options.confirmStep(step);
       if (!confirmed) {
         results.push({ stepId: step.id, status: 'skipped', output: 'Cancelled by user' });

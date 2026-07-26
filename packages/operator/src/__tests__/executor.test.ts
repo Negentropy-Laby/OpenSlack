@@ -99,6 +99,21 @@ describe('executePlan', () => {
     expect(result.steps[0].output).toBe('Cancelled by user');
   });
 
+  it('fails closed when a confirmation-required step has no confirmation callback', async () => {
+    const onStepStart = vi.fn();
+    const plan = makePlan(createRegisteredStep('pr.merge', { prNumber: 198 }, 's1'));
+
+    const result = await executePlan(plan, { onStepStart });
+
+    expect(result.status).toBe('blocked');
+    expect(result.summary).toContain('Explicit confirmation is required');
+    expect(result.steps[0]).toMatchObject({
+      status: 'skipped',
+      output: 'Explicit confirmation is required but no confirmation path is available',
+    });
+    expect(onStepStart).not.toHaveBeenCalled();
+  });
+
   it('produces a plan ID', async () => {
     const intent = parseIntent('check status');
     const plan = planActions(intent);

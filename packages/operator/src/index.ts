@@ -111,3 +111,68 @@ export type {
   ConversationListItem,
   ConversationDetailView,
 } from './conversation-bridge.js';
+export {
+  canonicalizeGovernedJson,
+  canonicalGovernedJson,
+  createCanonicalGovernedPlan,
+  hashGovernedValue,
+  hashOpaqueValue,
+  opaqueHashesEqual,
+  validateGovernedPlanRecord,
+  GovernedPlanContractError,
+} from './governed-plan.js';
+export type {
+  CanonicalGovernedPlan,
+  CreateCanonicalGovernedPlanInput,
+  GovernedActionOutcome,
+  GovernedExecutionStatus,
+  GovernedJsonPrimitive,
+  GovernedJsonValue,
+  GovernedPlanAction,
+  GovernedPlanBindings,
+  GovernedPlanEffect,
+  GovernedPlanExecution,
+  GovernedPlanRecord,
+  GovernedPlanState,
+} from './governed-plan.js';
+export {
+  createGovernedActionExecutionRegistry,
+  GovernedActionRegistryError,
+} from './action-execution-registry.js';
+export type {
+  GovernedActionExecutionContext,
+  GovernedActionExecutionRegistry,
+  GovernedActionExecutorDefinition,
+  GovernedActionExecutorResult,
+  GovernedActionMetadata,
+} from './action-execution-registry.js';
+export {
+  governedPlanStoreRoot,
+  isGovernedPlanExecutionTerminal,
+  LocalGovernedPlanStore,
+  GovernedPlanStoreError,
+} from './governed-plan-store.js';
+export type { GovernedPlanStore } from './governed-plan-store.js';
+export {
+  assertGovernedPlanService,
+  createGovernedPlanCompiler,
+  createGovernedPlanService,
+  GovernedPlanServiceError,
+  isGovernedPlanService,
+} from './governed-plan-service.js';
+export type {
+  GovernedPlanAuditEvent,
+  GovernedPlanAuditEventType,
+  GovernedPlanAuditSink,
+  GovernedPlanBindingSnapshot,
+  GovernedPlanCancellation,
+  GovernedPlanCompilationContext,
+  GovernedPlanCompile,
+  GovernedPlanCompiler,
+  GovernedPlanConfirmation,
+  GovernedPlanExecutionControl,
+  GovernedPlanHostAuthority,
+  GovernedPlanPreview,
+  GovernedPlanService,
+  GovernedPlanServiceOptions,
+} from './governed-plan-service.js';
