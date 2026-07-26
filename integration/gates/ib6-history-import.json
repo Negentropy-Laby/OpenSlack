@@ -1,0 +1,613 @@
+{
+  "$schema": "../../docs/integration/notification-delivery-ib6-history-import.v1.schema.json",
+  "schema": "openslack.notification_delivery_ib6_history_import.v1",
+  "receipt_id": "ib6-history-import-2026-07-26",
+  "recorded_at": "2026-07-26T13:51:49+08:00",
+  "gate": {
+    "name": "IB6-HISTORY-IMPORT",
+    "status": "PASS",
+    "closed": true,
+    "effectivity": "EFFECTIVE_ON_GOVERNED_CANONICAL_MAIN_MERGE",
+    "canonical_base": "main",
+    "px2_exit": "PENDING_POST_MERGE_AUDIT"
+  },
+  "repository_base": {
+    "role": "E6_MERGED_PRE_RECEIPT_BASE",
+    "commit": "937b0566797828a9f8f0868821e21857c3345d1e",
+    "tree": "1d6964137b36bc67195101d23edf641328fb1a17",
+    "canonical_branch": "main",
+    "service_subtree": "177e30fca4270c0f6aa87a033c1ecbd905bce6f1"
+  },
+  "predecessor_manifest": {
+    "path": "services/notification-delivery/integration/source-manifest.v2.json",
+    "sha256": "sha256:b658721496768decbe06a9146bce8cae16161331c676563352841d26d140c03f",
+    "phase_f_binding": {
+      "status": "PENDING_PHASE_F",
+      "path_base": "OPENSLACK_REPOSITORY_ROOT",
+      "expected_path": "integration/gates/ib6-history-import.json"
+    },
+    "fulfillment": {
+      "receipt_path": "integration/gates/ib6-history-import.json",
+      "resolution": "FULFILLED_BY_THIS_APPEND_ONLY_RECEIPT"
+    }
+  },
+  "source_history": {
+    "review_baseline": {
+      "commit": "7976962e7de1c6ffcd234d2962b89dc4b23c95c0",
+      "ancestor_of_frozen_source": true
+    },
+    "archive_tag": {
+      "name": "integration-archive/rc-wsman-pre-ib6",
+      "object": "b3d87f5074eb6ac7733e21d240bd5e2cf8e27a97",
+      "object_type": "tag",
+      "target_commit": "982db466b2ba2c20bec150b7688bd398e4f52714"
+    },
+    "frozen_source": {
+      "repository": "https://github.com/wsman/rc_wsman.git",
+      "commit": "982db466b2ba2c20bec150b7688bd398e4f52714",
+      "tree": "7ac5144aeab9d453f39e2b6d2fbea828e7a89017",
+      "reachable_commit_count": 36
+    }
+  },
+  "authorization": {
+    "scope": "IB6_HISTORY_IMPORT_ONLY",
+    "decision": "APPROVE",
+    "owner": "wsman",
+    "provenance": {
+      "kind": "CANONICAL_ENVELOPE_AND_EXPLICIT_OWNER_REPLY",
+      "governed_summary_url": "https://github.com/Negentropy-Laby/OpenSlack/pull/301",
+      "governed_summary_merge_commit": "bb3f234f93a9a86602693ee6dc3717f930c87213"
+    },
+    "bound_envelope": {
+      "openslack_base_commit": "4eefd75abf490257c226bd596cfd58122edd879f",
+      "openslack_base_tree": "fe7230ffaba7782e24c6ff85b16857ee76789de3",
+      "archive_tag": "integration-archive/rc-wsman-pre-ib6",
+      "archive_tag_object": "b3d87f5074eb6ac7733e21d240bd5e2cf8e27a97",
+      "source_commit": "982db466b2ba2c20bec150b7688bd398e4f52714",
+      "source_tree": "7ac5144aeab9d453f39e2b6d2fbea828e7a89017",
+      "source_reachable_commit_count": 36,
+      "import_path": "services/notification-delivery",
+      "readiness_report_sha256": "sha256:e9298bd3759693a4ddb6c20ccf9597e42b748205f30a1ec7feb86dba4640a674",
+      "tag_immutability_exception": "ACCEPT_EXACT_OBJECT_BINDING"
+    }
+  },
+  "import_binding": {
+    "pure_import": {
+      "commit": "141caadc2541490c32f3d5940f057de7bf703410",
+      "tree": "f9c7c835e9385db1500a66b7fa5f354a07410695",
+      "parents": [
+        "4eefd75abf490257c226bd596cfd58122edd879f",
+        "982db466b2ba2c20bec150b7688bd398e4f52714"
+      ]
+    },
+    "openslack_merge": {
+      "commit": "bb3f234f93a9a86602693ee6dc3717f930c87213",
+      "tree": "f9c7c835e9385db1500a66b7fa5f354a07410695",
+      "parents": [
+        "4eefd75abf490257c226bd596cfd58122edd879f",
+        "141caadc2541490c32f3d5940f057de7bf703410"
+      ]
+    },
+    "target_repository": "https://github.com/Negentropy-Laby/OpenSlack.git",
+    "target_path": "services/notification-delivery",
+    "imported_subtree": "7ac5144aeab9d453f39e2b6d2fbea828e7a89017",
+    "pure_import_tree_equals_readiness_candidate": true,
+    "openslack_merge_tree_equals_pure_import_tree": true,
+    "imported_subtree_equals_frozen_source_tree": true
+  },
+  "productization_chain": [
+    {
+      "phase": "D",
+      "pull_request": 301,
+      "scope": "PURE_HISTORY_IMPORT",
+      "base_commit": "4eefd75abf490257c226bd596cfd58122edd879f",
+      "head_commit": "141caadc2541490c32f3d5940f057de7bf703410",
+      "head_tree": "f9c7c835e9385db1500a66b7fa5f354a07410695",
+      "merge_commit": "bb3f234f93a9a86602693ee6dc3717f930c87213",
+      "merge_tree": "f9c7c835e9385db1500a66b7fa5f354a07410695",
+      "merge_parents": [
+        "4eefd75abf490257c226bd596cfd58122edd879f",
+        "141caadc2541490c32f3d5940f057de7bf703410"
+      ],
+      "merge_tree_equals_head_tree": true,
+      "changed_paths": {
+        "comparison": "GIT_DIFF_NAME_ONLY_NO_RENAMES_BASE_TO_HEAD",
+        "count": 203,
+        "digest": "sha256:b602970021d6e601634653b6188148b22caf2c032374dcdc46ed4df2b7c65c90",
+        "algorithm": "SHA256_SORTED_LF_PATHS_V1"
+      },
+      "hosted_validation": {
+        "mode": "SYNTHETIC_MERGE_TREE_EQUAL_CONTENT",
+        "governed_head": "141caadc2541490c32f3d5940f057de7bf703410",
+        "execution_commit": "f151874f4d5d4bb546ec86578646f797323c43e4",
+        "execution_parents": [
+          "4eefd75abf490257c226bd596cfd58122edd879f",
+          "141caadc2541490c32f3d5940f057de7bf703410"
+        ],
+        "validated_content_tree": "f9c7c835e9385db1500a66b7fa5f354a07410695",
+        "literal_head_execution": false,
+        "check_name": "validate / validate",
+        "conclusion": "SUCCESS",
+        "run_id": 30162216039,
+        "job_id": 89689331486,
+        "details_url": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/30162216039/job/89689331486"
+      }
+    },
+    {
+      "phase": "E1",
+      "pull_request": 302,
+      "scope": "SERVICE_OWNERSHIP",
+      "base_commit": "bb3f234f93a9a86602693ee6dc3717f930c87213",
+      "head_commit": "8772a984dbbd543b5c1ae65f40f5d0b514208e66",
+      "head_tree": "670d29d6e2b73cedae91a61ad6b77f4e4be0c9c5",
+      "merge_commit": "2fe463031f02fb7ff8074e076314ae70c892cb5a",
+      "merge_tree": "670d29d6e2b73cedae91a61ad6b77f4e4be0c9c5",
+      "merge_parents": [
+        "bb3f234f93a9a86602693ee6dc3717f930c87213",
+        "8772a984dbbd543b5c1ae65f40f5d0b514208e66"
+      ],
+      "merge_tree_equals_head_tree": true,
+      "changed_paths": {
+        "comparison": "GIT_DIFF_NAME_ONLY_NO_RENAMES_BASE_TO_HEAD",
+        "count": 2,
+        "digest": "sha256:fe5ee83cbe2b5705c318467f993d1d260f05dd3b84f2689351a69aeff6d73731",
+        "algorithm": "SHA256_SORTED_LF_PATHS_V1"
+      },
+      "hosted_validation": {
+        "mode": "SYNTHETIC_MERGE_TREE_EQUAL_CONTENT",
+        "governed_head": "8772a984dbbd543b5c1ae65f40f5d0b514208e66",
+        "execution_commit": "0f1409b4a7abaf8bb75b426f3f21169cc679d78c",
+        "execution_parents": [
+          "bb3f234f93a9a86602693ee6dc3717f930c87213",
+          "8772a984dbbd543b5c1ae65f40f5d0b514208e66"
+        ],
+        "validated_content_tree": "670d29d6e2b73cedae91a61ad6b77f4e4be0c9c5",
+        "literal_head_execution": false,
+        "check_name": "validate / validate",
+        "conclusion": "SUCCESS",
+        "run_id": 30165391784,
+        "job_id": 89697499730,
+        "details_url": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/30165391784/job/89697499730"
+      }
+    },
+    {
+      "phase": "E2",
+      "pull_request": 303,
+      "scope": "PATH_FILTERED_SERVICE_CI",
+      "base_commit": "2fe463031f02fb7ff8074e076314ae70c892cb5a",
+      "head_commit": "97cd338e1389865eb34e4054be1aed8a4a9ffcf5",
+      "head_tree": "d97a3b4f4e78867a64e176df83bac4ee39bcdd0c",
+      "merge_commit": "655eebc20a5c173f5f9d9d5641b5e938f415b6cc",
+      "merge_tree": "d97a3b4f4e78867a64e176df83bac4ee39bcdd0c",
+      "merge_parents": [
+        "2fe463031f02fb7ff8074e076314ae70c892cb5a",
+        "97cd338e1389865eb34e4054be1aed8a4a9ffcf5"
+      ],
+      "merge_tree_equals_head_tree": true,
+      "changed_paths": {
+        "comparison": "GIT_DIFF_NAME_ONLY_NO_RENAMES_BASE_TO_HEAD",
+        "count": 2,
+        "digest": "sha256:93cc126ddc3095974992cb28ee39917b2cc6a4e1710d62f3885dfb251b243ffe",
+        "algorithm": "SHA256_SORTED_LF_PATHS_V1"
+      },
+      "hosted_validation": {
+        "mode": "EXACT_HEAD",
+        "governed_head": "97cd338e1389865eb34e4054be1aed8a4a9ffcf5",
+        "execution_commit": "97cd338e1389865eb34e4054be1aed8a4a9ffcf5",
+        "validated_content_tree": "d97a3b4f4e78867a64e176df83bac4ee39bcdd0c",
+        "literal_head_execution": true,
+        "check_name": "Validate notification delivery service",
+        "conclusion": "SUCCESS",
+        "run_id": 30166722203,
+        "job_id": 89700920598,
+        "details_url": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/30166722203/job/89700920598"
+      }
+    },
+    {
+      "phase": "E3",
+      "pull_request": 304,
+      "scope": "GO_MODULE_AND_IMPORT_RELOCATION",
+      "base_commit": "655eebc20a5c173f5f9d9d5641b5e938f415b6cc",
+      "head_commit": "ec6438f5897563ad339e9833dd99b52255ac51bb",
+      "head_tree": "9c329c574f57a46b31407ba80dc35bdf44c13471",
+      "merge_commit": "b0ea03ce6dc6ab923b8e9d8bd0a600bde57bc167",
+      "merge_tree": "9c329c574f57a46b31407ba80dc35bdf44c13471",
+      "merge_parents": [
+        "655eebc20a5c173f5f9d9d5641b5e938f415b6cc",
+        "ec6438f5897563ad339e9833dd99b52255ac51bb"
+      ],
+      "merge_tree_equals_head_tree": true,
+      "changed_paths": {
+        "comparison": "GIT_DIFF_NAME_ONLY_NO_RENAMES_BASE_TO_HEAD",
+        "count": 53,
+        "digest": "sha256:e044f759dd8b5c24793605b346404f7983a4e05cc2d1a33407c4ef062af513cc",
+        "algorithm": "SHA256_SORTED_LF_PATHS_V1"
+      },
+      "hosted_validation": {
+        "mode": "EXACT_HEAD",
+        "governed_head": "ec6438f5897563ad339e9833dd99b52255ac51bb",
+        "execution_commit": "ec6438f5897563ad339e9833dd99b52255ac51bb",
+        "validated_content_tree": "9c329c574f57a46b31407ba80dc35bdf44c13471",
+        "literal_head_execution": true,
+        "check_name": "Validate notification delivery service",
+        "conclusion": "SUCCESS",
+        "run_id": 30168145809,
+        "job_id": 89704547011,
+        "details_url": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/30168145809/job/89704547011"
+      }
+    },
+    {
+      "phase": "E4",
+      "pull_request": 305,
+      "scope": "CONTAINER_INPUT_RELOCATION",
+      "base_commit": "b0ea03ce6dc6ab923b8e9d8bd0a600bde57bc167",
+      "head_commit": "b47af9926ff4d0c5453c5f3a4f75053480598276",
+      "head_tree": "5ec8fbab8fda2c2f717151b5589155634fcf5a69",
+      "merge_commit": "e81ae511507e409f1b90949a2b20f9de0832992b",
+      "merge_tree": "5ec8fbab8fda2c2f717151b5589155634fcf5a69",
+      "merge_parents": [
+        "b0ea03ce6dc6ab923b8e9d8bd0a600bde57bc167",
+        "b47af9926ff4d0c5453c5f3a4f75053480598276"
+      ],
+      "merge_tree_equals_head_tree": true,
+      "changed_paths": {
+        "comparison": "GIT_DIFF_NAME_ONLY_NO_RENAMES_BASE_TO_HEAD",
+        "count": 8,
+        "digest": "sha256:1a5ebe56f55db6a9ec35b8150b4e34682be3a7892bc27e5c41f4c3e22021bc5b",
+        "algorithm": "SHA256_SORTED_LF_PATHS_V1"
+      },
+      "hosted_validation": {
+        "mode": "EXACT_HEAD",
+        "governed_head": "b47af9926ff4d0c5453c5f3a4f75053480598276",
+        "execution_commit": "b47af9926ff4d0c5453c5f3a4f75053480598276",
+        "validated_content_tree": "5ec8fbab8fda2c2f717151b5589155634fcf5a69",
+        "literal_head_execution": true,
+        "check_name": "Validate notification delivery service",
+        "conclusion": "SUCCESS",
+        "run_id": 30170115593,
+        "job_id": 89709701430,
+        "details_url": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/30170115593/job/89709701430"
+      }
+    },
+    {
+      "phase": "E5",
+      "pull_request": 306,
+      "scope": "LEGAL_AND_REPOSITORY_PROVENANCE",
+      "base_commit": "e81ae511507e409f1b90949a2b20f9de0832992b",
+      "head_commit": "3996f39be08b5087ac1ef8818c3543735a18cf4b",
+      "head_tree": "4cd6d532901d1c980667eaefe575f8e41f1f21f7",
+      "merge_commit": "42b44375adfb99b1989a35827ff5d9aba98d7e6f",
+      "merge_tree": "4cd6d532901d1c980667eaefe575f8e41f1f21f7",
+      "merge_parents": [
+        "e81ae511507e409f1b90949a2b20f9de0832992b",
+        "3996f39be08b5087ac1ef8818c3543735a18cf4b"
+      ],
+      "merge_tree_equals_head_tree": true,
+      "changed_paths": {
+        "comparison": "GIT_DIFF_NAME_ONLY_NO_RENAMES_BASE_TO_HEAD",
+        "count": 15,
+        "digest": "sha256:af6fea9e09d68b5fd03a9f8d43bd1654a9a11ea2c9b86714166fecf211c7ae3b",
+        "algorithm": "SHA256_SORTED_LF_PATHS_V1"
+      },
+      "hosted_validation": {
+        "mode": "EXACT_HEAD",
+        "governed_head": "3996f39be08b5087ac1ef8818c3543735a18cf4b",
+        "execution_commit": "3996f39be08b5087ac1ef8818c3543735a18cf4b",
+        "validated_content_tree": "4cd6d532901d1c980667eaefe575f8e41f1f21f7",
+        "literal_head_execution": true,
+        "check_name": "Validate notification delivery service",
+        "conclusion": "SUCCESS",
+        "run_id": 30173297475,
+        "job_id": 89717867229,
+        "details_url": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/30173297475/job/89717867229"
+      }
+    },
+    {
+      "phase": "E6",
+      "pull_request": 307,
+      "scope": "PRODUCT_NAMING_AND_DOCUMENTATION",
+      "base_commit": "42b44375adfb99b1989a35827ff5d9aba98d7e6f",
+      "head_commit": "30d4c96d543917826bc2b82207956ea19784ddd0",
+      "head_tree": "1d6964137b36bc67195101d23edf641328fb1a17",
+      "merge_commit": "937b0566797828a9f8f0868821e21857c3345d1e",
+      "merge_tree": "1d6964137b36bc67195101d23edf641328fb1a17",
+      "merge_parents": [
+        "42b44375adfb99b1989a35827ff5d9aba98d7e6f",
+        "30d4c96d543917826bc2b82207956ea19784ddd0"
+      ],
+      "merge_tree_equals_head_tree": true,
+      "changed_paths": {
+        "comparison": "GIT_DIFF_NAME_ONLY_NO_RENAMES_BASE_TO_HEAD",
+        "count": 9,
+        "digest": "sha256:6469c732e6a647433a1c4ed8218c097398a347f0b24a676d5e506ec74f17219d",
+        "algorithm": "SHA256_SORTED_LF_PATHS_V1"
+      },
+      "hosted_validation": {
+        "mode": "EXACT_HEAD",
+        "governed_head": "30d4c96d543917826bc2b82207956ea19784ddd0",
+        "execution_commit": "30d4c96d543917826bc2b82207956ea19784ddd0",
+        "validated_content_tree": "1d6964137b36bc67195101d23edf641328fb1a17",
+        "literal_head_execution": true,
+        "check_name": "Validate notification delivery service",
+        "conclusion": "SUCCESS",
+        "run_id": 30176102597,
+        "job_id": 89725016891,
+        "details_url": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/30176102597/job/89725016891"
+      }
+    }
+  ],
+  "final_state": {
+    "service": {
+      "path": "services/notification-delivery",
+      "go_module": "github.com/Negentropy-Laby/OpenSlack/services/notification-delivery",
+      "subtree": "177e30fca4270c0f6aa87a033c1ecbd905bce6f1",
+      "workspace_manifest_entries": 210
+    },
+    "artifacts": [
+      {
+        "role": "SERVICE_CODEOWNERS",
+        "path": ".github/CODEOWNERS",
+        "sha256": "sha256:69cbae2e1ef5f5128b9969957a3288156915179b1a1aaa40edcff5be7706b891"
+      },
+      {
+        "role": "SERVICE_CODEOWNERS_TEST",
+        "path": "packages/pr/src/__tests__/codeowners.test.ts",
+        "sha256": "sha256:57d9358f8007a75c896f5c8638df8681dea1386216b0b4510047977ef2964414"
+      },
+      {
+        "role": "SERVICE_CI_WORKFLOW",
+        "path": ".github/workflows/notification-delivery-service.yml",
+        "sha256": "sha256:72320243302ce54ef89adcd154dc9551e77b220183b30adafb6638c5eec6feda"
+      },
+      {
+        "role": "SERVICE_CI_STRUCTURAL_TEST",
+        "path": "packages/github/src/__tests__/notification-delivery-service-workflow.test.ts",
+        "sha256": "sha256:c3a42fb1b8ff07328736582af7cdc284616bcab6ebd5a6bc09418a81b61d4854"
+      },
+      {
+        "role": "SERVICE_GO_MODULE",
+        "path": "services/notification-delivery/go.mod",
+        "sha256": "sha256:b56da194184304466177003cc9a665199155766aea8cb5a054593b01a563baa2"
+      },
+      {
+        "role": "SERVICE_DOCKERIGNORE",
+        "path": "services/notification-delivery/.dockerignore",
+        "sha256": "sha256:48a35a3ad2c21c111a527e57d694b2fc6ba3109761d1042b5aeeb60eee544fa8"
+      },
+      {
+        "role": "SERVICE_DOCKERFILE",
+        "path": "services/notification-delivery/Dockerfile",
+        "sha256": "sha256:fae60f7a8e3e3f47daa2beadaecc953f701210d1f25a97f5213e4e74438bbab7"
+      },
+      {
+        "role": "CONTAINER_HEALTHCHECK_SOURCE",
+        "path": "services/notification-delivery/cmd/container-healthcheck/main.go",
+        "sha256": "sha256:1a0280d43905e9a9c03e4be4ad7532520629c7048d4daec9a098805725a828f5"
+      },
+      {
+        "role": "CONTAINER_HEALTHCHECK_TEST",
+        "path": "services/notification-delivery/cmd/container-healthcheck/main_test.go",
+        "sha256": "sha256:1d8986673083d0c5dab8a4cf95faa43579df933c35354a1d6c3073176e028a91"
+      },
+      {
+        "role": "CANARY_PREFLIGHT",
+        "path": "services/notification-delivery/deploy/canary/preflight.sh",
+        "sha256": "sha256:6fa64b8a702c7fcb5dc4df8187672b9fc8711a9753a363b185878779d52a0391"
+      },
+      {
+        "role": "CANARY_DEPLOYMENT_CONTRACT",
+        "path": "services/notification-delivery/tests/contracts/canary_deployment_test.go",
+        "sha256": "sha256:82d3d3ab6a17603b04dac1ca3114ae25c8e30bc304b7309ad066b11495f62733"
+      },
+      {
+        "role": "DOCKERFILE_REPRODUCIBILITY_CONTRACT",
+        "path": "services/notification-delivery/tests/contracts/dockerfile_reproducibility_test.go",
+        "sha256": "sha256:432bfad9cf959eaf3605d364853fd666fa2b84b0b5af45a8ed34dab7049d068b"
+      },
+      {
+        "role": "ROOT_LICENSE",
+        "path": "LICENSE",
+        "sha256": "sha256:04f9674553a402c48856e9cc3f813a70bb59eb6033f33344980c8fd3a710c8f2"
+      },
+      {
+        "role": "ROOT_NOTICE",
+        "path": "NOTICE",
+        "sha256": "sha256:cab0fcd15bc126c7ca16763a34023aca9a08b71d6bebf1878f19da5771474c5a"
+      },
+      {
+        "role": "ROOT_THIRD_PARTY_NOTICES",
+        "path": "THIRD_PARTY_NOTICES.md",
+        "sha256": "sha256:5f2e1fd212001618f9c1d1dca7883edcbaeb9940d6816bfa1c9394f3c164cf01"
+      },
+      {
+        "role": "TUI_PORTING_NOTES",
+        "path": "docs/developer/tui-porting-notes.md",
+        "sha256": "sha256:0eb9875261040dd8a3c127fe03935ea53af50fcf98924e5ed06ccbd6153cff39"
+      },
+      {
+        "role": "RELEASE_ARCHIVE_TEST",
+        "path": "scripts/release/__tests__/archive.test.ts",
+        "sha256": "sha256:a6b8a838d8ee9fc59b6095a77bd49d51138421d64f3e470744025037a1a85b9b"
+      },
+      {
+        "role": "RELEASE_BUILD",
+        "path": "scripts/release/build.ts",
+        "sha256": "sha256:16d816c95d5224e7700c059c04853de0d9566997823f9ae58668e95bb2e0fef1"
+      },
+      {
+        "role": "RELEASE_SMOKE",
+        "path": "scripts/release/smoke.ts",
+        "sha256": "sha256:0691750136cc9971d304aa6b97b28761852355675a8dbec9c39db692e3669a5e"
+      },
+      {
+        "role": "SERVICE_LICENSE",
+        "path": "services/notification-delivery/LICENSE",
+        "sha256": "sha256:04f9674553a402c48856e9cc3f813a70bb59eb6033f33344980c8fd3a710c8f2"
+      },
+      {
+        "role": "SERVICE_NOTICE",
+        "path": "services/notification-delivery/NOTICE",
+        "sha256": "sha256:1009b641213efcdef8aea6307ea9745c0473e42cf160d6c6c8530a0b61a575d1"
+      },
+      {
+        "role": "SERVICE_THIRD_PARTY_NOTICES",
+        "path": "services/notification-delivery/THIRD_PARTY_NOTICES.md",
+        "sha256": "sha256:b537ef415b68027b321ca7db0a3dc065d74241e03829f5f7f70393a1c9f5d43f"
+      },
+      {
+        "role": "SERVICE_SBOM_REPOSITORY_INPUT",
+        "path": "services/notification-delivery/SBOM.cdx.json",
+        "sha256": "sha256:a22c503aaf5efeec6c36d9a8e3362cebf37280aea3a43e45093516e5141727b7"
+      },
+      {
+        "role": "SOURCE_MANIFEST_V1",
+        "path": "services/notification-delivery/integration/source-manifest.json",
+        "sha256": "sha256:11ca033a6dc07677ed315e676728e18b2ea4be39835b1afdc2d36d2b44c3d87c"
+      },
+      {
+        "role": "SOURCE_MANIFEST_V2",
+        "path": "services/notification-delivery/integration/source-manifest.v2.json",
+        "sha256": "sha256:b658721496768decbe06a9146bce8cae16161331c676563352841d26d140c03f"
+      },
+      {
+        "role": "SOURCE_MANIFEST_V2_SCHEMA",
+        "path": "services/notification-delivery/integration/schemas/source-manifest.v2.schema.json",
+        "sha256": "sha256:35afd58c50901670be7462fdbefc888307c3e0fa25570630f766b38498d05791"
+      },
+      {
+        "role": "LEGAL_PROVENANCE_CONTRACT",
+        "path": "services/notification-delivery/tests/contracts/legal_provenance_test.go",
+        "sha256": "sha256:c97367025163f25548ef57072b9dc75cda869e7f06549468af1e316c6b475ca0"
+      },
+      {
+        "role": "REPOSITORY_CONSISTENCY_CONTRACT",
+        "path": "services/notification-delivery/tests/contracts/repository_consistency_test.go",
+        "sha256": "sha256:2d965ac8d1091998f4667839d6812f4d2e3ab4e2cc87e15e4671effbf1ba362c"
+      },
+      {
+        "role": "E6_ROOT_README",
+        "path": "README.md",
+        "sha256": "sha256:a6cfc723d026c83e7d205b24f93bff18bb38c32c55aa0843e4db2fb868215704"
+      },
+      {
+        "role": "E6_DOCS_INDEX",
+        "path": "docs/README.md",
+        "sha256": "sha256:bf17890e969bc1123700574b70ec1766672aa51546fd904aa4509db53c74cbcc"
+      },
+      {
+        "role": "E6_INTEGRATION_GUIDE",
+        "path": "docs/developer/notification-delivery-integration.md",
+        "sha256": "sha256:7915f039f534db05cedd165d63384b53831dfa8b8565ef606a58430af5360de2"
+      },
+      {
+        "role": "E6_SERVICE_README",
+        "path": "services/notification-delivery/README.md",
+        "sha256": "sha256:d0d6e0db8a28b4f72f0edd343bf514487cb5d8d49bdff2d0a494d509e5a99dc4"
+      },
+      {
+        "role": "E6_OPENAPI",
+        "path": "services/notification-delivery/docs/api/openapi.yaml",
+        "sha256": "sha256:e61fe94f0775fe9986492bab280cf2cdfa93b5a8c6d7d6c429cb3b6f6eae463f"
+      },
+      {
+        "role": "E6_ARCHITECTURE",
+        "path": "services/notification-delivery/docs/architecture/architecture.md",
+        "sha256": "sha256:d6329e6a6c0a6b3b4cd84a4be8476d817c9951f94d404d229ffa81db727804cb"
+      },
+      {
+        "role": "E6_DESIGN",
+        "path": "services/notification-delivery/docs/design.md",
+        "sha256": "sha256:a21e9e30dfd6e341fc446a44361a452b12df5d1691ff78e0b5ed22ddb47e3d05"
+      },
+      {
+        "role": "E6_DEVELOPMENT_PLAN",
+        "path": "services/notification-delivery/docs/development-plan.md",
+        "sha256": "sha256:30f18176f867d76654dc030dcdd33ac7bafe7572ee3355d25836da4d69d4d641"
+      },
+      {
+        "role": "E6_SERVICE_WORKSPACE_MANIFEST",
+        "path": "services/notification-delivery/docs/testing/workspace-manifest.sha256",
+        "sha256": "sha256:b1541157b5829733e63db78a6699cb87bf1a7e155d152bb8edd920c9afa27981"
+      }
+    ]
+  },
+  "registry_state": {
+    "modules": {
+      "path": ".openslack/modules.yaml",
+      "sha256": "sha256:454c187019e3133a51b5361a64a0457d2a5575e10d028f02d8f560eadf2a961f"
+    },
+    "generated_status": {
+      "path": "docs/status/current.md",
+      "sha256": "sha256:189fd032898aa754b3e671c2cb1cc5142aadde513fa8f115349ba36fdf09ebaf"
+    },
+    "absent_component_ids": ["notification_handoff", "notification_delivery_service"],
+    "notification_delivery_component_absent": true,
+    "registry_relocation": {
+      "status": "N/A_CURRENT_BASELINE",
+      "next": "DEFERRED_TO_PX0"
+    }
+  },
+  "pending_external": {
+    "status": "PENDING_EXTERNAL",
+    "artifacts": [
+      {
+        "role": "ENVIRONMENT_MANIFEST_V2",
+        "path": "deploy/notification-import-qualification/environment-manifest.v2.json",
+        "sha256": "sha256:a456c815e86a59f20e161dfc3c1851a56a336775bff3e63e59134997e8aca363"
+      },
+      {
+        "role": "ENVIRONMENT_MANIFEST_V2_SCHEMA",
+        "path": "deploy/notification-import-qualification/environment-manifest.v2.schema.json",
+        "sha256": "sha256:ce2e2ed4bb3c07073029746d71a4e8a970e7d67637bb5bea5701931e572674e5"
+      },
+      {
+        "role": "POST_IMPORT_QUALIFICATION_WORKFLOW",
+        "path": ".github/workflows/notification-import-qualification.yml",
+        "sha256": "sha256:5d32be9e9a7314b1a83e5b0e980695ae30f25c21d340689ee98525966f1ac092"
+      }
+    ]
+  },
+  "review": {
+    "scope": "COMPLETED_D_AND_E1_THROUGH_E6_PRODUCTIZATION_ONLY",
+    "independent_blockers": 0,
+    "receipt_pr_included": false
+  },
+  "scope": {
+    "authorizes": [],
+    "not_claimed": [
+      "IB6_MERGE_TRAIN_PX2_EXIT",
+      "EXTERNAL_INPUTS",
+      "EXTERNAL_CONFIGURATION",
+      "EXTERNAL_READINESS",
+      "REGISTRY_INCLUSION",
+      "MODULE_REGISTRATION",
+      "RUNTIME_ADMISSION",
+      "SIGNED_PROVENANCE",
+      "CLI_ARCHIVE_INCLUSION",
+      "G4_E2E_PASS",
+      "G5_POST_IMPORT_QUALIFICATION_PASS",
+      "IB7_CUTOVER",
+      "LIVE_VERIFIED",
+      "OPENSLACK_0.2.0_RELEASE",
+      "OPENSLACK_0.3.0_RELEASE",
+      "PRODUCTION_READY",
+      "REPOSITORY_ARCHIVE",
+      "STANDALONE_REPOSITORY_ARCHIVE",
+      "DESTRUCTIVE_CLEANUP",
+      "DESTRUCTIVE_RETIREMENT"
+    ]
+  },
+  "self_reference_policy": {
+    "receipt_path": "integration/gates/ib6-history-import.json",
+    "contains_own_sha256": false,
+    "contains_receipt_pr_head": false,
+    "contains_receipt_pr_approval_or_check_ids": false,
+    "contains_receipt_merge_commit": false,
+    "external_bindings": [
+      "BOT_PR_BODY_BINDS_RECEIPT_HEAD_AND_VALIDATION_MODE",
+      "GITHUB_AND_PRMS_BIND_CURRENT_APPROVAL_THREADS_AND_CHECKS",
+      "EXPECTED_HEAD_MERGE_BINDS_FINAL_RECEIPT_HEAD",
+      "POST_MERGE_PX2_AUDIT_BINDS_RECEIPT_MERGE_AND_PROTECTED_MAIN"
+    ]
+  }
+}

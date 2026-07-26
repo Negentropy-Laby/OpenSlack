@@ -1,0 +1,2196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/notification-delivery-ib6-history-import.v1.json",
+  "title": "OpenSlack Notification Delivery IB6 History Import Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema",
+    "receipt_id",
+    "recorded_at",
+    "gate",
+    "repository_base",
+    "predecessor_manifest",
+    "source_history",
+    "authorization",
+    "import_binding",
+    "productization_chain",
+    "final_state",
+    "registry_state",
+    "pending_external",
+    "review",
+    "scope",
+    "self_reference_policy"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "../../docs/integration/notification-delivery-ib6-history-import.v1.schema.json"
+    },
+    "schema": {
+      "const": "openslack.notification_delivery_ib6_history_import.v1"
+    },
+    "receipt_id": {
+      "const": "ib6-history-import-2026-07-26"
+    },
+    "recorded_at": {
+      "const": "2026-07-26T13:51:49+08:00"
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "status", "closed", "effectivity", "canonical_base", "px2_exit"],
+      "properties": {
+        "name": {
+          "const": "IB6-HISTORY-IMPORT"
+        },
+        "status": {
+          "const": "PASS"
+        },
+        "closed": {
+          "const": true
+        },
+        "effectivity": {
+          "const": "EFFECTIVE_ON_GOVERNED_CANONICAL_MAIN_MERGE"
+        },
+        "canonical_base": {
+          "const": "main"
+        },
+        "px2_exit": {
+          "const": "PENDING_POST_MERGE_AUDIT"
+        }
+      }
+    },
+    "repository_base": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "commit", "tree", "canonical_branch", "service_subtree"],
+      "properties": {
+        "role": {
+          "const": "E6_MERGED_PRE_RECEIPT_BASE"
+        },
+        "commit": {
+          "const": "937b0566797828a9f8f0868821e21857c3345d1e"
+        },
+        "tree": {
+          "const": "1d6964137b36bc67195101d23edf641328fb1a17"
+        },
+        "canonical_branch": {
+          "const": "main"
+        },
+        "service_subtree": {
+          "const": "177e30fca4270c0f6aa87a033c1ecbd905bce6f1"
+        }
+      }
+    },
+    "predecessor_manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "phase_f_binding", "fulfillment"],
+      "properties": {
+        "path": {
+          "const": "services/notification-delivery/integration/source-manifest.v2.json"
+        },
+        "sha256": {
+          "const": "sha256:b658721496768decbe06a9146bce8cae16161331c676563352841d26d140c03f"
+        },
+        "phase_f_binding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "path_base", "expected_path"],
+          "properties": {
+            "status": {
+              "const": "PENDING_PHASE_F"
+            },
+            "path_base": {
+              "const": "OPENSLACK_REPOSITORY_ROOT"
+            },
+            "expected_path": {
+              "const": "integration/gates/ib6-history-import.json"
+            }
+          }
+        },
+        "fulfillment": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["receipt_path", "resolution"],
+          "properties": {
+            "receipt_path": {
+              "const": "integration/gates/ib6-history-import.json"
+            },
+            "resolution": {
+              "const": "FULFILLED_BY_THIS_APPEND_ONLY_RECEIPT"
+            }
+          }
+        }
+      }
+    },
+    "source_history": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["review_baseline", "archive_tag", "frozen_source"],
+      "properties": {
+        "review_baseline": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["commit", "ancestor_of_frozen_source"],
+          "properties": {
+            "commit": {
+              "const": "7976962e7de1c6ffcd234d2962b89dc4b23c95c0"
+            },
+            "ancestor_of_frozen_source": {
+              "const": true
+            }
+          }
+        },
+        "archive_tag": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "object", "object_type", "target_commit"],
+          "properties": {
+            "name": {
+              "const": "integration-archive/rc-wsman-pre-ib6"
+            },
+            "object": {
+              "const": "b3d87f5074eb6ac7733e21d240bd5e2cf8e27a97"
+            },
+            "object_type": {
+              "const": "tag"
+            },
+            "target_commit": {
+              "const": "982db466b2ba2c20bec150b7688bd398e4f52714"
+            }
+          }
+        },
+        "frozen_source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["repository", "commit", "tree", "reachable_commit_count"],
+          "properties": {
+            "repository": {
+              "const": "https://github.com/wsman/rc_wsman.git"
+            },
+            "commit": {
+              "const": "982db466b2ba2c20bec150b7688bd398e4f52714"
+            },
+            "tree": {
+              "const": "7ac5144aeab9d453f39e2b6d2fbea828e7a89017"
+            },
+            "reachable_commit_count": {
+              "const": 36
+            }
+          }
+        }
+      }
+    },
+    "authorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "decision", "owner", "provenance", "bound_envelope"],
+      "properties": {
+        "scope": {
+          "const": "IB6_HISTORY_IMPORT_ONLY"
+        },
+        "decision": {
+          "const": "APPROVE"
+        },
+        "owner": {
+          "const": "wsman"
+        },
+        "provenance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "governed_summary_url", "governed_summary_merge_commit"],
+          "properties": {
+            "kind": {
+              "const": "CANONICAL_ENVELOPE_AND_EXPLICIT_OWNER_REPLY"
+            },
+            "governed_summary_url": {
+              "const": "https://github.com/Negentropy-Laby/OpenSlack/pull/301"
+            },
+            "governed_summary_merge_commit": {
+              "const": "bb3f234f93a9a86602693ee6dc3717f930c87213"
+            }
+          }
+        },
+        "bound_envelope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "openslack_base_commit",
+            "openslack_base_tree",
+            "archive_tag",
+            "archive_tag_object",
+            "source_commit",
+            "source_tree",
+            "source_reachable_commit_count",
+            "import_path",
+            "readiness_report_sha256",
+            "tag_immutability_exception"
+          ],
+          "properties": {
+            "openslack_base_commit": {
+              "const": "4eefd75abf490257c226bd596cfd58122edd879f"
+            },
+            "openslack_base_tree": {
+              "const": "fe7230ffaba7782e24c6ff85b16857ee76789de3"
+            },
+            "archive_tag": {
+              "const": "integration-archive/rc-wsman-pre-ib6"
+            },
+            "archive_tag_object": {
+              "const": "b3d87f5074eb6ac7733e21d240bd5e2cf8e27a97"
+            },
+            "source_commit": {
+              "const": "982db466b2ba2c20bec150b7688bd398e4f52714"
+            },
+            "source_tree": {
+              "const": "7ac5144aeab9d453f39e2b6d2fbea828e7a89017"
+            },
+            "source_reachable_commit_count": {
+              "const": 36
+            },
+            "import_path": {
+              "const": "services/notification-delivery"
+            },
+            "readiness_report_sha256": {
+              "const": "sha256:e9298bd3759693a4ddb6c20ccf9597e42b748205f30a1ec7feb86dba4640a674"
+            },
+            "tag_immutability_exception": {
+              "const": "ACCEPT_EXACT_OBJECT_BINDING"
+            }
+          }
+        }
+      }
+    },
+    "import_binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "pure_import",
+        "openslack_merge",
+        "target_repository",
+        "target_path",
+        "imported_subtree",
+        "pure_import_tree_equals_readiness_candidate",
+        "openslack_merge_tree_equals_pure_import_tree",
+        "imported_subtree_equals_frozen_source_tree"
+      ],
+      "properties": {
+        "pure_import": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["commit", "tree", "parents"],
+          "properties": {
+            "commit": {
+              "const": "141caadc2541490c32f3d5940f057de7bf703410"
+            },
+            "tree": {
+              "const": "f9c7c835e9385db1500a66b7fa5f354a07410695"
+            },
+            "parents": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "prefixItems": [
+                {
+                  "const": "4eefd75abf490257c226bd596cfd58122edd879f"
+                },
+                {
+                  "const": "982db466b2ba2c20bec150b7688bd398e4f52714"
+                }
+              ],
+              "items": false
+            }
+          }
+        },
+        "openslack_merge": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["commit", "tree", "parents"],
+          "properties": {
+            "commit": {
+              "const": "bb3f234f93a9a86602693ee6dc3717f930c87213"
+            },
+            "tree": {
+              "const": "f9c7c835e9385db1500a66b7fa5f354a07410695"
+            },
+            "parents": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "prefixItems": [
+                {
+                  "const": "4eefd75abf490257c226bd596cfd58122edd879f"
+                },
+                {
+                  "const": "141caadc2541490c32f3d5940f057de7bf703410"
+                }
+              ],
+              "items": false
+            }
+          }
+        },
+        "target_repository": {
+          "const": "https://github.com/Negentropy-Laby/OpenSlack.git"
+        },
+        "target_path": {
+          "const": "services/notification-delivery"
+        },
+        "imported_subtree": {
+          "const": "7ac5144aeab9d453f39e2b6d2fbea828e7a89017"
+        },
+        "pure_import_tree_equals_readiness_candidate": {
+          "const": true
+        },
+        "openslack_merge_tree_equals_pure_import_tree": {
+          "const": true
+        },
+        "imported_subtree_equals_frozen_source_tree": {
+          "const": true
+        }
+      }
+    },
+    "productization_chain": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "prefixItems": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "phase",
+            "pull_request",
+            "scope",
+            "base_commit",
+            "head_commit",
+            "head_tree",
+            "merge_commit",
+            "merge_tree",
+            "merge_parents",
+            "merge_tree_equals_head_tree",
+            "changed_paths",
+            "hosted_validation"
+          ],
+          "properties": {
+            "phase": {
+              "const": "D"
+            },
+            "pull_request": {
+              "const": 301
+            },
+            "scope": {
+              "const": "PURE_HISTORY_IMPORT"
+            },
+            "base_commit": {
+              "const": "4eefd75abf490257c226bd596cfd58122edd879f"
+            },
+            "head_commit": {
+              "const": "141caadc2541490c32f3d5940f057de7bf703410"
+            },
+            "head_tree": {
+              "const": "f9c7c835e9385db1500a66b7fa5f354a07410695"
+            },
+            "merge_commit": {
+              "const": "bb3f234f93a9a86602693ee6dc3717f930c87213"
+            },
+            "merge_tree": {
+              "const": "f9c7c835e9385db1500a66b7fa5f354a07410695"
+            },
+            "merge_parents": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "prefixItems": [
+                {
+                  "const": "4eefd75abf490257c226bd596cfd58122edd879f"
+                },
+                {
+                  "const": "141caadc2541490c32f3d5940f057de7bf703410"
+                }
+              ],
+              "items": false
+            },
+            "merge_tree_equals_head_tree": {
+              "const": true
+            },
+            "changed_paths": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["comparison", "count", "digest", "algorithm"],
+              "properties": {
+                "comparison": {
+                  "const": "GIT_DIFF_NAME_ONLY_NO_RENAMES_BASE_TO_HEAD"
+                },
+                "count": {
+                  "const": 203
+                },
+                "digest": {
+                  "const": "sha256:b602970021d6e601634653b6188148b22caf2c032374dcdc46ed4df2b7c65c90"
+                },
+                "algorithm": {
+                  "const": "SHA256_SORTED_LF_PATHS_V1"
+                }
+              }
+            },
+            "hosted_validation": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode",
+                "governed_head",
+                "execution_commit",
+                "execution_parents",
+                "validated_content_tree",
+                "literal_head_execution",
+                "check_name",
+                "conclusion",
+                "run_id",
+                "job_id",
+                "details_url"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "SYNTHETIC_MERGE_TREE_EQUAL_CONTENT"
+                },
+                "governed_head": {
+                  "const": "141caadc2541490c32f3d5940f057de7bf703410"
+                },
+                "execution_commit": {
+                  "const": "f151874f4d5d4bb546ec86578646f797323c43e4"
+                },
+                "execution_parents": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "prefixItems": [
+                    {
+                      "const": "4eefd75abf490257c226bd596cfd58122edd879f"
+                    },
+                    {
+                      "const": "141caadc2541490c32f3d5940f057de7bf703410"
+                    }
+                  ],
+                  "items": false
+                },
+                "validated_content_tree": {
+                  "const": "f9c7c835e9385db1500a66b7fa5f354a07410695"
+                },
+                "literal_head_execution": {
+                  "const": false
+                },
+                "check_name": {
+                  "const": "validate / validate"
+                },
+                "conclusion": {
+                  "const": "SUCCESS"
+                },
+                "run_id": {
+                  "const": 30162216039
+                },
+                "job_id": {
+                  "const": 89689331486
+                },
+                "details_url": {
+                  "const": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/30162216039/job/89689331486"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "phase",
+            "pull_request",
+            "scope",
+            "base_commit",
+            "head_commit",
+            "head_tree",
+            "merge_commit",
+            "merge_tree",
+            "merge_parents",
+            "merge_tree_equals_head_tree",
+            "changed_paths",
+            "hosted_validation"
+          ],
+          "properties": {
+            "phase": {
+              "const": "E1"
+            },
+            "pull_request": {
+              "const": 302
+            },
+            "scope": {
+              "const": "SERVICE_OWNERSHIP"
+            },
+            "base_commit": {
+              "const": "bb3f234f93a9a86602693ee6dc3717f930c87213"
+            },
+            "head_commit": {
+              "const": "8772a984dbbd543b5c1ae65f40f5d0b514208e66"
+            },
+            "head_tree": {
+              "const": "670d29d6e2b73cedae91a61ad6b77f4e4be0c9c5"
+            },
+            "merge_commit": {
+              "const": "2fe463031f02fb7ff8074e076314ae70c892cb5a"
+            },
+            "merge_tree": {
+              "const": "670d29d6e2b73cedae91a61ad6b77f4e4be0c9c5"
+            },
+            "merge_parents": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "prefixItems": [
+                {
+                  "const": "bb3f234f93a9a86602693ee6dc3717f930c87213"
+                },
+                {
+                  "const": "8772a984dbbd543b5c1ae65f40f5d0b514208e66"
+                }
+              ],
+              "items": false
+            },
+            "merge_tree_equals_head_tree": {
+              "const": true
+            },
+            "changed_paths": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["comparison", "count", "digest", "algorithm"],
+              "properties": {
+                "comparison": {
+                  "const": "GIT_DIFF_NAME_ONLY_NO_RENAMES_BASE_TO_HEAD"
+                },
+                "count": {
+                  "const": 2
+                },
+                "digest": {
+                  "const": "sha256:fe5ee83cbe2b5705c318467f993d1d260f05dd3b84f2689351a69aeff6d73731"
+                },
+                "algorithm": {
+                  "const": "SHA256_SORTED_LF_PATHS_V1"
+                }
+              }
+            },
+            "hosted_validation": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode",
+                "governed_head",
+                "execution_commit",
+                "execution_parents",
+                "validated_content_tree",
+                "literal_head_execution",
+                "check_name",
+                "conclusion",
+                "run_id",
+                "job_id",
+                "details_url"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "SYNTHETIC_MERGE_TREE_EQUAL_CONTENT"
+                },
+                "governed_head": {
+                  "const": "8772a984dbbd543b5c1ae65f40f5d0b514208e66"
+                },
+                "execution_commit": {
+                  "const": "0f1409b4a7abaf8bb75b426f3f21169cc679d78c"
+                },
+                "execution_parents": {
+                  "type": "array",
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "prefixItems": [
+                    {
+                      "const": "bb3f234f93a9a86602693ee6dc3717f930c87213"
+                    },
+                    {
+                      "const": "8772a984dbbd543b5c1ae65f40f5d0b514208e66"
+                    }
+                  ],
+                  "items": false
+                },
+                "validated_content_tree": {
+                  "const": "670d29d6e2b73cedae91a61ad6b77f4e4be0c9c5"
+                },
+                "literal_head_execution": {
+                  "const": false
+                },
+                "check_name": {
+                  "const": "validate / validate"
+                },
+                "conclusion": {
+                  "const": "SUCCESS"
+                },
+                "run_id": {
+                  "const": 30165391784
+                },
+                "job_id": {
+                  "const": 89697499730
+                },
+                "details_url": {
+                  "const": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/30165391784/job/89697499730"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "phase",
+            "pull_request",
+            "scope",
+            "base_commit",
+            "head_commit",
+            "head_tree",
+            "merge_commit",
+            "merge_tree",
+            "merge_parents",
+            "merge_tree_equals_head_tree",
+            "changed_paths",
+            "hosted_validation"
+          ],
+          "properties": {
+            "phase": {
+              "const": "E2"
+            },
+            "pull_request": {
+              "const": 303
+            },
+            "scope": {
+              "const": "PATH_FILTERED_SERVICE_CI"
+            },
+            "base_commit": {
+              "const": "2fe463031f02fb7ff8074e076314ae70c892cb5a"
+            },
+            "head_commit": {
+              "const": "97cd338e1389865eb34e4054be1aed8a4a9ffcf5"
+            },
+            "head_tree": {
+              "const": "d97a3b4f4e78867a64e176df83bac4ee39bcdd0c"
+            },
+            "merge_commit": {
+              "const": "655eebc20a5c173f5f9d9d5641b5e938f415b6cc"
+            },
+            "merge_tree": {
+              "const": "d97a3b4f4e78867a64e176df83bac4ee39bcdd0c"
+            },
+            "merge_parents": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "prefixItems": [
+                {
+                  "const": "2fe463031f02fb7ff8074e076314ae70c892cb5a"
+                },
+                {
+                  "const": "97cd338e1389865eb34e4054be1aed8a4a9ffcf5"
+                }
+              ],
+              "items": false
+            },
+            "merge_tree_equals_head_tree": {
+              "const": true
+            },
+            "changed_paths": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["comparison", "count", "digest", "algorithm"],
+              "properties": {
+                "comparison": {
+                  "const": "GIT_DIFF_NAME_ONLY_NO_RENAMES_BASE_TO_HEAD"
+                },
+                "count": {
+                  "const": 2
+                },
+                "digest": {
+                  "const": "sha256:93cc126ddc3095974992cb28ee39917b2cc6a4e1710d62f3885dfb251b243ffe"
+                },
+                "algorithm": {
+                  "const": "SHA256_SORTED_LF_PATHS_V1"
+                }
+              }
+            },
+            "hosted_validation": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode",
+                "governed_head",
+                "execution_commit",
+                "validated_content_tree",
+                "literal_head_execution",
+                "check_name",
+                "conclusion",
+                "run_id",
+                "job_id",
+                "details_url"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "EXACT_HEAD"
+                },
+                "governed_head": {
+                  "const": "97cd338e1389865eb34e4054be1aed8a4a9ffcf5"
+                },
+                "execution_commit": {
+                  "const": "97cd338e1389865eb34e4054be1aed8a4a9ffcf5"
+                },
+                "validated_content_tree": {
+                  "const": "d97a3b4f4e78867a64e176df83bac4ee39bcdd0c"
+                },
+                "literal_head_execution": {
+                  "const": true
+                },
+                "check_name": {
+                  "const": "Validate notification delivery service"
+                },
+                "conclusion": {
+                  "const": "SUCCESS"
+                },
+                "run_id": {
+                  "const": 30166722203
+                },
+                "job_id": {
+                  "const": 89700920598
+                },
+                "details_url": {
+                  "const": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/30166722203/job/89700920598"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "phase",
+            "pull_request",
+            "scope",
+            "base_commit",
+            "head_commit",
+            "head_tree",
+            "merge_commit",
+            "merge_tree",
+            "merge_parents",
+            "merge_tree_equals_head_tree",
+            "changed_paths",
+            "hosted_validation"
+          ],
+          "properties": {
+            "phase": {
+              "const": "E3"
+            },
+            "pull_request": {
+              "const": 304
+            },
+            "scope": {
+              "const": "GO_MODULE_AND_IMPORT_RELOCATION"
+            },
+            "base_commit": {
+              "const": "655eebc20a5c173f5f9d9d5641b5e938f415b6cc"
+            },
+            "head_commit": {
+              "const": "ec6438f5897563ad339e9833dd99b52255ac51bb"
+            },
+            "head_tree": {
+              "const": "9c329c574f57a46b31407ba80dc35bdf44c13471"
+            },
+            "merge_commit": {
+              "const": "b0ea03ce6dc6ab923b8e9d8bd0a600bde57bc167"
+            },
+            "merge_tree": {
+              "const": "9c329c574f57a46b31407ba80dc35bdf44c13471"
+            },
+            "merge_parents": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "prefixItems": [
+                {
+                  "const": "655eebc20a5c173f5f9d9d5641b5e938f415b6cc"
+                },
+                {
+                  "const": "ec6438f5897563ad339e9833dd99b52255ac51bb"
+                }
+              ],
+              "items": false
+            },
+            "merge_tree_equals_head_tree": {
+              "const": true
+            },
+            "changed_paths": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["comparison", "count", "digest", "algorithm"],
+              "properties": {
+                "comparison": {
+                  "const": "GIT_DIFF_NAME_ONLY_NO_RENAMES_BASE_TO_HEAD"
+                },
+                "count": {
+                  "const": 53
+                },
+                "digest": {
+                  "const": "sha256:e044f759dd8b5c24793605b346404f7983a4e05cc2d1a33407c4ef062af513cc"
+                },
+                "algorithm": {
+                  "const": "SHA256_SORTED_LF_PATHS_V1"
+                }
+              }
+            },
+            "hosted_validation": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode",
+                "governed_head",
+                "execution_commit",
+                "validated_content_tree",
+                "literal_head_execution",
+                "check_name",
+                "conclusion",
+                "run_id",
+                "job_id",
+                "details_url"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "EXACT_HEAD"
+                },
+                "governed_head": {
+                  "const": "ec6438f5897563ad339e9833dd99b52255ac51bb"
+                },
+                "execution_commit": {
+                  "const": "ec6438f5897563ad339e9833dd99b52255ac51bb"
+                },
+                "validated_content_tree": {
+                  "const": "9c329c574f57a46b31407ba80dc35bdf44c13471"
+                },
+                "literal_head_execution": {
+                  "const": true
+                },
+                "check_name": {
+                  "const": "Validate notification delivery service"
+                },
+                "conclusion": {
+                  "const": "SUCCESS"
+                },
+                "run_id": {
+                  "const": 30168145809
+                },
+                "job_id": {
+                  "const": 89704547011
+                },
+                "details_url": {
+                  "const": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/30168145809/job/89704547011"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "phase",
+            "pull_request",
+            "scope",
+            "base_commit",
+            "head_commit",
+            "head_tree",
+            "merge_commit",
+            "merge_tree",
+            "merge_parents",
+            "merge_tree_equals_head_tree",
+            "changed_paths",
+            "hosted_validation"
+          ],
+          "properties": {
+            "phase": {
+              "const": "E4"
+            },
+            "pull_request": {
+              "const": 305
+            },
+            "scope": {
+              "const": "CONTAINER_INPUT_RELOCATION"
+            },
+            "base_commit": {
+              "const": "b0ea03ce6dc6ab923b8e9d8bd0a600bde57bc167"
+            },
+            "head_commit": {
+              "const": "b47af9926ff4d0c5453c5f3a4f75053480598276"
+            },
+            "head_tree": {
+              "const": "5ec8fbab8fda2c2f717151b5589155634fcf5a69"
+            },
+            "merge_commit": {
+              "const": "e81ae511507e409f1b90949a2b20f9de0832992b"
+            },
+            "merge_tree": {
+              "const": "5ec8fbab8fda2c2f717151b5589155634fcf5a69"
+            },
+            "merge_parents": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "prefixItems": [
+                {
+                  "const": "b0ea03ce6dc6ab923b8e9d8bd0a600bde57bc167"
+                },
+                {
+                  "const": "b47af9926ff4d0c5453c5f3a4f75053480598276"
+                }
+              ],
+              "items": false
+            },
+            "merge_tree_equals_head_tree": {
+              "const": true
+            },
+            "changed_paths": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["comparison", "count", "digest", "algorithm"],
+              "properties": {
+                "comparison": {
+                  "const": "GIT_DIFF_NAME_ONLY_NO_RENAMES_BASE_TO_HEAD"
+                },
+                "count": {
+                  "const": 8
+                },
+                "digest": {
+                  "const": "sha256:1a5ebe56f55db6a9ec35b8150b4e34682be3a7892bc27e5c41f4c3e22021bc5b"
+                },
+                "algorithm": {
+                  "const": "SHA256_SORTED_LF_PATHS_V1"
+                }
+              }
+            },
+            "hosted_validation": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode",
+                "governed_head",
+                "execution_commit",
+                "validated_content_tree",
+                "literal_head_execution",
+                "check_name",
+                "conclusion",
+                "run_id",
+                "job_id",
+                "details_url"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "EXACT_HEAD"
+                },
+                "governed_head": {
+                  "const": "b47af9926ff4d0c5453c5f3a4f75053480598276"
+                },
+                "execution_commit": {
+                  "const": "b47af9926ff4d0c5453c5f3a4f75053480598276"
+                },
+                "validated_content_tree": {
+                  "const": "5ec8fbab8fda2c2f717151b5589155634fcf5a69"
+                },
+                "literal_head_execution": {
+                  "const": true
+                },
+                "check_name": {
+                  "const": "Validate notification delivery service"
+                },
+                "conclusion": {
+                  "const": "SUCCESS"
+                },
+                "run_id": {
+                  "const": 30170115593
+                },
+                "job_id": {
+                  "const": 89709701430
+                },
+                "details_url": {
+                  "const": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/30170115593/job/89709701430"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "phase",
+            "pull_request",
+            "scope",
+            "base_commit",
+            "head_commit",
+            "head_tree",
+            "merge_commit",
+            "merge_tree",
+            "merge_parents",
+            "merge_tree_equals_head_tree",
+            "changed_paths",
+            "hosted_validation"
+          ],
+          "properties": {
+            "phase": {
+              "const": "E5"
+            },
+            "pull_request": {
+              "const": 306
+            },
+            "scope": {
+              "const": "LEGAL_AND_REPOSITORY_PROVENANCE"
+            },
+            "base_commit": {
+              "const": "e81ae511507e409f1b90949a2b20f9de0832992b"
+            },
+            "head_commit": {
+              "const": "3996f39be08b5087ac1ef8818c3543735a18cf4b"
+            },
+            "head_tree": {
+              "const": "4cd6d532901d1c980667eaefe575f8e41f1f21f7"
+            },
+            "merge_commit": {
+              "const": "42b44375adfb99b1989a35827ff5d9aba98d7e6f"
+            },
+            "merge_tree": {
+              "const": "4cd6d532901d1c980667eaefe575f8e41f1f21f7"
+            },
+            "merge_parents": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "prefixItems": [
+                {
+                  "const": "e81ae511507e409f1b90949a2b20f9de0832992b"
+                },
+                {
+                  "const": "3996f39be08b5087ac1ef8818c3543735a18cf4b"
+                }
+              ],
+              "items": false
+            },
+            "merge_tree_equals_head_tree": {
+              "const": true
+            },
+            "changed_paths": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["comparison", "count", "digest", "algorithm"],
+              "properties": {
+                "comparison": {
+                  "const": "GIT_DIFF_NAME_ONLY_NO_RENAMES_BASE_TO_HEAD"
+                },
+                "count": {
+                  "const": 15
+                },
+                "digest": {
+                  "const": "sha256:af6fea9e09d68b5fd03a9f8d43bd1654a9a11ea2c9b86714166fecf211c7ae3b"
+                },
+                "algorithm": {
+                  "const": "SHA256_SORTED_LF_PATHS_V1"
+                }
+              }
+            },
+            "hosted_validation": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode",
+                "governed_head",
+                "execution_commit",
+                "validated_content_tree",
+                "literal_head_execution",
+                "check_name",
+                "conclusion",
+                "run_id",
+                "job_id",
+                "details_url"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "EXACT_HEAD"
+                },
+                "governed_head": {
+                  "const": "3996f39be08b5087ac1ef8818c3543735a18cf4b"
+                },
+                "execution_commit": {
+                  "const": "3996f39be08b5087ac1ef8818c3543735a18cf4b"
+                },
+                "validated_content_tree": {
+                  "const": "4cd6d532901d1c980667eaefe575f8e41f1f21f7"
+                },
+                "literal_head_execution": {
+                  "const": true
+                },
+                "check_name": {
+                  "const": "Validate notification delivery service"
+                },
+                "conclusion": {
+                  "const": "SUCCESS"
+                },
+                "run_id": {
+                  "const": 30173297475
+                },
+                "job_id": {
+                  "const": 89717867229
+                },
+                "details_url": {
+                  "const": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/30173297475/job/89717867229"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "phase",
+            "pull_request",
+            "scope",
+            "base_commit",
+            "head_commit",
+            "head_tree",
+            "merge_commit",
+            "merge_tree",
+            "merge_parents",
+            "merge_tree_equals_head_tree",
+            "changed_paths",
+            "hosted_validation"
+          ],
+          "properties": {
+            "phase": {
+              "const": "E6"
+            },
+            "pull_request": {
+              "const": 307
+            },
+            "scope": {
+              "const": "PRODUCT_NAMING_AND_DOCUMENTATION"
+            },
+            "base_commit": {
+              "const": "42b44375adfb99b1989a35827ff5d9aba98d7e6f"
+            },
+            "head_commit": {
+              "const": "30d4c96d543917826bc2b82207956ea19784ddd0"
+            },
+            "head_tree": {
+              "const": "1d6964137b36bc67195101d23edf641328fb1a17"
+            },
+            "merge_commit": {
+              "const": "937b0566797828a9f8f0868821e21857c3345d1e"
+            },
+            "merge_tree": {
+              "const": "1d6964137b36bc67195101d23edf641328fb1a17"
+            },
+            "merge_parents": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "prefixItems": [
+                {
+                  "const": "42b44375adfb99b1989a35827ff5d9aba98d7e6f"
+                },
+                {
+                  "const": "30d4c96d543917826bc2b82207956ea19784ddd0"
+                }
+              ],
+              "items": false
+            },
+            "merge_tree_equals_head_tree": {
+              "const": true
+            },
+            "changed_paths": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["comparison", "count", "digest", "algorithm"],
+              "properties": {
+                "comparison": {
+                  "const": "GIT_DIFF_NAME_ONLY_NO_RENAMES_BASE_TO_HEAD"
+                },
+                "count": {
+                  "const": 9
+                },
+                "digest": {
+                  "const": "sha256:6469c732e6a647433a1c4ed8218c097398a347f0b24a676d5e506ec74f17219d"
+                },
+                "algorithm": {
+                  "const": "SHA256_SORTED_LF_PATHS_V1"
+                }
+              }
+            },
+            "hosted_validation": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "mode",
+                "governed_head",
+                "execution_commit",
+                "validated_content_tree",
+                "literal_head_execution",
+                "check_name",
+                "conclusion",
+                "run_id",
+                "job_id",
+                "details_url"
+              ],
+              "properties": {
+                "mode": {
+                  "const": "EXACT_HEAD"
+                },
+                "governed_head": {
+                  "const": "30d4c96d543917826bc2b82207956ea19784ddd0"
+                },
+                "execution_commit": {
+                  "const": "30d4c96d543917826bc2b82207956ea19784ddd0"
+                },
+                "validated_content_tree": {
+                  "const": "1d6964137b36bc67195101d23edf641328fb1a17"
+                },
+                "literal_head_execution": {
+                  "const": true
+                },
+                "check_name": {
+                  "const": "Validate notification delivery service"
+                },
+                "conclusion": {
+                  "const": "SUCCESS"
+                },
+                "run_id": {
+                  "const": 30176102597
+                },
+                "job_id": {
+                  "const": 89725016891
+                },
+                "details_url": {
+                  "const": "https://github.com/Negentropy-Laby/OpenSlack/actions/runs/30176102597/job/89725016891"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "items": false
+    },
+    "final_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["service", "artifacts"],
+      "properties": {
+        "service": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "go_module", "subtree", "workspace_manifest_entries"],
+          "properties": {
+            "path": {
+              "const": "services/notification-delivery"
+            },
+            "go_module": {
+              "const": "github.com/Negentropy-Laby/OpenSlack/services/notification-delivery"
+            },
+            "subtree": {
+              "const": "177e30fca4270c0f6aa87a033c1ecbd905bce6f1"
+            },
+            "workspace_manifest_entries": {
+              "const": 210
+            }
+          }
+        },
+        "artifacts": {
+          "type": "array",
+          "minItems": 37,
+          "maxItems": 37,
+          "prefixItems": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "SERVICE_CODEOWNERS"
+                },
+                "path": {
+                  "const": ".github/CODEOWNERS"
+                },
+                "sha256": {
+                  "const": "sha256:69cbae2e1ef5f5128b9969957a3288156915179b1a1aaa40edcff5be7706b891"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "SERVICE_CODEOWNERS_TEST"
+                },
+                "path": {
+                  "const": "packages/pr/src/__tests__/codeowners.test.ts"
+                },
+                "sha256": {
+                  "const": "sha256:57d9358f8007a75c896f5c8638df8681dea1386216b0b4510047977ef2964414"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "SERVICE_CI_WORKFLOW"
+                },
+                "path": {
+                  "const": ".github/workflows/notification-delivery-service.yml"
+                },
+                "sha256": {
+                  "const": "sha256:72320243302ce54ef89adcd154dc9551e77b220183b30adafb6638c5eec6feda"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "SERVICE_CI_STRUCTURAL_TEST"
+                },
+                "path": {
+                  "const": "packages/github/src/__tests__/notification-delivery-service-workflow.test.ts"
+                },
+                "sha256": {
+                  "const": "sha256:c3a42fb1b8ff07328736582af7cdc284616bcab6ebd5a6bc09418a81b61d4854"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "SERVICE_GO_MODULE"
+                },
+                "path": {
+                  "const": "services/notification-delivery/go.mod"
+                },
+                "sha256": {
+                  "const": "sha256:b56da194184304466177003cc9a665199155766aea8cb5a054593b01a563baa2"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "SERVICE_DOCKERIGNORE"
+                },
+                "path": {
+                  "const": "services/notification-delivery/.dockerignore"
+                },
+                "sha256": {
+                  "const": "sha256:48a35a3ad2c21c111a527e57d694b2fc6ba3109761d1042b5aeeb60eee544fa8"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "SERVICE_DOCKERFILE"
+                },
+                "path": {
+                  "const": "services/notification-delivery/Dockerfile"
+                },
+                "sha256": {
+                  "const": "sha256:fae60f7a8e3e3f47daa2beadaecc953f701210d1f25a97f5213e4e74438bbab7"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "CONTAINER_HEALTHCHECK_SOURCE"
+                },
+                "path": {
+                  "const": "services/notification-delivery/cmd/container-healthcheck/main.go"
+                },
+                "sha256": {
+                  "const": "sha256:1a0280d43905e9a9c03e4be4ad7532520629c7048d4daec9a098805725a828f5"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "CONTAINER_HEALTHCHECK_TEST"
+                },
+                "path": {
+                  "const": "services/notification-delivery/cmd/container-healthcheck/main_test.go"
+                },
+                "sha256": {
+                  "const": "sha256:1d8986673083d0c5dab8a4cf95faa43579df933c35354a1d6c3073176e028a91"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "CANARY_PREFLIGHT"
+                },
+                "path": {
+                  "const": "services/notification-delivery/deploy/canary/preflight.sh"
+                },
+                "sha256": {
+                  "const": "sha256:6fa64b8a702c7fcb5dc4df8187672b9fc8711a9753a363b185878779d52a0391"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "CANARY_DEPLOYMENT_CONTRACT"
+                },
+                "path": {
+                  "const": "services/notification-delivery/tests/contracts/canary_deployment_test.go"
+                },
+                "sha256": {
+                  "const": "sha256:82d3d3ab6a17603b04dac1ca3114ae25c8e30bc304b7309ad066b11495f62733"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "DOCKERFILE_REPRODUCIBILITY_CONTRACT"
+                },
+                "path": {
+                  "const": "services/notification-delivery/tests/contracts/dockerfile_reproducibility_test.go"
+                },
+                "sha256": {
+                  "const": "sha256:432bfad9cf959eaf3605d364853fd666fa2b84b0b5af45a8ed34dab7049d068b"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "ROOT_LICENSE"
+                },
+                "path": {
+                  "const": "LICENSE"
+                },
+                "sha256": {
+                  "const": "sha256:04f9674553a402c48856e9cc3f813a70bb59eb6033f33344980c8fd3a710c8f2"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "ROOT_NOTICE"
+                },
+                "path": {
+                  "const": "NOTICE"
+                },
+                "sha256": {
+                  "const": "sha256:cab0fcd15bc126c7ca16763a34023aca9a08b71d6bebf1878f19da5771474c5a"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "ROOT_THIRD_PARTY_NOTICES"
+                },
+                "path": {
+                  "const": "THIRD_PARTY_NOTICES.md"
+                },
+                "sha256": {
+                  "const": "sha256:5f2e1fd212001618f9c1d1dca7883edcbaeb9940d6816bfa1c9394f3c164cf01"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "TUI_PORTING_NOTES"
+                },
+                "path": {
+                  "const": "docs/developer/tui-porting-notes.md"
+                },
+                "sha256": {
+                  "const": "sha256:0eb9875261040dd8a3c127fe03935ea53af50fcf98924e5ed06ccbd6153cff39"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "RELEASE_ARCHIVE_TEST"
+                },
+                "path": {
+                  "const": "scripts/release/__tests__/archive.test.ts"
+                },
+                "sha256": {
+                  "const": "sha256:a6b8a838d8ee9fc59b6095a77bd49d51138421d64f3e470744025037a1a85b9b"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "RELEASE_BUILD"
+                },
+                "path": {
+                  "const": "scripts/release/build.ts"
+                },
+                "sha256": {
+                  "const": "sha256:16d816c95d5224e7700c059c04853de0d9566997823f9ae58668e95bb2e0fef1"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "RELEASE_SMOKE"
+                },
+                "path": {
+                  "const": "scripts/release/smoke.ts"
+                },
+                "sha256": {
+                  "const": "sha256:0691750136cc9971d304aa6b97b28761852355675a8dbec9c39db692e3669a5e"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "SERVICE_LICENSE"
+                },
+                "path": {
+                  "const": "services/notification-delivery/LICENSE"
+                },
+                "sha256": {
+                  "const": "sha256:04f9674553a402c48856e9cc3f813a70bb59eb6033f33344980c8fd3a710c8f2"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "SERVICE_NOTICE"
+                },
+                "path": {
+                  "const": "services/notification-delivery/NOTICE"
+                },
+                "sha256": {
+                  "const": "sha256:1009b641213efcdef8aea6307ea9745c0473e42cf160d6c6c8530a0b61a575d1"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "SERVICE_THIRD_PARTY_NOTICES"
+                },
+                "path": {
+                  "const": "services/notification-delivery/THIRD_PARTY_NOTICES.md"
+                },
+                "sha256": {
+                  "const": "sha256:b537ef415b68027b321ca7db0a3dc065d74241e03829f5f7f70393a1c9f5d43f"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "SERVICE_SBOM_REPOSITORY_INPUT"
+                },
+                "path": {
+                  "const": "services/notification-delivery/SBOM.cdx.json"
+                },
+                "sha256": {
+                  "const": "sha256:a22c503aaf5efeec6c36d9a8e3362cebf37280aea3a43e45093516e5141727b7"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "SOURCE_MANIFEST_V1"
+                },
+                "path": {
+                  "const": "services/notification-delivery/integration/source-manifest.json"
+                },
+                "sha256": {
+                  "const": "sha256:11ca033a6dc07677ed315e676728e18b2ea4be39835b1afdc2d36d2b44c3d87c"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "SOURCE_MANIFEST_V2"
+                },
+                "path": {
+                  "const": "services/notification-delivery/integration/source-manifest.v2.json"
+                },
+                "sha256": {
+                  "const": "sha256:b658721496768decbe06a9146bce8cae16161331c676563352841d26d140c03f"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "SOURCE_MANIFEST_V2_SCHEMA"
+                },
+                "path": {
+                  "const": "services/notification-delivery/integration/schemas/source-manifest.v2.schema.json"
+                },
+                "sha256": {
+                  "const": "sha256:35afd58c50901670be7462fdbefc888307c3e0fa25570630f766b38498d05791"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "LEGAL_PROVENANCE_CONTRACT"
+                },
+                "path": {
+                  "const": "services/notification-delivery/tests/contracts/legal_provenance_test.go"
+                },
+                "sha256": {
+                  "const": "sha256:c97367025163f25548ef57072b9dc75cda869e7f06549468af1e316c6b475ca0"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "REPOSITORY_CONSISTENCY_CONTRACT"
+                },
+                "path": {
+                  "const": "services/notification-delivery/tests/contracts/repository_consistency_test.go"
+                },
+                "sha256": {
+                  "const": "sha256:2d965ac8d1091998f4667839d6812f4d2e3ab4e2cc87e15e4671effbf1ba362c"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "E6_ROOT_README"
+                },
+                "path": {
+                  "const": "README.md"
+                },
+                "sha256": {
+                  "const": "sha256:a6cfc723d026c83e7d205b24f93bff18bb38c32c55aa0843e4db2fb868215704"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "E6_DOCS_INDEX"
+                },
+                "path": {
+                  "const": "docs/README.md"
+                },
+                "sha256": {
+                  "const": "sha256:bf17890e969bc1123700574b70ec1766672aa51546fd904aa4509db53c74cbcc"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "E6_INTEGRATION_GUIDE"
+                },
+                "path": {
+                  "const": "docs/developer/notification-delivery-integration.md"
+                },
+                "sha256": {
+                  "const": "sha256:7915f039f534db05cedd165d63384b53831dfa8b8565ef606a58430af5360de2"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "E6_SERVICE_README"
+                },
+                "path": {
+                  "const": "services/notification-delivery/README.md"
+                },
+                "sha256": {
+                  "const": "sha256:d0d6e0db8a28b4f72f0edd343bf514487cb5d8d49bdff2d0a494d509e5a99dc4"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "E6_OPENAPI"
+                },
+                "path": {
+                  "const": "services/notification-delivery/docs/api/openapi.yaml"
+                },
+                "sha256": {
+                  "const": "sha256:e61fe94f0775fe9986492bab280cf2cdfa93b5a8c6d7d6c429cb3b6f6eae463f"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "E6_ARCHITECTURE"
+                },
+                "path": {
+                  "const": "services/notification-delivery/docs/architecture/architecture.md"
+                },
+                "sha256": {
+                  "const": "sha256:d6329e6a6c0a6b3b4cd84a4be8476d817c9951f94d404d229ffa81db727804cb"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "E6_DESIGN"
+                },
+                "path": {
+                  "const": "services/notification-delivery/docs/design.md"
+                },
+                "sha256": {
+                  "const": "sha256:a21e9e30dfd6e341fc446a44361a452b12df5d1691ff78e0b5ed22ddb47e3d05"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "E6_DEVELOPMENT_PLAN"
+                },
+                "path": {
+                  "const": "services/notification-delivery/docs/development-plan.md"
+                },
+                "sha256": {
+                  "const": "sha256:30f18176f867d76654dc030dcdd33ac7bafe7572ee3355d25836da4d69d4d641"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "E6_SERVICE_WORKSPACE_MANIFEST"
+                },
+                "path": {
+                  "const": "services/notification-delivery/docs/testing/workspace-manifest.sha256"
+                },
+                "sha256": {
+                  "const": "sha256:b1541157b5829733e63db78a6699cb87bf1a7e155d152bb8edd920c9afa27981"
+                }
+              }
+            }
+          ],
+          "items": false
+        }
+      }
+    },
+    "registry_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modules",
+        "generated_status",
+        "absent_component_ids",
+        "notification_delivery_component_absent",
+        "registry_relocation"
+      ],
+      "properties": {
+        "modules": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "sha256"],
+          "properties": {
+            "path": {
+              "const": ".openslack/modules.yaml"
+            },
+            "sha256": {
+              "const": "sha256:454c187019e3133a51b5361a64a0457d2a5575e10d028f02d8f560eadf2a961f"
+            }
+          }
+        },
+        "generated_status": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "sha256"],
+          "properties": {
+            "path": {
+              "const": "docs/status/current.md"
+            },
+            "sha256": {
+              "const": "sha256:189fd032898aa754b3e671c2cb1cc5142aadde513fa8f115349ba36fdf09ebaf"
+            }
+          }
+        },
+        "absent_component_ids": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "prefixItems": [
+            {
+              "const": "notification_handoff"
+            },
+            {
+              "const": "notification_delivery_service"
+            }
+          ],
+          "items": false
+        },
+        "notification_delivery_component_absent": {
+          "const": true
+        },
+        "registry_relocation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "next"],
+          "properties": {
+            "status": {
+              "const": "N/A_CURRENT_BASELINE"
+            },
+            "next": {
+              "const": "DEFERRED_TO_PX0"
+            }
+          }
+        }
+      }
+    },
+    "pending_external": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "artifacts"],
+      "properties": {
+        "status": {
+          "const": "PENDING_EXTERNAL"
+        },
+        "artifacts": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "prefixItems": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "ENVIRONMENT_MANIFEST_V2"
+                },
+                "path": {
+                  "const": "deploy/notification-import-qualification/environment-manifest.v2.json"
+                },
+                "sha256": {
+                  "const": "sha256:a456c815e86a59f20e161dfc3c1851a56a336775bff3e63e59134997e8aca363"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "ENVIRONMENT_MANIFEST_V2_SCHEMA"
+                },
+                "path": {
+                  "const": "deploy/notification-import-qualification/environment-manifest.v2.schema.json"
+                },
+                "sha256": {
+                  "const": "sha256:ce2e2ed4bb3c07073029746d71a4e8a970e7d67637bb5bea5701931e572674e5"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "path", "sha256"],
+              "properties": {
+                "role": {
+                  "const": "POST_IMPORT_QUALIFICATION_WORKFLOW"
+                },
+                "path": {
+                  "const": ".github/workflows/notification-import-qualification.yml"
+                },
+                "sha256": {
+                  "const": "sha256:5d32be9e9a7314b1a83e5b0e980695ae30f25c21d340689ee98525966f1ac092"
+                }
+              }
+            }
+          ],
+          "items": false
+        }
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope", "independent_blockers", "receipt_pr_included"],
+      "properties": {
+        "scope": {
+          "const": "COMPLETED_D_AND_E1_THROUGH_E6_PRODUCTIZATION_ONLY"
+        },
+        "independent_blockers": {
+          "const": 0
+        },
+        "receipt_pr_included": {
+          "const": false
+        }
+      }
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authorizes", "not_claimed"],
+      "properties": {
+        "authorizes": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 0,
+          "items": false
+        },
+        "not_claimed": {
+          "type": "array",
+          "minItems": 20,
+          "maxItems": 20,
+          "prefixItems": [
+            {
+              "const": "IB6_MERGE_TRAIN_PX2_EXIT"
+            },
+            {
+              "const": "EXTERNAL_INPUTS"
+            },
+            {
+              "const": "EXTERNAL_CONFIGURATION"
+            },
+            {
+              "const": "EXTERNAL_READINESS"
+            },
+            {
+              "const": "REGISTRY_INCLUSION"
+            },
+            {
+              "const": "MODULE_REGISTRATION"
+            },
+            {
+              "const": "RUNTIME_ADMISSION"
+            },
+            {
+              "const": "SIGNED_PROVENANCE"
+            },
+            {
+              "const": "CLI_ARCHIVE_INCLUSION"
+            },
+            {
+              "const": "G4_E2E_PASS"
+            },
+            {
+              "const": "G5_POST_IMPORT_QUALIFICATION_PASS"
+            },
+            {
+              "const": "IB7_CUTOVER"
+            },
+            {
+              "const": "LIVE_VERIFIED"
+            },
+            {
+              "const": "OPENSLACK_0.2.0_RELEASE"
+            },
+            {
+              "const": "OPENSLACK_0.3.0_RELEASE"
+            },
+            {
+              "const": "PRODUCTION_READY"
+            },
+            {
+              "const": "REPOSITORY_ARCHIVE"
+            },
+            {
+              "const": "STANDALONE_REPOSITORY_ARCHIVE"
+            },
+            {
+              "const": "DESTRUCTIVE_CLEANUP"
+            },
+            {
+              "const": "DESTRUCTIVE_RETIREMENT"
+            }
+          ],
+          "items": false
+        }
+      }
+    },
+    "self_reference_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receipt_path",
+        "contains_own_sha256",
+        "contains_receipt_pr_head",
+        "contains_receipt_pr_approval_or_check_ids",
+        "contains_receipt_merge_commit",
+        "external_bindings"
+      ],
+      "properties": {
+        "receipt_path": {
+          "const": "integration/gates/ib6-history-import.json"
+        },
+        "contains_own_sha256": {
+          "const": false
+        },
+        "contains_receipt_pr_head": {
+          "const": false
+        },
+        "contains_receipt_pr_approval_or_check_ids": {
+          "const": false
+        },
+        "contains_receipt_merge_commit": {
+          "const": false
+        },
+        "external_bindings": {
+          "type": "array",
+          "minItems": 4,
+          "maxItems": 4,
+          "prefixItems": [
+            {
+              "const": "BOT_PR_BODY_BINDS_RECEIPT_HEAD_AND_VALIDATION_MODE"
+            },
+            {
+              "const": "GITHUB_AND_PRMS_BIND_CURRENT_APPROVAL_THREADS_AND_CHECKS"
+            },
+            {
+              "const": "EXPECTED_HEAD_MERGE_BINDS_FINAL_RECEIPT_HEAD"
+            },
+            {
+              "const": "POST_MERGE_PX2_AUDIT_BINDS_RECEIPT_MERGE_AND_PROTECTED_MAIN"
+            }
+          ],
+          "items": false
+        }
+      }
+    }
+  }
+}
