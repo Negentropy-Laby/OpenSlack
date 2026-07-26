@@ -80,13 +80,25 @@ function inferFormat(module: WorkflowModuleShape): string {
 
 // ── Publish Workflow Proposal ─────────────────────────────────────────────────
 
+const WORKFLOW_GOVERNANCE_BOT_LOGIN = 'openslack-agent-operator[bot]';
+
 export async function publishWorkflowGovernance(
   governance: WorkflowGovernanceIssue,
+  options?: GitHubClientOptions,
 ): Promise<{ issueNumber: number; url: string }> {
+  const client = await getClient(options);
+  requireWorkflowGovernanceBot(client);
   const title = `[Workflow Governance] PR #${governance.prNumber}`;
   const body = renderWorkflowGovernanceBody(governance);
-  const result = await createTaskIssue(title, body, workflowGovernanceLabels());
-  return { issueNumber: result.issueNumber, url: result.url };
+  const { data } = await client.octokit.issues.create({
+    owner: client.owner,
+    repo: client.repo,
+    title,
+    body,
+    labels: workflowGovernanceLabels(),
+    request: { signal: options?.signal },
+  });
+  return { issueNumber: data.number, url: data.html_url };
 }
 
 interface WorkflowGovernanceCandidate {
@@ -100,12 +112,12 @@ interface WorkflowGovernanceCandidate {
 }
 
 function requireWorkflowGovernanceBot(client: Awaited<ReturnType<typeof getClient>>): string {
-  if (client.authMode !== 'github_app_installation' || !client.appSlug) {
+  if (client.authMode !== 'github_app_installation') {
     throw new Error(
       'BOT_AUTH_REQUIRED: workflow governance state requires the configured GitHub App.',
     );
   }
-  return `${client.appSlug}[bot]`;
+  return WORKFLOW_GOVERNANCE_BOT_LOGIN;
 }
 
 function assertCanonicalWorkflowGovernanceIssue(
@@ -165,7 +177,8 @@ export async function findWorkflowGovernanceIssue(
   options?: GitHubClientOptions,
 ): Promise<{ issueNumber: number; url: string; body?: string; author?: string } | undefined> {
   const client = await getClient(options);
-  const expectedBotLogin = requireWorkflowGovernanceBot(client);
+  if (client.isDryRun) return undefined;
+  const expectedBotLogin = WORKFLOW_GOVERNANCE_BOT_LOGIN;
   const title = `[Workflow Governance] PR #${prNumber}`;
   const maxPages = options?.evidenceLimits?.maxPages ?? 10;
   if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 100) {
