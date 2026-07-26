@@ -1,6 +1,8 @@
 import { Command } from 'commander';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { TextDecoder } from 'node:util';
 import { parse as parseYaml } from 'yaml';
 import {
   readEvents,
@@ -34,8 +36,17 @@ import {
   renderDashboardMarkdown,
   BLOCKER_TYPES,
   recordEvent,
+  validateEvent,
+  buildBusinessOutcomeProjection,
+  renderBusinessOutcomeProjection,
+  renderBusinessOutcomeMarkdown,
 } from '@openslack/collaboration';
-import type { WorkflowTemplate } from '@openslack/collaboration';
+import type {
+  BusinessOutcomeSourceSnapshot,
+  CollaborationEvent,
+  ConfiguredBusinessOutcomeEstimate,
+  WorkflowTemplate,
+} from '@openslack/collaboration';
 import { resolveAgentPrincipal, renderFindingsPlain } from '@openslack/runtime';
 import type { PlainFinding } from '@openslack/runtime';
 import {
@@ -112,6 +123,9 @@ import {
   exportNegentropySlotPreview,
   renderNegentropyIntegrationReport,
 } from '@openslack/integration-negentropy';
+
+const BUSINESS_OUTCOME_EVENT_QUERY_MAX_BYTES = 8 * 1024 * 1024;
+const BUSINESS_OUTCOME_EVENT_QUERY_MAX_RECORDS = 50_000;
 
 type AgentAuthOptions = {
   principal?: import('@openslack/kernel').AgentPrincipal;
@@ -321,6 +335,187 @@ function listBuiltinTemplates(): BuiltinTemplateSummary[] {
   return templates;
 }
 
+interface OutcomeAssumptionValue {
+  value: number;
+  unit?: string;
+  note?: string;
+}
+
+interface OutcomeAssumptionsFile {
+  schema: 'openslack.business_outcome_assumptions.v1';
+  scenario: string;
+  version: string;
+  assumptions?: {
+    agentRuntimeCost?: OutcomeAssumptionValue;
+    estimatedManualHours?: OutcomeAssumptionValue;
+  };
+}
+
+function parseOutcomeEstimate(
+  value: OutcomeAssumptionValue | undefined,
+  assumptionRef: string,
+  version: string,
+): ConfiguredBusinessOutcomeEstimate<number> | undefined {
+  if (!value || !Number.isFinite(value.value) || value.value < 0) return undefined;
+  return {
+    value: value.value,
+    assumptionRef,
+    assumptionVersion: version,
+    ...(value.unit ? { unit: value.unit } : {}),
+    ...(value.note ? { note: value.note } : {}),
+  };
+}
+
+function loadOutcomeEstimates(
+  rootDir: string,
+  scenario: string | undefined,
+): BusinessOutcomeSourceSnapshot['estimates'] {
+  if (!scenario) return undefined;
+  const relativePath = 'examples/ai-organization-demo/input/outcome-assumptions.yaml';
+  const path = join(rootDir, ...relativePath.split('/'));
+  if (!existsSync(path)) return undefined;
+
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(readFileSync(path, 'utf-8'));
+  } catch {
+    return undefined;
+  }
+  if (!parsed || typeof parsed !== 'object') return undefined;
+  const assumptions = parsed as Partial<OutcomeAssumptionsFile>;
+  if (
+    assumptions.schema !== 'openslack.business_outcome_assumptions.v1' ||
+    assumptions.scenario !== scenario ||
+    typeof assumptions.version !== 'string' ||
+    assumptions.version.trim() === ''
+  ) {
+    return undefined;
+  }
+
+  const agentRuntimeCost = parseOutcomeEstimate(
+    assumptions.assumptions?.agentRuntimeCost,
+    `repo:${relativePath}#agentRuntimeCost`,
+    assumptions.version,
+  );
+  const estimatedManualHours = parseOutcomeEstimate(
+    assumptions.assumptions?.estimatedManualHours,
+    `repo:${relativePath}#estimatedManualHours`,
+    assumptions.version,
+  );
+  if (!agentRuntimeCost && !estimatedManualHours) return undefined;
+  return {
+    ...(agentRuntimeCost ? { agentRuntimeCost } : {}),
+    ...(estimatedManualHours ? { estimatedManualHours } : {}),
+  };
+}
+
+interface BusinessOutcomeEventQuery {
+  events: CollaborationEvent[];
+  evidenceRef: string;
+}
+
+function isCanonicalIsoTimestamp(value: string): boolean {
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
+}
+
+/**
+ * Read a bounded, integrity-checked JSONL snapshot for outcome reporting.
+ *
+ * Unlike the general activity reader, this reporting boundary must never skip
+ * malformed records and then emit authoritative-looking observed zeroes.
+ */
+function readBusinessOutcomeEventQuery(
+  rootDir: string,
+  period: { from: string; to: string },
+  scenario: string | undefined,
+): BusinessOutcomeEventQuery {
+  const eventStorePath = join(rootDir, '.openslack.local', 'collaboration', 'events.jsonl');
+  const windowRef = `from=${encodeURIComponent(period.from)}&to=${encodeURIComponent(period.to)}${
+    scenario ? `&scenario=${encodeURIComponent(scenario)}` : ''
+  }`;
+
+  if (!existsSync(eventStorePath)) {
+    return {
+      events: [],
+      evidenceRef: `query:collaboration-events:missing#bytes=0&records=0&${windowRef}`,
+    };
+  }
+
+  const stat = statSync(eventStorePath);
+  if (!stat.isFile()) {
+    throw new Error('collaboration event source is not a regular file');
+  }
+  if (stat.size > BUSINESS_OUTCOME_EVENT_QUERY_MAX_BYTES) {
+    throw new Error(
+      `collaboration event source exceeds ${BUSINESS_OUTCOME_EVENT_QUERY_MAX_BYTES} bytes`,
+    );
+  }
+
+  const raw = readFileSync(eventStorePath);
+  const byteLength = raw.byteLength;
+  if (byteLength > BUSINESS_OUTCOME_EVENT_QUERY_MAX_BYTES) {
+    throw new Error(
+      `collaboration event source exceeds ${BUSINESS_OUTCOME_EVENT_QUERY_MAX_BYTES} bytes`,
+    );
+  }
+
+  let decoded: string;
+  try {
+    decoded = new TextDecoder('utf-8', { fatal: true }).decode(raw);
+  } catch {
+    throw new Error('collaboration event source is not valid UTF-8');
+  }
+
+  let content = decoded;
+  if (content.endsWith('\r\n')) content = content.slice(0, -2);
+  else if (content.endsWith('\n')) content = content.slice(0, -1);
+  if (content.endsWith('\n') || content.endsWith('\r')) {
+    throw new Error('collaboration event source has more than one terminating newline');
+  }
+
+  const lines = content === '' ? [] : content.split(/\r?\n/);
+  if (lines.length > BUSINESS_OUTCOME_EVENT_QUERY_MAX_RECORDS) {
+    throw new Error(
+      `collaboration event source exceeds ${BUSINESS_OUTCOME_EVENT_QUERY_MAX_RECORDS} records`,
+    );
+  }
+
+  const events: CollaborationEvent[] = [];
+  for (const [index, line] of lines.entries()) {
+    if (line.trim() === '') {
+      throw new Error(`collaboration event source has a blank record at line ${index + 1}`);
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      throw new Error(`collaboration event source has malformed JSON at line ${index + 1}`);
+    }
+    const validation = validateEvent(parsed);
+    if (!validation.valid) {
+      throw new Error(
+        `collaboration event source has an invalid record at line ${index + 1}: ${
+          validation.reason ?? 'validation failed'
+        }`,
+      );
+    }
+    const event = parsed as CollaborationEvent;
+    if (!isCanonicalIsoTimestamp(event.timestamp)) {
+      throw new Error(
+        `collaboration event source has a non-canonical timestamp at line ${index + 1}`,
+      );
+    }
+    events.push(event);
+  }
+
+  const digest = createHash('sha256').update(raw).digest('hex');
+  return {
+    events,
+    evidenceRef: `query:collaboration-events:sha256:${digest}#bytes=${byteLength}&records=${events.length}&${windowRef}`,
+  };
+}
+
 export function collaborationCommands(): Command {
   const cmd = new Command('collaboration').description('OpenSlack Collaboration Layer');
 
@@ -379,6 +574,53 @@ export function collaborationCommands(): Command {
 
   integration.addCommand(negentropy);
   cmd.addCommand(integration);
+
+  cmd
+    .command('business-outcomes')
+    .description('Show evidence-backed business outcome projection')
+    .option('--since-hours <hours>', 'Window in hours', '24')
+    .option('--scenario <id>', 'Filter by explicit event scenario and load matching assumptions')
+    .option('--format <format>', 'Output format: json, markdown, or plain', 'plain')
+    .action((options: { sinceHours: string; scenario?: string; format: string }) => {
+      const sinceHours = Number(options.sinceHours);
+      if (!Number.isInteger(sinceHours) || sinceHours <= 0 || sinceHours > 87_600) {
+        console.error('--since-hours must be an integer between 1 and 87600.');
+        process.exitCode = 1;
+        return;
+      }
+      if (!['json', 'markdown', 'plain'].includes(options.format)) {
+        console.error('--format must be one of: json, markdown, plain.');
+        process.exitCode = 1;
+        return;
+      }
+
+      const rootDir = findRepoRoot();
+      const generatedAt = new Date().toISOString();
+      const period = {
+        from: new Date(Date.parse(generatedAt) - sinceHours * 3_600_000).toISOString(),
+        to: generatedAt,
+      };
+      try {
+        const eventQuery = readBusinessOutcomeEventQuery(rootDir, period, options.scenario);
+        const estimates = loadOutcomeEstimates(rootDir, options.scenario);
+        const projection = buildBusinessOutcomeProjection({
+          generatedAt,
+          period,
+          ...(options.scenario ? { scenario: options.scenario } : {}),
+          events: eventQuery.events,
+          evidenceRefs: [eventQuery.evidenceRef],
+          ...(estimates ? { estimates } : {}),
+        });
+
+        if (options.format === 'json') console.log(JSON.stringify(projection, null, 2));
+        else if (options.format === 'markdown')
+          console.log(renderBusinessOutcomeMarkdown(projection));
+        else console.log(renderBusinessOutcomeProjection(projection));
+      } catch (error) {
+        console.error(`Business outcomes blocked: ${(error as Error).message}`);
+        process.exitCode = 1;
+      }
+    });
 
   cmd
     .command('dashboard')
@@ -1673,6 +1915,7 @@ export function collaborationCommands(): Command {
             console.log('');
             console.log('  Errors:');
             for (const error of result.errors) console.log(`    - ${error}`);
+            process.exit(1);
           }
         } catch (err) {
           console.log(`Dry-run failed for workflow "${name}":`);

@@ -27,8 +27,13 @@ export {
 } from './types.js';
 
 export type { AgentRunStore } from './run-store.js';
-export { createRunStore, generateRunId, sweepOrphanRunTempFiles } from './run-store.js';
-export type { SweepOrphanRunTempOptions } from './run-store.js';
+export {
+  createRunStore,
+  generateRunId,
+  readRunStateSnapshot,
+  sweepOrphanRunTempFiles,
+} from './run-store.js';
+export type { ReadRunStateSnapshotOptions, SweepOrphanRunTempOptions } from './run-store.js';
 
 export { appendTranscriptEvent, readTranscript } from './transcript.js';
 

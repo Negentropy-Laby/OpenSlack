@@ -1,0 +1,38 @@
+{
+  "schema": "openslack.ai_org_demo_recorded_run.v1",
+  "runId": "recorded-manufacturing-90-day-v1",
+  "mode": "fixture",
+  "status": "completed",
+  "recordedAt": "2026-07-26T00:00:00.000Z",
+  "workflow": {
+    "name": "ai-org-transformation",
+    "version": "1.0.0"
+  },
+  "scenarioRef": "input/manufacturing-90-day.json",
+  "artifactFiles": [
+    "executive-summary.md",
+    "opportunity-matrix.md",
+    "data-system-map.md",
+    "roi-model.md",
+    "target-architecture.md",
+    "risk-register.md",
+    "90-day-plan.md"
+  ],
+  "evidenceRefs": [
+    "fixture:process-interview-01",
+    "fixture:system-inventory-01",
+    "fixture:roi-assumptions-01",
+    "assumption:input/outcome-assumptions.yaml@2026-07-26.2#annualValueCny",
+    "assumption:input/outcome-assumptions.yaml@2026-07-26.2#simpleAnnualRoiRate",
+    "fixture:architecture-decision-01",
+    "fixture:risk-workshop-01",
+    "fixture:delivery-plan-01"
+  ],
+  "github": {
+    "repository": null,
+    "parentIssue": null,
+    "childIssues": [],
+    "draftPullRequest": null,
+    "headCommit": null
+  }
+}

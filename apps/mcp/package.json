@@ -1,0 +1,31 @@
+{
+  "name": "@openslack/mcp",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "@openslack/collaboration": "workspace:*",
+    "@openslack/github": "workspace:*",
+    "@openslack/operator": "workspace:*",
+    "@openslack/pr": "workspace:*",
+    "@openslack/qoder-adapter": "workspace:*",
+    "@openslack/workflows": "workspace:*",
+    "@openslack/workspace": "workspace:*",
+    "yaml": "^2.7.0",
+    "zod": "4.4.3"
+  }
+}

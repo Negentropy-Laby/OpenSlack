@@ -18,6 +18,7 @@ export interface GitHubAppInstallationTokenOptions {
   env?: NodeJS.ProcessEnv;
   localStateRoot?: string;
   credentialStore?: Pick<CredentialStore, 'withSecret'>;
+  signal?: AbortSignal;
 }
 
 /** Internal App-auth context for endpoints that require a JWT rather than an installation token. */
@@ -51,6 +52,16 @@ export class GitHubAppTokenError extends Error {
 let cachedToken: TokenCache | null = null;
 let inFlight: { identityKey: string; promise: Promise<GitHubAppInstallationToken> } | null = null;
 let cacheGeneration = 0;
+
+function abortError(): Error {
+  const error = new Error('GITHUB_EVIDENCE_ABORTED');
+  error.name = 'AbortError';
+  return error;
+}
+
+function assertNotAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw abortError();
+}
 
 function base64urlEncode(buf: Buffer): string {
   return buf.toString('base64url').replace(/=+$/, '');
@@ -86,6 +97,7 @@ function createJwt(appId: string, privateKey: string): string {
 export function createGitHubAppJwtContext(
   options: GitHubAppInstallationTokenOptions = {},
 ): GitHubAppJwtContext {
+  assertNotAborted(options.signal);
   const source = resolveAppCredentialSource(options);
   let jwt: string;
   try {
@@ -108,6 +120,7 @@ export function createGitHubAppJwtContext(
 export async function requireAppInstallationToken(
   options: GitHubAppInstallationTokenOptions = {},
 ): Promise<GitHubAppInstallationToken> {
+  assertNotAborted(options.signal);
   const source = resolveAppCredentialSource(options);
   const { appId, installationId } = source;
   const identityKey = `${appId}\0${installationId}`;
@@ -119,7 +132,7 @@ export async function requireAppInstallationToken(
   ) {
     return cachedToken.value;
   }
-  if (inFlight?.identityKey === identityKey) return inFlight.promise;
+  if (!options.signal && inFlight?.identityKey === identityKey) return inFlight.promise;
 
   let jwt: string;
   try {
@@ -138,8 +151,9 @@ export async function requireAppInstallationToken(
     jwt,
     identityKey,
     generation: cacheGeneration,
+    signal: options.signal,
   });
-  inFlight = { identityKey, promise };
+  if (!options.signal) inFlight = { identityKey, promise };
   try {
     return await promise;
   } finally {
@@ -154,7 +168,9 @@ async function refreshInstallationToken(input: {
   jwt: string;
   identityKey: string;
   generation: number;
+  signal?: AbortSignal;
 }): Promise<GitHubAppInstallationToken> {
+  assertNotAborted(input.signal);
   try {
     const response = await boundedJsonPost({
       url: `https://api.github.com/app/installations/${input.installationId}/access_tokens`,
@@ -165,7 +181,9 @@ async function refreshInstallationToken(input: {
         Accept: 'application/vnd.github.v3+json',
         'User-Agent': 'openslack-github-provider',
       },
+      signal: input.signal,
     });
+    assertNotAborted(input.signal);
 
     // The shared transport validates only a top-level object; this endpoint owns its schema.
     if (
@@ -207,7 +225,9 @@ async function refreshInstallationToken(input: {
     return value;
   } catch (err) {
     if (err instanceof GitHubAppTokenError) throw err;
+    if (err instanceof Error && err.name === 'AbortError') throw err;
     if (err instanceof BoundedJsonPostError) {
+      if (err.code === 'ABORTED') throw abortError();
       throw new GitHubAppTokenError(
         err.code === 'INVALID_JSON' || err.code === 'INVALID_RESPONSE'
           ? 'APP_TOKEN_INVALID'

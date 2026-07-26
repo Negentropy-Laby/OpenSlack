@@ -1,0 +1,57 @@
+{
+  "schema": "openslack.ai_org_demo_projection.v1",
+  "scenarioId": "manufacturing-90-day",
+  "status": "completed",
+  "evidenceLevel": "LOCAL_PASS",
+  "phases": [
+    { "id": "Intake", "status": "completed" },
+    { "id": "Discover", "status": "completed" },
+    { "id": "Select", "status": "completed" },
+    { "id": "Design", "status": "completed" },
+    { "id": "Validate", "status": "completed" },
+    { "id": "Deliver", "status": "completed" }
+  ],
+  "roles": [
+    "business-discovery-agent",
+    "data-inventory-agent",
+    "solution-architect-agent",
+    "roi-analyst-agent",
+    "risk-reviewer-agent",
+    "delivery-planner-agent"
+  ],
+  "artifacts": [
+    "executive-summary.md",
+    "opportunity-matrix.md",
+    "data-system-map.md",
+    "roi-model.md",
+    "target-architecture.md",
+    "risk-register.md",
+    "90-day-plan.md"
+  ],
+  "governance": {
+    "githubHumanApprovalRequired": true,
+    "workflowCanApproveGitHubReview": false,
+    "workflowCanMergePullRequest": false
+  },
+  "outcomes": {
+    "cycleHours": {
+      "baseline": 12,
+      "target": 4,
+      "basis": "configured_estimate"
+    },
+    "annualValueCny": {
+      "value": 3840000,
+      "basis": "configured_estimate"
+    },
+    "observedRevenueCny": {
+      "value": null,
+      "basis": "unknown"
+    }
+  },
+  "evidenceRefs": [
+    "recorded-run:manifest.json",
+    "fixture:quality-baseline-01",
+    "assumption:input/outcome-assumptions.yaml@2026-07-26.2#annualValueCny",
+    "assumption:input/outcome-assumptions.yaml@2026-07-26.2#simpleAnnualRoiRate"
+  ]
+}

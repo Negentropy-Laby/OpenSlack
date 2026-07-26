@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/ai-org-demo/input.v1.json",
+  "title": "AI organization demo input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "scenarioId",
+    "organization",
+    "industry",
+    "objective",
+    "durationDays",
+    "budgetCny",
+    "constraints",
+    "successCriteria"
+  ],
+  "properties": {
+    "schema": { "const": "openslack.ai_org_demo_input.v1" },
+    "scenarioId": { "const": "manufacturing-90-day" },
+    "organization": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "industry": { "const": "manufacturing" },
+    "objective": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "durationDays": { "type": "integer", "minimum": 1, "maximum": 90 },
+    "budgetCny": { "type": "integer", "minimum": 1, "maximum": 1000000000 },
+    "constraints": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 8000 }
+    },
+    "successCriteria": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "metric", "baseline", "target", "basis"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "metric": { "type": "string", "minLength": 1, "maxLength": 512 },
+          "baseline": {
+            "type": ["number", "null"],
+            "minimum": 0,
+            "maximum": 1000000000
+          },
+          "target": { "type": "number", "minimum": 0, "maximum": 1000000000 },
+          "basis": {
+            "enum": ["observed", "configured_estimate", "unknown"]
+          }
+        }
+      }
+    }
+  }
+}

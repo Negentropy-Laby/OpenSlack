@@ -55,15 +55,25 @@ export async function fetchPRDetails(
   prNumber: number,
   options?: GitHubClientOptions,
 ): Promise<PRReviewReport> {
+  if (options?.signal?.aborted) throw new Error('GITHUB_EVIDENCE_ABORTED');
   const [pr, files, checks, reviews] = await Promise.all([
     getPR(prNumber, options),
     listPRFiles(prNumber, options),
     getPRChecks(prNumber, options),
     getPRReviews(prNumber, options),
   ]);
+  const maxFiles = options?.evidenceLimits?.maxFiles ?? 1_000;
+  const maxReviews = options?.evidenceLimits?.maxReviews ?? 1_000;
+  const maxChecks = options?.evidenceLimits?.maxChecks ?? 1_000;
+  if (files.length > maxFiles) throw new Error('GITHUB_EVIDENCE_FILES_LIMIT_EXCEEDED');
+  if (reviews.length > maxReviews) throw new Error('GITHUB_EVIDENCE_REVIEWS_LIMIT_EXCEEDED');
+  if (checks.length > maxChecks) throw new Error('GITHUB_EVIDENCE_CHECKS_LIMIT_EXCEEDED');
   const latestReviews = latestReviewsByReviewer(reviews);
   const shouldFetchPatches = pr ? isProfileSyncCandidate(files, pr.head.ref, pr.body) : false;
   const filePatches = shouldFetchPatches ? await getPRFilePatches(prNumber, options) : [];
+  if (filePatches.length > (options?.evidenceLimits?.maxPatches ?? 1_000)) {
+    throw new Error('GITHUB_EVIDENCE_PATCHES_LIMIT_EXCEEDED');
+  }
   let workflowEvidence: WorkflowEvidence | undefined;
   if (pr && touchesWorkflowFiles(files)) {
     const [baseTree, headTree] = await Promise.all([
@@ -84,6 +94,7 @@ export async function fetchPRDetails(
   const workflowGovernanceIssue = governanceRequired
     ? await findWorkflowGovernanceIssue(prNumber, options)
     : undefined;
+  if (options?.signal?.aborted) throw new Error('GITHUB_EVIDENCE_ABORTED');
 
   const author = pr?.user.login || 'unknown';
   const humanApprovals = latestReviews

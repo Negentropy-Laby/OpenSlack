@@ -1,0 +1,25 @@
+{
+  "systems": [
+    {
+      "name": "MES",
+      "owner": "生产运营",
+      "dataClass": "internal-production",
+      "readiness": "partial"
+    },
+    {
+      "name": "QMS",
+      "owner": "质量管理",
+      "dataClass": "internal-quality",
+      "readiness": "ready"
+    },
+    {
+      "name": "设备维护台账",
+      "owner": "设备工程",
+      "dataClass": "internal-maintenance",
+      "readiness": "blocked"
+    }
+  ],
+  "gaps": ["MES 与 QMS 的缺陷编码尚未统一", "维护台账缺少稳定的只读导出接口"],
+  "controls": ["首版仅使用只读快照", "对人员标识做最小化与脱敏", "每个派生结论保留源记录引用"],
+  "evidenceRefs": ["fixture:system-inventory-01", "fixture:data-owner-review-01"]
+}

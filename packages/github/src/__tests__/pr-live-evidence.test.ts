@@ -10,6 +10,7 @@ vi.mock('../client.js', () => ({
 
 import {
   GitHubEvidenceUnavailableError,
+  getCODEOWNERS,
   getPRChecks,
   getPRReviews,
   getRepositoryTree,
@@ -112,6 +113,7 @@ describe('strict PR live evidence', () => {
                               conclusion: 'SUCCESS',
                             },
                           ],
+                          pageInfo: { hasNextPage: false, endCursor: null },
                         },
                       },
                     },
@@ -291,6 +293,211 @@ describe('strict PR live evidence', () => {
     await expect(listPRFiles(138, { strictEvidence: true })).rejects.toBeInstanceOf(
       GitHubEvidenceUnavailableError,
     );
+  });
+
+  it('fails closed when REST page or file evidence limits are exceeded', async () => {
+    const graphql = vi.fn();
+    const listFiles = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: Array.from({ length: 100 }, (_, index) => ({
+          filename: `packages/a/file-${index}.ts`,
+        })),
+      })
+      .mockResolvedValueOnce({
+        data: [{ filename: 'a.ts' }, { filename: 'b.ts' }, { filename: 'c.ts' }],
+      });
+    makeClient({ pulls: { listFiles }, graphql });
+
+    await expect(
+      listPRFiles(138, {
+        strictEvidence: true,
+        evidenceLimits: { maxPages: 1, maxFiles: 500 },
+      }),
+    ).rejects.toThrow(/GITHUB_EVIDENCE_PAGES_LIMIT_EXCEEDED/);
+    await expect(
+      listPRFiles(138, {
+        strictEvidence: true,
+        evidenceLimits: { maxPages: 2, maxFiles: 2 },
+      }),
+    ).rejects.toThrow(/GITHUB_EVIDENCE_FILES_LIMIT_EXCEEDED/);
+    expect(graphql).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when REST review or check evidence limits are exceeded', async () => {
+    makeClient({
+      pulls: {
+        get: vi.fn().mockResolvedValue({
+          data: {
+            number: 138,
+            title: 'bounded evidence',
+            body: '',
+            state: 'open',
+            draft: false,
+            head: { ref: 'bounded', sha: '63029b4' },
+            base: { ref: 'main', sha: 'fac52ef' },
+            user: { login: 'bot' },
+            mergeable: true,
+            mergeable_state: 'clean',
+            merged: false,
+            html_url: 'https://example.test/pr/138',
+            created_at: '2026-06-01T14:00:00Z',
+            updated_at: '2026-06-01T14:32:04Z',
+          },
+        }),
+        listReviews: vi.fn().mockResolvedValue({
+          data: Array.from({ length: 3 }, (_, index) => ({
+            user: { login: `reviewer-${index}` },
+            state: 'COMMENTED',
+          })),
+        }),
+      },
+      checks: {
+        listForRef: vi.fn().mockResolvedValue({
+          data: {
+            check_runs: Array.from({ length: 3 }, (_, index) => ({
+              name: `check-${index}`,
+              status: 'completed',
+              conclusion: 'success',
+            })),
+          },
+        }),
+      },
+      graphql: vi.fn(),
+    });
+
+    await expect(getPRReviews(138, { evidenceLimits: { maxReviews: 2 } })).rejects.toThrow(
+      /GITHUB_EVIDENCE_REVIEWS_LIMIT_EXCEEDED/,
+    );
+    await expect(getPRChecks(138, { evidenceLimits: { maxChecks: 2 } })).rejects.toThrow(
+      /GITHUB_EVIDENCE_CHECKS_LIMIT_EXCEEDED/,
+    );
+  });
+
+  it('fails closed on REST CODEOWNERS byte and encoding boundaries without fallback', async () => {
+    const graphql = vi.fn();
+    const getContent = vi
+      .fn()
+      .mockResolvedValueOnce({ data: { content: Buffer.from('four').toString('base64') } })
+      .mockResolvedValueOnce({ data: { content: Buffer.from([0xc3, 0x28]).toString('base64') } });
+    makeClient({ repos: { getContent }, graphql });
+
+    await expect(
+      getCODEOWNERS('immutable-base-sha', {
+        strictEvidence: true,
+        evidenceLimits: { maxCodeownersBytes: 3 },
+      }),
+    ).rejects.toThrow('GITHUB_EVIDENCE_CODEOWNERS_BYTES_LIMIT_EXCEEDED');
+    await expect(
+      getCODEOWNERS('immutable-base-sha', {
+        strictEvidence: true,
+        evidenceLimits: { maxCodeownersBytes: 10 },
+      }),
+    ).rejects.toThrow('GITHUB_EVIDENCE_CODEOWNERS_INVALID');
+    expect(graphql).not.toHaveBeenCalled();
+  });
+
+  it('applies the same CODEOWNERS byte boundary to GraphQL fallback', async () => {
+    const graphql = vi.fn().mockResolvedValue({
+      repository: { object: { text: 'four' } },
+    });
+    makeClient({
+      repos: { getContent: vi.fn().mockRejectedValue(serverError('REST unavailable')) },
+      graphql,
+    });
+
+    await expect(
+      getCODEOWNERS('immutable-base-sha', {
+        strictEvidence: true,
+        evidenceLimits: { maxCodeownersBytes: 3 },
+      }),
+    ).rejects.toThrow('GITHUB_EVIDENCE_CODEOWNERS_BYTES_LIMIT_EXCEEDED');
+    expect(graphql).toHaveBeenCalledOnce();
+  });
+
+  it('enforces GraphQL pagination limits instead of returning partial evidence', async () => {
+    const graphql = vi.fn().mockResolvedValue({
+      repository: {
+        pullRequest: {
+          files: {
+            nodes: Array.from({ length: 100 }, (_, index) => ({
+              path: `packages/a/file-${index}.ts`,
+            })),
+            pageInfo: { hasNextPage: true, endCursor: 'next' },
+          },
+        },
+      },
+    });
+    makeClient({
+      pulls: { listFiles: vi.fn().mockRejectedValue(serverError('REST unavailable')) },
+      graphql,
+    });
+
+    await expect(
+      listPRFiles(138, {
+        strictEvidence: true,
+        evidenceLimits: { maxPages: 1, maxFiles: 500 },
+      }),
+    ).rejects.toThrow(/GITHUB_EVIDENCE_PAGES_LIMIT_EXCEEDED/);
+    expect(graphql).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates cancellation to the active REST request', async () => {
+    let requestSignal: AbortSignal | undefined;
+    const listFiles = vi.fn().mockImplementation(
+      (input: { request?: { signal?: AbortSignal } }) =>
+        new Promise((_, reject) => {
+          requestSignal = input.request?.signal;
+          requestSignal?.addEventListener(
+            'abort',
+            () => {
+              const error = new Error('request aborted');
+              error.name = 'AbortError';
+              reject(error);
+            },
+            { once: true },
+          );
+        }),
+    );
+    makeClient({ pulls: { listFiles }, graphql: vi.fn() });
+    const controller = new AbortController();
+    const pending = listPRFiles(138, { strictEvidence: true, signal: controller.signal });
+    await vi.waitFor(() => expect(requestSignal).toBeDefined());
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(requestSignal?.aborted).toBe(true);
+  });
+
+  it('propagates cancellation to the active GraphQL fallback request', async () => {
+    let requestSignal: AbortSignal | undefined;
+    const restError = Object.assign(new Error('REST unavailable'), { status: 400 });
+    const graphql = vi.fn().mockImplementation(
+      (_query: string, variables: { request?: { signal?: AbortSignal } }) =>
+        new Promise((_, reject) => {
+          requestSignal = variables.request?.signal;
+          requestSignal?.addEventListener(
+            'abort',
+            () => {
+              const error = new Error('request aborted');
+              error.name = 'AbortError';
+              reject(error);
+            },
+            { once: true },
+          );
+        }),
+    );
+    makeClient({
+      pulls: { listFiles: vi.fn().mockRejectedValue(restError) },
+      graphql,
+    });
+    const controller = new AbortController();
+    const pending = listPRFiles(138, { strictEvidence: true, signal: controller.signal });
+    await vi.waitFor(() => expect(requestSignal).toBeDefined());
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    expect(requestSignal?.aborted).toBe(true);
   });
 
   it('keeps non-strict legacy callers best-effort', async () => {

@@ -84,6 +84,23 @@ export { buildProfileSyncStatus } from './profile-sync-status.js';
 export type { ProfileSyncStatus, ProfileSyncStatusOptions } from './profile-sync-status.js';
 
 export {
+  buildBusinessOutcomeProjection,
+  validateBusinessOutcomeSourceSnapshot,
+  validateBusinessOutcomeProjection,
+  renderBusinessOutcomeProjection,
+  renderBusinessOutcomeMarkdown,
+} from './business-outcomes.js';
+export type {
+  BusinessOutcomeBasis,
+  BusinessOutcomeMetric,
+  BusinessOutcomeProjection,
+  BusinessOutcomeSourceSnapshot,
+  ObservedBusinessOutcomeValue,
+  ConfiguredBusinessOutcomeEstimate,
+  BusinessOutcomeProjectionValidation,
+} from './business-outcomes.js';
+
+export {
   createThread,
   listThreads,
   getThread,

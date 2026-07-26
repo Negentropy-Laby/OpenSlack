@@ -4,6 +4,7 @@ export const DEFAULT_JSON_RESPONSE_MAX_BYTES = 64 * 1024;
 export const DEFAULT_JSON_REQUEST_TIMEOUT_MS = 10_000;
 
 export type BoundedJsonPostFailureCode =
+  | 'ABORTED'
   | 'HTTP_ERROR'
   | 'INVALID_JSON'
   | 'INVALID_RESPONSE'
@@ -24,6 +25,7 @@ export interface BoundedJsonPostOptions {
   headers?: Record<string, string>;
   maxResponseBytes?: number;
   timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 /**
@@ -33,6 +35,7 @@ export interface BoundedJsonPostOptions {
 export async function boundedJsonPost(
   options: BoundedJsonPostOptions,
 ): Promise<Record<string, unknown>> {
+  if (options.signal?.aborted) throw new BoundedJsonPostError('ABORTED');
   const endpoint = new URL(options.url);
   const requestBody = Buffer.isBuffer(options.body) ? options.body : Buffer.from(options.body);
   const maxResponseBytes = options.maxResponseBytes ?? DEFAULT_JSON_RESPONSE_MAX_BYTES;
@@ -41,22 +44,31 @@ export async function boundedJsonPost(
   return new Promise((resolve, reject) => {
     let settled = false;
     const requestState: { timeout?: ReturnType<typeof setTimeout> } = {};
+    let req: ReturnType<typeof httpsRequest> | undefined;
+    const cleanup = (): void => {
+      if (requestState.timeout) clearTimeout(requestState.timeout);
+      options.signal?.removeEventListener('abort', abortRequest);
+    };
 
     const rejectSafe = (code: BoundedJsonPostFailureCode): void => {
       if (settled) return;
       settled = true;
-      if (requestState.timeout) clearTimeout(requestState.timeout);
+      cleanup();
       reject(new BoundedJsonPostError(code));
     };
 
     const resolveSafe = (value: Record<string, unknown>): void => {
       if (settled) return;
       settled = true;
-      if (requestState.timeout) clearTimeout(requestState.timeout);
+      cleanup();
       resolve(value);
     };
 
-    let req: ReturnType<typeof httpsRequest>;
+    const abortRequest = (): void => {
+      rejectSafe('ABORTED');
+      req?.destroy();
+    };
+
     try {
       req = httpsRequest(
         {
@@ -75,7 +87,7 @@ export async function boundedJsonPost(
 
           if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300) {
             rejectSafe('HTTP_ERROR');
-            req.destroy();
+            req?.destroy();
             return;
           }
 
@@ -89,7 +101,7 @@ export async function boundedJsonPost(
             if (responseBytes > maxResponseBytes) {
               chunks.length = 0;
               rejectSafe('RESPONSE_TOO_LARGE');
-              req.destroy();
+              req?.destroy();
               return;
             }
             chunks.push(bytes);
@@ -120,10 +132,15 @@ export async function boundedJsonPost(
 
     requestState.timeout = setTimeout(() => {
       rejectSafe('TIMEOUT');
-      req.destroy();
+      req?.destroy();
     }, timeoutMs);
     requestState.timeout.unref();
     req.on('error', () => rejectSafe('NETWORK_ERROR'));
+    options.signal?.addEventListener('abort', abortRequest, { once: true });
+    if (options.signal?.aborted) {
+      abortRequest();
+      return;
+    }
 
     try {
       req.write(requestBody);

@@ -94,6 +94,8 @@ See [Advanced Setup](#advanced-setup) for development mode, production builds, a
 | Create a task preview                   | `bun run openslack task create --title "Fix docs" --path "docs/**" --preview`                                                                   |
 | Diagnose a PR                           | `bun run openslack pr doctor <PR_NUMBER>`                                                                                                       |
 | See team activity                       | `bun run openslack collaboration dashboard`                                                                                                     |
+| Read evidence-backed business outcomes  | `bun run openslack collaboration business-outcomes --format markdown`                                                                           |
+| Connect Qoder Work over local MCP       | [`docs/developer/qoder-mcp.md`](docs/developer/qoder-mcp.md)                                                                                    |
 | Start a conversation thread             | `bun run openslack conversation start --title "Review PR #42"`                                                                                  |
 | Launch the conversation-first workbench | `bun run openslack tui`                                                                                                                         |
 | Maintain organization profile           | `bun run openslack collaboration workflow profile-sync status`                                                                                  |
@@ -124,6 +126,7 @@ OpenSlack/
 │   ├── delivery/            # Bot-authenticated branch/PR publication and SHA synchronization
 │   ├── pr/                  # PR Review & Merge Steward (fetch, classify, readiness, report)
 │   ├── operator/            # Structured planner and intent router
+│   ├── qoder-adapter/       # Frozen Qoder business-tool and result contracts
 │   ├── chat-gateway/        # Webhook / Slack projection frontend
 │   ├── agent-runtime/       # Governed tool plane, OpenAI-compatible/Aby providers, runs and evidence
 │   ├── collaboration/       # Activity, digest, dashboard, handoff, decision, room views
@@ -132,7 +135,9 @@ OpenSlack/
 │   └── workflows/           # Workflow engine: load, validate, execute, checkpoint, resume
 ├── services/
 │   └── notification-delivery/ # Independent Notification Delivery Service source
-├── apps/cli/                # User command surface and module command groups
+├── apps/
+│   ├── cli/                 # User command surface and module command groups
+│   └── mcp/                 # Read-only local MCP stdio frontend for Qoder Work
 ├── templates/new-agent/     # 9 onboarding template files
 ├── scripts/                 # genesis-validate.sh, genesis-rollback.sh, setup-gh.sh
 └── docs/                    # Full acceptance, developer, security documentation

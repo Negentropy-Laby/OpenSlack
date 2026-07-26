@@ -52,6 +52,10 @@ export async function loadWorkflowCostConfig(
     throw err;
   }
 
+  return parseWorkflowCostConfig(raw);
+}
+
+export function parseWorkflowCostConfig(raw: string): WorkflowCostConfig {
   const parsed = parseYaml(raw) as unknown;
   if (!parsed || typeof parsed !== 'object') {
     throw new Error(`${join('.openslack', 'workflows', 'cost.yaml')} must contain a YAML object.`);

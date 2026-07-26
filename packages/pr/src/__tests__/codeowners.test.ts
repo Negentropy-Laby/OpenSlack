@@ -43,6 +43,22 @@ describe('parseCODEOWNERS', () => {
     expect(parseCODEOWNERS('')).toEqual([]);
     expect(parseCODEOWNERS('# only comments\n\n  ')).toEqual([]);
   });
+
+  it('fails closed on CODEOWNERS byte, line, and entry limits', () => {
+    expect(() => parseCODEOWNERS('😀', { evidenceLimits: { maxCodeownersBytes: 3 } })).toThrow(
+      'GITHUB_EVIDENCE_CODEOWNERS_BYTES_LIMIT_EXCEEDED',
+    );
+    expect(() =>
+      parseCODEOWNERS('a @one\nb @two\nc @three', {
+        evidenceLimits: { maxCodeownersLines: 2 },
+      }),
+    ).toThrow('GITHUB_EVIDENCE_CODEOWNERS_LINES_LIMIT_EXCEEDED');
+    expect(() =>
+      parseCODEOWNERS('a @one\nb @two', {
+        evidenceLimits: { maxCodeownersEntries: 1 },
+      }),
+    ).toThrow('GITHUB_EVIDENCE_CODEOWNERS_ENTRIES_LIMIT_EXCEEDED');
+  });
 });
 
 describe('resolveCodeowners', () => {
@@ -75,6 +91,29 @@ describe('resolveCodeowners', () => {
   it('matches globstar patterns', () => {
     const owners = resolveCodeowners(['packages/kernel/src/zones.ts'], entries);
     expect(owners).toContain('@wsman');
+  });
+
+  it('bounds the changed-files by CODEOWNERS matching product', () => {
+    expect(() =>
+      resolveCodeowners(['a.ts', 'b.ts'], entries, {
+        evidenceLimits: { maxFiles: 1 },
+      }),
+    ).toThrow('GITHUB_EVIDENCE_FILES_LIMIT_EXCEEDED');
+    expect(() =>
+      resolveCodeowners(['a.ts'], entries, {
+        evidenceLimits: { maxCodeownersEntries: entries.length - 1 },
+      }),
+    ).toThrow('GITHUB_EVIDENCE_CODEOWNERS_ENTRIES_LIMIT_EXCEEDED');
+    expect(() =>
+      resolveCodeowners(['a.ts', 'b.ts'], entries.slice(0, 3), {
+        evidenceLimits: { maxCodeownerMatchOperations: 5 },
+      }),
+    ).toThrow('GITHUB_EVIDENCE_CODEOWNER_MATCH_OPERATIONS_LIMIT_EXCEEDED');
+    expect(
+      resolveCodeowners(['apps/a.ts', 'docs/b.md'], entries, {
+        evidenceLimits: { maxCodeownerMatchOperations: 12 },
+      }),
+    ).toEqual(['@wsman', '@alice', '@bob']);
   });
 
   it('assigns the repository owner to every protected instruction and implementation path', () => {
@@ -170,6 +209,19 @@ describe('loadPRCodeownerEvidence', () => {
     await expect(loadPRCodeownerEvidence(report())).rejects.toThrow(
       'CODEOWNERS could not be loaded from immutable-base-sha',
     );
+  });
+
+  it('propagates CODEOWNERS parse and matching limits through immutable evidence loading', async () => {
+    await expect(
+      loadPRCodeownerEvidence(report(), {
+        evidenceLimits: { maxCodeownersEntries: 1 },
+      }),
+    ).rejects.toThrow('GITHUB_EVIDENCE_CODEOWNERS_ENTRIES_LIMIT_EXCEEDED');
+
+    expect(hoisted.getCODEOWNERS).toHaveBeenCalledWith('immutable-base-sha', {
+      evidenceLimits: { maxCodeownersEntries: 1 },
+      strictEvidence: true,
+    });
   });
 
   it('is the only CODEOWNERS loading path used by PRMS consumers', () => {

@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../packages/workspace" },
+    { "path": "../../packages/operator" },
+    { "path": "../../packages/collaboration" },
+    { "path": "../../packages/workflows" },
+    { "path": "../../packages/github" },
+    { "path": "../../packages/pr" },
+    { "path": "../../packages/qoder-adapter" }
+  ]
+}

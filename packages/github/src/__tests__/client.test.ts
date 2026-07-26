@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -116,6 +116,58 @@ describe('GitHub client repository and auth resolution', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it('rejects oversized and malformed workspace metadata instead of parsing partial evidence', () => {
+    const container = mkdtempSync(join(tmpdir(), 'openslack-gh-workspace-metadata-'));
+    try {
+      const oversized = join(container, 'oversized');
+      mkdirSync(oversized);
+      writeFileSync(join(oversized, 'openslack.yaml'), Buffer.alloc(256 * 1024 + 1, 0x61));
+      expect(() => resolveGitHubRepoTarget({ cwd: oversized })).toThrow(
+        'Could not resolve GitHub repository',
+      );
+
+      const malformed = join(container, 'malformed');
+      mkdirSync(malformed);
+      writeFileSync(join(malformed, 'openslack.yaml'), Buffer.from([0xc3, 0x28]));
+      expect(() => resolveGitHubRepoTarget({ cwd: malformed })).toThrow(
+        'Could not resolve GitHub repository',
+      );
+    } finally {
+      rmSync(container, { recursive: true, force: true });
+    }
+  });
+
+  it.runIf(process.platform !== 'win32')('rejects symlinked workspace metadata', () => {
+    const container = mkdtempSync(join(tmpdir(), 'openslack-gh-workspace-link-'));
+    try {
+      const symlinked = join(container, 'symlinked');
+      mkdirSync(symlinked);
+      const target = join(container, 'target.yaml');
+      writeFileSync(target, 'canonical_remote:\n  owner: attacker\n  repo: redirected\n');
+      symlinkSync(target, join(symlinked, 'openslack.yaml'), 'file');
+      expect(() => resolveGitHubRepoTarget({ cwd: symlinked })).toThrow(
+        'Could not resolve GitHub repository',
+      );
+    } finally {
+      rmSync(container, { recursive: true, force: true });
+    }
+  });
+
+  it('preflights cancellation before repository or worktree discovery', () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    expect(() =>
+      resolveGitHubRepoTarget({
+        repoFullName: 'Negentropy-Laby/OpenSlack',
+        signal: controller.signal,
+      }),
+    ).toThrow(/GITHUB_EVIDENCE_ABORTED/);
+    expect(() => resolveGitHubAppLocalStateRoot(process.cwd(), controller.signal)).toThrow(
+      /GITHUB_EVIDENCE_ABORTED/,
+    );
   });
 
   it('resolves App local state from the primary workspace for a linked worktree', () => {

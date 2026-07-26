@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "openslack": {
+      "type": "stdio",
+      "command": "bun",
+      "args": [
+        "--cwd",
+        "/absolute/path/with spaces/OpenSlack",
+        "run",
+        "openslack",
+        "mcp",
+        "serve",
+        "--stdio"
+      ]
+    }
+  }
+}

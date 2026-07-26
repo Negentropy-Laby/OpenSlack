@@ -96,7 +96,12 @@ export async function findWorkflowGovernanceIssue(
   const client = await getClient(options);
   if (client.isDryRun) return undefined;
   const title = `[Workflow Governance] PR #${prNumber}`;
-  for (let page = 1; ; page += 1) {
+  const maxPages = options?.evidenceLimits?.maxPages ?? 10;
+  if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 100) {
+    throw new Error('GITHUB_EVIDENCE_LIMIT_INVALID: maxPages');
+  }
+  for (let page = 1; page <= maxPages; page += 1) {
+    if (options?.signal?.aborted) throw new Error('GITHUB_EVIDENCE_ABORTED');
     const { data } = await client.octokit.issues.listForRepo({
       owner: client.owner,
       repo: client.repo,
@@ -104,6 +109,7 @@ export async function findWorkflowGovernanceIssue(
       state: 'all',
       per_page: 100,
       page,
+      request: { signal: options?.signal },
     });
     const issue = data.find((candidate) => !candidate.pull_request && candidate.title === title);
     if (issue) {
@@ -115,7 +121,9 @@ export async function findWorkflowGovernanceIssue(
       };
     }
     if (data.length < 100) return undefined;
+    if (page === maxPages) throw new Error('GITHUB_EVIDENCE_PAGES_LIMIT_EXCEEDED');
   }
+  throw new Error('GITHUB_EVIDENCE_PAGES_LIMIT_EXCEEDED');
 }
 
 // ── Legacy proposal/review publishers (not PR merge gates) ────────────────────

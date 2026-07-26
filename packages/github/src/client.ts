@@ -1,8 +1,21 @@
 import { Octokit } from '@octokit/rest';
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import {
+  closeSync,
+  constants,
+  existsSync,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readSync,
+  realpathSync,
+} from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { requireAppInstallationToken, type GitHubAppInstallationTokenOptions } from './auth.js';
+
+const LOCAL_METADATA_MAX_BYTES = 256 * 1024;
+const GIT_COMMAND_TIMEOUT_MS = 2_000;
+const GIT_COMMAND_MAX_BUFFER = 64 * 1024;
 
 export type AuthMode = 'github_app_installation' | 'token' | 'dry_run';
 export type GitHubAuthPreference = 'auto' | 'app' | 'token' | 'dry-run';
@@ -23,6 +36,19 @@ export interface GitHubClientOptions {
   cwd?: string;
   localStateRoot?: string;
   credentialStore?: GitHubAppInstallationTokenOptions['credentialStore'];
+  signal?: AbortSignal;
+  evidenceLimits?: {
+    maxPages?: number;
+    maxFiles?: number;
+    maxReviews?: number;
+    maxChecks?: number;
+    maxTreeEntries?: number;
+    maxPatches?: number;
+    maxCodeownersBytes?: number;
+    maxCodeownersLines?: number;
+    maxCodeownersEntries?: number;
+    maxCodeownerMatchOperations?: number;
+  };
 }
 
 export interface GitHubClient {
@@ -115,25 +141,98 @@ export function parseGitHubRepoSpec(
   }
 }
 
-function resolveGitRemote(cwd: string): { owner: string; repo: string } | null {
+function abortError(): Error {
+  const error = new Error('GITHUB_EVIDENCE_ABORTED');
+  error.name = 'AbortError';
+  return error;
+}
+
+function assertNotAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw abortError();
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'AbortError';
+}
+
+function runBoundedGit(cwd: string, args: string[], signal?: AbortSignal): string {
+  assertNotAborted(signal);
+  const output = execFileSync('git', args, {
+    cwd,
+    encoding: 'utf-8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+    timeout: GIT_COMMAND_TIMEOUT_MS,
+    maxBuffer: GIT_COMMAND_MAX_BUFFER,
+    killSignal: 'SIGKILL',
+  });
+  assertNotAborted(signal);
+  return output;
+}
+
+function sameFileIdentity(left: ReturnType<typeof fstatSync>, right: ReturnType<typeof fstatSync>) {
+  return (
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.mode === right.mode &&
+    left.size === right.size &&
+    left.ctimeMs === right.ctimeMs &&
+    left.mtimeMs === right.mtimeMs
+  );
+}
+
+function readStableLocalUtf8(path: string, maxBytes: number): string | null {
+  let fd: number | undefined;
   try {
-    const remote = execFileSync('git', ['remote', 'get-url', 'origin'], {
-      cwd,
-      encoding: 'utf-8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).trim();
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    const before = fstatSync(fd);
+    if (!before.isFile() || before.size <= 0 || before.size > maxBytes) {
+      throw new Error('LOCAL_METADATA_INVALID');
+    }
+    const content = Buffer.allocUnsafe(before.size);
+    let offset = 0;
+    while (offset < content.byteLength) {
+      const count = readSync(fd, content, offset, content.byteLength - offset, offset);
+      if (count === 0) break;
+      offset += count;
+    }
+    const after = fstatSync(fd);
+    const pathStat = lstatSync(path);
+    if (
+      offset !== content.byteLength ||
+      !sameFileIdentity(before, after) ||
+      pathStat.isSymbolicLink() ||
+      !sameFileIdentity(after, pathStat)
+    ) {
+      throw new Error('LOCAL_METADATA_CHANGED');
+    }
+    return new TextDecoder('utf-8', { fatal: true }).decode(content);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') return null;
+    throw error;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+function resolveGitRemote(
+  cwd: string,
+  signal?: AbortSignal,
+): { owner: string; repo: string } | null {
+  try {
+    const remote = runBoundedGit(cwd, ['remote', 'get-url', 'origin'], signal).trim();
     return parseGitHubRepoSpec(remote);
-  } catch {
+  } catch (error) {
+    if (isAbortError(error)) throw error;
     return null;
   }
 }
 
 function resolveWorkspaceRepo(cwd: string): { owner: string; repo: string } | null {
   const workspacePath = join(cwd, 'openslack.yaml');
-  if (!existsSync(workspacePath)) return null;
 
   try {
-    const content = readFileSync(workspacePath, 'utf-8');
+    const content = readStableLocalUtf8(workspacePath, LOCAL_METADATA_MAX_BYTES);
+    if (content === null) return null;
     const canonical = content.match(
       /canonical_remote:[\s\S]*?owner:\s*([^\s#]+)[\s\S]*?repo:\s*([^\s#]+)/,
     );
@@ -145,6 +244,7 @@ function resolveWorkspaceRepo(cwd: string): { owner: string; repo: string } | nu
 }
 
 export function resolveGitHubRepoTarget(options: GitHubClientOptions = {}): GitHubRepoTarget {
+  assertNotAborted(options.signal);
   const cwd = options.cwd ?? process.cwd();
 
   if (options.repoFullName) {
@@ -165,7 +265,7 @@ export function resolveGitHubRepoTarget(options: GitHubClientOptions = {}): GitH
     return { owner: process.env.GITHUB_OWNER, repo: process.env.GITHUB_REPO, source: 'env' };
   }
 
-  const remote = resolveGitRemote(cwd);
+  const remote = resolveGitRemote(cwd, options.signal);
   if (remote) return { ...remote, source: 'git_remote' };
 
   const workspace = resolveWorkspaceRepo(cwd);
@@ -176,11 +276,15 @@ export function resolveGitHubRepoTarget(options: GitHubClientOptions = {}): GitH
   );
 }
 
-export function resolveGitHubAppLocalStateRoot(cwd: string = process.cwd()): string | undefined {
+export function resolveGitHubAppLocalStateRoot(
+  cwd: string = process.cwd(),
+  signal?: AbortSignal,
+): string | undefined {
+  assertNotAborted(signal);
   let current = resolve(cwd);
   let workspaceRoot: string | undefined;
   for (;;) {
-    if (existsSync(join(current, 'openslack.yaml'))) {
+    if (readStableLocalUtf8(join(current, 'openslack.yaml'), LOCAL_METADATA_MAX_BYTES) !== null) {
       workspaceRoot = current;
       break;
     }
@@ -194,22 +298,18 @@ export function resolveGitHubAppLocalStateRoot(cwd: string = process.cwd()): str
   }
 
   try {
-    const commonGitDir = execFileSync(
-      'git',
+    const commonGitDir = runBoundedGit(
+      workspaceRoot ?? resolve(cwd),
       ['rev-parse', '--path-format=absolute', '--git-common-dir'],
-      {
-        cwd: workspaceRoot ?? resolve(cwd),
-        encoding: 'utf-8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      },
+      signal,
     ).trim();
     if (commonGitDir && workspaceRoot) {
       const primaryRoot = dirname(resolve(commonGitDir));
-      const worktreeOutput = execFileSync('git', ['worktree', 'list', '--porcelain', '-z'], {
-        cwd: workspaceRoot,
-        encoding: 'utf-8',
-        stdio: ['ignore', 'pipe', 'ignore'],
-      });
+      const worktreeOutput = runBoundedGit(
+        workspaceRoot,
+        ['worktree', 'list', '--porcelain', '-z'],
+        signal,
+      );
       const registered = new Set(
         worktreeOutput
           .split('\0')
@@ -221,14 +321,16 @@ export function resolveGitHubAppLocalStateRoot(cwd: string = process.cwd()): str
       if (
         registered.has(currentPath) &&
         registered.has(primaryPath) &&
-        existsSync(join(primaryRoot, 'openslack.yaml'))
+        readStableLocalUtf8(join(primaryRoot, 'openslack.yaml'), LOCAL_METADATA_MAX_BYTES) !== null
       ) {
         return join(primaryRoot, '.openslack.local');
       }
     }
-  } catch {
+  } catch (error) {
+    if (isAbortError(error)) throw error;
     // A non-Git initialized workspace still owns its local state beside openslack.yaml.
   }
+  assertNotAborted(signal);
   return workspaceLocalState;
 }
 
@@ -237,7 +339,34 @@ function normalizeRealPath(path: string): string {
   return process.platform === 'win32' ? value.toLowerCase() : value;
 }
 
+const inFlightClients = new WeakMap<GitHubClientOptions, Promise<GitHubClient>>();
+const resolvedClients = new WeakMap<GitHubClientOptions, GitHubClient>();
+
 export async function getClient(options: GitHubClientOptions = {}): Promise<GitHubClient> {
+  assertNotAborted(options.signal);
+  const resolved = resolvedClients.get(options);
+  if (
+    resolved &&
+    (!resolved.tokenExpiresAt || Date.parse(resolved.tokenExpiresAt) > Date.now() + 300_000)
+  ) {
+    return resolved;
+  }
+  if (resolved) resolvedClients.delete(options);
+  const existing = inFlightClients.get(options);
+  if (existing) return existing;
+  const promise = getClientUncached(options);
+  inFlightClients.set(options, promise);
+  try {
+    const client = await promise;
+    resolvedClients.set(options, client);
+    return client;
+  } finally {
+    if (inFlightClients.get(options) === promise) inFlightClients.delete(options);
+  }
+}
+
+async function getClientUncached(options: GitHubClientOptions): Promise<GitHubClient> {
+  assertNotAborted(options.signal);
   const target = resolveGitHubRepoTarget(options);
   const owner = target.owner;
   const repo = target.repo;
@@ -270,15 +399,18 @@ export async function getClient(options: GitHubClientOptions = {}): Promise<GitH
     }
 
     const localStateRoot =
-      options.localStateRoot ?? resolveGitHubAppLocalStateRoot(options.cwd ?? process.cwd());
+      options.localStateRoot ??
+      resolveGitHubAppLocalStateRoot(options.cwd ?? process.cwd(), options.signal);
     const appConfigured = hasGitHubAppConfigurationIntent(localStateRoot);
     let appToken = null;
     try {
       appToken = await requireAppInstallationToken({
         localStateRoot,
         credentialStore: options.credentialStore,
+        signal: options.signal,
       });
-    } catch {
+    } catch (error) {
+      if (isAbortError(error)) throw error;
       if (auth === 'app' || appConfigured) {
         throw new GitHubAuthRequiredError(
           `AUTH_REQUIRED: configured GitHub App credentials are unavailable for ${owner}/${repo}.`,

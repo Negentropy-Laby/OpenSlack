@@ -1,0 +1,157 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/ai-org-demo/workflow-result.v1.json",
+  "title": "AI organization workflow result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "schema", "scenario", "phases", "artifacts", "governance", "evidenceRefs"],
+  "properties": {
+    "status": { "const": "completed" },
+    "runId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "schema": { "const": "openslack.ai_org_demo_workflow_result.v1" },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "scenarioId",
+        "organization",
+        "industry",
+        "objective",
+        "durationDays",
+        "budgetCny",
+        "constraints"
+      ],
+      "properties": {
+        "schema": { "const": "openslack.ai_org_demo_input.v1" },
+        "scenarioId": { "const": "manufacturing-90-day" },
+        "organization": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "industry": { "const": "manufacturing" },
+        "objective": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "durationDays": { "type": "integer", "minimum": 1, "maximum": 90 },
+        "budgetCny": { "type": "integer", "minimum": 1, "maximum": 1000000000 },
+        "constraints": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/boundedString" }
+        }
+      }
+    },
+    "phases": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "prefixItems": [
+        { "$ref": "#/$defs/intake" },
+        { "$ref": "#/$defs/discover" },
+        { "$ref": "#/$defs/select" },
+        { "$ref": "#/$defs/design" },
+        { "$ref": "#/$defs/validate" },
+        { "$ref": "#/$defs/deliver" }
+      ],
+      "items": false
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["filename", "title", "ownerAgentType", "content", "evidenceRefs"],
+        "properties": {
+          "filename": {
+            "enum": [
+              "executive-summary.md",
+              "opportunity-matrix.md",
+              "data-system-map.md",
+              "roi-model.md",
+              "target-architecture.md",
+              "risk-register.md",
+              "90-day-plan.md"
+            ]
+          },
+          "title": { "type": "string", "minLength": 1, "maxLength": 512 },
+          "ownerAgentType": { "$ref": "#/$defs/role" },
+          "content": { "type": "string", "minLength": 1, "maxLength": 8000 },
+          "evidenceRefs": { "$ref": "#/$defs/evidenceRefs" }
+        }
+      }
+    },
+    "governance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workflowCanApproveGitHubReview",
+        "workflowCanMergePullRequest",
+        "githubHumanApprovalRequired",
+        "writesGitHubObjects",
+        "writesMain"
+      ],
+      "properties": {
+        "workflowCanApproveGitHubReview": { "const": false },
+        "workflowCanMergePullRequest": { "const": false },
+        "githubHumanApprovalRequired": { "const": true },
+        "writesGitHubObjects": { "const": false },
+        "writesMain": { "const": false }
+      }
+    },
+    "evidenceRefs": { "$ref": "#/$defs/evidenceRefs" }
+  },
+  "$defs": {
+    "boundedString": { "type": "string", "minLength": 1, "maxLength": 8000 },
+    "evidenceRefs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+    },
+    "role": {
+      "enum": [
+        "business-discovery-agent",
+        "data-inventory-agent",
+        "solution-architect-agent",
+        "roi-analyst-agent",
+        "risk-reviewer-agent",
+        "delivery-planner-agent"
+      ]
+    },
+    "phase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "agentTypes"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "status": { "const": "completed" },
+        "agentTypes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/role" }
+        }
+      }
+    },
+    "intake": {
+      "allOf": [{ "$ref": "#/$defs/phase" }, { "properties": { "id": { "const": "Intake" } } }]
+    },
+    "discover": {
+      "allOf": [{ "$ref": "#/$defs/phase" }, { "properties": { "id": { "const": "Discover" } } }]
+    },
+    "select": {
+      "allOf": [{ "$ref": "#/$defs/phase" }, { "properties": { "id": { "const": "Select" } } }]
+    },
+    "design": {
+      "allOf": [{ "$ref": "#/$defs/phase" }, { "properties": { "id": { "const": "Design" } } }]
+    },
+    "validate": {
+      "allOf": [{ "$ref": "#/$defs/phase" }, { "properties": { "id": { "const": "Validate" } } }]
+    },
+    "deliver": {
+      "allOf": [{ "$ref": "#/$defs/phase" }, { "properties": { "id": { "const": "Deliver" } } }]
+    }
+  }
+}

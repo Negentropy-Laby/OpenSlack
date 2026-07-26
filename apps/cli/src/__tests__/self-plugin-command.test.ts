@@ -318,9 +318,9 @@ describe('self plugin command', () => {
     const self = spawnSync(process.execPath, ['--import', tsxImport, entry, 'self', '--help']);
 
     expect(root.status).toBe(0);
-    expect(root.stdout.byteLength).toBe(1681);
+    expect(root.stdout.byteLength).toBe(1760);
     expect(createHash('sha256').update(root.stdout).digest('hex')).toBe(
-      '502bf57583812ac44f9c93376adf4540e21988b9c116adac8dac0c52b7764711',
+      '3681d81425d762763ce683baf917c4301c15b4ebc1b3d8f1b175195035d2b025',
     );
     expect(self.status).toBe(0);
     expect(self.stdout.toString('utf8')).toContain('plugin');
