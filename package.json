@@ -8,7 +8,7 @@
     "apps/*"
   ],
   "scripts": {
-    "typecheck": "tsc --build && bun run schema:stage && tsc --noEmit -p scripts/release/tsconfig.json && tsc --noEmit -p scripts/public-pack/tsconfig.json && tsc --noEmit -p scripts/live-capstone/tsconfig.json && tsc --noEmit -p scripts/notification-qualification/tsconfig.json",
+    "typecheck": "tsc --build && bun run schema:stage && tsc --noEmit -p scripts/release/tsconfig.json && tsc --noEmit -p scripts/public-pack/tsconfig.json && tsc --noEmit -p scripts/live-capstone/tsconfig.json && tsc --noEmit -p scripts/notification-qualification/tsconfig.json && tsc --noEmit -p scripts/notification-docs/tsconfig.json",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -24,6 +24,7 @@
     "public:verify": "bun run build && bun scripts/public-pack/index.ts verify",
     "live:capstone": "bun scripts/live-capstone/index.ts",
     "notification:qualification": "bun scripts/notification-qualification/index.ts",
+    "docs:notification-verify": "bun scripts/notification-docs/index.ts",
     "openslack": "node --import tsx apps/cli/src/index.ts",
     "clean": "rimraf packages/*/dist apps/*/dist packages/*/tsconfig.tsbuildinfo apps/*/tsconfig.tsbuildinfo"
   },

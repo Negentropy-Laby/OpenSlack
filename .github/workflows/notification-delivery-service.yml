@@ -6,14 +6,48 @@ on:
       - main
     paths:
       - services/notification-delivery/**
+      - README.md
+      - docs/README.md
+      - docs/product/openslack-product-current.md
+      - docs/product/notification-delivery.md
+      - docs/guides/notification-delivery-operations.md
+      - docs/guides/core-workflows.md
+      - docs/user-guide.md
+      - docs/developer/notification-delivery-integration.md
+      - docs/developer/notification-delivery/**
+      - docs/security/notification-delivery-boundary.md
+      - docs/testing/notification-delivery-evidence.md
+      - integration/gates/ib6-history-import.json
+      - .openslack/modules.yaml
+      - package.json
+      - vitest.config.ts
+      - scripts/notification-docs/**
       - .github/workflows/notification-delivery-service.yml
+      - .github/workflows/openslack-reusable-validate.yml
       - packages/github/src/__tests__/notification-delivery-service-workflow.test.ts
   push:
     branches:
       - main
     paths:
       - services/notification-delivery/**
+      - README.md
+      - docs/README.md
+      - docs/product/openslack-product-current.md
+      - docs/product/notification-delivery.md
+      - docs/guides/notification-delivery-operations.md
+      - docs/guides/core-workflows.md
+      - docs/user-guide.md
+      - docs/developer/notification-delivery-integration.md
+      - docs/developer/notification-delivery/**
+      - docs/security/notification-delivery-boundary.md
+      - docs/testing/notification-delivery-evidence.md
+      - integration/gates/ib6-history-import.json
+      - .openslack/modules.yaml
+      - package.json
+      - vitest.config.ts
+      - scripts/notification-docs/**
       - .github/workflows/notification-delivery-service.yml
+      - .github/workflows/openslack-reusable-validate.yml
       - packages/github/src/__tests__/notification-delivery-service-workflow.test.ts
   workflow_dispatch:
 
@@ -73,9 +107,19 @@ jobs:
         run: |
           set -euo pipefail
           test "$(go env GOVERSION)" = "go1.26.5"
-      - name: Validate the root service workflow
+      - name: Validate the notification workflows
         working-directory: .
-        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/notification-delivery-service.yml
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/notification-delivery-service.yml .github/workflows/openslack-reusable-validate.yml
+      - name: Set up the exact Bun toolchain
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.11
+      - name: Install root dependencies
+        working-directory: .
+        run: bun install --frozen-lockfile
+      - name: Verify notification delivery documentation
+        working-directory: .
+        run: bun run docs:notification-verify
       - name: Verify module files
         run: |
           set -euo pipefail
