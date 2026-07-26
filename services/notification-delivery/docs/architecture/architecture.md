@@ -1,9 +1,12 @@
-# rc_wsman Master Architecture
+# Notification Delivery Service — Master Architecture
 
-> **Status**: Approved — independent Architecture review PASS (2026-07-20)
-> **Stage**: Implementation
+> **Standalone review status**: Approved — independent Architecture review PASS (2026-07-20)
+> **Standalone historical stage**: Implementation
 > **Stack**: Go 1.26.5, PostgreSQL 18.4, chi v5, pgx v5
-> **Implementation**: B1–B6 implemented, mechanically verified and independently Approved; local submission-ready
+> **Imported baseline**: B1–B6 implementation, mechanical validation and independent approval are
+> retained as standalone historical evidence; current validation is monorepo-scoped
+> **Current boundary**: repository source for an independent process and Go module; no registry
+> registration, runtime admission or release is claimed
 
 ## Goals and Constraints
 
@@ -209,8 +212,9 @@ vendor saturates workers, retention/partitioning when table maintenance degrades
 IdP exists. Kafka, sharding and multi-region require measured need and new ADRs; multi-region also requires a T0
 amendment.
 
-## Document Status
+## Standalone Historical Document Status
 
-This architecture and its four ADRs, OpenAPI, data model, threat model, runbook, test strategy, surface profile,
-entity registry and traceability records passed independent review. Approval does not imply code, test, migration,
-CI or deployment existence.
+At the time of the standalone architecture review, this architecture and its four ADRs, OpenAPI, data model, threat
+model, runbook, test strategy, surface profile, entity registry and traceability records passed independent review.
+That design approval did not itself imply code, test, migration, CI or deployment existence; the subsequently
+imported implementation and current monorepo validation are separate evidence.

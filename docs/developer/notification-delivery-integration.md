@@ -1,19 +1,27 @@
 # Notification Delivery Service Integration
 
-> **Status:** IB3-B daemon/router composition and IB3-C governed operations implemented —
-> `G3_QUEUE_PASS`; IB4-O1 read-only reconciliation is implemented on its stacked branch
+> **Status:** `REPOSITORY_IMPORTED_UNRELEASED / PENDING_PHASE_F`; the service source and E1–E5
+> productization batches are governed on OpenSlack `main`. This E6 documentation becomes the
+> governed final pre-Phase-F state only when its PR merge lands; the append-only Phase F receipt and
+> PX2 audit remain pending
 >
 > **Runtime effect:** v1 is unchanged; v2 service admission is fail-closed unless the explicit new-record gate is on.
 >
-> **Target release:** OpenSlack 0.3.0
+> **Historical release target:** OpenSlack 0.3.0; neither OpenSlack 0.2.0 nor 0.3.0 is claimed
+> released by this integration
 >
-> **Repository order:** `IB6-REPOSITORY-IMPORT-READINESS=PENDING_REPOSITORY_READINESS`;
+> **Repository order:** `IB6-HISTORY-IMPORT=REPOSITORY_IMPORTED_UNRELEASED / PENDING_PHASE_F`;
 > `G5-POST-IMPORT-QUALIFICATION=DEFERRED_UNTIL_IB6_MERGE_TRAIN_PX2_EXIT`
 
 This document freezes the boundary between OpenSlack's GitHub Watch queue and the process-isolated notification
-delivery service currently developed in `wsman/rc_wsman`. It is the OpenSlack half of Integration B0. The contract
-gate passed with the narrowly scoped standalone-service review waiver described below; G1 service and G2 client
-implementation may proceed without changing the runtime authority boundary.
+delivery service whose source is now governed at `services/notification-delivery` with Go module
+`github.com/Negentropy-Laby/OpenSlack/services/notification-delivery`. The standalone
+`wsman/rc_wsman` repository remains source provenance, not the current development location. This is the OpenSlack
+half of Integration B0. Its original contract gate passed with the narrowly scoped standalone-service review waiver
+described below; that historical waiver does not alter the current runtime authority boundary.
+
+Legacy `rc_wsman`, `RC_WSMAN_*`, `rc_wsman.*.v1`, database, migration, metric and alert names remain frozen
+wire/storage/provenance compatibility identifiers. They are not the current display name.
 
 ## Baselines And Release Isolation
 
@@ -37,10 +45,11 @@ The 2026-07-24 amendment prospectively replaced the unexecuted `G5-CANARY` prere
 manifest are immutable historical records. `G5-CANARY` remains `SUPERSEDED_NOT_RUN`, and the
 replacement qualification was never run.
 
-The current append-only decision supersedes only that old gate's role as a pre-IB6 authorization
-gate. Pre-import work now stops at technical
-`IB6-REPOSITORY-IMPORT-READINESS`; a separate exact-base human decision is still required before
-the import branch exists. External inputs and `G5-POST-IMPORT-QUALIFICATION` remain deferred until
+The current append-only decision superseded only that old gate's role as a pre-IB6 authorization
+gate. At import time, technical `IB6-REPOSITORY-IMPORT-READINESS` and a separate exact-base human
+decision were required before the import branch could exist. The readiness evidence and exact
+`IB6_HISTORY_IMPORT_ONLY` decision were recorded, and the unrelated-history import merged through
+PR #301. External inputs and `G5-POST-IMPORT-QUALIFICATION` remain deferred until
 `IB6-MERGE-TRAIN/PX2-EXIT`, whose terminal unlock is PX2 Exit.
 
 The historical governed amendment is
@@ -67,17 +76,18 @@ The original contract changes entered their repositories through OpenSlack merge
 an independent approval. The release owner accepted that absence as a temporary, repository-scoped waiver rather
 than representing it as independent review.
 
-While `wsman/rc_wsman` remains the standalone deployment source, its integration changes require a pull request,
-the configured required CI checks, an up-to-date head and a merge commit, but require zero approvals. Its protected
-`main` permits no direct pushes, squash or rebase merges, force pushes, deletion or bypass. This waiver does not relax
-technical tests, evidence requirements or any OpenSlack repository control.
+During the standalone period, changes in `wsman/rc_wsman` required a pull request, the configured required CI
+checks, an up-to-date head and a merge commit, but required zero approvals. Its protected `main` permitted no direct
+pushes, squash or rebase merges, force pushes, deletion or bypass. This historical waiver did not relax technical
+tests, evidence requirements or any OpenSlack repository control.
 
-OpenSlack implementation pull requests are agent-authored and target the protected `main` branch. They require
+Current Notification Delivery Service changes are OpenSlack implementation pull requests: they are bot-authored,
+target the protected `main` branch, and require
 `wsman`'s independent current-head approval, all required checks and resolved review threads; a new head dismisses
-stale approval. Only merge commits are allowed. The waiver applies only to the standalone
-service repository and expires at IB6: once the service history is imported, all service changes are governed by the
-OpenSlack review policy. It cannot be used to bypass G1 through G8, CODEOWNERS, security review, release-owner
-authorization or destructive-operation approval.
+stale approval. Only merge commits are allowed. The standalone waiver expired when the service history was imported;
+all current service changes are governed by OpenSlack CODEOWNERS, review policy and PRMS. The historical waiver
+cannot be used to bypass G1 through G8, security review, release-owner authorization or destructive-operation
+approval.
 
 ## Authority Transfer
 
@@ -98,7 +108,7 @@ GitHub event
 - After the queue contains `accepted`, the service permanently owns vendor delivery for that route record.
 - Accepted records never fall back to direct delivery and are never re-rendered or rerouted.
 - Service status is a read-only projection. It does not transfer authority back to OpenSlack.
-- `NotificationServiceClient` will be a separate client and will not implement `NotificationSink`; a 202 never emits
+- `NotificationServiceClient` is a separate client and does not implement `NotificationSink`; a 202 never emits
   `notification.sent`.
 
 ## V2 Watch Configuration
@@ -335,7 +345,8 @@ The caller cannot query status and the auditor cannot submit, replay or administ
 `X-Notification-Service-Deployment-Digest: sha256:<64-lowercase-hex>`, injected from the verified OCI image. OpenSlack
 also records a secret-free RFC 8785/JCS watch-config digest and service-reported vendor config versions.
 
-The standalone client posts only `vendor_id` and the exact Blob bytes encoded as `payload_base64` to
+The OpenSlack notification-service client posts only `vendor_id` and the exact Blob bytes encoded as
+`payload_base64` to
 `/v1/notifications`, with the frozen route key in `Idempotency-Key`. It resolves the bearer credential reference
 through `CredentialStore.withSecret` on every attempt, uses `redirect: manual`, and returns `HandoffResult` rather
 than sink delivery success. A 202 body is read to at most 16384 bytes with fatal UTF-8 decoding, duplicate-key
@@ -453,19 +464,21 @@ G1-SERVICE: service v2 contract implemented and verified
 G2-CLIENT: body, Blob, receipt and client components verified
 G3-QUEUE: PASS; IB3-A queue/migration, IB3-B daemon/router and IB3-C governed operations are bound to
 `a912cb4` / tree `89e4b38` by `docs/testing/integration-gates/g3-queue.json`
-G4-E2E: two repositories x Slack and webhook fault matrix
+G4-E2E: PENDING_EXTERNAL; two repositories x Slack and webhook fault matrix
 G5-CANARY: SUPERSEDED_NOT_RUN; historical 336-hour/100-accepted prerequisite retained without a PASS claim
 G5-IMPORT-QUALIFICATION: SUPERSEDED_UNEXECUTED; historical pre-IB6 role retained without a PASS claim
-IB6-REPOSITORY-IMPORT-READINESS: PENDING_REPOSITORY_READINESS; technical evidence only, import not authorized
+IB6-REPOSITORY-IMPORT-READINESS: COMPLETED_HISTORICAL_PRE_IMPORT_EVIDENCE; never authorized import
+IB6-HISTORY-IMPORT: REPOSITORY_IMPORTED_UNRELEASED / PENDING_PHASE_F; Phase F receipt and PX2 audit pending
 G5-POST-IMPORT-QUALIFICATION: DEFERRED_UNTIL_IB6_MERGE_TRAIN_PX2_EXIT; PENDING_EXTERNAL,
 IB7_EVALUATION_ONLY; one protected run, no minimum elapsed duration, 60-minute timeout
 ```
 
 G0 unlocks G1 and G2 only; it does not authorize daemon wiring or traffic. G3 closes the local queue, migration,
 router and governed-recovery gate only; its receipt explicitly does not claim G4, G5, live verification or production
-readiness. Repository readiness is not import authorization. The full service history may enter
-OpenSlack only after the separate exact-base `IB6_HISTORY_IMPORT_ONLY` human decision. PX2 Exit
-then unlocks external inputs, the post-IB6 immutable 0.2.0 release freeze, G4 and
+readiness. Repository readiness did not authorize import; the separate exact-base
+`IB6_HISTORY_IMPORT_ONLY` human decision was recorded before the full service history entered OpenSlack. The
+append-only Phase F receipt and post-merge PX2 audit are still required. Only PX2 Exit unlocks external inputs, the
+post-IB6 immutable 0.2.0 release freeze, G4 and
 `G5-POST-IMPORT-QUALIFICATION`. A G5 PASS supplies IB7 evaluation evidence only and makes no
 production-readiness, live-verification, IB7, 0.3.0-release or integration-completion claim.
 
