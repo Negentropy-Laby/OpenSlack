@@ -22,6 +22,14 @@
 > `PX2-EXIT=PENDING_POST_MERGE_AUDIT` and
 > `G5-POST-IMPORT-QUALIFICATION=PENDING_EXTERNAL / IB7_EVALUATION_ONLY`
 
+Audience-specific entrypoints:
+
+- [Product position and lifecycle](../product/notification-delivery.md)
+- [Operator task guide](../guides/notification-delivery-operations.md)
+- [Developer navigation](notification-delivery/README.md)
+- [Cross-system security boundary](../security/notification-delivery-boundary.md)
+- [Evidence map](../testing/notification-delivery-evidence.md)
+
 This document freezes the boundary between OpenSlack's GitHub Watch queue and the process-isolated notification
 delivery service whose source is now governed at `services/notification-delivery` with Go module
 `github.com/Negentropy-Laby/OpenSlack/services/notification-delivery`. The standalone

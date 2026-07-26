@@ -566,6 +566,11 @@ normal delivery or product branches.
 
 ## GitHub
 
+For Notification Delivery product context and safe task flow, read
+[`docs/product/notification-delivery.md`](product/notification-delivery.md) and
+[`docs/guides/notification-delivery-operations.md`](guides/notification-delivery-operations.md).
+The table below remains the authoritative command and flag reference.
+
 | Command                                                                                                      | Purpose                                                                                       |
 | ------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
 | `openslack github doctor`                                                                                    | Check GitHub auth, App installation permissions/events, repository scope, and workspace setup |

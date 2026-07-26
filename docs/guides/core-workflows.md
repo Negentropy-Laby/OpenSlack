@@ -1,6 +1,6 @@
 # Core Workflows
 
-Eight workflows that cover day-to-day OpenSlack use. Each one is a quick reference: what you want, where to start, what you will see, the safe default, and what to do next.
+Nine workflows that cover day-to-day OpenSlack use. Each one is a quick reference: what you want, where to start, what you will see, the safe default, and what to do next.
 
 For the full CLI reference, see [`user-guide.md`](../user-guide.md).
 For workflow-first operation, see
@@ -215,6 +215,39 @@ openslack collaboration inspect <runId> --format json
 openslack pr status <n>
 openslack pr doctor <n>
 ```
+
+---
+
+## 9. Operate Durable Notifications
+
+**Goal:** Check whether the notification queue is ready, distinguish service acceptance from vendor
+delivery, and reconcile one route without exposing its payload.
+
+**Start here:**
+
+```bash
+openslack github notifications doctor
+openslack github notifications status
+openslack github notifications queue
+```
+
+**What you will see:** Payload-blind readiness checks and route projections. `accepted` means the
+service durably accepted the handoff and now owns delivery; it does not mean the vendor received
+the notification.
+
+**Safe default:** Doctor, status, queue, and reconcile are read-only. Retry, drain, and quarantine
+resolution remain preview-only unless `--apply` is explicitly supplied. Runtime admission is still
+gated, so these operations do not authorize new service records.
+
+**Next action:** Reconcile the immutable route-record ID:
+
+```bash
+openslack github notifications reconcile <route-record-id>
+```
+
+Use the [Notification Delivery operations guide](notification-delivery-operations.md) before any
+recovery action. It explains `delivered`, `dead`, `unknown`, receipt recovery, Blob failure,
+deployment digest mismatch, quarantine, and qualification evidence.
 
 ---
 
