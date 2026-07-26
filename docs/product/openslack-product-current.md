@@ -1,7 +1,7 @@
 ---
 schema: openslack.product_index.v1
 status: index
-updated: 2026-07-08
+updated: 2026-07-26
 ---
 
 # OpenSlack Product Current
@@ -28,6 +28,11 @@ current-state document.
 | GitHub setup and repair                        | `docs/developer/github-automation.md`, `docs/user-guide.md`                                                                                   | `openslack setup github`, `openslack github repair ...`                                                                       |
 | Create and run tasks                           | `docs/developer/github-issues-loop.md`, `docs/user-guide.md`                                                                                  | `openslack task create`, `openslack agent tick`, `openslack task checkout`, `openslack task sync`                             |
 | Monitor selected repos for new Issues          | `docs/developer/github-watch-daemon.md`, `docs/product/user-experience-roadmap.md`                                                            | Phase 1/2/3/4 active: `openslack github watch ...` (auto-claim optional)                                                      |
+| Operate durable notifications                  | `docs/user-guide.md`, `docs/developer/notification-delivery-integration.md`                                                                   | `openslack github notifications doctor`, `status`, `queue`, `reconcile`                                                       |
+| Understand notification authority transfer     | `docs/developer/notification-delivery-integration.md`                                                                                         | `openslack github notifications reconcile <route-record-id>`                                                                  |
+| Develop the Notification Delivery Service      | `services/notification-delivery/README.md`, `docs/developer/notification-delivery-integration.md`                                             | See the service README for module-local development and validation                                                            |
+| Review the delivery security boundary          | `services/notification-delivery/docs/security/threat-model.md`, `docs/developer/notification-delivery-integration.md`                         | Read-only documentation and governed review                                                                                   |
+| Inspect IB6 and PX2 evidence                   | `docs/integration/notification-delivery-ib6-order-supersession.md`, `integration/gates/ib6-history-import.json`                               | Read the prose boundary and receipt; do not infer PX2, IB7, release, or live delivery                                         |
 | Review and merge PRs                           | `docs/product/module-04-pr-review-merge-steward.md`, `docs/user-guide.md`                                                                     | `openslack pr doctor`, `openslack pr queue`, `openslack pr merge`                                                             |
 | Run agent workflows                            | `docs/product/workflow-modules.md`, `docs/developer/workflow-runtime.md`, `docs/security/workflow-execution.md`                               | `openslack collaboration workflow preview`, `openslack collaboration workflow run`, `openslack collaboration workflow resume` |
 | Coordinate humans and agents                   | `docs/product/collaboration-layer.md`, `docs/developer/collaboration-events.md`                                                               | `openslack collaboration dashboard`, `handoff`, `decision`, `room`, `workflow`                                                |
@@ -49,6 +54,12 @@ current-state document.
 | Workflow Engine                            | `docs/product/workflow-modules.md`, `docs/developer/workflow-runtime.md`, `docs/security/workflow-execution.md`                        |
 | Negentropy-Lab Slot Preview                | `docs/product/negentropy-lab-integration.md`, `docs/developer/negentropy-slot-adapter.md`, `docs/security/negentropy-slot-boundary.md` |
 | Profile Sync                               | `docs/product/profile-sync.md`                                                                                                         |
+
+## Repository Services And Cross-Process Integrations
+
+| Surface                       | Current boundary                                                                                                     | Primary Docs                                                                                                                                   |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Notification Delivery Service | Repository import is complete; PX2 is pending, runtime admission remains gated, and no release or live claim is made | `services/notification-delivery/README.md`, `docs/developer/notification-delivery-integration.md`, `integration/gates/ib6-history-import.json` |
 
 ## Product Reviews
 

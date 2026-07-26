@@ -1,17 +1,26 @@
 # Notification Delivery Service Integration
 
-> **Status:** `REPOSITORY_IMPORTED_UNRELEASED / PENDING_PHASE_F`; the service source and E1–E5
-> productization batches are governed on OpenSlack `main`. This E6 documentation becomes the
-> governed final pre-Phase-F state only when its PR merge lands; the append-only Phase F receipt and
-> PX2 audit remain pending
+> **Repository import:** `PASS`
 >
-> **Runtime effect:** v1 is unchanged; v2 service admission is fail-closed unless the explicit new-record gate is on.
+> **IB6 receipt closed:** `true`
 >
-> **Historical release target:** OpenSlack 0.3.0; neither OpenSlack 0.2.0 nor 0.3.0 is claimed
-> released by this integration
+> **PX2 exit:** `PENDING_POST_MERGE_AUDIT`
 >
-> **Repository order:** `IB6-HISTORY-IMPORT=REPOSITORY_IMPORTED_UNRELEASED / PENDING_PHASE_F`;
-> `G5-POST-IMPORT-QUALIFICATION=DEFERRED_UNTIL_IB6_MERGE_TRAIN_PX2_EXIT`
+> **Repository:** `services/notification-delivery`
+>
+> **Runtime admission:** `GATED`; v1 is unchanged, and v2 service admission remains fail-closed
+> unless the explicit new-record gate is on
+>
+> **IB7 default cutover:** `NOT_AUTHORIZED`
+>
+> **Release:** `UNRELEASED`
+>
+> **LIVE_VERIFIED:** `NOT_CLAIMED`
+>
+> **Repository order:** `IB6-HISTORY-IMPORT=PASS`; the governed
+> [IB6 history-import receipt](../../integration/gates/ib6-history-import.json) is closed, while
+> `PX2-EXIT=PENDING_POST_MERGE_AUDIT` and
+> `G5-POST-IMPORT-QUALIFICATION=PENDING_EXTERNAL / IB7_EVALUATION_ONLY`
 
 This document freezes the boundary between OpenSlack's GitHub Watch queue and the process-isolated notification
 delivery service whose source is now governed at `services/notification-delivery` with Go module
@@ -49,7 +58,9 @@ The current append-only decision superseded only that old gate's role as a pre-I
 gate. At import time, technical `IB6-REPOSITORY-IMPORT-READINESS` and a separate exact-base human
 decision were required before the import branch could exist. The readiness evidence and exact
 `IB6_HISTORY_IMPORT_ONLY` decision were recorded, and the unrelated-history import merged through
-PR #301. External inputs and `G5-POST-IMPORT-QUALIFICATION` remain deferred until
+PR #301. Repository-only productization and the append-only
+[IB6 history-import receipt](../../integration/gates/ib6-history-import.json) subsequently closed
+`IB6-HISTORY-IMPORT=PASS`. External inputs and `G5-POST-IMPORT-QUALIFICATION` remain deferred until
 `IB6-MERGE-TRAIN/PX2-EXIT`, whose terminal unlock is PX2 Exit.
 
 The historical governed amendment is
@@ -468,17 +479,18 @@ G4-E2E: PENDING_EXTERNAL; two repositories x Slack and webhook fault matrix
 G5-CANARY: SUPERSEDED_NOT_RUN; historical 336-hour/100-accepted prerequisite retained without a PASS claim
 G5-IMPORT-QUALIFICATION: SUPERSEDED_UNEXECUTED; historical pre-IB6 role retained without a PASS claim
 IB6-REPOSITORY-IMPORT-READINESS: COMPLETED_HISTORICAL_PRE_IMPORT_EVIDENCE; never authorized import
-IB6-HISTORY-IMPORT: REPOSITORY_IMPORTED_UNRELEASED / PENDING_PHASE_F; Phase F receipt and PX2 audit pending
-G5-POST-IMPORT-QUALIFICATION: DEFERRED_UNTIL_IB6_MERGE_TRAIN_PX2_EXIT; PENDING_EXTERNAL,
-IB7_EVALUATION_ONLY; one protected run, no minimum elapsed duration, 60-minute timeout
+IB6-HISTORY-IMPORT: PASS; closed=true
+PX2-EXIT: PENDING_POST_MERGE_AUDIT
+G5-POST-IMPORT-QUALIFICATION: PENDING_EXTERNAL; IB7_EVALUATION_ONLY;
+one protected run, no minimum elapsed duration, 60-minute timeout
 ```
 
 G0 unlocks G1 and G2 only; it does not authorize daemon wiring or traffic. G3 closes the local queue, migration,
 router and governed-recovery gate only; its receipt explicitly does not claim G4, G5, live verification or production
 readiness. Repository readiness did not authorize import; the separate exact-base
 `IB6_HISTORY_IMPORT_ONLY` human decision was recorded before the full service history entered OpenSlack. The
-append-only Phase F receipt and post-merge PX2 audit are still required. Only PX2 Exit unlocks external inputs, the
-post-IB6 immutable 0.2.0 release freeze, G4 and
+append-only Phase F receipt is now closed and records `IB6-HISTORY-IMPORT=PASS`; the post-merge PX2 audit remains
+required. Only PX2 Exit unlocks external inputs, the post-IB6 immutable 0.2.0 release freeze, G4 and
 `G5-POST-IMPORT-QUALIFICATION`. A G5 PASS supplies IB7 evaluation evidence only and makes no
 production-readiness, live-verification, IB7, 0.3.0-release or integration-completion claim.
 
