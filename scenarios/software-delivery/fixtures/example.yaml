@@ -1,0 +1,19 @@
+schema: openslack.scenario_fixture.v1
+id: software-delivery-example
+provenance: demo_fixture
+semanticVersion: 1.0.0
+records:
+  - id: issue-42
+    type: core.work_item
+    title: Add governed delivery evidence
+    status: open
+    properties:
+      number: 42
+      state: open
+  - id: pr-313
+    type: reviewable_deliverable
+    title: Add Qoder foundation
+    status: review-required
+    properties:
+      number: 313
+      state: open

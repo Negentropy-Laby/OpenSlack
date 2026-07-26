@@ -1,0 +1,15 @@
+schema: openslack.scenario_pack.v1
+id: software-delivery
+version: 1.0.0
+title: Software Delivery
+description: Rebuild and preview the existing governed GitHub software-delivery path.
+files:
+  - capabilities.yaml
+  - fixtures/example.yaml
+  - notifications.yaml
+  - ontology.yaml
+  - policies.yaml
+  - projections.yaml
+  - scenario.yaml
+  - views.yaml
+  - workflows.yaml
