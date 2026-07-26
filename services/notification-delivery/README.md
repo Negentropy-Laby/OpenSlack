@@ -71,6 +71,7 @@ Internal caller / operator
 
 ## 深入阅读
 
+- [服务文档索引](docs/README.md)
 - [完整设计说明](docs/design.md)
 - [OpenAPI 契约](docs/api/openapi.yaml)
 - [主架构](docs/architecture/architecture.md)

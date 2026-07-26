@@ -1,5 +1,11 @@
 # AI 使用说明
 
+> **Imported historical record.**
+>
+> Imported history is retained for provenance.
+> It is not the current OpenSlack roadmap, module status, runtime admission,
+> release authority, or production-readiness source.
+
 > **覆盖范围**：截至 2026-07-22 的需求分析、规格/架构文档，以及 B1–B6 实现、调试、演练与
 > 机械验收。
 

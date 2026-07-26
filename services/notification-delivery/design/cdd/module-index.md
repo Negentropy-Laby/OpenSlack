@@ -1,5 +1,11 @@
 # Module Index: rc_wsman — API 通知投递服务
 
+> **Imported historical record.**
+>
+> Imported history is retained for provenance.
+> It is not the current OpenSlack roadmap, module status, runtime admission,
+> release authority, or production-readiness source.
+
 > **Status**: Approved
 > **Created**: 2026-07-18
 > **Last Updated**: 2026-07-22
