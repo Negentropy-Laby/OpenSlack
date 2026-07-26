@@ -69,6 +69,8 @@ export interface OpenSlackMcpResultV2<T = unknown> {
   readonly nextActions: readonly OpenSlackMcpNextActionV2[];
   readonly evidenceRefs: readonly string[];
   readonly planId?: string;
+  readonly planHash?: string;
+  readonly confirmationToken?: string;
   readonly executionId?: string;
   readonly approval?: {
     readonly approvalId: string;
@@ -100,6 +102,10 @@ export interface CreateOpenSlackMcpResultOptions<T> {
 export interface UpgradeOpenSlackMcpResultOptions {
   readonly correlationId: string;
   readonly authority: OpenSlackMcpAuthority;
+  readonly confirmationActionIds?: readonly string[];
+  readonly approval?: OpenSlackMcpResultV2['approval'];
+  readonly planHash?: string;
+  readonly confirmationToken?: string;
 }
 
 const MAX_SUMMARY_LENGTH = 2_000;
@@ -113,6 +119,8 @@ const MAX_INERT_JSON_DEPTH = 12;
 const MAX_INERT_JSON_CONTAINER_ITEMS = 1_000;
 const MAX_VERSIONED_REPO_PATH_LENGTH = 374;
 const CORRELATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
+const PLAN_HASH_PATTERN = /^[0-9a-f]{64}$/;
+const CONFIRMATION_TOKEN_PATTERN = /^[A-Za-z0-9_-]{32,128}$/;
 const SOURCE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:/?#@+-]*$/;
 const CANONICAL_TIMESTAMP_PATTERN =
   /^\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d\.\d{3}Z$/;
@@ -178,6 +186,22 @@ function normalizeCorrelationId(value: string): string {
   return correlationId;
 }
 
+function normalizePlanHash(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  if (!PLAN_HASH_PATTERN.test(value)) {
+    throw new TypeError('planHash must be a lowercase SHA-256 digest.');
+  }
+  return value;
+}
+
+function normalizeConfirmationToken(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  if (!CONFIRMATION_TOKEN_PATTERN.test(value)) {
+    throw new TypeError('confirmationToken must be a bounded base64url capability.');
+  }
+  return value;
+}
+
 export function createOpenSlackMcpResult<T>(
   options: CreateOpenSlackMcpResultOptions<T>,
 ): OpenSlackMcpResult<T> {
@@ -216,12 +240,58 @@ export function createOpenSlackMcpResult<T>(
   });
 }
 
+function normalizeConfirmationActionIds(value: readonly string[] | undefined): ReadonlySet<string> {
+  if (value === undefined) return new Set();
+  const values = dataArray(value, MAX_NEXT_ACTIONS);
+  if (
+    !values ||
+    values.some((item) => !boundedString(item, MAX_ID_LENGTH)) ||
+    new Set(values).size !== values.length
+  ) {
+    throw new TypeError('confirmationActionIds must be bounded unique identifiers.');
+  }
+  return new Set(values as string[]);
+}
+
+function normalizeApproval(
+  value: OpenSlackMcpResultV2['approval'] | undefined,
+): OpenSlackMcpResultV2['approval'] | undefined {
+  if (value === undefined) return undefined;
+  const approval = dataRecord(
+    value,
+    ['approvalId', 'kind', 'expiresAt', 'risk'],
+    ['approvalId', 'kind', 'expiresAt', 'risk'],
+  );
+  if (
+    !approval ||
+    !boundedString(approval.approvalId, MAX_ID_LENGTH) ||
+    approval.kind !== 'openslack_workflow_effect' ||
+    !canonicalIso(approval.expiresAt) ||
+    !['low', 'medium', 'high'].includes(String(approval.risk))
+  ) {
+    throw new TypeError('approval must be a bounded OpenSlack workflow-effect approval.');
+  }
+  return Object.freeze({
+    approvalId: approval.approvalId,
+    kind: 'openslack_workflow_effect',
+    expiresAt: approval.expiresAt as string,
+    risk: approval.risk as 'low' | 'medium' | 'high',
+  });
+}
+
 export function upgradeOpenSlackMcpResult(
   result: OpenSlackMcpResult,
   options: UpgradeOpenSlackMcpResultOptions,
 ): OpenSlackMcpResultV2 {
+  const confirmationActionIds = normalizeConfirmationActionIds(options.confirmationActionIds);
+  const approval = normalizeApproval(options.approval);
+  const planHash = normalizePlanHash(options.planHash);
+  const confirmationToken = normalizeConfirmationToken(options.confirmationToken);
   const nextActions = result.nextActions.map((action) =>
-    Object.freeze({ ...action, requiresConfirmation: false }),
+    Object.freeze({
+      ...action,
+      requiresConfirmation: confirmationActionIds.has(action.id),
+    }),
   );
   const upgraded: OpenSlackMcpResultV2 = Object.freeze({
     schema: OPENSLACK_MCP_RESULT_V2_SCHEMA,
@@ -234,7 +304,10 @@ export function upgradeOpenSlackMcpResult(
     nextActions: Object.freeze(nextActions),
     evidenceRefs: result.evidenceRefs,
     ...(result.planId ? { planId: result.planId } : {}),
+    ...(planHash ? { planHash } : {}),
+    ...(confirmationToken ? { confirmationToken } : {}),
     ...(result.executionId ? { executionId: result.executionId } : {}),
+    ...(approval ? { approval } : {}),
     ...(result.error ? { error: result.error } : {}),
   });
   if (!validateOpenSlackMcpResultV2(upgraded)) {
@@ -257,6 +330,8 @@ export function validateOpenSlackMcpResultV2(value: unknown): value is OpenSlack
       'nextActions',
       'evidenceRefs',
       'planId',
+      'planHash',
+      'confirmationToken',
       'executionId',
       'approval',
       'error',
@@ -313,8 +388,23 @@ export function validateOpenSlackMcpResultV2(value: unknown): value is OpenSlack
     (governance.blocker !== undefined && !boundedString(governance.blocker, 160)) ||
     evidenceRefs.some((reference) => !boundedEvidenceRef(reference)) ||
     (top.planId !== undefined && !boundedString(top.planId, MAX_ID_LENGTH)) ||
+    (top.planHash !== undefined && !boundedPattern(top.planHash, 64, PLAN_HASH_PATTERN)) ||
+    (top.confirmationToken !== undefined &&
+      !boundedPattern(top.confirmationToken, 128, CONFIRMATION_TOKEN_PATTERN)) ||
     (top.executionId !== undefined && !boundedString(top.executionId, MAX_ID_LENGTH)) ||
     (top.data !== undefined && !inertJson(top.data))
+  ) {
+    return false;
+  }
+  if (
+    (top.planHash !== undefined && top.planId === undefined) ||
+    (top.confirmationToken !== undefined &&
+      (top.planId === undefined ||
+        top.planHash === undefined ||
+        top.status !== 'needs_confirmation' ||
+        authority.mode !== 'governed_mutation' ||
+        governance.approvalRequired !== true ||
+        governance.approvalKind !== 'openslack_confirm'))
   ) {
     return false;
   }

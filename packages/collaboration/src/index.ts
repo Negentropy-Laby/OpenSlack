@@ -2,12 +2,15 @@ export {
   validateEvent,
   createEvent,
   appendEvent,
+  createBoundEventAppender,
   recordEvent,
   readEvents,
   filterEvents,
   getEventsPathForTesting,
   getEventsDirForTesting,
 } from './events.js';
+
+export type { BoundCollaborationEventAppender } from './events.js';
 
 export { sanitizeEvent, getSecretPatterns, containsSecret, scanValue } from './redact.js';
 

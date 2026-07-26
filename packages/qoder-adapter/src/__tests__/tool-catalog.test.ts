@@ -1,8 +1,13 @@
+import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import {
+  OPENSLACK_MUTATION_TOOL_CATALOG,
+  OPENSLACK_MUTATION_TOOL_NAMES,
   OPENSLACK_READ_TOOL_CATALOG,
   OPENSLACK_READ_TOOL_NAMES,
   ToolInputValidationError,
+  getOpenSlackMutationToolDefinition,
+  getOpenSlackToolCatalog,
   getOpenSlackReadToolDefinition,
   validateToolInput,
 } from '../index.js';
@@ -52,6 +57,171 @@ describe('Qoder read-tool catalog', () => {
     expect(names).not.toEqual(expect.arrayContaining(forbidden));
     expect(names).not.toEqual(expect.arrayContaining(['pr.watch', 'workspace.index']));
     expect(names.every((name) => !/shell|raw_command|direct_merge/i.test(name))).toBe(true);
+  });
+
+  it('keeps mutation profiles nominal, explicit, and separate from the production twelve', () => {
+    expect(OPENSLACK_MUTATION_TOOL_NAMES).toEqual([
+      'openslack_preview_scenario',
+      'openslack_preview_workflow',
+      'openslack_confirm_plan',
+      'openslack_cancel_plan',
+      'openslack_decide_workflow_approval',
+    ]);
+    expect(OPENSLACK_MUTATION_TOOL_CATALOG).toHaveLength(5);
+    expect(getOpenSlackToolCatalog({ includeDemoReset: false })).toHaveLength(12);
+    expect(
+      getOpenSlackToolCatalog({
+        includeDemoReset: false,
+        includeGovernedMutations: true,
+      }).map((tool) => tool.name),
+    ).toEqual([...OPENSLACK_READ_TOOL_NAMES, ...OPENSLACK_MUTATION_TOOL_NAMES.slice(0, 4)]);
+    expect(
+      getOpenSlackToolCatalog({
+        includeDemoReset: false,
+        includeGovernedMutations: true,
+        includeWorkflowApproval: true,
+      }).map((tool) => tool.name),
+    ).toEqual([...OPENSLACK_READ_TOOL_NAMES, ...OPENSLACK_MUTATION_TOOL_NAMES]);
+    expect(
+      getOpenSlackToolCatalog({
+        includeDemoReset: true,
+        includeGovernedMutations: true,
+        includeWorkflowApproval: true,
+      }).at(-1)?.name,
+    ).toBe('openslack_demo_reset');
+    expect(() =>
+      getOpenSlackToolCatalog({
+        includeDemoReset: false,
+        includeWorkflowApproval: true,
+      }),
+    ).toThrow(/without governed mutations/);
+  });
+
+  it('accepts bounded business input but never accepts client authority or executable steps', () => {
+    const scenario = getOpenSlackMutationToolDefinition('openslack_preview_scenario')!;
+    expect(
+      validateToolInput(scenario, {
+        scenarioId: 'software-delivery',
+        input: { objective: 'Explain delivery state.', days: 14 },
+      }),
+    ).toEqual({
+      scenarioId: 'software-delivery',
+      input: { objective: 'Explain delivery state.', days: 14 },
+    });
+    for (const forbidden of [
+      'actorId',
+      'workspaceId',
+      'correlationId',
+      'capabilities',
+      'permissionSnapshot',
+      'steps',
+      'command',
+      'approvalProvenance',
+    ]) {
+      expect(() =>
+        validateToolInput(scenario, {
+          scenarioId: 'software-delivery',
+          input: {},
+          [forbidden]: 'client-controlled',
+        }),
+      ).toThrow(/unexpected argument properties/);
+    }
+
+    const workflow = getOpenSlackMutationToolDefinition('openslack_preview_workflow')!;
+    expect(() =>
+      validateToolInput(workflow, {
+        workflowId: '../../dynamic-module',
+        input: {},
+      }),
+    ).toThrow(/invalid format/);
+    expect(() =>
+      validateToolInput(workflow, {
+        workflowId: 'ai-org-transformation',
+        input: {},
+        repository: 'https://example.invalid/owner/repo',
+      }),
+    ).toThrow(/invalid format/);
+
+    const confirm = getOpenSlackMutationToolDefinition('openslack_confirm_plan')!;
+    expect(() =>
+      validateToolInput(confirm, {
+        planId: 'plan-1',
+      }),
+    ).toThrow(/confirmationToken is required/);
+    expect(
+      validateToolInput(confirm, {
+        planId: 'plan-1',
+        confirmationToken: 'A'.repeat(43),
+      }),
+    ).toEqual({
+      planId: 'plan-1',
+      confirmationToken: 'A'.repeat(43),
+    });
+
+    const cancel = getOpenSlackMutationToolDefinition('openslack_cancel_plan')!;
+    expect(() =>
+      validateToolInput(cancel, {
+        planId: 'plan-1',
+        confirmationToken: 'short',
+      }),
+    ).toThrow(/invalid format|shorter than 32/);
+  });
+
+  it('rebuilds inert JSON from another realm while rejecting custom prototypes', () => {
+    const scenario = getOpenSlackMutationToolDefinition('openslack_preview_scenario')!;
+    const foreign = runInNewContext(
+      '({ scenarioId: "software-delivery", input: { objective: "Cross realm", tags: ["safe"] } })',
+    ) as unknown;
+    expect(validateToolInput(scenario, foreign)).toEqual({
+      scenarioId: 'software-delivery',
+      input: { objective: 'Cross realm', tags: ['safe'] },
+    });
+    expect(Object.getPrototypeOf(validateToolInput(scenario, foreign))).toBe(Object.prototype);
+
+    class ExecutableCarrier {
+      scenarioId = 'software-delivery';
+      input = {};
+    }
+    expect(() => validateToolInput(scenario, new ExecutableCarrier())).toThrow(
+      /inert plain object/,
+    );
+  });
+
+  it('rejects unsafe nested mutation input before invoking getters or Proxy traps', () => {
+    const scenario = getOpenSlackMutationToolDefinition('openslack_preview_scenario')!;
+    let getterInvoked = false;
+    const accessor = Object.defineProperty({}, 'objective', {
+      enumerable: true,
+      get() {
+        getterInvoked = true;
+        return 'unsafe';
+      },
+    });
+    expect(() =>
+      validateToolInput(scenario, {
+        scenarioId: 'software-delivery',
+        input: accessor,
+      }),
+    ).toThrow(/data property/);
+    expect(getterInvoked).toBe(false);
+
+    let traps = 0;
+    const proxy = new Proxy(
+      {},
+      {
+        getPrototypeOf() {
+          traps += 1;
+          throw new Error('trap');
+        },
+      },
+    );
+    expect(() =>
+      validateToolInput(scenario, {
+        scenarioId: 'software-delivery',
+        input: { nested: proxy },
+      }),
+    ).toThrow(/must not contain a Proxy/);
+    expect(traps).toBe(0);
   });
 
   it('rejects unknown and out-of-bound arguments', () => {

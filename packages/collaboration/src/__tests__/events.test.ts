@@ -64,6 +64,36 @@ describe('events', () => {
     expect(validateEvent(event).valid).toBe(true);
   });
 
+  it('validates distinct governed-plan and workflow-approval audit events', () => {
+    const types: CollaborationEventType[] = [
+      'operator.plan.previewed',
+      'operator.plan.confirmed',
+      'operator.plan.confirmation_rejected',
+      'operator.plan.cancelled',
+      'operator.plan.expired',
+      'operator.execution.started',
+      'operator.execution.completed',
+      'operator.execution.blocked',
+      'operator.execution.failed',
+      'operator.execution.reconciliation_required',
+      'workflow.approval.decided',
+    ];
+    for (const type of types) {
+      const event = createEvent(
+        makeEvent({
+          type,
+          object: {
+            kind: type.startsWith('workflow.') ? 'workflow' : 'plan',
+            id: 'GPLAN-test',
+          },
+          source: { kind: 'operator', ref: 'qoder-governed-plan' },
+          summary: `Recorded ${type}.`,
+        }),
+      );
+      expect(validateEvent(event).valid, type).toBe(true);
+    }
+  });
+
   it('rejects event with wrong schema', () => {
     const result = validateEvent({ schema: 'wrong.schema' });
     expect(result.valid).toBe(false);

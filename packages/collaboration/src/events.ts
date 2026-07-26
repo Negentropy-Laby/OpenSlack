@@ -1,9 +1,33 @@
-import { existsSync, mkdirSync, appendFileSync, readFileSync } from 'node:fs';
+import {
+  closeSync,
+  constants as fsConstants,
+  existsSync,
+  fstatSync,
+  fsyncSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeSync,
+  type Stats,
+} from 'node:fs';
+import { resolve } from 'node:path';
 import { join } from 'node:path';
 import type { CollaborationEvent, CollaborationEventType, EventFilter } from './types.js';
 import { sanitizeEvent } from './redact.js';
 
 const ALLOWED_SCHEMA = 'openslack.collaboration_event.v1';
+const NO_FOLLOW = process.platform === 'win32' ? 0 : (fsConstants.O_NOFOLLOW ?? 0);
+const BOUND_APPENDER_FINALIZER = new FinalizationRegistry<number>((descriptor) => {
+  try {
+    closeSync(descriptor);
+  } catch {
+    // The process may already be tearing down; the descriptor is otherwise
+    // owned for exactly the lifetime of the bound appender.
+  }
+});
 
 const ALL_EVENT_TYPES: CollaborationEventType[] = [
   'task.created',
@@ -24,10 +48,17 @@ const ALL_EVENT_TYPES: CollaborationEventType[] = [
   'pr.merge.blocked',
   'operator.intent.parsed',
   'operator.plan.created',
+  'operator.plan.previewed',
+  'operator.plan.confirmed',
+  'operator.plan.confirmation_rejected',
+  'operator.plan.cancelled',
+  'operator.plan.expired',
   'operator.plan.blocked',
   'operator.execution.started',
   'operator.execution.completed',
+  'operator.execution.blocked',
   'operator.execution.failed',
+  'operator.execution.reconciliation_required',
   'chat.message.received',
   'chat.message.duplicate_dropped',
   'chat.plan.confirmation_requested',
@@ -47,6 +78,7 @@ const ALL_EVENT_TYPES: CollaborationEventType[] = [
   'digest.generated',
   'workflow.previewed',
   'workflow.started',
+  'workflow.approval.decided',
   'workflow.completed',
   'workflow.blocked',
   'profile_sync.triggered',
@@ -183,17 +215,196 @@ export function createEvent(
   return event;
 }
 
-export function appendEvent(event: CollaborationEvent): void {
-  const path = getEventsPath();
-  const line = JSON.stringify(event) + '\n';
-  appendFileSync(path, line, 'utf-8');
+export function appendEvent(event: CollaborationEvent, rootDir = process.cwd()): void {
+  const path = getEventsPath(rootDir);
+  const directoryPath = join(rootDir, '.openslack.local', 'collaboration');
+  const directoryBefore = statSync(directoryPath);
+  const directorySymbolic = lstatSync(directoryPath);
+  if (
+    directorySymbolic.isSymbolicLink() ||
+    !directorySymbolic.isDirectory() ||
+    !directoryBefore.isDirectory() ||
+    realpathSync(directoryPath) !== resolve(directoryPath)
+  ) {
+    throw new Error('Collaboration event directory is unsafe.');
+  }
+  if (existsSync(path)) {
+    const initial = lstatSync(path);
+    if (
+      initial.isSymbolicLink() ||
+      !initial.isFile() ||
+      initial.nlink !== 1 ||
+      realpathSync(path) !== resolve(path)
+    ) {
+      throw new Error('Collaboration event file is unsafe.');
+    }
+  }
+  const descriptor = openSync(
+    path,
+    fsConstants.O_WRONLY | fsConstants.O_APPEND | fsConstants.O_CREAT | NO_FOLLOW,
+    0o600,
+  );
+  try {
+    const before = fstatSync(descriptor);
+    const namedBefore = lstatSync(path);
+    if (
+      !before.isFile() ||
+      !namedBefore.isFile() ||
+      namedBefore.isSymbolicLink() ||
+      before.nlink !== 1 ||
+      namedBefore.nlink !== 1 ||
+      !sameFileIdentity(before, namedBefore)
+    ) {
+      throw new Error('Collaboration event file identity is unsafe.');
+    }
+    const bytes = Buffer.from(`${JSON.stringify(event)}\n`, 'utf8');
+    let offset = 0;
+    while (offset < bytes.length) {
+      const written = writeSync(descriptor, bytes, offset, bytes.length - offset, null);
+      if (written < 1) throw new Error('Collaboration event append made no progress.');
+      offset += written;
+    }
+    fsyncSync(descriptor);
+    const after = fstatSync(descriptor);
+    const namedAfter = lstatSync(path);
+    const directoryAfter = statSync(directoryPath);
+    if (
+      !sameFileIdentity(before, after) ||
+      !sameFileIdentity(after, namedAfter) ||
+      after.nlink !== 1 ||
+      namedAfter.nlink !== 1 ||
+      directoryBefore.dev !== directoryAfter.dev ||
+      directoryBefore.ino !== directoryAfter.ino ||
+      realpathSync(directoryPath) !== resolve(directoryPath)
+    ) {
+      throw new Error('Collaboration event file or directory identity changed.');
+    }
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+export interface BoundCollaborationEventAppender {
+  append(event: CollaborationEvent): void;
+}
+
+/**
+ * Bind governed audit writes to one already-verified event-log inode for the
+ * lifetime of the appender. Reopening `events.jsonl` by path on every call
+ * would allow a directory replacement between an outer identity check and the
+ * open. A fixed O_APPEND descriptor makes a later rename unable to redirect
+ * bytes; path checks then decide whether the call may report success.
+ */
+export function createBoundEventAppender(rootDir = process.cwd()): BoundCollaborationEventAppender {
+  const path = getEventsPath(rootDir);
+  const directoryPath = join(rootDir, '.openslack.local', 'collaboration');
+  const directory = checkedDirectoryIdentity(directoryPath);
+  if (existsSync(path)) assertSafeNamedEventFile(path);
+
+  const descriptor = openSync(
+    path,
+    fsConstants.O_WRONLY | fsConstants.O_APPEND | fsConstants.O_CREAT | NO_FOLLOW,
+    0o600,
+  );
+  const opened = fstatSync(descriptor);
+  try {
+    assertBoundEventTarget(path, directoryPath, directory, descriptor, opened);
+  } catch (error) {
+    closeSync(descriptor);
+    throw error;
+  }
+
+  const appender = Object.freeze({
+    append(event: CollaborationEvent): void {
+      assertBoundEventTarget(path, directoryPath, directory, descriptor, opened);
+      appendEventBytes(descriptor, event);
+      fsyncSync(descriptor);
+      assertBoundEventTarget(path, directoryPath, directory, descriptor, opened);
+    },
+  });
+  BOUND_APPENDER_FINALIZER.register(appender, descriptor);
+  return appender;
+}
+
+interface DirectoryFileIdentity {
+  readonly dev: number;
+  readonly ino: number;
+}
+
+function checkedDirectoryIdentity(path: string): DirectoryFileIdentity {
+  const symbolic = lstatSync(path);
+  const stat = statSync(path);
+  if (
+    symbolic.isSymbolicLink() ||
+    !symbolic.isDirectory() ||
+    !stat.isDirectory() ||
+    realpathSync(path) !== resolve(path)
+  ) {
+    throw new Error('Collaboration event directory is unsafe.');
+  }
+  return Object.freeze({ dev: stat.dev, ino: stat.ino });
+}
+
+function assertSafeNamedEventFile(path: string): void {
+  const named = lstatSync(path);
+  if (
+    named.isSymbolicLink() ||
+    !named.isFile() ||
+    named.nlink !== 1 ||
+    realpathSync(path) !== resolve(path)
+  ) {
+    throw new Error('Collaboration event file is unsafe.');
+  }
+}
+
+function assertBoundEventTarget(
+  path: string,
+  directoryPath: string,
+  directory: DirectoryFileIdentity,
+  descriptor: number,
+  opened: Stats,
+): void {
+  const currentDirectory = checkedDirectoryIdentity(directoryPath);
+  const currentDescriptor = fstatSync(descriptor);
+  const named = lstatSync(path);
+  if (
+    currentDirectory.dev !== directory.dev ||
+    currentDirectory.ino !== directory.ino ||
+    !opened.isFile() ||
+    !currentDescriptor.isFile() ||
+    !named.isFile() ||
+    named.isSymbolicLink() ||
+    opened.nlink !== 1 ||
+    currentDescriptor.nlink !== 1 ||
+    named.nlink !== 1 ||
+    !sameFileIdentity(opened, currentDescriptor) ||
+    !sameFileIdentity(currentDescriptor, named) ||
+    realpathSync(path) !== resolve(path)
+  ) {
+    throw new Error('Bound Collaboration event file or directory identity changed.');
+  }
+}
+
+function appendEventBytes(descriptor: number, event: CollaborationEvent): void {
+  const bytes = Buffer.from(`${JSON.stringify(event)}\n`, 'utf8');
+  let offset = 0;
+  while (offset < bytes.length) {
+    const written = writeSync(descriptor, bytes, offset, bytes.length - offset, null);
+    if (written < 1) throw new Error('Collaboration event append made no progress.');
+    offset += written;
+  }
+}
+
+function sameFileIdentity(left: Stats, right: Stats): boolean {
+  return left.dev === right.dev && left.ino === right.ino;
 }
 
 export function recordEvent(
   partial: Omit<CollaborationEvent, 'id' | 'timestamp' | 'schema'>,
+  rootDir = process.cwd(),
 ): CollaborationEvent {
   const event = createEvent(partial);
-  appendEvent(event);
+  appendEvent(event, rootDir);
   return event;
 }
 
@@ -205,10 +416,12 @@ export function readEvents(rootDir = process.cwd()): CollaborationEvent[] {
   const lines = raw.split('\n').filter((l) => l.trim() !== '');
 
   const events: CollaborationEvent[] = [];
+  const seenIds = new Set<string>();
   for (const line of lines) {
     try {
       const parsed = JSON.parse(line) as CollaborationEvent;
-      if (validateEvent(parsed).valid) {
+      if (validateEvent(parsed).valid && !seenIds.has(parsed.id)) {
+        seenIds.add(parsed.id);
         events.push(parsed);
       }
     } catch {

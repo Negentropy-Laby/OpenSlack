@@ -114,6 +114,146 @@ describe('OpenSlack MCP result contract', () => {
     expect(validateOpenSlackMcpResultV2(v2)).toBe(true);
   });
 
+  it('marks only host-selected next actions as confirmation and validates workflow approvals', () => {
+    const v1 = createOpenSlackMcpResult({
+      status: 'needs_confirmation',
+      summary: 'A canonical plan is ready.',
+      planId: 'plan-1',
+      nextActions: [
+        {
+          id: 'confirm-plan',
+          label: 'Confirm plan',
+          tool: 'openslack_confirm_plan',
+          arguments: { planId: 'plan-1' },
+        },
+        {
+          id: 'cancel-plan',
+          label: 'Cancel plan',
+          tool: 'openslack_cancel_plan',
+          arguments: { planId: 'plan-1' },
+        },
+      ],
+    });
+    const v2 = upgradeOpenSlackMcpResult(v1, {
+      correlationId: 'mcp:mutation-1',
+      authority: {
+        mode: 'governed_mutation',
+        sources: ['openslack.operator_governed_plan'],
+        observedAt: '2026-07-27T00:00:00.000Z',
+      },
+      confirmationActionIds: ['confirm-plan'],
+      approval: {
+        approvalId: 'approval-1',
+        kind: 'openslack_workflow_effect',
+        expiresAt: '2026-07-27T00:05:00.000Z',
+        risk: 'medium',
+      },
+    });
+
+    expect(v2.nextActions.map((action) => action.requiresConfirmation)).toEqual([true, false]);
+    expect(v2.approval).toEqual({
+      approvalId: 'approval-1',
+      kind: 'openslack_workflow_effect',
+      expiresAt: '2026-07-27T00:05:00.000Z',
+      risk: 'medium',
+    });
+    expect(validateOpenSlackMcpResultV2(v2)).toBe(true);
+  });
+
+  it('carries a one-time confirmation capability only on a bound mutation preview', () => {
+    const result = upgradeOpenSlackMcpResult(
+      createOpenSlackMcpResult({
+        status: 'needs_confirmation',
+        summary: 'A canonical plan is ready.',
+        planId: 'GPLAN-12345678-1234-4123-8123-123456789abc',
+        governance: {
+          risk: 'medium',
+          approvalRequired: true,
+          approvalKind: 'openslack_confirm',
+        },
+        nextActions: [
+          {
+            id: 'confirm-plan',
+            label: 'Confirm exact plan',
+            tool: 'openslack_confirm_plan',
+          },
+        ],
+      }),
+      {
+        correlationId: 'CORR-12345678-1234-4123-8123-123456789abc',
+        authority: {
+          mode: 'governed_mutation',
+          sources: ['openslack.operator_governed_plan'],
+          observedAt: '2026-07-27T00:00:00.000Z',
+        },
+        confirmationActionIds: ['confirm-plan'],
+        planHash: 'a'.repeat(64),
+        confirmationToken: 'b'.repeat(43),
+      },
+    );
+
+    expect(result).toMatchObject({
+      planHash: 'a'.repeat(64),
+      confirmationToken: 'b'.repeat(43),
+      nextActions: [{ requiresConfirmation: true }],
+    });
+    expect(validateOpenSlackMcpResultV2(result)).toBe(true);
+    expect(
+      validateOpenSlackMcpResultV2({
+        ...result,
+        authority: { ...result.authority, mode: 'projection' },
+      }),
+    ).toBe(false);
+    expect(
+      validateOpenSlackMcpResultV2({
+        ...result,
+        governance: { ...result.governance, approvalRequired: false },
+      }),
+    ).toBe(false);
+  });
+
+  it('rejects proxied confirmation and approval options before executing traps', () => {
+    let traps = 0;
+    const proxy = new Proxy(
+      {},
+      {
+        get() {
+          traps += 1;
+          throw new Error('trap');
+        },
+        getPrototypeOf() {
+          traps += 1;
+          throw new Error('trap');
+        },
+        ownKeys() {
+          traps += 1;
+          throw new Error('trap');
+        },
+      },
+    );
+    const base = {
+      correlationId: 'mcp:mutation-2',
+      authority: {
+        mode: 'governed_mutation' as const,
+        sources: ['openslack.operator_governed_plan'],
+        observedAt: '2026-07-27T00:00:00.000Z',
+      },
+    };
+    expect(() =>
+      upgradeOpenSlackMcpResult(createOpenSlackMcpResult({ summary: 'ready' }), {
+        ...base,
+        confirmationActionIds: proxy as never,
+      }),
+    ).toThrow(/confirmationActionIds/);
+    expect(() =>
+      upgradeOpenSlackMcpResult(createOpenSlackMcpResult({ summary: 'ready' }), {
+        ...base,
+        approval: proxy as never,
+      }),
+    ).toThrow(/approval/);
+    expect(traps).toBe(0);
+  });
+
   it('rejects open, non-canonical, and accessor-bearing v2 values without invoking getters', () => {
     const valid = upgradeOpenSlackMcpResult(createOpenSlackMcpResult({ summary: 'ready' }), {
       correlationId: 'mcp:test-2',
@@ -275,8 +415,46 @@ describe('OpenSlack MCP result contract', () => {
         },
       },
     );
+    const previewResult = upgradeOpenSlackMcpResult(
+      createOpenSlackMcpResult({
+        status: 'needs_confirmation',
+        summary: 'Preview sample.',
+        planId: 'GPLAN-12345678-1234-4123-8123-123456789abc',
+        governance: {
+          approvalRequired: true,
+          approvalKind: 'openslack_confirm',
+          risk: 'medium',
+        },
+      }),
+      {
+        correlationId: 'CORR-12345678-1234-4123-8123-123456789abc',
+        authority: {
+          mode: 'governed_mutation',
+          sources: ['openslack.operator_governed_plan'],
+          observedAt: '2026-07-27T00:00:00.000Z',
+        },
+        planHash: 'a'.repeat(64),
+        confirmationToken: 'b'.repeat(43),
+      },
+    );
     const samples: Array<{ name: string; value: unknown; valid: boolean }> = [
       { name: 'valid', value: result, valid: true },
+      { name: 'valid mutation preview', value: previewResult, valid: true },
+      {
+        name: 'plan hash without plan id',
+        value: { ...result, planHash: 'a'.repeat(64) },
+        valid: false,
+      },
+      {
+        name: 'confirmation token on projection',
+        value: {
+          ...result,
+          planId: 'plan-1',
+          planHash: 'a'.repeat(64),
+          confirmationToken: 'b'.repeat(43),
+        },
+        valid: false,
+      },
       { name: 'valid inert arguments', value: actionResult, valid: true },
       { name: 'maximum inert depth', value: { ...result, data: nestedJson(12) }, valid: true },
       {
