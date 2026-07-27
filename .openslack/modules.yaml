@@ -1,6 +1,6 @@
 schema: openslack.modules.v2
-vitest_tests: 4843
-vitest_files: 388
+vitest_tests: 4868
+vitest_files: 390
 modules:
   - id: self_evolution
     name: Self-Evolution Kernel
@@ -124,6 +124,13 @@ modules:
       - test:apps/mcp/src/__tests__/config-examples.test.ts
       - test:apps/mcp/src/__tests__/source-boundary.test.ts
       - test:apps/cli/src/__tests__/mcp-command.test.ts
+      - commit:6cdc96e60b04de083d47fed78eb5bd4d37fa857c
+      - test:apps/mcp/src/__tests__/graph-tools.test.ts
+      - test:apps/mcp/src/__tests__/qoder-skill.test.ts
+      - test:apps/mcp/src/__tests__/sanitizer.test.ts
+      - repo:integrations/qoder-work/skills/openslack-organization-control/SKILL.md
+      - commit:7dd09ad0a702a3e5d4267a3f4c5cddf7beb4abe2
+      - repo:docs/testing/qoder-work-evidence.md
     phase: '2A/2B/2C'
     cli:
       - openslack ask
@@ -142,9 +149,9 @@ modules:
       - '@openslack/credentials'
       - '@openslack/qoder-adapter'
       - '@openslack/mcp'
-    tests: 993
-    test_files: 122
-    notes: Structured planner active. Webhook and Slack chat adapters active with actor mapping. PRMS chat cards and action confirmation active. The typed Operator action registry is instance-scoped, preserves the closed 30-action built-in default, accepts explicit planner/executor injection, and canonical-revalidates frozen PlanSteps at execution. The CLI application composition root constructs one sealed PluginHost and instance-scoped Operator action, LLM-provider, conversation-store, and plugin-action bindings per process. The read-only Qoder MCP frontend uses that same composition context, publishes an exact nine-tool business catalog over local stdio, applies bounded schemas and redaction, and exposes no shell, approval, merge, generic command, or mutation surface; Qoder desktop qualification remains an external blocker. Its host target catalog exposes only the audited bounded github.metrics returned-item count under the exact github.issues.read capability; SHADOW plugin actions remain visibility-only, while ENFORCE proof plans are rebuilt through the same canonical registry before execution. All other built-ins and all unconfigured plugin authority remain fail-closed until complete behavior contracts, policy, activation evidence, and a durable audit sink are explicitly composed. Setup attach provides preview-first read-only-monitor and full-agent modes backed by a virtual validation plan, persistent rollback journal, workspace lock, before-hash/realpath/symlink/containment checks, atomic writes, exact byte/mode rollback, crash recovery, and idempotent apply; the foreground watcher starts only after commit and validation. Generated agents cannot approve or merge. LLM-first intent routing with deterministic keyword fallback, setup report, and 24h pending plan store active. Session-based conversation memory with multi-turn context resolution and progressive clarification. Doctor --format plain for non-technical output. Conversation-first TUI workbench with Ask OpenSlack, Operator recommendation cards, workflow draft-first cards, profile sync recommendations, and subagent mention dispatch. TUI setup report view and PR doctor view via --format tui. Versioned Windows x64 and Linux x64 archive builds embed the CLI, workflow assets, native keychain binding, build metadata, SBOM, checksums, and provenance; native build and unpacked smoke are enforced by the release matrix. The installed CLI verifies stable release artifacts and trusted signatures without a source checkout, Bun, or Node.js. Agent Runtime credentials can be previewed and imported atomically into the native keychain without writing secret values to workspace configuration.
+    tests: 1018
+    test_files: 124
+    notes: Structured planner active. Webhook and Slack chat adapters active with actor mapping. PRMS chat cards and action confirmation active. The typed Operator action registry is instance-scoped, preserves the closed 30-action built-in default, accepts explicit planner/executor injection, and canonical-revalidates frozen PlanSteps at execution. The CLI application composition root constructs one sealed PluginHost and instance-scoped Operator action, LLM-provider, conversation-store, and plugin-action bindings per process. The read-only Qoder MCP frontend uses that same composition context, publishes an exact 12-tool business and Organization Graph catalog over local stdio, returns the versioned openslack.mcp_result.v2 envelope, applies bounded schemas, graph limits, evidence allowlists, nested-data rejection, and redaction, and exposes no shell, approval, merge, generic command, or mutation surface. The repository Qoder Skill is progressively disclosed, validates independently, and requires Status, Owner, Blocker, Next, and Evidence reporting; direct MCP SDK qualification is LOCAL_PASS, while authenticated Qoder CLI and desktop qualification remain external blockers and QODER_VERIFIED is not claimed. Its host target catalog exposes only the audited bounded github.metrics returned-item count under the exact github.issues.read capability; SHADOW plugin actions remain visibility-only, while ENFORCE proof plans are rebuilt through the same canonical registry before execution. All other built-ins and all unconfigured plugin authority remain fail-closed until complete behavior contracts, policy, activation evidence, and a durable audit sink are explicitly composed. Setup attach provides preview-first read-only-monitor and full-agent modes backed by a virtual validation plan, persistent rollback journal, workspace lock, before-hash/realpath/symlink/containment checks, atomic writes, exact byte/mode rollback, crash recovery, and idempotent apply; the foreground watcher starts only after commit and validation. Generated agents cannot approve or merge. LLM-first intent routing with deterministic keyword fallback, setup report, and 24h pending plan store active. Session-based conversation memory with multi-turn context resolution and progressive clarification. Doctor --format plain for non-technical output. Conversation-first TUI workbench with Ask OpenSlack, Operator recommendation cards, workflow draft-first cards, profile sync recommendations, and subagent mention dispatch. TUI setup report view and PR doctor view via --format tui. Versioned Windows x64 and Linux x64 archive builds embed the CLI, workflow assets, native keychain binding, build metadata, SBOM, checksums, and provenance; native build and unpacked smoke are enforced by the release matrix. The installed CLI verifies stable release artifacts and trusted signatures without a source checkout, Bun, or Node.js. Agent Runtime credentials can be previewed and imported atomically into the native keychain without writing secret values to workspace configuration.
 
   - id: pr_review_merge
     name: PR Review & Merge Steward
