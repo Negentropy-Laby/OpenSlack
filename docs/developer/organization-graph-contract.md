@@ -181,7 +181,14 @@ The store:
 - rejects BOMs, duplicate JSON keys, symlinks, traversal, alternate data streams, and non-regular
   files;
 - performs realpath/containment and same-file checks before and after reads;
-- uses `O_NOFOLLOW` or the closest fail-closed platform equivalent;
+- on POSIX, uses `O_NOFOLLOW` where the platform provides it;
+- on Windows, opens the path with
+  [`FILE_FLAG_OPEN_REPARSE_POINT`](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew),
+  rejects reparse-point attributes, and compares handle-derived volume plus
+  [`FILE_ID_INFO`](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_id_info)
+  identity before and after the bounded read;
+- fails closed when a platform cannot provide equivalent no-follow, regular-file, and stable
+  handle-identity guarantees;
 - writes with explicit modes through atomic temp-file, fsync, and rename;
 - serializes updates with a per-scenario lock and compare-and-swap cursor;
 - never publishes a cursor that references a partial snapshot or delta;

@@ -48,8 +48,8 @@ STDIO authenticates neither the desktop user nor an enterprise identity. Read ca
 transport actor. Mutation mode is disabled unless server startup binds one active OpenSlack
 principal, workspace, and permission snapshot.
 
-An agent principal cannot decide a human-owned workflow effect. The
-`openslack_decide_workflow_approval` tool is registered only with a separately host-attested,
+An agent principal cannot confirm a human-owned workflow effect. The
+`openslack_confirm_workflow_effect` tool is registered only with a separately host-attested,
 authorized human binding; otherwise it is absent or returns `blocked`. A Qoder permission prompt,
 IM sender label, or client-provided actor string is not that attestation.
 

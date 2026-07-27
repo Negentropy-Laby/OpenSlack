@@ -24,6 +24,10 @@ separate qualification; it does not weaken this contract.
 
 ## Catalog Evolution
 
+This section is the single source of truth for exact MCP tool names and catalog counts. Product,
+Scenario Runtime, Skill, and security documents link here and must not independently add, rename,
+or copy the catalog.
+
 The foundation catalog contains exactly nine read-only tools:
 
 ```text
@@ -57,7 +61,7 @@ openslack_preview_scenario
 openslack_preview_workflow
 openslack_confirm_plan
 openslack_cancel_plan
-openslack_decide_workflow_approval
+openslack_confirm_workflow_effect
 ```
 
 Scenario instantiation and workflow start are effects of a confirmed canonical plan. There is no
@@ -90,11 +94,8 @@ interface OpenSlackMcpResultV2<T = unknown> {
   governance: {
     risk: 'none' | 'low' | 'medium' | 'high';
     approvalRequired: boolean;
-    approvalKind?:
-      | 'openslack_confirm'
-      | 'openslack_workflow_effect'
-      | 'github_human_review'
-      | 'workflow_trust';
+    approvalKind?: 'openslack_confirm' | 'openslack_workflow_effect' | 'github_human_review';
+    evidenceFacets?: Array<'workflow_trust'>;
     owner?: string;
     blocker?: string;
   };
@@ -121,7 +122,9 @@ interface OpenSlackMcpResultV2<T = unknown> {
 The actionable `approval` object is intentionally limited to
 `kind: 'openslack_workflow_effect'`. Plan confirmation uses the bound `planId`; GitHub human review
 and its optional `Workflow-Trust` marker are evidence-only governance state and never receive an
-MCP approval token.
+MCP approval token. `evidenceFacets: ['workflow_trust']` is valid only with
+`approvalKind: 'github_human_review'`; the facet is deduplicated, omitted when absent, and rejected
+with every other approval kind.
 
 Compatibility requirements:
 
@@ -141,7 +144,7 @@ server-startup binding to one active OpenSlack registry/runtime principal and it
 snapshot. The server rejects a missing, inactive, mismatched, or unauthorized principal.
 
 An agent-bound principal can preview and confirm only actions granted to that agent. It cannot
-decide a human-owned workflow effect. `openslack_decide_workflow_approval` is advertised only when
+confirm a human-owned workflow effect. `openslack_confirm_workflow_effect` is advertised only when
 the composition root supplies a separately attested, authorized human principal for that decision;
 an agent-only or transport-only binding omits the tool or returns `blocked`. Qoder's permission
 prompt and a client-supplied actor name are not human attestation.

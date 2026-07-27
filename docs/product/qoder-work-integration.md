@@ -76,35 +76,18 @@ packages/qoder-adapter
 openslack mcp serve --stdio
 ```
 
-The implemented QW2 catalog contains exactly nine read-only tools:
-
-```text
-openslack_get_executive_overview
-openslack_list_work_items
-openslack_get_work_room
-openslack_get_activity
-openslack_get_workflow_progress
-openslack_get_pr_readiness
-openslack_list_pending_approvals
-openslack_get_business_outcomes
-openslack_get_notification_status
-```
+The exact tool names and counts are owned by the
+[Qoder MCP Catalog Evolution contract](../developer/qoder-mcp-contract.md#catalog-evolution).
+The implemented QW2 milestone contains nine read-only tools.
 
 This server reuses the instance-scoped OpenSlack composition context, imports package APIs, and
 does not execute CLI text or parse CLI output. It exposes no shell, generic command, approval,
 merge, policy, permission, or other mutation tool. Its current result schema is
 `openslack.mcp_result.v1`.
 
-The planned graph-read milestone adds exactly three tools:
-
-```text
-openslack_list_scenarios
-openslack_query_graph
-openslack_explain_graph
-```
-
-That future milestone produces a 12-tool read-only catalog. Until those tools and their tests
-exist, the implemented catalog remains nine.
+The planned graph-read milestone adds three tools and produces a 12-tool read-only catalog. Until
+those tools and their tests exist, the implemented catalog remains nine. This product document
+does not duplicate or independently extend the canonical catalog.
 
 ## Authority boundary
 
@@ -174,15 +157,8 @@ Qoder sends business inputs, not executable steps. OpenSlack resolves the scenar
 capabilities, targets, actor, and current evidence. A confirmation is invalid after plan expiry,
 input change, actor change, permission change, target change, or plan-hash change.
 
-The planned mutation catalog is separate from the 12 read-only tools:
-
-```text
-openslack_preview_scenario
-openslack_preview_workflow
-openslack_confirm_plan
-openslack_cancel_plan
-openslack_decide_workflow_approval
-```
+The planned mutation catalog is separate from the 12 read-only tools and is defined only in the
+[Qoder MCP Catalog Evolution contract](../developer/qoder-mcp-contract.md#catalog-evolution).
 
 Scenario instantiation and workflow start are effects of a confirmed canonical plan, not duplicate
 unbound execution tools.
@@ -215,8 +191,8 @@ STDIO establishes a local process transport boundary; it does not authenticate a
 - A tool argument never supplies mutation authority.
 - Mutation mode requires a server-startup binding to an active OpenSlack registry/runtime
   principal and permission snapshot.
-- An agent-bound principal cannot decide a human-owned workflow effect;
-  `openslack_decide_workflow_approval` requires a separately host-attested authorized human
+- An agent-bound principal cannot confirm a human-owned workflow effect;
+  `openslack_confirm_workflow_effect` requires a separately host-attested authorized human
   binding, otherwise that tool is absent or blocked.
 - Missing, inactive, mismatched, or unauthorized principals fail closed.
 - The server creates the correlation ID; clients cannot select a colliding ID.

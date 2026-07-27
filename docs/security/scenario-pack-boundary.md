@@ -116,7 +116,9 @@ Scenario Pack is not:
 - an `openslack.plugin.v1` action/workflow alias manifest;
 - a reviewed bundled code contribution;
 - a Qoder Skill or Workbench;
-- a Negentropy-Lab `scenario-pack.extension`;
+- the externally governed Negentropy-Lab
+  [`scenario-pack.extension`](negentropy-slot-boundary.md), which is a SHADOW projection
+  contribution rather than an OpenSlack Scenario Pack;
 - a notification vendor registry.
 
 Each surface keeps its own schema, trust owner, lifecycle, and activation evidence. No successful

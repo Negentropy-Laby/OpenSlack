@@ -61,13 +61,9 @@ The existing read-only `apps/mcp` frontend and `packages/qoder-adapter` are exte
 Scenario Runtime does not create `apps/mcp-server`, rename the Qoder adapter, parse CLI output, or
 auto-export its internal methods as tools.
 
-The first read-only additions are:
-
-```text
-openslack_list_scenarios
-openslack_query_graph
-openslack_explain_graph
-```
+The first read-only additions are the graph tools defined in the
+[Qoder MCP Catalog Evolution contract](../developer/qoder-mcp-contract.md#catalog-evolution).
+That contract is the single source of exact tool names and counts.
 
 Governed scenario preview and execution tools come only after the runtime, pack loader, actor
 binding, immutable plan store, and audit contracts exist.
@@ -204,6 +200,9 @@ openslack: ["prms:doctor"]  -> openslack.prms.doctor
 github: ["pr"]              -> rejected: unknown capability
 ```
 
+After normalization, every value must exactly match an ID in the sealed host capability catalog;
+a syntactically valid dotted ID that is absent from that catalog is unknown and rejected.
+
 Mixed legacy and canonical declarations normalize, deduplicate, and sort deterministically.
 Existing workflows retain their effective permissions. Unknown namespaces, unknown capability
 IDs, wildcards, conflicting aliases, and malformed values fail closed.
@@ -234,15 +233,9 @@ The result becomes an immutable canonical plan. Confirmation binds the exact pla
 permission snapshot, target scope, and input hash. Any mismatch, expiry, or policy change requires
 a new preview.
 
-Planned governed tools are:
-
-```text
-openslack_preview_scenario
-openslack_preview_workflow
-openslack_confirm_plan
-openslack_cancel_plan
-openslack_decide_workflow_approval
-```
+Planned governed tools are defined only in the
+[Qoder MCP Catalog Evolution contract](../developer/qoder-mcp-contract.md#catalog-evolution);
+Scenario Runtime does not maintain a second catalog.
 
 Instantiation and workflow start are effects recorded by a confirmed plan, not separate unbound
 tools. GitHub review remains an external human decision and is never represented by an executable
