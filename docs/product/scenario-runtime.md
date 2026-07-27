@@ -201,6 +201,7 @@ github: ["issues:read"]     -> github.issues.read
 git: ["push"]               -> git.push
 filesystem: ["read"]        -> filesystem.read
 openslack: ["prms:doctor"]  -> openslack.prms.doctor
+github: ["pr"]              -> rejected: unknown capability
 ```
 
 Mixed legacy and canonical declarations normalize, deduplicate, and sort deterministically.

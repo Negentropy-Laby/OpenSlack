@@ -32,6 +32,13 @@ HTML artifact can replace current OpenSlack/GitHub evidence.
 | OpenSlack workflow-effect approval | authorized workflow approver          | one pending workflow effect         |
 | GitHub human review                | authorized non-author GitHub identity | repository review/approval evidence |
 
+The terms map to the canonical [Approval vocabulary](../product/approval-vocabulary.md): plan
+confirmation is **Approve Plan**; workflow-effect approval is **Confirm Operation**, or **Confirm
+Merge** for a merge effect; and GitHub human review is **GitHub Review Approval**. Qoder
+connector/tool permission is authorization, not an approval action. A current-head GitHub approval
+may also carry a `Workflow-Trust` marker for workflow governance; the marker is a facet of the
+fourth decision, not a fifth decision.
+
 An agent or bot cannot originate the fourth decision. GitHub review must be current-head,
 non-author, policy-valid evidence; MCP never emits an approval token for it.
 

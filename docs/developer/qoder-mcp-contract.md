@@ -118,6 +118,11 @@ interface OpenSlackMcpResultV2<T = unknown> {
 }
 ```
 
+The actionable `approval` object is intentionally limited to
+`kind: 'openslack_workflow_effect'`. Plan confirmation uses the bound `planId`; GitHub human review
+and its optional `Workflow-Trust` marker are evidence-only governance state and never receive an
+MCP approval token.
+
 Compatibility requirements:
 
 - v1 fixtures for all nine foundation tools convert to v2 without changing business meaning;
@@ -173,7 +178,12 @@ evidence, and atomically claims the plan for one execution. Replay, drift, actor
 partial-failure retry fail closed. Reconciliation produces a fresh preview.
 
 OpenSlack plan confirmation, OpenSlack workflow-effect approval, Qoder connector permission, and
-GitHub human review remain four independent decisions.
+GitHub human review remain four independent decisions. They use the canonical
+[Approval vocabulary](../product/approval-vocabulary.md): plan confirmation maps to **Approve
+Plan**; workflow-effect approval maps to **Confirm Operation**, or **Confirm Merge** for a merge
+effect; and GitHub human review maps to **GitHub Review Approval**. Connector permission is
+authorization rather than approval. A `Workflow-Trust` marker is a current-head evidence facet of
+the GitHub review decision, not a fifth decision.
 
 ## Bounds and Failure Semantics
 

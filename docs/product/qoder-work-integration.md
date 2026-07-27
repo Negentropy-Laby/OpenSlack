@@ -195,7 +195,13 @@ These decisions are separate:
 2. **OpenSlack plan confirmation** confirms one immutable canonical plan.
 3. **OpenSlack workflow-effect approval** decides a governed OpenSlack effect gate.
 4. **GitHub human review** is an authoritative GitHub review by an eligible human identity.
-5. **Workflow-Trust review** is repository governance bound to the current workflow artifact head.
+
+These terms map to the existing [Approval vocabulary](approval-vocabulary.md): plan confirmation is
+**Approve Plan**; a workflow-effect decision is **Confirm Operation**, or **Confirm Merge** when the
+effect is a merge request; and GitHub human review is **GitHub Review Approval**. Qoder MCP
+permission is client authorization, not an approval action. When workflow artifacts are governed,
+the eligible current-head GitHub approval may carry one `Workflow-Trust` marker. That marker is a
+trust-evidence facet of the fourth decision, not a fifth decision.
 
 No MCP result, Qoder conversation, Skill UI action, OpenSlack agent, or bot identity can originate
 or fabricate GitHub approval. GitHub approval is reported as governance state, never emitted as an

@@ -32,6 +32,19 @@ This document clarifies the distinct approval actions in OpenSlack and what each
 - **What it does**: Submits an actual GitHub PR review approval, recorded by GitHub
 - **What it does NOT**: This is NOT something OpenSlack does on behalf of users. OpenSlack never submits GitHub review approvals. This action requires direct human interaction with GitHub.
 
+## Qoder and Workflow-Governance Mapping
+
+Qoder integration and workflow governance do not add approval actions. Their contract terms map to
+the existing four actions as follows:
+
+| Contract term                      | Canonical approval action                     | Clarification                                                                                      |
+| ---------------------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Qoder connector/tool permission    | None                                          | Client authorization is a prerequisite for an MCP call, not an OpenSlack or GitHub approval.       |
+| OpenSlack plan confirmation        | Approve Plan                                  | Confirms one immutable canonical plan.                                                             |
+| OpenSlack workflow-effect approval | Confirm Operation, or Confirm Merge for merge | The effect type determines which existing OpenSlack confirmation applies.                          |
+| GitHub human review                | GitHub Review Approval                        | Remains authoritative GitHub evidence from an eligible human identity.                             |
+| `Workflow-Trust` marker            | Facet of GitHub Review Approval               | A current-head approval may carry the trust marker; it is not a fifth approval action or decision. |
+
 ## TUI Approval
 
 ### What TUI Approval IS
