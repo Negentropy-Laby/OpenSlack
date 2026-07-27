@@ -1,16 +1,17 @@
 # Scenario Runtime
 
-| Field                   | Value                                                     |
-| ----------------------- | --------------------------------------------------------- |
-| Status                  | `PLANNED — DESIGN CONTRACT`                               |
-| Product direction       | One-scenario-first                                        |
-| Lead interview scenario | Contract-to-Delivery Lite                                 |
-| Pack format             | Declarative `openslack.scenario_pack.v1`                  |
-| Execution authority     | OpenSlack canonical plan through registered host adapters |
+| Field                   | Value                                                      |
+| ----------------------- | ---------------------------------------------------------- |
+| Status                  | `DECLARATIVE CORE IMPLEMENTED — GOVERNED MUTATION PENDING` |
+| Product direction       | One-scenario-first                                         |
+| Lead interview scenario | Contract-to-Delivery Lite                                  |
+| Pack format             | Declarative `openslack.scenario_pack.v1`                   |
+| Execution authority     | OpenSlack canonical plan through registered host adapters  |
 
-This document defines the planned Scenario Runtime product contract. It does not claim that
-`@openslack/scenario-runtime`, Scenario Packs, scenario MCP tools, Contract-to-Delivery Lite, or
-scenario lifecycle events have been implemented.
+The `@openslack/scenario-runtime` package and exact-byte locked, projection-only
+`software-delivery` Scenario Pack implement the declarative loading, capability normalization,
+preview, instance, and local-store core described here. Governed mutation tools,
+Contract-to-Delivery Lite, and scenario lifecycle events remain later milestones.
 
 ## Product outcome
 

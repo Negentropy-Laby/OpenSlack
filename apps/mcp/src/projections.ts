@@ -438,5 +438,23 @@ export function projectToolData(name: OpenSlackReadToolName, value: unknown): Ro
       return outcomes(item);
     case 'openslack_get_notification_status':
       return notification(item);
+    case 'openslack_list_scenarios':
+      return {
+        generatedAt: text(item.generatedAt),
+        scenarios: rows(item.scenarios, 50).map((scenario) => ({
+          id: text(scenario.id),
+          version: text(scenario.version),
+          title: text(scenario.title),
+          description: text(scenario.description),
+          definitionHash: text(scenario.definitionHash),
+          projectorIds: texts(scenario.projectorIds, 20),
+          viewIds: texts(scenario.viewIds, 20),
+          evidenceRef: text(scenario.evidenceRef),
+        })),
+        evidenceRefs: texts(item.evidenceRefs, 50),
+      };
+    case 'openslack_query_graph':
+    case 'openslack_explain_graph':
+      return item;
   }
 }

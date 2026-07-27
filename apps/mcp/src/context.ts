@@ -1,5 +1,6 @@
-import { existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { existsSync, lstatSync, realpathSync, statSync } from 'node:fs';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import {
   BLOCKER_TYPES,
   buildBusinessOutcomeProjection,
@@ -18,6 +19,16 @@ import {
   type WatchDeliveryQueueV2State,
   type WatchDeliveryQueueV2Stats,
 } from '@openslack/github';
+import {
+  GraphStoreError,
+  LocalGraphStore,
+  explainGraph,
+  queryGraph,
+  type GraphExplainInput,
+  type GraphExplanation,
+  type GraphQueryInput,
+  type GraphQueryResult,
+} from '@openslack/organization-graph';
 import type {
   ActionRegistryPort,
   ConversationStoreBindingPort,
@@ -31,6 +42,11 @@ import {
   loadPRReviewPolicy,
   summarizePRDecision,
 } from '@openslack/pr';
+import {
+  createSoftwareDeliveryScenarioCatalog,
+  loadScenarioPack,
+  type LoadedScenarioDefinition,
+} from '@openslack/scenario-runtime';
 import { getWorkflowRunProgress } from '@openslack/workflows';
 import { parse as parseYaml } from 'yaml';
 import {
@@ -87,12 +103,17 @@ export interface OpenSlackReadModelPorts {
   readonly pendingApprovals: (input: { limit: number }) => unknown | Promise<unknown>;
   readonly notificationStatus: () => unknown | Promise<unknown>;
   readonly businessOutcomes?: BusinessOutcomesReaderPort;
+  readonly scenarios: () => unknown | Promise<unknown>;
+  readonly graphQuery: (input: GraphQueryInput) => unknown | Promise<unknown>;
+  readonly graphExplain: (input: GraphExplainInput) => unknown | Promise<unknown>;
 }
 
 export interface OpenSlackMcpContext {
   readonly workspaceRoot: string;
   readonly operator: OperatorApplicationContextPort;
   readonly readers: OpenSlackReadModelPorts;
+  readonly runtime: OpenSlackMcpRuntimePort;
+  readonly demoReset?: LocalDemoResetPort;
 }
 
 export interface CreateOpenSlackMcpContextOptions {
@@ -100,6 +121,49 @@ export interface CreateOpenSlackMcpContextOptions {
   readonly operator: OperatorApplicationContextPort;
   readonly readers?: Partial<OpenSlackReadModelPorts>;
   readonly businessOutcomes?: BusinessOutcomesReaderPort;
+  /** Test seam. Production callers omit this and receive the system clock. */
+  readonly clock?: () => Date;
+  /** Test seam. Production callers omit this and receive server-generated UUIDs. */
+  readonly correlationIdFactory?: () => string;
+  readonly graphMaxAgeMs?: number;
+  /** Required before the local-only demo reset tool can be registered. */
+  readonly demoMode?: boolean;
+  readonly demoReset?: LocalDemoResetPort;
+}
+
+export interface OpenSlackMcpRuntimePort {
+  readonly now: () => Date;
+  readonly nextCorrelationId: () => string;
+}
+
+export interface LocalDemoResetInvocation {
+  readonly root: string;
+  readonly signal: AbortSignal;
+  readonly deadlineAt: string;
+}
+
+export interface CreateLocalDemoResetPortOptions {
+  readonly workspaceRoot: string;
+  readonly fixtureRoot: string;
+  readonly demoMode: true;
+  readonly reset: (invocation: LocalDemoResetInvocation) => unknown | Promise<unknown>;
+}
+
+export interface LocalDemoResetPort {
+  readonly reset: (input: {
+    readonly signal: AbortSignal;
+    readonly deadlineAt: string;
+  }) => unknown | Promise<unknown>;
+}
+
+export class ProjectionEvidenceUnavailableError extends Error {
+  constructor(
+    readonly code: 'SOURCE_EVIDENCE_UNAVAILABLE' | 'SOURCE_EVIDENCE_STALE',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ProjectionEvidenceUnavailableError';
+  }
 }
 
 const MAX_LOCAL_JSON_BYTES = MCP_MAX_LOCAL_FILE_BYTES;
@@ -111,6 +175,175 @@ const TASK_TYPES = new Set([
   'task.released',
   'task.expired',
 ]);
+const DEFAULT_GRAPH_MAX_AGE_MS = 24 * 60 * 60 * 1_000;
+const MIN_GRAPH_MAX_AGE_MS = 60 * 1_000;
+const MAX_GRAPH_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1_000;
+const SCENARIO_IDS = Object.freeze(['software-delivery'] as const);
+const NOMINAL_LOCAL_DEMO_RESET_PORTS = new WeakMap<
+  object,
+  { readonly workspaceRoot: string; readonly fixtureRoot: string }
+>();
+
+function graphMaxAge(value: number | undefined): number {
+  const resolved = value ?? DEFAULT_GRAPH_MAX_AGE_MS;
+  if (
+    !Number.isSafeInteger(resolved) ||
+    resolved < MIN_GRAPH_MAX_AGE_MS ||
+    resolved > MAX_GRAPH_MAX_AGE_MS
+  ) {
+    throw new TypeError(
+      `graphMaxAgeMs must be between ${MIN_GRAPH_MAX_AGE_MS} and ${MAX_GRAPH_MAX_AGE_MS}.`,
+    );
+  }
+  return resolved;
+}
+
+function canonicalClock(clock: (() => Date) | undefined): () => Date {
+  const source = clock ?? (() => new Date());
+  return () => {
+    const value = source();
+    if (!(value instanceof Date) || !Number.isFinite(value.getTime())) {
+      throw new TypeError('MCP runtime clock returned an invalid date.');
+    }
+    return new Date(value.getTime());
+  };
+}
+
+function canonicalCorrelationFactory(factory: (() => string) | undefined): () => string {
+  const source = factory ?? (() => `mcp:${randomUUID()}`);
+  return () => {
+    const value = source();
+    if (
+      typeof value !== 'string' ||
+      value.length < 1 ||
+      value.length > 160 ||
+      !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value)
+    ) {
+      throw new TypeError('MCP correlation factory returned an invalid identifier.');
+    }
+    return value;
+  };
+}
+
+function directoryIdentity(path: string): string {
+  const stat = statSync(path, { bigint: true });
+  if (!stat.isDirectory()) throw new TypeError('demo fixture root must be an existing directory.');
+  return `${stat.dev}:${stat.ino}`;
+}
+
+function assertNoSymbolicPathComponents(base: string, target: string): void {
+  const child = relative(base, target);
+  if (!child || child.startsWith('..') || isAbsolute(child)) {
+    throw new TypeError('demo fixture root must be a non-empty child of .openslack.local/demo.');
+  }
+  let current = base;
+  for (const segment of child.split(sep)) {
+    current = join(current, segment);
+    const stat = lstatSync(current);
+    if (stat.isSymbolicLink()) {
+      throw new TypeError('demo fixture path components must not be symlinks or reparse points.');
+    }
+  }
+}
+
+function canonicalDemoFixtureRoot(
+  workspaceRoot: string,
+  fixtureRoot: string,
+): {
+  readonly workspaceRoot: string;
+  readonly allowedRoot: string;
+  readonly canonicalRoot: string;
+  readonly identity: string;
+} {
+  if (!isAbsolute(fixtureRoot) || fixtureRoot.includes('\0')) {
+    throw new TypeError('demo fixture root must be an absolute local path.');
+  }
+  const canonicalWorkspace = realpathSync.native(resolve(workspaceRoot));
+  const lexicalAllowedRoot = resolve(canonicalWorkspace, '.openslack.local', 'demo');
+  const lexicalTarget = resolve(fixtureRoot);
+  assertNoSymbolicPathComponents(canonicalWorkspace, lexicalAllowedRoot);
+  assertNoSymbolicPathComponents(lexicalAllowedRoot, lexicalTarget);
+  const allowedRoot = realpathSync.native(lexicalAllowedRoot);
+  const canonicalRoot = realpathSync.native(lexicalTarget);
+  assertNoSymbolicPathComponents(allowedRoot, canonicalRoot);
+  return Object.freeze({
+    workspaceRoot: canonicalWorkspace,
+    allowedRoot,
+    canonicalRoot,
+    identity: directoryIdentity(canonicalRoot),
+  });
+}
+
+export function createLocalDemoResetPort(
+  options: CreateLocalDemoResetPortOptions,
+): LocalDemoResetPort {
+  if (options.demoMode !== true || typeof options.reset !== 'function') {
+    throw new TypeError('local demo reset requires explicit demoMode=true and a reset callback.');
+  }
+  const binding = canonicalDemoFixtureRoot(options.workspaceRoot, options.fixtureRoot);
+  const port: LocalDemoResetPort = Object.freeze({
+    reset: (input: { readonly signal: AbortSignal; readonly deadlineAt: string }) => {
+      if (
+        !input ||
+        typeof input !== 'object' ||
+        !(input.signal instanceof AbortSignal) ||
+        typeof input.deadlineAt !== 'string'
+      ) {
+        throw new TypeError('demo reset invocation requires a signal and canonical deadline.');
+      }
+      const deadline = new Date(input.deadlineAt);
+      if (
+        !Number.isFinite(deadline.getTime()) ||
+        deadline.toISOString() !== input.deadlineAt ||
+        input.signal.aborted
+      ) {
+        throw new TypeError('demo reset invocation is expired or invalid.');
+      }
+      const current = canonicalDemoFixtureRoot(options.workspaceRoot, options.fixtureRoot);
+      if (
+        current.allowedRoot !== binding.allowedRoot ||
+        current.canonicalRoot !== binding.canonicalRoot ||
+        current.identity !== binding.identity
+      ) {
+        throw new TypeError('demo fixture root identity changed after the port was created.');
+      }
+      return options.reset(
+        Object.freeze({
+          root: binding.canonicalRoot,
+          signal: input.signal,
+          deadlineAt: input.deadlineAt,
+        }),
+      );
+    },
+  });
+  NOMINAL_LOCAL_DEMO_RESET_PORTS.set(
+    port,
+    Object.freeze({
+      workspaceRoot: binding.workspaceRoot,
+      fixtureRoot: binding.canonicalRoot,
+    }),
+  );
+  return port;
+}
+
+function assertLocalDemoResetPort(
+  workspaceRoot: string,
+  demoMode: boolean | undefined,
+  port: LocalDemoResetPort | undefined,
+): LocalDemoResetPort | undefined {
+  if (!port) return undefined;
+  const binding = NOMINAL_LOCAL_DEMO_RESET_PORTS.get(port);
+  if (
+    demoMode !== true ||
+    !binding ||
+    binding.workspaceRoot !== realpathSync.native(workspaceRoot)
+  ) {
+    throw new TypeError(
+      'demoReset must be created by createLocalDemoResetPort with explicit demoMode=true.',
+    );
+  }
+  return port;
+}
 
 function sourceRef(event: CollaborationEvent): string {
   return `${event.source.kind}:${event.source.ref}`;
@@ -942,8 +1175,66 @@ function modulesDto(rootDir: string): readonly Record<string, unknown>[] {
 export function createDefaultOpenSlackReadModelPorts(
   workspaceRoot: string,
   businessOutcomes?: BusinessOutcomesReaderPort,
+  options: {
+    readonly clock?: () => Date;
+    readonly graphMaxAgeMs?: number;
+  } = {},
 ): OpenSlackReadModelPorts {
   const rootDir = resolve(workspaceRoot);
+  const clock = canonicalClock(options.clock);
+  const maxGraphAgeMs = graphMaxAge(options.graphMaxAgeMs);
+  const graphStore = new LocalGraphStore(join(rootDir, '.openslack.local', 'graph'));
+  const graphCursorSecret = randomBytes(32);
+  const scenarioRoot = join(rootDir, 'scenarios');
+
+  const loadScenarios = async (): Promise<readonly LoadedScenarioDefinition[]> => {
+    const catalog = createSoftwareDeliveryScenarioCatalog();
+    try {
+      return await Promise.all(
+        SCENARIO_IDS.map((scenarioId) => loadScenarioPack({ scenarioRoot, scenarioId, catalog })),
+      );
+    } catch {
+      throw new ProjectionEvidenceUnavailableError(
+        'SOURCE_EVIDENCE_UNAVAILABLE',
+        'No locked Scenario Definition is available from the bounded scenario catalog.',
+      );
+    }
+  };
+
+  const currentGraph = async (scenarioInstanceId: string) => {
+    const cursor = await graphStore.currentCursor(scenarioInstanceId);
+    if (cursor === null) {
+      throw new ProjectionEvidenceUnavailableError(
+        'SOURCE_EVIDENCE_UNAVAILABLE',
+        `No current graph snapshot is recorded for ${scenarioInstanceId}.`,
+      );
+    }
+    let snapshot;
+    try {
+      snapshot = await graphStore.readCurrentSnapshot(scenarioInstanceId);
+    } catch (error) {
+      if (error instanceof GraphStoreError && error.code === 'GRAPH_STORE_NOT_FOUND') {
+        throw new ProjectionEvidenceUnavailableError(
+          'SOURCE_EVIDENCE_UNAVAILABLE',
+          `No current graph snapshot is recorded for ${scenarioInstanceId}.`,
+        );
+      }
+      throw error;
+    }
+    const generatedAt = Date.parse(snapshot.generatedAt);
+    const now = clock().getTime();
+    if (!Number.isFinite(generatedAt) || generatedAt > now + 5 * 60 * 1_000) {
+      throw new Error('GRAPH_SNAPSHOT_TIME_INVALID');
+    }
+    if (now - generatedAt > maxGraphAgeMs) {
+      throw new ProjectionEvidenceUnavailableError(
+        'SOURCE_EVIDENCE_STALE',
+        `The current graph snapshot for ${scenarioInstanceId} is stale.`,
+      );
+    }
+    return snapshot;
+  };
+
   const ports: OpenSlackReadModelPorts = {
     executiveOverview: ({ sinceHours, limit }) => {
       const events = eventsForWindow(rootDir, sinceHours);
@@ -1066,6 +1357,45 @@ export function createDefaultOpenSlackReadModelPorts(
     pendingApprovals: ({ limit }) => pendingGovernance(eventsForWindow(rootDir, 0), rootDir, limit),
     notificationStatus: () => notificationProjection(rootDir),
     businessOutcomes: businessOutcomes ?? defaultBusinessOutcomesReader(rootDir),
+    scenarios: async () => {
+      const definitions = await loadScenarios();
+      return {
+        generatedAt: clock().toISOString(),
+        scenarios: definitions.map((definition) => ({
+          id: definition.manifest.id,
+          version: definition.manifest.version,
+          title: definition.manifest.title,
+          description: definition.manifest.description,
+          definitionHash: definition.definitionHash,
+          projectorIds: definition.projections.projectors.map((projector) => projector.id),
+          viewIds: definition.views.views.map((view) => view.id),
+          evidenceRef: `artifact:sha256:${definition.definitionHash}`,
+        })),
+        evidenceRefs: definitions.map(
+          (definition) => `artifact:sha256:${definition.definitionHash}`,
+        ),
+      };
+    },
+    graphQuery: async (input) => {
+      const snapshot = await currentGraph(input.scenarioInstanceId);
+      const result: GraphQueryResult = queryGraph(snapshot, input, {
+        cursorSecret: graphCursorSecret,
+        now: clock(),
+      });
+      return {
+        generatedAt: snapshot.generatedAt,
+        ...result,
+      };
+    },
+    graphExplain: async (input) => {
+      const snapshot = await currentGraph(input.scenarioInstanceId);
+      const result: GraphExplanation = explainGraph(snapshot, input);
+      return {
+        generatedAt: snapshot.generatedAt,
+        snapshotCursor: snapshot.cursor,
+        ...result,
+      };
+    },
   };
   return Object.freeze(ports);
 }
@@ -1074,10 +1404,21 @@ export function createOpenSlackMcpContext(
   options: CreateOpenSlackMcpContextOptions,
 ): OpenSlackMcpContext {
   const workspaceRoot = resolve(options.workspaceRoot);
-  const defaults = createDefaultOpenSlackReadModelPorts(workspaceRoot, options.businessOutcomes);
+  const clock = canonicalClock(options.clock);
+  const defaults = createDefaultOpenSlackReadModelPorts(workspaceRoot, options.businessOutcomes, {
+    clock,
+    graphMaxAgeMs: options.graphMaxAgeMs,
+  });
+  const runtime = Object.freeze({
+    now: clock,
+    nextCorrelationId: canonicalCorrelationFactory(options.correlationIdFactory),
+  });
+  const demoReset = assertLocalDemoResetPort(workspaceRoot, options.demoMode, options.demoReset);
   return Object.freeze({
     workspaceRoot,
     operator: options.operator,
     readers: Object.freeze({ ...defaults, ...options.readers }),
+    runtime,
+    ...(demoReset ? { demoReset } : {}),
   });
 }

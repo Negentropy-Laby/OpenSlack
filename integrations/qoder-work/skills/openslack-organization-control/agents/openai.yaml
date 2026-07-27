@@ -1,0 +1,4 @@
+interface:
+  display_name: 'OpenSlack Organization Control'
+  short_description: 'Read governed OpenSlack status and evidence'
+  default_prompt: 'Use $openslack-organization-control to explain OpenSlack status, ownership, blockers, next actions, and evidence.'

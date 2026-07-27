@@ -1,9 +1,17 @@
-export { createDefaultOpenSlackReadModelPorts, createOpenSlackMcpContext } from './context.js';
+export {
+  createDefaultOpenSlackReadModelPorts,
+  createLocalDemoResetPort,
+  createOpenSlackMcpContext,
+} from './context.js';
 export type {
   BusinessOutcomesReaderInput,
   BusinessOutcomesReaderPort,
+  CreateLocalDemoResetPortOptions,
   CreateOpenSlackMcpContextOptions,
+  LocalDemoResetInvocation,
+  LocalDemoResetPort,
   OpenSlackMcpContext,
+  OpenSlackMcpRuntimePort,
   OpenSlackReadModelPorts,
   OperatorApplicationContextPort,
 } from './context.js';

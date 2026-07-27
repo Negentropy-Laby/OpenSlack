@@ -1,7 +1,9 @@
 # Scenario Pack v1
 
-Status: planned contract. `openslack.scenario_pack.v1` is a declarative scenario-definition format,
-not an extension of `openslack.plugin.v1` and not an executable plugin system.
+Status: implemented declarative contract. `openslack.scenario_pack.v1` is a
+scenario-definition format, not an extension of `openslack.plugin.v1` and not an executable plugin
+system. The locked projection-only `software-delivery` Pack is the current built-in instance of
+this contract; governed scenario mutation remains deferred.
 
 ## Directory Contract
 

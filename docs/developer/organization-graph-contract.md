@@ -1,8 +1,8 @@
 # Organization Graph Contract
 
-Status: planned contract. Organization Graph is a pure, bounded, rebuildable projection. This
-document freezes its v1 data, hashing, query, explanation, and local-store behavior before
-implementation.
+Status: implemented core contract. Organization Graph is a pure, bounded, rebuildable projection.
+Its v1 data, hashing, query, explanation, local-store behavior, and software-delivery projector are
+implemented; the Contract-to-Delivery and HTML artifact milestones remain deferred.
 
 ## Authority Model
 

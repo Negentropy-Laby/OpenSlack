@@ -1,4 +1,6 @@
-export type JsonSchemaPrimitiveType = 'string' | 'integer' | 'boolean';
+import { types as utilTypes } from 'node:util';
+
+export type JsonSchemaPrimitiveType = 'string' | 'integer' | 'boolean' | 'array';
 
 export interface JsonSchemaProperty {
   readonly type: JsonSchemaPrimitiveType;
@@ -9,6 +11,15 @@ export interface JsonSchemaProperty {
   readonly minLength?: number;
   readonly maxLength?: number;
   readonly pattern?: string;
+  readonly minItems?: number;
+  readonly maxItems?: number;
+  readonly uniqueItems?: boolean;
+  readonly items?: Readonly<{
+    type: 'string';
+    minLength?: number;
+    maxLength?: number;
+    pattern?: string;
+  }>;
 }
 
 export interface StrictObjectSchema {
@@ -41,9 +52,14 @@ export const OPENSLACK_READ_TOOL_NAMES = Object.freeze([
   'openslack_list_pending_approvals',
   'openslack_get_business_outcomes',
   'openslack_get_notification_status',
+  'openslack_list_scenarios',
+  'openslack_query_graph',
+  'openslack_explain_graph',
 ] as const);
 
 export type OpenSlackReadToolName = (typeof OPENSLACK_READ_TOOL_NAMES)[number];
+export const OPENSLACK_DEMO_RESET_TOOL_NAME = 'openslack_demo_reset' as const;
+export type OpenSlackToolName = OpenSlackReadToolName | typeof OPENSLACK_DEMO_RESET_TOOL_NAME;
 
 const commonAnnotations = Object.freeze({
   readOnlyHint: true as const,
@@ -234,6 +250,84 @@ const definitions: readonly OpenSlackReadToolDefinition[] = [
     inputSchema: emptySchema(),
     annotations: { ...commonAnnotations, openWorldHint: false },
   },
+  {
+    name: 'openslack_list_scenarios',
+    title: 'OpenSlack scenarios',
+    description: 'List only locked Scenario Definitions accepted by the sealed host-owned catalog.',
+    inputSchema: emptySchema(),
+    annotations: { ...commonAnnotations, openWorldHint: false },
+  },
+  {
+    name: 'openslack_query_graph',
+    title: 'OpenSlack organization graph query',
+    description:
+      'Query one current Organization Graph snapshot with query-bound pagination and strict traversal/output limits.',
+    inputSchema: strictSchema(
+      {
+        scenarioInstanceId: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 160,
+          pattern: '^[A-Za-z0-9._:-]+$',
+        },
+        rootNodeIds: {
+          type: 'array',
+          maxItems: 200,
+          uniqueItems: true,
+          items: { type: 'string', minLength: 1, maxLength: 512 },
+        },
+        nodeTypes: {
+          type: 'array',
+          maxItems: 50,
+          uniqueItems: true,
+          items: { type: 'string', minLength: 1, maxLength: 512 },
+        },
+        edgeTypes: {
+          type: 'array',
+          maxItems: 50,
+          uniqueItems: true,
+          items: { type: 'string', minLength: 1, maxLength: 512 },
+        },
+        statuses: {
+          type: 'array',
+          maxItems: 50,
+          uniqueItems: true,
+          items: { type: 'string', minLength: 1, maxLength: 512 },
+        },
+        direction: { type: 'string', enum: ['outgoing', 'incoming', 'both'] },
+        depth: { type: 'integer', minimum: 0, maximum: 3 },
+        maxNodes: { type: 'integer', minimum: 1, maximum: 200 },
+        maxEdges: { type: 'integer', minimum: 1, maximum: 500 },
+        maxResponseBytes: { type: 'integer', minimum: 1_024, maximum: 512 * 1_024 },
+        includeEvidence: { type: 'boolean' },
+        cursor: { type: 'string', minLength: 1, maxLength: 512 },
+      },
+      ['scenarioInstanceId'],
+    ),
+    annotations: { ...commonAnnotations, openWorldHint: false },
+  },
+  {
+    name: 'openslack_explain_graph',
+    title: 'OpenSlack organization graph explanation',
+    description:
+      'Explain one graph node or edge from bounded provenance and an optional relationship path.',
+    inputSchema: strictSchema(
+      {
+        scenarioInstanceId: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 160,
+          pattern: '^[A-Za-z0-9._:-]+$',
+        },
+        targetId: { type: 'string', minLength: 1, maxLength: 512 },
+        rootNodeId: { type: 'string', minLength: 1, maxLength: 512 },
+        direction: { type: 'string', enum: ['outgoing', 'incoming', 'both'] },
+        depth: { type: 'integer', minimum: 0, maximum: 3 },
+      },
+      ['scenarioInstanceId', 'targetId'],
+    ),
+    annotations: { ...commonAnnotations, openWorldHint: false },
+  },
 ];
 
 function deepFreeze<T>(value: T): T {
@@ -247,6 +341,40 @@ function deepFreeze<T>(value: T): T {
 export const OPENSLACK_READ_TOOL_CATALOG = deepFreeze(
   definitions.map((definition) => ({ ...definition })),
 ) as readonly OpenSlackReadToolDefinition[];
+
+export const OPENSLACK_DEMO_RESET_TOOL_DEFINITION = deepFreeze({
+  name: OPENSLACK_DEMO_RESET_TOOL_NAME,
+  title: 'Reset bounded OpenSlack demo fixture',
+  description:
+    'Invoke a host-injected local demo reset port. This tool is absent from production servers.',
+  inputSchema: emptySchema(),
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: true,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
+} as const);
+
+const NOMINAL_CATALOGS = new WeakSet<object>();
+NOMINAL_CATALOGS.add(OPENSLACK_READ_TOOL_CATALOG);
+const DEMO_TOOL_CATALOG = deepFreeze([
+  ...OPENSLACK_READ_TOOL_CATALOG,
+  OPENSLACK_DEMO_RESET_TOOL_DEFINITION,
+]);
+NOMINAL_CATALOGS.add(DEMO_TOOL_CATALOG);
+
+export function getOpenSlackToolCatalog(options: {
+  readonly includeDemoReset: boolean;
+}): readonly (OpenSlackReadToolDefinition | typeof OPENSLACK_DEMO_RESET_TOOL_DEFINITION)[] {
+  return options.includeDemoReset ? DEMO_TOOL_CATALOG : OPENSLACK_READ_TOOL_CATALOG;
+}
+
+export function assertNominalOpenSlackToolCatalog(value: unknown): void {
+  if (typeof value !== 'object' || value === null || !NOMINAL_CATALOGS.has(value)) {
+    throw new TypeError('A host-owned nominal OpenSlack tool catalog is required.');
+  }
+}
 
 const toolNames = new Set<string>(OPENSLACK_READ_TOOL_NAMES);
 
@@ -262,65 +390,187 @@ export function getOpenSlackReadToolDefinition(
 
 export class ToolInputValidationError extends Error {
   readonly code = 'INVALID_TOOL_INPUT';
+  readonly findings: readonly string[];
 
-  constructor(readonly findings: readonly string[]) {
-    super(`Invalid tool input: ${findings.join('; ')}`);
+  constructor(findings: readonly string[]) {
+    const boundedFindings = Object.freeze(
+      findings
+        .slice(0, MAX_VALIDATION_FINDINGS)
+        .map((finding) => finding.slice(0, MAX_VALIDATION_FINDING_LENGTH)),
+    );
+    super(`Invalid tool input: ${boundedFindings.join('; ')}`);
     this.name = 'ToolInputValidationError';
+    this.findings = boundedFindings;
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+const MAX_INPUT_DEPTH = 6;
+const MAX_INPUT_NODES = 2_048;
+const MAX_INPUT_OBJECT_KEYS = 100;
+const MAX_INPUT_KEY_LENGTH = 160;
+const MAX_VALIDATION_FINDINGS = 20;
+const MAX_VALIDATION_FINDING_LENGTH = 256;
+
+interface CloneBudget {
+  nodes: number;
+}
+
+function cloneInertValue(
+  value: unknown,
+  path: string,
+  depth = 0,
+  budget: CloneBudget = { nodes: 0 },
+): unknown {
+  budget.nodes += 1;
+  if (budget.nodes > MAX_INPUT_NODES) {
+    throw new ToolInputValidationError(['arguments exceeds the total node limit']);
+  }
+  if (depth > MAX_INPUT_DEPTH) {
+    throw new ToolInputValidationError([`${path} exceeds the depth limit`]);
+  }
+  if (utilTypes.isProxy(value)) {
+    throw new ToolInputValidationError([`${path} must not contain a Proxy`]);
+  }
+  if (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'boolean' ||
+    (typeof value === 'number' && Number.isFinite(value))
+  ) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    if (Object.getPrototypeOf(value) !== Array.prototype || value.length > 1_000) {
+      throw new ToolInputValidationError([`${path} must be a bounded ordinary array`]);
+    }
+    const expected = new Set<string>(['length']);
+    const result: unknown[] = [];
+    for (let index = 0; index < value.length; index += 1) {
+      const key = String(index);
+      expected.add(key);
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) {
+        throw new ToolInputValidationError([`${path} contains sparse or accessor entries`]);
+      }
+      result.push(cloneInertValue(descriptor.value, `${path}[${index}]`, depth + 1, budget));
+    }
+    if (Reflect.ownKeys(value).some((key) => typeof key !== 'string' || !expected.has(key))) {
+      throw new ToolInputValidationError([`${path} contains named or symbol properties`]);
+    }
+    return Object.freeze(result);
+  }
+  if (typeof value !== 'object' || value === null) {
+    throw new ToolInputValidationError([`${path} contains a non-JSON value`]);
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new ToolInputValidationError([`${path} must be an inert plain object`]);
+  }
+  const keys = Reflect.ownKeys(value);
+  if (keys.length > MAX_INPUT_OBJECT_KEYS) {
+    throw new ToolInputValidationError([`${path} contains too many properties`]);
+  }
+  const result: Record<string, unknown> = {};
+  for (const key of keys) {
+    if (typeof key !== 'string') {
+      throw new ToolInputValidationError([`${path} contains symbol properties`]);
+    }
+    if (key.length > MAX_INPUT_KEY_LENGTH) {
+      throw new ToolInputValidationError([`${path} contains an overlong property name`]);
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) {
+      throw new ToolInputValidationError([`${path} properties must each be a data property`]);
+    }
+    result[key] = cloneInertValue(descriptor.value, `${path}.property`, depth + 1, budget);
+  }
+  return Object.freeze(result);
 }
 
 export function validateToolInput(
-  definition: OpenSlackReadToolDefinition,
+  definition: Pick<OpenSlackReadToolDefinition, 'inputSchema'>,
   value: unknown,
 ): Readonly<Record<string, unknown>> {
-  if (!isRecord(value)) {
+  if (utilTypes.isProxy(value)) {
+    throw new ToolInputValidationError(['arguments must not be a Proxy']);
+  }
+  if (value === null || typeof value !== 'object') {
     throw new ToolInputValidationError(['arguments must be an object']);
   }
+  if (Array.isArray(value)) {
+    throw new ToolInputValidationError(['arguments must be an object']);
+  }
+  const input = cloneInertValue(value, 'arguments') as Readonly<Record<string, unknown>>;
 
   const findings: string[] = [];
+  const addFinding = (finding: string): void => {
+    if (findings.length < MAX_VALIDATION_FINDINGS) findings.push(finding);
+  };
   const allowed = new Set(Object.keys(definition.inputSchema.properties));
-  for (const key of Object.keys(value)) {
-    if (!allowed.has(key)) findings.push(`${key} is not allowed`);
+  if (Object.keys(input).some((key) => !allowed.has(key))) {
+    addFinding('unexpected argument properties are not allowed');
   }
   for (const required of definition.inputSchema.required ?? []) {
-    if (!(required in value)) findings.push(`${required} is required`);
+    if (!Object.hasOwn(input, required)) addFinding(`${required} is required`);
   }
 
-  for (const [key, raw] of Object.entries(value)) {
+  for (const [key, raw] of Object.entries(input)) {
     const property = definition.inputSchema.properties[key];
     if (!property) continue;
     if (property.type === 'string') {
       if (typeof raw !== 'string') {
-        findings.push(`${key} must be a string`);
+        addFinding(`${key} must be a string`);
         continue;
       }
       if (property.minLength !== undefined && raw.length < property.minLength)
-        findings.push(`${key} is shorter than ${property.minLength}`);
+        addFinding(`${key} is shorter than ${property.minLength}`);
       if (property.maxLength !== undefined && raw.length > property.maxLength)
-        findings.push(`${key} is longer than ${property.maxLength}`);
+        addFinding(`${key} is longer than ${property.maxLength}`);
       if (property.pattern && !new RegExp(property.pattern, 'u').test(raw))
-        findings.push(`${key} has an invalid format`);
+        addFinding(`${key} has an invalid format`);
     } else if (property.type === 'integer') {
       if (typeof raw !== 'number' || !Number.isInteger(raw)) {
-        findings.push(`${key} must be an integer`);
+        addFinding(`${key} must be an integer`);
         continue;
       }
       if (property.minimum !== undefined && raw < property.minimum)
-        findings.push(`${key} must be at least ${property.minimum}`);
+        addFinding(`${key} must be at least ${property.minimum}`);
       if (property.maximum !== undefined && raw > property.maximum)
-        findings.push(`${key} must be at most ${property.maximum}`);
+        addFinding(`${key} must be at most ${property.maximum}`);
     } else if (property.type === 'boolean' && typeof raw !== 'boolean') {
-      findings.push(`${key} must be a boolean`);
+      addFinding(`${key} must be a boolean`);
+    } else if (property.type === 'array') {
+      if (!Array.isArray(raw)) {
+        addFinding(`${key} must be an array`);
+        continue;
+      }
+      if (property.minItems !== undefined && raw.length < property.minItems)
+        addFinding(`${key} must contain at least ${property.minItems} items`);
+      if (property.maxItems !== undefined && raw.length > property.maxItems)
+        addFinding(`${key} must contain at most ${property.maxItems} items`);
+      if (property.uniqueItems && new Set(raw).size !== raw.length)
+        addFinding(`${key} must contain unique items`);
+      const item = property.items;
+      if (item) {
+        raw.forEach((entry, index) => {
+          if (typeof entry !== 'string') {
+            addFinding(`${key}[${index}] must be a string`);
+            return;
+          }
+          if (item.minLength !== undefined && entry.length < item.minLength)
+            addFinding(`${key}[${index}] is shorter than ${item.minLength}`);
+          if (item.maxLength !== undefined && entry.length > item.maxLength)
+            addFinding(`${key}[${index}] is longer than ${item.maxLength}`);
+          if (item.pattern && !new RegExp(item.pattern, 'u').test(entry))
+            addFinding(`${key}[${index}] has an invalid format`);
+        });
+      }
     }
     if (property.enum && !property.enum.includes(raw as never)) {
-      findings.push(`${key} must be one of ${property.enum.join(', ')}`);
+      addFinding(`${key} must be one of ${property.enum.join(', ')}`);
     }
   }
 
   if (findings.length > 0) throw new ToolInputValidationError(Object.freeze(findings));
-  return Object.freeze({ ...value });
+  return input;
 }

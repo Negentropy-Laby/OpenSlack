@@ -23,11 +23,14 @@ function argsFor(name: OpenSlackReadToolName): Record<string, unknown> {
   if (name === 'openslack_get_work_room') return { roomId: 'pr:312' };
   if (name === 'openslack_get_workflow_progress') return { runId: 'RUN-1' };
   if (name === 'openslack_get_pr_readiness') return { prNumber: 312 };
+  if (name === 'openslack_query_graph') return { scenarioInstanceId: 'scenario-1' };
+  if (name === 'openslack_explain_graph')
+    return { scenarioInstanceId: 'scenario-1', targetId: 'node-1' };
   return {};
 }
 
 describe('official MCP SDK integration', () => {
-  it('initializes, lists exactly nine tools, and calls every tool', async () => {
+  it('initializes, lists exactly twelve tools, and calls every tool', async () => {
     const root = mkdtempSync(join(tmpdir(), 'openslack-mcp-sdk-'));
     roots.push(root);
     const projection = async () => ({ evidenceRef: 'fixture:read-only' });
@@ -41,6 +44,9 @@ describe('official MCP SDK integration', () => {
       pendingApprovals: projection,
       businessOutcomes: projection,
       notificationStatus: projection,
+      scenarios: projection,
+      graphQuery: projection,
+      graphExplain: projection,
     };
     const context = createOpenSlackMcpContext({
       workspaceRoot: root,
@@ -56,13 +62,13 @@ describe('official MCP SDK integration', () => {
     try {
       const listed = await client.listTools();
       expect(listed.tools.map((tool) => tool.name)).toEqual(OPENSLACK_READ_TOOL_NAMES);
-      expect(listed.tools).toHaveLength(9);
+      expect(listed.tools).toHaveLength(12);
 
       for (const name of OPENSLACK_READ_TOOL_NAMES) {
         const result = await client.callTool({ name, arguments: argsFor(name) });
         expect(result.isError).toBe(false);
         expect(result.structuredContent).toMatchObject({
-          schema: 'openslack.mcp_result.v1',
+          schema: 'openslack.mcp_result.v2',
           status: 'completed',
         });
         const content = result.content as Array<{ type: string; text?: string }>;
@@ -110,6 +116,9 @@ describe('official MCP SDK integration', () => {
         pendingApprovals: fallback,
         businessOutcomes: async () => projection,
         notificationStatus: fallback,
+        scenarios: fallback,
+        graphQuery: fallback,
+        graphExplain: fallback,
       },
     });
     const server = createOpenSlackMcpServer(context);

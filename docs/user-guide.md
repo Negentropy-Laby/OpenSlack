@@ -25,7 +25,7 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 | Diagnose why a PR cannot merge                   | `openslack pr doctor <n>`                                                      | Shows blocker owner, evidence, and next action.                                                      |
 | See team state across events and PRs             | `openslack collaboration dashboard`                                            | Projection-only; does not create dashboard-specific state.                                           |
 | Read evidence-backed business outcomes           | `openslack collaboration business-outcomes --format markdown`                  | Every metric retains observed, configured-estimate, or unknown basis and evidence.                   |
-| Connect Qoder Work                               | `openslack mcp serve --stdio`                                                  | Publishes exactly nine read-only business tools over local stdio.                                    |
+| Connect Qoder Work                               | `openslack mcp serve --stdio`                                                  | Publishes exactly 12 read-only v2 business/graph tools over local stdio.                             |
 | Record a handoff or decision                     | `openslack collaboration handoff ...` / `openslack collaboration decision ...` | Creates auditable collaboration objects.                                                             |
 | Keep the org profile in sync                     | `openslack collaboration workflow profile-sync check`                          | Profile Sync Robot checks and previews are read-only; `run` requires confirmation.                   |
 | Start a conversation with an agent               | `openslack conversation start --title "..."`                                   | Creates a typed thread with JSONL persistence and secret scanning.                                   |
@@ -744,9 +744,9 @@ When an LLM provider is configured (`OPENSLACK_LLM_PROVIDER`, `OPENSLACK_LLM_MOD
 
 ## Qoder Work MCP
 
-| Command                       | Purpose                                                        |
-| ----------------------------- | -------------------------------------------------------------- |
-| `openslack mcp serve --stdio` | Serve the frozen nine-tool, read-only business catalog via MCP |
+| Command                       | Purpose                                                                   |
+| ----------------------------- | ------------------------------------------------------------------------- |
+| `openslack mcp serve --stdio` | Serve the frozen 12-tool, read-only `openslack.mcp_result.v2` MCP catalog |
 
 The MCP process reserves stdout for protocol frames, opens no listening socket,
 and exposes no shell, generic command, approval, merge, policy, permission, or
@@ -754,6 +754,23 @@ other mutation tool. Qoder MCP permission is separate from OpenSlack plan
 confirmation and from an authorized human GitHub review. Connector examples for
 Windows, WSL, and Unix are documented in
 [`developer/qoder-mcp.md`](developer/qoder-mcp.md).
+
+The catalog adds `openslack_list_scenarios`, `openslack_query_graph`, and
+`openslack_explain_graph` to the nine foundation reads. Missing or stale current
+graph evidence returns explicit `SOURCE_EVIDENCE_UNAVAILABLE` or
+`SOURCE_EVIDENCE_STALE` blockers; it does not produce an empty authoritative
+graph.
+
+Only an explicitly injected local demo composition advertises a 13th
+`openslack_demo_reset` tool. The stock command above always advertises the
+production 12.
+
+Qoder Work desktop discovers the checked-in Skill from
+`~/.qoderwork/skills/openslack-organization-control/`. qodercli uses the
+separate user path `~/.qoder/skills/openslack-organization-control/` or the
+project path `.qoder/skills/openslack-organization-control/`. Installing into
+one path does not configure or qualify the other. See the developer guide for
+installation, discovery, and current-build evidence requirements.
 
 ## Chat Gateway
 
