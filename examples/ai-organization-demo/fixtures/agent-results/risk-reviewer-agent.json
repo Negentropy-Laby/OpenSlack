@@ -1,0 +1,32 @@
+{
+  "risks": [
+    {
+      "id": "R-01",
+      "category": "data-quality",
+      "severity": "high",
+      "mitigation": "第 30 天前完成缺陷编码映射并保留人工复核",
+      "owner": "质量数据负责人"
+    },
+    {
+      "id": "R-02",
+      "category": "governance",
+      "severity": "high",
+      "mitigation": "保持 bot-authored PR 与独立人类 GitHub Review",
+      "owner": "试点治理负责人"
+    },
+    {
+      "id": "R-03",
+      "category": "adoption",
+      "severity": "medium",
+      "mitigation": "每两周开展一线用户回顾并保留退出路径",
+      "owner": "生产运营负责人"
+    }
+  ],
+  "decision": "proceed_with_controls",
+  "approvalPoints": [
+    "数据负责人确认试点只读数据范围",
+    "业务负责人确认第 30 天基线",
+    "独立人类身份完成 GitHub Review"
+  ],
+  "evidenceRefs": ["fixture:risk-workshop-01", "repo:docs/security/human-approval.md"]
+}

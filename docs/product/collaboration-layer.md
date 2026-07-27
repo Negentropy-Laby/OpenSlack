@@ -118,11 +118,62 @@ Action steps must reference registered OpenSlack actions such as `pr.doctor`;
 raw command strings are rejected. Workflow runs emit correlation IDs so events,
 handoffs, decisions, and room views can reconstruct the run.
 
+### Business Outcome Projection
+
+`BusinessOutcomeProjection` is the schema-pinned, read-only business reporting boundary:
+
+```text
+openslack collaboration business-outcomes
+  --since-hours <n>
+  --scenario <id>
+  --format json|markdown|plain
+```
+
+It has the fixed schema `openslack.business_outcome.v1` and groups metrics under `work`,
+`governance`, `agents`, `economics`, `reuse`, and `notifications`. Every metric carries its own
+`basis` (`observed`, `configured_estimate`, or `unknown`) and evidence references. The top-level
+`gaps` list makes missing authoritative evidence visible.
+
+The projection is a pure aggregator. `buildBusinessOutcomeProjection` accepts an injected
+`BusinessOutcomeSourceSnapshot`; it does not read GitHub, PRMS, workflow storage, notification
+queues, or the network. The CLI composition layer injects the bounded collaboration-event query
+and versioned assumptions that are locally available. Its query receipt hashes the bounded source
+as original bytes and pins the SHA-256, byte and record bounds, and requested period/scenario.
+Decoding is fatal UTF-8, and JSONL accepts at most one terminating newline. A missing event store is
+treated as an explicitly receipted empty query and is not created by this read-only command.
+Malformed, invalid, oversized, or ambiguously terminated JSONL blocks the report with a nonzero
+exit instead of silently producing observed zeroes.
+
+Truth boundaries are strict:
+
+- work completes only with `task.done` paired to `task.created` by object ID;
+  `task.completed` is not an OpenSlack event;
+- `pr.review.commented` and OpenSlack plan confirmations are not GitHub human approvals;
+  approval counts remain unknown without injected current-head PRMS evidence;
+- review-intervention inputs explicitly exclude those current-head approvals so one human
+  approval cannot be counted twice; count inputs must be non-negative integers with evidence,
+  and overlapping approval/review evidence causes the review count to be excluded;
+- first-pass PR rate means the first recorded `pr.doctor.ready` or `pr.doctor.blocked`
+  observation for each PR, not global PR quality;
+- `notification.sent` and `notification.failed` describe direct route attempts only;
+  durable `accepted` and remote `delivered` remain unknown without injected receipt or
+  reconciliation evidence;
+- blocker time remains unknown without close or unblock evidence;
+- manual-hour and runtime-cost assumptions are always versioned
+  `configured_estimate` inputs;
+- revenue is not a projection field because OpenSlack has no authoritative revenue source.
+
+Supplying `--scenario` isolates events through explicit `metadata.scenarioId` or
+`metadata.scenario`; unscoped events do not leak into a scenario report. The fixed manufacturing
+demo assumptions are stored in
+`examples/ai-organization-demo/input/outcome-assumptions.yaml`.
+
 ## User Stories
 
 As a human team lead, I want to:
 
 - See what my agents did today (`openslack digest`)
+- See evidence-backed operational outcomes (`openslack collaboration business-outcomes`)
 - Know what is blocked and who should act next (`openslack activity`)
 - Hand off a task from one agent to another (`openslack collaboration handoff`)
 - Record a product decision so we don't re-discuss it (`openslack collaboration decision`)
@@ -163,6 +214,7 @@ Digest, handoff, decision, room.
 Commands:
 
 - `openslack digest`
+- `openslack collaboration business-outcomes --since-hours 24 --format markdown`
 - `openslack collaboration handoff create/list/accept/close`
 - `openslack collaboration decision record/list/show`
 - `openslack collaboration room show pr:42`

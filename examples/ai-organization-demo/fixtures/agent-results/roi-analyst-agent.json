@@ -1,0 +1,15 @@
+{
+  "candidate": "质量异常处置 Copilot",
+  "score": 82,
+  "baselineHours": 12,
+  "projectedHours": 4,
+  "estimatedAnnualValueCny": 3840000,
+  "assumptions": [
+    "每月 200 个质量异常案例",
+    "每个案例配置估算节省 8 小时",
+    "综合人工小时成本 200 CNY，年化按 12 个月计算",
+    "综合人工小时成本使用配置值，不代表已观察收益"
+  ],
+  "recommendation": "在第 1–30 天采集真实基线后再决定是否保留年化价值估算。",
+  "evidenceRefs": ["fixture:roi-assumptions-01", "fixture:quality-baseline-01"]
+}

@@ -1,0 +1,24 @@
+{
+  "pilotUseCase": "质量异常处置 Copilot",
+  "components": [
+    "MES/QMS 只读快照适配器",
+    "OpenSlack Workflow 与 Agent Runtime",
+    "GitHub Issues、Draft PR 与 PRMS",
+    "只读业务结果投影"
+  ],
+  "dataFlow": [
+    "MES/QMS 快照进入有来源标记的试点数据集",
+    "Agent 生成结构化发现与证据引用",
+    "OpenSlack 将正式任务和交付物投影到 GitHub",
+    "PRMS 与人类 Review 保持最终治理门禁"
+  ],
+  "agentControls": [
+    "最小权限、固定 agentType 和有界 token 预算",
+    "Agent 不具备 GitHub Approval 或 Merge 能力",
+    "所有写入通过独立分支和 bot-authored Draft PR"
+  ],
+  "evidenceRefs": [
+    "fixture:architecture-decision-01",
+    "repo:.openslack/workflows/ai-org-transformation.ts"
+  ]
+}

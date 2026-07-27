@@ -14,6 +14,7 @@ import { createTaskIssue } from '../issue-tasks.js';
 import {
   publishWorkflowProposal,
   publishWorkflowGovernance,
+  refreshWorkflowGovernance,
   findWorkflowGovernanceIssue,
   publishWorkflowReviewRequest,
   publishWorkflowRunAudit,
@@ -53,11 +54,19 @@ describe('workflow issue publishers', () => {
   }
 
   it('creates a single workflow governance issue', async () => {
-    mockCreateTaskIssue.mockResolvedValue({
-      issueNumber: 176,
-      url: 'https://github.com/test/176',
-      nodeId: 'node_176',
+    const create = vi.fn().mockResolvedValue({
+      data: {
+        number: 176,
+        html_url: 'https://github.com/test/176',
+      },
     });
+    mockGetClient.mockResolvedValue({
+      owner: 'org',
+      repo: 'repo',
+      authMode: 'github_app_installation',
+      isDryRun: false,
+      octokit: { issues: { create } },
+    } as never);
     const result = await publishWorkflowGovernance({
       schema: 'openslack.workflow_governance.v1',
       prNumber: 176,
@@ -70,11 +79,38 @@ describe('workflow issue publishers', () => {
     });
 
     expect(result.issueNumber).toBe(176);
-    expect(mockCreateTaskIssue).toHaveBeenCalledWith(
-      '[Workflow Governance] PR #176',
-      expect.stringContaining('evidence_hash: "sha256:evidence"'),
-      ['workflow:governance'],
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: '[Workflow Governance] PR #176',
+        body: expect.stringContaining('evidence_hash: "sha256:evidence"'),
+        labels: ['workflow:governance'],
+      }),
     );
+  });
+
+  it('rejects a token-authenticated governance publish at the package mutation boundary', async () => {
+    const create = vi.fn();
+    mockGetClient.mockResolvedValue({
+      owner: 'org',
+      repo: 'repo',
+      authMode: 'token',
+      isDryRun: false,
+      octokit: { issues: { create } },
+    } as never);
+
+    await expect(
+      publishWorkflowGovernance({
+        schema: 'openslack.workflow_governance.v1',
+        prNumber: 313,
+        artifactFiles: ['.openslack/workflows/demo.ts'],
+        changeKind: 'added',
+        baseSha: 'base',
+        headSha: 'head',
+        evidenceHash: 'sha256:evidence',
+        requestedBy: 'openslack-agent-operator',
+      }),
+    ).rejects.toThrow('BOT_AUTH_REQUIRED');
+    expect(create).not.toHaveBeenCalled();
   });
 
   it('finds an existing governance issue for idempotent PR preparation', async () => {
@@ -93,6 +129,8 @@ describe('workflow issue publishers', () => {
             number: 177,
             title: '[Workflow Governance] PR #176',
             html_url: 'issue-url',
+            state: 'open',
+            body: 'schema: "openslack.workflow_governance.v1"\npr: 176\nhead_sha: "old-head"',
             user: { login: 'openslack-agent-operator[bot]' },
           },
         ],
@@ -100,6 +138,7 @@ describe('workflow issue publishers', () => {
     mockGetClient.mockResolvedValue({
       owner: 'org',
       repo: 'repo',
+      authMode: 'token',
       isDryRun: false,
       octokit: {
         issues: {
@@ -111,9 +150,210 @@ describe('workflow issue publishers', () => {
     await expect(findWorkflowGovernanceIssue(176)).resolves.toEqual({
       issueNumber: 177,
       url: 'issue-url',
+      body: 'schema: "openslack.workflow_governance.v1"\npr: 176\nhead_sha: "old-head"',
       author: 'openslack-agent-operator[bot]',
     });
     expect(listForRepo).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 2 }));
+  });
+
+  it('returns no governance evidence in dry-run without requiring bot credentials', async () => {
+    mockGetClient.mockResolvedValue({
+      owner: 'org',
+      repo: 'repo',
+      authMode: 'dry_run',
+      isDryRun: true,
+      octokit: null,
+    } as never);
+
+    await expect(findWorkflowGovernanceIssue(313)).resolves.toBeUndefined();
+  });
+
+  it('refreshes one existing governance issue with current-head evidence', async () => {
+    const get = vi.fn().mockResolvedValue({
+      data: {
+        number: 176,
+        title: '[Workflow Governance] PR #313',
+        html_url: 'issue-url',
+        state: 'open',
+        body: 'schema: "openslack.workflow_governance.v1"\npr: 313\nhead_sha: "old-head"',
+        user: { login: 'openslack-agent-operator[bot]' },
+      },
+    });
+    const update = vi.fn().mockResolvedValue({
+      data: {
+        number: 176,
+        html_url: 'issue-url',
+      },
+    });
+    mockGetClient.mockResolvedValue({
+      owner: 'org',
+      repo: 'repo',
+      authMode: 'github_app_installation',
+      isDryRun: false,
+      octokit: { issues: { get, update } },
+    } as never);
+
+    await expect(
+      refreshWorkflowGovernance(176, {
+        schema: 'openslack.workflow_governance.v1',
+        prNumber: 313,
+        artifactFiles: ['.openslack/workflows/ai-org-transformation.ts'],
+        changeKind: 'added',
+        baseSha: 'base',
+        headSha: 'current-head',
+        evidenceHash: 'sha256:current',
+        requestedBy: 'openslack-agent-operator',
+      }),
+    ).resolves.toEqual({ issueNumber: 176, url: 'issue-url' });
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        issue_number: 176,
+        body: expect.stringContaining('head_sha: "current-head"'),
+      }),
+    );
+  });
+
+  it('rejects a non-canonical refresh target before updating it', async () => {
+    const get = vi.fn().mockResolvedValue({
+      data: {
+        number: 176,
+        title: '[Workflow Governance] PR #313',
+        html_url: 'issue-url',
+        state: 'open',
+        body: 'schema: "openslack.workflow_governance.v1"\npr: 999',
+        user: { login: 'openslack-agent-operator[bot]' },
+      },
+    });
+    const update = vi.fn();
+    mockGetClient.mockResolvedValue({
+      owner: 'org',
+      repo: 'repo',
+      authMode: 'github_app_installation',
+      isDryRun: false,
+      octokit: { issues: { get, update } },
+    } as never);
+
+    await expect(
+      refreshWorkflowGovernance(176, {
+        schema: 'openslack.workflow_governance.v1',
+        prNumber: 313,
+        artifactFiles: ['.openslack/workflows/demo.ts'],
+        changeKind: 'added',
+        baseSha: 'base',
+        headSha: 'head',
+        evidenceHash: 'sha256:evidence',
+        requestedBy: 'openslack-agent-operator',
+      }),
+    ).rejects.toThrow('WORKFLOW_GOVERNANCE_ISSUE_INVALID');
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('rejects a token-authenticated governance refresh at the package mutation boundary', async () => {
+    const get = vi.fn();
+    const update = vi.fn();
+    mockGetClient.mockResolvedValue({
+      owner: 'org',
+      repo: 'repo',
+      authMode: 'token',
+      isDryRun: false,
+      octokit: { issues: { get, update } },
+    } as never);
+
+    await expect(
+      refreshWorkflowGovernance(176, {
+        schema: 'openslack.workflow_governance.v1',
+        prNumber: 313,
+        artifactFiles: ['.openslack/workflows/demo.ts'],
+        changeKind: 'added',
+        baseSha: 'base',
+        headSha: 'head',
+        evidenceHash: 'sha256:evidence',
+        requestedBy: 'openslack-agent-operator',
+      }),
+    ).rejects.toThrow('BOT_AUTH_REQUIRED');
+    expect(get).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('rejects duplicate governance issues instead of selecting one to overwrite', async () => {
+    mockGetClient.mockResolvedValue({
+      owner: 'org',
+      repo: 'repo',
+      authMode: 'github_app_installation',
+      appSlug: 'openslack-agent-operator',
+      isDryRun: false,
+      octokit: {
+        issues: {
+          listForRepo: vi.fn().mockResolvedValue({
+            data: [314, 315].map((number) => ({
+              number,
+              title: '[Workflow Governance] PR #313',
+              html_url: `issue-${number}`,
+              state: 'open',
+              body: 'schema: "openslack.workflow_governance.v1"\npr: 313',
+              user: { login: 'openslack-agent-operator[bot]' },
+            })),
+          }),
+        },
+      },
+    } as never);
+
+    await expect(findWorkflowGovernanceIssue(313)).rejects.toThrow(
+      'WORKFLOW_GOVERNANCE_ISSUE_AMBIGUOUS',
+    );
+  });
+
+  it.each([
+    [
+      'non-bot author',
+      {
+        state: 'open',
+        body: 'schema: "openslack.workflow_governance.v1"\npr: 313',
+        user: { login: 'human' },
+      },
+    ],
+    [
+      'closed issue',
+      {
+        state: 'closed',
+        body: 'schema: "openslack.workflow_governance.v1"\npr: 313',
+        user: { login: 'openslack-agent-operator[bot]' },
+      },
+    ],
+    [
+      'wrong binding',
+      {
+        state: 'open',
+        body: 'schema: "openslack.workflow_governance.v1"\npr: 999',
+        user: { login: 'openslack-agent-operator[bot]' },
+      },
+    ],
+  ])('rejects a canonical-looking governance issue with %s', async (_label, override) => {
+    mockGetClient.mockResolvedValue({
+      owner: 'org',
+      repo: 'repo',
+      authMode: 'github_app_installation',
+      appSlug: 'openslack-agent-operator',
+      isDryRun: false,
+      octokit: {
+        issues: {
+          listForRepo: vi.fn().mockResolvedValue({
+            data: [
+              {
+                number: 314,
+                title: '[Workflow Governance] PR #313',
+                html_url: 'issue-url',
+                ...override,
+              },
+            ],
+          }),
+        },
+      },
+    } as never);
+
+    await expect(findWorkflowGovernanceIssue(313)).rejects.toThrow(
+      'WORKFLOW_GOVERNANCE_ISSUE_INVALID',
+    );
   });
 
   describe('publishWorkflowProposal', () => {

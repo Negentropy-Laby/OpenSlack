@@ -1,0 +1,26 @@
+schema: openslack.business_outcome_assumptions.v1
+scenario: manufacturing-90-day
+version: '2026-07-26.2'
+assumptions:
+  estimatedManualHours:
+    value: 4800
+    unit: hours
+    note: >-
+      Configured 90-day estimate: 200 quality-exception cases per month times
+      8 hours per case times 3 months. This is not observed savings or revenue.
+  annualValueCny:
+    value: 3840000
+    unit: CNY
+    basis: configured_estimate
+    formula: 200 cases/month * 8 hours/case * 200 CNY/hour * 12 months/year
+    note: >-
+      Annualized configured estimate only. It must not be presented as observed
+      savings or revenue until a governed pilot establishes the inputs.
+  simpleAnnualRoiRate:
+    value: 6.68
+    unit: ratio
+    basis: configured_estimate
+    formula: (3840000 annual value CNY - 500000 pilot budget CNY) / 500000 pilot budget CNY
+    note: >-
+      A transparent simple ROI assumption based on the fixed input budget. It
+      excludes follow-on years, avoided risk, and unobserved revenue.

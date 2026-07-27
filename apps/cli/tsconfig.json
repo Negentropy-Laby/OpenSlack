@@ -23,6 +23,7 @@
     { "path": "../../packages/integration-negentropy" },
     { "path": "../../packages/workflows" },
     { "path": "../../packages/agent-runtime" },
-    { "path": "../../packages/delivery" }
+    { "path": "../../packages/delivery" },
+    { "path": "../mcp" }
   ]
 }

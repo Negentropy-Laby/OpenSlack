@@ -1,4 +1,14 @@
-import { lstatSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { parseSecretReference } from '@openslack/credentials';
@@ -21,24 +31,63 @@ export class GitHubAppLocalConfigError extends Error {
   }
 }
 
+function sameFileIdentity(left: ReturnType<typeof fstatSync>, right: ReturnType<typeof fstatSync>) {
+  return (
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.mode === right.mode &&
+    left.size === right.size &&
+    left.ctimeMs === right.ctimeMs &&
+    left.mtimeMs === right.mtimeMs
+  );
+}
+
+function readStableConfig(path: string): string | null {
+  let fd: number | undefined;
+  try {
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    const before = fstatSync(fd);
+    if (!before.isFile() || before.size <= 0 || before.size > 65_536) {
+      throw new GitHubAppLocalConfigError();
+    }
+    const bytes = Buffer.allocUnsafe(before.size);
+    let offset = 0;
+    while (offset < bytes.byteLength) {
+      const count = readSync(fd, bytes, offset, bytes.byteLength - offset, offset);
+      if (count === 0) break;
+      offset += count;
+    }
+    const after = fstatSync(fd);
+    const pathStat = lstatSync(path);
+    if (
+      offset !== bytes.byteLength ||
+      !sameFileIdentity(before, after) ||
+      pathStat.isSymbolicLink() ||
+      !sameFileIdentity(after, pathStat)
+    ) {
+      throw new GitHubAppLocalConfigError();
+    }
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch {
+      throw new GitHubAppLocalConfigError();
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') return null;
+    if (error instanceof GitHubAppLocalConfigError) throw error;
+    throw new GitHubAppLocalConfigError();
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
 export function readGitHubAppLocalConfig(
   localStateRoot: string | undefined,
 ): GitHubAppLocalConfig | null {
   if (!localStateRoot) return null;
   const path = join(resolve(localStateRoot), 'github-app.json');
-  let content: string;
-  try {
-    const stat = lstatSync(path);
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.size <= 0 || stat.size > 65_536) {
-      throw new GitHubAppLocalConfigError();
-    }
-    content = readFileSync(path, 'utf-8');
-  } catch (error) {
-    if (error instanceof GitHubAppLocalConfigError) throw error;
-    const code = (error as NodeJS.ErrnoException | undefined)?.code;
-    if (code === 'ENOENT') return null;
-    throw new GitHubAppLocalConfigError();
-  }
+  const content = readStableConfig(path);
+  if (content === null) return null;
 
   let value: unknown;
   try {

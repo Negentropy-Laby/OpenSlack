@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/ai-org-demo/recorded-run.v1.json",
+  "title": "Sanitized AI organization recorded run",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "runId",
+    "mode",
+    "status",
+    "recordedAt",
+    "workflow",
+    "scenarioRef",
+    "artifactFiles",
+    "evidenceRefs",
+    "github"
+  ],
+  "properties": {
+    "schema": { "const": "openslack.ai_org_demo_recorded_run.v1" },
+    "runId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "mode": { "enum": ["fixture", "live"] },
+    "status": { "enum": ["completed", "blocked", "failed"] },
+    "recordedAt": { "type": "string", "format": "date-time" },
+    "workflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "const": "ai-org-transformation" },
+        "version": { "const": "1.0.0" }
+      }
+    },
+    "scenarioRef": { "const": "input/manufacturing-90-day.json" },
+    "artifactFiles": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "pattern": "^[a-z0-9-]+\\.md$"
+      }
+    },
+    "evidenceRefs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+    },
+    "github": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "parentIssue", "childIssues", "draftPullRequest", "headCommit"],
+      "properties": {
+        "repository": { "type": ["string", "null"], "minLength": 3, "maxLength": 256 },
+        "parentIssue": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "childIssues": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "type": "integer", "minimum": 1, "maximum": 2147483647 }
+        },
+        "draftPullRequest": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 2147483647
+        },
+        "headCommit": {
+          "type": ["string", "null"],
+          "pattern": "^[0-9a-f]{40}$"
+        }
+      }
+    }
+  }
+}

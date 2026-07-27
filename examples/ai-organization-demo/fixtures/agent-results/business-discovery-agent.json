@@ -1,0 +1,14 @@
+{
+  "executiveContext": "质量异常处置依赖跨 MES、QMS 与人工表格取证，班组长无法及时获得完整上下文。",
+  "processPainPoints": [
+    "异常证据分散，人工收集平均需要 6 小时",
+    "跨部门责任人和下一步缺少可追溯的单一视图",
+    "结案依据没有统一证据引用"
+  ],
+  "successMeasures": [
+    "异常处置周期从配置基线 12 小时降低到 4 小时",
+    "95% 的试点结论包含可追溯证据引用",
+    "未经授权的 GitHub 审批和直接 main 写入保持为零"
+  ],
+  "evidenceRefs": ["fixture:process-interview-01", "fixture:quality-baseline-01"]
+}

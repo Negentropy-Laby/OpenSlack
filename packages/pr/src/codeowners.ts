@@ -26,6 +26,42 @@ export class PRCodeownerEvidenceUnavailableError extends Error {
   }
 }
 
+const DEFAULT_MAX_CODEOWNERS_BYTES = 256 * 1024;
+const DEFAULT_MAX_CODEOWNERS_LINES = 10_000;
+const DEFAULT_MAX_CODEOWNERS_ENTRIES = 1_000;
+const DEFAULT_MAX_CHANGED_FILES = 1_000;
+const DEFAULT_MAX_CODEOWNER_MATCH_OPERATIONS = 100_000;
+
+function codeownersLimit(
+  options: GitHubClientOptions | undefined,
+  key: 'maxCodeownersBytes' | 'maxCodeownersLines' | 'maxCodeownersEntries',
+  fallback: number,
+  absoluteMax: number,
+): number {
+  const value = options?.evidenceLimits?.[key] ?? fallback;
+  if (!Number.isSafeInteger(value) || value < 1 || value > absoluteMax) {
+    throw new Error(`GITHUB_EVIDENCE_LIMIT_INVALID: ${key}`);
+  }
+  return value;
+}
+
+function changedFileLimit(options?: GitHubClientOptions): number {
+  const value = options?.evidenceLimits?.maxFiles ?? DEFAULT_MAX_CHANGED_FILES;
+  if (!Number.isSafeInteger(value) || value < 1 || value > 100_000) {
+    throw new Error('GITHUB_EVIDENCE_LIMIT_INVALID: maxFiles');
+  }
+  return value;
+}
+
+function codeownerMatchOperationLimit(options?: GitHubClientOptions): number {
+  const value =
+    options?.evidenceLimits?.maxCodeownerMatchOperations ?? DEFAULT_MAX_CODEOWNER_MATCH_OPERATIONS;
+  if (!Number.isSafeInteger(value) || value < 1 || value > 10_000_000) {
+    throw new Error('GITHUB_EVIDENCE_LIMIT_INVALID: maxCodeownerMatchOperations');
+  }
+  return value;
+}
+
 function matchesGlob(path: string, glob: string): boolean {
   const escaped = glob
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')
@@ -38,18 +74,63 @@ function matchesGlob(path: string, glob: string): boolean {
   return regex.test(path);
 }
 
-export function parseCODEOWNERS(content: string): CodeownersEntry[] {
-  return content
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith('#'))
-    .map((line) => {
-      const parts = line.split(/\s+/);
-      return { pattern: parts[0], owners: parts.slice(1) };
-    });
+export function parseCODEOWNERS(content: string, options?: GitHubClientOptions): CodeownersEntry[] {
+  if (
+    Buffer.byteLength(content, 'utf8') >
+    codeownersLimit(options, 'maxCodeownersBytes', DEFAULT_MAX_CODEOWNERS_BYTES, 4 * 1024 * 1024)
+  ) {
+    throw new Error('GITHUB_EVIDENCE_CODEOWNERS_BYTES_LIMIT_EXCEEDED');
+  }
+  const lines = content === '' ? [] : content.split('\n');
+  if (
+    lines.length >
+    codeownersLimit(options, 'maxCodeownersLines', DEFAULT_MAX_CODEOWNERS_LINES, 100_000)
+  ) {
+    throw new Error('GITHUB_EVIDENCE_CODEOWNERS_LINES_LIMIT_EXCEEDED');
+  }
+  const maxEntries = codeownersLimit(
+    options,
+    'maxCodeownersEntries',
+    DEFAULT_MAX_CODEOWNERS_ENTRIES,
+    100_000,
+  );
+  const entries: CodeownersEntry[] = [];
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const parts = line.split(/\s+/);
+    entries.push({ pattern: parts[0], owners: parts.slice(1) });
+    if (entries.length > maxEntries) {
+      throw new Error('GITHUB_EVIDENCE_CODEOWNERS_ENTRIES_LIMIT_EXCEEDED');
+    }
+  }
+  return entries;
 }
 
-export function resolveCodeowners(changedFiles: string[], entries: CodeownersEntry[]): string[] {
+export function resolveCodeowners(
+  changedFiles: string[],
+  entries: CodeownersEntry[],
+  options?: GitHubClientOptions,
+): string[] {
+  if (changedFiles.length > changedFileLimit(options)) {
+    throw new Error('GITHUB_EVIDENCE_FILES_LIMIT_EXCEEDED');
+  }
+  const maxEntries = codeownersLimit(
+    options,
+    'maxCodeownersEntries',
+    DEFAULT_MAX_CODEOWNERS_ENTRIES,
+    100_000,
+  );
+  if (entries.length > maxEntries) {
+    throw new Error('GITHUB_EVIDENCE_CODEOWNERS_ENTRIES_LIMIT_EXCEEDED');
+  }
+  const matchOperations = changedFiles.length * entries.length;
+  if (
+    !Number.isSafeInteger(matchOperations) ||
+    matchOperations > codeownerMatchOperationLimit(options)
+  ) {
+    throw new Error('GITHUB_EVIDENCE_CODEOWNER_MATCH_OPERATIONS_LIMIT_EXCEEDED');
+  }
   const owners = new Set<string>();
   for (const file of changedFiles) {
     for (const entry of entries) {
@@ -93,10 +174,10 @@ export async function loadPRCodeownerEvidence(
     );
   }
 
-  const entries = parseCODEOWNERS(content);
+  const entries = parseCODEOWNERS(content, options);
   return {
     ref,
     entries,
-    owners: resolveCodeowners(report.changedFiles, entries),
+    owners: resolveCodeowners(report.changedFiles, entries, options),
   };
 }

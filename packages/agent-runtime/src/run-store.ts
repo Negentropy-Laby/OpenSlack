@@ -3,12 +3,19 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  lstatSync,
+  fstatSync,
+  openSync,
+  closeSync,
+  readSync,
   renameSync,
   statSync,
   unlinkSync,
   writeFileSync,
+  constants,
 } from 'node:fs';
 import { join } from 'node:path';
+import { TextDecoder } from 'node:util';
 import { scanValue } from '@openslack/collaboration';
 import type {
   AgentRunFailureCode,
@@ -20,6 +27,7 @@ import type {
 const RUNS_DIR_NAME = 'agents/runs';
 const ORPHAN_TEMP_MAX_AGE_MS = 60 * 60 * 1000;
 const RUN_TEMP_FILE_RE = /^(?:run|metadata)\.json\..+\.tmp$/;
+const DEFAULT_RUN_SNAPSHOT_MAX_BYTES = 512 * 1024;
 
 export const RUN_ID_RE = /^RUN-[A-Z0-9-]+$/;
 
@@ -71,6 +79,81 @@ export interface AgentRunStore {
 export interface SweepOrphanRunTempOptions {
   olderThanMs?: number;
   nowMs?: number;
+}
+
+export interface ReadRunStateSnapshotOptions {
+  maxBytes?: number;
+}
+
+/**
+ * Read one persisted run without constructing a store or running maintenance.
+ *
+ * This is the read-model entry point for projections. It deliberately rejects
+ * symbolic links and oversized files before parsing, and never creates,
+ * rewrites, sweeps, or removes workspace state.
+ */
+export function readRunStateSnapshot(
+  runId: string,
+  rootDir?: string,
+  options: ReadRunStateSnapshotOptions = {},
+): AgentRunState | null {
+  validateRunId(runId);
+  const maxBytes = options.maxBytes ?? DEFAULT_RUN_SNAPSHOT_MAX_BYTES;
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 2 * 1024 * 1024) {
+    throw new TypeError('maxBytes must be an integer between 1 and 2097152.');
+  }
+  const path = getRunMetaPath(runId, rootDir);
+  if (!existsSync(path)) return null;
+  const entry = lstatSync(path, { bigint: true });
+  if (!entry.isFile() || entry.isSymbolicLink()) {
+    throw new Error(`Run metadata for ${runId} is not a regular file.`);
+  }
+
+  const descriptor = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  try {
+    const before = fstatSync(descriptor, { bigint: true });
+    if (
+      before.dev !== entry.dev ||
+      before.ino !== entry.ino ||
+      before.mode !== entry.mode ||
+      before.size > BigInt(maxBytes)
+    ) {
+      throw new Error(`Run metadata for ${runId} exceeds the read bound.`);
+    }
+    const buffer = Buffer.alloc(maxBytes + 1);
+    let bytesRead = 0;
+    while (bytesRead < buffer.length) {
+      const count = readSync(descriptor, buffer, bytesRead, buffer.length - bytesRead, null);
+      if (count === 0) break;
+      bytesRead += count;
+    }
+    if (bytesRead > maxBytes) throw new Error(`Run metadata for ${runId} exceeds the read bound.`);
+    const after = fstatSync(descriptor, { bigint: true });
+    if (
+      before.size !== after.size ||
+      before.mtimeNs !== after.mtimeNs ||
+      before.ctimeNs !== after.ctimeNs ||
+      before.dev !== after.dev ||
+      before.ino !== after.ino ||
+      before.mode !== after.mode ||
+      BigInt(bytesRead) !== after.size
+    ) {
+      throw new Error(`Run metadata for ${runId} changed during read.`);
+    }
+    let parsed: AgentRunState;
+    try {
+      const raw = new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, bytesRead));
+      parsed = JSON.parse(raw) as AgentRunState;
+    } catch {
+      throw new Error(`Corrupted run metadata for ${runId}: failed to parse run.json`);
+    }
+    if (parsed.runId !== runId) {
+      throw new Error(`Corrupted run metadata for ${runId}: run ID does not match the file path`);
+    }
+    return parsed;
+  } finally {
+    closeSync(descriptor);
+  }
 }
 
 /** Remove stale atomic-write temp files without touching live or unrelated files. */

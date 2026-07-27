@@ -1,12 +1,26 @@
-import { readdir, readFile } from 'node:fs/promises';
-import { existsSync, readFileSync } from 'node:fs';
+import {
+  closeSync,
+  constants,
+  existsSync,
+  fstatSync,
+  lstatSync,
+  openSync,
+  opendirSync,
+  readSync,
+} from 'node:fs';
+import type { BigIntStats } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { createRunStore, type AgentRunEvent, type AgentRunState } from '@openslack/agent-runtime';
+import { TextDecoder } from 'node:util';
+import {
+  readRunStateSnapshot,
+  type AgentRunEvent,
+  type AgentRunState,
+} from '@openslack/agent-runtime';
 import { redactString } from './redact.js';
 import {
   estimateWorkflowAgentCost,
   getBudgetWarningThreshold,
-  loadWorkflowCostConfig,
+  parseWorkflowCostConfig,
   type WorkflowCostConfig,
 } from './cost.js';
 import type { BudgetWarning } from './run-store.js';
@@ -35,9 +49,9 @@ interface RunMetaFile {
   runId: string;
   workflowName: string;
   mode: ExecutionMode;
-  manifestHash?: string;
-  args?: Record<string, unknown>;
-  startedAt?: string;
+  manifestHash: string;
+  args: Record<string, unknown>;
+  startedAt: string;
 }
 
 interface RunStatusFileLike {
@@ -52,11 +66,286 @@ interface RunStatusFileLike {
 
 interface ReadResult<T> {
   value: T | null;
+  present: boolean;
   warning?: string;
 }
 
 export interface GetWorkflowRunProgressOptions {
   rootDir?: string;
+  loadWorkflowManifest?: boolean;
+  loadCostConfig?: boolean;
+  strictRead?: boolean;
+}
+
+const MAX_JSON_BYTES = 2 * 1024 * 1024;
+const MAX_TRANSCRIPT_BYTES = 2 * 1024 * 1024;
+const MAX_JSONL_LINES = 10_000;
+const MAX_AGENT_RESULT_FILES = 256;
+const MAX_PROGRESS_ITEMS = 1_000;
+const EXECUTION_MODES = new Set<ExecutionMode>(['validate', 'preview', 'dry-run', 'execute']);
+const RUN_STATUS_STATES = new Set<RunStatusState>([
+  'created',
+  'previewed',
+  'confirmed',
+  'running',
+  'paused',
+  'paused_waiting_approval',
+  'resuming',
+  'completed',
+  'failed',
+  'cancelled',
+]);
+const PHASE_STATUS_STATES = new Set<PhaseCheckpoint['status']>(['completed', 'failed', 'skipped']);
+const APPROVAL_STATUS_STATES = new Set<PendingApproval['status']>([
+  'pending',
+  'approved',
+  'rejected',
+]);
+const AGENT_RUN_STATUS_STATES = new Set<AgentRunState['status']>([
+  'pending',
+  'running',
+  'paused',
+  'completed',
+  'failed',
+  'cancelled',
+]);
+const AGENT_EVENT_TYPES = new Set<AgentRunEvent['type']>([
+  'start',
+  'progress',
+  'tool_call',
+  'tool_result',
+  'complete',
+  'fail',
+  'cancel',
+]);
+const AGENT_FAILURE_CODES = new Set([
+  'RUNTIME_NOT_CONFIGURED',
+  'RUNTIME_MISCONFIGURED',
+  'PROVIDER_UNAVAILABLE',
+  'PROVIDER_TIMEOUT',
+  'PROVIDER_INVALID_RESPONSE',
+  'TOOL_ARGUMENT_INVALID',
+  'TOOL_DENIED',
+  'BUDGET_EXCEEDED',
+  'LIMIT_EXCEEDED',
+  'EXECUTION_FAILED',
+]);
+const AGENT_BRIDGE_MODES = new Set(['local', 'external-command', 'process', 'fake']);
+const AGENT_ISOLATION_MODES = new Set(['none', 'worktree']);
+
+function invalidLocalEvidence(): never {
+  throw new Error('WORKFLOW_PROGRESS_LOCAL_EVIDENCE_INVALID');
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= 10_000;
+}
+
+function isOptionalString(value: unknown): boolean {
+  return value === undefined || isNonEmptyString(value);
+}
+
+function isTimestamp(value: unknown): value is string {
+  return isNonEmptyString(value) && Number.isFinite(Date.parse(value));
+}
+
+function isNonNegativeNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+function isOptionalNonNegativeNumber(value: unknown): boolean {
+  return value === undefined || isNonNegativeNumber(value);
+}
+
+function validateRunMeta(value: unknown, runId: string): value is RunMetaFile {
+  if (!isRecord(value)) return false;
+  return (
+    value.runId === runId &&
+    isNonEmptyString(value.workflowName) &&
+    EXECUTION_MODES.has(value.mode as ExecutionMode) &&
+    isNonEmptyString(value.manifestHash) &&
+    isRecord(value.args) &&
+    isTimestamp(value.startedAt)
+  );
+}
+
+function validatePhaseCheckpoint(value: unknown): value is PhaseCheckpoint {
+  if (!isRecord(value)) return false;
+  return (
+    isNonEmptyString(value.phase) &&
+    isTimestamp(value.timestamp) &&
+    PHASE_STATUS_STATES.has(value.status as PhaseCheckpoint['status']) &&
+    isOptionalString(value.cacheKey)
+  );
+}
+
+function validateBudgetWarning(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return (
+    isTimestamp(value.timestamp) &&
+    (value.kind === 'threshold' || value.kind === 'exceeded') &&
+    isNonEmptyString(value.message) &&
+    isNonNegativeNumber(value.tokensUsed) &&
+    isNonNegativeNumber(value.tokenBudget) &&
+    isNonNegativeNumber(value.percent) &&
+    isOptionalNonNegativeNumber(value.costUsd)
+  );
+}
+
+function validateRunStatus(value: unknown, runId: string): value is RunStatusFileLike {
+  if (!isRecord(value)) return false;
+  return (
+    value.runId === runId &&
+    RUN_STATUS_STATES.has(value.status as RunStatusState) &&
+    isTimestamp(value.updatedAt) &&
+    isOptionalString(value.currentPhase) &&
+    Array.isArray(value.phases) &&
+    value.phases.length <= MAX_PROGRESS_ITEMS &&
+    value.phases.every(validatePhaseCheckpoint) &&
+    (value.controlEvents === undefined ||
+      (Array.isArray(value.controlEvents) &&
+        value.controlEvents.length <= MAX_PROGRESS_ITEMS &&
+        value.controlEvents.every(isRecord))) &&
+    (value.budgetWarnings === undefined ||
+      (Array.isArray(value.budgetWarnings) &&
+        value.budgetWarnings.length <= MAX_PROGRESS_ITEMS &&
+        value.budgetWarnings.every(validateBudgetWarning)))
+  );
+}
+
+function validatePendingApproval(value: unknown): value is PendingApproval {
+  if (!isRecord(value)) return false;
+  return (
+    isNonEmptyString(value.id) &&
+    isNonEmptyString(value.operation) &&
+    isNonEmptyString(value.detail) &&
+    isTimestamp(value.timestamp) &&
+    APPROVAL_STATUS_STATES.has(value.status as PendingApproval['status'])
+  );
+}
+
+function validateLogEntry(value: unknown, runId: string): value is ProgressLogEntry {
+  if (!isRecord(value)) return false;
+  return (
+    value.runId === runId &&
+    isTimestamp(value.ts) &&
+    isOptionalString(value.phase) &&
+    isNonEmptyString(value.message)
+  );
+}
+
+function validateWorkflowEvidence(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return (
+    isNonEmptyString(value.label) &&
+    isNonEmptyString(value.phase) &&
+    isOptionalString(value.agentRunId) &&
+    isOptionalString(value.model) &&
+    (value.isolation === undefined || AGENT_ISOLATION_MODES.has(String(value.isolation))) &&
+    isOptionalString(value.agentType) &&
+    (value.bridgeMode === undefined || AGENT_BRIDGE_MODES.has(String(value.bridgeMode))) &&
+    isNonEmptyString(value.promptSummary) &&
+    isNonEmptyString(value.promptHash) &&
+    isTimestamp(value.startedAt) &&
+    (value.completedAt === undefined || isTimestamp(value.completedAt)) &&
+    isOptionalNonNegativeNumber(value.tokenUsage) &&
+    (value.replayAvailable === undefined || typeof value.replayAvailable === 'boolean') &&
+    isOptionalString(value.replayUnavailableReason)
+  );
+}
+
+function validateAgentResult(value: unknown): value is AgentResult {
+  if (!isRecord(value) || !Object.prototype.hasOwnProperty.call(value, 'data')) return false;
+  return (
+    isOptionalNonNegativeNumber(value.tokenUsage) &&
+    isOptionalString(value.schemaVersion) &&
+    isOptionalString(value.runId) &&
+    (value.workflowEvidence === undefined || validateWorkflowEvidence(value.workflowEvidence))
+  );
+}
+
+function validateAgentRunState(value: unknown, runId: string): value is AgentRunState {
+  if (!isRecord(value)) return false;
+  const handoff = value.worktreeHandoff;
+  return (
+    value.runId === runId &&
+    AGENT_RUN_STATUS_STATES.has(value.status as AgentRunState['status']) &&
+    isNonEmptyString(value.agentId) &&
+    isOptionalString(value.model) &&
+    isTimestamp(value.startedAt) &&
+    (value.completedAt === undefined || isTimestamp(value.completedAt)) &&
+    isNonNegativeNumber(value.tokensUsed) &&
+    (value.tokensRemaining === null ||
+      (typeof value.tokensRemaining === 'number' &&
+        Number.isFinite(value.tokensRemaining) &&
+        Number.isInteger(value.tokensRemaining))) &&
+    isNonNegativeNumber(value.toolCalls) &&
+    isOptionalString(value.lastTool) &&
+    (value.failureCode === undefined || AGENT_FAILURE_CODES.has(String(value.failureCode))) &&
+    isOptionalString(value.errorSummary) &&
+    isOptionalString(value.error) &&
+    isOptionalString(value.worktreePath) &&
+    isNonEmptyString(value.transcriptPath) &&
+    (handoff === undefined ||
+      (isRecord(handoff) &&
+        isNonEmptyString(handoff.worktreePath) &&
+        isNonEmptyString(handoff.branchName) &&
+        isNonEmptyString(handoff.reason) &&
+        isTimestamp(handoff.preservedAt)))
+  );
+}
+
+function validateAgentRunEvent(value: unknown): value is AgentRunEvent {
+  if (!isRecord(value)) return false;
+  return (
+    isTimestamp(value.timestamp) &&
+    AGENT_EVENT_TYPES.has(value.type as AgentRunEvent['type']) &&
+    isRecord(value.data)
+  );
+}
+
+function readBoundedText(path: string, maxBytes: number): string {
+  const entry = lstatSync(path, { bigint: true });
+  if (!entry.isFile() || entry.isSymbolicLink()) throw new Error('not a regular file');
+  const descriptor = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  try {
+    const before = fstatSync(descriptor, { bigint: true });
+    if (
+      before.dev !== entry.dev ||
+      before.ino !== entry.ino ||
+      before.mode !== entry.mode ||
+      before.size > BigInt(maxBytes)
+    ) {
+      throw new Error('file identity changed before read');
+    }
+    const buffer = Buffer.alloc(maxBytes + 1);
+    let bytesRead = 0;
+    while (bytesRead < buffer.length) {
+      const count = readSync(descriptor, buffer, bytesRead, buffer.length - bytesRead, null);
+      if (count === 0) break;
+      bytesRead += count;
+    }
+    if (bytesRead > maxBytes) throw new Error('file exceeds read bound');
+    const after = fstatSync(descriptor, { bigint: true });
+    if (
+      before.size !== after.size ||
+      before.mtimeNs !== after.mtimeNs ||
+      before.ctimeNs !== after.ctimeNs ||
+      before.dev !== after.dev ||
+      before.ino !== after.ino ||
+      before.mode !== after.mode ||
+      BigInt(bytesRead) !== after.size
+    ) {
+      throw new Error('file changed during read');
+    }
+    return new TextDecoder('utf-8', { fatal: true }).decode(buffer.subarray(0, bytesRead));
+  } finally {
+    closeSync(descriptor);
+  }
 }
 
 function workflowsRunDir(rootDir: string, runId: string): string {
@@ -65,14 +354,19 @@ function workflowsRunDir(rootDir: string, runId: string): string {
 
 async function readJson<T>(path: string, label: string): Promise<ReadResult<T>> {
   try {
-    return { value: JSON.parse(await readFile(path, 'utf-8')) as T };
+    return {
+      value: JSON.parse(readBoundedText(path, MAX_JSON_BYTES)) as T | null,
+      present: true,
+    };
   } catch (err) {
     const code =
       err && typeof err === 'object' && 'code' in err
         ? (err as NodeJS.ErrnoException).code
         : undefined;
-    if (code === 'ENOENT') return { value: null, warning: `${label} not recorded` };
-    return { value: null, warning: `${label} could not be parsed` };
+    if (code === 'ENOENT') {
+      return { value: null, present: false, warning: `${label} not recorded` };
+    }
+    return { value: null, present: true, warning: `${label} could not be parsed` };
   }
 }
 
@@ -81,9 +375,13 @@ async function readJsonl<T>(
   label: string,
 ): Promise<{ values: T[]; warning?: string }> {
   try {
-    const raw = await readFile(path, 'utf-8');
+    const raw = readBoundedText(path, MAX_JSON_BYTES);
     const values: T[] = [];
-    for (const line of raw.split('\n')) {
+    const lines = raw.split('\n');
+    if (lines.length > MAX_JSONL_LINES) {
+      return { values: [], warning: `${label} exceeds the line bound` };
+    }
+    for (const line of lines) {
       if (!line.trim()) continue;
       try {
         values.push(JSON.parse(line) as T);
@@ -179,31 +477,72 @@ function toolEvidenceFromTranscript(events: AgentRunEvent[]): WorkflowToolEviden
     });
 }
 
-function readAgentTranscript(state: AgentRunState | null): AgentRunEvent[] {
-  if (!state?.transcriptPath || !existsSync(state.transcriptPath)) return [];
-  const raw = readFileSync(state.transcriptPath, 'utf-8');
+function readAgentTranscript(
+  state: AgentRunState | null,
+  agentRunId: string,
+  rootDir: string,
+  warnings: string[],
+  strictRead: boolean,
+): AgentRunEvent[] {
+  if (!state) return [];
+  const transcriptPath = resolve(
+    rootDir,
+    '.openslack.local',
+    'agents',
+    'runs',
+    agentRunId,
+    'transcript.jsonl',
+  );
+  if (!existsSync(transcriptPath)) return [];
+  let raw: string;
+  try {
+    raw = readBoundedText(transcriptPath, MAX_TRANSCRIPT_BYTES);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      warnings.push(`agent transcript ${agentRunId} could not be read safely`);
+    }
+    return [];
+  }
   const events: AgentRunEvent[] = [];
-  for (const line of raw.split('\n')) {
+  const lines = raw.split('\n');
+  if (lines.length > MAX_JSONL_LINES) {
+    warnings.push(`agent transcript ${agentRunId} exceeds the line bound`);
+    return [];
+  }
+  for (const line of lines) {
     if (!line.trim()) continue;
     try {
-      events.push(JSON.parse(line) as AgentRunEvent);
+      const event = JSON.parse(line) as AgentRunEvent;
+      if (strictRead && !validateAgentRunEvent(event)) invalidLocalEvidence();
+      events.push(event);
     } catch {
-      break;
+      if (strictRead) invalidLocalEvidence();
+      warnings.push(`agent transcript ${agentRunId} contains a malformed JSONL line`);
+      return [];
     }
   }
   return events;
 }
 
-function enrichAgent(agent: WorkflowAgentProgress, rootDir: string): WorkflowAgentProgress {
+function enrichAgent(
+  agent: WorkflowAgentProgress,
+  rootDir: string,
+  warnings: string[],
+  strictRead: boolean,
+): WorkflowAgentProgress {
   if (!agent.agentRunId) return agent;
   let state: AgentRunState | null = null;
   try {
-    state = createRunStore(rootDir).getRun(agent.agentRunId);
-  } catch {
+    state = readRunStateSnapshot(agent.agentRunId, rootDir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      warnings.push(`agent run state ${agent.agentRunId} could not be read safely`);
+    }
     state = null;
   }
   if (!state) return agent;
-  const transcript = readAgentTranscript(state);
+  if (strictRead && !validateAgentRunState(state, agent.agentRunId)) invalidLocalEvidence();
+  const transcript = readAgentTranscript(state, agent.agentRunId, rootDir, warnings, strictRead);
   const complete = [...transcript].reverse().find((event) => event.type === 'complete');
   const fail = [...transcript].reverse().find((event) => event.type === 'fail');
   const cancel = [...transcript].reverse().find((event) => event.type === 'cancel');
@@ -235,23 +574,61 @@ async function readAgentResults(
   runDir: string,
   rootDir: string,
   warnings: string[],
+  strictRead: boolean,
 ): Promise<WorkflowAgentProgress[]> {
   const agentDir = join(runDir, 'agents');
-  let files: string[] = [];
+  let before: BigIntStats;
   try {
-    files = await readdir(agentDir);
-  } catch {
+    before = lstatSync(agentDir, { bigint: true });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      warnings.push('agent result directory could not be read safely');
+    }
     return [];
   }
+  if (!before.isDirectory() || before.isSymbolicLink()) {
+    warnings.push('agent result directory is not a regular directory');
+    return [];
+  }
+  const handle = opendirSync(agentDir);
   const agents: WorkflowAgentProgress[] = [];
-  for (const file of files.filter((entry) => entry.endsWith('.json'))) {
-    const read = await readJson<AgentResult | Record<string, unknown>>(
-      join(agentDir, file),
-      `agent result ${file}`,
-    );
-    if (read.warning) warnings.push(read.warning);
-    if (!read.value) continue;
-    agents.push(enrichAgent(readEvidence(read.value, file), rootDir));
+  let seen = 0;
+  try {
+    for (;;) {
+      const entry = handle.readSync();
+      if (!entry) break;
+      seen += 1;
+      if (seen > MAX_AGENT_RESULT_FILES) {
+        warnings.push(`agent result directory exceeds the ${MAX_AGENT_RESULT_FILES} item bound`);
+        return [];
+      }
+      if (!entry.name.endsWith('.json')) continue;
+      if (!entry.isFile() || entry.isSymbolicLink()) {
+        warnings.push(`agent result ${entry.name} is not a regular file`);
+        return [];
+      }
+      const read = await readJson<AgentResult | Record<string, unknown>>(
+        join(agentDir, entry.name),
+        `agent result ${entry.name}`,
+      );
+      if (read.warning) warnings.push(read.warning);
+      if (strictRead && read.present && !validateAgentResult(read.value)) invalidLocalEvidence();
+      if (!read.value) continue;
+      agents.push(enrichAgent(readEvidence(read.value, entry.name), rootDir, warnings, strictRead));
+    }
+  } finally {
+    handle.closeSync();
+  }
+  const after = lstatSync(agentDir, { bigint: true });
+  if (
+    before.dev !== after.dev ||
+    before.ino !== after.ino ||
+    before.mode !== after.mode ||
+    before.mtimeNs !== after.mtimeNs ||
+    before.ctimeNs !== after.ctimeNs
+  ) {
+    warnings.push('agent result directory changed during read');
+    return [];
   }
   return agents;
 }
@@ -381,6 +758,7 @@ async function loadWorkflowMeta(
     const { findWorkflow, loadWorkflow } = await import('./loader.js');
     const found = await findWorkflow(workflowName, rootDir);
     if (!found) return null;
+    if (!found.path.startsWith('builtin:')) readBoundedText(found.path, MAX_JSON_BYTES);
     return (await loadWorkflow(found.path)).meta;
   } catch {
     return null;
@@ -398,6 +776,13 @@ export async function getWorkflowRunProgress(
   const statusRead = await readJson<RunStatusFileLike>(join(runDir, 'status.json'), 'run status');
   if (metaRead.warning) warnings.push(metaRead.warning);
   if (statusRead.warning) warnings.push(statusRead.warning);
+  if (!metaRead.present && !statusRead.present) return null;
+  if (
+    options.strictRead &&
+    (!validateRunMeta(metaRead.value, runId) || !validateRunStatus(statusRead.value, runId))
+  ) {
+    invalidLocalEvidence();
+  }
   if (!metaRead.value && !statusRead.value) return null;
 
   const pendingRead = await readJson<PendingApproval[]>(
@@ -406,24 +791,70 @@ export async function getWorkflowRunProgress(
   );
   if (pendingRead.warning && pendingRead.warning !== 'pending approvals not recorded')
     warnings.push(pendingRead.warning);
+  if (
+    pendingRead.value &&
+    (!Array.isArray(pendingRead.value) || pendingRead.value.length > MAX_PROGRESS_ITEMS)
+  ) {
+    pendingRead.value = null;
+    warnings.push('pending approvals exceed the safe item bound');
+  }
+  if (
+    options.strictRead &&
+    pendingRead.present &&
+    (!Array.isArray(pendingRead.value) || !pendingRead.value.every(validatePendingApproval))
+  ) {
+    invalidLocalEvidence();
+  }
   const logRead = await readJsonl<ProgressLogEntry>(join(runDir, 'log.jsonl'), 'workflow log');
   if (logRead.warning && logRead.warning !== 'workflow log not recorded')
     warnings.push(logRead.warning);
+  if (options.strictRead && !logRead.values.every((entry) => validateLogEntry(entry, runId))) {
+    invalidLocalEvidence();
+  }
   const outputRead = await readJson<unknown>(join(runDir, 'output.json'), 'workflow output');
   if (outputRead.warning && outputRead.warning !== 'workflow output not recorded')
     warnings.push(outputRead.warning);
+  if (
+    statusRead.value?.phases &&
+    (!Array.isArray(statusRead.value.phases) || statusRead.value.phases.length > MAX_PROGRESS_ITEMS)
+  ) {
+    statusRead.value.phases = [];
+    warnings.push('workflow phases exceed the safe item bound');
+  }
+  if (
+    statusRead.value?.budgetWarnings &&
+    (!Array.isArray(statusRead.value.budgetWarnings) ||
+      statusRead.value.budgetWarnings.length > MAX_PROGRESS_ITEMS)
+  ) {
+    statusRead.value.budgetWarnings = [];
+    warnings.push('workflow budget warnings exceed the safe item bound');
+  }
 
   const workflowName = metaRead.value?.workflowName ?? 'not recorded';
-  const workflowMeta = await loadWorkflowMeta(rootDir, metaRead.value?.workflowName);
-  const agents = await readAgentResults(runDir, rootDir, warnings);
+  const workflowMeta =
+    options.loadWorkflowManifest === false
+      ? null
+      : await loadWorkflowMeta(rootDir, metaRead.value?.workflowName);
+  const agents = await readAgentResults(runDir, rootDir, warnings, options.strictRead === true);
   const phases = groupPhases(statusRead.value, workflowMeta, agents);
-  const costConfig = await loadWorkflowCostConfig(rootDir).catch((err) => {
-    warnings.push(
-      `workflow cost config could not be loaded: ${err instanceof Error ? err.message : String(err)}`,
-    );
-    return null;
-  });
+  const costPath = resolve(rootDir, '.openslack', 'workflows', 'cost.yaml');
+  const costConfig =
+    options.loadCostConfig === false
+      ? null
+      : await (async () => {
+          if (!existsSync(costPath)) return null;
+          const raw = readBoundedText(costPath, MAX_JSON_BYTES);
+          return parseWorkflowCostConfig(raw);
+        })().catch((err) => {
+          warnings.push(
+            `workflow cost config could not be loaded: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          return null;
+        });
   const budget = buildBudget(workflowMeta, agents, statusRead.value, costConfig);
+  if (options.strictRead && warnings.length > 0) {
+    throw new Error('WORKFLOW_PROGRESS_LOCAL_EVIDENCE_INVALID');
+  }
 
   const startedAt = metaRead.value?.startedAt;
   const updatedAt = statusRead.value?.updatedAt;

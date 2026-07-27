@@ -10,6 +10,7 @@ import {
   loadGitHubWatchConfig,
   parseGitHubRepoSpec,
   publishWorkflowGovernance,
+  refreshWorkflowGovernance,
   findWorkflowGovernanceIssue,
   updatePRBody,
 } from '@openslack/github';
@@ -291,23 +292,42 @@ export function prCommands(): Command {
         );
         return;
       }
-      const existing = report.body?.match(/workflow\s+governance\s+#(\d+)/i);
-      if (existing) {
-        console.log(`Workflow governance #${existing[1]} is already linked.`);
+      const governance = {
+        schema: 'openslack.workflow_governance.v1' as const,
+        prNumber,
+        artifactFiles: evidence.artifactFiles,
+        changeKind: evidence.changeKind,
+        baseSha: evidence.baseSha,
+        headSha: evidence.headSha,
+        evidenceHash: evidence.evidenceHash,
+        requestedBy: 'openslack-agent-operator',
+      };
+      const linkedMatches = [...(report.body ?? '').matchAll(/workflow\s+governance\s+#(\d+)/gi)];
+      if (linkedMatches.length > 1) {
+        console.error(
+          `WORKFLOW_GOVERNANCE_BINDING_AMBIGUOUS: PR #${prNumber} contains multiple governance links.`,
+        );
+        process.exitCode = 1;
         return;
       }
-      const created =
-        (await findWorkflowGovernanceIssue(prNumber)) ??
-        (await publishWorkflowGovernance({
-          schema: 'openslack.workflow_governance.v1',
-          prNumber,
-          artifactFiles: evidence.artifactFiles,
-          changeKind: evidence.changeKind,
-          baseSha: evidence.baseSha,
-          headSha: evidence.headSha,
-          evidenceHash: evidence.evidenceHash,
-          requestedBy: 'openslack-agent-operator',
-        }));
+      const linked = linkedMatches[0];
+      const found = await findWorkflowGovernanceIssue(prNumber);
+      if (linked) {
+        const linkedIssueNumber = Number.parseInt(linked[1], 10);
+        if (!found || found.issueNumber !== linkedIssueNumber) {
+          console.error(
+            `WORKFLOW_GOVERNANCE_BINDING_MISMATCH: PR #${prNumber} links #${linkedIssueNumber}, but the canonical governance issue could not be matched.`,
+          );
+          process.exitCode = 1;
+          return;
+        }
+        await refreshWorkflowGovernance(linkedIssueNumber, governance);
+        console.log(`Workflow governance #${linkedIssueNumber} refreshed for the current PR head.`);
+        return;
+      }
+      const created = found
+        ? await refreshWorkflowGovernance(found.issueNumber, governance)
+        : await publishWorkflowGovernance(governance);
       const body = `${report.body?.trimEnd() ?? ''}\n\n## Workflow governance\n\n- Workflow governance #${created.issueNumber}\n`;
       await updatePRBody(prNumber, body);
       console.log(`Workflow governance issue created: #${created.issueNumber}`);

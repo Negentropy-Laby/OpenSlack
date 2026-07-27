@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/ai-org-demo/projection.v1.json",
+  "title": "AI organization recorded projection",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "scenarioId",
+    "status",
+    "evidenceLevel",
+    "phases",
+    "roles",
+    "artifacts",
+    "governance",
+    "outcomes",
+    "evidenceRefs"
+  ],
+  "properties": {
+    "schema": { "const": "openslack.ai_org_demo_projection.v1" },
+    "scenarioId": { "const": "manufacturing-90-day" },
+    "status": { "const": "completed" },
+    "evidenceLevel": { "enum": ["LOCAL_PASS", "GITHUB_REHEARSED", "INTERVIEW_READY"] },
+    "phases": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "prefixItems": [
+        { "$ref": "#/$defs/intake" },
+        { "$ref": "#/$defs/discover" },
+        { "$ref": "#/$defs/select" },
+        { "$ref": "#/$defs/design" },
+        { "$ref": "#/$defs/validate" },
+        { "$ref": "#/$defs/deliver" }
+      ],
+      "items": false
+    },
+    "roles": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/role" }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "executive-summary.md",
+          "opportunity-matrix.md",
+          "data-system-map.md",
+          "roi-model.md",
+          "target-architecture.md",
+          "risk-register.md",
+          "90-day-plan.md"
+        ]
+      }
+    },
+    "governance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "githubHumanApprovalRequired",
+        "workflowCanApproveGitHubReview",
+        "workflowCanMergePullRequest"
+      ],
+      "properties": {
+        "githubHumanApprovalRequired": { "const": true },
+        "workflowCanApproveGitHubReview": { "const": false },
+        "workflowCanMergePullRequest": { "const": false }
+      }
+    },
+    "outcomes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cycleHours", "annualValueCny", "observedRevenueCny"],
+      "properties": {
+        "cycleHours": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["baseline", "target", "basis"],
+          "properties": {
+            "baseline": { "type": "number", "minimum": 0, "maximum": 100000 },
+            "target": { "type": "number", "minimum": 0, "maximum": 100000 },
+            "basis": { "const": "configured_estimate" }
+          }
+        },
+        "annualValueCny": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["value", "basis"],
+          "properties": {
+            "value": { "type": "integer", "minimum": 0, "maximum": 1000000000 },
+            "basis": { "const": "configured_estimate" }
+          }
+        },
+        "observedRevenueCny": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["value", "basis"],
+          "properties": {
+            "value": { "const": null },
+            "basis": { "const": "unknown" }
+          }
+        }
+      }
+    },
+    "evidenceRefs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+    }
+  },
+  "$defs": {
+    "role": {
+      "enum": [
+        "business-discovery-agent",
+        "data-inventory-agent",
+        "solution-architect-agent",
+        "roi-analyst-agent",
+        "risk-reviewer-agent",
+        "delivery-planner-agent"
+      ]
+    },
+    "phase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 32 },
+        "status": { "const": "completed" }
+      }
+    },
+    "intake": {
+      "allOf": [{ "$ref": "#/$defs/phase" }, { "properties": { "id": { "const": "Intake" } } }]
+    },
+    "discover": {
+      "allOf": [{ "$ref": "#/$defs/phase" }, { "properties": { "id": { "const": "Discover" } } }]
+    },
+    "select": {
+      "allOf": [{ "$ref": "#/$defs/phase" }, { "properties": { "id": { "const": "Select" } } }]
+    },
+    "design": {
+      "allOf": [{ "$ref": "#/$defs/phase" }, { "properties": { "id": { "const": "Design" } } }]
+    },
+    "validate": {
+      "allOf": [{ "$ref": "#/$defs/phase" }, { "properties": { "id": { "const": "Validate" } } }]
+    },
+    "deliver": {
+      "allOf": [{ "$ref": "#/$defs/phase" }, { "properties": { "id": { "const": "Deliver" } } }]
+    }
+  }
+}

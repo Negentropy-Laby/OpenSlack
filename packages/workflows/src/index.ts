@@ -279,6 +279,7 @@ export {
   estimateWorkflowAgentCost,
   getBudgetWarningThreshold,
   loadWorkflowCostConfig,
+  parseWorkflowCostConfig,
 } from './cost.js';
 export type { WorkflowCostConfig, WorkflowCostEstimate, WorkflowCostRate } from './cost.js';
 

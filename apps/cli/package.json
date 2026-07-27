@@ -17,6 +17,7 @@
     "@openslack/credentials": "workspace:*",
     "@openslack/workspace": "workspace:*",
     "@openslack/kernel": "workspace:*",
+    "@openslack/mcp": "workspace:*",
     "@openslack/runtime": "workspace:*",
     "@openslack/github": "workspace:*",
     "@openslack/integration-negentropy": "workspace:*",

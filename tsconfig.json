@@ -19,8 +19,10 @@
     { "path": "packages/workflows" },
     { "path": "packages/agent-runtime" },
     { "path": "packages/delivery" },
+    { "path": "packages/qoder-adapter" },
     { "path": "packages/tui" },
     { "path": "apps/cli" },
+    { "path": "apps/mcp" },
     { "path": "apps/auth-callback" }
   ]
 }

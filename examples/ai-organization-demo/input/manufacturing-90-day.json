@@ -1,0 +1,38 @@
+{
+  "schema": "openslack.ai_org_demo_input.v1",
+  "scenarioId": "manufacturing-90-day",
+  "organization": "华东精密制造有限公司",
+  "industry": "manufacturing",
+  "objective": "在 90 天内证明一个可审计、可回滚的 AI 试点能够降低质量异常处置周期",
+  "durationDays": 90,
+  "budgetCny": 500000,
+  "constraints": [
+    "GitHub remains the formal task, review, and delivery source of truth.",
+    "Agents cannot approve GitHub reviews or merge pull requests.",
+    "Configured estimates must never be presented as observed revenue.",
+    "The pilot must be reversible inside 90 days."
+  ],
+  "successCriteria": [
+    {
+      "id": "cycle-time",
+      "metric": "quality_exception_cycle_hours",
+      "baseline": 12,
+      "target": 4,
+      "basis": "configured_estimate"
+    },
+    {
+      "id": "evidence-completeness",
+      "metric": "traceable_evidence_rate",
+      "baseline": null,
+      "target": 0.95,
+      "basis": "configured_estimate"
+    },
+    {
+      "id": "governance",
+      "metric": "unauthorized_approvals",
+      "baseline": 0,
+      "target": 0,
+      "basis": "observed"
+    }
+  ]
+}

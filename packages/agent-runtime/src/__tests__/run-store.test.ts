@@ -10,7 +10,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createRunStore } from '../run-store.js';
+import { createRunStore, readRunStateSnapshot } from '../run-store.js';
 import type { AgentRunRequest } from '../types.js';
 
 function makeTempRoot(): string {
@@ -100,6 +100,42 @@ describe('createRunStore', () => {
     const found = store.getRun('RUN-20260101-TEST1234');
     expect(found).not.toBeNull();
     expect(found!.agentId).toBe('test-agent');
+  });
+
+  it('reads a bounded snapshot without sweeping stale atomic-write evidence', () => {
+    const store = createRunStore(root);
+    store.createRun(makeRequest());
+    const runDir = join(root, '.openslack.local', 'agents/runs', 'RUN-20260101-TEST1234');
+    const stale = join(runDir, 'run.json.stale.tmp');
+    writeFileSync(stale, 'stale evidence', 'utf8');
+    utimesSync(stale, new Date(0), new Date(0));
+
+    expect(readRunStateSnapshot('RUN-20260101-TEST1234', root)?.agentId).toBe('test-agent');
+    expect(readFileSync(stale, 'utf8')).toBe('stale evidence');
+  });
+
+  it('rejects oversized state before parsing it', () => {
+    const runDir = join(root, '.openslack.local', 'agents/runs', 'RUN-20260101-TEST1234');
+    mkdirSync(runDir, { recursive: true });
+    writeFileSync(join(runDir, 'run.json'), 'x'.repeat(1_025));
+
+    expect(() => readRunStateSnapshot('RUN-20260101-TEST1234', root, { maxBytes: 1_024 })).toThrow(
+      /exceeds the read bound/,
+    );
+  });
+
+  it('rejects invalid UTF-8 and mismatched run identity in projection snapshots', () => {
+    const runDir = join(root, '.openslack.local', 'agents/runs', 'RUN-20260101-TEST1234');
+    mkdirSync(runDir, { recursive: true });
+    writeFileSync(join(runDir, 'run.json'), Buffer.from([0xc3, 0x28]));
+    expect(() => readRunStateSnapshot('RUN-20260101-TEST1234', root)).toThrow(
+      /failed to parse run\.json/,
+    );
+
+    writeFileSync(join(runDir, 'run.json'), JSON.stringify({ runId: 'RUN-20260101-DIFFERENT' }));
+    expect(() => readRunStateSnapshot('RUN-20260101-TEST1234', root)).toThrow(
+      /run ID does not match/,
+    );
   });
 
   it('returns null for nonexistent run', () => {

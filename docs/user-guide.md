@@ -24,6 +24,8 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 | Configure the built-in model runtime             | `openslack agent-runtime setup openai-compatible ...`                          | Preview-first; writes only endpoint, model, limits, and a credential reference.                      |
 | Diagnose why a PR cannot merge                   | `openslack pr doctor <n>`                                                      | Shows blocker owner, evidence, and next action.                                                      |
 | See team state across events and PRs             | `openslack collaboration dashboard`                                            | Projection-only; does not create dashboard-specific state.                                           |
+| Read evidence-backed business outcomes           | `openslack collaboration business-outcomes --format markdown`                  | Every metric retains observed, configured-estimate, or unknown basis and evidence.                   |
+| Connect Qoder Work                               | `openslack mcp serve --stdio`                                                  | Publishes exactly nine read-only business tools over local stdio.                                    |
 | Record a handoff or decision                     | `openslack collaboration handoff ...` / `openslack collaboration decision ...` | Creates auditable collaboration objects.                                                             |
 | Keep the org profile in sync                     | `openslack collaboration workflow profile-sync check`                          | Profile Sync Robot checks and previews are read-only; `run` requires confirmation.                   |
 | Start a conversation with an agent               | `openslack conversation start --title "..."`                                   | Creates a typed thread with JSONL persistence and secret scanning.                                   |
@@ -740,6 +742,19 @@ Steward still re-runs PRMS and blocks unless all gates pass.
 
 When an LLM provider is configured (`OPENSLACK_LLM_PROVIDER`, `OPENSLACK_LLM_MODEL`, `OPENSLACK_LLM_API_KEY`), OpenSlack uses LLM-first intent classification. The deterministic keyword router serves as fallback when the LLM is unavailable or returns an invalid response. Without LLM configuration, all routing uses the keyword router. LLM output is restricted to registered OpenSlack actions; raw shell commands are rejected.
 
+## Qoder Work MCP
+
+| Command                       | Purpose                                                        |
+| ----------------------------- | -------------------------------------------------------------- |
+| `openslack mcp serve --stdio` | Serve the frozen nine-tool, read-only business catalog via MCP |
+
+The MCP process reserves stdout for protocol frames, opens no listening socket,
+and exposes no shell, generic command, approval, merge, policy, permission, or
+other mutation tool. Qoder MCP permission is separate from OpenSlack plan
+confirmation and from an authorized human GitHub review. Connector examples for
+Windows, WSL, and Unix are documented in
+[`developer/qoder-mcp.md`](developer/qoder-mcp.md).
+
 ## Chat Gateway
 
 | Command                                                                      | Purpose                                                |
@@ -782,6 +797,8 @@ compatibility rules.
 | `openslack collaboration activity --object pr:42`                                                      | Filter by object                                      |
 | `openslack collaboration digest`                                                                       | Show grouped event summary                            |
 | `openslack collaboration digest --since 24`                                                            | Digest for last N hours                               |
+| `openslack collaboration business-outcomes --since-hours 24 --format json`                             | Show the evidence-backed business-outcome projection  |
+| `openslack collaboration business-outcomes --scenario manufacturing-90-day --format markdown`          | Apply explicit versioned demo assumptions             |
 | `openslack collaboration handoff create --from claude --to codex --context "..."`                      | Create a handoff                                      |
 | `openslack collaboration handoff list`                                                                 | List all handoffs                                     |
 | `openslack collaboration handoff show <id>`                                                            | Show a handoff                                        |

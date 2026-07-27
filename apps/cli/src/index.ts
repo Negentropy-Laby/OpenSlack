@@ -21,6 +21,7 @@ import { conversationCommands } from './commands/conversation.js';
 import { guideCommands } from './commands/guide.js';
 import { tuiCommands } from './commands/tui.js';
 import { versionCommand } from './commands/version.js';
+import { mcpCommands } from './commands/mcp.js';
 import {
   createOpenSlackCliContext,
   createWorkspacePluginOpenSlackCliContext,
@@ -98,6 +99,12 @@ program.addCommand(collaborationCommands());
 program.addCommand(conversationCommands());
 program.addCommand(guideCommands());
 program.addCommand(tuiCommands(applicationContext.operator));
+program.addCommand(
+  mcpCommands({
+    workspaceRoot: applicationContext.workspaceRoot,
+    operator: applicationContext.operator,
+  }),
+);
 
 if (enforceStartupStateCompatibility(process.argv)) program.parse(process.argv);
 

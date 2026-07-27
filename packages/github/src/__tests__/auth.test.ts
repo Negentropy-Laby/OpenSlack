@@ -178,6 +178,43 @@ describe('GitHub App installation token response handling', () => {
     await expect(pending).resolves.toMatchObject({ code: 'APP_TOKEN_REQUEST_FAILED' });
     expect(destroy).toHaveBeenCalledOnce();
   });
+
+  it('propagates caller cancellation to the active token request and never caches it', async () => {
+    const controller = new AbortController();
+    const { destroy } = installResponse({ neverRespond: true });
+    const pending = requireAppInstallationToken({ signal: controller.signal });
+    await vi.waitFor(() => expect(requestMock).toHaveBeenCalledOnce());
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({
+      name: 'AbortError',
+      message: 'GITHUB_EVIDENCE_ABORTED',
+    });
+    expect(destroy).toHaveBeenCalledOnce();
+
+    installResponse({ chunks: [JSON.stringify(tokenResponse('post-abort-token'))] });
+    await expect(requireAppInstallationToken()).resolves.toMatchObject({
+      token: 'post-abort-token',
+    });
+    expect(requestMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not start token HTTP when the caller deadline is already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      getClient({
+        repoFullName: 'acme/project',
+        auth: 'app',
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({
+      name: 'AbortError',
+      message: 'GITHUB_EVIDENCE_ABORTED',
+    });
+    expect(requestMock).not.toHaveBeenCalled();
+  });
 });
 
 describe('GitHub App installation token cache', () => {

@@ -5,6 +5,40 @@ import { assertCanonicalPRBase } from './pr-base-policy.js';
 const RETRY_ATTEMPTS = 2;
 const RETRY_DELAY_MS = 75;
 const EVIDENCE_TIMEOUT_MS = 8_000;
+const DEFAULT_MAX_EVIDENCE_PAGES = 10;
+const DEFAULT_MAX_EVIDENCE_ITEMS = 1_000;
+const DEFAULT_MAX_TREE_ENTRIES = 100_000;
+const DEFAULT_MAX_CODEOWNERS_BYTES = 256 * 1024;
+
+function evidenceLimit(
+  options: GitHubClientOptions | undefined,
+  key: keyof NonNullable<GitHubClientOptions['evidenceLimits']>,
+  fallback: number,
+): number {
+  const value = options?.evidenceLimits?.[key] ?? fallback;
+  if (!Number.isSafeInteger(value) || value < 1 || value > 100_000) {
+    throw new Error(`GITHUB_EVIDENCE_LIMIT_INVALID: ${key}`);
+  }
+  return value;
+}
+
+function codeownersByteLimit(options?: GitHubClientOptions): number {
+  const value = options?.evidenceLimits?.maxCodeownersBytes ?? DEFAULT_MAX_CODEOWNERS_BYTES;
+  if (!Number.isSafeInteger(value) || value < 1 || value > 4 * 1024 * 1024) {
+    throw new Error('GITHUB_EVIDENCE_LIMIT_INVALID: maxCodeownersBytes');
+  }
+  return value;
+}
+
+function abortError(): Error {
+  const error = new Error('GitHub evidence request aborted.');
+  error.name = 'AbortError';
+  return error;
+}
+
+function assertNotAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw abortError();
+}
 
 export class GitHubEvidenceUnavailableError extends Error {
   readonly code = 'GITHUB_EVIDENCE_UNAVAILABLE';
@@ -57,41 +91,81 @@ function isNotFound(error: unknown): boolean {
 }
 
 function isRetryableEvidenceError(error: unknown): boolean {
+  if (error instanceof Error && error.name === 'AbortError') return false;
   const status = errorStatus(error);
   if (status !== undefined) return status >= 500 || status === 429;
   const message = errorMessage(error);
   return /ECONNRESET|ETIMEDOUT|timeout|network|socket hang up/i.test(message);
 }
 
-async function sleep(ms: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, ms));
+function isEvidenceBoundaryError(error: unknown): boolean {
+  return (
+    (error instanceof Error && error.name === 'AbortError') ||
+    /GITHUB_EVIDENCE_(?:ABORTED|LIMIT_INVALID|CODEOWNERS_INVALID|(?:PAGES|FILES|REVIEWS|CHECKS|PATCHES|TREE|CODEOWNERS_BYTES)_LIMIT_EXCEEDED)/.test(
+      errorMessage(error),
+    )
+  );
 }
 
-async function withTimeout<T>(operationName: string, operation: () => Promise<T>): Promise<T> {
+async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  assertNotAborted(signal);
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(resolve, ms);
+    timeout.unref?.();
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timeout);
+        reject(abortError());
+      },
+      { once: true },
+    );
+  });
+}
+
+async function withTimeout<T>(
+  operationName: string,
+  operation: (signal: AbortSignal) => Promise<T>,
+  parentSignal?: AbortSignal,
+): Promise<T> {
+  assertNotAborted(parentSignal);
+  const controller = new AbortController();
+  const abortFromParent = () => controller.abort(parentSignal?.reason ?? abortError());
+  parentSignal?.addEventListener('abort', abortFromParent, { once: true });
+  const aborted = new Promise<never>((_, reject) => {
+    controller.signal.addEventListener('abort', () => reject(abortError()), { once: true });
+  });
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
+      controller.abort(new Error(`${operationName} timed out after ${EVIDENCE_TIMEOUT_MS}ms`));
       reject(new Error(`${operationName} timed out after ${EVIDENCE_TIMEOUT_MS}ms`));
     }, EVIDENCE_TIMEOUT_MS);
     timeoutId.unref?.();
   });
 
   try {
-    return await Promise.race([operation(), timeout]);
+    return await Promise.race([operation(controller.signal), timeout, aborted]);
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
+    parentSignal?.removeEventListener('abort', abortFromParent);
   }
 }
 
-async function withRetry<T>(operationName: string, operation: () => Promise<T>): Promise<T> {
+async function withRetry<T>(
+  operationName: string,
+  operation: (signal: AbortSignal) => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt < RETRY_ATTEMPTS; attempt++) {
+    assertNotAborted(signal);
     try {
-      return await withTimeout(operationName, operation);
+      return await withTimeout(operationName, operation, signal);
     } catch (error) {
       lastError = error;
       if (attempt === RETRY_ATTEMPTS - 1 || !isRetryableEvidenceError(error)) break;
-      await sleep(RETRY_DELAY_MS);
+      await sleep(RETRY_DELAY_MS, signal);
     }
   }
   throw lastError;
@@ -117,12 +191,17 @@ async function graphqlRequest<T>(
   client: Awaited<ReturnType<typeof getClient>>,
   query: string,
   variables: Record<string, unknown>,
+  options?: GitHubClientOptions,
 ): Promise<T> {
   const graphql = client.octokit.graphql as unknown as (
     query: string,
     variables: Record<string, unknown>,
   ) => Promise<T>;
-  return withTimeout('GitHub GraphQL request', () => graphql(query, variables));
+  return withTimeout(
+    'GitHub GraphQL request',
+    (signal) => graphql(query, { ...variables, request: { signal } }),
+    options?.signal,
+  );
 }
 
 function normalizeGraphQLState(value: string | null | undefined): string {
@@ -132,18 +211,25 @@ function normalizeGraphQLState(value: string | null | undefined): string {
 async function listPRFilesRest(
   client: Awaited<ReturnType<typeof getClient>>,
   prNumber: number,
+  options?: GitHubClientOptions,
 ): Promise<Array<{ filename: string; previous_filename?: string; patch?: string }>> {
   const files: Array<{ filename: string; previous_filename?: string; patch?: string }> = [];
-  for (let page = 1; ; page += 1) {
+  const maxPages = evidenceLimit(options, 'maxPages', DEFAULT_MAX_EVIDENCE_PAGES);
+  const maxFiles = evidenceLimit(options, 'maxFiles', DEFAULT_MAX_EVIDENCE_ITEMS);
+  for (let page = 1; page <= maxPages; page += 1) {
+    assertNotAborted(options?.signal);
     const { data } = await client.octokit.pulls.listFiles({
       owner: client.owner,
       repo: client.repo,
       pull_number: prNumber,
       per_page: 100,
       page,
+      request: { signal: options?.signal },
     });
     files.push(...data);
+    if (files.length > maxFiles) throw new Error('GITHUB_EVIDENCE_FILES_LIMIT_EXCEEDED');
     if (data.length < 100) break;
+    if (page === maxPages) throw new Error('GITHUB_EVIDENCE_PAGES_LIMIT_EXCEEDED');
   }
   return files;
 }
@@ -151,6 +237,7 @@ async function listPRFilesRest(
 async function listPRReviewsRest(
   client: Awaited<ReturnType<typeof getClient>>,
   prNumber: number,
+  options?: GitHubClientOptions,
 ): Promise<
   Array<{
     user?: { login?: string | null } | null;
@@ -167,16 +254,22 @@ async function listPRReviewsRest(
     submitted_at?: string | null;
     commit_id?: string | null;
   }> = [];
-  for (let page = 1; ; page += 1) {
+  const maxPages = evidenceLimit(options, 'maxPages', DEFAULT_MAX_EVIDENCE_PAGES);
+  const maxReviews = evidenceLimit(options, 'maxReviews', DEFAULT_MAX_EVIDENCE_ITEMS);
+  for (let page = 1; page <= maxPages; page += 1) {
+    assertNotAborted(options?.signal);
     const { data } = await client.octokit.pulls.listReviews({
       owner: client.owner,
       repo: client.repo,
       pull_number: prNumber,
       per_page: 100,
       page,
+      request: { signal: options?.signal },
     });
     reviews.push(...data);
+    if (reviews.length > maxReviews) throw new Error('GITHUB_EVIDENCE_REVIEWS_LIMIT_EXCEEDED');
     if (data.length < 100) break;
+    if (page === maxPages) throw new Error('GITHUB_EVIDENCE_PAGES_LIMIT_EXCEEDED');
   }
   return reviews;
 }
@@ -184,19 +277,26 @@ async function listPRReviewsRest(
 async function listPRChecksRest(
   client: Awaited<ReturnType<typeof getClient>>,
   ref: string,
+  options?: GitHubClientOptions,
 ): Promise<Array<{ name: string; status: string; conclusion: string | null }>> {
   const runs: Array<{ name: string; status: string; conclusion: string | null }> = [];
-  for (let page = 1; ; page += 1) {
+  const maxPages = evidenceLimit(options, 'maxPages', DEFAULT_MAX_EVIDENCE_PAGES);
+  const maxChecks = evidenceLimit(options, 'maxChecks', DEFAULT_MAX_EVIDENCE_ITEMS);
+  for (let page = 1; page <= maxPages; page += 1) {
+    assertNotAborted(options?.signal);
     const { data } = await client.octokit.checks.listForRef({
       owner: client.owner,
       repo: client.repo,
       ref,
       per_page: 100,
       page,
+      request: { signal: options?.signal },
     });
     const checkRuns = data.check_runs || [];
     runs.push(...checkRuns);
+    if (runs.length > maxChecks) throw new Error('GITHUB_EVIDENCE_CHECKS_LIMIT_EXCEEDED');
     if (checkRuns.length < 100) break;
+    if (page === maxPages) throw new Error('GITHUB_EVIDENCE_PAGES_LIMIT_EXCEEDED');
   }
   return runs;
 }
@@ -375,6 +475,20 @@ interface GraphQLReviewsResponse {
   } | null;
 }
 
+interface GraphQLCheckContextNode {
+  __typename: string;
+  name?: string | null;
+  status?: string | null;
+  conclusion?: string | null;
+  context?: string | null;
+  state?: string | null;
+}
+
+interface GraphQLCheckContextsConnection {
+  nodes?: Array<GraphQLCheckContextNode | null> | null;
+  pageInfo: { hasNextPage: boolean; endCursor?: string | null };
+}
+
 interface GraphQLChecksResponse {
   repository?: {
     pullRequest?: {
@@ -382,16 +496,7 @@ interface GraphQLChecksResponse {
         nodes?: Array<{
           commit?: {
             statusCheckRollup?: {
-              contexts?: {
-                nodes?: Array<{
-                  __typename: string;
-                  name?: string | null;
-                  status?: string | null;
-                  conclusion?: string | null;
-                  context?: string | null;
-                  state?: string | null;
-                } | null> | null;
-              } | null;
+              contexts?: GraphQLCheckContextsConnection | null;
             } | null;
           } | null;
         } | null> | null;
@@ -417,6 +522,7 @@ function graphqlMergeableToBoolean(value: string | null | undefined): boolean | 
 async function getPRGraphQL(
   client: Awaited<ReturnType<typeof getClient>>,
   prNumber: number,
+  options?: GitHubClientOptions,
 ): Promise<PRDetail | null> {
   const response = await graphqlRequest<GraphQLPullRequestResponse>(
     client,
@@ -444,6 +550,7 @@ async function getPRGraphQL(
       }
     `,
     { owner: client.owner, repo: client.repo, number: prNumber },
+    options,
   );
   const pr = response.repository?.pullRequest;
   if (!pr) return null;
@@ -468,10 +575,17 @@ async function getPRGraphQL(
 async function listPRFilesGraphQL(
   client: Awaited<ReturnType<typeof getClient>>,
   prNumber: number,
+  options?: GitHubClientOptions,
 ): Promise<string[]> {
   const files: string[] = [];
   let after: string | null = null;
+  let pages = 0;
+  const maxPages = evidenceLimit(options, 'maxPages', DEFAULT_MAX_EVIDENCE_PAGES);
+  const maxFiles = evidenceLimit(options, 'maxFiles', DEFAULT_MAX_EVIDENCE_ITEMS);
   do {
+    assertNotAborted(options?.signal);
+    pages += 1;
+    if (pages > maxPages) throw new Error('GITHUB_EVIDENCE_PAGES_LIMIT_EXCEEDED');
     const response: GraphQLFilesResponse = await graphqlRequest<GraphQLFilesResponse>(
       client,
       `
@@ -487,6 +601,7 @@ async function listPRFilesGraphQL(
         }
       `,
       { owner: client.owner, repo: client.repo, number: prNumber, after },
+      options,
     );
     const connection:
       | NonNullable<
@@ -496,8 +611,9 @@ async function listPRFilesGraphQL(
       | undefined = response.repository?.pullRequest?.files;
     for (const node of connection?.nodes ?? []) {
       if (node?.path) files.push(node.path);
+      if (files.length > maxFiles) throw new Error('GITHUB_EVIDENCE_FILES_LIMIT_EXCEEDED');
     }
-    after = connection?.pageInfo.hasNextPage ? (connection.pageInfo.endCursor ?? null) : null;
+    after = connection?.pageInfo?.hasNextPage ? (connection.pageInfo.endCursor ?? null) : null;
   } while (after);
   return files;
 }
@@ -505,10 +621,17 @@ async function listPRFilesGraphQL(
 async function getPRReviewsGraphQL(
   client: Awaited<ReturnType<typeof getClient>>,
   prNumber: number,
+  options?: GitHubClientOptions,
 ): Promise<PRReview[]> {
   const reviews: PRReview[] = [];
   let after: string | null = null;
+  let pages = 0;
+  const maxPages = evidenceLimit(options, 'maxPages', DEFAULT_MAX_EVIDENCE_PAGES);
+  const maxReviews = evidenceLimit(options, 'maxReviews', DEFAULT_MAX_EVIDENCE_ITEMS);
   do {
+    assertNotAborted(options?.signal);
+    pages += 1;
+    if (pages > maxPages) throw new Error('GITHUB_EVIDENCE_PAGES_LIMIT_EXCEEDED');
     const response: GraphQLReviewsResponse = await graphqlRequest<GraphQLReviewsResponse>(
       client,
       `
@@ -530,6 +653,7 @@ async function getPRReviewsGraphQL(
         }
       `,
       { owner: client.owner, repo: client.repo, number: prNumber, after },
+      options,
     );
     const connection:
       | NonNullable<
@@ -545,8 +669,9 @@ async function getPRReviewsGraphQL(
         submittedAt: node?.submittedAt ?? undefined,
         commitOid: node?.commit?.oid ?? undefined,
       });
+      if (reviews.length > maxReviews) throw new Error('GITHUB_EVIDENCE_REVIEWS_LIMIT_EXCEEDED');
     }
-    after = connection?.pageInfo.hasNextPage ? (connection.pageInfo.endCursor ?? null) : null;
+    after = connection?.pageInfo?.hasNextPage ? (connection.pageInfo.endCursor ?? null) : null;
   } while (after);
   return reviews;
 }
@@ -554,29 +679,46 @@ async function getPRReviewsGraphQL(
 async function getPRChecksGraphQL(
   client: Awaited<ReturnType<typeof getClient>>,
   prNumber: number,
+  options?: GitHubClientOptions,
 ): Promise<PRCheckRun[]> {
-  const response = await graphqlRequest<GraphQLChecksResponse>(
-    client,
-    `
-      query OpenSlackPrChecks($owner: String!, $repo: String!, $number: Int!) {
-        repository(owner: $owner, name: $repo) {
-          pullRequest(number: $number) {
-            commits(last: 1) {
-              nodes {
-                commit {
-                  statusCheckRollup {
-                    contexts(first: 100) {
-                      nodes {
-                        __typename
-                        ... on CheckRun {
-                          name
-                          status
-                          conclusion
+  const checks: PRCheckRun[] = [];
+  let after: string | null = null;
+  let pages = 0;
+  const maxPages = evidenceLimit(options, 'maxPages', DEFAULT_MAX_EVIDENCE_PAGES);
+  const maxChecks = evidenceLimit(options, 'maxChecks', DEFAULT_MAX_EVIDENCE_ITEMS);
+  do {
+    assertNotAborted(options?.signal);
+    pages += 1;
+    if (pages > maxPages) throw new Error('GITHUB_EVIDENCE_PAGES_LIMIT_EXCEEDED');
+    const response: GraphQLChecksResponse = await graphqlRequest<GraphQLChecksResponse>(
+      client,
+      `
+        query OpenSlackPrChecks(
+          $owner: String!
+          $repo: String!
+          $number: Int!
+          $after: String
+        ) {
+          repository(owner: $owner, name: $repo) {
+            pullRequest(number: $number) {
+              commits(last: 1) {
+                nodes {
+                  commit {
+                    statusCheckRollup {
+                      contexts(first: 100, after: $after) {
+                        nodes {
+                          __typename
+                          ... on CheckRun {
+                            name
+                            status
+                            conclusion
+                          }
+                          ... on StatusContext {
+                            context
+                            state
+                          }
                         }
-                        ... on StatusContext {
-                          context
-                          state
-                        }
+                        pageInfo { hasNextPage endCursor }
                       }
                     }
                   }
@@ -585,35 +727,39 @@ async function getPRChecksGraphQL(
             }
           }
         }
-      }
-    `,
-    { owner: client.owner, repo: client.repo, number: prNumber },
-  );
-  const contexts =
-    response.repository?.pullRequest?.commits?.nodes?.[0]?.commit?.statusCheckRollup?.contexts
-      ?.nodes ?? [];
-  return contexts
-    .filter((node): node is NonNullable<typeof node> => Boolean(node))
-    .map((node) => {
+      `,
+      { owner: client.owner, repo: client.repo, number: prNumber, after },
+      options,
+    );
+    const connection: GraphQLCheckContextsConnection | null | undefined =
+      response.repository?.pullRequest?.commits?.nodes?.[0]?.commit?.statusCheckRollup?.contexts;
+    for (const node of connection?.nodes ?? []) {
+      if (!node) continue;
       if (node.__typename === 'StatusContext') {
         const state = normalizeGraphQLState(node.state);
-        return {
+        checks.push({
           name: node.context || 'status',
           status: state === 'pending' ? 'in_progress' : 'completed',
           conclusion: state === 'pending' ? null : state,
-        };
+        });
+      } else {
+        checks.push({
+          name: node.name || 'check',
+          status: normalizeGraphQLState(node.status),
+          conclusion: node.conclusion ? normalizeGraphQLState(node.conclusion) : null,
+        });
       }
-      return {
-        name: node.name || 'check',
-        status: normalizeGraphQLState(node.status),
-        conclusion: node.conclusion ? normalizeGraphQLState(node.conclusion) : null,
-      };
-    });
+      if (checks.length > maxChecks) throw new Error('GITHUB_EVIDENCE_CHECKS_LIMIT_EXCEEDED');
+    }
+    after = connection?.pageInfo?.hasNextPage ? (connection.pageInfo.endCursor ?? null) : null;
+  } while (after);
+  return checks;
 }
 
 async function getCODEOWNERSGraphQL(
   client: Awaited<ReturnType<typeof getClient>>,
   ref: string,
+  options?: GitHubClientOptions,
 ): Promise<string | null> {
   const response = await graphqlRequest<GraphQLBlobResponse>(
     client,
@@ -627,8 +773,42 @@ async function getCODEOWNERSGraphQL(
       }
     `,
     { owner: client.owner, repo: client.repo, expression: `${ref}:.github/CODEOWNERS` },
+    options,
   );
-  return response.repository?.object?.text ?? null;
+  const content = response.repository?.object?.text ?? null;
+  return content === null ? null : assertCodeownersText(content, options);
+}
+
+function assertCodeownersText(content: string, options?: GitHubClientOptions): string {
+  if (Buffer.byteLength(content, 'utf8') > codeownersByteLimit(options)) {
+    throw new Error('GITHUB_EVIDENCE_CODEOWNERS_BYTES_LIMIT_EXCEEDED');
+  }
+  return content;
+}
+
+function decodeCodeownersBase64(content: string, options?: GitHubClientOptions): string {
+  const maxBytes = codeownersByteLimit(options);
+  const maxEncodedBytes = Math.ceil(maxBytes / 3) * 4 + 4;
+  if (content.length > maxEncodedBytes * 2 + 1_024) {
+    throw new Error('GITHUB_EVIDENCE_CODEOWNERS_BYTES_LIMIT_EXCEEDED');
+  }
+  const normalized = content.replace(/\s/g, '');
+  if (
+    normalized.length > maxEncodedBytes ||
+    normalized.length % 4 !== 0 ||
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(normalized)
+  ) {
+    throw new Error('GITHUB_EVIDENCE_CODEOWNERS_INVALID');
+  }
+  const bytes = Buffer.from(normalized, 'base64');
+  if (bytes.byteLength > maxBytes) {
+    throw new Error('GITHUB_EVIDENCE_CODEOWNERS_BYTES_LIMIT_EXCEEDED');
+  }
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    throw new Error('GITHUB_EVIDENCE_CODEOWNERS_INVALID');
+  }
 }
 
 export async function getPR(
@@ -641,12 +821,16 @@ export async function getPR(
     return null;
   }
   try {
-    const { data } = await withRetry('fetch pull request', () =>
-      client.octokit.pulls.get({
-        owner: client.owner,
-        repo: client.repo,
-        pull_number: prNumber,
-      }),
+    const { data } = await withRetry(
+      'fetch pull request',
+      (signal) =>
+        client.octokit.pulls.get({
+          owner: client.owner,
+          repo: client.repo,
+          pull_number: prNumber,
+          request: { signal },
+        }),
+      options?.signal,
     );
     return {
       number: data.number,
@@ -665,9 +849,11 @@ export async function getPR(
       updated_at: data.updated_at,
     };
   } catch (error) {
+    if (isEvidenceBoundaryError(error)) throw error;
     try {
-      return await getPRGraphQL(client, prNumber);
+      return await getPRGraphQL(client, prNumber, options);
     } catch (fallbackError) {
+      if (isEvidenceBoundaryError(fallbackError)) throw fallbackError;
       if (options?.strictEvidence) {
         strictEvidenceUnavailable('fetch pull request', client, prNumber, fallbackError);
       }
@@ -689,10 +875,12 @@ export async function listPRFiles(
     return [];
   }
   try {
-    const data = await withRetry('list pull request files', () =>
-      listPRFilesRest(client, prNumber),
+    const data = await withRetry(
+      'list pull request files',
+      (signal) => listPRFilesRest(client, prNumber, { ...options, signal }),
+      options?.signal,
     );
-    return [
+    const files = [
       ...new Set(
         data.flatMap((file) =>
           [file.filename, file.previous_filename].filter(
@@ -701,10 +889,16 @@ export async function listPRFiles(
         ),
       ),
     ];
+    if (files.length > evidenceLimit(options, 'maxFiles', DEFAULT_MAX_EVIDENCE_ITEMS)) {
+      throw new Error('GITHUB_EVIDENCE_FILES_LIMIT_EXCEEDED');
+    }
+    return files;
   } catch (error) {
+    if (isEvidenceBoundaryError(error)) throw error;
     try {
-      return await listPRFilesGraphQL(client, prNumber);
+      return await listPRFilesGraphQL(client, prNumber, options);
     } catch (fallbackError) {
+      if (isEvidenceBoundaryError(fallbackError)) throw fallbackError;
       if (options?.strictEvidence) {
         strictEvidenceUnavailable('list pull request files', client, prNumber, fallbackError);
       }
@@ -731,13 +925,20 @@ export async function getPRFilePatches(
     return [];
   }
   try {
-    const data = await withRetry('list pull request file patches', () =>
-      listPRFilesRest(client, prNumber),
+    const data = await withRetry(
+      'list pull request file patches',
+      (signal) => listPRFilesRest(client, prNumber, { ...options, signal }),
+      options?.signal,
     );
-    return data
+    const patches = data
       .filter((f): f is typeof f & { patch: string } => typeof f.patch === 'string')
       .map((f) => ({ filename: f.filename, patch: f.patch }));
+    if (patches.length > evidenceLimit(options, 'maxPatches', DEFAULT_MAX_EVIDENCE_ITEMS)) {
+      throw new Error('GITHUB_EVIDENCE_PATCHES_LIMIT_EXCEEDED');
+    }
+    return patches;
   } catch (error) {
+    if (isEvidenceBoundaryError(error)) throw error;
     if (options?.strictEvidence) {
       strictEvidenceUnavailable('list pull request file patches', client, prNumber, error);
     }
@@ -757,8 +958,10 @@ export async function getPRChecks(
   try {
     const pr = await getPR(prNumber, options);
     if (!pr) return [];
-    const data = await withRetry('fetch pull request checks', () =>
-      listPRChecksRest(client, pr.head.sha),
+    const data = await withRetry(
+      'fetch pull request checks',
+      (signal) => listPRChecksRest(client, pr.head.sha, { ...options, signal }),
+      options?.signal,
     );
     return data.map((run) => ({
       name: run.name,
@@ -766,9 +969,11 @@ export async function getPRChecks(
       conclusion: run.conclusion,
     }));
   } catch (error) {
+    if (isEvidenceBoundaryError(error)) throw error;
     try {
-      return await getPRChecksGraphQL(client, prNumber);
+      return await getPRChecksGraphQL(client, prNumber, options);
     } catch (fallbackError) {
+      if (isEvidenceBoundaryError(fallbackError)) throw fallbackError;
       if (options?.strictEvidence) {
         strictEvidenceUnavailable('fetch pull request checks', client, prNumber, fallbackError);
       }
@@ -790,8 +995,10 @@ export async function getPRReviews(
     return [];
   }
   try {
-    const data = await withRetry('fetch pull request reviews', () =>
-      listPRReviewsRest(client, prNumber),
+    const data = await withRetry(
+      'fetch pull request reviews',
+      (signal) => listPRReviewsRest(client, prNumber, { ...options, signal }),
+      options?.signal,
     );
     return data.map((r) => ({
       user: { login: r.user?.login || 'unknown' },
@@ -801,9 +1008,11 @@ export async function getPRReviews(
       commitOid: r.commit_id ?? undefined,
     }));
   } catch (error) {
+    if (isEvidenceBoundaryError(error)) throw error;
     try {
-      return await getPRReviewsGraphQL(client, prNumber);
+      return await getPRReviewsGraphQL(client, prNumber, options);
     } catch (fallbackError) {
+      if (isEvidenceBoundaryError(fallbackError)) throw fallbackError;
       if (options?.strictEvidence) {
         strictEvidenceUnavailable('fetch pull request reviews', client, prNumber, fallbackError);
       }
@@ -825,16 +1034,23 @@ export async function getRepositoryTree(
     return [];
   }
   try {
-    const { data } = await withRetry('fetch repository tree', () =>
-      client.octokit.git.getTree({
-        owner: client.owner,
-        repo: client.repo,
-        tree_sha: treeSha,
-        recursive: 'true',
-      }),
+    const { data } = await withRetry(
+      'fetch repository tree',
+      (signal) =>
+        client.octokit.git.getTree({
+          owner: client.owner,
+          repo: client.repo,
+          tree_sha: treeSha,
+          recursive: 'true',
+          request: { signal },
+        }),
+      options?.signal,
     );
     if (data.truncated) {
       throw new Error(`Recursive Git tree ${treeSha} was truncated.`);
+    }
+    if (data.tree.length > evidenceLimit(options, 'maxTreeEntries', DEFAULT_MAX_TREE_ENTRIES)) {
+      throw new Error('GITHUB_EVIDENCE_TREE_LIMIT_EXCEEDED');
     }
     return data.tree.flatMap((entry) =>
       entry.path && entry.mode && entry.type && entry.sha
@@ -895,24 +1111,30 @@ export async function getCODEOWNERS(
     return null;
   }
   try {
-    const { data } = await withRetry('fetch CODEOWNERS', () =>
-      client.octokit.repos.getContent({
-        owner: client.owner,
-        repo: client.repo,
-        path: '.github/CODEOWNERS',
-        ref,
-      }),
+    const { data } = await withRetry(
+      'fetch CODEOWNERS',
+      (signal) =>
+        client.octokit.repos.getContent({
+          owner: client.owner,
+          repo: client.repo,
+          path: '.github/CODEOWNERS',
+          ref,
+          request: { signal },
+        }),
+      options?.signal,
     );
     if ('content' in data && typeof data.content === 'string') {
-      return Buffer.from(data.content, 'base64').toString('utf-8');
+      return decodeCodeownersBase64(data.content, options);
     }
     return null;
   } catch (error) {
     if (isNotFound(error)) return null;
+    if (isEvidenceBoundaryError(error)) throw error;
     try {
-      return await getCODEOWNERSGraphQL(client, ref);
+      return await getCODEOWNERSGraphQL(client, ref, options);
     } catch (fallbackError) {
       if (isNotFound(fallbackError)) return null;
+      if (isEvidenceBoundaryError(fallbackError)) throw fallbackError;
       if (options?.strictEvidence) {
         strictEvidenceUnavailable('fetch CODEOWNERS', client, undefined, fallbackError);
       }

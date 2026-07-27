@@ -80,13 +80,96 @@ function inferFormat(module: WorkflowModuleShape): string {
 
 // ── Publish Workflow Proposal ─────────────────────────────────────────────────
 
+const WORKFLOW_GOVERNANCE_BOT_LOGIN = 'openslack-agent-operator[bot]';
+
 export async function publishWorkflowGovernance(
   governance: WorkflowGovernanceIssue,
+  options?: GitHubClientOptions,
 ): Promise<{ issueNumber: number; url: string }> {
+  const client = await getClient(options);
+  requireWorkflowGovernanceBot(client);
   const title = `[Workflow Governance] PR #${governance.prNumber}`;
   const body = renderWorkflowGovernanceBody(governance);
-  const result = await createTaskIssue(title, body, workflowGovernanceLabels());
-  return { issueNumber: result.issueNumber, url: result.url };
+  const { data } = await client.octokit.issues.create({
+    owner: client.owner,
+    repo: client.repo,
+    title,
+    body,
+    labels: workflowGovernanceLabels(),
+    request: { signal: options?.signal },
+  });
+  return { issueNumber: data.number, url: data.html_url };
+}
+
+interface WorkflowGovernanceCandidate {
+  number: number;
+  title: string;
+  html_url: string;
+  state?: string;
+  body?: string | null;
+  user?: { login?: string | null } | null;
+  pull_request?: unknown;
+}
+
+function requireWorkflowGovernanceBot(client: Awaited<ReturnType<typeof getClient>>): string {
+  if (client.authMode !== 'github_app_installation') {
+    throw new Error(
+      'BOT_AUTH_REQUIRED: workflow governance state requires the configured GitHub App.',
+    );
+  }
+  return WORKFLOW_GOVERNANCE_BOT_LOGIN;
+}
+
+function assertCanonicalWorkflowGovernanceIssue(
+  issue: WorkflowGovernanceCandidate,
+  prNumber: number,
+  expectedBotLogin: string,
+): void {
+  const expectedTitle = `[Workflow Governance] PR #${prNumber}`;
+  const body = issue.body ?? '';
+  const schemaBound = /^schema: "openslack\.workflow_governance\.v1"$/m.test(body);
+  const prBound = new RegExp(`^pr: ${prNumber}$`, 'm').test(body);
+  if (
+    issue.pull_request ||
+    issue.title !== expectedTitle ||
+    issue.state !== 'open' ||
+    issue.user?.login?.toLowerCase() !== expectedBotLogin.toLowerCase() ||
+    !schemaBound ||
+    !prBound
+  ) {
+    throw new Error(`WORKFLOW_GOVERNANCE_ISSUE_INVALID: #${issue.number}`);
+  }
+}
+
+export async function refreshWorkflowGovernance(
+  issueNumber: number,
+  governance: WorkflowGovernanceIssue,
+  options?: GitHubClientOptions,
+): Promise<{ issueNumber: number; url: string }> {
+  if (!Number.isSafeInteger(issueNumber) || issueNumber <= 0) {
+    throw new Error('WORKFLOW_GOVERNANCE_ISSUE_NUMBER_INVALID');
+  }
+  const client = await getClient(options);
+  const expectedBotLogin = requireWorkflowGovernanceBot(client);
+  const current = await client.octokit.issues.get({
+    owner: client.owner,
+    repo: client.repo,
+    issue_number: issueNumber,
+    request: { signal: options?.signal },
+  });
+  assertCanonicalWorkflowGovernanceIssue(
+    current.data as WorkflowGovernanceCandidate,
+    governance.prNumber,
+    expectedBotLogin,
+  );
+  const { data } = await client.octokit.issues.update({
+    owner: client.owner,
+    repo: client.repo,
+    issue_number: issueNumber,
+    body: renderWorkflowGovernanceBody(governance),
+    request: { signal: options?.signal },
+  });
+  return { issueNumber: data.number, url: data.html_url };
 }
 
 export async function findWorkflowGovernanceIssue(
@@ -95,8 +178,15 @@ export async function findWorkflowGovernanceIssue(
 ): Promise<{ issueNumber: number; url: string; body?: string; author?: string } | undefined> {
   const client = await getClient(options);
   if (client.isDryRun) return undefined;
+  const expectedBotLogin = WORKFLOW_GOVERNANCE_BOT_LOGIN;
   const title = `[Workflow Governance] PR #${prNumber}`;
-  for (let page = 1; ; page += 1) {
+  const maxPages = options?.evidenceLimits?.maxPages ?? 10;
+  if (!Number.isSafeInteger(maxPages) || maxPages < 1 || maxPages > 100) {
+    throw new Error('GITHUB_EVIDENCE_LIMIT_INVALID: maxPages');
+  }
+  const matches: WorkflowGovernanceCandidate[] = [];
+  for (let page = 1; page <= maxPages; page += 1) {
+    if (options?.signal?.aborted) throw new Error('GITHUB_EVIDENCE_ABORTED');
     const { data } = await client.octokit.issues.listForRepo({
       owner: client.owner,
       repo: client.repo,
@@ -104,18 +194,28 @@ export async function findWorkflowGovernanceIssue(
       state: 'all',
       per_page: 100,
       page,
+      request: { signal: options?.signal },
     });
-    const issue = data.find((candidate) => !candidate.pull_request && candidate.title === title);
-    if (issue) {
-      return {
-        issueNumber: issue.number,
-        url: issue.html_url,
-        ...(issue.body ? { body: issue.body } : {}),
-        ...(issue.user?.login ? { author: issue.user.login } : {}),
-      };
-    }
-    if (data.length < 100) return undefined;
+    matches.push(
+      ...(data as WorkflowGovernanceCandidate[]).filter(
+        (candidate) => !candidate.pull_request && candidate.title === title,
+      ),
+    );
+    if (data.length < 100) break;
+    if (page === maxPages) throw new Error('GITHUB_EVIDENCE_PAGES_LIMIT_EXCEEDED');
   }
+  if (matches.length === 0) return undefined;
+  if (matches.length !== 1) {
+    throw new Error(`WORKFLOW_GOVERNANCE_ISSUE_AMBIGUOUS: PR #${prNumber}`);
+  }
+  const issue = matches[0];
+  assertCanonicalWorkflowGovernanceIssue(issue, prNumber, expectedBotLogin);
+  return {
+    issueNumber: issue.number,
+    url: issue.html_url,
+    ...(issue.body ? { body: issue.body } : {}),
+    ...(issue.user?.login ? { author: issue.user.login } : {}),
+  };
 }
 
 // ── Legacy proposal/review publishers (not PR merge gates) ────────────────────

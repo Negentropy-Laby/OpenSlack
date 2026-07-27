@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -31,6 +31,28 @@ describe('GitHub App non-secret local config', () => {
   it('rejects invalid credential references before credential access', () => {
     const root = localState({ privateKeyRef: 'file:private.pem' });
     expect(() => readGitHubAppLocalConfig(root)).toThrow('local configuration is invalid');
+  });
+
+  it('rejects oversized and malformed UTF-8 config evidence', () => {
+    const oversized = localState({});
+    writeFileSync(join(oversized, 'github-app.json'), Buffer.alloc(65_537, 0x61));
+    expect(() => readGitHubAppLocalConfig(oversized)).toThrow('local configuration is invalid');
+
+    const malformed = localState({});
+    writeFileSync(join(malformed, 'github-app.json'), Buffer.from([0xc3, 0x28]));
+    expect(() => readGitHubAppLocalConfig(malformed)).toThrow('local configuration is invalid');
+  });
+
+  it.runIf(process.platform !== 'win32')('rejects symlinked config evidence', () => {
+    const symlinked = mkdtempSync(join(tmpdir(), 'openslack-app-config-link-'));
+    roots.push(symlinked);
+    const target = join(symlinked, 'target.json');
+    writeFileSync(
+      target,
+      '{"schema":"openslack.github_app_local.v1","appId":"123","installationId":"456","appSlug":"local-app","privateKeyRef":"keychain:openslack/test-app"}\n',
+    );
+    symlinkSync(target, join(symlinked, 'github-app.json'), 'file');
+    expect(() => readGitHubAppLocalConfig(symlinked)).toThrow('local configuration is invalid');
   });
 });
 
