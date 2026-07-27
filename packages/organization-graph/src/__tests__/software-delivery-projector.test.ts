@@ -104,6 +104,9 @@ describe('software delivery projector', () => {
     expect(snapshot.completeness.missingSources).toContain(
       'github.reviews.currentHead.review-stale',
     );
+    expect(snapshot.completeness.missingSources).not.toContain(
+      'github.reviews.currentHead.review-self',
+    );
 
     const laterChangeRequest = structuredClone(softwareDeliverySource());
     (laterChangeRequest.sources.reviews.items as SoftwareDeliveryReviewObservation[]).push({
@@ -139,6 +142,25 @@ describe('software delivery projector', () => {
     const snapshot = projectSoftwareDeliverySnapshot(source).snapshot;
     expect(snapshot.nodes.some((node) => node.type === 'verification_evidence')).toBe(true);
     expect(snapshot.nodes.some((node) => node.type === 'human_decision')).toBe(false);
+  });
+
+  it('keeps a current-head non-terminal check informational without claiming head evidence is missing', () => {
+    const source = structuredClone(softwareDeliverySource());
+    const check = source.sources.checks.items[0]!;
+    check.status = 'in_progress';
+    delete check.conclusion;
+    delete check.completedAt;
+
+    const snapshot = projectSoftwareDeliverySnapshot(source).snapshot;
+    expect(snapshot.nodes.some((node) => node.type === 'verification_evidence')).toBe(false);
+    expect(
+      snapshot.nodes.find((node) => node.type === 'informational.check_observation')?.properties,
+    ).toMatchObject({
+      currentHeadBound: true,
+      status: 'in_progress',
+    });
+    expect(snapshot.completeness.warnings).toContain('informational.check.check-1');
+    expect(snapshot.completeness.missingSources).not.toContain('github.checks.currentHead.check-1');
   });
 
   it('keeps cache and synthetic PR, review, PRMS, and merge evidence informational', () => {

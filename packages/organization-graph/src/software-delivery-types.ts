@@ -5,6 +5,7 @@ export const SOFTWARE_DELIVERY_SOURCE_SCHEMA =
 export const SOFTWARE_DELIVERY_PROJECTOR_ID = 'openslack.software_delivery.v1' as const;
 
 export const SOFTWARE_DELIVERY_SOURCE_LIMITS = Object.freeze({
+  // Every source batch uses this ceiling unless its schema supplies a stricter per-kind limit.
   observationsPerKind: 500,
   totalObservations: 3_000,
   totalRelations: 12_000,

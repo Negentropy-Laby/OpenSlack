@@ -327,8 +327,24 @@ class ProjectionBuilder {
   readonly sourceNodes = new Map<string, string>();
   readonly warnings = new Set<string>();
   readonly missing = new Set<string>();
+  readonly actorById: ReadonlyMap<string, ActorRef>;
 
-  constructor(readonly source: SoftwareDeliverySourceSnapshot) {}
+  constructor(readonly source: SoftwareDeliverySourceSnapshot) {
+    this.actorById = new Map(
+      batchItems(source.sources.actors).map(({ actor }) => [actor.id, actor] as const),
+    );
+  }
+
+  actor(id: string): ActorRef | undefined {
+    return this.actorById.get(id);
+  }
+
+  owners(ids: readonly string[]): ActorRef[] {
+    return uniqueSorted(ids)
+      .map((id) => this.actor(id))
+      .filter((actor): actor is ActorRef => actor !== undefined)
+      .map(compactActor);
+  }
 
   addNode(sourceKind: string, sourceId: string, node: GraphNode): void {
     const existing = this.nodes.get(node.id);
@@ -515,14 +531,7 @@ function addActors(builder: ProjectionBuilder): void {
 function addIssues(builder: ProjectionBuilder): void {
   for (const issue of sorted(batchItems(builder.source.sources.issues))) {
     const current = issue.observationKind === 'live';
-    const owners = issue.assigneeIds
-      .map(
-        (id) =>
-          batchItems(builder.source.sources.actors).find((candidate) => candidate.actor.id === id)
-            ?.actor,
-      )
-      .filter((actor): actor is ActorRef => actor !== undefined)
-      .map(compactActor);
+    const owners = builder.owners(issue.assigneeIds);
     const node = nodeFrom({
       source: builder.source,
       type: current ? 'core.work_item' : 'informational.issue_observation',
@@ -608,9 +617,7 @@ function addClaims(builder: ProjectionBuilder): void {
         current ? 'claim_ref' : 'claim_projection_observation',
         claim.claimRef,
       ),
-      owners: batchItems(builder.source.sources.actors)
-        .filter((candidate) => candidate.actor.id === claim.agentActorId)
-        .map((candidate) => compactActor(candidate.actor)),
+      owners: builder.owners([claim.agentActorId]),
       properties: {
         currentAuthority: current,
         expiresAt: claim.expiresAt,
@@ -749,9 +756,7 @@ function isCurrentPullRequest(pr: SoftwareDeliveryPullRequestObservation): boole
 function addPullRequests(builder: ProjectionBuilder): void {
   for (const pullRequest of sorted(batchItems(builder.source.sources.pullRequests))) {
     const current = isCurrentPullRequest(pullRequest);
-    const author = batchItems(builder.source.sources.actors).find(
-      (candidate) => candidate.actor.id === pullRequest.authorActorId,
-    )?.actor;
+    const author = builder.actor(pullRequest.authorActorId);
     const node = nodeFrom({
       source: builder.source,
       type: current ? 'reviewable_deliverable' : 'informational.pr_observation',
@@ -808,14 +813,17 @@ function pullRequestById(
 function addChecks(builder: ProjectionBuilder): void {
   for (const check of sorted(batchItems(builder.source.sources.checks))) {
     const pullRequest = pullRequestById(builder.source, check.pullRequestId);
-    const current =
+    const currentHeadBound =
       check.observationKind === 'live' &&
       pullRequest !== undefined &&
       isCurrentPullRequest(pullRequest) &&
       check.headSha !== undefined &&
-      check.headSha === pullRequest.headSha &&
-      (check.status !== 'completed' ||
-        (check.conclusion !== undefined && check.completedAt !== undefined));
+      check.headSha === pullRequest.headSha;
+    const current =
+      currentHeadBound &&
+      check.status === 'completed' &&
+      check.conclusion !== undefined &&
+      check.completedAt !== undefined;
     const node = nodeFrom({
       source: builder.source,
       type: current ? 'verification_evidence' : 'informational.check_observation',
@@ -827,7 +835,7 @@ function addChecks(builder: ProjectionBuilder): void {
         current ? 'check_run' : 'check_projection_observation',
       ),
       properties: {
-        currentHeadBound: current,
+        currentHeadBound,
         observationKind: check.observationKind,
         status: check.status,
         ...(check.conclusion === undefined ? {} : { conclusion: check.conclusion }),
@@ -845,8 +853,10 @@ function addChecks(builder: ProjectionBuilder): void {
       check,
       'pr-check',
     );
-    if (!current) {
+    if (!currentHeadBound) {
       builder.incomplete(`github.checks.currentHead.${check.id}`);
+    }
+    if (!current) {
       builder.warn(`informational.check.${check.id}`);
     }
   }
@@ -877,6 +887,7 @@ function addReviews(builder: ProjectionBuilder): void {
   for (const review of sorted(batchItems(builder.source.sources.reviews))) {
     const pullRequest = pullRequestById(builder.source, review.pullRequestId);
     const decisionState = review.state === 'APPROVED' || review.state === 'CHANGES_REQUESTED';
+    const selfReview = pullRequest !== undefined && review.actorId === pullRequest.authorActorId;
     const current =
       review.observationKind === 'live' &&
       review.actorKind === 'human' &&
@@ -885,7 +896,7 @@ function addReviews(builder: ProjectionBuilder): void {
       isCurrentPullRequest(pullRequest) &&
       review.commitOid !== undefined &&
       review.commitOid === pullRequest.headSha &&
-      review.actorId !== pullRequest.authorActorId &&
+      !selfReview &&
       latestDecisiveReview.get(`${review.pullRequestId}:${review.actorId}:${review.commitOid}`) ===
         review.id;
     const node = nodeFrom({
@@ -898,16 +909,13 @@ function addReviews(builder: ProjectionBuilder): void {
         'github',
         current ? 'pull_request_review' : 'review_projection_observation',
       ),
-      owners: batchItems(builder.source.sources.actors)
-        .filter((candidate) => candidate.actor.id === review.actorId)
-        .map((candidate) => compactActor(candidate.actor)),
+      owners: builder.owners([review.actorId]),
       properties: {
         actorId: review.actorId,
         actorKind: review.actorKind,
         currentHeadBound: current,
         decisionState,
-        independentReviewer:
-          pullRequest === undefined ? false : review.actorId !== pullRequest.authorActorId,
+        independentReviewer: pullRequest !== undefined && !selfReview,
         observationKind: review.observationKind,
         ...(review.commitOid === undefined ? {} : { commitOid: review.commitOid }),
       },
@@ -925,10 +933,10 @@ function addReviews(builder: ProjectionBuilder): void {
     );
     if (!current) {
       builder.warn(`informational.review.${review.id}`);
-      if (review.actorKind === 'human' && decisionState) {
+      if (review.actorKind === 'human' && decisionState && !selfReview) {
         builder.incomplete(`github.reviews.currentHead.${review.id}`);
       }
-      if (pullRequest !== undefined && review.actorId === pullRequest.authorActorId) {
+      if (selfReview) {
         builder.warn(`github.reviews.selfReview.${review.id}`);
       }
     }
@@ -1048,9 +1056,7 @@ function addAgentRuns(builder: ProjectionBuilder): void {
         'openslack',
         current ? 'agent_run' : 'agent_run_projection_observation',
       ),
-      owners: batchItems(builder.source.sources.actors)
-        .filter((candidate) => candidate.actor.id === agentRun.agentActorId)
-        .map((candidate) => compactActor(candidate.actor)),
+      owners: builder.owners([agentRun.agentActorId]),
       properties: {
         agentActorId: agentRun.agentActorId,
         currentAuthority: current,
@@ -1238,9 +1244,7 @@ function addDecisions(builder: ProjectionBuilder): void {
         'openslack',
         current ? 'decision' : 'decision_projection_observation',
       ),
-      owners: batchItems(builder.source.sources.actors)
-        .filter((candidate) => candidate.actor.id === decision.decidedByActorId)
-        .map((candidate) => compactActor(candidate.actor)),
+      owners: builder.owners([decision.decidedByActorId]),
       properties: {
         currentAuthority: current,
         decidedByActorId: decision.decidedByActorId,
