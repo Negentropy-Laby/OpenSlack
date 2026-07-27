@@ -1,17 +1,19 @@
 # Scenario Runtime
 
-| Field                   | Value                                                      |
-| ----------------------- | ---------------------------------------------------------- |
-| Status                  | `DECLARATIVE CORE IMPLEMENTED — GOVERNED MUTATION PENDING` |
-| Product direction       | One-scenario-first                                         |
-| Lead interview scenario | Contract-to-Delivery Lite                                  |
-| Pack format             | Declarative `openslack.scenario_pack.v1`                   |
-| Execution authority     | OpenSlack canonical plan through registered host adapters  |
+| Field                   | Value                                                                           |
+| ----------------------- | ------------------------------------------------------------------------------- |
+| Status                  | `DECLARATIVE CORE + GOVERNED MUTATION CONTRACT IMPLEMENTED — REHEARSAL PENDING` |
+| Product direction       | One-scenario-first                                                              |
+| Lead interview scenario | Contract-to-Delivery Lite                                                       |
+| Pack format             | Declarative `openslack.scenario_pack.v1`                                        |
+| Execution authority     | OpenSlack canonical plan through registered host adapters                       |
 
 The `@openslack/scenario-runtime` package and exact-byte locked, projection-only
 `software-delivery` Scenario Pack implement the declarative loading, capability normalization,
-preview, instance, and local-store core described here. Governed mutation tools,
-Contract-to-Delivery Lite, and scenario lifecycle events remain later milestones.
+preview, instance, and local-store core described here. The governed mutation contract is
+implemented. The default stock MCP remains read-only; authenticated Qoder rehearsal and live
+adapter qualification remain pending. Contract-to-Delivery Lite and scenario lifecycle events
+remain later milestones.
 
 ## Product outcome
 
@@ -66,8 +68,10 @@ The first read-only additions are the graph tools defined in the
 [Qoder MCP Catalog Evolution contract](../developer/qoder-mcp-contract.md#catalog-evolution).
 That contract is the single source of exact tool names and counts.
 
-Governed scenario preview and execution tools come only after the runtime, pack loader, actor
-binding, immutable plan store, and audit contracts exist.
+Governed scenario preview and execution tools are implemented, but they are exposed only through
+explicitly injected 16/17-tool host compositions after runtime, pack-loader, actor-binding,
+immutable-plan-store, executor, and audit bindings are satisfied. The stock MCP composition
+remains the exact 12-tool read-only surface.
 
 ## Definition and instance
 
@@ -234,7 +238,7 @@ The result becomes an immutable canonical plan. Confirmation binds the exact pla
 permission snapshot, target scope, and input hash. Any mismatch, expiry, or policy change requires
 a new preview.
 
-Planned governed tools are defined only in the
+The implemented governed tools are defined only in the
 [Qoder MCP Catalog Evolution contract](../developer/qoder-mcp-contract.md#catalog-evolution);
 Scenario Runtime does not maintain a second catalog.
 
