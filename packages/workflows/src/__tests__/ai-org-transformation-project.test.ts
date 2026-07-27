@@ -70,7 +70,13 @@ function expectClosedAndBoundedSchema(schema: JSONSchemaDefinition): void {
 
 describe('ai-org-transformation workflow', () => {
   it('is discoverable and statically validates its six ordered phases', async () => {
+    const source = readFileSync(
+      resolve(process.cwd(), '.openslack/workflows/ai-org-transformation.ts'),
+      'utf8',
+    );
     const workflow = await loadProjectWorkflow();
+    expect(source).toContain("from '@openslack/collaboration'");
+    expect(source).not.toContain('../../packages/collaboration/src/');
     expect(workflow.meta.name).toBe('ai-org-transformation');
     expect(workflow.meta.phases.map((phase) => phase.title)).toEqual([
       'Intake',

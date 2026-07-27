@@ -677,7 +677,7 @@ describe('OpenSlack MCP core', () => {
       `${JSON.stringify({
         id: 'EVT-QW2-1',
         schema: 'openslack.collaboration_event.v1',
-        timestamp: '2026-07-26T00:00:00.000Z',
+        timestamp: new Date().toISOString(),
         type: 'task.blocked',
         actor: { id: 'agent-1', kind: 'agent' },
         object: { id: '42', kind: 'issue' },

@@ -152,6 +152,11 @@ describe('buildBusinessOutcomeProjection', () => {
     expect(projection.economics.costPerCompletedItem.evidenceRefs).toContain(
       'repo:examples/assumptions.yaml#agentRuntimeCost@2026-07-26',
     );
+    expect(projection.economics.costPerCompletedItem.evidenceRefs).toContain('event:created-1');
+    expect(projection.economics.costPerCompletedItem.evidenceRefs).toContain('event:done-1');
+    expect(projection.economics.costPerCompletedItem.note).toContain(
+      'observed denominator does not strengthen a configured-estimate numerator',
+    );
   });
 
   it('marks unsupported facts unknown instead of inferring approvals, acceptance, or delivery', () => {

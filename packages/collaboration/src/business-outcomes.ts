@@ -173,6 +173,22 @@ const COUNT_METRIC_PATHS = new Set<string>([
 
 const RATIO_METRIC_PATHS = new Set<string>(['work.completionRate', 'governance.prFirstPassRate']);
 
+const BASIS_STRENGTH: Readonly<Record<BusinessOutcomeBasis, number>> = {
+  unknown: 0,
+  configured_estimate: 1,
+  observed: 2,
+};
+
+function weakestBasis(
+  first: BusinessOutcomeBasis,
+  ...remaining: BusinessOutcomeBasis[]
+): BusinessOutcomeBasis {
+  return remaining.reduce(
+    (weakest, basis) => (BASIS_STRENGTH[basis] < BASIS_STRENGTH[weakest] ? basis : weakest),
+    first,
+  );
+}
+
 function unique(values: string[]): string[] {
   return [...new Set(values)].sort();
 }
@@ -673,10 +689,10 @@ export function buildBusinessOutcomeProjection(
         )
       : {
           value: runtimeCost.value / completedPairs.length,
-          basis: runtimeCost.basis,
+          basis: weakestBasis(runtimeCost.basis, 'observed'),
           unit: runtimeCost.unit ? `${runtimeCost.unit}/completed_item` : 'per_completed_item',
           evidenceRefs: unique([...runtimeCost.evidenceRefs, ...completedEvidence]),
-          note: 'Uses the weakest basis of the runtime-cost input and observed completed cohort.',
+          note: 'Combines runtime cost with an observed completed cohort. The observed denominator does not strengthen a configured-estimate numerator; the ratio uses the weaker basis.',
         };
 
   const reusedRuns = normalizedObservedIds(snapshot.reuse?.reusedWorkflowRunIds);

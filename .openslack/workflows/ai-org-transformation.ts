@@ -5,7 +5,7 @@ import type {
   WorkflowMeta,
   WorkflowRuntime,
 } from '@openslack/workflows';
-import { getSecretPatterns } from '../../packages/collaboration/src/redact.ts';
+import { getSecretPatterns } from '@openslack/collaboration';
 
 export const meta: WorkflowMeta = {
   name: 'ai-org-transformation',
