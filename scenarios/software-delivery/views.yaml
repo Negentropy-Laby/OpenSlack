@@ -1,0 +1,13 @@
+schema: openslack.scenario_views.v1
+views:
+  - id: delivery-core
+    title: Governed Delivery Core
+    nodeTypes:
+      - core.work_item
+      - human_decision
+      - outcome
+      - reviewable_deliverable
+      - verification_evidence
+    fields:
+      - status
+      - title

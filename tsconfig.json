@@ -21,6 +21,7 @@
     { "path": "packages/delivery" },
     { "path": "packages/qoder-adapter" },
     { "path": "packages/organization-graph" },
+    { "path": "packages/scenario-runtime" },
     { "path": "packages/tui" },
     { "path": "apps/cli" },
     { "path": "apps/mcp" },

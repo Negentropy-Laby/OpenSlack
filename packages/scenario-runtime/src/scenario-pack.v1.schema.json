@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/scenario-pack.v1.schema.json",
+  "$defs": {
+    "typeId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9]*(?:[._][a-z][a-z0-9_]*)*$"
+    },
+    "relationshipId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$"
+    },
+    "propertyId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][A-Za-z0-9]*$"
+    },
+    "statusId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$"
+    },
+    "authorityProviders": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": { "enum": ["github", "openslack", "demo_fixture"] }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "id", "version", "title", "description", "files"],
+  "properties": {
+    "schema": { "const": "openslack.scenario_pack.v1" },
+    "id": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$", "maxLength": 64 },
+    "version": { "type": "string", "maxLength": 128 },
+    "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+    "description": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "files": {
+      "type": "array",
+      "minItems": 8,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^(?:scenario|ontology|projections|workflows|capabilities|policies|views|notifications)\\.yaml$|^fixtures/[a-z][a-z0-9-]*\\.yaml$"
+      }
+    }
+  }
+}

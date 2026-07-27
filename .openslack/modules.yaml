@@ -1,6 +1,6 @@
 schema: openslack.modules.v2
-vitest_tests: 4768
-vitest_files: 384
+vitest_tests: 4843
+vitest_files: 388
 modules:
   - id: self_evolution
     name: Self-Evolution Kernel
@@ -208,6 +208,12 @@ modules:
       - test:packages/organization-graph/src/__tests__/software-delivery-validation.test.ts
       - test:packages/organization-graph/src/__tests__/software-delivery-projector.test.ts
       - test:packages/organization-graph/src/__tests__/software-delivery-repository-smoke.test.ts
+      - commit:e9f85086485242032b725df6302d454093bac180
+      - test:packages/scenario-runtime/src/__tests__/capabilities.test.ts
+      - test:packages/scenario-runtime/src/__tests__/pack-loader.test.ts
+      - test:packages/scenario-runtime/src/__tests__/planner-instance.test.ts
+      - test:packages/scenario-runtime/src/__tests__/store.test.ts
+      - repo:scenarios/software-delivery/scenario.yaml
     phase: '2D/2E'
     cli:
       - openslack collaboration activity
@@ -269,8 +275,9 @@ modules:
       - '@openslack/agent-runtime'
       - '@openslack/integration-negentropy'
       - '@openslack/organization-graph'
-    tests: 2145
-    test_files: 173
+      - '@openslack/scenario-runtime'
+    tests: 2220
+    test_files: 177
     components:
       - id: agent_runtime
         name: Agent Runtime
@@ -288,3 +295,4 @@ modules:
       BusinessOutcomeProjection v1 aggregates only injected, evidence-backed event/run/PRMS/notification snapshots, preserves observed/configured-estimate/unknown basis per metric, and never invents revenue, durable acceptance, delivery, or human approval.
       Organization Graph Core v1 is active as a pure, rebuildable projection package with closed snapshot/delta contracts, derived stable identities, deterministic integrity hashes, bounded query/explain, and an adversarially checked local atomic store. It performs no network or authoritative business mutation.
       Software Delivery Projector v1 is active as a deterministic, side-effect-free projection over injected and explicitly complete/incomplete/missing source batches. Current GitHub authority requires live observations and current-head bindings; only completed current-head checks become verification evidence, while cache, synthetic, stale-review, self-review, non-terminal-check, missing-target, expired-lease, and incomplete evidence remain informational or incomplete. The projector does not alter existing GitHub task, claim, PR, review, merge, or watch behavior.
+      Scenario Runtime v1 is active as a projection-first, code-free Scenario Pack loader and local instance runtime. It uses an exact-byte closed lock, sealed host-owned projector/capability catalogs, deterministic legacy permission normalization, preview-only canonical plans, nominally trusted instances, bounded global idempotency/CAS, and fail-closed crash recovery. The initial software-delivery Pack registers only the existing projector, declares its complete current/informational/provenance vocabulary, and grants no workflow, notification, deep-link, or mutation authority.

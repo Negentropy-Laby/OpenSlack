@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/scenario-instance.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "id",
+    "definitionId",
+    "definitionVersion",
+    "definitionHash",
+    "correlationId",
+    "state",
+    "targetRefs",
+    "workflowRunIds",
+    "planId",
+    "planHash",
+    "createdAt",
+    "updatedAt",
+    "evidenceRefs"
+  ],
+  "properties": {
+    "schema": { "const": "openslack.scenario_instance.v1" },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[^\\\\/\\u0000-\\u001f\\u007f]+$"
+    },
+    "definitionId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+    },
+    "definitionVersion": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "definitionHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "correlationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[^\\\\/\\u0000-\\u001f\\u007f]+$"
+    },
+    "state": {
+      "enum": [
+        "previewed",
+        "instantiating",
+        "active",
+        "blocked",
+        "completed",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "targetRefs": {
+      "type": "array",
+      "maxItems": 50,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["provider", "objectType", "objectId", "version", "observedAt"],
+        "properties": {
+          "provider": {
+            "enum": ["github", "openslack", "demo_fixture", "dingtalk", "crm", "erp", "hr"]
+          },
+          "objectType": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[a-z][A-Za-z0-9_.-]*$"
+          },
+          "objectId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^(?!.*(?:[Hh][Tt][Tt][Pp][Ss]?://|[Jj][Aa][Vv][Aa][Ss][Cc][Rr][Ii][Pp][Tt]:|[Dd][Aa][Tt][Aa]:[Tt][Ee][Xx][Tt]/[Hh][Tt][Mm][Ll]|<\\s*[Ss][Cc][Rr][Ii][Pp][Tt]|<\\s*[Ii][Ff][Rr][Aa][Mm][Ee]))[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^(?!.*(?:[Hh][Tt][Tt][Pp][Ss]?://|[Jj][Aa][Vv][Aa][Ss][Cc][Rr][Ii][Pp][Tt]:|[Dd][Aa][Tt][Aa]:[Tt][Ee][Xx][Tt]/[Hh][Tt][Mm][Ll]|<\\s*[Ss][Cc][Rr][Ii][Pp][Tt]|<\\s*[Ii][Ff][Rr][Aa][Mm][Ee]))[^\\u0000-\\u001f\\u007f]+$"
+          },
+          "observedAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+        }
+      }
+    },
+    "workflowRunIds": {
+      "type": "array",
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512,
+        "pattern": "^[^\\\\/\\u0000-\\u001f\\u007f]+$"
+      }
+    },
+    "planId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[^\\\\/\\u0000-\\u001f\\u007f]+$"
+    },
+    "planHash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "evidenceRefs": {
+      "type": "array",
+      "maxItems": 100,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1, "maxLength": 2048 }
+    }
+  }
+}
