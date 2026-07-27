@@ -5,6 +5,7 @@ import { listPendingApprovals } from './approvals.js';
 import { getNotificationStatus } from './notifications.js';
 import { getBusinessOutcomes } from './outcomes.js';
 import { getExecutiveOverview } from './overview.js';
+import { explainOrganizationGraph, listScenarios, queryOrganizationGraph } from './graph.js';
 import { getPrReadiness } from './pr.js';
 import { getWorkRoom } from './room.js';
 import { getWorkflowProgress } from './workflow.js';
@@ -28,4 +29,7 @@ export const OPENSLACK_READ_TOOL_HANDLERS: Readonly<
   openslack_list_pending_approvals: listPendingApprovals,
   openslack_get_business_outcomes: getBusinessOutcomes,
   openslack_get_notification_status: getNotificationStatus,
+  openslack_list_scenarios: listScenarios,
+  openslack_query_graph: queryOrganizationGraph,
+  openslack_explain_graph: explainOrganizationGraph,
 });

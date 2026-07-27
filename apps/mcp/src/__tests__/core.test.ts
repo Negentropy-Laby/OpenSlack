@@ -11,7 +11,11 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { OPENSLACK_READ_TOOL_NAMES, type OpenSlackReadToolName } from '@openslack/qoder-adapter';
+import {
+  OPENSLACK_READ_TOOL_NAMES,
+  validateOpenSlackMcpResultV2,
+  type OpenSlackReadToolName,
+} from '@openslack/qoder-adapter';
 import {
   createOpenSlackMcpContext,
   type OpenSlackReadModelPorts,
@@ -49,7 +53,7 @@ function byteTree(root: string, relative = ''): Record<string, string> {
 }
 
 function readers(overrides: Partial<OpenSlackReadModelPorts> = {}): OpenSlackReadModelPorts {
-  return {
+  const base: OpenSlackReadModelPorts = {
     executiveOverview: async () => ({ kind: 'overview', evidenceRef: 'module:registry' }),
     workItems: async () => ({ kind: 'work', evidenceRef: 'event:work' }),
     workRoom: async () => ({ kind: 'room', evidenceRef: 'event:room' }),
@@ -62,8 +66,18 @@ function readers(overrides: Partial<OpenSlackReadModelPorts> = {}): OpenSlackRea
       kind: 'notifications',
       evidenceRef: 'queue:v2',
     }),
-    ...overrides,
+    scenarios: async () => ({ generatedAt: '2026-07-27T00:00:00.000Z', scenarios: [] }),
+    graphQuery: async () => ({
+      generatedAt: '2026-07-27T00:00:00.000Z',
+      nodes: [],
+      edges: [],
+    }),
+    graphExplain: async () => ({
+      generatedAt: '2026-07-27T00:00:00.000Z',
+      targetId: 'node:1',
+    }),
   };
+  return Object.assign(base, overrides);
 }
 
 function toolArgs(name: OpenSlackReadToolName): Record<string, unknown> {
@@ -74,13 +88,17 @@ function toolArgs(name: OpenSlackReadToolName): Record<string, unknown> {
       return { runId: 'RUN-1' };
     case 'openslack_get_pr_readiness':
       return { prNumber: 312 };
+    case 'openslack_query_graph':
+      return { scenarioInstanceId: 'scenario-1' };
+    case 'openslack_explain_graph':
+      return { scenarioInstanceId: 'scenario-1', targetId: 'node-1' };
     default:
       return {};
   }
 }
 
 describe('OpenSlack MCP core', () => {
-  it('lists exactly the frozen nine read-only tools', () => {
+  it('lists exactly the frozen twelve read-only tools', () => {
     const context = createOpenSlackMcpContext({
       workspaceRoot: emptyRoot(),
       operator: operatorContext(),
@@ -89,11 +107,11 @@ describe('OpenSlack MCP core', () => {
     const core = new OpenSlackMcpCore(context);
 
     expect(core.listTools().map((tool) => tool.name)).toEqual(OPENSLACK_READ_TOOL_NAMES);
-    expect(core.listTools()).toHaveLength(9);
+    expect(core.listTools()).toHaveLength(12);
     expect(Object.isFrozen(core.listTools())).toBe(true);
   });
 
-  it('returns matching structured and text output for all nine tools', async () => {
+  it('returns matching structured and text v2 output for all twelve tools', async () => {
     const context = createOpenSlackMcpContext({
       workspaceRoot: emptyRoot(),
       operator: operatorContext(),
@@ -106,7 +124,127 @@ describe('OpenSlack MCP core', () => {
       expect(result.isError).toBe(false);
       expect(result.content).toHaveLength(1);
       expect(JSON.parse(result.content[0].text)).toEqual(result.structuredContent);
-      expect(result.structuredContent.schema).toBe('openslack.mcp_result.v1');
+      expect(result.structuredContent.schema).toBe('openslack.mcp_result.v2');
+      expect(result.structuredContent).toMatchObject({
+        correlationId: expect.any(String),
+        authority: {
+          mode: 'projection',
+          sources: expect.any(Array),
+          observedAt: expect.any(String),
+        },
+      });
+      expect(validateOpenSlackMcpResultV2(result.structuredContent)).toBe(true);
+    }
+  });
+
+  it('preserves all nine foundation data fixtures across the atomic v1 to v2 conversion', async () => {
+    const context = createOpenSlackMcpContext({
+      workspaceRoot: emptyRoot(),
+      operator: operatorContext(),
+      readers: readers(),
+      correlationIdFactory: (() => {
+        let id = 0;
+        return () => `mcp:foundation-${++id}`;
+      })(),
+    });
+    const core = new OpenSlackMcpCore(context);
+    const foundationNames = OPENSLACK_READ_TOOL_NAMES.slice(0, 9);
+    for (const name of foundationNames) {
+      const result = await core.callTool(name, toolArgs(name));
+      expect(result.structuredContent).toMatchObject({
+        schema: 'openslack.mcp_result.v2',
+        status: 'completed',
+        governance: { risk: 'none', approvalRequired: false },
+      });
+      expect(result.structuredContent.data).toBeDefined();
+      expect(validateOpenSlackMcpResultV2(result.structuredContent)).toBe(true);
+    }
+  });
+
+  it('generates correlation IDs at the composition boundary and never accepts an override', async () => {
+    let next = 0;
+    const core = new OpenSlackMcpCore(
+      createOpenSlackMcpContext({
+        workspaceRoot: emptyRoot(),
+        operator: operatorContext(),
+        readers: readers(),
+        clock: () => new Date('2026-07-27T03:00:00.000Z'),
+        correlationIdFactory: () => `mcp:call-${++next}`,
+      }),
+    );
+    const first = await core.callTool('openslack_get_activity', {});
+    const second = await core.callTool('openslack_get_activity', {});
+    expect(first.structuredContent.correlationId).toBe('mcp:call-1');
+    expect(second.structuredContent.correlationId).toBe('mcp:call-2');
+    await expect(
+      core.callTool('openslack_get_activity', { correlationId: 'client-selected' }),
+    ).rejects.toThrow(/unexpected argument properties/);
+    expect(first.structuredContent.authority).toMatchObject({
+      mode: 'projection',
+      sources: ['openslack.collaboration_events'],
+      observedAt: '2026-07-27T03:00:00.000Z',
+    });
+  });
+
+  it('does not invoke getters returned by a host reader', async () => {
+    let invoked = false;
+    const crafted = Object.defineProperty({}, 'generatedAt', {
+      enumerable: true,
+      get() {
+        invoked = true;
+        throw new Error('getter executed');
+      },
+    });
+    const core = new OpenSlackMcpCore(
+      createOpenSlackMcpContext({
+        workspaceRoot: emptyRoot(),
+        operator: operatorContext(),
+        readers: readers({ activity: async () => crafted }),
+      }),
+    );
+    const result = await core.callTool('openslack_get_activity', {});
+    expect(invoked).toBe(false);
+    expect(result.structuredContent.schema).toBe('openslack.mcp_result.v2');
+    expect(result.content[0].text).not.toContain('getter executed');
+  });
+
+  it('rejects top-level and nested reader proxies without executing their traps', async () => {
+    for (const nested of [false, true]) {
+      let trapHits = 0;
+      const proxy = new Proxy(
+        { generatedAt: '2026-07-27T00:00:00.000Z' },
+        {
+          getPrototypeOf() {
+            trapHits += 1;
+            throw new Error('proxy prototype trap executed');
+          },
+          ownKeys() {
+            trapHits += 1;
+            throw new Error('proxy ownKeys trap executed');
+          },
+          getOwnPropertyDescriptor() {
+            trapHits += 1;
+            throw new Error('proxy descriptor trap executed');
+          },
+        },
+      );
+      const core = new OpenSlackMcpCore(
+        createOpenSlackMcpContext({
+          workspaceRoot: emptyRoot(),
+          operator: operatorContext(),
+          readers: readers({ activity: async () => (nested ? { nested: proxy } : proxy) }),
+        }),
+      );
+      const result = await core.callTool('openslack_get_activity', {});
+
+      expect(trapHits).toBe(0);
+      expect(result.isError).toBe(true);
+      expect(result.structuredContent).toMatchObject({
+        schema: 'openslack.mcp_result.v2',
+        status: 'failed',
+        error: { code: expect.any(String) },
+      });
+      expect(JSON.parse(result.content[0].text)).toEqual(result.structuredContent);
     }
   });
 
@@ -200,7 +338,7 @@ describe('OpenSlack MCP core', () => {
       /at most 100/,
     );
     await expect(core.callTool('openslack_get_activity', { rawCommand: 'status' })).rejects.toThrow(
-      /rawCommand is not allowed/,
+      /unexpected argument properties/,
     );
   });
 

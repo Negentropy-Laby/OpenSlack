@@ -1,8 +1,10 @@
 # Qoder Work Trust Boundary
 
-Status: planned security contract. The current shipped boundary is the nine-tool, read-only STDIO
-server documented in [Qoder Work MCP integration](../developer/qoder-mcp.md). This document defines
-the additional invariants required before graph and mutation milestones.
+Status: design security contract. The current local production boundary is the exact 12-tool,
+read-only STDIO server with v2 results documented in
+[Qoder Work MCP integration](../developer/qoder-mcp.md). An injected local demo profile may add
+only its bounded reset tool as number 13. No Qoder desktop qualification or QG5 mutation is
+claimed.
 
 ## Security Position
 

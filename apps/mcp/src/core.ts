@@ -1,13 +1,17 @@
+import { types as utilTypes } from 'node:util';
 import {
-  OPENSLACK_READ_TOOL_CATALOG,
+  OPENSLACK_DEMO_RESET_TOOL_NAME,
   OPENSLACK_READ_TOOL_NAMES,
   ToolInputValidationError,
+  assertNominalOpenSlackToolCatalog,
   createOpenSlackMcpResult,
-  getOpenSlackReadToolDefinition,
+  getOpenSlackToolCatalog,
   isOpenSlackReadToolName,
+  upgradeOpenSlackMcpResult,
   validateToolInput,
   type OpenSlackMcpResult,
-  type OpenSlackReadToolDefinition,
+  type OpenSlackMcpResultV2,
+  type OpenSlackToolName,
 } from '@openslack/qoder-adapter';
 import type { OpenSlackMcpContext } from './context.js';
 import { OpenSlackMcpProtocolError, safeToolError } from './errors.js';
@@ -39,11 +43,11 @@ export interface OpenSlackMcpCoreOptions {
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MIN_TIMEOUT_MS = 100;
 const MAX_TIMEOUT_MS = 30_000;
-const DEFAULT_MAX_OUTPUT_BYTES = 1024 * 1024;
+const DEFAULT_MAX_OUTPUT_BYTES = 512 * 1024;
 const MIN_MAX_OUTPUT_BYTES = 16 * 1024;
-const MAX_MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
+const MAX_MAX_OUTPUT_BYTES = 512 * 1024;
 const MAX_TEXT_LENGTH = 4_000;
-const MAX_ARRAY_ITEMS = 100;
+const MAX_ARRAY_ITEMS = 500;
 const MAX_OBJECT_KEYS = 200;
 const SENSITIVE_NORMALIZED_KEYS = new Set([
   'apikey',
@@ -106,15 +110,33 @@ function sanitizeForProtocol(value: unknown, depth = 0): unknown {
   if (value === null || value === undefined || typeof value === 'boolean') return value;
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
   if (typeof value === 'string') return redactString(value);
+  if ((typeof value === 'object' || typeof value === 'function') && utilTypes.isProxy(value)) {
+    throw new TypeError('PROTOCOL_OUTPUT_PROXY_REJECTED');
+  }
   if (Array.isArray(value)) {
-    return value.slice(0, MAX_ARRAY_ITEMS).map((entry) => sanitizeForProtocol(entry, depth + 1));
+    const output: unknown[] = [];
+    for (let index = 0; index < Math.min(value.length, MAX_ARRAY_ITEMS); index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      const sanitized =
+        descriptor && Object.hasOwn(descriptor, 'value')
+          ? sanitizeForProtocol(descriptor.value, depth + 1)
+          : '[UNSAFE_ARRAY_ENTRY]';
+      output.push(sanitized === undefined ? null : sanitized);
+    }
+    return output;
   }
   if (typeof value !== 'object') return String(value);
   const output: Record<string, unknown> = {};
-  for (const [key, child] of Object.entries(value as Record<string, unknown>).slice(
-    0,
-    MAX_OBJECT_KEYS,
-  )) {
+  const keys = Reflect.ownKeys(value)
+    .filter((key): key is string => typeof key === 'string')
+    .slice(0, MAX_OBJECT_KEYS);
+  for (const key of keys) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor || !Object.hasOwn(descriptor, 'value')) {
+      output[key] = '[UNSAFE_PROPERTY]';
+      continue;
+    }
+    const child = descriptor.value;
     if (key === 'evidenceRef') {
       if (typeof child === 'string') {
         const reference = normalizeTypedEvidenceReference(child);
@@ -123,10 +145,18 @@ function sanitizeForProtocol(value: unknown, depth = 0): unknown {
       continue;
     }
     if (key === 'evidenceRefs') {
+      if (
+        (typeof child === 'object' || typeof child === 'function') &&
+        child !== null &&
+        utilTypes.isProxy(child)
+      ) {
+        throw new TypeError('PROTOCOL_OUTPUT_PROXY_REJECTED');
+      }
       output[key] = Array.isArray(child) ? normalizeTypedEvidenceReferences(child) : [];
       continue;
     }
-    output[key] = isSensitiveKey(key) ? '[REDACTED]' : sanitizeForProtocol(child, depth + 1);
+    const sanitized = isSensitiveKey(key) ? '[REDACTED]' : sanitizeForProtocol(child, depth + 1);
+    if (sanitized !== undefined) output[key] = sanitized;
   }
   return output;
 }
@@ -144,6 +174,7 @@ async function withTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
   controller: AbortController,
+  timeoutCode = 'READ_PROJECTION_TIMEOUT',
 ): Promise<T> {
   let timeout: NodeJS.Timeout | undefined;
   try {
@@ -151,8 +182,8 @@ async function withTimeout<T>(
       promise,
       new Promise<never>((_, reject) => {
         timeout = setTimeout(() => {
-          controller.abort(new Error('READ_PROJECTION_TIMEOUT'));
-          reject(new Error('READ_PROJECTION_TIMEOUT'));
+          controller.abort(new Error(timeoutCode));
+          reject(new ToolDeadlineExceededError(timeoutCode));
         }, timeoutMs);
         timeout.unref();
       }),
@@ -162,19 +193,75 @@ async function withTimeout<T>(
   }
 }
 
-function assertFrozenCatalog(): void {
+class ToolDeadlineExceededError extends Error {
+  constructor(readonly code: string) {
+    super(code);
+    this.name = 'ToolDeadlineExceededError';
+  }
+}
+
+function deepFreezeJson<T>(value: T): T {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    for (const key of Reflect.ownKeys(value)) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (descriptor && Object.hasOwn(descriptor, 'value')) deepFreezeJson(descriptor.value);
+    }
+    Object.freeze(value);
+  }
+  return value;
+}
+
+const AUTHORITY_SOURCES = Object.freeze({
+  openslack_get_executive_overview: Object.freeze([
+    'openslack.module_registry',
+    'openslack.collaboration_projection',
+  ]),
+  openslack_list_work_items: Object.freeze(['openslack.collaboration_events']),
+  openslack_get_work_room: Object.freeze(['openslack.collaboration_projection']),
+  openslack_get_activity: Object.freeze(['openslack.collaboration_events']),
+  openslack_get_workflow_progress: Object.freeze(['openslack.workflow_run_store']),
+  openslack_get_pr_readiness: Object.freeze(['github.live', 'openslack.prms']),
+  openslack_list_pending_approvals: Object.freeze([
+    'openslack.operator_plans',
+    'openslack.workflow_governance',
+    'github.review_evidence',
+  ]),
+  openslack_get_business_outcomes: Object.freeze(['openslack.business_outcome_projection']),
+  openslack_get_notification_status: Object.freeze(['openslack.notification_projection']),
+  openslack_list_scenarios: Object.freeze(['openslack.locked_scenario_pack']),
+  openslack_query_graph: Object.freeze(['openslack.organization_graph_snapshot']),
+  openslack_explain_graph: Object.freeze(['openslack.organization_graph_snapshot']),
+  openslack_demo_reset: Object.freeze(['openslack.local_demo_fixture']),
+}) satisfies Readonly<Record<OpenSlackToolName, readonly string[]>>;
+
+function observedAt(value: unknown, fallback: Date): string {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const candidate = (value as Record<string, unknown>).generatedAt;
+    if (typeof candidate === 'string') {
+      const parsed = new Date(candidate);
+      if (Number.isFinite(parsed.getTime()) && parsed.toISOString() === candidate) return candidate;
+    }
+  }
+  return fallback.toISOString();
+}
+
+function assertFrozenCatalog(includeDemoReset: boolean): void {
+  const catalog = getOpenSlackToolCatalog({ includeDemoReset });
+  assertNominalOpenSlackToolCatalog(catalog);
+  const expectedLength = includeDemoReset ? 13 : 12;
   if (
-    OPENSLACK_READ_TOOL_CATALOG.length !== 9 ||
-    OPENSLACK_READ_TOOL_NAMES.length !== 9 ||
-    !Object.isFrozen(OPENSLACK_READ_TOOL_CATALOG)
+    catalog.length !== expectedLength ||
+    OPENSLACK_READ_TOOL_NAMES.length !== 12 ||
+    !Object.isFrozen(catalog)
   ) {
     throw new Error('READ_TOOL_CATALOG_INVALID');
   }
-  const catalogNames = OPENSLACK_READ_TOOL_CATALOG.map((tool) => tool.name);
+  const catalogNames = catalog.map((tool) => tool.name);
   if (
-    new Set(catalogNames).size !== 9 ||
+    new Set(catalogNames).size !== expectedLength ||
     OPENSLACK_READ_TOOL_NAMES.some((name) => !catalogNames.includes(name)) ||
-    OPENSLACK_READ_TOOL_NAMES.some((name) => !(name in OPENSLACK_READ_TOOL_HANDLERS))
+    OPENSLACK_READ_TOOL_NAMES.some((name) => !(name in OPENSLACK_READ_TOOL_HANDLERS)) ||
+    includeDemoReset !== catalogNames.includes(OPENSLACK_DEMO_RESET_TOOL_NAME)
   ) {
     throw new Error('READ_TOOL_CATALOG_DRIFT');
   }
@@ -184,10 +271,12 @@ export class OpenSlackMcpCore {
   readonly #context: OpenSlackMcpContext;
   readonly #timeoutMs: number;
   readonly #maxOutputBytes: number;
+  readonly #catalog: ReturnType<typeof getOpenSlackToolCatalog>;
 
   constructor(context: OpenSlackMcpContext, options: OpenSlackMcpCoreOptions = {}) {
-    assertFrozenCatalog();
+    assertFrozenCatalog(context.demoReset !== undefined);
     this.#context = context;
+    this.#catalog = getOpenSlackToolCatalog({ includeDemoReset: context.demoReset !== undefined });
     this.#timeoutMs = boundedInteger(
       options.timeoutMs,
       DEFAULT_TIMEOUT_MS,
@@ -204,15 +293,16 @@ export class OpenSlackMcpCore {
     );
   }
 
-  listTools(): readonly OpenSlackReadToolDefinition[] {
-    return OPENSLACK_READ_TOOL_CATALOG;
+  listTools(): ReturnType<typeof getOpenSlackToolCatalog> {
+    return this.#catalog;
   }
 
   async callTool(name: string, args: unknown = {}): Promise<OpenSlackMcpToolCallResult> {
-    if (!isOpenSlackReadToolName(name)) {
+    const demoReset = name === OPENSLACK_DEMO_RESET_TOOL_NAME && this.#context.demoReset;
+    if (!isOpenSlackReadToolName(name) && !demoReset) {
       throw new OpenSlackMcpProtocolError(-32602, `Unknown tool: ${name}`);
     }
-    const definition = getOpenSlackReadToolDefinition(name);
+    const definition = this.#catalog.find((tool) => tool.name === name);
     if (!definition) throw new OpenSlackMcpProtocolError(-32602, `Unknown tool: ${name}`);
 
     let input: Readonly<Record<string, unknown>>;
@@ -225,56 +315,148 @@ export class OpenSlackMcpCore {
       throw error;
     }
 
+    const callTime = this.#context.runtime.now();
+    const correlationId = this.#context.runtime.nextCorrelationId();
+    const toolName = name as OpenSlackToolName;
     let result: OpenSlackMcpResult;
     try {
       const controller = new AbortController();
-      result = await withTimeout(
-        OPENSLACK_READ_TOOL_HANDLERS[name](this.#context, input, controller.signal),
-        this.#timeoutMs,
-        controller,
-      );
+      const deadlineAt = new Date(callTime.getTime() + this.#timeoutMs).toISOString();
+      result = demoReset
+        ? await withTimeout(
+            Promise.resolve(
+              demoReset.reset(Object.freeze({ signal: controller.signal, deadlineAt })),
+            ).then((data) =>
+              createOpenSlackMcpResult({
+                summary: 'The bounded local demo reset port completed.',
+                data,
+                governance: { risk: 'low' },
+              }),
+            ),
+            this.#timeoutMs,
+            controller,
+            'DEMO_RESET_TIMEOUT',
+          )
+        : await withTimeout(
+            OPENSLACK_READ_TOOL_HANDLERS[name as keyof typeof OPENSLACK_READ_TOOL_HANDLERS](
+              this.#context,
+              input,
+              controller.signal,
+            ),
+            this.#timeoutMs,
+            controller,
+          );
     } catch (error) {
-      const safe = safeToolError(error);
-      result = failedResult(safe.safeCode, safe.safeMessage);
+      if (demoReset && error instanceof ToolDeadlineExceededError) {
+        result = createOpenSlackMcpResult({
+          status: 'blocked',
+          summary:
+            'The demo reset deadline expired; reconcile the fixture before any further demo mutation.',
+          data: { outcome: 'reconciliation_required' },
+          governance: {
+            risk: 'low',
+            blocker: 'DEMO_RESET_RECONCILIATION_REQUIRED',
+          },
+        });
+      } else {
+        const safe = safeToolError(error);
+        result = failedResult(safe.safeCode, safe.safeMessage);
+      }
     }
 
-    const projectedData =
-      result.data === undefined ? undefined : projectToolData(name, result.data);
-    result = createOpenSlackMcpResult({
-      status: result.status,
-      summary: result.summary,
-      ...(projectedData === undefined ? {} : { data: projectedData }),
-      governance: result.governance,
-      nextActions: [],
-      evidenceRefs: normalizeEvidenceReferences([
-        ...result.evidenceRefs,
-        ...evidenceFrom(projectedData),
-      ]),
-      ...(result.planId ? { planId: result.planId } : {}),
-      ...(result.executionId ? { executionId: result.executionId } : {}),
-      ...(result.error ? { error: result.error } : {}),
-    });
-    const structured = sanitizeForProtocol(result) as Readonly<Record<string, unknown>>;
-    let serialized = JSON.stringify(structured);
-    if (Buffer.byteLength(serialized, 'utf8') > this.#maxOutputBytes) {
-      const bounded = sanitizeForProtocol(
-        failedResult(
-          'READ_PROJECTION_TOO_LARGE',
-          'The requested OpenSlack projection exceeded the protocol output bound.',
-        ),
-      ) as Readonly<Record<string, unknown>>;
-      serialized = JSON.stringify(bounded);
+    try {
+      const safeRawData = result.data === undefined ? undefined : sanitizeForProtocol(result.data);
+      const projectedRawData =
+        safeRawData === undefined
+          ? undefined
+          : demoReset
+            ? safeRawData
+            : projectToolData(name as Parameters<typeof projectToolData>[0], safeRawData);
+      const projectedData =
+        projectedRawData === undefined ? undefined : sanitizeForProtocol(projectedRawData);
+      result = createOpenSlackMcpResult({
+        status: result.status,
+        summary: result.summary,
+        ...(projectedData === undefined ? {} : { data: projectedData }),
+        governance: result.governance,
+        nextActions: [],
+        evidenceRefs: normalizeEvidenceReferences([
+          ...result.evidenceRefs,
+          ...evidenceFrom(projectedData),
+        ]),
+        ...(result.planId ? { planId: result.planId } : {}),
+        ...(result.executionId ? { executionId: result.executionId } : {}),
+        ...(result.error ? { error: result.error } : {}),
+      });
+      const resultV2: OpenSlackMcpResultV2 = upgradeOpenSlackMcpResult(result, {
+        correlationId,
+        authority: {
+          mode: demoReset ? 'governed_mutation' : 'projection',
+          sources: AUTHORITY_SOURCES[toolName],
+          observedAt: observedAt(projectedData, callTime),
+        },
+      });
+      const structured = deepFreezeJson(
+        sanitizeForProtocol(resultV2) as Readonly<Record<string, unknown>>,
+      );
+      let serialized = JSON.stringify(structured);
+      if (Buffer.byteLength(serialized, 'utf8') > this.#maxOutputBytes) {
+        const bounded = deepFreezeJson(
+          sanitizeForProtocol(
+            upgradeOpenSlackMcpResult(
+              failedResult(
+                'READ_PROJECTION_TOO_LARGE',
+                'The requested OpenSlack projection exceeded the protocol output bound.',
+              ),
+              {
+                correlationId,
+                authority: {
+                  mode: demoReset ? 'governed_mutation' : 'projection',
+                  sources: AUTHORITY_SOURCES[toolName],
+                  observedAt: callTime.toISOString(),
+                },
+              },
+            ),
+          ) as Readonly<Record<string, unknown>>,
+        );
+        serialized = JSON.stringify(bounded);
+        return Object.freeze({
+          content: Object.freeze([{ type: 'text' as const, text: serialized }]),
+          structuredContent: bounded,
+          isError: true,
+        });
+      }
+
       return Object.freeze({
         content: Object.freeze([{ type: 'text' as const, text: serialized }]),
-        structuredContent: Object.freeze(bounded),
+        structuredContent: structured,
+        isError: result.status === 'failed',
+      });
+    } catch {
+      const fallback = deepFreezeJson(
+        sanitizeForProtocol(
+          upgradeOpenSlackMcpResult(
+            failedResult(
+              'PROTOCOL_OUTPUT_UNSAFE',
+              'The OpenSlack result could not be safely projected onto the MCP protocol.',
+            ),
+            {
+              correlationId,
+              authority: {
+                mode: demoReset ? 'governed_mutation' : 'projection',
+                sources: AUTHORITY_SOURCES[toolName],
+                observedAt: callTime.toISOString(),
+              },
+            },
+          ),
+        ) as Readonly<Record<string, unknown>>,
+      );
+      const serialized = JSON.stringify(fallback);
+      return Object.freeze({
+        content: Object.freeze([{ type: 'text' as const, text: serialized }]),
+        structuredContent: fallback,
         isError: true,
       });
     }
-
-    return Object.freeze({
-      content: Object.freeze([{ type: 'text' as const, text: serialized }]),
-      structuredContent: Object.freeze(structured),
-      isError: result.status === 'failed',
-    });
   }
 }

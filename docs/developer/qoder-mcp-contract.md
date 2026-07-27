@@ -1,9 +1,9 @@
 # Qoder MCP Contract
 
-Status: planned contract. The merged implementation baseline remains the read-only
-`openslack.mcp_result.v1` server described in [Qoder Work MCP integration](qoder-mcp.md). This
-document freezes the compatible v2 boundary required by Organization Graph and Scenario Runtime;
-it does not claim those additions are implemented.
+Status: design contract. The current local production surface is the exact 12-tool,
+`openslack.mcp_result.v2` server described in [Qoder Work MCP integration](qoder-mcp.md); an
+explicitly injected local demo surface adds only the bounded reset tool as number 13. This does not
+claim Qoder desktop qualification or any QG5 mutation.
 
 ## Composition Boundary
 
@@ -28,7 +28,7 @@ This section is the single source of truth for exact MCP tool names and catalog 
 Scenario Runtime, Skill, and security documents link here and must not independently add, rename,
 or copy the catalog.
 
-The foundation catalog contains exactly nine read-only tools:
+The foundation compatibility layer contains exactly nine read-only handlers:
 
 ```text
 openslack_get_executive_overview
@@ -42,7 +42,7 @@ openslack_get_business_outcomes
 openslack_get_notification_status
 ```
 
-The graph-read milestone adds exactly:
+The current production catalog adds exactly:
 
 ```text
 openslack_list_scenarios
@@ -68,16 +68,20 @@ Scenario instantiation and workflow start are effects of a confirmed canonical p
 second direct execution tool. No MCP catalog exposes arbitrary commands, direct merge, GitHub
 approval, policy writes, registry writes, or permission writes.
 
-`openslack_demo_reset` is present only in an explicitly configured local `demo_mode` profile whose
-root is the bounded fixture workspace. It is absent from the production catalog and never deletes
-or rewrites live GitHub objects.
+`openslack_demo_reset` is present only with explicit `demoMode: true` and a nominal port created by
+`createLocalDemoResetPort`. The factory binds one existing canonical
+`.openslack.local/demo/<fixture>` child to the same workspace and rejects symlink/reparse or changed
+directory identities. Its host callback receives only frozen `{ root, signal, deadlineAt }`
+authority. Timeout is an ambiguous effect reported as `reconciliation_required`, never as proof of
+no effect. That exact 13-tool profile is separate from production and never rewrites live GitHub
+objects.
 
 ## Result Versions
 
-`openslack.mcp_result.v1` remains frozen. Existing status values and field meanings must not change.
+`openslack.mcp_result.v1` remains frozen as the internal compatibility contract for the nine
+foundation handlers. Existing status values and field meanings must not change.
 
-The graph/scenario milestone switches every advertised tool atomically to
-`openslack.mcp_result.v2`:
+The current server switches every advertised tool atomically to `openslack.mcp_result.v2`:
 
 ```ts
 interface OpenSlackMcpResultV2<T = unknown> {

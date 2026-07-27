@@ -12,6 +12,8 @@
     { "path": "../../packages/workflows" },
     { "path": "../../packages/github" },
     { "path": "../../packages/pr" },
-    { "path": "../../packages/qoder-adapter" }
+    { "path": "../../packages/qoder-adapter" },
+    { "path": "../../packages/organization-graph" },
+    { "path": "../../packages/scenario-runtime" }
   ]
 }

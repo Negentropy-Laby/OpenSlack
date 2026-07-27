@@ -1,8 +1,8 @@
 # Scenario Pack Security Boundary
 
-Status: planned security contract. `openslack.scenario_pack.v1` is a code-free request format. A
-valid pack is not authorized, active, trusted, or executable merely because it passes schema and
-integrity checks.
+Status: implemented declarative security boundary. `openslack.scenario_pack.v1` is a code-free
+request format. A valid pack is not authorized, active, trusted, or executable merely because it
+passes schema and integrity checks.
 
 ## Core Invariant
 

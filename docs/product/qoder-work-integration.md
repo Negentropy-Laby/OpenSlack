@@ -2,15 +2,15 @@
 
 | Field             | Value                                                                  |
 | ----------------- | ---------------------------------------------------------------------- |
-| Status            | `PLANNED — DESIGN CONTRACT`                                            |
+| Status            | `READ PATH IMPLEMENTED — GOVERNED MUTATION AND QUALIFICATION PENDING`  |
 | Product direction | Qoder-first, MCP-first, projection-first                               |
 | MVP transport     | Local STDIO MCP                                                        |
 | Authority owner   | OpenSlack for plans and governance; external systems for their records |
 | Evidence ceiling  | Contract documentation alone proves no implementation or qualification |
 
-This document defines the planned product boundary between Qoder Work and OpenSlack. It is not a
-claim that the graph, scenario, mutation, Skill, Workbench, remote Connector, or interview
-qualification milestones have shipped.
+This document defines the product boundary between Qoder Work and OpenSlack. Current local
+graph/scenario reads and the checked-in Skill do not claim governed QG5 mutation, a formal
+Workbench, a remote Connector, or interview qualification.
 
 ## Product outcome
 
@@ -66,7 +66,7 @@ boundary. Scenario and graph views consume its projection or the same typed sour
 do not introduce a second KPI database or invent revenue, approvals, notification delivery, or
 manual-hour savings.
 
-### QW2: read-only MCP frontend
+### QW2/QG4: read-only MCP frontend
 
 The existing packages and command remain:
 
@@ -78,16 +78,18 @@ openslack mcp serve --stdio
 
 The exact tool names and counts are owned by the
 [Qoder MCP Catalog Evolution contract](../developer/qoder-mcp-contract.md#catalog-evolution).
-The implemented QW2 milestone contains nine read-only tools.
+The implemented QW2 foundation contains nine compatibility handlers.
 
-This server reuses the instance-scoped OpenSlack composition context, imports package APIs, and
+The server reuses the instance-scoped OpenSlack composition context, imports package APIs, and
 does not execute CLI text or parse CLI output. It exposes no shell, generic command, approval,
-merge, policy, permission, or other mutation tool. Its current result schema is
-`openslack.mcp_result.v1`.
+merge, policy, permission, or other production mutation tool. The frozen
+`openslack.mcp_result.v1` type remains an internal compatibility boundary for these nine handlers.
 
-The planned graph-read milestone adds three tools and produces a 12-tool read-only catalog. Until
-those tools and their tests exist, the implemented catalog remains nine. This product document
-does not duplicate or independently extend the canonical catalog.
+The production QG4 milestone adds three graph/scenario reads, producing exactly 12 read-only
+tools. An explicitly injected local demo profile adds only `openslack_demo_reset` as the exact
+13th tool. Every advertised production/demo result is `openslack.mcp_result.v2`; the stock STDIO
+command does not advertise the demo tool. This product document does not duplicate or
+independently extend the canonical catalog.
 
 ## Authority boundary
 
@@ -204,10 +206,10 @@ The remote transport later replaces startup binding with an OAuth subject-to-pri
 
 ## Result and evidence rules
 
-`openslack.mcp_result.v1` remains frozen for the nine implemented tools. Graph/scenario work
-introduces `openslack.mcp_result.v2` only through one coordinated compatibility change. The v2
-contract retains the v1 status vocabulary and adds server-generated correlation, typed authority
-sources, governance, immutable plan identity, and execution identity.
+`openslack.mcp_result.v1` remains frozen for the nine foundation handlers. The current MCP server
+upgrades every advertised tool atomically to `openslack.mcp_result.v2`. The v2 contract retains
+the v1 status vocabulary and adds server-generated correlation, typed authority sources,
+governance, immutable plan identity, and execution identity.
 
 All results must:
 

@@ -2,15 +2,16 @@
 
 | Field              | Value                                                       |
 | ------------------ | ----------------------------------------------------------- |
-| Status             | `PLANNED — DESIGN CONTRACT`                                 |
+| Status             | `CORE AND SOFTWARE-DELIVERY PROJECTOR IMPLEMENTED`          |
 | Product direction  | Projection-first                                            |
 | First source model | Software delivery evidence                                  |
 | Lead scenario      | Contract-to-Delivery Lite                                   |
 | Authority          | Derived and rebuildable; never authoritative mutation state |
 
-This document defines the planned Organization Graph product contract. No
-`@openslack/organization-graph` package, graph store, projector, graph MCP tool, or HTML graph
-artifact is claimed as implemented by this document.
+The `@openslack/organization-graph` package, local snapshot store, bounded query/explain APIs,
+software-delivery projector, and read-only MCP tools implement the core described here. The
+Contract-to-Delivery projector and offline HTML artifact remain later milestones and are not
+claimed by this document.
 
 ## Product outcome
 

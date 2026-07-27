@@ -1,3 +1,4 @@
+import { types as utilTypes } from 'node:util';
 import { createOpenSlackMcpResult, type OpenSlackMcpResult } from '@openslack/qoder-adapter';
 import { normalizeTypedEvidenceReference, normalizeTypedEvidenceReferences } from '../sanitizer.js';
 
@@ -18,21 +19,48 @@ export function stringArg(
   return typeof value === 'string' ? value : undefined;
 }
 
+export function stringArrayArg(
+  input: Readonly<Record<string, unknown>>,
+  key: string,
+): string[] | undefined {
+  const value = input[key];
+  return Array.isArray(value) ? (value as string[]) : undefined;
+}
+
 function walkEvidence(value: unknown, output: Set<string>, depth: number): void {
   if (depth > 8 || output.size >= 50 || value === null || value === undefined) return;
   if (typeof value === 'string') return;
+  if ((typeof value === 'object' || typeof value === 'function') && utilTypes.isProxy(value)) {
+    throw new TypeError('PROTOCOL_OUTPUT_PROXY_REJECTED');
+  }
   if (Array.isArray(value)) {
-    for (const child of value) walkEvidence(child, output, depth + 1);
+    for (let index = 0; index < value.length; index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      if (descriptor && Object.hasOwn(descriptor, 'value')) {
+        walkEvidence(descriptor.value, output, depth + 1);
+      }
+    }
     return;
   }
   if (typeof value !== 'object') return;
-  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== 'string') continue;
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor || !Object.hasOwn(descriptor, 'value')) continue;
+    const child = descriptor.value;
     if (key === 'headSha' && typeof child === 'string') {
       const sha = child.trim();
       if (/^[0-9a-f]{40}$/i.test(sha)) output.add(`commit:${sha.toLowerCase()}`);
     } else if (key === 'evidenceRef' && typeof child === 'string') {
       const reference = normalizeEvidenceReference(child);
       if (reference) output.add(reference);
+    } else if (
+      key === 'evidenceRefs' &&
+      (typeof child === 'object' || typeof child === 'function') &&
+      child !== null &&
+      utilTypes.isProxy(child)
+    ) {
+      throw new TypeError('PROTOCOL_OUTPUT_PROXY_REJECTED');
     } else if (key === 'evidenceRefs' && Array.isArray(child)) {
       for (const item of child) {
         if (typeof item !== 'string') continue;

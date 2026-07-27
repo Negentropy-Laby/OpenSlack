@@ -1,3 +1,4 @@
+import { types as utilTypes } from 'node:util';
 import { getSecretPatterns } from '@openslack/collaboration';
 
 const MAX_PERCENT_DECODE_PASSES = 3;
@@ -112,6 +113,7 @@ export function normalizeTypedEvidenceReferences(
   values: readonly unknown[],
   limit = 50,
 ): readonly string[] {
+  if (utilTypes.isProxy(values)) throw new TypeError('PROTOCOL_OUTPUT_PROXY_REJECTED');
   const normalized = new Set<string>();
   for (const value of values) {
     if (typeof value !== 'string') continue;
