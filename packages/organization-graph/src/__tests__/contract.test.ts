@@ -14,6 +14,7 @@ import {
   verifyGraphDeltaIntegrity,
   verifyGraphSnapshotIntegrity,
 } from '../index.js';
+import type { AuthorityRef } from '../index.js';
 import { EDGE_IDS, NODE_IDS, graphDelta, graphSnapshot } from './fixtures.js';
 
 describe('organization graph contracts', () => {
@@ -188,7 +189,13 @@ describe('organization graph contracts', () => {
   });
 
   it('derives identity from scenario, type, and authority object identity only', () => {
-    const authority = graphSnapshot().nodes[0]!.authorityRef;
+    const authority = {
+      provider: 'github',
+      objectType: 'issue',
+      objectId: 'node-a',
+      version: 'v-node-a',
+      observedAt: '2026-07-26T08:00:00.000Z',
+    } satisfies AuthorityRef;
     const first = deriveGraphNodeId({
       scenarioInstanceId: 'scenario-001',
       type: 'core.work_item',
@@ -204,6 +211,9 @@ describe('organization graph contracts', () => {
       type: 'core.work_item',
       authorityRef: reobservedAuthority,
     });
+    expect(first).toBe(
+      'node:sha256:9a72e03d5cdbca852c3cf49b2a4fca68e8e9f62db37abdd87da5fdd222a07899',
+    );
     expect(observedAgain).toBe(first);
     expect(
       deriveGraphNodeId({

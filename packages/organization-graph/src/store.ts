@@ -16,6 +16,12 @@ import { parseStrictGraphJson } from './strict-json.js';
 import type { GraphDelta, GraphEdge, GraphNode, GraphSnapshot } from './types.js';
 
 const CURSOR_SCHEMA = 'openslack.graph_cursor.v1';
+/**
+ * Node does not expose Windows FILE_FLAG_OPEN_REPARSE_POINT through its portable fs.open API.
+ * Windows therefore retains the lstat/realpath/handle-identity/readback checks below, but lacks
+ * POSIX-equivalent open-time no-follow and directory-fsync guarantees. Windows qualification
+ * must report that platform delta until a native fail-closed adapter supplies both guarantees.
+ */
 const NO_FOLLOW = process.platform === 'win32' ? 0 : (fsConstants.O_NOFOLLOW ?? 0);
 
 export interface GraphStoreLimits {
@@ -797,7 +803,15 @@ function assertDeltaTransition(
   const nodes = new Map(current.nodes.map((node) => [node.id, node]));
   const edges = new Map(current.edges.map((edge) => [edge.id, edge]));
 
-  for (const node of delta.upsertNodes) nodes.set(node.id, node);
+  for (const node of delta.upsertNodes) {
+    if (nodes.get(node.id)?.validTo !== undefined) {
+      storeFail(
+        'GRAPH_STORE_CONTENT_INVALID',
+        `Delta node upsert ${node.id} cannot reopen a closed v1 record.`,
+      );
+    }
+    nodes.set(node.id, node);
+  }
   for (const id of delta.closeNodeIds) {
     const existing = nodes.get(id);
     if (!existing || existing.validTo !== undefined) {
@@ -808,7 +822,15 @@ function assertDeltaTransition(
     }
     nodes.set(id, { ...existing, validTo: delta.generatedAt });
   }
-  for (const edge of delta.upsertEdges) edges.set(edge.id, edge);
+  for (const edge of delta.upsertEdges) {
+    if (edges.get(edge.id)?.validTo !== undefined) {
+      storeFail(
+        'GRAPH_STORE_CONTENT_INVALID',
+        `Delta edge upsert ${edge.id} cannot reopen a closed v1 record.`,
+      );
+    }
+    edges.set(edge.id, edge);
+  }
   for (const id of delta.closeEdgeIds) {
     const existing = edges.get(id);
     if (!existing || existing.validTo !== undefined) {

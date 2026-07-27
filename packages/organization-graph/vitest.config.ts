@@ -1,5 +1,7 @@
-export default {
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
   test: {
-    include: ['src/**/*.test.ts', 'packages/organization-graph/src/**/*.test.ts'],
+    exclude: ['**/node_modules/**', '**/dist/**', '**/.worktrees/**'],
   },
-};
+});

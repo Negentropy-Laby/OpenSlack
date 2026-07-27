@@ -388,6 +388,8 @@ function projectEdge(edge: GraphEdge, includeEvidence: boolean): GraphEdge {
 function responseSize(result: GraphQueryResult): number {
   let previous = -1;
   let current = 0;
+  // responseBytes contributes to the serialized envelope, so converge until recording the
+  // measured value no longer changes the measurement itself.
   while (current !== previous) {
     previous = current;
     result.truncation.responseBytes = current;
@@ -420,19 +422,15 @@ function buildResult(
   const selected: typeof items = [];
   let nodeCount = 0;
   let edgeCount = 0;
-  let nodeLimit = false;
-  let edgeLimit = false;
   let byteLimit = false;
   let index = offset;
 
   while (index < items.length) {
     const item = items[index]!;
     if (item.kind === 'node' && nodeCount >= query.maxNodes) {
-      nodeLimit = true;
       break;
     }
     if (item.kind === 'edge' && edgeCount >= query.maxEdges) {
-      edgeLimit = true;
       break;
     }
     selected.push(item);
@@ -449,6 +447,7 @@ function buildResult(
       .filter((item): item is { kind: 'edge'; value: GraphEdge } => item.kind === 'edge')
       .map((item) => projectEdge(item.value, query.includeEvidence));
     const nextOffset = offset + selected.length;
+    const nextItem = items[nextOffset];
     const paths = nodes
       .map((node) => traversal.paths.get(node.id))
       .filter((path): path is GraphRelationshipPath => path !== undefined);
@@ -462,8 +461,8 @@ function buildResult(
       completeness: snapshot.completeness,
       truncation: {
         truncated: nextOffset < items.length,
-        nodeLimit,
-        edgeLimit,
+        nodeLimit: nextItem?.kind === 'node' && nodeCount >= query.maxNodes,
+        edgeLimit: nextItem?.kind === 'edge' && edgeCount >= query.maxEdges,
         byteLimit,
         paginated: offset > 0,
         responseBytes: 0,

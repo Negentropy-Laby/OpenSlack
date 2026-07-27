@@ -17,6 +17,7 @@ import { join } from 'node:path';
 import {
   GRAPH_SNAPSHOT_SCHEMA,
   LocalGraphStore,
+  sealGraphDelta,
   sealGraphSnapshot,
   serializeGraphSnapshot,
 } from '../index.js';
@@ -223,6 +224,62 @@ describe('local organization graph store', () => {
       }),
     ).rejects.toMatchObject({ code: 'GRAPH_STORE_CONTENT_INVALID' });
     expect(await store.currentCursor('scenario-001')).toBe('cursor-001');
+  });
+
+  it('rejects reopening a closed v1 node or edge through an upsert', async () => {
+    const current = graphTransitionSnapshot('cursor-001');
+    const reopen = <T extends { validTo?: string }>(record: T): Omit<T, 'validTo'> => {
+      const { validTo: _closedAt, ...openRecord } = record;
+      return openRecord;
+    };
+
+    const nodeStore = await temporaryStore();
+    await nodeStore.publishSnapshot(current, { expectedCursor: null });
+    const closedNode = current.nodes.find((node) => node.validTo !== undefined)!;
+    const reopenedNode = reopen(closedNode);
+    const nodeTarget = sealGraphSnapshot({
+      ...current,
+      cursor: 'cursor-002',
+      nodes: current.nodes.map((node) => (node.id === reopenedNode.id ? reopenedNode : node)),
+    });
+    const nodeDelta = sealGraphDelta({
+      ...graphDelta('cursor-001', 'cursor-002'),
+      generatedAt: nodeTarget.generatedAt,
+      upsertNodes: [reopenedNode],
+      closeNodeIds: [],
+      upsertEdges: [],
+      closeEdgeIds: [],
+    });
+    await expect(
+      nodeStore.publishSnapshot(nodeTarget, {
+        expectedCursor: 'cursor-001',
+        delta: nodeDelta,
+      }),
+    ).rejects.toThrow(/cannot reopen a closed v1 record/);
+
+    const edgeStore = await temporaryStore();
+    await edgeStore.publishSnapshot(current, { expectedCursor: null });
+    const closedEdge = current.edges.find((edge) => edge.validTo !== undefined)!;
+    const reopenedEdge = reopen(closedEdge);
+    const edgeTarget = sealGraphSnapshot({
+      ...current,
+      cursor: 'cursor-002',
+      edges: current.edges.map((edge) => (edge.id === reopenedEdge.id ? reopenedEdge : edge)),
+    });
+    const edgeDelta = sealGraphDelta({
+      ...graphDelta('cursor-001', 'cursor-002'),
+      generatedAt: edgeTarget.generatedAt,
+      upsertNodes: [],
+      closeNodeIds: [],
+      upsertEdges: [reopenedEdge],
+      closeEdgeIds: [],
+    });
+    await expect(
+      edgeStore.publishSnapshot(edgeTarget, {
+        expectedCursor: 'cursor-001',
+        delta: edgeDelta,
+      }),
+    ).rejects.toThrow(/cannot reopen a closed v1 record/);
   });
 
   it('rejects a projection directory identity replacement before cursor publication', async () => {

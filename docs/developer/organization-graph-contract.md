@@ -103,6 +103,9 @@ interface GraphDelta {
 
 Stable IDs derive from scenario instance, graph type, and authority object identity. Source removal
 closes a node or edge through a delta; it does not erase history silently.
+Graph Delta v1 models one validity interval per stable ID: an upsert cannot reopen a node or edge
+whose `validTo` is already set. A future multi-interval schema must represent any reopen explicitly
+without overwriting the closed interval.
 
 ## Canonicalization and Integrity
 

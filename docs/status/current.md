@@ -143,9 +143,9 @@ standalone P0 completion.
 
 ## Test Suite
 
-4743 passing Vitest tests across 381 passing files. No failures recorded.
+4745 passing Vitest tests across 381 passing files. No failures recorded.
 
-Module-attributed coverage: 5046 tests across 477 module test files (packages shared across modules are counted per module).
+Module-attributed coverage: 5048 tests across 477 module test files (packages shared across modules are counted per module).
 
 Note: The Vitest line is the raw passing count recorded in .openslack/modules.yaml. The module-attributed coverage line is the per-module sum from .openslack/modules.yaml, where each test file is counted once per module that claims it. Use module counts for coverage tracking; use raw bun run test output for CI verification, including skipped tests.
 

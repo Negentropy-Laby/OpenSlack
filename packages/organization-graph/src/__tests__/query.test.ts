@@ -176,6 +176,34 @@ describe('bounded graph query', () => {
     expect(result.nodes.length).toBeGreaterThan(0);
   });
 
+  it('reports the effective byte limit after byte truncation supersedes a node limit', () => {
+    const snapshot = graphSnapshot();
+    const expanded = sealGraphSnapshot({
+      ...snapshot,
+      nodes: snapshot.nodes.map((node, index) => ({
+        ...node,
+        properties: { text: index === 0 ? 'small' : 'x'.repeat(2_000) },
+      })),
+    });
+    const result = queryGraph(
+      expanded,
+      {
+        scenarioInstanceId: 'scenario-001',
+        maxNodes: 2,
+        maxEdges: 500,
+        maxResponseBytes: 2_000,
+      },
+      { cursorSecret, now: 1_000 },
+    );
+    expect(result.nodes).toHaveLength(1);
+    expect(result.truncation).toMatchObject({
+      truncated: true,
+      nodeLimit: false,
+      edgeLimit: false,
+      byteLimit: true,
+    });
+  });
+
   it('fails closed when one item cannot fit instead of emitting a zero-progress cursor', () => {
     const snapshot = graphSnapshot();
     const expanded = sealGraphSnapshot({

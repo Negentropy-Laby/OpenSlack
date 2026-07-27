@@ -1,8 +1,9 @@
 import { createHash } from 'node:crypto';
+import { canonicalJson } from './canonical-json.js';
 import type { AuthorityRef } from './types.js';
 
 function sha256(value: unknown): string {
-  return createHash('sha256').update(JSON.stringify(value), 'utf8').digest('hex');
+  return createHash('sha256').update(canonicalJson(value), 'utf8').digest('hex');
 }
 
 function authorityIdentity(

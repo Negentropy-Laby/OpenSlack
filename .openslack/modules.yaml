@@ -1,5 +1,5 @@
 schema: openslack.modules.v2
-vitest_tests: 4743
+vitest_tests: 4745
 vitest_files: 381
 modules:
   - id: self_evolution
@@ -265,7 +265,7 @@ modules:
       - '@openslack/agent-runtime'
       - '@openslack/integration-negentropy'
       - '@openslack/organization-graph'
-    tests: 2120
+    tests: 2122
     test_files: 170
     components:
       - id: agent_runtime
