@@ -62,3 +62,38 @@ export type {
   StrictJsonPrimitive,
   StrictJsonValue,
 } from './strict-json.js';
+
+export {
+  SOFTWARE_DELIVERY_PROJECTOR_ID,
+  SOFTWARE_DELIVERY_SOURCE_LIMITS,
+  SOFTWARE_DELIVERY_SOURCE_SCHEMA,
+} from './software-delivery-types.js';
+export type {
+  SoftwareDeliveryActorObservation,
+  SoftwareDeliveryAgentRunObservation,
+  SoftwareDeliveryCheckObservation,
+  SoftwareDeliveryClaimObservation,
+  SoftwareDeliveryCommitObservation,
+  SoftwareDeliveryDecisionObservation,
+  SoftwareDeliveryEvidence,
+  SoftwareDeliveryHandoffObservation,
+  SoftwareDeliveryIncompleteBatch,
+  SoftwareDeliveryIssueObservation,
+  SoftwareDeliveryLabel,
+  SoftwareDeliveryMergeObservation,
+  SoftwareDeliveryMissingBatch,
+  SoftwareDeliveryObservationSource,
+  SoftwareDeliveryObservedBatch,
+  SoftwareDeliveryPrmsReportObservation,
+  SoftwareDeliveryProjectionResult,
+  SoftwareDeliveryPullRequestObservation,
+  SoftwareDeliveryRepositoryObservation,
+  SoftwareDeliveryReviewObservation,
+  SoftwareDeliverySourceBatch,
+  SoftwareDeliverySourceBatches,
+  SoftwareDeliverySourceSnapshot,
+  SoftwareDeliveryWorkflowRunObservation,
+  SoftwareDeliveryWorktreeObservation,
+} from './software-delivery-types.js';
+export { validateSoftwareDeliverySourceSnapshot } from './software-delivery-validation.js';
+export { projectSoftwareDeliverySnapshot } from './software-delivery-projector.js';
