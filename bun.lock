@@ -4,6 +4,9 @@
   "workspaces": {
     "": {
       "name": "openslack",
+      "dependencies": {
+        "@openslack/collaboration": "workspace:*",
+      },
       "devDependencies": {
         "@tsconfig/node22": "^22.0.0",
         "@types/node": "^22.0.0",
