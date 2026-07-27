@@ -59,6 +59,14 @@ import {
   readBoundedJsonlFileSync,
   readBoundedTextFileSync,
 } from './bounded-read.js';
+import {
+  assertOpenSlackGovernedMutationPort,
+  type OpenSlackGovernedMutationPort,
+} from './mutations.js';
+import {
+  assertOpenSlackWorkflowApprovalPort,
+  type OpenSlackWorkflowApprovalPort,
+} from './workflow-approvals.js';
 
 export interface OperatorApplicationContextPort {
   readonly actionRegistry: ActionRegistryPort;
@@ -113,6 +121,8 @@ export interface OpenSlackMcpContext {
   readonly operator: OperatorApplicationContextPort;
   readonly readers: OpenSlackReadModelPorts;
   readonly runtime: OpenSlackMcpRuntimePort;
+  readonly governedMutations?: OpenSlackGovernedMutationPort;
+  readonly workflowApprovalAuthority?: OpenSlackWorkflowApprovalPort;
   readonly demoReset?: LocalDemoResetPort;
 }
 
@@ -126,6 +136,10 @@ export interface CreateOpenSlackMcpContextOptions {
   /** Test seam. Production callers omit this and receive server-generated UUIDs. */
   readonly correlationIdFactory?: () => string;
   readonly graphMaxAgeMs?: number;
+  /** Optional nominal Operator mutation port. Omit to preserve the exact read-only catalog. */
+  readonly governedMutations?: OpenSlackGovernedMutationPort;
+  /** Optional separately human-attested workflow-effect decision port. Requires governedMutations. */
+  readonly workflowApprovalAuthority?: OpenSlackWorkflowApprovalPort;
   /** Required before the local-only demo reset tool can be registered. */
   readonly demoMode?: boolean;
   readonly demoReset?: LocalDemoResetPort;
@@ -1414,11 +1428,26 @@ export function createOpenSlackMcpContext(
     nextCorrelationId: canonicalCorrelationFactory(options.correlationIdFactory),
   });
   const demoReset = assertLocalDemoResetPort(workspaceRoot, options.demoMode, options.demoReset);
+  const governedMutations =
+    options.governedMutations === undefined
+      ? undefined
+      : assertOpenSlackGovernedMutationPort(options.governedMutations);
+  const workflowApprovalAuthority =
+    options.workflowApprovalAuthority === undefined
+      ? undefined
+      : assertOpenSlackWorkflowApprovalPort(options.workflowApprovalAuthority);
+  if (workflowApprovalAuthority && !governedMutations) {
+    throw new TypeError(
+      'Workflow approval authority cannot be exposed without governed mutations.',
+    );
+  }
   return Object.freeze({
     workspaceRoot,
     operator: options.operator,
     readers: Object.freeze({ ...defaults, ...options.readers }),
     runtime,
+    ...(governedMutations ? { governedMutations } : {}),
+    ...(workflowApprovalAuthority ? { workflowApprovalAuthority } : {}),
     ...(demoReset ? { demoReset } : {}),
   });
 }

@@ -12,7 +12,11 @@ import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, parse, resolve, sep } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { OPENSLACK_READ_TOOL_NAMES } from '@openslack/qoder-adapter';
+import {
+  OPENSLACK_DEMO_RESET_TOOL_NAME,
+  OPENSLACK_MUTATION_TOOL_NAMES,
+  OPENSLACK_READ_TOOL_NAMES,
+} from '@openslack/qoder-adapter';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
@@ -64,7 +68,7 @@ function shellQuote(value: string): string {
 }
 
 describe('Qoder Organization Control Skill qualification', () => {
-  it('has canonical frontmatter, valid relative links, and the exact read-only allowlist', () => {
+  it('has canonical frontmatter, valid relative links, and only the exact catalog profiles', () => {
     const skill = readFileSync(join(skillRoot, 'SKILL.md'), 'utf8');
     expect(skill).toMatch(
       /^---\r?\nname: openslack-organization-control\r?\ndescription: [^\r\n]+\r?\n---\r?\n/,
@@ -73,15 +77,18 @@ describe('Qoder Organization Control Skill qualification', () => {
       .filter((path) => /\.(?:md|yaml)$/.test(path))
       .map((path) => readFileSync(path, 'utf8'))
       .join('\n');
-    const documentedDemoBoundary =
-      /An explicitly injected local demo MCP composition[\s\S]*?The demo tool is not a QG5 mutation and never touches live\s+GitHub objects\./;
-    expect(allText).toMatch(documentedDemoBoundary);
-    const productionText = allText.replace(documentedDemoBoundary, '');
-    const observedTools = [...new Set(productionText.match(/openslack_[a-z_]+/g) ?? [])].sort();
-    expect(observedTools).toEqual([...OPENSLACK_READ_TOOL_NAMES].sort());
-    expect(productionText).not.toMatch(
-      /openslack_(?:preview_scenario|preview_workflow|confirm_plan|cancel_plan|decide_workflow_approval|demo_reset)/,
+    const observedTools = [...new Set(allText.match(/openslack_[a-z_]+/g) ?? [])].sort();
+    expect(observedTools).toEqual(
+      [
+        ...OPENSLACK_READ_TOOL_NAMES,
+        ...OPENSLACK_MUTATION_TOOL_NAMES,
+        OPENSLACK_DEMO_RESET_TOOL_NAME,
+      ].sort(),
     );
+    expect(allText).toMatch(/exact 12, 16, or 17\s+production profiles/);
+    expect(allText).toMatch(/one-time root\s+`confirmationToken`/);
+    expect(allText).toMatch(/never creates a GitHub review/);
+    expect(allText).not.toMatch(/run_shell|raw_command|direct_merge|approve_github_pr/);
 
     for (const path of files(skillRoot).filter((value) => value.endsWith('.md'))) {
       const text = readFileSync(path, 'utf8');

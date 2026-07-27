@@ -1,9 +1,10 @@
 # Qoder MCP Contract
 
-Status: design contract. The current local production surface is the exact 12-tool,
-`openslack.mcp_result.v2` server described in [Qoder Work MCP integration](qoder-mcp.md); an
-explicitly injected local demo surface adds only the bounded reset tool as number 13. This does not
-claim Qoder desktop qualification or any QG5 mutation.
+Status: implemented local contract. The stock local surface is the exact 12-tool,
+`openslack.mcp_result.v2` server described in [Qoder Work MCP integration](qoder-mcp.md).
+Nominal composition ports enable exact agent-governed 16-tool and separately human-attested 17-tool
+profiles. An explicitly injected local demo surface appends only the bounded reset tool. This does
+not claim Qoder desktop qualification or Scenario rehearsal.
 
 ## Composition Boundary
 
@@ -54,27 +55,35 @@ The resulting production read-only catalog is exactly 12 tools. `run.explain` ex
 `openslack_get_workflow_progress`; business-language aliases in the Qoder Skill are not duplicate
 registrations.
 
-Governed mutation is a later catalog milestone:
+The implemented agent-governed profile appends:
 
 ```text
 openslack_preview_scenario
 openslack_preview_workflow
 openslack_confirm_plan
 openslack_cancel_plan
-openslack_confirm_workflow_effect
 ```
 
 Scenario instantiation and workflow start are effects of a confirmed canonical plan. There is no
 second direct execution tool. No MCP catalog exposes arbitrary commands, direct merge, GitHub
 approval, policy writes, registry writes, or permission writes.
 
+The separately human-attested profile appends:
+
+```text
+openslack_decide_workflow_approval
+```
+
+Its v2 store, per-decision human attestation, and durable audit projection are separate from legacy
+Workflow run approvals. An agent-bound composition cannot advertise or invoke it.
+
 `openslack_demo_reset` is present only with explicit `demoMode: true` and a nominal port created by
 `createLocalDemoResetPort`. The factory binds one existing canonical
 `.openslack.local/demo/<fixture>` child to the same workspace and rejects symlink/reparse or changed
 directory identities. Its host callback receives only frozen `{ root, signal, deadlineAt }`
 authority. Timeout is an ambiguous effect reported as `reconciliation_required`, never as proof of
-no effect. That exact 13-tool profile is separate from production and never rewrites live GitHub
-objects.
+no effect. Exact production counts are 12, 16, and 17; exact demo counts are 13, 17, and 18. The
+stock CLI remains production-12.
 
 ## Result Versions
 
@@ -112,6 +121,8 @@ interface OpenSlackMcpResultV2<T = unknown> {
   }>;
   evidenceRefs: string[];
   planId?: string;
+  planHash?: string;
+  confirmationToken?: string;
   executionId?: string;
   approval?: {
     approvalId: string;
@@ -148,10 +159,12 @@ server-startup binding to one active OpenSlack registry/runtime principal and it
 snapshot. The server rejects a missing, inactive, mismatched, or unauthorized principal.
 
 An agent-bound principal can preview and confirm only actions granted to that agent. It cannot
-confirm a human-owned workflow effect. `openslack_confirm_workflow_effect` is advertised only when
-the composition root supplies a separately attested, authorized human principal for that decision;
-an agent-only or transport-only binding omits the tool or returns `blocked`. Qoder's permission
-prompt and a client-supplied actor name are not human attestation.
+decide a human-owned workflow effect. `openslack_decide_workflow_approval` is advertised only when
+the composition root supplies an independently authenticated per-decision attestation port. Every
+call must attest the exact run, approval, decision, reason hash, required capability, business
+correlation, and approval expiry; an agent-only or transport-only composition omits the tool or
+returns `blocked`. Qoder's permission prompt, explicit wording, and a client-supplied actor name
+are not human attestation.
 
 Tool arguments cannot supply or override:
 
@@ -176,13 +189,24 @@ A persisted pending plan binds:
 planId / planHash / actorId / workspaceId / correlationId
 createdAt / expiresAt / state
 canonical ActionPlan / effect manifest
-source versions and current-head SHAs
+source versions and current-head SHAs / permission snapshot
+action catalog / executor binding / build nonce / process nonce
 ```
 
 Confirmation performs a bounded strict read, verifies expiry and bindings, recomputes the plan
 hash, revalidates the sealed registry, rereads source versions, resolves current permission
-evidence, and atomically claims the plan for one execution. Replay, drift, actor mismatch, and
-partial-failure retry fail closed. Reconciliation produces a fresh preview.
+evidence, and atomically claims the plan for one execution. The raw confirmation capability is
+returned only at the v2 result root; only its hash is persisted, and it never appears in
+`nextActions`, audit events, or evidence. Replay, drift, actor mismatch, and partial-failure retry
+fail closed. Reconciliation produces a fresh preview.
+
+The isolated workflow-effect decision path uses one atomic pending-to-approved/rejected CAS.
+Transport arguments cannot replace its principal, capability, workspace, or business correlation.
+That CAS also persists a deterministic `auditProjection.status: pending` marker. A successful
+Collaboration append advances the record to `recorded`; a failure leaves the terminal v2 decision
+authoritative and retries only the projection using the same event ID.
+The projection sink writes only through a composition-bound, identity-checked O_APPEND descriptor;
+it does not reopen `events.jsonl` after an outer directory check.
 
 OpenSlack plan confirmation, OpenSlack workflow-effect approval, Qoder connector permission, and
 GitHub human review remain four independent decisions. They use the canonical
@@ -207,8 +231,10 @@ SOURCE_EVIDENCE_STALE
 ```
 
 Governed mutation adds stable fail-closed codes for expired plans, hash drift, source drift,
-permission drift, registry drift, actor mismatch, and replay. Raw source prose, vendor responses,
-credentials, tokens, and secret-bearing paths never enter MCP output.
+permission drift, registry drift, actor mismatch, replay, and uncertain execution. Workflow
+decisions distinguish durable-decision reconciliation from derived-audit-projection
+reconciliation. Raw source prose, vendor responses, credentials, nested confirmation capabilities,
+and secret-bearing paths never enter MCP output.
 
 ## Qualification Evidence
 
@@ -217,7 +243,7 @@ Local SDK/Inspector evidence proves only `LOCAL_PASS`. `QODER_VERIFIED` addition
 - Qoder Work build and operating system;
 - connector configuration hash without credentials;
 - exact `tools/list`;
-- initialize and bounded call results for every advertised read tool;
+- initialize and bounded call results for every tool in the selected exact profile;
 - timestamps and OpenSlack commit;
 - explicit blocked/unknown results for unavailable evidence.
 

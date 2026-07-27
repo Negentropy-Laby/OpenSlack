@@ -334,6 +334,18 @@
       "maxLength": 160,
       "pattern": "^[^\\u0000-\\u001f\\u007f]*$"
     },
+    "planHash": {
+      "type": "string",
+      "minLength": 64,
+      "maxLength": 64,
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "confirmationToken": {
+      "type": "string",
+      "minLength": 32,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
     "executionId": {
       "type": "string",
       "minLength": 1,
@@ -375,5 +387,45 @@
         }
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "planHash": true },
+        "required": ["planHash"]
+      },
+      "then": {
+        "properties": { "planId": true },
+        "required": ["planId"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "confirmationToken": true },
+        "required": ["confirmationToken"]
+      },
+      "then": {
+        "required": ["planId", "planHash"],
+        "properties": {
+          "planId": true,
+          "planHash": true,
+          "status": { "const": "needs_confirmation" },
+          "authority": {
+            "type": "object",
+            "properties": {
+              "mode": { "const": "governed_mutation" }
+            }
+          },
+          "governance": {
+            "type": "object",
+            "required": ["approvalKind"],
+            "properties": {
+              "approvalRequired": { "const": true },
+              "approvalKind": { "const": "openslack_confirm" }
+            }
+          }
+        }
+      }
+    }
+  ]
 }

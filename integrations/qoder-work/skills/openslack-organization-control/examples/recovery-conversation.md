@@ -37,3 +37,7 @@ human reviewer acts.
 
 Do not retry with broader, unbounded queries. Narrow the affected route or PR using the connected
 read-tool schema. Preserve `unknown` until stronger evidence exists.
+
+If a governed plan confirmation returns `reconciliation_required`, the same rule is stronger:
+never confirm it again. Read the stored plan/run state and reconcile the possibly applied effect
+before any new mutation.

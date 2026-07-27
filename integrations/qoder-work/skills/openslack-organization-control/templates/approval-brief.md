@@ -20,8 +20,10 @@ Current-head bound: `<yes | no | unknown>`
 
 ## Next
 
-<Human action required by returned evidence, or one read-only readiness check. Do not claim this
-Skill can decide the approval.>
+<Human action required by returned evidence, one read-only readiness check, or the exact
+`openslack_decide_workflow_approval` call only when the separately human-attested profile is
+active. Explicit wording is not the attestation; the host authenticates and attests each exact
+decision. Never claim the Skill can create a GitHub review.>
 
 ## Evidence
 

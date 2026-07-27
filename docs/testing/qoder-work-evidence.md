@@ -81,3 +81,47 @@ Not logged in · Please run /login
 No login was attempted, no credential file was inspected, and no inference is made about desktop
 connector behavior. A future authenticated qualification may append a new revision-bound record;
 it must not rewrite this local-only verdict into live evidence.
+
+## QG5 Governed Mutation Qualification
+
+This later local qualification preserves the QG4 read-only stock profile and tests the optional
+governed profiles through explicitly injected composition ports.
+
+| Boundary                                       | Verdict       | Evidence                                                                  |
+| ---------------------------------------------- | ------------- | ------------------------------------------------------------------------- |
+| Stock CLI catalog                              | `LOCAL_PASS`  | remains exact production-12 and projection-only                           |
+| Agent-governed catalog                         | `LOCAL_PASS`  | exact production-16; preview, confirm, cancel                             |
+| Separately human-attested catalog              | `LOCAL_PASS`  | exact production-17; one workflow-effect decision                         |
+| Official MCP SDK governed transport sequence   | `LOCAL_PASS`  | preview → confirm → independently attested workflow decision              |
+| Immutable plan and one-time confirmation       | `LOCAL_PASS`  | only token hash persisted; replay/drift/timeout fail closed               |
+| Workflow decision and audit reconciliation     | `LOCAL_PASS`  | terminal CAS plus deterministic durable `pending`/`recorded` projection   |
+| Audit path replacement and hardlink resistance | `LOCAL_PASS`  | fixed O_APPEND descriptor; 2500 replacement attempts captured zero writes |
+| Independent QG5 security review                | `LOCAL_PASS`  | no remaining reproducible P0, P1, or P2 finding                           |
+| Authenticated Qoder Work execution             | `NOT_RUN`     | prior `Not logged in` boundary unchanged                                  |
+| `QODER_VERIFIED`                               | `NOT_CLAIMED` | local protocol evidence is not substituted for authenticated Qoder proof  |
+
+### Revision binding
+
+| Field                  | Value                                      |
+| ---------------------- | ------------------------------------------ |
+| Observed at            | `2026-07-26T21:54:14Z`                     |
+| Governed plan core     | `a47ab482459b205d5c7358e05cbf58d6c1a54d21` |
+| Scenario/workflow core | `cfd6328942668448d6067e1c87645121a83c8493` |
+| MCP and audit frontend | `c16909053d5fb8c46c07743723a964cea172c18e` |
+| Skill and contract     | `3c4a13bf7e4cce960dcf8f29ddf2ccc9d81ef43f` |
+
+### Local gates
+
+- `bun run typecheck`: pass.
+- `bun run test`: 401 test files and 4967 tests passed; 16 tests remained skipped by existing
+  environment gates.
+- `bun run build`: pass.
+- Qoder Skill `quick_validate.py`: `Skill is valid!`.
+- Official MCP SDK and Bun direct suites: pass.
+- Replacement race: 2500 successful appends, 2500 lines in the bound original log, zero captured
+  files and zero captured lines.
+
+The human-attested tool does not trust Skill wording, Qoder permission, IM identity, or a
+client-supplied actor. Its host attests the exact run, approval, decision, reason hash, capability,
+business correlation, and expiry for each call. The tool decides only an OpenSlack workflow
+effect; it never creates a GitHub review or authorizes merge.

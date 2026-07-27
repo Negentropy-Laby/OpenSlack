@@ -16,6 +16,29 @@ export type {
   OperatorApplicationContextPort,
 } from './context.js';
 
+export {
+  assertOpenSlackGovernedMutationPort,
+  createOpenSlackGovernedMutationPort,
+} from './mutations.js';
+export type {
+  CreateOpenSlackGovernedMutationPortOptions,
+  OpenSlackGovernedMutationInvocation,
+  OpenSlackGovernedMutationPort,
+  OpenSlackGovernedPlanCompilerInput,
+} from './mutations.js';
+export {
+  assertOpenSlackWorkflowApprovalPort,
+  createOpenSlackWorkflowApprovalAttestationPort,
+  createOpenSlackWorkflowApprovalPort,
+} from './workflow-approvals.js';
+export type {
+  CreateOpenSlackWorkflowApprovalPortOptions,
+  OpenSlackWorkflowApprovalAttestationPort,
+  OpenSlackWorkflowApprovalPort,
+  WorkflowApprovalAttestationRequest,
+  WorkflowApprovalDecisionResult,
+} from './workflow-approvals.js';
+
 export { OpenSlackMcpCore } from './core.js';
 export type {
   OpenSlackMcpContent,
@@ -25,5 +48,7 @@ export type {
 
 export { createOpenSlackMcpServer } from './server.js';
 export type { OpenSlackMcpServer } from './server.js';
+
+export { createGovernedPlanCollaborationAuditSink } from './audit.js';
 
 export { OpenSlackMcpProtocolError, OpenSlackMcpToolError, safeToolError } from './errors.js';

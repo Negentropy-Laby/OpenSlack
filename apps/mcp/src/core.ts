@@ -1,11 +1,16 @@
 import { types as utilTypes } from 'node:util';
 import {
   OPENSLACK_DEMO_RESET_TOOL_NAME,
+  OPENSLACK_GOVERNED_MUTATION_TOOL_NAMES,
+  OPENSLACK_MUTATION_TOOL_NAMES,
   OPENSLACK_READ_TOOL_NAMES,
+  OPENSLACK_TOOL_CATALOG_COMPOSITION,
+  OPENSLACK_WORKFLOW_APPROVAL_TOOL_NAMES,
   ToolInputValidationError,
   assertNominalOpenSlackToolCatalog,
   createOpenSlackMcpResult,
   getOpenSlackToolCatalog,
+  isOpenSlackMutationToolName,
   isOpenSlackReadToolName,
   upgradeOpenSlackMcpResult,
   validateToolInput,
@@ -22,6 +27,16 @@ import {
   redactProtocolString,
 } from './sanitizer.js';
 import { OPENSLACK_READ_TOOL_HANDLERS } from './tools/index.js';
+import {
+  callGovernedMutationTool,
+  governedMutationRecordResult,
+  type GovernedMutationToolResult,
+} from './tools/mutations.js';
+import {
+  callWorkflowApprovalTool,
+  workflowApprovalRecordResult,
+  type WorkflowApprovalToolResult,
+} from './tools/workflow-approvals.js';
 import { evidenceFrom, normalizeEvidenceReferences } from './tools/shared.js';
 
 export interface OpenSlackMcpContent {
@@ -105,7 +120,13 @@ function redactString(value: string): string {
   return redactProtocolString(value, MAX_TEXT_LENGTH);
 }
 
-function sanitizeForProtocol(value: unknown, depth = 0): unknown {
+const CONFIRMATION_CAPABILITY = /^[A-Za-z0-9_-]{32,128}$/;
+
+function sanitizeForProtocol(
+  value: unknown,
+  depth = 0,
+  preserveRootConfirmationToken = false,
+): unknown {
   if (depth > 12) return '[MAX_DEPTH]';
   if (value === null || value === undefined || typeof value === 'boolean') return value;
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
@@ -119,7 +140,7 @@ function sanitizeForProtocol(value: unknown, depth = 0): unknown {
       const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
       const sanitized =
         descriptor && Object.hasOwn(descriptor, 'value')
-          ? sanitizeForProtocol(descriptor.value, depth + 1)
+          ? sanitizeForProtocol(descriptor.value, depth + 1, preserveRootConfirmationToken)
           : '[UNSAFE_ARRAY_ENTRY]';
       output.push(sanitized === undefined ? null : sanitized);
     }
@@ -155,7 +176,21 @@ function sanitizeForProtocol(value: unknown, depth = 0): unknown {
       output[key] = Array.isArray(child) ? normalizeTypedEvidenceReferences(child) : [];
       continue;
     }
-    const sanitized = isSensitiveKey(key) ? '[REDACTED]' : sanitizeForProtocol(child, depth + 1);
+    // Confirmation capabilities are bearer secrets. Only the explicit root response
+    // field may survive sanitization; nested copies remain subject to key redaction.
+    if (
+      depth === 0 &&
+      preserveRootConfirmationToken &&
+      key === 'confirmationToken' &&
+      typeof child === 'string' &&
+      CONFIRMATION_CAPABILITY.test(child)
+    ) {
+      output[key] = child;
+      continue;
+    }
+    const sanitized = isSensitiveKey(key)
+      ? '[REDACTED]'
+      : sanitizeForProtocol(child, depth + 1, preserveRootConfirmationToken);
     if (sanitized !== undefined) output[key] = sanitized;
   }
   return output;
@@ -168,6 +203,13 @@ function failedResult(code: string, message: string): OpenSlackMcpResult {
     error: { code, message },
     governance: { blocker: code },
   });
+}
+
+class ToolDeadlineExceededError extends Error {
+  constructor(readonly code: string) {
+    super(code);
+    this.name = 'ToolDeadlineExceededError';
+  }
 }
 
 async function withTimeout<T>(
@@ -190,13 +232,6 @@ async function withTimeout<T>(
     ]);
   } finally {
     if (timeout) clearTimeout(timeout);
-  }
-}
-
-class ToolDeadlineExceededError extends Error {
-  constructor(readonly code: string) {
-    super(code);
-    this.name = 'ToolDeadlineExceededError';
   }
 }
 
@@ -231,6 +266,20 @@ const AUTHORITY_SOURCES = Object.freeze({
   openslack_list_scenarios: Object.freeze(['openslack.locked_scenario_pack']),
   openslack_query_graph: Object.freeze(['openslack.organization_graph_snapshot']),
   openslack_explain_graph: Object.freeze(['openslack.organization_graph_snapshot']),
+  openslack_preview_scenario: Object.freeze([
+    'openslack.locked_scenario_pack',
+    'openslack.governed_plan_store',
+  ]),
+  openslack_preview_workflow: Object.freeze([
+    'openslack.sealed_workflow_registry',
+    'openslack.governed_plan_store',
+  ]),
+  openslack_confirm_plan: Object.freeze([
+    'openslack.governed_plan_store',
+    'openslack.typed_action_registry',
+  ]),
+  openslack_cancel_plan: Object.freeze(['openslack.governed_plan_store']),
+  openslack_decide_workflow_approval: Object.freeze(['openslack.workflow_effect_approval_v2']),
   openslack_demo_reset: Object.freeze(['openslack.local_demo_fixture']),
 }) satisfies Readonly<Record<OpenSlackToolName, readonly string[]>>;
 
@@ -245,13 +294,35 @@ function observedAt(value: unknown, fallback: Date): string {
   return fallback.toISOString();
 }
 
-function assertFrozenCatalog(includeDemoReset: boolean): void {
-  const catalog = getOpenSlackToolCatalog({ includeDemoReset });
+function assertFrozenCatalog(
+  includeDemoReset: boolean,
+  includeGovernedMutations: boolean,
+  includeWorkflowApproval: boolean,
+): void {
+  const catalog = getOpenSlackToolCatalog({
+    includeDemoReset,
+    includeGovernedMutations,
+    includeWorkflowApproval,
+  });
   assertNominalOpenSlackToolCatalog(catalog);
-  const expectedLength = includeDemoReset ? 13 : 12;
+  const { components, profiles } = OPENSLACK_TOOL_CATALOG_COMPOSITION;
+  const expectedProfileLength = includeWorkflowApproval
+    ? profiles.humanAttested
+    : includeGovernedMutations
+      ? profiles.agentBound
+      : profiles.productionReadOnly;
+  const expectedLength = expectedProfileLength + (includeDemoReset ? components.demoReset : 0);
   if (
     catalog.length !== expectedLength ||
-    OPENSLACK_READ_TOOL_NAMES.length !== 12 ||
+    OPENSLACK_READ_TOOL_NAMES.length !== components.read ||
+    OPENSLACK_GOVERNED_MUTATION_TOOL_NAMES.length !== components.governedMutations ||
+    OPENSLACK_WORKFLOW_APPROVAL_TOOL_NAMES.length !== components.workflowApproval ||
+    OPENSLACK_MUTATION_TOOL_NAMES.length !==
+      components.governedMutations + components.workflowApproval ||
+    profiles.productionReadOnly !== components.read ||
+    profiles.agentBound !== components.read + components.governedMutations ||
+    profiles.humanAttested !==
+      components.read + components.governedMutations + components.workflowApproval ||
     !Object.isFrozen(catalog)
   ) {
     throw new Error('READ_TOOL_CATALOG_INVALID');
@@ -261,6 +332,10 @@ function assertFrozenCatalog(includeDemoReset: boolean): void {
     new Set(catalogNames).size !== expectedLength ||
     OPENSLACK_READ_TOOL_NAMES.some((name) => !catalogNames.includes(name)) ||
     OPENSLACK_READ_TOOL_NAMES.some((name) => !(name in OPENSLACK_READ_TOOL_HANDLERS)) ||
+    includeGovernedMutations !==
+      OPENSLACK_GOVERNED_MUTATION_TOOL_NAMES.every((name) => catalogNames.includes(name)) ||
+    includeWorkflowApproval !==
+      OPENSLACK_WORKFLOW_APPROVAL_TOOL_NAMES.every((name) => catalogNames.includes(name)) ||
     includeDemoReset !== catalogNames.includes(OPENSLACK_DEMO_RESET_TOOL_NAME)
   ) {
     throw new Error('READ_TOOL_CATALOG_DRIFT');
@@ -274,9 +349,17 @@ export class OpenSlackMcpCore {
   readonly #catalog: ReturnType<typeof getOpenSlackToolCatalog>;
 
   constructor(context: OpenSlackMcpContext, options: OpenSlackMcpCoreOptions = {}) {
-    assertFrozenCatalog(context.demoReset !== undefined);
+    assertFrozenCatalog(
+      context.demoReset !== undefined,
+      context.governedMutations !== undefined,
+      context.workflowApprovalAuthority !== undefined,
+    );
     this.#context = context;
-    this.#catalog = getOpenSlackToolCatalog({ includeDemoReset: context.demoReset !== undefined });
+    this.#catalog = getOpenSlackToolCatalog({
+      includeDemoReset: context.demoReset !== undefined,
+      includeGovernedMutations: context.governedMutations !== undefined,
+      includeWorkflowApproval: context.workflowApprovalAuthority !== undefined,
+    });
     this.#timeoutMs = boundedInteger(
       options.timeoutMs,
       DEFAULT_TIMEOUT_MS,
@@ -299,7 +382,13 @@ export class OpenSlackMcpCore {
 
   async callTool(name: string, args: unknown = {}): Promise<OpenSlackMcpToolCallResult> {
     const demoReset = name === OPENSLACK_DEMO_RESET_TOOL_NAME && this.#context.demoReset;
-    if (!isOpenSlackReadToolName(name) && !demoReset) {
+    const governedMutation =
+      isOpenSlackMutationToolName(name) &&
+      name !== 'openslack_decide_workflow_approval' &&
+      this.#context.governedMutations;
+    const workflowApproval =
+      name === 'openslack_decide_workflow_approval' && this.#context.workflowApprovalAuthority;
+    if (!isOpenSlackReadToolName(name) && !demoReset && !governedMutation && !workflowApproval) {
       throw new OpenSlackMcpProtocolError(-32602, `Unknown tool: ${name}`);
     }
     const definition = this.#catalog.find((tool) => tool.name === name);
@@ -316,36 +405,79 @@ export class OpenSlackMcpCore {
     }
 
     const callTime = this.#context.runtime.now();
-    const correlationId = this.#context.runtime.nextCorrelationId();
+    const requestCorrelationId = this.#context.runtime.nextCorrelationId();
     const toolName = name as OpenSlackToolName;
     let result: OpenSlackMcpResult;
+    let mutationMetadata: GovernedMutationToolResult | WorkflowApprovalToolResult | undefined;
     try {
       const controller = new AbortController();
       const deadlineAt = new Date(callTime.getTime() + this.#timeoutMs).toISOString();
-      result = demoReset
-        ? await withTimeout(
-            Promise.resolve(
-              demoReset.reset(Object.freeze({ signal: controller.signal, deadlineAt })),
-            ).then((data) =>
-              createOpenSlackMcpResult({
-                summary: 'The bounded local demo reset port completed.',
-                data,
-                governance: { risk: 'low' },
-              }),
-            ),
-            this.#timeoutMs,
-            controller,
-            'DEMO_RESET_TIMEOUT',
-          )
-        : await withTimeout(
-            OPENSLACK_READ_TOOL_HANDLERS[name as keyof typeof OPENSLACK_READ_TOOL_HANDLERS](
-              this.#context,
-              input,
-              controller.signal,
-            ),
-            this.#timeoutMs,
-            controller,
-          );
+      if (demoReset) {
+        result = await withTimeout(
+          Promise.resolve(
+            demoReset.reset(Object.freeze({ signal: controller.signal, deadlineAt })),
+          ).then((data) =>
+            createOpenSlackMcpResult({
+              summary: 'The bounded local demo reset port completed.',
+              data,
+              governance: { risk: 'low' },
+            }),
+          ),
+          this.#timeoutMs,
+          controller,
+          'DEMO_RESET_TIMEOUT',
+        );
+      } else if (governedMutation) {
+        const executionDeadlineAt = new Date(
+          callTime.getTime() + Math.max(50, Math.floor(this.#timeoutMs * 0.8)),
+        ).toISOString();
+        mutationMetadata = await withTimeout(
+          callGovernedMutationTool(
+            governedMutation,
+            name as Exclude<
+              (typeof OPENSLACK_MUTATION_TOOL_NAMES)[number],
+              'openslack_decide_workflow_approval'
+            >,
+            input,
+            Object.freeze({
+              signal: controller.signal,
+              deadlineAt: executionDeadlineAt,
+            }),
+          ),
+          this.#timeoutMs,
+          controller,
+          'GOVERNED_MUTATION_TIMEOUT',
+        );
+        result = mutationMetadata.result;
+      } else if (workflowApproval) {
+        const executionDeadlineAt = new Date(
+          callTime.getTime() + Math.max(50, Math.floor(this.#timeoutMs * 0.8)),
+        ).toISOString();
+        mutationMetadata = await withTimeout(
+          callWorkflowApprovalTool(
+            workflowApproval,
+            input,
+            Object.freeze({
+              signal: controller.signal,
+              deadlineAt: executionDeadlineAt,
+            }),
+          ),
+          this.#timeoutMs,
+          controller,
+          'WORKFLOW_APPROVAL_TIMEOUT',
+        );
+        result = mutationMetadata.result;
+      } else {
+        result = await withTimeout(
+          OPENSLACK_READ_TOOL_HANDLERS[name as keyof typeof OPENSLACK_READ_TOOL_HANDLERS](
+            this.#context,
+            input,
+            controller.signal,
+          ),
+          this.#timeoutMs,
+          controller,
+        );
+      }
     } catch (error) {
       if (demoReset && error instanceof ToolDeadlineExceededError) {
         result = createOpenSlackMcpResult({
@@ -358,6 +490,89 @@ export class OpenSlackMcpCore {
             blocker: 'DEMO_RESET_RECONCILIATION_REQUIRED',
           },
         });
+      } else if (
+        governedMutation &&
+        error instanceof ToolDeadlineExceededError &&
+        typeof input.planId === 'string'
+      ) {
+        const durable = await governedMutation.get(input.planId).catch(() => null);
+        if (durable?.state === 'reconciliation_required') {
+          mutationMetadata = governedMutationRecordResult(durable);
+          result = mutationMetadata.result;
+        } else if (durable?.state === 'executing') {
+          mutationMetadata = governedMutationRecordResult(durable);
+          result = createOpenSlackMcpResult({
+            status: 'blocked',
+            summary:
+              'The governed mutation deadline expired after its durable execution claim; reconcile the plan before another mutation.',
+            data: {
+              planId: durable.planId,
+              state: 'reconciliation_required',
+              durableState: durable.state,
+              revision: durable.revision,
+              executionId: durable.execution?.executionId,
+            },
+            governance: {
+              risk: 'medium',
+              blocker: 'GOVERNED_MUTATION_RECONCILIATION_REQUIRED',
+            },
+            evidenceRefs: [`plan:${durable.planId}`],
+            planId: durable.planId,
+            ...(durable.execution?.executionId
+              ? { executionId: durable.execution.executionId }
+              : {}),
+          });
+        } else {
+          result = createOpenSlackMcpResult({
+            status: 'blocked',
+            summary:
+              'The governed mutation deadline expired; reconcile the plan before another mutation.',
+            data: { outcome: 'reconciliation_required' },
+            governance: {
+              risk: 'medium',
+              blocker: 'GOVERNED_MUTATION_RECONCILIATION_REQUIRED',
+            },
+            ...(typeof input.planId === 'string' ? { planId: input.planId } : {}),
+          });
+        }
+      } else if (
+        workflowApproval &&
+        error instanceof ToolDeadlineExceededError &&
+        typeof input.runId === 'string' &&
+        typeof input.approvalId === 'string'
+      ) {
+        const durable = await workflowApproval
+          .read(input.runId, input.approvalId)
+          .catch(() => undefined);
+        if (durable) {
+          mutationMetadata = workflowApprovalRecordResult(durable);
+          result = mutationMetadata.result;
+        } else {
+          result = createOpenSlackMcpResult({
+            status: 'blocked',
+            summary:
+              'The workflow-effect decision deadline expired; reconcile the approval before another decision.',
+            governance: {
+              risk: 'medium',
+              blocker: 'WORKFLOW_APPROVAL_RECONCILIATION_REQUIRED',
+            },
+          });
+        }
+      } else if (
+        workflowApproval &&
+        typeof input.runId === 'string' &&
+        typeof input.approvalId === 'string'
+      ) {
+        const durable = await workflowApproval
+          .read(input.runId, input.approvalId)
+          .catch(() => undefined);
+        if (durable) {
+          mutationMetadata = workflowApprovalRecordResult(durable);
+          result = mutationMetadata.result;
+        } else {
+          const safe = safeToolError(error);
+          result = failedResult(safe.safeCode, safe.safeMessage);
+        }
       } else {
         const safe = safeToolError(error);
         result = failedResult(safe.safeCode, safe.safeMessage);
@@ -369,7 +584,7 @@ export class OpenSlackMcpCore {
       const projectedRawData =
         safeRawData === undefined
           ? undefined
-          : demoReset
+          : demoReset || governedMutation || workflowApproval
             ? safeRawData
             : projectToolData(name as Parameters<typeof projectToolData>[0], safeRawData);
       const projectedData =
@@ -379,7 +594,7 @@ export class OpenSlackMcpCore {
         summary: result.summary,
         ...(projectedData === undefined ? {} : { data: projectedData }),
         governance: result.governance,
-        nextActions: [],
+        nextActions: governedMutation ? result.nextActions : [],
         evidenceRefs: normalizeEvidenceReferences([
           ...result.evidenceRefs,
           ...evidenceFrom(projectedData),
@@ -389,15 +604,32 @@ export class OpenSlackMcpCore {
         ...(result.error ? { error: result.error } : {}),
       });
       const resultV2: OpenSlackMcpResultV2 = upgradeOpenSlackMcpResult(result, {
-        correlationId,
+        correlationId: mutationMetadata?.correlationId ?? requestCorrelationId,
         authority: {
-          mode: demoReset ? 'governed_mutation' : 'projection',
+          mode:
+            demoReset || governedMutation || workflowApproval ? 'governed_mutation' : 'projection',
           sources: AUTHORITY_SOURCES[toolName],
           observedAt: observedAt(projectedData, callTime),
         },
+        ...(mutationMetadata &&
+        'confirmationActionIds' in mutationMetadata &&
+        mutationMetadata.confirmationActionIds
+          ? { confirmationActionIds: mutationMetadata.confirmationActionIds }
+          : {}),
+        ...(mutationMetadata && 'planHash' in mutationMetadata && mutationMetadata.planHash
+          ? { planHash: mutationMetadata.planHash }
+          : {}),
+        ...(mutationMetadata &&
+        'confirmationToken' in mutationMetadata &&
+        mutationMetadata.confirmationToken
+          ? { confirmationToken: mutationMetadata.confirmationToken }
+          : {}),
+        ...(mutationMetadata && 'approval' in mutationMetadata && mutationMetadata.approval
+          ? { approval: mutationMetadata.approval }
+          : {}),
       });
       const structured = deepFreezeJson(
-        sanitizeForProtocol(resultV2) as Readonly<Record<string, unknown>>,
+        sanitizeForProtocol(resultV2, 0, true) as Readonly<Record<string, unknown>>,
       );
       let serialized = JSON.stringify(structured);
       if (Buffer.byteLength(serialized, 'utf8') > this.#maxOutputBytes) {
@@ -409,9 +641,12 @@ export class OpenSlackMcpCore {
                 'The requested OpenSlack projection exceeded the protocol output bound.',
               ),
               {
-                correlationId,
+                correlationId: mutationMetadata?.correlationId ?? requestCorrelationId,
                 authority: {
-                  mode: demoReset ? 'governed_mutation' : 'projection',
+                  mode:
+                    demoReset || governedMutation || workflowApproval
+                      ? 'governed_mutation'
+                      : 'projection',
                   sources: AUTHORITY_SOURCES[toolName],
                   observedAt: callTime.toISOString(),
                 },
@@ -441,9 +676,12 @@ export class OpenSlackMcpCore {
               'The OpenSlack result could not be safely projected onto the MCP protocol.',
             ),
             {
-              correlationId,
+              correlationId: mutationMetadata?.correlationId ?? requestCorrelationId,
               authority: {
-                mode: demoReset ? 'governed_mutation' : 'projection',
+                mode:
+                  demoReset || governedMutation || workflowApproval
+                    ? 'governed_mutation'
+                    : 'projection',
                 sources: AUTHORITY_SOURCES[toolName],
                 observedAt: callTime.toISOString(),
               },

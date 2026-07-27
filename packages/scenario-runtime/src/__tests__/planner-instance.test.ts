@@ -159,7 +159,16 @@ async function context(
 describe('Scenario preview and instance contract', () => {
   it('produces an immutable read-only plan and a valid previewed instance', async () => {
     const plan = previewScenario(await context());
-    expect(plan.effects).toEqual([]);
+    expect(plan.effects).toHaveLength(1);
+    expect(plan.effects[0]).toMatchObject({
+      kind: 'scenario.instantiate',
+      payload: {
+        schema: 'openslack.scenario_instantiate.v1',
+        scenarioInstanceId: plan.scenarioInstanceId,
+        inputHash: plan.inputHash,
+        targetScopeHash: plan.targetScopeHash,
+      },
+    });
     expect(plan.capabilities).toEqual([]);
     expect(plan.planId).toBe(`scenario-plan:sha256:${plan.planHash}`);
     expect(Object.isFrozen(plan)).toBe(true);
@@ -265,6 +274,31 @@ describe('Scenario preview and instance contract', () => {
       expect.objectContaining({ code: 'SCENARIO_PREVIEW_INPUT_INVALID' }),
     );
     expect(invoked).toBe(false);
+  });
+
+  it('rejects instance and nested array proxies before invoking reflection traps', async () => {
+    const instance = createPreviewedScenarioInstance(previewScenario(await context()));
+    let traps = 0;
+    const proxy = new Proxy(
+      {},
+      {
+        getPrototypeOf() {
+          traps += 1;
+          return Object.prototype;
+        },
+        ownKeys() {
+          traps += 1;
+          return [];
+        },
+      },
+    );
+    expect(() => validateScenarioInstance(proxy)).toThrowError(
+      expect.objectContaining({ code: 'SCENARIO_INSTANCE_INVALID' }),
+    );
+    expect(() => validateScenarioInstance({ ...instance, targetRefs: proxy })).toThrowError(
+      expect.objectContaining({ code: 'SCENARIO_INSTANCE_INVALID' }),
+    );
+    expect(traps).toBe(0);
   });
 
   it('enforces closed instance fields, temporal order, and lifecycle transitions', async () => {

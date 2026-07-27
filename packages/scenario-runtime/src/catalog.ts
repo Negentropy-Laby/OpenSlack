@@ -9,6 +9,7 @@ import {
   SOFTWARE_DELIVERY_PROJECTOR_CONTRACT,
   SOFTWARE_DELIVERY_PROJECTOR_ID,
 } from '@openslack/organization-graph';
+import { types as nodeTypes } from 'node:util';
 
 const CATALOG_ID_PATTERN = /^[a-z][A-Za-z0-9_-]*(?:\.[a-z][A-Za-z0-9_-]*)*$/;
 const CATALOG_INPUT_FIELDS = Object.freeze([
@@ -143,6 +144,11 @@ function buildUnique<T extends { readonly id: string }>(
 function assertInertCatalogValue(value: unknown, field: string, depth: number): void {
   if (depth > 8) {
     throw new ScenarioCatalogError('SCENARIO_CATALOG_INVALID', `${field} exceeds depth limits.`);
+  }
+  if ((typeof value === 'object' || typeof value === 'function') && value !== null) {
+    if (nodeTypes.isProxy(value)) {
+      throw new ScenarioCatalogError('SCENARIO_CATALOG_INVALID', `${field} cannot be a Proxy.`);
+    }
   }
   if (
     value === null ||

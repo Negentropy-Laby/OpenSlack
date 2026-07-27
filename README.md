@@ -139,7 +139,7 @@ OpenSlack/
 │   └── notification-delivery/ # Independent Notification Delivery Service source
 ├── apps/
 │   ├── cli/                 # User command surface and module command groups
-│   └── mcp/                 # Read-only local MCP stdio frontend for Qoder Work
+│   └── mcp/                 # Local MCP stdio frontend; read-only stock, governed opt-in profiles
 ├── integrations/qoder-work/ # Qoder Work Skill and installation guidance
 ├── scenarios/               # Exact-byte locked declarative Scenario Packs
 ├── templates/new-agent/     # 9 onboarding template files

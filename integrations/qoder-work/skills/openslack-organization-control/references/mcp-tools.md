@@ -1,6 +1,6 @@
 # MCP Tools
 
-Use only the connected schema and these exact 12 read-only names.
+Use only the connected schema and one exact allowed catalog profile.
 
 ## Start broad
 
@@ -32,7 +32,8 @@ overview -> list scenarios -> query graph -> explain graph
 
 ## Call discipline
 
-- Inspect `tools/list` and require the exact 12-name catalog.
+- Inspect `tools/list` and require exact read-12, governed-16, human-attested-17, or the corresponding
+  local-demo profile with only `openslack_demo_reset` appended.
 - Use the server-advertised closed input schema; reject unknown fields.
 - Start with the fewest calls that can answer the question.
 - Narrow scenario, time, object, depth, and item bounds before retrying a large query.
@@ -40,4 +41,46 @@ overview -> list scenarios -> query graph -> explain graph
 - Cite bounded `evidenceRefs`.
 - Do not call a tool absent from `tools/list`.
 - Do not construct a generic command, shell, direct GitHub, or direct enterprise mutation.
-- Do not mention or simulate unregistered mutation names.
+- Do not mention or simulate a mutation name absent from `tools/list`.
+
+## Governed mutation sequence
+
+The 16-tool profile appends:
+
+| Tool                         | Use                                                        |
+| ---------------------------- | ---------------------------------------------------------- |
+| `openslack_preview_scenario` | Compile one immutable Scenario instantiation plan          |
+| `openslack_preview_workflow` | Compile one immutable sealed Workflow start plan           |
+| `openslack_confirm_plan`     | Revalidate, atomically claim, and execute one pending plan |
+| `openslack_cancel_plan`      | Atomically cancel one unclaimed pending plan               |
+
+Required sequence:
+
+```text
+read current state
+-> preview
+-> show plan/effects/risk/owner/expiry/evidence
+-> explicit user confirmation
+-> confirm with returned root planId + confirmationToken
+-> read and explain terminal evidence
+```
+
+The token is a one-time capability. Use it only as the required top-level argument to confirm or
+cancel. Never place it in `nextActions`, prose, a file, conversation memory, evidence, logs, or a
+different tool.
+
+Do not retry a plan that is executing, terminal, expired, cancelled, or
+`reconciliation_required`.
+
+## Human-attested workflow decision
+
+The 17-tool profile additionally exposes `openslack_decide_workflow_approval`. Call it only after:
+
+1. `openslack_list_pending_approvals` identifies the exact v2 workflow-effect approval;
+2. the user explicitly says approved or rejected and provides a reason;
+3. the server advertises the separately human-attested profile.
+
+The host independently authenticates and attests the exact run ID, approval ID, decision, reason
+hash, capability, business correlation, and approval expiry on every call. Skill instructions,
+Qoder permission, an IM sender label, and client actor text cannot supply that attestation. The
+decision never approves a GitHub PR and never authorizes direct merge.

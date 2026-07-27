@@ -293,6 +293,64 @@ export {
 } from './workflow-catalog.js';
 export type { WorkflowCatalogEntry } from './workflow-catalog.js';
 
+// ── Governed Workflow Plan Compiler ─────────────────────────────────────────
+export {
+  compileGovernedWorkflowPlan,
+  compileWorkflowStartPlan,
+  createSealedWorkflowPlanResolver,
+  normalizeWorkflowPlanInput,
+  resolveSealedWorkflowPlanTarget,
+  SealedWorkflowPlanResolver,
+  WORKFLOW_START_EFFECT_SCHEMA,
+  WORKFLOW_START_PLAN_SCHEMA,
+  WorkflowPlanError,
+} from './governed-plan.js';
+export type {
+  CompileWorkflowStartPlanInput,
+  CreateSealedWorkflowPlanResolverInput,
+  WorkflowAuthorityBinding,
+  WorkflowAuthorityProvider,
+  WorkflowAuthorityRequirement,
+  WorkflowPlanResolverEntry,
+  WorkflowPlanRisk,
+  WorkflowStartEffect,
+  WorkflowStartPlan,
+} from './governed-plan.js';
+
+// ── Workflow Effect Approval v2 ─────────────────────────────────────────────
+export {
+  applyWorkflowEffectApprovalDecision,
+  createPendingWorkflowEffectApproval,
+  createWorkflowEffectDecisionAuthority,
+  markWorkflowEffectApprovalAuditRecorded,
+  validateWorkflowEffectApproval,
+  workflowEffectApprovalAuditEventId,
+  workflowEffectApprovalBytes,
+  WORKFLOW_EFFECT_APPROVAL_SCHEMA,
+  WorkflowEffectApprovalContractError,
+  WorkflowEffectDecisionAuthority,
+} from './workflow-effect-approval.js';
+export type {
+  CreatePendingWorkflowEffectApprovalInput,
+  AssertHumanWorkflowEffectDecisionBindingInput,
+  HumanWorkflowEffectDecisionBinding,
+  IssueHumanWorkflowEffectDecisionBindingInput,
+  WorkflowEffectApprovalDecision,
+  WorkflowEffectApprovalDecisionEvidence,
+  WorkflowEffectApprovalAuditProjection,
+  WorkflowEffectApprovalRecord,
+  WorkflowEffectApprovalStatus,
+  WorkflowEffectDecisionAuthorityInput,
+} from './workflow-effect-approval.js';
+export {
+  LocalWorkflowEffectApprovalStore,
+  WorkflowEffectApprovalStoreError,
+} from './workflow-effect-approval-store.js';
+export type {
+  DecideWorkflowEffectApprovalInput,
+  MarkWorkflowEffectApprovalAuditProjectedInput,
+} from './workflow-effect-approval-store.js';
+
 // ── Workflow Save / Export ─────────────────────────────────────────────────
 export { saveWorkflow, saveWorkflowRunScript, exportWorkflowSkill } from './workflow-save.js';
 export type {

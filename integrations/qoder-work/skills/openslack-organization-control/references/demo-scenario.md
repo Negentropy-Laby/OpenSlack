@@ -33,7 +33,7 @@ Contract
   -> contributes to Outcome
 ```
 
-## Read-only demonstration
+## Foundation demonstration
 
 1. Read `openslack_get_executive_overview`.
 2. List `openslack_list_scenarios`.
@@ -43,8 +43,11 @@ Contract
    needed.
 6. Present Status / Owner / Blocker / Next / Evidence.
 
-The current Skill does not instantiate the scenario or start a workflow. If the scenario is not
-already present, report that the connected surface is read-only.
+If the connected profile is read-only and the scenario is not already present, report that
+boundary. If the exact governed profile is active, read first, preview the registered
+Contract-to-Delivery Scenario, show the immutable effects and risk, wait for explicit
+confirmation, then confirm with the returned one-time capability. Do not invent an instance or
+Workflow when either tool is absent.
 
 The manufacturing 90-day workflow is a deterministic technical fixture/fallback. It is not a
 second live lead scenario. Any employee-onboarding view is static fixture evidence only.

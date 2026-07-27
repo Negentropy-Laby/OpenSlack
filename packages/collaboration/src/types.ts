@@ -38,10 +38,17 @@ export type PRMSEvent =
 export type OperatorEvent =
   | 'operator.intent.parsed'
   | 'operator.plan.created'
+  | 'operator.plan.previewed'
+  | 'operator.plan.confirmed'
+  | 'operator.plan.confirmation_rejected'
+  | 'operator.plan.cancelled'
+  | 'operator.plan.expired'
   | 'operator.plan.blocked'
   | 'operator.execution.started'
   | 'operator.execution.completed'
-  | 'operator.execution.failed';
+  | 'operator.execution.blocked'
+  | 'operator.execution.failed'
+  | 'operator.execution.reconciliation_required';
 
 export type ChatEvent =
   | 'chat.message.received'
@@ -67,6 +74,7 @@ export type CollaborationObjectEvent =
   | 'digest.generated'
   | 'workflow.previewed'
   | 'workflow.started'
+  | 'workflow.approval.decided'
   | 'workflow.completed'
   | 'workflow.blocked'
   | 'profile_sync.triggered'

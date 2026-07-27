@@ -1,6 +1,6 @@
 import { types as utilTypes } from 'node:util';
 
-export type JsonSchemaPrimitiveType = 'string' | 'integer' | 'boolean' | 'array';
+export type JsonSchemaPrimitiveType = 'string' | 'integer' | 'boolean' | 'array' | 'object';
 
 export interface JsonSchemaProperty {
   readonly type: JsonSchemaPrimitiveType;
@@ -14,6 +14,8 @@ export interface JsonSchemaProperty {
   readonly minItems?: number;
   readonly maxItems?: number;
   readonly uniqueItems?: boolean;
+  readonly maxProperties?: number;
+  readonly additionalProperties?: boolean;
   readonly items?: Readonly<{
     type: 'string';
     minLength?: number;
@@ -42,6 +44,19 @@ export interface OpenSlackReadToolDefinition {
   };
 }
 
+export interface OpenSlackMutationToolDefinition {
+  readonly name: OpenSlackMutationToolName;
+  readonly title: string;
+  readonly description: string;
+  readonly inputSchema: StrictObjectSchema;
+  readonly annotations: {
+    readonly readOnlyHint: false;
+    readonly destructiveHint: boolean;
+    readonly idempotentHint: boolean;
+    readonly openWorldHint: boolean;
+  };
+}
+
 export const OPENSLACK_READ_TOOL_NAMES = Object.freeze([
   'openslack_get_executive_overview',
   'openslack_list_work_items',
@@ -58,8 +73,38 @@ export const OPENSLACK_READ_TOOL_NAMES = Object.freeze([
 ] as const);
 
 export type OpenSlackReadToolName = (typeof OPENSLACK_READ_TOOL_NAMES)[number];
+export const OPENSLACK_GOVERNED_MUTATION_TOOL_NAMES = Object.freeze([
+  'openslack_preview_scenario',
+  'openslack_preview_workflow',
+  'openslack_confirm_plan',
+  'openslack_cancel_plan',
+] as const);
+export const OPENSLACK_WORKFLOW_APPROVAL_TOOL_NAMES = Object.freeze([
+  'openslack_decide_workflow_approval',
+] as const);
+export const OPENSLACK_MUTATION_TOOL_NAMES = Object.freeze([
+  ...OPENSLACK_GOVERNED_MUTATION_TOOL_NAMES,
+  ...OPENSLACK_WORKFLOW_APPROVAL_TOOL_NAMES,
+] as const);
+export type OpenSlackMutationToolName = (typeof OPENSLACK_MUTATION_TOOL_NAMES)[number];
 export const OPENSLACK_DEMO_RESET_TOOL_NAME = 'openslack_demo_reset' as const;
-export type OpenSlackToolName = OpenSlackReadToolName | typeof OPENSLACK_DEMO_RESET_TOOL_NAME;
+export const OPENSLACK_TOOL_CATALOG_COMPOSITION = Object.freeze({
+  components: Object.freeze({
+    read: 12,
+    governedMutations: 4,
+    workflowApproval: 1,
+    demoReset: 1,
+  } as const),
+  profiles: Object.freeze({
+    productionReadOnly: 12,
+    agentBound: 16,
+    humanAttested: 17,
+  } as const),
+});
+export type OpenSlackToolName =
+  | OpenSlackReadToolName
+  | OpenSlackMutationToolName
+  | typeof OPENSLACK_DEMO_RESET_TOOL_NAME;
 
 const commonAnnotations = Object.freeze({
   readOnlyHint: true as const,
@@ -330,6 +375,160 @@ const definitions: readonly OpenSlackReadToolDefinition[] = [
   },
 ];
 
+const mutationDefinitions: readonly OpenSlackMutationToolDefinition[] = [
+  {
+    name: 'openslack_preview_scenario',
+    title: 'Preview a governed OpenSlack scenario',
+    description:
+      'Compile bounded business input into one immutable OpenSlack scenario plan without executing any effect.',
+    inputSchema: strictSchema(
+      {
+        scenarioId: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 100,
+          pattern: '^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$',
+        },
+        input: {
+          type: 'object',
+          maxProperties: 64,
+          additionalProperties: true,
+        },
+      },
+      ['scenarioId', 'input'],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  },
+  {
+    name: 'openslack_preview_workflow',
+    title: 'Preview a governed OpenSlack workflow',
+    description:
+      'Resolve one host-registered workflow and compile a bounded side-effect manifest without starting it.',
+    inputSchema: strictSchema(
+      {
+        workflowId: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 100,
+          pattern: '^[a-z][A-Za-z0-9]*(?:[-.][A-Za-z0-9]+)*$',
+        },
+        input: {
+          type: 'object',
+          maxProperties: 64,
+          additionalProperties: true,
+        },
+        repository: {
+          type: 'string',
+          minLength: 3,
+          maxLength: 200,
+          pattern: '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$',
+        },
+      },
+      ['workflowId', 'input'],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  },
+  {
+    name: 'openslack_confirm_plan',
+    title: 'Confirm one immutable OpenSlack plan',
+    description:
+      'Revalidate and atomically claim one unexpired canonical plan for exactly one governed execution.',
+    inputSchema: strictSchema(
+      {
+        planId: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 160,
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]*$',
+        },
+        confirmationToken: {
+          type: 'string',
+          minLength: 32,
+          maxLength: 128,
+          pattern: '^[A-Za-z0-9_-]+$',
+        },
+      },
+      ['planId', 'confirmationToken'],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  },
+  {
+    name: 'openslack_cancel_plan',
+    title: 'Cancel one pending OpenSlack plan',
+    description:
+      'Atomically cancel an unclaimed pending plan; executing or terminal plans remain immutable.',
+    inputSchema: strictSchema(
+      {
+        planId: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 160,
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]*$',
+        },
+        confirmationToken: {
+          type: 'string',
+          minLength: 32,
+          maxLength: 128,
+          pattern: '^[A-Za-z0-9_-]+$',
+        },
+      },
+      ['planId', 'confirmationToken'],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  },
+  {
+    name: 'openslack_decide_workflow_approval',
+    title: 'Decide one OpenSlack workflow effect',
+    description:
+      'Apply one separately attested human decision to a bound OpenSlack workflow-effect approval; never a GitHub review.',
+    inputSchema: strictSchema(
+      {
+        runId: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 160,
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]*$',
+        },
+        approvalId: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 160,
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]*$',
+        },
+        decision: { type: 'string', enum: ['approved', 'rejected'] },
+        reason: { type: 'string', minLength: 1, maxLength: 1_000 },
+      },
+      ['runId', 'approvalId', 'decision', 'reason'],
+    ),
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  },
+];
+
 function deepFreeze<T>(value: T): T {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
     Object.freeze(value);
@@ -341,6 +540,10 @@ function deepFreeze<T>(value: T): T {
 export const OPENSLACK_READ_TOOL_CATALOG = deepFreeze(
   definitions.map((definition) => ({ ...definition })),
 ) as readonly OpenSlackReadToolDefinition[];
+
+export const OPENSLACK_MUTATION_TOOL_CATALOG = deepFreeze(
+  mutationDefinitions.map((definition) => ({ ...definition })),
+) as readonly OpenSlackMutationToolDefinition[];
 
 export const OPENSLACK_DEMO_RESET_TOOL_DEFINITION = deepFreeze({
   name: OPENSLACK_DEMO_RESET_TOOL_NAME,
@@ -357,17 +560,61 @@ export const OPENSLACK_DEMO_RESET_TOOL_DEFINITION = deepFreeze({
 } as const);
 
 const NOMINAL_CATALOGS = new WeakSet<object>();
+const governedMutationToolNames = new Set<string>(OPENSLACK_GOVERNED_MUTATION_TOOL_NAMES);
 NOMINAL_CATALOGS.add(OPENSLACK_READ_TOOL_CATALOG);
 const DEMO_TOOL_CATALOG = deepFreeze([
   ...OPENSLACK_READ_TOOL_CATALOG,
   OPENSLACK_DEMO_RESET_TOOL_DEFINITION,
 ]);
 NOMINAL_CATALOGS.add(DEMO_TOOL_CATALOG);
+const AGENT_MUTATION_TOOL_CATALOG = deepFreeze([
+  ...OPENSLACK_READ_TOOL_CATALOG,
+  ...OPENSLACK_MUTATION_TOOL_CATALOG.filter((definition) =>
+    governedMutationToolNames.has(definition.name),
+  ),
+]);
+const HUMAN_MUTATION_TOOL_CATALOG = deepFreeze([
+  ...OPENSLACK_READ_TOOL_CATALOG,
+  ...OPENSLACK_MUTATION_TOOL_CATALOG,
+]);
+const AGENT_MUTATION_DEMO_TOOL_CATALOG = deepFreeze([
+  ...AGENT_MUTATION_TOOL_CATALOG,
+  OPENSLACK_DEMO_RESET_TOOL_DEFINITION,
+]);
+const HUMAN_MUTATION_DEMO_TOOL_CATALOG = deepFreeze([
+  ...HUMAN_MUTATION_TOOL_CATALOG,
+  OPENSLACK_DEMO_RESET_TOOL_DEFINITION,
+]);
+for (const catalog of [
+  AGENT_MUTATION_TOOL_CATALOG,
+  HUMAN_MUTATION_TOOL_CATALOG,
+  AGENT_MUTATION_DEMO_TOOL_CATALOG,
+  HUMAN_MUTATION_DEMO_TOOL_CATALOG,
+]) {
+  NOMINAL_CATALOGS.add(catalog);
+}
 
 export function getOpenSlackToolCatalog(options: {
   readonly includeDemoReset: boolean;
-}): readonly (OpenSlackReadToolDefinition | typeof OPENSLACK_DEMO_RESET_TOOL_DEFINITION)[] {
-  return options.includeDemoReset ? DEMO_TOOL_CATALOG : OPENSLACK_READ_TOOL_CATALOG;
+  readonly includeGovernedMutations?: boolean;
+  readonly includeWorkflowApproval?: boolean;
+}): readonly (
+  | OpenSlackReadToolDefinition
+  | OpenSlackMutationToolDefinition
+  | typeof OPENSLACK_DEMO_RESET_TOOL_DEFINITION
+)[] {
+  if (!options.includeGovernedMutations) {
+    if (options.includeWorkflowApproval) {
+      throw new TypeError('Workflow approval cannot be advertised without governed mutations.');
+    }
+    return options.includeDemoReset ? DEMO_TOOL_CATALOG : OPENSLACK_READ_TOOL_CATALOG;
+  }
+  if (options.includeWorkflowApproval) {
+    return options.includeDemoReset
+      ? HUMAN_MUTATION_DEMO_TOOL_CATALOG
+      : HUMAN_MUTATION_TOOL_CATALOG;
+  }
+  return options.includeDemoReset ? AGENT_MUTATION_DEMO_TOOL_CATALOG : AGENT_MUTATION_TOOL_CATALOG;
 }
 
 export function assertNominalOpenSlackToolCatalog(value: unknown): void {
@@ -376,16 +623,27 @@ export function assertNominalOpenSlackToolCatalog(value: unknown): void {
   }
 }
 
-const toolNames = new Set<string>(OPENSLACK_READ_TOOL_NAMES);
+const readToolNames = new Set<string>(OPENSLACK_READ_TOOL_NAMES);
+const mutationToolNames = new Set<string>(OPENSLACK_MUTATION_TOOL_NAMES);
 
 export function isOpenSlackReadToolName(value: string): value is OpenSlackReadToolName {
-  return toolNames.has(value);
+  return readToolNames.has(value);
+}
+
+export function isOpenSlackMutationToolName(value: string): value is OpenSlackMutationToolName {
+  return mutationToolNames.has(value);
 }
 
 export function getOpenSlackReadToolDefinition(
   name: string,
 ): OpenSlackReadToolDefinition | undefined {
   return OPENSLACK_READ_TOOL_CATALOG.find((definition) => definition.name === name);
+}
+
+export function getOpenSlackMutationToolDefinition(
+  name: string,
+): OpenSlackMutationToolDefinition | undefined {
+  return OPENSLACK_MUTATION_TOOL_CATALOG.find((definition) => definition.name === name);
 }
 
 export class ToolInputValidationError extends Error {
@@ -415,6 +673,20 @@ interface CloneBudget {
   nodes: number;
 }
 
+function isOrdinaryObjectAcrossRealms(value: object): boolean {
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype === null) return true;
+  if (utilTypes.isProxy(prototype)) return false;
+  return Object.getPrototypeOf(prototype) === null;
+}
+
+function isOrdinaryArrayAcrossRealms(value: readonly unknown[]): boolean {
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype === null || utilTypes.isProxy(prototype)) return false;
+  const parent = Object.getPrototypeOf(prototype);
+  return parent !== null && !utilTypes.isProxy(parent) && Object.getPrototypeOf(parent) === null;
+}
+
 function cloneInertValue(
   value: unknown,
   path: string,
@@ -440,7 +712,7 @@ function cloneInertValue(
     return value;
   }
   if (Array.isArray(value)) {
-    if (Object.getPrototypeOf(value) !== Array.prototype || value.length > 1_000) {
+    if (!isOrdinaryArrayAcrossRealms(value) || value.length > 1_000) {
       throw new ToolInputValidationError([`${path} must be a bounded ordinary array`]);
     }
     const expected = new Set<string>(['length']);
@@ -462,8 +734,7 @@ function cloneInertValue(
   if (typeof value !== 'object' || value === null) {
     throw new ToolInputValidationError([`${path} contains a non-JSON value`]);
   }
-  const prototype = Object.getPrototypeOf(value);
-  if (prototype !== Object.prototype && prototype !== null) {
+  if (!isOrdinaryObjectAcrossRealms(value)) {
     throw new ToolInputValidationError([`${path} must be an inert plain object`]);
   }
   const keys = Reflect.ownKeys(value);
@@ -488,7 +759,7 @@ function cloneInertValue(
 }
 
 export function validateToolInput(
-  definition: Pick<OpenSlackReadToolDefinition, 'inputSchema'>,
+  definition: Pick<OpenSlackReadToolDefinition | OpenSlackMutationToolDefinition, 'inputSchema'>,
   value: unknown,
 ): Readonly<Record<string, unknown>> {
   if (utilTypes.isProxy(value)) {
@@ -539,6 +810,17 @@ export function validateToolInput(
         addFinding(`${key} must be at most ${property.maximum}`);
     } else if (property.type === 'boolean' && typeof raw !== 'boolean') {
       addFinding(`${key} must be a boolean`);
+    } else if (property.type === 'object') {
+      if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+        addFinding(`${key} must be an object`);
+        continue;
+      }
+      if (
+        property.maxProperties !== undefined &&
+        Object.keys(raw).length > property.maxProperties
+      ) {
+        addFinding(`${key} must contain at most ${property.maxProperties} properties`);
+      }
     } else if (property.type === 'array') {
       if (!Array.isArray(raw)) {
         addFinding(`${key} must be an array`);
