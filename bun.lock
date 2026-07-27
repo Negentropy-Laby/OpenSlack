@@ -165,6 +165,10 @@
         "@openslack/pr": "workspace:*",
       },
     },
+    "packages/organization-graph": {
+      "name": "@openslack/organization-graph",
+      "version": "0.2.0",
+    },
     "packages/plugin-api": {
       "name": "@openslack/plugin-api",
       "version": "0.2.0",
@@ -446,6 +450,8 @@
     "@openslack/mcp": ["@openslack/mcp@workspace:apps/mcp"],
 
     "@openslack/operator": ["@openslack/operator@workspace:packages/operator"],
+
+    "@openslack/organization-graph": ["@openslack/organization-graph@workspace:packages/organization-graph"],
 
     "@openslack/plugin-api": ["@openslack/plugin-api@workspace:packages/plugin-api"],
 
