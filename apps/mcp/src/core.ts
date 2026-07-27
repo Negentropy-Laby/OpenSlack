@@ -1,8 +1,11 @@
 import { types as utilTypes } from 'node:util';
 import {
   OPENSLACK_DEMO_RESET_TOOL_NAME,
+  OPENSLACK_GOVERNED_MUTATION_TOOL_NAMES,
   OPENSLACK_MUTATION_TOOL_NAMES,
   OPENSLACK_READ_TOOL_NAMES,
+  OPENSLACK_TOOL_CATALOG_COMPOSITION,
+  OPENSLACK_WORKFLOW_APPROVAL_TOOL_NAMES,
   ToolInputValidationError,
   assertNominalOpenSlackToolCatalog,
   createOpenSlackMcpResult,
@@ -173,6 +176,8 @@ function sanitizeForProtocol(
       output[key] = Array.isArray(child) ? normalizeTypedEvidenceReferences(child) : [];
       continue;
     }
+    // Confirmation capabilities are bearer secrets. Only the explicit root response
+    // field may survive sanitization; nested copies remain subject to key redaction.
     if (
       depth === 0 &&
       preserveRootConfirmationToken &&
@@ -200,6 +205,13 @@ function failedResult(code: string, message: string): OpenSlackMcpResult {
   });
 }
 
+class ToolDeadlineExceededError extends Error {
+  constructor(readonly code: string) {
+    super(code);
+    this.name = 'ToolDeadlineExceededError';
+  }
+}
+
 async function withTimeout<T>(
   promise: Promise<T>,
   timeoutMs: number,
@@ -220,13 +232,6 @@ async function withTimeout<T>(
     ]);
   } finally {
     if (timeout) clearTimeout(timeout);
-  }
-}
-
-class ToolDeadlineExceededError extends Error {
-  constructor(readonly code: string) {
-    super(code);
-    this.name = 'ToolDeadlineExceededError';
   }
 }
 
@@ -300,14 +305,24 @@ function assertFrozenCatalog(
     includeWorkflowApproval,
   });
   assertNominalOpenSlackToolCatalog(catalog);
-  const expectedLength =
-    12 +
-    (includeGovernedMutations ? 4 : 0) +
-    (includeWorkflowApproval ? 1 : 0) +
-    (includeDemoReset ? 1 : 0);
+  const { components, profiles } = OPENSLACK_TOOL_CATALOG_COMPOSITION;
+  const expectedProfileLength = includeWorkflowApproval
+    ? profiles.humanAttested
+    : includeGovernedMutations
+      ? profiles.agentBound
+      : profiles.productionReadOnly;
+  const expectedLength = expectedProfileLength + (includeDemoReset ? components.demoReset : 0);
   if (
     catalog.length !== expectedLength ||
-    OPENSLACK_READ_TOOL_NAMES.length !== 12 ||
+    OPENSLACK_READ_TOOL_NAMES.length !== components.read ||
+    OPENSLACK_GOVERNED_MUTATION_TOOL_NAMES.length !== components.governedMutations ||
+    OPENSLACK_WORKFLOW_APPROVAL_TOOL_NAMES.length !== components.workflowApproval ||
+    OPENSLACK_MUTATION_TOOL_NAMES.length !==
+      components.governedMutations + components.workflowApproval ||
+    profiles.productionReadOnly !== components.read ||
+    profiles.agentBound !== components.read + components.governedMutations ||
+    profiles.humanAttested !==
+      components.read + components.governedMutations + components.workflowApproval ||
     !Object.isFrozen(catalog)
   ) {
     throw new Error('READ_TOOL_CATALOG_INVALID');
@@ -318,8 +333,9 @@ function assertFrozenCatalog(
     OPENSLACK_READ_TOOL_NAMES.some((name) => !catalogNames.includes(name)) ||
     OPENSLACK_READ_TOOL_NAMES.some((name) => !(name in OPENSLACK_READ_TOOL_HANDLERS)) ||
     includeGovernedMutations !==
-      OPENSLACK_MUTATION_TOOL_NAMES.slice(0, 4).every((name) => catalogNames.includes(name)) ||
-    includeWorkflowApproval !== catalogNames.includes('openslack_decide_workflow_approval') ||
+      OPENSLACK_GOVERNED_MUTATION_TOOL_NAMES.every((name) => catalogNames.includes(name)) ||
+    includeWorkflowApproval !==
+      OPENSLACK_WORKFLOW_APPROVAL_TOOL_NAMES.every((name) => catalogNames.includes(name)) ||
     includeDemoReset !== catalogNames.includes(OPENSLACK_DEMO_RESET_TOOL_NAME)
   ) {
     throw new Error('READ_TOOL_CATALOG_DRIFT');

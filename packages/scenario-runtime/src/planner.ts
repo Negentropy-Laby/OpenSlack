@@ -169,6 +169,7 @@ export class ScenarioPlannerError extends Error {
 const SAFE_IDENTIFIER = /^[^\u0000-\u001f\u007f/\\]+$/;
 const SECRET_KEY =
   /(?:password|credential|privatekey|accesstoken|refreshtoken|githubtoken|apikey|secret)$/i;
+// All call sites check their UTF-8 byte limit before applying the credential pattern.
 const SECRET_VALUE = /-----BEGIN|\b(?:gh[pousr]_|github_pat_|xox[a-z]-|sk-|AKIA[A-Z0-9]{16})/i;
 const HOST_OWNED_INPUT_KEY =
   /(?:allowunattended|confirmstep|path|module|entrypoint|command|shell|credential|token|authentication|(?:repo|repository)$|^owner$|^auth$)/i;

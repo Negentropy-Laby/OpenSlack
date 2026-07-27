@@ -1,6 +1,9 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { types as utilTypes } from 'node:util';
 
+// This module owns generic Operator GovernedPlanRecord validation and execution.
+// WorkflowStartPlan compilation is a separate domain in packages/workflows/src/governed-plan.ts.
+
 export type GovernedJsonPrimitive = null | boolean | number | string;
 export type GovernedJsonValue =
   | GovernedJsonPrimitive
@@ -139,6 +142,7 @@ function pointer(path: string, segment: string | number): string {
 }
 
 function inspectDescriptors(value: object, path: string): PropertyDescriptorMap {
+  // Why: descriptor-only inspection rejects accessors without invoking attacker-controlled code.
   if (utilTypes.isProxy(value)) {
     return fail('GOVERNED_PLAN_INVALID', 'Proxy objects are forbidden.', path);
   }
@@ -155,6 +159,7 @@ function dataValue(
   path: string,
   enumerable = true,
 ): unknown {
+  // Why: governed JSON accepts only inert own data; inherited and accessor fields are authority leaks.
   const descriptor = descriptors[key];
   if (!descriptor || descriptor.enumerable !== enumerable || !Object.hasOwn(descriptor, 'value')) {
     return fail(

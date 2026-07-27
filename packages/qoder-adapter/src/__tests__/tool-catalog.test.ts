@@ -1,10 +1,13 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import {
+  OPENSLACK_GOVERNED_MUTATION_TOOL_NAMES,
   OPENSLACK_MUTATION_TOOL_CATALOG,
   OPENSLACK_MUTATION_TOOL_NAMES,
   OPENSLACK_READ_TOOL_CATALOG,
   OPENSLACK_READ_TOOL_NAMES,
+  OPENSLACK_TOOL_CATALOG_COMPOSITION,
+  OPENSLACK_WORKFLOW_APPROVAL_TOOL_NAMES,
   ToolInputValidationError,
   getOpenSlackMutationToolDefinition,
   getOpenSlackToolCatalog,
@@ -60,6 +63,13 @@ describe('Qoder read-tool catalog', () => {
   });
 
   it('keeps mutation profiles nominal, explicit, and separate from the production twelve', () => {
+    expect(OPENSLACK_GOVERNED_MUTATION_TOOL_NAMES).toEqual([
+      'openslack_preview_scenario',
+      'openslack_preview_workflow',
+      'openslack_confirm_plan',
+      'openslack_cancel_plan',
+    ]);
+    expect(OPENSLACK_WORKFLOW_APPROVAL_TOOL_NAMES).toEqual(['openslack_decide_workflow_approval']);
     expect(OPENSLACK_MUTATION_TOOL_NAMES).toEqual([
       'openslack_preview_scenario',
       'openslack_preview_workflow',
@@ -67,6 +77,22 @@ describe('Qoder read-tool catalog', () => {
       'openslack_cancel_plan',
       'openslack_decide_workflow_approval',
     ]);
+    expect(OPENSLACK_TOOL_CATALOG_COMPOSITION).toEqual({
+      components: {
+        read: 12,
+        governedMutations: 4,
+        workflowApproval: 1,
+        demoReset: 1,
+      },
+      profiles: {
+        productionReadOnly: 12,
+        agentBound: 16,
+        humanAttested: 17,
+      },
+    });
+    expect(Object.isFrozen(OPENSLACK_TOOL_CATALOG_COMPOSITION)).toBe(true);
+    expect(Object.isFrozen(OPENSLACK_TOOL_CATALOG_COMPOSITION.components)).toBe(true);
+    expect(Object.isFrozen(OPENSLACK_TOOL_CATALOG_COMPOSITION.profiles)).toBe(true);
     expect(OPENSLACK_MUTATION_TOOL_CATALOG).toHaveLength(5);
     expect(getOpenSlackToolCatalog({ includeDemoReset: false })).toHaveLength(12);
     expect(
@@ -74,7 +100,7 @@ describe('Qoder read-tool catalog', () => {
         includeDemoReset: false,
         includeGovernedMutations: true,
       }).map((tool) => tool.name),
-    ).toEqual([...OPENSLACK_READ_TOOL_NAMES, ...OPENSLACK_MUTATION_TOOL_NAMES.slice(0, 4)]);
+    ).toEqual([...OPENSLACK_READ_TOOL_NAMES, ...OPENSLACK_GOVERNED_MUTATION_TOOL_NAMES]);
     expect(
       getOpenSlackToolCatalog({
         includeDemoReset: false,

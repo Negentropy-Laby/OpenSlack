@@ -17,8 +17,10 @@ import {
 } from '@openslack/workflows';
 import { readEvents } from '@openslack/collaboration';
 import {
+  OPENSLACK_GOVERNED_MUTATION_TOOL_NAMES,
   OPENSLACK_MUTATION_TOOL_NAMES,
   OPENSLACK_READ_TOOL_NAMES,
+  OPENSLACK_TOOL_CATALOG_COMPOSITION,
   validateOpenSlackMcpResultV2,
 } from '@openslack/qoder-adapter';
 import {
@@ -284,9 +286,9 @@ describe('governed MCP mutation profile', () => {
     const { core } = harness(workspaceRoot);
     expect(core.listTools().map((tool) => tool.name)).toEqual([
       ...OPENSLACK_READ_TOOL_NAMES,
-      ...OPENSLACK_MUTATION_TOOL_NAMES.slice(0, 4),
+      ...OPENSLACK_GOVERNED_MUTATION_TOOL_NAMES,
     ]);
-    expect(core.listTools()).toHaveLength(16);
+    expect(core.listTools()).toHaveLength(OPENSLACK_TOOL_CATALOG_COMPOSITION.profiles.agentBound);
     expect(core.listTools().map((tool) => tool.name)).not.toContain(
       'openslack_decide_workflow_approval',
     );
@@ -465,7 +467,9 @@ describe('governed MCP mutation profile', () => {
       ...OPENSLACK_READ_TOOL_NAMES,
       ...OPENSLACK_MUTATION_TOOL_NAMES,
     ]);
-    expect(core.listTools()).toHaveLength(17);
+    expect(core.listTools()).toHaveLength(
+      OPENSLACK_TOOL_CATALOG_COMPOSITION.profiles.humanAttested,
+    );
 
     const decision = await core.callTool('openslack_decide_workflow_approval', {
       runId: 'run-contract-001',

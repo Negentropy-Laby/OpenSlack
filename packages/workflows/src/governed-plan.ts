@@ -1,6 +1,9 @@
 import { createHash } from 'node:crypto';
 import { types as nodeTypes } from 'node:util';
 
+// This module owns the workflow-specific WorkflowStartPlan and sealed resolver contract.
+// Generic persisted execution lives in packages/operator/src/governed-plan.ts.
+
 export const WORKFLOW_START_PLAN_SCHEMA = 'openslack.workflow_start_plan.v1' as const;
 export const WORKFLOW_START_EFFECT_SCHEMA = 'openslack.workflow_start_effect.v1' as const;
 
@@ -110,6 +113,7 @@ const SEMVER =
 const HASH = /^[0-9a-f]{64}$/;
 const CONTROL = /[\u0000-\u001f\u007f]/;
 const ACTIVE_CONTENT = /(?:https?:\/\/|javascript:|data:text\/html|<\s*script\b|<\s*iframe\b)/i;
+// Callers check UTF-8 byte limits before this pattern, so credential scanning stays bounded.
 const SECRET_VALUE =
   /(?:-----BEGIN [A-Z ]*PRIVATE KEY-----|(?:github_pat_|gh[opusr]_|sk-)[A-Za-z0-9_-]{12,}|xox[baprs]-[A-Za-z0-9-]{8,}|bearer\s+[A-Za-z0-9._~+/=-]{12,})/i;
 const FORBIDDEN_INPUT_KEYS = new Set([

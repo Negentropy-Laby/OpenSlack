@@ -73,15 +73,34 @@ export const OPENSLACK_READ_TOOL_NAMES = Object.freeze([
 ] as const);
 
 export type OpenSlackReadToolName = (typeof OPENSLACK_READ_TOOL_NAMES)[number];
-export const OPENSLACK_MUTATION_TOOL_NAMES = Object.freeze([
+export const OPENSLACK_GOVERNED_MUTATION_TOOL_NAMES = Object.freeze([
   'openslack_preview_scenario',
   'openslack_preview_workflow',
   'openslack_confirm_plan',
   'openslack_cancel_plan',
+] as const);
+export const OPENSLACK_WORKFLOW_APPROVAL_TOOL_NAMES = Object.freeze([
   'openslack_decide_workflow_approval',
+] as const);
+export const OPENSLACK_MUTATION_TOOL_NAMES = Object.freeze([
+  ...OPENSLACK_GOVERNED_MUTATION_TOOL_NAMES,
+  ...OPENSLACK_WORKFLOW_APPROVAL_TOOL_NAMES,
 ] as const);
 export type OpenSlackMutationToolName = (typeof OPENSLACK_MUTATION_TOOL_NAMES)[number];
 export const OPENSLACK_DEMO_RESET_TOOL_NAME = 'openslack_demo_reset' as const;
+export const OPENSLACK_TOOL_CATALOG_COMPOSITION = Object.freeze({
+  components: Object.freeze({
+    read: 12,
+    governedMutations: 4,
+    workflowApproval: 1,
+    demoReset: 1,
+  } as const),
+  profiles: Object.freeze({
+    productionReadOnly: 12,
+    agentBound: 16,
+    humanAttested: 17,
+  } as const),
+});
 export type OpenSlackToolName =
   | OpenSlackReadToolName
   | OpenSlackMutationToolName
@@ -541,6 +560,7 @@ export const OPENSLACK_DEMO_RESET_TOOL_DEFINITION = deepFreeze({
 } as const);
 
 const NOMINAL_CATALOGS = new WeakSet<object>();
+const governedMutationToolNames = new Set<string>(OPENSLACK_GOVERNED_MUTATION_TOOL_NAMES);
 NOMINAL_CATALOGS.add(OPENSLACK_READ_TOOL_CATALOG);
 const DEMO_TOOL_CATALOG = deepFreeze([
   ...OPENSLACK_READ_TOOL_CATALOG,
@@ -549,7 +569,9 @@ const DEMO_TOOL_CATALOG = deepFreeze([
 NOMINAL_CATALOGS.add(DEMO_TOOL_CATALOG);
 const AGENT_MUTATION_TOOL_CATALOG = deepFreeze([
   ...OPENSLACK_READ_TOOL_CATALOG,
-  ...OPENSLACK_MUTATION_TOOL_CATALOG.slice(0, 4),
+  ...OPENSLACK_MUTATION_TOOL_CATALOG.filter((definition) =>
+    governedMutationToolNames.has(definition.name),
+  ),
 ]);
 const HUMAN_MUTATION_TOOL_CATALOG = deepFreeze([
   ...OPENSLACK_READ_TOOL_CATALOG,
