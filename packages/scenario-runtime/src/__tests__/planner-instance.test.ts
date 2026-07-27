@@ -1,18 +1,128 @@
-import { dirname, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
-import type { AuthorityRef } from '@openslack/organization-graph';
+import { afterEach, describe, expect, it } from 'vitest';
+import {
+  SOFTWARE_DELIVERY_PROJECTOR_CONTRACT,
+  SOFTWARE_DELIVERY_PROJECTOR_ID,
+  type AuthorityRef,
+} from '@openslack/organization-graph';
 import {
   createPreviewedScenarioInstance,
   createSoftwareDeliveryScenarioCatalog,
   loadScenarioPack,
   previewScenario,
+  sealScenarioHostCatalog,
   transitionScenarioInstance,
   validateScenarioInstance,
 } from '../index.js';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../');
 const scenarioRoot = resolve(repositoryRoot, 'scenarios');
+const temporaryRoots: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(
+    temporaryRoots.splice(0).map((path) => rm(path, { recursive: true, force: true })),
+  );
+});
+
+function workflowCatalog(includeWorkflow: boolean) {
+  return sealScenarioHostCatalog({
+    projectors: [
+      {
+        id: SOFTWARE_DELIVERY_PROJECTOR_ID,
+        version: '1.0.0',
+        adapterId: SOFTWARE_DELIVERY_PROJECTOR_ID,
+        nodeTypes: SOFTWARE_DELIVERY_PROJECTOR_CONTRACT.nodeTypes,
+        edgeTypes: SOFTWARE_DELIVERY_PROJECTOR_CONTRACT.edgeTypes,
+      },
+    ],
+    workflows: includeWorkflow
+      ? [
+          {
+            id: 'delivery-preview',
+            version: '1.0.0',
+            adapterId: 'openslack.github.v1',
+            capabilityIds: ['github.issues.create'],
+          },
+        ]
+      : [],
+    capabilities: [
+      {
+        id: 'github.issues.create',
+        adapterId: 'openslack.github.v1',
+        risk: 'low',
+        readOnly: false,
+        approvalRequired: true,
+      },
+    ],
+    adapters: [
+      {
+        id: SOFTWARE_DELIVERY_PROJECTOR_ID,
+        kind: 'projection',
+        capabilityIds: [],
+      },
+      {
+        id: 'openslack.github.v1',
+        kind: 'workflow',
+        capabilityIds: ['github.issues.create'],
+      },
+    ],
+    deepLinkTemplates: [],
+    notificationIntents: [],
+  });
+}
+
+async function loadWorkflowDefinition() {
+  const parent = await mkdtemp(join(tmpdir(), 'openslack-scenario-planner-'));
+  temporaryRoots.push(parent);
+  const root = join(parent, 'scenarios');
+  const pack = join(root, 'software-delivery');
+  await mkdir(root);
+  await cp(join(scenarioRoot, 'software-delivery'), pack, { recursive: true });
+  await writeFile(
+    join(pack, 'capabilities.yaml'),
+    [
+      'schema: openslack.scenario_capabilities.v1',
+      'requested:',
+      '  - github.issues.create',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  await writeFile(
+    join(pack, 'workflows.yaml'),
+    [
+      'schema: openslack.scenario_workflows.v1',
+      'workflows:',
+      '  - id: delivery-preview',
+      '    adapterId: openslack.github.v1',
+      '    capabilityIds:',
+      '      - github.issues.create',
+      '    role: delivery',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  const lockPath = join(pack, 'scenario.lock.json');
+  const lock = JSON.parse(await readFile(lockPath, 'utf8')) as {
+    files: Array<{ path: string; bytes: number; sha256: string }>;
+  };
+  for (const entry of lock.files) {
+    const bytes = await readFile(join(pack, ...entry.path.split('/')));
+    entry.bytes = bytes.length;
+    entry.sha256 = createHash('sha256').update(bytes).digest('hex');
+  }
+  await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`, 'utf8');
+  return loadScenarioPack({
+    scenarioRoot: root,
+    scenarioId: 'software-delivery',
+    catalog: workflowCatalog(true),
+  });
+}
 
 function target(objectId: string, observedAt: string): AuthorityRef {
   return {
@@ -122,6 +232,22 @@ describe('Scenario preview and instance contract', () => {
     expect(() => createPreviewedScenarioInstance({ ...plan })).toThrowError(
       expect.objectContaining({ code: 'SCENARIO_PREVIEW_INPUT_INVALID' }),
     );
+  });
+
+  it('fails with a typed error when a loaded definition is paired with another sealed catalog', async () => {
+    const valid = await context();
+    const definition = await loadWorkflowDefinition();
+    expect(() =>
+      previewScenario({
+        ...valid,
+        definition,
+        catalog: workflowCatalog(false),
+        actor: {
+          id: valid.actor.id,
+          permissions: { capabilities: ['github.issues.create'] },
+        },
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'SCENARIO_PREVIEW_CATALOG_MISMATCH' }));
   });
 
   it('rejects accessor preview input without invoking it', async () => {

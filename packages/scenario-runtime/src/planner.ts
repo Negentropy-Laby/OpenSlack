@@ -103,7 +103,8 @@ export class ScenarioPlannerError extends Error {
   readonly code:
     | 'SCENARIO_PREVIEW_INPUT_INVALID'
     | 'SCENARIO_PREVIEW_SCOPE_INVALID'
-    | 'SCENARIO_PREVIEW_EXPIRED';
+    | 'SCENARIO_PREVIEW_EXPIRED'
+    | 'SCENARIO_PREVIEW_CATALOG_MISMATCH';
 
   constructor(code: ScenarioPlannerError['code'], message: string) {
     super(message);
@@ -119,6 +120,28 @@ const SECRET_VALUE = /-----BEGIN|\b(?:gh[pousr]_|github_pat_|xox[a-z]-|sk-|AKIA[
 
 function previewFail(code: ScenarioPlannerError['code'], message: string): never {
   throw new ScenarioPlannerError(code, message);
+}
+
+function requireCatalogCapability(catalog: ScenarioHostCatalog, id: string) {
+  const capability = catalog.capability(id);
+  if (!capability) {
+    return previewFail(
+      'SCENARIO_PREVIEW_CATALOG_MISMATCH',
+      `The sealed host catalog does not contain capability ${id}.`,
+    );
+  }
+  return capability;
+}
+
+function requireCatalogWorkflow(catalog: ScenarioHostCatalog, id: string) {
+  const workflow = catalog.workflow(id);
+  if (!workflow) {
+    return previewFail(
+      'SCENARIO_PREVIEW_CATALOG_MISMATCH',
+      `The sealed host catalog does not contain workflow ${id}.`,
+    );
+  }
+  return workflow;
 }
 
 function cloneInput(
@@ -274,6 +297,8 @@ export function previewScenario(input: PreviewScenarioInput): ScenarioInstantiat
   });
   assertCapabilitiesGranted(resolution);
 
+  // Reuse the closed instance validator only to canonicalize targetRefs. The synthetic identifiers
+  // satisfy its structural contract; the temporary instance is discarded and never trusted.
   const validatedTargets = validateScenarioInstance({
     schema: SCENARIO_INSTANCE_SCHEMA,
     id: 'preview-target-validator',
@@ -324,11 +349,11 @@ export function previewScenario(input: PreviewScenarioInput): ScenarioInstantiat
   }
 
   const capabilities = resolution.effective.map((id) => {
-    const capability = input.catalog.capability(id)!;
+    const capability = requireCatalogCapability(input.catalog, id);
     return Object.freeze({ ...capability });
   });
   const workflows = input.definition.workflows.workflows.map((reference) => {
-    const workflow = input.catalog.workflow(reference.id)!;
+    const workflow = requireCatalogWorkflow(input.catalog, reference.id);
     return Object.freeze({
       id: workflow.id,
       version: workflow.version,
@@ -337,8 +362,8 @@ export function previewScenario(input: PreviewScenarioInput): ScenarioInstantiat
     });
   });
   const effects = workflows.map((workflow) => {
-    const workflowCapabilities = workflow.capabilityIds.map(
-      (capability) => input.catalog.capability(capability)!,
+    const workflowCapabilities = workflow.capabilityIds.map((capability) =>
+      requireCatalogCapability(input.catalog, capability),
     );
     return Object.freeze({
       kind: 'workflow.start' as const,

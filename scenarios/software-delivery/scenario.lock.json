@@ -35,8 +35,8 @@
     },
     {
       "path": "scenario.yaml",
-      "bytes": 370,
-      "sha256": "7c7096054a9f32ed41723f1c2afe4ba1e26b264593b59e80c81ee2c8c36ff6a1"
+      "bytes": 467,
+      "sha256": "5406bef7f08fed03df78806bd57e67d70c53ed8a34c7c926cdfd56da17e61c75"
     },
     {
       "path": "views.yaml",
