@@ -9,15 +9,16 @@ gates:
     evidence: ['commit:85f18a24645edade981a342bb67308e3a65d9904']
     notes: Baseline matched origin/main before migration work.
   - id: documentation_migration
-    status: pending
+    status: passed
     evidence:
       [
         docs/reference/document-path-migration-v1.yaml,
         'github:pr-327:merged:85f18a24645edade981a342bb67308e3a65d9904',
         'github:pr-328:merged:067f4566cd06855f65d2b2a53257227c0db69067',
+        'github:pr-329:merged:de0d202e84b34c4def7d684c68372ebca7bb35fa',
         memory_bank/t3_archive/reviews/documentation-migration-v1.md,
       ]
-    notes: 'PR #329 enforcement, independent human approval, and merge remain pending.'
+    notes: Documentation migration and repository enforcement are complete; no release or live gate is promoted.
   - id: signed_release
     status: blocked
     evidence: ['issue:240']

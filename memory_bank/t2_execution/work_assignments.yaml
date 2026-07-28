@@ -1,5 +1,5 @@
 schema: openslack.work_assignments.v1
-updated: 2026-07-28
+updated: 2026-07-29
 assignments:
   - id: issue-239
     title: 'release: close OpenSlack 0.2.0 external gates'
@@ -159,7 +159,7 @@ assignments:
     last_verified_at: 2026-07-28T13:55:03Z
   - id: documentation-governance-v1
     title: Establish the OpenSlack root documentation governance system
-    status: review
+    status: done
     planned_owner: project-governance
     module_or_workstream: self-evolution
     execution:
@@ -177,18 +177,17 @@ assignments:
       - Reusable and Notification Delivery CI enforce documentation governance.
       - A bot-authored PR receives independent human review and approval.
     dependencies: []
-    blockers:
-      - exact_head_hosted_checks_pending
-      - independent_human_approval_pending
-      - pr_329_merge_pending
+    blockers: []
     evidence:
       - commit:3250fb75a634330c15d4390c0ea0d265bd80085a
       - github:pr-327:merged:85f18a24645edade981a342bb67308e3a65d9904
       - commit:b5a7248a91aab659448422d6f6131abb3ee31485
       - github:pr-328:merged:067f4566cd06855f65d2b2a53257227c0db69067
       - commit:31845d508bea4171b94a795abb1a0357c6fec80c
-      - github:pr-329:open:31845d508bea4171b94a795abb1a0357c6fec80c
+      - commit:c61118c4f18ac7326b0b3b7ce392b9a56797b838
+      - github:pr-329:approval:4800139148:c61118c4f18ac7326b0b3b7ce392b9a56797b838
+      - github:pr-329:merged:de0d202e84b34c4def7d684c68372ebca7bb35fa
       - repo:.github/workflows/openslack-reusable-validate.yml
       - repo:.github/workflows/notification-delivery-service.yml
       - repo:memory_bank/t3_archive/reviews/documentation-migration-v1.md
-    last_verified_at: 2026-07-29T01:05:34+08:00
+    last_verified_at: 2026-07-29T01:28:42+08:00
