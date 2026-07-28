@@ -311,17 +311,18 @@ describe('self plugin command', () => {
     }
   });
 
-  it('preserves top-level help bytes while extending only the self subtree', () => {
+  it('pins top-level help bytes including the governed graph build surface', () => {
     const entry = fileURLToPath(new URL('../index.ts', import.meta.url));
     const tsxImport = pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href;
     const root = spawnSync(process.execPath, ['--import', tsxImport, entry, '--help']);
     const self = spawnSync(process.execPath, ['--import', tsxImport, entry, 'self', '--help']);
 
     expect(root.status).toBe(0);
-    expect(root.stdout.byteLength).toBe(1760);
+    expect(root.stdout.byteLength).toBe(1879);
     expect(createHash('sha256').update(root.stdout).digest('hex')).toBe(
-      '3681d81425d762763ce683baf917c4301c15b4ebc1b3d8f1b175195035d2b025',
+      'aa09907d48bfa6484f682e2a4c72d7bf21be792dd6403df4131e79b635d2a046',
     );
+    expect(root.stdout.toString('utf8')).toContain('graph');
     expect(self.status).toBe(0);
     expect(self.stdout.toString('utf8')).toContain('plugin');
 

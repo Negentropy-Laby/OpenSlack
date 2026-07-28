@@ -171,6 +171,48 @@ Missing or stale graph evidence does not initialize a store, create a scenario, 
 successful empty dataset. Narrowing a query is appropriate for truncation or size limits; it does
 not repair missing or stale authority evidence.
 
+## Explicit local graph snapshot build
+
+The side-effecting CLI importer is separate from the frozen MCP catalog:
+
+```bash
+bun run openslack graph snapshot build \
+  --scenario software-delivery \
+  --from ./evidence/software-delivery.json \
+  --scenario-instance <scenario-instance-id> \
+  --format json
+```
+
+Use exactly one of `--from <path>` or `--from-stdin`. Both paths stop at the Software Delivery
+4 MiB source ceiling before parsing. File input requires a real regular file, rejects symlink or
+reparse resolution, and verifies path and handle identity before, during, and after the bounded
+read. The package service then uses strict JSON with explicit depth, node, and string ceilings,
+the registered Software Delivery validator/projector, and the existing atomic `LocalGraphStore`.
+It does not call GitHub or assemble live evidence.
+
+The first publication omits `--expected-cursor` and succeeds only when no current pointer exists.
+Every replacement must pass the exact current cursor:
+
+```bash
+bun run openslack graph snapshot build \
+  --scenario software-delivery \
+  --from-stdin \
+  --scenario-instance <scenario-instance-id> \
+  --expected-cursor <current-cursor> \
+  --format json
+```
+
+The store root is fixed to `.openslack.local/graph` in the current workspace. There is no force
+or arbitrary-store option. A missing, stale, or concurrently changed cursor fails with
+`GRAPH_STORE_CURSOR_CONFLICT`; lock contention remains `GRAPH_STORE_LOCKED`. If publication reports
+`GRAPH_STORE_COMMITTED_UNVERIFIED`, read the current pointer before retrying because the cursor may
+already be committed.
+
+`openslack_query_graph` and `openslack_explain_graph` remain read-only and side-effect-free. They
+never invoke this command, read its stdin, or silently build missing graph evidence. A successful
+local import and official MCP SDK readback are `LOCAL_PASS` evidence only and do not establish
+`QODER_VERIFIED`.
+
 ## Configure the Qoder Work desktop connector
 
 Open **Extensions → Connectors → + Add → Paste JSON Config**, then adapt one of:

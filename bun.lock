@@ -48,6 +48,7 @@
         "@openslack/kernel": "workspace:*",
         "@openslack/mcp": "workspace:*",
         "@openslack/operator": "workspace:*",
+        "@openslack/organization-graph": "workspace:*",
         "@openslack/plugin-api": "workspace:*",
         "@openslack/plugin-host": "workspace:*",
         "@openslack/plugin-testkit": "workspace:*",

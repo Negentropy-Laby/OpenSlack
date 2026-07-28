@@ -98,3 +98,11 @@ export type {
 } from './software-delivery-types.js';
 export { validateSoftwareDeliverySourceSnapshot } from './software-delivery-validation.js';
 export { projectSoftwareDeliverySnapshot } from './software-delivery-projector.js';
+export {
+  SOFTWARE_DELIVERY_SCENARIO_ID,
+  buildAndPublishSoftwareDeliverySnapshot,
+} from './snapshot-build.js';
+export type {
+  BuildAndPublishSoftwareDeliverySnapshotInput,
+  PublishedSoftwareDeliverySnapshot,
+} from './snapshot-build.js';

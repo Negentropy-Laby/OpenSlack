@@ -25,6 +25,7 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 | Diagnose why a PR cannot merge                   | `openslack pr doctor <n>`                                                      | Shows blocker owner, evidence, and next action.                                                      |
 | See team state across events and PRs             | `openslack collaboration dashboard`                                            | Projection-only; does not create dashboard-specific state.                                           |
 | Read evidence-backed business outcomes           | `openslack collaboration business-outcomes --format markdown`                  | Every metric retains observed, configured-estimate, or unknown basis and evidence.                   |
+| Build bounded local graph evidence               | `openslack graph snapshot build --scenario software-delivery --from <json>`    | Strict file/stdin import with CAS; replacements require the exact current cursor.                    |
 | Connect Qoder Work                               | `openslack mcp serve --stdio`                                                  | Publishes exactly 12 read-only v2 business/graph tools over local stdio.                             |
 | Record a handoff or decision                     | `openslack collaboration handoff ...` / `openslack collaboration decision ...` | Creates auditable collaboration objects.                                                             |
 | Keep the org profile in sync                     | `openslack collaboration workflow profile-sync check`                          | Profile Sync Robot checks and previews are read-only; `run` requires confirmation.                   |
@@ -748,6 +749,39 @@ When an LLM provider is configured (`OPENSLACK_LLM_PROVIDER`, `OPENSLACK_LLM_MOD
 | ----------------------------- | ------------------------------------------------------------------------- |
 | `openslack mcp serve --stdio` | Serve the frozen 12-tool, read-only `openslack.mcp_result.v2` MCP catalog |
 
+Build current graph evidence explicitly before querying it:
+
+```bash
+openslack graph snapshot build \
+  --scenario software-delivery \
+  --from ./evidence/software-delivery.json \
+  --scenario-instance <scenario-instance-id> \
+  --format json
+```
+
+Use `--from-stdin` instead of `--from <path>` for a bounded pipeline. Exactly
+one source is required. The importer reads at most 4 MiB, rejects symlink or
+reparse sources and files that change identity while being read, applies the
+strict Software Delivery source contract, and publishes only through the local
+graph store's compare-and-swap boundary.
+
+The first publication omits `--expected-cursor`. Every replacement must supply
+the exact current cursor:
+
+```bash
+openslack graph snapshot build \
+  --scenario software-delivery \
+  --from ./evidence/software-delivery-next.json \
+  --scenario-instance <scenario-instance-id> \
+  --expected-cursor <current-cursor>
+```
+
+There is no force or overwrite option. A missing, stale, or concurrently
+changed expected cursor returns `GRAPH_STORE_CURSOR_CONFLICT`. The command
+writes only to `.openslack.local/graph` in the current workspace, performs no
+GitHub or live-evidence collection, and is intentionally side-effecting. It is
+not an MCP read tool.
+
 The MCP process reserves stdout for protocol frames, opens no listening socket,
 and exposes no shell, generic command, approval, merge, policy, permission, or
 other mutation tool. Qoder MCP permission is separate from OpenSlack plan
@@ -759,7 +793,8 @@ The catalog adds `openslack_list_scenarios`, `openslack_query_graph`, and
 `openslack_explain_graph` to the nine foundation reads. Missing or stale current
 graph evidence returns explicit `SOURCE_EVIDENCE_UNAVAILABLE` or
 `SOURCE_EVIDENCE_STALE` blockers; it does not produce an empty authoritative
-graph.
+graph. Query and explain remain side-effect-free and never invoke the snapshot
+build command.
 
 Only an explicitly injected local demo composition advertises a 13th
 `openslack_demo_reset` tool. The stock command above always advertises the
