@@ -108,6 +108,23 @@ function catalog() {
 }
 
 describe('scenario capability compatibility', () => {
+  it('binds the complete sealed Host Catalog to a deterministic integrity hash', () => {
+    const first = catalog();
+    const second = catalog();
+    const empty = sealScenarioHostCatalog({
+      adapters: [],
+      capabilities: [],
+      workflows: [],
+      projectors: [],
+      deepLinkTemplates: [],
+      notificationIntents: [],
+    });
+
+    expect(first.integrityHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(second.integrityHash).toBe(first.integrityHash);
+    expect(empty.integrityHash).not.toBe(first.integrityHash);
+  });
+
   it('normalizes mixed legacy and canonical declarations deterministically', () => {
     const known = catalog().capabilityIds();
     const first = normalizeWorkflowPermissions(

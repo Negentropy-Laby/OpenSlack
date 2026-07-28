@@ -299,6 +299,7 @@ export {
   compileWorkflowStartPlan,
   createSealedWorkflowPlanResolver,
   normalizeWorkflowPlanInput,
+  rehydrateWorkflowStartPlan,
   resolveSealedWorkflowPlanTarget,
   SealedWorkflowPlanResolver,
   WORKFLOW_START_EFFECT_SCHEMA,
@@ -308,6 +309,7 @@ export {
 export type {
   CompileWorkflowStartPlanInput,
   CreateSealedWorkflowPlanResolverInput,
+  PersistedWorkflowStartPlanBinding,
   WorkflowAuthorityBinding,
   WorkflowAuthorityProvider,
   WorkflowAuthorityRequirement,

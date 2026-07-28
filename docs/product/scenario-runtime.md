@@ -1,19 +1,20 @@
 # Scenario Runtime
 
-| Field                   | Value                                                                           |
-| ----------------------- | ------------------------------------------------------------------------------- |
-| Status                  | `DECLARATIVE CORE + GOVERNED MUTATION CONTRACT IMPLEMENTED — REHEARSAL PENDING` |
-| Product direction       | One-scenario-first                                                              |
-| Lead interview scenario | Contract-to-Delivery Lite                                                       |
-| Pack format             | Declarative `openslack.scenario_pack.v1`                                        |
-| Execution authority     | OpenSlack canonical plan through registered host adapters                       |
+| Field                   | Value                                                                                  |
+| ----------------------- | -------------------------------------------------------------------------------------- |
+| Status                  | `AGENT-BOUND SCENARIO COMPOSITION IMPLEMENTED — CLI + REHEARSAL PENDING`               |
+| Product direction       | One-scenario-first                                                                     |
+| Lead interview scenario | Contract-to-Delivery Lite                                                              |
+| Pack format             | Declarative `openslack.scenario_pack.v1`                                               |
+| Execution authority     | Registry/runtime principal + canonical plan + registered host executor + durable store |
 
 The `@openslack/scenario-runtime` package and exact-byte locked, projection-only
 `software-delivery` Scenario Pack implement the declarative loading, capability normalization,
-preview, instance, and local-store core described here. The governed mutation contract is
-implemented. The default stock MCP remains read-only; authenticated Qoder rehearsal and live
-adapter qualification remain pending. Contract-to-Delivery Lite and scenario lifecycle events
-remain later milestones.
+preview, instance, and local-store core described here. The governed mutation contract and a
+production agent-bound `software-delivery` Scenario instantiation composition are implemented.
+The default stock MCP remains read-only, the governed CLI profile is not exposed yet, and
+authenticated Qoder rehearsal and live adapter qualification remain pending. Contract-to-Delivery
+Lite and scenario lifecycle events remain later milestones.
 
 ## Product outcome
 
@@ -68,10 +69,13 @@ The first read-only additions are the graph tools defined in the
 [Qoder MCP Catalog Evolution contract](../developer/qoder-mcp-contract.md#catalog-evolution).
 That contract is the single source of exact tool names and counts.
 
-Governed scenario preview and execution tools are implemented, but they are exposed only through
-explicitly injected 16/17-tool host compositions after runtime, pack-loader, actor-binding,
-immutable-plan-store, executor, and audit bindings are satisfied. The stock MCP composition
-remains the exact 12-tool read-only surface.
+Governed scenario preview and execution tools are implemented. The production agent-bound factory
+resolves an active registry/runtime principal, current permission snapshot, canonical workspace,
+process-sealed Scenario definitions, exact lock/catalog/build hashes, real plan and instance
+stores, and the Collaboration audit sink before returning an explicitly injectable 16-tool
+composition. Its `scenario.instantiate` executor uses CAS and durable instance readback. No sealed
+Workflow target/executor is currently registered, so Workflow preview is stably blocked and
+creates no plan. The stock MCP composition remains the exact 12-tool read-only surface.
 
 ## Definition and instance
 

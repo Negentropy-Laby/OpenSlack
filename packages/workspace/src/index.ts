@@ -43,7 +43,7 @@ export type {
 } from './module-registry.js';
 
 // Agent Registry Parser
-export { parseAgentRegistry } from './agent-registry-parser.js';
+export { parseAgentRegistry, parseAgentRegistryText } from './agent-registry-parser.js';
 export type { ParsedAgentRegistryEntry } from './agent-registry-parser.js';
 
 // Registry Migration

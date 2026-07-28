@@ -10,6 +10,59 @@ import type {
   AgentPermissionSnapshot,
 } from '@openslack/kernel';
 
+const SAFE_AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const SAFE_RUNTIME_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/;
+const RUNTIME_PROVIDERS = new Set<AgentRuntimeIdentity['provider']>([
+  'cli',
+  'slack',
+  'github',
+  'webhook',
+]);
+
+function canonicalTimestamp(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 64) return false;
+  const millis = Date.parse(value);
+  return Number.isFinite(millis) && new Date(millis).toISOString() === value;
+}
+
+function validateRuntimeIdentity(value: unknown): AgentRuntimeIdentity | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const data = value as Record<string, unknown>;
+  if (
+    data.schema !== 'openslack.agent_runtime_identity.v1' ||
+    typeof data.agent_id !== 'string' ||
+    !SAFE_AGENT_ID.test(data.agent_id) ||
+    typeof data.agent_uid !== 'string' ||
+    !SAFE_RUNTIME_ID.test(data.agent_uid) ||
+    typeof data.run_id !== 'string' ||
+    !SAFE_RUNTIME_ID.test(data.run_id) ||
+    typeof data.provider !== 'string' ||
+    !RUNTIME_PROVIDERS.has(data.provider as AgentRuntimeIdentity['provider']) ||
+    !canonicalTimestamp(data.started_at) ||
+    !(
+      data.public_key_jwk === null ||
+      (typeof data.public_key_jwk === 'object' && !Array.isArray(data.public_key_jwk))
+    ) ||
+    !(data.key_id === null || typeof data.key_id === 'string') ||
+    !(data.key_generated_at === null || canonicalTimestamp(data.key_generated_at))
+  ) {
+    return null;
+  }
+  if (data.authenticated_github_identity !== undefined) {
+    const github = data.authenticated_github_identity;
+    if (
+      !github ||
+      typeof github !== 'object' ||
+      Array.isArray(github) ||
+      typeof (github as Record<string, unknown>).login !== 'string' ||
+      typeof (github as Record<string, unknown>).is_bot !== 'boolean'
+    ) {
+      return null;
+    }
+  }
+  return data as unknown as AgentRuntimeIdentity;
+}
+
 function generateRunId(): string {
   const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
   const rand = Math.random().toString(36).slice(2, 8);
@@ -71,13 +124,21 @@ export function generateRuntimeIdentity(args: {
 }
 
 export function loadRuntimeIdentity(root: string, agentId: string): AgentRuntimeIdentity | null {
+  if (!SAFE_AGENT_ID.test(agentId)) return null;
   const identityPath = join(root, '.openslack.local', 'agents', agentId, 'identity.yaml');
   if (!existsSync(identityPath)) return null;
 
   try {
-    const data = parseYaml(readFileSync(identityPath, 'utf-8')) as Record<string, unknown>;
-    if (!data || data.schema !== 'openslack.agent_runtime_identity.v1') return null;
-    return data as unknown as AgentRuntimeIdentity;
+    return parseRuntimeIdentityText(readFileSync(identityPath, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+export function parseRuntimeIdentityText(raw: string): AgentRuntimeIdentity | null {
+  if (typeof raw !== 'string' || Buffer.byteLength(raw, 'utf8') > 2 * 1024 * 1024) return null;
+  try {
+    return validateRuntimeIdentity(parseYaml(raw));
   } catch {
     return null;
   }
@@ -89,6 +150,12 @@ export function resolveAgentPrincipal(args: {
   provider?: string;
 }): { principal: AgentPrincipal; snapshot: AgentPermissionSnapshot } | { error: string } {
   const { root, agentId, provider = 'cli' } = args;
+  if (
+    !SAFE_AGENT_ID.test(agentId) ||
+    !RUNTIME_PROVIDERS.has(provider as AgentRuntimeIdentity['provider'])
+  ) {
+    return { error: 'Agent reference or runtime provider is invalid' };
+  }
 
   const registry = parseAgentRegistry(root, agentId);
   if (!registry) {
@@ -107,6 +174,16 @@ export function resolveAgentPrincipal(args: {
       error: `No runtime identity for agent "${agentId}". Run: openslack agent bootstrap --agent-id ${agentId}`,
     };
   }
+  if (
+    registry.agent_id !== agentId ||
+    runtimeIdentity.agent_id !== agentId ||
+    runtimeIdentity.agent_uid !== registry.identity.uid ||
+    runtimeIdentity.provider !== provider
+  ) {
+    return {
+      error: `Runtime identity for agent "${agentId}" does not match the active registry binding`,
+    };
+  }
 
   const snapshot = resolvePermissionSnapshot({ registry, runtimeIdentity });
   if (!snapshot) {
@@ -115,9 +192,10 @@ export function resolveAgentPrincipal(args: {
 
   // Correct the source to reflect the original registry version
   const parsed = registry as ParsedAgentRegistryEntry;
-  if (parsed._source_schema === 'openslack.agent_registry.v1') {
-    (snapshot as { source: string }).source = 'registry_v1';
-  }
+  const effectiveSnapshot =
+    parsed._source_schema === 'openslack.agent_registry.v1'
+      ? Object.freeze({ ...snapshot, source: 'registry_v1' as const })
+      : snapshot;
 
-  return { principal: snapshot.principal, snapshot };
+  return { principal: effectiveSnapshot.principal, snapshot: effectiveSnapshot };
 }

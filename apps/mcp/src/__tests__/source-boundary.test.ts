@@ -20,6 +20,7 @@ describe('QW2 MCP source boundary', () => {
     const files = [
       'context.ts',
       'core.ts',
+      'governed-composition.ts',
       'mutations.ts',
       'workflow-approvals.ts',
       'server.ts',
@@ -38,6 +39,7 @@ describe('QW2 MCP source boundary', () => {
   it('keeps the governed mutation path isolated from legacy or dynamic executors', () => {
     const files = [
       'core.ts',
+      'governed-composition.ts',
       'mutations.ts',
       'workflow-approvals.ts',
       'tools/mutations.ts',
@@ -57,6 +59,27 @@ describe('QW2 MCP source boundary', () => {
     expect(source).toContain('per-decision attestation');
     expect(source).toContain('reasonHash');
     expect(source).toContain('auditProjection');
+  });
+
+  it('builds the agent-bound composition only from reviewed resolvers and durable stores', () => {
+    const source = readFileSync(join(sourceRoot, 'governed-composition.ts'), 'utf8');
+
+    for (const required of [
+      'resolveAgentPrincipal',
+      'authorizeAgentAction',
+      'loadScenarioPack',
+      'previewScenario',
+      'rehydrateScenarioInstantiationPlan',
+      'LocalScenarioInstanceStore',
+      'compileWorkflowStartPlan',
+      'createGovernedPlanCollaborationAuditSink',
+    ]) {
+      expect(source).toContain(required);
+    }
+    expect(source).not.toMatch(
+      /\b(?:generateRuntimeIdentity|executePlan|executeWorkflowTemplate|findWorkflow|loadWorkflow|issueHumanDecisionBinding|createWorkflowEffectDecisionAuthority)\b/,
+    );
+    expect(source).not.toMatch(/apps\/cli|@openslack\/cli|node:child_process|execFile|spawn\s*\(/);
   });
 
   it('binds governed audit projection to one verified append descriptor', () => {

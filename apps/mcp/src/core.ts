@@ -19,7 +19,7 @@ import {
   type OpenSlackToolName,
 } from '@openslack/qoder-adapter';
 import type { OpenSlackMcpContext } from './context.js';
-import { OpenSlackMcpProtocolError, safeToolError } from './errors.js';
+import { OpenSlackMcpProtocolError, safeToolError, type OpenSlackMcpToolError } from './errors.js';
 import { projectToolData } from './projections.js';
 import {
   normalizeTypedEvidenceReference,
@@ -203,6 +203,17 @@ function failedResult(code: string, message: string): OpenSlackMcpResult {
     error: { code, message },
     governance: { blocker: code },
   });
+}
+
+function toolErrorResult(error: OpenSlackMcpToolError): OpenSlackMcpResult {
+  if (error.safeStatus === 'blocked') {
+    return createOpenSlackMcpResult({
+      status: 'blocked',
+      summary: error.safeMessage,
+      governance: { blocker: error.safeCode },
+    });
+  }
+  return failedResult(error.safeCode, error.safeMessage);
 }
 
 class ToolDeadlineExceededError extends Error {
@@ -571,11 +582,11 @@ export class OpenSlackMcpCore {
           result = mutationMetadata.result;
         } else {
           const safe = safeToolError(error);
-          result = failedResult(safe.safeCode, safe.safeMessage);
+          result = toolErrorResult(safe);
         }
       } else {
         const safe = safeToolError(error);
-        result = failedResult(safe.safeCode, safe.safeMessage);
+        result = toolErrorResult(safe);
       }
     }
 

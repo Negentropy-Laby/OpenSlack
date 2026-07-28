@@ -74,6 +74,8 @@ function makeHarness(
   } = {},
 ) {
   let sourceVersion = 'source-v1';
+  let permissionVersion = 'permission-v1';
+  let buildNonce = 'operator-build-nonce-0123456789';
   const events: GovernedPlanAuditEvent[] = [];
   const definitions: GovernedActionExecutorDefinition[] = [
     {
@@ -98,8 +100,11 @@ function makeHarness(
     registry,
     getBindingSnapshot: () => ({
       sourceVersions: { scenario: sourceVersion },
-      permissionSnapshot: { capabilities: definitions.map((item) => item.actionId) },
-      buildNonce: 'operator-build-nonce-0123456789',
+      permissionSnapshot: {
+        version: permissionVersion,
+        capabilities: definitions.map((item) => item.actionId),
+      },
+      buildNonce,
     }),
     audit: (event) => {
       events.push(event);
@@ -117,6 +122,12 @@ function makeHarness(
     events,
     changeSource: () => {
       sourceVersion = 'source-v2';
+    },
+    changePermission: () => {
+      permissionVersion = 'permission-v2';
+    },
+    changeBuild: () => {
+      buildNonce = 'operator-build-nonce-changed-9876543210';
     },
   };
 }
@@ -142,6 +153,61 @@ describe('governed plan service', () => {
     );
     expect(events.map((event) => event.type)).toEqual(['plan.previewed']);
     expect(Object.isFrozen(preview.record)).toBe(true);
+  });
+
+  it('passes the exact immutable plan and authority into preview and confirm binding checks', async () => {
+    const contexts: unknown[] = [];
+    const registry = createGovernedActionExecutionRegistry([
+      {
+        actionId: 'scenario.instantiate',
+        version: '1.0.0',
+        bindingId: 'scenario-runtime.instantiate.v1',
+        description: 'Instantiate scenario',
+        execute: async () => ({ status: 'succeeded', summary: 'Created' }),
+      },
+    ]);
+    const service = createGovernedPlanService({
+      store: new LocalGovernedPlanStore(makeRoot()),
+      registry,
+      getBindingSnapshot: (context) => {
+        contexts.push(context);
+        return {
+          sourceVersions: { scenario: 'source-v1' },
+          permissionSnapshot: { actions: ['scenario.instantiate'] },
+          buildNonce: 'operator-build-nonce-0123456789',
+        };
+      },
+      audit: () => undefined,
+    });
+    const preview = await service.preview(compiler(), authority);
+    await service.confirm(
+      {
+        planId: preview.record.planId,
+        confirmationToken: preview.confirmationToken,
+      },
+      authority,
+    );
+
+    expect(contexts).toEqual([
+      {
+        phase: 'preview',
+        canonicalPlan: preview.record.canonicalPlan,
+        authority,
+      },
+      {
+        phase: 'confirm',
+        canonicalPlan: preview.record.canonicalPlan,
+        authority,
+      },
+    ]);
+    expect(
+      contexts.every(
+        (context) =>
+          Object.isFrozen(context) &&
+          Object.isFrozen((context as { canonicalPlan: object }).canonicalPlan) &&
+          Object.isFrozen((context as { authority: object }).authority),
+      ),
+    ).toBe(true);
   });
 
   it('accepts only nominal compilers and fails closed on throws/proxy/accessor results', async () => {
@@ -290,6 +356,36 @@ describe('governed plan service', () => {
     ).rejects.toThrow('binding changed');
     expect((await service.get(preview.record.planId))?.state).toBe('pending');
     expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when permission or build bindings drift before the atomic claim', async () => {
+    const permission = makeHarness();
+    const permissionPreview = await permission.service.preview(compiler(), authority);
+    permission.changePermission();
+    await expect(
+      permission.service.confirm(
+        {
+          planId: permissionPreview.record.planId,
+          confirmationToken: permissionPreview.confirmationToken,
+        },
+        authority,
+      ),
+    ).rejects.toThrow('binding changed');
+    expect((await permission.service.get(permissionPreview.record.planId))?.state).toBe('pending');
+
+    const build = makeHarness();
+    const buildPreview = await build.service.preview(compiler(), authority);
+    build.changeBuild();
+    await expect(
+      build.service.confirm(
+        {
+          planId: buildPreview.record.planId,
+          confirmationToken: buildPreview.confirmationToken,
+        },
+        authority,
+      ),
+    ).rejects.toThrow('binding changed');
+    expect((await build.service.get(buildPreview.record.planId))?.state).toBe('pending');
   });
 
   it('durably requires reconciliation after an executor throws and never replays', async () => {

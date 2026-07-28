@@ -3,15 +3,32 @@ import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import type { AgentRegistryEntry, AgentPermissions, RiskZone } from '@openslack/kernel';
 
+const SAFE_AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
 export interface ParsedAgentRegistryEntry extends AgentRegistryEntry {
   _source_schema: 'openslack.agent_registry.v1' | 'openslack.agent_registry.v2';
 }
 
 export function parseAgentRegistry(root: string, agentId: string): ParsedAgentRegistryEntry | null {
+  if (!SAFE_AGENT_ID.test(agentId)) return null;
   const regPath = join(root, '.openslack', 'agents', 'registry', `${agentId}.yaml`);
   if (!existsSync(regPath)) return null;
 
   const raw = readFileSync(regPath, 'utf-8');
+  return parseAgentRegistryText(raw, agentId);
+}
+
+export function parseAgentRegistryText(
+  raw: string,
+  agentId: string,
+): ParsedAgentRegistryEntry | null {
+  if (
+    typeof raw !== 'string' ||
+    Buffer.byteLength(raw, 'utf8') > 2 * 1024 * 1024 ||
+    !SAFE_AGENT_ID.test(agentId)
+  ) {
+    return null;
+  }
   const data = parseYaml(raw) as Record<string, unknown> | null;
   if (!data || typeof data !== 'object') return null;
 

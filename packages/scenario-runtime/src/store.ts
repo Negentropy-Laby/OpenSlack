@@ -1089,6 +1089,32 @@ export class LocalScenarioInstanceStore {
   }
 }
 
+export function scenarioInstanceStoreRoot(workspaceRoot: string): string {
+  if (
+    typeof workspaceRoot !== 'string' ||
+    !isAbsolute(workspaceRoot) ||
+    resolve(workspaceRoot) !== workspaceRoot ||
+    workspaceRoot.includes('\0')
+  ) {
+    return fail('SCENARIO_STORE_PATH_UNSAFE', 'Workspace root must be normalized and absolute.');
+  }
+  return join(workspaceRoot, '.openslack.local', 'scenario-instances');
+}
+
+export async function initializeScenarioInstanceStoreRoot(workspaceRoot: string): Promise<string> {
+  const root = scenarioInstanceStoreRoot(workspaceRoot);
+  const workspace = await assertDirectory(workspaceRoot);
+  const localPath = join(workspace.real, '.openslack.local');
+  await ensureFixedChild(workspace.real, localPath);
+  const local = await assertDirectory(localPath);
+  if (!contained(workspace.real, local.real)) {
+    return fail('SCENARIO_STORE_PATH_UNSAFE', 'Local state root escapes the workspace.');
+  }
+  await ensureFixedChild(local.real, root);
+  await prepare(root, 'scenario-store-preflight', true);
+  return root;
+}
+
 /** @internal deterministic fault-injection seam; intentionally absent from the package root. */
 export function createScenarioInstanceStoreForTest(
   root: string,

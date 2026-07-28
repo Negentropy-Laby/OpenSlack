@@ -105,5 +105,10 @@ export type {
   ScenarioWorkflowStartEffect,
   ScenarioPlanWorkflow,
 } from './planner.js';
-export { LocalScenarioInstanceStore, ScenarioInstanceStoreError } from './store.js';
+export {
+  initializeScenarioInstanceStoreRoot,
+  LocalScenarioInstanceStore,
+  scenarioInstanceStoreRoot,
+  ScenarioInstanceStoreError,
+} from './store.js';
 export type { StoredScenarioInstance } from './store.js';

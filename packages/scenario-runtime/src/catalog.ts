@@ -6,9 +6,11 @@ import {
 } from './capabilities.js';
 import { isCanonicalScenarioSemver } from './pack-schema.js';
 import {
+  canonicalJson,
   SOFTWARE_DELIVERY_PROJECTOR_CONTRACT,
   SOFTWARE_DELIVERY_PROJECTOR_ID,
 } from '@openslack/organization-graph';
+import { createHash } from 'node:crypto';
 import { types as nodeTypes } from 'node:util';
 
 const CATALOG_ID_PATTERN = /^[a-z][A-Za-z0-9_-]*(?:\.[a-z][A-Za-z0-9_-]*)*$/;
@@ -230,6 +232,7 @@ function assertClosedCatalogInput(value: unknown): asserts value is ScenarioHost
 const SEALED_CATALOGS = new WeakSet<object>();
 
 export class ScenarioHostCatalog {
+  readonly integrityHash: string;
   readonly #projectors: ReadonlyMap<string, ScenarioProjectorCatalogEntry>;
   readonly #workflows: ReadonlyMap<string, ScenarioWorkflowCatalogEntry>;
   readonly #capabilities: ReadonlyMap<string, CapabilityCatalogEntry>;
@@ -361,6 +364,22 @@ export class ScenarioHostCatalog {
         }
       }
     }
+    const sorted = <T extends { readonly id: string }>(values: Iterable<T>): readonly T[] =>
+      Object.freeze([...values].sort((left, right) => left.id.localeCompare(right.id, 'en')));
+    this.integrityHash = createHash('sha256')
+      .update(
+        canonicalJson({
+          schema: 'openslack.scenario_host_catalog.v1',
+          projectors: sorted(this.#projectors.values()),
+          workflows: sorted(this.#workflows.values()),
+          capabilities: sorted(this.#capabilities.values()),
+          adapters: sorted(this.#adapters.values()),
+          deepLinkTemplates: sorted(this.#deepLinkTemplates.values()),
+          notificationIntents: sorted(this.#notificationIntents.values()),
+        }),
+        'utf8',
+      )
+      .digest('hex');
     SEALED_CATALOGS.add(this);
     Object.freeze(this);
   }

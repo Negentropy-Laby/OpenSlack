@@ -6,11 +6,12 @@ OpenSlack exposes a local Model Context Protocol server for Qoder Work:
 bun run openslack mcp serve --stdio
 ```
 
-The stock CLI composition is projection-only and advertises exactly 12 read-only tools. An
-embedding may opt into a nominal agent-bound governed profile with 16 tools, or a separately
-human-attested profile with 17. The CLI composition root supplies the same instance-scoped OpenSlack
-context used by the CLI, TUI, and chat frontend. `apps/mcp` imports package APIs and never imports
-private CLI files, executes CLI text, or parses CLI stdout.
+The stock CLI composition is projection-only and advertises exactly 12 read-only tools.
+`apps/mcp` now provides a production agent-bound composition factory that can be explicitly
+injected to expose 16 tools; a separately human-attested composition may expose 17. The stock CLI
+does not yet select either governed profile. Its composition root supplies the same instance-scoped
+OpenSlack context used by the CLI, TUI, and chat frontend. `apps/mcp` imports package APIs and never
+imports private CLI files, executes CLI text, or parses CLI stdout.
 
 This document describes the current local build. It does not claim that a Qoder Work desktop build
 has completed qualification or that `QODER_VERIFIED` has been reached.
@@ -72,8 +73,13 @@ and bound to the normalized query; changing the query invalidates the cursor.
 
 ## Governed mutation profiles
 
-An embedding opts into the agent-governed profile only by supplying the nominal
-`OpenSlackGovernedMutationPort`. It appends exactly:
+An embedding opts into the agent-governed profile only by explicitly injecting the nominal
+`OpenSlackGovernedMutationPort`. The production
+`createOpenSlackAgentBoundMutationComposition()` factory constructs that port from only a
+canonical workspace root, an Agent registry/runtime principal reference, an optional runtime
+provider, and an optional workspace-ID equality assertion. It does not accept an actor string,
+permission snapshot, compiler, executor, audit callback, raw secret, or workspace authority from
+the MCP client. The injected port appends exactly:
 
 ```text
 openslack_preview_scenario
@@ -88,6 +94,20 @@ Only the capability hash is stored. Confirmation revalidates actor, workspace, e
 source, permission, action catalog, executor binding, build, and process snapshots before one
 atomic execution claim. A timeout after that claim is reconciliation-required; it is never
 reported as safe to retry.
+
+The current production factory registers only the real `scenario.instantiate` action. It discovers
+the locked Scenario root once, seals the accepted definitions for the process, uses
+`loadScenarioPack()` and `previewScenario()`, strictly rehydrates the persisted Scenario plan, and
+writes the instance through `LocalScenarioInstanceStore` CAS before verified readback. Registry,
+runtime-identity, workspace, Scenario lock, catalog, resolver, build, plan-store, instance-store,
+and audit bindings fail closed. The checked-in `software-delivery` Pack remains projection-only
+and requests no workflow capability.
+
+No reviewed sealed Workflow target/executor is registered by this factory yet. Consequently,
+`openslack_preview_workflow` returns the stable blocked code
+`GOVERNED_WORKFLOW_TARGET_NOT_REGISTERED` and creates no pending plan. The strict persisted
+Workflow-plan rehydration API is implemented for a later reviewed resolver/executor composition;
+the factory does not invent a Workflow or register an always-failing executor.
 
 The human-attested profile additionally requires a nominal `OpenSlackWorkflowApprovalPort` backed
 by the isolated v2 workflow-effect approval store and a separately authenticated host attestation
@@ -299,6 +319,7 @@ Repository validation:
 ```bash
 bunx vitest run packages/qoder-adapter/src/__tests__
 bunx vitest run apps/mcp/src/__tests__
+bunx vitest run apps/mcp/src/__tests__/governed-composition.test.ts
 bunx vitest run apps/cli/src/__tests__/mcp-command.test.ts
 bunx tsc --noEmit -p packages/qoder-adapter/tsconfig.json
 bunx tsc --noEmit -p apps/mcp/tsconfig.json
@@ -320,6 +341,9 @@ final reset tool, bounded fixture-root behavior, and a v2 result. Demo evidence 
 production-profile evidence.
 
 These checks support local build acceptance only. They do not establish `QODER_VERIFIED`.
+The production factory's official MCP SDK preview → confirm → durable Scenario readback is
+`AGENT_BOUND_PROFILE_LOCAL_PASS` evidence for the injected composition only. Until a later CLI PR
+exposes an explicit agent-bound profile, `openslack mcp serve --stdio` remains exact-read-12.
 
 ## Current-build acceptance record
 
