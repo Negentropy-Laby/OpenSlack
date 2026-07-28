@@ -13,6 +13,11 @@ they own.
 The default production profile uses exactly 12 read-only tools. Every advertised tool returns
 `openslack.mcp_result.v2`.
 
+The CLI selects the same 12 tools by default or with `--profile read-only`. An active Agent
+registry/runtime binding with `scenario.instantiate` permission may explicitly select
+`--profile agent-bound --principal-ref <agent-id>` for the exact 16-tool profile. The
+human-attested 17-tool profile is not yet a CLI choice.
+
 ```text
 openslack_get_executive_overview
 openslack_list_work_items

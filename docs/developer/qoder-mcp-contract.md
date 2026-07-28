@@ -1,10 +1,11 @@
 # Qoder MCP Contract
 
-Status: implemented local contract. The stock local surface is the exact 12-tool,
-`openslack.mcp_result.v2` server described in [Qoder Work MCP integration](qoder-mcp.md).
-Nominal composition ports enable exact agent-governed 16-tool and separately human-attested 17-tool
-profiles. An explicitly injected local demo surface appends only the bounded reset tool. This does
-not claim Qoder desktop qualification or Scenario rehearsal.
+Status: implemented local contract. The default and explicit `read-only` CLI surfaces are the exact
+12-tool `openslack.mcp_result.v2` server described in
+[Qoder Work MCP integration](qoder-mcp.md). Explicit `agent-bound` selects the production
+agent-governed 16-tool composition. A separately human-attested 17-tool composition exists as a
+nominal contract but is not yet a CLI choice. An explicitly injected local demo surface appends
+only the bounded reset tool. This does not claim Qoder desktop qualification or Scenario rehearsal.
 
 ## Composition Boundary
 
@@ -82,8 +83,20 @@ Workflow run approvals. An agent-bound composition cannot advertise or invoke it
 `.openslack.local/demo/<fixture>` child to the same workspace and rejects symlink/reparse or changed
 directory identities. Its host callback receives only frozen `{ root, signal, deadlineAt }`
 authority. Timeout is an ambiguous effect reported as `reconciliation_required`, never as proof of
-no effect. Exact production counts are 12, 16, and 17; exact demo counts are 13, 17, and 18. The
-stock CLI remains production-12.
+no effect. Exact production counts are 12, 16, and 17; exact demo counts are 13, 17, and 18.
+Default and explicit `read-only` are production-12; explicit `agent-bound` is production-16.
+
+## CLI profile selection
+
+The CLI exposes only `read-only` and `agent-bound`. Omitting `--profile` is exactly equivalent to
+`--profile read-only`. Read-only rejects `--principal-ref` and `--workspace-id`.
+
+Agent-bound requires `--principal-ref`, which selects an existing active registry/runtime binding;
+the CLI fixes the runtime provider to `cli` and never creates an identity. Optional
+`--workspace-id` asserts equality with the canonical workspace ID and cannot replace it. The
+production factory must finish principal, permission, catalog, audit, executor, and store
+initialization before the MCP server is constructed. Failure exposes no partial or fallback
+catalog, and diagnostics remain on stderr.
 
 ## Result Versions
 

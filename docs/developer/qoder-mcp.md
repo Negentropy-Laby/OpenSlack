@@ -4,14 +4,16 @@ OpenSlack exposes a local Model Context Protocol server for Qoder Work:
 
 ```bash
 bun run openslack mcp serve --stdio
+bun run openslack mcp serve --stdio --profile read-only
+bun run openslack mcp serve --stdio --profile agent-bound --principal-ref <agent-id>
 ```
 
-The stock CLI composition is projection-only and advertises exactly 12 read-only tools.
-`apps/mcp` now provides a production agent-bound composition factory that can be explicitly
-injected to expose 16 tools; a separately human-attested composition may expose 17. The stock CLI
-does not yet select either governed profile. Its composition root supplies the same instance-scoped
-OpenSlack context used by the CLI, TUI, and chat frontend. `apps/mcp` imports package APIs and never
-imports private CLI files, executes CLI text, or parses CLI stdout.
+The default and explicit `read-only` CLI compositions are projection-only and advertise exactly 12
+read-only tools. Explicit `agent-bound` uses the production composition factory and advertises
+exactly 16. A separately human-attested composition may expose 17, but that profile is not a CLI
+choice until its independent host provider is implemented. The composition root supplies the same
+instance-scoped OpenSlack context used by the CLI, TUI, and chat frontend. `apps/mcp` imports
+package APIs and never imports private CLI files, executes CLI text, or parses CLI stdout.
 
 This document describes the current local build. It does not claim that a Qoder Work desktop build
 has completed qualification or that `QODER_VERIFIED` has been reached.
@@ -88,6 +90,21 @@ openslack_confirm_plan
 openslack_cancel_plan
 ```
 
+The CLI selects that factory only through:
+
+```bash
+openslack mcp serve --stdio --profile agent-bound --principal-ref <agent-id>
+openslack mcp serve --stdio --profile agent-bound --principal-ref <agent-id> \
+  --workspace-id <asserted-workspace-id>
+```
+
+`--principal-ref` is only a lookup key for the existing Agent registry and matching CLI runtime
+identity. It never becomes `actorId`. `--workspace-id`, when present, is only an equality assertion
+against canonical `openslack.yaml`. Default and explicit `read-only` reject both mutation-only
+arguments. Any principal, permission, workspace, Scenario catalog, audit, executor, plan-store, or
+instance-store initialization failure terminates startup before a server or partial catalog is
+created; it never falls back to 12 tools.
+
 Preview compiles business input through a host-owned Scenario or sealed Workflow compiler,
 persists one immutable canonical plan, and returns a root-only one-time confirmation capability.
 Only the capability hash is stored. Confirmation revalidates actor, workspace, expiry, plan,
@@ -145,9 +162,10 @@ must limit every effect to that root and honor abort. A deadline returns
 that a timed-out effect did not occur. The tool returns `authority.mode: governed_mutation`, is not
 a QG5 mutation surface, and never deletes or rewrites live GitHub objects.
 
-The stock `openslack mcp serve --stdio` command injects neither mutation nor reset ports and
-therefore advertises only the production 12. Exact demo counts are 13, 17, or 18, corresponding to
-the 12, 16, or 17 production profile plus reset. Any other count or ordering is invalid.
+Default and explicit `read-only` inject neither mutation nor reset ports and therefore advertise
+only the production 12. Explicit `agent-bound` injects the production governed mutation port and
+advertises 16. Exact demo counts are 13, 17, or 18, corresponding to the 12, 16, or 17 production
+profile plus reset. Any other count or ordering is invalid.
 
 ## Result envelope
 
@@ -241,9 +259,16 @@ Open **Extensions → Connectors → + Add → Paste JSON Config**, then adapt o
 - `templates/qoder-skill/examples/mcp-config.wsl.json`
 - `templates/qoder-skill/examples/mcp-config.unix.json`
 
-The examples preserve a workspace path containing spaces as one JSON argument and contain no
-credential values. Keep permission prompts enabled, authorize only the exact names advertised by
-the selected 12, 16, or 17 profile, and do not add a wildcard allow rule.
+Those examples use the default 12-tool profile. Credential-free 16-tool examples are:
+
+- `templates/qoder-skill/examples/mcp-config.agent-bound.windows.json`
+- `templates/qoder-skill/examples/mcp-config.agent-bound.wsl.json`
+- `templates/qoder-skill/examples/mcp-config.agent-bound.unix.json`
+
+Replace `<agent-id>` with an already active registry entry that has a matching CLI runtime identity
+and `scenario.instantiate` grant. The examples preserve a workspace path containing spaces as one
+JSON argument and contain no credential values. Keep permission prompts enabled, authorize only
+the exact names advertised by the selected 12 or 16 profile, and do not add a wildcard allow rule.
 
 After adding or changing the connector, start a new Qoder Work conversation so it discovers the
 current catalog. Qoder's connector documentation is:
@@ -342,8 +367,9 @@ production-profile evidence.
 
 These checks support local build acceptance only. They do not establish `QODER_VERIFIED`.
 The production factory's official MCP SDK preview → confirm → durable Scenario readback is
-`AGENT_BOUND_PROFILE_LOCAL_PASS` evidence for the injected composition only. Until a later CLI PR
-exposes an explicit agent-bound profile, `openslack mcp serve --stdio` remains exact-read-12.
+`AGENT_BOUND_PROFILE_LOCAL_PASS` evidence. The default and explicit `read-only` CLI profiles are
+qualified as exact-read-12; explicit `agent-bound` is qualified as exact-agent-16. Authenticated
+Qoder Desktop execution remains a separate pending gate.
 
 ## Current-build acceptance record
 
@@ -387,6 +413,8 @@ MCP and Skill path with all required bounded evidence. No such claim is made by 
 
 - `OPENSLACK_MCP_START_FAILED`: run the command directly and inspect stderr; stdout intentionally
   contains no diagnostics.
+- `OPENSLACK_MCP_PROFILE_ARGUMENT_INVALID`: remove mutation-only arguments from `read-only`, or
+  provide `--principal-ref` for `agent-bound`.
 - `INVALID_TOOL_INPUT`: remove unknown fields or bring a value within the advertised schema.
 - `SOURCE_EVIDENCE_UNAVAILABLE`: produce or select a current graph snapshot; do not infer empty
   authority state.
