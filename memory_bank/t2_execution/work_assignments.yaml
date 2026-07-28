@@ -159,7 +159,7 @@ assignments:
     last_verified_at: 2026-07-28T13:55:03Z
   - id: documentation-governance-v1
     title: Establish the OpenSlack root documentation governance system
-    status: running
+    status: review
     planned_owner: project-governance
     module_or_workstream: self-evolution
     execution:
@@ -167,7 +167,9 @@ assignments:
       claim_ref: refs/heads/agent/codex/docs-governance-pr2/20260728
       started_at: 2026-07-28T09:25:45Z
     github_issue: null
-    pull_request: null
+    pull_request:
+      number: 328
+      url: https://github.com/Negentropy-Laby/OpenSlack/pull/328
     acceptance_criteria:
       - The T0-T3 Memory Bank and module/workstream CDD structure are present.
       - All 103 legacy document paths are migrated or retained by manifest.
@@ -176,11 +178,11 @@ assignments:
       - A bot-authored PR receives independent human review and approval.
     dependencies: []
     blockers:
-      - governed_bot_pr_pending
       - exact_head_hosted_checks_pending
       - independent_human_approval_pending
     evidence:
       - commit:3250fb75a634330c15d4390c0ea0d265bd80085a
       - github:pr-327:merged:85f18a24645edade981a342bb67308e3a65d9904
       - commit:7e0d1f3540bb05bc289c9d0fcdba86a2c1aab108
-    last_verified_at: 2026-07-28T13:55:03Z
+      - github:pr-328:open:30f406c114a0ab99cf97e2a028e6070c47b2b1c2
+    last_verified_at: 2026-07-28T14:04:29Z
