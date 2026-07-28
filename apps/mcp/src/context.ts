@@ -1202,6 +1202,7 @@ export function createDefaultOpenSlackReadModelPorts(
   const scenarioCatalog = createSoftwareDeliveryScenarioCatalog();
   let scenarioDiscoveryPromise: Promise<ScenarioPackDiscoveryResult> | undefined;
 
+  // Intentionally cache rejection too: discovery is fail-closed and recovery requires a restart.
   const discoverScenariosOnce = (): Promise<ScenarioPackDiscoveryResult> =>
     (scenarioDiscoveryPromise ??= discoverScenarioPacks({
       scenarioRoot,
