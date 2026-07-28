@@ -1,9 +1,14 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { buildBusinessOutcomeProjection } from '@openslack/collaboration';
+import {
+  LocalGraphStore,
+  buildAndPublishSoftwareDeliverySnapshot,
+} from '@openslack/organization-graph';
 import { OPENSLACK_READ_TOOL_NAMES, type OpenSlackReadToolName } from '@openslack/qoder-adapter';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
@@ -14,6 +19,7 @@ import {
 import { createOpenSlackMcpServer } from '../server.js';
 
 const roots: string[] = [];
+const repositoryRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -30,6 +36,72 @@ function argsFor(name: OpenSlackReadToolName): Record<string, unknown> {
 }
 
 describe('official MCP SDK integration', () => {
+  it('reads a CLI-compatible published fixture through the exact stock twelve-tool server', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'openslack-mcp-sdk-graph-'));
+    roots.push(root);
+    const store = new LocalGraphStore(join(root, '.openslack.local', 'graph'));
+    const published = await buildAndPublishSoftwareDeliverySnapshot({
+      sourceBytes: readFileSync(
+        join(
+          repositoryRoot,
+          'packages',
+          'organization-graph',
+          'src',
+          '__tests__',
+          'fixtures',
+          'software-delivery-source.json',
+        ),
+      ),
+      store,
+      expectedCursor: null,
+      expectedScenarioInstanceId: 'scenario-software-delivery-fixture',
+    });
+    const readback = await store.readCurrentSnapshot(published.scenarioInstanceId);
+    expect(readback.integrityHash).toBe(published.snapshotIntegrityHash);
+
+    const context = createOpenSlackMcpContext({
+      workspaceRoot: root,
+      operator: Object.freeze({}) as unknown as OperatorApplicationContextPort,
+      clock: () => new Date('2026-07-28T02:30:00.000Z'),
+      correlationIdFactory: () => 'qw2-sdk-graph-fixture',
+    });
+    const server = createOpenSlackMcpServer(context);
+    const client = new Client({ name: 'qw2-sdk-graph-fixture', version: '1.0.0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    await server.sdkServer.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const listed = await client.listTools();
+      expect(listed.tools.map((tool) => tool.name)).toEqual(OPENSLACK_READ_TOOL_NAMES);
+      expect(listed.tools).toHaveLength(12);
+
+      const result = await client.callTool({
+        name: 'openslack_query_graph',
+        arguments: { scenarioInstanceId: published.scenarioInstanceId },
+      });
+      expect(result.isError).toBe(false);
+      expect(result.structuredContent).toMatchObject({
+        schema: 'openslack.mcp_result.v2',
+        status: 'completed',
+        authority: {
+          mode: 'projection',
+          sources: ['openslack.organization_graph_snapshot'],
+        },
+        data: {
+          scenarioInstanceId: published.scenarioInstanceId,
+          snapshotCursor: published.cursor,
+        },
+      });
+      expect((await store.readCurrentSnapshot(published.scenarioInstanceId)).integrityHash).toBe(
+        published.snapshotIntegrityHash,
+      );
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   it('initializes, lists exactly twelve tools, and calls every tool', async () => {
     const root = mkdtempSync(join(tmpdir(), 'openslack-mcp-sdk-'));
     roots.push(root);

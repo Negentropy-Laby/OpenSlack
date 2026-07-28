@@ -15,6 +15,7 @@
     { "path": "../../packages/github" },
     { "path": "../../packages/pr" },
     { "path": "../../packages/operator" },
+    { "path": "../../packages/organization-graph" },
     { "path": "../../packages/plugin-api" },
     { "path": "../../packages/plugin-host" },
     { "path": "../../packages/plugin-testkit" },

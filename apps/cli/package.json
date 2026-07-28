@@ -23,6 +23,7 @@
     "@openslack/integration-negentropy": "workspace:*",
     "@openslack/pr": "workspace:*",
     "@openslack/operator": "workspace:*",
+    "@openslack/organization-graph": "workspace:*",
     "@openslack/plugin-api": "workspace:*",
     "@openslack/plugin-host": "workspace:*",
     "@openslack/plugin-testkit": "workspace:*",
