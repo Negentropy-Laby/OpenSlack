@@ -869,7 +869,7 @@
   "portfolio": {
     "schema": "openslack.project_state.v1",
     "updated": "2026-07-29",
-    "last_verified": "2026-07-28T18:40:17Z",
+    "last_verified": "2026-07-28T18:44:02Z",
     "portfolio_status": "active_development",
     "release_train": "0.2.0",
     "modules": [
@@ -1436,7 +1436,7 @@
       {
         "id": "single-root-memory-bank",
         "title": "Consolidate all project governance into the root Memory Bank",
-        "status": "running",
+        "status": "review",
         "planned_owner": "project-governance",
         "module_or_workstream": "self-evolution",
         "execution": {
@@ -1445,7 +1445,10 @@
           "started_at": "2026-07-28T18:04:56Z"
         },
         "github_issue": null,
-        "pull_request": null,
+        "pull_request": {
+          "number": 332,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/pull/332"
+        },
         "acceptance_criteria": [
           "The repository contains exactly one memory_bank directory at the project root.",
           "memory_bank contains no YAML files and control-plane.json is the sole structured governance authority.",
@@ -1453,9 +1456,17 @@
           "Documentation generation, verification, service consistency tests, and workspace-manifest verification pass."
         ],
         "dependencies": ["documentation-governance-v1"],
-        "blockers": [],
-        "evidence": ["commit:de0d202e84b34c4def7d684c68372ebca7bb35fa"],
-        "last_verified_at": "2026-07-28T18:04:56Z"
+        "blockers": [
+          "hosted_checks_pending",
+          "independent_human_approval_pending",
+          "merge_pending"
+        ],
+        "evidence": [
+          "commit:de0d202e84b34c4def7d684c68372ebca7bb35fa",
+          "commit:c1aa0b39b4fcdee0bd2393175dd6e5887be689a7",
+          "github:pr-332:created:c1aa0b39b4fcdee0bd2393175dd6e5887be689a7"
+        ],
+        "last_verified_at": "2026-07-28T18:44:02Z"
       }
     ]
   },

@@ -36,4 +36,4 @@ generated: true
 | issue-314 | [Workflow Governance] PR #313 | reconciliation_required | unassigned | scenario-runtime | issue_open_after_associated_pr_merged |
 | issue-331 | collaboration: deliver Contract-to-Delivery Lite composite graph | ready | unassigned | collaboration | None |
 | documentation-governance-v1 | Establish the OpenSlack root documentation governance system | done | project-governance | self-evolution | None |
-| single-root-memory-bank | Consolidate all project governance into the root Memory Bank | running | project-governance | self-evolution | None |
+| single-root-memory-bank | Consolidate all project governance into the root Memory Bank | review | project-governance | self-evolution | hosted_checks_pending<br>independent_human_approval_pending<br>merge_pending |
