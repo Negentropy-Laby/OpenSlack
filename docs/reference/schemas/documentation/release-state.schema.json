@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/documentation/release-state.schema.json",
+  "title": "OpenSlack release train state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "updated", "train", "status", "human_approval", "gates"],
+  "properties": {
+    "schema": { "const": "openslack.release_state.v1" },
+    "updated": { "type": "string", "format": "date" },
+    "train": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "status": { "enum": ["planned", "active", "blocked", "ready", "released", "cancelled"] },
+    "human_approval": {
+      "enum": ["not_requested", "required", "pending", "approved", "rejected"]
+    },
+    "gates": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "status", "evidence", "notes"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+          "status": {
+            "enum": ["not_started", "pending", "passed", "failed", "blocked", "not_applicable"]
+          },
+          "evidence": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "notes": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,727 @@
+schema: openslack.document_path_migration.v1
+phase: planning
+baseline_document_count: 103
+reference_exceptions:
+  - CHANGELOG.md
+entries:
+  - {
+      id: DPM-001,
+      old_path: docs/README.md,
+      new_path: docs/README.md,
+      document_id: docs-index,
+      migration_type: retained,
+    }
+  - {
+      id: DPM-002,
+      old_path: docs/archive/original-product-spec.md,
+      new_path: docs/archive/original-product-spec.md,
+      document_id: archive-original-product-spec,
+      migration_type: retained,
+    }
+  - {
+      id: DPM-003,
+      old_path: docs/demos/README.md,
+      new_path: docs/examples/README.md,
+      document_id: examples-index,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-004,
+      old_path: docs/demos/ai-organization-commercial-loop.md,
+      new_path: docs/examples/ai-organization-commercial-loop.md,
+      document_id: example-ai-organization-commercial-loop,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-005,
+      old_path: docs/demos/ai-organization/rehearsal-checklist.md,
+      new_path: docs/examples/ai-organization/rehearsal-checklist.md,
+      document_id: example-ai-organization-rehearsal,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-006,
+      old_path: docs/demos/ai-organization/runbook.md,
+      new_path: docs/examples/ai-organization/runbook.md,
+      document_id: example-ai-organization-runbook,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-007,
+      old_path: docs/demos/ai-organization/scenario.md,
+      new_path: docs/examples/ai-organization/scenario.md,
+      document_id: example-ai-organization-scenario,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-008,
+      old_path: docs/developer/aby-bridge-integration-plan.md,
+      new_path: docs/architecture/integrations/aby-bridge.md,
+      document_id: architecture-aby-bridge,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-009,
+      old_path: docs/developer/agent-registry-schema.md,
+      new_path: docs/reference/agent-registry-schema.md,
+      document_id: reference-agent-registry-schema,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-010,
+      old_path: docs/developer/agent-runtime.md,
+      new_path: docs/architecture/components/agent-runtime.md,
+      document_id: architecture-agent-runtime,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-011,
+      old_path: docs/developer/beta-productization-plan.md,
+      new_path: docs/archive/plans/beta-productization-plan.md,
+      document_id: archive-beta-productization-plan,
+      migration_type: archived,
+    }
+  - {
+      id: DPM-012,
+      old_path: docs/developer/branch-protection.md,
+      new_path: docs/operations/branch-protection.md,
+      document_id: operations-branch-protection,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-013,
+      old_path: docs/developer/collaboration-events.md,
+      new_path: docs/architecture/contracts/collaboration-events.md,
+      document_id: contract-collaboration-events,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-014,
+      old_path: docs/developer/github-automation.md,
+      new_path: docs/operations/github-automation.md,
+      document_id: operations-github-automation,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-015,
+      old_path: docs/developer/github-issues-loop.md,
+      new_path: docs/contributor/github-issues-loop.md,
+      document_id: contributor-github-issues-loop,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-016,
+      old_path: docs/developer/github-watch-daemon.md,
+      new_path: docs/operations/github-watch-daemon.md,
+      document_id: operations-github-watch-daemon,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-017,
+      old_path: docs/developer/keychain-packaging.md,
+      new_path: docs/operations/keychain-packaging.md,
+      document_id: operations-keychain-packaging,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-018,
+      old_path: docs/developer/legacy-branch-disposition-20260718.json,
+      new_path: docs/archive/developer/legacy-branch-disposition-20260718.json,
+      document_id: archive-legacy-branch-disposition-20260718,
+      migration_type: archived,
+    }
+  - {
+      id: DPM-019,
+      old_path: docs/developer/live-capstone.md,
+      new_path: docs/evidence/live-capstone.md,
+      document_id: evidence-live-capstone,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-020,
+      old_path: docs/developer/mcp-runtime-lifecycle.md,
+      new_path: docs/architecture/components/mcp-runtime-lifecycle.md,
+      document_id: architecture-mcp-runtime-lifecycle,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-021,
+      old_path: docs/developer/module-maturity.md,
+      new_path: docs/reference/module-maturity.md,
+      document_id: reference-module-maturity,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-022,
+      old_path: docs/developer/negentropy-slot-adapter.md,
+      new_path: docs/architecture/integrations/negentropy-slot-adapter.md,
+      document_id: architecture-negentropy-slot-adapter,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-023,
+      old_path: docs/developer/new-agent-onboarding.md,
+      new_path: docs/contributor/new-agent-onboarding.md,
+      document_id: contributor-new-agent-onboarding,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-024,
+      old_path: docs/developer/notification-delivery-integration.md,
+      new_path: docs/architecture/integrations/notification-delivery.md,
+      document_id: architecture-notification-delivery,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-025,
+      old_path: docs/developer/notification-delivery/README.md,
+      new_path: docs/contributor/notification-delivery/README.md,
+      document_id: contributor-notification-delivery-index,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-026,
+      old_path: docs/developer/notification-delivery/change-and-test-guide.md,
+      new_path: docs/contributor/notification-delivery/change-and-test-guide.md,
+      document_id: contributor-notification-delivery-change-test,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-027,
+      old_path: docs/developer/notification-delivery/repository-boundaries.md,
+      new_path: docs/contributor/notification-delivery/repository-boundaries.md,
+      document_id: contributor-notification-delivery-boundaries,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-028,
+      old_path: docs/developer/npm-publishing.md,
+      new_path: docs/operations/npm-publishing.md,
+      document_id: operations-npm-publishing,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-029,
+      old_path: docs/developer/npm-rollback.md,
+      new_path: docs/operations/npm-rollback.md,
+      document_id: operations-npm-rollback,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-030,
+      old_path: docs/developer/organization-graph-contract.md,
+      new_path: docs/architecture/contracts/organization-graph.md,
+      document_id: contract-organization-graph,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-031,
+      old_path: docs/developer/plugins/authoring.md,
+      new_path: docs/contributor/plugins/authoring.md,
+      document_id: contributor-plugin-authoring,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-032,
+      old_path: docs/developer/plugins/embedding.md,
+      new_path: docs/contributor/plugins/embedding.md,
+      document_id: contributor-plugin-embedding,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-033,
+      old_path: docs/developer/plugins/host.md,
+      new_path: docs/contributor/plugins/host.md,
+      document_id: contributor-plugin-host,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-034,
+      old_path: docs/developer/plugins/manifest.md,
+      new_path: docs/contributor/plugins/manifest.md,
+      document_id: contributor-plugin-manifest,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-035,
+      old_path: docs/developer/plugins/testkit.md,
+      new_path: docs/contributor/plugins/testkit.md,
+      document_id: contributor-plugin-testkit,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-036,
+      old_path: docs/developer/qoder-mcp-contract.md,
+      new_path: docs/architecture/contracts/qoder-mcp.md,
+      document_id: contract-qoder-mcp,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-037,
+      old_path: docs/developer/qoder-mcp.md,
+      new_path: docs/architecture/integrations/qoder-mcp.md,
+      document_id: architecture-qoder-mcp,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-038,
+      old_path: docs/developer/release-0.2.0.md,
+      new_path: docs/operations/release-0.2.0.md,
+      document_id: operations-release-0.2.0,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-039,
+      old_path: docs/developer/repository-pr-projection.md,
+      new_path: docs/architecture/components/repository-pr-projection.md,
+      document_id: architecture-repository-pr-projection,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-040,
+      old_path: docs/developer/scenario-pack.md,
+      new_path: docs/contributor/scenario-pack.md,
+      document_id: contributor-scenario-pack,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-041,
+      old_path: docs/developer/self-evolution-kernel.md,
+      new_path: docs/architecture/components/self-evolution-kernel.md,
+      document_id: architecture-self-evolution-kernel,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-042,
+      old_path: docs/developer/subagent-runtime.md,
+      new_path: docs/architecture/components/subagent-runtime.md,
+      document_id: architecture-subagent-runtime,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-043,
+      old_path: docs/developer/technical-debt.md,
+      new_path: docs/contributor/technical-debt.md,
+      document_id: contributor-technical-debt,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-044,
+      old_path: docs/developer/tui-porting-notes.md,
+      new_path: docs/contributor/tui-porting-notes.md,
+      document_id: contributor-tui-porting-notes,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-045,
+      old_path: docs/developer/tui-style-guide.md,
+      new_path: docs/contributor/tui-style-guide.md,
+      document_id: contributor-tui-style-guide,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-046,
+      old_path: docs/developer/workflow-runtime.md,
+      new_path: docs/architecture/components/workflow-runtime.md,
+      document_id: architecture-workflow-runtime,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-047,
+      old_path: docs/guides/aby-integration.md,
+      new_path: docs/user/guides/aby-integration.md,
+      document_id: user-guide-aby-integration,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-048,
+      old_path: docs/guides/core-workflows.md,
+      new_path: docs/user/guides/core-workflows.md,
+      document_id: user-guide-core-workflows,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-049,
+      old_path: docs/guides/dynamic-workflow-workbench.md,
+      new_path: docs/user/guides/dynamic-workflow-workbench.md,
+      document_id: user-guide-dynamic-workflow-workbench,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-050,
+      old_path: docs/guides/embed-openslack-in-negentropy-lab.md,
+      new_path: docs/user/guides/embed-openslack-in-negentropy-lab.md,
+      document_id: user-guide-negentropy-embedding,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-051,
+      old_path: docs/guides/install-openslack.md,
+      new_path: docs/user/guides/install-openslack.md,
+      document_id: user-guide-install,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-052,
+      old_path: docs/guides/manual-upgrade-rollback.md,
+      new_path: docs/user/guides/manual-upgrade-rollback.md,
+      document_id: user-guide-upgrade-rollback,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-053,
+      old_path: docs/guides/notification-delivery-operations.md,
+      new_path: docs/user/guides/notification-delivery-operations.md,
+      document_id: user-guide-notification-delivery-operations,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-054,
+      old_path: docs/guides/openai-compatible-runtime.md,
+      new_path: docs/user/guides/openai-compatible-runtime.md,
+      document_id: user-guide-openai-compatible-runtime,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-055,
+      old_path: docs/guides/tui-workbench.md,
+      new_path: docs/user/guides/tui-workbench.md,
+      document_id: user-guide-tui-workbench,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-056,
+      old_path: docs/integration/notification-delivery-gate-supersession.v1.schema.json,
+      new_path: docs/reference/schemas/integration/notification-delivery-gate-supersession.v1.schema.json,
+      document_id: schema-notification-delivery-gate-supersession-v1,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-057,
+      old_path: docs/integration/notification-delivery-ib6-history-import.v1.schema.json,
+      new_path: docs/reference/schemas/integration/notification-delivery-ib6-history-import.v1.schema.json,
+      document_id: schema-notification-delivery-ib6-history-import-v1,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-058,
+      old_path: docs/integration/notification-delivery-ib6-order-supersession.md,
+      new_path: docs/architecture/integrations/notification-delivery/ib6-order-supersession.md,
+      document_id: architecture-notification-ib6-order-supersession,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-059,
+      old_path: docs/integration/notification-delivery-ib6-order-supersession.v1.schema.json,
+      new_path: docs/reference/schemas/integration/notification-delivery-ib6-order-supersession.v1.schema.json,
+      document_id: schema-notification-delivery-ib6-order-supersession-v1,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-060,
+      old_path: docs/integration/notification-delivery-pre-ib6-gate-amendment.md,
+      new_path: docs/architecture/integrations/notification-delivery/pre-ib6-gate-amendment.md,
+      document_id: architecture-notification-pre-ib6-gate-amendment,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-061,
+      old_path: docs/product/agent-conversations.md,
+      new_path: design/cdd/workstreams/agent-runtime-and-aby/agent-conversations.md,
+      document_id: cdd-agent-conversations,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-062,
+      old_path: docs/product/agent-runtime.md,
+      new_path: design/cdd/workstreams/agent-runtime-and-aby/README.md,
+      document_id: cdd-workstream-agent-runtime-and-aby,
+      migration_type: replaced,
+    }
+  - {
+      id: DPM-063,
+      old_path: docs/product/agent-teams.md,
+      new_path: design/cdd/workstreams/agent-runtime-and-aby/agent-teams.md,
+      document_id: cdd-agent-teams,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-064,
+      old_path: docs/product/agent-work-units.md,
+      new_path: design/cdd/workstreams/agent-runtime-and-aby/agent-work-units.md,
+      document_id: cdd-agent-work-units,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-065,
+      old_path: docs/product/approval-vocabulary.md,
+      new_path: standards/approval-vocabulary.md,
+      document_id: standard-approval-vocabulary,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-066,
+      old_path: docs/product/collaboration-layer.md,
+      new_path: design/cdd/modules/collaboration.md,
+      document_id: cdd-module-collaboration,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-067,
+      old_path: docs/product/dynamic-workflow-ux-closure.md,
+      new_path: design/cdd/workstreams/workflow-runtime/dynamic-workflow-ux-closure.md,
+      document_id: cdd-workflow-dynamic-ux-closure,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-068,
+      old_path: docs/product/dynamic-workflows.md,
+      new_path: design/cdd/workstreams/workflow-runtime/README.md,
+      document_id: cdd-workstream-workflow-runtime,
+      migration_type: replaced,
+    }
+  - {
+      id: DPM-069,
+      old_path: docs/product/module-04-pr-review-merge-steward.md,
+      new_path: design/cdd/modules/pr-review-merge.md,
+      document_id: cdd-module-pr-review-merge,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-070,
+      old_path: docs/product/negentropy-lab-integration.md,
+      new_path: design/cdd/workstreams/negentropy-integration/README.md,
+      document_id: cdd-workstream-negentropy-integration,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-071,
+      old_path: docs/product/notification-delivery.md,
+      new_path: design/cdd/workstreams/notification-delivery/README.md,
+      document_id: cdd-workstream-notification-delivery,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-072,
+      old_path: docs/product/openslack-product-current.md,
+      new_path: design/cdd/module-index.md,
+      document_id: cdd-module-index,
+      migration_type: replaced,
+    }
+  - {
+      id: DPM-073,
+      old_path: docs/product/organization-graph.md,
+      new_path: design/cdd/workstreams/organization-graph/README.md,
+      document_id: cdd-workstream-organization-graph,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-074,
+      old_path: docs/product/phase-1.md,
+      new_path: docs/archive/product/phase-1.md,
+      document_id: archive-product-phase-1,
+      migration_type: archived,
+    }
+  - {
+      id: DPM-075,
+      old_path: docs/product/profile-sync.md,
+      new_path: design/cdd/workstreams/profile-sync/README.md,
+      document_id: cdd-workstream-profile-sync,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-076,
+      old_path: docs/product/progress-review-2026-05-28.md,
+      new_path: docs/archive/reviews/progress-review-2026-05-28.md,
+      document_id: archive-progress-review-2026-05-28,
+      migration_type: archived,
+    }
+  - {
+      id: DPM-077,
+      old_path: docs/product/qoder-work-integration.md,
+      new_path: design/cdd/workstreams/qoder-work/README.md,
+      document_id: cdd-workstream-qoder-work,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-078,
+      old_path: docs/product/scenario-runtime.md,
+      new_path: design/cdd/workstreams/scenario-runtime/README.md,
+      document_id: cdd-workstream-scenario-runtime,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-079,
+      old_path: docs/product/tui.md,
+      new_path: design/cdd/workstreams/tui-productization/README.md,
+      document_id: cdd-workstream-tui-productization,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-080,
+      old_path: docs/product/unresolved-issues-development-plan.md,
+      new_path: docs/archive/plans/unresolved-issues-development-plan.md,
+      document_id: archive-unresolved-issues-development-plan,
+      migration_type: archived,
+    }
+  - {
+      id: DPM-081,
+      old_path: docs/product/user-experience-roadmap.md,
+      new_path: design/ux/product-roadmap.md,
+      document_id: ux-product-roadmap,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-082,
+      old_path: docs/product/v0.1-rc.md,
+      new_path: docs/archive/product/v0.1-rc.md,
+      document_id: archive-product-v0.1-rc,
+      migration_type: archived,
+    }
+  - {
+      id: DPM-083,
+      old_path: docs/product/workflow-format-analysis.md,
+      new_path: design/cdd/workstreams/workflow-runtime/workflow-format-analysis.md,
+      document_id: cdd-workflow-format-analysis,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-084,
+      old_path: docs/product/workflow-modules.md,
+      new_path: design/cdd/workstreams/workflow-runtime/workflow-modules.md,
+      document_id: cdd-workflow-modules,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-085,
+      old_path: docs/security/agent-runtime-permissions.md,
+      new_path: docs/security/agent-runtime-permissions.md,
+      document_id: security-agent-runtime-permissions,
+      migration_type: retained,
+    }
+  - {
+      id: DPM-086,
+      old_path: docs/security/collaboration-audit.md,
+      new_path: docs/security/collaboration-audit.md,
+      document_id: security-collaboration-audit,
+      migration_type: retained,
+    }
+  - {
+      id: DPM-087,
+      old_path: docs/security/human-approval.md,
+      new_path: docs/security/human-approval.md,
+      document_id: security-human-approval,
+      migration_type: retained,
+    }
+  - {
+      id: DPM-088,
+      old_path: docs/security/negentropy-slot-boundary.md,
+      new_path: docs/security/negentropy-slot-boundary.md,
+      document_id: security-negentropy-slot-boundary,
+      migration_type: retained,
+    }
+  - {
+      id: DPM-089,
+      old_path: docs/security/notification-delivery-boundary.md,
+      new_path: docs/security/notification-delivery-boundary.md,
+      document_id: security-notification-delivery-boundary,
+      migration_type: retained,
+    }
+  - {
+      id: DPM-090,
+      old_path: docs/security/plugin-trust-model.md,
+      new_path: docs/security/plugin-trust-model.md,
+      document_id: security-plugin-trust-model,
+      migration_type: retained,
+    }
+  - {
+      id: DPM-091,
+      old_path: docs/security/qoder-trust-boundary.md,
+      new_path: docs/security/qoder-trust-boundary.md,
+      document_id: security-qoder-trust-boundary,
+      migration_type: retained,
+    }
+  - {
+      id: DPM-092,
+      old_path: docs/security/scenario-pack-boundary.md,
+      new_path: docs/security/scenario-pack-boundary.md,
+      document_id: security-scenario-pack-boundary,
+      migration_type: retained,
+    }
+  - {
+      id: DPM-093,
+      old_path: docs/security/self-evolution-guardrails.md,
+      new_path: docs/security/self-evolution-guardrails.md,
+      document_id: security-self-evolution-guardrails,
+      migration_type: retained,
+    }
+  - {
+      id: DPM-094,
+      old_path: docs/security/subagent-permissions.md,
+      new_path: docs/security/subagent-permissions.md,
+      document_id: security-subagent-permissions,
+      migration_type: retained,
+    }
+  - {
+      id: DPM-095,
+      old_path: docs/security/tui-terminal-safety.md,
+      new_path: docs/security/tui-terminal-safety.md,
+      document_id: security-tui-terminal-safety,
+      migration_type: retained,
+    }
+  - {
+      id: DPM-096,
+      old_path: docs/security/workflow-execution.md,
+      new_path: docs/security/workflow-execution.md,
+      document_id: security-workflow-execution,
+      migration_type: retained,
+    }
+  - {
+      id: DPM-097,
+      old_path: docs/self-evolution/osek-review.md,
+      new_path: docs/evidence/reviews/osek-review.md,
+      document_id: evidence-osek-review,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-098,
+      old_path: docs/status/current.md,
+      new_path: docs/status/current.md,
+      document_id: status-module-telemetry-current,
+      migration_type: generated,
+    }
+  - {
+      id: DPM-099,
+      old_path: docs/status/deferred/negentropy-sidecar.md,
+      new_path: docs/archive/deferred/negentropy-sidecar.md,
+      document_id: archive-negentropy-sidecar,
+      migration_type: archived,
+    }
+  - {
+      id: DPM-100,
+      old_path: docs/testing/integration-gates/g3-queue.json,
+      new_path: docs/evidence/integration-gates/g3-queue.json,
+      document_id: evidence-notification-g3-queue,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-101,
+      old_path: docs/testing/notification-delivery-evidence.md,
+      new_path: docs/evidence/notification-delivery-evidence.md,
+      document_id: evidence-notification-delivery,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-102,
+      old_path: docs/testing/qoder-work-evidence.md,
+      new_path: docs/evidence/qoder-work-evidence.md,
+      document_id: evidence-qoder-work,
+      migration_type: moved,
+    }
+  - {
+      id: DPM-103,
+      old_path: docs/user-guide.md,
+      new_path: docs/user/cli-reference.md,
+      document_id: user-cli-reference,
+      migration_type: moved,
+    }

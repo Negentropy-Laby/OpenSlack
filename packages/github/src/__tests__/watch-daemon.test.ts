@@ -251,6 +251,7 @@ function sendRequest(
         port,
         path: '/github/webhook',
         method: 'POST',
+        agent: false,
         headers: {
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(body),

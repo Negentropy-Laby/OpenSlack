@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/documentation/work-assignments.schema.json",
+  "title": "OpenSlack planned and executing work",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "updated", "assignments"],
+  "properties": {
+    "schema": { "const": "openslack.work_assignments.v1" },
+    "updated": { "type": "string", "format": "date" },
+    "assignments": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/assignment" }
+    }
+  },
+  "$defs": {
+    "nullableString": {
+      "type": ["string", "null"]
+    },
+    "assignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": ["claimed", "running", "review", "done"]
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "execution": {
+                "type": "object",
+                "properties": {
+                  "agent_id": { "type": "string", "minLength": 1 },
+                  "claim_ref": { "type": "string", "minLength": 1 }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "required": [
+        "id",
+        "title",
+        "status",
+        "planned_owner",
+        "module_or_workstream",
+        "execution",
+        "github_issue",
+        "pull_request",
+        "acceptance_criteria",
+        "dependencies",
+        "blockers",
+        "evidence",
+        "last_verified_at"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "title": { "type": "string", "minLength": 1 },
+        "status": {
+          "enum": [
+            "planned",
+            "ready",
+            "claimed",
+            "running",
+            "review",
+            "blocked",
+            "reconciliation_required",
+            "done",
+            "cancelled"
+          ]
+        },
+        "planned_owner": { "type": "string", "minLength": 1 },
+        "module_or_workstream": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "execution": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["agent_id", "claim_ref", "started_at"],
+          "properties": {
+            "agent_id": { "$ref": "#/$defs/nullableString" },
+            "claim_ref": { "$ref": "#/$defs/nullableString" },
+            "started_at": {
+              "oneOf": [{ "type": "null" }, { "type": "string", "format": "date-time" }]
+            }
+          }
+        },
+        "github_issue": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["number", "url"],
+              "properties": {
+                "number": { "type": "integer", "minimum": 1 },
+                "url": {
+                  "type": "string",
+                  "pattern": "^https://github\\.com/[^/]+/[^/]+/issues/[1-9][0-9]*$"
+                }
+              }
+            }
+          ]
+        },
+        "pull_request": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["number", "url"],
+              "properties": {
+                "number": { "type": "integer", "minimum": 1 },
+                "url": {
+                  "type": "string",
+                  "pattern": "^https://github\\.com/[^/]+/[^/]+/pull/[1-9][0-9]*$"
+                }
+              }
+            }
+          ]
+        },
+        "acceptance_criteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "dependencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "blockers": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "evidence": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "last_verified_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

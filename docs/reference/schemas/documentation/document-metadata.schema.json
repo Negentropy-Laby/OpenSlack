@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/documentation/document-metadata.schema.json",
+  "title": "OpenSlack document metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "id", "status", "authority", "audience", "owner", "updated", "sources"],
+  "properties": {
+    "schema": { "const": "openslack.document.v1" },
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9.-]*$" },
+    "status": {
+      "enum": ["Draft", "In Review", "Approved", "Generated", "Archived"]
+    },
+    "authority": {
+      "enum": ["canonical", "projection", "index", "archive"]
+    },
+    "audience": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "users",
+          "contributors",
+          "operators",
+          "reviewers",
+          "release-managers",
+          "security",
+          "all"
+        ]
+      }
+    },
+    "owner": { "type": "string", "minLength": 1 },
+    "updated": { "type": "string", "format": "date" },
+    "sources": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "generated": { "type": "boolean" }
+  }
+}
