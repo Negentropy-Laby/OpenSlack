@@ -35,6 +35,8 @@ sources:
 - Migration validation hardening: `b5a7248a91aab659448422d6f6131abb3ee31485`
 - Migration delivery: PR #328, merged as
   `067f4566cd06855f65d2b2a53257227c0db69067`
+- CI enforcement candidate: `31845d508bea4171b94a795abb1a0357c6fec80c`
+- Enforcement delivery: draft PR #329, opened at the CI enforcement candidate
 - Path ledger: `docs/reference/document-path-migration-v1.yaml`
 
 ## Immutable Historical Exceptions
@@ -77,12 +79,12 @@ claims.
 ## Review and Closure
 
 PR #327 and PR #328 were bot-authored, independently approved, exact-head
-verified, and merged. The enforcement change recorded by this review is a
-proposed closure state: it becomes effective only if PR3 receives its independent
-human approval and merges. Before PR3 publication:
+verified, and merged. PR #329 is the bot-authored draft for the enforcement
+change recorded by this review. The proposed closure state becomes effective
+only if that PR receives its independent human approval and merges:
 
 - implementation closure: `COMPLETE_LOCAL`
-- governed delivery: `PENDING_BOT_PR`
+- governed delivery: `PR_329_DRAFT`
 - exact-head hosted checks: `PENDING`
 - independent PR3 review: `PENDING`
 - human approval: `PENDING`

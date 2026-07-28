@@ -8,7 +8,9 @@ assignments:
     module_or_workstream: self-evolution
     execution: { agent_id: null, claim_ref: null, started_at: null }
     github_issue: { number: 239, url: 'https://github.com/Negentropy-Laby/OpenSlack/issues/239' }
-    pull_request: null
+    pull_request:
+      number: 329
+      url: https://github.com/Negentropy-Laby/OpenSlack/pull/329
     acceptance_criteria: [All child release blockers are closed with independent evidence.]
     dependencies:
       [
@@ -181,7 +183,9 @@ assignments:
       - github:pr-327:merged:85f18a24645edade981a342bb67308e3a65d9904
       - commit:b5a7248a91aab659448422d6f6131abb3ee31485
       - github:pr-328:merged:067f4566cd06855f65d2b2a53257227c0db69067
+      - commit:31845d508bea4171b94a795abb1a0357c6fec80c
+      - github:pr-329:open:31845d508bea4171b94a795abb1a0357c6fec80c
       - repo:.github/workflows/openslack-reusable-validate.yml
       - repo:.github/workflows/notification-delivery-service.yml
       - repo:memory_bank/t3_archive/reviews/documentation-migration-v1.md
-    last_verified_at: 2026-07-28T16:26:07Z
+    last_verified_at: 2026-07-28T16:40:05Z
