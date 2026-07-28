@@ -159,7 +159,7 @@ assignments:
     last_verified_at: 2026-07-28T13:55:03Z
   - id: documentation-governance-v1
     title: Establish the OpenSlack root documentation governance system
-    status: done
+    status: review
     planned_owner: project-governance
     module_or_workstream: self-evolution
     execution:
@@ -177,7 +177,10 @@ assignments:
       - Reusable and Notification Delivery CI enforce documentation governance.
       - A bot-authored PR receives independent human review and approval.
     dependencies: []
-    blockers: []
+    blockers:
+      - exact_head_hosted_checks_pending
+      - independent_human_approval_pending
+      - pr_329_merge_pending
     evidence:
       - commit:3250fb75a634330c15d4390c0ea0d265bd80085a
       - github:pr-327:merged:85f18a24645edade981a342bb67308e3a65d9904
@@ -188,4 +191,4 @@ assignments:
       - repo:.github/workflows/openslack-reusable-validate.yml
       - repo:.github/workflows/notification-delivery-service.yml
       - repo:memory_bank/t3_archive/reviews/documentation-migration-v1.md
-    last_verified_at: 2026-07-28T16:40:05Z
+    last_verified_at: 2026-07-29T01:05:34+08:00

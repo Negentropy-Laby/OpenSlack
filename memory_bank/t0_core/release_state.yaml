@@ -9,7 +9,7 @@ gates:
     evidence: ['commit:85f18a24645edade981a342bb67308e3a65d9904']
     notes: Baseline matched origin/main before migration work.
   - id: documentation_migration
-    status: passed
+    status: pending
     evidence:
       [
         docs/reference/document-path-migration-v1.yaml,
@@ -17,7 +17,7 @@ gates:
         'github:pr-328:merged:067f4566cd06855f65d2b2a53257227c0db69067',
         memory_bank/t3_archive/reviews/documentation-migration-v1.md,
       ]
-    notes: The three-PR migration becomes effective when this reviewed enforcement change lands.
+    notes: 'PR #329 enforcement, independent human approval, and merge remain pending.'
   - id: signed_release
     status: blocked
     evidence: ['issue:240']

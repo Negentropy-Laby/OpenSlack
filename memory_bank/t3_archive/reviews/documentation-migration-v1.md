@@ -36,7 +36,7 @@ sources:
 - Migration delivery: PR #328, merged as
   `067f4566cd06855f65d2b2a53257227c0db69067`
 - CI enforcement candidate: `31845d508bea4171b94a795abb1a0357c6fec80c`
-- Enforcement delivery: draft PR #329, opened at the CI enforcement candidate
+- Enforcement delivery: PR #329, opened at the CI enforcement candidate
 - Path ledger: `docs/reference/document-path-migration-v1.yaml`
 
 ## Immutable Historical Exceptions
@@ -61,17 +61,18 @@ claims.
 - `bun run docs:notification-verify`: passed all nine checks, including the
   explicitly rebound service workspace manifest.
 - Documentation, Notification Delivery, agent-document sync, and workflow
-  contract regression tests: 92 passed.
-- Root TypeScript typecheck passed with Node 22.23.1 and the frozen Bun
-  dependency graph.
+  contract regression tests: 92 passed. The Windows-native review repair run
+  added 37 focused passes with one explicit file-symlink privilege skip; its
+  governed-root junction coverage passed.
+- Root TypeScript typecheck and build passed with the frozen Bun dependency
+  graph.
 - `openslack status verify`, `openslack workspace validate`, and the seven-case
   self-evolution golden suite: passed using the Bun entrypoint.
-- Full Vitest discovery completed with 5,094 passed, three failed, and three
-  skipped. This is not promoted to a passing gate. One Notification Blob lock
-  race passed on focused rerun; the two reproducible local-only failures reflect
-  Git 2.34 lacking `git worktree list -z` and this shell setting `NO_COLOR`
-  while the TUI test expects truecolor. Hosted Node/Git checks remain the
-  delivery authority.
+- The final Windows-native full Vitest repair run passed with 5,082 tests across
+  408 files and 20 platform skips. An earlier run hit the pre-existing
+  concurrent Workflow Effect Approval CAS assertion; its focused rerun passed
+  9/9 and the final full run was green. Hosted checks remain the delivery
+  authority.
 - Local `actionlint` was not available because Go is absent. Workflow structure
   passed the repository's exact contract tests; hosted actionlint remains
   pending.
@@ -79,16 +80,17 @@ claims.
 ## Review and Closure
 
 PR #327 and PR #328 were bot-authored, independently approved, exact-head
-verified, and merged. PR #329 is the bot-authored draft for the enforcement
+verified, and merged. PR #329 is the open bot-authored PR for the enforcement
 change recorded by this review. The proposed closure state becomes effective
 only if that PR receives its independent human approval and merges:
 
 - implementation closure: `COMPLETE_LOCAL`
-- governed delivery: `PR_329_DRAFT`
-- exact-head hosted checks: `PENDING`
+- governed delivery: `PR_329_OPEN`
+- exact-head hosted checks: `PENDING_REPAIR_HEAD`
 - independent PR3 review: `PENDING`
 - human approval: `PENDING`
-- migration work assignment: `done` on PR3 merge
+- documentation migration gate: `pending` until PR3 merge
+- migration work assignment: `review` until PR3 merge
 
 No release, production readiness, or live verification is claimed.
 

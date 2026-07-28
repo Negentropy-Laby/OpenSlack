@@ -354,6 +354,17 @@ describe('documentation governance validation', () => {
     ).toThrow(/human_approval gate with evidence/);
   });
 
+  test('mirrors the human approval evidence invariant in the release-state schema', () => {
+    const root = temporaryRepository();
+    writeCanonicalState(root);
+    writeJsonFile(root, 'memory_bank/t0_core/release_state.yaml', {
+      ...release,
+      human_approval: 'approved',
+    });
+
+    expect(() => verifyDocumentation(root)).toThrow(/release-state\.schema\.json/);
+  });
+
   test('generates byte-identical projections for identical input', () => {
     expect(renderGeneratedDocuments(project, release, assignments)).toEqual(
       renderGeneratedDocuments(project, release, assignments),
@@ -497,23 +508,48 @@ describe('documentation governance validation', () => {
     expect(() => verifyDocumentation(root)).toThrow(
       /active document contains a template placeholder/i,
     );
+
+    writeRepositoryFile(
+      root,
+      'docs/active.md',
+      documentMetadata('active', 'A lowercase todo is ordinary prose.\n'),
+    );
+    expect(() => verifyDocumentation(root)).not.toThrow();
+
+    writeRepositoryFile(
+      root,
+      'docs/active.md',
+      documentMetadata('active', 'A literal `{{mustache}}` value remains template-shaped.\n'),
+    );
+    expect(() => verifyDocumentation(root)).toThrow(
+      /active document contains a template placeholder/i,
+    );
   });
 
-  test('rejects symbolic links before a documentation scan can leave the repository', () => {
+  test.skipIf(process.platform === 'win32')(
+    'rejects registered document symbolic links before reading them',
+    () => {
+      const root = temporaryRepository();
+      writeDocumentMap(root);
+      const outside = mkdtempSync(join(tmpdir(), 'openslack-documentation-outside-'));
+      temporaryRoots.push(outside);
+      writeRepositoryFile(outside, 'outside.md', '# Outside\n');
+      symlinkSync(join(outside, 'outside.md'), join(root, 'docs', 'active.md'), 'file');
+
+      expect(() => verifyDocumentation(root)).toThrow(/ordinary file/);
+    },
+  );
+
+  test('rejects linked governed roots before a documentation scan can leave the repository', () => {
     const root = temporaryRepository();
     writeDocumentMap(root);
+    writeRepositoryFile(root, 'docs/active.md', documentMetadata('active'));
     const outside = mkdtempSync(join(tmpdir(), 'openslack-documentation-outside-'));
     temporaryRoots.push(outside);
     writeRepositoryFile(outside, 'outside.md', '# Outside\n');
-    symlinkSync(join(outside, 'outside.md'), join(root, 'docs', 'active.md'), 'file');
+    symlinkSync(outside, join(root, 'design'), process.platform === 'win32' ? 'junction' : 'dir');
 
-    expect(() => verifyDocumentation(root)).toThrow(/ordinary file/);
-
-    unlinkSync(join(root, 'docs', 'active.md'));
-    writeRepositoryFile(root, 'docs/active.md', documentMetadata('active'));
-    symlinkSync(outside, join(root, 'docs', 'linked'), 'dir');
-
-    expect(() => verifyDocumentation(root)).toThrow(/symbolic link/);
+    expect(() => verifyDocumentation(root)).toThrow(/ordinary directory/);
   });
 
   test('parses Markdown link titles and GitHub-style ATX anchors', () => {

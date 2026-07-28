@@ -47,6 +47,7 @@ const ASSIGNMENT_STATUSES = new Set([
 ]);
 
 const EXECUTING_ASSIGNMENT_STATUSES = new Set(['claimed', 'running', 'review', 'done']);
+const HUMAN_APPROVAL_GATE_ID = 'human_approval';
 
 const TEXT_SCAN_EXCLUDED_NAMES = new Set([
   '.aby',
@@ -331,7 +332,7 @@ export function validateReleaseStateObject(value: unknown): void {
   if (release.human_approval === 'approved') {
     const approvalGate = gates
       .map((entry) => asObject(entry, 'release gate'))
-      .find((gate) => gate.id === 'human_approval');
+      .find((gate) => gate.id === HUMAN_APPROVAL_GATE_ID);
     if (
       !approvalGate ||
       approvalGate.status !== 'passed' ||
@@ -410,6 +411,10 @@ function validateDocumentMap(root: string, value: unknown): number {
 }
 
 function hasTemplatePlaceholder(content: string): boolean {
+  // Active documents intentionally reject uppercase authoring sentinels and
+  // every mustache interpolation. Lowercase prose such as "todo" is ordinary
+  // content; literal mustache examples belong in archived evidence or must be
+  // rewritten so they cannot be mistaken for an unresolved template value.
   return (
     /\[(?:CHOOSE|SPECIFY|TODO)[^\]]*\]/u.test(content) ||
     /(?:^|\s)(?:TBD|TODO|PLACEHOLDER)(?:\s|:|$)/mu.test(content) ||
@@ -421,6 +426,12 @@ function collectGovernedMarkdown(root: string): string[] {
   const results: string[] = [];
   const visit = (repositoryPath: string): void => {
     const fullPath = join(root, repositoryPath);
+    const rootStats = lstatSync(fullPath);
+    if (rootStats.isSymbolicLink() || !rootStats.isDirectory()) {
+      throw new Error(
+        `Governed documentation root must be an ordinary directory: ${repositoryPath}`,
+      );
+    }
     for (const name of readdirSync(fullPath).sort()) {
       const child = `${repositoryPath}/${name}`;
       const stats = lstatSync(join(root, child));
