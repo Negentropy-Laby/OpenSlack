@@ -81,8 +81,9 @@ The exact tool names and counts are owned by the
 The implemented QW2 foundation contains nine compatibility handlers.
 
 The server reuses the instance-scoped OpenSlack composition context, imports package APIs, and
-does not execute CLI text or parse CLI output. It exposes no shell, generic command, approval,
-merge, policy, permission, or other production mutation tool. The frozen
+does not execute CLI text or parse CLI output. The read-only profiles expose no mutation tool; no
+profile exposes shell, generic command, human workflow decision without independent attestation,
+GitHub approval/direct merge, policy, registry, or permission mutation. The frozen
 `openslack.mcp_result.v1` type remains an internal compatibility boundary for these nine handlers.
 
 The production QG4 catalog adds exactly three graph/scenario reads:
@@ -93,12 +94,13 @@ openslack_query_graph
 openslack_explain_graph
 ```
 
-The stock local production catalog is therefore exactly 12 read-only tools. A nominal agent-bound
-composition appends exactly four preview/confirm tools for a 16-tool profile. A separately
-human-attested workflow-effect decision port appends one more for a 17-tool profile. An explicitly
+The default and explicit `read-only` local production catalogs are therefore exactly 12 tools.
+Explicit CLI `agent-bound` selects the production composition and appends exactly four
+preview/confirm tools for a 16-tool profile. A separately human-attested workflow-effect decision
+port appends one more for a 17-tool profile, but that profile is not yet a CLI choice. An explicitly
 injected local demo profile adds only `openslack_demo_reset` to one of those profiles. Every
-advertised production/demo result is `openslack.mcp_result.v2`; the stock STDIO command advertises
-neither mutation nor demo tools.
+advertised production/demo result is `openslack.mcp_result.v2`; no CLI profile advertises demo
+tools.
 
 ## Authority boundary
 

@@ -37,6 +37,8 @@
     "yaml": "^2.7.0"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "@openslack/scenario-runtime": "workspace:*",
     "@openslack/sdk": "workspace:*",
     "@types/node": "^22.0.0"
   }

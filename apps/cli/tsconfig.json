@@ -16,6 +16,7 @@
     { "path": "../../packages/pr" },
     { "path": "../../packages/operator" },
     { "path": "../../packages/organization-graph" },
+    { "path": "../../packages/scenario-runtime" },
     { "path": "../../packages/plugin-api" },
     { "path": "../../packages/plugin-host" },
     { "path": "../../packages/plugin-testkit" },

@@ -26,7 +26,7 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 | See team state across events and PRs             | `openslack collaboration dashboard`                                            | Projection-only; does not create dashboard-specific state.                                           |
 | Read evidence-backed business outcomes           | `openslack collaboration business-outcomes --format markdown`                  | Every metric retains observed, configured-estimate, or unknown basis and evidence.                   |
 | Build bounded local graph evidence               | `openslack graph snapshot build --scenario software-delivery --from <json>`    | Strict file/stdin import with CAS; replacements require the exact current cursor.                    |
-| Connect Qoder Work                               | `openslack mcp serve --stdio`                                                  | Publishes exactly 12 read-only v2 business/graph tools over local stdio.                             |
+| Connect Qoder Work                               | `openslack mcp serve --stdio`                                                  | Defaults to exactly 12 read-only v2 business/graph tools over local stdio.                           |
 | Record a handoff or decision                     | `openslack collaboration handoff ...` / `openslack collaboration decision ...` | Creates auditable collaboration objects.                                                             |
 | Keep the org profile in sync                     | `openslack collaboration workflow profile-sync check`                          | Profile Sync Robot checks and previews are read-only; `run` requires confirmation.                   |
 | Start a conversation with an agent               | `openslack conversation start --title "..."`                                   | Creates a typed thread with JSONL persistence and secret scanning.                                   |
@@ -745,9 +745,11 @@ When an LLM provider is configured (`OPENSLACK_LLM_PROVIDER`, `OPENSLACK_LLM_MOD
 
 ## Qoder Work MCP
 
-| Command                       | Purpose                                                                   |
-| ----------------------------- | ------------------------------------------------------------------------- |
-| `openslack mcp serve --stdio` | Serve the frozen 12-tool, read-only `openslack.mcp_result.v2` MCP catalog |
+| Command                                                                                                                 | Purpose                                                                                 |
+| ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `openslack mcp serve --stdio`                                                                                           | Default to the frozen 12-tool, read-only `openslack.mcp_result.v2` catalog              |
+| `openslack mcp serve --stdio --profile read-only`                                                                       | Explicitly select the same exact 12-tool read-only catalog                              |
+| `openslack mcp serve --stdio --profile agent-bound --principal-ref <agent-id> [--workspace-id <asserted-workspace-id>]` | Select the exact 16-tool governed agent catalog from an active registry/runtime binding |
 
 Build current graph evidence explicitly before querying it:
 
@@ -782,11 +784,21 @@ writes only to `.openslack.local/graph` in the current workspace, performs no
 GitHub or live-evidence collection, and is intentionally side-effecting. It is
 not an MCP read tool.
 
-The MCP process reserves stdout for protocol frames, opens no listening socket,
-and exposes no shell, generic command, approval, merge, policy, permission, or
-other mutation tool. Qoder MCP permission is separate from OpenSlack plan
-confirmation and from an authorized human GitHub review. Connector examples for
-Windows, WSL, and Unix are documented in
+Every MCP profile reserves stdout for protocol frames and opens no listening
+socket. Default and explicit `read-only` accept neither `--principal-ref` nor
+`--workspace-id` and expose no mutation tool. `agent-bound` requires
+`--principal-ref`; that value only selects an existing active Agent registry
+entry and matching CLI runtime identity. An optional `--workspace-id` is an
+equality assertion against canonical `openslack.yaml`, never an override.
+
+The 16-tool profile adds only Scenario/Workflow preview plus plan
+confirm/cancel. It exposes no shell, generic command, human workflow decision,
+GitHub approval/direct merge, policy, registry, or permission mutation. If
+principal, permission, workspace, catalog, audit, executor, or store
+initialization fails, startup fails without exposing a partial or read-only
+fallback catalog. Diagnostics use stderr only. Qoder MCP permission remains
+separate from OpenSlack plan confirmation and from an authorized human GitHub
+review. Connector examples for Windows, WSL, and Unix are documented in
 [`developer/qoder-mcp.md`](developer/qoder-mcp.md).
 
 The catalog adds `openslack_list_scenarios`, `openslack_query_graph`, and
@@ -796,9 +808,10 @@ graph evidence returns explicit `SOURCE_EVIDENCE_UNAVAILABLE` or
 graph. Query and explain remain side-effect-free and never invoke the snapshot
 build command.
 
-Only an explicitly injected local demo composition advertises a 13th
-`openslack_demo_reset` tool. The stock command above always advertises the
-production 12.
+Only an explicitly injected local demo composition advertises
+`openslack_demo_reset`. Default and explicit `read-only` always advertise
+production 12; explicit `agent-bound` advertises production 16. The CLI does
+not yet expose the separately human-attested 17-tool profile.
 
 Qoder Work desktop discovers the checked-in Skill from
 `~/.qoderwork/skills/openslack-organization-control/`. qodercli uses the

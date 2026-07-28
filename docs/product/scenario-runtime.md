@@ -2,7 +2,7 @@
 
 | Field                   | Value                                                                                  |
 | ----------------------- | -------------------------------------------------------------------------------------- |
-| Status                  | `AGENT-BOUND SCENARIO COMPOSITION IMPLEMENTED — CLI + REHEARSAL PENDING`               |
+| Status                  | `AGENT-BOUND CLI PROFILE IMPLEMENTED — REHEARSAL PENDING`                              |
 | Product direction       | One-scenario-first                                                                     |
 | Lead interview scenario | Contract-to-Delivery Lite                                                              |
 | Pack format             | Declarative `openslack.scenario_pack.v1`                                               |
@@ -12,9 +12,10 @@ The `@openslack/scenario-runtime` package and exact-byte locked, projection-only
 `software-delivery` Scenario Pack implement the declarative loading, capability normalization,
 preview, instance, and local-store core described here. The governed mutation contract and a
 production agent-bound `software-delivery` Scenario instantiation composition are implemented.
-The default stock MCP remains read-only, the governed CLI profile is not exposed yet, and
-authenticated Qoder rehearsal and live adapter qualification remain pending. Contract-to-Delivery
-Lite and scenario lifecycle events remain later milestones.
+The default stock MCP remains read-only, while explicit CLI `agent-bound` selects the governed
+16-tool composition from an active registry/runtime principal. Authenticated Qoder rehearsal and
+live adapter qualification remain pending. Contract-to-Delivery Lite and scenario lifecycle events
+remain later milestones.
 
 ## Product outcome
 
@@ -75,7 +76,9 @@ process-sealed Scenario definitions, exact lock/catalog/build hashes, real plan 
 stores, and the Collaboration audit sink before returning an explicitly injectable 16-tool
 composition. Its `scenario.instantiate` executor uses CAS and durable instance readback. No sealed
 Workflow target/executor is currently registered, so Workflow preview is stably blocked and
-creates no plan. The stock MCP composition remains the exact 12-tool read-only surface.
+creates no plan. Default and explicit `read-only` remain the exact 12-tool surface; explicit
+`agent-bound` selects the exact 16-tool surface. The separately human-attested 17-tool profile is
+not yet a CLI choice.
 
 ## Definition and instance
 

@@ -1,11 +1,11 @@
 # Qoder Work Trust Boundary
 
-Status: implemented local security contract. The stock local boundary is the exact 12-tool,
-read-only STDIO server with v2 results documented in
-[Qoder Work MCP integration](../developer/qoder-mcp.md). Nominal composition can enable an
-agent-governed 16-tool profile or separately human-attested 17-tool profile. An injected local demo
-profile may append only its bounded reset tool. No Qoder desktop qualification or Scenario
-rehearsal is claimed.
+Status: implemented local security contract. Default and explicit `read-only` are the exact
+12-tool STDIO server with v2 results documented in
+[Qoder Work MCP integration](../developer/qoder-mcp.md). Explicit `agent-bound` selects the
+production 16-tool governed composition. A separately human-attested 17-tool composition is not
+yet a CLI choice. An injected local demo profile may append only its bounded reset tool. No Qoder
+desktop qualification or Scenario rehearsal is claimed.
 
 ## Security Position
 
