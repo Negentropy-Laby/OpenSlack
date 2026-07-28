@@ -11,7 +11,7 @@
     "@openslack/collaboration": "workspace:*"
   },
   "scripts": {
-    "typecheck": "tsc --build && bun run schema:stage && tsc --noEmit -p scripts/release/tsconfig.json && tsc --noEmit -p scripts/public-pack/tsconfig.json && tsc --noEmit -p scripts/live-capstone/tsconfig.json && tsc --noEmit -p scripts/notification-qualification/tsconfig.json && tsc --noEmit -p scripts/notification-docs/tsconfig.json",
+    "typecheck": "tsc --build && bun run schema:stage && tsc --noEmit -p scripts/release/tsconfig.json && tsc --noEmit -p scripts/public-pack/tsconfig.json && tsc --noEmit -p scripts/live-capstone/tsconfig.json && tsc --noEmit -p scripts/notification-qualification/tsconfig.json && tsc --noEmit -p scripts/notification-docs/tsconfig.json && tsc --noEmit -p scripts/documentation/tsconfig.json",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -28,6 +28,9 @@
     "live:capstone": "bun scripts/live-capstone/index.ts",
     "notification:qualification": "bun scripts/notification-qualification/index.ts",
     "docs:notification-verify": "bun scripts/notification-docs/index.ts",
+    "docs:generate": "bun scripts/documentation/index.ts generate",
+    "docs:verify": "bun scripts/documentation/index.ts verify",
+    "docs:migration-check": "bun scripts/documentation/index.ts migration-check",
     "openslack": "node --import tsx apps/cli/src/index.ts",
     "clean": "rimraf packages/*/dist apps/*/dist packages/*/tsconfig.tsbuildinfo apps/*/tsconfig.tsbuildinfo"
   },
@@ -42,7 +45,8 @@
     "tsx": "^4.22.0",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.59.3",
-    "vitest": "^3.0.0"
+    "vitest": "^3.0.0",
+    "yaml": "^2.7.0"
   },
   "engines": {
     "node": ">=22.0.0"
