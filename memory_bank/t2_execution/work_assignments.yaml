@@ -8,9 +8,7 @@ assignments:
     module_or_workstream: self-evolution
     execution: { agent_id: null, claim_ref: null, started_at: null }
     github_issue: { number: 239, url: 'https://github.com/Negentropy-Laby/OpenSlack/issues/239' }
-    pull_request:
-      number: 329
-      url: https://github.com/Negentropy-Laby/OpenSlack/pull/329
+    pull_request: null
     acceptance_criteria: [All child release blockers are closed with independent evidence.]
     dependencies:
       [
@@ -169,7 +167,9 @@ assignments:
       claim_ref: refs/heads/agent/codex/docs-governance-pr3/20260729
       started_at: 2026-07-28T09:25:45Z
     github_issue: null
-    pull_request: null
+    pull_request:
+      number: 329
+      url: https://github.com/Negentropy-Laby/OpenSlack/pull/329
     acceptance_criteria:
       - The T0-T3 Memory Bank and module/workstream CDD structure are present.
       - All 103 legacy document paths are migrated or retained by manifest.
