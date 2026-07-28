@@ -441,7 +441,7 @@ describe('documentation governance validation', () => {
       'docs/active.md',
       documentMetadata(
         'active',
-        '[Target](target.md "friendly title")\n[Second](target.md#heading-1)\n',
+        '[Target](target.md "friendly title")\n[Second](target.md#heading-1)\n`^[a-z](?:[a-z0-9-]+)$`\n',
       ),
     );
     writeRepositoryFile(root, 'docs/target.md', '## Heading ##\n\n## Heading ##\n');
@@ -464,6 +464,20 @@ describe('documentation governance validation', () => {
       documentMetadata('active', '[Missing](does-not-exist.md "friendly title")\n'),
     );
     expect(() => verifyDocumentation(root)).toThrow(/Broken Markdown link/);
+  });
+
+  test('reports malformed Markdown link encoding with document context', () => {
+    const root = temporaryRepository();
+    writeDocumentMap(root);
+    writeRepositoryFile(
+      root,
+      'docs/active.md',
+      documentMetadata('active', '[Malformed](target%ZZ.md)\n'),
+    );
+
+    expect(() => verifyDocumentation(root)).toThrow(
+      /Malformed Markdown link in docs\/active\.md: target%ZZ\.md/,
+    );
   });
 
   test('rejects stale generated projections', () => {

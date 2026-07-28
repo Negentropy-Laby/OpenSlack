@@ -559,11 +559,20 @@ function validateLinks(root: string, files: string[]): void {
     const linkPattern = /(?<!!)\[[^\]]*]\(([^)]+)\)/g;
     for (const match of content.matchAll(linkPattern)) {
       const rawTarget = markdownLinkDestination(match[1] ?? '');
+      // Inline regular expressions such as `[a-z](?:...)` resemble Markdown
+      // links to this deliberately small parser; `?:` identifies that
+      // non-capturing-group form rather than a repository path.
       if (!rawTarget || rawTarget.startsWith('?:') || /^(?:https?:|mailto:)/.test(rawTarget)) {
         continue;
       }
       const [targetPath, anchor] = rawTarget.split('#', 2);
-      const decoded = decodeURIComponent(targetPath ?? '');
+      let decoded: string;
+      try {
+        decoded = decodeURIComponent(targetPath ?? '');
+      } catch {
+        errors.push(`Malformed Markdown link in ${repositoryPath}: ${rawTarget}`);
+        continue;
+      }
       const resolvedPath = decoded
         ? posix.normalize(posix.join(posix.dirname(repositoryPath), decoded))
         : repositoryPath;
@@ -580,7 +589,13 @@ function validateLinks(root: string, files: string[]): void {
       }
       if (anchor && resolvedPath.endsWith('.md')) {
         const headings = markdownHeadingSlugs(readFileSync(fullTarget, 'utf8'));
-        const decodedAnchor = decodeURIComponent(anchor).toLowerCase();
+        let decodedAnchor: string;
+        try {
+          decodedAnchor = decodeURIComponent(anchor).toLowerCase();
+        } catch {
+          errors.push(`Malformed Markdown link in ${repositoryPath}: ${rawTarget}`);
+          continue;
+        }
         if (!headings.includes(decodedAnchor)) {
           errors.push(`Broken Markdown anchor in ${repositoryPath}: ${rawTarget}`);
         }
