@@ -3,7 +3,8 @@
 Status: implemented declarative contract. `openslack.scenario_pack.v1` is a
 scenario-definition format, not an extension of `openslack.plugin.v1` and not an executable plugin
 system. The locked projection-only `software-delivery` Pack is the current built-in instance of
-this contract; governed scenario mutation remains deferred.
+this contract. The governed mutation contract is implemented. The default stock MCP remains
+read-only; authenticated Qoder rehearsal and live adapter qualification remain pending.
 
 ## Directory Contract
 
@@ -120,9 +121,10 @@ described as transactionally rolled back.
 
 ## Initial Packs
 
-`software-delivery` is the first executable scenario because it projects and orchestrates existing
-OpenSlack/GitHub paths. `contract-to-delivery-lite` later adds only Customer, Contract, Project,
-Milestone, Acceptance, Deliverable, and Outcome demo ontology around that real subgraph.
+`software-delivery` is the first built-in locked projection foundation. It registers the existing
+software-delivery projector but currently grants no workflow, notification, deep-link, or mutation
+authority. `contract-to-delivery-lite` remains a later Pack that will add only Customer, Contract,
+Project, Milestone, Acceptance, Deliverable, and Outcome ontology around that real subgraph.
 
 The manufacturing 90-day workflow remains a deterministic technical fixture and fallback. It is
 not a second lead scenario.
