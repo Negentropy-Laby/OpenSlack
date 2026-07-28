@@ -9,8 +9,8 @@ owner: project-governance
 updated: 2026-07-29
 sources:
   - docs/reference/document-path-migration-v1.yaml
-  - memory_bank/document_map.yaml
-  - memory_bank/t2_execution/work_assignments.yaml
+  - memory_bank/control-plane.json#/authorities
+  - memory_bank/control-plane.json#/assignments
 ---
 
 # Documentation Migration v1 Review Record

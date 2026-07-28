@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/documentation/control-plane.schema.json",
+  "title": "OpenSlack consolidated governance control plane",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "schema",
+    "updated",
+    "authorities",
+    "documents",
+    "portfolio",
+    "release",
+    "assignments",
+    "support",
+    "migrations"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "../docs/reference/schemas/documentation/control-plane.schema.json"
+    },
+    "schema": { "const": "openslack.control_plane.v1" },
+    "updated": { "type": "string", "format": "date" },
+    "authorities": {
+      "$ref": "https://openslack.dev/schemas/documentation/document-map.schema.json#/properties/authorities"
+    },
+    "documents": {
+      "$ref": "https://openslack.dev/schemas/documentation/document-map.schema.json#/properties/documents"
+    },
+    "portfolio": {
+      "$ref": "https://openslack.dev/schemas/documentation/project-state.schema.json"
+    },
+    "release": {
+      "$ref": "https://openslack.dev/schemas/documentation/release-state.schema.json"
+    },
+    "assignments": {
+      "$ref": "https://openslack.dev/schemas/documentation/work-assignments.schema.json"
+    },
+    "support": { "$ref": "#/$defs/supportMap" },
+    "migrations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["memoryBankConsolidation"],
+      "properties": {
+        "memoryBankConsolidation": { "$ref": "#/$defs/consolidation" }
+      }
+    }
+  },
+  "$defs": {
+    "path": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+$"
+    },
+    "supportMap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "productModules", "notificationDelivery"],
+      "properties": {
+        "schema": { "const": "openslack.support_map.v1" },
+        "productModules": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "#/$defs/productSupport" }
+        },
+        "notificationDelivery": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "#/$defs/serviceSupport" }
+        }
+      }
+    },
+    "productSupport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cdd", "architecture", "telemetry"],
+      "properties": {
+        "cdd": { "$ref": "#/$defs/path" },
+        "architecture": { "$ref": "#/$defs/path" },
+        "telemetry": { "$ref": "#/$defs/path" }
+      }
+    },
+    "serviceSupport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["laws", "cdds", "adrs", "evidence"],
+      "properties": {
+        "laws": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^ND-BL-0[1-6]$" }
+        },
+        "cdds": { "$ref": "#/$defs/pathList" },
+        "adrs": { "$ref": "#/$defs/pathList" },
+        "evidence": { "$ref": "#/$defs/pathList" }
+      }
+    },
+    "pathList": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/path" }
+    },
+    "consolidation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "updated", "sources"],
+      "properties": {
+        "schema": { "const": "openslack.memory_bank_consolidation.v1" },
+        "updated": { "type": "string", "format": "date" },
+        "sources": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source", "targets", "disposition"],
+            "properties": {
+              "source": { "$ref": "#/$defs/path" },
+              "targets": { "$ref": "#/$defs/pathList" },
+              "disposition": { "enum": ["merged", "moved"] }
+            }
+          }
+        }
+      }
+    }
+  }
+}

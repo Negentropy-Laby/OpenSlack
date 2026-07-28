@@ -6,13 +6,17 @@ authority: index
 audience:
   - reviewers
 owner: qa
-updated: 2026-07-28
+updated: 2026-07-29
 sources:
-  - memory_bank/t0_core/release_state.yaml
+  - memory_bank/control-plane.json#/release
 ---
 
 # Gate Run Index
 
 Gate runs must record command, revision, environment, result, and scope. The
-current release gate state is canonical in `release_state.yaml`; this directory
-indexes immutable supporting records added by reviewed changes.
+current release gate state is canonical at
+`memory_bank/control-plane.json#/release`; this directory indexes immutable
+supporting records added by reviewed changes.
+
+- Notification Delivery history:
+  `memory_bank/t3_archive/gate_runs/notification-delivery.md`

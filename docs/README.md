@@ -6,9 +6,9 @@ authority: index
 audience:
   - all
 owner: project-governance
-updated: 2026-07-28
+updated: 2026-07-29
 sources:
-  - memory_bank/document_map.yaml
+  - memory_bank/control-plane.json#/authorities
   - design/cdd/module-index.md
 ---
 
@@ -33,9 +33,10 @@ explains navigation and team operations without copying dynamic state.
 
 ## Current State
 
-- Project portfolio: `memory_bank/t0_core/project_state.yaml`
-- Release gates: `memory_bank/t0_core/release_state.yaml`
-- Planned assignments: `memory_bank/t2_execution/work_assignments.yaml`
+- Project portfolio: `memory_bank/control-plane.json#/portfolio`
+- Release gates: `memory_bank/control-plane.json#/release`
+- Planned assignments: `memory_bank/control-plane.json#/assignments`
+- Module and service support map: `memory_bank/control-plane.json#/support`
 - Module telemetry: [generated module status](status/current.md)
 - Generated project roadmap: `production/project-roadmap.md`
 

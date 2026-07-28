@@ -3,7 +3,7 @@
 > **Status**: Implemented and mechanically verified — Basic API ergonomics; sensory/UI accessibility N/A
 > **Tier**: Basic
 > **Domain**: internal headless Bearer-auth JSON/HTTP API + data/migration workflow
-> **Authority sources**: `../memory_bank/t1_axioms/ux_accessibility_context.md`,
+> **Authority sources**: `../../../memory_bank/t1_axioms/ux_accessibility_context.md`,
 > `design/ux/surface-profile.md`, `design/ux/interaction-patterns.md`,
 > `../docs/api/openapi.yaml`, ADR-0002/ADR-0003, `../docs/architecture/data-model.md`
 
@@ -27,13 +27,13 @@ authorization; this document's current status reflects implemented contract evid
 
 ## Sensory Applicability
 
-| Section | Applicability | Rationale |
-|---|---|---|
-| Visual | N/A | No visual/UI surface; headless API. |
-| Motor | N/A | No pointer/touch/gesture surface; headless API. |
-| Cognitive | N/A — addressed via API-ergonomics Basic tier below | Cognitive load for the human operator is reduced through stable errors, sanitized status, and OpenAPI/runbook documentation — not via a sensory UI. |
-| Auditory | N/A | No audio surface. |
-| Platform accessibility API | N/A | No UI component exposes a platform accessibility tree. |
+| Section                    | Applicability                                       | Rationale                                                                                                                                           |
+| -------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Visual                     | N/A                                                 | No visual/UI surface; headless API.                                                                                                                 |
+| Motor                      | N/A                                                 | No pointer/touch/gesture surface; headless API.                                                                                                     |
+| Cognitive                  | N/A — addressed via API-ergonomics Basic tier below | Cognitive load for the human operator is reduced through stable errors, sanitized status, and OpenAPI/runbook documentation — not via a sensory UI. |
+| Auditory                   | N/A                                                 | No audio surface.                                                                                                                                   |
+| Platform accessibility API | N/A                                                 | No UI component exposes a platform accessibility tree.                                                                                              |
 
 ## Applicable Surfaces
 

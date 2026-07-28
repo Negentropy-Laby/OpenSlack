@@ -8,7 +8,7 @@ audience:
 owner: architecture
 updated: 2026-07-28
 sources:
-  - memory_bank/document_map.yaml
+  - memory_bank/control-plane.json#/authorities
 ---
 
 # Reference Documentation

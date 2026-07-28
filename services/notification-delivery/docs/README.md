@@ -44,21 +44,22 @@ runtime admission、发布与 live 状态以仓库根文档和治理 receipt 为
 这些证据记录服务实现和本地验收，不等于 PX2、外部 qualification、IB7、release、
 production readiness 或 `LIVE_VERIFIED`。
 
-## Imported Standalone History
+## Governance and Imported History
 
-| 历史材料            | 入口                                                                                                   |
-| ------------------- | ------------------------------------------------------------------------------------------------------ |
-| B1–B6 历史开发计划  | [development-plan.md](development-plan.md)                                                             |
-| AI 使用与规划演进   | [ai-usage.md](ai-usage.md)                                                                             |
-| CDD 设计索引        | [module-index.md](../design/cdd/module-index.md)                                                       |
-| T0 活动快照         | [active_context.md](../memory_bank/t0_core/active_context.md)                                          |
-| T0 状态快照         | [current_state.md](../memory_bank/t0_core/current_state.md)                                            |
-| Standalone 阶段标记 | [stage.txt](../production/stage.txt)                                                                   |
-| CDD 评审归档        | [review-archive.md](../design/cdd/reviews/review-archive.md)                                           |
-| 架构评审归档        | [architecture-review-archive.md](architecture/architecture-review-archive.md)                          |
-| 实现评审归档        | [implementation-review-archive.md](../memory_bank/t3_archive/reviews/implementation-review-archive.md) |
-| T0 评审索引         | [review-index.md](../memory_bank/t3_archive/reviews/review-index.md)                                   |
-| 历史 gate 归档      | [gate-archive.md](../memory_bank/t3_archive/gate-archive.md)                                           |
+| 历史材料            | 入口                                                                                                                       |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| B1–B6 历史开发计划  | [development-plan.md](development-plan.md)                                                                                 |
+| AI 使用与规划演进   | [ai-usage.md](ai-usage.md)                                                                                                 |
+| CDD 设计索引        | [module-index.md](../design/cdd/module-index.md)                                                                           |
+| 根 T0 活动上下文    | [active_context.md](../../../memory_bank/t0_core/active_context.md)                                                        |
+| 根项目状态投影      | [current_state.md](../../../memory_bank/t0_core/current_state.md)                                                          |
+| Standalone 阶段标记 | [stage.txt](../production/stage.txt)                                                                                       |
+| CDD 评审归档        | [review-archive.md](../design/cdd/reviews/review-archive.md)                                                               |
+| 架构评审归档        | [architecture-review-archive.md](architecture/architecture-review-archive.md)                                              |
+| 实现评审历史        | [notification-delivery-implementation.md](../../../memory_bank/t3_archive/reviews/notification-delivery-implementation.md) |
+| 项目评审索引        | [review-index.md](../../../memory_bank/t3_archive/reviews/review-index.md)                                                 |
+| 历史 gate 记录      | [notification-delivery.md](../../../memory_bank/t3_archive/gate_runs/notification-delivery.md)                             |
 
-以上材料用于 provenance 和历史追溯，不是当前 OpenSlack roadmap、模块状态、接纳、发布或生产就绪
-事实源。文件继续保留原路径，不搬迁、不复制其历史正文。
+以上材料用于 governance、provenance 和历史追溯，不是 OpenSlack runtime admission、发布或生产就绪
+事实源。仓库只保留根 `memory_bank/`；原 service-local Memory Bank 文本可通过 Git 历史恢复，
+不另建重复原文归档。

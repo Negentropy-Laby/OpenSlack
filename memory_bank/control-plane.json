@@ -1,0 +1,1698 @@
+{
+  "$schema": "../docs/reference/schemas/documentation/control-plane.schema.json",
+  "schema": "openslack.control_plane.v1",
+  "updated": "2026-07-29",
+  "authorities": [
+    {
+      "fact": "project.portfolio-state",
+      "canonical": "memory_bank/control-plane.json#/portfolio",
+      "projections": ["memory_bank/t0_core/current_state.md", "production/project-roadmap.md"],
+      "indexes": ["memory_bank/README.md"]
+    },
+    {
+      "fact": "project.release-state",
+      "canonical": "memory_bank/control-plane.json#/release",
+      "projections": ["memory_bank/t0_core/release_state.md"]
+    },
+    {
+      "fact": "project.work-plan-and-execution-mirror",
+      "canonical": "memory_bank/control-plane.json#/assignments",
+      "projections": [
+        "memory_bank/t2_execution/current_roadmap.md",
+        "production/project-roadmap.md"
+      ]
+    },
+    {
+      "fact": "product.module-runtime-telemetry",
+      "canonical": ".openslack/modules.yaml",
+      "projections": ["docs/status/current.md"]
+    },
+    {
+      "fact": "documentation.authority-map",
+      "canonical": "memory_bank/control-plane.json#/authorities",
+      "indexes": ["docs/README.md"]
+    },
+    {
+      "fact": "delivery.evidence-index",
+      "canonical": "docs/evidence/README.md",
+      "indexes": [
+        "memory_bank/t3_archive/qa_evidence_index.md",
+        "memory_bank/t3_archive/reviews/review-index.md"
+      ]
+    },
+    {
+      "fact": "product.design-map",
+      "canonical": "design/cdd/module-index.md",
+      "indexes": ["docs/architecture/traceability-matrix.md"]
+    },
+    {
+      "fact": "project.support-map",
+      "canonical": "memory_bank/control-plane.json#/support"
+    },
+    {
+      "fact": "governance.memory-bank-consolidation",
+      "canonical": "memory_bank/control-plane.json#/migrations/memoryBankConsolidation"
+    }
+  ],
+  "documents": [
+    {
+      "id": "cdd-module-index",
+      "path": "design/cdd/module-index.md",
+      "status": "active"
+    },
+    {
+      "id": "cdd-module-collaboration",
+      "path": "design/cdd/modules/collaboration.md",
+      "status": "active"
+    },
+    {
+      "id": "cdd-module-github-task-loop",
+      "path": "design/cdd/modules/github-task-loop.md",
+      "status": "active"
+    },
+    {
+      "id": "cdd-module-operator",
+      "path": "design/cdd/modules/operator.md",
+      "status": "active"
+    },
+    {
+      "id": "cdd-module-pr-review-merge",
+      "path": "design/cdd/modules/pr-review-merge.md",
+      "status": "active"
+    },
+    {
+      "id": "cdd-module-self-evolution",
+      "path": "design/cdd/modules/self-evolution.md",
+      "status": "active"
+    },
+    {
+      "id": "cdd-product-concept",
+      "path": "design/cdd/product-concept.md",
+      "status": "active"
+    },
+    {
+      "id": "cdd-agent-conversations",
+      "path": "design/cdd/workstreams/agent-runtime-and-aby/agent-conversations.md",
+      "status": "active"
+    },
+    {
+      "id": "cdd-agent-teams",
+      "path": "design/cdd/workstreams/agent-runtime-and-aby/agent-teams.md",
+      "status": "active"
+    },
+    {
+      "id": "cdd-agent-work-units",
+      "path": "design/cdd/workstreams/agent-runtime-and-aby/agent-work-units.md",
+      "status": "active"
+    },
+    {
+      "id": "cdd-workstream-agent-runtime-and-aby",
+      "path": "design/cdd/workstreams/agent-runtime-and-aby/README.md",
+      "status": "active"
+    },
+    {
+      "id": "cdd-workstream-negentropy-integration",
+      "path": "design/cdd/workstreams/negentropy-integration/README.md",
+      "status": "active"
+    },
+    {
+      "id": "cdd-workstream-notification-delivery",
+      "path": "design/cdd/workstreams/notification-delivery/README.md",
+      "status": "active"
+    },
+    {
+      "id": "cdd-workstream-organization-graph",
+      "path": "design/cdd/workstreams/organization-graph/README.md",
+      "status": "active"
+    },
+    {
+      "id": "cdd-workstream-plugin-platform",
+      "path": "design/cdd/workstreams/plugin-platform/README.md",
+      "status": "active"
+    },
+    {
+      "id": "cdd-workstream-profile-sync",
+      "path": "design/cdd/workstreams/profile-sync/README.md",
+      "status": "active"
+    },
+    {
+      "id": "cdd-workstream-qoder-work",
+      "path": "design/cdd/workstreams/qoder-work/README.md",
+      "status": "active"
+    },
+    {
+      "id": "cdd-workstream-scenario-runtime",
+      "path": "design/cdd/workstreams/scenario-runtime/README.md",
+      "status": "active"
+    },
+    {
+      "id": "cdd-workstream-tui-productization",
+      "path": "design/cdd/workstreams/tui-productization/README.md",
+      "status": "active"
+    },
+    {
+      "id": "cdd-workflow-dynamic-ux-closure",
+      "path": "design/cdd/workstreams/workflow-runtime/dynamic-workflow-ux-closure.md",
+      "status": "active"
+    },
+    {
+      "id": "cdd-workstream-workflow-runtime",
+      "path": "design/cdd/workstreams/workflow-runtime/README.md",
+      "status": "active"
+    },
+    {
+      "id": "cdd-workflow-format-analysis",
+      "path": "design/cdd/workstreams/workflow-runtime/workflow-format-analysis.md",
+      "status": "active"
+    },
+    {
+      "id": "cdd-workflow-modules",
+      "path": "design/cdd/workstreams/workflow-runtime/workflow-modules.md",
+      "status": "active"
+    },
+    {
+      "id": "ux-product-roadmap",
+      "path": "design/ux/product-roadmap.md",
+      "status": "active"
+    },
+    {
+      "id": "architecture-adr-single-root-memory-bank",
+      "path": "docs/architecture/adr/adr-0001-single-root-memory-bank.md",
+      "status": "active"
+    },
+    {
+      "id": "architecture-adr-index",
+      "path": "docs/architecture/adr/README.md",
+      "status": "index"
+    },
+    {
+      "id": "architecture-master",
+      "path": "docs/architecture/architecture.md",
+      "status": "active"
+    },
+    {
+      "id": "architecture-agent-runtime",
+      "path": "docs/architecture/components/agent-runtime.md",
+      "status": "active"
+    },
+    {
+      "id": "architecture-collaboration",
+      "path": "docs/architecture/components/collaboration.md",
+      "status": "active"
+    },
+    {
+      "id": "architecture-github-task-loop",
+      "path": "docs/architecture/components/github-task-loop.md",
+      "status": "active"
+    },
+    {
+      "id": "architecture-mcp-runtime-lifecycle",
+      "path": "docs/architecture/components/mcp-runtime-lifecycle.md",
+      "status": "active"
+    },
+    {
+      "id": "architecture-operator",
+      "path": "docs/architecture/components/operator.md",
+      "status": "active"
+    },
+    {
+      "id": "architecture-pr-review-merge",
+      "path": "docs/architecture/components/pr-review-merge.md",
+      "status": "active"
+    },
+    {
+      "id": "architecture-components-index",
+      "path": "docs/architecture/components/README.md",
+      "status": "index"
+    },
+    {
+      "id": "architecture-repository-pr-projection",
+      "path": "docs/architecture/components/repository-pr-projection.md",
+      "status": "active"
+    },
+    {
+      "id": "architecture-self-evolution-kernel",
+      "path": "docs/architecture/components/self-evolution-kernel.md",
+      "status": "active"
+    },
+    {
+      "id": "architecture-subagent-runtime",
+      "path": "docs/architecture/components/subagent-runtime.md",
+      "status": "active"
+    },
+    {
+      "id": "architecture-workflow-runtime",
+      "path": "docs/architecture/components/workflow-runtime.md",
+      "status": "active"
+    },
+    {
+      "id": "contract-collaboration-events",
+      "path": "docs/architecture/contracts/collaboration-events.md",
+      "status": "active"
+    },
+    {
+      "id": "contract-organization-graph",
+      "path": "docs/architecture/contracts/organization-graph.md",
+      "status": "active"
+    },
+    {
+      "id": "contract-qoder-mcp",
+      "path": "docs/architecture/contracts/qoder-mcp.md",
+      "status": "active"
+    },
+    {
+      "id": "architecture-contracts-index",
+      "path": "docs/architecture/contracts/README.md",
+      "status": "index"
+    },
+    {
+      "id": "architecture-control-manifest",
+      "path": "docs/architecture/control-manifest.md",
+      "status": "active"
+    },
+    {
+      "id": "architecture-aby-bridge",
+      "path": "docs/architecture/integrations/aby-bridge.md",
+      "status": "active"
+    },
+    {
+      "id": "architecture-negentropy-slot-adapter",
+      "path": "docs/architecture/integrations/negentropy-slot-adapter.md",
+      "status": "active"
+    },
+    {
+      "id": "architecture-notification-delivery",
+      "path": "docs/architecture/integrations/notification-delivery.md",
+      "status": "active"
+    },
+    {
+      "id": "architecture-qoder-mcp",
+      "path": "docs/architecture/integrations/qoder-mcp.md",
+      "status": "active"
+    },
+    {
+      "id": "architecture-integrations-index",
+      "path": "docs/architecture/integrations/README.md",
+      "status": "index"
+    },
+    {
+      "id": "architecture-index",
+      "path": "docs/architecture/README.md",
+      "status": "index"
+    },
+    {
+      "id": "architecture-traceability-matrix",
+      "path": "docs/architecture/traceability-matrix.md",
+      "status": "active"
+    },
+    {
+      "id": "archive-negentropy-sidecar",
+      "path": "docs/archive/deferred/negentropy-sidecar.md",
+      "status": "archived"
+    },
+    {
+      "id": "archive-original-product-spec",
+      "path": "docs/archive/original-product-spec.md",
+      "status": "archived"
+    },
+    {
+      "id": "archive-beta-productization-plan",
+      "path": "docs/archive/plans/beta-productization-plan.md",
+      "status": "archived"
+    },
+    {
+      "id": "archive-unresolved-issues-development-plan",
+      "path": "docs/archive/plans/unresolved-issues-development-plan.md",
+      "status": "archived"
+    },
+    {
+      "id": "archive-product-phase-1",
+      "path": "docs/archive/product/phase-1.md",
+      "status": "archived"
+    },
+    {
+      "id": "archive-product-v0.1-rc",
+      "path": "docs/archive/product/v0.1-rc.md",
+      "status": "archived"
+    },
+    {
+      "id": "archive-index",
+      "path": "docs/archive/README.md",
+      "status": "index"
+    },
+    {
+      "id": "archive-progress-review-2026-05-28",
+      "path": "docs/archive/reviews/progress-review-2026-05-28.md",
+      "status": "archived"
+    },
+    {
+      "id": "contributor-github-issues-loop",
+      "path": "docs/contributor/github-issues-loop.md",
+      "status": "active"
+    },
+    {
+      "id": "contributor-new-agent-onboarding",
+      "path": "docs/contributor/new-agent-onboarding.md",
+      "status": "active"
+    },
+    {
+      "id": "contributor-notification-delivery-change-test",
+      "path": "docs/contributor/notification-delivery/change-and-test-guide.md",
+      "status": "active"
+    },
+    {
+      "id": "contributor-notification-delivery-index",
+      "path": "docs/contributor/notification-delivery/README.md",
+      "status": "index"
+    },
+    {
+      "id": "contributor-notification-delivery-boundaries",
+      "path": "docs/contributor/notification-delivery/repository-boundaries.md",
+      "status": "active"
+    },
+    {
+      "id": "contributor-plugin-authoring",
+      "path": "docs/contributor/plugins/authoring.md",
+      "status": "active"
+    },
+    {
+      "id": "contributor-plugin-embedding",
+      "path": "docs/contributor/plugins/embedding.md",
+      "status": "active"
+    },
+    {
+      "id": "contributor-plugin-host",
+      "path": "docs/contributor/plugins/host.md",
+      "status": "active"
+    },
+    {
+      "id": "contributor-plugin-manifest",
+      "path": "docs/contributor/plugins/manifest.md",
+      "status": "active"
+    },
+    {
+      "id": "contributor-plugin-testkit",
+      "path": "docs/contributor/plugins/testkit.md",
+      "status": "active"
+    },
+    {
+      "id": "contributor-index",
+      "path": "docs/contributor/README.md",
+      "status": "index"
+    },
+    {
+      "id": "contributor-scenario-pack",
+      "path": "docs/contributor/scenario-pack.md",
+      "status": "active"
+    },
+    {
+      "id": "contributor-technical-debt",
+      "path": "docs/contributor/technical-debt.md",
+      "status": "active"
+    },
+    {
+      "id": "contributor-tui-porting-notes",
+      "path": "docs/contributor/tui-porting-notes.md",
+      "status": "active"
+    },
+    {
+      "id": "contributor-tui-style-guide",
+      "path": "docs/contributor/tui-style-guide.md",
+      "status": "active"
+    },
+    {
+      "id": "evidence-live-capstone",
+      "path": "docs/evidence/live-capstone.md",
+      "status": "active"
+    },
+    {
+      "id": "evidence-notification-delivery",
+      "path": "docs/evidence/notification-delivery-evidence.md",
+      "status": "active"
+    },
+    {
+      "id": "evidence-notification-ib6-order-supersession",
+      "path": "docs/evidence/notification-delivery/ib6-order-supersession.md",
+      "status": "archived"
+    },
+    {
+      "id": "evidence-notification-pre-ib6-gate-amendment",
+      "path": "docs/evidence/notification-delivery/pre-ib6-gate-amendment.md",
+      "status": "archived"
+    },
+    {
+      "id": "evidence-qoder-work",
+      "path": "docs/evidence/qoder-work-evidence.md",
+      "status": "active"
+    },
+    {
+      "id": "evidence-index",
+      "path": "docs/evidence/README.md",
+      "status": "index"
+    },
+    {
+      "id": "evidence-osek-review",
+      "path": "docs/evidence/reviews/osek-review.md",
+      "status": "active"
+    },
+    {
+      "id": "example-ai-organization-commercial-loop",
+      "path": "docs/examples/ai-organization-commercial-loop.md",
+      "status": "active"
+    },
+    {
+      "id": "example-ai-organization-rehearsal",
+      "path": "docs/examples/ai-organization/rehearsal-checklist.md",
+      "status": "active"
+    },
+    {
+      "id": "example-ai-organization-runbook",
+      "path": "docs/examples/ai-organization/runbook.md",
+      "status": "active"
+    },
+    {
+      "id": "example-ai-organization-scenario",
+      "path": "docs/examples/ai-organization/scenario.md",
+      "status": "active"
+    },
+    {
+      "id": "examples-index",
+      "path": "docs/examples/README.md",
+      "status": "index"
+    },
+    {
+      "id": "operations-branch-protection",
+      "path": "docs/operations/branch-protection.md",
+      "status": "active"
+    },
+    {
+      "id": "operations-github-automation",
+      "path": "docs/operations/github-automation.md",
+      "status": "active"
+    },
+    {
+      "id": "operations-github-watch-daemon",
+      "path": "docs/operations/github-watch-daemon.md",
+      "status": "active"
+    },
+    {
+      "id": "operations-keychain-packaging",
+      "path": "docs/operations/keychain-packaging.md",
+      "status": "active"
+    },
+    {
+      "id": "operations-npm-publishing",
+      "path": "docs/operations/npm-publishing.md",
+      "status": "active"
+    },
+    {
+      "id": "operations-npm-rollback",
+      "path": "docs/operations/npm-rollback.md",
+      "status": "active"
+    },
+    {
+      "id": "operations-index",
+      "path": "docs/operations/README.md",
+      "status": "index"
+    },
+    {
+      "id": "operations-release-0.2.0",
+      "path": "docs/operations/release-0.2.0.md",
+      "status": "active"
+    },
+    {
+      "id": "docs-index",
+      "path": "docs/README.md",
+      "status": "index"
+    },
+    {
+      "id": "reference-agent-registry-schema",
+      "path": "docs/reference/agent-registry-schema.md",
+      "status": "active"
+    },
+    {
+      "id": "reference-module-maturity",
+      "path": "docs/reference/module-maturity.md",
+      "status": "active"
+    },
+    {
+      "id": "reference-index",
+      "path": "docs/reference/README.md",
+      "status": "index"
+    },
+    {
+      "id": "security-agent-runtime-permissions",
+      "path": "docs/security/agent-runtime-permissions.md",
+      "status": "active"
+    },
+    {
+      "id": "security-collaboration-audit",
+      "path": "docs/security/collaboration-audit.md",
+      "status": "active"
+    },
+    {
+      "id": "security-human-approval",
+      "path": "docs/security/human-approval.md",
+      "status": "active"
+    },
+    {
+      "id": "security-negentropy-slot-boundary",
+      "path": "docs/security/negentropy-slot-boundary.md",
+      "status": "active"
+    },
+    {
+      "id": "security-notification-delivery-boundary",
+      "path": "docs/security/notification-delivery-boundary.md",
+      "status": "active"
+    },
+    {
+      "id": "security-plugin-trust-model",
+      "path": "docs/security/plugin-trust-model.md",
+      "status": "active"
+    },
+    {
+      "id": "security-qoder-trust-boundary",
+      "path": "docs/security/qoder-trust-boundary.md",
+      "status": "active"
+    },
+    {
+      "id": "security-index",
+      "path": "docs/security/README.md",
+      "status": "index"
+    },
+    {
+      "id": "security-scenario-pack-boundary",
+      "path": "docs/security/scenario-pack-boundary.md",
+      "status": "active"
+    },
+    {
+      "id": "security-self-evolution-guardrails",
+      "path": "docs/security/self-evolution-guardrails.md",
+      "status": "active"
+    },
+    {
+      "id": "security-subagent-permissions",
+      "path": "docs/security/subagent-permissions.md",
+      "status": "active"
+    },
+    {
+      "id": "security-tui-terminal-safety",
+      "path": "docs/security/tui-terminal-safety.md",
+      "status": "active"
+    },
+    {
+      "id": "security-workflow-execution",
+      "path": "docs/security/workflow-execution.md",
+      "status": "active"
+    },
+    {
+      "id": "status-module-telemetry-current",
+      "path": "docs/status/current.md",
+      "status": "generated"
+    },
+    {
+      "id": "user-cli-reference",
+      "path": "docs/user/cli-reference.md",
+      "status": "active"
+    },
+    {
+      "id": "user-guide-aby-integration",
+      "path": "docs/user/guides/aby-integration.md",
+      "status": "active"
+    },
+    {
+      "id": "user-guide-core-workflows",
+      "path": "docs/user/guides/core-workflows.md",
+      "status": "active"
+    },
+    {
+      "id": "user-guide-dynamic-workflow-workbench",
+      "path": "docs/user/guides/dynamic-workflow-workbench.md",
+      "status": "active"
+    },
+    {
+      "id": "user-guide-negentropy-embedding",
+      "path": "docs/user/guides/embed-openslack-in-negentropy-lab.md",
+      "status": "active"
+    },
+    {
+      "id": "user-guide-install",
+      "path": "docs/user/guides/install-openslack.md",
+      "status": "active"
+    },
+    {
+      "id": "user-guide-upgrade-rollback",
+      "path": "docs/user/guides/manual-upgrade-rollback.md",
+      "status": "active"
+    },
+    {
+      "id": "user-guide-notification-delivery-operations",
+      "path": "docs/user/guides/notification-delivery-operations.md",
+      "status": "active"
+    },
+    {
+      "id": "user-guide-openai-compatible-runtime",
+      "path": "docs/user/guides/openai-compatible-runtime.md",
+      "status": "active"
+    },
+    {
+      "id": "user-guide-tui-workbench",
+      "path": "docs/user/guides/tui-workbench.md",
+      "status": "active"
+    },
+    {
+      "id": "user-index",
+      "path": "docs/user/README.md",
+      "status": "index"
+    },
+    {
+      "id": "docs-zh-cn-guide",
+      "path": "docs/zh-CN/README.md",
+      "status": "index"
+    },
+    {
+      "id": "memory-bank-index",
+      "path": "memory_bank/README.md",
+      "status": "index"
+    },
+    {
+      "id": "governance-active-context",
+      "path": "memory_bank/t0_core/active_context.md",
+      "status": "active"
+    },
+    {
+      "id": "governance-amendment-log",
+      "path": "memory_bank/t0_core/amendment_log.md",
+      "status": "active"
+    },
+    {
+      "id": "governance-basic-law-index",
+      "path": "memory_bank/t0_core/basic_law_index.md",
+      "status": "active"
+    },
+    {
+      "id": "state-current",
+      "path": "memory_bank/t0_core/current_state.md",
+      "status": "generated"
+    },
+    {
+      "id": "release-current",
+      "path": "memory_bank/t0_core/release_state.md",
+      "status": "generated"
+    },
+    {
+      "id": "context-architecture",
+      "path": "memory_bank/t1_axioms/architecture_context.md",
+      "status": "active"
+    },
+    {
+      "id": "context-behavior",
+      "path": "memory_bank/t1_axioms/behavior_context.md",
+      "status": "active"
+    },
+    {
+      "id": "context-knowledge-graph",
+      "path": "memory_bank/t1_axioms/knowledge_graph.md",
+      "status": "index"
+    },
+    {
+      "id": "context-qa",
+      "path": "memory_bank/t1_axioms/qa_context.md",
+      "status": "active"
+    },
+    {
+      "id": "context-system-patterns",
+      "path": "memory_bank/t1_axioms/system_patterns.md",
+      "status": "active"
+    },
+    {
+      "id": "context-technology",
+      "path": "memory_bank/t1_axioms/tech_context.md",
+      "status": "active"
+    },
+    {
+      "id": "context-ux-accessibility",
+      "path": "memory_bank/t1_axioms/ux_accessibility_context.md",
+      "status": "active"
+    },
+    {
+      "id": "roadmap-memory-current",
+      "path": "memory_bank/t2_execution/current_roadmap.md",
+      "status": "generated"
+    },
+    {
+      "id": "execution-index",
+      "path": "memory_bank/t2_execution/README.md",
+      "status": "index"
+    },
+    {
+      "id": "execution-workflow-contract",
+      "path": "memory_bank/t2_execution/workflow_contract.md",
+      "status": "active"
+    },
+    {
+      "id": "evidence-notification-constitution-v1",
+      "path": "memory_bank/t3_archive/amendments/notification-delivery-v1.md",
+      "status": "archived"
+    },
+    {
+      "id": "evidence-amendment-index",
+      "path": "memory_bank/t3_archive/amendments/README.md",
+      "status": "index"
+    },
+    {
+      "id": "evidence-notification-gate-history",
+      "path": "memory_bank/t3_archive/gate_runs/notification-delivery.md",
+      "status": "archived"
+    },
+    {
+      "id": "evidence-gate-run-index",
+      "path": "memory_bank/t3_archive/gate_runs/README.md",
+      "status": "index"
+    },
+    {
+      "id": "evidence-qa-index",
+      "path": "memory_bank/t3_archive/qa_evidence_index.md",
+      "status": "index"
+    },
+    {
+      "id": "evidence-archive-index",
+      "path": "memory_bank/t3_archive/README.md",
+      "status": "index"
+    },
+    {
+      "id": "evidence-release-index",
+      "path": "memory_bank/t3_archive/release_evidence/README.md",
+      "status": "index"
+    },
+    {
+      "id": "evidence-documentation-migration-v1",
+      "path": "memory_bank/t3_archive/reviews/documentation-migration-v1.md",
+      "status": "active"
+    },
+    {
+      "id": "evidence-notification-implementation-review",
+      "path": "memory_bank/t3_archive/reviews/notification-delivery-implementation.md",
+      "status": "archived"
+    },
+    {
+      "id": "evidence-review-index-readme",
+      "path": "memory_bank/t3_archive/reviews/README.md",
+      "status": "index"
+    },
+    {
+      "id": "evidence-review-index",
+      "path": "memory_bank/t3_archive/reviews/review-index.md",
+      "status": "index"
+    },
+    {
+      "id": "evidence-sprint-snapshot-index",
+      "path": "memory_bank/t3_archive/sprint_snapshots/README.md",
+      "status": "index"
+    },
+    {
+      "id": "production-current-milestone",
+      "path": "production/current-milestone.md",
+      "status": "active"
+    },
+    {
+      "id": "production-epics-index",
+      "path": "production/epics/README.md",
+      "status": "index"
+    },
+    {
+      "id": "roadmap-production-current",
+      "path": "production/project-roadmap.md",
+      "status": "generated"
+    },
+    {
+      "id": "production-qa-index",
+      "path": "production/qa/README.md",
+      "status": "index"
+    },
+    {
+      "id": "production-index",
+      "path": "production/README.md",
+      "status": "index"
+    },
+    {
+      "id": "production-sprints-index",
+      "path": "production/sprints/README.md",
+      "status": "index"
+    },
+    {
+      "id": "production-stories-index",
+      "path": "production/stories/README.md",
+      "status": "index"
+    },
+    {
+      "id": "standard-approval-vocabulary",
+      "path": "standards/approval-vocabulary.md",
+      "status": "active"
+    },
+    {
+      "id": "standard-documentation",
+      "path": "standards/documentation-standard.md",
+      "status": "active"
+    },
+    {
+      "id": "standard-technical-preferences",
+      "path": "standards/technical-preferences.md",
+      "status": "active"
+    },
+    {
+      "id": "standard-traceability",
+      "path": "standards/traceability-standard.md",
+      "status": "active"
+    }
+  ],
+  "portfolio": {
+    "schema": "openslack.project_state.v1",
+    "updated": "2026-07-29",
+    "last_verified": "2026-07-28T18:40:17Z",
+    "portfolio_status": "active_development",
+    "release_train": "0.2.0",
+    "modules": [
+      {
+        "id": "self-evolution",
+        "name": "Self-Evolution",
+        "stage": "Implementation",
+        "maturity": "local_ready",
+        "blockers": ["signed_v0_2_0_release_pending"],
+        "evidence": [".openslack/modules.yaml", "commit:035b768feda72870129be3c41d5eb7b3aa123478"]
+      },
+      {
+        "id": "github-task-loop",
+        "name": "GitHub Task Loop",
+        "stage": "Implementation",
+        "maturity": "local_ready",
+        "blockers": ["clean_machine_agent_task_capstone_pending"],
+        "evidence": [".openslack/modules.yaml", "repo:packages/github"]
+      },
+      {
+        "id": "operator",
+        "name": "Operator",
+        "stage": "Implementation",
+        "maturity": "local_ready",
+        "blockers": ["model_endpoint_not_configured", "live_provider_smoke_pending"],
+        "evidence": [".openslack/modules.yaml", "repo:packages/operator"]
+      },
+      {
+        "id": "pr-review-merge",
+        "name": "PR Review and Merge Steward",
+        "stage": "Implementation",
+        "maturity": "local_ready",
+        "blockers": ["clean_machine_end_to_end_merge_capstone_pending"],
+        "evidence": [".openslack/modules.yaml", "repo:packages/pr"]
+      },
+      {
+        "id": "collaboration",
+        "name": "Collaboration",
+        "stage": "Implementation",
+        "maturity": "local_ready",
+        "blockers": ["clean_machine_agent_task_capstone_pending"],
+        "evidence": [".openslack/modules.yaml", "repo:packages/collaboration"]
+      }
+    ],
+    "workstreams": [
+      {
+        "id": "notification-delivery",
+        "name": "Notification Delivery",
+        "stage": "Verification",
+        "maturity": "local_ready",
+        "blockers": [
+          "px2_not_claimed",
+          "runtime_admission_not_claimed",
+          "release_not_claimed",
+          "live_verification_not_claimed"
+        ],
+        "evidence": [
+          "services/notification-delivery/README.md",
+          "docs/evidence/notification-delivery-evidence.md",
+          "memory_bank/control-plane.json#/support/notificationDelivery",
+          "memory_bank/t3_archive/reviews/notification-delivery-implementation.md"
+        ]
+      },
+      {
+        "id": "plugin-platform",
+        "name": "Plugin Platform",
+        "stage": "Implementation",
+        "maturity": "local_ready",
+        "blockers": ["external_host_qualification_pending"],
+        "evidence": [
+          "repo:packages/plugin-api",
+          "repo:packages/plugin-host",
+          "repo:packages/plugin-testkit"
+        ]
+      },
+      {
+        "id": "agent-runtime-and-aby",
+        "name": "Agent Runtime and Aby",
+        "stage": "Verification",
+        "maturity": "local_ready",
+        "blockers": ["model_endpoint_not_configured", "live_provider_smoke_pending"],
+        "evidence": ["repo:packages/agent-runtime", "docs/architecture/integrations/aby-bridge.md"]
+      },
+      {
+        "id": "workflow-runtime",
+        "name": "Workflow Runtime",
+        "stage": "Implementation",
+        "maturity": "local_ready",
+        "blockers": ["authenticated_host_qualification_pending"],
+        "evidence": ["repo:packages/workflows", "repo:.openslack/workflows"]
+      },
+      {
+        "id": "organization-graph",
+        "name": "Organization Graph",
+        "stage": "Implementation",
+        "maturity": "local_ready",
+        "blockers": ["live_evidence_collection_out_of_scope"],
+        "evidence": ["repo:packages/organization-graph"]
+      },
+      {
+        "id": "scenario-runtime",
+        "name": "Scenario Runtime",
+        "stage": "Implementation",
+        "maturity": "local_ready",
+        "blockers": ["authenticated_host_qualification_pending"],
+        "evidence": ["repo:packages/scenario-runtime", "repo:scenarios/software-delivery"]
+      },
+      {
+        "id": "qoder-work",
+        "name": "Qoder Work",
+        "stage": "Verification",
+        "maturity": "implemented",
+        "blockers": ["qoder_authentication_pending", "qoder_desktop_qualification_pending"],
+        "evidence": ["docs/evidence/qoder-work-evidence.md", "repo:packages/qoder-adapter"]
+      },
+      {
+        "id": "negentropy-integration",
+        "name": "Negentropy Integration",
+        "stage": "Verification",
+        "maturity": "implemented",
+        "blockers": [
+          "external_signing_pending",
+          "administrator_registration_pending",
+          "live_contribution_pending"
+        ],
+        "evidence": [
+          "repo:packages/integration-negentropy",
+          "docs/security/negentropy-slot-boundary.md"
+        ]
+      },
+      {
+        "id": "profile-sync",
+        "name": "Profile Sync",
+        "stage": "Implementation",
+        "maturity": "local_ready",
+        "blockers": ["clean_machine_bot_delivery_smoke_pending"],
+        "evidence": ["repo:packages/workflows"]
+      },
+      {
+        "id": "tui-productization",
+        "name": "TUI Productization",
+        "stage": "Implementation",
+        "maturity": "local_ready",
+        "blockers": ["clean_machine_onboarding_smoke_pending"],
+        "evidence": ["repo:packages/tui"]
+      }
+    ]
+  },
+  "release": {
+    "schema": "openslack.release_state.v1",
+    "updated": "2026-07-29",
+    "train": "0.2.0",
+    "status": "blocked",
+    "human_approval": "not_requested",
+    "gates": [
+      {
+        "id": "source_baseline",
+        "status": "passed",
+        "evidence": ["commit:85f18a24645edade981a342bb67308e3a65d9904"],
+        "notes": "Baseline matched origin/main before migration work."
+      },
+      {
+        "id": "documentation_migration",
+        "status": "passed",
+        "evidence": [
+          "docs/reference/document-path-migration-v1.yaml",
+          "github:pr-327:merged:85f18a24645edade981a342bb67308e3a65d9904",
+          "github:pr-328:merged:067f4566cd06855f65d2b2a53257227c0db69067",
+          "github:pr-329:merged:de0d202e84b34c4def7d684c68372ebca7bb35fa",
+          "memory_bank/t3_archive/reviews/documentation-migration-v1.md"
+        ],
+        "notes": "The three-PR documentation migration is merged; this gate does not imply release or live verification."
+      },
+      {
+        "id": "signed_release",
+        "status": "blocked",
+        "evidence": ["issue:240"],
+        "notes": "Signed v0.2.0 release is not complete."
+      },
+      {
+        "id": "clean_machine_release",
+        "status": "blocked",
+        "evidence": ["issue:241"],
+        "notes": "Clean-machine release capstone remains open."
+      },
+      {
+        "id": "npm_publication",
+        "status": "blocked",
+        "evidence": ["issue:242"],
+        "notes": "Public npm publication remains open."
+      },
+      {
+        "id": "bot_delivery",
+        "status": "blocked",
+        "evidence": ["issue:243"],
+        "notes": "Clean-machine bot delivery smoke remains open."
+      },
+      {
+        "id": "model_endpoint",
+        "status": "blocked",
+        "evidence": ["issue:244"],
+        "notes": "Model endpoint is not configured."
+      },
+      {
+        "id": "onboarding",
+        "status": "blocked",
+        "evidence": ["issue:245"],
+        "notes": "Clean-machine onboarding smoke remains open."
+      },
+      {
+        "id": "merge_capstone",
+        "status": "blocked",
+        "evidence": ["issue:246"],
+        "notes": "End-to-end merge capstone remains open."
+      },
+      {
+        "id": "agent_task_capstone",
+        "status": "blocked",
+        "evidence": ["issue:247"],
+        "notes": "Agent task capstone remains open."
+      },
+      {
+        "id": "live_provider",
+        "status": "blocked",
+        "evidence": ["issue:248"],
+        "notes": "Live provider smoke remains open."
+      }
+    ]
+  },
+  "assignments": {
+    "schema": "openslack.work_assignments.v1",
+    "updated": "2026-07-29",
+    "assignments": [
+      {
+        "id": "issue-239",
+        "title": "release: close OpenSlack 0.2.0 external gates",
+        "status": "ready",
+        "planned_owner": "unassigned",
+        "module_or_workstream": "self-evolution",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 239,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/239"
+        },
+        "pull_request": null,
+        "acceptance_criteria": ["All child release blockers are closed with independent evidence."],
+        "dependencies": [
+          "issue-240",
+          "issue-241",
+          "issue-242",
+          "issue-243",
+          "issue-244",
+          "issue-245",
+          "issue-246",
+          "issue-247",
+          "issue-248"
+        ],
+        "blockers": [],
+        "evidence": ["github:issue-239:open"],
+        "last_verified_at": "2026-07-28T13:55:03Z"
+      },
+      {
+        "id": "issue-240",
+        "title": "release blocker: signed_v0_2_0_release_pending",
+        "status": "blocked",
+        "planned_owner": "unassigned",
+        "module_or_workstream": "self-evolution",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 240,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/240"
+        },
+        "pull_request": null,
+        "acceptance_criteria": ["A signed v0.2.0 release is published and verified."],
+        "dependencies": [],
+        "blockers": ["signed_v0_2_0_release_pending"],
+        "evidence": ["github:issue-240:open"],
+        "last_verified_at": "2026-07-28T13:55:03Z"
+      },
+      {
+        "id": "issue-241",
+        "title": "release blocker: clean_machine_release_capstone_pending",
+        "status": "blocked",
+        "planned_owner": "unassigned",
+        "module_or_workstream": "self-evolution",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 241,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/241"
+        },
+        "pull_request": null,
+        "acceptance_criteria": ["The release capstone passes on a clean machine."],
+        "dependencies": [],
+        "blockers": ["clean_machine_release_capstone_pending"],
+        "evidence": ["github:issue-241:open"],
+        "last_verified_at": "2026-07-28T13:55:03Z"
+      },
+      {
+        "id": "issue-242",
+        "title": "release blocker: npm_publication_pending",
+        "status": "blocked",
+        "planned_owner": "unassigned",
+        "module_or_workstream": "self-evolution",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 242,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/242"
+        },
+        "pull_request": null,
+        "acceptance_criteria": ["Required packages are publicly available and verified."],
+        "dependencies": [],
+        "blockers": ["npm_publication_pending"],
+        "evidence": ["github:issue-242:open"],
+        "last_verified_at": "2026-07-28T13:55:03Z"
+      },
+      {
+        "id": "issue-243",
+        "title": "release blocker: clean_machine_bot_delivery_smoke_pending",
+        "status": "blocked",
+        "planned_owner": "unassigned",
+        "module_or_workstream": "github-task-loop",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 243,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/243"
+        },
+        "pull_request": null,
+        "acceptance_criteria": ["Bot-authenticated delivery passes on a clean machine."],
+        "dependencies": [],
+        "blockers": ["clean_machine_bot_delivery_smoke_pending"],
+        "evidence": ["github:issue-243:open"],
+        "last_verified_at": "2026-07-28T13:55:03Z"
+      },
+      {
+        "id": "issue-244",
+        "title": "release blocker: model_endpoint_not_configured",
+        "status": "blocked",
+        "planned_owner": "unassigned",
+        "module_or_workstream": "agent-runtime-and-aby",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 244,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/244"
+        },
+        "pull_request": null,
+        "acceptance_criteria": [
+          "A supported model endpoint is configured without committing credentials."
+        ],
+        "dependencies": [],
+        "blockers": ["model_endpoint_not_configured"],
+        "evidence": ["github:issue-244:open"],
+        "last_verified_at": "2026-07-28T13:55:03Z"
+      },
+      {
+        "id": "issue-245",
+        "title": "release blocker: clean_machine_onboarding_smoke_pending",
+        "status": "blocked",
+        "planned_owner": "unassigned",
+        "module_or_workstream": "operator",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 245,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/245"
+        },
+        "pull_request": null,
+        "acceptance_criteria": ["Onboarding smoke passes on a clean machine."],
+        "dependencies": [],
+        "blockers": ["clean_machine_onboarding_smoke_pending"],
+        "evidence": ["github:issue-245:open"],
+        "last_verified_at": "2026-07-28T13:55:03Z"
+      },
+      {
+        "id": "issue-246",
+        "title": "release blocker: clean_machine_end_to_end_merge_capstone_pending",
+        "status": "blocked",
+        "planned_owner": "unassigned",
+        "module_or_workstream": "pr-review-merge",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 246,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/246"
+        },
+        "pull_request": null,
+        "acceptance_criteria": ["The governed merge capstone passes on a clean machine."],
+        "dependencies": [],
+        "blockers": ["clean_machine_end_to_end_merge_capstone_pending"],
+        "evidence": ["github:issue-246:open"],
+        "last_verified_at": "2026-07-28T13:55:03Z"
+      },
+      {
+        "id": "issue-247",
+        "title": "release blocker: clean_machine_agent_task_capstone_pending",
+        "status": "blocked",
+        "planned_owner": "unassigned",
+        "module_or_workstream": "collaboration",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 247,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/247"
+        },
+        "pull_request": null,
+        "acceptance_criteria": ["The agent task lifecycle capstone passes on a clean machine."],
+        "dependencies": [],
+        "blockers": ["clean_machine_agent_task_capstone_pending"],
+        "evidence": ["github:issue-247:open"],
+        "last_verified_at": "2026-07-28T13:55:03Z"
+      },
+      {
+        "id": "issue-248",
+        "title": "release blocker: live_provider_smoke_pending",
+        "status": "blocked",
+        "planned_owner": "unassigned",
+        "module_or_workstream": "agent-runtime-and-aby",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 248,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/248"
+        },
+        "pull_request": null,
+        "acceptance_criteria": [
+          "A live provider smoke run is recorded without exposing credentials."
+        ],
+        "dependencies": ["issue-244"],
+        "blockers": ["live_provider_smoke_pending"],
+        "evidence": ["github:issue-248:open"],
+        "last_verified_at": "2026-07-28T13:55:03Z"
+      },
+      {
+        "id": "issue-314",
+        "title": "[Workflow Governance] PR #313",
+        "status": "reconciliation_required",
+        "planned_owner": "unassigned",
+        "module_or_workstream": "scenario-runtime",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 314,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/314"
+        },
+        "pull_request": {
+          "number": 313,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/pull/313"
+        },
+        "acceptance_criteria": [
+          "Reconcile the open governance Issue with the merged PR and record the final state."
+        ],
+        "dependencies": [],
+        "blockers": ["issue_open_after_associated_pr_merged"],
+        "evidence": [
+          "github:pr-313:merged:8bf81fb994ce3a09c97894363f29c7eb047174b9",
+          "github:issue-314:open"
+        ],
+        "last_verified_at": "2026-07-28T13:55:03Z"
+      },
+      {
+        "id": "issue-331",
+        "title": "collaboration: deliver Contract-to-Delivery Lite composite graph",
+        "status": "ready",
+        "planned_owner": "unassigned",
+        "module_or_workstream": "collaboration",
+        "execution": {
+          "agent_id": null,
+          "claim_ref": null,
+          "started_at": null
+        },
+        "github_issue": {
+          "number": 331,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/331"
+        },
+        "pull_request": null,
+        "acceptance_criteria": [
+          "The composite graph preserves Software Delivery authority semantics and connects Customer through Outcome with explicit evidence bridges.",
+          "Fresh discovery accepts exactly software-delivery and contract-to-delivery-lite in deterministic order.",
+          "Graph build, CAS readback, depth-3 query windows, and per-edge explain pass through the official stock 12-tool MCP SDK.",
+          "Stale, self, synthetic, cached, green-only, missing, or mismatched evidence fails closed and cannot promote Acceptance or Outcome."
+        ],
+        "dependencies": [],
+        "blockers": [],
+        "evidence": ["github:issue-331:open"],
+        "last_verified_at": "2026-07-28T18:11:09Z"
+      },
+      {
+        "id": "documentation-governance-v1",
+        "title": "Establish the OpenSlack root documentation governance system",
+        "status": "done",
+        "planned_owner": "project-governance",
+        "module_or_workstream": "self-evolution",
+        "execution": {
+          "agent_id": "codex",
+          "claim_ref": "refs/heads/agent/codex/docs-governance-pr3/20260729",
+          "started_at": "2026-07-28T09:25:45Z"
+        },
+        "github_issue": null,
+        "pull_request": {
+          "number": 329,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/pull/329"
+        },
+        "acceptance_criteria": [
+          "The T0-T3 Memory Bank and module/workstream CDD structure are present.",
+          "All 103 legacy document paths are migrated or retained by manifest.",
+          "Generated project and module projections verify deterministically.",
+          "Reusable and Notification Delivery CI enforce documentation governance.",
+          "A bot-authored PR receives independent human review and approval."
+        ],
+        "dependencies": [],
+        "blockers": [],
+        "evidence": [
+          "commit:3250fb75a634330c15d4390c0ea0d265bd80085a",
+          "github:pr-327:merged:85f18a24645edade981a342bb67308e3a65d9904",
+          "commit:b5a7248a91aab659448422d6f6131abb3ee31485",
+          "github:pr-328:merged:067f4566cd06855f65d2b2a53257227c0db69067",
+          "commit:31845d508bea4171b94a795abb1a0357c6fec80c",
+          "repo:.github/workflows/openslack-reusable-validate.yml",
+          "repo:.github/workflows/notification-delivery-service.yml",
+          "repo:memory_bank/t3_archive/reviews/documentation-migration-v1.md",
+          "github:pr-329:merged:de0d202e84b34c4def7d684c68372ebca7bb35fa",
+          "commit:de0d202e84b34c4def7d684c68372ebca7bb35fa"
+        ],
+        "last_verified_at": "2026-07-28T18:04:56Z"
+      },
+      {
+        "id": "single-root-memory-bank",
+        "title": "Consolidate all project governance into the root Memory Bank",
+        "status": "running",
+        "planned_owner": "project-governance",
+        "module_or_workstream": "self-evolution",
+        "execution": {
+          "agent_id": "codex",
+          "claim_ref": "refs/heads/agent/codex/single-root-memory-bank/20260729",
+          "started_at": "2026-07-28T18:04:56Z"
+        },
+        "github_issue": null,
+        "pull_request": null,
+        "acceptance_criteria": [
+          "The repository contains exactly one memory_bank directory at the project root.",
+          "memory_bank contains no YAML files and control-plane.json is the sole structured governance authority.",
+          "Notification Delivery laws, support context, workflow contract, and evidence remain traceable from root T0-T3 documents.",
+          "Documentation generation, verification, service consistency tests, and workspace-manifest verification pass."
+        ],
+        "dependencies": ["documentation-governance-v1"],
+        "blockers": [],
+        "evidence": ["commit:de0d202e84b34c4def7d684c68372ebca7bb35fa"],
+        "last_verified_at": "2026-07-28T18:04:56Z"
+      }
+    ]
+  },
+  "support": {
+    "schema": "openslack.support_map.v1",
+    "productModules": {
+      "self-evolution": {
+        "cdd": "design/cdd/modules/self-evolution.md",
+        "architecture": "docs/architecture/components/self-evolution-kernel.md",
+        "telemetry": ".openslack/modules.yaml"
+      },
+      "github-task-loop": {
+        "cdd": "design/cdd/modules/github-task-loop.md",
+        "architecture": "docs/architecture/components/github-task-loop.md",
+        "telemetry": ".openslack/modules.yaml"
+      },
+      "operator": {
+        "cdd": "design/cdd/modules/operator.md",
+        "architecture": "docs/architecture/components/operator.md",
+        "telemetry": ".openslack/modules.yaml"
+      },
+      "pr-review-merge": {
+        "cdd": "design/cdd/modules/pr-review-merge.md",
+        "architecture": "docs/architecture/components/pr-review-merge.md",
+        "telemetry": ".openslack/modules.yaml"
+      },
+      "collaboration": {
+        "cdd": "design/cdd/modules/collaboration.md",
+        "architecture": "docs/architecture/components/collaboration.md",
+        "telemetry": ".openslack/modules.yaml"
+      }
+    },
+    "notificationDelivery": {
+      "notification-store": {
+        "laws": ["ND-BL-02", "ND-BL-03", "ND-BL-04", "ND-BL-06"],
+        "cdds": ["services/notification-delivery/design/cdd/notification-store.md"],
+        "adrs": [
+          "services/notification-delivery/docs/architecture/adr-0001-postgresql-outbox.md",
+          "services/notification-delivery/docs/architecture/adr-0002-idempotency-at-least-once.md",
+          "services/notification-delivery/docs/architecture/adr-0003-api-key-authorization.md"
+        ],
+        "evidence": [
+          "services/notification-delivery/docs/testing/ac-evidence.json",
+          "services/notification-delivery/tests/integration/notificationstore_test.go",
+          "services/notification-delivery/internal/notificationstore/transition_test.go"
+        ]
+      },
+      "vendor-registry": {
+        "laws": ["ND-BL-05"],
+        "cdds": ["services/notification-delivery/design/cdd/vendor-registry.md"],
+        "adrs": [
+          "services/notification-delivery/docs/architecture/adr-0001-postgresql-outbox.md",
+          "services/notification-delivery/docs/architecture/adr-0003-api-key-authorization.md",
+          "services/notification-delivery/docs/architecture/adr-0004-ssrf-safe-http.md"
+        ],
+        "evidence": [
+          "services/notification-delivery/docs/testing/ac-evidence.json",
+          "services/notification-delivery/tests/integration/vendorregistry_test.go",
+          "services/notification-delivery/internal/vendorregistry/postgres/repository_test.go"
+        ]
+      },
+      "caller-access": {
+        "laws": ["ND-BL-02", "ND-BL-05"],
+        "cdds": ["services/notification-delivery/design/cdd/caller-access.md"],
+        "adrs": [
+          "services/notification-delivery/docs/architecture/adr-0003-api-key-authorization.md"
+        ],
+        "evidence": [
+          "services/notification-delivery/docs/testing/ac-evidence.json",
+          "services/notification-delivery/tests/integration/calleraccess_test.go",
+          "services/notification-delivery/internal/calleraccess/domain_test.go"
+        ]
+      },
+      "delivery": {
+        "laws": ["ND-BL-03", "ND-BL-04", "ND-BL-05"],
+        "cdds": ["services/notification-delivery/design/cdd/delivery.md"],
+        "adrs": [
+          "services/notification-delivery/docs/architecture/adr-0001-postgresql-outbox.md",
+          "services/notification-delivery/docs/architecture/adr-0002-idempotency-at-least-once.md",
+          "services/notification-delivery/docs/architecture/adr-0004-ssrf-safe-http.md"
+        ],
+        "evidence": [
+          "services/notification-delivery/docs/testing/ac-evidence.json",
+          "services/notification-delivery/tests/integration/delivery_test.go",
+          "services/notification-delivery/internal/delivery/runner_test.go",
+          "services/notification-delivery/internal/delivery/transport_test.go"
+        ]
+      },
+      "operations-control": {
+        "laws": ["ND-BL-04"],
+        "cdds": ["services/notification-delivery/design/cdd/operations-control.md"],
+        "adrs": [
+          "services/notification-delivery/docs/architecture/adr-0001-postgresql-outbox.md",
+          "services/notification-delivery/docs/architecture/adr-0003-api-key-authorization.md"
+        ],
+        "evidence": [
+          "services/notification-delivery/docs/testing/ac-evidence.json",
+          "services/notification-delivery/internal/operationscontrol/service_test.go",
+          "services/notification-delivery/internal/app/operations_handlers_test.go",
+          "services/notification-delivery/tests/integration/operations_observability_test.go"
+        ]
+      },
+      "reliability-observability": {
+        "laws": ["ND-BL-06"],
+        "cdds": ["services/notification-delivery/design/cdd/reliability-observability.md"],
+        "adrs": [
+          "services/notification-delivery/docs/architecture/adr-0001-postgresql-outbox.md",
+          "services/notification-delivery/docs/architecture/adr-0003-api-key-authorization.md"
+        ],
+        "evidence": [
+          "services/notification-delivery/docs/testing/ac-evidence.json",
+          "services/notification-delivery/internal/reliability/service_test.go",
+          "services/notification-delivery/tests/contracts/prometheus_artifacts_test.go",
+          "services/notification-delivery/deploy/prometheus/rules.test.yml"
+        ]
+      }
+    }
+  },
+  "migrations": {
+    "memoryBankConsolidation": {
+      "schema": "openslack.memory_bank_consolidation.v1",
+      "updated": "2026-07-29",
+      "sources": [
+        {
+          "source": "memory_bank/document_map.yaml",
+          "disposition": "merged",
+          "targets": [
+            "memory_bank/control-plane.json#/authorities",
+            "memory_bank/control-plane.json#/documents"
+          ]
+        },
+        {
+          "source": "memory_bank/t0_core/project_state.yaml",
+          "disposition": "merged",
+          "targets": ["memory_bank/control-plane.json#/portfolio"]
+        },
+        {
+          "source": "memory_bank/t0_core/release_state.yaml",
+          "disposition": "merged",
+          "targets": ["memory_bank/control-plane.json#/release"]
+        },
+        {
+          "source": "memory_bank/t1_axioms/module_support_map.yaml",
+          "disposition": "merged",
+          "targets": ["memory_bank/control-plane.json#/support/productModules"]
+        },
+        {
+          "source": "memory_bank/t2_execution/work_assignments.yaml",
+          "disposition": "merged",
+          "targets": ["memory_bank/control-plane.json#/assignments"]
+        },
+        {
+          "source": "services/notification-delivery/memory_bank/t0_core/active_context.md",
+          "disposition": "merged",
+          "targets": ["memory_bank/t0_core/active_context.md"]
+        },
+        {
+          "source": "services/notification-delivery/memory_bank/t0_core/amendment_log.md",
+          "disposition": "merged",
+          "targets": ["memory_bank/t0_core/amendment_log.md"]
+        },
+        {
+          "source": "services/notification-delivery/memory_bank/t0_core/basic_law_index.md",
+          "disposition": "merged",
+          "targets": ["memory_bank/t0_core/basic_law_index.md"]
+        },
+        {
+          "source": "services/notification-delivery/memory_bank/t0_core/current_state.md",
+          "disposition": "merged",
+          "targets": ["memory_bank/control-plane.json#/portfolio/workstreams"]
+        },
+        {
+          "source": "services/notification-delivery/memory_bank/t1_axioms/architecture_context.md",
+          "disposition": "merged",
+          "targets": ["memory_bank/t1_axioms/architecture_context.md"]
+        },
+        {
+          "source": "services/notification-delivery/memory_bank/t1_axioms/behavior_context.md",
+          "disposition": "merged",
+          "targets": ["memory_bank/t1_axioms/behavior_context.md"]
+        },
+        {
+          "source": "services/notification-delivery/memory_bank/t1_axioms/knowledge_graph.md",
+          "disposition": "merged",
+          "targets": ["memory_bank/t1_axioms/knowledge_graph.md"]
+        },
+        {
+          "source": "services/notification-delivery/memory_bank/t1_axioms/module_support_map.yaml",
+          "disposition": "merged",
+          "targets": ["memory_bank/control-plane.json#/support/notificationDelivery"]
+        },
+        {
+          "source": "services/notification-delivery/memory_bank/t1_axioms/qa_context.md",
+          "disposition": "merged",
+          "targets": ["memory_bank/t1_axioms/qa_context.md"]
+        },
+        {
+          "source": "services/notification-delivery/memory_bank/t1_axioms/system_patterns.md",
+          "disposition": "merged",
+          "targets": ["memory_bank/t1_axioms/system_patterns.md"]
+        },
+        {
+          "source": "services/notification-delivery/memory_bank/t1_axioms/tech_context.md",
+          "disposition": "merged",
+          "targets": ["memory_bank/t1_axioms/tech_context.md"]
+        },
+        {
+          "source": "services/notification-delivery/memory_bank/t1_axioms/ux_accessibility_context.md",
+          "disposition": "merged",
+          "targets": ["memory_bank/t1_axioms/ux_accessibility_context.md"]
+        },
+        {
+          "source": "services/notification-delivery/memory_bank/t2_execution/workflow_contract.md",
+          "disposition": "merged",
+          "targets": ["memory_bank/t2_execution/workflow_contract.md"]
+        },
+        {
+          "source": "services/notification-delivery/memory_bank/t3_archive/amendments/amendment-v1.0-2026-07-18.md",
+          "disposition": "moved",
+          "targets": ["memory_bank/t3_archive/amendments/notification-delivery-v1.md"]
+        },
+        {
+          "source": "services/notification-delivery/memory_bank/t3_archive/gate-archive.md",
+          "disposition": "moved",
+          "targets": ["memory_bank/t3_archive/gate_runs/notification-delivery.md"]
+        },
+        {
+          "source": "services/notification-delivery/memory_bank/t3_archive/reviews/implementation-review-archive.md",
+          "disposition": "moved",
+          "targets": ["memory_bank/t3_archive/reviews/notification-delivery-implementation.md"]
+        },
+        {
+          "source": "services/notification-delivery/memory_bank/t3_archive/reviews/review-index.md",
+          "disposition": "merged",
+          "targets": ["memory_bank/t3_archive/reviews/review-index.md"]
+        }
+      ]
+    }
+  }
+}

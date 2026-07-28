@@ -8,7 +8,7 @@ audience:
 owner: project-governance
 updated: 2026-07-28
 sources:
-  - memory_bank/t2_execution/work_assignments.yaml
+  - memory_bank/control-plane.json#/assignments
 ---
 
 # Sprint Index

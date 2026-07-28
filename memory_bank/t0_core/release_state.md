@@ -8,7 +8,7 @@ audience:
 owner: release-governance
 updated: 2026-07-29
 sources:
-  - memory_bank/t0_core/release_state.yaml
+  - memory_bank/control-plane.json#/release
 generated: true
 ---
 
@@ -24,7 +24,7 @@ generated: true
 | Gate | Status | Evidence | Notes |
 | --- | --- | --- | --- |
 | source_baseline | passed | commit:85f18a24645edade981a342bb67308e3a65d9904 | Baseline matched origin/main before migration work. |
-| documentation_migration | passed | docs/reference/document-path-migration-v1.yaml<br>github:pr-327:merged:85f18a24645edade981a342bb67308e3a65d9904<br>github:pr-328:merged:067f4566cd06855f65d2b2a53257227c0db69067<br>github:pr-329:merged:de0d202e84b34c4def7d684c68372ebca7bb35fa<br>memory_bank/t3_archive/reviews/documentation-migration-v1.md | Documentation migration and repository enforcement are complete; no release or live gate is promoted. |
+| documentation_migration | passed | docs/reference/document-path-migration-v1.yaml<br>github:pr-327:merged:85f18a24645edade981a342bb67308e3a65d9904<br>github:pr-328:merged:067f4566cd06855f65d2b2a53257227c0db69067<br>github:pr-329:merged:de0d202e84b34c4def7d684c68372ebca7bb35fa<br>memory_bank/t3_archive/reviews/documentation-migration-v1.md | The three-PR documentation migration is merged; this gate does not imply release or live verification. |
 | signed_release | blocked | issue:240 | Signed v0.2.0 release is not complete. |
 | clean_machine_release | blocked | issue:241 | Clean-machine release capstone remains open. |
 | npm_publication | blocked | issue:242 | Public npm publication remains open. |

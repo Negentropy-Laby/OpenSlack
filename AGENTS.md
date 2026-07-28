@@ -251,8 +251,10 @@ Keep one authority for each fact class.
 | `.openslack/modules.yaml` | Module runtime maturity, CLI/package ownership, and test-count authority.                         |
 | `docs/status/current.md`  | Generated module telemetry projection; not project portfolio state.                               |
 
-Project state changes begin in canonical YAML and are reviewed through a pull
-request. Do not directly edit:
+Project governance changes begin in `memory_bank/control-plane.json` and are
+reviewed through a pull request. The repository has exactly one
+`memory_bank/` directory, at the root, and YAML is forbidden inside it. Do not
+directly edit:
 
 - `memory_bank/t0_core/current_state.md`
 - `memory_bank/t0_core/release_state.md`
@@ -273,9 +275,10 @@ If `docs/status/current.md` changes after generation, commit the generated file 
 
 ### Documentation Change Workflow
 
-1. Identify the fact class in `memory_bank/document_map.yaml`.
-2. Edit only its canonical source. Project portfolio, release, and assignments
-   change in their structured Memory Bank YAML; module telemetry changes in
+1. Identify the fact class in `memory_bank/control-plane.json#/authorities`.
+2. Edit only its canonical source. Project portfolio, release, assignments,
+   support bindings, and the document map change in their named JSON Pointer
+   section of `memory_bank/control-plane.json`; module telemetry changes in
    `.openslack/modules.yaml`.
 3. Verify referenced GitHub/OpenSlack evidence before changing status. A planned
    owner never substitutes for `execution.agent_id` or a claim ref.
@@ -288,7 +291,8 @@ If `docs/status/current.md` changes after generation, commit the generated file 
 
 Every active English Markdown document under `docs/`, `design/`,
 `memory_bank/`, `production/`, or `standards/` must be registered in
-`memory_bank/document_map.yaml` and use `openslack.document.v1` metadata.
+`memory_bank/control-plane.json#/documents` and use `openslack.document.v1`
+metadata.
 Generated documents and immutable historical evidence use their declared
 exceptions. Do not add an old-path pointer page.
 

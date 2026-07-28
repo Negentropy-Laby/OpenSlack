@@ -6,7 +6,7 @@ authority: index
 audience:
   - contributors
 owner: architecture
-updated: 2026-07-28
+updated: 2026-07-29
 sources:
   - docs/architecture/architecture.md
 ---
@@ -15,4 +15,4 @@ sources:
 
 Component documents explain how packages and runtime boundaries implement the
 five modules and ten workstreams. The module support map lives in
-`memory_bank/t1_axioms/module_support_map.yaml`.
+`memory_bank/control-plane.json#/support`.
