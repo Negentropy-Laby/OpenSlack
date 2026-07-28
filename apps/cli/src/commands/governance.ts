@@ -279,7 +279,7 @@ export function governanceCommands(): Command {
         } else if (directCommitFailed) {
           nextAction = {
             owner: 'human',
-            action: 'Add exception to docs/developer/technical-debt.md',
+            action: 'Add exception to docs/contributor/technical-debt.md',
           };
         } else if (attributedCommits.length > 0) {
           nextAction = { owner: 'human', action: 'Remove AI attribution from commit messages' };
@@ -418,7 +418,7 @@ export function governanceCommands(): Command {
             console.log('    No PR merge record and no technical-debt exception');
           }
           console.log('');
-          console.log('Action required: add exception to docs/developer/technical-debt.md');
+          console.log('Action required: add exception to docs/contributor/technical-debt.md');
         }
         if (!hasGhAccess && unverifiedCommits.length > 0) {
           console.log(

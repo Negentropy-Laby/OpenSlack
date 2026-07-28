@@ -1,0 +1,507 @@
+schema: openslack.document_map.v1
+authorities:
+  - fact: project.portfolio-state
+    canonical: memory_bank/t0_core/project_state.yaml
+    projections:
+      - memory_bank/t0_core/current_state.md
+      - production/project-roadmap.md
+    indexes:
+      - memory_bank/README.md
+  - fact: project.release-state
+    canonical: memory_bank/t0_core/release_state.yaml
+    projections:
+      - memory_bank/t0_core/release_state.md
+  - fact: project.work-assignments
+    canonical: memory_bank/t2_execution/work_assignments.yaml
+    projections:
+      - memory_bank/t2_execution/current_roadmap.md
+      - production/project-roadmap.md
+  - fact: product.module-runtime-telemetry
+    canonical: .openslack/modules.yaml
+    projections:
+      - docs/status/current.md
+  - fact: documentation.authority-map
+    canonical: memory_bank/document_map.yaml
+    indexes:
+      - docs/README.md
+  - fact: delivery.evidence-index
+    canonical: docs/evidence/README.md
+    indexes:
+      - memory_bank/t3_archive/qa_evidence_index.md
+      - memory_bank/t3_archive/reviews/review-index.md
+  - fact: product.design-map
+    canonical: design/cdd/module-index.md
+    indexes:
+      - docs/architecture/traceability-matrix.md
+documents:
+  - id: cdd-module-index
+    path: design/cdd/module-index.md
+    status: active
+  - id: cdd-module-collaboration
+    path: design/cdd/modules/collaboration.md
+    status: active
+  - id: cdd-module-github-task-loop
+    path: design/cdd/modules/github-task-loop.md
+    status: active
+  - id: cdd-module-operator
+    path: design/cdd/modules/operator.md
+    status: active
+  - id: cdd-module-pr-review-merge
+    path: design/cdd/modules/pr-review-merge.md
+    status: active
+  - id: cdd-module-self-evolution
+    path: design/cdd/modules/self-evolution.md
+    status: active
+  - id: cdd-product-concept
+    path: design/cdd/product-concept.md
+    status: active
+  - id: cdd-agent-conversations
+    path: design/cdd/workstreams/agent-runtime-and-aby/agent-conversations.md
+    status: active
+  - id: cdd-agent-teams
+    path: design/cdd/workstreams/agent-runtime-and-aby/agent-teams.md
+    status: active
+  - id: cdd-agent-work-units
+    path: design/cdd/workstreams/agent-runtime-and-aby/agent-work-units.md
+    status: active
+  - id: cdd-workstream-agent-runtime-and-aby
+    path: design/cdd/workstreams/agent-runtime-and-aby/README.md
+    status: active
+  - id: cdd-workstream-negentropy-integration
+    path: design/cdd/workstreams/negentropy-integration/README.md
+    status: active
+  - id: cdd-workstream-notification-delivery
+    path: design/cdd/workstreams/notification-delivery/README.md
+    status: active
+  - id: cdd-workstream-organization-graph
+    path: design/cdd/workstreams/organization-graph/README.md
+    status: active
+  - id: cdd-workstream-plugin-platform
+    path: design/cdd/workstreams/plugin-platform/README.md
+    status: active
+  - id: cdd-workstream-profile-sync
+    path: design/cdd/workstreams/profile-sync/README.md
+    status: active
+  - id: cdd-workstream-qoder-work
+    path: design/cdd/workstreams/qoder-work/README.md
+    status: active
+  - id: cdd-workstream-scenario-runtime
+    path: design/cdd/workstreams/scenario-runtime/README.md
+    status: active
+  - id: cdd-workstream-tui-productization
+    path: design/cdd/workstreams/tui-productization/README.md
+    status: active
+  - id: cdd-workflow-dynamic-ux-closure
+    path: design/cdd/workstreams/workflow-runtime/dynamic-workflow-ux-closure.md
+    status: active
+  - id: cdd-workstream-workflow-runtime
+    path: design/cdd/workstreams/workflow-runtime/README.md
+    status: active
+  - id: cdd-workflow-format-analysis
+    path: design/cdd/workstreams/workflow-runtime/workflow-format-analysis.md
+    status: active
+  - id: cdd-workflow-modules
+    path: design/cdd/workstreams/workflow-runtime/workflow-modules.md
+    status: active
+  - id: ux-product-roadmap
+    path: design/ux/product-roadmap.md
+    status: active
+  - id: architecture-adr-index
+    path: docs/architecture/adr/README.md
+    status: index
+  - id: architecture-master
+    path: docs/architecture/architecture.md
+    status: active
+  - id: architecture-agent-runtime
+    path: docs/architecture/components/agent-runtime.md
+    status: active
+  - id: architecture-collaboration
+    path: docs/architecture/components/collaboration.md
+    status: active
+  - id: architecture-github-task-loop
+    path: docs/architecture/components/github-task-loop.md
+    status: active
+  - id: architecture-mcp-runtime-lifecycle
+    path: docs/architecture/components/mcp-runtime-lifecycle.md
+    status: active
+  - id: architecture-operator
+    path: docs/architecture/components/operator.md
+    status: active
+  - id: architecture-pr-review-merge
+    path: docs/architecture/components/pr-review-merge.md
+    status: active
+  - id: architecture-components-index
+    path: docs/architecture/components/README.md
+    status: index
+  - id: architecture-repository-pr-projection
+    path: docs/architecture/components/repository-pr-projection.md
+    status: active
+  - id: architecture-self-evolution-kernel
+    path: docs/architecture/components/self-evolution-kernel.md
+    status: active
+  - id: architecture-subagent-runtime
+    path: docs/architecture/components/subagent-runtime.md
+    status: active
+  - id: architecture-workflow-runtime
+    path: docs/architecture/components/workflow-runtime.md
+    status: active
+  - id: contract-collaboration-events
+    path: docs/architecture/contracts/collaboration-events.md
+    status: active
+  - id: contract-organization-graph
+    path: docs/architecture/contracts/organization-graph.md
+    status: active
+  - id: contract-qoder-mcp
+    path: docs/architecture/contracts/qoder-mcp.md
+    status: active
+  - id: architecture-contracts-index
+    path: docs/architecture/contracts/README.md
+    status: index
+  - id: architecture-control-manifest
+    path: docs/architecture/control-manifest.md
+    status: active
+  - id: architecture-aby-bridge
+    path: docs/architecture/integrations/aby-bridge.md
+    status: active
+  - id: architecture-negentropy-slot-adapter
+    path: docs/architecture/integrations/negentropy-slot-adapter.md
+    status: active
+  - id: architecture-notification-delivery
+    path: docs/architecture/integrations/notification-delivery.md
+    status: active
+  - id: evidence-notification-ib6-order-supersession
+    path: docs/evidence/notification-delivery/ib6-order-supersession.md
+    status: archived
+  - id: evidence-notification-pre-ib6-gate-amendment
+    path: docs/evidence/notification-delivery/pre-ib6-gate-amendment.md
+    status: archived
+  - id: architecture-qoder-mcp
+    path: docs/architecture/integrations/qoder-mcp.md
+    status: active
+  - id: architecture-integrations-index
+    path: docs/architecture/integrations/README.md
+    status: index
+  - id: architecture-index
+    path: docs/architecture/README.md
+    status: index
+  - id: architecture-traceability-matrix
+    path: docs/architecture/traceability-matrix.md
+    status: active
+  - id: archive-negentropy-sidecar
+    path: docs/archive/deferred/negentropy-sidecar.md
+    status: archived
+  - id: archive-original-product-spec
+    path: docs/archive/original-product-spec.md
+    status: archived
+  - id: archive-beta-productization-plan
+    path: docs/archive/plans/beta-productization-plan.md
+    status: archived
+  - id: archive-unresolved-issues-development-plan
+    path: docs/archive/plans/unresolved-issues-development-plan.md
+    status: archived
+  - id: archive-product-phase-1
+    path: docs/archive/product/phase-1.md
+    status: archived
+  - id: archive-product-v0.1-rc
+    path: docs/archive/product/v0.1-rc.md
+    status: archived
+  - id: archive-index
+    path: docs/archive/README.md
+    status: index
+  - id: archive-progress-review-2026-05-28
+    path: docs/archive/reviews/progress-review-2026-05-28.md
+    status: archived
+  - id: contributor-github-issues-loop
+    path: docs/contributor/github-issues-loop.md
+    status: active
+  - id: contributor-new-agent-onboarding
+    path: docs/contributor/new-agent-onboarding.md
+    status: active
+  - id: contributor-notification-delivery-change-test
+    path: docs/contributor/notification-delivery/change-and-test-guide.md
+    status: active
+  - id: contributor-notification-delivery-index
+    path: docs/contributor/notification-delivery/README.md
+    status: index
+  - id: contributor-notification-delivery-boundaries
+    path: docs/contributor/notification-delivery/repository-boundaries.md
+    status: active
+  - id: contributor-plugin-authoring
+    path: docs/contributor/plugins/authoring.md
+    status: active
+  - id: contributor-plugin-embedding
+    path: docs/contributor/plugins/embedding.md
+    status: active
+  - id: contributor-plugin-host
+    path: docs/contributor/plugins/host.md
+    status: active
+  - id: contributor-plugin-manifest
+    path: docs/contributor/plugins/manifest.md
+    status: active
+  - id: contributor-plugin-testkit
+    path: docs/contributor/plugins/testkit.md
+    status: active
+  - id: contributor-index
+    path: docs/contributor/README.md
+    status: index
+  - id: contributor-scenario-pack
+    path: docs/contributor/scenario-pack.md
+    status: active
+  - id: contributor-technical-debt
+    path: docs/contributor/technical-debt.md
+    status: active
+  - id: contributor-tui-porting-notes
+    path: docs/contributor/tui-porting-notes.md
+    status: active
+  - id: contributor-tui-style-guide
+    path: docs/contributor/tui-style-guide.md
+    status: active
+  - id: evidence-live-capstone
+    path: docs/evidence/live-capstone.md
+    status: active
+  - id: evidence-notification-delivery
+    path: docs/evidence/notification-delivery-evidence.md
+    status: active
+  - id: evidence-qoder-work
+    path: docs/evidence/qoder-work-evidence.md
+    status: active
+  - id: evidence-index
+    path: docs/evidence/README.md
+    status: index
+  - id: evidence-osek-review
+    path: docs/evidence/reviews/osek-review.md
+    status: active
+  - id: example-ai-organization-commercial-loop
+    path: docs/examples/ai-organization-commercial-loop.md
+    status: active
+  - id: example-ai-organization-rehearsal
+    path: docs/examples/ai-organization/rehearsal-checklist.md
+    status: active
+  - id: example-ai-organization-runbook
+    path: docs/examples/ai-organization/runbook.md
+    status: active
+  - id: example-ai-organization-scenario
+    path: docs/examples/ai-organization/scenario.md
+    status: active
+  - id: examples-index
+    path: docs/examples/README.md
+    status: index
+  - id: operations-branch-protection
+    path: docs/operations/branch-protection.md
+    status: active
+  - id: operations-github-automation
+    path: docs/operations/github-automation.md
+    status: active
+  - id: operations-github-watch-daemon
+    path: docs/operations/github-watch-daemon.md
+    status: active
+  - id: operations-keychain-packaging
+    path: docs/operations/keychain-packaging.md
+    status: active
+  - id: operations-npm-publishing
+    path: docs/operations/npm-publishing.md
+    status: active
+  - id: operations-npm-rollback
+    path: docs/operations/npm-rollback.md
+    status: active
+  - id: operations-index
+    path: docs/operations/README.md
+    status: index
+  - id: operations-release-0.2.0
+    path: docs/operations/release-0.2.0.md
+    status: active
+  - id: docs-index
+    path: docs/README.md
+    status: index
+  - id: reference-agent-registry-schema
+    path: docs/reference/agent-registry-schema.md
+    status: active
+  - id: reference-module-maturity
+    path: docs/reference/module-maturity.md
+    status: active
+  - id: reference-index
+    path: docs/reference/README.md
+    status: index
+  - id: security-agent-runtime-permissions
+    path: docs/security/agent-runtime-permissions.md
+    status: active
+  - id: security-collaboration-audit
+    path: docs/security/collaboration-audit.md
+    status: active
+  - id: security-human-approval
+    path: docs/security/human-approval.md
+    status: active
+  - id: security-negentropy-slot-boundary
+    path: docs/security/negentropy-slot-boundary.md
+    status: active
+  - id: security-notification-delivery-boundary
+    path: docs/security/notification-delivery-boundary.md
+    status: active
+  - id: security-plugin-trust-model
+    path: docs/security/plugin-trust-model.md
+    status: active
+  - id: security-qoder-trust-boundary
+    path: docs/security/qoder-trust-boundary.md
+    status: active
+  - id: security-index
+    path: docs/security/README.md
+    status: index
+  - id: security-scenario-pack-boundary
+    path: docs/security/scenario-pack-boundary.md
+    status: active
+  - id: security-self-evolution-guardrails
+    path: docs/security/self-evolution-guardrails.md
+    status: active
+  - id: security-subagent-permissions
+    path: docs/security/subagent-permissions.md
+    status: active
+  - id: security-tui-terminal-safety
+    path: docs/security/tui-terminal-safety.md
+    status: active
+  - id: security-workflow-execution
+    path: docs/security/workflow-execution.md
+    status: active
+  - id: status-module-telemetry-current
+    path: docs/status/current.md
+    status: generated
+  - id: user-cli-reference
+    path: docs/user/cli-reference.md
+    status: active
+  - id: user-guide-aby-integration
+    path: docs/user/guides/aby-integration.md
+    status: active
+  - id: user-guide-core-workflows
+    path: docs/user/guides/core-workflows.md
+    status: active
+  - id: user-guide-dynamic-workflow-workbench
+    path: docs/user/guides/dynamic-workflow-workbench.md
+    status: active
+  - id: user-guide-negentropy-embedding
+    path: docs/user/guides/embed-openslack-in-negentropy-lab.md
+    status: active
+  - id: user-guide-install
+    path: docs/user/guides/install-openslack.md
+    status: active
+  - id: user-guide-upgrade-rollback
+    path: docs/user/guides/manual-upgrade-rollback.md
+    status: active
+  - id: user-guide-notification-delivery-operations
+    path: docs/user/guides/notification-delivery-operations.md
+    status: active
+  - id: user-guide-openai-compatible-runtime
+    path: docs/user/guides/openai-compatible-runtime.md
+    status: active
+  - id: user-guide-tui-workbench
+    path: docs/user/guides/tui-workbench.md
+    status: active
+  - id: user-index
+    path: docs/user/README.md
+    status: index
+  - id: docs-zh-cn-guide
+    path: docs/zh-CN/README.md
+    status: index
+  - id: memory-bank-index
+    path: memory_bank/README.md
+    status: index
+  - id: governance-active-context
+    path: memory_bank/t0_core/active_context.md
+    status: active
+  - id: governance-amendment-log
+    path: memory_bank/t0_core/amendment_log.md
+    status: active
+  - id: governance-basic-law-index
+    path: memory_bank/t0_core/basic_law_index.md
+    status: active
+  - id: state-current
+    path: memory_bank/t0_core/current_state.md
+    status: generated
+  - id: release-current
+    path: memory_bank/t0_core/release_state.md
+    status: generated
+  - id: context-architecture
+    path: memory_bank/t1_axioms/architecture_context.md
+    status: active
+  - id: context-behavior
+    path: memory_bank/t1_axioms/behavior_context.md
+    status: active
+  - id: context-knowledge-graph
+    path: memory_bank/t1_axioms/knowledge_graph.md
+    status: index
+  - id: context-qa
+    path: memory_bank/t1_axioms/qa_context.md
+    status: active
+  - id: context-system-patterns
+    path: memory_bank/t1_axioms/system_patterns.md
+    status: active
+  - id: context-technology
+    path: memory_bank/t1_axioms/tech_context.md
+    status: active
+  - id: context-ux-accessibility
+    path: memory_bank/t1_axioms/ux_accessibility_context.md
+    status: active
+  - id: roadmap-memory-current
+    path: memory_bank/t2_execution/current_roadmap.md
+    status: generated
+  - id: execution-index
+    path: memory_bank/t2_execution/README.md
+    status: index
+  - id: execution-workflow-contract
+    path: memory_bank/t2_execution/workflow_contract.md
+    status: active
+  - id: evidence-amendment-index
+    path: memory_bank/t3_archive/amendments/README.md
+    status: index
+  - id: evidence-gate-run-index
+    path: memory_bank/t3_archive/gate_runs/README.md
+    status: index
+  - id: evidence-qa-index
+    path: memory_bank/t3_archive/qa_evidence_index.md
+    status: index
+  - id: evidence-archive-index
+    path: memory_bank/t3_archive/README.md
+    status: index
+  - id: evidence-release-index
+    path: memory_bank/t3_archive/release_evidence/README.md
+    status: index
+  - id: evidence-review-index-readme
+    path: memory_bank/t3_archive/reviews/README.md
+    status: index
+  - id: evidence-review-index
+    path: memory_bank/t3_archive/reviews/review-index.md
+    status: index
+  - id: evidence-sprint-snapshot-index
+    path: memory_bank/t3_archive/sprint_snapshots/README.md
+    status: index
+  - id: production-current-milestone
+    path: production/current-milestone.md
+    status: active
+  - id: production-epics-index
+    path: production/epics/README.md
+    status: index
+  - id: roadmap-production-current
+    path: production/project-roadmap.md
+    status: generated
+  - id: production-qa-index
+    path: production/qa/README.md
+    status: index
+  - id: production-index
+    path: production/README.md
+    status: index
+  - id: production-sprints-index
+    path: production/sprints/README.md
+    status: index
+  - id: production-stories-index
+    path: production/stories/README.md
+    status: index
+  - id: standard-approval-vocabulary
+    path: standards/approval-vocabulary.md
+    status: active
+  - id: standard-documentation
+    path: standards/documentation-standard.md
+    status: active
+  - id: standard-technical-preferences
+    path: standards/technical-preferences.md
+    status: active
+  - id: standard-traceability
+    path: standards/traceability-standard.md
+    status: active

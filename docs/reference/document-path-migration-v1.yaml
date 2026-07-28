@@ -1,8 +1,18 @@
 schema: openslack.document_path_migration.v1
-phase: planning
+phase: migrated
 baseline_document_count: 103
 reference_exceptions:
   - CHANGELOG.md
+  - docs/evidence/notification-delivery/ib6-order-supersession.md
+  - docs/evidence/notification-delivery/pre-ib6-gate-amendment.md
+  - docs/reference/schemas/integration/notification-delivery-gate-supersession.v1.schema.json
+  - docs/reference/schemas/integration/notification-delivery-ib6-history-import.v1.schema.json
+  - docs/reference/schemas/integration/notification-delivery-ib6-order-supersession.v1.schema.json
+  - integration/gates/ib6-history-import.json
+  - integration/gates/ib6-repository-import-order-supersession.json
+  - packages/github/src/__tests__/notification-import-qualification-deployment.test.ts
+  - scripts/notification-docs/__tests__/lib.test.ts
+  - scripts/notification-docs/lib.ts
 entries:
   - {
       id: DPM-001,
@@ -406,8 +416,8 @@ entries:
   - {
       id: DPM-058,
       old_path: docs/integration/notification-delivery-ib6-order-supersession.md,
-      new_path: docs/architecture/integrations/notification-delivery/ib6-order-supersession.md,
-      document_id: architecture-notification-ib6-order-supersession,
+      new_path: docs/evidence/notification-delivery/ib6-order-supersession.md,
+      document_id: evidence-notification-ib6-order-supersession,
       migration_type: moved,
     }
   - {
@@ -420,8 +430,8 @@ entries:
   - {
       id: DPM-060,
       old_path: docs/integration/notification-delivery-pre-ib6-gate-amendment.md,
-      new_path: docs/architecture/integrations/notification-delivery/pre-ib6-gate-amendment.md,
-      document_id: architecture-notification-pre-ib6-gate-amendment,
+      new_path: docs/evidence/notification-delivery/pre-ib6-gate-amendment.md,
+      document_id: evidence-notification-pre-ib6-gate-amendment,
       migration_type: moved,
     }
   - {

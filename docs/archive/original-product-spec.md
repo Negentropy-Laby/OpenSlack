@@ -1,3 +1,16 @@
+---
+schema: openslack.document.v1
+id: archive-original-product-spec
+status: Archived
+authority: archive
+audience:
+  - contributors
+owner: project-governance
+updated: 2026-07-28
+sources:
+  - docs/reference/document-path-migration-v1.yaml
+---
+
 # OpenSlack v1.0 Product Document
 
 > ⚠️ **HISTORICAL** — This document describes the original OpenSlack product

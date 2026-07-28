@@ -113,7 +113,7 @@ is not included in the current OpenSlack CLI archive or CLI CycloneDX SBOM.
 
 ## TUI License Gate
 
-For the TUI port governed by `docs/developer/tui-porting-notes.md`, no ported
+For the TUI port governed by `docs/contributor/tui-porting-notes.md`, no ported
 code PR (PR 1+) merges until the license status of all ported code is
 confirmed. This document serves as the tracking file for that confirmation.
 

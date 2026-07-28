@@ -6,6 +6,13 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+### Changed
+
+- Established the root T0–T3 Memory Bank, module/workstream CDDs, audience-based
+  documentation structure, deterministic project-state projections, and a
+  permanent 103-entry path migration manifest. Historical paths were removed
+  without compatibility stubs.
+
 ## [0.2.0] - 2026-07-19
 
 ### Added
@@ -41,8 +48,8 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 - The canonical product registry uses the `modules.v2` model for module and
   component maturity, operator configuration, blocker ownership, evidence, CLI
   groups, packages, and test counts.
-- Generated `docs/status/current.md` is the current-state projection of the module
-  registry rather than a hand-maintained status claim.
+- Generated `docs/status/current.md` is the module telemetry projection of the
+  registry rather than project portfolio, assignment, release, or approval authority.
 - PRMS Workflow Trust is bound to deterministic base/head tree evidence, the
   synchronized current PR head, and a valid current-head human approval; cached or
   synthetic projection state cannot become approval or merge authority.
@@ -66,7 +73,7 @@ The following nine unique blocker IDs are external release prerequisites and
 evidence gates at this branch cut. They are **not delivered features**, and this
 changelog does not assert production readiness. Their final disposition must be
 recorded through the 0.2.0 release runbook
-(`docs/developer/release-0.2.0.md`) and owner-scoped live evidence before any
+(`docs/operations/release-0.2.0.md`) and owner-scoped live evidence before any
 maturity promotion.
 
 The version date above is the declared release date for this branch cut. If the

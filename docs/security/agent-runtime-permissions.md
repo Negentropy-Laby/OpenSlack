@@ -1,8 +1,14 @@
 ---
-schema: openslack.security_spec.v1
-status: active
-created: 2026-06-02
-threat_model: true
+schema: openslack.document.v1
+id: security-agent-runtime-permissions
+status: In Review
+authority: canonical
+audience:
+  - security
+owner: security
+updated: 2026-07-28
+sources:
+  - docs/reference/document-path-migration-v1.yaml
 ---
 
 # Agent Runtime Permissions — Security Specification

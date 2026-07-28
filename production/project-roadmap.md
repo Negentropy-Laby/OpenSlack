@@ -1,0 +1,35 @@
+---
+schema: openslack.document.v1
+id: roadmap-production-current
+status: Generated
+authority: projection
+audience:
+  - contributors
+owner: project-governance
+updated: 2026-07-28
+sources:
+  - memory_bank/t2_execution/work_assignments.yaml
+generated: true
+---
+
+# OpenSlack Project Roadmap
+
+> Team-facing projection. Governance source: `memory_bank/t2_execution/work_assignments.yaml`.
+
+- Portfolio status: **active_development**
+- Release train: **0.2.0**
+- Generated from structured assignments: **11 items**
+
+| Work item | Title | Status | Planned owner | Scope | Blockers |
+| --- | --- | --- | --- | --- | --- |
+| issue-239 | release: close OpenSlack 0.2.0 external gates | ready | unassigned | self-evolution | None |
+| issue-240 | release blocker: signed_v0_2_0_release_pending | blocked | unassigned | self-evolution | signed_v0_2_0_release_pending |
+| issue-241 | release blocker: clean_machine_release_capstone_pending | blocked | unassigned | self-evolution | clean_machine_release_capstone_pending |
+| issue-242 | release blocker: npm_publication_pending | blocked | unassigned | self-evolution | npm_publication_pending |
+| issue-243 | release blocker: clean_machine_bot_delivery_smoke_pending | blocked | unassigned | github-task-loop | clean_machine_bot_delivery_smoke_pending |
+| issue-244 | release blocker: model_endpoint_not_configured | blocked | unassigned | agent-runtime-and-aby | model_endpoint_not_configured |
+| issue-245 | release blocker: clean_machine_onboarding_smoke_pending | blocked | unassigned | operator | clean_machine_onboarding_smoke_pending |
+| issue-246 | release blocker: clean_machine_end_to_end_merge_capstone_pending | blocked | unassigned | pr-review-merge | clean_machine_end_to_end_merge_capstone_pending |
+| issue-247 | release blocker: clean_machine_agent_task_capstone_pending | blocked | unassigned | collaboration | clean_machine_agent_task_capstone_pending |
+| issue-248 | release blocker: live_provider_smoke_pending | blocked | unassigned | agent-runtime-and-aby | live_provider_smoke_pending |
+| issue-314 | [Workflow Governance] PR #313 | reconciliation_required | unassigned | scenario-runtime | issue_open_after_associated_pr_merged |

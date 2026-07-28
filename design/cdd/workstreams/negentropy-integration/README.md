@@ -1,0 +1,140 @@
+---
+schema: openslack.document.v1
+id: cdd-workstream-negentropy-integration
+status: In Review
+authority: canonical
+audience:
+  - contributors
+owner: product
+updated: 2026-07-28
+sources:
+  - docs/reference/document-path-migration-v1.yaml
+---
+
+# OpenSlack × Negentropy-Lab Integration
+
+OpenSlack remains a standalone GitHub-native collaboration workbench.
+Negentropy-Lab remains the control plane and sole owner of `AuthorityState`.
+The implemented integration is a one-way, projection-only preview and
+verification bridge for the upstream `scenario-pack.extension` slot.
+
+## Product boundary
+
+OpenSlack's operational loop remains:
+
+```text
+Issue → Agent → PR → Doctor → Human Approval → Merge Steward → Done
+```
+
+The bridge exports bounded facts derived through package APIs from workflow
+runs, PRMS policy/events, profile-sync status, and collaboration events. It does
+not parse CLI prose, export event summaries or actor handles, or mutate
+Negentropy-Lab.
+
+The contribution is fixed to:
+
+| Property          | Value                     |
+| ----------------- | ------------------------- |
+| slot              | `scenario-pack.extension` |
+| provider          | `external` / `openslack`  |
+| layer and kind    | `L5` / `scenario-pack`    |
+| gate              | `SHADOW`                  |
+| activation mode   | `opt-in`                  |
+| data path         | projection-only           |
+| preview readiness | `NOT_REGISTERABLE`        |
+
+It has no route, realtime room, lifecycle callback, writer handle, or mutation
+method. Its forbidden methods include `authorityWriterHandle` and
+`proposeMutation`.
+
+## Commands
+
+```bash
+openslack collaboration integration negentropy export-slot --format json
+openslack collaboration integration negentropy doctor --format plain
+openslack collaboration integration negentropy status --format json
+```
+
+`export-slot` validates an exact, SHA-256-pinned upstream JSON Schema and writes
+an unsigned canonical preview to
+`.openslack.local/integrations/negentropy/slot-preview.json`.
+
+`doctor` validates:
+
+- the bundled upstream schema hash;
+- preview canonical hash and freshness;
+- an externally supplied signature envelope's structure, key ID, and artifact
+  binding;
+- a completed upstream registration receipt;
+- agreement with the live HTTPS contribution and diagnostics endpoints.
+
+OpenSlack does not cryptographically verify the signature itself, read a signing
+private key, sign the contribution, or register it.
+
+## State model
+
+The top-level status is intentionally closed:
+
+1. `UNSIGNED_PREVIEW`
+2. `SIGNATURE_ATTACHED_UNVERIFIED`
+3. `VERIFIED_BY_NEGENTROPY`
+
+A local receipt cannot create the third state. It requires a completed admission
+receipt whose contribution and diagnostic identities match, followed by live
+HTTPS reads that return the same unsigned canonical contribution and lifecycle.
+Only then may OpenSlack display the lifecycle value returned by Negentropy.
+OpenSlack never independently reports registration, validation, installation,
+or activation.
+
+## External responsibilities
+
+An external trusted party signs the canonical contribution. A Negentropy
+administrator registers it and supplies the registration response. Endpoint
+configuration is stored in `.openslack/integrations/negentropy.yaml`; the
+signature envelope and registration response are stored under the gitignored
+`.openslack.local/integrations/negentropy/` directory.
+
+These actions do not authorize OpenSlack to call write routes. Version 1 never
+changes `gate.mode` to `ENFORCE` and never touches `AuthorityState`.
+
+## Related documentation
+
+- [`../developer/negentropy-slot-adapter.md`](../../../../docs/architecture/integrations/negentropy-slot-adapter.md)
+- [`../security/negentropy-slot-boundary.md`](../../../../docs/security/negentropy-slot-boundary.md)
+- [`../guides/embed-openslack-in-negentropy-lab.md`](../../../../docs/user/guides/embed-openslack-in-negentropy-lab.md)
+- [`collaboration-layer.md`](../../modules/collaboration.md)
+
+## Overview
+
+The Negentropy workstream exports a bounded external L5 SHADOW contribution and
+diagnoses registration evidence without owning Negentropy authority.
+
+## User Promise
+
+Users can inspect an unsigned preview and distinguish local export,
+administrator registration, verified contribution, and live activation.
+
+## Data Model
+
+Schema-pinned contribution, diagnostics, saved receipt, live HTTPS observation,
+and explicit readiness/non-readiness states.
+
+## Edge Cases
+
+Missing signature, administrator registration, receipt/live mismatch, stale
+evidence, or an attempted AuthorityState write remains not registerable.
+
+## Dependencies
+
+`@openslack/integration-negentropy` and an independently governed
+Negentropy-Lab installation.
+
+## Configuration
+
+The slot remains external, opt-in, L5, SHADOW, and projection-only.
+
+## Acceptance Criteria
+
+- OpenSlack never reads a signing private key or emits ENFORCE.
+- Verified state requires agreeing saved and live evidence.
+- Documentation never promotes the current implemented state to live verified.

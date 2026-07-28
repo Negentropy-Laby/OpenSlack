@@ -14,29 +14,33 @@ OpenSlack is an agent-native collaboration workspace for human-agent teams. Agen
 
 Before making or reviewing changes, read these in order:
 
-1. `docs/status/current.md` — generated current state and module status.
-2. `.openslack/modules.yaml` — canonical product module registry.
-3. `README.md` — user-facing product overview and quick start.
-4. `docs/user-guide.md` — complete CLI reference.
-5. This file — repository rules and agent constraints.
+1. `memory_bank/t0_core/current_state.md` — generated project portfolio state.
+2. `memory_bank/t0_core/release_state.md` — generated, independently stated release gates.
+3. `memory_bank/t2_execution/current_roadmap.md` — generated project assignments and blockers.
+4. `docs/status/current.md` — generated module runtime telemetry only.
+5. `.openslack/modules.yaml` — canonical module maturity, packages, commands, and test counts.
+6. `design/cdd/module-index.md` and `docs/architecture/control-manifest.md` — product scope and implementation controls.
+7. `README.md`, `docs/README.md`, and this file — product, documentation, and repository rules.
 
-Historical files such as `docs/product/phase-1.md` and archived product specs are useful background, but they are **not** the current source of truth.
+Historical files such as `docs/archive/product/phase-1.md` and archived product specs are useful background, but they are **not** the current source of truth.
 
 ---
 
 ## Immediate Startup Checklist
 
-1. Read `docs/status/current.md` for generated current state.
-2. Read `.openslack/modules.yaml` for the product module registry.
-3. Read `README.md` for the user-facing product overview.
-4. Read `docs/user-guide.md` only when you need the full CLI reference.
-5. Follow every constraint in this file before making changes.
+1. Read root Memory Bank state and roadmap before selecting project work.
+2. Read `docs/status/current.md` and `.openslack/modules.yaml` for module telemetry.
+3. Read the affected CDD and architecture/control documents.
+4. Verify the GitHub/OpenSlack Issue, claim, PR, review, and delivery evidence.
+5. Read `docs/user/cli-reference.md` only when you need the full CLI reference.
+6. Follow every constraint in this file before making changes.
 
 ---
 
 ## Working Rule
 
-Do not infer current status from old phase documents. Treat archived specs and old acceptance documents as historical context only.
+Do not infer project state from module telemetry or old phase documents. Treat
+archived specs and old acceptance documents as historical context only.
 
 ---
 
@@ -47,13 +51,16 @@ bun run openslack status
 bun run openslack doctor
 bun run openslack status verify
 bun run openslack pr doctor <PR_NUMBER>
+bun run docs:generate
+bun run docs:verify
+bun run docs:migration-check
 ```
 
 ---
 
 ## Product Modules
 
-OpenSlack v0.1 RC is organized around five user-facing modules.
+OpenSlack is organized around five user-facing modules.
 
 ### Module 01 — Self-Evolution Kernel
 
@@ -227,26 +234,39 @@ Do not add a new top-level command unless it belongs to a clearly named product 
 
 ## Documentation System
 
-Keep the docs simple and non-overlapping.
+Keep one authority for each fact class.
 
-| File                      | Purpose                                                                                                                   |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `README.md`               | Short product overview, quick start, module summary, links. No dynamic metrics.                                           |
-| `AGENTS.md` / `CLAUDE.md` | Identical canonical instructions for all agents and contributors. Either file may be read; they contain the same content. |
-| `docs/README.md`          | User-oriented documentation map for the docs directory.                                                                   |
-| `.openslack/modules.yaml` | Source of truth for product modules, phases, CLI groups, packages, and test counts.                                       |
-| `docs/status/current.md`  | Generated status document. Do not hand-edit except through `openslack status generate`.                                   |
-| `docs/user-guide.md`      | Complete CLI reference.                                                                                                   |
-| `docs/product/*.md`       | Product/module specifications and acceptance docs.                                                                        |
-| `docs/developer/*.md`     | Implementation details, setup, runbooks, technical debt.                                                                  |
-| `docs/security/*.md`      | Security and guardrail documentation.                                                                                     |
-| `docs/archive/*.md`       | Historical specs only. Not current operating guidance.                                                                    |
+| Path                      | Purpose                                                                                           |
+| ------------------------- | ------------------------------------------------------------------------------------------------- |
+| `memory_bank/`            | Project-wide T0–T3 governance, portfolio state, release state, assignments, and evidence indexes. |
+| `design/cdd/`             | Product concept, five module CDDs, and cross-module workstream CDDs.                              |
+| `docs/architecture/`      | Master architecture, components, integrations, contracts, ADRs, traceability, and controls.       |
+| `docs/user/`              | Installation, CLI, workflows, and operator-facing guides.                                         |
+| `docs/contributor/`       | Onboarding and implementation guidance.                                                           |
+| `docs/security/`          | Security and guardrail documentation.                                                             |
+| `docs/operations/`        | Release, automation, packaging, and recovery procedures.                                          |
+| `docs/reference/`         | Schemas, vocabularies, and the permanent migration manifest.                                      |
+| `docs/evidence/`          | Checked-in evidence indexes; GitHub/OpenSlack remains live delivery authority.                    |
+| `docs/archive/`           | Historical material only; never current operating guidance.                                       |
+| `.openslack/modules.yaml` | Module runtime maturity, CLI/package ownership, and test-count authority.                         |
+| `docs/status/current.md`  | Generated module telemetry projection; not project portfolio state.                               |
+
+Project state changes begin in canonical YAML and are reviewed through a pull
+request. Do not directly edit:
+
+- `memory_bank/t0_core/current_state.md`
+- `memory_bank/t0_core/release_state.md`
+- `memory_bank/t2_execution/current_roadmap.md`
+- `production/project-roadmap.md`
+- `docs/status/current.md`
 
 When module status, test counts, or CLI ownership changes:
 
 ```bash
 bun run openslack status generate
 bun run openslack status verify
+bun run docs:generate
+bun run docs:verify
 ```
 
 If `docs/status/current.md` changes after generation, commit the generated file with the source change.
@@ -631,13 +651,9 @@ PRs should clearly state:
 
 ## Current Status
 
-OpenSlack v0.1 RC has five product modules:
-
-1. Self-Evolution Kernel — ACTIVE
-2. GitHub Issues Task Loop — ACTIVE
-3. Operator Interface — EARLY, safe keyword router
-4. PR Review & Merge Steward — ACTIVE
-5. Collaboration Layer — ACTIVE, projection-only observability and workspace UX
+OpenSlack is in active development on the 0.2.0 release train. The five modules
+and ten workstreams have independent stages, maturity, blockers, and evidence;
+do not summarize them as one readiness claim.
 
 For live status, run:
 
@@ -647,4 +663,5 @@ bun run openslack doctor
 bun run openslack status verify
 ```
 
-For full current state, read `docs/status/current.md`.
+For project-wide state, read `memory_bank/t0_core/current_state.md`. For module
+runtime telemetry, read `docs/status/current.md`.

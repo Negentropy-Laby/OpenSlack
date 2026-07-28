@@ -6,7 +6,8 @@ OpenSlack lets heterogeneous AI agents (Claude Code, Codex, reviewers, researche
 
 > **Status:** Developer Preview. The standalone local product path is `LOCAL_READY`; live GitHub delivery, clean-machine onboarding, and production claims remain evidence-gated.
 > **Repository:** [`Negentropy-Laby/OpenSlack`](https://github.com/Negentropy-Laby/OpenSlack)
-> **Live status:** [`docs/status/current.md`](docs/status/current.md) -- run `openslack status` for current metrics
+> **Project status:** [`memory_bank/t0_core/current_state.md`](memory_bank/t0_core/current_state.md) -- portfolio and workstream state
+> **Module telemetry:** [`docs/status/current.md`](docs/status/current.md) -- generated module maturity, commands, and test counts
 
 ---
 
@@ -26,8 +27,8 @@ Workflow --> Agent Work --> PRMS Review --> Human Approval --> Merge --> Collabo
 
 Preview the work, let agents execute it, review the PR, confirm governed actions, and keep the collaboration record. **Evidence Projection** is the integration boundary where external authority systems such as Negentropy-Lab may absorb OpenSlack outputs as read-only audit data. OpenSlack can now produce and diagnose an unsigned `scenario-pack.extension` preview, but only a trusted Negentropy receipt and matching live diagnostics can verify registration state.
 
-See the step-by-step guides: [`docs/guides/core-workflows.md`](docs/guides/core-workflows.md)
-and [`docs/guides/dynamic-workflow-workbench.md`](docs/guides/dynamic-workflow-workbench.md)
+See the step-by-step guides: [`docs/user/guides/core-workflows.md`](docs/user/guides/core-workflows.md)
+and [`docs/user/guides/dynamic-workflow-workbench.md`](docs/user/guides/dynamic-workflow-workbench.md)
 
 ---
 
@@ -37,7 +38,13 @@ OpenSlack runs as a **standalone workflow-first agent collaboration workbench** 
 
 ### Standalone Workbench Mode
 
-No external control plane is required. Local workspace, workflow, review, and evidence features are self-contained; GitHub delivery, model-backed execution, bot-authored PRs, and human approval still require their documented operator credentials and hosted-service configuration. The sources of truth are GitHub Issues, Pull Requests, Git branches, and the local `.openslack` workspace.
+No external control plane is required. Local workspace, workflow, review, and
+evidence features are self-contained; GitHub delivery, model-backed execution,
+bot-authored PRs, and human approval still require their documented operator
+credentials and hosted-service configuration. The root Memory Bank owns project
+planning and portfolio state; GitHub/OpenSlack owns actual claims, pull
+requests, reviews, and delivery evidence; `.openslack/modules.yaml` owns module
+runtime telemetry.
 
 ### Negentropy-Lab Slot Preview
 
@@ -52,7 +59,7 @@ OpenSlack can prepare a `scenario-pack.extension` contribution for a Negentropy-
 Use `openslack collaboration integration negentropy export-slot --format json`,
 `doctor`, and `status`. Exported previews are always
 `readiness: NOT_REGISTERABLE`; OpenSlack neither signs nor registers them. See
-[`docs/product/negentropy-lab-integration.md`](docs/product/negentropy-lab-integration.md).
+[`design/cdd/workstreams/negentropy-integration/README.md`](design/cdd/workstreams/negentropy-integration/README.md).
 
 ---
 
@@ -83,24 +90,24 @@ See [Advanced Setup](#advanced-setup) for development mode, production builds, a
 
 ## What Should I Run?
 
-| Goal                                    | Command                                                                                                                                               |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| First local health check                | `bun run openslack setup`                                                                                                                             |
-| Initialize an ordinary Git repository   | `bun run openslack init --root <repo> --repo <owner/name>`                                                                                            |
-| Preview a guided sidecar attach         | `bun run openslack setup attach --repo <owner/name>`                                                                                                  |
-| Check status without guessing modules   | `bun run openslack status`                                                                                                                            |
-| Inspect durable notification readiness  | [`Notification Delivery product`](docs/product/notification-delivery.md), [`operations guide`](docs/guides/notification-delivery-operations.md)       |
-| Ask in natural language                 | `bun run openslack ask "检查系统状态"`                                                                                                                |
-| Create a task preview                   | `bun run openslack task create --title "Fix docs" --path "docs/**" --preview`                                                                         |
-| Diagnose a PR                           | `bun run openslack pr doctor <PR_NUMBER>`                                                                                                             |
-| See team activity                       | `bun run openslack collaboration dashboard`                                                                                                           |
-| Read evidence-backed business outcomes  | `bun run openslack collaboration business-outcomes --format markdown`                                                                                 |
-| Connect Qoder Work over local MCP       | [`Qoder MCP and Skill guide`](docs/developer/qoder-mcp.md), [`Skill README`](integrations/qoder-work/skills/openslack-organization-control/README.md) |
-| Start a conversation thread             | `bun run openslack conversation start --title "Review PR #42"`                                                                                        |
-| Launch the conversation-first workbench | `bun run openslack tui`                                                                                                                               |
-| Maintain organization profile           | `bun run openslack collaboration workflow profile-sync status`                                                                                        |
-| Export a Negentropy SHADOW preview      | `bun run openslack collaboration integration negentropy export-slot --format json`                                                                    |
-| Find the full CLI reference             | [`docs/user-guide.md`](docs/user-guide.md)                                                                                                            |
+| Goal                                    | Command                                                                                                                                                               |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| First local health check                | `bun run openslack setup`                                                                                                                                             |
+| Initialize an ordinary Git repository   | `bun run openslack init --root <repo> --repo <owner/name>`                                                                                                            |
+| Preview a guided sidecar attach         | `bun run openslack setup attach --repo <owner/name>`                                                                                                                  |
+| Check status without guessing modules   | `bun run openslack status`                                                                                                                                            |
+| Inspect durable notification readiness  | [`Notification Delivery product`](design/cdd/workstreams/notification-delivery/README.md), [`operations guide`](docs/user/guides/notification-delivery-operations.md) |
+| Ask in natural language                 | `bun run openslack ask "检查系统状态"`                                                                                                                                |
+| Create a task preview                   | `bun run openslack task create --title "Fix docs" --path "docs/**" --preview`                                                                                         |
+| Diagnose a PR                           | `bun run openslack pr doctor <PR_NUMBER>`                                                                                                                             |
+| See team activity                       | `bun run openslack collaboration dashboard`                                                                                                                           |
+| Read evidence-backed business outcomes  | `bun run openslack collaboration business-outcomes --format markdown`                                                                                                 |
+| Connect Qoder Work over local MCP       | [`Qoder MCP and Skill guide`](docs/architecture/integrations/qoder-mcp.md), [`Skill README`](integrations/qoder-work/skills/openslack-organization-control/README.md) |
+| Start a conversation thread             | `bun run openslack conversation start --title "Review PR #42"`                                                                                                        |
+| Launch the conversation-first workbench | `bun run openslack tui`                                                                                                                                               |
+| Maintain organization profile           | `bun run openslack collaboration workflow profile-sync status`                                                                                                        |
+| Export a Negentropy SHADOW preview      | `bun run openslack collaboration integration negentropy export-slot --format json`                                                                                    |
+| Find the full CLI reference             | [`docs/user/cli-reference.md`](docs/user/cli-reference.md)                                                                                                            |
 
 Mutation-oriented commands default to preview or require explicit confirmation flags where possible. Chat confirmations are never GitHub approvals, and PR merges still require PRMS and GitHub governance gates.
 
@@ -111,7 +118,10 @@ OpenSlack-authored and delegated agent work must be submitted as PRs opened by t
 ```
 OpenSlack/
 ├── openslack.yaml           # Self-Project Mode workspace
-├── .openslack/              # Workspace state (policies, constitution, evals, tasks)
+├── memory_bank/             # Project-wide portfolio, assignments, and evidence indexes
+├── design/cdd/              # Product, module, and workstream requirements
+├── production/              # Milestones and generated project roadmap
+├── .openslack/              # Runtime/module workspace state, not project portfolio state
 ├── packages/                # Active packages; see docs/status/current.md
 │   ├── kernel/              # Zone classifier, merge decision, policy engine
 │   ├── plugin-api/          # Public declarative plugin contract, schema, and host policy ports
@@ -144,12 +154,12 @@ OpenSlack/
 ├── scenarios/               # Exact-byte locked declarative Scenario Packs
 ├── templates/new-agent/     # 9 onboarding template files
 ├── scripts/                 # genesis-validate.sh, genesis-rollback.sh, setup-gh.sh
-└── docs/                    # Full acceptance, developer, security documentation
+└── docs/                    # User, contributor, architecture, security, operations, and evidence docs
 ```
 
 The [`Notification Delivery Service`](services/notification-delivery/README.md) is stored in this
 repository as source for an independent process and Go module. See the
-[integration contract and governance status](docs/developer/notification-delivery-integration.md).
+[integration contract and governance status](docs/architecture/integrations/notification-delivery.md).
 It is not a sixth OpenSlack module, is not registered in `.openslack/modules.yaml`, has not been
 admitted or activated by the OpenSlack runtime, and is not a released artifact.
 
@@ -159,14 +169,14 @@ The public embedding surface consists of `@openslack/plugin-api`,
 instance-scoped integrity and activation boundary for declarative workspace/installed manifests
 and explicitly imported reviewed bundles. It never executes auto-discovered code and is not a
 general executable-plugin loader, dynamic CLI registry, or sandbox. See
-[`docs/developer/plugins/host.md`](docs/developer/plugins/host.md) and
-[`docs/developer/plugins/embedding.md`](docs/developer/plugins/embedding.md).
+[`docs/contributor/plugins/host.md`](docs/contributor/plugins/host.md) and
+[`docs/contributor/plugins/embedding.md`](docs/contributor/plugins/embedding.md).
 
 `openslack self plugin check <path>` now provides deterministic plain or JSON
 registration preflight reports. It validates declarative manifests, compatibility,
 authority ceilings, and optional lock integrity, but never grants activation;
 the Red Host independently repeats all authorization checks. See
-[`docs/developer/plugins/testkit.md`](docs/developer/plugins/testkit.md).
+[`docs/contributor/plugins/testkit.md`](docs/contributor/plugins/testkit.md).
 
 The nested `openslack self plugin run <plugin-id> <action-id>` command is an internal,
 injection-driven proof route. It loads locked workspace manifests only for that route, requires
@@ -196,7 +206,7 @@ The self-protection core. OpenSlack validates, classifies, reviews, and rolls ba
 - **Review:** Fitness scoring (6 weighted dimensions) + independent agent review
 - **Rollback:** Genesis validate/rollback scripts (zero runtime dependency)
 
-See: [`docs/product/phase-1.md`](docs/product/phase-1.md)
+See: [`docs/archive/product/phase-1.md`](docs/archive/product/phase-1.md)
 
 ### Module 02: GITL (GitHub Issues Task Loop)
 
@@ -210,7 +220,7 @@ The autonomous execution core. Agents discover, claim, and complete tasks throug
 - **Execute:** Worktree isolation → git commit → governed delivery → synchronized draft PR
 - **Complete:** PR merged → claim ref deleted → issue → done
 
-See: [`docs/developer/github-issues-loop.md`](docs/developer/github-issues-loop.md)
+See: [`docs/contributor/github-issues-loop.md`](docs/contributor/github-issues-loop.md)
 
 ### Module 03: Operator Interface
 
@@ -240,7 +250,7 @@ The agent-assisted PR gatekeeper. Reviews PRs, classifies risk, checks merge rea
 - **Merge:** `openslack pr merge 10` → execute merge only after all gates pass
 - **Policy:** No auto-approval. No self-review. Red Zone requires an explicit human decision recorded through the required human GitHub identity. Black Zone blocked.
 
-See: [`docs/product/module-04-pr-review-merge-steward.md`](docs/product/module-04-pr-review-merge-steward.md)
+See: [`design/cdd/modules/pr-review-merge.md`](design/cdd/modules/pr-review-merge.md)
 
 ### Module 05: Collaboration Layer
 
@@ -258,7 +268,7 @@ The projection and coordination layer. It makes tasks, PRs, handoffs, decisions,
 - **Agent Conversations:** `openslack conversation start --title "..."` → structured multi-turn interaction threads between humans and agents with JSONL persistence, 7 typed message kinds, secret scanning, and memory policy control (`start`, `list`, `show`, `send`, `summarize`, `archive`)
 - **Conversation-first TUI:** `openslack tui` → Ask OpenSlack from the first screen, get safe action cards for PRMS, workflow drafts, approvals, profile sync, and subagent dispatch, and record asks/actions into the current conversation thread
 
-See: [`docs/product/collaboration-layer.md`](docs/product/collaboration-layer.md), [`docs/product/agent-conversations.md`](docs/product/agent-conversations.md), [`docs/product/dynamic-workflows.md`](docs/product/dynamic-workflows.md), [`docs/product/dynamic-workflow-ux-closure.md`](docs/product/dynamic-workflow-ux-closure.md)
+See: [`design/cdd/modules/collaboration.md`](design/cdd/modules/collaboration.md), [`design/cdd/workstreams/agent-runtime-and-aby/agent-conversations.md`](design/cdd/workstreams/agent-runtime-and-aby/agent-conversations.md), [`design/cdd/workstreams/workflow-runtime/README.md`](design/cdd/workstreams/workflow-runtime/README.md), [`design/cdd/workstreams/workflow-runtime/dynamic-workflow-ux-closure.md`](design/cdd/workstreams/workflow-runtime/dynamic-workflow-ux-closure.md)
 
 ### Cross-Cutting Integration: Negentropy-Lab Slot Preview
 
@@ -282,8 +292,8 @@ OpenSlack remains a standalone GitHub-agent workbench. Its preview contribution 
 `gate.mode: SHADOW`, opt-in, projection-only, and `NOT_REGISTERABLE` until an external signer and
 Negentropy administrator act. `doctor` reports `VERIFIED_BY_NEGENTROPY` only after the saved
 completed receipt agrees with the live HTTPS contribution and diagnostics. See
-[`docs/product/negentropy-lab-integration.md`](docs/product/negentropy-lab-integration.md),
-[`docs/developer/negentropy-slot-adapter.md`](docs/developer/negentropy-slot-adapter.md), and
+[`design/cdd/workstreams/negentropy-integration/README.md`](design/cdd/workstreams/negentropy-integration/README.md),
+[`docs/architecture/integrations/negentropy-slot-adapter.md`](docs/architecture/integrations/negentropy-slot-adapter.md), and
 [`docs/security/negentropy-slot-boundary.md`](docs/security/negentropy-slot-boundary.md).
 
 ## Advanced Setup
@@ -316,11 +326,11 @@ bash scripts/genesis-validate.sh      # use Git Bash on Windows
 
 ## CLI Reference
 
-See [`docs/user-guide.md`](docs/user-guide.md) for the complete command reference.
+See [`docs/user/cli-reference.md`](docs/user/cli-reference.md) for the complete command reference.
 
 ## Authentication
 
-Three-tier model (see [`docs/developer/github-automation.md`](docs/developer/github-automation.md)):
+Three-tier model (see [`docs/operations/github-automation.md`](docs/operations/github-automation.md)):
 
 1. **GitHub App installation token** — primary runtime credential (JWT, auto-refresh, zero manual)
 2. **PAT / GITHUB_TOKEN** — local dev fallback
@@ -392,32 +402,33 @@ output_contract:
 
 ## Documentation
 
-| User Need                                                      | Start Here                                                                                                                                                                                                                                                                                                                                                                             |
-| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Negentropy-Lab integration, slot surface, and boundary         | [`docs/product/negentropy-lab-integration.md`](docs/product/negentropy-lab-integration.md), [`docs/developer/negentropy-slot-adapter.md`](docs/developer/negentropy-slot-adapter.md), [`docs/security/negentropy-slot-boundary.md`](docs/security/negentropy-slot-boundary.md), [`docs/guides/embed-openslack-in-negentropy-lab.md`](docs/guides/embed-openslack-in-negentropy-lab.md) |
-| Profile Sync Robot and projection                              | [`docs/product/profile-sync.md`](docs/product/profile-sync.md)                                                                                                                                                                                                                                                                                                                         |
-| Documentation home                                             | [`docs/README.md`](docs/README.md)                                                                                                                                                                                                                                                                                                                                                     |
-| Current status, modules, commands, and test counts             | [`docs/status/current.md`](docs/status/current.md)                                                                                                                                                                                                                                                                                                                                     |
-| Complete CLI reference                                         | [`docs/user-guide.md`](docs/user-guide.md)                                                                                                                                                                                                                                                                                                                                             |
-| Plugin manifest, Red host, and private embedding boundary      | [`docs/developer/plugins/manifest.md`](docs/developer/plugins/manifest.md), [`docs/developer/plugins/authoring.md`](docs/developer/plugins/authoring.md), [`docs/developer/plugins/host.md`](docs/developer/plugins/host.md), [`docs/developer/plugins/embedding.md`](docs/developer/plugins/embedding.md)                                                                             |
-| Product documentation map                                      | [`docs/product/openslack-product-current.md`](docs/product/openslack-product-current.md)                                                                                                                                                                                                                                                                                               |
-| Product UX roadmap and remaining productization work           | [`docs/product/user-experience-roadmap.md`](docs/product/user-experience-roadmap.md)                                                                                                                                                                                                                                                                                                   |
-| Self-evolution architecture                                    | [`docs/product/phase-1.md`](docs/product/phase-1.md), [`docs/developer/self-evolution-kernel.md`](docs/developer/self-evolution-kernel.md)                                                                                                                                                                                                                                             |
-| GitHub Issues task loop                                        | [`docs/developer/github-issues-loop.md`](docs/developer/github-issues-loop.md)                                                                                                                                                                                                                                                                                                         |
-| GitHub watch daemon and durable repository-event notifications | [`docs/developer/github-watch-daemon.md`](docs/developer/github-watch-daemon.md)                                                                                                                                                                                                                                                                                                       |
-| PR review and merge governance                                 | [`docs/product/module-04-pr-review-merge-steward.md`](docs/product/module-04-pr-review-merge-steward.md)                                                                                                                                                                                                                                                                               |
-| Collaboration, handoff, decision, room, workflow views         | [`docs/product/collaboration-layer.md`](docs/product/collaboration-layer.md), [`docs/developer/collaboration-events.md`](docs/developer/collaboration-events.md)                                                                                                                                                                                                                       |
-| Agent Conversations and subagent runtime                       | [`docs/product/agent-conversations.md`](docs/product/agent-conversations.md), [`docs/developer/subagent-runtime.md`](docs/developer/subagent-runtime.md)                                                                                                                                                                                                                               |
-| Aby external runtime setup                                     | [`docs/guides/aby-integration.md`](docs/guides/aby-integration.md)                                                                                                                                                                                                                                                                                                                     |
-| Subagent security and permissions                              | [`docs/security/subagent-permissions.md`](docs/security/subagent-permissions.md)                                                                                                                                                                                                                                                                                                       |
-| TUI workbench guide                                            | [`docs/guides/tui-workbench.md`](docs/guides/tui-workbench.md)                                                                                                                                                                                                                                                                                                                         |
-| Dynamic workflow workbench guide                               | [`docs/guides/dynamic-workflow-workbench.md`](docs/guides/dynamic-workflow-workbench.md)                                                                                                                                                                                                                                                                                               |
-| Workflow engine runtime, UX closure, and execution model       | [`docs/product/dynamic-workflow-ux-closure.md`](docs/product/dynamic-workflow-ux-closure.md), [`docs/developer/workflow-runtime.md`](docs/developer/workflow-runtime.md)                                                                                                                                                                                                               |
-| Workflow security model and trust levels                       | [`docs/security/workflow-execution.md`](docs/security/workflow-execution.md)                                                                                                                                                                                                                                                                                                           |
-| Agent identity and onboarding                                  | [`docs/developer/agent-registry-schema.md`](docs/developer/agent-registry-schema.md), [`docs/developer/new-agent-onboarding.md`](docs/developer/new-agent-onboarding.md)                                                                                                                                                                                                               |
-| GitHub authentication and setup                                | [`docs/developer/github-automation.md`](docs/developer/github-automation.md)                                                                                                                                                                                                                                                                                                           |
-| Guardrails and security boundaries                             | [`docs/security/self-evolution-guardrails.md`](docs/security/self-evolution-guardrails.md), [`docs/security/collaboration-audit.md`](docs/security/collaboration-audit.md)                                                                                                                                                                                                             |
-| Technical debt register                                        | [`docs/developer/technical-debt.md`](docs/developer/technical-debt.md)                                                                                                                                                                                                                                                                                                                 |
+| User Need                                                      | Start Here                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Negentropy-Lab integration, slot surface, and boundary         | [`design/cdd/workstreams/negentropy-integration/README.md`](design/cdd/workstreams/negentropy-integration/README.md), [`docs/architecture/integrations/negentropy-slot-adapter.md`](docs/architecture/integrations/negentropy-slot-adapter.md), [`docs/security/negentropy-slot-boundary.md`](docs/security/negentropy-slot-boundary.md), [`docs/user/guides/embed-openslack-in-negentropy-lab.md`](docs/user/guides/embed-openslack-in-negentropy-lab.md) |
+| Profile Sync Robot and projection                              | [`design/cdd/workstreams/profile-sync/README.md`](design/cdd/workstreams/profile-sync/README.md)                                                                                                                                                                                                                                                                                                                                                           |
+| Documentation home                                             | [`docs/README.md`](docs/README.md)                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Project portfolio, release, assignments, and blockers          | [`memory_bank/t0_core/current_state.md`](memory_bank/t0_core/current_state.md), [`memory_bank/t0_core/release_state.md`](memory_bank/t0_core/release_state.md), [`production/project-roadmap.md`](production/project-roadmap.md)                                                                                                                                                                                                                           |
+| Module maturity, commands, packages, and test counts           | [`docs/status/current.md`](docs/status/current.md)                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Complete CLI reference                                         | [`docs/user/cli-reference.md`](docs/user/cli-reference.md)                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Plugin manifest, Red host, and private embedding boundary      | [`docs/contributor/plugins/manifest.md`](docs/contributor/plugins/manifest.md), [`docs/contributor/plugins/authoring.md`](docs/contributor/plugins/authoring.md), [`docs/contributor/plugins/host.md`](docs/contributor/plugins/host.md), [`docs/contributor/plugins/embedding.md`](docs/contributor/plugins/embedding.md)                                                                                                                                 |
+| Product documentation map                                      | [`design/cdd/module-index.md`](design/cdd/module-index.md)                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Product UX roadmap and remaining productization work           | [`design/ux/product-roadmap.md`](design/ux/product-roadmap.md)                                                                                                                                                                                                                                                                                                                                                                                             |
+| Self-evolution architecture                                    | [`docs/archive/product/phase-1.md`](docs/archive/product/phase-1.md), [`docs/architecture/components/self-evolution-kernel.md`](docs/architecture/components/self-evolution-kernel.md)                                                                                                                                                                                                                                                                     |
+| GitHub Issues task loop                                        | [`docs/contributor/github-issues-loop.md`](docs/contributor/github-issues-loop.md)                                                                                                                                                                                                                                                                                                                                                                         |
+| GitHub watch daemon and durable repository-event notifications | [`docs/operations/github-watch-daemon.md`](docs/operations/github-watch-daemon.md)                                                                                                                                                                                                                                                                                                                                                                         |
+| PR review and merge governance                                 | [`design/cdd/modules/pr-review-merge.md`](design/cdd/modules/pr-review-merge.md)                                                                                                                                                                                                                                                                                                                                                                           |
+| Collaboration, handoff, decision, room, workflow views         | [`design/cdd/modules/collaboration.md`](design/cdd/modules/collaboration.md), [`docs/architecture/contracts/collaboration-events.md`](docs/architecture/contracts/collaboration-events.md)                                                                                                                                                                                                                                                                 |
+| Agent Conversations and subagent runtime                       | [`design/cdd/workstreams/agent-runtime-and-aby/agent-conversations.md`](design/cdd/workstreams/agent-runtime-and-aby/agent-conversations.md), [`docs/architecture/components/subagent-runtime.md`](docs/architecture/components/subagent-runtime.md)                                                                                                                                                                                                       |
+| Aby external runtime setup                                     | [`docs/user/guides/aby-integration.md`](docs/user/guides/aby-integration.md)                                                                                                                                                                                                                                                                                                                                                                               |
+| Subagent security and permissions                              | [`docs/security/subagent-permissions.md`](docs/security/subagent-permissions.md)                                                                                                                                                                                                                                                                                                                                                                           |
+| TUI workbench guide                                            | [`docs/user/guides/tui-workbench.md`](docs/user/guides/tui-workbench.md)                                                                                                                                                                                                                                                                                                                                                                                   |
+| Dynamic workflow workbench guide                               | [`docs/user/guides/dynamic-workflow-workbench.md`](docs/user/guides/dynamic-workflow-workbench.md)                                                                                                                                                                                                                                                                                                                                                         |
+| Workflow engine runtime, UX closure, and execution model       | [`design/cdd/workstreams/workflow-runtime/dynamic-workflow-ux-closure.md`](design/cdd/workstreams/workflow-runtime/dynamic-workflow-ux-closure.md), [`docs/architecture/components/workflow-runtime.md`](docs/architecture/components/workflow-runtime.md)                                                                                                                                                                                                 |
+| Workflow security model and trust levels                       | [`docs/security/workflow-execution.md`](docs/security/workflow-execution.md)                                                                                                                                                                                                                                                                                                                                                                               |
+| Agent identity and onboarding                                  | [`docs/reference/agent-registry-schema.md`](docs/reference/agent-registry-schema.md), [`docs/contributor/new-agent-onboarding.md`](docs/contributor/new-agent-onboarding.md)                                                                                                                                                                                                                                                                               |
+| GitHub authentication and setup                                | [`docs/operations/github-automation.md`](docs/operations/github-automation.md)                                                                                                                                                                                                                                                                                                                                                                             |
+| Guardrails and security boundaries                             | [`docs/security/self-evolution-guardrails.md`](docs/security/self-evolution-guardrails.md), [`docs/security/collaboration-audit.md`](docs/security/collaboration-audit.md)                                                                                                                                                                                                                                                                                 |
+| Technical debt register                                        | [`docs/contributor/technical-debt.md`](docs/contributor/technical-debt.md)                                                                                                                                                                                                                                                                                                                                                                                 |
 
 ## Repository Rules
 
@@ -440,4 +451,6 @@ Every file must have a clear purpose. See [`AGENTS.md`](AGENTS.md) for:
 
 ## Status
 
-Run `openslack status` for live project metrics, or see [`docs/status/current.md`](docs/status/current.md).
+Read [`memory_bank/t0_core/current_state.md`](memory_bank/t0_core/current_state.md)
+for project-wide state. Run `openslack status` or read
+[`docs/status/current.md`](docs/status/current.md) for module runtime telemetry.

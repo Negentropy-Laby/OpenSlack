@@ -1,3 +1,16 @@
+---
+schema: openslack.document.v1
+id: security-negentropy-slot-boundary
+status: In Review
+authority: canonical
+audience:
+  - security
+owner: security
+updated: 2026-07-28
+sources:
+  - docs/reference/document-path-migration-v1.yaml
+---
+
 # Negentropy-Lab Slot Boundary
 
 This document defines the hard security boundary between OpenSlack and Negentropy-Lab when OpenSlack contributes to the `scenario-pack.extension` slot as an external provider. OpenSlack remains a GitHub-agent workbench; Negentropy-Lab remains the authority owner and control plane. The OpenSlack v1 artifact is fixed to `SHADOW` and OpenSlack never escalates it to `ENFORCE`.

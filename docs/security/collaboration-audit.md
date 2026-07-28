@@ -1,3 +1,16 @@
+---
+schema: openslack.document.v1
+id: security-collaboration-audit
+status: In Review
+authority: canonical
+audience:
+  - security
+owner: security
+updated: 2026-07-28
+sources:
+  - docs/reference/document-path-migration-v1.yaml
+---
+
 # Collaboration Audit
 
 ## Scope

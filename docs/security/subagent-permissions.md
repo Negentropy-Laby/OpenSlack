@@ -1,9 +1,14 @@
 ---
-schema: openslack.security_spec.v1
-status: partial
-created: 2026-06-02
-parent_spec: docs/developer/subagent-runtime.md
-threat_model: true
+schema: openslack.document.v1
+id: security-subagent-permissions
+status: In Review
+authority: canonical
+audience:
+  - security
+owner: security
+updated: 2026-07-28
+sources:
+  - docs/reference/document-path-migration-v1.yaml
 ---
 
 # Subagent Permission Model
@@ -168,7 +173,7 @@ Planned but not yet implemented:
 - **Room view aggregation** for subagent conversations
 - **Lifecycle events** (`agent.conversation.started/completed/failed`)
 
-See `docs/developer/collaboration-events.md` for the full event model.
+See `docs/architecture/contracts/collaboration-events.md` for the full event model.
 
 ## Related Files
 

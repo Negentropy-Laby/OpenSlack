@@ -28,7 +28,7 @@ const CONSTITUTIONAL_PATHS_POLICY = new URL(
 const CODEOWNERS_PATH = new URL('../../../../.github/CODEOWNERS', import.meta.url);
 const PLUGIN_TRUST_MIRROR_DOCS = [
   new URL('../../../../docs/security/self-evolution-guardrails.md', import.meta.url),
-  new URL('../../../../docs/developer/branch-protection.md', import.meta.url),
+  new URL('../../../../docs/operations/branch-protection.md', import.meta.url),
 ] as const;
 
 describe('classifyPaths', () => {

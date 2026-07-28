@@ -48,7 +48,15 @@ const ASSIGNMENT_STATUSES = new Set([
 
 const EXECUTING_ASSIGNMENT_STATUSES = new Set(['claimed', 'running', 'review', 'done']);
 
-const TEXT_SCAN_EXCLUDED_NAMES = new Set(['.git', 'node_modules', 'dist', '.worktrees']);
+const TEXT_SCAN_EXCLUDED_NAMES = new Set([
+  '.aby',
+  '.claude',
+  '.git',
+  '.worktrees',
+  'coverage',
+  'dist',
+  'node_modules',
+]);
 
 // These repository subtrees have their own authority or contain local-only
 // evidence. The root migration scan must not reinterpret their path history.
@@ -545,30 +553,42 @@ function markdownLinkDestination(rawTarget: string): string {
 }
 
 function validateLinks(root: string, files: string[]): void {
+  const errors: string[] = [];
   for (const repositoryPath of files) {
     const content = readFileSync(join(root, repositoryPath), 'utf8');
     const linkPattern = /(?<!!)\[[^\]]*]\(([^)]+)\)/g;
     for (const match of content.matchAll(linkPattern)) {
       const rawTarget = markdownLinkDestination(match[1] ?? '');
-      if (!rawTarget || /^(?:https?:|mailto:)/.test(rawTarget)) continue;
+      if (!rawTarget || rawTarget.startsWith('?:') || /^(?:https?:|mailto:)/.test(rawTarget)) {
+        continue;
+      }
       const [targetPath, anchor] = rawTarget.split('#', 2);
       const decoded = decodeURIComponent(targetPath ?? '');
       const resolvedPath = decoded
         ? posix.normalize(posix.join(posix.dirname(repositoryPath), decoded))
         : repositoryPath;
-      validateRepositoryPath(resolvedPath, `link in ${repositoryPath}`);
+      try {
+        validateRepositoryPath(resolvedPath, `link in ${repositoryPath}`);
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : String(error));
+        continue;
+      }
       const fullTarget = join(root, resolvedPath);
       if (!existsSync(fullTarget)) {
-        throw new Error(`Broken Markdown link in ${repositoryPath}: ${rawTarget}`);
+        errors.push(`Broken Markdown link in ${repositoryPath}: ${rawTarget}`);
+        continue;
       }
       if (anchor && resolvedPath.endsWith('.md')) {
         const headings = markdownHeadingSlugs(readFileSync(fullTarget, 'utf8'));
         const decodedAnchor = decodeURIComponent(anchor).toLowerCase();
         if (!headings.includes(decodedAnchor)) {
-          throw new Error(`Broken Markdown anchor in ${repositoryPath}: ${rawTarget}`);
+          errors.push(`Broken Markdown anchor in ${repositoryPath}: ${rawTarget}`);
         }
       }
     }
+  }
+  if (errors.length > 0) {
+    throw new Error(`Markdown link validation failed:\n${errors.slice(0, 100).join('\n')}`);
   }
 }
 

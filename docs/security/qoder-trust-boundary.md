@@ -1,8 +1,21 @@
+---
+schema: openslack.document.v1
+id: security-qoder-trust-boundary
+status: In Review
+authority: canonical
+audience:
+  - security
+owner: security
+updated: 2026-07-28
+sources:
+  - docs/reference/document-path-migration-v1.yaml
+---
+
 # Qoder Work Trust Boundary
 
 Status: implemented local security contract. Default and explicit `read-only` are the exact
 12-tool STDIO server with v2 results documented in
-[Qoder Work MCP integration](../developer/qoder-mcp.md). Explicit `agent-bound` selects the
+[Qoder Work MCP integration](../architecture/integrations/qoder-mcp.md). Explicit `agent-bound` selects the
 production 16-tool governed composition. Explicit `human-attested` selects 17 only after the
 current local OS subject, owner-only mapping, and controlling TTY are proven. An injected local
 demo profile may append only its bounded reset tool. No Qoder
@@ -36,7 +49,7 @@ HTML artifact can replace current OpenSlack/GitHub evidence.
 | OpenSlack workflow-effect approval | authorized workflow approver          | one pending workflow effect         |
 | GitHub human review                | authorized non-author GitHub identity | repository review/approval evidence |
 
-The terms map to the canonical [Approval vocabulary](../product/approval-vocabulary.md): plan
+The terms map to the canonical [Approval vocabulary](../../standards/approval-vocabulary.md): plan
 confirmation is **Approve Plan**; workflow-effect approval is **Confirm Operation**, or **Confirm
 Merge** for a merge effect; and GitHub human review is **GitHub Review Approval**. Qoder
 connector/tool permission is authorization, not an approval action. A current-head GitHub approval
@@ -156,7 +169,7 @@ It does not prove:
 
 ## Related Documents
 
-- [Qoder product boundary](../product/qoder-work-integration.md)
-- [Qoder MCP contract](../developer/qoder-mcp-contract.md)
+- [Qoder product boundary](../../design/cdd/workstreams/qoder-work/README.md)
+- [Qoder MCP contract](../architecture/contracts/qoder-mcp.md)
 - [Human approval](human-approval.md)
 - [Workflow execution security](workflow-execution.md)

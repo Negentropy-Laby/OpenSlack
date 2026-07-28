@@ -1,3 +1,16 @@
+---
+schema: openslack.document.v1
+id: security-self-evolution-guardrails
+status: In Review
+authority: canonical
+audience:
+  - security
+owner: security
+updated: 2026-07-28
+sources:
+  - docs/reference/document-path-migration-v1.yaml
+---
+
 # Self-Evolution Guardrails
 
 ## Zone Classification
