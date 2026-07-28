@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
 
 import { Ajv2020 } from 'ajv/dist/2020.js';
@@ -258,6 +258,14 @@ export function validateWorkAssignmentsObject(value: unknown): void {
     if (!ASSIGNMENT_STATUSES.has(String(item.status))) {
       throw new Error(`Invalid work assignment status: ${String(item.status)}`);
     }
+    if (
+      !PRODUCT_MODULES.has(String(item.module_or_workstream)) &&
+      !WORKSTREAMS.has(String(item.module_or_workstream))
+    ) {
+      throw new Error(
+        `Assignment ${String(item.id)} has unknown module_or_workstream: ${String(item.module_or_workstream)}`,
+      );
+    }
     if (typeof item.planned_owner !== 'string' || item.planned_owner.trim() === '') {
       throw new Error(`Assignment ${String(item.id)} must declare planned_owner or unassigned.`);
     }
@@ -302,6 +310,41 @@ export function validateWorkAssignmentsObject(value: unknown): void {
   }
 }
 
+export function validateReleaseStateObject(value: unknown): void {
+  const release = asObject(value, 'release state');
+  if (release.schema !== 'openslack.release_state.v1') {
+    throw new Error('Release state schema must be openslack.release_state.v1.');
+  }
+  const gates = release.gates;
+  if (!Array.isArray(gates)) throw new Error('Release state gates must be an array.');
+  ensureUnique(
+    gates.map((entry) => String(asObject(entry, 'release gate').id)),
+    'release gate id',
+  );
+  for (const raw of gates) {
+    const gate = asObject(raw, 'release gate');
+    const evidence = Array.isArray(gate.evidence) ? gate.evidence : [];
+    if (gate.status === 'passed' && evidence.length === 0) {
+      throw new Error(`Release gate ${String(gate.id)} cannot pass without evidence.`);
+    }
+  }
+  if (release.human_approval === 'approved') {
+    const approvalGate = gates
+      .map((entry) => asObject(entry, 'release gate'))
+      .find((gate) => gate.id === 'human_approval');
+    if (
+      !approvalGate ||
+      approvalGate.status !== 'passed' ||
+      !Array.isArray(approvalGate.evidence) ||
+      approvalGate.evidence.length === 0
+    ) {
+      throw new Error(
+        'Approved human approval requires a passed human_approval gate with evidence.',
+      );
+    }
+  }
+}
+
 function parseFrontmatter(markdown: string, path: string): JsonObject {
   if (!markdown.startsWith('---\n')) throw new Error(`${path} is missing YAML frontmatter.`);
   const end = markdown.indexOf('\n---\n', 4);
@@ -339,17 +382,59 @@ function validateDocumentMap(root: string, value: unknown): number {
     validateRepositoryPath(document.path, `document ${document.id}`);
     const fullPath = join(root, document.path);
     if (!existsSync(fullPath)) throw new Error(`Registered document is missing: ${document.path}`);
+    const documentStats = lstatSync(fullPath);
+    if (documentStats.isSymbolicLink() || !documentStats.isFile()) {
+      throw new Error(`Registered document must be an ordinary file: ${document.path}`);
+    }
     if (document.status === 'active' || document.status === 'index') {
-      const metadata = parseFrontmatter(readFileSync(fullPath, 'utf8'), document.path);
+      const content = readFileSync(fullPath, 'utf8');
+      const metadata = parseFrontmatter(content, document.path);
       validateWithSchema(root, metadata, 'document-metadata.schema.json', document.path);
       validateDocumentMetadata(metadata);
       if (metadata.id !== document.id) {
         throw new Error(`${document.path} frontmatter id does not match document_map.yaml.`);
       }
+      if (hasTemplatePlaceholder(content)) {
+        throw new Error(`Active document contains a template placeholder: ${document.path}`);
+      }
       active += 1;
     }
   }
+  const registered = new Set(map.documents.map((document) => document.path));
+  for (const path of collectGovernedMarkdown(root)) {
+    if (!registered.has(path)) {
+      throw new Error(`Governed Markdown document is not registered in document_map.yaml: ${path}`);
+    }
+  }
   return active;
+}
+
+function hasTemplatePlaceholder(content: string): boolean {
+  return (
+    /\[(?:CHOOSE|SPECIFY|TODO)[^\]]*\]/u.test(content) ||
+    /(?:^|\s)(?:TBD|TODO|PLACEHOLDER)(?:\s|:|$)/mu.test(content) ||
+    /\{\{[^}\n]+\}\}/u.test(content)
+  );
+}
+
+function collectGovernedMarkdown(root: string): string[] {
+  const results: string[] = [];
+  const visit = (repositoryPath: string): void => {
+    const fullPath = join(root, repositoryPath);
+    for (const name of readdirSync(fullPath).sort()) {
+      const child = `${repositoryPath}/${name}`;
+      const stats = lstatSync(join(root, child));
+      if (stats.isSymbolicLink()) {
+        throw new Error(`Governed documentation path is a symbolic link: ${child}`);
+      }
+      if (stats.isDirectory()) visit(child);
+      else if (name.endsWith('.md')) results.push(child);
+    }
+  };
+  for (const repositoryPath of ['design', 'docs', 'memory_bank', 'production', 'standards']) {
+    if (existsSync(join(root, repositoryPath))) visit(repositoryPath);
+  }
+  return results;
 }
 
 function validateModuleTelemetryBoundary(root: string): void {
@@ -396,6 +481,7 @@ function loadCanonical(root: string): {
   validateWithSchema(root, release, 'release-state.schema.json', RELEASE_STATE);
   validateWithSchema(root, assignments, 'work-assignments.schema.json', WORK_ASSIGNMENTS);
   validateProjectStateObject(project);
+  validateReleaseStateObject(release);
   validateWorkAssignmentsObject(assignments);
   return { project, release, assignments };
 }
@@ -620,7 +706,10 @@ function walkTextFiles(root: string, current = ''): string[] {
     ) {
       continue;
     }
-    const stats = statSync(join(root, child));
+    const stats = lstatSync(join(root, child));
+    if (stats.isSymbolicLink()) {
+      throw new Error(`Documentation text scan encountered a symbolic link: ${child}`);
+    }
     if (stats.isDirectory()) result.push(...walkTextFiles(root, child));
     else if (
       /\.(?:md|ya?ml|json|jsonc|ts|tsx|js|mjs|cjs|sh|ps1)$/.test(name) ||

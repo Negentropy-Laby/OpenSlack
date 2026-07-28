@@ -612,7 +612,7 @@ If the workflow source file has changed since the run was paused:
 ### Ambient Global Injection
 
 > **Security note:** The `new AsyncFunction()` approach shown below is a
-> **design placeholder** illustrating the desired API surface. A production
+> **illustrative sketch** of the desired API surface. A production
 > implementation must NOT use `AsyncFunction` or `eval` to execute arbitrary
 > JS from workflow files. The real implementation must:
 >
@@ -622,7 +622,7 @@ If the workflow source file has changed since the run was paused:
 >    a frozen sandbox object)
 > 3. Never pass unsanitized file contents to code evaluation primitives
 >
-> The placeholder below shows only the API shape, not the execution mechanism.
+> The sketch below shows only the API shape, not the execution mechanism.
 
 ```typescript
 // ILLUSTRATIVE API shape only. Real implementation uses sandboxed execution.
@@ -643,7 +643,7 @@ function anthropicCompatRunner(moduleBody: string, runtime: WorkflowRuntime): Pr
   };
 
   // Production: execute in sandboxed context with restricted globals
-  // Placeholder: wrap body in async function (NOT production-safe)
+  // Unsafe sketch: wrapping the body in an async function is NOT production-safe.
   throw new Error('anthropicCompatRunner: must use sandboxed execution, not AsyncFunction');
 }
 ```

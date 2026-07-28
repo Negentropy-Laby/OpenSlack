@@ -1,5 +1,5 @@
 schema: openslack.release_state.v1
-updated: 2026-07-28
+updated: 2026-07-29
 train: 0.2.0
 status: blocked
 human_approval: not_requested
@@ -9,9 +9,15 @@ gates:
     evidence: ['commit:85f18a24645edade981a342bb67308e3a65d9904']
     notes: Baseline matched origin/main before migration work.
   - id: documentation_migration
-    status: pending
-    evidence: [docs/reference/document-path-migration-v1.yaml]
-    notes: In Review until the atomic migration and independent review complete.
+    status: passed
+    evidence:
+      [
+        docs/reference/document-path-migration-v1.yaml,
+        'github:pr-327:merged:85f18a24645edade981a342bb67308e3a65d9904',
+        'github:pr-328:merged:067f4566cd06855f65d2b2a53257227c0db69067',
+        memory_bank/t3_archive/reviews/documentation-migration-v1.md,
+      ]
+    notes: The three-PR migration becomes effective when this reviewed enforcement change lands.
   - id: signed_release
     status: blocked
     evidence: ['issue:240']

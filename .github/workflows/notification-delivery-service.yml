@@ -17,10 +17,16 @@ on:
       - docs/contributor/notification-delivery/**
       - docs/security/notification-delivery-boundary.md
       - docs/evidence/notification-delivery-evidence.md
+      - docs/reference/**
+      - memory_bank/**
+      - production/**
+      - standards/**
       - integration/gates/ib6-history-import.json
       - .openslack/modules.yaml
+      - bun.lock
       - package.json
       - vitest.config.ts
+      - scripts/documentation/**
       - scripts/notification-docs/**
       - .github/workflows/notification-delivery-service.yml
       - .github/workflows/openslack-reusable-validate.yml
@@ -41,10 +47,16 @@ on:
       - docs/contributor/notification-delivery/**
       - docs/security/notification-delivery-boundary.md
       - docs/evidence/notification-delivery-evidence.md
+      - docs/reference/**
+      - memory_bank/**
+      - production/**
+      - standards/**
       - integration/gates/ib6-history-import.json
       - .openslack/modules.yaml
+      - bun.lock
       - package.json
       - vitest.config.ts
+      - scripts/documentation/**
       - scripts/notification-docs/**
       - .github/workflows/notification-delivery-service.yml
       - .github/workflows/openslack-reusable-validate.yml
@@ -117,6 +129,18 @@ jobs:
       - name: Install root dependencies
         working-directory: .
         run: bun install --frozen-lockfile
+      - name: Verify root documentation governance
+        working-directory: .
+        run: |
+          set -euo pipefail
+          bun run docs:verify
+          bun run docs:migration-check
+          bun run docs:generate
+          git diff --exit-code -- \
+            memory_bank/t0_core/current_state.md \
+            memory_bank/t0_core/release_state.md \
+            memory_bank/t2_execution/current_roadmap.md \
+            production/project-roadmap.md
       - name: Verify notification delivery documentation
         working-directory: .
         run: bun run docs:notification-verify

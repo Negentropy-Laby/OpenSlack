@@ -91,10 +91,16 @@ const triggerPaths = [
   'docs/contributor/notification-delivery/**',
   'docs/security/notification-delivery-boundary.md',
   'docs/evidence/notification-delivery-evidence.md',
+  'docs/reference/**',
+  'memory_bank/**',
+  'production/**',
+  'standards/**',
   'integration/gates/ib6-history-import.json',
   '.openslack/modules.yaml',
+  'bun.lock',
   'package.json',
   'vitest.config.ts',
+  'scripts/documentation/**',
   'scripts/notification-docs/**',
   '.github/workflows/notification-delivery-service.yml',
   '.github/workflows/openslack-reusable-validate.yml',
@@ -156,6 +162,7 @@ describe('notification delivery service workflow', () => {
     const actionlintIndex = stepIndex('Validate the notification workflows');
     const setupBunIndex = job.steps.findIndex((step) => step.uses === setupBunAction);
     const installIndex = stepIndex('Install root dependencies');
+    const rootDocsIndex = stepIndex('Verify root documentation governance');
     const docsIndex = stepIndex('Verify notification delivery documentation');
     const firstServiceCommandIndex = stepIndex('Verify module files');
 
@@ -166,7 +173,8 @@ describe('notification delivery service workflow', () => {
     expect(actionlintIndex).toBe(goGuardIndex + 1);
     expect(setupBunIndex).toBe(actionlintIndex + 1);
     expect(installIndex).toBe(setupBunIndex + 1);
-    expect(docsIndex).toBe(installIndex + 1);
+    expect(rootDocsIndex).toBe(installIndex + 1);
+    expect(docsIndex).toBe(rootDocsIndex + 1);
     expect(firstServiceCommandIndex).toBe(docsIndex + 1);
     expect(job.steps[checkoutIndex]?.with).toEqual({
       ref: exactHeadExpression,
@@ -196,6 +204,21 @@ describe('notification delivery service workflow', () => {
       name: 'Install root dependencies',
       'working-directory': '.',
       run: 'bun install --frozen-lockfile',
+    });
+    expect(job.steps[rootDocsIndex]).toEqual({
+      name: 'Verify root documentation governance',
+      'working-directory': '.',
+      run: lines(
+        'set -euo pipefail',
+        'bun run docs:verify',
+        'bun run docs:migration-check',
+        'bun run docs:generate',
+        'git diff --exit-code -- \\',
+        '  memory_bank/t0_core/current_state.md \\',
+        '  memory_bank/t0_core/release_state.md \\',
+        '  memory_bank/t2_execution/current_roadmap.md \\',
+        '  production/project-roadmap.md',
+      ),
     });
     expect(job.steps[docsIndex]).toEqual({
       name: 'Verify notification delivery documentation',
@@ -240,6 +263,7 @@ describe('notification delivery service workflow', () => {
       'Validate the notification workflows',
       'Set up the exact Bun toolchain',
       'Install root dependencies',
+      'Verify root documentation governance',
       'Verify notification delivery documentation',
       'Verify module files',
       'Verify Go formatting',
@@ -269,6 +293,17 @@ describe('notification delivery service workflow', () => {
       'Validate the notification workflows':
         'go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/notification-delivery-service.yml .github/workflows/openslack-reusable-validate.yml',
       'Install root dependencies': 'bun install --frozen-lockfile',
+      'Verify root documentation governance': lines(
+        'set -euo pipefail',
+        'bun run docs:verify',
+        'bun run docs:migration-check',
+        'bun run docs:generate',
+        'git diff --exit-code -- \\',
+        '  memory_bank/t0_core/current_state.md \\',
+        '  memory_bank/t0_core/release_state.md \\',
+        '  memory_bank/t2_execution/current_roadmap.md \\',
+        '  production/project-roadmap.md',
+      ),
       'Verify notification delivery documentation': 'bun run docs:notification-verify',
       'Verify module files': lines(
         'set -euo pipefail',
