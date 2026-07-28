@@ -6,6 +6,8 @@
   },
   "include": ["src"],
   "references": [
+    { "path": "../../packages/kernel" },
+    { "path": "../../packages/runtime" },
     { "path": "../../packages/workspace" },
     { "path": "../../packages/operator" },
     { "path": "../../packages/collaboration" },

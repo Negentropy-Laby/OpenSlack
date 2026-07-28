@@ -137,7 +137,7 @@ describe('resolveAgentPrincipal', () => {
   });
 
   it('returns the same run_id on repeated calls', () => {
-    generateRuntimeIdentity({ root: fixtureRoot, agentId: AGENT_ID, provider: 'test' });
+    generateRuntimeIdentity({ root: fixtureRoot, agentId: AGENT_ID, provider: 'cli' });
 
     const first = resolveAgentPrincipal({ root: fixtureRoot, agentId: AGENT_ID });
     const second = resolveAgentPrincipal({ root: fixtureRoot, agentId: AGENT_ID });
@@ -147,5 +147,34 @@ describe('resolveAgentPrincipal', () => {
     if ('principal' in first && 'principal' in second) {
       expect(first.principal.run_id).toBe(second.principal.run_id);
     }
+  });
+
+  it('fails closed when the requested provider or runtime registry binding mismatches', () => {
+    generateRuntimeIdentity({ root: fixtureRoot, agentId: AGENT_ID, provider: 'cli' });
+    expect(
+      resolveAgentPrincipal({ root: fixtureRoot, agentId: AGENT_ID, provider: 'github' }),
+    ).toMatchObject({ error: expect.stringContaining('does not match') });
+
+    const identityPath = join(fixtureRoot, '.openslack.local', 'agents', AGENT_ID, 'identity.yaml');
+    const identity = loadRuntimeIdentity(fixtureRoot, AGENT_ID)!;
+    writeFileSync(
+      identityPath,
+      [
+        `schema: ${identity.schema}`,
+        `agent_id: other_agent`,
+        `agent_uid: ${identity.agent_uid}`,
+        `run_id: ${identity.run_id}`,
+        `public_key_jwk: null`,
+        `key_id: null`,
+        `key_generated_at: null`,
+        `provider: cli`,
+        `started_at: ${identity.started_at}`,
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+    expect(resolveAgentPrincipal({ root: fixtureRoot, agentId: AGENT_ID })).toMatchObject({
+      error: expect.stringContaining('does not match'),
+    });
   });
 });

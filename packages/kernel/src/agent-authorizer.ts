@@ -54,21 +54,43 @@ export function resolvePermissionSnapshot(args: {
   const { registry, runtimeIdentity } = args;
   if (!registry || !runtimeIdentity) return null;
 
-  const principal: AgentPrincipal = {
+  const principal: AgentPrincipal = Object.freeze({
     registry_id: registry.agent_id,
     runtime_uid: runtimeIdentity.agent_uid,
     run_id: runtimeIdentity.run_id,
     provider: runtimeIdentity.provider,
-    authenticated_github_identity: runtimeIdentity.authenticated_github_identity,
-  };
+    ...(runtimeIdentity.authenticated_github_identity
+      ? {
+          authenticated_github_identity: Object.freeze({
+            login: runtimeIdentity.authenticated_github_identity.login,
+            is_bot: runtimeIdentity.authenticated_github_identity.is_bot,
+          }),
+        }
+      : {}),
+  });
+  const permissions = {
+    paths: {
+      allow: [...registry.permissions.paths.allow],
+      deny: [...registry.permissions.paths.deny],
+    },
+    actions: { ...registry.permissions.actions },
+    github: { ...registry.permissions.github },
+    max_risk_zone: registry.permissions.max_risk_zone,
+  } satisfies AgentPermissions;
+  Object.freeze(permissions.paths.allow);
+  Object.freeze(permissions.paths.deny);
+  Object.freeze(permissions.paths);
+  Object.freeze(permissions.actions);
+  Object.freeze(permissions.github);
+  Object.freeze(permissions);
 
-  return {
+  return Object.freeze({
     principal,
     registry_entry_agent_id: registry.agent_id,
-    permissions: registry.permissions,
+    permissions,
     resolved_at: new Date().toISOString(),
     source: registry.schema === 'openslack.agent_registry.v2' ? 'registry_v2' : 'registry_v1',
-  };
+  });
 }
 
 export function authorizeAgentAction(args: {

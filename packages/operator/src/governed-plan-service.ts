@@ -7,6 +7,7 @@ import {
   hashOpaqueValue,
   opaqueHashesEqual,
   validateGovernedPlanRecord,
+  type CanonicalGovernedPlan,
   type CreateCanonicalGovernedPlanInput,
   type GovernedActionOutcome,
   type GovernedJsonValue,
@@ -32,6 +33,12 @@ export interface GovernedPlanBindingSnapshot {
   readonly sourceVersions: unknown;
   readonly permissionSnapshot: unknown;
   readonly buildNonce: string;
+}
+
+export interface GovernedPlanBindingContext {
+  readonly phase: 'preview' | 'confirm';
+  readonly canonicalPlan: CanonicalGovernedPlan;
+  readonly authority: GovernedPlanHostAuthority;
 }
 
 export type GovernedPlanAuditEventType =
@@ -68,9 +75,9 @@ export type GovernedPlanAuditSink = (event: GovernedPlanAuditEvent) => void | Pr
 export interface GovernedPlanServiceOptions {
   readonly store: GovernedPlanStore;
   readonly registry: GovernedActionExecutionRegistry;
-  readonly getBindingSnapshot: () =>
-    | GovernedPlanBindingSnapshot
-    | Promise<GovernedPlanBindingSnapshot>;
+  readonly getBindingSnapshot: (
+    context: GovernedPlanBindingContext,
+  ) => GovernedPlanBindingSnapshot | Promise<GovernedPlanBindingSnapshot>;
   readonly audit: GovernedPlanAuditSink;
   readonly defaultTtlMs?: number;
   readonly executionTimeoutMs?: number;
@@ -533,12 +540,12 @@ class GovernedPlanServiceImpl implements GovernedPlanService {
     this.#processNonceHash = hashOpaqueValue(randomBytes(32).toString('base64url'));
   }
 
-  async #bindingHashes(): Promise<{
+  async #bindingHashes(context: GovernedPlanBindingContext): Promise<{
     sourceVersionHash: string;
     permissionSnapshotHash: string;
     buildNonceHash: string;
   }> {
-    const snapshot = validateBindingSnapshot(await this.#getBindingSnapshot());
+    const snapshot = validateBindingSnapshot(await this.#getBindingSnapshot(context));
     return {
       sourceVersionHash: hashGovernedValue(snapshot.sourceVersions),
       permissionSnapshotHash: hashGovernedValue(snapshot.permissionSnapshot),
@@ -595,7 +602,13 @@ class GovernedPlanServiceImpl implements GovernedPlanService {
         );
       }
     }
-    const bindingHashes = await this.#bindingHashes();
+    const bindingHashes = await this.#bindingHashes(
+      Object.freeze({
+        phase: 'preview',
+        canonicalPlan,
+        authority,
+      }),
+    );
     const confirmationToken = randomBytes(32).toString('base64url');
     const record = validateGovernedPlanRecord({
       schema: 'openslack.governed_plan.v1',
@@ -682,7 +695,16 @@ class GovernedPlanServiceImpl implements GovernedPlanService {
   }
 
   async #assertCurrentBindings(record: GovernedPlanRecord): Promise<void> {
-    const current = await this.#bindingHashes();
+    const current = await this.#bindingHashes(
+      Object.freeze({
+        phase: 'confirm',
+        canonicalPlan: record.canonicalPlan,
+        authority: Object.freeze({
+          actorId: record.bindings.actorId,
+          workspaceId: record.bindings.workspaceId,
+        }),
+      }),
+    );
     const unchanged =
       opaqueHashesEqual(record.bindings.sourceVersionHash, current.sourceVersionHash) &&
       opaqueHashesEqual(record.bindings.permissionSnapshotHash, current.permissionSnapshotHash) &&

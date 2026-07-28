@@ -5,7 +5,12 @@ export { tickAgent } from './tick.js';
 export type { TickResult } from './tick.js';
 
 // Agent Identity
-export { generateRuntimeIdentity, loadRuntimeIdentity, resolveAgentPrincipal } from './identity.js';
+export {
+  generateRuntimeIdentity,
+  loadRuntimeIdentity,
+  parseRuntimeIdentityText,
+  resolveAgentPrincipal,
+} from './identity.js';
 
 // Re-exports from git-sync (backward compat)
 export { parseTaskLinkMetadata, proposeWorkspacePR, renderTaskLinkMetadata } from './propose.js';

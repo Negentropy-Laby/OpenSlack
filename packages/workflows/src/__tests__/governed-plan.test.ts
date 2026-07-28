@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   compileWorkflowStartPlan,
   createSealedWorkflowPlanResolver,
+  rehydrateWorkflowStartPlan,
   resolveSealedWorkflowPlanTarget,
   WORKFLOW_START_EFFECT_SCHEMA,
   WORKFLOW_START_PLAN_SCHEMA,
@@ -57,6 +58,18 @@ function input() {
 }
 
 describe('governed workflow plan compiler', () => {
+  it('binds the sorted sealed resolver to a deterministic immutable integrity hash', () => {
+    const first = resolver();
+    const second = resolver();
+    const empty = createSealedWorkflowPlanResolver({ entries: [] });
+
+    expect(first.integrityHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(second.integrityHash).toBe(first.integrityHash);
+    expect(empty.integrityHash).not.toBe(first.integrityHash);
+    expect(first.list()).toEqual([first.resolve('delivery.create')]);
+    expect(Object.isFrozen(first.list())).toBe(true);
+  });
+
   it('compiles one deterministic immutable canonical effect without executing it', () => {
     const first = compileWorkflowStartPlan(input());
     const secondInput = input();
@@ -100,6 +113,82 @@ describe('governed workflow plan compiler', () => {
     expect(() =>
       compileWorkflowStartPlan({ ...input(), workflowId: 'delivery.missing' }),
     ).toThrowError(expect.objectContaining({ code: 'WORKFLOW_PLAN_TARGET_MISSING' }));
+  });
+
+  it('strictly rehydrates persisted plans against current host-owned bindings', () => {
+    const originalInput = input();
+    const original = compileWorkflowStartPlan(originalInput);
+    const persisted = JSON.parse(JSON.stringify(original));
+    const restored = rehydrateWorkflowStartPlan(persisted, {
+      resolver: originalInput.resolver,
+      planHash: original.planHash,
+      actorId: original.actorId,
+      workspaceId: original.workspaceId,
+      correlationId: original.correlationId,
+      workflowHash: original.workflow.workflowHash,
+      now: original.createdAt,
+    });
+    expect(restored).toEqual(original);
+    expect(Object.isFrozen(restored)).toBe(true);
+
+    persisted.effect.workflowHash = 'b'.repeat(64);
+    expect(() =>
+      rehydrateWorkflowStartPlan(persisted, {
+        resolver: originalInput.resolver,
+        planHash: original.planHash,
+        actorId: original.actorId,
+        workspaceId: original.workspaceId,
+        correlationId: original.correlationId,
+        workflowHash: original.workflow.workflowHash,
+        now: original.createdAt,
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'WORKFLOW_PERSISTED_PLAN_INVALID' }));
+  });
+
+  it('rejects stale resolver, actor, workflow, and expiry bindings during rehydration', () => {
+    const originalInput = input();
+    const original = compileWorkflowStartPlan(originalInput);
+    const persisted = JSON.parse(JSON.stringify(original));
+    const baseBinding = {
+      resolver: originalInput.resolver,
+      planHash: original.planHash,
+      actorId: original.actorId,
+      workspaceId: original.workspaceId,
+      correlationId: original.correlationId,
+      workflowHash: original.workflow.workflowHash,
+      now: original.createdAt,
+    };
+    expect(() =>
+      rehydrateWorkflowStartPlan(persisted, {
+        ...baseBinding,
+        actorId: 'different-actor',
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'WORKFLOW_PERSISTED_PLAN_BINDING_MISMATCH' }));
+    expect(() =>
+      rehydrateWorkflowStartPlan(persisted, {
+        ...baseBinding,
+        workflowHash: 'b'.repeat(64),
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'WORKFLOW_PERSISTED_PLAN_BINDING_MISMATCH' }));
+    expect(() =>
+      rehydrateWorkflowStartPlan(persisted, {
+        ...baseBinding,
+        now: original.expiresAt,
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'WORKFLOW_PLAN_EXPIRED' }));
+    expect(() =>
+      rehydrateWorkflowStartPlan(persisted, {
+        ...baseBinding,
+        resolver: createSealedWorkflowPlanResolver({
+          entries: [
+            {
+              ...original.workflow,
+              workflowHash: 'b'.repeat(64),
+            },
+          ],
+        }),
+      }),
+    ).toThrowError(expect.objectContaining({ code: 'WORKFLOW_PERSISTED_PLAN_INVALID' }));
   });
 
   it.each([

@@ -220,5 +220,16 @@ describe('resolvePermissionSnapshot', () => {
     expect(snapshot!.principal.registry_id).toBe('test_agent');
     expect(snapshot!.principal.run_id).toBe('RUN-001');
     expect(snapshot!.source).toBe('registry_v2');
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(Object.isFrozen(snapshot!.principal)).toBe(true);
+    expect(Object.isFrozen(snapshot!.permissions)).toBe(true);
+    expect(Object.isFrozen(snapshot!.permissions.paths)).toBe(true);
+    expect(Object.isFrozen(snapshot!.permissions.paths.allow)).toBe(true);
+    expect(Object.isFrozen(snapshot!.permissions.paths.deny)).toBe(true);
+    expect(Object.isFrozen(snapshot!.permissions.actions)).toBe(true);
+    expect(Object.isFrozen(snapshot!.permissions.github)).toBe(true);
+    (registry.permissions.actions as Record<string, 'allow' | 'ask' | 'deny'>)['task.claim'] =
+      'deny';
+    expect(snapshot!.permissions.actions['task.claim']).toBe('allow');
   });
 });

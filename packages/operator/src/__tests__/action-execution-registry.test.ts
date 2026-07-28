@@ -47,6 +47,12 @@ describe('governed action execution registry', () => {
     expect(registry.actionCatalogHash).toMatch(/^[0-9a-f]{64}$/);
     expect(registry.executorBindingHash).toMatch(/^[0-9a-f]{64}$/);
     expect(Reflect.set(registry, 'has', () => true)).toBe(false);
+
+    const changedExecutor = createGovernedActionExecutionRegistry([
+      { ...definition(), bindingId: 'scenario-runtime.instantiate.v2' },
+    ]);
+    expect(changedExecutor.actionCatalogHash).toBe(registry.actionCatalogHash);
+    expect(changedExecutor.executorBindingHash).not.toBe(registry.executorBindingHash);
   });
 
   it('passes only deeply frozen canonical input/context and freezes output', async () => {

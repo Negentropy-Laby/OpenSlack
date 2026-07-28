@@ -164,6 +164,7 @@ export type {
   GovernedPlanAuditEvent,
   GovernedPlanAuditEventType,
   GovernedPlanAuditSink,
+  GovernedPlanBindingContext,
   GovernedPlanBindingSnapshot,
   GovernedPlanCancellation,
   GovernedPlanCompilationContext,

@@ -71,6 +71,16 @@ export interface WorkflowStartPlan {
   readonly expiresAt: string;
 }
 
+export interface PersistedWorkflowStartPlanBinding {
+  readonly resolver: SealedWorkflowPlanResolver;
+  readonly planHash: string;
+  readonly actorId: string;
+  readonly workspaceId: string;
+  readonly correlationId: string;
+  readonly workflowHash: string;
+  readonly now: string;
+}
+
 export interface CreateSealedWorkflowPlanResolverInput {
   readonly entries: readonly WorkflowPlanResolverEntry[];
 }
@@ -94,7 +104,9 @@ export class WorkflowPlanError extends Error {
     | 'WORKFLOW_PLAN_TARGET_MISSING'
     | 'WORKFLOW_PLAN_INPUT_INVALID'
     | 'WORKFLOW_PLAN_AUTHORITY_INVALID'
-    | 'WORKFLOW_PLAN_EXPIRED';
+    | 'WORKFLOW_PLAN_EXPIRED'
+    | 'WORKFLOW_PERSISTED_PLAN_INVALID'
+    | 'WORKFLOW_PERSISTED_PLAN_BINDING_MISMATCH';
 
   constructor(code: WorkflowPlanError['code'], message: string) {
     super(message);
@@ -531,10 +543,18 @@ function normalizeResolverEntry(value: unknown, index: number): WorkflowPlanReso
 }
 
 export class SealedWorkflowPlanResolver {
+  readonly integrityHash: string;
   readonly #entries: ReadonlyMap<string, WorkflowPlanResolverEntry>;
 
   private constructor(entries: readonly WorkflowPlanResolverEntry[]) {
-    this.#entries = new Map(entries.map((entry) => [entry.id, entry]));
+    const sorted = Object.freeze(
+      [...entries].sort((left, right) => left.id.localeCompare(right.id, 'en')),
+    );
+    this.#entries = new Map(sorted.map((entry) => [entry.id, entry]));
+    this.integrityHash = hash({
+      schema: 'openslack.sealed_workflow_plan_resolver.v1',
+      entries: sorted,
+    });
     SEALED_RESOLVERS.add(this);
     Object.freeze(this);
   }
@@ -575,6 +595,10 @@ export class SealedWorkflowPlanResolver {
 
   resolve(id: string): WorkflowPlanResolverEntry | undefined {
     return this.#entries.get(id);
+  }
+
+  list(): readonly WorkflowPlanResolverEntry[] {
+    return Object.freeze([...this.#entries.values()]);
   }
 }
 
@@ -840,6 +864,235 @@ export function compileWorkflowStartPlan(
     planId: `workflow-plan:sha256:${planHash}`,
     planHash,
   });
+}
+
+function clonePersistedPlanJson(
+  value: unknown,
+  path: string,
+  depth: number,
+  state: { nodes: number },
+): unknown {
+  assertNotProxy(value, path, 'WORKFLOW_PERSISTED_PLAN_INVALID');
+  state.nodes += 1;
+  if (depth > 12 || state.nodes > 5_000) {
+    return fail(
+      'WORKFLOW_PERSISTED_PLAN_INVALID',
+      'Persisted Workflow plan exceeds structural limits.',
+    );
+  }
+  if (value === null || typeof value === 'boolean') return value;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) {
+      return fail('WORKFLOW_PERSISTED_PLAN_INVALID', `${path} contains a non-finite number.`);
+    }
+    return value;
+  }
+  if (typeof value === 'string') {
+    if (
+      Buffer.byteLength(value, 'utf8') > 8_192 ||
+      CONTROL.test(value) ||
+      SECRET_VALUE.test(value)
+    ) {
+      return fail('WORKFLOW_PERSISTED_PLAN_INVALID', `${path} contains unsafe persisted content.`);
+    }
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return denseArray(value, path, 256, 'WORKFLOW_PERSISTED_PLAN_INVALID').map((item, index) =>
+      clonePersistedPlanJson(item, `${path}/${index}`, depth + 1, state),
+    );
+  }
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    ![Object.prototype, null].includes(Object.getPrototypeOf(value) as never)
+  ) {
+    return fail('WORKFLOW_PERSISTED_PLAN_INVALID', `${path} must be inert JSON data.`);
+  }
+  const keys = Reflect.ownKeys(value);
+  if (keys.length > 64) {
+    return fail('WORKFLOW_PERSISTED_PLAN_INVALID', `${path} has too many fields.`);
+  }
+  const result: Record<string, unknown> = Object.create(null);
+  for (const key of keys) {
+    if (typeof key !== 'string') {
+      return fail('WORKFLOW_PERSISTED_PLAN_INVALID', `${path} contains a symbol field.`);
+    }
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor || !descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) {
+      return fail('WORKFLOW_PERSISTED_PLAN_INVALID', `${path}/${key} must be a data field.`);
+    }
+    Object.defineProperty(result, key, {
+      value: clonePersistedPlanJson(descriptor.value, `${path}/${key}`, depth + 1, state),
+      enumerable: true,
+    });
+  }
+  return result;
+}
+
+/**
+ * Rehydrates a persisted Workflow start plan only after recomputing it against the current sealed
+ * resolver and proving the host-owned actor, workspace, correlation, workflow, and expiry binding.
+ */
+export function rehydrateWorkflowStartPlan(
+  value: unknown,
+  expectedValue: PersistedWorkflowStartPlanBinding,
+): WorkflowStartPlan {
+  const expected = closedRecord(
+    expectedValue,
+    ['resolver', 'planHash', 'actorId', 'workspaceId', 'correlationId', 'workflowHash', 'now'],
+    'persisted Workflow plan binding',
+    'WORKFLOW_PERSISTED_PLAN_BINDING_MISMATCH',
+  );
+  const resolver = own(expected, 'resolver');
+  SealedWorkflowPlanResolver.assertSealed(resolver);
+  const expectedPlanHash = text(
+    own(expected, 'planHash'),
+    'binding.planHash',
+    64,
+    'WORKFLOW_PERSISTED_PLAN_BINDING_MISMATCH',
+    HASH,
+  );
+  const expectedActorId = text(
+    own(expected, 'actorId'),
+    'binding.actorId',
+    512,
+    'WORKFLOW_PERSISTED_PLAN_BINDING_MISMATCH',
+    RUNTIME_IDENTIFIER,
+  );
+  const expectedWorkspaceId = text(
+    own(expected, 'workspaceId'),
+    'binding.workspaceId',
+    512,
+    'WORKFLOW_PERSISTED_PLAN_BINDING_MISMATCH',
+    RUNTIME_IDENTIFIER,
+  );
+  const expectedCorrelationId = text(
+    own(expected, 'correlationId'),
+    'binding.correlationId',
+    512,
+    'WORKFLOW_PERSISTED_PLAN_BINDING_MISMATCH',
+    RUNTIME_IDENTIFIER,
+  );
+  const expectedWorkflowHash = text(
+    own(expected, 'workflowHash'),
+    'binding.workflowHash',
+    64,
+    'WORKFLOW_PERSISTED_PLAN_BINDING_MISMATCH',
+    HASH,
+  );
+  const now = timestamp(
+    own(expected, 'now'),
+    'binding.now',
+    'WORKFLOW_PERSISTED_PLAN_BINDING_MISMATCH',
+  );
+
+  const persisted = deepFreeze(clonePersistedPlanJson(value, '/plan', 0, { nodes: 0 }));
+  const record = closedRecord(
+    persisted,
+    [
+      'schema',
+      'planId',
+      'planHash',
+      'actorId',
+      'workspaceId',
+      'correlationId',
+      'workflow',
+      'normalizedInput',
+      'inputHash',
+      'authorityBindings',
+      'effect',
+      'risk',
+      'requiresConfirmation',
+      'createdAt',
+      'expiresAt',
+    ],
+    'persisted Workflow plan',
+    'WORKFLOW_PERSISTED_PLAN_INVALID',
+  );
+  if (own(record, 'schema') !== WORKFLOW_START_PLAN_SCHEMA) {
+    return fail(
+      'WORKFLOW_PERSISTED_PLAN_INVALID',
+      'Persisted Workflow plan schema is unsupported.',
+    );
+  }
+  const workflow = normalizeResolverEntry(own(record, 'workflow'), 0);
+  const actorId = text(
+    own(record, 'actorId'),
+    'actorId',
+    512,
+    'WORKFLOW_PERSISTED_PLAN_INVALID',
+    RUNTIME_IDENTIFIER,
+  );
+  const workspaceId = text(
+    own(record, 'workspaceId'),
+    'workspaceId',
+    512,
+    'WORKFLOW_PERSISTED_PLAN_INVALID',
+    RUNTIME_IDENTIFIER,
+  );
+  const correlationId = text(
+    own(record, 'correlationId'),
+    'correlationId',
+    512,
+    'WORKFLOW_PERSISTED_PLAN_INVALID',
+    RUNTIME_IDENTIFIER,
+  );
+  const createdAt = timestamp(
+    own(record, 'createdAt'),
+    'createdAt',
+    'WORKFLOW_PERSISTED_PLAN_INVALID',
+  );
+  const expiresAt = timestamp(
+    own(record, 'expiresAt'),
+    'expiresAt',
+    'WORKFLOW_PERSISTED_PLAN_INVALID',
+  );
+  if (Date.parse(now) >= Date.parse(expiresAt)) {
+    return fail('WORKFLOW_PLAN_EXPIRED', 'Persisted Workflow plan is expired.');
+  }
+
+  let compiled: WorkflowStartPlan;
+  try {
+    compiled = compileWorkflowStartPlan({
+      resolver,
+      workflowId: workflow.id,
+      input: own(record, 'normalizedInput'),
+      authorityBindings: own(record, 'authorityBindings') as readonly WorkflowAuthorityBinding[],
+      actorId,
+      workspaceId,
+      correlationId,
+      createdAt,
+      expiresAt,
+    });
+  } catch (error) {
+    if (error instanceof WorkflowPlanError) {
+      return fail(
+        'WORKFLOW_PERSISTED_PLAN_INVALID',
+        'Persisted Workflow plan could not be recomputed safely.',
+      );
+    }
+    throw error;
+  }
+  if (canonicalJson(persisted) !== canonicalJson(compiled)) {
+    return fail(
+      'WORKFLOW_PERSISTED_PLAN_INVALID',
+      'Persisted Workflow plan does not match its deterministic compilation.',
+    );
+  }
+  if (
+    compiled.planHash !== expectedPlanHash ||
+    compiled.actorId !== expectedActorId ||
+    compiled.workspaceId !== expectedWorkspaceId ||
+    compiled.correlationId !== expectedCorrelationId ||
+    compiled.workflow.workflowHash !== expectedWorkflowHash
+  ) {
+    return fail(
+      'WORKFLOW_PERSISTED_PLAN_BINDING_MISMATCH',
+      'Persisted Workflow plan does not match its host-owned binding.',
+    );
+  }
+  return compiled;
 }
 
 /** Compatibility alias for the host-side governed action-plan compiler. */

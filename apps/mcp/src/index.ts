@@ -51,4 +51,13 @@ export type { OpenSlackMcpServer } from './server.js';
 
 export { createGovernedPlanCollaborationAuditSink } from './audit.js';
 
+export {
+  createOpenSlackAgentBoundMutationComposition,
+  OpenSlackGovernedCompositionError,
+} from './governed-composition.js';
+export type {
+  CreateOpenSlackAgentBoundMutationCompositionOptions,
+  OpenSlackAgentBoundMutationComposition,
+} from './governed-composition.js';
+
 export { OpenSlackMcpProtocolError, OpenSlackMcpToolError, safeToolError } from './errors.js';
