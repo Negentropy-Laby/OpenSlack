@@ -137,7 +137,7 @@ copyFileSync(
   join(bundleDir, 'assets', 'product', 'negentropy.slot-contribution.v1.schema.json'),
 );
 for (const file of ['install-openslack.md', 'manual-upgrade-rollback.md']) {
-  copyFileSync(join(root, 'docs', 'guides', file), join(bundleDir, file));
+  copyFileSync(join(root, 'docs', 'user', 'guides', file), join(bundleDir, file));
 }
 
 const buildInfo = {

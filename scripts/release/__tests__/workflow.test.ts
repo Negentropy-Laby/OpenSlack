@@ -6,6 +6,7 @@ const workflow = readFileSync(
   resolve(import.meta.dirname, '..', '..', '..', '.github', 'workflows', 'openslack-release.yml'),
   'utf-8',
 );
+const build = readFileSync(resolve(import.meta.dirname, '..', 'build.ts'), 'utf-8');
 
 describe('native release workflow integrity', () => {
   it('runs PR release smoke for every broad compiled or packaged input family', () => {
@@ -23,6 +24,11 @@ describe('native release workflow integrity', () => {
     ]) {
       expect(workflow).toContain(`- ${path}`);
     }
+  });
+
+  it('packages release guides from their canonical user-documentation paths', () => {
+    expect(build).toContain("join(root, 'docs', 'user', 'guides', file)");
+    expect(build).not.toContain("join(root, 'docs', 'guides', file)");
   });
 
   it('requires trusted signatures for tags and never clobbers release assets', () => {

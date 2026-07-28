@@ -57,7 +57,7 @@ func TestLegalAndHistoricalInputsRemainBound(t *testing.T) {
 	}
 
 	rootNotices := readText(t, filepath.Join(openSlackRoot, "THIRD_PARTY_NOTICES.md"))
-	tuiNotes := readText(t, filepath.Join(openSlackRoot, "docs", "developer", "tui-porting-notes.md"))
+	tuiNotes := readText(t, filepath.Join(openSlackRoot, "docs", "contributor", "tui-porting-notes.md"))
 	for name, text := range map[string]string{"THIRD_PARTY_NOTICES.md": rootNotices, "tui-porting-notes.md": tuiNotes} {
 		if !strings.Contains(text, "082be66f5fb604b7ad4c16828ea3f1ac5fd30590") ||
 			!strings.Contains(text, "OpenSlack-native") {
