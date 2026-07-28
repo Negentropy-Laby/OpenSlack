@@ -22,6 +22,7 @@ generated: true
 
 ## Product Modules
 
+<!-- prettier-ignore -->
 | Module | Stage | Maturity | Blockers |
 | --- | --- | --- | --- |
 | Self-Evolution | Implementation | local_ready | signed_v0_2_0_release_pending |
@@ -32,6 +33,7 @@ generated: true
 
 ## Workstreams
 
+<!-- prettier-ignore -->
 | Workstream | Stage | Maturity | Blockers |
 | --- | --- | --- | --- |
 | Notification Delivery | Verification | local_ready | px2_not_claimed<br>runtime_admission_not_claimed<br>release_not_claimed<br>live_verification_not_claimed |

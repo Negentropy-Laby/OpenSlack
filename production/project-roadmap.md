@@ -18,8 +18,9 @@ generated: true
 
 - Portfolio status: **active_development**
 - Release train: **0.2.0**
-- Generated from structured assignments: **11 items**
+- Generated from structured assignments: **12 items**
 
+<!-- prettier-ignore -->
 | Work item | Title | Status | Planned owner | Scope | Blockers |
 | --- | --- | --- | --- | --- | --- |
 | issue-239 | release: close OpenSlack 0.2.0 external gates | ready | unassigned | self-evolution | None |
@@ -33,3 +34,4 @@ generated: true
 | issue-247 | release blocker: clean_machine_agent_task_capstone_pending | blocked | unassigned | collaboration | clean_machine_agent_task_capstone_pending |
 | issue-248 | release blocker: live_provider_smoke_pending | blocked | unassigned | agent-runtime-and-aby | live_provider_smoke_pending |
 | issue-314 | [Workflow Governance] PR #313 | reconciliation_required | unassigned | scenario-runtime | issue_open_after_associated_pr_merged |
+| documentation-governance-v1 | Establish the OpenSlack root documentation governance system | running | project-governance | self-evolution | governed_bot_pr_pending<br>exact_head_hosted_checks_pending<br>independent_human_approval_pending |

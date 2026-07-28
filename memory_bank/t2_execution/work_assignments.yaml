@@ -24,7 +24,7 @@ assignments:
       ]
     blockers: []
     evidence: ['github:issue-239:open']
-    last_verified_at: 2026-07-28T09:25:45Z
+    last_verified_at: 2026-07-28T13:55:03Z
   - id: issue-240
     title: 'release blocker: signed_v0_2_0_release_pending'
     status: blocked
@@ -37,7 +37,7 @@ assignments:
     dependencies: []
     blockers: [signed_v0_2_0_release_pending]
     evidence: ['github:issue-240:open']
-    last_verified_at: 2026-07-28T09:25:45Z
+    last_verified_at: 2026-07-28T13:55:03Z
   - id: issue-241
     title: 'release blocker: clean_machine_release_capstone_pending'
     status: blocked
@@ -50,7 +50,7 @@ assignments:
     dependencies: []
     blockers: [clean_machine_release_capstone_pending]
     evidence: ['github:issue-241:open']
-    last_verified_at: 2026-07-28T09:25:45Z
+    last_verified_at: 2026-07-28T13:55:03Z
   - id: issue-242
     title: 'release blocker: npm_publication_pending'
     status: blocked
@@ -63,7 +63,7 @@ assignments:
     dependencies: []
     blockers: [npm_publication_pending]
     evidence: ['github:issue-242:open']
-    last_verified_at: 2026-07-28T09:25:45Z
+    last_verified_at: 2026-07-28T13:55:03Z
   - id: issue-243
     title: 'release blocker: clean_machine_bot_delivery_smoke_pending'
     status: blocked
@@ -76,7 +76,7 @@ assignments:
     dependencies: []
     blockers: [clean_machine_bot_delivery_smoke_pending]
     evidence: ['github:issue-243:open']
-    last_verified_at: 2026-07-28T09:25:45Z
+    last_verified_at: 2026-07-28T13:55:03Z
   - id: issue-244
     title: 'release blocker: model_endpoint_not_configured'
     status: blocked
@@ -89,7 +89,7 @@ assignments:
     dependencies: []
     blockers: [model_endpoint_not_configured]
     evidence: ['github:issue-244:open']
-    last_verified_at: 2026-07-28T09:25:45Z
+    last_verified_at: 2026-07-28T13:55:03Z
   - id: issue-245
     title: 'release blocker: clean_machine_onboarding_smoke_pending'
     status: blocked
@@ -102,7 +102,7 @@ assignments:
     dependencies: []
     blockers: [clean_machine_onboarding_smoke_pending]
     evidence: ['github:issue-245:open']
-    last_verified_at: 2026-07-28T09:25:45Z
+    last_verified_at: 2026-07-28T13:55:03Z
   - id: issue-246
     title: 'release blocker: clean_machine_end_to_end_merge_capstone_pending'
     status: blocked
@@ -115,7 +115,7 @@ assignments:
     dependencies: []
     blockers: [clean_machine_end_to_end_merge_capstone_pending]
     evidence: ['github:issue-246:open']
-    last_verified_at: 2026-07-28T09:25:45Z
+    last_verified_at: 2026-07-28T13:55:03Z
   - id: issue-247
     title: 'release blocker: clean_machine_agent_task_capstone_pending'
     status: blocked
@@ -128,7 +128,7 @@ assignments:
     dependencies: []
     blockers: [clean_machine_agent_task_capstone_pending]
     evidence: ['github:issue-247:open']
-    last_verified_at: 2026-07-28T09:25:45Z
+    last_verified_at: 2026-07-28T13:55:03Z
   - id: issue-248
     title: 'release blocker: live_provider_smoke_pending'
     status: blocked
@@ -141,7 +141,7 @@ assignments:
     dependencies: [issue-244]
     blockers: [live_provider_smoke_pending]
     evidence: ['github:issue-248:open']
-    last_verified_at: 2026-07-28T09:25:45Z
+    last_verified_at: 2026-07-28T13:55:03Z
   - id: issue-314
     title: '[Workflow Governance] PR #313'
     status: reconciliation_required
@@ -156,4 +156,31 @@ assignments:
     blockers: [issue_open_after_associated_pr_merged]
     evidence:
       ['github:pr-313:merged:8bf81fb994ce3a09c97894363f29c7eb047174b9', 'github:issue-314:open']
-    last_verified_at: 2026-07-28T09:25:45Z
+    last_verified_at: 2026-07-28T13:55:03Z
+  - id: documentation-governance-v1
+    title: Establish the OpenSlack root documentation governance system
+    status: running
+    planned_owner: project-governance
+    module_or_workstream: self-evolution
+    execution:
+      agent_id: codex
+      claim_ref: refs/heads/agent/codex/docs-governance-pr2/20260728
+      started_at: 2026-07-28T09:25:45Z
+    github_issue: null
+    pull_request: null
+    acceptance_criteria:
+      - The T0-T3 Memory Bank and module/workstream CDD structure are present.
+      - All 103 legacy document paths are migrated or retained by manifest.
+      - Generated project and module projections verify deterministically.
+      - Reusable and Notification Delivery CI enforce documentation governance.
+      - A bot-authored PR receives independent human review and approval.
+    dependencies: []
+    blockers:
+      - governed_bot_pr_pending
+      - exact_head_hosted_checks_pending
+      - independent_human_approval_pending
+    evidence:
+      - commit:3250fb75a634330c15d4390c0ea0d265bd80085a
+      - github:pr-327:merged:85f18a24645edade981a342bb67308e3a65d9904
+      - commit:7e0d1f3540bb05bc289c9d0fcdba86a2c1aab108
+    last_verified_at: 2026-07-28T13:55:03Z

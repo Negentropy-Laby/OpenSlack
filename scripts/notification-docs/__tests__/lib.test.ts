@@ -128,8 +128,7 @@ function fixture(): string {
     RECEIPT,
     `${JSON.stringify(
       {
-        $schema:
-          '../../docs/integration/notification-delivery-ib6-history-import.v1.schema.json',
+        $schema: '../../docs/integration/notification-delivery-ib6-history-import.v1.schema.json',
         schema: 'openslack.notification_delivery_ib6_history_import.v1',
         gate: {
           name: 'IB6-HISTORY-IMPORT',

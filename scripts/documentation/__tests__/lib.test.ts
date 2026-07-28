@@ -270,6 +270,13 @@ describe('documentation governance validation', () => {
         ],
       }),
     ).toThrow(/invalid GitHub Issue/);
+
+    expect(() =>
+      validateWorkAssignmentsObject({
+        ...assignments,
+        assignments: [{ ...(assignments.assignments[0] ?? {}), github_issue: null }],
+      }),
+    ).not.toThrow();
   });
 
   test.each(['claimed', 'running', 'review', 'done'])(

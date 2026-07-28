@@ -6,7 +6,7 @@ human_approval: not_requested
 gates:
   - id: source_baseline
     status: passed
-    evidence: ['commit:035b768feda72870129be3c41d5eb7b3aa123478']
+    evidence: ['commit:85f18a24645edade981a342bb67308e3a65d9904']
     notes: Baseline matched origin/main before migration work.
   - id: documentation_migration
     status: pending

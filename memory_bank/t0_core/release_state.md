@@ -20,9 +20,10 @@ generated: true
 - Overall status: **blocked**
 - Human approval: **not_requested**
 
+<!-- prettier-ignore -->
 | Gate | Status | Evidence | Notes |
 | --- | --- | --- | --- |
-| source_baseline | passed | commit:035b768feda72870129be3c41d5eb7b3aa123478 | Baseline matched origin/main before migration work. |
+| source_baseline | passed | commit:85f18a24645edade981a342bb67308e3a65d9904 | Baseline matched origin/main before migration work. |
 | documentation_migration | pending | docs/reference/document-path-migration-v1.yaml | In Review until the atomic migration and independent review complete. |
 | signed_release | blocked | issue:240 | Signed v0.2.0 release is not complete. |
 | clean_machine_release | blocked | issue:241 | Clean-machine release capstone remains open. |
