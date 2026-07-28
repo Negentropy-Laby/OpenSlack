@@ -6,14 +6,16 @@ OpenSlack exposes a local Model Context Protocol server for Qoder Work:
 bun run openslack mcp serve --stdio
 bun run openslack mcp serve --stdio --profile read-only
 bun run openslack mcp serve --stdio --profile agent-bound --principal-ref <agent-id>
+bun run openslack mcp serve --stdio --profile human-attested \
+  --principal-ref <agent-id> --human-principal <human-id>
 ```
 
 The default and explicit `read-only` CLI compositions are projection-only and advertise exactly 12
 read-only tools. Explicit `agent-bound` uses the production composition factory and advertises
-exactly 16. A separately human-attested composition may expose 17, but that profile is not a CLI
-choice until its independent host provider is implemented. The composition root supplies the same
-instance-scoped OpenSlack context used by the CLI, TUI, and chat frontend. `apps/mcp` imports
-package APIs and never imports private CLI files, executes CLI text, or parses CLI stdout.
+exactly 16. Explicit `human-attested` advertises 17 only after its independent provider proves the
+current local OS subject, owner-only mapping, and controlling TTY. The composition root supplies
+the same instance-scoped OpenSlack context used by the CLI, TUI, and chat frontend. `apps/mcp`
+imports package APIs and never imports private CLI files, executes CLI text, or parses CLI stdout.
 
 This document describes the current local build. It does not claim that a Qoder Work desktop build
 has completed qualification or that `QODER_VERIFIED` has been reached.
@@ -265,10 +267,30 @@ Those examples use the default 12-tool profile. Credential-free 16-tool examples
 - `templates/qoder-skill/examples/mcp-config.agent-bound.wsl.json`
 - `templates/qoder-skill/examples/mcp-config.agent-bound.unix.json`
 
+Credential-free 17-tool examples are:
+
+- `templates/qoder-skill/examples/mcp-config.human-attested.windows.json`
+- `templates/qoder-skill/examples/mcp-config.human-attested.wsl.json`
+- `templates/qoder-skill/examples/mcp-config.human-attested.unix.json`
+
 Replace `<agent-id>` with an already active registry entry that has a matching CLI runtime identity
-and `scenario.instantiate` grant. The examples preserve a workspace path containing spaces as one
-JSON argument and contain no credential values. Keep permission prompts enabled, authorize only
-the exact names advertised by the selected 12 or 16 profile, and do not add a wildcard allow rule.
+and `scenario.instantiate` grant. Before selecting 17, run in the same OS environment:
+
+```bash
+bun run openslack mcp attestation status
+bun run openslack mcp attestation bind-local-subject \
+  --human-principal <human-id> --confirm
+```
+
+The bind command stores only a one-way hash of the current POSIX uid/user or Windows SID.
+`--human-principal` is an equality assertion against that mapping, not an identity or credential.
+Every decision prompt opens only `/dev/tty` or `CON` and accepts the exact `APPROVE` or `REJECT`
+token. A desktop launcher without a controlling TTY cannot start this profile; startup fails
+closed without exposing a 16/12-tool fallback.
+
+The examples preserve a workspace path containing spaces as one JSON argument and contain no
+credential values. Keep permission prompts enabled, authorize only the exact names advertised by
+the selected 12, 16, or 17 profile, and do not add a wildcard allow rule.
 
 After adding or changing the connector, start a new Qoder Work conversation so it discovers the
 current catalog. Qoder's connector documentation is:
@@ -368,8 +390,10 @@ production-profile evidence.
 These checks support local build acceptance only. They do not establish `QODER_VERIFIED`.
 The production factory's official MCP SDK preview → confirm → durable Scenario readback is
 `AGENT_BOUND_PROFILE_LOCAL_PASS` evidence. The default and explicit `read-only` CLI profiles are
-qualified as exact-read-12; explicit `agent-bound` is qualified as exact-agent-16. Authenticated
-Qoder Desktop execution remains a separate pending gate.
+qualified as exact-read-12; explicit `agent-bound` is qualified as exact-agent-16; local SDK and
+provider tests qualify exact-human-17 plus one durable workflow-effect decision. Authenticated
+Qoder Desktop execution remains a separate pending gate, and a Desktop process without a
+controlling TTY is an expected fail-closed outcome.
 
 ## Current-build acceptance record
 
@@ -413,8 +437,12 @@ MCP and Skill path with all required bounded evidence. No such claim is made by 
 
 - `OPENSLACK_MCP_START_FAILED`: run the command directly and inspect stderr; stdout intentionally
   contains no diagnostics.
-- `OPENSLACK_MCP_PROFILE_ARGUMENT_INVALID`: remove mutation-only arguments from `read-only`, or
-  provide `--principal-ref` for `agent-bound`.
+- `OPENSLACK_MCP_PROFILE_ARGUMENT_INVALID`: remove authority-binding arguments from `read-only`,
+  provide `--principal-ref` for `agent-bound`, or provide both `--principal-ref` and
+  `--human-principal` for `human-attested`.
+- `LOCAL_HUMAN_ATTESTATION_*`: run `openslack mcp attestation status`; bind the same local OS
+  subject explicitly, verify owner-only file/ACL state, and use a launcher with `/dev/tty` or
+  `CON`. Never redirect MCP stdin/stdout into the attestation prompt.
 - `INVALID_TOOL_INPUT`: remove unknown fields or bring a value within the advertised schema.
 - `SOURCE_EVIDENCE_UNAVAILABLE`: produce or select a current graph snapshot; do not infer empty
   authority state.

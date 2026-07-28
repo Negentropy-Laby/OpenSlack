@@ -125,3 +125,29 @@ The human-attested tool does not trust Skill wording, Qoder permission, IM ident
 client-supplied actor. Its host attests the exact run, approval, decision, reason hash, capability,
 business correlation, and expiry for each call. The tool decides only an OpenSlack workflow
 effect; it never creates a GitHub review or authorizes merge.
+
+## Local human-attested CLI qualification
+
+The production CLI now exposes `human-attested`, but only after a separate local provider passes
+its startup self-test. The mapping at `.openslack.local/mcp/human-subjects.json` stores a one-way
+OS-subject hash and asserted human principal, never a raw uid, username, SID, or credential.
+Mapping reads are bounded, canonical, no-follow, owner checked, and process-sealed by byte hash and
+file identity. Windows additionally requires provable current-SID ownership and protected ACLs.
+
+| Boundary                                        | Verdict       | Evidence                                                                     |
+| ----------------------------------------------- | ------------- | ---------------------------------------------------------------------------- |
+| Default / explicit read-only CLI                | `LOCAL_PASS`  | exact production-12; no authority-binding arguments                          |
+| Agent-bound CLI                                 | `LOCAL_PASS`  | exact production-16 from registry/runtime principal                          |
+| Human-attested CLI                              | `LOCAL_PASS`  | exact production-17 after independent provider self-test                     |
+| Per-decision binding                            | `LOCAL_PASS`  | run, approval, decision, reason hash, capability, correlation, expiry        |
+| Controlling-TTY separation                      | `LOCAL_PASS`  | `/dev/tty` or `CON`; no MCP stdin/stdout path                                |
+| Subject/mapping/expiry/abort/confirmation drift | `LOCAL_PASS`  | fail closed before binding; requested profile has no 16/12 fallback          |
+| Official MCP SDK decision and durable readback  | `LOCAL_PASS`  | exact 17 tools; terminal decision plus recorded audit projection             |
+| Authenticated Qoder Work execution              | `NOT_RUN`     | controlling-TTY availability and Desktop connector execution remain external |
+| `QODER_VERIFIED`                                | `NOT_CLAIMED` | local protocol and provider evidence are not Desktop qualification           |
+
+Qoder Work may launch a stdio child without a controlling TTY. That is an expected fail-closed
+outcome, not qualification evidence and not permission to read approval input from protocol
+stdin. A named authenticated Desktop build must still prove connector initialization, exact
+catalog discovery, tool permission behavior, Skill triggering, and the independent local
+attestation channel before any `QODER_VERIFIED` claim.

@@ -6,7 +6,10 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import {
   createOpenSlackAgentBoundMutationComposition,
+  createGovernedPlanCollaborationAuditSink,
   createOpenSlackMcpServer,
+  createOpenSlackWorkflowApprovalAttestationPort,
+  createOpenSlackWorkflowApprovalPort,
   type OpenSlackAgentBoundMutationComposition,
   type OpenSlackMcpContext,
   type OpenSlackMcpServer,
@@ -14,8 +17,13 @@ import {
 } from '@openslack/mcp';
 import { LocalGovernedPlanStore } from '@openslack/operator';
 import { LocalScenarioInstanceStore } from '@openslack/scenario-runtime';
+import {
+  createWorkflowEffectDecisionAuthority,
+  LocalWorkflowEffectApprovalStore,
+} from '@openslack/workflows';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mcpCommands, type McpCommandDependencies } from '../commands/mcp.js';
+import type { OpenSlackHumanAttestedMcpComposition } from '../mcp-human-attested-composition.js';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const sourcePack = join(repositoryRoot, 'scenarios', 'software-delivery');
@@ -41,6 +49,10 @@ const AGENT_BOUND_TOOL_NAMES = Object.freeze([
   'openslack_preview_workflow',
   'openslack_confirm_plan',
   'openslack_cancel_plan',
+]);
+const HUMAN_ATTESTED_TOOL_NAMES = Object.freeze([
+  ...AGENT_BOUND_TOOL_NAMES,
+  'openslack_decide_workflow_approval',
 ]);
 const roots: string[] = [];
 
@@ -203,8 +215,13 @@ async function runOverOfficialSdk(
           probeError = error;
           throw error;
         } finally {
-          await client.close();
-          await server.close();
+          try {
+            await client.close();
+            await server.close();
+          } catch (error) {
+            probeError ??= error;
+            throw error;
+          }
         }
       },
       close: () => server.close(),
@@ -407,6 +424,118 @@ describe('MCP CLI production profiles over the official SDK', () => {
     expect(
       await new LocalGovernedPlanStore(composition!.governedPlanRoot).load(planId),
     ).toMatchObject({ state: 'pending', revision: 1 });
+    expect(stderr).not.toHaveBeenCalled();
+    expect(stdout).not.toHaveBeenCalled();
+  });
+
+  it('exposes exactly 17 tools and records one separately attested decision over the official SDK', async () => {
+    const workspaceRoot = createWorkspace();
+    let approvalStore: LocalWorkflowEffectApprovalStore | undefined;
+    const createHumanAttestedComposition = async (
+      options: Parameters<NonNullable<McpCommandDependencies['createHumanAttestedComposition']>>[0],
+    ): Promise<OpenSlackHumanAttestedMcpComposition> => {
+      const agent = await createOpenSlackAgentBoundMutationComposition({
+        workspaceRoot: options.workspaceRoot,
+        principalRef: options.principalRef,
+        provider: 'cli',
+        ...(options.workspaceIdAssertion === undefined
+          ? {}
+          : { workspaceIdAssertion: options.workspaceIdAssertion }),
+      });
+      const authority = createWorkflowEffectDecisionAuthority({
+        workspaceId: agent.authority.workspaceId,
+        humanPrincipalIds: [options.humanPrincipalAssertion],
+        capabilities: ['workflow.effect.decide'],
+        maxBindingTtlMs: 60_000,
+      });
+      const approvalRoot = join(workspaceRoot, 'workflow-effect-approvals');
+      mkdirSync(approvalRoot);
+      const store = new LocalWorkflowEffectApprovalStore(approvalRoot, authority);
+      approvalStore = store;
+      const now = Date.now();
+      await store.createPending({
+        runId: 'run-human-attested-001',
+        approvalId: 'approval-human-attested-001',
+        correlationId: 'correlation-human-attested-001',
+        workflowId: 'delivery.create',
+        workflowVersion: '1.0.0',
+        workflowHash: 'a'.repeat(64),
+        inputHash: 'b'.repeat(64),
+        effectId: `workflow-effect:sha256:${'c'.repeat(64)}`,
+        effectHash: 'c'.repeat(64),
+        requiredCapability: 'workflow.effect.decide',
+        createdAt: new Date(now).toISOString(),
+        expiresAt: new Date(now + 120_000).toISOString(),
+      });
+      const attestation = createOpenSlackWorkflowApprovalAttestationPort((request) =>
+        authority.issueHumanDecisionBinding({
+          principalId: options.humanPrincipalAssertion,
+          capability: request.requiredCapability,
+          runId: request.runId,
+          approvalId: request.approvalId,
+          correlationId: request.correlationId,
+          approvalExpiresAt: request.approvalExpiresAt,
+          decision: request.decision,
+          reasonHash: request.reasonHash,
+          expiresAt: new Date(
+            Math.min(Date.now() + 30_000, Date.parse(request.approvalExpiresAt)),
+          ).toISOString(),
+        }),
+      );
+      return Object.freeze({
+        ...agent,
+        humanPrincipalId: options.humanPrincipalAssertion,
+        workflowApprovalAuthority: createOpenSlackWorkflowApprovalPort({
+          store,
+          attestation,
+          audit: createGovernedPlanCollaborationAuditSink(workspaceRoot),
+        }),
+        workflowApprovalStoreRoot: approvalRoot,
+      });
+    };
+
+    await runOverOfficialSdk(
+      workspaceRoot,
+      [
+        '--profile',
+        'human-attested',
+        '--principal-ref',
+        PRINCIPAL_REF,
+        '--human-principal',
+        'human.interviewer',
+        '--workspace-id',
+        WORKSPACE_ID,
+      ],
+      async (client) => {
+        expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(
+          HUMAN_ATTESTED_TOOL_NAMES,
+        );
+        const decision = await client.callTool({
+          name: 'openslack_decide_workflow_approval',
+          arguments: {
+            runId: 'run-human-attested-001',
+            approvalId: 'approval-human-attested-001',
+            decision: 'approved',
+            reason: 'The local human reviewed the exact effect evidence.',
+          },
+        });
+        expect(decision.structuredContent).toMatchObject({
+          status: 'completed',
+          correlationId: 'correlation-human-attested-001',
+          governance: { owner: 'human.interviewer' },
+          data: { status: 'approved', auditProjection: 'recorded' },
+        });
+        expect(
+          await approvalStore!.read('run-human-attested-001', 'approval-human-attested-001'),
+        ).toMatchObject({
+          revision: 2,
+          status: 'approved',
+          auditProjection: { status: 'recorded' },
+        });
+      },
+      { createHumanAttestedComposition },
+    );
+
     expect(stderr).not.toHaveBeenCalled();
     expect(stdout).not.toHaveBeenCalled();
   });

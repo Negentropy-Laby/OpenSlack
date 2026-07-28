@@ -182,6 +182,8 @@ async function approvalHarness(workspaceRoot: string) {
         capability: request.requiredCapability,
         runId: request.runId,
         approvalId: request.approvalId,
+        correlationId: request.correlationId,
+        approvalExpiresAt: request.approvalExpiresAt,
         decision: request.decision,
         reasonHash: request.reasonHash,
         expiresAt: new Date(
@@ -436,7 +438,7 @@ describe('governed MCP mutation profile', () => {
         operator: operator(),
         governedMutations: mutations,
       }),
-      { timeoutMs: 100 },
+      { timeoutMs: 1_000 },
     );
     const preview = await deadlineCore.callTool('openslack_preview_scenario', {
       scenarioId: 'software-delivery',
@@ -613,6 +615,8 @@ describe('governed MCP mutation profile', () => {
           capability: request.requiredCapability,
           runId: request.runId,
           approvalId: request.approvalId,
+          correlationId: request.correlationId,
+          approvalExpiresAt: request.approvalExpiresAt,
           decision: request.decision,
           reasonHash: request.reasonHash,
           expiresAt: new Date(

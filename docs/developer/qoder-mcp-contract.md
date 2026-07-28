@@ -3,8 +3,9 @@
 Status: implemented local contract. The default and explicit `read-only` CLI surfaces are the exact
 12-tool `openslack.mcp_result.v2` server described in
 [Qoder Work MCP integration](qoder-mcp.md). Explicit `agent-bound` selects the production
-agent-governed 16-tool composition. A separately human-attested 17-tool composition exists as a
-nominal contract but is not yet a CLI choice. An explicitly injected local demo surface appends
+agent-governed 16-tool composition. Explicit `human-attested` selects the production 17-tool
+composition only after its independent local OS-subject and controlling-TTY self-test. An
+explicitly injected local demo surface appends
 only the bounded reset tool. This does not claim Qoder desktop qualification or Scenario rehearsal.
 
 ## Composition Boundary
@@ -84,12 +85,13 @@ Workflow run approvals. An agent-bound composition cannot advertise or invoke it
 directory identities. Its host callback receives only frozen `{ root, signal, deadlineAt }`
 authority. Timeout is an ambiguous effect reported as `reconciliation_required`, never as proof of
 no effect. Exact production counts are 12, 16, and 17; exact demo counts are 13, 17, and 18.
-Default and explicit `read-only` are production-12; explicit `agent-bound` is production-16.
+Default and explicit `read-only` are production-12; explicit `agent-bound` is production-16;
+explicit `human-attested` is production-17.
 
 ## CLI profile selection
 
-The CLI exposes only `read-only` and `agent-bound`. Omitting `--profile` is exactly equivalent to
-`--profile read-only`. Read-only rejects `--principal-ref` and `--workspace-id`.
+The CLI exposes `read-only`, `agent-bound`, and `human-attested`. Omitting `--profile` is exactly
+equivalent to `--profile read-only`. Read-only rejects every authority-binding argument.
 
 Agent-bound requires `--principal-ref`, which selects an existing active registry/runtime binding;
 the CLI fixes the runtime provider to `cli` and never creates an identity. Optional
@@ -97,6 +99,13 @@ the CLI fixes the runtime provider to `cli` and never creates an identity. Optio
 production factory must finish principal, permission, catalog, audit, executor, and store
 initialization before the MCP server is constructed. Failure exposes no partial or fallback
 catalog, and diagnostics remain on stderr.
+
+Human-attested requires the same agent binding plus `--human-principal`. That value is an equality
+assertion against the current OS subject's local mapping, not an identity source. The mapping
+persists only a one-way subject hash and human principal ID. Each decision opens only `/dev/tty`
+or `CON`, displays the exact decision scope, and requires `APPROVE` or `REJECT`; MCP stdin/stdout
+never carry the human response. Missing TTY, unsafe ownership/ACL, subject or mapping drift,
+assertion mismatch, abort, or expiry fails the requested profile with no 16/12-tool fallback.
 
 ## Result Versions
 

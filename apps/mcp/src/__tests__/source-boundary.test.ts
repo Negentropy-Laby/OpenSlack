@@ -56,6 +56,9 @@ describe('QW2 MCP source boundary', () => {
     expect(source).not.toMatch(
       /\b(?:issueHumanDecisionBinding|createWorkflowEffectDecisionAuthority)\b/,
     );
+    expect(source).not.toMatch(
+      /\b(?:createLocalHumanAttestationProvider|bindLocalHumanSubject|resolveProductionSubject)\b|local-human-attestation/,
+    );
     expect(source).toContain('per-decision attestation');
     expect(source).toContain('reasonHash');
     expect(source).toContain('auditProjection');

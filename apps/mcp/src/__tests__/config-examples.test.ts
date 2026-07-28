@@ -72,4 +72,48 @@ describe('Qoder MCP config examples', () => {
       expect(JSON.stringify(server)).not.toMatch(/token|secret|password|http:|https:/i);
     },
   );
+
+  it.each(['windows', 'wsl', 'unix'])(
+    'keeps the %s human-attested example credential-free, explicit, and assertion-only',
+    (platform: string) => {
+      const path = resolve(
+        process.cwd(),
+        'templates',
+        'qoder-skill',
+        'examples',
+        `mcp-config.human-attested.${platform}.json`,
+      );
+      const config = JSON.parse(readFileSync(path, 'utf8')) as {
+        mcpServers: {
+          openslack: {
+            type: string;
+            command: string;
+            args: string[];
+            env?: Record<string, string>;
+          };
+        };
+      };
+      const server = config.mcpServers.openslack;
+
+      expect(server.type).toBe('stdio');
+      expect(server.args.slice(-10)).toEqual([
+        'openslack',
+        'mcp',
+        'serve',
+        '--stdio',
+        '--profile',
+        'human-attested',
+        '--principal-ref',
+        '<agent-id>',
+        '--human-principal',
+        '<human-id>',
+      ]);
+      expect(server.args.some((argument) => /\s/.test(argument))).toBe(true);
+      expect(server.args).not.toContain('--workspace-id');
+      expect(server.env).toBeUndefined();
+      expect(JSON.stringify(server)).not.toMatch(
+        /token|secret|password|credential|subjectHash|sid|http:|https:/i,
+      );
+    },
+  );
 });

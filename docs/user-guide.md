@@ -745,11 +745,14 @@ When an LLM provider is configured (`OPENSLACK_LLM_PROVIDER`, `OPENSLACK_LLM_MOD
 
 ## Qoder Work MCP
 
-| Command                                                                                                                 | Purpose                                                                                 |
-| ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `openslack mcp serve --stdio`                                                                                           | Default to the frozen 12-tool, read-only `openslack.mcp_result.v2` catalog              |
-| `openslack mcp serve --stdio --profile read-only`                                                                       | Explicitly select the same exact 12-tool read-only catalog                              |
-| `openslack mcp serve --stdio --profile agent-bound --principal-ref <agent-id> [--workspace-id <asserted-workspace-id>]` | Select the exact 16-tool governed agent catalog from an active registry/runtime binding |
+| Command                                                                                                                                                 | Purpose                                                                                                              |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `openslack mcp serve --stdio`                                                                                                                           | Default to the frozen 12-tool, read-only `openslack.mcp_result.v2` catalog                                           |
+| `openslack mcp serve --stdio --profile read-only`                                                                                                       | Explicitly select the same exact 12-tool read-only catalog                                                           |
+| `openslack mcp serve --stdio --profile agent-bound --principal-ref <agent-id> [--workspace-id <asserted-workspace-id>]`                                 | Select the exact 16-tool governed agent catalog from an active registry/runtime binding                              |
+| `openslack mcp attestation status`                                                                                                                      | Inspect sanitized local human-subject mapping and controlling-TTY readiness                                          |
+| `openslack mcp attestation bind-local-subject --human-principal <human-id> --confirm`                                                                   | Bind the current OS subject hash to one asserted human principal; no raw subject or credential is persisted          |
+| `openslack mcp serve --stdio --profile human-attested --principal-ref <agent-id> --human-principal <human-id> [--workspace-id <asserted-workspace-id>]` | Select the exact 17-tool profile only after both the agent binding and independent local human attestation self-test |
 
 Build current graph evidence explicitly before querying it:
 
@@ -785,8 +788,8 @@ GitHub or live-evidence collection, and is intentionally side-effecting. It is
 not an MCP read tool.
 
 Every MCP profile reserves stdout for protocol frames and opens no listening
-socket. Default and explicit `read-only` accept neither `--principal-ref` nor
-`--workspace-id` and expose no mutation tool. `agent-bound` requires
+socket. Default and explicit `read-only` accept no authority-binding argument
+and expose no mutation tool. `agent-bound` requires
 `--principal-ref`; that value only selects an existing active Agent registry
 entry and matching CLI runtime identity. An optional `--workspace-id` is an
 equality assertion against canonical `openslack.yaml`, never an override.
@@ -801,6 +804,17 @@ separate from OpenSlack plan confirmation and from an authorized human GitHub
 review. Connector examples for Windows, WSL, and Unix are documented in
 [`developer/qoder-mcp.md`](developer/qoder-mcp.md).
 
+`human-attested` additionally requires `--human-principal`, which is only an
+equality assertion against `.openslack.local/mcp/human-subjects.json`. The
+mapping stores a one-way hash of the current POSIX uid/user or Windows SID,
+never the raw OS subject. Every decision is shown on `/dev/tty` or `CON` and
+requires the exact `APPROVE` or `REJECT` token. The short-lived binding covers
+the run, approval, decision, reason hash, required capability, business
+correlation, and approval expiry. If the OS subject, mapping, ownership/ACL,
+controlling TTY, deadline, or assertion cannot be proven, the requested
+17-tool profile fails before server construction and never falls back to 16 or
+12 tools.
+
 The catalog adds `openslack_list_scenarios`, `openslack_query_graph`, and
 `openslack_explain_graph` to the nine foundation reads. Missing or stale current
 graph evidence returns explicit `SOURCE_EVIDENCE_UNAVAILABLE` or
@@ -810,8 +824,8 @@ build command.
 
 Only an explicitly injected local demo composition advertises
 `openslack_demo_reset`. Default and explicit `read-only` always advertise
-production 12; explicit `agent-bound` advertises production 16. The CLI does
-not yet expose the separately human-attested 17-tool profile.
+production 12; explicit `agent-bound` advertises production 16; explicit
+`human-attested` advertises production 17 only after its startup self-test.
 
 Qoder Work desktop discovers the checked-in Skill from
 `~/.qoderwork/skills/openslack-organization-control/`. qodercli uses the

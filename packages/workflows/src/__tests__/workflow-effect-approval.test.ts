@@ -50,6 +50,8 @@ function binding(
     capability: 'workflow.effect.decide',
     runId: 'run-001',
     approvalId: 'approval-001',
+    correlationId: 'business-correlation-001',
+    approvalExpiresAt: new Date(now + 60_000).toISOString(),
     decision,
     reasonHash,
     expiresAt: new Date(now + 30_000).toISOString(),
@@ -199,11 +201,50 @@ describe('workflow effect approval v2 contract', () => {
         capability: 'workflow.effect.decide',
         runId: 'run-001',
         approvalId: 'approval-001',
+        correlationId: 'business-correlation-001',
+        approvalExpiresAt: new Date(now + 60_000).toISOString(),
         decision: 'approved',
         reasonHash: approvedReasonHash,
         expiresAt: new Date(now + 30_000).toISOString(),
       }),
     ).toThrowError(expect.objectContaining({ code: 'WORKFLOW_EFFECT_APPROVAL_BINDING_INVALID' }));
+  });
+
+  it('binds a human decision to the exact business correlation and approval expiry', () => {
+    const now = Date.now();
+    const decisionAuthority = authority();
+    for (const scoped of [
+      {
+        correlationId: 'business-correlation-other',
+        approvalExpiresAt: new Date(now + 60_000).toISOString(),
+      },
+      {
+        correlationId: 'business-correlation-001',
+        approvalExpiresAt: new Date(now + 90_000).toISOString(),
+      },
+    ]) {
+      const humanBinding = decisionAuthority.issueHumanDecisionBinding({
+        principalId: 'human-reviewer',
+        capability: 'workflow.effect.decide',
+        runId: 'run-001',
+        approvalId: 'approval-001',
+        correlationId: scoped.correlationId,
+        approvalExpiresAt: scoped.approvalExpiresAt,
+        decision: 'approved',
+        reasonHash: approvedReasonHash,
+        expiresAt: new Date(now + 30_000).toISOString(),
+      });
+      expect(() =>
+        applyWorkflowEffectApprovalDecision(
+          pending(now),
+          'approved',
+          humanBinding,
+          decisionAuthority,
+          approvedReasonHash,
+          new Date(now + 1_000).toISOString(),
+        ),
+      ).toThrowError(expect.objectContaining({ code: 'WORKFLOW_EFFECT_APPROVAL_BINDING_INVALID' }));
+    }
   });
 
   it('rejects mismatched effect identity, capability, expiry, and noncanonical timestamps', () => {
