@@ -44,8 +44,8 @@ import {
 } from '@openslack/pr';
 import {
   createSoftwareDeliveryScenarioCatalog,
-  loadScenarioPack,
-  type LoadedScenarioDefinition,
+  discoverScenarioPacks,
+  type ScenarioPackDiscoveryResult,
 } from '@openslack/scenario-runtime';
 import { getWorkflowRunProgress } from '@openslack/workflows';
 import { parse as parseYaml } from 'yaml';
@@ -192,7 +192,6 @@ const TASK_TYPES = new Set([
 const DEFAULT_GRAPH_MAX_AGE_MS = 24 * 60 * 60 * 1_000;
 const MIN_GRAPH_MAX_AGE_MS = 60 * 1_000;
 const MAX_GRAPH_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1_000;
-const SCENARIO_IDS = Object.freeze(['software-delivery'] as const);
 const NOMINAL_LOCAL_DEMO_RESET_PORTS = new WeakMap<
   object,
   { readonly workspaceRoot: string; readonly fixtureRoot: string }
@@ -1200,19 +1199,33 @@ export function createDefaultOpenSlackReadModelPorts(
   const graphStore = new LocalGraphStore(join(rootDir, '.openslack.local', 'graph'));
   const graphCursorSecret = randomBytes(32);
   const scenarioRoot = join(rootDir, 'scenarios');
+  const scenarioCatalog = createSoftwareDeliveryScenarioCatalog();
+  let scenarioDiscoveryPromise: Promise<ScenarioPackDiscoveryResult> | undefined;
 
-  const loadScenarios = async (): Promise<readonly LoadedScenarioDefinition[]> => {
-    const catalog = createSoftwareDeliveryScenarioCatalog();
+  // Intentionally cache rejection too: discovery is fail-closed and recovery requires a restart.
+  const discoverScenariosOnce = (): Promise<ScenarioPackDiscoveryResult> =>
+    (scenarioDiscoveryPromise ??= discoverScenarioPacks({
+      scenarioRoot,
+      catalog: scenarioCatalog,
+    }));
+
+  const loadScenarios = async (): Promise<ScenarioPackDiscoveryResult> => {
+    let discovery: ScenarioPackDiscoveryResult;
     try {
-      return await Promise.all(
-        SCENARIO_IDS.map((scenarioId) => loadScenarioPack({ scenarioRoot, scenarioId, catalog })),
-      );
+      discovery = await discoverScenariosOnce();
     } catch {
       throw new ProjectionEvidenceUnavailableError(
         'SOURCE_EVIDENCE_UNAVAILABLE',
         'No locked Scenario Definition is available from the bounded scenario catalog.',
       );
     }
+    if (discovery.accepted.length === 0) {
+      throw new ProjectionEvidenceUnavailableError(
+        'SOURCE_EVIDENCE_UNAVAILABLE',
+        'No locked Scenario Definition is available from the bounded scenario catalog.',
+      );
+    }
+    return discovery;
   };
 
   const currentGraph = async (scenarioInstanceId: string) => {
@@ -1372,7 +1385,12 @@ export function createDefaultOpenSlackReadModelPorts(
     notificationStatus: () => notificationProjection(rootDir),
     businessOutcomes: businessOutcomes ?? defaultBusinessOutcomesReader(rootDir),
     scenarios: async () => {
-      const definitions = await loadScenarios();
+      const discovery = await loadScenarios();
+      const definitions = discovery.accepted;
+      const blockedCounts = new Map<string, number>();
+      for (const diagnostic of discovery.blocked) {
+        blockedCounts.set(diagnostic.code, (blockedCounts.get(diagnostic.code) ?? 0) + 1);
+      }
       return {
         generatedAt: clock().toISOString(),
         scenarios: definitions.map((definition) => ({
@@ -1388,6 +1406,9 @@ export function createDefaultOpenSlackReadModelPorts(
         evidenceRefs: definitions.map(
           (definition) => `artifact:sha256:${definition.definitionHash}`,
         ),
+        blockedCounts: [...blockedCounts]
+          .sort(([left], [right]) => left.localeCompare(right, 'en'))
+          .map(([code, count]) => ({ code, count })),
       };
     },
     graphQuery: async (input) => {

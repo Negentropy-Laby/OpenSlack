@@ -451,6 +451,10 @@ export function projectToolData(name: OpenSlackReadToolName, value: unknown): Ro
           viewIds: texts(scenario.viewIds, 20),
           evidenceRef: text(scenario.evidenceRef),
         })),
+        blockedCounts: rows(item.blockedCounts, 32).map((blocked) => ({
+          code: text(blocked.code),
+          count: number(blocked.count),
+        })),
         evidenceRefs: texts(item.evidenceRefs, 50),
       };
     case 'openslack_query_graph':
