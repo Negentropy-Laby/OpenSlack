@@ -1,0 +1,323 @@
+---
+schema: openslack.document.v1
+id: contributor-github-issues-loop
+status: In Review
+authority: canonical
+audience:
+  - contributors
+owner: project-governance
+updated: 2026-07-28
+sources:
+  - docs/reference/document-path-migration-v1.yaml
+---
+
+# Module: GitHub Issues Task Loop (GITL)
+
+> Status: ACTIVE (Phase 1.7 — Productized)
+> Sources: `packages/github/src/{issue-tasks,claims,manifest,lifecycle,task-filter,repair}.ts`
+> CLI: `openslack agent tick --source github-issues`
+
+## Overview
+
+The GitHub Issues-First Autonomous Task Loop enables OpenSlack agents to discover, claim, execute, and complete tasks entirely through GitHub Issues — without requiring GitHub Project v2, OAuth device flow, or browser interaction.
+
+## Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  OBSERVE                                                         │
+│  openslack self observe → triageObservations()                   │
+│  ↓                                                               │
+│  CREATE ISSUE                                                    │
+│  createTaskIssue(title, body, [openslack:task, openslack:ready]) │
+│  ↓                                                               │
+│  AGENT TICK                                                      │
+│  tickAgent(id, { source: 'github-issues' })                     │
+│  → queryReadyIssueTasks() → GitHub Search API                    │
+│  → claimIssueTask() → git ref atomic lock                        │
+│  ↓                                                               │
+│  WORK IN WORKTREE                                                │
+│  openslack task checkout → git worktree add -b HEAD             │
+│  ↓                                                               │
+│  SUBMIT PR                                                       │
+│  openslack task sync → git commit → GitHubDeliveryService       │
+│  → PUSHED → PR_CREATED/UPDATED → HEAD_SYNCHRONIZED              │
+│  → AWAITING_GATES (PRMS owns readiness and merge)               │
+│  → reviewClaim() → verify owner/ref/PR → review                 │
+│  ↓                                                               │
+│  COMPLETE                                                        │
+│  PR merged → completeClaim() → verify PR/ref/done postconditions │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+## Claim Protocol
+
+### Atomic Claim via Git Ref
+
+The claim lock uses deterministic Git references as an atomic gate. This is the only reliable lock mechanism available at the repository level without a database.
+
+```
+ref: refs/heads/openslack/claims/issue-{issueNumber}
+```
+
+**Protocol:**
+
+1. Agent queries ready issues via GitHub Search API (`label:openslack:task label:openslack:ready`)
+2. For each candidate, agent gets main branch HEAD SHA
+3. Agent attempts `POST /repos/{owner}/{repo}/git/refs` with the claim ref pointing to HEAD SHA
+4. **If ref created (HTTP 201):** claim granted — return lease
+5. **If ref already exists (HTTP 422):** claim denied — task already claimed by another agent
+6. Best-effort label update: remove `openslack:ready`, add `openslack:claimed`, post claim comment
+
+**Why git refs and not labels?**
+
+Labels are not atomic. Two agents can simultaneously read label state, both see "ready", and both attempt to claim. Git ref creation is a server-side atomic operation — the first agent to create the ref wins, all others get HTTP 422.
+
+### Completion Protocol
+
+```
+DELETE /repos/{owner}/{repo}/git/refs/heads/openslack/claims/issue-{issueNumber}
+```
+
+`completeClaim({ issueNumber, agentId, prUrl })` verifies structured ownership,
+exact PR evidence, and the linked PR's merged state before any completion
+mutation. It then removes the claim ref, writes `openslack:done`, and re-reads
+GitHub to prove both final postconditions. A 404 is idempotent success only when
+the final Issue state is already complete.
+
+## Issue Label Lifecycle
+
+| Label               | State                    | Claim Ref                               | Notes                                         |
+| ------------------- | ------------------------ | --------------------------------------- | --------------------------------------------- |
+| `openslack:task`    | Marked as OpenSlack task | N/A                                     | Always present on task issues                 |
+| `openslack:ready`   | Available for claim      | None                                    | Agent can attempt claim                       |
+| `openslack:claimed` | Claimed by agent         | `refs/heads/openslack/claims/issue-{n}` | Claim ref is authoritative                    |
+| `openslack:running` | Agent working            | Claim ref exists                        | Set manually by agent after worktree creation |
+| `openslack:review`  | PR submitted             | Claim ref exists                        | Set and verified by `reviewClaim()`           |
+| `openslack:done`    | Completed                | Claim ref deleted                       | Set and verified by `completeClaim()`         |
+| `openslack:blocked` | Needs human              | Claim ref may exist                     | Set manually when agent cannot proceed        |
+
+Initial claim labels remain a repairable projection of the atomic claim ref.
+Heartbeat, review, and completion commands are stricter: they never report
+success until their required ref, owner, comment, label, and PR postconditions
+have been re-read from GitHub. Partial mutations return a fixed error code and
+one idempotent recovery command. The `openslack github repair claims` command
+still reconciles stale projection state (dry-run by default, `--apply` to
+mutate).
+
+## Task Manifest
+
+Task issues embed structured metadata in YAML frontmatter within the issue body:
+
+```yaml
+schema: openslack.github_issue_task.v1
+task_id: TASK-2026-000123
+agent_type: codex
+risk_level: low
+required_capabilities:
+  - typescript
+  - ci-fix
+allowed_paths:
+  - packages/**
+  - .openslack/tasks/**
+forbidden_paths:
+  - .github/**
+output_contract:
+  - draft_pr
+  - workspace_run_record
+```
+
+`parseTaskManifest(body)` extracts this from the issue body. `buildTaskManifestYaml(manifest)` generates the YAML string for issue creation.
+
+## API Reference
+
+### `createTaskIssue(title, body, labels)`
+
+Creates a new GitHub issue with task labels. Returns `{ issueNumber, url, nodeId }`.
+
+```
+import { createTaskIssue } from '@openslack/github';
+
+const { issueNumber, url } = await createTaskIssue(
+  'Fix failing workspace validation',
+  '## Task\n...',
+  ['openslack:task', 'openslack:ready', 'risk:low', 'agent-type:codex'],
+);
+// → Issue #42: https://github.com/Negentropy-Laby/OpenSlack/issues/42
+```
+
+### `queryReadyIssueTasks(options?)`
+
+Searches for issues with `label:openslack:task` + `label:openslack:ready`. Returns `IssueTask[]`.
+
+```
+import { queryReadyIssueTasks } from '@openslack/github';
+
+const tasks = await queryReadyIssueTasks({
+  agentType: 'codex',
+  capabilities: ['typescript'],
+  maxRisk: 'medium',
+});
+// → [{ issueNumber: 42, title: '...', labels: [...], body: '...' }]
+```
+
+### `claimIssueTask({ issueNumber, agentId, ttlMinutes })`
+
+Creates atomic git ref claim. Returns `{ claimStatus, claimRef, lease }`.
+
+```
+import { claimIssueTask } from '@openslack/github';
+
+const result = await claimIssueTask({
+  issueNumber: 42,
+  agentId: 'codex_developer_ci-bot',
+  ttlMinutes: 60,
+});
+if (result.claimStatus === 'granted') {
+  console.log('Claimed:', result.claimRef);  // refs/heads/openslack/claims/issue-42
+}
+```
+
+### Strict Claim lifecycle
+
+`heartbeatClaim`, `reviewClaim`, and `completeClaim` return
+`openslack.claim_lifecycle.v1`. They require a live GitHub client, structured
+claim/heartbeat ownership, and verified remote postconditions. Raw transport
+errors are replaced with fixed, non-secret error codes.
+
+## CLI Usage
+
+```bash
+# Agent discovers and claims issues
+openslack agent tick --agent-id codex_developer --source github-issues
+
+# Self-observe creates issues from EVOL tasks
+openslack self triage --create-issues
+
+# Task sync creates PR and links to issue
+openslack task sync \
+  --agent-id codex_developer \
+  --task-id TASK-2026-000999 \
+  --run-id RUN-2026-000001 \
+  --paths "packages/core/src/fix.ts" \
+  --issue-number 1
+
+# Recover a published PR whose Issue review transition was interrupted
+openslack github claim review \
+  --issue-number 1 \
+  --agent-id codex_developer \
+  --pr-url https://github.com/owner/repo/pull/42
+
+# Complete only after merge/review evidence exists
+openslack github claim complete \
+  --issue-number 1 \
+  --agent-id codex_developer \
+  --pr-url https://github.com/owner/repo/pull/42
+```
+
+The strict claim lifecycle currently accepts canonical `https://github.com/.../pull/<n>`
+URLs only. GitHub Enterprise Server hosts are outside the v0.2.0 support boundary and fail closed
+with `CLAIM_INVALID_INPUT`.
+
+## Authentication
+
+Uses the three-tier auth model from `docs/operations/github-automation.md`:
+
+1. `OPENSLACK_GITHUB_APP_ID` + `OPENSLACK_GITHUB_APP_INSTALLATION_ID` + private key → GitHub App installation token (preferred)
+2. `GITHUB_TOKEN` → PAT fallback
+3. Neither → dry-run mode
+
+## Required GitHub Labels
+
+Created once (idempotent) via REST API:
+
+| Label                 | Color    | Purpose          |
+| --------------------- | -------- | ---------------- |
+| `openslack:task`      | `1f6feb` | OpenSlack task   |
+| `openslack:ready`     | `2da44e` | Ready for claim  |
+| `openslack:claimed`   | `fbca04` | Claimed by agent |
+| `openslack:running`   | `d29922` | Agent working    |
+| `openslack:review`    | `8250df` | PR submitted     |
+| `openslack:done`      | `6e7781` | Completed        |
+| `openslack:blocked`   | `cf222e` | Blocked          |
+| `risk:low`            | `2da44e` |                  |
+| `risk:medium`         | `fbca04` |                  |
+| `risk:high`           | `d29922` |                  |
+| `risk:critical`       | `cf222e` |                  |
+| `agent-type:codex`    | `0969da` |                  |
+| `agent-type:reviewer` | `0969da` |                  |
+| `agent-type:sync`     | `0969da` |                  |
+| `agent-type:memory`   | `0969da` |                  |
+
+## E2E Verification
+
+```bash
+# Prerequisites: GITHUB_TOKEN with repo scope, or GitHub App env vars set
+
+# 1. Check readiness
+openslack github doctor
+
+# 2. Create test issue
+node --import tsx -e "
+import { createTaskIssue } from './packages/github/src/issue-tasks.js';
+const r = await createTaskIssue('E2E Smoke Test', '## Task', [
+  'openslack:task', 'openslack:ready', 'risk:low', 'agent-type:codex'
+]);
+console.log('Issue #' + r.issueNumber);
+"
+
+# 3. Agent discovers and claims
+openslack agent tick --agent-id anthropic_architect_aby --source github-issues
+# → Action: claimed, Task: #<n>, Claim: refs/heads/openslack/claims/issue-<n>
+
+# 4. Verify claim ref exists on GitHub
+# → https://github.com/Negentropy-Laby/OpenSlack/tree/openslack/claims
+
+# 5. Verify issue labels changed
+# → openslack:ready removed, openslack:claimed added
+
+# 6. Complete claim through the verified CLI contract
+openslack github claim complete \
+  --issue-number <n> \
+  --agent-id <agent-id> \
+  --pr-url https://github.com/owner/repo/pull/<n>
+
+# 7. Verify claim ref deleted and issue → done
+```
+
+## Phase 1.7 Additions
+
+### Manifest Validation (`manifest.ts`)
+
+```bash
+node -e "parseIssueTaskManifest(body)"  # uses openslack-task code fence + JSON Schema
+```
+
+- Required fields: `task_id` (TASK-YYYY-NNNNNN), `agent_type`, `risk_level` (low/medium/high/critical)
+- Red Zone detection: `allowed_paths` hitting `.github/`, `.openslack/policies/`, etc. requires `human_approval_required_for: [red_zone_change]`
+- Path conflict detection: intersecting allowed/forbidden paths
+
+### Heartbeat + Expiry (`claim-lifecycle.ts`, `claims.ts`)
+
+```bash
+heartbeatClaim({ issueNumber: 42, agentId: 'agent-x', ttlMinutes: 60 })
+reviewClaim({ issueNumber: 42, agentId: 'agent-x', prUrl })
+completeClaim({ issueNumber: 42, agentId: 'agent-x', prUrl })
+expireIssueClaim(42)  # deletes ref, resets to ready
+```
+
+### Task Filtering (`task-filter.ts`)
+
+```bash
+filterByCapability(manifest, agentCaps)  # required_capabilities ⊆ agent capabilities
+filterByRisk(manifest, 'medium')  # blocks critical, respects max_risk_level
+filterByPath(manifest, changedPaths)  # checks forbidden_paths + Black Zone
+filterRedZonePaths(changedPaths)  # identifies Red Zone crossing (.github/, kernel/src, etc.)
+```
+
+### Repair (`repair.ts`)
+
+```bash
+repairLabels()  # idempotently creates 7 openslack:state labels
+repairExpiredClaims()  # lists refs, checks expiry, deletes stale, resets labels
+```

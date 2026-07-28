@@ -20,13 +20,13 @@ const SERVICE_INDEX = `${SERVICE_ROOT}/docs/README.md`;
 const MANIFEST = `${SERVICE_ROOT}/docs/testing/workspace-manifest.sha256`;
 const RECEIPT = 'integration/gates/ib6-history-import.json';
 const REQUIRED_DOCS = [
-  'docs/product/notification-delivery.md',
-  'docs/guides/notification-delivery-operations.md',
-  'docs/developer/notification-delivery/README.md',
-  'docs/developer/notification-delivery/repository-boundaries.md',
-  'docs/developer/notification-delivery/change-and-test-guide.md',
+  'design/cdd/workstreams/notification-delivery/README.md',
+  'docs/user/guides/notification-delivery-operations.md',
+  'docs/contributor/notification-delivery/README.md',
+  'docs/contributor/notification-delivery/repository-boundaries.md',
+  'docs/contributor/notification-delivery/change-and-test-guide.md',
   'docs/security/notification-delivery-boundary.md',
-  'docs/testing/notification-delivery-evidence.md',
+  'docs/evidence/notification-delivery-evidence.md',
 ] as const;
 
 const SERVICE_SECTIONS = [
@@ -75,42 +75,44 @@ const SERVICE_SECTIONS = [
 ] as const;
 
 const NAVIGATION_CASES = [
-  ['README.md', 'docs/product/notification-delivery.md'],
-  ['README.md', 'docs/guides/notification-delivery-operations.md'],
-  ['docs/README.md', 'docs/product/notification-delivery.md'],
-  ['docs/README.md', 'docs/guides/notification-delivery-operations.md'],
-  ['docs/README.md', 'docs/developer/notification-delivery/README.md'],
+  ['README.md', 'design/cdd/workstreams/notification-delivery/README.md'],
+  ['README.md', 'docs/user/guides/notification-delivery-operations.md'],
+  ['docs/README.md', 'design/cdd/workstreams/notification-delivery/README.md'],
+  ['docs/README.md', 'docs/user/guides/notification-delivery-operations.md'],
+  ['docs/README.md', 'docs/contributor/notification-delivery/README.md'],
   ['docs/README.md', 'docs/security/notification-delivery-boundary.md'],
-  ['docs/README.md', 'docs/testing/notification-delivery-evidence.md'],
+  ['docs/README.md', 'docs/evidence/notification-delivery-evidence.md'],
   ['docs/README.md', SERVICE_INDEX],
-  ['docs/product/openslack-product-current.md', 'docs/product/notification-delivery.md'],
-  ['docs/product/openslack-product-current.md', 'docs/guides/notification-delivery-operations.md'],
-  ['docs/product/openslack-product-current.md', 'docs/developer/notification-delivery/README.md'],
-  ['docs/product/openslack-product-current.md', 'docs/security/notification-delivery-boundary.md'],
-  ['docs/product/openslack-product-current.md', 'docs/testing/notification-delivery-evidence.md'],
-  ['docs/user-guide.md', 'docs/product/notification-delivery.md'],
-  ['docs/user-guide.md', 'docs/guides/notification-delivery-operations.md'],
-  ['docs/guides/core-workflows.md', 'docs/guides/notification-delivery-operations.md'],
-  ['docs/developer/notification-delivery-integration.md', RECEIPT],
-  ['docs/developer/notification-delivery-integration.md', 'docs/product/notification-delivery.md'],
+  ['design/cdd/module-index.md', 'design/cdd/workstreams/notification-delivery/README.md'],
+  ['design/cdd/module-index.md', 'docs/user/guides/notification-delivery-operations.md'],
+  ['design/cdd/module-index.md', 'docs/contributor/notification-delivery/README.md'],
+  ['design/cdd/module-index.md', 'docs/security/notification-delivery-boundary.md'],
+  ['design/cdd/module-index.md', 'docs/evidence/notification-delivery-evidence.md'],
+  ['docs/user/cli-reference.md', 'design/cdd/workstreams/notification-delivery/README.md'],
+  ['docs/user/cli-reference.md', 'docs/user/guides/notification-delivery-operations.md'],
+  ['docs/user/guides/core-workflows.md', 'docs/user/guides/notification-delivery-operations.md'],
+  ['docs/architecture/integrations/notification-delivery.md', RECEIPT],
   [
-    'docs/developer/notification-delivery-integration.md',
-    'docs/guides/notification-delivery-operations.md',
+    'docs/architecture/integrations/notification-delivery.md',
+    'design/cdd/workstreams/notification-delivery/README.md',
   ],
   [
-    'docs/developer/notification-delivery-integration.md',
-    'docs/developer/notification-delivery/README.md',
+    'docs/architecture/integrations/notification-delivery.md',
+    'docs/user/guides/notification-delivery-operations.md',
   ],
   [
-    'docs/developer/notification-delivery-integration.md',
+    'docs/architecture/integrations/notification-delivery.md',
+    'docs/contributor/notification-delivery/README.md',
+  ],
+  [
+    'docs/architecture/integrations/notification-delivery.md',
     'docs/security/notification-delivery-boundary.md',
   ],
   [
-    'docs/developer/notification-delivery-integration.md',
-    'docs/testing/notification-delivery-evidence.md',
+    'docs/architecture/integrations/notification-delivery.md',
+    'docs/evidence/notification-delivery-evidence.md',
   ],
   [`${SERVICE_ROOT}/README.md`, 'docs/README.md'],
-  [`${SERVICE_ROOT}/README.md`, '../../docs/developer/notification-delivery-integration.md'],
 ] as const;
 
 afterEach(() => {
@@ -146,65 +148,69 @@ function fixture(): string {
     root,
     'README.md',
     lines(
-      'docs/product/notification-delivery.md',
-      'docs/guides/notification-delivery-operations.md',
+      'design/cdd/workstreams/notification-delivery/README.md',
+      'docs/user/guides/notification-delivery-operations.md',
     ),
   );
   write(
     root,
     'docs/README.md',
     lines(
-      'docs/product/notification-delivery.md',
-      'docs/guides/notification-delivery-operations.md',
-      'docs/developer/notification-delivery/README.md',
+      'design/cdd/workstreams/notification-delivery/README.md',
+      'docs/user/guides/notification-delivery-operations.md',
+      'docs/contributor/notification-delivery/README.md',
       'docs/security/notification-delivery-boundary.md',
-      'docs/testing/notification-delivery-evidence.md',
+      'docs/evidence/notification-delivery-evidence.md',
       SERVICE_INDEX,
     ),
   );
   write(
     root,
-    'docs/product/openslack-product-current.md',
+    'design/cdd/module-index.md',
     lines(
-      'docs/product/notification-delivery.md',
-      'docs/guides/notification-delivery-operations.md',
-      'docs/developer/notification-delivery/README.md',
+      'design/cdd/workstreams/notification-delivery/README.md',
+      'docs/user/guides/notification-delivery-operations.md',
+      'docs/contributor/notification-delivery/README.md',
       'docs/security/notification-delivery-boundary.md',
-      'docs/testing/notification-delivery-evidence.md',
+      'docs/evidence/notification-delivery-evidence.md',
     ),
   );
-  write(root, 'docs/product/notification-delivery.md', productPage());
-  write(root, 'docs/guides/notification-delivery-operations.md', '# Operations\n');
-  write(root, 'docs/guides/core-workflows.md', 'docs/guides/notification-delivery-operations.md\n');
+  write(root, 'design/cdd/workstreams/notification-delivery/README.md', productPage());
+  write(root, 'docs/user/guides/notification-delivery-operations.md', '# Operations\n');
   write(
     root,
-    'docs/user-guide.md',
+    'docs/user/guides/core-workflows.md',
+    'docs/user/guides/notification-delivery-operations.md\n',
+  );
+  write(
+    root,
+    'docs/user/cli-reference.md',
     lines(
-      'docs/product/notification-delivery.md',
-      'docs/guides/notification-delivery-operations.md',
+      'design/cdd/workstreams/notification-delivery/README.md',
+      'docs/user/guides/notification-delivery-operations.md',
     ),
   );
-  write(root, 'docs/developer/notification-delivery/README.md', '# Developer\n');
-  write(root, 'docs/developer/notification-delivery/repository-boundaries.md', '# Boundaries\n');
+  write(root, 'docs/contributor/notification-delivery/README.md', '# Developer\n');
+  write(root, 'docs/contributor/notification-delivery/repository-boundaries.md', '# Boundaries\n');
   write(
     root,
-    'docs/developer/notification-delivery/change-and-test-guide.md',
+    'docs/contributor/notification-delivery/change-and-test-guide.md',
     '# Change and test\n',
   );
   write(
     root,
-    'docs/developer/notification-delivery-integration.md',
+    'docs/architecture/integrations/notification-delivery.md',
     lines(
       RECEIPT,
-      'docs/product/notification-delivery.md',
-      'docs/guides/notification-delivery-operations.md',
-      'docs/developer/notification-delivery/README.md',
+      'design/cdd/workstreams/notification-delivery/README.md',
+      'docs/user/guides/notification-delivery-operations.md',
+      'docs/contributor/notification-delivery/README.md',
       'docs/security/notification-delivery-boundary.md',
-      'docs/testing/notification-delivery-evidence.md',
+      'docs/evidence/notification-delivery-evidence.md',
     ),
   );
   write(root, 'docs/security/notification-delivery-boundary.md', '# Security\n');
-  write(root, 'docs/testing/notification-delivery-evidence.md', '# Evidence\n');
+  write(root, 'docs/evidence/notification-delivery-evidence.md', '# Evidence\n');
 
   write(
     root,
@@ -212,7 +218,7 @@ function fixture(): string {
     lines(
       '# Service',
       '[service index](docs/README.md)',
-      '[integration](../../docs/developer/notification-delivery-integration.md)',
+      '[integration](../../docs/architecture/integrations/notification-delivery.md)',
     ),
   );
   write(root, SERVICE_INDEX, serviceIndex());
@@ -251,9 +257,9 @@ function serviceIndex(): string {
   const output = [
     '# Service docs',
     '',
-    '[product](../../../docs/product/notification-delivery.md)',
-    '[integration](../../../docs/developer/notification-delivery-integration.md)',
-    '[evidence](../../../docs/testing/notification-delivery-evidence.md)',
+    '[product](../../../design/cdd/workstreams/notification-delivery/README.md)',
+    '[integration](../../../docs/architecture/integrations/notification-delivery.md)',
+    '[evidence](../../../docs/evidence/notification-delivery-evidence.md)',
     '',
   ];
   for (const section of SERVICE_SECTIONS) {
@@ -387,7 +393,7 @@ describe('notification documentation verifier', () => {
     const root = fixture();
     write(
       root,
-      'docs/guides/notification-delivery-operations.md',
+      'docs/user/guides/notification-delivery-operations.md',
       '# Operations\nPENDING_PHASE_F\n',
     );
     expectFailure(root, 'CURRENT_DOC_STATUS_STALE');
@@ -493,14 +499,14 @@ describe('notification documentation verifier', () => {
     'PRODUCTION_READY=true',
   ])('rejects premature product claim %s', (claim) => {
     const root = fixture();
-    const path = resolve(root, 'docs/product/notification-delivery.md');
+    const path = resolve(root, 'design/cdd/workstreams/notification-delivery/README.md');
     writeFileSync(path, `${readFileSync(path, 'utf8')}${claim}\n`, 'utf8');
     expectFailure(root, 'PREMATURE_PRODUCT_CLAIM');
   });
 
   it('requires the fixed lifecycle non-claims', () => {
     const root = fixture();
-    const path = resolve(root, 'docs/product/notification-delivery.md');
+    const path = resolve(root, 'design/cdd/workstreams/notification-delivery/README.md');
     writeFileSync(path, readFileSync(path, 'utf8').replace('NOT_AUTHORIZED', 'AUTHORIZED'), 'utf8');
     expectFailure(root, 'PREMATURE_PRODUCT_CLAIM');
   });

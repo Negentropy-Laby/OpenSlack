@@ -1,3 +1,16 @@
+---
+schema: openslack.document.v1
+id: security-scenario-pack-boundary
+status: In Review
+authority: canonical
+audience:
+  - security
+owner: security
+updated: 2026-07-28
+sources:
+  - docs/reference/document-path-migration-v1.yaml
+---
+
 # Scenario Pack Security Boundary
 
 Status: implemented declarative security boundary. `openslack.scenario_pack.v1` is a code-free
@@ -142,7 +155,7 @@ remain required for the implementing code.
 
 ## Related Documents
 
-- [Scenario Runtime product contract](../product/scenario-runtime.md)
-- [Scenario Pack v1](../developer/scenario-pack.md)
+- [Scenario Runtime product contract](../../design/cdd/workstreams/scenario-runtime/README.md)
+- [Scenario Pack v1](../contributor/scenario-pack.md)
 - [Plugin trust model](plugin-trust-model.md)
 - [Workflow execution security](workflow-execution.md)

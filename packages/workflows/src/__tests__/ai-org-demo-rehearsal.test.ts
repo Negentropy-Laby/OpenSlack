@@ -18,6 +18,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const repositoryRoot = resolve(process.cwd());
 const scriptPath = join(repositoryRoot, 'scripts', 'demo-ai-org-rehearse.ts');
 const temporaryRoots: string[] = [];
+const AI_ORG_DEMO_SUITE_TIMEOUT_MS = 15_000;
 
 function temporaryRoot(): string {
   const root = mkdtempSync(join(tmpdir(), 'openslack-ai-org-fixture-test-'));
@@ -73,7 +74,7 @@ afterEach(() => {
   }
 });
 
-describe('AI organization rehearsal script', () => {
+describe('AI organization rehearsal script', { timeout: AI_ORG_DEMO_SUITE_TIMEOUT_MS }, () => {
   it('renders a deterministic fixture without subprocess or network availability', async () => {
     const root = temporaryRoot();
     const first = join(root, 'first');

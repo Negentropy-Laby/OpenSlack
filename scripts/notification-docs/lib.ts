@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readFileSync, readdirSync, type Dirent, type Stats } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
 import { posix } from 'node:path';
+import { parse as parseYaml } from 'yaml';
 
 export const NOTIFICATION_DOC_ERROR_CODES = Object.freeze([
   'IB6_RECEIPT_INVALID',
@@ -31,24 +32,25 @@ export interface NotificationDocVerification {
 
 const RECEIPT_PATH = 'integration/gates/ib6-history-import.json';
 const MODULES_PATH = '.openslack/modules.yaml';
-const PRODUCT_PATH = 'docs/product/notification-delivery.md';
-const PRODUCT_INDEX_PATH = 'docs/product/openslack-product-current.md';
+const PRODUCT_PATH = 'design/cdd/workstreams/notification-delivery/README.md';
+const PRODUCT_INDEX_PATH = 'design/cdd/module-index.md';
 const SERVICE_ROOT = 'services/notification-delivery';
 const SERVICE_INDEX_PATH = `${SERVICE_ROOT}/docs/README.md`;
 const SERVICE_MANIFEST_PATH = `${SERVICE_ROOT}/docs/testing/workspace-manifest.sha256`;
+const DOCUMENT_MIGRATION_PATH = 'docs/reference/document-path-migration-v1.yaml';
 const EXPECTED_RECEIPT_SCHEMA = 'openslack.notification_delivery_ib6_history_import.v1';
 const EXPECTED_RECEIPT_SCHEMA_REFERENCE =
   '../../docs/integration/notification-delivery-ib6-history-import.v1.schema.json';
 const EXPECTED_PX2_EXIT = 'PENDING_POST_MERGE_AUDIT';
 
 const REQUIRED_ROOT_DOCS = Object.freeze([
-  'docs/product/notification-delivery.md',
-  'docs/guides/notification-delivery-operations.md',
-  'docs/developer/notification-delivery/README.md',
-  'docs/developer/notification-delivery/repository-boundaries.md',
-  'docs/developer/notification-delivery/change-and-test-guide.md',
+  'design/cdd/workstreams/notification-delivery/README.md',
+  'docs/user/guides/notification-delivery-operations.md',
+  'docs/contributor/notification-delivery/README.md',
+  'docs/contributor/notification-delivery/repository-boundaries.md',
+  'docs/contributor/notification-delivery/change-and-test-guide.md',
   'docs/security/notification-delivery-boundary.md',
-  'docs/testing/notification-delivery-evidence.md',
+  'docs/evidence/notification-delivery-evidence.md',
 ] as const);
 
 const CURRENT_DOC_STATUS_ALLOWLIST = Object.freeze([
@@ -56,15 +58,15 @@ const CURRENT_DOC_STATUS_ALLOWLIST = Object.freeze([
   'docs/README.md',
   PRODUCT_INDEX_PATH,
   PRODUCT_PATH,
-  'docs/guides/notification-delivery-operations.md',
-  'docs/guides/core-workflows.md',
-  'docs/user-guide.md',
-  'docs/developer/notification-delivery/README.md',
-  'docs/developer/notification-delivery/repository-boundaries.md',
-  'docs/developer/notification-delivery/change-and-test-guide.md',
-  'docs/developer/notification-delivery-integration.md',
+  'docs/user/guides/notification-delivery-operations.md',
+  'docs/user/guides/core-workflows.md',
+  'docs/user/cli-reference.md',
+  'docs/contributor/notification-delivery/README.md',
+  'docs/contributor/notification-delivery/repository-boundaries.md',
+  'docs/contributor/notification-delivery/change-and-test-guide.md',
+  'docs/architecture/integrations/notification-delivery.md',
   'docs/security/notification-delivery-boundary.md',
-  'docs/testing/notification-delivery-evidence.md',
+  'docs/evidence/notification-delivery-evidence.md',
   `${SERVICE_ROOT}/README.md`,
   SERVICE_INDEX_PATH,
 ] as const);
@@ -73,56 +75,56 @@ const NAVIGATION_EDGES = Object.freeze([
   {
     source: 'README.md',
     targets: [
-      'docs/product/notification-delivery.md',
-      'docs/guides/notification-delivery-operations.md',
+      'design/cdd/workstreams/notification-delivery/README.md',
+      'docs/user/guides/notification-delivery-operations.md',
     ],
   },
   {
     source: 'docs/README.md',
     targets: [
-      'docs/product/notification-delivery.md',
-      'docs/guides/notification-delivery-operations.md',
-      'docs/developer/notification-delivery/README.md',
+      'design/cdd/workstreams/notification-delivery/README.md',
+      'docs/user/guides/notification-delivery-operations.md',
+      'docs/contributor/notification-delivery/README.md',
       'docs/security/notification-delivery-boundary.md',
-      'docs/testing/notification-delivery-evidence.md',
+      'docs/evidence/notification-delivery-evidence.md',
       SERVICE_INDEX_PATH,
     ],
   },
   {
     source: PRODUCT_INDEX_PATH,
     targets: [
-      'docs/product/notification-delivery.md',
-      'docs/guides/notification-delivery-operations.md',
-      'docs/developer/notification-delivery/README.md',
+      'design/cdd/workstreams/notification-delivery/README.md',
+      'docs/user/guides/notification-delivery-operations.md',
+      'docs/contributor/notification-delivery/README.md',
       'docs/security/notification-delivery-boundary.md',
-      'docs/testing/notification-delivery-evidence.md',
+      'docs/evidence/notification-delivery-evidence.md',
     ],
   },
   {
-    source: 'docs/user-guide.md',
+    source: 'docs/user/cli-reference.md',
     targets: [
-      'docs/product/notification-delivery.md',
-      'docs/guides/notification-delivery-operations.md',
+      'design/cdd/workstreams/notification-delivery/README.md',
+      'docs/user/guides/notification-delivery-operations.md',
     ],
   },
   {
-    source: 'docs/guides/core-workflows.md',
-    targets: ['docs/guides/notification-delivery-operations.md'],
+    source: 'docs/user/guides/core-workflows.md',
+    targets: ['docs/user/guides/notification-delivery-operations.md'],
   },
   {
-    source: 'docs/developer/notification-delivery-integration.md',
+    source: 'docs/architecture/integrations/notification-delivery.md',
     targets: [
       RECEIPT_PATH,
-      'docs/product/notification-delivery.md',
-      'docs/guides/notification-delivery-operations.md',
-      'docs/developer/notification-delivery/README.md',
+      'design/cdd/workstreams/notification-delivery/README.md',
+      'docs/user/guides/notification-delivery-operations.md',
+      'docs/contributor/notification-delivery/README.md',
       'docs/security/notification-delivery-boundary.md',
-      'docs/testing/notification-delivery-evidence.md',
+      'docs/evidence/notification-delivery-evidence.md',
     ],
   },
   {
     source: `${SERVICE_ROOT}/README.md`,
-    targets: [SERVICE_INDEX_PATH, 'docs/developer/notification-delivery-integration.md'],
+    targets: [SERVICE_INDEX_PATH],
   },
 ] as const);
 
@@ -406,10 +408,33 @@ function verifyServiceLinks(root: string): void {
         fail('SERVICE_LINK_UNRESOLVED', source);
       }
       if (!isSafeExistingRepoPath(root, target)) {
+        if (isDeclaredMigratedServiceLink(root, target)) continue;
         fail('SERVICE_LINK_UNRESOLVED', source);
       }
     }
   }
+}
+
+function isDeclaredMigratedServiceLink(root: string, target: string): boolean {
+  if (!isRegularRepoFile(root, DOCUMENT_MIGRATION_PATH)) return false;
+  const manifest = parseYaml(
+    readFileSync(repoPath(root, DOCUMENT_MIGRATION_PATH), 'utf8'),
+  ) as unknown;
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) return false;
+  const value = manifest as { phase?: unknown; entries?: unknown };
+  if (value.phase !== 'migrated' || !Array.isArray(value.entries)) return false;
+  for (const raw of value.entries) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+    const entry = raw as { old_path?: unknown; new_path?: unknown };
+    if (
+      entry.old_path === target &&
+      typeof entry.new_path === 'string' &&
+      isSafeExistingRepoPath(root, entry.new_path)
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function verifyServiceDocClassification(root: string): void {

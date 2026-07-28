@@ -14,6 +14,7 @@ import {
 import type { ModulesRegistry, RawModulesRegistry } from '../module-registry.js';
 
 const liveEvidenceRoots: string[] = [];
+const LIVE_EVIDENCE_FIXTURE_TIMEOUT_MS = 15_000;
 
 afterEach(() => {
   for (const root of liveEvidenceRoots.splice(0)) {
@@ -60,7 +61,7 @@ const validRegistry: ModulesRegistry = {
   ],
 };
 
-describe('validateModules', () => {
+describe('validateModules', { timeout: LIVE_EVIDENCE_FIXTURE_TIMEOUT_MS }, () => {
   it('passes for valid registry', () => {
     const result = validateModules(validRegistry);
     expect(result.valid).toBe(true);

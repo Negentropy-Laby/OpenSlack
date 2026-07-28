@@ -1,10 +1,23 @@
+---
+schema: openslack.document.v1
+id: security-notification-delivery-boundary
+status: In Review
+authority: canonical
+audience:
+  - security
+owner: security
+updated: 2026-07-28
+sources:
+  - docs/reference/document-path-migration-v1.yaml
+---
+
 # Notification Delivery Security Boundary
 
 This page describes the trust boundary between OpenSlack and the process-isolated Notification
 Delivery Service. The service's internal implementation controls remain authoritative in its
 [threat model](../../services/notification-delivery/docs/security/threat-model.md). Exact body,
 receipt, retry, and HTTP rules remain authoritative in the
-[cross-process integration contract](../developer/notification-delivery-integration.md).
+[cross-process integration contract](../architecture/integrations/notification-delivery.md).
 
 ## Authority Transfer
 
@@ -112,5 +125,5 @@ admission, external configuration, post-import qualification, IB7 cutover, relea
 readiness, or `LIVE_VERIFIED`.
 
 For operator tasks, use the
-[Notification Delivery operations guide](../guides/notification-delivery-operations.md). For
-evidence status, use the [evidence map](../testing/notification-delivery-evidence.md).
+[Notification Delivery operations guide](../user/guides/notification-delivery-operations.md). For
+evidence status, use the [evidence map](../evidence/notification-delivery-evidence.md).

@@ -644,7 +644,7 @@ async function createTaskIssue(
     title,
     description,
     agentType,
-    allowedPaths: ['docs/demos/ai-organization/**'],
+    allowedPaths: ['docs/examples/ai-organization/**'],
     requiredCapabilities: ['documentation', 'evidence-analysis'],
     outputContract: ['draft_pr'],
     successCriteria: ['Artifact is traceable to the fixed workflow run'],
@@ -725,7 +725,7 @@ function createArtifactBranch(
   }
   runCommand(
     'git',
-    ['add', '--', `docs/demos/ai-organization/rehearsals/${workflowResult.runId}`],
+    ['add', '--', `docs/examples/ai-organization/rehearsals/${workflowResult.runId}`],
     worktree,
   );
   runCommand('git', ['commit', '-m', 'docs: record AI organization rehearsal artifacts'], worktree);

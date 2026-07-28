@@ -1,70 +1,51 @@
+---
+schema: openslack.document.v1
+id: docs-index
+status: In Review
+authority: index
+audience:
+  - all
+owner: project-governance
+updated: 2026-07-28
+sources:
+  - memory_bank/document_map.yaml
+  - design/cdd/module-index.md
+---
+
 # OpenSlack Documentation
 
-Use this page when you know what you want to do, but not which document owns it.
+English documents are authoritative. The [Chinese guide](zh-CN/README.md)
+explains navigation and team operations without copying dynamic state.
 
-## Start Here
+## By Audience
 
-| Goal                                                                                                    | Read                                                                                                                                                                           |
-| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Install, run setup, and understand the product quickly                                                  | `../README.md`                                                                                                                                                                 |
-| Follow step-by-step workflows (first run, workflows, blocked PRs, governed actions, activity, handoffs) | `guides/core-workflows.md`                                                                                                                                                     |
-| Use the workflow-first TUI and CLI workbench                                                            | `guides/dynamic-workflow-workbench.md`                                                                                                                                         |
-| Configure Aby as an external agent runtime                                                              | `guides/aby-integration.md`                                                                                                                                                    |
-| Understand dynamic workflows and work-unit boundaries                                                   | `product/dynamic-workflows.md`, `product/agent-work-units.md`                                                                                                                  |
-| Rehearse the fixed AI-organization commercial loop                                                      | `demos/README.md`, `demos/ai-organization-commercial-loop.md`                                                                                                                  |
-| Connect Qoder Work to the exact 12-tool read-only MCP frontend and install its Skill                    | `developer/qoder-mcp.md`, `../integrations/qoder-work/skills/openslack-organization-control/README.md`, `testing/qoder-work-evidence.md`                                       |
-| Understand the implemented Qoder mutation contract (stock MCP stays read-only)                          | `product/qoder-work-integration.md`, `developer/qoder-mcp-contract.md`, `security/qoder-trust-boundary.md`                                                                     |
-| Use the Organization Graph and declarative Scenario Runtime contracts                                   | `product/organization-graph.md`, `product/scenario-runtime.md`, `developer/organization-graph-contract.md`, `developer/scenario-pack.md`, `security/scenario-pack-boundary.md` |
-| Find the exact CLI command and flags                                                                    | `user-guide.md`                                                                                                                                                                |
-| Check current modules, packages, commands, and test counts                                              | `status/current.md`                                                                                                                                                            |
-| Understand lifecycle, maturity, blockers, and evidence rules                                            | `developer/module-maturity.md`                                                                                                                                                 |
-| Understand repository rules for contributors and agents                                                 | `../AGENTS.md`                                                                                                                                                                 |
-| Find product and module design docs                                                                     | `product/openslack-product-current.md`                                                                                                                                         |
-| Understand Notification Delivery as a product and its lifecycle boundary                                | `product/notification-delivery.md`                                                                                                                                             |
-| Operate the notification queue safely                                                                   | `guides/notification-delivery-operations.md`, `user-guide.md`                                                                                                                  |
-| Develop across the OpenSlack and service repositories                                                   | `developer/notification-delivery/README.md`, `developer/notification-delivery-integration.md`                                                                                  |
-| Review the cross-system security boundary                                                               | `security/notification-delivery-boundary.md`, `../services/notification-delivery/docs/security/threat-model.md`                                                                |
-| Inspect the governed IB6, PX2, service, and qualification evidence                                      | `testing/notification-delivery-evidence.md`, `integration/notification-delivery-ib6-order-supersession.md`                                                                     |
-| Read the Notification Delivery Service implementation overview                                          | `../services/notification-delivery/docs/README.md`, `../services/notification-delivery/README.md`                                                                              |
-| Understand the Negentropy-Lab slot preview and boundary                                                 | `product/negentropy-lab-integration.md`, `security/negentropy-slot-boundary.md`, `developer/negentropy-slot-adapter.md`, `guides/embed-openslack-in-negentropy-lab.md`         |
-| Learn how Profile Sync renders a GitHub profile projection                                              | `product/profile-sync.md`                                                                                                                                                      |
-| Understand the public plugin contract, testkit, Red host, and embedding boundary                        | `developer/plugins/manifest.md`, `developer/plugins/authoring.md`, `developer/plugins/testkit.md`, `developer/plugins/host.md`, `developer/plugins/embedding.md`               |
-| Run the secret-free Windows/Linux production capstone                                                   | `developer/live-capstone.md`                                                                                                                                                   |
-| Operate the 0.2.0 release, recover npm publication, and review release history                          | `developer/release-0.2.0.md`, `developer/npm-rollback.md`, `../CHANGELOG.md`                                                                                                   |
+- [Users](user/README.md): install, CLI, core workflows, and operations guides.
+- [Contributors](contributor/README.md): onboarding, module development, plugins,
+  and cross-repository work.
+- [Architecture](architecture/README.md): system, components, integrations,
+  contracts, ADRs, traceability, and controls.
+- [Security](security/README.md): trust and permission boundaries.
+- [Operations](operations/README.md): release, automation, packaging, and recovery.
+- [Reference](reference/README.md): schemas, vocabularies, and migration map.
+- [Evidence](evidence/README.md): test, qualification, and review evidence indexes.
+- [Examples](examples/README.md): runnable or rehearsable examples.
+- [Archive](archive/README.md): historical plans and superseded material.
 
-## Common Workflows
+## Current State
 
-| Workflow                                                                          | Docs                                                                                                                                                                   |
-| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| First-run health check                                                            | `../README.md`, `user-guide.md`                                                                                                                                        |
-| GitHub authentication and setup repair                                            | `developer/github-automation.md`, `user-guide.md`                                                                                                                      |
-| GitHub Issues task loop                                                           | `developer/github-issues-loop.md`, `user-guide.md`                                                                                                                     |
-| GitHub watch daemon and realtime Issue notifications                              | `developer/github-watch-daemon.md`, `product/user-experience-roadmap.md`                                                                                               |
-| Operate durable notifications safely                                              | `product/notification-delivery.md`, `guides/notification-delivery-operations.md`                                                                                       |
-| Develop across the Notification Delivery boundaries                               | `developer/notification-delivery/README.md`, `developer/notification-delivery-integration.md`, `../services/notification-delivery/README.md`                           |
-| Review Notification Delivery security and evidence                                | `security/notification-delivery-boundary.md`, `testing/notification-delivery-evidence.md`                                                                              |
-| Agent identity and onboarding                                                     | `developer/agent-registry-schema.md`, `developer/new-agent-onboarding.md`                                                                                              |
-| Install, upgrade, and rollback                                                    | `guides/install-openslack.md`, `guides/manual-upgrade-rollback.md`                                                                                                     |
-| Release 0.2.0 and recover staged, partial, or withdrawn npm publication           | `developer/release-0.2.0.md`, `developer/npm-rollback.md`, `../CHANGELOG.md`                                                                                           |
-| Aby external runtime setup                                                        | `guides/aby-integration.md`, `developer/aby-bridge-integration-plan.md`, `developer/mcp-runtime-lifecycle.md`                                                          |
-| Embed OpenSlack into Negentropy-Lab as an external scenario-pack slot             | `product/negentropy-lab-integration.md`, `guides/embed-openslack-in-negentropy-lab.md`, `developer/negentropy-slot-adapter.md`, `security/negentropy-slot-boundary.md` |
-| Maintain the GitHub profile README with Profile Sync                              | `product/profile-sync.md`, `user-guide.md`                                                                                                                             |
-| Self-evolution, risk zones, plugin trust, and rollback                            | `product/phase-1.md`, `developer/self-evolution-kernel.md`, `security/self-evolution-guardrails.md`, `security/plugin-trust-model.md`                                  |
-| Author, preflight, and host declarative manifests or reviewed bundled descriptors | `developer/plugins/manifest.md`, `developer/plugins/authoring.md`, `developer/plugins/testkit.md`, `developer/plugins/host.md`, `developer/plugins/embedding.md`       |
-| PR review, human approval, and merge governance                                   | `product/module-04-pr-review-merge-steward.md`, `security/human-approval.md`, `user-guide.md`                                                                          |
-| Collaboration events, handoffs, decisions, rooms, and workflows                   | `product/collaboration-layer.md`, `developer/collaboration-events.md`, `security/collaboration-audit.md`                                                               |
-| Dynamic workflow recommendation, pattern library, drafts, and policy              | `guides/dynamic-workflow-workbench.md`, `product/dynamic-workflows.md`, `product/agent-work-units.md`                                                                  |
-| Run the fixed manufacturing AI-organization demo                                  | `demos/ai-organization/scenario.md`, `demos/ai-organization/runbook.md`, `demos/ai-organization/rehearsal-checklist.md`                                                |
-| Configure the read-only Qoder Work MCP connector and Skill                        | `developer/qoder-mcp.md`, `../integrations/qoder-work/skills/openslack-organization-control/README.md`                                                                 |
-| Design against the current Qoder read, Graph, and Scenario contracts              | `product/qoder-work-integration.md`, `product/organization-graph.md`, `product/scenario-runtime.md`, `developer/qoder-mcp-contract.md`                                 |
-| UX roadmap and productization plan                                                | `product/user-experience-roadmap.md`                                                                                                                                   |
-| Technical debt register                                                           | `developer/technical-debt.md`                                                                                                                                          |
+- Project portfolio: `memory_bank/t0_core/project_state.yaml`
+- Release gates: `memory_bank/t0_core/release_state.yaml`
+- Planned assignments: `memory_bank/t2_execution/work_assignments.yaml`
+- Module telemetry: [generated module status](status/current.md)
+- Generated project roadmap: `production/project-roadmap.md`
 
-## Source-Of-Truth Rules
+## Notification Delivery Boundary
 
-- `status/current.md` is generated by `openslack status generate`.
-- `.openslack/modules.yaml` is the module registry source for generated status.
-- Packaged installations read the same registry from `assets/product/modules.yaml`.
-- `README.md` should stay focused on first-time users and common workflows.
-- `user-guide.md` should remain the complete CLI reference.
-- Product and developer docs should explain design and operation, not duplicate live metrics.
+- Product CDD: `design/cdd/workstreams/notification-delivery/README.md`
+- Operations: `docs/user/guides/notification-delivery-operations.md`
+- Contributor entrypoint: `docs/contributor/notification-delivery/README.md`
+- Security: `docs/security/notification-delivery-boundary.md`
+- Evidence index: `docs/evidence/notification-delivery-evidence.md`
+- Service-owned documentation: `services/notification-delivery/docs/README.md`
+
+Run `bun run docs:verify` before submitting documentation changes.

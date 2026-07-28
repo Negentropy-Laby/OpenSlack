@@ -1,7 +1,14 @@
 ---
-schema: openslack.security_doc.v1
-created: 2026-05-27
-status: draft
+schema: openslack.document.v1
+id: security-tui-terminal-safety
+status: In Review
+authority: canonical
+audience:
+  - security
+owner: security
+updated: 2026-07-28
+sources:
+  - docs/reference/document-path-migration-v1.yaml
 ---
 
 # TUI Terminal Safety: Escape Sequence Sanitization
@@ -109,5 +116,5 @@ component level. This ensures that:
 
 ## Related Documents
 
-- `docs/developer/tui-porting-notes.md` — what is ported, coupling resolution
-- `docs/product/tui.md` — product definition and constraints
+- `docs/contributor/tui-porting-notes.md` — what is ported, coupling resolution
+- `design/cdd/workstreams/tui-productization/README.md` — product definition and constraints

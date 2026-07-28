@@ -1,0 +1,50 @@
+schema: openslack.release_state.v1
+updated: 2026-07-28
+train: 0.2.0
+status: blocked
+human_approval: not_requested
+gates:
+  - id: source_baseline
+    status: passed
+    evidence: ['commit:85f18a24645edade981a342bb67308e3a65d9904']
+    notes: Baseline matched origin/main before migration work.
+  - id: documentation_migration
+    status: pending
+    evidence: [docs/reference/document-path-migration-v1.yaml]
+    notes: In Review until the atomic migration and independent review complete.
+  - id: signed_release
+    status: blocked
+    evidence: ['issue:240']
+    notes: Signed v0.2.0 release is not complete.
+  - id: clean_machine_release
+    status: blocked
+    evidence: ['issue:241']
+    notes: Clean-machine release capstone remains open.
+  - id: npm_publication
+    status: blocked
+    evidence: ['issue:242']
+    notes: Public npm publication remains open.
+  - id: bot_delivery
+    status: blocked
+    evidence: ['issue:243']
+    notes: Clean-machine bot delivery smoke remains open.
+  - id: model_endpoint
+    status: blocked
+    evidence: ['issue:244']
+    notes: Model endpoint is not configured.
+  - id: onboarding
+    status: blocked
+    evidence: ['issue:245']
+    notes: Clean-machine onboarding smoke remains open.
+  - id: merge_capstone
+    status: blocked
+    evidence: ['issue:246']
+    notes: End-to-end merge capstone remains open.
+  - id: agent_task_capstone
+    status: blocked
+    evidence: ['issue:247']
+    notes: Agent task capstone remains open.
+  - id: live_provider
+    status: blocked
+    evidence: ['issue:248']
+    notes: Live provider smoke remains open.

@@ -1,9 +1,14 @@
 ---
-schema: openslack.security_spec.v1
-status: implemented
-created: 2026-05-28
-parent_spec: docs/product/workflow-modules.md
-threat_model: true
+schema: openslack.document.v1
+id: security-workflow-execution
+status: In Review
+authority: canonical
+audience:
+  - security
+owner: security
+updated: 2026-07-28
+sources:
+  - docs/reference/document-path-migration-v1.yaml
 ---
 
 # Workflow Execution Security Model

@@ -9,9 +9,9 @@
 本索引区分当前服务实现、当前本地证据和导入的 standalone 历史。OpenSlack 产品定位、模块状态、
 runtime admission、发布与 live 状态以仓库根文档和治理 receipt 为准：
 
-- [OpenSlack 产品页](../../../docs/product/notification-delivery.md)
-- [跨进程集成契约](../../../docs/developer/notification-delivery-integration.md)
-- [根级证据索引](../../../docs/testing/notification-delivery-evidence.md)
+- [OpenSlack 产品页](../../../design/cdd/workstreams/notification-delivery/README.md)
+- [跨进程集成契约](../../../docs/architecture/integrations/notification-delivery.md)
+- [根级证据索引](../../../docs/evidence/notification-delivery-evidence.md)
 
 ## Current Implementation Docs
 

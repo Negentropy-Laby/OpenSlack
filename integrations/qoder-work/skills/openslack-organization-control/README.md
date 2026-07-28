@@ -164,6 +164,6 @@ Missing or stale current graph evidence fails closed as `SOURCE_EVIDENCE_UNAVAIL
 - Documentation and local tests do not by themselves prove Qoder desktop qualification.
 
 See [SKILL.md](SKILL.md) for the operating workflow, `references/` for detailed boundaries, and
-the [MCP developer guide](../../../../docs/developer/qoder-mcp.md) for connector setup, exact
+the [MCP developer guide](../../../../docs/architecture/integrations/qoder-mcp.md) for connector setup, exact
 profile rules, and the current-build acceptance record. No `QODER_VERIFIED` claim is made
 here.

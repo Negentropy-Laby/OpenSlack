@@ -1,3 +1,16 @@
+---
+schema: openslack.document.v1
+id: security-plugin-trust-model
+status: In Review
+authority: canonical
+audience:
+  - security
+owner: security
+updated: 2026-07-28
+sources:
+  - docs/reference/document-path-migration-v1.yaml
+---
+
 # Plugin Trust Model
 
 This document defines the normative trust boundary for the OpenSlack plugin system. The private

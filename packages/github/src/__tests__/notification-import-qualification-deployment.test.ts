@@ -588,7 +588,7 @@ describe('notification import qualification deployment', () => {
     );
     const historicalDecision = JSON.parse(historicalDecisionBytes.toString('utf8')) as object;
     const historicalSchema = readRepositoryJson(
-      'docs/integration/notification-delivery-gate-supersession.v1.schema.json',
+      'docs/reference/schemas/integration/notification-delivery-gate-supersession.v1.schema.json',
     );
     const validateHistorical = new Ajv2020({
       strict: false,
@@ -614,7 +614,7 @@ describe('notification import qualification deployment', () => {
       'integration/gates/ib6-repository-import-order-supersession.json',
     ) as OrderDecision;
     const schema = readRepositoryJson(
-      'docs/integration/notification-delivery-ib6-order-supersession.v1.schema.json',
+      'docs/reference/schemas/integration/notification-delivery-ib6-order-supersession.v1.schema.json',
     );
     const validate = new Ajv2020({ strict: false, validateFormats: false }).compile(schema);
     expect(validate(decision), JSON.stringify(validate.errors)).toBe(true);
@@ -628,7 +628,7 @@ describe('notification import qualification deployment', () => {
 
     for (const binding of decision.historical_bindings) {
       const digest = `sha256:${createHash('sha256')
-        .update(readRepositoryBytes(binding.path))
+        .update(readRepositoryBytes(migratedRepositoryPath(binding.path)))
         .digest('hex')}`;
       expect(digest, `STOP: HISTORICAL_GATE_BYTES_DRIFT: ${binding.path}`).toBe(binding.sha256);
     }
@@ -718,8 +718,8 @@ describe('notification import qualification deployment', () => {
     );
 
     const currentTruth = [
-      readRepositoryBytes('docs/developer/notification-delivery-integration.md'),
-      readRepositoryBytes('docs/user-guide.md'),
+      readRepositoryBytes('docs/architecture/integrations/notification-delivery.md'),
+      readRepositoryBytes('docs/user/cli-reference.md'),
       readRepositoryBytes('deploy/notification-import-qualification/README.md'),
     ]
       .map((bytes) => bytes.toString('utf8'))
@@ -734,7 +734,7 @@ describe('notification import qualification deployment', () => {
       'integration/gates/ib6-history-import.json',
     ) as PhaseFReceipt;
     const receiptSchema = readRepositoryJson(
-      'docs/integration/notification-delivery-ib6-history-import.v1.schema.json',
+      'docs/reference/schemas/integration/notification-delivery-ib6-history-import.v1.schema.json',
     );
     const validateReceipt = new Ajv2020({
       strict: false,
@@ -1297,6 +1297,17 @@ function readRepositoryBytes(path: string): Buffer {
 
 function readRepositoryJson(path: string): object {
   return JSON.parse(readRepositoryBytes(path).toString('utf8')) as object;
+}
+
+function migratedRepositoryPath(path: string): string {
+  const manifest = parse(
+    readRepositoryBytes('docs/reference/document-path-migration-v1.yaml').toString('utf8'),
+  ) as {
+    phase?: string;
+    entries?: Array<{ old_path?: string; new_path?: string }>;
+  };
+  if (manifest.phase !== 'migrated') return path;
+  return manifest.entries?.find((entry) => entry.old_path === path)?.new_path ?? path;
 }
 
 function configYaml(digest: `sha256:${string}`): string {

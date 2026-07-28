@@ -1,3 +1,16 @@
+---
+schema: openslack.document.v1
+id: security-human-approval
+status: In Review
+authority: canonical
+audience:
+  - security
+owner: security
+updated: 2026-07-28
+sources:
+  - docs/reference/document-path-migration-v1.yaml
+---
+
 # Human Approval
 
 Human approval in OpenSlack means a real human with the required authority makes the approval decision. It does not require that the human personally browse GitHub or manually inspect every raw diff in the GitHub UI.

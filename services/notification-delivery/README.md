@@ -4,7 +4,7 @@
 > monorepo。当前产品化与发布边界仍是仓库内源码与验证：OpenSlack client/queue 集成代码已经
 > 存在，但该独立进程和 Go module 尚未完成 registry registration、外部配置、service
 > admission/activation、live deployment 或 release。集成状态与治理边界见
-> [OpenSlack 集成指南](../../docs/developer/notification-delivery-integration.md)。
+> [OpenSlack 集成指南](../../docs/architecture/integrations/notification-delivery.md)。
 
 `rc_wsman` 仅作为既有数据库/迁移、指标与告警、wire schema/fingerprint、测试 fixture、
 Canary/OpenAPI 示例及历史 provenance 标识保留；它不是当前 display name。

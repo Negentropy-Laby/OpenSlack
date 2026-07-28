@@ -138,7 +138,7 @@ export interface RunStatus {
  * - 'execute': Real side effects. REQUIRES human confirmation via onConfirm
  *   callback or explicit allowUnattended flag. Never proceeds without one.
  *
- * @see docs/product/approval-vocabulary.md for the full approval/confirmation vocabulary
+ * @see standards/approval-vocabulary.md for the full approval/confirmation vocabulary
  */
 export type ExecutionMode = 'validate' | 'preview' | 'dry-run' | 'execute';
 
