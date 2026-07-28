@@ -271,6 +271,27 @@ bun run docs:verify
 
 If `docs/status/current.md` changes after generation, commit the generated file with the source change.
 
+### Documentation Change Workflow
+
+1. Identify the fact class in `memory_bank/document_map.yaml`.
+2. Edit only its canonical source. Project portfolio, release, and assignments
+   change in their structured Memory Bank YAML; module telemetry changes in
+   `.openslack/modules.yaml`.
+3. Verify referenced GitHub/OpenSlack evidence before changing status. A planned
+   owner never substitutes for `execution.agent_id` or a claim ref.
+4. Run `bun run docs:generate` and, when module telemetry changed,
+   `bun run openslack status generate`.
+5. Run `bun run docs:verify`, `bun run docs:migration-check`,
+   `bun run docs:notification-verify`, and
+   `bun run openslack status verify`.
+6. Commit canonical sources and generated projections together.
+
+Every active English Markdown document under `docs/`, `design/`,
+`memory_bank/`, `production/`, or `standards/` must be registered in
+`memory_bank/document_map.yaml` and use `openslack.document.v1` metadata.
+Generated documents and immutable historical evidence use their declared
+exceptions. Do not add an old-path pointer page.
+
 ---
 
 ## Required Development Workflow

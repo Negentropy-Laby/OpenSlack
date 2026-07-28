@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -17,6 +18,7 @@ import {
   renderGeneratedDocuments,
   validateDocumentMetadata,
   validateProjectStateObject,
+  validateReleaseStateObject,
   validateRepositoryPath,
   validateWorkAssignmentsObject,
   verifyDocumentation,
@@ -196,7 +198,10 @@ function documentMap(
   return {
     schema: 'openslack.document_map.v1',
     authorities: [{ fact: 'portfolio', canonical: 'docs/active.md' }],
-    documents: [{ id: 'active', path: 'docs/active.md', status: 'active' }],
+    documents: [
+      { id: 'active', path: 'docs/active.md', status: 'active' },
+      { id: 'legacy', path: 'docs/legacy.md', status: 'archived' },
+    ],
     ...overrides,
   };
 }
@@ -307,6 +312,58 @@ describe('documentation governance validation', () => {
       ).not.toThrow();
     },
   );
+
+  test('rejects duplicate assignment ids and unknown scopes', () => {
+    expect(() =>
+      validateWorkAssignmentsObject({
+        ...assignments,
+        assignments: [
+          assignments.assignments[0],
+          {
+            ...assignments.assignments[0],
+            module_or_workstream: 'unknown-scope',
+          },
+        ],
+      }),
+    ).toThrow(/Duplicate assignment id/);
+    expect(() =>
+      validateWorkAssignmentsObject({
+        ...assignments,
+        assignments: [
+          {
+            ...assignments.assignments[0],
+            module_or_workstream: 'unknown-scope',
+          },
+        ],
+      }),
+    ).toThrow(/unknown module_or_workstream/);
+  });
+
+  test('rejects evidence-free release and approval promotions', () => {
+    expect(() =>
+      validateReleaseStateObject({
+        ...release,
+        gates: [{ id: 'local', status: 'passed', evidence: [], notes: '' }],
+      }),
+    ).toThrow(/cannot pass without evidence/);
+    expect(() =>
+      validateReleaseStateObject({
+        ...release,
+        human_approval: 'approved',
+      }),
+    ).toThrow(/human_approval gate with evidence/);
+  });
+
+  test('mirrors the human approval evidence invariant in the release-state schema', () => {
+    const root = temporaryRepository();
+    writeCanonicalState(root);
+    writeJsonFile(root, 'memory_bank/t0_core/release_state.yaml', {
+      ...release,
+      human_approval: 'approved',
+    });
+
+    expect(() => verifyDocumentation(root)).toThrow(/release-state\.schema\.json/);
+  });
 
   test('generates byte-identical projections for identical input', () => {
     expect(renderGeneratedDocuments(project, release, assignments)).toEqual(
@@ -433,9 +490,80 @@ describe('documentation governance validation', () => {
     expect(() => verifyDocumentation(root)).toThrow(/frontmatter id does not match/);
   });
 
-  test('parses Markdown link titles and GitHub-style ATX anchors', () => {
+  test('rejects unregistered governed Markdown and active template placeholders', () => {
     const root = temporaryRepository();
     writeDocumentMap(root);
+    writeRepositoryFile(root, 'docs/active.md', documentMetadata('active'));
+    writeRepositoryFile(root, 'docs/unregistered.md', '# Unregistered\n');
+    expect(() => verifyDocumentation(root)).toThrow(
+      /Governed Markdown document is not registered.*docs\/unregistered\.md/,
+    );
+
+    unlinkSync(join(root, 'docs/unregistered.md'));
+    writeRepositoryFile(
+      root,
+      'docs/active.md',
+      documentMetadata('active', 'TODO: replace this template value.\n'),
+    );
+    expect(() => verifyDocumentation(root)).toThrow(
+      /active document contains a template placeholder/i,
+    );
+
+    writeRepositoryFile(
+      root,
+      'docs/active.md',
+      documentMetadata('active', 'A lowercase todo is ordinary prose.\n'),
+    );
+    expect(() => verifyDocumentation(root)).not.toThrow();
+
+    writeRepositoryFile(
+      root,
+      'docs/active.md',
+      documentMetadata('active', 'A literal `{{mustache}}` value remains template-shaped.\n'),
+    );
+    expect(() => verifyDocumentation(root)).toThrow(
+      /active document contains a template placeholder/i,
+    );
+  });
+
+  test.skipIf(process.platform === 'win32')(
+    'rejects registered document symbolic links before reading them',
+    () => {
+      const root = temporaryRepository();
+      writeDocumentMap(root);
+      const outside = mkdtempSync(join(tmpdir(), 'openslack-documentation-outside-'));
+      temporaryRoots.push(outside);
+      writeRepositoryFile(outside, 'outside.md', '# Outside\n');
+      symlinkSync(join(outside, 'outside.md'), join(root, 'docs', 'active.md'), 'file');
+
+      expect(() => verifyDocumentation(root)).toThrow(/ordinary file/);
+    },
+  );
+
+  test('rejects linked governed roots before a documentation scan can leave the repository', () => {
+    const root = temporaryRepository();
+    writeDocumentMap(root);
+    writeRepositoryFile(root, 'docs/active.md', documentMetadata('active'));
+    const outside = mkdtempSync(join(tmpdir(), 'openslack-documentation-outside-'));
+    temporaryRoots.push(outside);
+    writeRepositoryFile(outside, 'outside.md', '# Outside\n');
+    symlinkSync(outside, join(root, 'design'), process.platform === 'win32' ? 'junction' : 'dir');
+
+    expect(() => verifyDocumentation(root)).toThrow(/ordinary directory/);
+  });
+
+  test('parses Markdown link titles and GitHub-style ATX anchors', () => {
+    const root = temporaryRepository();
+    writeDocumentMap(
+      root,
+      documentMap({
+        documents: [
+          { id: 'active', path: 'docs/active.md', status: 'active' },
+          { id: 'legacy', path: 'docs/legacy.md', status: 'archived' },
+          { id: 'target', path: 'docs/target.md', status: 'archived' },
+        ],
+      }),
+    );
     writeRepositoryFile(
       root,
       'docs/active.md',

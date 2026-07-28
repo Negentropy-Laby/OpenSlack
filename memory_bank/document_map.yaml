@@ -466,6 +466,9 @@ documents:
   - id: evidence-review-index-readme
     path: memory_bank/t3_archive/reviews/README.md
     status: index
+  - id: evidence-documentation-migration-v1
+    path: memory_bank/t3_archive/reviews/documentation-migration-v1.md
+    status: active
   - id: evidence-review-index
     path: memory_bank/t3_archive/reviews/review-index.md
     status: index

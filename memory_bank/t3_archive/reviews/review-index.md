@@ -13,6 +13,6 @@ sources:
 
 # Review Index
 
-| Review                     | State     | Evidence                                         | Non-claims                                                                  |
-| -------------------------- | --------- | ------------------------------------------------ | --------------------------------------------------------------------------- |
-| Documentation migration v1 | In Review | `docs/reference/document-path-migration-v1.yaml` | No independent human approval, merge, release, or live verification claimed |
+| Review                     | State                                    | Evidence                                                       | Non-claims                                           |
+| -------------------------- | ---------------------------------------- | -------------------------------------------------------------- | ---------------------------------------------------- |
+| Documentation migration v1 | Closure proposed; effective on PR3 merge | `memory_bank/t3_archive/reviews/documentation-migration-v1.md` | No release or live verification claimed by migration |
