@@ -59,8 +59,15 @@ export type {
   ScenarioWorkflows,
   ScenarioYamlValue,
 } from './pack-schema.js';
+export { discoverScenarioPacks } from './discover.js';
+export type {
+  DiscoverScenarioPacksOptions,
+  ScenarioPackDiscoveryDiagnostic,
+  ScenarioPackDiscoveryResult,
+} from './discover.js';
 export {
   assertLoadedScenarioDefinition,
+  isCanonicalScenarioPackId,
   loadScenarioPack,
   ScenarioPackLoadError,
 } from './pack-loader.js';

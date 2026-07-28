@@ -1,4 +1,5 @@
-import { cpSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,6 +37,32 @@ function root(): string {
 
 function operator(): OperatorApplicationContextPort {
   return Object.freeze({}) as unknown as OperatorApplicationContextPort;
+}
+
+function addLockedScenarioPack(workspaceRoot: string, scenarioId: string): void {
+  const scenarioRoot = join(workspaceRoot, 'scenarios');
+  const pack = join(scenarioRoot, scenarioId);
+  cpSync(join(repositoryRoot, 'scenarios', 'software-delivery'), pack, { recursive: true });
+  if (scenarioId === 'software-delivery') return;
+
+  const manifestPath = join(pack, 'scenario.yaml');
+  writeFileSync(
+    manifestPath,
+    readFileSync(manifestPath, 'utf8').replace('id: software-delivery', `id: ${scenarioId}`),
+    'utf8',
+  );
+  const lockPath = join(pack, 'scenario.lock.json');
+  const lock = JSON.parse(readFileSync(lockPath, 'utf8')) as {
+    scenarioId: string;
+    files: Array<{ path: string; bytes: number; sha256: string }>;
+  };
+  lock.scenarioId = scenarioId;
+  for (const entry of lock.files) {
+    const bytes = readFileSync(join(pack, ...entry.path.split('/')));
+    entry.bytes = bytes.length;
+    entry.sha256 = createHash('sha256').update(bytes).digest('hex');
+  }
+  writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`, 'utf8');
 }
 
 function node(
@@ -163,7 +190,105 @@ describe('default graph read adapters', () => {
             definitionHash: expect.stringMatching(/^[0-9a-f]{64}$/),
           },
         ],
+        blockedCounts: [],
       },
+    });
+  });
+
+  it('discovers once per context and observes new Packs only after context recreation', async () => {
+    const workspaceRoot = root();
+    mkdirSync(join(workspaceRoot, 'scenarios'), { recursive: true });
+    addLockedScenarioPack(workspaceRoot, 'software-delivery');
+    const firstCore = new OpenSlackMcpCore(
+      createOpenSlackMcpContext({
+        workspaceRoot,
+        operator: operator(),
+        clock: () => new Date(now),
+        correlationIdFactory: () => 'mcp:single-scan',
+      }),
+    );
+
+    const first = await firstCore.callTool('openslack_list_scenarios', {});
+    expect(
+      (first.structuredContent.data as { scenarios: Array<{ id: string }> }).scenarios.map(
+        (scenario) => scenario.id,
+      ),
+    ).toEqual(['software-delivery']);
+
+    addLockedScenarioPack(workspaceRoot, 'second-pack');
+    const cached = await firstCore.callTool('openslack_list_scenarios', {});
+    expect(
+      (cached.structuredContent.data as { scenarios: Array<{ id: string }> }).scenarios.map(
+        (scenario) => scenario.id,
+      ),
+    ).toEqual(['software-delivery']);
+
+    const restartedCore = new OpenSlackMcpCore(
+      createOpenSlackMcpContext({
+        workspaceRoot,
+        operator: operator(),
+        clock: () => new Date(now),
+        correlationIdFactory: () => 'mcp:after-restart',
+      }),
+    );
+    const restarted = await restartedCore.callTool('openslack_list_scenarios', {});
+    expect(
+      (restarted.structuredContent.data as { scenarios: Array<{ id: string }> }).scenarios.map(
+        (scenario) => scenario.id,
+      ),
+    ).toEqual(['second-pack', 'software-delivery']);
+  });
+
+  it('projects only bounded blocked-code counts and keeps accepted Packs available', async () => {
+    const workspaceRoot = root();
+    mkdirSync(join(workspaceRoot, 'scenarios'), { recursive: true });
+    addLockedScenarioPack(workspaceRoot, 'software-delivery');
+    mkdirSync(join(workspaceRoot, 'scenarios', 'Invalid_ID'));
+    mkdirSync(join(workspaceRoot, 'scenarios', 'broken-pack'));
+    writeFileSync(join(workspaceRoot, 'scenarios', 'ordinary-file'), 'not a pack\n', 'utf8');
+    const core = new OpenSlackMcpCore(
+      createOpenSlackMcpContext({
+        workspaceRoot,
+        operator: operator(),
+        clock: () => new Date(now),
+        correlationIdFactory: () => 'mcp:blocked-counts',
+      }),
+    );
+
+    const result = await core.callTool('openslack_list_scenarios', {});
+    expect(result.structuredContent).toMatchObject({
+      status: 'completed',
+      data: {
+        scenarios: [{ id: 'software-delivery' }],
+        blockedCounts: [
+          { code: 'SCENARIO_PACK_FILE_SET_MISMATCH', count: 1 },
+          { code: 'SCENARIO_PACK_FILE_UNSAFE', count: 1 },
+          { code: 'SCENARIO_PACK_SOURCE_INVALID', count: 1 },
+        ],
+      },
+    });
+    const serialized = JSON.stringify(result.structuredContent);
+    expect(serialized).not.toContain(workspaceRoot);
+    expect(serialized).not.toContain('Invalid_ID');
+    expect(serialized).not.toContain('ordinary-file');
+  });
+
+  it('returns SOURCE_EVIDENCE_UNAVAILABLE when discovery accepts no Pack', async () => {
+    const workspaceRoot = root();
+    mkdirSync(join(workspaceRoot, 'scenarios'), { recursive: true });
+    const core = new OpenSlackMcpCore(
+      createOpenSlackMcpContext({
+        workspaceRoot,
+        operator: operator(),
+        clock: () => new Date(now),
+        correlationIdFactory: () => 'mcp:no-scenarios',
+      }),
+    );
+
+    const result = await core.callTool('openslack_list_scenarios', {});
+    expect(result.structuredContent).toMatchObject({
+      status: 'blocked',
+      governance: { blocker: 'SOURCE_EVIDENCE_UNAVAILABLE' },
     });
   });
 

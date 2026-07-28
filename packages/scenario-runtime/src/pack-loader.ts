@@ -11,6 +11,7 @@ import {
 import {
   assertCanonicalCapabilityId,
   isNonOverridableForbiddenCapability,
+  ScenarioCapabilityError,
   SCENARIO_RISK_LEVELS,
 } from './capabilities.js';
 import { ScenarioHostCatalog } from './catalog.js';
@@ -21,6 +22,7 @@ import {
   SCENARIO_PACK_LIMITS,
   SCENARIO_PACK_LOCK_SCHEMA,
   type ParsedScenarioPackFiles,
+  type ScenarioPackErrorCode,
   type ScenarioFixture,
   type ScenarioPackLock,
   type ScenarioPackLockEntry,
@@ -33,7 +35,7 @@ const LOCK_FILE = 'scenario.lock.json';
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const NO_FOLLOW = process.platform === 'win32' ? 0 : (fsConstants.O_NOFOLLOW ?? 0);
 
-export type ScenarioPackLoadErrorCode =
+type ScenarioPackSourceErrorCode =
   | 'SCENARIO_PACK_SOURCE_INVALID'
   | 'SCENARIO_PACK_SOURCE_OUTSIDE_ROOT'
   | 'SCENARIO_PACK_SOURCE_SYMLINK'
@@ -46,6 +48,8 @@ export type ScenarioPackLoadErrorCode =
   | 'SCENARIO_PACK_INTEGRITY_MISMATCH'
   | 'SCENARIO_PACK_REFERENCE_MISSING'
   | 'SCENARIO_PACK_POLICY_DENIED';
+
+export type ScenarioPackLoadErrorCode = ScenarioPackSourceErrorCode | ScenarioPackErrorCode;
 
 export class ScenarioPackLoadError extends Error {
   readonly code: ScenarioPackLoadErrorCode;
@@ -112,6 +116,10 @@ interface SafeRead {
 
 const NO_HOOKS: LoadHooks = Object.freeze({});
 
+export function isCanonicalScenarioPackId(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= 64 && PACK_ID_PATTERN.test(value);
+}
+
 function fail(
   code: ScenarioPackLoadErrorCode,
   message: string,
@@ -165,6 +173,61 @@ async function inspectPath(path: string, kind: 'file' | 'directory'): Promise<St
   return stat;
 }
 
+export interface PreparedScenarioRoot {
+  readonly root: string;
+  readonly rootReal: string;
+  readonly rootStat: Stats;
+}
+
+function assertNormalizedScenarioRoot(scenarioRoot: string): void {
+  if (
+    typeof scenarioRoot !== 'string' ||
+    !isAbsolute(scenarioRoot) ||
+    resolve(scenarioRoot) !== scenarioRoot ||
+    scenarioRoot.includes('\0')
+  ) {
+    return fail('SCENARIO_PACK_SOURCE_INVALID', 'scenarioRoot must be a normalized absolute path.');
+  }
+}
+
+async function inspectScenarioRoot(scenarioRoot: string): Promise<PreparedScenarioRoot> {
+  const rootStat = await inspectPath(scenarioRoot, 'directory');
+  const rootReal = await realpath(scenarioRoot);
+  if (!samePath(scenarioRoot, rootReal)) {
+    return fail(
+      'SCENARIO_PACK_SOURCE_SYMLINK',
+      'Configured scenario root must not traverse a symlink.',
+      scenarioRoot,
+    );
+  }
+  return Object.freeze({ root: scenarioRoot, rootReal, rootStat });
+}
+
+/** @internal shared source boundary for bounded discovery; not exported from the package root. */
+export async function prepareScenarioRoot(
+  scenarioRoot: string,
+  catalog: ScenarioHostCatalog,
+): Promise<PreparedScenarioRoot> {
+  assertNormalizedScenarioRoot(scenarioRoot);
+  ScenarioHostCatalog.assertSealed(catalog);
+  return inspectScenarioRoot(scenarioRoot);
+}
+
+/** @internal detects root replacement or entry-set drift during bounded discovery. */
+export async function assertPreparedScenarioRootStable(
+  prepared: PreparedScenarioRoot,
+): Promise<void> {
+  const finalStat = await inspectPath(prepared.root, 'directory');
+  const finalReal = await realpath(prepared.root);
+  if (!stableIdentity(prepared.rootStat, finalStat) || !samePath(prepared.rootReal, finalReal)) {
+    return fail(
+      'SCENARIO_PACK_FILE_CHANGED',
+      'Scenario root changed during discovery.',
+      prepared.root,
+    );
+  }
+}
+
 function boundedOption(value: number | undefined, ceiling: number, name: string): number {
   if (value === undefined) return ceiling;
   if (!Number.isSafeInteger(value) || value < 1 || value > ceiling) {
@@ -184,32 +247,12 @@ async function prepareRoot(options: LoadScenarioPackOptions): Promise<{
   packReal: string;
   packStat: Stats;
 }> {
-  if (
-    typeof options.scenarioRoot !== 'string' ||
-    !isAbsolute(options.scenarioRoot) ||
-    resolve(options.scenarioRoot) !== options.scenarioRoot ||
-    options.scenarioRoot.includes('\0')
-  ) {
-    return fail('SCENARIO_PACK_SOURCE_INVALID', 'scenarioRoot must be a normalized absolute path.');
-  }
-  if (
-    typeof options.scenarioId !== 'string' ||
-    options.scenarioId.length > 64 ||
-    !PACK_ID_PATTERN.test(options.scenarioId)
-  ) {
+  assertNormalizedScenarioRoot(options.scenarioRoot);
+  if (!isCanonicalScenarioPackId(options.scenarioId)) {
     return fail('SCENARIO_PACK_SOURCE_INVALID', 'Scenario ID is invalid.');
   }
   ScenarioHostCatalog.assertSealed(options.catalog);
-  const root = options.scenarioRoot;
-  const rootStat = await inspectPath(root, 'directory');
-  const rootReal = await realpath(root);
-  if (!samePath(root, rootReal)) {
-    return fail(
-      'SCENARIO_PACK_SOURCE_SYMLINK',
-      'Configured scenario root must not traverse a symlink.',
-      root,
-    );
-  }
+  const { root, rootReal, rootStat } = await inspectScenarioRoot(options.scenarioRoot);
   const pack = join(root, options.scenarioId);
   const packStat = await inspectPath(pack, 'directory');
   const packReal = await realpath(pack);
@@ -509,8 +552,22 @@ function validateRegisteredReferences(
   }
   const requested = new Set(parsed.capabilities.requested);
   for (const capabilityId of parsed.capabilities.requested) {
-    assertCanonicalCapabilityId(capabilityId);
-    if (isNonOverridableForbiddenCapability(capabilityId) || !catalog.capability(capabilityId)) {
+    if (isNonOverridableForbiddenCapability(capabilityId)) {
+      return fail(
+        'SCENARIO_PACK_REFERENCE_MISSING',
+        `Capability ${capabilityId} is forbidden or not registered.`,
+      );
+    }
+    try {
+      assertCanonicalCapabilityId(capabilityId);
+    } catch (error) {
+      if (!(error instanceof ScenarioCapabilityError)) throw error;
+      return fail(
+        'SCENARIO_PACK_REFERENCE_MISSING',
+        'Capability reference is invalid or not registered.',
+      );
+    }
+    if (!catalog.capability(capabilityId)) {
       return fail(
         'SCENARIO_PACK_REFERENCE_MISSING',
         `Capability ${capabilityId} is forbidden or not registered.`,

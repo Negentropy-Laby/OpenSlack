@@ -23,6 +23,7 @@ import {
 import {
   assertLoadedScenarioDefinition,
   createSoftwareDeliveryScenarioCatalog,
+  isCanonicalScenarioPackId,
   isCanonicalScenarioSemver,
   loadScenarioPack,
 } from '../index.js';
@@ -74,6 +75,15 @@ afterEach(async () => {
 });
 
 describe('Scenario Pack exact-byte loader', () => {
+  it('exports the loader-owned canonical Pack ID validator', () => {
+    expect(isCanonicalScenarioPackId('software-delivery')).toBe(true);
+    expect(isCanonicalScenarioPackId('contract-to-delivery-lite')).toBe(true);
+    expect(isCanonicalScenarioPackId('Software-Delivery')).toBe(false);
+    expect(isCanonicalScenarioPackId('software_delivery')).toBe(false);
+    expect(isCanonicalScenarioPackId('../software-delivery')).toBe(false);
+    expect(isCanonicalScenarioPackId(`s${'a'.repeat(64)}`)).toBe(false);
+  });
+
   it('loads the real projection-only software-delivery pack through the host-owned catalog', async () => {
     const definition = await loadScenarioPack({
       scenarioRoot: sourceRoot,
