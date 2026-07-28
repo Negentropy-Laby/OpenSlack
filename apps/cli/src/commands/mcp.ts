@@ -7,8 +7,23 @@ import {
   type OpenSlackMcpServer,
   type OperatorApplicationContextPort,
 } from '@openslack/mcp';
+import {
+  bindLocalHumanSubject,
+  getLocalHumanAttestationStatus,
+  LocalHumanAttestationError,
+  type BindLocalHumanSubjectOptions,
+  type LocalHumanAttestationStatus,
+} from '@openslack/workflows';
+import {
+  createOpenSlackHumanAttestedMcpComposition,
+  type OpenSlackHumanAttestedMcpComposition,
+} from '../mcp-human-attested-composition.js';
 
-export const OPENSLACK_MCP_CLI_PROFILES = Object.freeze(['read-only', 'agent-bound'] as const);
+export const OPENSLACK_MCP_CLI_PROFILES = Object.freeze([
+  'read-only',
+  'agent-bound',
+  'human-attested',
+] as const);
 export type OpenSlackMcpCliProfile = (typeof OPENSLACK_MCP_CLI_PROFILES)[number];
 
 export interface McpCommandDependencies {
@@ -16,6 +31,13 @@ export interface McpCommandDependencies {
   readonly operator: OperatorApplicationContextPort;
   readonly createContext?: typeof createOpenSlackMcpContext;
   readonly createAgentBoundComposition?: typeof createOpenSlackAgentBoundMutationComposition;
+  readonly createHumanAttestedComposition?: (
+    options: Parameters<typeof createOpenSlackHumanAttestedMcpComposition>[0],
+  ) => Promise<OpenSlackHumanAttestedMcpComposition>;
+  readonly getAttestationStatus?: (workspaceRoot: string) => LocalHumanAttestationStatus;
+  readonly bindLocalSubject?: (
+    options: BindLocalHumanSubjectOptions,
+  ) => LocalHumanAttestationStatus;
   readonly createServer?: typeof createOpenSlackMcpServer;
 }
 
@@ -23,6 +45,7 @@ interface McpServeOptions {
   readonly stdio: true;
   readonly profile: OpenSlackMcpCliProfile;
   readonly principalRef?: string;
+  readonly humanPrincipal?: string;
   readonly workspaceId?: string;
 }
 
@@ -39,41 +62,109 @@ async function createProfileContext(
 ): Promise<OpenSlackMcpContext> {
   const createContext = dependencies.createContext ?? createOpenSlackMcpContext;
   if (options.profile === 'read-only') {
-    if (options.principalRef !== undefined || options.workspaceId !== undefined) {
-      throw new McpProfileArgumentError(
-        'read-only does not accept --principal-ref or --workspace-id.',
-      );
+    if (
+      options.principalRef !== undefined ||
+      options.humanPrincipal !== undefined ||
+      options.workspaceId !== undefined
+    ) {
+      throw new McpProfileArgumentError('read-only does not accept authority-binding arguments.');
     }
     return createContext({
       workspaceRoot: dependencies.workspaceRoot,
       operator: dependencies.operator,
     });
   }
-  if (options.profile !== 'agent-bound') {
+  if (options.profile !== 'agent-bound' && options.profile !== 'human-attested') {
     throw new McpProfileArgumentError('The requested MCP profile is not registered.');
   }
   if (options.principalRef === undefined) {
-    throw new McpProfileArgumentError('agent-bound requires --principal-ref.');
+    throw new McpProfileArgumentError(`${options.profile} requires --principal-ref.`);
+  }
+  if (options.profile === 'agent-bound') {
+    if (options.humanPrincipal !== undefined) {
+      throw new McpProfileArgumentError('agent-bound does not accept --human-principal.');
+    }
+    const composition = await (
+      dependencies.createAgentBoundComposition ?? createOpenSlackAgentBoundMutationComposition
+    )({
+      workspaceRoot: dependencies.workspaceRoot,
+      principalRef: options.principalRef,
+      provider: 'cli',
+      ...(options.workspaceId === undefined ? {} : { workspaceIdAssertion: options.workspaceId }),
+    });
+    return createContext({
+      workspaceRoot: dependencies.workspaceRoot,
+      operator: dependencies.operator,
+      governedMutations: composition.governedMutations,
+    });
+  }
+  if (options.humanPrincipal === undefined) {
+    throw new McpProfileArgumentError('human-attested requires --human-principal.');
   }
   const composition = await (
-    dependencies.createAgentBoundComposition ?? createOpenSlackAgentBoundMutationComposition
+    dependencies.createHumanAttestedComposition ?? createOpenSlackHumanAttestedMcpComposition
   )({
     workspaceRoot: dependencies.workspaceRoot,
     principalRef: options.principalRef,
-    provider: 'cli',
+    humanPrincipalAssertion: options.humanPrincipal,
     ...(options.workspaceId === undefined ? {} : { workspaceIdAssertion: options.workspaceId }),
   });
   return createContext({
     workspaceRoot: dependencies.workspaceRoot,
     operator: dependencies.operator,
     governedMutations: composition.governedMutations,
+    workflowApprovalAuthority: composition.workflowApprovalAuthority,
   });
+}
+
+function renderAttestationError(error: unknown): string {
+  return error instanceof LocalHumanAttestationError
+    ? `${error.code}: local human attestation failed closed.`
+    : 'LOCAL_HUMAN_ATTESTATION_FAILED: local human attestation failed closed.';
 }
 
 export function mcpCommands(dependencies: McpCommandDependencies): Command {
   const command = new Command('mcp').description(
     'Qoder/OpenSlack Model Context Protocol integration',
   );
+
+  const attestation = command
+    .command('attestation')
+    .description('Manage the credential-free local human subject binding');
+
+  attestation
+    .command('status')
+    .description('Inspect the current local human attestation readiness')
+    .action(() => {
+      try {
+        const status = (dependencies.getAttestationStatus ?? getLocalHumanAttestationStatus)(
+          dependencies.workspaceRoot,
+        );
+        console.log(JSON.stringify(status, null, 2));
+      } catch (error) {
+        console.error(renderAttestationError(error));
+        process.exitCode = 1;
+      }
+    });
+
+  attestation
+    .command('bind-local-subject')
+    .description('Bind the current OS subject hash to one asserted human principal')
+    .requiredOption('--human-principal <human-id>', 'Assert the human principal to bind')
+    .requiredOption('--confirm', 'Confirm this local subject binding')
+    .action((options: { readonly humanPrincipal: string; readonly confirm: true }) => {
+      try {
+        const status = (dependencies.bindLocalSubject ?? bindLocalHumanSubject)({
+          workspaceRoot: dependencies.workspaceRoot,
+          humanPrincipalId: options.humanPrincipal,
+          confirmed: options.confirm,
+        });
+        console.log(JSON.stringify(status, null, 2));
+      } catch (error) {
+        console.error(renderAttestationError(error));
+        process.exitCode = 1;
+      }
+    });
 
   command
     .command('serve')
@@ -88,7 +179,11 @@ export function mcpCommands(dependencies: McpCommandDependencies): Command {
       '--principal-ref <agent-id>',
       'Resolve an active registry/runtime principal for agent-bound',
     )
-    .option('--workspace-id <workspace-id>', 'Assert the canonical workspace ID for agent-bound')
+    .option(
+      '--human-principal <human-id>',
+      'Assert the separately mapped human principal for human-attested',
+    )
+    .option('--workspace-id <workspace-id>', 'Assert the canonical workspace ID')
     .action(async (options: McpServeOptions) => {
       let server: OpenSlackMcpServer | undefined;
       try {

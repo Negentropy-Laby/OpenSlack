@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "openslack": {
+      "type": "stdio",
+      "command": "wsl.exe",
+      "args": [
+        "--cd",
+        "/mnt/d/absolute/path with spaces/OpenSlack",
+        "--",
+        "bun",
+        "run",
+        "openslack",
+        "mcp",
+        "serve",
+        "--stdio",
+        "--profile",
+        "human-attested",
+        "--principal-ref",
+        "<agent-id>",
+        "--human-principal",
+        "<human-id>"
+      ]
+    }
+  }
+}

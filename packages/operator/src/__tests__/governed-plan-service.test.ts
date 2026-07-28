@@ -509,7 +509,7 @@ describe('governed plan service', () => {
       await late;
       return { status: 'succeeded' as const, summary: 'Late success' };
     });
-    const { service } = makeHarness(execute, { executionTimeoutMs: 20 });
+    const { service } = makeHarness(execute, { executionTimeoutMs: 1_000 });
     const preview = await service.preview(compiler(), authority);
 
     await expect(

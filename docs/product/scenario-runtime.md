@@ -12,10 +12,11 @@ The `@openslack/scenario-runtime` package and exact-byte locked, projection-only
 `software-delivery` Scenario Pack implement the declarative loading, capability normalization,
 preview, instance, and local-store core described here. The governed mutation contract and a
 production agent-bound `software-delivery` Scenario instantiation composition are implemented.
-The default stock MCP remains read-only, while explicit CLI `agent-bound` selects the governed
-16-tool composition from an active registry/runtime principal. Authenticated Qoder rehearsal and
-live adapter qualification remain pending. Contract-to-Delivery Lite and scenario lifecycle events
-remain later milestones.
+The default stock MCP remains read-only, explicit CLI `agent-bound` selects the governed 16-tool
+composition from an active registry/runtime principal, and explicit `human-attested` selects 17
+only after a separate local OS-subject and controlling-TTY attestation self-test. Authenticated
+Qoder rehearsal and live adapter qualification remain pending. Contract-to-Delivery Lite and
+scenario lifecycle events remain later milestones.
 
 ## Product outcome
 
@@ -77,8 +78,8 @@ stores, and the Collaboration audit sink before returning an explicitly injectab
 composition. Its `scenario.instantiate` executor uses CAS and durable instance readback. No sealed
 Workflow target/executor is currently registered, so Workflow preview is stably blocked and
 creates no plan. Default and explicit `read-only` remain the exact 12-tool surface; explicit
-`agent-bound` selects the exact 16-tool surface. The separately human-attested 17-tool profile is
-not yet a CLI choice.
+`agent-bound` selects the exact 16-tool surface. Explicit `human-attested` selects the exact
+17-tool surface only when the local human mapping and controlling TTY are proven.
 
 ## Definition and instance
 

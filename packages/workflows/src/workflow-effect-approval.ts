@@ -68,6 +68,8 @@ export interface HumanWorkflowEffectDecisionBinding {
   readonly capability: string;
   readonly runId: string;
   readonly approvalId: string;
+  readonly correlationId: string;
+  readonly approvalExpiresAt: string;
   readonly decision: WorkflowEffectApprovalDecision;
   readonly reasonHash: string;
   readonly issuedAt: string;
@@ -87,6 +89,8 @@ export interface IssueHumanWorkflowEffectDecisionBindingInput {
   readonly capability: string;
   readonly runId: string;
   readonly approvalId: string;
+  readonly correlationId: string;
+  readonly approvalExpiresAt: string;
   readonly decision: WorkflowEffectApprovalDecision;
   readonly reasonHash: string;
   readonly expiresAt: string;
@@ -96,6 +100,8 @@ export interface AssertHumanWorkflowEffectDecisionBindingInput {
   readonly requiredCapability: string;
   readonly runId: string;
   readonly approvalId: string;
+  readonly correlationId: string;
+  readonly approvalExpiresAt: string;
   readonly decision: WorkflowEffectApprovalDecision;
   readonly reasonHash: string;
   readonly decidedAt: string;
@@ -614,7 +620,17 @@ export class WorkflowEffectDecisionAuthority {
     WorkflowEffectDecisionAuthority.assertSealed(this);
     const input = closedRecord(
       value,
-      ['principalId', 'capability', 'runId', 'approvalId', 'decision', 'reasonHash', 'expiresAt'],
+      [
+        'principalId',
+        'capability',
+        'runId',
+        'approvalId',
+        'correlationId',
+        'approvalExpiresAt',
+        'decision',
+        'reasonHash',
+        'expiresAt',
+      ],
       'human decision binding request',
       'WORKFLOW_EFFECT_APPROVAL_BINDING_INVALID',
     );
@@ -642,6 +658,17 @@ export class WorkflowEffectDecisionAuthority {
       SAFE_ID,
       'WORKFLOW_EFFECT_APPROVAL_BINDING_INVALID',
     );
+    const correlationId = text(
+      own(input, 'correlationId'),
+      'correlationId',
+      SAFE_ID,
+      'WORKFLOW_EFFECT_APPROVAL_BINDING_INVALID',
+    );
+    const approvalExpiresAt = timestamp(
+      own(input, 'approvalExpiresAt'),
+      'approvalExpiresAt',
+      'WORKFLOW_EFFECT_APPROVAL_BINDING_INVALID',
+    );
     const decision = own(input, 'decision');
     if (decision !== 'approved' && decision !== 'rejected') {
       return fail(
@@ -664,7 +691,9 @@ export class WorkflowEffectDecisionAuthority {
     if (
       !this.#humanPrincipalIds.has(principalId) ||
       !this.#capabilities.has(capability) ||
+      Date.parse(approvalExpiresAt) <= Date.parse(created) ||
       Date.parse(expiresAt) <= Date.parse(created) ||
+      Date.parse(expiresAt) > Date.parse(approvalExpiresAt) ||
       Date.parse(expiresAt) - Date.parse(created) > this.#maxBindingTtlMs
     ) {
       return fail(
@@ -678,6 +707,8 @@ export class WorkflowEffectDecisionAuthority {
       capability,
       runId,
       approvalId,
+      correlationId,
+      approvalExpiresAt,
       decision,
       reasonHash,
       issuedAt: created,
@@ -712,6 +743,8 @@ export class WorkflowEffectDecisionAuthority {
         'capability',
         'runId',
         'approvalId',
+        'correlationId',
+        'approvalExpiresAt',
         'decision',
         'reasonHash',
         'issuedAt',
@@ -723,7 +756,16 @@ export class WorkflowEffectDecisionAuthority {
     );
     const request = closedRecord(
       requestValue,
-      ['requiredCapability', 'runId', 'approvalId', 'decision', 'reasonHash', 'decidedAt'],
+      [
+        'requiredCapability',
+        'runId',
+        'approvalId',
+        'correlationId',
+        'approvalExpiresAt',
+        'decision',
+        'reasonHash',
+        'decidedAt',
+      ],
       'human decision binding scope',
       'WORKFLOW_EFFECT_APPROVAL_BINDING_INVALID',
     );
@@ -755,6 +797,17 @@ export class WorkflowEffectDecisionAuthority {
       own(binding, 'approvalId'),
       'approvalId',
       SAFE_ID,
+      'WORKFLOW_EFFECT_APPROVAL_BINDING_INVALID',
+    );
+    const correlationId = text(
+      own(binding, 'correlationId'),
+      'correlationId',
+      SAFE_ID,
+      'WORKFLOW_EFFECT_APPROVAL_BINDING_INVALID',
+    );
+    const approvalExpiresAt = timestamp(
+      own(binding, 'approvalExpiresAt'),
+      'approvalExpiresAt',
       'WORKFLOW_EFFECT_APPROVAL_BINDING_INVALID',
     );
     const decision = own(binding, 'decision');
@@ -797,6 +850,17 @@ export class WorkflowEffectDecisionAuthority {
       SAFE_ID,
       'WORKFLOW_EFFECT_APPROVAL_BINDING_INVALID',
     );
+    const requestedCorrelationId = text(
+      own(request, 'correlationId'),
+      'correlationId',
+      SAFE_ID,
+      'WORKFLOW_EFFECT_APPROVAL_BINDING_INVALID',
+    );
+    const requestedApprovalExpiresAt = timestamp(
+      own(request, 'approvalExpiresAt'),
+      'approvalExpiresAt',
+      'WORKFLOW_EFFECT_APPROVAL_BINDING_INVALID',
+    );
     const requestedDecision = own(request, 'decision');
     const requestedReasonHash = text(
       own(request, 'reasonHash'),
@@ -804,17 +868,14 @@ export class WorkflowEffectDecisionAuthority {
       HASH,
       'WORKFLOW_EFFECT_APPROVAL_BINDING_INVALID',
     );
-    const nonce = text(
-      own(binding, 'nonce'),
-      'nonce',
-      UUID_V4,
-      'WORKFLOW_EFFECT_APPROVAL_BINDING_INVALID',
-    );
+    text(own(binding, 'nonce'), 'nonce', UUID_V4, 'WORKFLOW_EFFECT_APPROVAL_BINDING_INVALID');
     if (
       workspaceId !== this.#workspaceId ||
       capability !== requiredCapability ||
       runId !== requestedRunId ||
       approvalId !== requestedApprovalId ||
+      correlationId !== requestedCorrelationId ||
+      approvalExpiresAt !== requestedApprovalExpiresAt ||
       decision !== requestedDecision ||
       reasonHash !== requestedReasonHash ||
       (decision !== 'approved' && decision !== 'rejected') ||
@@ -822,7 +883,9 @@ export class WorkflowEffectDecisionAuthority {
       !this.#humanPrincipalIds.has(principalId) ||
       !this.#capabilities.has(capability) ||
       Date.parse(issuedAt) > Date.parse(decisionTime) ||
-      Date.parse(decisionTime) >= Date.parse(expiresAt)
+      Date.parse(decisionTime) >= Date.parse(expiresAt) ||
+      Date.parse(decisionTime) >= Date.parse(approvalExpiresAt) ||
+      Date.parse(expiresAt) > Date.parse(approvalExpiresAt)
     ) {
       return fail(
         'WORKFLOW_EFFECT_APPROVAL_BINDING_INVALID',
@@ -877,6 +940,8 @@ export function applyWorkflowEffectApprovalDecision(
     requiredCapability: current.requiredCapability,
     runId: current.runId,
     approvalId: current.approvalId,
+    correlationId: current.correlationId,
+    approvalExpiresAt: current.expiresAt,
     decision,
     reasonHash: canonicalReasonHash,
     decidedAt: canonicalDecidedAt,

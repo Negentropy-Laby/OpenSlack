@@ -352,6 +352,21 @@ export type {
   DecideWorkflowEffectApprovalInput,
   MarkWorkflowEffectApprovalAuditProjectedInput,
 } from './workflow-effect-approval-store.js';
+export {
+  bindLocalHumanSubject,
+  createLocalHumanAttestationProvider,
+  getLocalHumanAttestationStatus,
+  LOCAL_HUMAN_ATTESTATION_STATUS_SCHEMA,
+  LOCAL_HUMAN_SUBJECTS_SCHEMA,
+  LocalHumanAttestationError,
+} from './local-human-attestation.js';
+export type {
+  BindLocalHumanSubjectOptions,
+  CreateLocalHumanAttestationProviderOptions,
+  LocalHumanAttestationProvider,
+  LocalHumanAttestationRequest,
+  LocalHumanAttestationStatus,
+} from './local-human-attestation.js';
 
 // ── Workflow Save / Export ─────────────────────────────────────────────────
 export { saveWorkflow, saveWorkflowRunScript, exportWorkflowSkill } from './workflow-save.js';

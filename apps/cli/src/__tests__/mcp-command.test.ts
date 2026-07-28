@@ -4,6 +4,7 @@ import type {
   OpenSlackMcpContext,
   OpenSlackMcpServer,
 } from '@openslack/mcp';
+import type { OpenSlackHumanAttestedMcpComposition } from '../mcp-human-attested-composition.js';
 import { mcpCommands, OPENSLACK_MCP_CLI_PROFILES } from '../commands/mcp.js';
 
 function operatorContext() {
@@ -34,21 +35,30 @@ describe('mcp command', () => {
     process.exitCode = undefined;
   });
 
-  it('registers only the explicit stdio route and two exact profiles', () => {
+  it('registers the local attestation routes, explicit stdio route, and three exact profiles', () => {
     const command = mcpCommands({
       workspaceRoot: process.cwd(),
       operator: operatorContext(),
     });
 
-    expect(command.commands.map((child) => child.name())).toEqual(['serve']);
-    expect(command.commands[0].options.map((option) => option.long)).toEqual([
+    expect(command.commands.map((child) => child.name())).toEqual(['attestation', 'serve']);
+    expect(command.commands[0].commands.map((child) => child.name())).toEqual([
+      'status',
+      'bind-local-subject',
+    ]);
+    expect(command.commands[0].commands[1].options.map((option) => option.long)).toEqual([
+      '--human-principal',
+      '--confirm',
+    ]);
+    expect(command.commands[1].options.map((option) => option.long)).toEqual([
       '--stdio',
       '--profile',
       '--principal-ref',
+      '--human-principal',
       '--workspace-id',
     ]);
-    expect(command.commands[0].options[0].mandatory).toBe(true);
-    expect(command.commands[0].options[1]).toMatchObject({
+    expect(command.commands[1].options[0].mandatory).toBe(true);
+    expect(command.commands[1].options[1]).toMatchObject({
       argChoices: [...OPENSLACK_MCP_CLI_PROFILES],
       defaultValue: 'read-only',
     });
@@ -135,26 +145,155 @@ describe('mcp command', () => {
     expect(createdServer.serveStdio).toHaveBeenCalledOnce();
   });
 
+  it('binds human-attested through a separate composition and exposes exactly its approval port', async () => {
+    const governedMutations = Object.freeze({}) as never;
+    const workflowApprovalAuthority = Object.freeze({}) as never;
+    const composition = Object.freeze({
+      authority: Object.freeze({
+        actorId: 'agent-principal:sha256:test',
+        workspaceId: 'workspace-test',
+      }),
+      governedMutations,
+      governedPlanRoot: 'plan-root',
+      scenarioInstanceRoot: 'scenario-root',
+      scenarioIds: Object.freeze(['software-delivery']),
+      humanPrincipalId: 'human.interviewer',
+      workflowApprovalAuthority,
+      workflowApprovalStoreRoot: 'approval-root',
+    }) as OpenSlackHumanAttestedMcpComposition;
+    const context = Object.freeze({}) as OpenSlackMcpContext;
+    const createHumanAttestedComposition = vi.fn(async () => composition);
+    const createAgentBoundComposition = vi.fn();
+    const createContext = vi.fn(() => context);
+    const createdServer = server();
+
+    await mcpCommands({
+      workspaceRoot: process.cwd(),
+      operator: operatorContext(),
+      createAgentBoundComposition,
+      createHumanAttestedComposition,
+      createContext,
+      createServer: vi.fn(() => createdServer),
+    }).parseAsync([
+      'node',
+      'test',
+      'serve',
+      '--stdio',
+      '--profile',
+      'human-attested',
+      '--principal-ref',
+      'agent-1',
+      '--human-principal',
+      'human.interviewer',
+      '--workspace-id',
+      'workspace-test',
+    ]);
+
+    expect(createAgentBoundComposition).not.toHaveBeenCalled();
+    expect(createHumanAttestedComposition).toHaveBeenCalledWith({
+      workspaceRoot: process.cwd(),
+      principalRef: 'agent-1',
+      humanPrincipalAssertion: 'human.interviewer',
+      workspaceIdAssertion: 'workspace-test',
+    });
+    expect(createContext).toHaveBeenCalledWith({
+      workspaceRoot: process.cwd(),
+      operator: expect.anything(),
+      governedMutations,
+      workflowApprovalAuthority,
+    });
+    expect(createdServer.serveStdio).toHaveBeenCalledOnce();
+  });
+
+  it('reports and binds local attestation without exposing an OS subject', async () => {
+    const status = Object.freeze({
+      schema: 'openslack.local_human_attestation_status.v1' as const,
+      state: 'ready' as const,
+      version: 1 as const,
+      humanPrincipalId: 'human.interviewer',
+      ttyAvailable: true,
+    });
+    const getAttestationStatus = vi.fn(() => status);
+    const bindLocalSubject = vi.fn(() => status);
+    const command = mcpCommands({
+      workspaceRoot: process.cwd(),
+      operator: operatorContext(),
+      getAttestationStatus,
+      bindLocalSubject,
+    });
+
+    await command.parseAsync(['node', 'test', 'attestation', 'status']);
+    await command.parseAsync([
+      'node',
+      'test',
+      'attestation',
+      'bind-local-subject',
+      '--human-principal',
+      'human.interviewer',
+      '--confirm',
+    ]);
+
+    expect(getAttestationStatus).toHaveBeenCalledWith(process.cwd());
+    expect(bindLocalSubject).toHaveBeenCalledWith({
+      workspaceRoot: process.cwd(),
+      humanPrincipalId: 'human.interviewer',
+      confirmed: true,
+    });
+    expect(stdout).toHaveBeenCalledTimes(2);
+    expect(stdout.mock.calls.flat().join('\n')).not.toMatch(/subjectHash|windows-sid|posix:/i);
+    expect(stderr).not.toHaveBeenCalled();
+  });
+
   it.each([
     {
       name: 'principal authority on read-only',
       args: ['--profile', 'read-only', '--principal-ref', 'agent-1'],
       message:
-        'OPENSLACK_MCP_PROFILE_ARGUMENT_INVALID: read-only does not accept --principal-ref or --workspace-id.',
+        'OPENSLACK_MCP_PROFILE_ARGUMENT_INVALID: read-only does not accept authority-binding arguments.',
     },
     {
       name: 'workspace authority on read-only',
       args: ['--workspace-id', 'workspace-test'],
       message:
-        'OPENSLACK_MCP_PROFILE_ARGUMENT_INVALID: read-only does not accept --principal-ref or --workspace-id.',
+        'OPENSLACK_MCP_PROFILE_ARGUMENT_INVALID: read-only does not accept authority-binding arguments.',
+    },
+    {
+      name: 'human authority on read-only',
+      args: ['--human-principal', 'human.interviewer'],
+      message:
+        'OPENSLACK_MCP_PROFILE_ARGUMENT_INVALID: read-only does not accept authority-binding arguments.',
     },
     {
       name: 'missing principal on agent-bound',
       args: ['--profile', 'agent-bound'],
       message: 'OPENSLACK_MCP_PROFILE_ARGUMENT_INVALID: agent-bound requires --principal-ref.',
     },
+    {
+      name: 'human principal on agent-bound',
+      args: [
+        '--profile',
+        'agent-bound',
+        '--principal-ref',
+        'agent-1',
+        '--human-principal',
+        'human.interviewer',
+      ],
+      message:
+        'OPENSLACK_MCP_PROFILE_ARGUMENT_INVALID: agent-bound does not accept --human-principal.',
+    },
+    {
+      name: 'missing agent principal on human-attested',
+      args: ['--profile', 'human-attested', '--human-principal', 'human.interviewer'],
+      message: 'OPENSLACK_MCP_PROFILE_ARGUMENT_INVALID: human-attested requires --principal-ref.',
+    },
+    {
+      name: 'missing human principal on human-attested',
+      args: ['--profile', 'human-attested', '--principal-ref', 'agent-1'],
+      message: 'OPENSLACK_MCP_PROFILE_ARGUMENT_INVALID: human-attested requires --human-principal.',
+    },
   ])('rejects $name before composition or server creation', async ({ args, message }) => {
     const createAgentBoundComposition = vi.fn();
+    const createHumanAttestedComposition = vi.fn();
     const createContext = vi.fn();
     const createServer = vi.fn();
 
@@ -162,6 +301,7 @@ describe('mcp command', () => {
       workspaceRoot: process.cwd(),
       operator: operatorContext(),
       createAgentBoundComposition,
+      createHumanAttestedComposition,
       createContext,
       createServer,
     }).parseAsync(['node', 'test', 'serve', '--stdio', ...args]);
@@ -169,6 +309,7 @@ describe('mcp command', () => {
     expect(stderr).toHaveBeenLastCalledWith(message);
     expect(stdout).not.toHaveBeenCalled();
     expect(createAgentBoundComposition).not.toHaveBeenCalled();
+    expect(createHumanAttestedComposition).not.toHaveBeenCalled();
     expect(createContext).not.toHaveBeenCalled();
     expect(createServer).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);

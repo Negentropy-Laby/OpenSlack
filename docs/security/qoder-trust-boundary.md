@@ -3,8 +3,9 @@
 Status: implemented local security contract. Default and explicit `read-only` are the exact
 12-tool STDIO server with v2 results documented in
 [Qoder Work MCP integration](../developer/qoder-mcp.md). Explicit `agent-bound` selects the
-production 16-tool governed composition. A separately human-attested 17-tool composition is not
-yet a CLI choice. An injected local demo profile may append only its bounded reset tool. No Qoder
+production 16-tool governed composition. Explicit `human-attested` selects 17 only after the
+current local OS subject, owner-only mapping, and controlling TTY are proven. An injected local
+demo profile may append only its bounded reset tool. No Qoder
 desktop qualification or Scenario rehearsal is claimed.
 
 ## Security Position
@@ -58,6 +59,14 @@ attest the exact run, approval, decision, reason hash, capability, business corr
 expiry. A Qoder permission prompt, explicit wording, IM sender label, or client-provided actor
 string is not that attestation.
 
+The CLI derives the local subject from POSIX uid plus `os.userInfo()` or from the Windows SID
+returned by the fixed system `whoami /user` API path. It persists only a one-way subject hash in
+an owner-only, no-follow, atomically replaced mapping. Windows startup additionally requires
+provable current-SID ownership and protected ACLs. `--human-principal` is an equality assertion,
+never an identity input. Each decision uses only `/dev/tty` or `CON`; MCP stdin/stdout cannot
+supply the response. Any subject, mapping, file identity, ACL, TTY, deadline, or approval-expiry
+failure aborts the requested 17-tool profile without fallback.
+
 Client arguments cannot select an actor, installation identity, workspace root, capability,
 approval source, or collision-prone correlation ID. Missing or stale binding fails closed.
 
@@ -66,22 +75,22 @@ bounded transport metadata while the existing runtime identity remains authorita
 
 ## Threats and Controls
 
-| Threat                                                      | Required control                                                                           |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Prompt injection requests a shell or direct GitHub mutation | explicit tool catalog; no generic dispatcher                                               |
-| Qoder invents executable plan steps                         | OpenSlack rebuilds a canonical plan from sealed registries                                 |
-| Client replays or edits confirmation                        | actor/workspace/hash/expiry/source/catalog/executor/build/process binding and atomic claim |
-| Client injects approval identity or capability              | nominal per-decision attestation port; closed schema omits authority                       |
-| Approval audit projection fails after terminal CAS          | durable pending event; projection-only retry; no decision retry                            |
-| Audit directory is replaced between check and append        | composition-bound O_APPEND descriptor; pre/post identity checks                            |
-| Client claims another correlation                           | server-generated collision-resistant correlation ID                                        |
-| Skill or UI fabricates authority                            | evidence-labelled result envelope; authority sources are typed                             |
-| Oversized graph floods model context                        | depth/item/byte limits, deterministic truncation, query-bound cursor                       |
-| Raw evidence leaks secrets                                  | bounded projection, secret scan, no raw transcripts/vendor bodies                          |
-| Stale PR review is presented as approval                    | current-head PRMS evidence required                                                        |
-| Missing source appears as success                           | explicit blocked/unknown and completeness gaps                                             |
-| STDIO diagnostics corrupt JSON-RPC                          | stdout frames only; diagnostics on stderr                                                  |
-| Local reset deletes live objects                            | demo-only registration and fixture-root containment                                        |
+| Threat                                                      | Required control                                                                             |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Prompt injection requests a shell or direct GitHub mutation | explicit tool catalog; no generic dispatcher                                                 |
+| Qoder invents executable plan steps                         | OpenSlack rebuilds a canonical plan from sealed registries                                   |
+| Client replays or edits confirmation                        | actor/workspace/hash/expiry/source/catalog/executor/build/process binding and atomic claim   |
+| Client injects approval identity or capability              | OS-subject mapping plus nominal per-decision attestation port; client schema omits authority |
+| Approval audit projection fails after terminal CAS          | durable pending event; projection-only retry; no decision retry                              |
+| Audit directory is replaced between check and append        | composition-bound O_APPEND descriptor; pre/post identity checks                              |
+| Client claims another correlation                           | server-generated collision-resistant correlation ID                                          |
+| Skill or UI fabricates authority                            | evidence-labelled result envelope; authority sources are typed                               |
+| Oversized graph floods model context                        | depth/item/byte limits, deterministic truncation, query-bound cursor                         |
+| Raw evidence leaks secrets                                  | bounded projection, secret scan, no raw transcripts/vendor bodies                            |
+| Stale PR review is presented as approval                    | current-head PRMS evidence required                                                          |
+| Missing source appears as success                           | explicit blocked/unknown and completeness gaps                                               |
+| STDIO diagnostics corrupt JSON-RPC                          | stdout frames only; diagnostics on stderr                                                    |
+| Local reset deletes live objects                            | demo-only registration and fixture-root containment                                          |
 
 ## Tool and Output Boundary
 

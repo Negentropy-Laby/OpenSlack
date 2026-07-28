@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "openslack": {
+      "type": "stdio",
+      "command": "bun.exe",
+      "args": [
+        "--cwd",
+        "C:\\absolute\\path with spaces\\OpenSlack",
+        "run",
+        "openslack",
+        "mcp",
+        "serve",
+        "--stdio",
+        "--profile",
+        "human-attested",
+        "--principal-ref",
+        "<agent-id>",
+        "--human-principal",
+        "<human-id>"
+      ]
+    }
+  }
+}

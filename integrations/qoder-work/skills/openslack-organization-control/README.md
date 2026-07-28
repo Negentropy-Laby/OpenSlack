@@ -15,8 +15,10 @@ The default production profile uses exactly 12 read-only tools. Every advertised
 
 The CLI selects the same 12 tools by default or with `--profile read-only`. An active Agent
 registry/runtime binding with `scenario.instantiate` permission may explicitly select
-`--profile agent-bound --principal-ref <agent-id>` for the exact 16-tool profile. The
-human-attested 17-tool profile is not yet a CLI choice.
+`--profile agent-bound --principal-ref <agent-id>` for the exact 16-tool profile. After binding
+the current local OS subject with `openslack mcp attestation bind-local-subject
+--human-principal <human-id> --confirm`, explicit `--profile human-attested --principal-ref
+<agent-id> --human-principal <human-id>` selects 17 only when a controlling TTY is available.
 
 ```text
 openslack_get_executive_overview
@@ -46,6 +48,11 @@ A separately human-attested profile appends `openslack_decide_workflow_approval`
 a fresh independently authenticated attestation for the exact run, approval, decision, and reason
 hash. It decides one OpenSlack v2 workflow effect and is never a GitHub review. Exact production
 counts are 12, 16, and 17.
+
+The local attestation mapping contains only a one-way OS-subject hash and the asserted human
+principal. Every decision prompt opens `/dev/tty` or `CON`, never MCP stdin/stdout. A Qoder
+launcher without a controlling TTY cannot start this profile; it fails closed and does not fall
+back to 16 or 12 tools. This local contract does not establish `QODER_VERIFIED`.
 
 An explicitly injected local demo composition may append only `openslack_demo_reset`; it never
 touches live GitHub objects. A Qoder tool permission remains distinct from OpenSlack confirmation,

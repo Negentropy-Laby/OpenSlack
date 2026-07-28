@@ -96,9 +96,10 @@ openslack_explain_graph
 
 The default and explicit `read-only` local production catalogs are therefore exactly 12 tools.
 Explicit CLI `agent-bound` selects the production composition and appends exactly four
-preview/confirm tools for a 16-tool profile. A separately human-attested workflow-effect decision
-port appends one more for a 17-tool profile, but that profile is not yet a CLI choice. An explicitly
-injected local demo profile adds only `openslack_demo_reset` to one of those profiles. Every
+preview/confirm tools for a 16-tool profile. Explicit CLI `human-attested` adds the separately
+attested workflow-effect decision for a 17-tool profile after its OS-subject mapping and
+controlling-TTY self-test. An explicitly injected local demo profile adds only
+`openslack_demo_reset` to one of those profiles. Every
 advertised production/demo result is `openslack.mcp_result.v2`; no CLI profile advertises demo
 tools.
 

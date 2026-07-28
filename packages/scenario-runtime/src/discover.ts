@@ -1,7 +1,7 @@
 import type { Dirent } from 'node:fs';
 import { lstat, opendir } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ScenarioHostCatalog } from './catalog.js';
+import type { ScenarioHostCatalog } from './catalog.js';
 import {
   assertPreparedScenarioRootStable,
   isCanonicalScenarioPackId,
@@ -128,8 +128,14 @@ async function enumerateRoot(scenarioRoot: string, ceiling: number): Promise<rea
       entries.push(entry);
     }
   } finally {
-    await directory.close().catch((error: NodeJS.ErrnoException) => {
-      if (error.code !== 'ERR_DIR_CLOSED') throw error;
+    await new Promise<void>((resolve, reject) => {
+      directory.close((error?: NodeJS.ErrnoException | null) => {
+        if (error != null && error.code !== 'ERR_DIR_CLOSED') {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
     });
   }
   return Object.freeze(entries.sort((left, right) => compareText(left.name, right.name)));
