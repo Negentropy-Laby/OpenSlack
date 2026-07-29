@@ -36,7 +36,12 @@ sources:
 - Migration delivery: PR #328, merged as
   `067f4566cd06855f65d2b2a53257227c0db69067`
 - CI enforcement candidate: `31845d508bea4171b94a795abb1a0357c6fec80c`
-- Enforcement delivery: PR #329, opened at the CI enforcement candidate
+- Enforcement repair head: `c61118c4f18ac7326b0b3b7ce392b9a56797b838`
+- Human approval: GitHub review `4800139148`, submitted by `wsman` as
+  `APPROVED` at `2026-07-28T17:27:59Z` and bound to exact head
+  `c61118c4f18ac7326b0b3b7ce392b9a56797b838`
+- Enforcement delivery: PR #329, merged as
+  `de0d202e84b34c4def7d684c68372ebca7bb35fa`
 - Path ledger: `docs/reference/document-path-migration-v1.yaml`
 
 ## Immutable Historical Exceptions
@@ -74,23 +79,23 @@ claims.
   9/9 and the final full run was green. Hosted checks remain the delivery
   authority.
 - Local `actionlint` was not available because Go is absent. Workflow structure
-  passed the repository's exact contract tests; hosted actionlint remains
-  pending.
+  passed the repository's exact contract tests, and the PR #329 exact-head
+  Notification Delivery workflow passed hosted actionlint before its service
+  and documentation validation.
 
 ## Review and Closure
 
-PR #327 and PR #328 were bot-authored, independently approved, exact-head
-verified, and merged. PR #329 is the open bot-authored PR for the enforcement
-change recorded by this review. The proposed closure state becomes effective
-only if that PR receives its independent human approval and merges:
+PR #327, PR #328, and PR #329 were bot-authored, independently approved,
+exact-head verified, and merged. The documentation-governance migration is
+closed with the following bounded result:
 
 - implementation closure: `COMPLETE_LOCAL`
-- governed delivery: `PR_329_OPEN`
-- exact-head hosted checks: `PENDING_REPAIR_HEAD`
-- independent PR3 review: `PENDING`
-- human approval: `PENDING`
-- documentation migration gate: `pending` until PR3 merge
-- migration work assignment: `review` until PR3 merge
+- governed delivery: `PR_329_MERGED`
+- exact-head hosted checks: `PASS`
+- independent PR3 review: `APPROVED`
+- PR3 human approval: `RECORDED`
+- documentation migration gate: `passed`
+- migration work assignment: `done`
 
 No release, production readiness, or live verification is claimed.
 
