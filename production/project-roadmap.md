@@ -37,4 +37,4 @@ generated: true
 | issue-331 | collaboration: deliver Contract-to-Delivery Lite composite graph | done | unassigned | collaboration | None |
 | documentation-governance-v1 | Establish the OpenSlack root documentation governance system | done | project-governance | self-evolution | None |
 | single-root-memory-bank | Consolidate all project governance into the root Memory Bank | done | project-governance | self-evolution | None |
-| t2-standards-migration | Move project execution standards into the root T2 Memory Bank | running | project-governance | self-evolution | None |
+| t2-standards-migration | Move project execution standards into the root T2 Memory Bank | review | project-governance | self-evolution | hosted_checks_pending<br>independent_human_approval_pending<br>merge_pending |

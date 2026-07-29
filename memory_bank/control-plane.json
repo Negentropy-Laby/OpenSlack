@@ -874,7 +874,7 @@
   "portfolio": {
     "schema": "openslack.project_state.v1",
     "updated": "2026-07-29",
-    "last_verified": "2026-07-29T05:33:16Z",
+    "last_verified": "2026-07-29T05:44:40Z",
     "portfolio_status": "active_development",
     "release_train": "0.2.0",
     "modules": [
@@ -1484,7 +1484,7 @@
       {
         "id": "t2-standards-migration",
         "title": "Move project execution standards into the root T2 Memory Bank",
-        "status": "running",
+        "status": "review",
         "planned_owner": "project-governance",
         "module_or_workstream": "self-evolution",
         "execution": {
@@ -1493,7 +1493,10 @@
           "started_at": "2026-07-29T05:33:16Z"
         },
         "github_issue": null,
-        "pull_request": null,
+        "pull_request": {
+          "number": 334,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/pull/334"
+        },
         "acceptance_criteria": [
           "The root standards directory no longer exists.",
           "The four canonical standards live flat in memory_bank/t2_execution with stable document IDs.",
@@ -1501,9 +1504,16 @@
           "Documentation, migration, status, and Notification Delivery validation pass."
         ],
         "dependencies": ["single-root-memory-bank"],
-        "blockers": [],
-        "evidence": ["commit:74a5394c60b2080cf048f01a6a4ad8e9f07b062f"],
-        "last_verified_at": "2026-07-29T05:33:16Z"
+        "blockers": [
+          "hosted_checks_pending",
+          "independent_human_approval_pending",
+          "merge_pending"
+        ],
+        "evidence": [
+          "commit:74a5394c60b2080cf048f01a6a4ad8e9f07b062f",
+          "github:pr-334:created:a9c2f4e8deee331010cefecde2b4f149d5f4b1ef"
+        ],
+        "last_verified_at": "2026-07-29T05:44:40Z"
       }
     ]
   },
