@@ -7,12 +7,17 @@ vi.mock('../profile-sync.js', () => ({
   validatePost: vi.fn(),
 }));
 
+vi.mock('../client.js', () => ({
+  getClient: vi.fn(),
+}));
+
 import {
   readRepoDirectory,
   readRepoFile,
   parseFrontmatter,
   validatePost,
 } from '../profile-sync.js';
+import { getClient } from '../client.js';
 import { checkProfileSync } from '../profile-sync-check.js';
 import type { ProfileSyncConfig } from '../profile-sync-config.js';
 
@@ -20,6 +25,7 @@ const mockReadRepoDirectory = readRepoDirectory as ReturnType<typeof vi.fn>;
 const mockReadRepoFile = readRepoFile as ReturnType<typeof vi.fn>;
 const mockParseFrontmatter = parseFrontmatter as ReturnType<typeof vi.fn>;
 const mockValidatePost = validatePost as ReturnType<typeof vi.fn>;
+const mockGetClient = getClient as ReturnType<typeof vi.fn>;
 
 const mockConfig: ProfileSyncConfig = {
   schema: 'openslack.profile_sync.v1',
@@ -39,6 +45,7 @@ const mockConfig: ProfileSyncConfig = {
 describe('checkProfileSync', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetClient.mockResolvedValue({ isDryRun: true });
   });
 
   it('returns ok=true when everything passes', async () => {
