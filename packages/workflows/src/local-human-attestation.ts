@@ -1269,6 +1269,15 @@ interface ProductionTtyHandles {
   readonly output: number;
 }
 
+interface ProductionTtyStream {
+  readonly closed: boolean;
+  destroy(): this;
+  off(event: 'close', listener: () => void): this;
+  off(event: 'error', listener: (error: Error) => void): this;
+  once(event: 'close', listener: () => void): this;
+  once(event: 'error', listener: (error: Error) => void): this;
+}
+
 function openProductionTty(): ProductionTtyHandles {
   if (process.platform !== 'win32') {
     const handle = openSync(POSIX_TTY_DEVICE, fsConstants.O_RDWR | NO_FOLLOW);
@@ -1300,6 +1309,45 @@ function probeProductionTty(): void {
   closeProductionTty(openProductionTty());
 }
 
+async function destroyOwnedProductionTtyStream(stream: ProductionTtyStream): Promise<void> {
+  if (stream.closed) return;
+  await new Promise<void>((resolvePromise, rejectPromise) => {
+    const onClose = () => {
+      stream.off('error', onError);
+      resolvePromise();
+    };
+    const onError = (error: Error) => {
+      stream.off('close', onClose);
+      rejectPromise(error);
+    };
+    stream.once('close', onClose);
+    stream.once('error', onError);
+    stream.destroy();
+  });
+}
+
+async function closeOwnedProductionTtyStream(
+  stream: ProductionTtyStream | undefined,
+  handle: number,
+): Promise<void> {
+  if (stream) {
+    await destroyOwnedProductionTtyStream(stream);
+    return;
+  }
+  closeSync(handle);
+}
+
+async function closeSplitProductionTtyStreams(
+  handles: ProductionTtyHandles,
+  input: ReturnType<typeof createReadStream> | undefined,
+  output: ReturnType<typeof createWriteStream> | undefined,
+): Promise<void> {
+  await Promise.all([
+    closeOwnedProductionTtyStream(input, handles.input),
+    closeOwnedProductionTtyStream(output, handles.output),
+  ]);
+}
+
 async function promptProductionTty(
   prompt: string,
   signal: AbortSignal,
@@ -1317,12 +1365,13 @@ async function promptProductionTty(
   signal.addEventListener('abort', abort, { once: true });
   const timer = setTimeout(abort, remaining);
   const handles = openProductionTty();
+  const streamsOwnHandles = handles.input !== handles.output;
   let input: ReturnType<typeof createReadStream> | undefined;
   let output: ReturnType<typeof createWriteStream> | undefined;
   let readline: ReturnType<typeof createInterface> | undefined;
   try {
-    input = createReadStream('', { fd: handles.input, autoClose: false });
-    output = createWriteStream('', { fd: handles.output, autoClose: false });
+    input = createReadStream('', { fd: handles.input, autoClose: streamsOwnHandles });
+    output = createWriteStream('', { fd: handles.output, autoClose: streamsOwnHandles });
     readline = createInterface({ input, output, terminal: true });
     return await readline.question(prompt, { signal: controller.signal });
   } catch (error) {
@@ -1337,9 +1386,13 @@ async function promptProductionTty(
     clearTimeout(timer);
     signal.removeEventListener('abort', abort);
     readline?.close();
-    input?.destroy();
-    output?.destroy();
-    closeProductionTty(handles);
+    if (streamsOwnHandles) {
+      await closeSplitProductionTtyStreams(handles, input, output);
+    } else {
+      input?.destroy();
+      output?.destroy();
+      closeProductionTty(handles);
+    }
   }
 }
 
