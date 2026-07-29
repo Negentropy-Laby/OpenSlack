@@ -154,6 +154,35 @@ echoes the token. An uncertain execution is reconciled, not retried.
 Missing or stale current graph evidence fails closed as `SOURCE_EVIDENCE_UNAVAILABLE` or
 `SOURCE_EVIDENCE_STALE`; it is not rendered as an empty authoritative graph.
 
+## Qualification
+
+Local production-17 and authenticated Desktop evidence are deliberately separate. From a clean
+candidate checkout, a human can exercise the former in a real controlling terminal:
+
+```bash
+bun run qualification:human-attested -- \
+  --human-principal human:founder \
+  --confirm
+```
+
+The prompt must be read and answered with exact `APPROVE` on `CON` or `/dev/tty`; redirected stdin
+and test injection are not accepted. The receipt is emitted only after durable CAS/audit readback
+and cleanup of the isolated temporary agent, mapping, and approval store.
+
+Prepare and verify the Desktop run with:
+
+```bash
+bun run qualification:qoder-desktop -- prepare --format json
+bun run qualification:qoder-desktop -- verify --receipt <local-receipt.json>
+```
+
+Use the generated stock Connector and fixed 12-tool call plan. Remove previous grants, observe one
+permission prompt for every tool without a wildcard, and exercise automatic, `/` chooser, and
+explicit `/openslack-organization-control` invocation. The receipt stores hashes, structured
+states, and evidence references only; it must not store account identifiers, authentication
+files, credentials, or raw vendor output. Until `verify` succeeds against the exact candidate,
+`QODER_VERIFIED` remains unclaimed.
+
 ## Evidence limits
 
 - A demo fixture is not live authority.

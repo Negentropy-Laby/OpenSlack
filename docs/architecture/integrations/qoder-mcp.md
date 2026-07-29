@@ -287,6 +287,62 @@ never invoke this command, read its stdin, or silently build missing graph evide
 local import and official MCP SDK readback are `LOCAL_PASS` evidence only and do not establish
 `QODER_VERIFIED`.
 
+## Run the qualification harnesses
+
+The repository provides two repeatable, fail-closed qualification entrypoints. Their presence is
+not qualification evidence; only a successful run against the frozen candidate revision can
+advance the corresponding claim.
+
+Run the 17-tool human-attested check from a real Windows or POSIX controlling terminal:
+
+```bash
+bun run qualification:human-attested -- \
+  --human-principal human:founder \
+  --confirm
+```
+
+The harness creates an isolated temporary workspace and `qoder_qualification_agent`. That agent
+allows only `scenario.instantiate` and `openslack.collaboration.recordEvent`; GitHub writes,
+notification delivery, shell, policy, permission, and registry mutation remain unavailable. The
+official MCP SDK must discover the exact 17-tool production composition. The human then reviews
+one synthetic, local-only workflow-effect decision on `CON` or `/dev/tty` and types the exact
+`APPROVE` token. Success requires terminal CAS revision 2, a recorded Collaboration audit
+projection, durable readback, and removal of the temporary workspace, subject mapping, and
+approval store before the sanitized receipt is emitted. No stdin, command argument, or test
+dependency can supply the attestation.
+
+Prepare the stock Qoder Work Desktop check from a clean Windows candidate checkout:
+
+```bash
+bun run qualification:qoder-desktop -- prepare --format json
+```
+
+Preparation rejects tracked changes, records the candidate commit and tree, installed Qoder build,
+OS and architecture, Skill tree hash, credential-free Connector config hash, and fixed call-plan
+hash. The generated Windows config pins the same resolved Bun executable that ran preparation, so
+it does not depend on the Desktop process inheriting a shell-specific `PATH`. It publishes one
+more-than-24-hour locked graph fixture, reserves a separate missing graph instance, preflights all
+12 tools through the official MCP SDK, and writes a Connector config, call plan, sealed manifest,
+and pending receipt beneath
+`.openslack.local/qualification/qoder-desktop/`.
+
+Use the generated Connector and call plan in a new authenticated Desktop conversation. Remove the
+old OpenSlack Connector and prior grants first; grant every one of the 12 tools individually and
+never use a wildcard. Record only structured statuses and SHA-256 evidence references in the
+pending receipt—never an account name, authentication file, credential, or raw vendor response.
+After all 12 calls and automatic, `/` chooser, and explicit-name Skill invocations are complete,
+verify the edited receipt:
+
+```bash
+bun run qualification:qoder-desktop -- verify \
+  --receipt <absolute-path-to-qoder-desktop-receipt.json>
+```
+
+Verification rechecks the clean candidate revision, Qoder build, exact tool order, per-tool input
+and result bindings, permission prompts, two locked Packs, stale and unavailable blocker codes,
+all three Skill modes, Connector credential absence, and the current Config, call-plan, and Skill
+hashes. Any mismatch leaves `QODER_VERIFIED` unclaimed.
+
 ## Configure the Qoder Work desktop connector
 
 Open **Extensions → Connectors → + Add → Paste JSON Config**, then adapt one of:

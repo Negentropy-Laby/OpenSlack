@@ -822,6 +822,26 @@ bun run demo:contract-delivery
 The path-free result distinguishes real governed local-store evidence from the
 `demo_fixture` business chain and reports live GitHub and Qoder Desktop as `not_run`.
 
+Repository qualification entrypoints are intentionally separate from the product MCP command:
+
+```bash
+bun run qualification:human-attested -- \
+  --human-principal human:founder \
+  --confirm
+
+bun run qualification:qoder-desktop -- prepare --format json
+bun run qualification:qoder-desktop -- verify --receipt <local-receipt.json>
+```
+
+The first command requires a real controlling `CON` or `/dev/tty`, an exact human `APPROVE`
+response, the production 17-tool composition, durable CAS/audit readback, and cleanup of its
+isolated temporary authority. The Desktop `prepare` command requires a clean Windows checkout and
+generates a credential-free stock Connector, fixed 12-tool call plan, sealed manifest, stale and
+missing graph fixtures, and pending local receipt. `verify` rejects tool-order, blocker,
+permission, Skill-trigger, candidate, Qoder-build, Config, call-plan, Skill-hash, timestamp, or
+credential drift. Neither command grants live GitHub, notification, policy, shell, or registry
+authority.
+
 Every MCP profile reserves stdout for protocol frames and opens no listening
 socket. Default and explicit `read-only` accept no authority-binding argument
 and expose no mutation tool. `agent-bound` requires
