@@ -5,10 +5,14 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  CONTRACT_TO_DELIVERY_SCENARIO_ID,
+  CONTRACT_TO_DELIVERY_SOURCE_LIMITS,
   GraphStoreError,
   LocalGraphStore,
   SOFTWARE_DELIVERY_SOURCE_LIMITS,
+  buildAndPublishGraphSnapshot,
   buildAndPublishSoftwareDeliverySnapshot,
+  graphSnapshotBuildProfile,
 } from '../index.js';
 
 const roots: string[] = [];
@@ -16,6 +20,11 @@ const fixturePath = join(
   dirname(fileURLToPath(import.meta.url)),
   'fixtures',
   'software-delivery-source.json',
+);
+const contractFixturePath = join(
+  dirname(fileURLToPath(import.meta.url)),
+  'fixtures',
+  'contract-to-delivery-source.json',
 );
 
 async function root(): Promise<string> {
@@ -26,6 +35,10 @@ async function root(): Promise<string> {
 
 function fixture(): Buffer {
   return readFileSync(fixturePath);
+}
+
+function contractFixture(): Buffer {
+  return readFileSync(contractFixturePath);
 }
 
 function fixtureObject(): Record<string, unknown> {
@@ -198,5 +211,73 @@ describe('buildAndPublishSoftwareDeliverySnapshot', () => {
         expectedCursor: null,
       }),
     ).rejects.toBe(error);
+  });
+});
+
+describe('buildAndPublishGraphSnapshot sealed scenario dispatch', () => {
+  it('registers only the two host-owned source profiles', () => {
+    expect(graphSnapshotBuildProfile(CONTRACT_TO_DELIVERY_SCENARIO_ID)).toEqual({
+      scenarioId: CONTRACT_TO_DELIVERY_SCENARIO_ID,
+      sourceBytes: CONTRACT_TO_DELIVERY_SOURCE_LIMITS.sourceBytes,
+      sourceJsonNodes: CONTRACT_TO_DELIVERY_SOURCE_LIMITS.sourceJsonNodes,
+      textBytes: CONTRACT_TO_DELIVERY_SOURCE_LIMITS.textBytes,
+    });
+    expect(graphSnapshotBuildProfile('software-delivery')).toEqual({
+      scenarioId: 'software-delivery',
+      sourceBytes: SOFTWARE_DELIVERY_SOURCE_LIMITS.sourceBytes,
+      sourceJsonNodes: SOFTWARE_DELIVERY_SOURCE_LIMITS.sourceJsonNodes,
+      textBytes: SOFTWARE_DELIVERY_SOURCE_LIMITS.textBytes,
+    });
+    expect(graphSnapshotBuildProfile('unregistered-pack')).toBeUndefined();
+  });
+
+  it('rejects a runtime-selected scenario outside the sealed dispatch', async () => {
+    const store = new LocalGraphStore(join(await root(), 'graph'));
+    await expect(
+      buildAndPublishGraphSnapshot({
+        scenarioId: 'unregistered-pack' as never,
+        sourceBytes: contractFixture(),
+        store,
+        expectedCursor: null,
+      }),
+    ).rejects.toMatchObject({
+      code: 'GRAPH_SCOPE_INVALID',
+      path: '$.scenarioId',
+    });
+  });
+
+  it('strictly projects and CAS-publishes the checked-in composite fixture', async () => {
+    const store = new LocalGraphStore(join(await root(), 'graph'));
+    const result = await buildAndPublishGraphSnapshot({
+      scenarioId: CONTRACT_TO_DELIVERY_SCENARIO_ID,
+      sourceBytes: contractFixture(),
+      store,
+      expectedCursor: null,
+      expectedScenarioInstanceId: 'scenario-contract-delivery-001',
+    });
+
+    const readback = await store.readCurrentSnapshot(result.scenarioInstanceId);
+    expect(result).toMatchObject({
+      scenarioInstanceId: 'scenario-contract-delivery-001',
+      previousCursor: null,
+      cursor: 'contract-source-cursor-001',
+      snapshotIntegrityHash: readback.integrityHash,
+      nodeCount: readback.nodes.length,
+      edgeCount: readback.edges.length,
+    });
+    expect(readback.projectorVersion).toBe('openslack.contract_to_delivery.v1');
+    expect(readback.nodes.some((node) => node.type === 'business.outcome')).toBe(true);
+  });
+
+  it('enforces the composite pre-parse byte ceiling', async () => {
+    const store = new LocalGraphStore(join(await root(), 'graph'));
+    await expect(
+      buildAndPublishGraphSnapshot({
+        scenarioId: CONTRACT_TO_DELIVERY_SCENARIO_ID,
+        sourceBytes: Buffer.alloc(CONTRACT_TO_DELIVERY_SOURCE_LIMITS.sourceBytes + 1, 0x20),
+        store,
+        expectedCursor: null,
+      }),
+    ).rejects.toMatchObject({ code: 'GRAPH_BOUND_EXCEEDED', path: '$' });
   });
 });

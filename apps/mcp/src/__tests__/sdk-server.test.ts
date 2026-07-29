@@ -6,8 +6,9 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { buildBusinessOutcomeProjection } from '@openslack/collaboration';
 import {
+  CONTRACT_TO_DELIVERY_SCENARIO_ID,
   LocalGraphStore,
-  buildAndPublishSoftwareDeliverySnapshot,
+  buildAndPublishGraphSnapshot,
 } from '@openslack/organization-graph';
 import { OPENSLACK_READ_TOOL_NAMES, type OpenSlackReadToolName } from '@openslack/qoder-adapter';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -36,11 +37,12 @@ function argsFor(name: OpenSlackReadToolName): Record<string, unknown> {
 }
 
 describe('official MCP SDK integration', () => {
-  it('reads a CLI-compatible published fixture through the exact stock twelve-tool server', async () => {
+  it('reads and explains the composite story through three bounded stock-profile windows', async () => {
     const root = mkdtempSync(join(tmpdir(), 'openslack-mcp-sdk-graph-'));
     roots.push(root);
     const store = new LocalGraphStore(join(root, '.openslack.local', 'graph'));
-    const published = await buildAndPublishSoftwareDeliverySnapshot({
+    const published = await buildAndPublishGraphSnapshot({
+      scenarioId: CONTRACT_TO_DELIVERY_SCENARIO_ID,
       sourceBytes: readFileSync(
         join(
           repositoryRoot,
@@ -49,12 +51,12 @@ describe('official MCP SDK integration', () => {
           'src',
           '__tests__',
           'fixtures',
-          'software-delivery-source.json',
+          'contract-to-delivery-source.json',
         ),
       ),
       store,
       expectedCursor: null,
-      expectedScenarioInstanceId: 'scenario-software-delivery-fixture',
+      expectedScenarioInstanceId: 'scenario-contract-delivery-001',
     });
     const readback = await store.readCurrentSnapshot(published.scenarioInstanceId);
     expect(readback.integrityHash).toBe(published.snapshotIntegrityHash);
@@ -62,7 +64,7 @@ describe('official MCP SDK integration', () => {
     const context = createOpenSlackMcpContext({
       workspaceRoot: root,
       operator: Object.freeze({}) as unknown as OperatorApplicationContextPort,
-      clock: () => new Date('2026-07-28T02:30:00.000Z'),
+      clock: () => new Date('2026-07-27T02:30:00.000Z'),
       correlationIdFactory: () => 'qw2-sdk-graph-fixture',
     });
     const server = createOpenSlackMcpServer(context);
@@ -76,23 +78,93 @@ describe('official MCP SDK integration', () => {
       expect(listed.tools.map((tool) => tool.name)).toEqual(OPENSLACK_READ_TOOL_NAMES);
       expect(listed.tools).toHaveLength(12);
 
-      const result = await client.callTool({
-        name: 'openslack_query_graph',
-        arguments: { scenarioInstanceId: published.scenarioInstanceId },
-      });
-      expect(result.isError).toBe(false);
-      expect(result.structuredContent).toMatchObject({
-        schema: 'openslack.mcp_result.v2',
-        status: 'completed',
-        authority: {
-          mode: 'projection',
-          sources: ['openslack.organization_graph_snapshot'],
-        },
-        data: {
-          scenarioInstanceId: published.scenarioInstanceId,
-          snapshotCursor: published.cursor,
-        },
-      });
+      const rootsByType = ['business.customer', 'business.milestone', 'business.acceptance'].map(
+        (type) => readback.nodes.find((node) => node.type === type)?.id,
+      );
+      expect(rootsByType.every((value) => typeof value === 'string')).toBe(true);
+      const observedEdgeTypes = new Set<string>();
+      for (const rootNodeId of rootsByType as string[]) {
+        const result = await client.callTool({
+          name: 'openslack_query_graph',
+          arguments: {
+            scenarioInstanceId: published.scenarioInstanceId,
+            rootNodeIds: [rootNodeId],
+            direction: 'both',
+            depth: 3,
+            maxNodes: 200,
+            maxEdges: 500,
+            includeEvidence: true,
+          },
+        });
+        expect(result.isError).toBe(false);
+        expect(result.structuredContent).toMatchObject({
+          schema: 'openslack.mcp_result.v2',
+          status: 'completed',
+          authority: {
+            mode: 'projection',
+            sources: ['openslack.organization_graph_snapshot'],
+          },
+          data: {
+            scenarioInstanceId: published.scenarioInstanceId,
+            snapshotCursor: published.cursor,
+            truncation: { truncated: false },
+          },
+        });
+        const data = (
+          result.structuredContent as {
+            data: { edges: Array<{ type: string }> };
+          }
+        ).data;
+        for (const edge of data.edges) observedEdgeTypes.add(edge.type);
+      }
+      for (const edgeType of [
+        'accepted_as',
+        'assigned_to',
+        'approved_by',
+        'closes_work_item',
+        'contract_delivered_by',
+        'contracts_for',
+        'delivers_project',
+        'executed_by',
+        'milestone_contains',
+        'produces',
+        'realizes',
+        'scoped_to',
+        'substantiated_by',
+        'tracks_milestone',
+        'transitioned_by',
+      ]) {
+        expect(observedEdgeTypes).toContain(edgeType);
+      }
+
+      const compositeEdges = readback.edges.filter(
+        (edge) => edge.projectorVersion === 'openslack.contract_to_delivery.v1',
+      );
+      expect(compositeEdges).toHaveLength(12);
+      for (const edge of compositeEdges) {
+        const explanation = await client.callTool({
+          name: 'openslack_explain_graph',
+          arguments: {
+            scenarioInstanceId: published.scenarioInstanceId,
+            targetId: edge.id,
+            depth: 3,
+          },
+        });
+        expect(explanation.isError).toBe(false);
+        expect(explanation.structuredContent).toMatchObject({
+          status: 'completed',
+          authority: {
+            mode: 'projection',
+            sources: ['openslack.organization_graph_snapshot'],
+          },
+          data: {
+            targetKind: 'edge',
+            targetId: edge.id,
+            snapshotCursor: published.cursor,
+            evidenceRefs: expect.arrayContaining(edge.evidenceRefs),
+          },
+        });
+      }
       expect((await store.readCurrentSnapshot(published.scenarioInstanceId)).integrityHash).toBe(
         published.snapshotIntegrityHash,
       );

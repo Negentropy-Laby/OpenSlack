@@ -167,6 +167,11 @@ describe('default graph read adapters', () => {
       join(scenarioRoot, 'software-delivery'),
       { recursive: true },
     );
+    cpSync(
+      join(repositoryRoot, 'scenarios', 'contract-to-delivery-lite'),
+      join(scenarioRoot, 'contract-to-delivery-lite'),
+      { recursive: true },
+    );
     const core = new OpenSlackMcpCore(
       createOpenSlackMcpContext({
         workspaceRoot,
@@ -184,6 +189,11 @@ describe('default graph read adapters', () => {
       },
       data: {
         scenarios: [
+          {
+            id: 'contract-to-delivery-lite',
+            version: '1.0.0',
+            definitionHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+          },
           {
             id: 'software-delivery',
             version: '1.0.0',

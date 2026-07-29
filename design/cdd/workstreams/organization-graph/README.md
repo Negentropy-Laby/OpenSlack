@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: product
-updated: 2026-07-28
+updated: 2026-07-29
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -15,16 +15,17 @@ sources:
 
 | Field              | Value                                                       |
 | ------------------ | ----------------------------------------------------------- |
-| Status             | `CORE AND SOFTWARE-DELIVERY PROJECTOR IMPLEMENTED`          |
+| Status             | `COMPOSITE GRAPH IMPLEMENTED — REHEARSAL PENDING`           |
 | Product direction  | Projection-first                                            |
 | First source model | Software delivery evidence                                  |
 | Lead scenario      | Contract-to-Delivery Lite                                   |
 | Authority          | Derived and rebuildable; never authoritative mutation state |
 
 The `@openslack/organization-graph` package, local snapshot store, bounded query/explain APIs,
-software-delivery projector, and read-only MCP tools implement the core described here. The
-Contract-to-Delivery projector and offline HTML artifact remain later milestones and are not
-claimed by this document.
+software-delivery projector, Contract-to-Delivery Lite composite projector, and read-only MCP
+tools implement the graph core described here. The composite fixture and locked Pack are locally
+queryable; the governed rehearsal, live multi-system evidence, and offline HTML artifact remain
+later milestones.
 
 ## Product outcome
 
@@ -304,14 +305,15 @@ events and runs.
 
 ## MVP boundary
 
-The MVP includes:
+The implemented local graph slice includes:
 
 - pure graph contracts, canonicalization, integrity, bounded query, explanation, and local store;
 - a deterministic software-delivery projector;
-- one live Contract-to-Delivery Lite view that reuses the software-delivery subgraph;
-- the three planned graph read tools;
-- one static, read-only HTML graph/outcome/evidence artifact;
-- fixture rebuild and bounded real-repository rebuild evidence.
+- one locked, projection-only Contract-to-Delivery Lite Pack that reuses the software-delivery
+  subgraph in the same snapshot;
+- the Scenario list plus bounded graph query/explain tools;
+- a strict file/stdin builder with sealed Software Delivery and Contract-to-Delivery dispatch;
+- fixture build, store readback, and official MCP SDK query/explain evidence.
 
 The static artifact owns no network fetch, authentication, mutation API, or persistent state.
 
@@ -321,6 +323,8 @@ After contract stability:
 
 - DingTalk, CRM, ERP, and HR source projectors;
 - live multi-system Contract-to-Delivery data;
+- governed Contract-to-Delivery rehearsal;
+- static, read-only HTML graph/outcome/evidence artifact;
 - formal Qoder Workbench graph UI;
 - remote Connector graph streaming;
 - larger-scale graph databases or cross-workspace federation;

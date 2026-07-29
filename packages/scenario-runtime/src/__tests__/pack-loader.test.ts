@@ -15,13 +15,18 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  CONTRACT_TO_DELIVERY_PROJECTOR_CONTRACT,
+  CONTRACT_TO_DELIVERY_PROJECTOR_ID,
   projectSoftwareDeliverySnapshot,
+  projectContractToDeliverySnapshot,
   SOFTWARE_DELIVERY_PROJECTOR_CONTRACT,
   SOFTWARE_DELIVERY_PROJECTOR_ID,
+  type ContractToDeliverySourceSnapshot,
   type SoftwareDeliverySourceSnapshot,
 } from '@openslack/organization-graph';
 import {
   assertLoadedScenarioDefinition,
+  createOpenSlackHostScenarioCatalog,
   createSoftwareDeliveryScenarioCatalog,
   isCanonicalScenarioPackId,
   isCanonicalScenarioSemver,
@@ -34,6 +39,8 @@ const sourceRoot = join(repositoryRoot, 'scenarios');
 const temporaryRoots: string[] = [];
 const softwareDeliveryFixtureModule =
   '../../../organization-graph/src/__tests__/software-delivery-fixtures.ts';
+const contractToDeliveryFixtureModule =
+  '../../../organization-graph/src/__tests__/contract-to-delivery-fixtures.ts';
 
 async function copyPack(): Promise<{ root: string; pack: string }> {
   const parent = await mkdtemp(join(tmpdir(), 'openslack-scenario-pack-'));
@@ -106,6 +113,109 @@ describe('Scenario Pack exact-byte loader', () => {
     expect(definition.fixtures[0]?.semanticVersion).toBe('1.0.0');
     expect(Object.isFrozen(definition)).toBe(true);
     expect(() => assertLoadedScenarioDefinition(definition)).not.toThrow();
+  });
+
+  it('loads the real locked Contract-to-Delivery Pack only through the full host catalog', async () => {
+    const definition = await loadScenarioPack({
+      scenarioRoot: sourceRoot,
+      scenarioId: 'contract-to-delivery-lite',
+      catalog: createOpenSlackHostScenarioCatalog(),
+    });
+
+    expect(definition.projections.projectors).toEqual([
+      {
+        id: CONTRACT_TO_DELIVERY_PROJECTOR_ID,
+        adapterId: CONTRACT_TO_DELIVERY_PROJECTOR_ID,
+      },
+    ]);
+    expect(definition.workflows.workflows).toEqual([]);
+    expect(definition.capabilities.requested).toEqual([]);
+    expect(definition.notifications.mappings).toEqual([]);
+    expect(definition.manifest.id).toBe('contract-to-delivery-lite');
+    expect(() => assertLoadedScenarioDefinition(definition)).not.toThrow();
+
+    await expect(
+      loadScenarioPack({
+        scenarioRoot: sourceRoot,
+        scenarioId: 'contract-to-delivery-lite',
+        catalog: createSoftwareDeliveryScenarioCatalog(),
+      }),
+    ).rejects.toMatchObject({ code: 'SCENARIO_PACK_REFERENCE_MISSING' });
+  });
+
+  it('keeps composite ontology metadata aligned with the sealed projector', async () => {
+    const definition = await loadScenarioPack({
+      scenarioRoot: sourceRoot,
+      scenarioId: 'contract-to-delivery-lite',
+      catalog: createOpenSlackHostScenarioCatalog(),
+    });
+    const fixtureModule = (await import(contractToDeliveryFixtureModule)) as {
+      contractToDeliverySource(): ContractToDeliverySourceSnapshot;
+    };
+    const source = fixtureModule.contractToDeliverySource();
+    const happy = projectContractToDeliverySnapshot(source).snapshot;
+    const informationalSource = structuredClone(source);
+    informationalSource.softwareDelivery.sources.reviews.items.find(
+      (review) => review.id === 'review-current',
+    )!.state = 'CHANGES_REQUESTED';
+    const informational = projectContractToDeliverySnapshot(informationalSource).snapshot;
+
+    expect(definition.ontology.types.map((type) => type.id).sort()).toEqual(
+      [...CONTRACT_TO_DELIVERY_PROJECTOR_CONTRACT.nodeTypes].sort(),
+    );
+    expect([...new Set(definition.ontology.relationships.map((item) => item.id))].sort()).toEqual(
+      [...CONTRACT_TO_DELIVERY_PROJECTOR_CONTRACT.edgeTypes].sort(),
+    );
+
+    const businessTypeIds = new Set(
+      CONTRACT_TO_DELIVERY_PROJECTOR_CONTRACT.nodeTypes.filter(
+        (id) =>
+          id.startsWith('business.') ||
+          id === 'informational.acceptance_observation' ||
+          id === 'informational.outcome_observation',
+      ),
+    );
+    const emittedBusinessNodes = [happy, informational]
+      .flatMap((snapshot) => snapshot.nodes)
+      .filter((node) => businessTypeIds.has(node.type));
+    for (const type of definition.ontology.types.filter((item) => businessTypeIds.has(item.id))) {
+      const nodes = emittedBusinessNodes.filter((node) => node.type === type.id);
+      expect(nodes.length, type.id).toBeGreaterThan(0);
+      for (const node of nodes) {
+        expect(type.authorityProviders).toContain(node.authorityRef.provider);
+        expect(
+          Object.keys(node.properties).every((field) => type.fields.includes(field)),
+          `${type.id} property vocabulary`,
+        ).toBe(true);
+      }
+      for (const field of type.fields) {
+        expect(
+          nodes.some((node) => Object.hasOwn(node.properties, field)),
+          `${type.id}.${field}`,
+        ).toBe(true);
+      }
+    }
+
+    const newEdgeIds = new Set(
+      CONTRACT_TO_DELIVERY_PROJECTOR_CONTRACT.edgeTypes.filter(
+        (id) => !SOFTWARE_DELIVERY_PROJECTOR_CONTRACT.edgeTypes.includes(id as never),
+      ),
+    );
+    const emittedTriples = new Set(
+      [happy, informational].flatMap((snapshot) => {
+        const nodeTypes = new Map(snapshot.nodes.map((node) => [node.id, node.type]));
+        return snapshot.edges.map(
+          (edge) => `${edge.type}\0${nodeTypes.get(edge.from)}\0${nodeTypes.get(edge.to)}`,
+        );
+      }),
+    );
+    expect(
+      definition.ontology.relationships
+        .filter((relationship) => newEdgeIds.has(relationship.id))
+        .every((relationship) =>
+          emittedTriples.has(`${relationship.id}\0${relationship.from}\0${relationship.to}`),
+        ),
+    ).toBe(true);
   });
 
   it('declares ontology types that are actually emitted by the registered projector', async () => {

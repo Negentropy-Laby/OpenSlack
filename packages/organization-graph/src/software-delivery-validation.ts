@@ -1,4 +1,5 @@
 import { GraphContractError } from './errors.js';
+import { inertGraphJsonBytes } from './inert-json.js';
 import {
   SOFTWARE_DELIVERY_PROJECTOR_ID,
   SOFTWARE_DELIVERY_SOURCE_LIMITS,
@@ -962,139 +963,6 @@ function batch<T extends SoftwareDeliveryEvidence>(
   };
 }
 
-function inertJsonBytes(value: unknown): number {
-  const ancestors = new WeakSet<object>();
-  let bytes = 0;
-  let nodes = 0;
-  visit(value, '$', 0);
-  return bytes;
-
-  function charge(amount: number, path: string): void {
-    bytes += amount;
-    if (bytes > SOFTWARE_DELIVERY_SOURCE_LIMITS.sourceBytes) {
-      fail(
-        'GRAPH_BOUND_EXCEEDED',
-        path,
-        `source exceeds ${SOFTWARE_DELIVERY_SOURCE_LIMITS.sourceBytes} JSON bytes.`,
-      );
-    }
-  }
-
-  function visit(candidate: unknown, path: string, depth: number): void {
-    nodes += 1;
-    if (nodes > SOFTWARE_DELIVERY_SOURCE_LIMITS.sourceJsonNodes) {
-      fail(
-        'GRAPH_BOUND_EXCEEDED',
-        path,
-        `source exceeds ${SOFTWARE_DELIVERY_SOURCE_LIMITS.sourceJsonNodes} JSON nodes.`,
-      );
-    }
-    if (depth > 32) fail('GRAPH_BOUND_EXCEEDED', path, 'exceeds source nesting depth 32.');
-    if (candidate === null || typeof candidate === 'boolean') {
-      charge(candidate === null ? 4 : candidate ? 4 : 5, path);
-      return;
-    }
-    if (typeof candidate === 'number') {
-      if (!Number.isFinite(candidate)) {
-        fail('GRAPH_SCHEMA_INVALID', path, 'must contain only finite JSON numbers.');
-      }
-      charge(Buffer.byteLength(JSON.stringify(candidate), 'utf8'), path);
-      return;
-    }
-    if (typeof candidate === 'string') {
-      charge(Buffer.byteLength(JSON.stringify(candidate), 'utf8'), path);
-      return;
-    }
-    if (typeof candidate !== 'object') {
-      return fail('GRAPH_SCHEMA_INVALID', path, 'must contain only inert JSON data.');
-    }
-    if (ancestors.has(candidate)) {
-      return fail('GRAPH_SCHEMA_INVALID', path, 'must not contain cyclic references.');
-    }
-    ancestors.add(candidate);
-    try {
-      if (Array.isArray(candidate)) {
-        if (Object.getPrototypeOf(candidate) !== Array.prototype) {
-          fail('GRAPH_SCHEMA_INVALID', path, 'array prototype must be Array.prototype.');
-        }
-        if (candidate.length > SOFTWARE_DELIVERY_SOURCE_LIMITS.sourceArrayItems) {
-          fail(
-            'GRAPH_BOUND_EXCEEDED',
-            path,
-            `array exceeds ${SOFTWARE_DELIVERY_SOURCE_LIMITS.sourceArrayItems} items.`,
-          );
-        }
-        const keys = Reflect.ownKeys(candidate);
-        if (keys.length > SOFTWARE_DELIVERY_SOURCE_LIMITS.sourceArrayItems + 1) {
-          fail('GRAPH_BOUND_EXCEEDED', path, 'array has too many own properties.');
-        }
-        for (const key of keys) {
-          if (typeof key === 'symbol') {
-            fail('GRAPH_SCHEMA_INVALID', path, 'must not contain symbol properties.');
-          }
-          if (key === 'length') continue;
-          if (!/^(?:0|[1-9]\d*)$/.test(key) || Number(key) >= candidate.length) {
-            fail('GRAPH_SCHEMA_INVALID', `${path}.${key}`, 'is not a canonical array index.');
-          }
-        }
-        charge(2 + Math.max(0, candidate.length - 1), path);
-        for (let index = 0; index < candidate.length; index += 1) {
-          const descriptor = Object.getOwnPropertyDescriptor(candidate, String(index));
-          if (
-            descriptor === undefined ||
-            !Object.hasOwn(descriptor, 'value') ||
-            descriptor.enumerable !== true
-          ) {
-            fail(
-              'GRAPH_SCHEMA_INVALID',
-              `${path}[${index}]`,
-              'must be a dense enumerable data property.',
-            );
-          }
-          visit(descriptor.value, `${path}[${index}]`, depth + 1);
-        }
-        return;
-      }
-
-      const prototype = Object.getPrototypeOf(candidate);
-      if (prototype !== Object.prototype && prototype !== null) {
-        fail('GRAPH_SCHEMA_INVALID', path, 'object prototype must be Object.prototype or null.');
-      }
-      const keys = Reflect.ownKeys(candidate);
-      if (keys.length > SOFTWARE_DELIVERY_SOURCE_LIMITS.sourceObjectProperties) {
-        fail(
-          'GRAPH_BOUND_EXCEEDED',
-          path,
-          `object exceeds ${SOFTWARE_DELIVERY_SOURCE_LIMITS.sourceObjectProperties} properties.`,
-        );
-      }
-      charge(2 + Math.max(0, keys.length - 1), path);
-      for (const key of keys) {
-        if (typeof key === 'symbol') {
-          fail('GRAPH_SCHEMA_INVALID', path, 'must not contain symbol properties.');
-        }
-        const descriptor = Object.getOwnPropertyDescriptor(candidate, key);
-        if (
-          descriptor === undefined ||
-          !Object.hasOwn(descriptor, 'value') ||
-          descriptor.enumerable !== true
-        ) {
-          fail(
-            'GRAPH_SCHEMA_INVALID',
-            `${path}.${key}`,
-            'must be an enumerable inert data property.',
-          );
-        }
-        charge(1 + Buffer.byteLength(JSON.stringify(key), 'utf8'), `${path}.${key}`);
-        visit(descriptor.value, `${path}.${key}`, depth + 1);
-      }
-      return;
-    } finally {
-      ancestors.delete(candidate);
-    }
-  }
-}
-
 function assertAggregateBounds(sources: SoftwareDeliverySourceBatches): void {
   const batches = Object.values(sources);
   const totalObservations = batches.reduce((total, candidate) => total + candidate.items.length, 0);
@@ -1188,7 +1056,7 @@ function assertSemanticUnique<T>(
 export function validateSoftwareDeliverySourceSnapshot(
   value: unknown,
 ): SoftwareDeliverySourceSnapshot {
-  const bytes = inertJsonBytes(value);
+  const bytes = inertGraphJsonBytes(value, SOFTWARE_DELIVERY_SOURCE_LIMITS);
   if (bytes > SOFTWARE_DELIVERY_SOURCE_LIMITS.sourceBytes) {
     fail(
       'GRAPH_BOUND_EXCEEDED',

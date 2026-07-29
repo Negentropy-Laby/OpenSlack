@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - users
 owner: project-governance
-updated: 2026-07-28
+updated: 2026-07-29
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -38,7 +38,7 @@ Complete CLI reference for the OpenSlack Agent Company OS.
 | Diagnose why a PR cannot merge                   | `openslack pr doctor <n>`                                                      | Shows blocker owner, evidence, and next action.                                                      |
 | See team state across events and PRs             | `openslack collaboration dashboard`                                            | Projection-only; does not create dashboard-specific state.                                           |
 | Read evidence-backed business outcomes           | `openslack collaboration business-outcomes --format markdown`                  | Every metric retains observed, configured-estimate, or unknown basis and evidence.                   |
-| Build bounded local graph evidence               | `openslack graph snapshot build --scenario software-delivery --from <json>`    | Strict file/stdin import with CAS; replacements require the exact current cursor.                    |
+| Build bounded local graph evidence               | `openslack graph snapshot build --scenario <registered-id> --from <json>`      | Sealed Software Delivery or Contract-to-Delivery import with CAS; replacements require exact cursor. |
 | Connect Qoder Work                               | `openslack mcp serve --stdio`                                                  | Defaults to exactly 12 read-only v2 business/graph tools over local stdio.                           |
 | Record a handoff or decision                     | `openslack collaboration handoff ...` / `openslack collaboration decision ...` | Creates auditable collaboration objects.                                                             |
 | Keep the org profile in sync                     | `openslack collaboration workflow profile-sync check`                          | Profile Sync Robot checks and previews are read-only; `run` requires confirmation.                   |
@@ -782,6 +782,19 @@ one source is required. The importer reads at most 4 MiB, rejects symlink or
 reparse sources and files that change identity while being read, applies the
 strict Software Delivery source contract, and publishes only through the local
 graph store's compare-and-swap boundary.
+
+The sealed host dispatch accepts `software-delivery` and
+`contract-to-delivery-lite` under the same locked 4 MiB input ceiling. Pack
+files cannot provide code or select a projector. For the checked-in composite
+fixture:
+
+```bash
+openslack graph snapshot build \
+  --scenario contract-to-delivery-lite \
+  --from packages/organization-graph/src/__tests__/fixtures/contract-to-delivery-source.json \
+  --scenario-instance scenario-contract-delivery-001 \
+  --format json
+```
 
 The first publication omits `--expected-cursor`. Every replacement must supply
 the exact current cursor:

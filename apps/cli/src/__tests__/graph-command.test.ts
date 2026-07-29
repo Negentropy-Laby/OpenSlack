@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  CONTRACT_TO_DELIVERY_SOURCE_LIMITS,
   GraphStoreError,
   LocalGraphStore,
   SOFTWARE_DELIVERY_SOURCE_LIMITS,
@@ -27,6 +28,19 @@ const fixturePath = join(
   'fixtures',
   'software-delivery-source.json',
 );
+const contractFixturePath = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+  '..',
+  'packages',
+  'organization-graph',
+  'src',
+  '__tests__',
+  'fixtures',
+  'contract-to-delivery-source.json',
+);
 const roots: string[] = [];
 
 function root(): string {
@@ -37,6 +51,10 @@ function root(): string {
 
 function fixture(): Buffer {
   return readFileSync(fixturePath);
+}
+
+function contractFixture(): Buffer {
+  return readFileSync(contractFixturePath);
 }
 
 function changedFixture(cursor: string): Buffer {
@@ -121,7 +139,7 @@ describe('graph snapshot build command', () => {
       readSourceFile,
     });
     expect(stderr).toHaveBeenLastCalledWith(
-      'GRAPH_SCENARIO_UNSUPPORTED: Only software-delivery is registered for snapshot build.',
+      'GRAPH_SCENARIO_UNSUPPORTED: Graph snapshot scenario is not registered by the sealed host dispatch.',
     );
     expect(readSourceFile).not.toHaveBeenCalled();
 
@@ -197,6 +215,42 @@ describe('graph snapshot build command', () => {
     );
     expect(readStdin).toHaveBeenCalledOnce();
     expect(String(stdout.mock.calls[0]![0])).toContain('Previous cursor: <none>');
+  });
+
+  it('publishes Contract-to-Delivery through the same locked input ceiling', async () => {
+    const workspaceRoot = root();
+    const readStdin = vi.fn(async (maxBytes: number) => {
+      expect(maxBytes).toBe(CONTRACT_TO_DELIVERY_SOURCE_LIMITS.sourceBytes);
+      return contractFixture();
+    });
+    await run(
+      workspaceRoot,
+      [
+        '--scenario',
+        'contract-to-delivery-lite',
+        '--from-stdin',
+        '--scenario-instance',
+        'scenario-contract-delivery-001',
+        '--format',
+        'json',
+      ],
+      { readStdin },
+    );
+
+    expect(stderr).not.toHaveBeenCalled();
+    expect(readStdin).toHaveBeenCalledOnce();
+    const result = JSON.parse(String(stdout.mock.calls[0]![0])) as {
+      scenarioInstanceId: string;
+      cursor: string;
+    };
+    expect(result).toMatchObject({
+      scenarioInstanceId: 'scenario-contract-delivery-001',
+      cursor: 'contract-source-cursor-001',
+    });
+    const readback = await new LocalGraphStore(
+      join(workspaceRoot, '.openslack.local', 'graph'),
+    ).readCurrentSnapshot(result.scenarioInstanceId);
+    expect(readback.projectorVersion).toBe('openslack.contract_to_delivery.v1');
   });
 
   it('requires a matching explicit expected cursor for every replacement', async () => {

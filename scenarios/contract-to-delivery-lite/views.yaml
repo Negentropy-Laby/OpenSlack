@@ -1,0 +1,18 @@
+schema: openslack.scenario_views.v1
+views:
+  - id: contract-delivery-story
+    title: Contract to Delivery Story
+    nodeTypes:
+      - agent_run
+      - business.acceptance
+      - business.contract
+      - business.customer
+      - business.milestone
+      - business.outcome
+      - business.project
+      - core.work_item
+      - organization.actor
+      - reviewable_deliverable
+    fields:
+      - status
+      - title

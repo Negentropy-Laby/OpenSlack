@@ -1,0 +1,643 @@
+{
+  "schema": "openslack.contract_to_delivery_source_snapshot.v1",
+  "scenarioDefinitionId": "contract-to-delivery-lite",
+  "scenarioInstanceId": "scenario-contract-delivery-001",
+  "cursor": "contract-source-cursor-001",
+  "generatedAt": "2026-07-27T02:00:00.000Z",
+  "projectorVersion": "openslack.contract_to_delivery.v1",
+  "softwareDelivery": {
+    "schema": "openslack.software_delivery_source_snapshot.v1",
+    "scenarioDefinitionId": "contract-to-delivery-lite",
+    "scenarioInstanceId": "scenario-contract-delivery-001",
+    "cursor": "contract-source-cursor-001",
+    "generatedAt": "2026-07-27T02:00:00.000Z",
+    "projectorVersion": "openslack.software_delivery.v1",
+    "sources": {
+      "repository": {
+        "status": "observed",
+        "batchVersion": "batch-repository-v1",
+        "observedAt": "2026-07-27T01:00:00.000Z",
+        "items": [
+          {
+            "id": "repo-1",
+            "authorityVersion": "version-repo-1",
+            "observationKind": "live",
+            "observedAt": "2026-07-27T01:00:00.000Z",
+            "sourceEventIds": ["event-repo-1"],
+            "evidenceRefs": ["evidence-repo-1"],
+            "repositoryId": "repo-1",
+            "fullName": "acme/project",
+            "defaultBranch": "main"
+          }
+        ],
+        "warningCodes": []
+      },
+      "actors": {
+        "status": "observed",
+        "batchVersion": "batch-actors-v1",
+        "observedAt": "2026-07-27T01:00:00.000Z",
+        "items": [
+          {
+            "id": "actor-author-observation",
+            "authorityVersion": "version-actor-author-observation",
+            "observationKind": "live",
+            "observedAt": "2026-07-27T01:00:00.000Z",
+            "sourceEventIds": ["event-actor-author-observation"],
+            "evidenceRefs": ["evidence-actor-author-observation"],
+            "authorityProvider": "github",
+            "actor": {
+              "id": "author-1",
+              "kind": "human",
+              "displayName": "Author"
+            }
+          },
+          {
+            "id": "actor-reviewer-observation",
+            "authorityVersion": "version-actor-reviewer-observation",
+            "observationKind": "live",
+            "observedAt": "2026-07-27T01:00:00.000Z",
+            "sourceEventIds": ["event-actor-reviewer-observation"],
+            "evidenceRefs": ["evidence-actor-reviewer-observation"],
+            "authorityProvider": "github",
+            "actor": {
+              "id": "reviewer-1",
+              "kind": "human",
+              "displayName": "Reviewer"
+            }
+          },
+          {
+            "id": "actor-agent-observation",
+            "authorityVersion": "version-actor-agent-observation",
+            "observationKind": "local_store",
+            "observedAt": "2026-07-27T01:00:00.000Z",
+            "sourceEventIds": ["event-actor-agent-observation"],
+            "evidenceRefs": ["evidence-actor-agent-observation"],
+            "authorityProvider": "openslack",
+            "actor": {
+              "id": "agent-1",
+              "kind": "agent",
+              "displayName": "Delivery Agent"
+            }
+          }
+        ],
+        "warningCodes": []
+      },
+      "issues": {
+        "status": "observed",
+        "batchVersion": "batch-issues-v1",
+        "observedAt": "2026-07-27T01:00:00.000Z",
+        "items": [
+          {
+            "id": "issue-10",
+            "authorityVersion": "version-issue-10",
+            "observationKind": "live",
+            "observedAt": "2026-07-27T01:00:00.000Z",
+            "sourceEventIds": ["event-issue-10"],
+            "evidenceRefs": ["evidence-issue-10"],
+            "repositoryId": "repo-1",
+            "number": 10,
+            "title": "Deliver governed change",
+            "state": "closed",
+            "labels": [
+              {
+                "name": "high",
+                "category": "risk"
+              },
+              {
+                "name": "openslack:done",
+                "category": "state"
+              }
+            ],
+            "assigneeIds": ["agent-1"],
+            "assigneesComplete": true,
+            "closureComplete": true,
+            "createdAt": "2026-07-27T00:00:00.000Z",
+            "updatedAt": "2026-07-27T01:40:00.000Z",
+            "closedAt": "2026-07-27T01:40:00.000Z"
+          }
+        ],
+        "warningCodes": []
+      },
+      "claims": {
+        "status": "observed",
+        "batchVersion": "batch-claims-v1",
+        "observedAt": "2026-07-27T01:00:00.000Z",
+        "items": [
+          {
+            "id": "claim-10",
+            "authorityVersion": "version-claim-10",
+            "observationKind": "local_store",
+            "observedAt": "2026-07-27T01:00:00.000Z",
+            "sourceEventIds": ["event-claim-10"],
+            "evidenceRefs": ["evidence-claim-10"],
+            "issueId": "issue-10",
+            "claimRef": "refs/heads/openslack/claims/issue-10",
+            "targetSha": "base-sha-1",
+            "status": "active",
+            "agentActorId": "agent-1",
+            "claimedAt": "2026-07-27T00:10:00.000Z",
+            "expiresAt": "2026-07-27T03:10:00.000Z"
+          }
+        ],
+        "warningCodes": []
+      },
+      "worktrees": {
+        "status": "observed",
+        "batchVersion": "batch-worktrees-v1",
+        "observedAt": "2026-07-27T01:00:00.000Z",
+        "items": [
+          {
+            "id": "worktree-10-observation",
+            "authorityVersion": "version-worktree-10-observation",
+            "observationKind": "local_store",
+            "observedAt": "2026-07-27T01:00:00.000Z",
+            "sourceEventIds": ["event-worktree-10-observation"],
+            "evidenceRefs": ["evidence-worktree-10-observation"],
+            "issueId": "issue-10",
+            "claimId": "claim-10",
+            "agentRunId": "agent-run-1",
+            "worktreeId": "worktree-10",
+            "baseSha": "base-sha-1",
+            "branchName": "agent/issue-10",
+            "status": "preserved",
+            "createdAt": "2026-07-27T00:15:00.000Z"
+          }
+        ],
+        "warningCodes": []
+      },
+      "commits": {
+        "status": "observed",
+        "batchVersion": "batch-commits-v1",
+        "observedAt": "2026-07-27T01:00:00.000Z",
+        "items": [
+          {
+            "id": "commit-observation-1",
+            "authorityVersion": "version-commit-observation-1",
+            "observationKind": "live",
+            "observedAt": "2026-07-27T01:00:00.000Z",
+            "sourceEventIds": ["event-commit-observation-1"],
+            "evidenceRefs": ["evidence-commit-observation-1"],
+            "repositoryId": "repo-1",
+            "sha": "head-sha-1",
+            "issueIds": ["issue-10"],
+            "worktreeId": "worktree-10",
+            "authoredAt": "2026-07-27T00:30:00.000Z"
+          }
+        ],
+        "warningCodes": []
+      },
+      "pullRequests": {
+        "status": "observed",
+        "batchVersion": "batch-pullRequests-v1",
+        "observedAt": "2026-07-27T01:00:00.000Z",
+        "items": [
+          {
+            "id": "pr-20",
+            "authorityVersion": "version-pr-20",
+            "observationKind": "live",
+            "observedAt": "2026-07-27T01:00:00.000Z",
+            "sourceEventIds": ["event-pr-20"],
+            "evidenceRefs": ["evidence-pr-20"],
+            "repositoryId": "repo-1",
+            "number": 20,
+            "title": "Deliver governed change",
+            "authorActorId": "author-1",
+            "state": "merged",
+            "draft": false,
+            "baseSha": "base-sha-1",
+            "headSha": "head-sha-1",
+            "issueIds": ["issue-10"],
+            "commitShas": ["head-sha-1"],
+            "openedAt": "2026-07-27T00:40:00.000Z",
+            "updatedAt": "2026-07-27T01:30:00.000Z"
+          }
+        ],
+        "warningCodes": []
+      },
+      "checks": {
+        "status": "observed",
+        "batchVersion": "batch-checks-v1",
+        "observedAt": "2026-07-27T01:00:00.000Z",
+        "items": [
+          {
+            "id": "check-1",
+            "authorityVersion": "version-check-1",
+            "observationKind": "live",
+            "observedAt": "2026-07-27T01:00:00.000Z",
+            "sourceEventIds": ["event-check-1"],
+            "evidenceRefs": ["evidence-check-1"],
+            "pullRequestId": "pr-20",
+            "name": "required-tests",
+            "status": "completed",
+            "conclusion": "success",
+            "headSha": "head-sha-1",
+            "startedAt": "2026-07-27T00:45:00.000Z",
+            "completedAt": "2026-07-27T00:50:00.000Z"
+          }
+        ],
+        "warningCodes": []
+      },
+      "reviews": {
+        "status": "observed",
+        "batchVersion": "batch-reviews-v1",
+        "observedAt": "2026-07-27T01:00:00.000Z",
+        "items": [
+          {
+            "id": "review-current",
+            "authorityVersion": "version-review-current",
+            "observationKind": "live",
+            "observedAt": "2026-07-27T01:00:00.000Z",
+            "sourceEventIds": ["event-review-current"],
+            "evidenceRefs": ["evidence-review-current"],
+            "pullRequestId": "pr-20",
+            "actorId": "reviewer-1",
+            "actorKind": "human",
+            "state": "APPROVED",
+            "commitOid": "head-sha-1",
+            "submittedAt": "2026-07-27T01:00:00.000Z"
+          },
+          {
+            "id": "review-stale",
+            "authorityVersion": "version-review-stale",
+            "observationKind": "live",
+            "observedAt": "2026-07-27T01:00:00.000Z",
+            "sourceEventIds": ["event-review-stale"],
+            "evidenceRefs": ["evidence-review-stale"],
+            "pullRequestId": "pr-20",
+            "actorId": "reviewer-1",
+            "actorKind": "human",
+            "state": "APPROVED",
+            "commitOid": "old-head-sha",
+            "submittedAt": "2026-07-27T00:55:00.000Z"
+          },
+          {
+            "id": "review-self",
+            "authorityVersion": "version-review-self",
+            "observationKind": "live",
+            "observedAt": "2026-07-27T01:00:00.000Z",
+            "sourceEventIds": ["event-review-self"],
+            "evidenceRefs": ["evidence-review-self"],
+            "pullRequestId": "pr-20",
+            "actorId": "author-1",
+            "actorKind": "human",
+            "state": "APPROVED",
+            "commitOid": "head-sha-1",
+            "submittedAt": "2026-07-27T00:58:00.000Z"
+          }
+        ],
+        "warningCodes": []
+      },
+      "merges": {
+        "status": "observed",
+        "batchVersion": "batch-merges-v1",
+        "observedAt": "2026-07-27T01:00:00.000Z",
+        "items": [
+          {
+            "id": "merge-20",
+            "authorityVersion": "version-merge-20",
+            "observationKind": "live",
+            "observedAt": "2026-07-27T01:00:00.000Z",
+            "sourceEventIds": ["event-merge-20"],
+            "evidenceRefs": ["evidence-merge-20"],
+            "pullRequestId": "pr-20",
+            "headSha": "head-sha-1",
+            "mergeCommitSha": "merge-sha-1",
+            "actorId": "reviewer-1",
+            "mergedAt": "2026-07-27T01:30:00.000Z"
+          }
+        ],
+        "warningCodes": []
+      },
+      "workflowRuns": {
+        "status": "observed",
+        "batchVersion": "batch-workflowRuns-v1",
+        "observedAt": "2026-07-27T01:00:00.000Z",
+        "items": [
+          {
+            "id": "workflow-run-1",
+            "authorityVersion": "version-workflow-run-1",
+            "observationKind": "local_store",
+            "observedAt": "2026-07-27T01:00:00.000Z",
+            "sourceEventIds": ["event-workflow-run-1"],
+            "evidenceRefs": ["evidence-workflow-run-1"],
+            "workflowId": "software-delivery",
+            "status": "completed",
+            "issueIds": ["issue-10"],
+            "pullRequestIds": ["pr-20"],
+            "startedAt": "2026-07-27T00:05:00.000Z",
+            "completedAt": "2026-07-27T01:35:00.000Z"
+          }
+        ],
+        "warningCodes": []
+      },
+      "agentRuns": {
+        "status": "observed",
+        "batchVersion": "batch-agentRuns-v1",
+        "observedAt": "2026-07-27T01:00:00.000Z",
+        "items": [
+          {
+            "id": "agent-run-1",
+            "authorityVersion": "version-agent-run-1",
+            "observationKind": "local_store",
+            "observedAt": "2026-07-27T01:00:00.000Z",
+            "sourceEventIds": ["event-agent-run-1"],
+            "evidenceRefs": ["evidence-agent-run-1"],
+            "workflowRunId": "workflow-run-1",
+            "agentActorId": "agent-1",
+            "status": "completed",
+            "worktreeId": "worktree-10",
+            "startedAt": "2026-07-27T00:12:00.000Z",
+            "completedAt": "2026-07-27T01:20:00.000Z"
+          }
+        ],
+        "warningCodes": []
+      },
+      "prmsReports": {
+        "status": "observed",
+        "batchVersion": "batch-prmsReports-v1",
+        "observedAt": "2026-07-27T01:00:00.000Z",
+        "items": [
+          {
+            "id": "prms-20",
+            "authorityVersion": "version-prms-20",
+            "observationKind": "local_store",
+            "observedAt": "2026-07-27T01:00:00.000Z",
+            "sourceEventIds": ["event-prms-20"],
+            "evidenceRefs": ["evidence-prms-20"],
+            "pullRequestId": "pr-20",
+            "baseSha": "base-sha-1",
+            "headSha": "head-sha-1",
+            "status": "ready",
+            "blockerCount": 0
+          }
+        ],
+        "warningCodes": []
+      },
+      "handoffs": {
+        "status": "observed",
+        "batchVersion": "batch-handoffs-v1",
+        "observedAt": "2026-07-27T01:00:00.000Z",
+        "items": [
+          {
+            "id": "handoff-1",
+            "authorityVersion": "version-handoff-1",
+            "observationKind": "local_store",
+            "observedAt": "2026-07-27T01:00:00.000Z",
+            "sourceEventIds": ["event-handoff-1"],
+            "evidenceRefs": ["evidence-handoff-1"],
+            "status": "closed",
+            "fromActorId": "agent-1",
+            "toActorId": "reviewer-1",
+            "issueId": "issue-10",
+            "pullRequestId": "pr-20",
+            "workflowRunId": "workflow-run-1",
+            "createdAt": "2026-07-27T00:35:00.000Z",
+            "closedAt": "2026-07-27T01:10:00.000Z"
+          }
+        ],
+        "warningCodes": []
+      },
+      "decisions": {
+        "status": "observed",
+        "batchVersion": "batch-decisions-v1",
+        "observedAt": "2026-07-27T01:00:00.000Z",
+        "items": [
+          {
+            "id": "decision-1",
+            "authorityVersion": "version-decision-1",
+            "observationKind": "local_store",
+            "observedAt": "2026-07-27T01:00:00.000Z",
+            "sourceEventIds": ["event-decision-1"],
+            "evidenceRefs": ["evidence-decision-1"],
+            "topic": "Adopt governed delivery",
+            "status": "active",
+            "decidedByActorId": "reviewer-1",
+            "issueId": "issue-10",
+            "pullRequestId": "pr-20",
+            "workflowRunId": "workflow-run-1",
+            "createdAt": "2026-07-27T01:05:00.000Z"
+          }
+        ],
+        "warningCodes": []
+      }
+    }
+  },
+  "business": {
+    "customers": {
+      "status": "observed",
+      "batchVersion": "fixture-customers-v1",
+      "observedAt": "2026-07-27T01:45:00.000Z",
+      "items": [
+        {
+          "id": "customer-acme",
+          "title": "Acme Corporation",
+          "status": "active",
+          "authorityRef": {
+            "provider": "demo_fixture",
+            "objectType": "customer",
+            "objectId": "customer-acme",
+            "version": "fixture-customer-acme-v1",
+            "observedAt": "2026-07-27T01:45:00.000Z"
+          },
+          "sourceEventIds": ["event:customer-acme"],
+          "evidenceRefs": ["fixture:customer-acme"]
+        }
+      ],
+      "warningCodes": []
+    },
+    "contracts": {
+      "status": "observed",
+      "batchVersion": "fixture-contracts-v1",
+      "observedAt": "2026-07-27T01:45:00.000Z",
+      "items": [
+        {
+          "id": "contract-acme-delivery",
+          "title": "Acme governed delivery contract",
+          "status": "active",
+          "authorityRef": {
+            "provider": "demo_fixture",
+            "objectType": "contract",
+            "objectId": "contract-acme-delivery",
+            "version": "fixture-contract-acme-delivery-v1",
+            "observedAt": "2026-07-27T01:45:00.000Z"
+          },
+          "sourceEventIds": ["event:contract-acme-delivery"],
+          "evidenceRefs": ["fixture:contract-acme-delivery"],
+          "customerId": "customer-acme",
+          "deliverable": {
+            "targetType": "reviewable_deliverable",
+            "authorityRef": {
+              "provider": "github",
+              "objectType": "pull_request",
+              "objectId": "pr-20",
+              "version": "version-pr-20",
+              "observedAt": "2026-07-27T01:00:00.000Z"
+            }
+          }
+        }
+      ],
+      "warningCodes": []
+    },
+    "projects": {
+      "status": "observed",
+      "batchVersion": "fixture-projects-v1",
+      "observedAt": "2026-07-27T01:45:00.000Z",
+      "items": [
+        {
+          "id": "project-governed-delivery",
+          "title": "Governed delivery project",
+          "status": "active",
+          "authorityRef": {
+            "provider": "demo_fixture",
+            "objectType": "project",
+            "objectId": "project-governed-delivery",
+            "version": "fixture-project-governed-delivery-v1",
+            "observedAt": "2026-07-27T01:45:00.000Z"
+          },
+          "sourceEventIds": ["event:project-governed-delivery"],
+          "evidenceRefs": ["fixture:project-governed-delivery"],
+          "contractId": "contract-acme-delivery",
+          "workItem": {
+            "targetType": "core.work_item",
+            "authorityRef": {
+              "provider": "github",
+              "objectType": "issue",
+              "objectId": "issue-10",
+              "version": "version-issue-10",
+              "observedAt": "2026-07-27T01:00:00.000Z"
+            }
+          }
+        }
+      ],
+      "warningCodes": []
+    },
+    "milestones": {
+      "status": "observed",
+      "batchVersion": "fixture-milestones-v1",
+      "observedAt": "2026-07-27T01:45:00.000Z",
+      "items": [
+        {
+          "id": "milestone-accepted-change",
+          "title": "Accepted change milestone",
+          "status": "completed",
+          "authorityRef": {
+            "provider": "demo_fixture",
+            "objectType": "milestone",
+            "objectId": "milestone-accepted-change",
+            "version": "fixture-milestone-accepted-change-v1",
+            "observedAt": "2026-07-27T01:45:00.000Z"
+          },
+          "sourceEventIds": ["event:milestone-accepted-change"],
+          "evidenceRefs": ["fixture:milestone-accepted-change"],
+          "projectId": "project-governed-delivery",
+          "workItem": {
+            "targetType": "core.work_item",
+            "authorityRef": {
+              "provider": "github",
+              "objectType": "issue",
+              "objectId": "issue-10",
+              "version": "version-issue-10",
+              "observedAt": "2026-07-27T01:00:00.000Z"
+            }
+          }
+        }
+      ],
+      "warningCodes": []
+    },
+    "acceptances": {
+      "status": "observed",
+      "batchVersion": "fixture-acceptances-v1",
+      "observedAt": "2026-07-27T01:45:00.000Z",
+      "items": [
+        {
+          "id": "acceptance-current-head",
+          "title": "Current-head human acceptance",
+          "status": "accepted",
+          "authorityRef": {
+            "provider": "demo_fixture",
+            "objectType": "acceptance",
+            "objectId": "acceptance-current-head",
+            "version": "fixture-acceptance-current-head-v1",
+            "observedAt": "2026-07-27T01:45:00.000Z"
+          },
+          "sourceEventIds": ["event:acceptance-current-head"],
+          "evidenceRefs": ["fixture:acceptance-current-head"],
+          "deliverable": {
+            "targetType": "reviewable_deliverable",
+            "authorityRef": {
+              "provider": "github",
+              "objectType": "pull_request",
+              "objectId": "pr-20",
+              "version": "version-pr-20",
+              "observedAt": "2026-07-27T01:00:00.000Z"
+            }
+          },
+          "humanDecision": {
+            "targetType": "human_decision",
+            "authorityRef": {
+              "provider": "github",
+              "objectType": "pull_request_review",
+              "objectId": "review-current",
+              "version": "version-review-current",
+              "observedAt": "2026-07-27T01:00:00.000Z"
+            }
+          },
+          "acceptedTransition": {
+            "targetType": "accepted_transition",
+            "authorityRef": {
+              "provider": "github",
+              "objectType": "merge",
+              "objectId": "merge-20",
+              "version": "version-merge-20",
+              "observedAt": "2026-07-27T01:00:00.000Z"
+            }
+          }
+        }
+      ],
+      "warningCodes": []
+    },
+    "outcomes": {
+      "status": "observed",
+      "batchVersion": "fixture-outcomes-v1",
+      "observedAt": "2026-07-27T01:45:00.000Z",
+      "items": [
+        {
+          "id": "outcome-contract-realized",
+          "title": "Contract outcome realized",
+          "status": "realized",
+          "authorityRef": {
+            "provider": "demo_fixture",
+            "objectType": "outcome",
+            "objectId": "outcome-contract-realized",
+            "version": "fixture-outcome-contract-realized-v1",
+            "observedAt": "2026-07-27T01:45:00.000Z"
+          },
+          "sourceEventIds": ["event:outcome-contract-realized"],
+          "evidenceRefs": ["fixture:outcome-contract-realized"],
+          "acceptanceId": "acceptance-current-head",
+          "workItem": {
+            "targetType": "core.work_item",
+            "authorityRef": {
+              "provider": "github",
+              "objectType": "issue",
+              "objectId": "issue-10",
+              "version": "version-issue-10",
+              "observedAt": "2026-07-27T01:00:00.000Z"
+            }
+          },
+          "softwareOutcome": {
+            "targetType": "outcome",
+            "authorityRef": {
+              "provider": "github",
+              "objectType": "issue_outcome",
+              "objectId": "issue-10",
+              "version": "version-issue-10",
+              "observedAt": "2026-07-27T01:00:00.000Z"
+            }
+          }
+        }
+      ],
+      "warningCodes": []
+    }
+  }
+}

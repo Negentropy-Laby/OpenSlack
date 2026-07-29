@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: project-governance
-updated: 2026-07-28
+updated: 2026-07-29
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -15,9 +15,10 @@ sources:
 
 Status: implemented declarative contract. `openslack.scenario_pack.v1` is a
 scenario-definition format, not an extension of `openslack.plugin.v1` and not an executable plugin
-system. The locked projection-only `software-delivery` Pack is the current built-in instance of
-this contract. The governed mutation contract is implemented. The default stock MCP remains
-read-only; authenticated Qoder rehearsal and live adapter qualification remain pending.
+system. The locked projection-only `software-delivery` and `contract-to-delivery-lite` Packs are
+the current built-in instances of this contract. The governed mutation contract is implemented.
+The default stock MCP remains read-only; Contract-to-Delivery rehearsal, authenticated Qoder
+qualification, and live adapter qualification remain pending.
 
 ## Directory Contract
 
@@ -134,10 +135,12 @@ described as transactionally rolled back.
 
 ## Initial Packs
 
-`software-delivery` is the first built-in locked projection foundation. It registers the existing
-software-delivery projector but currently grants no workflow, notification, deep-link, or mutation
-authority. `contract-to-delivery-lite` remains a later Pack that will add only Customer, Contract,
-Project, Milestone, Acceptance, Deliverable, and Outcome ontology around that real subgraph.
+`software-delivery` is the first built-in locked projection foundation.
+`contract-to-delivery-lite` is the second built-in locked Pack and registers the sealed composite
+projector that adds Customer, Contract, Project, Milestone, Acceptance, and Outcome ontology around
+the reused Work Item, Agent, and Deliverable subgraph. Both Packs are currently projection-only and
+grant no workflow, notification, deep-link, or mutation authority. Their executable host dispatch
+is static code; Pack files cannot provide module paths or projector functions.
 
 The manufacturing 90-day workflow remains a deterministic technical fixture and fallback. It is
 not a second lead scenario.

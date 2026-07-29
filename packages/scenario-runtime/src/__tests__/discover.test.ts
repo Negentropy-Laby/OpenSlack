@@ -5,6 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  createOpenSlackHostScenarioCatalog,
   createSoftwareDeliveryScenarioCatalog,
   discoverScenarioPacks,
   SCENARIO_PACK_LIMITS,
@@ -12,6 +13,7 @@ import {
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../../');
 const sourcePack = join(repositoryRoot, 'scenarios', 'software-delivery');
+const repositoryScenarioRoot = join(repositoryRoot, 'scenarios');
 const temporaryRoots: string[] = [];
 
 async function scenarioRoot(): Promise<string> {
@@ -60,6 +62,19 @@ afterEach(async () => {
 });
 
 describe('bounded Scenario Pack discovery', () => {
+  it('discovers both real built-in Packs in deterministic order', async () => {
+    const result = await discoverScenarioPacks({
+      scenarioRoot: repositoryScenarioRoot,
+      catalog: createOpenSlackHostScenarioCatalog(),
+    });
+
+    expect(result.accepted.map((definition) => definition.manifest.id)).toEqual([
+      'contract-to-delivery-lite',
+      'software-delivery',
+    ]);
+    expect(result.blocked).toEqual([]);
+  });
+
   it('discovers the real locked software-delivery Pack and deeply freezes the result', async () => {
     const root = await scenarioRoot();
     await copyPack(root);

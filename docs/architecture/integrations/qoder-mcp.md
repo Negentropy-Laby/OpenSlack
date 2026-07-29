@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-07-28
+updated: 2026-07-29
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -236,12 +236,26 @@ bun run openslack graph snapshot build \
   --format json
 ```
 
-Use exactly one of `--from <path>` or `--from-stdin`. Both paths stop at the Software Delivery
-4 MiB source ceiling before parsing. File input requires a real regular file, rejects symlink or
-reparse resolution, and verifies path and handle identity before, during, and after the bounded
-read. The package service then uses strict JSON with explicit depth, node, and string ceilings,
-the registered Software Delivery validator/projector, and the existing atomic `LocalGraphStore`.
-It does not call GitHub or assemble live evidence.
+Use exactly one of `--from <path>` or `--from-stdin`. Both scenarios and both input paths stop at
+the locked 4 MiB Software Delivery source ceiling before parsing. File input requires a real
+regular file, rejects symlink or reparse resolution, and verifies path and handle identity before,
+during, and after the bounded read. The package service then uses strict JSON with explicit depth,
+node, and string ceilings, a sealed host-owned dispatch for the two registered
+validator/projectors, and the existing atomic `LocalGraphStore`. Pack content cannot select a
+module or projector function. The command does not call GitHub or assemble live evidence.
+
+The checked-in composite fixture can be built explicitly:
+
+```bash
+bun run openslack graph snapshot build \
+  --scenario contract-to-delivery-lite \
+  --from packages/organization-graph/src/__tests__/fixtures/contract-to-delivery-source.json \
+  --scenario-instance scenario-contract-delivery-001 \
+  --format json
+```
+
+This produces a fixture-backed Customer-to-Outcome projection in the same snapshot as the reused
+Software Delivery subgraph. It does not establish a governed workflow rehearsal or live delivery.
 
 The first publication omits `--expected-cursor` and succeeds only when no current pointer exists.
 Every replacement must pass the exact current cursor:

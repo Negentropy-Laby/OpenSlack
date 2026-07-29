@@ -7,6 +7,8 @@ import {
 import { isCanonicalScenarioSemver } from './pack-schema.js';
 import {
   canonicalJson,
+  CONTRACT_TO_DELIVERY_PROJECTOR_CONTRACT,
+  CONTRACT_TO_DELIVERY_PROJECTOR_ID,
   SOFTWARE_DELIVERY_PROJECTOR_CONTRACT,
   SOFTWARE_DELIVERY_PROJECTOR_ID,
 } from '@openslack/organization-graph';
@@ -457,6 +459,49 @@ export function createSoftwareDeliveryScenarioCatalog(): ScenarioHostCatalog {
     workflows: [],
     capabilities: [],
     adapters: [
+      {
+        id: SOFTWARE_DELIVERY_PROJECTOR_ID,
+        kind: 'projection',
+        capabilityIds: [],
+      },
+    ],
+    deepLinkTemplates: [],
+    notificationIntents: [],
+  });
+}
+
+/**
+ * Reviewed production catalog for every built-in declarative Scenario Pack.
+ *
+ * The catalog registers inert metadata only. Executable projector dispatch remains sealed inside
+ * the Organization Graph package and cannot be supplied or overridden by a Pack.
+ */
+export function createOpenSlackHostScenarioCatalog(): ScenarioHostCatalog {
+  return ScenarioHostCatalog.seal({
+    projectors: [
+      {
+        id: CONTRACT_TO_DELIVERY_PROJECTOR_ID,
+        version: '1.0.0',
+        adapterId: CONTRACT_TO_DELIVERY_PROJECTOR_ID,
+        nodeTypes: CONTRACT_TO_DELIVERY_PROJECTOR_CONTRACT.nodeTypes,
+        edgeTypes: CONTRACT_TO_DELIVERY_PROJECTOR_CONTRACT.edgeTypes,
+      },
+      {
+        id: SOFTWARE_DELIVERY_PROJECTOR_ID,
+        version: '1.0.0',
+        adapterId: SOFTWARE_DELIVERY_PROJECTOR_ID,
+        nodeTypes: SOFTWARE_DELIVERY_PROJECTOR_CONTRACT.nodeTypes,
+        edgeTypes: SOFTWARE_DELIVERY_PROJECTOR_CONTRACT.edgeTypes,
+      },
+    ],
+    workflows: [],
+    capabilities: [],
+    adapters: [
+      {
+        id: CONTRACT_TO_DELIVERY_PROJECTOR_ID,
+        kind: 'projection',
+        capabilityIds: [],
+      },
       {
         id: SOFTWARE_DELIVERY_PROJECTOR_ID,
         kind: 'projection',
