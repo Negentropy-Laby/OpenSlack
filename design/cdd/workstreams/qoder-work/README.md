@@ -6,25 +6,27 @@ authority: canonical
 audience:
   - contributors
 owner: product
-updated: 2026-07-29
+updated: 2026-07-30
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
 
 # Qoder Work Integration
 
-| Field             | Value                                                                      |
-| ----------------- | -------------------------------------------------------------------------- |
-| Status            | `READ + GOVERNED LOCAL REHEARSAL IMPLEMENTED — QODER VERIFICATION PENDING` |
-| Product direction | Qoder-first, MCP-first, projection-first                                   |
-| MVP transport     | Local STDIO MCP                                                            |
-| Authority owner   | OpenSlack for plans and governance; external systems for their records     |
-| Evidence ceiling  | Contract documentation alone proves no implementation or qualification     |
+| Field             | Value                                                                             |
+| ----------------- | --------------------------------------------------------------------------------- |
+| Status            | `LOCAL STOCK CONNECTOR QODER_VERIFIED — REMOTE PRODUCTIZATION DEFERRED`           |
+| Product direction | Qoder-first, MCP-first, projection-first                                          |
+| MVP transport     | Local STDIO MCP                                                                   |
+| Authority owner   | OpenSlack for plans and governance; external systems for their records            |
+| Evidence ceiling  | Candidate-bound qualification proves only the reviewed local stock Connector path |
 
 This document defines the product boundary between Qoder Work and OpenSlack. Current local
 graph/scenario reads, optional governed mutation ports, the credential-free Contract-to-Delivery
-local rehearsal, and the checked-in Skill do not claim a formal Workbench, a remote Connector,
-Qoder Desktop qualification, or interview readiness.
+local rehearsal, and the checked-in Skill remain separately scoped. The final Windows candidate
+qualified the exact stock 12-tool STDIO Connector and all three Skill trigger modes as
+`QODER_VERIFIED`; it does not claim a formal Workbench, a remote Connector, OAuth, Marketplace
+publication, live Contract-to-Delivery execution, or interview readiness.
 
 ## Product outcome
 
@@ -274,9 +276,11 @@ All results must:
 - keep notification `accepted` distinct from vendor `delivered`;
 - identify fixtures as fixtures rather than live external authority.
 
-Local tests and MCP Inspector evidence support `LOCAL_PASS`. Only a current Qoder installation
-exercising initialization, exact tool discovery, permission prompts, and every advertised tool can
-support `QODER_VERIFIED`.
+Local tests and MCP Inspector evidence support `LOCAL_PASS`. The current candidate-bound Qoder
+Work `0.9.12.0` evidence additionally proves initialization, exact tool discovery, the observed
+permission outcome for every stock read-only tool, all 12 fixed calls, and automatic, `/` chooser,
+and explicit-name Skill triggers. That evidence supports `QODER_VERIFIED` only for the reviewed
+local stock Connector and installed Skill.
 
 ## Non-goals
 
@@ -337,5 +341,6 @@ explicit host composition.
 ## Acceptance Criteria
 
 - Local contract tests and authenticated Desktop qualification are separate.
-- Permission prompts and Skill triggers are verified before `QODER_VERIFIED`.
+- Observed permission outcomes and all three Skill triggers are verified before
+  `QODER_VERIFIED`.
 - No client permission becomes GitHub or OpenSlack approval.
