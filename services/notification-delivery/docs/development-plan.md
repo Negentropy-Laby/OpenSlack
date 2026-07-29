@@ -61,15 +61,15 @@ B3/B4 实施前的 AI 辅助计划、最终采纳项与人工修正已精炼至
 
 ## 批次划分（沿模块依赖 DAG）
 
-| 批次 | 范围 | 依赖 | AC 家族（数量） |
-|---|---|---|---|
-| CP0（已完成） | 测试基线、`internal/delivery/backoff.go`、CI、accessibility | — | — |
-| B1 | 工程基座与数据层（已完成） | CP0 | APP lifecycle、迁移不变量（非 AC 计数） |
-| B2 | Notification Store 核心（已完成） | B1 | NS（79） |
-| B3 | Caller Access + Vendor Registry | B1（契约层对齐 B2） | CA（15）+ VR（152） |
-| B4 | Delivery | B2 + B3 | DL（20） |
-| B5 | Operations Control + Reliability Observability | B2（+B3 只读） | OC（14）+ RO（10） |
-| B6 | 端到端硬化与部署包 | B1–B5 | 4 NSBR + 容量基线 |
+| 批次          | 范围                                                        | 依赖                | AC 家族（数量）                         |
+| ------------- | ----------------------------------------------------------- | ------------------- | --------------------------------------- |
+| CP0（已完成） | 测试基线、`internal/delivery/backoff.go`、CI、accessibility | —                   | —                                       |
+| B1            | 工程基座与数据层（已完成）                                  | CP0                 | APP lifecycle、迁移不变量（非 AC 计数） |
+| B2            | Notification Store 核心（已完成）                           | B1                  | NS（79）                                |
+| B3            | Caller Access + Vendor Registry                             | B1（契约层对齐 B2） | CA（15）+ VR（152）                     |
+| B4            | Delivery                                                    | B2 + B3             | DL（20）                                |
+| B5            | Operations Control + Reliability Observability              | B2（+B3 只读）      | OC（14）+ RO（10）                      |
+| B6            | 端到端硬化与部署包                                          | B1–B5               | 4 NSBR + 容量基线                       |
 
 ### B1 — 工程基座与数据层
 
@@ -83,12 +83,13 @@ B3/B4 实施前的 AI 辅助计划、最终采纳项与人工修正已精炼至
 表无 UPDATE 路径）；配置加载的 fail-closed 行为有负向测试。
 
 **通过标准（增量）**：
+
 - [x] 迁移 up/down 在空库与重复执行下幂等；与 data-model.md 逐表对账零偏差
 - [x] pepper env 缺失/双丢失时启动 fail-closed（config.Load 报错、服务不启动），有测试；
-  auth `503` 语义随 B3 认证落地后验证
+      auth `503` 语义随 B3 认证落地后验证
 - [x] 无任何业务行为混入（本批不实现任何 AC 业务路径）
 
-**评审证据**：[`implementation-review-archive.md`](../memory_bank/t3_archive/reviews/implementation-review-archive.md) §B1 + B2 Review。
+**评审证据**：[`notification-delivery-implementation.md`](../../../memory_bank/t3_archive/reviews/notification-delivery-implementation.md) §B1 + B2 Review。
 
 ### B2 — Notification Store 核心
 
@@ -103,8 +104,9 @@ commit-outcome-unknown 重试收敛、replay 与 in-flight 的 OCC 竞态；`dea
 die 的 Store 写路径（为 B4 的 B-01 做准备）。
 
 **通过标准（增量）**：
+
 - [x] 79/79 NS AC 有机器可校验的测试证据；并发竞态与每测试独立 PostgreSQL schema 在默认并行
-  `-race -count=5` 下稳定通过
+      `-race -count=5` 下稳定通过
 - [x] attempt history 任何路径不可 UPDATE/DELETE（触发器集成测试 + 代码扫描双重验证）
 - [x] not-found/越权统一响应不泄露存在性（负向测试）
 
@@ -124,6 +126,7 @@ die 的 Store 写路径（为 B4 的 B-01 做准备）。
 防枚举时序与错误体一致性；管理操作幂等重放（同 key 同结果、同 key 异指纹冲突）。
 
 **通过标准（增量）**：
+
 - [x] 167/167 AC 有机器可校验的实际测试证据
 - [x] OpenAPI request/response contract test 覆盖全部 B3 路由及主要错误分支
 - [x] HMAC/pepper 生命周期、撤销/轮换、权限、限流与并发有单元/集成测试
@@ -141,6 +144,7 @@ redirect 诱导、metadata endpoint）；B-01 决定性 trace 复现测试（cut
 20 条 DL AC；与 VR 快照、Store 写回的契约边界（mock 只用于进程内接口，数据库用真实实例）。
 
 **通过标准（增量）**：
+
 - [x] 20/20 DL AC + B-01 回归测试通过
 - [x] SSRF 负向用例覆盖 DNS rebinding、地址类别、redirect、proxy、TLS hostname，且不读取响应体
 - [x] 计时语义（cutoff、budget、退避上界）使用注入时钟；worker 并发与 shutdown 路径有测试
@@ -157,6 +161,7 @@ gauge（pending 深度、最老 pending 年龄、dead 计数，no-pending=0）�
 scrape 失败窗口语义测试。
 
 **通过标准（增量）**：
+
 - [x] 24/24 AC 有测试证据
 - [x] 重放端到端（dead → preview → execute → 新 cycle）集成通过
 - [x] 无任何自动恢复/自动重放路径（静态边界测试确认）
@@ -172,8 +177,9 @@ send 后 commit 前、PostgreSQL 重启、worker 抢占）；容量基线测量�
 `ai-usage.md` 实现阶段记录完整性；README 运行说明与真实启动命令一致性。
 
 **通过标准（最终）**：
+
 - [x] Standalone 历史记录：290/290 canonical AC + 4/4 NSBR 有本地通过证据；当时
-  GitHub-hosted CI 明确未运行
+      GitHub-hosted CI 明确未运行
 - [x] crash-after-send 不产生丢失，仅产生公开披露的重复（at-least-once 实证）
 - [x] deadline Path A/B 的 blocking N=1、N=W 通过，并记录更高 N 的非 SLA 基线
 - [x] docker-compose 一键启动；app/PostgreSQL/Prometheus health 与 scrape 通过

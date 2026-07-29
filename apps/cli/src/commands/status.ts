@@ -194,7 +194,7 @@ schema: openslack.status.v3
 authority: projection
 scope: product_module_runtime
 source: .openslack/modules.yaml
-project_state: memory_bank/t0_core/project_state.yaml
+project_state: memory_bank/control-plane.json#/portfolio
 generated: true
 ---
 
@@ -210,7 +210,7 @@ This generated view reports module runtime maturity, package ownership, CLI
 groups, and recorded test counts. It is not authoritative for portfolio stage,
 planned ownership, task execution, release gates, live verification, or human
 approval. For project-wide state, use
-\`memory_bank/t0_core/project_state.yaml\` and its generated projection.
+\`memory_bank/control-plane.json#/portfolio\` and its generated projection.
 
 ${moduleTable}
 

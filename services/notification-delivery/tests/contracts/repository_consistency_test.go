@@ -60,7 +60,7 @@ func TestRegistriesAndStageMirrorsAreCurrent(t *testing.T) {
 	root := repositoryRoot(t)
 	for _, relative := range []string{
 		"design/registry/entities.yaml", "docs/architecture/tr-registry.yaml",
-		"docs/architecture/adr-registry.yaml", "memory_bank/t1_axioms/module_support_map.yaml",
+		"docs/architecture/adr-registry.yaml",
 	} {
 		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(relative)))
 		if err != nil {
@@ -87,8 +87,7 @@ func TestRegistriesAndStageMirrorsAreCurrent(t *testing.T) {
 	}
 	activeFiles := []string{
 		"README.md", "docs/development-plan.md", "docs/architecture/architecture.md",
-		"design/cdd/module-index.md", "memory_bank/t0_core/active_context.md",
-		"memory_bank/t1_axioms/architecture_context.md", "memory_bank/t1_axioms/tech_context.md",
+		"design/cdd/module-index.md", "docs/README.md", "docs/ai-usage.md",
 	}
 	for _, relative := range activeFiles {
 		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(relative)))
@@ -161,7 +160,7 @@ func TestWorkspaceManifestMatchesFiles(t *testing.T) {
 		"README.md": true, "Dockerfile": true, "LICENSE": true, "NOTICE": true, "THIRD_PARTY_NOTICES.md": true, "SBOM.cdx.json": true,
 		"cmd": true, "deploy": true, "design": true,
 		"docker-compose.yml": true, "docs": true, "go.mod": true, "go.sum": true, "internal": true,
-		"integration": true, "memory_bank": true, "migrations": true, "production": true, "scripts": true, "standards": true, "tests": true,
+		"integration": true, "migrations": true, "production": true, "scripts": true, "standards": true, "tests": true,
 	}
 	expectedPaths := make(map[string]bool)
 	if err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {

@@ -1,8 +1,27 @@
-# Implementation Review Archive — T3 Archive
+---
+schema: openslack.document.v1
+id: evidence-notification-implementation-review
+status: Archived
+authority: archive
+audience:
+  - reviewers
+owner: notification-delivery
+updated: 2026-07-29
+sources:
+  - services/notification-delivery/docs/testing/workspace-manifest.sha256
+  - services/notification-delivery/docs/testing/ac-evidence.json
+---
+
+# Notification Delivery Implementation Review History
+
+> This append-and-supersede record now lives in the only root Memory Bank.
+> The former service-local path remains recoverable through Git history. Local
+> implementation approval does not imply OpenSlack release, runtime admission,
+> or production readiness.
 
 > 实现批次评审证据（append + supersede）。本档案记录 B1/B2 实现评审；
-> 后续批次（B3–B6）追加于此。权威验收依据：`design/cdd/` 模块 CDD 的 canonical AC 与
-> `docs/architecture/tr-registry.yaml`。
+> 后续批次（B3–B6）追加于此。权威验收依据：`services/notification-delivery/design/cdd/` 模块 CDD 的 canonical AC 与
+> `services/notification-delivery/docs/architecture/tr-registry.yaml`。
 
 ## B1 + B2 Review — 2026-07-21 — Verdict: APPROVED
 
@@ -12,56 +31,56 @@
   （依赖/secret/schema 扫描 + CDD 列名对账）+ 全量 `-race` 测试实证。**独立性限制如实记录**：
   本 verdict 非 pristine fresh-session 独立批准（先例：same-thread 结论历史上只记 NEEDS REVISION 的
   模块均随后经 fresh 复审确认）。B3 开工前可由所有者选择补一轮 fresh 复审。
-- **Design authority**: `design/cdd/notification-store.md`（79 AC）、`docs/architecture/data-model.md`、
-  `docs/architecture/control-manifest.md`、ADR-0001/0002。
+- **Design authority**: `services/notification-delivery/design/cdd/notification-store.md`（79 AC）、`services/notification-delivery/docs/architecture/data-model.md`、
+  `services/notification-delivery/docs/architecture/control-manifest.md`、ADR-0001/0002。
 
 ### 验证证据（Docker, golang:1.26.5, real PostgreSQL 18.4 via compose）
 
 - `go vet ./...` clean;`go test -race ./...` 全绿：
-  `internal/app` / `internal/config` / `internal/delivery` / `internal/notificationstore` /
-  `internal/notificationstore/postgres` / `tests/integration` 全 ok。
+  `services/notification-delivery/internal/app` / `services/notification-delivery/internal/config` / `services/notification-delivery/internal/delivery` / `services/notification-delivery/internal/notificationstore` /
+  `services/notification-delivery/internal/notificationstore/postgres` / `services/notification-delivery/tests/integration` 全 ok。
 - 测试规模：24 单元用例（transition 判别联合、domain 校验、cursor HMAC)+ 11 集成用例
   （迁移 up/down 幂等 + 10 个 Store 行为用例）。
 - `go mod tidy` 无净变化（go.mod/go.sum 已固化）。
 
 ### 机械核验结果
 
-| 检查 | 结果 |
-|---|---|
-| CTRL-024（无 Kafka/Redis/独立 DLQ/调度平台；无 lease 续约、无自动 dead 重放、无本地 fallback） | PASS（依赖仅 chi/pgx/migrate/client_golang；代码扫描零命中） |
-| CTRL-016（pepper 值不进 Store/logs/metrics；仅 `pepper_id` 落库） | PASS（迁移仅 `pepper_id`；config fail-closed；`Pepper.String()` 只输出 ID 标签） |
-| Outbox 语义（pending 行即 outbox、dead 行即 DLQ，无第二表；SKIP LOCKED claim；30s lease 上限；OCC） | PASS |
-| Append-only（delivery_attempts 触发器 + 代码零 UPDATE/DELETE 路径） | PASS（触发器集成测试实证 UPDATE/DELETE 均报错） |
-| B-01（cutoff 后 retryable actual result 当前写回原子 `die(deadline_exceeded)`、计数 +1、禁 next_attempt_at） | PASS（单元测试 `TestDecideTransition_Die_B01DeadlineExceededCountsAttempt`） |
-| policy_termination 6 项不计数；error_code 矩阵（transport 必填/http 可选/unknown 可选/policy 空） | PASS（单元测试覆盖） |
-| 防枚举（not-found 与越权统一） | PASS（`Transition`/`Get` 统一 not-found） |
+| 检查                                                                                                         | 结果                                                                             |
+| ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| CTRL-024（无 Kafka/Redis/独立 DLQ/调度平台；无 lease 续约、无自动 dead 重放、无本地 fallback）               | PASS（依赖仅 chi/pgx/migrate/client_golang；代码扫描零命中）                     |
+| CTRL-016（pepper 值不进 Store/logs/metrics；仅 `pepper_id` 落库）                                            | PASS（迁移仅 `pepper_id`；config fail-closed；`Pepper.String()` 只输出 ID 标签） |
+| Outbox 语义（pending 行即 outbox、dead 行即 DLQ，无第二表；SKIP LOCKED claim；30s lease 上限；OCC）          | PASS                                                                             |
+| Append-only（delivery_attempts 触发器 + 代码零 UPDATE/DELETE 路径）                                          | PASS（触发器集成测试实证 UPDATE/DELETE 均报错）                                  |
+| B-01（cutoff 后 retryable actual result 当前写回原子 `die(deadline_exceeded)`、计数 +1、禁 next_attempt_at） | PASS（单元测试 `TestDecideTransition_Die_B01DeadlineExceededCountsAttempt`）     |
+| policy_termination 6 项不计数；error_code 矩阵（transport 必填/http 可选/unknown 可选/policy 空）            | PASS（单元测试覆盖）                                                             |
+| 防枚举（not-found 与越权统一）                                                                               | PASS（`Transition`/`Get` 统一 not-found）                                        |
 
 ### 评审中发现并修复的缺陷（实现期）
 
 1. **迁移缺 3 列**(`updated_at`、`replay_actor`、`replay_reason`)——代码引用但 000001 未建；均有 CDD §data model 依据，补列。
 2. **intake 冲突路径误判**——`ON CONFLICT DO NOTHING` 冲突时 pgx 返回 `ErrNoRows` 而非空 id；改为 `errors.Is(insertErr, pgx.ErrNoRows)` 走幂等矩阵。
 3. **recovery `conn busy`**——pgx 单连接禁止交错查询；recovery 循环改为先物化行再逐行 UPDATE。
-4. **scan NULL 崩溃**——可空列（lease/dead/replay/last_*）改指针扫描。
+4. **scan NULL 崩溃**——可空列（lease/dead/replay/last\_\*）改指针扫描。
 5. **cursor 参数类型歧义**——`listDeadSQL`/`listHistorySQL` 可空参数加显式 `::timestamptz`/`::uuid` cast。
 6. **appendAttempt 违反 CHECK**——replay/recovery 的 `outcome_class`/`result_kind` 空串违反 CHECK，改 NULL。
 7. **schema 漂移 `last_http_status`**——迁移与 domain 存在该列但**无 CDD 依据**（grep CDD 零命中）且代码从未读写；按 Authority Rule 移除（迁移 + domain 同步删除）。
 
 ### Reviewed artifact SHA-256
 
-| Artifact | SHA-256 |
-|---|---|
-| `migrations/000001_create_base_tables.up.sql` | `acc48977f1b97de9657cd0a56bcbc56a7deaedee9c173104ee08f9c68b1257c8` |
-| `internal/notificationstore/domain.go` | `0a1bc6ffd98ea5090098ddfb2f1b1d503c879477dcd4508d760e468e1e28140b` |
-| `internal/notificationstore/transition.go` | `ec283a32a0498b25d4a88f7ba00982f7c29215d9ae4d5070c14adede56f27af4` |
-| `internal/notificationstore/postgres/repository.go` | `56398ec785fe42588355af83fb028b4fedbe69ae2a7dfcb19ffc8fb7e2358e0a` |
-| `internal/notificationstore/postgres/sql.go` | `0090c19e9e2b7e6bae42c2c9daabd57fba21120ac23630697e1d904aeeb0e8f5` |
-| `internal/notificationstore/postgres/scan.go` | `4e145f6d18d5cb41b2f3113fc2d0ecdffdad99f92e306132692e3abd94e52792` |
-| `internal/notificationstore/postgres/cursor.go` | `52c51cb030b65bebf28dfaf5e8f3d6745962b58613c6e98bafa17e9ce4e2265d` |
-| `internal/config/config.go` | `aec4af9f38ff43c7254c85a5be56c6ade1bbc7e27495afee81d0aa40d0433cac` |
-| `internal/app/server.go` | `4b87bb1657eb350c251024f51e395069f58018daa109e79542dcf57ce0e46d40` |
-| `cmd/server/main.go` | `eff3d5c8e43357a1f21fbfeb10b71b84907f6c32074e2e5b63e375d647780456` |
-| `tests/integration/notificationstore_test.go` | `35a2da6dd14f64b1cf104d77d338b742c5e68b8d53eb7c9710db08ce1247bb39` |
-| `internal/notificationstore/transition_test.go` | `1d56cc8a09b0ff4441dd80e49a768dd4c2163bd4e6677666ad984779514f5625` |
+| Artifact                                                                           | SHA-256                                                            |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `services/notification-delivery/migrations/000001_create_base_tables.up.sql`       | `acc48977f1b97de9657cd0a56bcbc56a7deaedee9c173104ee08f9c68b1257c8` |
+| `services/notification-delivery/internal/notificationstore/domain.go`              | `0a1bc6ffd98ea5090098ddfb2f1b1d503c879477dcd4508d760e468e1e28140b` |
+| `services/notification-delivery/internal/notificationstore/transition.go`          | `ec283a32a0498b25d4a88f7ba00982f7c29215d9ae4d5070c14adede56f27af4` |
+| `services/notification-delivery/internal/notificationstore/postgres/repository.go` | `56398ec785fe42588355af83fb028b4fedbe69ae2a7dfcb19ffc8fb7e2358e0a` |
+| `services/notification-delivery/internal/notificationstore/postgres/sql.go`        | `0090c19e9e2b7e6bae42c2c9daabd57fba21120ac23630697e1d904aeeb0e8f5` |
+| `services/notification-delivery/internal/notificationstore/postgres/scan.go`       | `4e145f6d18d5cb41b2f3113fc2d0ecdffdad99f92e306132692e3abd94e52792` |
+| `services/notification-delivery/internal/notificationstore/postgres/cursor.go`     | `52c51cb030b65bebf28dfaf5e8f3d6745962b58613c6e98bafa17e9ce4e2265d` |
+| `services/notification-delivery/internal/config/config.go`                         | `aec4af9f38ff43c7254c85a5be56c6ade1bbc7e27495afee81d0aa40d0433cac` |
+| `services/notification-delivery/internal/app/server.go`                            | `4b87bb1657eb350c251024f51e395069f58018daa109e79542dcf57ce0e46d40` |
+| `services/notification-delivery/cmd/server/main.go`                                | `eff3d5c8e43357a1f21fbfeb10b71b84907f6c32074e2e5b63e375d647780456` |
+| `services/notification-delivery/tests/integration/notificationstore_test.go`       | `35a2da6dd14f64b1cf104d77d338b742c5e68b8d53eb7c9710db08ce1247bb39` |
+| `services/notification-delivery/internal/notificationstore/transition_test.go`     | `1d56cc8a09b0ff4441dd80e49a768dd4c2163bd4e6677666ad984779514f5625` |
 
 ### AC 覆盖估计（NS 79）
 
@@ -72,7 +91,7 @@ B-01 决策与 policy_termination/error_code 矩阵（AC 决策表子集）。
 其余 AC（如 clock-unavailable、batch 边界全组合、cursor 漂移全矩阵、全局 vs scoped 全组合）为
 code-only，建议 B6 端到端硬化时补齐对账；tr-registry 的 `planned_test_types` 对账同属 B6 范围。
 
-### 通过标准对账（docs/development-plan.md）
+### 通过标准对账（services/notification-delivery/docs/development-plan.md）
 
 - B1:CI 等价命令全绿 ✓；迁移 up/down 幂等 ✓；pepper fail-closed 有测试 ✓；无业务行为混入 ✓
 - B2：判别联合单测 ✓；集成测试 `-race` 稳定 ✓；append-only 双重验证 ✓；
@@ -82,25 +101,25 @@ code-only，建议 B6 端到端硬化时补齐对账；tr-registry 的 `planned_
 
 - **Scope**: B3 Caller Access + Vendor Registry 实现（domain、postgres adapter、HTTP composition、集成测试、迁移 000002/000003）。
 - **Method**: 执行 CLAUDE.md 授权 Docker 命令（`go build ./... && go vet ./... && go test -race ./...`）+ CTRL-024/CTRL-016/Authority Rule/OpenAPI 机械核验。
-- **Design authority**: `design/cdd/caller-access.md`、`design/cdd/vendor-registry.md`、`docs/architecture/control-manifest.md`、`docs/architecture/adr-0003-api-key-authorization.md`、`docs/api/openapi.yaml`。
+- **Design authority**: `services/notification-delivery/design/cdd/caller-access.md`、`services/notification-delivery/design/cdd/vendor-registry.md`、`services/notification-delivery/docs/architecture/control-manifest.md`、`services/notification-delivery/docs/architecture/adr-0003-api-key-authorization.md`、`services/notification-delivery/docs/api/openapi.yaml`。
 
 ### 验证证据（Docker, golang:1.26.5, real PostgreSQL 18.4 via compose）
 
 - `go build ./...` clean; `go vet ./...` clean.
 - `go test -race ./...` **失败**（并行包执行下 PostgreSQL deadlock）：
-  - `internal/calleraccess/postgres`：`TestPostgresRepository_IssueKey_Concurrency` → `ERROR: deadlock detected (SQLSTATE 40P01)`
-  - `tests/integration`：`TestCallerAccess_EndToEnd_RateLimit` → `clean caller access: ERROR: deadlock detected (SQLSTATE 40P01)`
-- 同样命令加 `-p 1` 后**全绿**；确认是跨包并行时 `TRUNCATE TABLE access_keys, principals RESTART IDENTITY CASCADE` 与未提交事务互相等待，非 domain 逻辑缺陷，但 CI 等效命令（`.github/workflows/tests.yml` 未使用 `-p 1`）会失败。
+  - `services/notification-delivery/internal/calleraccess/postgres`：`TestPostgresRepository_IssueKey_Concurrency` → `ERROR: deadlock detected (SQLSTATE 40P01)`
+  - `services/notification-delivery/tests/integration`：`TestCallerAccess_EndToEnd_RateLimit` → `clean caller access: ERROR: deadlock detected (SQLSTATE 40P01)`
+- 同样命令加 `-p 1` 后**全绿**；确认是跨包并行时 `TRUNCATE TABLE access_keys, principals RESTART IDENTITY CASCADE` 与未提交事务互相等待，非 domain 逻辑缺陷，但 CI 等效命令（`services/notification-delivery/.github/workflows/tests.yml` 未使用 `-p 1`）会失败。
 
 ### 机械核验结果
 
-| 检查 | 结果 | 说明 |
-|---|---|---|
-| CTRL-024（无 Kafka/Redis/独立 DLQ/调度平台/service mesh；无 unbounded retry、lease renewal、自动 dead replay、本地 fallback） | PASS | 代码扫描零命中；依赖仍限于 chi/pgx/migrate/client_golang |
-| CTRL-016（pepper 值不进 Store/logs/metrics/audit/responses；仅 `pepper_id` 落库） | PASS | `access_keys` 仅存 `pepper_id`；`Pepper.String()` 只输出 ID；logger 不记录 payload/secret；request logger 仅 method/path/status/duration/request_id |
-| Authority Rule（每个 identifier 单一行为 authority） | PASS | Caller Access 包拥有 PrincipalRecord/AccessKeyRecord/AttenuatedContext；Vendor Registry 包拥有 VendorRecord/EndpointVersion/DeliveryConfigSnapshot/AdminCommand/AdminAuditEvent；postgres 子包仅实现各自父包 Repository；`internal/app` 仅作 composition |
-| OpenAPI 公共端点契约 | **FAIL** | 多个 envelope 与 `docs/api/openapi.yaml` 不符（见下方） |
-| YAML registries 解析 / AC 计数 | PASS | `tr-registry.yaml` 290 canonical AC + 4 NSBR boundary mappings；无重复 key |
+| 检查                                                                                                                          | 结果     | 说明                                                                                                                                                                                                                                                                                    |
+| ----------------------------------------------------------------------------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CTRL-024（无 Kafka/Redis/独立 DLQ/调度平台/service mesh；无 unbounded retry、lease renewal、自动 dead replay、本地 fallback） | PASS     | 代码扫描零命中；依赖仍限于 chi/pgx/migrate/client_golang                                                                                                                                                                                                                                |
+| CTRL-016（pepper 值不进 Store/logs/metrics/audit/responses；仅 `pepper_id` 落库）                                             | PASS     | `access_keys` 仅存 `pepper_id`；`Pepper.String()` 只输出 ID；logger 不记录 payload/secret；request logger 仅 method/path/status/duration/request_id                                                                                                                                     |
+| Authority Rule（每个 identifier 单一行为 authority）                                                                          | PASS     | Caller Access 包拥有 PrincipalRecord/AccessKeyRecord/AttenuatedContext；Vendor Registry 包拥有 VendorRecord/EndpointVersion/DeliveryConfigSnapshot/AdminCommand/AdminAuditEvent；postgres 子包仅实现各自父包 Repository；`services/notification-delivery/internal/app` 仅作 composition |
+| OpenAPI 公共端点契约                                                                                                          | **FAIL** | 多个 envelope 与 `services/notification-delivery/docs/api/openapi.yaml` 不符（见下方）                                                                                                                                                                                                  |
+| YAML registries 解析 / AC 计数                                                                                                | PASS     | `tr-registry.yaml` 290 canonical AC + 4 NSBR boundary mappings；无重复 key                                                                                                                                                                                                              |
 
 ### OpenAPI 契约不符（public endpoints）
 
@@ -117,23 +136,23 @@ code-only，建议 B6 端到端硬化时补齐对账；tr-registry 的 `planned_
 
 ### Reviewed artifact SHA-256
 
-| Artifact | SHA-256 |
-|---|---|
-| `internal/calleraccess/domain.go` | `ad0cbb0ef10291d8662436da22b4039d27e9b680592e1ecba2a2122f5c6ac4a5` |
-| `internal/calleraccess/admin.go` | `0824903a3a96d4586cdc0707fec2485abd271d7eef0806b0d9bc9308af4d4433` |
-| `internal/calleraccess/ratelimiter.go` | `b7a5c4d795018dcc7a5a8f416cf8a4cd7b09302e8e04108d11be2bf78dc8bce0` |
-| `internal/calleraccess/postgres/repository.go` | `fcf0cd61d0c3de5aa6f6d1a5aca6e38b0d245f44c6b20e3a43e3d8212d0983bc` |
-| `internal/vendorregistry/domain.go` | `e9f73314ddc460b0d50353a940844001d44031c56c0e07aa140357c741862cf6` |
-| `internal/vendorregistry/service.go` | `a90cfefd280c5776703c6ae06807ab9b63dcf22ffc9bee0302cab52127698958` |
-| `internal/vendorregistry/postgres/repository.go` | `745bacccbf8d750eeb725fb28e0fe3d1b9a9d8e96d7865538df2bcc62d807629` |
-| `internal/app/server.go` | `9932ff8be8052b03a999500d2c196027c9743180fb1199abb8439b5243c7693f` |
-| `internal/app/handlers.go` | `b8f54b80f2ad3675437d52dfe286bd85d68b553ff0c5a69d80fc5e407cde73ab` |
-| `cmd/server/main.go` | `5302b4fb391c18958a16d34c6d3707ea7090b97a9081f39c34eeea63cf9a7223` |
-| `migrations/000002_align_principals_b3.up.sql` | `99bcb6fa5e2abfb672a090ca167cbdb332de28f126b627e874bfe18a08dcca89` |
-| `migrations/000003_b3_registry_fixes.up.sql` | `76877e05fdc247fb6813a76fab3d40da0dd10fd05023776bf49308f7676957e3` |
-| `docs/api/openapi.yaml` | `1ab4b4cff43ee62e62186e192396fef7c1038651bfda51edcb16218c0921dca2` |
+| Artifact                                                                        | SHA-256                                                            |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `services/notification-delivery/internal/calleraccess/domain.go`                | `ad0cbb0ef10291d8662436da22b4039d27e9b680592e1ecba2a2122f5c6ac4a5` |
+| `services/notification-delivery/internal/calleraccess/admin.go`                 | `0824903a3a96d4586cdc0707fec2485abd271d7eef0806b0d9bc9308af4d4433` |
+| `services/notification-delivery/internal/calleraccess/ratelimiter.go`           | `b7a5c4d795018dcc7a5a8f416cf8a4cd7b09302e8e04108d11be2bf78dc8bce0` |
+| `services/notification-delivery/internal/calleraccess/postgres/repository.go`   | `fcf0cd61d0c3de5aa6f6d1a5aca6e38b0d245f44c6b20e3a43e3d8212d0983bc` |
+| `services/notification-delivery/internal/vendorregistry/domain.go`              | `e9f73314ddc460b0d50353a940844001d44031c56c0e07aa140357c741862cf6` |
+| `services/notification-delivery/internal/vendorregistry/service.go`             | `a90cfefd280c5776703c6ae06807ab9b63dcf22ffc9bee0302cab52127698958` |
+| `services/notification-delivery/internal/vendorregistry/postgres/repository.go` | `745bacccbf8d750eeb725fb28e0fe3d1b9a9d8e96d7865538df2bcc62d807629` |
+| `services/notification-delivery/internal/app/server.go`                         | `9932ff8be8052b03a999500d2c196027c9743180fb1199abb8439b5243c7693f` |
+| `services/notification-delivery/internal/app/handlers.go`                       | `b8f54b80f2ad3675437d52dfe286bd85d68b553ff0c5a69d80fc5e407cde73ab` |
+| `services/notification-delivery/cmd/server/main.go`                             | `5302b4fb391c18958a16d34c6d3707ea7090b97a9081f39c34eeea63cf9a7223` |
+| `services/notification-delivery/migrations/000002_align_principals_b3.up.sql`   | `99bcb6fa5e2abfb672a090ca167cbdb332de28f126b627e874bfe18a08dcca89` |
+| `services/notification-delivery/migrations/000003_b3_registry_fixes.up.sql`     | `76877e05fdc247fb6813a76fab3d40da0dd10fd05023776bf49308f7676957e3` |
+| `services/notification-delivery/docs/api/openapi.yaml`                          | `1ab4b4cff43ee62e62186e192396fef7c1038651bfda51edcb16218c0921dca2` |
 
-### 通过标准对账（docs/development-plan.md）
+### 通过标准对账（services/notification-delivery/docs/development-plan.md）
 
 - B3：CI 等价命令 `go test -race ./...` **未全绿**（deadlock 在并行包执行下复现），需修正测试清理策略或 CI 并行度后方可重新评审。
 - B3：CTRL-024/CTRL-016/Authority Rule 机械核验通过；OpenAPI 契约不符需修正后重新核验。
@@ -175,12 +194,13 @@ code-only，建议 B6 端到端硬化时补齐对账；tr-registry 的 `planned_
 环境：Docker `golang:1.26.5`；compose `postgres:18.4`；真实 PostgreSQL 集成测试使用独立 schema。
 
 - `gofmt -w cmd internal tests` — PASS
-- `go mod tidy` — PASS；`go.mod` / `go.sum` 已落盘
+- `go mod tidy` — PASS；`services/notification-delivery/go.mod` /
+  `services/notification-delivery/go.sum` 已落盘
 - `go build ./...` — PASS
 - `go vet ./...` — PASS
 - `go test -race ./...` — PASS
-- `go test -race ./... -count=5` — PASS（含 `tests/contracts` 79.899s、
-  `tests/integration` 13.689s；未使用 `-p 1`）
+- `go test -race ./... -count=5` — PASS（含 `services/notification-delivery/tests/contracts` 79.899s、
+  `services/notification-delivery/tests/integration` 13.689s；未使用 `-p 1`）
 - AC evidence contract — PASS：NS 79 + CA 15 + VR 152 + DL 20 = **266**；无缺失、重复、
   空证据、`code-only` 或 `deferred`；所引用测试函数均存在。
 - OpenAPI request/response validation — PASS：B3 全部路由及平台端点。
@@ -188,21 +208,21 @@ code-only，建议 B6 端到端硬化时补齐对账；tr-registry 的 `planned_
 
 ### Reviewed artifact SHA-256
 
-| Artifact | SHA-256 |
-|---|---|
-| `internal/app/handlers.go` | `d91aa646d8dbdd3a0f1563546b59e1166ddcf4f45faa70074da92292ca5282ca` |
-| `internal/app/server.go` | `d1d93d52efdabd5d42d9b01c280fb92bae051987588ce00cccc5d1b65676b05b` |
-| `internal/notificationstore/postgres/repository.go` | `b1888e9732ebec0f6c4800156803f9975e196aef508a63a9d13f5ef4ef636def` |
-| `internal/vendorregistry/domain.go` | `fb01deb221965d5dce7c5a4575c5c41a5548e279c86c965fa721ab17e83625a0` |
-| `internal/delivery/runner.go` | `b470911440af17c70c6a6d1ef31ee616d556bfb46b0d50306ebf507cc3a58593` |
-| `internal/delivery/transport.go` | `c85c04e5758f816f4f427f5d558f06215c222e058cb92eef754942ffb33021fc` |
-| `internal/delivery/worker.go` | `7b1484f68177b20b49061c8ea0e9b8e63842d8956e1d5597462ecf00914bd8b2` |
-| `migrations/000003_b3_registry_fixes.up.sql` | `bb8eb311e2474801ada04ef3256cdc5d65e3436bb44bdf414d6599458f207361` |
-| `migrations/000004_b4_delivery_result_contract.up.sql` | `f3f7e406bbd6927a076975fab8e441c25b0680db3c2e47f6deec6a4b48755a27` |
-| `docs/api/openapi.yaml` | `75144895acce61946161d24d2f47e73cb7f75b7816127d12f373325e95c54133` |
-| `docs/testing/b1-b4-ac-evidence.json` | `e6f81b95003e255c358e72b03a4f65584adbdb8f5928523e87e952582b8dc8ee` |
-| `tests/contracts/ac_evidence_test.go` | `fed8dbf97eea49a3b2681469350120bcdcb95595fee43fd78b1d05b604796b6a` |
-| `tests/integration/delivery_test.go` | `8c8535a4b79e7619003196f55ec43b1e8bc52e7b79a75801d67c31407e7bb190` |
+| Artifact                                                                              | SHA-256                                                            |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `services/notification-delivery/internal/app/handlers.go`                             | `d91aa646d8dbdd3a0f1563546b59e1166ddcf4f45faa70074da92292ca5282ca` |
+| `services/notification-delivery/internal/app/server.go`                               | `d1d93d52efdabd5d42d9b01c280fb92bae051987588ce00cccc5d1b65676b05b` |
+| `services/notification-delivery/internal/notificationstore/postgres/repository.go`    | `b1888e9732ebec0f6c4800156803f9975e196aef508a63a9d13f5ef4ef636def` |
+| `services/notification-delivery/internal/vendorregistry/domain.go`                    | `fb01deb221965d5dce7c5a4575c5c41a5548e279c86c965fa721ab17e83625a0` |
+| `services/notification-delivery/internal/delivery/runner.go`                          | `b470911440af17c70c6a6d1ef31ee616d556bfb46b0d50306ebf507cc3a58593` |
+| `services/notification-delivery/internal/delivery/transport.go`                       | `c85c04e5758f816f4f427f5d558f06215c222e058cb92eef754942ffb33021fc` |
+| `services/notification-delivery/internal/delivery/worker.go`                          | `7b1484f68177b20b49061c8ea0e9b8e63842d8956e1d5597462ecf00914bd8b2` |
+| `services/notification-delivery/migrations/000003_b3_registry_fixes.up.sql`           | `bb8eb311e2474801ada04ef3256cdc5d65e3436bb44bdf414d6599458f207361` |
+| `services/notification-delivery/migrations/000004_b4_delivery_result_contract.up.sql` | `f3f7e406bbd6927a076975fab8e441c25b0680db3c2e47f6deec6a4b48755a27` |
+| `services/notification-delivery/docs/api/openapi.yaml`                                | `75144895acce61946161d24d2f47e73cb7f75b7816127d12f373325e95c54133` |
+| `services/notification-delivery/docs/testing/b1-b4-ac-evidence.json`                  | `e6f81b95003e255c358e72b03a4f65584adbdb8f5928523e87e952582b8dc8ee` |
+| `services/notification-delivery/tests/contracts/ac_evidence_test.go`                  | `fed8dbf97eea49a3b2681469350120bcdcb95595fee43fd78b1d05b604796b6a` |
+| `services/notification-delivery/tests/integration/delivery_test.go`                   | `8c8535a4b79e7619003196f55ec43b1e8bc52e7b79a75801d67c31407e7bb190` |
 
 ### Remaining gate
 
@@ -237,31 +257,31 @@ B4 review，再做 cross-batch review。独立 reviewer 未签发前，README、
 - `gofmt -w cmd internal tests` — PASS
 - `go mod tidy`、`go build ./...`、`go vet ./...` — PASS
 - `go test -race ./...` — PASS
-- `go test -race ./... -count=5` — PASS（`tests/contracts` 77.824s；
-  `tests/integration` 15.108s；默认包并行，未使用 `-p 1`）
+- `go test -race ./... -count=5` — PASS（`services/notification-delivery/tests/contracts` 77.824s；
+  `services/notification-delivery/tests/integration` 15.108s；默认包并行，未使用 `-p 1`）
 - AC evidence — PASS：NS 79 + CA 15 + VR 152 + DL 20 = 266 个显式、唯一、可追踪 AC
 - OpenAPI request/response contract、JSON/YAML registry parse、migration matrix — PASS
 
 ### Addendum artifact SHA-256
 
-| Artifact | SHA-256 |
-|---|---|
-| `internal/app/handlers.go` | `d98ee22ac8b0a8cbc8886b1253fb55bb145c097b891ec67fc338c1bab1dfa0d8` |
-| `internal/calleraccess/domain.go` | `bee3ecef42a334d0eda6df6843946feb27e91bd445d9a2ca4735dd1e28cd59eb` |
-| `internal/notificationstore/postgres/repository.go` | `b1888e9732ebec0f6c4800156803f9975e196aef508a63a9d13f5ef4ef636def` |
-| `internal/vendorregistry/domain.go` | `60326fa3d168f75d058940b73428937ea459465c4d09836c4ad0bc638d75db67` |
-| `internal/vendorregistry/service.go` | `54c0ba9cfbfccd0873d724218f7423580fcec6a2527de69dab999b9281abaa57` |
-| `internal/vendorregistry/postgres/repository.go` | `ca5f49055d17d95edad58731581e331dee115aac4b1a12f0521dab4fa0e31098` |
-| `internal/delivery/requestbuilder.go` | `9b23d6f5ec88470d3654a2b3e67e0ffd529d5e846b8cb32eb6057edf3baa00f9` |
-| `internal/delivery/runner.go` | `7f7ecfdd054b80611576f28b7af51d8ae627f81cee14b71f65d0d6ec8c48ed7a` |
-| `internal/delivery/transport.go` | `3f0882b0199b499ad23022306a0ca9afb4e59dc078620c24e095f19044448e74` |
-| `internal/delivery/worker.go` | `067181ca49817c35d55a9d2c9aa8d19b4a3992b3060c81a7de4036cfe58b813e` |
-| `migrations/000005_vendor_rejected_audit_targets.up.sql` | `589c7227f8ae8163a17f8c19815f579b002bb0d214c83d68be721fa507a17f57` |
-| `migrations/000006_vendor_audit_union.up.sql` | `2b8223b6292090a3df2b78904b1116d0cc3f3f4c21c48eb814f728ec0a11342a` |
-| `docs/api/openapi.yaml` | `4aadbb2a87853991e248a40ae3286c169d84c37e9d5265e51405156ffd46b3ff` |
-| `docs/testing/b1-b4-ac-evidence.json` | `30c1c03b0624fe3dacb9e8e888e7096f7d914d8d16ee35cc03c0d8461e77d099` |
-| `tests/contracts/ac_evidence_test.go` | `21774b7df50a90e8d1383320e85e72a574916cca13072f3c5dbae54c71b88ab7` |
-| `tests/integration/migration_test.go` | `cb61a26fc8df50964882338503f2bd47c4c7f8a694536821dce1496a1e4a3d73` |
+| Artifact                                                                                | SHA-256                                                            |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `services/notification-delivery/internal/app/handlers.go`                               | `d98ee22ac8b0a8cbc8886b1253fb55bb145c097b891ec67fc338c1bab1dfa0d8` |
+| `services/notification-delivery/internal/calleraccess/domain.go`                        | `bee3ecef42a334d0eda6df6843946feb27e91bd445d9a2ca4735dd1e28cd59eb` |
+| `services/notification-delivery/internal/notificationstore/postgres/repository.go`      | `b1888e9732ebec0f6c4800156803f9975e196aef508a63a9d13f5ef4ef636def` |
+| `services/notification-delivery/internal/vendorregistry/domain.go`                      | `60326fa3d168f75d058940b73428937ea459465c4d09836c4ad0bc638d75db67` |
+| `services/notification-delivery/internal/vendorregistry/service.go`                     | `54c0ba9cfbfccd0873d724218f7423580fcec6a2527de69dab999b9281abaa57` |
+| `services/notification-delivery/internal/vendorregistry/postgres/repository.go`         | `ca5f49055d17d95edad58731581e331dee115aac4b1a12f0521dab4fa0e31098` |
+| `services/notification-delivery/internal/delivery/requestbuilder.go`                    | `9b23d6f5ec88470d3654a2b3e67e0ffd529d5e846b8cb32eb6057edf3baa00f9` |
+| `services/notification-delivery/internal/delivery/runner.go`                            | `7f7ecfdd054b80611576f28b7af51d8ae627f81cee14b71f65d0d6ec8c48ed7a` |
+| `services/notification-delivery/internal/delivery/transport.go`                         | `3f0882b0199b499ad23022306a0ca9afb4e59dc078620c24e095f19044448e74` |
+| `services/notification-delivery/internal/delivery/worker.go`                            | `067181ca49817c35d55a9d2c9aa8d19b4a3992b3060c81a7de4036cfe58b813e` |
+| `services/notification-delivery/migrations/000005_vendor_rejected_audit_targets.up.sql` | `589c7227f8ae8163a17f8c19815f579b002bb0d214c83d68be721fa507a17f57` |
+| `services/notification-delivery/migrations/000006_vendor_audit_union.up.sql`            | `2b8223b6292090a3df2b78904b1116d0cc3f3f4c21c48eb814f728ec0a11342a` |
+| `services/notification-delivery/docs/api/openapi.yaml`                                  | `4aadbb2a87853991e248a40ae3286c169d84c37e9d5265e51405156ffd46b3ff` |
+| `services/notification-delivery/docs/testing/b1-b4-ac-evidence.json`                    | `30c1c03b0624fe3dacb9e8e888e7096f7d914d8d16ee35cc03c0d8461e77d099` |
+| `services/notification-delivery/tests/contracts/ac_evidence_test.go`                    | `21774b7df50a90e8d1383320e85e72a574916cca13072f3c5dbae54c71b88ab7` |
+| `services/notification-delivery/tests/integration/migration_test.go`                    | `cb61a26fc8df50964882338503f2bd47c4c7f8a694536821dce1496a1e4a3d73` |
 
 ### Remaining gate
 
@@ -400,9 +420,9 @@ AC evidence 为 290/290 canonical AC + 4/4 NSBR。逐批 `APPROVED` 不能替代
 对同一 `c1edbcf…1256` 清单执行的后续 fresh read-only audit 发现三项 truth/correctness blocker，
 因此上一节不能继续作为当前 final verdict：
 
-1. `design/accessibility-requirements.md` 仍标 Draft/pending gate，而 T1 accessibility 镜像又声称该
+1. `services/notification-delivery/design/accessibility-requirements.md` 仍标 Draft/pending gate，而 T1 accessibility 镜像又声称该
    文件不存在；已统一为 sensory/UI N/A + implemented Basic API ergonomics，并保留历史 gate 未运行。
-2. `tests/README.md`、`internal/delivery/backoff.go` 与 `standards/technical-preferences.md` 仍以现在时
+2. `services/notification-delivery/tests/README.md`、`services/notification-delivery/internal/delivery/backoff.go` 与 `services/notification-delivery/standards/technical-preferences.md` 仍以现在时
    声称 authored-but-not-compiled、无 dependency manifest 或 implementation 尚未开始；已更新为本地
    Go 1.26.5/PostgreSQL 18.4 实证，GitHub Actions 仍明确 `NOT_RUN`。
 3. Store `QueryOutbox` 把负 `oldest_pending_age_seconds` clamp 为 0，使 Reliability 无法按契约对负投影
@@ -419,7 +439,7 @@ fresh reviewer 签发；在此之前状态保持 `Implementation`，不得写为
 - Reviewed manifest：161 entries；SHA-256
   `24754678f056d1893d8f758a3f756ee53b7369678f8c3467ca8229857e3ccfc2`；161/161 PASS。
 - 290 canonical AC + 4 NSBR、JSON/YAML/Compose 与上一轮三项修正均通过独立核验。
-- Blocking drift：根 `CLAUDE.md` 仍把当前范围写为 B1/B2、B3+ 未授权、`/healthz`、
+- Blocking drift：service `services/notification-delivery/CLAUDE.md` 仍把当前范围写为 B1/B2、B3+ 未授权、`/healthz`、
   `client_golang` 和 Architecture stage；T2 workflow contract 仍镜像 Architecture；T0 next command
   仍要求重复已经完成的验收/冻结步骤。
 - Correction：上述活动 truth surface 已统一为 Implementation、B1–B6 implemented/batch-approved、

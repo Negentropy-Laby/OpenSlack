@@ -13,14 +13,14 @@
 
 ### Reviewed snapshot（SHA-256）
 
-| Artifact | SHA-256 |
-|---|---|
-| Review-package aggregate | `b00dbdc0bc818e54c441aef0a55470051c57feb5ada6a8d67e6988d9a1ee518d` |
-| `architecture.md` | `b382a0bd7aefe739adaba9f1e3d0f1b456d6f368731ca0527a5d68cc206209c8` |
-| `docs/api/openapi.yaml` | `1ab4b4cff43ee62e62186e192396fef7c1038651bfda51edcb16218c0921dca2` |
-| `tr-registry.yaml` | `3e0e36dfb7eb8a9727f981b3b8f356df53cc39df563cf0a023779f3fa8bd5323` |
+| Artifact                        | SHA-256                                                            |
+| ------------------------------- | ------------------------------------------------------------------ |
+| Review-package aggregate        | `b00dbdc0bc818e54c441aef0a55470051c57feb5ada6a8d67e6988d9a1ee518d` |
+| `architecture.md`               | `b382a0bd7aefe739adaba9f1e3d0f1b456d6f368731ca0527a5d68cc206209c8` |
+| `docs/api/openapi.yaml`         | `1ab4b4cff43ee62e62186e192396fef7c1038651bfda51edcb16218c0921dca2` |
+| `tr-registry.yaml`              | `3e0e36dfb7eb8a9727f981b3b8f356df53cc39df563cf0a023779f3fa8bd5323` |
 | `design/registry/entities.yaml` | `b197e7ea15d80ac90f2db80c838e53f3e44d7680982740da3d3de72e609d4f07` |
-| cross-review run 03 | `e7949eda97f2cb7baca8d58b6f067c39963dcd57896b44b3207fe93a5a0a9814` |
+| cross-review run 03             | `e7949eda97f2cb7baca8d58b6f067c39963dcd57896b44b3207fe93a5a0a9814` |
 
 ### Results（摘要）
 
@@ -59,16 +59,16 @@ test-strategy 场景 12–14 + Capacity-Baseline 条款。Deferred：数值测�
 
 ### Changed artifacts（SHA-256）
 
-| Artifact | SHA-256 |
-|---|---|
-| `adr-0003-api-key-authorization.md` | `1de7da072c887ed3da8fb88c90d877152ce6d9000c52e49ae5354485b93c3fd4` |
-| `data-model.md` | `2133d26294827be9bd1d6917ec1588e2a194a7eff81d2543d588d4806e7353f8` |
-| `architecture.md` | `89ff03a087aecdfb04177cc2e0b3e821b5c50eaf84852a4fec8622d5461562eb` |
-| `standards/technical-preferences.md` | `a646d202ca936646008545f140017b6125881efcfca5611256219de7b7815116` |
-| `docs/operations/runbook.md` | `eaa1ae409edde947216b3f10aad3bbec3aee8738b75f76de6bf545631a8f2a54` |
-| `adr-registry.yaml` | `e3aafbbb6d52bcdf066f1597e676f8bf4bedc98c5250b163ef3619fee668a7b8` |
-| `tr-registry.yaml` | `93c897ce63a3c2a54ba4ecceae9f5c35abe53a93f7f2982dd2ad5abdd44f8ccf` |
-| `docs/testing/test-strategy.md` | `eb8d4739a5d1c730b2745cd0271be59969d8aeea66b05a5951360165f84ff907` |
+| Artifact                                           | SHA-256                                                            |
+| -------------------------------------------------- | ------------------------------------------------------------------ |
+| `adr-0003-api-key-authorization.md`                | `1de7da072c887ed3da8fb88c90d877152ce6d9000c52e49ae5354485b93c3fd4` |
+| `data-model.md`                                    | `2133d26294827be9bd1d6917ec1588e2a194a7eff81d2543d588d4806e7353f8` |
+| `architecture.md`                                  | `89ff03a087aecdfb04177cc2e0b3e821b5c50eaf84852a4fec8622d5461562eb` |
+| `standards/technical-preferences.md`               | `a646d202ca936646008545f140017b6125881efcfca5611256219de7b7815116` |
+| `docs/operations/runbook.md`                       | `eaa1ae409edde947216b3f10aad3bbec3aee8738b75f76de6bf545631a8f2a54` |
+| `adr-registry.yaml`                                | `e3aafbbb6d52bcdf066f1597e676f8bf4bedc98c5250b163ef3619fee668a7b8` |
+| `tr-registry.yaml`                                 | `93c897ce63a3c2a54ba4ecceae9f5c35abe53a93f7f2982dd2ad5abdd44f8ccf` |
+| `docs/testing/test-strategy.md`                    | `eb8d4739a5d1c730b2745cd0271be59969d8aeea66b05a5951360165f84ff907` |
 | `deadline-backlog-pressure-analysis-2026-07-20.md` | `5df494abc0c1cf6b290bb06e35e5c500dfe44af61a684a7b2cf85e6116090cac` |
 
 ### DO_NOT_TOUCH pinned（节选）
@@ -98,7 +98,7 @@ amendment_log `2e00d212…`；workflow_contract `432adc77…`；stage.txt `e8c56
 2026-07-21 owner-authorized 文档 consolidation 中，`adr-0003-api-key-authorization.md` 的 ## Amendments
 引用由本档案的退役原件名改为 `architecture-review-archive.md`（纯引用改名，无行为变更）。因此
 ADR-0003 当前 SHA 不再等于上文 pinned `1de7da07…`；其余 pinned artifact 均未受影响。
-`memory_bank/t3_archive/amendments/amendment-v1.0-2026-07-18.md` 作为 2026-07-18 历史记录，
+`../../../../memory_bank/t3_archive/amendments/notification-delivery-v1.md` 作为 2026-07-18 历史记录，
 保留其对 `release_state.md` 与 constitution-draft review 原件的当时路径引用，不做回溯改写。
 
 ## Owner Amendment Record — ADR-0005 Pre-IB6 Gate Supersession — 2026-07-24
@@ -119,15 +119,15 @@ ADR-0003 当前 SHA 不再等于上文 pinned `1de7da07…`；其余 pinned arti
 
 ### Supersession artifact snapshot
 
-| Artifact | SHA-256 |
-|---|---|
-| `docs/architecture/adr-0005-openslack-handoff-integration.md` | `1827b5337fbf1f11ee0e9f5d38866b03750d3d596c957b42460521db7c940bf8` |
-| `docs/architecture/adr-registry.yaml` | `ce6e116b7bf2d048aba702d305be674c630f5ec1eb333b7bf5c3b200576c1482` |
-| `docs/operations/runbook.md` | `2119418e3103d8c8d95c494fe4d7fd65dd10be5b26aea014e2843cb3761b9a6a` |
-| `integration/schemas/integration-gate-supersession.v1.schema.json` | `23e756e1160a569c145b8dd38059089b7607727532ca21f7faa97c68ca95940c` |
-| `integration/schemas/ib6-preconditions.v2.schema.json` | `0ed86c4d40bc6784275f3b8213eca83fde50fa31fb757fa78dc6bdb71b18e133` |
-| `integration/gates/g5-import-qualification-supersession.json` | `2d1ee8da4bf3433732384bc1b70afd264b3455c9c8a0764e7c16b24f65ba54d6` |
-| `memory_bank/t3_archive/gate-archive.md` | `f3e481ccf3a6c9e995dc5e900afec2b70d89deb4c765bd0aaf00f99c65512b32` |
+| Artifact                                                                | SHA-256                                                            |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `docs/architecture/adr-0005-openslack-handoff-integration.md`           | `1827b5337fbf1f11ee0e9f5d38866b03750d3d596c957b42460521db7c940bf8` |
+| `docs/architecture/adr-registry.yaml`                                   | `ce6e116b7bf2d048aba702d305be674c630f5ec1eb333b7bf5c3b200576c1482` |
+| `docs/operations/runbook.md`                                            | `2119418e3103d8c8d95c494fe4d7fd65dd10be5b26aea014e2843cb3761b9a6a` |
+| `integration/schemas/integration-gate-supersession.v1.schema.json`      | `23e756e1160a569c145b8dd38059089b7607727532ca21f7faa97c68ca95940c` |
+| `integration/schemas/ib6-preconditions.v2.schema.json`                  | `0ed86c4d40bc6784275f3b8213eca83fde50fa31fb757fa78dc6bdb71b18e133` |
+| `integration/gates/g5-import-qualification-supersession.json`           | `2d1ee8da4bf3433732384bc1b70afd264b3455c9c8a0764e7c16b24f65ba54d6` |
+| `../../../../memory_bank/t3_archive/gate_runs/notification-delivery.md` | `f3e481ccf3a6c9e995dc5e900afec2b70d89deb4c765bd0aaf00f99c65512b32` |
 
 ### Mechanical verification
 

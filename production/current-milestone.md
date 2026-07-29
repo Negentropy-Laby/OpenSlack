@@ -9,8 +9,8 @@ audience:
 owner: project-governance
 updated: 2026-07-28
 sources:
-  - memory_bank/t0_core/release_state.yaml
-  - memory_bank/t2_execution/work_assignments.yaml
+  - memory_bank/control-plane.json#/release
+  - memory_bank/control-plane.json#/assignments
 ---
 
 # Current Milestone — 0.2.0 External Gate Closure

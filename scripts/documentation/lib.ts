@@ -1,17 +1,28 @@
-import { existsSync, lstatSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
+import {
+  existsSync,
+  lstatSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { basename, isAbsolute, join, posix, relative, resolve, sep } from 'node:path';
 
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import type { ValidateFunction } from 'ajv';
-import { parse as parseYaml } from 'yaml';
+import { parse as parseYaml, parseDocument } from 'yaml';
 
 const SCHEMA_ROOT = 'docs/reference/schemas/documentation';
 const MIGRATION_MANIFEST = 'docs/reference/document-path-migration-v1.yaml';
-const PROJECT_STATE = 'memory_bank/t0_core/project_state.yaml';
-const RELEASE_STATE = 'memory_bank/t0_core/release_state.yaml';
-const WORK_ASSIGNMENTS = 'memory_bank/t2_execution/work_assignments.yaml';
-const DOCUMENT_MAP = 'memory_bank/document_map.yaml';
+const CONTROL_PLANE = 'memory_bank/control-plane.json';
+const PROJECT_STATE = `${CONTROL_PLANE}#/portfolio`;
+const RELEASE_STATE = `${CONTROL_PLANE}#/release`;
+const WORK_ASSIGNMENTS = `${CONTROL_PLANE}#/assignments`;
+const DOCUMENT_MAP = `${CONTROL_PLANE}#/authorities`;
 
 const PRODUCT_MODULES = new Set([
   'self-evolution',
@@ -32,6 +43,40 @@ const WORKSTREAMS = new Set([
   'negentropy-integration',
   'profile-sync',
   'tui-productization',
+]);
+
+const NOTIFICATION_DELIVERY_COMPONENTS = new Set([
+  'notification-store',
+  'vendor-registry',
+  'caller-access',
+  'delivery',
+  'operations-control',
+  'reliability-observability',
+]);
+
+const REQUIRED_CONSOLIDATION_SOURCES = new Set([
+  'memory_bank/document_map.yaml',
+  'memory_bank/t0_core/project_state.yaml',
+  'memory_bank/t0_core/release_state.yaml',
+  'memory_bank/t1_axioms/module_support_map.yaml',
+  'memory_bank/t2_execution/work_assignments.yaml',
+  'services/notification-delivery/memory_bank/t0_core/active_context.md',
+  'services/notification-delivery/memory_bank/t0_core/amendment_log.md',
+  'services/notification-delivery/memory_bank/t0_core/basic_law_index.md',
+  'services/notification-delivery/memory_bank/t0_core/current_state.md',
+  'services/notification-delivery/memory_bank/t1_axioms/architecture_context.md',
+  'services/notification-delivery/memory_bank/t1_axioms/behavior_context.md',
+  'services/notification-delivery/memory_bank/t1_axioms/knowledge_graph.md',
+  'services/notification-delivery/memory_bank/t1_axioms/module_support_map.yaml',
+  'services/notification-delivery/memory_bank/t1_axioms/qa_context.md',
+  'services/notification-delivery/memory_bank/t1_axioms/system_patterns.md',
+  'services/notification-delivery/memory_bank/t1_axioms/tech_context.md',
+  'services/notification-delivery/memory_bank/t1_axioms/ux_accessibility_context.md',
+  'services/notification-delivery/memory_bank/t2_execution/workflow_contract.md',
+  'services/notification-delivery/memory_bank/t3_archive/amendments/amendment-v1.0-2026-07-18.md',
+  'services/notification-delivery/memory_bank/t3_archive/gate-archive.md',
+  'services/notification-delivery/memory_bank/t3_archive/reviews/implementation-review-archive.md',
+  'services/notification-delivery/memory_bank/t3_archive/reviews/review-index.md',
 ]);
 
 const ASSIGNMENT_STATUSES = new Set([
@@ -70,6 +115,7 @@ type GeneratedTarget =
   | 'production/project-roadmap.md';
 
 const schemaValidatorCache = new Map<string, ValidateFunction>();
+const ajvCache = new Map<string, Ajv2020>();
 
 type JsonObject = Record<string, unknown>;
 
@@ -107,6 +153,29 @@ interface DocumentMap {
   documents: DocumentRecord[];
 }
 
+interface ConsolidationRecord {
+  source: string;
+  targets: string[];
+  disposition: 'merged' | 'moved';
+}
+
+interface ControlPlane extends JsonObject {
+  schema: 'openslack.control_plane.v1';
+  authorities: DocumentMap['authorities'];
+  documents: DocumentRecord[];
+  portfolio: JsonObject;
+  release: JsonObject;
+  assignments: JsonObject;
+  support: JsonObject;
+  migrations: {
+    memoryBankConsolidation: {
+      schema: 'openslack.memory_bank_consolidation.v1';
+      updated: string;
+      sources: ConsolidationRecord[];
+    };
+  };
+}
+
 export interface VerificationResult {
   schemas: number;
   documents: number;
@@ -122,6 +191,20 @@ function asObject(value: unknown, label: string): JsonObject {
 
 function readYaml(root: string, repositoryPath: string): unknown {
   return parseYaml(readFileSync(join(root, repositoryPath), 'utf8')) as unknown;
+}
+
+function readJson(root: string, repositoryPath: string): unknown {
+  const text = readFileSync(join(root, repositoryPath), 'utf8');
+  const value = JSON.parse(text) as unknown;
+  const document = parseDocument(text, { uniqueKeys: true });
+  if (document.errors.length > 0) {
+    throw new Error(
+      `${repositoryPath} contains duplicate or invalid JSON keys: ${document.errors
+        .map((error) => error.message)
+        .join('; ')}`,
+    );
+  }
+  return value;
 }
 
 function schemaPaths(root: string): string[] {
@@ -147,7 +230,18 @@ function compileSchema(root: string, file: string): ValidateFunction {
   const absolutePath = resolve(root, file);
   const cached = schemaValidatorCache.get(absolutePath);
   if (cached) return cached;
-  const validate = createAjv().compile(loadSchema(root, file));
+  const rootKey = resolve(root);
+  let ajv = ajvCache.get(rootKey);
+  if (!ajv) {
+    ajv = createAjv();
+    for (const schemaPath of schemaPaths(root)) {
+      ajv.addSchema(loadSchema(root, schemaPath));
+    }
+    ajvCache.set(rootKey, ajv);
+  }
+  const schema = loadSchema(root, file);
+  const schemaId = String(schema.$id ?? '');
+  const validate = (schemaId && ajv.getSchema(schemaId)) || ajv.compile(schema);
   schemaValidatorCache.set(absolutePath, validate);
   return validate;
 }
@@ -162,6 +256,35 @@ function validateWithSchema(root: string, data: unknown, schemaFile: string, lab
   }
 }
 
+function splitRepositoryReference(
+  value: string,
+  label: string,
+): { repositoryPath: string; pointer: string | null } {
+  const hash = value.indexOf('#');
+  const repositoryPath = hash === -1 ? value : value.slice(0, hash);
+  const pointer = hash === -1 ? null : value.slice(hash + 1);
+  validateRepositoryPath(repositoryPath, label);
+  if (
+    pointer !== null &&
+    (!pointer.startsWith('/') || pointer.includes('..') || /~(?![01])/u.test(pointer))
+  ) {
+    throw new Error(`${label} has an invalid JSON Pointer: ${value}`);
+  }
+  return { repositoryPath, pointer };
+}
+
+function resolveJsonPointer(value: unknown, pointer: string, label: string): unknown {
+  let current = value;
+  for (const encoded of pointer.slice(1).split('/')) {
+    const key = encoded.replace(/~1/g, '/').replace(/~0/g, '~');
+    if (!current || typeof current !== 'object' || !Object.hasOwn(current, key)) {
+      throw new Error(`${label} does not resolve: #${pointer}`);
+    }
+    current = (current as JsonObject)[key];
+  }
+  return current;
+}
+
 export function validateRepositoryPath(value: string, label = 'path'): void {
   if (!value || isAbsolute(value) || value.includes('\\') || value.includes('\0')) {
     throw new Error(`${label} must be a non-empty repository-relative POSIX path.`);
@@ -169,6 +292,34 @@ export function validateRepositoryPath(value: string, label = 'path'): void {
   const normalized = posix.normalize(value);
   if (normalized !== value || normalized === '..' || normalized.startsWith('../')) {
     throw new Error(`${label} escapes or is not normalized: ${value}`);
+  }
+}
+
+function validateOrdinaryRepositoryFile(
+  root: string,
+  repositoryPath: string,
+  label: string,
+  allowMissingFile = false,
+): void {
+  validateRepositoryPath(repositoryPath, label);
+  const parts = repositoryPath.split('/');
+  let current = root;
+  for (let index = 0; index < parts.length; index += 1) {
+    current = join(current, parts[index]!);
+    const isTarget = index === parts.length - 1;
+    if (!existsSync(current)) {
+      if (isTarget && allowMissingFile) return;
+      throw new Error(`${label} is missing: ${repositoryPath}`);
+    }
+    const stats = lstatSync(current);
+    if (stats.isSymbolicLink()) {
+      throw new Error(`${label} must not traverse a symbolic link: ${repositoryPath}`);
+    }
+    if (isTarget ? !stats.isFile() : !stats.isDirectory()) {
+      throw new Error(
+        `${label} must resolve through ordinary directories to a regular file: ${repositoryPath}`,
+      );
+    }
   }
 }
 
@@ -353,7 +504,7 @@ function parseFrontmatter(markdown: string, path: string): JsonObject {
   return asObject(parseYaml(markdown.slice(4, end)), `${path} frontmatter`);
 }
 
-function validateDocumentMap(root: string, value: unknown): number {
+function validateDocumentMap(root: string, value: unknown, controlPlane: ControlPlane): number {
   validateWithSchema(root, value, 'document-map.schema.json', DOCUMENT_MAP);
   const map = value as DocumentMap;
   ensureUnique(
@@ -372,28 +523,52 @@ function validateDocumentMap(root: string, value: unknown): number {
     map.documents.map((entry) => entry.path),
     'active document path',
   );
+  const registered = new Set(map.documents.map((document) => document.path));
   for (const authority of map.authorities) {
-    validateRepositoryPath(authority.canonical, `authority ${authority.fact}`);
-    if (!existsSync(join(root, authority.canonical))) {
-      throw new Error(`Authority ${authority.fact} is missing: ${authority.canonical}`);
+    const { repositoryPath, pointer } = splitRepositoryReference(
+      authority.canonical,
+      `authority ${authority.fact}`,
+    );
+    validateOrdinaryRepositoryFile(root, repositoryPath, `authority ${authority.fact}`);
+    if (pointer !== null) {
+      if (!repositoryPath.endsWith('.json')) {
+        throw new Error(
+          `Authority ${authority.fact} uses a JSON Pointer with a non-JSON file: ${authority.canonical}`,
+        );
+      }
+      resolveJsonPointer(
+        repositoryPath === CONTROL_PLANE ? controlPlane : readJson(root, repositoryPath),
+        pointer,
+        `authority ${authority.fact}`,
+      );
+    }
+    for (const field of ['projections', 'indexes', 'archives'] as const) {
+      for (const path of authority[field] ?? []) {
+        validateOrdinaryRepositoryFile(
+          root,
+          path,
+          `authority ${authority.fact} ${field.slice(0, -1)}`,
+        );
+        if (!registered.has(path)) {
+          throw new Error(
+            `Authority ${authority.fact} ${field.slice(0, -1)} is not a registered document: ${path}`,
+          );
+        }
+      }
     }
   }
   let active = 0;
   for (const document of map.documents) {
     validateRepositoryPath(document.path, `document ${document.id}`);
     const fullPath = join(root, document.path);
-    if (!existsSync(fullPath)) throw new Error(`Registered document is missing: ${document.path}`);
-    const documentStats = lstatSync(fullPath);
-    if (documentStats.isSymbolicLink() || !documentStats.isFile()) {
-      throw new Error(`Registered document must be an ordinary file: ${document.path}`);
-    }
+    validateOrdinaryRepositoryFile(root, document.path, `registered document ${document.id}`);
     if (document.status === 'active' || document.status === 'index') {
       const content = readFileSync(fullPath, 'utf8');
       const metadata = parseFrontmatter(content, document.path);
       validateWithSchema(root, metadata, 'document-metadata.schema.json', document.path);
       validateDocumentMetadata(metadata);
       if (metadata.id !== document.id) {
-        throw new Error(`${document.path} frontmatter id does not match document_map.yaml.`);
+        throw new Error(`${document.path} frontmatter id does not match ${DOCUMENT_MAP}.`);
       }
       if (hasTemplatePlaceholder(content)) {
         throw new Error(`Active document contains a template placeholder: ${document.path}`);
@@ -401,10 +576,9 @@ function validateDocumentMap(root: string, value: unknown): number {
       active += 1;
     }
   }
-  const registered = new Set(map.documents.map((document) => document.path));
   for (const path of collectGovernedMarkdown(root)) {
     if (!registered.has(path)) {
-      throw new Error(`Governed Markdown document is not registered in document_map.yaml: ${path}`);
+      throw new Error(`Governed Markdown document is not registered in ${DOCUMENT_MAP}: ${path}`);
     }
   }
   return active;
@@ -475,26 +649,189 @@ function validateModuleTelemetryBoundary(root: string): void {
   visit(value);
 }
 
+function validateMemoryBankTopology(root: string): void {
+  const memoryBanks: string[] = [];
+  const excluded = new Set([
+    '.aby',
+    '.git',
+    '.openslack.local',
+    '.worktrees',
+    'coverage',
+    'dist',
+    'node_modules',
+  ]);
+  const visitDirectories = (repositoryPath = ''): void => {
+    const fullPath = join(root, repositoryPath);
+    for (const name of readdirSync(fullPath).sort()) {
+      if (excluded.has(name)) continue;
+      const child = repositoryPath ? `${repositoryPath}/${name}` : name;
+      const stats = lstatSync(join(root, child));
+      if (name === 'memory_bank') {
+        if (stats.isSymbolicLink()) {
+          throw new Error(`Memory Bank directory must not be a symbolic link: ${child}`);
+        }
+        if (stats.isDirectory()) memoryBanks.push(child);
+      }
+      if (stats.isSymbolicLink() || !stats.isDirectory()) continue;
+      visitDirectories(child);
+    }
+  };
+  visitDirectories();
+  if (memoryBanks.length !== 1 || memoryBanks[0] !== 'memory_bank') {
+    throw new Error(
+      `The repository must contain exactly one root memory_bank directory; found: ${memoryBanks.join(', ') || 'none'}.`,
+    );
+  }
+
+  const yamlFiles: string[] = [];
+  const visitMemoryBank = (repositoryPath: string): void => {
+    for (const name of readdirSync(join(root, repositoryPath)).sort()) {
+      const child = `${repositoryPath}/${name}`;
+      const stats = lstatSync(join(root, child));
+      if (stats.isSymbolicLink()) {
+        throw new Error(`Memory Bank path is a symbolic link: ${child}`);
+      }
+      if (stats.isDirectory()) {
+        if (name === 'workstreams' || name === 'workstream_laws') {
+          throw new Error(`Workstream-specific Memory Bank nesting is forbidden: ${child}`);
+        }
+        visitMemoryBank(child);
+      } else if (/\.ya?ml$/i.test(name)) yamlFiles.push(child);
+    }
+  };
+  visitMemoryBank('memory_bank');
+  if (yamlFiles.length > 0) {
+    throw new Error(`YAML is forbidden inside memory_bank: ${yamlFiles.join(', ')}`);
+  }
+}
+
+function validateSupportMap(root: string, value: unknown): void {
+  const support = asObject(value, 'control plane support map');
+  if (support.schema !== 'openslack.support_map.v1') {
+    throw new Error('Control plane support schema must be openslack.support_map.v1.');
+  }
+  const productModules = asObject(support.productModules, 'product support modules');
+  const productModuleIds = Object.keys(productModules);
+  ensureUnique(productModuleIds, 'product support module');
+  if (
+    productModuleIds.length !== PRODUCT_MODULES.size ||
+    [...PRODUCT_MODULES].some((id) => !(id in productModules))
+  ) {
+    throw new Error('Product support map must contain exactly the five product modules.');
+  }
+  for (const [id, raw] of Object.entries(productModules)) {
+    if (!PRODUCT_MODULES.has(id)) throw new Error(`Unknown product support module: ${id}`);
+    const item = asObject(raw, `product support module ${id}`);
+    for (const field of ['cdd', 'architecture', 'telemetry']) {
+      const path = String(item[field] ?? '');
+      validateOrdinaryRepositoryFile(root, path, `product support module ${id} ${field}`);
+    }
+  }
+  const serviceComponents = asObject(
+    support.notificationDelivery,
+    'notification delivery support components',
+  );
+  const serviceComponentIds = Object.keys(serviceComponents);
+  if (
+    serviceComponentIds.length !== NOTIFICATION_DELIVERY_COMPONENTS.size ||
+    [...NOTIFICATION_DELIVERY_COMPONENTS].some((id) => !(id in serviceComponents))
+  ) {
+    throw new Error(
+      'Notification Delivery support map must contain exactly its six logical components.',
+    );
+  }
+  const lawIndexPath = 'memory_bank/t0_core/basic_law_index.md';
+  validateOrdinaryRepositoryFile(root, lawIndexPath, 'Notification Delivery law index');
+  const lawIndex = readFileSync(join(root, lawIndexPath), 'utf8');
+  for (const [id, raw] of Object.entries(serviceComponents)) {
+    const item = asObject(raw, `notification delivery support component ${id}`);
+    const laws = item.laws;
+    if (!Array.isArray(laws)) {
+      throw new Error(`Notification Delivery support ${id} laws must be an array.`);
+    }
+    for (const rawLaw of laws) {
+      const law = String(rawLaw);
+      if (!lawIndex.includes(`${law} —`)) {
+        throw new Error(`Notification Delivery support ${id} references an unknown law: ${law}`);
+      }
+    }
+    for (const field of ['cdds', 'adrs', 'evidence']) {
+      const paths = item[field];
+      if (!Array.isArray(paths)) {
+        throw new Error(`Notification Delivery support ${id} ${field} must be an array.`);
+      }
+      for (const rawPath of paths) {
+        const path = String(rawPath);
+        validateOrdinaryRepositoryFile(root, path, `notification delivery support ${id} ${field}`);
+      }
+    }
+  }
+}
+
+function validateConsolidation(root: string, controlPlane: ControlPlane): void {
+  const consolidation = controlPlane.migrations.memoryBankConsolidation;
+  const sourceIds = consolidation.sources.map((entry) => entry.source);
+  ensureUnique(sourceIds, 'Memory Bank consolidation source');
+  const missingSources = [...REQUIRED_CONSOLIDATION_SOURCES].filter(
+    (source) => !sourceIds.includes(source),
+  );
+  if (missingSources.length > 0) {
+    throw new Error(
+      `Memory Bank consolidation provenance is incomplete: ${missingSources.join(', ')}`,
+    );
+  }
+  for (const entry of consolidation.sources) {
+    validateRepositoryPath(entry.source, 'Memory Bank consolidation source');
+    if (existsSync(join(root, entry.source))) {
+      throw new Error(`Consolidated Memory Bank source still exists: ${entry.source}`);
+    }
+    for (const target of entry.targets) {
+      const { repositoryPath, pointer } = splitRepositoryReference(
+        target,
+        `Memory Bank consolidation target for ${entry.source}`,
+      );
+      validateOrdinaryRepositoryFile(
+        root,
+        repositoryPath,
+        `Memory Bank consolidation target for ${entry.source}`,
+      );
+      if (pointer !== null) {
+        if (!repositoryPath.endsWith('.json')) {
+          throw new Error(
+            `Memory Bank consolidation target uses a JSON Pointer with a non-JSON file: ${target}`,
+          );
+        }
+        resolveJsonPointer(
+          repositoryPath === CONTROL_PLANE ? controlPlane : readJson(root, repositoryPath),
+          pointer,
+          `Memory Bank consolidation target for ${entry.source}`,
+        );
+      }
+    }
+  }
+}
+
 function loadCanonical(root: string): {
+  controlPlane: ControlPlane;
   project: JsonObject;
   release: JsonObject;
   assignments: JsonObject;
 } | null {
-  if (
-    ![PROJECT_STATE, RELEASE_STATE, WORK_ASSIGNMENTS].every((path) => existsSync(join(root, path)))
-  ) {
-    return null;
-  }
-  const project = asObject(readYaml(root, PROJECT_STATE), PROJECT_STATE);
-  const release = asObject(readYaml(root, RELEASE_STATE), RELEASE_STATE);
-  const assignments = asObject(readYaml(root, WORK_ASSIGNMENTS), WORK_ASSIGNMENTS);
+  if (!existsSync(join(root, CONTROL_PLANE))) return null;
+  const controlPlane = asObject(readJson(root, CONTROL_PLANE), CONTROL_PLANE) as ControlPlane;
+  validateWithSchema(root, controlPlane, 'control-plane.schema.json', CONTROL_PLANE);
+  const project = asObject(controlPlane.portfolio, PROJECT_STATE);
+  const release = asObject(controlPlane.release, RELEASE_STATE);
+  const assignments = asObject(controlPlane.assignments, WORK_ASSIGNMENTS);
   validateWithSchema(root, project, 'project-state.schema.json', PROJECT_STATE);
   validateWithSchema(root, release, 'release-state.schema.json', RELEASE_STATE);
   validateWithSchema(root, assignments, 'work-assignments.schema.json', WORK_ASSIGNMENTS);
   validateProjectStateObject(project);
   validateReleaseStateObject(release);
   validateWorkAssignmentsObject(assignments);
-  return { project, release, assignments };
+  validateSupportMap(root, controlPlane.support);
+  validateConsolidation(root, controlPlane);
+  return { controlPlane, project, release, assignments };
 }
 
 function markdownMetadata(id: string, owner: string, source: string, updated: string): string {
@@ -551,7 +888,7 @@ function renderRoadmap(
     .join('\n');
   const mirror = memoryMirror
     ? '> Governance memory mirror. Team-facing projection: `production/project-roadmap.md`.\n\n'
-    : '> Team-facing projection. Governance source: `memory_bank/t2_execution/work_assignments.yaml`.\n\n';
+    : `> Team-facing projection. Governance source: \`${WORK_ASSIGNMENTS}\`.\n\n`;
   return `${markdownMetadata(memoryMirror ? 'roadmap-memory-current' : 'roadmap-production-current', 'project-governance', WORK_ASSIGNMENTS, updated)}# OpenSlack Project Roadmap\n\n${mirror}- Portfolio status: **${String(project.portfolio_status)}**\n- Release train: **${String(project.release_train)}**\n- Generated from structured assignments: **${items.length} items**\n\n<!-- prettier-ignore -->\n| Work item | Title | Status | Planned owner | Scope | Blockers |\n| --- | --- | --- | --- | --- | --- |\n${rows}\n`;
 }
 
@@ -569,21 +906,60 @@ export function renderGeneratedDocuments(
 }
 
 export function generateDocumentation(root: string): string[] {
+  validateMemoryBankTopology(root);
   const canonical = loadCanonical(root);
   if (!canonical) {
-    throw new Error(
-      'Canonical Memory Bank YAML is missing; generation is unavailable in planning mode.',
-    );
+    throw new Error(`Canonical governance control plane is missing: ${CONTROL_PLANE}.`);
   }
   const rendered = renderGeneratedDocuments(
     canonical.project,
     canonical.release,
     canonical.assignments,
   );
-  for (const [repositoryPath, content] of Object.entries(rendered)) {
-    writeFileSync(join(root, repositoryPath), content, 'utf8');
+  const entries = Object.entries(rendered).sort(([left], [right]) => left.localeCompare(right));
+  const stagingDirectory = mkdtempSync(join(root, '.docs-generate-'));
+  const originals = new Map<string, string | null>();
+  const staged = new Map<string, string>();
+  try {
+    for (const [index, [repositoryPath, content]] of entries.entries()) {
+      validateOrdinaryRepositoryFile(
+        root,
+        repositoryPath,
+        `generated projection ${repositoryPath}`,
+        true,
+      );
+      const fullPath = join(root, repositoryPath);
+      originals.set(repositoryPath, existsSync(fullPath) ? readFileSync(fullPath, 'utf8') : null);
+      const stagedPath = join(
+        stagingDirectory,
+        `${String(index).padStart(2, '0')}-${basename(repositoryPath)}`,
+      );
+      writeFileSync(stagedPath, content, 'utf8');
+      staged.set(repositoryPath, stagedPath);
+    }
+
+    const replaced: string[] = [];
+    try {
+      for (const [repositoryPath] of entries) {
+        renameSync(staged.get(repositoryPath)!, join(root, repositoryPath));
+        replaced.push(repositoryPath);
+      }
+    } catch (error) {
+      for (const repositoryPath of replaced.reverse()) {
+        const fullPath = join(root, repositoryPath);
+        const original = originals.get(repositoryPath);
+        if (original === null) {
+          if (existsSync(fullPath)) unlinkSync(fullPath);
+        } else if (original !== undefined) {
+          writeFileSync(fullPath, original, 'utf8');
+        }
+      }
+      throw error;
+    }
+  } finally {
+    rmSync(stagingDirectory, { recursive: true, force: true });
   }
-  return Object.keys(rendered).sort();
+  return entries.map(([repositoryPath]) => repositoryPath);
 }
 
 function verifyGenerated(
@@ -596,9 +972,8 @@ function verifyGenerated(
     canonical.assignments,
   );
   for (const [repositoryPath, content] of Object.entries(expected)) {
+    validateOrdinaryRepositoryFile(root, repositoryPath, `generated projection ${repositoryPath}`);
     const fullPath = join(root, repositoryPath);
-    if (!existsSync(fullPath))
-      throw new Error(`Generated projection is missing: ${repositoryPath}`);
     if (readFileSync(fullPath, 'utf8') !== content) {
       throw new Error(
         `Generated projection is stale or hand-edited: ${repositoryPath}. Run bun run docs:generate.`,
@@ -799,17 +1174,20 @@ export function verifyDocumentation(root: string): VerificationResult {
   const schemas = schemaPaths(root);
   for (const schema of schemas) compileSchema(root, schema);
   verifyMigration(root);
+  validateMemoryBankTopology(root);
   validateModuleTelemetryBoundary(root);
   const canonical = loadCanonical(root);
-  let documents = 0;
-  let generated = 0;
-  if (existsSync(join(root, DOCUMENT_MAP))) {
-    const mapValue = readYaml(root, DOCUMENT_MAP);
-    documents = validateDocumentMap(root, mapValue);
-    const map = mapValue as DocumentMap;
-    validateLinks(root, collectMarkdownFiles(root, map.documents));
+  if (!canonical) {
+    throw new Error(`Canonical governance control plane is missing: ${CONTROL_PLANE}.`);
   }
-  if (canonical) generated = verifyGenerated(root, canonical);
+  const map: DocumentMap = {
+    schema: 'openslack.document_map.v1',
+    authorities: canonical.controlPlane.authorities,
+    documents: canonical.controlPlane.documents,
+  };
+  const documents = validateDocumentMap(root, map, canonical.controlPlane);
+  validateLinks(root, collectMarkdownFiles(root, map.documents));
+  const generated = verifyGenerated(root, canonical);
   return { schemas: schemas.length, documents, generated };
 }
 

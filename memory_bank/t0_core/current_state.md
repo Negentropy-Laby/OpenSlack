@@ -6,9 +6,9 @@ authority: projection
 audience:
   - contributors
 owner: project-governance
-updated: 2026-07-28
+updated: 2026-07-29
 sources:
-  - memory_bank/t0_core/project_state.yaml
+  - memory_bank/control-plane.json#/portfolio
 generated: true
 ---
 
@@ -18,7 +18,7 @@ generated: true
 
 - Portfolio status: **active_development**
 - Release train: **0.2.0**
-- Last verified: **2026-07-28T09:25:45Z**
+- Last verified: **2026-07-28T18:44:02Z**
 
 ## Product Modules
 

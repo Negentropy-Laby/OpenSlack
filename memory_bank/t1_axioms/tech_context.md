@@ -6,10 +6,11 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-07-28
+updated: 2026-07-29
 sources:
   - standards/technical-preferences.md
   - package.json
+  - services/notification-delivery/go.mod
 ---
 
 # Technology Context
@@ -24,3 +25,9 @@ sources:
 
 Version details remain in package manifests and service module files; this page
 records only cross-project constraints.
+
+Notification Delivery currently pins Go 1.26.5, chi v5, pgx v5,
+golang-migrate v4, and PostgreSQL 18.4. PostgreSQL unavailability fails intake
+and workers closed; there is no local persistence fallback. Capacity evidence
+is a machine-specific baseline and must not be promoted into an SLA without a
+separate reviewed decision.

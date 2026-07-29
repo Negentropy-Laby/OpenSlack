@@ -9,7 +9,7 @@ audience:
 owner: release
 updated: 2026-07-28
 sources:
-  - memory_bank/t0_core/release_state.yaml
+  - memory_bank/control-plane.json#/release
 ---
 
 # Release Evidence Index

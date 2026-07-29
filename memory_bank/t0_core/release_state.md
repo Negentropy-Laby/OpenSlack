@@ -8,7 +8,7 @@ audience:
 owner: release-governance
 updated: 2026-07-29
 sources:
-  - memory_bank/t0_core/release_state.yaml
+  - memory_bank/control-plane.json#/release
 generated: true
 ---
 

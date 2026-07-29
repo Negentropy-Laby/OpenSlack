@@ -84,6 +84,31 @@ const assignments = {
   ],
 };
 
+const consolidationSources = [
+  'memory_bank/document_map.yaml',
+  'memory_bank/t0_core/project_state.yaml',
+  'memory_bank/t0_core/release_state.yaml',
+  'memory_bank/t1_axioms/module_support_map.yaml',
+  'memory_bank/t2_execution/work_assignments.yaml',
+  'services/notification-delivery/memory_bank/t0_core/active_context.md',
+  'services/notification-delivery/memory_bank/t0_core/amendment_log.md',
+  'services/notification-delivery/memory_bank/t0_core/basic_law_index.md',
+  'services/notification-delivery/memory_bank/t0_core/current_state.md',
+  'services/notification-delivery/memory_bank/t1_axioms/architecture_context.md',
+  'services/notification-delivery/memory_bank/t1_axioms/behavior_context.md',
+  'services/notification-delivery/memory_bank/t1_axioms/knowledge_graph.md',
+  'services/notification-delivery/memory_bank/t1_axioms/module_support_map.yaml',
+  'services/notification-delivery/memory_bank/t1_axioms/qa_context.md',
+  'services/notification-delivery/memory_bank/t1_axioms/system_patterns.md',
+  'services/notification-delivery/memory_bank/t1_axioms/tech_context.md',
+  'services/notification-delivery/memory_bank/t1_axioms/ux_accessibility_context.md',
+  'services/notification-delivery/memory_bank/t2_execution/workflow_contract.md',
+  'services/notification-delivery/memory_bank/t3_archive/amendments/amendment-v1.0-2026-07-18.md',
+  'services/notification-delivery/memory_bank/t3_archive/gate-archive.md',
+  'services/notification-delivery/memory_bank/t3_archive/reviews/implementation-review-archive.md',
+  'services/notification-delivery/memory_bank/t3_archive/reviews/review-index.md',
+] as const;
+
 const temporaryRoots: string[] = [];
 
 afterEach(() => {
@@ -145,6 +170,11 @@ function temporaryRepository(): string {
   mkdirSync(dirname(targetSchemas), { recursive: true });
   cpSync(sourceSchemas, targetSchemas, { recursive: true });
   writeRepositoryFile(root, 'docs/legacy.md', '# Legacy\n');
+  writeRepositoryFile(
+    root,
+    'memory_bank/t0_core/basic_law_index.md',
+    '# Laws\n\n### ND-BL-01 — One\n### ND-BL-02 — Two\n### ND-BL-03 — Three\n### ND-BL-04 — Four\n### ND-BL-05 — Five\n### ND-BL-06 — Six\n',
+  );
   writeMigrationManifest(root);
   return root;
 }
@@ -206,21 +236,222 @@ function documentMap(
   };
 }
 
+function generatedDocumentRecords(): Array<Record<string, unknown>> {
+  return [
+    {
+      id: 'state-current',
+      path: 'memory_bank/t0_core/current_state.md',
+      status: 'generated',
+    },
+    {
+      id: 'release-current',
+      path: 'memory_bank/t0_core/release_state.md',
+      status: 'generated',
+    },
+    {
+      id: 'roadmap-memory-current',
+      path: 'memory_bank/t2_execution/current_roadmap.md',
+      status: 'generated',
+    },
+    {
+      id: 'roadmap-production-current',
+      path: 'production/project-roadmap.md',
+      status: 'generated',
+    },
+  ];
+}
+
+function controlPlane(
+  map: Record<string, unknown> = documentMap(),
+  assignmentState: Record<string, unknown> = assignments,
+  releaseState: Record<string, unknown> = release,
+): Record<string, unknown> {
+  return {
+    $schema: '../docs/reference/schemas/documentation/control-plane.schema.json',
+    schema: 'openslack.control_plane.v1',
+    updated: '2026-07-28',
+    authorities: map.authorities,
+    documents: map.documents,
+    portfolio: project,
+    release: releaseState,
+    assignments: assignmentState,
+    support: {
+      schema: 'openslack.support_map.v1',
+      productModules: {
+        'self-evolution': {
+          cdd: 'docs/legacy.md',
+          architecture: 'docs/legacy.md',
+          telemetry: 'docs/legacy.md',
+        },
+        'github-task-loop': {
+          cdd: 'docs/legacy.md',
+          architecture: 'docs/legacy.md',
+          telemetry: 'docs/legacy.md',
+        },
+        operator: {
+          cdd: 'docs/legacy.md',
+          architecture: 'docs/legacy.md',
+          telemetry: 'docs/legacy.md',
+        },
+        'pr-review-merge': {
+          cdd: 'docs/legacy.md',
+          architecture: 'docs/legacy.md',
+          telemetry: 'docs/legacy.md',
+        },
+        collaboration: {
+          cdd: 'docs/legacy.md',
+          architecture: 'docs/legacy.md',
+          telemetry: 'docs/legacy.md',
+        },
+      },
+      notificationDelivery: {
+        'notification-store': {
+          laws: ['ND-BL-03'],
+          cdds: ['docs/legacy.md'],
+          adrs: ['docs/legacy.md'],
+          evidence: ['docs/legacy.md'],
+        },
+        'vendor-registry': {
+          laws: ['ND-BL-05'],
+          cdds: ['docs/legacy.md'],
+          adrs: ['docs/legacy.md'],
+          evidence: ['docs/legacy.md'],
+        },
+        'caller-access': {
+          laws: ['ND-BL-02'],
+          cdds: ['docs/legacy.md'],
+          adrs: ['docs/legacy.md'],
+          evidence: ['docs/legacy.md'],
+        },
+        delivery: {
+          laws: ['ND-BL-04'],
+          cdds: ['docs/legacy.md'],
+          adrs: ['docs/legacy.md'],
+          evidence: ['docs/legacy.md'],
+        },
+        'operations-control': {
+          laws: ['ND-BL-04'],
+          cdds: ['docs/legacy.md'],
+          adrs: ['docs/legacy.md'],
+          evidence: ['docs/legacy.md'],
+        },
+        'reliability-observability': {
+          laws: ['ND-BL-06'],
+          cdds: ['docs/legacy.md'],
+          adrs: ['docs/legacy.md'],
+          evidence: ['docs/legacy.md'],
+        },
+      },
+    },
+    migrations: {
+      memoryBankConsolidation: {
+        schema: 'openslack.memory_bank_consolidation.v1',
+        updated: '2026-07-28',
+        sources: consolidationSources.map((source) => ({
+          source,
+          targets: ['memory_bank/control-plane.json#/portfolio'],
+          disposition: 'merged',
+        })),
+      },
+    },
+  };
+}
+
 function writeDocumentMap(root: string, value = documentMap()): void {
-  writeJsonFile(root, 'memory_bank/document_map.yaml', value);
+  const documents = Array.isArray(value.documents) ? value.documents : [];
+  const withGenerated = {
+    ...value,
+    documents: [
+      ...documents,
+      ...(documents.some((document) => document.path === 'memory_bank/t0_core/basic_law_index.md')
+        ? []
+        : [
+            {
+              id: 'basic-law',
+              path: 'memory_bank/t0_core/basic_law_index.md',
+              status: 'archived',
+            },
+          ]),
+      ...generatedDocumentRecords().filter(
+        (generated) =>
+          !documents.some(
+            (document) => document.path === generated.path || document.id === generated.id,
+          ),
+      ),
+    ],
+  };
+  writeJsonFile(root, 'memory_bank/control-plane.json', controlPlane(withGenerated));
+  mkdirSync(join(root, 'memory_bank/t0_core'), { recursive: true });
+  mkdirSync(join(root, 'memory_bank/t2_execution'), { recursive: true });
+  mkdirSync(join(root, 'production'), { recursive: true });
+  generateDocumentation(root);
 }
 
 function writeCanonicalState(
   root: string,
   assignmentState: Record<string, unknown> = assignments,
+  releaseState: Record<string, unknown> = release,
 ): void {
-  writeJsonFile(root, 'memory_bank/t0_core/project_state.yaml', project);
-  writeJsonFile(root, 'memory_bank/t0_core/release_state.yaml', release);
-  writeJsonFile(root, 'memory_bank/t2_execution/work_assignments.yaml', assignmentState);
+  const map = {
+    schema: 'openslack.document_map.v1',
+    authorities: [
+      {
+        fact: 'portfolio',
+        canonical: 'memory_bank/control-plane.json#/portfolio',
+      },
+    ],
+    documents: [
+      { id: 'legacy', path: 'docs/legacy.md', status: 'archived' },
+      {
+        id: 'basic-law',
+        path: 'memory_bank/t0_core/basic_law_index.md',
+        status: 'archived',
+      },
+      ...generatedDocumentRecords(),
+    ],
+  };
+  writeJsonFile(
+    root,
+    'memory_bank/control-plane.json',
+    controlPlane(map, assignmentState, releaseState),
+  );
+  mkdirSync(join(root, 'memory_bank/t0_core'), { recursive: true });
+  mkdirSync(join(root, 'memory_bank/t2_execution'), { recursive: true });
   mkdirSync(join(root, 'production'), { recursive: true });
 }
 
 describe('documentation governance validation', () => {
+  test('preserves the exact documentation-governance human approval binding', () => {
+    const repositoryControlPlane = JSON.parse(
+      readFileSync(join(process.cwd(), 'memory_bank/control-plane.json'), 'utf8'),
+    ) as {
+      assignments: {
+        assignments: Array<{ id: string; evidence: string[]; last_verified_at: string }>;
+      };
+    };
+    const assignment = repositoryControlPlane.assignments.assignments.find(
+      (candidate) => candidate.id === 'documentation-governance-v1',
+    );
+
+    expect(assignment?.evidence).toEqual(
+      expect.arrayContaining([
+        'commit:c61118c4f18ac7326b0b3b7ce392b9a56797b838',
+        'github:pr-329:approval:4800139148:c61118c4f18ac7326b0b3b7ce392b9a56797b838',
+      ]),
+    );
+    expect(assignment?.last_verified_at).toBe('2026-07-29T01:28:42+08:00');
+  });
+
+  test('records the superseded PR 328 service Memory Bank boundary in the ADR', () => {
+    const adr = readFileSync(
+      join(process.cwd(), 'docs/architecture/adr/adr-0001-single-root-memory-bank.md'),
+      'utf8',
+    );
+
+    expect(adr).toContain("supersedes only PR #328's explicit migration boundary that left");
+    expect(adr).toMatch(/It does not\s+reclassify the service CDD corpus/u);
+  });
+
   test('rejects missing document owner', () => {
     expect(() =>
       validateDocumentMetadata({
@@ -356,13 +587,11 @@ describe('documentation governance validation', () => {
 
   test('mirrors the human approval evidence invariant in the release-state schema', () => {
     const root = temporaryRepository();
-    writeCanonicalState(root);
-    writeJsonFile(root, 'memory_bank/t0_core/release_state.yaml', {
-      ...release,
-      human_approval: 'approved',
-    });
+    writeCanonicalState(root, assignments, { ...release, human_approval: 'approved' });
 
-    expect(() => verifyDocumentation(root)).toThrow(/release-state\.schema\.json/);
+    expect(() => verifyDocumentation(root)).toThrow(
+      /control-plane\.schema\.json|release-state\.schema\.json/,
+    );
   });
 
   test('generates byte-identical projections for identical input', () => {
@@ -443,6 +672,7 @@ describe('documentation governance validation', () => {
 
   test('rejects module telemetry that attempts to own project governance', () => {
     const root = temporaryRepository();
+    writeDocumentMap(root);
     writeJsonFile(root, '.openslack/modules.yaml', {
       modules: [{ id: 'operator', nested: { planned_owner: 'operator-team' } }],
     });
@@ -536,7 +766,7 @@ describe('documentation governance validation', () => {
       writeRepositoryFile(outside, 'outside.md', '# Outside\n');
       symlinkSync(join(outside, 'outside.md'), join(root, 'docs', 'active.md'), 'file');
 
-      expect(() => verifyDocumentation(root)).toThrow(/ordinary file/);
+      expect(() => verifyDocumentation(root)).toThrow(/ordinary file|symbolic link/);
     },
   );
 
@@ -625,6 +855,123 @@ describe('documentation governance validation', () => {
       ...assignments,
       assignments: [{ ...(assignments.assignments[0] ?? {}), status: 'claimed' }],
     });
-    expect(() => verifyDocumentation(root)).toThrow(/work-assignments\.schema\.json/);
+    expect(() => verifyDocumentation(root)).toThrow(
+      /control-plane\.schema\.json|work-assignments\.schema\.json/,
+    );
+  });
+
+  test('rejects nested Memory Banks and YAML inside the root Memory Bank', () => {
+    const root = temporaryRepository();
+    writeDocumentMap(root);
+    writeRepositoryFile(root, 'docs/active.md', documentMetadata('active'));
+    writeRepositoryFile(root, 'services/example/memory_bank/state.md', '# Nested\n');
+    expect(() => verifyDocumentation(root)).toThrow(/exactly one root memory_bank/);
+
+    rmSync(join(root, 'services'), { recursive: true, force: true });
+    writeRepositoryFile(root, 'memory_bank/legacy.yaml', 'legacy: true\n');
+    expect(() => verifyDocumentation(root)).toThrow(/YAML is forbidden inside memory_bank/);
+  });
+
+  test('rejects unresolved control-plane authority pointers', () => {
+    const root = temporaryRepository();
+    writeRepositoryFile(root, 'docs/active.md', documentMetadata('active'));
+    writeDocumentMap(
+      root,
+      documentMap({
+        authorities: [
+          {
+            fact: 'portfolio',
+            canonical: 'memory_bank/control-plane.json#/missing',
+          },
+        ],
+      }),
+    );
+    expect(() => verifyDocumentation(root)).toThrow(/authority portfolio does not resolve/);
+  });
+
+  test('rejects inherited and malformed control-plane authority pointers', () => {
+    const root = temporaryRepository();
+    writeRepositoryFile(root, 'docs/active.md', documentMetadata('active'));
+    for (const canonical of [
+      'memory_bank/control-plane.json#/constructor',
+      'memory_bank/control-plane.json#/portfolio/~2invalid',
+    ]) {
+      writeDocumentMap(
+        root,
+        documentMap({
+          authorities: [{ fact: 'portfolio', canonical }],
+        }),
+      );
+      expect(() => verifyDocumentation(root)).toThrow(/does not resolve|invalid JSON Pointer/);
+    }
+  });
+
+  test('applies strict embedded schemas to the consolidated control plane', () => {
+    const root = temporaryRepository();
+    writeDocumentMap(root);
+    const path = join(root, 'memory_bank/control-plane.json');
+    const value = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+    value.portfolio = {};
+    writeJsonFile(root, 'memory_bank/control-plane.json', value);
+    expect(() => verifyDocumentation(root)).toThrow(/control-plane\.schema\.json/);
+  });
+
+  test('rejects duplicate JSON keys in the consolidated control plane', () => {
+    const root = temporaryRepository();
+    writeRepositoryFile(
+      root,
+      'memory_bank/control-plane.json',
+      '{"schema":"openslack.control_plane.v1","schema":"duplicate"}\n',
+    );
+    expect(() => verifyDocumentation(root)).toThrow(/duplicate or invalid JSON keys/);
+  });
+
+  test('validates authority projections, indexes, and archives as ordinary files', () => {
+    const root = temporaryRepository();
+    writeRepositoryFile(root, 'docs/active.md', documentMetadata('active'));
+    writeDocumentMap(
+      root,
+      documentMap({
+        authorities: [
+          {
+            fact: 'portfolio',
+            canonical: 'docs/active.md',
+            projections: ['docs/missing.md'],
+          },
+        ],
+      }),
+    );
+    expect(() => verifyDocumentation(root)).toThrow(/authority portfolio projection is missing/);
+  });
+
+  test.skipIf(process.platform === 'win32')(
+    'refuses to generate through a symbolic-link target',
+    () => {
+      const root = temporaryRepository();
+      writeCanonicalState(root);
+      const outside = mkdtempSync(join(tmpdir(), 'openslack-documentation-outside-'));
+      temporaryRoots.push(outside);
+      writeRepositoryFile(outside, 'outside.md', 'outside remains unchanged\n');
+      symlinkSync(
+        join(outside, 'outside.md'),
+        join(root, 'memory_bank/t0_core/current_state.md'),
+        'file',
+      );
+
+      expect(() => generateDocumentation(root)).toThrow(/symbolic link/);
+      expect(readFileSync(join(outside, 'outside.md'), 'utf8')).toBe('outside remains unchanged\n');
+    },
+  );
+
+  test('preflights every generated target before replacing any projection', () => {
+    const root = temporaryRepository();
+    writeCanonicalState(root);
+    writeRepositoryFile(root, 'memory_bank/t0_core/current_state.md', 'original state\n');
+    mkdirSync(join(root, 'memory_bank/t0_core/release_state.md'), { recursive: true });
+
+    expect(() => generateDocumentation(root)).toThrow(/ordinary directories to a regular file/);
+    expect(readFileSync(join(root, 'memory_bank/t0_core/current_state.md'), 'utf8')).toBe(
+      'original state\n',
+    );
   });
 });

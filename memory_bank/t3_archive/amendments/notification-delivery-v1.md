@@ -1,7 +1,21 @@
-# Amendment v1.0 — Constitution Accepted
+---
+schema: openslack.document.v1
+id: evidence-notification-constitution-v1
+status: Archived
+authority: archive
+audience:
+  - reviewers
+owner: notification-delivery
+updated: 2026-07-29
+sources:
+  - services/notification-delivery/design/cdd/product-concept.md
+  - services/notification-delivery/docs/architecture/adr-registry.yaml
+---
+
+# Notification Delivery Amendment v1.0 — Constitution Accepted
 
 > 宪法从 0.1 Draft 升级为 1.0 Accepted 的正式修订证据。
-> 归档：`memory_bank/t3_archive/amendments/amendment-v1.0-2026-07-18.md`。
+> 原服务级 Memory Bank 记录已规范化迁入唯一的根 Memory Bank；原路径可通过 Git 历史恢复。
 > 日期：2026-07-18。
 
 ## 1. 触发
@@ -13,7 +27,7 @@
 
 - **BL-02**：
   - 增 **幂等冲突规则** —— 持久化不可变 `request_fingerprint`；相同 `(caller_id,
-    Idempotency-Key)` 且指纹一致 → 返回原 `notification_id`；指纹不同 → 返回
+Idempotency-Key)` 且指纹一致 → 返回原 `notification_id`；指纹不同 → 返回
     `409 IdempotencyConflict`，不创建任务、不复用旧结果（防止错误复用 key 静默吞掉合法通知）。
   - 增 `caller_id` **服务端推导**约束 —— 不接受请求 Header/Body 自报。
   - 新增第三条 design test（同键异指纹 → 409）。
@@ -52,5 +66,6 @@
 - `current_state.md`：阻塞从"宪法待 sign-off"转移到"T1 axioms / ADR / 设计文档未建立"。
 
 ## 5. 相关证据
-- 草案审查（含用户核验反馈）：`../reviews/constitution-draft-v0.1-review-2026-07-18.md`
-- 宪法正文：`../../t0_core/basic_law_index.md`
+
+- 草案审查（含用户核验反馈）：`memory_bank/t3_archive/reviews/review-index.md` 的 Notification Delivery constitution 条目
+- 宪法正文：`memory_bank/t0_core/basic_law_index.md` 的 ND-BL-01..06

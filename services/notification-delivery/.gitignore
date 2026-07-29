@@ -1,5 +1,5 @@
 # rc_wsman .gitignore
-# Project artifacts (CDDs, ADRs, memory_bank, production/stage.txt, go.mod,
+# Project artifacts (CDDs, ADRs, production/stage.txt, go.mod,
 # internal/, tests/, .github/, docs/, design/, standards/) ARE tracked.
 # Only tooling state, generated build output, and machine-local cruft are ignored.
 
