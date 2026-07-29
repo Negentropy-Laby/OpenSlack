@@ -8,7 +8,6 @@ audience:
 owner: architecture
 updated: 2026-07-29
 sources:
-  - standards/technical-preferences.md
   - package.json
   - services/notification-delivery/go.mod
 ---

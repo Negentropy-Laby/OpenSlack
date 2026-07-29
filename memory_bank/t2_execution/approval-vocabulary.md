@@ -6,9 +6,10 @@ authority: canonical
 audience:
   - contributors
 owner: project-governance
-updated: 2026-07-28
+updated: 2026-07-29
 sources:
-  - docs/reference/document-path-migration-v1.yaml
+  - design/cdd/product-concept.md
+  - memory_bank/t1_axioms/behavior_context.md
 ---
 
 # Approval Vocabulary

@@ -14,6 +14,8 @@ sources:
 
 # Documentation Standard
 
+This is an executable T2 governance standard for documentation changes.
+
 Active English Markdown uses `openslack.document.v1` frontmatter with `id`,
 `status`, `authority`, `audience`, `owner`, `updated`, and `sources`. IDs and
 paths are unique. Active documents contain no template placeholders.

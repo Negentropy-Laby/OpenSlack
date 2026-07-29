@@ -9,7 +9,6 @@ owner: product
 updated: 2026-07-29
 sources:
   - design/cdd/product-concept.md
-  - standards/approval-vocabulary.md
   - services/notification-delivery/docs/operations/runbook.md
 ---
 

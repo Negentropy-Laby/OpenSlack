@@ -872,6 +872,15 @@ describe('documentation governance validation', () => {
     expect(() => verifyDocumentation(root)).toThrow(/YAML is forbidden inside memory_bank/);
   });
 
+  test('rejects the legacy root standards path', () => {
+    const root = temporaryRepository();
+    writeDocumentMap(root);
+    writeRepositoryFile(root, 'docs/active.md', documentMetadata('active'));
+    writeRepositoryFile(root, 'standards/legacy.md', '# Legacy standards\n');
+
+    expect(() => verifyDocumentation(root)).toThrow(/legacy root standards path is forbidden/);
+  });
+
   test('rejects unresolved control-plane authority pointers', () => {
     const root = temporaryRepository();
     writeRepositoryFile(root, 'docs/active.md', documentMetadata('active'));
