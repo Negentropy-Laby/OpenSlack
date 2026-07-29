@@ -8,6 +8,7 @@
         "@openslack/collaboration": "workspace:*",
       },
       "devDependencies": {
+        "@modelcontextprotocol/sdk": "1.29.0",
         "@tsconfig/node22": "^22.0.0",
         "@types/node": "^22.0.0",
         "ajv": "8.17.1",

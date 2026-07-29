@@ -50,6 +50,18 @@ export { createOpenSlackMcpServer } from './server.js';
 export type { OpenSlackMcpServer } from './server.js';
 
 export { createGovernedPlanCollaborationAuditSink } from './audit.js';
+export {
+  assembleContractDeliveryLiteRehearsalSource,
+  CONTRACT_DELIVERY_REHEARSAL_BUILD_SOURCE_PATH,
+  executeContractDeliveryLiteWorkflow,
+  publishContractDeliveryLiteRehearsalSnapshot,
+} from './contract-delivery-rehearsal.js';
+export type {
+  AssembleContractDeliveryLiteRehearsalInput,
+  ContractDeliveryLiteWorkflowExecution,
+  ExecuteContractDeliveryLiteWorkflowInput,
+  PublishContractDeliveryLiteRehearsalInput,
+} from './contract-delivery-rehearsal.js';
 
 export {
   createOpenSlackAgentBoundMutationComposition,

@@ -5,8 +5,8 @@
   "files": [
     {
       "path": "capabilities.yaml",
-      "bytes": 57,
-      "sha256": "fa8d207953aeb1af2498a6a4f37e7458be356d12d3d2f31b1817c6d2305b0d88"
+      "bytes": 94,
+      "sha256": "b52c4ebadcd90640354171cdaa2250f215861d03ce074e5568231f773a096253"
     },
     {
       "path": "fixtures/example.yaml",
@@ -45,8 +45,8 @@
     },
     {
       "path": "workflows.yaml",
-      "bytes": 54,
-      "sha256": "8193b78ccd08aa434de775388c3e24a5c86d74ca2e27d3b11ad25f1443b3a279"
+      "bytes": 213,
+      "sha256": "e8d48c8701fb89974fa1136edaa901b9946a47c11ffed1612638a6f1b5ead150"
     }
   ]
 }

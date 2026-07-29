@@ -6,24 +6,25 @@ authority: canonical
 audience:
   - contributors
 owner: product
-updated: 2026-07-28
+updated: 2026-07-29
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
 
 # Qoder Work Integration
 
-| Field             | Value                                                                  |
-| ----------------- | ---------------------------------------------------------------------- |
-| Status            | `READ AND GOVERNED MUTATION CONTRACTS IMPLEMENTED — REHEARSAL PENDING` |
-| Product direction | Qoder-first, MCP-first, projection-first                               |
-| MVP transport     | Local STDIO MCP                                                        |
-| Authority owner   | OpenSlack for plans and governance; external systems for their records |
-| Evidence ceiling  | Contract documentation alone proves no implementation or qualification |
+| Field             | Value                                                                      |
+| ----------------- | -------------------------------------------------------------------------- |
+| Status            | `READ + GOVERNED LOCAL REHEARSAL IMPLEMENTED — QODER VERIFICATION PENDING` |
+| Product direction | Qoder-first, MCP-first, projection-first                                   |
+| MVP transport     | Local STDIO MCP                                                            |
+| Authority owner   | OpenSlack for plans and governance; external systems for their records     |
+| Evidence ceiling  | Contract documentation alone proves no implementation or qualification     |
 
 This document defines the product boundary between Qoder Work and OpenSlack. Current local
-graph/scenario reads, optional governed mutation ports, and the checked-in Skill do not claim a
-formal Workbench, a remote Connector, Qoder desktop qualification, or interview readiness.
+graph/scenario reads, optional governed mutation ports, the credential-free Contract-to-Delivery
+local rehearsal, and the checked-in Skill do not claim a formal Workbench, a remote Connector,
+Qoder Desktop qualification, or interview readiness.
 
 ## Product outcome
 

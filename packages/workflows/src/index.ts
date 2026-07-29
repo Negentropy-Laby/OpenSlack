@@ -319,6 +319,27 @@ export type {
   WorkflowStartPlan,
 } from './governed-plan.js';
 
+export {
+  assertContractDeliveryLiteWorkflowPlan,
+  CONTRACT_DELIVERY_LITE_ADAPTER_ID,
+  CONTRACT_DELIVERY_LITE_CAPABILITIES,
+  CONTRACT_DELIVERY_LITE_EXECUTOR_ID,
+  CONTRACT_DELIVERY_LITE_FIXTURE_ID,
+  CONTRACT_DELIVERY_LITE_WORKFLOW_HASH,
+  CONTRACT_DELIVERY_LITE_WORKFLOW_ID,
+  CONTRACT_DELIVERY_LITE_WORKFLOW_VERSION,
+  ContractDeliveryLiteWorkflowError,
+  createContractDeliveryLiteWorkflowReceipt,
+  createContractDeliveryLiteWorkflowResolverEntry,
+  deriveContractDeliveryLiteWorkflowRunId,
+  normalizeContractDeliveryLiteWorkflowInput,
+  validateContractDeliveryLiteWorkflowReceipt,
+} from './contract-delivery-lite.js';
+export type {
+  ContractDeliveryLiteWorkflowInput,
+  ContractDeliveryLiteWorkflowReceipt,
+} from './contract-delivery-lite.js';
+
 // ── Workflow Effect Approval v2 ─────────────────────────────────────────────
 export {
   applyWorkflowEffectApprovalDecision,

@@ -13,19 +13,20 @@ sources:
 
 # Organization Graph
 
-| Field              | Value                                                       |
-| ------------------ | ----------------------------------------------------------- |
-| Status             | `COMPOSITE GRAPH IMPLEMENTED — REHEARSAL PENDING`           |
-| Product direction  | Projection-first                                            |
-| First source model | Software delivery evidence                                  |
-| Lead scenario      | Contract-to-Delivery Lite                                   |
-| Authority          | Derived and rebuildable; never authoritative mutation state |
+| Field              | Value                                                                        |
+| ------------------ | ---------------------------------------------------------------------------- |
+| Status             | `COMPOSITE GRAPH + LOCAL REHEARSAL IMPLEMENTED — LIVE QUALIFICATION PENDING` |
+| Product direction  | Projection-first                                                             |
+| First source model | Software delivery evidence                                                   |
+| Lead scenario      | Contract-to-Delivery Lite                                                    |
+| Authority          | Derived and rebuildable; never authoritative mutation state                  |
 
 The `@openslack/organization-graph` package, local snapshot store, bounded query/explain APIs,
 software-delivery projector, Contract-to-Delivery Lite composite projector, and read-only MCP
-tools implement the graph core described here. The composite fixture and locked Pack are locally
-queryable; the governed rehearsal, live multi-system evidence, and offline HTML artifact remain
-later milestones.
+tools implement the graph core described here. The governed local rehearsal explicitly assembles
+the fixture-backed source only after durable Scenario and Workflow evidence, publishes through the
+sealed graph builder, and verifies query/explain through the official MCP SDK. Live multi-system
+evidence and the offline HTML artifact remain later milestones.
 
 ## Product outcome
 
@@ -309,11 +310,13 @@ The implemented local graph slice includes:
 
 - pure graph contracts, canonicalization, integrity, bounded query, explanation, and local store;
 - a deterministic software-delivery projector;
-- one locked, projection-only Contract-to-Delivery Lite Pack that reuses the software-delivery
-  subgraph in the same snapshot;
+- one locked Contract-to-Delivery Lite Pack whose reviewed local Workflow reuses the
+  software-delivery subgraph in the same snapshot;
 - the Scenario list plus bounded graph query/explain tools;
 - a strict file/stdin builder with sealed Software Delivery and Contract-to-Delivery dispatch;
-- fixture build, store readback, and official MCP SDK query/explain evidence.
+- fixture build, store readback, and official MCP SDK query/explain evidence;
+- a governed local rehearsal assembler that preserves `demo_fixture` business authority and calls
+  the explicit sealed graph builder outside the read tools.
 
 The static artifact owns no network fetch, authentication, mutation API, or persistent state.
 
@@ -323,7 +326,6 @@ After contract stability:
 
 - DingTalk, CRM, ERP, and HR source projectors;
 - live multi-system Contract-to-Delivery data;
-- governed Contract-to-Delivery rehearsal;
 - static, read-only HTML graph/outcome/evidence artifact;
 - formal Qoder Workbench graph UI;
 - remote Connector graph streaming;

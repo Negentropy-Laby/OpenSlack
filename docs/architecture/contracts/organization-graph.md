@@ -13,10 +13,12 @@ sources:
 
 # Organization Graph Contract
 
-Status: composite graph implemented; rehearsal pending. Organization Graph is a pure, bounded,
-rebuildable projection. Its v1 data, hashing, query, explanation, local-store behavior,
-software-delivery projector, and Contract-to-Delivery Lite composite projector are implemented.
-The governed rehearsal, live multi-system source assembly, and HTML artifact remain deferred.
+Status: composite graph and governed local rehearsal implemented; live qualification pending.
+Organization Graph is a pure, bounded, rebuildable projection. Its v1 data, hashing, query,
+explanation, local-store behavior, software-delivery projector, and Contract-to-Delivery Lite
+composite projector are implemented. The application-layer rehearsal assembler calls the sealed
+builder explicitly after durable governed evidence; query and explain remain side-effect free.
+Live multi-system source assembly and the HTML artifact remain deferred.
 
 ## Authority Model
 

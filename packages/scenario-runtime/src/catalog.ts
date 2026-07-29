@@ -494,8 +494,23 @@ export function createOpenSlackHostScenarioCatalog(): ScenarioHostCatalog {
         edgeTypes: SOFTWARE_DELIVERY_PROJECTOR_CONTRACT.edgeTypes,
       },
     ],
-    workflows: [],
-    capabilities: [],
+    workflows: [
+      {
+        id: 'contract.delivery.lite',
+        version: '1.0.0',
+        adapterId: 'openslack.contract_delivery.local',
+        capabilityIds: ['openslack.collaboration.recordEvent'],
+      },
+    ],
+    capabilities: [
+      {
+        id: 'openslack.collaboration.recordEvent',
+        adapterId: 'openslack.contract_delivery.local',
+        risk: 'low',
+        readOnly: false,
+        approvalRequired: false,
+      },
+    ],
     adapters: [
       {
         id: CONTRACT_TO_DELIVERY_PROJECTOR_ID,
@@ -506,6 +521,11 @@ export function createOpenSlackHostScenarioCatalog(): ScenarioHostCatalog {
         id: SOFTWARE_DELIVERY_PROJECTOR_ID,
         kind: 'projection',
         capabilityIds: [],
+      },
+      {
+        id: 'openslack.contract_delivery.local',
+        kind: 'workflow',
+        capabilityIds: ['openslack.collaboration.recordEvent'],
       },
     ],
     deepLinkTemplates: [],
