@@ -9,7 +9,7 @@ owner: project-governance
 updated: 2026-07-29
 sources:
   - memory_bank/control-plane.json#/assignments
-  - standards/approval-vocabulary.md
+  - memory_bank/t2_execution/approval-vocabulary.md
   - services/notification-delivery/production/stage.txt
   - services/notification-delivery/docs/development-plan.md
 ---

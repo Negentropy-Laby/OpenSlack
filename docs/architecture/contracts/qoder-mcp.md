@@ -245,7 +245,7 @@ it does not reopen `events.jsonl` after an outer directory check.
 
 OpenSlack plan confirmation, OpenSlack workflow-effect approval, Qoder connector permission, and
 GitHub human review remain four independent decisions. They use the canonical
-[Approval vocabulary](../../../standards/approval-vocabulary.md): plan confirmation maps to **Approve
+[Approval vocabulary](../../../memory_bank/t2_execution/approval-vocabulary.md): plan confirmation maps to **Approve
 Plan**; workflow-effect approval maps to **Confirm Operation**, or **Confirm Merge** for a merge
 effect; and GitHub human review maps to **GitHub Review Approval**. Connector permission is
 authorization rather than approval. A `Workflow-Trust` marker is a current-head evidence facet of
@@ -291,4 +291,4 @@ Notification Delivery admission, or GitHub approval.
 - [Qoder product boundary](../../../design/cdd/workstreams/qoder-work/README.md)
 - [Qoder trust boundary](../../security/qoder-trust-boundary.md)
 - [Human approval](../../security/human-approval.md)
-- [Approval vocabulary](../../../standards/approval-vocabulary.md)
+- [Approval vocabulary](../../../memory_bank/t2_execution/approval-vocabulary.md)

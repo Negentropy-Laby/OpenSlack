@@ -852,29 +852,29 @@
     },
     {
       "id": "standard-approval-vocabulary",
-      "path": "standards/approval-vocabulary.md",
+      "path": "memory_bank/t2_execution/approval-vocabulary.md",
       "status": "active"
     },
     {
       "id": "standard-documentation",
-      "path": "standards/documentation-standard.md",
+      "path": "memory_bank/t2_execution/documentation-standard.md",
       "status": "active"
     },
     {
       "id": "standard-technical-preferences",
-      "path": "standards/technical-preferences.md",
+      "path": "memory_bank/t2_execution/technical-preferences.md",
       "status": "active"
     },
     {
       "id": "standard-traceability",
-      "path": "standards/traceability-standard.md",
+      "path": "memory_bank/t2_execution/traceability-standard.md",
       "status": "active"
     }
   ],
   "portfolio": {
     "schema": "openslack.project_state.v1",
     "updated": "2026-07-29",
-    "last_verified": "2026-07-28T18:44:02Z",
+    "last_verified": "2026-07-29T05:44:40Z",
     "portfolio_status": "active_development",
     "release_train": "0.2.0",
     "modules": [
@@ -1451,7 +1451,7 @@
       {
         "id": "single-root-memory-bank",
         "title": "Consolidate all project governance into the root Memory Bank",
-        "status": "review",
+        "status": "done",
         "planned_owner": "project-governance",
         "module_or_workstream": "self-evolution",
         "execution": {
@@ -1471,17 +1471,49 @@
           "Documentation generation, verification, service consistency tests, and workspace-manifest verification pass."
         ],
         "dependencies": ["documentation-governance-v1"],
+        "blockers": [],
+        "evidence": [
+          "commit:de0d202e84b34c4def7d684c68372ebca7bb35fa",
+          "commit:236c1073f61e0eeb997e34b8c4538b0d7b514379",
+          "github:pr-332:created:c1aa0b39b4fcdee0bd2393175dd6e5887be689a7",
+          "github:pr-332:approval:4804009200:7d2e68a13f4bdc30f34927edcdacae5f49f6798c",
+          "github:pr-332:merged:74a5394c60b2080cf048f01a6a4ad8e9f07b062f"
+        ],
+        "last_verified_at": "2026-07-29T04:37:44Z"
+      },
+      {
+        "id": "t2-standards-migration",
+        "title": "Move project execution standards into the root T2 Memory Bank",
+        "status": "review",
+        "planned_owner": "project-governance",
+        "module_or_workstream": "self-evolution",
+        "execution": {
+          "agent_id": "codex",
+          "claim_ref": "refs/heads/agent/codex/t2-standards-migration/20260729",
+          "started_at": "2026-07-29T05:33:16Z"
+        },
+        "github_issue": null,
+        "pull_request": {
+          "number": 334,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/pull/334"
+        },
+        "acceptance_criteria": [
+          "The root standards directory no longer exists.",
+          "The four canonical standards live flat in memory_bank/t2_execution with stable document IDs.",
+          "T1 context does not depend on T2 standards as a source.",
+          "Documentation, migration, status, and Notification Delivery validation pass."
+        ],
+        "dependencies": ["single-root-memory-bank"],
         "blockers": [
           "hosted_checks_pending",
           "independent_human_approval_pending",
           "merge_pending"
         ],
         "evidence": [
-          "commit:de0d202e84b34c4def7d684c68372ebca7bb35fa",
-          "commit:236c1073f61e0eeb997e34b8c4538b0d7b514379",
-          "github:pr-332:created:c1aa0b39b4fcdee0bd2393175dd6e5887be689a7"
+          "commit:74a5394c60b2080cf048f01a6a4ad8e9f07b062f",
+          "github:pr-334:created:a9c2f4e8deee331010cefecde2b4f149d5f4b1ef"
         ],
-        "last_verified_at": "2026-07-29T04:23:08Z"
+        "last_verified_at": "2026-07-29T05:44:40Z"
       }
     ]
   },

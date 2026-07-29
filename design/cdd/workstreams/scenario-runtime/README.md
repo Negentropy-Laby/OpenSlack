@@ -419,7 +419,7 @@ Scenario Runtime does not:
 - [`qoder-work-integration.md`](../qoder-work/README.md)
 - [`organization-graph.md`](../organization-graph/README.md)
 - [`dynamic-workflows.md`](../workflow-runtime/README.md)
-- [`approval-vocabulary.md`](../../../../standards/approval-vocabulary.md)
+- [`approval-vocabulary.md`](../../../../memory_bank/t2_execution/approval-vocabulary.md)
 - [`notification-delivery.md`](../notification-delivery/README.md)
 - [`../developer/scenario-pack.md`](../../../../docs/contributor/scenario-pack.md)
 - [`../security/scenario-pack-boundary.md`](../../../../docs/security/scenario-pack-boundary.md)

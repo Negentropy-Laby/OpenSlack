@@ -465,7 +465,7 @@ entries:
   - {
       id: DPM-065,
       old_path: docs/product/approval-vocabulary.md,
-      new_path: standards/approval-vocabulary.md,
+      new_path: memory_bank/t2_execution/approval-vocabulary.md,
       document_id: standard-approval-vocabulary,
       migration_type: moved,
     }

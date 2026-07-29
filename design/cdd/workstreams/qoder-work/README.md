@@ -226,7 +226,7 @@ These decisions are separate:
 3. **OpenSlack workflow-effect approval** decides a governed OpenSlack effect gate.
 4. **GitHub human review** is an authoritative GitHub review by an eligible human identity.
 
-These terms map to the existing [Approval vocabulary](../../../../standards/approval-vocabulary.md): plan confirmation is
+These terms map to the existing [Approval vocabulary](../../../../memory_bank/t2_execution/approval-vocabulary.md): plan confirmation is
 **Approve Plan**; a workflow-effect decision is **Confirm Operation**, or **Confirm Merge** when the
 effect is a merge request; and GitHub human review is **GitHub Review Approval**. Qoder MCP
 permission is client authorization, not an approval action. When workflow artifacts are governed,
@@ -300,7 +300,7 @@ This integration does not:
 - [`../developer/qoder-mcp.md`](../../../../docs/architecture/integrations/qoder-mcp.md)
 - [`../developer/qoder-mcp-contract.md`](../../../../docs/architecture/contracts/qoder-mcp.md)
 - [`../security/qoder-trust-boundary.md`](../../../../docs/security/qoder-trust-boundary.md)
-- [`approval-vocabulary.md`](../../../../standards/approval-vocabulary.md)
+- [`approval-vocabulary.md`](../../../../memory_bank/t2_execution/approval-vocabulary.md)
 - [`collaboration-layer.md`](../../modules/collaboration.md)
 - [`../demos/ai-organization-commercial-loop.md`](../../../../docs/examples/ai-organization-commercial-loop.md)
 

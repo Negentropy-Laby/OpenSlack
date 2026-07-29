@@ -236,20 +236,20 @@ Do not add a new top-level command unless it belongs to a clearly named product 
 
 Keep one authority for each fact class.
 
-| Path                      | Purpose                                                                                           |
-| ------------------------- | ------------------------------------------------------------------------------------------------- |
-| `memory_bank/`            | Project-wide T0–T3 governance, portfolio state, release state, assignments, and evidence indexes. |
-| `design/cdd/`             | Product concept, five module CDDs, and cross-module workstream CDDs.                              |
-| `docs/architecture/`      | Master architecture, components, integrations, contracts, ADRs, traceability, and controls.       |
-| `docs/user/`              | Installation, CLI, workflows, and operator-facing guides.                                         |
-| `docs/contributor/`       | Onboarding and implementation guidance.                                                           |
-| `docs/security/`          | Security and guardrail documentation.                                                             |
-| `docs/operations/`        | Release, automation, packaging, and recovery procedures.                                          |
-| `docs/reference/`         | Schemas, vocabularies, and the permanent migration manifest.                                      |
-| `docs/evidence/`          | Checked-in evidence indexes; GitHub/OpenSlack remains live delivery authority.                    |
-| `docs/archive/`           | Historical material only; never current operating guidance.                                       |
-| `.openslack/modules.yaml` | Module runtime maturity, CLI/package ownership, and test-count authority.                         |
-| `docs/status/current.md`  | Generated module telemetry projection; not project portfolio state.                               |
+| Path                      | Purpose                                                                                                                 |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `memory_bank/`            | Project-wide T0–T3 governance, portfolio state, release state, assignments, executable standards, and evidence indexes. |
+| `design/cdd/`             | Product concept, five module CDDs, and cross-module workstream CDDs.                                                    |
+| `docs/architecture/`      | Master architecture, components, integrations, contracts, ADRs, traceability, and controls.                             |
+| `docs/user/`              | Installation, CLI, workflows, and operator-facing guides.                                                               |
+| `docs/contributor/`       | Onboarding and implementation guidance.                                                                                 |
+| `docs/security/`          | Security and guardrail documentation.                                                                                   |
+| `docs/operations/`        | Release, automation, packaging, and recovery procedures.                                                                |
+| `docs/reference/`         | Schemas, vocabularies, and the permanent migration manifest.                                                            |
+| `docs/evidence/`          | Checked-in evidence indexes; GitHub/OpenSlack remains live delivery authority.                                          |
+| `docs/archive/`           | Historical material only; never current operating guidance.                                                             |
+| `.openslack/modules.yaml` | Module runtime maturity, CLI/package ownership, and test-count authority.                                               |
+| `docs/status/current.md`  | Generated module telemetry projection; not project portfolio state.                                                     |
 
 Project governance changes begin in `memory_bank/control-plane.json` and are
 reviewed through a pull request. The repository has exactly one
@@ -290,7 +290,7 @@ If `docs/status/current.md` changes after generation, commit the generated file 
 6. Commit canonical sources and generated projections together.
 
 Every active English Markdown document under `docs/`, `design/`,
-`memory_bank/`, `production/`, or `standards/` must be registered in
+`memory_bank/`, or `production/` must be registered in
 `memory_bank/control-plane.json#/documents` and use `openslack.document.v1`
 metadata.
 Generated documents and immutable historical evidence use their declared

@@ -616,7 +616,7 @@ function collectGovernedMarkdown(root: string): string[] {
       else if (name.endsWith('.md')) results.push(child);
     }
   };
-  for (const repositoryPath of ['design', 'docs', 'memory_bank', 'production', 'standards']) {
+  for (const repositoryPath of ['design', 'docs', 'memory_bank', 'production']) {
     if (existsSync(join(root, repositoryPath))) visit(repositoryPath);
   }
   return results;
@@ -650,6 +650,12 @@ function validateModuleTelemetryBoundary(root: string): void {
 }
 
 function validateMemoryBankTopology(root: string): void {
+  if (existsSync(join(root, 'standards'))) {
+    throw new Error(
+      'The legacy root standards path is forbidden; executable standards belong in memory_bank/t2_execution.',
+    );
+  }
+
   const memoryBanks: string[] = [];
   const excluded = new Set([
     '.aby',

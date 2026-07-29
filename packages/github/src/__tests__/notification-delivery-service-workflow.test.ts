@@ -94,7 +94,6 @@ const triggerPaths = [
   'docs/reference/**',
   'memory_bank/**',
   'production/**',
-  'standards/**',
   'integration/gates/ib6-history-import.json',
   '.openslack/modules.yaml',
   'bun.lock',

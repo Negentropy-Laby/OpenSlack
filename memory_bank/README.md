@@ -32,7 +32,8 @@ create another Memory Bank.
 
 - `t0_core/`: proposed laws and current portfolio/release state.
 - `t1_axioms/`: architecture, technology, UX, QA, and traceability context.
-- `t2_execution/`: work assignment and workflow contracts plus generated roadmap.
+- `t2_execution/`: work assignment, workflow contracts, executable standards,
+  and the generated roadmap.
 - `t3_archive/`: durable indexes for gates, reviews, releases, QA, and amendments.
 
 `control-plane.json` is the only structured governance file in this directory;
