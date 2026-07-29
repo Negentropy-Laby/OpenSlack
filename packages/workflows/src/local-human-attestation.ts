@@ -40,6 +40,9 @@ const MAX_SUBJECTS = 64;
 const BINDING_TTL_MS = 30_000;
 const MIN_BINDING_TTL_MS = 1_000;
 const NO_FOLLOW = process.platform === 'win32' ? 0 : (fsConstants.O_NOFOLLOW ?? 0);
+const POSIX_TTY_DEVICE = '/dev/tty';
+const WINDOWS_TTY_INPUT = 'CONIN$';
+const WINDOWS_TTY_OUTPUT = 'CONOUT$';
 const SAFE_PRINCIPAL = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/;
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._:@-]{0,255}$/;
 const HASH = /^sha256:[0-9a-f]{64}$/;
@@ -1261,13 +1264,40 @@ function assertProductionOwnership(path: string, stat: Stats, privateAccess: boo
   }
 }
 
-function ttyDevice(): string {
-  return process.platform === 'win32' ? 'CON' : '/dev/tty';
+interface ProductionTtyHandles {
+  readonly input: number;
+  readonly output: number;
+}
+
+function openProductionTty(): ProductionTtyHandles {
+  if (process.platform !== 'win32') {
+    const handle = openSync(POSIX_TTY_DEVICE, fsConstants.O_RDWR | NO_FOLLOW);
+    return Object.freeze({ input: handle, output: handle });
+  }
+  const input = openSync(WINDOWS_TTY_INPUT, fsConstants.O_RDONLY | NO_FOLLOW);
+  try {
+    const output = openSync(WINDOWS_TTY_OUTPUT, fsConstants.O_WRONLY | NO_FOLLOW);
+    return Object.freeze({ input, output });
+  } catch (error) {
+    closeSync(input);
+    throw error;
+  }
+}
+
+function closeProductionTty(handles: ProductionTtyHandles): void {
+  if (handles.output === handles.input) {
+    closeSync(handles.input);
+    return;
+  }
+  try {
+    closeSync(handles.output);
+  } finally {
+    closeSync(handles.input);
+  }
 }
 
 function probeProductionTty(): void {
-  const handle = openSync(ttyDevice(), fsConstants.O_RDWR | NO_FOLLOW);
-  closeSync(handle);
+  closeProductionTty(openProductionTty());
 }
 
 async function promptProductionTty(
@@ -1286,13 +1316,13 @@ async function promptProductionTty(
   const abort = () => controller.abort();
   signal.addEventListener('abort', abort, { once: true });
   const timer = setTimeout(abort, remaining);
-  const handle = openSync(ttyDevice(), fsConstants.O_RDWR | NO_FOLLOW);
+  const handles = openProductionTty();
   let input: ReturnType<typeof createReadStream> | undefined;
   let output: ReturnType<typeof createWriteStream> | undefined;
   let readline: ReturnType<typeof createInterface> | undefined;
   try {
-    input = createReadStream('', { fd: handle, autoClose: false });
-    output = createWriteStream('', { fd: handle, autoClose: false });
+    input = createReadStream('', { fd: handles.input, autoClose: false });
+    output = createWriteStream('', { fd: handles.output, autoClose: false });
     readline = createInterface({ input, output, terminal: true });
     return await readline.question(prompt, { signal: controller.signal });
   } catch (error) {
@@ -1309,7 +1339,7 @@ async function promptProductionTty(
     readline?.close();
     input?.destroy();
     output?.destroy();
-    closeSync(handle);
+    closeProductionTty(handles);
   }
 }
 

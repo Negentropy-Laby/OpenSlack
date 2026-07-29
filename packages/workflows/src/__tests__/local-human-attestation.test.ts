@@ -352,8 +352,13 @@ describe('credential-free local human attestation', () => {
     );
     expect(source).not.toContain('process.stdin');
     expect(source).not.toContain('process.stdout');
-    expect(source).toContain("process.platform === 'win32' ? 'CON' : '/dev/tty'");
+    expect(source).toContain("const POSIX_TTY_DEVICE = '/dev/tty'");
+    expect(source).toContain("const WINDOWS_TTY_INPUT = 'CONIN$'");
+    expect(source).toContain("const WINDOWS_TTY_OUTPUT = 'CONOUT$'");
+    expect(source).toContain('openSync(WINDOWS_TTY_INPUT, fsConstants.O_RDONLY | NO_FOLLOW)');
+    expect(source).toContain('openSync(WINDOWS_TTY_OUTPUT, fsConstants.O_WRONLY | NO_FOLLOW)');
+    expect(source).not.toContain("openSync('CON'");
     expect(source).toContain('readline?.close()');
-    expect(source).toContain('closeSync(handle)');
+    expect(source).toContain('closeProductionTty(handles)');
   });
 });
