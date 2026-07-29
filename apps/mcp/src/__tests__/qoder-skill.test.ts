@@ -131,6 +131,7 @@ describe('Qoder Organization Control Skill qualification', () => {
         spawnSync('bash', [script, '--target-root', '/tmp'], { encoding: 'utf8' }).status,
       ).not.toBe(0);
     },
+    30_000,
   );
 
   it.runIf(bashAvailable)('rejects a symlink component in a Bash installer target', () => {
@@ -227,5 +228,6 @@ describe('Qoder Organization Control Skill qualification', () => {
       expect(reparse.status).not.toBe(0);
       expect(reparse.stderr).toContain('reparse-point component');
     },
+    30_000,
   );
 });

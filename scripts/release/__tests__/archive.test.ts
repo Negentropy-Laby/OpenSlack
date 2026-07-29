@@ -84,6 +84,9 @@ describe('release archive creation', () => {
     expect(source).toContain('cpSync(bundleDir, smokeBundleDir');
     expect(source).toContain('smokeBundle(smokeBundleDir, target, root)');
     expect(source).not.toContain('smokeBundle(bundleDir, target, root)');
+    expect(source).toContain("maxRetries: process.platform === 'win32' ? 10 : 0");
+    expect(source).toContain('rmSync(smokeRoot, temporaryCleanupOptions)');
+    expect(source).toContain('rmSync(extractionRoot, temporaryCleanupOptions)');
     expect(source).toContain("for (const file of ['LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md'])");
     expect(source).toContain('copyFileSync(join(root, file), join(bundleDir, file))');
 

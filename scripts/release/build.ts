@@ -56,6 +56,12 @@ const channel = parseArg('--channel') ?? 'dev';
 const releaseRoot = resolve(parseArg('--out-dir') ?? join(root, 'dist', 'release', `v${version}`));
 const bundleName = `openslack-v${version}-${target}`;
 const bundleDir = join(releaseRoot, bundleName);
+const temporaryCleanupOptions = Object.freeze({
+  recursive: true,
+  force: true,
+  maxRetries: process.platform === 'win32' ? 10 : 0,
+  retryDelay: 100,
+});
 const commit = run('git', ['rev-parse', 'HEAD'], { cwd: root }).stdout.trim();
 const dirty = getGitContentState(root).dirty;
 if (dirty && !hasArg('--allow-dirty')) {
@@ -170,7 +176,7 @@ try {
   cpSync(bundleDir, smokeBundleDir, { recursive: true, errorOnExist: true });
   smoke = smokeBundle(smokeBundleDir, target, root);
 } finally {
-  rmSync(smokeRoot, { recursive: true, force: true });
+  rmSync(smokeRoot, temporaryCleanupOptions);
 }
 writeJson(join(bundleDir, 'smoke-report.json'), smoke);
 
@@ -186,7 +192,7 @@ try {
   extractReleaseArchive(archivePath, extractionRoot, target);
   archiveSmoke = smokeBundle(join(extractionRoot, bundleName), target, root);
 } finally {
-  rmSync(extractionRoot, { recursive: true, force: true });
+  rmSync(extractionRoot, temporaryCleanupOptions);
 }
 
 const sbomName = `${bundleName}.sbom.cdx.json`;

@@ -409,8 +409,32 @@ function validateLockOwner(value: unknown): LockOwner {
 
 async function readLock(prepared: PreparedStore, path: string) {
   const initial = await lstatIfPresent(path);
+  if (!initial) {
+    return fail(
+      'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_CHANGED',
+      'Approval-store lock disappeared before read.',
+      path,
+    );
+  }
+  if (initial.isFile() && !initial.isSymbolicLink() && initial.size < 1) {
+    await delay(5);
+    const repeated = await lstatIfPresent(path);
+    if (
+      !repeated ||
+      !sameIdentity(initial, repeated) ||
+      (repeated.isFile() &&
+        !repeated.isSymbolicLink() &&
+        repeated.size >= 1 &&
+        repeated.size <= LOCK_MAX_BYTES)
+    ) {
+      return fail(
+        'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_CHANGED',
+        'Approval-store lock publication was not yet stable.',
+        path,
+      );
+    }
+  }
   if (
-    !initial ||
     !initial.isFile() ||
     initial.isSymbolicLink() ||
     initial.size < 1 ||
