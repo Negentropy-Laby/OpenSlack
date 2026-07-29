@@ -127,19 +127,18 @@ source, permission, action catalog, executor binding, build, and process snapsho
 atomic execution claim. A timeout after that claim is reconciliation-required; it is never
 reported as safe to retry.
 
-The current production factory registers only the real `scenario.instantiate` action. It discovers
+The current production factory registers the real `scenario.instantiate` action and one reviewed
+`openslack.contract_delivery.local` Workflow action. It discovers
 the locked Scenario root once, seals the accepted definitions for the process, uses
 `loadScenarioPack()` and `previewScenario()`, strictly rehydrates the persisted Scenario plan, and
 writes the instance through `LocalScenarioInstanceStore` CAS before verified readback. Registry,
 runtime-identity, workspace, Scenario lock, catalog, resolver, build, plan-store, instance-store,
 and audit bindings fail closed. The checked-in `software-delivery` Pack remains projection-only
-and requests no workflow capability.
-
-No reviewed sealed Workflow target/executor is registered by this factory yet. Consequently,
-`openslack_preview_workflow` returns the stable blocked code
-`GOVERNED_WORKFLOW_TARGET_NOT_REGISTERED` and creates no pending plan. The strict persisted
-Workflow-plan rehydration API is implemented for a later reviewed resolver/executor composition;
-the factory does not invent a Workflow or register an always-failing executor.
+and requests no workflow capability. `contract-to-delivery-lite` references exactly one sealed
+Workflow and one low-risk Collaboration event capability. Its executor requires an active current
+Scenario instance and verified principal, permission, resolver, Pack, plan, store, and build
+bindings. Every other Workflow target returns
+`GOVERNED_WORKFLOW_TARGET_NOT_REGISTERED` without creating a pending plan.
 
 The human-attested profile additionally requires a nominal `OpenSlackWorkflowApprovalPort` backed
 by the isolated v2 workflow-effect approval store and a separately authenticated host attestation
@@ -249,13 +248,21 @@ The checked-in composite fixture can be built explicitly:
 ```bash
 bun run openslack graph snapshot build \
   --scenario contract-to-delivery-lite \
-  --from packages/organization-graph/src/__tests__/fixtures/contract-to-delivery-source.json \
+  --from packages/organization-graph/src/fixtures/contract-to-delivery-source.json \
   --scenario-instance scenario-contract-delivery-001 \
   --format json
 ```
 
 This produces a fixture-backed Customer-to-Outcome projection in the same snapshot as the reused
-Software Delivery subgraph. It does not establish a governed workflow rehearsal or live delivery.
+Software Delivery subgraph. For the governed credential-free local path, run:
+
+```bash
+bun run demo:contract-delivery
+```
+
+That rehearsal proves local principal, plan, Scenario, Workflow, Collaboration, graph-build, and
+MCP readback bindings. The business chain remains `demo_fixture`; live GitHub and Qoder Desktop
+remain `not_run`.
 
 The first publication omits `--expected-cursor` and succeeds only when no current pointer exists.
 Every replacement must pass the exact current cursor:

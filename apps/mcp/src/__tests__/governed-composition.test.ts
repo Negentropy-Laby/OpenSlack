@@ -6,23 +6,31 @@ import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { readEvents } from '@openslack/collaboration';
+import { LocalGraphStore } from '@openslack/organization-graph';
 import { LocalGovernedPlanStore } from '@openslack/operator';
 import {
   OPENSLACK_GOVERNED_MUTATION_TOOL_NAMES,
   OPENSLACK_READ_TOOL_NAMES,
 } from '@openslack/qoder-adapter';
 import { LocalScenarioInstanceStore } from '@openslack/scenario-runtime';
+import {
+  CONTRACT_DELIVERY_LITE_FIXTURE_ID,
+  CONTRACT_DELIVERY_LITE_WORKFLOW_ID,
+} from '@openslack/workflows';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  assembleContractDeliveryLiteRehearsalSource,
   createOpenSlackAgentBoundMutationComposition,
   createOpenSlackMcpContext,
   createOpenSlackMcpServer,
   OpenSlackMcpCore,
+  publishContractDeliveryLiteRehearsalSnapshot,
   type OperatorApplicationContextPort,
 } from '../index.js';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..');
 const sourcePack = join(repositoryRoot, 'scenarios', 'software-delivery');
+const contractDeliverySourcePack = join(repositoryRoot, 'scenarios', 'contract-to-delivery-lite');
 const PRINCIPAL_REF = 'agent-bound';
 const WORKSPACE_ID = 'workspace-governed-composition';
 const roots: string[] = [];
@@ -41,6 +49,7 @@ function registryYaml(
     readonly identityStatus?: 'active' | 'suspended' | 'retired';
     readonly employmentStatus?: 'active' | 'paused' | 'onboarding' | 'retired';
     readonly maxRiskZone?: 'green' | 'yellow' | 'red' | 'black';
+    readonly workflowAction?: 'allow' | 'ask' | 'deny';
   } = {},
 ): string {
   return [
@@ -78,6 +87,7 @@ function registryYaml(
     '    deny: []',
     '  actions:',
     `    scenario.instantiate: ${options.action ?? 'allow'}`,
+    `    openslack.collaboration.recordEvent: ${options.workflowAction ?? 'deny'}`,
     '  github:',
     '    can_create_pr: false',
     '    can_comment: false',
@@ -123,6 +133,8 @@ function createWorkspace(
     readonly employmentStatus?: 'active' | 'paused' | 'onboarding' | 'retired';
     readonly maxRiskZone?: 'green' | 'yellow' | 'red' | 'black';
     readonly runtimeIdentity?: string | null;
+    readonly contractDelivery?: boolean;
+    readonly workflowAction?: 'allow' | 'ask' | 'deny';
   } = {},
 ): string {
   const root = mkdtempSync(join(tmpdir(), 'openslack-governed-composition-'));
@@ -177,6 +189,11 @@ function createWorkspace(
   }
   mkdirSync(join(root, 'scenarios'));
   cpSync(sourcePack, join(root, 'scenarios', 'software-delivery'), { recursive: true });
+  if (options.contractDelivery) {
+    cpSync(contractDeliverySourcePack, join(root, 'scenarios', 'contract-to-delivery-lite'), {
+      recursive: true,
+    });
+  }
   return root;
 }
 
@@ -384,6 +401,204 @@ describe('production agent-bound governed mutation composition', () => {
     }
   });
 
+  it('rehearses Contract-to-Delivery through governed plans, explicit build, query, and explain', async () => {
+    const workspaceRoot = createWorkspace({
+      contractDelivery: true,
+      workflowAction: 'allow',
+    });
+    const composition = await createOpenSlackAgentBoundMutationComposition({
+      workspaceRoot,
+      principalRef: PRINCIPAL_REF,
+    });
+    expect(composition.scenarioIds).toEqual(['contract-to-delivery-lite', 'software-delivery']);
+    const server = createOpenSlackMcpServer(context(workspaceRoot, composition.governedMutations));
+    const client = new Client({ name: 'contract-delivery-local-rehearsal', version: '1.0.0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.sdkServer.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual([
+        ...OPENSLACK_READ_TOOL_NAMES,
+        ...OPENSLACK_GOVERNED_MUTATION_TOOL_NAMES,
+      ]);
+
+      const scenarioPreview = await client.callTool({
+        name: 'openslack_preview_scenario',
+        arguments: {
+          scenarioId: 'contract-to-delivery-lite',
+          input: {
+            mode: 'local_rehearsal',
+            fixtureId: CONTRACT_DELIVERY_LITE_FIXTURE_ID,
+          },
+        },
+      });
+      const scenarioMetadata = previewMetadata(
+        scenarioPreview.structuredContent as Record<string, unknown>,
+      );
+      const scenarioConfirmation = await client.callTool({
+        name: 'openslack_confirm_plan',
+        arguments: {
+          planId: scenarioMetadata.planId,
+          confirmationToken: scenarioMetadata.confirmationToken,
+        },
+      });
+      expect(scenarioConfirmation.structuredContent).toMatchObject({
+        status: 'completed',
+        data: {
+          state: 'succeeded',
+          outcomes: [{ data: { state: 'active' } }],
+        },
+      });
+      const scenarioInstanceId = String(
+        (
+          scenarioConfirmation.structuredContent as {
+            data: { outcomes: Array<{ data: { scenarioInstanceId: string } }> };
+          }
+        ).data.outcomes[0]!.data.scenarioInstanceId,
+      );
+
+      const workflowPreview = await client.callTool({
+        name: 'openslack_preview_workflow',
+        arguments: {
+          workflowId: CONTRACT_DELIVERY_LITE_WORKFLOW_ID,
+          input: {
+            mode: 'local_rehearsal',
+            fixtureId: CONTRACT_DELIVERY_LITE_FIXTURE_ID,
+            scenarioInstanceId,
+            scenarioCorrelationId: scenarioMetadata.correlationId,
+          },
+        },
+      });
+      const workflowMetadata = previewMetadata(
+        workflowPreview.structuredContent as Record<string, unknown>,
+      );
+      expect(workflowPreview.structuredContent).toMatchObject({
+        status: 'needs_confirmation',
+        data: {
+          kind: 'workflow.start',
+          effects: [{ type: 'workflow.start', target: scenarioInstanceId }],
+        },
+      });
+      const workflowConfirmation = await client.callTool({
+        name: 'openslack_confirm_plan',
+        arguments: {
+          planId: workflowMetadata.planId,
+          confirmationToken: workflowMetadata.confirmationToken,
+        },
+      });
+      expect(workflowConfirmation.structuredContent).toMatchObject({
+        status: 'completed',
+        data: {
+          state: 'succeeded',
+          outcomes: [
+            {
+              status: 'succeeded',
+              data: {
+                evidenceLevel: 'LOCAL_REHEARSAL_PASS',
+                origins: {
+                  workflow: 'governed_local_store',
+                  workItem: 'demo_fixture',
+                  deliverable: 'demo_fixture',
+                  acceptance: 'demo_fixture',
+                  outcome: 'demo_fixture',
+                  liveGitHub: 'not_run',
+                },
+              },
+            },
+          ],
+        },
+      });
+      const completedInstance = await new LocalScenarioInstanceStore(
+        composition.scenarioInstanceRoot,
+        scenarioMetadata.correlationId,
+      ).readWithRevision(scenarioInstanceId);
+      expect(completedInstance).toMatchObject({
+        instance: {
+          state: 'completed',
+          workflowRunIds: [expect.stringMatching(/^workflow-run:sha256:[0-9a-f]{64}$/)],
+        },
+      });
+
+      const source = await assembleContractDeliveryLiteRehearsalSource({
+        governedPlanRoot: composition.governedPlanRoot,
+        scenarioInstanceRoot: composition.scenarioInstanceRoot,
+        workflowPlanId: workflowMetadata.planId,
+        scenarioInstanceId,
+        scenarioCorrelationId: scenarioMetadata.correlationId,
+      });
+      const published = await publishContractDeliveryLiteRehearsalSnapshot({
+        workspaceRoot,
+        source,
+        expectedCursor: null,
+      });
+      const graphStore = new LocalGraphStore(join(workspaceRoot, '.openslack.local', 'graph'));
+      const snapshot = await graphStore.readCurrentSnapshot(scenarioInstanceId);
+      const customer = snapshot.nodes.find((node) => node.type === 'business.customer');
+      const compositeEdge = snapshot.edges.find(
+        (edge) => edge.projectorVersion === 'openslack.contract_to_delivery.v1',
+      );
+      expect(customer).toBeDefined();
+      expect(compositeEdge).toBeDefined();
+      expect(
+        source.softwareDelivery.sources.workflowRuns.items.some(
+          (item) =>
+            item.workflowId === CONTRACT_DELIVERY_LITE_WORKFLOW_ID &&
+            item.observationKind === 'local_store',
+        ),
+      ).toBe(true);
+
+      const query = await client.callTool({
+        name: 'openslack_query_graph',
+        arguments: {
+          scenarioInstanceId,
+          rootNodeIds: [customer!.id],
+          direction: 'both',
+          depth: 3,
+          maxNodes: 200,
+          maxEdges: 500,
+          includeEvidence: true,
+        },
+      });
+      expect(query.structuredContent).toMatchObject({
+        status: 'completed',
+        authority: {
+          mode: 'projection',
+          sources: ['openslack.organization_graph_snapshot'],
+        },
+        data: {
+          scenarioInstanceId,
+          snapshotCursor: published.cursor,
+          truncation: { truncated: false },
+        },
+      });
+      const explanation = await client.callTool({
+        name: 'openslack_explain_graph',
+        arguments: {
+          scenarioInstanceId,
+          targetId: compositeEdge!.id,
+          depth: 3,
+        },
+      });
+      expect(explanation.structuredContent).toMatchObject({
+        status: 'completed',
+        authority: {
+          mode: 'projection',
+          sources: ['openslack.organization_graph_snapshot'],
+        },
+        data: {
+          targetId: compositeEdge!.id,
+          snapshotCursor: published.cursor,
+        },
+      });
+      expect(readEvents(workspaceRoot).some((event) => event.type === 'workflow.started')).toBe(
+        true,
+      );
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   it('keeps the preview pending when permission changes before confirmation', async () => {
     const workspaceRoot = createWorkspace();
     const composition = await createOpenSlackAgentBoundMutationComposition({
@@ -413,6 +628,70 @@ describe('production agent-bound governed mutation composition', () => {
     expect(
       await new LocalGovernedPlanStore(composition.governedPlanRoot).load(metadata.planId),
     ).toMatchObject({ state: 'pending', revision: 1 });
+  });
+
+  it('keeps the Workflow preview pending when its capability changes before confirmation', async () => {
+    const workspaceRoot = createWorkspace({
+      contractDelivery: true,
+      workflowAction: 'allow',
+    });
+    const composition = await createOpenSlackAgentBoundMutationComposition({
+      workspaceRoot,
+      principalRef: PRINCIPAL_REF,
+    });
+    const core = new OpenSlackMcpCore(context(workspaceRoot, composition.governedMutations));
+    const scenarioPreview = await core.callTool('openslack_preview_scenario', {
+      scenarioId: 'contract-to-delivery-lite',
+      input: {
+        mode: 'local_rehearsal',
+        fixtureId: CONTRACT_DELIVERY_LITE_FIXTURE_ID,
+      },
+    });
+    const scenarioMetadata = previewMetadata(scenarioPreview.structuredContent);
+    const scenarioConfirmation = await core.callTool('openslack_confirm_plan', {
+      planId: scenarioMetadata.planId,
+      confirmationToken: scenarioMetadata.confirmationToken,
+    });
+    const scenarioInstanceId = String(
+      (
+        scenarioConfirmation.structuredContent as {
+          data: { outcomes: Array<{ data: { scenarioInstanceId: string } }> };
+        }
+      ).data.outcomes[0]!.data.scenarioInstanceId,
+    );
+    const workflowPreview = await core.callTool('openslack_preview_workflow', {
+      workflowId: CONTRACT_DELIVERY_LITE_WORKFLOW_ID,
+      input: {
+        mode: 'local_rehearsal',
+        fixtureId: CONTRACT_DELIVERY_LITE_FIXTURE_ID,
+        scenarioInstanceId,
+        scenarioCorrelationId: scenarioMetadata.correlationId,
+      },
+    });
+    const workflowMetadata = previewMetadata(workflowPreview.structuredContent);
+    writeFileSync(
+      join(workspaceRoot, '.openslack', 'agents', 'registry', `${PRINCIPAL_REF}.yaml`),
+      registryYaml({ action: 'allow', workflowAction: 'deny' }),
+      'utf8',
+    );
+
+    const confirmed = await core.callTool('openslack_confirm_plan', {
+      planId: workflowMetadata.planId,
+      confirmationToken: workflowMetadata.confirmationToken,
+    });
+    expect(confirmed.structuredContent).toMatchObject({
+      status: 'blocked',
+      governance: { blocker: 'GOVERNED_ACTION_NOT_AUTHORIZED' },
+    });
+    expect(
+      await new LocalGovernedPlanStore(composition.governedPlanRoot).load(workflowMetadata.planId),
+    ).toMatchObject({ state: 'pending', revision: 1 });
+    expect(
+      await new LocalScenarioInstanceStore(
+        composition.scenarioInstanceRoot,
+        scenarioMetadata.correlationId,
+      ).readWithRevision(scenarioInstanceId),
+    ).toMatchObject({ instance: { state: 'active', workflowRunIds: [] } });
   });
 
   it('keeps the preview pending when the bound runtime identity disappears', async () => {

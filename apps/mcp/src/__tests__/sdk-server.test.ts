@@ -49,7 +49,6 @@ describe('official MCP SDK integration', () => {
           'packages',
           'organization-graph',
           'src',
-          '__tests__',
           'fixtures',
           'contract-to-delivery-source.json',
         ),

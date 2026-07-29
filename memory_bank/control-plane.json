@@ -461,6 +461,11 @@
       "status": "active"
     },
     {
+      "id": "example-contract-to-delivery-lite",
+      "path": "docs/examples/contract-to-delivery-lite.md",
+      "status": "active"
+    },
+    {
       "id": "example-ai-organization-rehearsal",
       "path": "docs/examples/ai-organization/rehearsal-checklist.md",
       "status": "active"

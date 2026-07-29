@@ -1,2 +1,3 @@
 schema: openslack.scenario_capabilities.v1
-requested: []
+requested:
+  - openslack.collaboration.recordEvent

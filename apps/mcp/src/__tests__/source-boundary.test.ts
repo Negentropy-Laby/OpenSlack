@@ -20,6 +20,7 @@ describe('QW2 MCP source boundary', () => {
     const files = [
       'context.ts',
       'core.ts',
+      'contract-delivery-rehearsal.ts',
       'governed-composition.ts',
       'mutations.ts',
       'workflow-approvals.ts',
@@ -39,6 +40,7 @@ describe('QW2 MCP source boundary', () => {
   it('keeps the governed mutation path isolated from legacy or dynamic executors', () => {
     const files = [
       'core.ts',
+      'contract-delivery-rehearsal.ts',
       'governed-composition.ts',
       'mutations.ts',
       'workflow-approvals.ts',
@@ -75,6 +77,8 @@ describe('QW2 MCP source boundary', () => {
       'rehydrateScenarioInstantiationPlan',
       'LocalScenarioInstanceStore',
       'compileWorkflowStartPlan',
+      'createContractDeliveryLiteWorkflowResolverEntry',
+      'executeContractDeliveryLiteWorkflow',
       'createGovernedPlanCollaborationAuditSink',
     ]) {
       expect(source).toContain(required);
@@ -83,6 +87,25 @@ describe('QW2 MCP source boundary', () => {
       /\b(?:generateRuntimeIdentity|executePlan|executeWorkflowTemplate|findWorkflow|loadWorkflow|issueHumanDecisionBinding|createWorkflowEffectDecisionAuthority)\b/,
     );
     expect(source).not.toMatch(/apps\/cli|@openslack\/cli|node:child_process|execFile|spawn\s*\(/);
+  });
+
+  it('assembles rehearsal evidence before explicit sealed graph publication', () => {
+    const source = readFileSync(join(sourceRoot, 'contract-delivery-rehearsal.ts'), 'utf8');
+
+    for (const required of [
+      'LocalGovernedPlanStore',
+      'LocalScenarioInstanceStore',
+      'createContractToDeliveryDemoSource',
+      'validateContractToDeliverySourceSnapshot',
+      'buildAndPublishGraphSnapshot',
+    ]) {
+      expect(source).toContain(required);
+    }
+    expect(source).not.toMatch(
+      /\b(?:projectContractToDeliverySnapshot|projectSoftwareDeliverySnapshot|publishSnapshot|executePlan|executeWorkflowTemplate|loadWorkflow|RunStore|allowUnattended)\b/,
+    );
+    expect(source).not.toContain('__tests__/fixtures');
+    expect(source).not.toMatch(/github\.pr\.(?:approve|merge)|shell\.run|command\.run/);
   });
 
   it('binds governed audit projection to one verified append descriptor', () => {

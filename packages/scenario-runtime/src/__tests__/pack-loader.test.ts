@@ -128,8 +128,15 @@ describe('Scenario Pack exact-byte loader', () => {
         adapterId: CONTRACT_TO_DELIVERY_PROJECTOR_ID,
       },
     ]);
-    expect(definition.workflows.workflows).toEqual([]);
-    expect(definition.capabilities.requested).toEqual([]);
+    expect(definition.workflows.workflows).toEqual([
+      {
+        id: 'contract.delivery.lite',
+        adapterId: 'openslack.contract_delivery.local',
+        capabilityIds: ['openslack.collaboration.recordEvent'],
+        role: 'delivery',
+      },
+    ]);
+    expect(definition.capabilities.requested).toEqual(['openslack.collaboration.recordEvent']);
     expect(definition.notifications.mappings).toEqual([]);
     expect(definition.manifest.id).toBe('contract-to-delivery-lite');
     expect(() => assertLoadedScenarioDefinition(definition)).not.toThrow();

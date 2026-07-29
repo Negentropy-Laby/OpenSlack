@@ -1,2 +1,7 @@
 schema: openslack.scenario_workflows.v1
-workflows: []
+workflows:
+  - id: contract.delivery.lite
+    adapterId: openslack.contract_delivery.local
+    capabilityIds:
+      - openslack.collaboration.recordEvent
+    role: delivery

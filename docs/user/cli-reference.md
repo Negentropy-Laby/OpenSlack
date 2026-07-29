@@ -791,7 +791,7 @@ fixture:
 ```bash
 openslack graph snapshot build \
   --scenario contract-to-delivery-lite \
-  --from packages/organization-graph/src/__tests__/fixtures/contract-to-delivery-source.json \
+  --from packages/organization-graph/src/fixtures/contract-to-delivery-source.json \
   --scenario-instance scenario-contract-delivery-001 \
   --format json
 ```
@@ -812,6 +812,15 @@ changed expected cursor returns `GRAPH_STORE_CURSOR_CONFLICT`. The command
 writes only to `.openslack.local/graph` in the current workspace, performs no
 GitHub or live-evidence collection, and is intentionally side-effecting. It is
 not an MCP read tool.
+
+Repository contributors can exercise the complete credential-free governed local path with:
+
+```bash
+bun run demo:contract-delivery
+```
+
+The path-free result distinguishes real governed local-store evidence from the
+`demo_fixture` business chain and reports live GitHub and Qoder Desktop as `not_run`.
 
 Every MCP profile reserves stdout for protocol frames and opens no listening
 socket. Default and explicit `read-only` accept no authority-binding argument

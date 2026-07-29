@@ -70,6 +70,12 @@ export {
   CONTRACT_TO_DELIVERY_SOURCE_LIMITS,
   CONTRACT_TO_DELIVERY_SOURCE_SCHEMA,
 } from './contract-to-delivery-types.js';
+export {
+  CONTRACT_TO_DELIVERY_DEMO_SOURCE_ID,
+  ContractToDeliveryDemoSourceError,
+  createContractToDeliveryDemoSource,
+} from './contract-to-delivery-demo-source.js';
+export type { CreateContractToDeliveryDemoSourceInput } from './contract-to-delivery-demo-source.js';
 export type {
   ContractToDeliveryAcceptanceObservation,
   ContractToDeliveryBridgeRef,

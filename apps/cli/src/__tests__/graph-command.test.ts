@@ -37,7 +37,6 @@ const contractFixturePath = join(
   'packages',
   'organization-graph',
   'src',
-  '__tests__',
   'fixtures',
   'contract-to-delivery-source.json',
 );

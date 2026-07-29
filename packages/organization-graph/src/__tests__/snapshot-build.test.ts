@@ -23,6 +23,7 @@ const fixturePath = join(
 );
 const contractFixturePath = join(
   dirname(fileURLToPath(import.meta.url)),
+  '..',
   'fixtures',
   'contract-to-delivery-source.json',
 );

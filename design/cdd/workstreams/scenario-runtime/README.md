@@ -15,22 +15,22 @@ sources:
 
 | Field                   | Value                                                                                  |
 | ----------------------- | -------------------------------------------------------------------------------------- |
-| Status                  | `COMPOSITE PACK + GOVERNED PROFILES IMPLEMENTED — REHEARSAL PENDING`                   |
+| Status                  | `COMPOSITE PACK + GOVERNED LOCAL REHEARSAL IMPLEMENTED — LIVE QUALIFICATION PENDING`   |
 | Product direction       | One-scenario-first                                                                     |
 | Lead interview scenario | Contract-to-Delivery Lite                                                              |
 | Pack format             | Declarative `openslack.scenario_pack.v1`                                               |
 | Execution authority     | Registry/runtime principal + canonical plan + registered host executor + durable store |
 
-The `@openslack/scenario-runtime` package and exact-byte locked, projection-only
-`software-delivery` and `contract-to-delivery-lite` Scenario Packs implement the declarative
-loading, capability normalization, preview, instance, and local-store core described here. The
-governed mutation contract and a production agent-bound Scenario instantiation composition are
-implemented.
+The `@openslack/scenario-runtime` package and exact-byte locked `software-delivery` and
+`contract-to-delivery-lite` Scenario Packs implement the declarative loading, capability
+normalization, preview, instance, and local-store core described here. The governed mutation
+contract, a production agent-bound Scenario instantiation composition, and the reviewed
+credential-free Contract-to-Delivery local Workflow rehearsal are implemented.
 The default stock MCP remains read-only, explicit CLI `agent-bound` selects the governed 16-tool
 composition from an active registry/runtime principal, and explicit `human-attested` selects 17
 only after a separate local OS-subject and controlling-TTY attestation self-test. Authenticated
-Qoder rehearsal, the governed Contract-to-Delivery workflow, live adapter qualification, and
-scenario lifecycle events remain later milestones.
+Authenticated Qoder rehearsal, live adapter qualification, notification delivery, and external
+Scenario lifecycle qualification remain later milestones.
 
 ## Product outcome
 
@@ -85,13 +85,15 @@ The first read-only additions are the graph tools defined in the
 [Qoder MCP Catalog Evolution contract](../../../../docs/architecture/contracts/qoder-mcp.md#catalog-evolution).
 That contract is the single source of exact tool names and counts.
 
-Governed scenario preview and execution tools are implemented. The production agent-bound factory
+Governed scenario and sealed Workflow preview and execution tools are implemented. The production agent-bound factory
 resolves an active registry/runtime principal, current permission snapshot, canonical workspace,
 process-sealed Scenario definitions, exact lock/catalog/build hashes, real plan and instance
 stores, and the Collaboration audit sink before returning an explicitly injectable 16-tool
-composition. Its `scenario.instantiate` executor uses CAS and durable instance readback. No sealed
-Workflow target/executor is currently registered, so Workflow preview is stably blocked and
-creates no plan. Default and explicit `read-only` remain the exact 12-tool surface; explicit
+composition. Its `scenario.instantiate` executor uses CAS and durable instance readback. The only
+registered Workflow target is the reviewed `contract.delivery.lite` local executor, bound to the
+locked Pack, its one requested Collaboration capability, the current principal permission
+snapshot, and an active Scenario instance. Unknown Workflow targets remain stably blocked and
+create no plan. Default and explicit `read-only` remain the exact 12-tool surface; explicit
 `agent-bound` selects the exact 16-tool surface. Explicit `human-attested` selects the exact
 17-tool surface only when the local human mapping and controlling TTY are proven.
 
@@ -352,10 +354,13 @@ Contract
   -> contributes to Outcome
 ```
 
-The `contract-to-delivery-lite` Pack is currently projection-only and grants no workflow,
-notification, deep-link, or mutation authority. The `software-delivery` pack/projector is reusable
-foundation, not a second live interview scenario. The employee-onboarding example, if shown, is a
-static fixture only and makes no live execution claim.
+The `software-delivery` Pack remains projection-only. The `contract-to-delivery-lite` Pack
+references exactly one host-registered Workflow and requests exactly one low-risk Collaboration
+event capability. Those declarations grant no authority by themselves: the explicit agent-bound
+host composition still resolves the current principal, permission, plan, Scenario, executor,
+store, and build bindings before execution. The Pack declares no notification, deep-link, GitHub,
+PRMS, approval, merge, shell, or credential authority. The employee-onboarding example, if shown,
+is a static fixture only and makes no live execution claim.
 
 ## Notification boundary
 
@@ -378,13 +383,13 @@ The MVP includes:
 - capability normalization that preserves legacy workflow behavior;
 - atomic local scenario instance store and recovery evidence;
 - declarative `software-delivery` foundation;
-- one locked, projection-only Contract-to-Delivery Lite Pack and composite graph;
+- one locked Contract-to-Delivery Lite Pack, sealed local Workflow, and composite graph;
 - preview-first OpenSlack canonical plans;
 - Organization Graph and BusinessOutcome projection;
+- one repeatable credential-free local rehearsal through the official MCP SDK;
 
 Deferred:
 
-- governed Contract-to-Delivery workflow and repeatable local rehearsal;
 - console/direct-local notification intent for that rehearsal;
 - a static read-only HTML artifact;
 - formal Qoder Workbench;
