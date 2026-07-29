@@ -38,7 +38,11 @@ export interface ContractDeliveryLiteWorkflowReceipt {
     readonly deliverable: 'demo_fixture';
     readonly acceptance: 'demo_fixture';
     readonly outcome: 'demo_fixture';
+    readonly notificationIntent: 'not_created';
+    readonly notificationDelivery: 'blocked_not_configured';
     readonly liveGitHub: 'not_run';
+    readonly liveCapstone: 'LIVE_CAPSTONE_PENDING';
+    readonly qoderDesktop: 'not_run';
   };
 }
 
@@ -246,7 +250,11 @@ export function createContractDeliveryLiteWorkflowReceipt(
       deliverable: 'demo_fixture',
       acceptance: 'demo_fixture',
       outcome: 'demo_fixture',
+      notificationIntent: 'not_created',
+      notificationDelivery: 'blocked_not_configured',
       liveGitHub: 'not_run',
+      liveCapstone: 'LIVE_CAPSTONE_PENDING',
+      qoderDesktop: 'not_run',
     }),
   });
 }

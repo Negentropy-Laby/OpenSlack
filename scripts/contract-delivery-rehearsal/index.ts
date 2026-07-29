@@ -276,7 +276,13 @@ async function main(): Promise<void> {
             data?: {
               evidenceLevel?: string;
               workflowRunId?: string;
-              origins?: { liveGitHub?: string };
+              origins?: {
+                notificationIntent?: string;
+                notificationDelivery?: string;
+                liveGitHub?: string;
+                liveCapstone?: string;
+                qoderDesktop?: string;
+              };
             };
           }>;
         };
@@ -284,7 +290,11 @@ async function main(): Promise<void> {
     ).data?.outcomes?.[0]?.data;
     if (
       receipt?.evidenceLevel !== 'LOCAL_REHEARSAL_PASS' ||
-      receipt.origins?.liveGitHub !== 'not_run'
+      receipt.origins?.notificationIntent !== 'not_created' ||
+      receipt.origins.notificationDelivery !== 'blocked_not_configured' ||
+      receipt.origins.liveGitHub !== 'not_run' ||
+      receipt.origins.liveCapstone !== 'LIVE_CAPSTONE_PENDING' ||
+      receipt.origins.qoderDesktop !== 'not_run'
     ) {
       throw new LocalRehearsalError(
         'WORKFLOW_CONFIRMATION_FAILED',
@@ -369,7 +379,10 @@ async function main(): Promise<void> {
           origins: {
             workflow: 'governed_local_store',
             businessChain: 'demo_fixture',
+            notificationIntent: 'not_created',
+            notificationDelivery: 'blocked_not_configured',
             liveGitHub: 'not_run',
+            liveCapstone: 'LIVE_CAPSTONE_PENDING',
             qoderDesktop: 'not_run',
           },
         },

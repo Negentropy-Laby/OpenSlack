@@ -165,7 +165,11 @@ export async function executeContractDeliveryLiteWorkflow(
       evidenceLevel: receipt.evidenceLevel,
       fixtureId: receipt.fixtureId,
       scenarioInstanceId: receipt.scenarioInstanceId,
+      notificationIntent: receipt.origins.notificationIntent,
+      notificationDelivery: receipt.origins.notificationDelivery,
       liveGitHub: receipt.origins.liveGitHub,
+      liveCapstone: receipt.origins.liveCapstone,
+      qoderDesktop: receipt.origins.qoderDesktop,
     },
   });
   input.eventAppender.append(event);

@@ -58,7 +58,11 @@ describe('reviewed Contract-to-Delivery local Workflow contract', () => {
         deliverable: 'demo_fixture',
         acceptance: 'demo_fixture',
         outcome: 'demo_fixture',
+        notificationIntent: 'not_created',
+        notificationDelivery: 'blocked_not_configured',
         liveGitHub: 'not_run',
+        liveCapstone: 'LIVE_CAPSTONE_PENDING',
+        qoderDesktop: 'not_run',
       },
     });
     expect(Object.isFrozen(first)).toBe(true);
