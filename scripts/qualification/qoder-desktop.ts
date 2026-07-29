@@ -9,6 +9,7 @@ import {
   LocalGraphStore,
 } from '../../packages/organization-graph/src/index.js';
 import {
+  OPENSLACK_READ_TOOL_CATALOG,
   OPENSLACK_READ_TOOL_NAMES,
   validateOpenSlackMcpResultV2,
   type OpenSlackMcpResultV2,
@@ -30,13 +31,13 @@ import {
 } from './common.js';
 
 export const QODER_DESKTOP_MANIFEST_SCHEMA =
-  'openslack.qoder_desktop_qualification_manifest.v1' as const;
+  'openslack.qoder_desktop_qualification_manifest.v2' as const;
 export const QODER_DESKTOP_RECEIPT_SCHEMA =
-  'openslack.qoder_desktop_qualification_receipt.v1' as const;
+  'openslack.qoder_desktop_qualification_receipt.v2' as const;
 export const QODER_DESKTOP_CALL_PLAN_SCHEMA =
   'openslack.qoder_desktop_qualification_call_plan.v1' as const;
 export const QODER_DESKTOP_VERIFICATION_SCHEMA =
-  'openslack.qoder_desktop_qualification_verification.v1' as const;
+  'openslack.qoder_desktop_qualification_verification.v2' as const;
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '..', '..');
 const RECEIPT_FILE = 'qoder-desktop-receipt.json';
@@ -45,6 +46,10 @@ const CONFIG_FILE = 'mcp-config.windows.json';
 const CALL_PLAN_FILE = 'call-plan.json';
 const EVIDENCE_REF = /^sha256:[0-9a-f]{64}$/;
 const PENDING = 'PENDING';
+const PERMISSION_OUTCOMES = Object.freeze([
+  'prompt_observed',
+  'no_prompt_read_only_observed',
+] as const);
 const SKILL_MODES = Object.freeze(['automatic', 'slash_chooser', 'explicit_name'] as const);
 const REQUIRED_SECTIONS = Object.freeze([
   'Status',
@@ -68,6 +73,14 @@ export interface QoderToolBaseline {
   readonly assertions: readonly string[];
 }
 
+export interface QoderToolAnnotationBinding {
+  readonly name: string;
+  readonly readOnlyHint: boolean;
+  readonly destructiveHint: boolean;
+  readonly idempotentHint: boolean;
+  readonly openWorldHint: boolean;
+}
+
 export interface QoderDesktopQualificationManifest {
   readonly schema: typeof QODER_DESKTOP_MANIFEST_SCHEMA;
   readonly qualificationId: string;
@@ -85,11 +98,12 @@ export interface QoderDesktopQualificationManifest {
   readonly staleInstanceId: string;
   readonly missingInstanceId: string;
   readonly toolNames: readonly string[];
+  readonly toolAnnotations: readonly QoderToolAnnotationBinding[];
   readonly calls: readonly QoderToolBaseline[];
 }
 
 interface QoderReceiptToolCall extends QoderToolBaseline {
-  readonly permissionPrompt: 'observed';
+  readonly permissionOutcome: (typeof PERMISSION_OUTCOMES)[number];
   readonly evidenceRef: string;
 }
 
@@ -132,7 +146,8 @@ export interface QoderDesktopQualificationReceipt {
   readonly permissions: {
     readonly oldConnectorRemoved: true;
     readonly oldGrantsRemoved: true;
-    readonly mode: 'per_tool';
+    readonly connectorExplicitlyEnabled: true;
+    readonly autoRunDisabled: true;
     readonly wildcard: false;
   };
   readonly scenarioCatalog: {
@@ -166,6 +181,77 @@ function blocked(code: string, message: string): never {
 
 function nonce(): string {
   return randomBytes(6).toString('hex');
+}
+
+function reviewedToolAnnotations(): readonly QoderToolAnnotationBinding[] {
+  return Object.freeze(
+    OPENSLACK_READ_TOOL_CATALOG.map((tool) =>
+      Object.freeze({
+        name: tool.name,
+        readOnlyHint: tool.annotations.readOnlyHint,
+        destructiveHint: tool.annotations.destructiveHint,
+        idempotentHint: tool.annotations.idempotentHint,
+        openWorldHint: tool.annotations.openWorldHint,
+      }),
+    ),
+  );
+}
+
+function isReviewedReadOnlyBinding(binding: QoderToolAnnotationBinding | undefined): boolean {
+  return (
+    binding !== undefined &&
+    binding.readOnlyHint === true &&
+    binding.destructiveHint === false &&
+    binding.idempotentHint === true
+  );
+}
+
+function isPermissionOutcome(value: unknown): value is (typeof PERMISSION_OUTCOMES)[number] {
+  return value === 'prompt_observed' || value === 'no_prompt_read_only_observed';
+}
+
+function validateToolAnnotationBindings(value: unknown): readonly QoderToolAnnotationBinding[] {
+  if (!Array.isArray(value) || value.length !== OPENSLACK_READ_TOOL_NAMES.length) {
+    return blocked(
+      'QODER_QUALIFICATION_TOOL_POLICY_MISMATCH',
+      'The qualification tool annotations are not the exact reviewed read-only bindings.',
+    );
+  }
+  const bindings = value.map((entry, index) => {
+    assertExactRecord(
+      entry,
+      ['name', 'readOnlyHint', 'destructiveHint', 'idempotentHint', 'openWorldHint'],
+      'QODER_QUALIFICATION_TOOL_POLICY_MISMATCH',
+      `tool annotation binding ${index}`,
+    );
+    const binding = entry as Record<string, unknown>;
+    if (
+      binding.name !== OPENSLACK_READ_TOOL_NAMES[index] ||
+      typeof binding.readOnlyHint !== 'boolean' ||
+      typeof binding.destructiveHint !== 'boolean' ||
+      typeof binding.idempotentHint !== 'boolean' ||
+      typeof binding.openWorldHint !== 'boolean'
+    ) {
+      return blocked(
+        'QODER_QUALIFICATION_TOOL_POLICY_MISMATCH',
+        'The qualification tool annotations are not the exact reviewed read-only bindings.',
+      );
+    }
+    return Object.freeze({
+      name: OPENSLACK_READ_TOOL_NAMES[index]!,
+      readOnlyHint: binding.readOnlyHint,
+      destructiveHint: binding.destructiveHint,
+      idempotentHint: binding.idempotentHint,
+      openWorldHint: binding.openWorldHint,
+    });
+  });
+  if (JSON.stringify(bindings) !== JSON.stringify(reviewedToolAnnotations())) {
+    return blocked(
+      'QODER_QUALIFICATION_TOOL_POLICY_MISMATCH',
+      'The qualification tool annotations are not the exact reviewed read-only bindings.',
+    );
+  }
+  return Object.freeze(bindings);
 }
 
 function fixedCallPlan(
@@ -536,6 +622,7 @@ async function preflightStockConnector(
   plan: readonly QoderToolCallPlan[],
 ): Promise<{
   readonly toolNames: readonly string[];
+  readonly toolAnnotations: readonly QoderToolAnnotationBinding[];
   readonly calls: readonly QoderToolBaseline[];
 }> {
   const server = (config.mcpServers as { openslack: { command: string; args: string[] } })
@@ -553,13 +640,17 @@ async function preflightStockConnector(
   const client = new Client({ name: 'openslack-qoder-desktop-preflight', version: '1.0.0' });
   try {
     await client.connect(transport);
-    const toolNames = (await client.listTools()).tools.map((tool) => tool.name);
+    const listedTools = (await client.listTools()).tools;
+    const toolNames = listedTools.map((tool) => tool.name);
     if (JSON.stringify(toolNames) !== JSON.stringify(OPENSLACK_READ_TOOL_NAMES)) {
       return blocked(
         'QODER_QUALIFICATION_TOOL_CATALOG_MISMATCH',
         'The stock MCP server is not the exact reviewed 12-tool catalog.',
       );
     }
+    const toolAnnotations = validateToolAnnotationBindings(
+      listedTools.map((tool) => ({ name: tool.name, ...tool.annotations })),
+    );
     const calls: QoderToolBaseline[] = [];
     for (const entry of plan) {
       const response = await client.callTool(
@@ -606,6 +697,7 @@ async function preflightStockConnector(
     }
     return Object.freeze({
       toolNames: Object.freeze([...toolNames]),
+      toolAnnotations: Object.freeze([...toolAnnotations]),
       calls: Object.freeze(calls),
     });
   } finally {
@@ -634,13 +726,14 @@ function receiptTemplate(
     toolsListed: Object.freeze({ names: manifest.toolNames, evidenceRef: PENDING }),
     calls: Object.freeze(
       manifest.calls.map((call) =>
-        Object.freeze({ ...call, permissionPrompt: 'pending', evidenceRef: PENDING }),
+        Object.freeze({ ...call, permissionOutcome: 'pending', evidenceRef: PENDING }),
       ),
     ),
     permissions: Object.freeze({
       oldConnectorRemoved: false,
       oldGrantsRemoved: false,
-      mode: 'pending',
+      connectorExplicitlyEnabled: false,
+      autoRunDisabled: false,
       wildcard: true,
     }),
     scenarioCatalog: Object.freeze({
@@ -713,6 +806,7 @@ export async function prepareQoderDesktopQualification(): Promise<QoderDesktopPr
     staleInstanceId,
     missingInstanceId,
     toolNames: preflight.toolNames,
+    toolAnnotations: preflight.toolAnnotations,
     calls: preflight.calls,
   });
   const configPath = join(outputRoot, CONFIG_FILE);
@@ -767,6 +861,7 @@ function validateManifest(value: unknown): QoderDesktopQualificationManifest {
       'staleInstanceId',
       'missingInstanceId',
       'toolNames',
+      'toolAnnotations',
       'calls',
     ],
     'QODER_QUALIFICATION_MANIFEST_INVALID',
@@ -794,6 +889,7 @@ function validateManifest(value: unknown): QoderDesktopQualificationManifest {
     !SAFE_QUALIFICATION_ID.test(manifest.missingInstanceId) ||
     manifest.staleInstanceId === manifest.missingInstanceId ||
     JSON.stringify(manifest.toolNames) !== JSON.stringify(OPENSLACK_READ_TOOL_NAMES) ||
+    !Array.isArray(manifest.toolAnnotations) ||
     !Array.isArray(manifest.calls) ||
     manifest.calls.length !== OPENSLACK_READ_TOOL_NAMES.length
   ) {
@@ -807,6 +903,7 @@ function validateManifest(value: unknown): QoderDesktopQualificationManifest {
     'QODER_QUALIFICATION_MANIFEST_INVALID',
     'preparedAt',
   );
+  validateToolAnnotationBindings(manifest.toolAnnotations);
   manifest.calls.forEach((call, index) => {
     assertExactRecord(
       call,
@@ -836,6 +933,7 @@ export function validateQoderDesktopReceipt(
   manifest: QoderDesktopQualificationManifest,
   nowValue = new Date().toISOString(),
 ): QoderDesktopQualificationReceipt {
+  validateManifest(manifest);
   assertExactRecord(
     value,
     [
@@ -869,7 +967,13 @@ export function validateQoderDesktopReceipt(
     [receipt.toolsListed, ['names', 'evidenceRef'], 'tool-list evidence'],
     [
       receipt.permissions,
-      ['oldConnectorRemoved', 'oldGrantsRemoved', 'mode', 'wildcard'],
+      [
+        'oldConnectorRemoved',
+        'oldGrantsRemoved',
+        'connectorExplicitlyEnabled',
+        'autoRunDisabled',
+        'wildcard',
+      ],
       'permission evidence',
     ],
     [receipt.scenarioCatalog, ['count', 'ids', 'locked'], 'Scenario catalog evidence'],
@@ -914,7 +1018,8 @@ export function validateQoderDesktopReceipt(
     !EVIDENCE_REF.test(receipt.toolsListed.evidenceRef) ||
     receipt.permissions.oldConnectorRemoved !== true ||
     receipt.permissions.oldGrantsRemoved !== true ||
-    receipt.permissions.mode !== 'per_tool' ||
+    receipt.permissions.connectorExplicitlyEnabled !== true ||
+    receipt.permissions.autoRunDisabled !== true ||
     receipt.permissions.wildcard !== false ||
     receipt.scenarioCatalog.count !== 2 ||
     JSON.stringify(receipt.scenarioCatalog.ids) !==
@@ -943,7 +1048,7 @@ export function validateQoderDesktopReceipt(
         'status',
         'blocker',
         'assertions',
-        'permissionPrompt',
+        'permissionOutcome',
         'evidenceRef',
       ],
       'QODER_QUALIFICATION_RECEIPT_INVALID',
@@ -963,6 +1068,15 @@ export function validateQoderDesktopReceipt(
       );
     }
     if (
+      call.permissionOutcome === 'no_prompt_read_only_observed' &&
+      !isReviewedReadOnlyBinding(manifest.toolAnnotations[index])
+    ) {
+      blocked(
+        'QODER_QUALIFICATION_TOOL_POLICY_MISMATCH',
+        'A no-prompt observation is not bound to the exact reviewed read-only annotation.',
+      );
+    }
+    if (
       call.name !== OPENSLACK_READ_TOOL_NAMES[index] ||
       call.name !== baseline.name ||
       call.inputHash !== baseline.inputHash ||
@@ -970,7 +1084,7 @@ export function validateQoderDesktopReceipt(
       call.status !== baseline.status ||
       call.blocker !== baseline.blocker ||
       JSON.stringify(call.assertions) !== JSON.stringify(baseline.assertions) ||
-      call.permissionPrompt !== 'observed' ||
+      !isPermissionOutcome(call.permissionOutcome) ||
       typeof call.evidenceRef !== 'string' ||
       !EVIDENCE_REF.test(call.evidenceRef)
     ) {
@@ -978,7 +1092,7 @@ export function validateQoderDesktopReceipt(
         index >= receipt.calls.length
           ? 'QODER_QUALIFICATION_CALL_MISSING'
           : 'QODER_QUALIFICATION_TOOL_ORDER_OR_RESULT_INVALID',
-        'Qoder Desktop tool order, result, blocker, or permission evidence is invalid.',
+        'Qoder Desktop tool order, result, blocker, or permission outcome evidence is invalid.',
       );
     }
   });
@@ -1105,6 +1219,7 @@ export function verifyQoderDesktopQualification(receiptPathValue: string): Reado
 export function qoderReceiptFixture(
   manifest: QoderDesktopQualificationManifest,
   timestamp = new Date().toISOString(),
+  permissionOutcome: (typeof PERMISSION_OUTCOMES)[number] = 'no_prompt_read_only_observed',
 ): QoderDesktopQualificationReceipt {
   const evidenceRef = `sha256:${'e'.repeat(64)}`;
   return {
@@ -1124,13 +1239,14 @@ export function qoderReceiptFixture(
     toolsListed: { names: manifest.toolNames, evidenceRef },
     calls: manifest.calls.map((call) => ({
       ...call,
-      permissionPrompt: 'observed',
+      permissionOutcome,
       evidenceRef,
     })),
     permissions: {
       oldConnectorRemoved: true,
       oldGrantsRemoved: true,
-      mode: 'per_tool',
+      connectorExplicitlyEnabled: true,
+      autoRunDisabled: true,
       wildcard: false,
     },
     scenarioCatalog: {
@@ -1195,6 +1311,7 @@ export function qoderManifestFixture(
     staleInstanceId,
     missingInstanceId,
     toolNames: [...OPENSLACK_READ_TOOL_NAMES],
+    toolAnnotations: reviewedToolAnnotations().map((binding) => ({ ...binding })),
     calls,
     ...overrides,
   };
