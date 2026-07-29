@@ -269,6 +269,14 @@ function hash(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex');
 }
 
+export function humanAttestedQualificationServerStderr(
+  platform: NodeJS.Platform,
+): 'inherit' | 'pipe' {
+  // Bun needs one inherited Windows standard handle to preserve the real
+  // controlling console while MCP stdin/stdout remain dedicated JSON-RPC pipes.
+  return platform === 'win32' ? 'inherit' : 'pipe';
+}
+
 async function seedApproval(
   workspaceRoot: string,
   humanPrincipal: string,
@@ -336,7 +344,7 @@ async function runOverProductionStdio(workspaceRoot: string): Promise<{
       HUMAN_ATTESTED_QUALIFICATION_WORKSPACE,
     ],
     cwd: workspaceRoot,
-    stderr: 'pipe',
+    stderr: humanAttestedQualificationServerStderr(process.platform),
   });
   let stderrBytes = 0;
   transport.stderr?.on('data', (chunk: Buffer | string) => {
