@@ -8,6 +8,7 @@ export default defineConfig({
       'scripts/release',
       'scripts/public-pack',
       'scripts/live-capstone',
+      'scripts/qualification',
       'scripts/notification-docs',
       'scripts/documentation',
     ],
