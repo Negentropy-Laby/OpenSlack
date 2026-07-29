@@ -1,0 +1,337 @@
+schema: openslack.scenario_ontology.v1
+types:
+  - id: accepted_transition
+    title: Accepted Transition
+    authorityProviders: [github]
+    fields: [actorId, currentHeadBound, headSha, mergeCommitSha, observationKind]
+  - id: agent_run
+    title: Agent Run
+    authorityProviders: [openslack]
+    fields: [agentActorId, currentAuthority, observationKind]
+  - id: artifact_revision
+    title: Artifact Revision
+    authorityProviders: [github]
+    fields: [currentAuthority, observationKind, repositoryId, sha]
+  - id: business.acceptance
+    title: Business Acceptance
+    authorityProviders: [demo_fixture]
+    fields:
+      [acceptedTransitionNodeId, deliverableNodeId, humanDecisionNodeId, observationId, promoted]
+  - id: business.contract
+    title: Business Contract
+    authorityProviders: [demo_fixture]
+    fields: [customerObservationId, observationId]
+  - id: business.customer
+    title: Business Customer
+    authorityProviders: [demo_fixture]
+    fields: [observationId]
+  - id: business.milestone
+    title: Business Milestone
+    authorityProviders: [demo_fixture]
+    fields: [observationId, projectObservationId]
+  - id: business.outcome
+    title: Business Outcome
+    authorityProviders: [demo_fixture]
+    fields:
+      [acceptanceObservationId, observationId, promoted, softwareOutcomeNodeId, workItemNodeId]
+  - id: business.project
+    title: Business Project
+    authorityProviders: [demo_fixture]
+    fields: [contractObservationId, observationId]
+  - id: coordination.handoff
+    title: Coordination Handoff
+    authorityProviders: [openslack]
+    fields: [currentAuthority, fromActorId, observationKind, toActorId]
+  - id: core.work_item
+    title: Work Item
+    authorityProviders: [github]
+    fields: [assigneesComplete, closureComplete, labels, number, observationKind, repositoryId]
+  - id: execution_context
+    title: Execution Context
+    authorityProviders: [openslack]
+    fields: [baseSha, branchName, currentAuthority, observationKind]
+  - id: execution_lease
+    title: Execution Lease
+    authorityProviders: [openslack]
+    fields: [currentAuthority, expiresAt, observationKind, targetSha]
+  - id: governance.decision
+    title: Governance Decision
+    authorityProviders: [openslack]
+    fields: [currentAuthority, decidedByActorId, observationKind]
+  - id: human_decision
+    title: Human Decision
+    authorityProviders: [github]
+    fields:
+      [
+        actorId,
+        actorKind,
+        commitOid,
+        currentHeadBound,
+        decisionState,
+        independentReviewer,
+        observationKind,
+      ]
+  - id: informational.acceptance_observation
+    title: Informational Acceptance Observation
+    authorityProviders: [demo_fixture]
+    fields:
+      [acceptedTransitionNodeId, deliverableNodeId, humanDecisionNodeId, observationId, promoted]
+  - id: informational.actor_observation
+    title: Informational Actor Observation
+    authorityProviders: [demo_fixture, openslack]
+    fields: [actorKind, observationKind]
+  - id: informational.agent_run_observation
+    title: Informational Agent Run Observation
+    authorityProviders: [demo_fixture, openslack]
+    fields: [agentActorId, currentAuthority, observationKind]
+  - id: informational.check_observation
+    title: Informational Check Observation
+    authorityProviders: [demo_fixture, github, openslack]
+    fields: [conclusion, currentHeadBound, headSha, observationKind, status]
+  - id: informational.claim_observation
+    title: Informational Claim Observation
+    authorityProviders: [demo_fixture, openslack]
+    fields: [currentAuthority, expiresAt, observationKind, targetSha]
+  - id: informational.commit_observation
+    title: Informational Commit Observation
+    authorityProviders: [demo_fixture, openslack]
+    fields: [currentAuthority, observationKind, repositoryId, sha]
+  - id: informational.decision_observation
+    title: Informational Decision Observation
+    authorityProviders: [demo_fixture, openslack]
+    fields: [currentAuthority, decidedByActorId, observationKind]
+  - id: informational.handoff_observation
+    title: Informational Handoff Observation
+    authorityProviders: [demo_fixture, openslack]
+    fields: [currentAuthority, fromActorId, observationKind, toActorId]
+  - id: informational.issue_observation
+    title: Informational Issue Observation
+    authorityProviders: [demo_fixture, openslack]
+    fields: [assigneesComplete, closureComplete, labels, number, observationKind, repositoryId]
+  - id: informational.merge_observation
+    title: Informational Merge Observation
+    authorityProviders: [demo_fixture, github, openslack]
+    fields: [actorId, currentHeadBound, headSha, mergeCommitSha, observationKind]
+  - id: informational.outcome_observation
+    title: Informational Outcome Observation
+    authorityProviders: [demo_fixture]
+    fields:
+      [acceptanceObservationId, observationId, promoted, softwareOutcomeNodeId, workItemNodeId]
+  - id: informational.pr_observation
+    title: Informational Pull Request Observation
+    authorityProviders: [demo_fixture, github, openslack]
+    fields:
+      [
+        authorActorId,
+        baseSha,
+        currentHeadBound,
+        draft,
+        headSha,
+        number,
+        observationKind,
+        repositoryId,
+      ]
+  - id: informational.prms_observation
+    title: Informational PRMS Observation
+    authorityProviders: [demo_fixture, openslack]
+    fields: [baseSha, blockerCount, currentHeadBound, headSha, observationKind]
+  - id: informational.repository_observation
+    title: Informational Repository Observation
+    authorityProviders: [demo_fixture, openslack]
+    fields: [currentAuthority, defaultBranch, observationKind]
+  - id: informational.review_observation
+    title: Informational Review Observation
+    authorityProviders: [demo_fixture, github, openslack]
+    fields:
+      [
+        actorId,
+        actorKind,
+        commitOid,
+        currentHeadBound,
+        decisionState,
+        independentReviewer,
+        observationKind,
+      ]
+  - id: informational.workflow_run_observation
+    title: Informational Workflow Run Observation
+    authorityProviders: [demo_fixture, openslack]
+    fields: [currentAuthority, observationKind, workflowId]
+  - id: informational.worktree_observation
+    title: Informational Worktree Observation
+    authorityProviders: [demo_fixture, openslack]
+    fields: [baseSha, branchName, currentAuthority, observationKind]
+  - id: organization.actor
+    title: Organization Actor
+    authorityProviders: [github, openslack]
+    fields: [actorKind, observationKind]
+  - id: outcome
+    title: Outcome
+    authorityProviders: [github]
+    fields: [closedAt, issueId, issueVersion]
+  - id: prms_report
+    title: PRMS Report
+    authorityProviders: [openslack]
+    fields: [baseSha, blockerCount, currentHeadBound, headSha, observationKind]
+  - id: projection.source_batch
+    title: Projection Source Batch
+    authorityProviders: [openslack]
+    fields: [recordCount, status]
+  - id: reviewable_deliverable
+    title: Reviewable Deliverable
+    authorityProviders: [github]
+    fields:
+      [
+        authorActorId,
+        baseSha,
+        currentHeadBound,
+        draft,
+        headSha,
+        number,
+        observationKind,
+        repositoryId,
+      ]
+  - id: software.repository
+    title: Software Repository
+    authorityProviders: [github]
+    fields: [currentAuthority, defaultBranch, observationKind]
+  - id: verification_evidence
+    title: Verification Evidence
+    authorityProviders: [github]
+    fields: [conclusion, currentHeadBound, headSha, observationKind, status]
+  - id: workflow_run
+    title: Workflow Run
+    authorityProviders: [openslack]
+    fields: [currentAuthority, observationKind, workflowId]
+relationships:
+  - id: accepted_as
+    from: reviewable_deliverable
+    to: business.acceptance
+  - id: accepted_by
+    from: reviewable_deliverable
+    to: accepted_transition
+  - id: approved_by
+    from: business.acceptance
+    to: human_decision
+  - id: assessed_by
+    from: reviewable_deliverable
+    to: prms_report
+  - id: assigned_to
+    from: core.work_item
+    to: organization.actor
+  - id: closes_as
+    from: core.work_item
+    to: outcome
+  - id: closes_work_item
+    from: business.outcome
+    to: core.work_item
+  - id: contains
+    from: software.repository
+    to: core.work_item
+  - id: contract_delivered_by
+    from: business.contract
+    to: reviewable_deliverable
+  - id: contracts_for
+    from: business.customer
+    to: business.contract
+  - id: coordinates
+    from: coordination.handoff
+    to: core.work_item
+  - id: coordinates
+    from: coordination.handoff
+    to: reviewable_deliverable
+  - id: coordinates
+    from: coordination.handoff
+    to: workflow_run
+  - id: decomposes_to
+    from: workflow_run
+    to: core.work_item
+  - id: delivers_project
+    from: business.contract
+    to: business.project
+  - id: executed_by
+    from: workflow_run
+    to: agent_run
+  - id: executes_in
+    from: agent_run
+    to: execution_context
+  - id: executes_in
+    from: core.work_item
+    to: execution_context
+  - id: executes_in
+    from: execution_lease
+    to: execution_context
+  - id: from_actor
+    from: coordination.handoff
+    to: organization.actor
+  - id: governs
+    from: governance.decision
+    to: core.work_item
+  - id: governs
+    from: governance.decision
+    to: reviewable_deliverable
+  - id: governs
+    from: governance.decision
+    to: workflow_run
+  - id: hosts_run
+    from: execution_context
+    to: agent_run
+  - id: implemented_by
+    from: core.work_item
+    to: artifact_revision
+  - id: included_in
+    from: artifact_revision
+    to: reviewable_deliverable
+  - id: leased_by
+    from: core.work_item
+    to: execution_lease
+  - id: milestone_contains
+    from: business.milestone
+    to: core.work_item
+  - id: observed_review
+    from: reviewable_deliverable
+    to: informational.review_observation
+  - id: observed_assessment
+    from: reviewable_deliverable
+    to: informational.prms_observation
+  - id: observed_merge
+    from: reviewable_deliverable
+    to: informational.merge_observation
+  - id: owned_by
+    from: execution_lease
+    to: organization.actor
+  - id: performed_by
+    from: agent_run
+    to: organization.actor
+  - id: produces
+    from: core.work_item
+    to: reviewable_deliverable
+  - id: produces
+    from: execution_context
+    to: artifact_revision
+  - id: produces
+    from: workflow_run
+    to: reviewable_deliverable
+  - id: realizes
+    from: business.acceptance
+    to: business.outcome
+  - id: reviewed_by
+    from: reviewable_deliverable
+    to: human_decision
+  - id: scoped_to
+    from: business.project
+    to: core.work_item
+  - id: substantiated_by
+    from: business.outcome
+    to: outcome
+  - id: to_actor
+    from: coordination.handoff
+    to: organization.actor
+  - id: tracks_milestone
+    from: business.project
+    to: business.milestone
+  - id: transitioned_by
+    from: business.acceptance
+    to: accepted_transition
+  - id: verified_by
+    from: reviewable_deliverable
+    to: verification_evidence

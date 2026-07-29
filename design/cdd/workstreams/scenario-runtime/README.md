@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: product
-updated: 2026-07-28
+updated: 2026-07-29
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -15,20 +15,21 @@ sources:
 
 | Field                   | Value                                                                                  |
 | ----------------------- | -------------------------------------------------------------------------------------- |
-| Status                  | `AGENT-BOUND CLI PROFILE IMPLEMENTED — REHEARSAL PENDING`                              |
+| Status                  | `COMPOSITE PACK + GOVERNED PROFILES IMPLEMENTED — REHEARSAL PENDING`                   |
 | Product direction       | One-scenario-first                                                                     |
 | Lead interview scenario | Contract-to-Delivery Lite                                                              |
 | Pack format             | Declarative `openslack.scenario_pack.v1`                                               |
 | Execution authority     | Registry/runtime principal + canonical plan + registered host executor + durable store |
 
 The `@openslack/scenario-runtime` package and exact-byte locked, projection-only
-`software-delivery` Scenario Pack implement the declarative loading, capability normalization,
-preview, instance, and local-store core described here. The governed mutation contract and a
-production agent-bound `software-delivery` Scenario instantiation composition are implemented.
+`software-delivery` and `contract-to-delivery-lite` Scenario Packs implement the declarative
+loading, capability normalization, preview, instance, and local-store core described here. The
+governed mutation contract and a production agent-bound Scenario instantiation composition are
+implemented.
 The default stock MCP remains read-only, explicit CLI `agent-bound` selects the governed 16-tool
 composition from an active registry/runtime principal, and explicit `human-attested` selects 17
 only after a separate local OS-subject and controlling-TTY attestation self-test. Authenticated
-Qoder rehearsal and live adapter qualification remain pending. Contract-to-Delivery Lite and
+Qoder rehearsal, the governed Contract-to-Delivery workflow, live adapter qualification, and
 scenario lifecycle events remain later milestones.
 
 ## Product outcome
@@ -319,7 +320,7 @@ This avoids expanding the task/PR Dashboard into an industry-wide database.
 
 ## One-scenario MVP
 
-There is one lead live story:
+There is one lead story definition:
 
 > A company has signed an AI workflow transformation contract. Establish a delivery project and
 > complete security review, GitHub integration, and demonstration materials within two weeks.
@@ -331,6 +332,7 @@ Customer
 Contract
 Project
 Milestone
+Work Item
 Deliverable
 Acceptance
 Outcome
@@ -350,9 +352,10 @@ Contract
   -> contributes to Outcome
 ```
 
-The `software-delivery` pack/projector is reusable foundation, not a second live interview
-scenario. The employee-onboarding example, if shown, is a static fixture only and makes no live
-execution claim.
+The `contract-to-delivery-lite` Pack is currently projection-only and grants no workflow,
+notification, deep-link, or mutation authority. The `software-delivery` pack/projector is reusable
+foundation, not a second live interview scenario. The employee-onboarding example, if shown, is a
+static fixture only and makes no live execution claim.
 
 ## Notification boundary
 
@@ -375,14 +378,15 @@ The MVP includes:
 - capability normalization that preserves legacy workflow behavior;
 - atomic local scenario instance store and recovery evidence;
 - declarative `software-delivery` foundation;
-- one live Contract-to-Delivery Lite pack;
+- one locked, projection-only Contract-to-Delivery Lite Pack and composite graph;
 - preview-first OpenSlack canonical plans;
 - Organization Graph and BusinessOutcome projection;
-- console/direct-local notification intent;
-- a static read-only HTML artifact.
 
 Deferred:
 
+- governed Contract-to-Delivery workflow and repeatable local rehearsal;
+- console/direct-local notification intent for that rehearsal;
+- a static read-only HTML artifact;
 - formal Qoder Workbench;
 - public remote Connector and OAuth;
 - real DingTalk writeback;

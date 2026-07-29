@@ -43,7 +43,7 @@ import {
   summarizePRDecision,
 } from '@openslack/pr';
 import {
-  createSoftwareDeliveryScenarioCatalog,
+  createOpenSlackHostScenarioCatalog,
   discoverScenarioPacks,
   type ScenarioPackDiscoveryResult,
 } from '@openslack/scenario-runtime';
@@ -1199,7 +1199,7 @@ export function createDefaultOpenSlackReadModelPorts(
   const graphStore = new LocalGraphStore(join(rootDir, '.openslack.local', 'graph'));
   const graphCursorSecret = randomBytes(32);
   const scenarioRoot = join(rootDir, 'scenarios');
-  const scenarioCatalog = createSoftwareDeliveryScenarioCatalog();
+  const scenarioCatalog = createOpenSlackHostScenarioCatalog();
   let scenarioDiscoveryPromise: Promise<ScenarioPackDiscoveryResult> | undefined;
 
   // Intentionally cache rejection too: discovery is fail-closed and recovery requires a restart.

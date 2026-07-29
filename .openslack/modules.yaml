@@ -1,6 +1,6 @@
 schema: openslack.modules.v2
-vitest_tests: 5056
-vitest_files: 407
+vitest_tests: 5131
+vitest_files: 412
 modules:
   - id: self_evolution
     name: Self-Evolution Kernel
@@ -254,8 +254,14 @@ modules:
       - test:packages/collaboration/src/__tests__/events.test.ts
       - commit:393c96fe9f63a08f13f48174745dcdbd4f49c405
       - test:packages/organization-graph/src/__tests__/snapshot-build.test.ts
+      - commit:b124bc4bb2c4af5ea85fa1a25facb18bf84e1b14
+      - test:packages/organization-graph/src/__tests__/contract-to-delivery-validation.test.ts
+      - test:packages/organization-graph/src/__tests__/contract-to-delivery-projector.test.ts
       - test:apps/cli/src/__tests__/graph-command.test.ts
+      - test:apps/mcp/src/__tests__/sdk-server.test.ts
       - repo:packages/organization-graph/src/__tests__/fixtures/software-delivery-source.json
+      - repo:packages/organization-graph/src/__tests__/fixtures/contract-to-delivery-source.json
+      - repo:scenarios/contract-to-delivery-lite/scenario.yaml
       - commit:0227d965b0ab9653a85c59b69782f4f0017f4ad3
       - commit:3975ed39
       - test:packages/workflows/src/__tests__/local-human-attestation.test.ts
@@ -322,8 +328,8 @@ modules:
       - '@openslack/integration-negentropy'
       - '@openslack/organization-graph'
       - '@openslack/scenario-runtime'
-    tests: 2306
-    test_files: 185
+    tests: 2335
+    test_files: 187
     components:
       - id: agent_runtime
         name: Agent Runtime
@@ -341,8 +347,9 @@ modules:
       BusinessOutcomeProjection v1 aggregates only injected, evidence-backed event/run/PRMS/notification snapshots, preserves observed/configured-estimate/unknown basis per metric, and never invents revenue, durable acceptance, delivery, or human approval.
       Organization Graph Core v1 is active as a pure, rebuildable projection package with closed snapshot/delta contracts, derived stable identities, deterministic integrity hashes, bounded query/explain, and an adversarially checked local atomic store. It performs no network or authoritative business mutation.
       Software Delivery Projector v1 is active as a deterministic, side-effect-free projection over injected and explicitly complete/incomplete/missing source batches. Current GitHub authority requires live observations and current-head bindings; only completed current-head checks become verification evidence, while cache, synthetic, stale-review, self-review, non-terminal-check, missing-target, expired-lease, and incomplete evidence remain informational or incomplete. The projector does not alter existing GitHub task, claim, PR, review, merge, or watch behavior.
-      The explicit graph snapshot build CLI accepts one bounded file or stdin Software Delivery source, applies strict JSON plus the registered validator/projector, and CAS-publishes only to the workspace-local graph store. It performs no live evidence collection, exposes no force overwrite, and remains separate from the side-effect-free MCP query/explain tools.
-      Scenario Runtime v1 is active as a projection-first, code-free Scenario Pack loader and local instance runtime. It uses an exact-byte closed lock, sealed host-owned projector/capability catalogs, deterministic legacy permission normalization, preview-only canonical plans, nominally trusted instances, bounded global idempotency/CAS, and fail-closed crash recovery. The initial software-delivery Pack registers only the existing projector, declares its complete current/informational/provenance vocabulary, and grants no workflow, notification, deep-link, or mutation authority.
+      The explicit graph snapshot build CLI accepts one bounded file or stdin source through a sealed two-profile dispatch under the same locked 4 MiB Software Delivery source ceiling. Each profile applies strict JSON plus its registered validator/projector and CAS-publishes only to the workspace-local graph store; unknown scenarios fail closed. It performs no live evidence collection, exposes no force overwrite, and remains separate from the side-effect-free MCP query/explain tools.
+      Contract-to-Delivery Projector v1 is active as a deterministic composite projection. It invokes the existing Software Delivery projector, preserves its nodes and edges exactly, and adds bounded Customer, Contract, Project, Milestone, Acceptance, Deliverable, and Outcome relationships only from typed demo-fixture business evidence. Acceptance requires a current merged deliverable, an independent current-head human approval, and a current accepted transition; Outcome requires that promoted acceptance, a live closed work item, and the existing Software Delivery outcome. Missing or drifted bridges remain incomplete and never create dangling authority edges. The checked fixture and official stock 12-tool MCP SDK test prove the Customer-to-Outcome graph, bounded query/explain evidence, projection-only authority, and no query-side store mutation. This is LOCAL_PASS only; no Scenario rehearsal, Qoder Desktop verification, or live business-evidence qualification is claimed.
+      Scenario Runtime v1 is active as a projection-first, code-free Scenario Pack loader and local instance runtime. It uses an exact-byte closed lock, sealed host-owned projector/capability catalogs, deterministic legacy permission normalization, preview-only canonical plans, nominally trusted instances, bounded global idempotency/CAS, and fail-closed crash recovery. The built-in software-delivery and contract-to-delivery-lite Packs register only sealed projection foundations, declare their complete current/informational/provenance vocabularies, and grant no workflow, notification, deep-link, or mutation authority.
       Scenario Pack discovery enumerates the trusted root with a bounded streaming directory reader, verifies every candidate through the existing exact-byte loader, exposes only sanitized blocked-code counts, and seals accepted definitions for the process lifetime. Pack changes require a process restart.
       Scenario and sealed Workflow planners now compile bounded intent into immutable governed-plan effects without accepting raw commands, module paths, arbitrary URLs, or unattended flags. Scenario instantiation precedes any referenced Workflow starts, and each source/catalog/input binding is rehydrated and revalidated before execution. The isolated workflow-effect approval v2 store keeps its business correlation, exact effect hashes, per-decision human attestation, one-winner CAS, and deterministic pending/recorded audit projection separate from legacy Workflow run approvals. Its local human provider persists only a bounded OS-subject hash mapping, process-seals mapping identity, binds correlation and approval expiry into each nominal decision, and keeps controlling-TTY I/O entirely separate from MCP stdin/stdout.
       Persisted Workflow start plans now recompile against the current sealed resolver and require exact host-owned plan, actor, workspace, correlation, workflow, and expiry bindings before any future executor can consume them. The agent-bound MCP composition currently registers only the real Scenario instance executor; it moves previewed instances through CAS to active state and verifies durable readback, while unregistered Workflow targets remain a stable blocked result with no synthetic execution.

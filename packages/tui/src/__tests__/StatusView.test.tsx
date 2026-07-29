@@ -135,10 +135,11 @@ describe('StatusView', () => {
     expect(output).toContain('unavailable');
   });
 
-  it('renders test suite information', async () => {
+  it('renders test inventory without implying an execution result', async () => {
     const output = await renderView(makeModel());
-    expect(output).toContain('526');
-    expect(output).toContain('tests');
+    expect(output).toContain('Test Inventory');
+    expect(output).toContain('526 tests');
+    expect(output).not.toContain('Test Suite');
   });
 
   it('renders recommendations', async () => {

@@ -1,0 +1,5 @@
+schema: openslack.scenario_policies.v1
+constraints:
+  maxRisk: low
+  allowExternalTargets: false
+  maxWorkflowRuns: 1

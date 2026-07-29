@@ -7,12 +7,12 @@ import {
   GraphContractError,
   GraphStoreError,
   LocalGraphStore,
-  SOFTWARE_DELIVERY_SCENARIO_ID,
   SOFTWARE_DELIVERY_SOURCE_LIMITS,
   StrictGraphJsonError,
-  buildAndPublishSoftwareDeliverySnapshot,
-  type BuildAndPublishSoftwareDeliverySnapshotInput,
-  type PublishedSoftwareDeliverySnapshot,
+  buildAndPublishGraphSnapshot,
+  graphSnapshotBuildProfile,
+  type BuildAndPublishGraphSnapshotInput,
+  type PublishedGraphBuildSnapshot,
 } from '@openslack/organization-graph';
 
 const NO_FOLLOW = process.platform === 'win32' ? 0 : (fsConstants.O_NOFOLLOW ?? 0);
@@ -45,8 +45,8 @@ export interface GraphCommandDependencies {
   readonly workspaceRoot: string;
   readonly createStore?: (root: string) => LocalGraphStore;
   readonly buildSnapshot?: (
-    input: BuildAndPublishSoftwareDeliverySnapshotInput,
-  ) => Promise<PublishedSoftwareDeliverySnapshot>;
+    input: BuildAndPublishGraphSnapshotInput,
+  ) => Promise<PublishedGraphBuildSnapshot>;
   readonly readSourceFile?: (path: string, maxBytes: number) => Promise<Buffer>;
   readonly readStdin?: (maxBytes: number) => Promise<Buffer>;
 }
@@ -207,7 +207,7 @@ function resolveSourcePath(workspaceRoot: string, sourcePath: string): string {
 }
 
 export function renderGraphSnapshotBuildResult(
-  result: PublishedSoftwareDeliverySnapshot,
+  result: PublishedGraphBuildSnapshot,
   format: 'plain' | 'json',
 ): string {
   const safeResult = {
@@ -269,10 +269,11 @@ export function graphCommands(dependencies: GraphCommandDependencies): Command {
         if (options.from === undefined && !options.fromStdin) {
           commandFail('GRAPH_SOURCE_REQUIRED', 'Choose exactly one of --from or --from-stdin.');
         }
-        if (options.scenario !== SOFTWARE_DELIVERY_SCENARIO_ID) {
+        const profile = graphSnapshotBuildProfile(options.scenario);
+        if (profile === undefined) {
           commandFail(
             'GRAPH_SCENARIO_UNSUPPORTED',
-            `Only ${SOFTWARE_DELIVERY_SCENARIO_ID} is registered for snapshot build.`,
+            'Graph snapshot scenario is not registered by the sealed host dispatch.',
           );
         }
         if (options.format !== 'plain' && options.format !== 'json') {
@@ -287,18 +288,17 @@ export function graphCommands(dependencies: GraphCommandDependencies): Command {
             ? await (
                 dependencies.readStdin ??
                 ((maxBytes) => readBoundedGraphSourceStream(process.stdin, maxBytes))
-              )(SOFTWARE_DELIVERY_SOURCE_LIMITS.sourceBytes)
+              )(profile.sourceBytes)
             : await (dependencies.readSourceFile ?? readBoundedGraphSourceFile)(
                 resolveSourcePath(dependencies.workspaceRoot, options.from),
-                SOFTWARE_DELIVERY_SOURCE_LIMITS.sourceBytes,
+                profile.sourceBytes,
               );
         const storeRoot = join(dependencies.workspaceRoot, '.openslack.local', 'graph');
         const store = (dependencies.createStore ?? ((root) => new LocalGraphStore(root)))(
           storeRoot,
         );
-        const result = await (
-          dependencies.buildSnapshot ?? buildAndPublishSoftwareDeliverySnapshot
-        )({
+        const result = await (dependencies.buildSnapshot ?? buildAndPublishGraphSnapshot)({
+          scenarioId: profile.scenarioId,
           sourceBytes,
           store,
           expectedCursor: options.expectedCursor ?? null,

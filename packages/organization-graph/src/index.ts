@@ -64,6 +64,34 @@ export type {
 } from './strict-json.js';
 
 export {
+  CONTRACT_TO_DELIVERY_PROJECTOR_CONTRACT,
+  CONTRACT_TO_DELIVERY_PROJECTOR_ID,
+  CONTRACT_TO_DELIVERY_SCENARIO_ID,
+  CONTRACT_TO_DELIVERY_SOURCE_LIMITS,
+  CONTRACT_TO_DELIVERY_SOURCE_SCHEMA,
+} from './contract-to-delivery-types.js';
+export type {
+  ContractToDeliveryAcceptanceObservation,
+  ContractToDeliveryBridgeRef,
+  ContractToDeliveryBusinessEvidence,
+  ContractToDeliveryBusinessSources,
+  ContractToDeliveryBusinessStatus,
+  ContractToDeliveryContractObservation,
+  ContractToDeliveryCustomerObservation,
+  ContractToDeliveryIncompleteBatch,
+  ContractToDeliveryMilestoneObservation,
+  ContractToDeliveryMissingBatch,
+  ContractToDeliveryObservedBatch,
+  ContractToDeliveryOutcomeObservation,
+  ContractToDeliveryProjectObservation,
+  ContractToDeliveryProjectionResult,
+  ContractToDeliverySourceBatch,
+  ContractToDeliverySourceSnapshot,
+} from './contract-to-delivery-types.js';
+export { validateContractToDeliverySourceSnapshot } from './contract-to-delivery-validation.js';
+export { projectContractToDeliverySnapshot } from './contract-to-delivery-projector.js';
+
+export {
   SOFTWARE_DELIVERY_PROJECTOR_CONTRACT,
   SOFTWARE_DELIVERY_PROJECTOR_ID,
   SOFTWARE_DELIVERY_SOURCE_LIMITS,
@@ -99,10 +127,17 @@ export type {
 export { validateSoftwareDeliverySourceSnapshot } from './software-delivery-validation.js';
 export { projectSoftwareDeliverySnapshot } from './software-delivery-projector.js';
 export {
+  GRAPH_SNAPSHOT_BUILD_SCENARIO_IDS,
   SOFTWARE_DELIVERY_SCENARIO_ID,
+  buildAndPublishGraphSnapshot,
   buildAndPublishSoftwareDeliverySnapshot,
+  graphSnapshotBuildProfile,
 } from './snapshot-build.js';
 export type {
+  BuildAndPublishGraphSnapshotInput,
   BuildAndPublishSoftwareDeliverySnapshotInput,
+  GraphSnapshotBuildProfile,
+  GraphSnapshotBuildScenarioId,
+  PublishedGraphBuildSnapshot,
   PublishedSoftwareDeliverySnapshot,
 } from './snapshot-build.js';

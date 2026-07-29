@@ -17,6 +17,7 @@ export type { ScenarioWorkflowPermissions } from './permission-normalizer.js';
 export {
   ScenarioCatalogError,
   ScenarioHostCatalog,
+  createOpenSlackHostScenarioCatalog,
   createSoftwareDeliveryScenarioCatalog,
   sealScenarioHostCatalog,
 } from './catalog.js';

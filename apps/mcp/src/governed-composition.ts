@@ -34,7 +34,7 @@ import {
 import { parseRuntimeIdentityText, resolveAgentPrincipal } from '@openslack/runtime';
 import {
   createPreviewedScenarioInstance,
-  createSoftwareDeliveryScenarioCatalog,
+  createOpenSlackHostScenarioCatalog,
   discoverScenarioPacks,
   initializeScenarioInstanceStoreRoot,
   loadScenarioPack,
@@ -789,7 +789,7 @@ export async function createOpenSlackAgentBoundMutationComposition(
   }
 
   const scenarioRoot = join(rootBinding.real, 'scenarios');
-  const scenarioCatalog: ScenarioHostCatalog = createSoftwareDeliveryScenarioCatalog();
+  const scenarioCatalog: ScenarioHostCatalog = createOpenSlackHostScenarioCatalog();
   let discovery;
   try {
     discovery = await discoverScenarioPacks({

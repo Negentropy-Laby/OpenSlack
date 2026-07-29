@@ -1,5 +1,14 @@
+import {
+  CONTRACT_TO_DELIVERY_PROJECTOR_ID,
+  CONTRACT_TO_DELIVERY_SCENARIO_ID,
+  CONTRACT_TO_DELIVERY_SOURCE_LIMITS,
+  type ContractToDeliverySourceSnapshot,
+} from './contract-to-delivery-types.js';
+import { projectContractToDeliverySnapshot } from './contract-to-delivery-projector.js';
+import { validateContractToDeliverySourceSnapshot } from './contract-to-delivery-validation.js';
 import { GraphContractError } from './errors.js';
 import {
+  SOFTWARE_DELIVERY_PROJECTOR_ID,
   SOFTWARE_DELIVERY_SOURCE_LIMITS,
   type SoftwareDeliverySourceSnapshot,
 } from './software-delivery-types.js';
@@ -7,12 +16,36 @@ import { projectSoftwareDeliverySnapshot } from './software-delivery-projector.j
 import { validateSoftwareDeliverySourceSnapshot } from './software-delivery-validation.js';
 import { parseStrictGraphJson } from './strict-json.js';
 import type { LocalGraphStore, PublishedGraphSnapshot } from './store.js';
+import type { GraphSnapshot } from './types.js';
 
-export const SOFTWARE_DELIVERY_SCENARIO_ID = 'software-delivery';
+export const SOFTWARE_DELIVERY_SCENARIO_ID = 'software-delivery' as const;
+export const GRAPH_SNAPSHOT_BUILD_SCENARIO_IDS = Object.freeze([
+  CONTRACT_TO_DELIVERY_SCENARIO_ID,
+  SOFTWARE_DELIVERY_SCENARIO_ID,
+] as const);
 
-export interface PublishedSoftwareDeliverySnapshot extends PublishedGraphSnapshot {
+export type GraphSnapshotBuildScenarioId = (typeof GRAPH_SNAPSHOT_BUILD_SCENARIO_IDS)[number];
+
+export interface GraphSnapshotBuildProfile {
+  readonly scenarioId: GraphSnapshotBuildScenarioId;
+  readonly sourceBytes: number;
+  readonly sourceJsonNodes: number;
+  readonly textBytes: number;
+}
+
+export interface PublishedGraphBuildSnapshot extends PublishedGraphSnapshot {
   readonly nodeCount: number;
   readonly edgeCount: number;
+}
+
+export type PublishedSoftwareDeliverySnapshot = PublishedGraphBuildSnapshot;
+
+export interface BuildAndPublishGraphSnapshotInput {
+  readonly scenarioId: GraphSnapshotBuildScenarioId;
+  readonly sourceBytes: Buffer;
+  readonly store: LocalGraphStore;
+  readonly expectedCursor: string | null;
+  readonly expectedScenarioInstanceId?: string;
 }
 
 export interface BuildAndPublishSoftwareDeliverySnapshotInput {
@@ -22,19 +55,69 @@ export interface BuildAndPublishSoftwareDeliverySnapshotInput {
   readonly expectedScenarioInstanceId?: string;
 }
 
+interface ScopedSource {
+  readonly scenarioDefinitionId: string;
+  readonly scenarioInstanceId: string;
+}
+
+interface SealedBuildProfile extends GraphSnapshotBuildProfile {
+  readonly projectorId: string;
+  readonly validate: (value: unknown) => ScopedSource;
+  readonly project: (value: unknown) => { readonly snapshot: GraphSnapshot };
+}
+
+const BUILD_PROFILES: Readonly<Record<GraphSnapshotBuildScenarioId, SealedBuildProfile>> =
+  Object.freeze({
+    [CONTRACT_TO_DELIVERY_SCENARIO_ID]: Object.freeze({
+      scenarioId: CONTRACT_TO_DELIVERY_SCENARIO_ID,
+      projectorId: CONTRACT_TO_DELIVERY_PROJECTOR_ID,
+      sourceBytes: CONTRACT_TO_DELIVERY_SOURCE_LIMITS.sourceBytes,
+      sourceJsonNodes: CONTRACT_TO_DELIVERY_SOURCE_LIMITS.sourceJsonNodes,
+      textBytes: CONTRACT_TO_DELIVERY_SOURCE_LIMITS.textBytes,
+      validate: (value: unknown): ContractToDeliverySourceSnapshot =>
+        validateContractToDeliverySourceSnapshot(value),
+      project: projectContractToDeliverySnapshot,
+    }),
+    [SOFTWARE_DELIVERY_SCENARIO_ID]: Object.freeze({
+      scenarioId: SOFTWARE_DELIVERY_SCENARIO_ID,
+      projectorId: SOFTWARE_DELIVERY_PROJECTOR_ID,
+      sourceBytes: SOFTWARE_DELIVERY_SOURCE_LIMITS.sourceBytes,
+      sourceJsonNodes: SOFTWARE_DELIVERY_SOURCE_LIMITS.sourceJsonNodes,
+      textBytes: SOFTWARE_DELIVERY_SOURCE_LIMITS.textBytes,
+      validate: (value: unknown): SoftwareDeliverySourceSnapshot =>
+        validateSoftwareDeliverySourceSnapshot(value),
+      project: projectSoftwareDeliverySnapshot,
+    }),
+  });
+
 function scopeFail(path: string, message: string): never {
   throw new GraphContractError('GRAPH_SCOPE_INVALID', path, message);
 }
 
-function assertSoftwareDeliveryScope(
-  source: SoftwareDeliverySourceSnapshot,
+function isRegisteredScenarioId(value: string): value is GraphSnapshotBuildScenarioId {
+  return (GRAPH_SNAPSHOT_BUILD_SCENARIO_IDS as readonly string[]).includes(value);
+}
+
+export function graphSnapshotBuildProfile(
+  scenarioId: string,
+): Readonly<GraphSnapshotBuildProfile> | undefined {
+  if (!isRegisteredScenarioId(scenarioId)) return undefined;
+  const profile = BUILD_PROFILES[scenarioId];
+  return Object.freeze({
+    scenarioId: profile.scenarioId,
+    sourceBytes: profile.sourceBytes,
+    sourceJsonNodes: profile.sourceJsonNodes,
+    textBytes: profile.textBytes,
+  });
+}
+
+function assertScope(
+  source: ScopedSource,
+  scenarioId: GraphSnapshotBuildScenarioId,
   expectedScenarioInstanceId?: string,
 ): void {
-  if (source.scenarioDefinitionId !== SOFTWARE_DELIVERY_SCENARIO_ID) {
-    scopeFail(
-      '$.scenarioDefinitionId',
-      `must equal the registered scenario ${SOFTWARE_DELIVERY_SCENARIO_ID}.`,
-    );
+  if (source.scenarioDefinitionId !== scenarioId) {
+    scopeFail('$.scenarioDefinitionId', `must equal the registered scenario ${scenarioId}.`);
   }
   if (
     expectedScenarioInstanceId !== undefined &&
@@ -46,36 +129,42 @@ function assertSoftwareDeliveryScope(
 
 /**
  * Strictly parses, validates, projects, and compare-and-swap publishes one
- * caller-supplied Software Delivery evidence snapshot.
+ * caller-supplied evidence snapshot through a host-owned sealed dispatch.
  *
- * This service never assembles live evidence and never performs implicit
- * refreshes. Callers must supply the complete bounded source bytes and the
- * cursor they expect to replace.
+ * The dispatch is static code. Scenario Packs cannot provide module paths,
+ * projector functions, or alternate byte ceilings.
  */
-export async function buildAndPublishSoftwareDeliverySnapshot(
-  input: BuildAndPublishSoftwareDeliverySnapshotInput,
-): Promise<PublishedSoftwareDeliverySnapshot> {
-  if (input.sourceBytes.length > SOFTWARE_DELIVERY_SOURCE_LIMITS.sourceBytes) {
+export async function buildAndPublishGraphSnapshot(
+  input: BuildAndPublishGraphSnapshotInput,
+): Promise<PublishedGraphBuildSnapshot> {
+  if (!isRegisteredScenarioId(input.scenarioId)) {
+    scopeFail('$.scenarioId', 'is not registered by the sealed graph snapshot dispatch.');
+  }
+  const profile = BUILD_PROFILES[input.scenarioId];
+  if (input.sourceBytes.length > profile.sourceBytes) {
     throw new GraphContractError(
       'GRAPH_BOUND_EXCEEDED',
       '$',
-      `source exceeds ${SOFTWARE_DELIVERY_SOURCE_LIMITS.sourceBytes} bytes.`,
+      `source exceeds ${profile.sourceBytes} bytes.`,
     );
   }
 
   const parsed = parseStrictGraphJson(input.sourceBytes, {
     maxDepth: 32,
-    maxNodes: SOFTWARE_DELIVERY_SOURCE_LIMITS.sourceJsonNodes,
-    maxStringLength: SOFTWARE_DELIVERY_SOURCE_LIMITS.textBytes,
+    maxNodes: profile.sourceJsonNodes,
+    maxStringLength: profile.textBytes,
   });
-  const source = validateSoftwareDeliverySourceSnapshot(parsed);
-  assertSoftwareDeliveryScope(source, input.expectedScenarioInstanceId);
+  const source = profile.validate(parsed);
+  assertScope(source, input.scenarioId, input.expectedScenarioInstanceId);
 
-  const { snapshot } = projectSoftwareDeliverySnapshot(source);
-  if (snapshot.scenarioInstanceId !== source.scenarioInstanceId) {
+  const { snapshot } = profile.project(source);
+  if (
+    snapshot.scenarioInstanceId !== source.scenarioInstanceId ||
+    snapshot.projectorVersion !== profile.projectorId
+  ) {
     scopeFail(
-      '$.scenarioInstanceId',
-      'does not match the scenario instance emitted by the registered projector.',
+      '$',
+      'does not match the scenario instance or projector emitted by the sealed host dispatch.',
     );
   }
   if (
@@ -95,5 +184,17 @@ export async function buildAndPublishSoftwareDeliverySnapshot(
     ...published,
     nodeCount: snapshot.nodes.length,
     edgeCount: snapshot.edges.length,
+  });
+}
+
+/**
+ * Compatibility wrapper retained for existing Software Delivery callers.
+ */
+export async function buildAndPublishSoftwareDeliverySnapshot(
+  input: BuildAndPublishSoftwareDeliverySnapshotInput,
+): Promise<PublishedSoftwareDeliverySnapshot> {
+  return buildAndPublishGraphSnapshot({
+    scenarioId: SOFTWARE_DELIVERY_SCENARIO_ID,
+    ...input,
   });
 }

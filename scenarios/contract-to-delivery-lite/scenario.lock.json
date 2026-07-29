@@ -1,0 +1,52 @@
+{
+  "schema": "openslack.scenario_pack_lock.v1",
+  "scenarioId": "contract-to-delivery-lite",
+  "scenarioVersion": "1.0.0",
+  "files": [
+    {
+      "path": "capabilities.yaml",
+      "bytes": 57,
+      "sha256": "fa8d207953aeb1af2498a6a4f37e7458be356d12d3d2f31b1817c6d2305b0d88"
+    },
+    {
+      "path": "fixtures/example.yaml",
+      "bytes": 1374,
+      "sha256": "f4daf88de4c20a42b596fc4653128bf81a0a9f558db158e08ec73bf3a125311d"
+    },
+    {
+      "path": "notifications.yaml",
+      "bytes": 57,
+      "sha256": "35078d3d9f028cbfc2602530dae05c43a36332638b0b4a2060353c54c022e7cf"
+    },
+    {
+      "path": "ontology.yaml",
+      "bytes": 11020,
+      "sha256": "a21ba69774162c62b9faa01362b78bc89331181c3736fc372d866c3b9d8c4fa4"
+    },
+    {
+      "path": "policies.yaml",
+      "bytes": 118,
+      "sha256": "dbd191ae8b1352d36c4ad1636643ae7a2f904b3d0dc764b630c58f081731b585"
+    },
+    {
+      "path": "projections.yaml",
+      "bytes": 145,
+      "sha256": "e0621da554891010e4ed5ab781cea48e85747ff21f786a504e9ba45c03ab7028"
+    },
+    {
+      "path": "scenario.yaml",
+      "bytes": 482,
+      "sha256": "58ae5fd4faa8f0e542d74cd8581c8e174d2842198c742a3dc2053aba052b8535"
+    },
+    {
+      "path": "views.yaml",
+      "bytes": 425,
+      "sha256": "79f5d892f88311ea1b1573c9b81fea6b03606f686b8e592de393cb332280ad96"
+    },
+    {
+      "path": "workflows.yaml",
+      "bytes": 54,
+      "sha256": "8193b78ccd08aa434de775388c3e24a5c86d74ca2e27d3b11ad25f1443b3a279"
+    }
+  ]
+}

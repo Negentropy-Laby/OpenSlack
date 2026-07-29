@@ -316,7 +316,7 @@ describe.each(COLUMN_WIDTHS)('at %d columns', (cols) => {
     expect(output).toContain('abc1234');
     expect(output).toContain('Self-Evolution Kernel');
     expect(output).toContain('Collaboration Layer');
-    expect(output).toContain('Test Suite');
+    expect(output).toContain('Test Inventory');
     expect(output).toContain('526 tests');
     expect(output).toContain('Next:');
     assertNoLineExceedsWidth(output, cols);

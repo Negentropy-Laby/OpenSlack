@@ -6,16 +6,17 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-07-28
+updated: 2026-07-29
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
 
 # Organization Graph Contract
 
-Status: implemented core contract. Organization Graph is a pure, bounded, rebuildable projection.
-Its v1 data, hashing, query, explanation, local-store behavior, and software-delivery projector are
-implemented; the Contract-to-Delivery and HTML artifact milestones remain deferred.
+Status: composite graph implemented; rehearsal pending. Organization Graph is a pure, bounded,
+rebuildable projection. Its v1 data, hashing, query, explanation, local-store behavior,
+software-delivery projector, and Contract-to-Delivery Lite composite projector are implemented.
+The governed rehearsal, live multi-system source assembly, and HTML artifact remain deferred.
 
 ## Authority Model
 

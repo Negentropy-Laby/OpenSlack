@@ -1086,10 +1086,10 @@ export function renderPlainStatus(vm: StatusViewModel, width: number = MAX_WIDTH
   }
   lines.push('');
 
-  // Test Suite
+  // Test inventory
   lines.push(
     wrap(
-      `Test Suite: ${vm.testSuite.totalTests} tests across ${vm.testSuite.totalFiles} files`,
+      `Test Inventory: ${vm.testSuite.totalTests} tests across ${vm.testSuite.totalFiles} files`,
       width,
     ),
   );

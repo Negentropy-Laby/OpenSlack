@@ -1,0 +1,53 @@
+schema: openslack.scenario_fixture.v1
+id: contract-to-delivery-lite-example
+provenance: demo_fixture
+semanticVersion: 1.0.0
+records:
+  - id: customer-acme
+    type: business.customer
+    title: Acme Corporation
+    status: active
+    properties:
+      source: demo_fixture
+  - id: contract-acme-delivery
+    type: business.contract
+    title: Acme governed delivery contract
+    status: active
+    properties:
+      source: demo_fixture
+  - id: project-governed-delivery
+    type: business.project
+    title: Governed delivery project
+    status: active
+    properties:
+      source: demo_fixture
+  - id: milestone-accepted-change
+    type: business.milestone
+    title: Accepted change milestone
+    status: completed
+    properties:
+      source: demo_fixture
+  - id: issue-10
+    type: core.work_item
+    title: Deliver governed change
+    status: closed
+    properties:
+      source: demo_fixture
+  - id: pr-20
+    type: reviewable_deliverable
+    title: Deliver governed change
+    status: merged
+    properties:
+      source: demo_fixture
+  - id: acceptance-current-head
+    type: business.acceptance
+    title: Current-head human acceptance
+    status: accepted
+    properties:
+      source: demo_fixture
+  - id: outcome-contract-realized
+    type: business.outcome
+    title: Contract outcome realized
+    status: realized
+    properties:
+      source: demo_fixture

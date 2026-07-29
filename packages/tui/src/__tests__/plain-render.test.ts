@@ -1132,7 +1132,8 @@ describe('renderPlainStatus', () => {
     expect(out).toContain('Commit: abc1234');
     expect(out).toContain('Modules (5):');
     expect(out).toContain('GitHub:');
-    expect(out).toContain('Test Suite: 526 tests across 45 files');
+    expect(out).toContain('Test Inventory: 526 tests across 45 files');
+    expect(out).not.toContain('Test Suite:');
     expect(out).toContain('Recommended Next Steps:');
     expect(out).toContain('Needs Attention:');
     expect(out).toContain('Next: Review PR #130');

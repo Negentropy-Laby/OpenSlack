@@ -1,0 +1,4 @@
+schema: openslack.scenario_projections.v1
+projectors:
+  - id: openslack.contract_to_delivery.v1
+    adapterId: openslack.contract_to_delivery.v1
