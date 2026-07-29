@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-07-28
+updated: 2026-07-30
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -19,7 +19,9 @@ Status: implemented local contract. The default and explicit `read-only` CLI sur
 agent-governed 16-tool composition. Explicit `human-attested` selects the production 17-tool
 composition only after its independent local OS-subject and controlling-TTY self-test. An
 explicitly injected local demo surface appends
-only the bounded reset tool. This does not claim Qoder desktop qualification or Scenario rehearsal.
+only the bounded reset tool. This contract is not qualification evidence by itself. The
+candidate-bound stock 12-tool Desktop result is recorded separately as `QODER_VERIFIED`; it does
+not claim Scenario live qualification, a remote Connector, or production readiness.
 
 ## Composition Boundary
 

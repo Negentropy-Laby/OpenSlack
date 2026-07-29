@@ -1,7 +1,7 @@
 {
   "$schema": "../docs/reference/schemas/documentation/control-plane.schema.json",
   "schema": "openslack.control_plane.v1",
-  "updated": "2026-07-29",
+  "updated": "2026-07-30",
   "authorities": [
     {
       "fact": "project.portfolio-state",
@@ -873,8 +873,8 @@
   ],
   "portfolio": {
     "schema": "openslack.project_state.v1",
-    "updated": "2026-07-29",
-    "last_verified": "2026-07-29T05:44:40Z",
+    "updated": "2026-07-30",
+    "last_verified": "2026-07-29T18:26:25.123Z",
     "portfolio_status": "active_development",
     "release_train": "0.2.0",
     "modules": [
@@ -986,9 +986,19 @@
         "id": "qoder-work",
         "name": "Qoder Work",
         "stage": "Verification",
-        "maturity": "implemented",
-        "blockers": ["qoder_authentication_pending", "qoder_desktop_qualification_pending"],
-        "evidence": ["docs/evidence/qoder-work-evidence.md", "repo:packages/qoder-adapter"]
+        "maturity": "local_ready",
+        "blockers": [],
+        "evidence": [
+          "docs/evidence/qoder-work-evidence.md",
+          "repo:packages/qoder-adapter",
+          "commit:23e6c168c880f2f7122094c86d22894cdf9ba628",
+          "tree:49a2faec2d23f3b51cd2eb1647a651fcaaf1e5a1",
+          "qoder-build:0.9.12.0",
+          "skill:sha256:a6acdc5bd0ff398c15ebf9775c8fa5e19dbb9b6eae655e2af3742e5cf819647f",
+          "config:sha256:8c7f8f5fc9da152faaad7e478d5d500204a7e04ebb4afede3480318c26df034e",
+          "manifest:sha256:e42aed876a24090d8c175549ea5c7d4e67df984c71f1a689c33e307e1851d61e",
+          "receipt:sha256:814bd6bfe446ebe01836d63da1df979531f71f82940ec9f10c7d53eac2e6a314"
+        ]
       },
       {
         "id": "negentropy-integration",

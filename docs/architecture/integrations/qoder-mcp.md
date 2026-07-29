@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-07-29
+updated: 2026-07-30
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -30,8 +30,13 @@ current local OS subject, owner-only mapping, and controlling TTY. The compositi
 the same instance-scoped OpenSlack context used by the CLI, TUI, and chat frontend. `apps/mcp`
 imports package APIs and never imports private CLI files, executes CLI text, or parses CLI stdout.
 
-This document describes the current local build. It does not claim that a Qoder Work desktop build
-has completed qualification or that `QODER_VERIFIED` has been reached.
+This document describes the current local build. The candidate-bound Qoder Work `0.9.12.0`
+qualification completed initialization, the exact stock 12-tool call plan, observed read-only
+permission outcomes, and all three Skill trigger modes, so the local stock Connector is
+`QODER_VERIFIED`. The separately controlling-TTY-qualified production-17 path is
+`HUMAN_ATTESTED_PROFILE_LOCAL_PASS`. Neither claim promotes a remote Connector, OAuth,
+Marketplace, Workbench, live capstone, Notification Delivery, release, or production readiness;
+see [Qoder Work evidence](../../evidence/qoder-work-evidence.md).
 
 ## Authority boundary
 

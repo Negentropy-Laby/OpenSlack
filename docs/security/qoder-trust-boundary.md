@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - security
 owner: security
-updated: 2026-07-28
+updated: 2026-07-30
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -18,8 +18,10 @@ Status: implemented local security contract. Default and explicit `read-only` ar
 [Qoder Work MCP integration](../architecture/integrations/qoder-mcp.md). Explicit `agent-bound` selects the
 production 16-tool governed composition. Explicit `human-attested` selects 17 only after the
 current local OS subject, owner-only mapping, and controlling TTY are proven. An injected local
-demo profile may append only its bounded reset tool. No Qoder
-desktop qualification or Scenario rehearsal is claimed.
+demo profile may append only its bounded reset tool. The exact stock 12-tool local Connector has
+candidate-bound `QODER_VERIFIED` evidence, and the isolated production-17 controlling-TTY path has
+`HUMAN_ATTESTED_PROFILE_LOCAL_PASS` evidence. Those results do not change this trust boundary or
+claim Scenario live qualification, remote transport, or production readiness.
 
 ## Security Position
 

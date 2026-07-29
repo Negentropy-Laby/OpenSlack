@@ -6,27 +6,28 @@ authority: canonical
 audience:
   - contributors
 owner: qa
-updated: 2026-07-28
+updated: 2026-07-30
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
 
 # Qoder Work Integration Evidence
 
-This record separates the repository-local MCP and Skill qualification from a real Qoder
-conversation. It contains no token, session, account, connector configuration, or credential
-material.
+This record preserves the historical repository-local and unauthenticated observations, then
+records the final candidate-bound local Qoder Work Desktop and controlling-TTY qualifications. It
+contains no token, session, account, raw connector configuration, authentication file, raw vendor
+body, or credential material.
 
 ## Verdict
 
-| Boundary                                 | Verdict                 | Meaning                                                                                               |
-| ---------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------- |
-| OpenSlack MCP build and tests            | `LOCAL_PASS`            | The read-only MCP frontend builds and passes repository tests.                                        |
-| MCP SDK over production STDIO entrypoint | `LOCAL_PASS`            | The exact production catalog and result envelope were exercised against the committed CLI entrypoint. |
-| Qoder Skill structure and discovery      | `LOCAL_PASS`            | The Skill validator passes and Qoder CLI discovers the linked Skill as enabled.                       |
-| Qoder CLI `/Skill` conversation          | `BLOCKED_NOT_LOGGED_IN` | The official client stopped before model or MCP execution and requested `/login`.                     |
-| Qoder Work desktop connector execution   | `NOT_RUN`               | No authenticated desktop session was used.                                                            |
-| `QODER_VERIFIED`                         | `NOT_CLAIMED`           | Local protocol evidence is not substituted for an authenticated Qoder run.                            |
+| Boundary                                   | Verdict                              | Meaning                                                                                                    |
+| ------------------------------------------ | ------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| OpenSlack MCP build and tests              | `LOCAL_PASS`                         | The read-only MCP frontend builds and passes repository tests.                                             |
+| MCP SDK over production STDIO entrypoint   | `LOCAL_PASS`                         | The exact production catalog and result envelope were exercised against the committed CLI entrypoint.      |
+| Qoder Skill structure and discovery        | `LOCAL_PASS`                         | The Skill validator passes and Qoder Work discovers the installed Skill.                                   |
+| Qoder CLI `/Skill` conversation            | `BLOCKED_NOT_LOGGED_IN` (historical) | The earlier official CLI observation stopped before model or MCP execution and requested `/login`.         |
+| Human-attested production-17 local profile | `HUMAN_ATTESTED_PROFILE_LOCAL_PASS`  | A real Windows controlling TTY approved the isolated synthetic effect with durable CAS and audit readback. |
+| Qoder Work desktop stock connector         | `QODER_VERIFIED`                     | Qoder Work `0.9.12.0` initialized and exercised the exact stock 12-tool profile and all three Skill modes. |
 
 ## Observation Binding
 
@@ -95,10 +96,12 @@ No login was attempted, no credential file was inspected, and no inference is ma
 connector behavior. A future authenticated qualification may append a new revision-bound record;
 it must not rewrite this local-only verdict into live evidence.
 
-## QG5 Governed Mutation Qualification
+## Historical QG5 governed-mutation qualification
 
-This later local qualification preserves the QG4 read-only stock profile and tests the optional
-governed profiles through explicitly injected composition ports.
+This pre-final-candidate local qualification preserved the QG4 read-only stock profile and tested
+the optional governed profiles through explicitly injected composition ports. Its `NOT_RUN` and
+`NOT_CLAIMED` rows are retained as historical evidence and are superseded only by the final
+candidate-bound qualification recorded below.
 
 | Boundary                                       | Verdict       | Evidence                                                                  |
 | ---------------------------------------------- | ------------- | ------------------------------------------------------------------------- |
@@ -139,13 +142,15 @@ client-supplied actor. Its host attests the exact run, approval, decision, reaso
 business correlation, and expiry for each call. The tool decides only an OpenSlack workflow
 effect; it never creates a GitHub review or authorizes merge.
 
-## Local human-attested CLI qualification
+## Historical local human-attested CLI qualification
 
-The production CLI now exposes `human-attested`, but only after a separate local provider passes
-its startup self-test. The mapping at `.openslack.local/mcp/human-subjects.json` stores a one-way
-OS-subject hash and asserted human principal, never a raw uid, username, SID, or credential.
-Mapping reads are bounded, canonical, no-follow, owner checked, and process-sealed by byte hash and
-file identity. Windows additionally requires provable current-SID ownership and protected ACLs.
+This pre-final-candidate snapshot recorded the production CLI surface before the Desktop
+qualification below. The production CLI exposes `human-attested`, but only after a separate local
+provider passes its startup self-test. The mapping at
+`.openslack.local/mcp/human-subjects.json` stores a one-way OS-subject hash and asserted human
+principal, never a raw uid, username, SID, or credential. Mapping reads are bounded, canonical,
+no-follow, owner checked, and process-sealed by byte hash and file identity. Windows additionally
+requires provable current-SID ownership and protected ACLs.
 
 | Boundary                                        | Verdict       | Evidence                                                                     |
 | ----------------------------------------------- | ------------- | ---------------------------------------------------------------------------- |
@@ -159,8 +164,90 @@ file identity. Windows additionally requires provable current-SID ownership and 
 | Authenticated Qoder Work execution              | `NOT_RUN`     | controlling-TTY availability and Desktop connector execution remain external |
 | `QODER_VERIFIED`                                | `NOT_CLAIMED` | local protocol and provider evidence are not Desktop qualification           |
 
-Qoder Work may launch a stdio child without a controlling TTY. That is an expected fail-closed
-outcome, not qualification evidence and not permission to read approval input from protocol
-stdin. A named authenticated Desktop build must still prove connector initialization, exact
-catalog discovery, tool permission behavior, Skill triggering, and the independent local
-attestation channel before any `QODER_VERIFIED` claim.
+At that time, Qoder Work could launch a stdio child without a controlling TTY. That was an expected
+fail-closed outcome, not qualification evidence and not permission to read approval input from
+protocol stdin. The final candidate qualification below subsequently proved connector
+initialization, exact catalog discovery, observed permission behavior, Skill triggering, and the
+independent local attestation channel.
+
+## Final candidate-bound Desktop and controlling-TTY qualification
+
+The final candidate was frozen after the v2 evidence contract and candidate-revision comparison
+fixes merged. A detached, no-space Windows worktree passed frozen install, typecheck, two complete
+zero-failure test runs, build, documentation generation and verification, migration and
+Notification documentation checks, status verification, workspace validation, golden `7/7`, and
+Genesis validation. The tracked worktree remained clean before and after qualification.
+
+### Final revision binding
+
+| Field                                    | Value                                                                      |
+| ---------------------------------------- | -------------------------------------------------------------------------- |
+| Candidate commit                         | `23e6c168c880f2f7122094c86d22894cdf9ba628`                                 |
+| Candidate tree                           | `49a2faec2d23f3b51cd2eb1647a651fcaaf1e5a1`                                 |
+| Qoder Work build                         | `0.9.12.0`                                                                 |
+| Platform                                 | Windows `x64`                                                              |
+| Qualification ID                         | `qoder-desktop-23e6c168c880-3f224a5178ff`                                  |
+| Skill SHA-256                            | `a6acdc5bd0ff398c15ebf9775c8fa5e19dbb9b6eae655e2af3742e5cf819647f`         |
+| Credential-free Connector config SHA-256 | `8c7f8f5fc9da152faaad7e478d5d500204a7e04ebb4afede3480318c26df034e`         |
+| Fixed call-plan SHA-256                  | `d810da39237bb00ead89f51624a4d73a8a20f6838b0bc7e5450dd40ec6c24fa4`         |
+| Sealed v2 manifest SHA-256               | `e42aed876a24090d8c175549ea5c7d4e67df984c71f1a689c33e307e1851d61e`         |
+| Verified v2 receipt SHA-256              | `814bd6bfe446ebe01836d63da1df979531f71f82940ec9f10c7d53eac2e6a314`         |
+| Desktop observation window               | `2026-07-29T18:02:47.169Z` to `2026-07-29T18:26:25.123Z`                   |
+| Verifier result                          | `openslack.qoder_desktop_qualification_verification.v2` / `QODER_VERIFIED` |
+
+### Real controlling-TTY result
+
+The production 17-tool composition ran through the official MCP SDK from the same candidate. The
+current Windows OS subject was temporarily bound to `human:founder`; no raw SID, account name, uid,
+username, or authentication material was retained. The human reviewed the exact synthetic,
+local-only workflow effect and typed `APPROVE` on `CON`, independently of MCP stdin/stdout.
+
+| Boundary                          | Result                                                                              |
+| --------------------------------- | ----------------------------------------------------------------------------------- |
+| Exact production catalog          | `17` tools                                                                          |
+| Human decision                    | `approved`                                                                          |
+| Reason SHA-256                    | `42d1fc72ff7d6486df19a73584693f2194af5fdea79d068183c0579fc8ffbe9a`                  |
+| Terminal CAS                      | revision `0` to `2`                                                                 |
+| Audit projection                  | `recorded`                                                                          |
+| Audit event                       | `WFAPPROVAL-AUDIT-d50ac2026d5d08027c3a6c949dee95ede440307395eba739ab50f0cf64849de1` |
+| Temporary workspace and authority | removed                                                                             |
+| Subject mapping                   | removed                                                                             |
+| Approval store                    | removed                                                                             |
+| Narrow claim                      | `HUMAN_ATTESTED_PROFILE_LOCAL_PASS`                                                 |
+
+### Authenticated Desktop result
+
+Qoder Work initialized the explicitly enabled credential-free STDIO Connector with `auth=none`
+and listed exactly the 12 stock read-only tools in the sealed order. The old Connector and prior
+grants were removed, Auto-run was disabled, and no wildcard rule was present. The Desktop then
+executed every fixed call-plan entry:
+
+| Result class | Count | Preserved blocker codes                                                          |
+| ------------ | ----: | -------------------------------------------------------------------------------- |
+| `completed`  |     7 | none                                                                             |
+| `blocked`    |     3 | `WORKFLOW_RUN_NOT_FOUND`, `SOURCE_EVIDENCE_STALE`, `SOURCE_EVIDENCE_UNAVAILABLE` |
+| `failed`     |     2 | `READ_PROJECTION_FAILED`                                                         |
+
+All 12 results used `openslack.mcp_result.v2`. `openslack_list_scenarios` returned exactly the
+locked `contract-to-delivery-lite` and `software-delivery` Packs. The stale graph fixture remained
+`SOURCE_EVIDENCE_STALE`; the reserved missing instance remained
+`SOURCE_EVIDENCE_UNAVAILABLE`.
+
+Qoder Work displayed no permission prompt for these calls. The v2 verifier accepted the observed
+`no_prompt_read_only_observed` outcome only because the live `tools/list` exactly matched the
+sealed stock catalog and every tool advertised `readOnlyHint=true`, `destructiveHint=false`, and
+`idempotentHint=true`; the reviewed `openWorldHint` values also matched exactly. These annotations
+explain client UX and do not grant OpenSlack authority.
+
+Automatic matching, the `/` chooser, and explicit
+`/openslack-organization-control` each loaded the Skill and produced the required `Status`,
+`Owner`, `Blocker`, `Next`, and `Evidence` sections. All three preserved blocked and unknown
+states and identified fixtures and projections as non-live authority. The closed v2 receipt
+contained only structured status, timestamps, hashes, and evidence references; the verifier
+rejected credentials, account/authentication fields, raw vendor bodies, mutation tools, catalog
+or annotation drift, wildcard rules, Auto-run, prior grants, and missing calls.
+
+This result establishes `QODER_VERIFIED` only for the candidate-bound local stock STDIO Connector
+and installed Skill. It does not promote a public remote Connector, OAuth, Marketplace,
+Workbench, live Contract-to-Delivery capstone, Notification Delivery, release, production
+readiness, GitHub approval, or external-system mutation.
