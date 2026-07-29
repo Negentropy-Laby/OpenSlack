@@ -177,11 +177,17 @@ bun run qualification:qoder-desktop -- verify --receipt <local-receipt.json>
 ```
 
 Use the generated stock Connector and fixed 12-tool call plan. Remove previous grants, observe one
-permission prompt for every tool without a wildcard, and exercise automatic, `/` chooser, and
-explicit `/openslack-organization-control` invocation. The receipt stores hashes, structured
-states, and evidence references only; it must not store account identifiers, authentication
-files, credentials, or raw vendor output. Until `verify` succeeds against the exact candidate,
-`QODER_VERIFIED` remains unclaimed.
+of `prompt_observed` or `no_prompt_read_only_observed` for every tool, explicitly enable the
+Connector, keep Auto-run disabled, never use a wildcard, and exercise automatic, `/` chooser, and
+explicit `/openslack-organization-control` invocation. Qoder Work's
+[`PermissionRequest`](https://docs.qoder.com/qoderwork/hooks) is conditional: the client may
+directly execute trusted read-only tools. The verifier accepts no-prompt evidence only when the
+exact 12-tool catalog and its
+[MCP annotations](https://blog.modelcontextprotocol.io/posts/2026-03-16-tool-annotations/) match
+the sealed OpenSlack catalog; annotations explain client UX but do not grant OpenSlack authority.
+The receipt stores hashes, structured states, and evidence references only; it must not store
+account identifiers, authentication files, credentials, or raw vendor output. Until `verify`
+succeeds against the exact candidate, `QODER_VERIFIED` remains unclaimed.
 
 ## Evidence limits
 

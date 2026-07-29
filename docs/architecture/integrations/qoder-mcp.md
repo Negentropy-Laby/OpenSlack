@@ -322,16 +322,25 @@ OS and architecture, Skill tree hash, credential-free Connector config hash, and
 hash. The generated Windows config pins the same resolved Bun executable that ran preparation, so
 it does not depend on the Desktop process inheriting a shell-specific `PATH`. It publishes one
 more-than-24-hour locked graph fixture, reserves a separate missing graph instance, preflights all
-12 tools through the official MCP SDK, and writes a Connector config, call plan, sealed manifest,
-and pending receipt beneath
+12 tools through the official MCP SDK, seals each advertised tool's `readOnlyHint`,
+`destructiveHint`, `idempotentHint`, and `openWorldHint`, and writes a Connector config, call plan,
+sealed v2 manifest, and pending v2 receipt beneath
 `.openslack.local/qualification/qoder-desktop/`.
 
 Use the generated Connector and call plan in a new authenticated Desktop conversation. Remove the
-old OpenSlack Connector and prior grants first; grant every one of the 12 tools individually and
-never use a wildcard. Record only structured statuses and SHA-256 evidence references in the
-pending receipt—never an account name, authentication file, credential, or raw vendor response.
-After all 12 calls and automatic, `/` chooser, and explicit-name Skill invocations are complete,
-verify the edited receipt:
+old OpenSlack Connector and prior grants first, explicitly enable the new Connector, disable
+Auto-run, and never use a wildcard. For each call, record the observed permission outcome as
+`prompt_observed` when Desktop requests authorization or
+`no_prompt_read_only_observed` when Desktop directly executes the exact sealed read-only tool.
+`PermissionRequest` is a conditional Qoder Work hook event that fires when a tool execution
+requires authorization, not a promise that every call displays a prompt; see
+[Qoder Work Hooks](https://docs.qoder.com/qoderwork/hooks). MCP annotations can inform that client
+preflight behavior; see
+[MCP Tool Annotations](https://blog.modelcontextprotocol.io/posts/2026-03-16-tool-annotations/).
+They are untrusted hints, not OpenSlack authority. Record only structured statuses and SHA-256
+evidence references in the pending receipt—never an account name, authentication file,
+credential, or raw vendor response. After all 12 calls and automatic, `/` chooser, and
+explicit-name Skill invocations are complete, verify the edited receipt:
 
 ```bash
 bun run qualification:qoder-desktop -- verify \
@@ -339,9 +348,15 @@ bun run qualification:qoder-desktop -- verify \
 ```
 
 Verification rechecks the clean candidate revision, Qoder build, exact tool order, per-tool input
-and result bindings, permission prompts, two locked Packs, stale and unavailable blocker codes,
-all three Skill modes, Connector credential absence, and the current Config, call-plan, and Skill
-hashes. Any mismatch leaves `QODER_VERIFIED` unclaimed.
+and result bindings, observed permission outcomes, exact sealed annotations, explicit Connector
+enablement, disabled Auto-run, removed prior grants, two locked Packs, stale and unavailable
+blocker codes, all three Skill modes, Connector credential absence, and the current Config,
+call-plan, and Skill hashes. A no-prompt result is accepted only for the exact production 12-tool
+catalog when `readOnlyHint=true`, `destructiveHint=false`, and `idempotentHint=true`;
+`openWorldHint` must match the sealed catalog but need not be false. Any mutation tool, annotation
+drift, unknown permission outcome, wildcard, Auto-run, prior grant, or other mismatch leaves
+`QODER_VERIFIED` unclaimed. An annotation never substitutes for OpenSlack's runtime authority
+boundary.
 
 ## Configure the Qoder Work desktop connector
 
@@ -379,8 +394,8 @@ token. A desktop launcher without a controlling TTY cannot start this profile; s
 closed without exposing a 16/12-tool fallback.
 
 The examples preserve a workspace path containing spaces as one JSON argument and contain no
-credential values. Keep permission prompts enabled, authorize only the exact names advertised by
-the selected 12, 16, or 17 profile, and do not add a wildcard allow rule.
+credential values. Authorize only the exact names advertised by the selected 12, 16, or 17
+profile, keep Auto-run disabled during qualification, and do not add a wildcard allow rule.
 
 After adding or changing the connector, start a new Qoder Work conversation so it discovers the
 current catalog. Qoder's connector documentation is:
@@ -500,7 +515,8 @@ build under test. It must include:
   corresponding local-demo profile);
 - one bounded call result for every advertised tool, including schema and status;
 - missing-graph and stale-graph fail-closed results;
-- permission-prompt state and confirmation that no wildcard tool grant was used;
+- each call's actual permission outcome, explicit Connector enablement, disabled Auto-run, removed
+  prior grants, and confirmation that no wildcard tool grant was used;
 - automatic, `/`, and explicit Skill discovery/invocation evidence for the tested surface;
 - redaction confirmation and absence of credentials, tokens, or raw vendor bodies;
 - unresolved blockers and all explicit unknowns.
