@@ -14,6 +14,7 @@ import {
   HUMAN_ATTESTED_QUALIFICATION_CLAIM,
   HUMAN_ATTESTED_QUALIFICATION_PRINCIPAL,
   HUMAN_ATTESTED_QUALIFICATION_SCHEMA,
+  humanAttestedQualificationServerStderr,
   humanQualificationRegistryYaml,
   validateHumanAttestedReceipt,
   type HumanAttestedQualificationReceipt,
@@ -114,6 +115,12 @@ describe('human-attested qualification harness', () => {
     expect(existsSync(root)).toBe(false);
   });
 
+  it('preserves the Windows controlling console without exposing MCP stdin or stdout', () => {
+    expect(humanAttestedQualificationServerStderr('win32')).toBe('inherit');
+    expect(humanAttestedQualificationServerStderr('linux')).toBe('pipe');
+    expect(humanAttestedQualificationServerStderr('darwin')).toBe('pipe');
+  });
+
   it('keeps the production STDIO server on real composition and away from test/stdio attestation', () => {
     const source = readFileSync(
       resolve(import.meta.dirname, '..', 'human-attested-server.ts'),
@@ -126,6 +133,8 @@ describe('human-attested qualification harness', () => {
     expect(source).toContain('createOpenSlackHumanAttestedMcpComposition');
     expect(source).toContain('createOpenSlackMcpServer');
     expect(source).not.toMatch(/ForTest|issueHumanDecisionBinding|process\.stdin|readline/i);
+    expect(source).toContain("process.stderr.write('HUMAN_QUALIFICATION_SERVER_FAILED\\n')");
+    expect(source).not.toMatch(/error\.(?:message|stack)|JSON\.stringify\(error/);
     expect(cli).toContain('runProductionHumanAttestedQualification');
     expect(cli).not.toMatch(/ForTest|process\.stdin|issueHumanDecisionBinding/i);
   });
