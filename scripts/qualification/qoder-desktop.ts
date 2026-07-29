@@ -28,6 +28,7 @@ import {
   readStrictJson,
   SAFE_QUALIFICATION_ID,
   SHA256,
+  type CandidateRevision,
 } from './common.js';
 
 export const QODER_DESKTOP_MANIFEST_SCHEMA =
@@ -157,6 +158,18 @@ export interface QoderDesktopQualificationReceipt {
   };
   readonly skillTriggers: readonly QoderSkillTrigger[];
   readonly sensitiveDataAbsent: true;
+}
+
+export function candidateRevisionsEqual(
+  left: CandidateRevision,
+  right: CandidateRevision,
+): boolean {
+  return (
+    left.commit === right.commit &&
+    left.tree === right.tree &&
+    left.os === right.os &&
+    left.architecture === right.architecture
+  );
 }
 
 export interface QoderDesktopPreparationResult {
@@ -1166,7 +1179,7 @@ export function verifyQoderDesktopQualification(receiptPathValue: string): Reado
   const manifest = manifestFromReceiptPath(receiptPath);
   const currentCandidate = candidateRevision(REPOSITORY_ROOT);
   if (
-    JSON.stringify(currentCandidate) !== JSON.stringify(manifest.candidate) ||
+    !candidateRevisionsEqual(currentCandidate, manifest.candidate) ||
     qoderBuild(REPOSITORY_ROOT) !== manifest.qoderBuild
   ) {
     return blocked(

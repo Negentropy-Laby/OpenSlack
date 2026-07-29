@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { assertCleanTrackedStatus } from '../common.js';
 import {
+  candidateRevisionsEqual,
   qoderManifestFixture,
   qoderReceiptFixture,
   validateCredentialFreeConnectorConfig,
@@ -10,6 +11,29 @@ import {
 const timestamp = '2026-07-29T00:00:00.000Z';
 
 describe('Qoder Desktop qualification harness', () => {
+  it('compares candidate revision values independently of manifest key order', () => {
+    const liveRevision = {
+      commit: '1'.repeat(40),
+      tree: '2'.repeat(40),
+      os: 'win32' as const,
+      architecture: 'x64',
+    };
+    const canonicalManifestRevision = {
+      architecture: 'x64',
+      commit: '1'.repeat(40),
+      os: 'win32' as const,
+      tree: '2'.repeat(40),
+    };
+
+    expect(candidateRevisionsEqual(liveRevision, canonicalManifestRevision)).toBe(true);
+    expect(
+      candidateRevisionsEqual(liveRevision, {
+        ...canonicalManifestRevision,
+        tree: '3'.repeat(40),
+      }),
+    ).toBe(false);
+  });
+
   it('accepts no-prompt observations for the exact sealed read-only 12-tool catalog', () => {
     const manifest = qoderManifestFixture();
     const receipt = qoderReceiptFixture(manifest, timestamp);
