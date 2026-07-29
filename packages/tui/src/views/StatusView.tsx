@@ -162,16 +162,16 @@ export default function StatusView({ model, onBack }: StatusViewProps): React.JS
         )
       : React.createElement(ThemedText, { colorTheme: 'muted', dim: true }, 'GitHub: unavailable'),
 
-    // Test Suite
+    // Test inventory
     React.createElement(
       Box,
       { flexDirection: 'row', marginY: 0 },
-      React.createElement(StatusIcon, { category: 'pass' }),
+      React.createElement(StatusIcon, { category: 'info' }),
       React.createElement(Text, null, ' '),
       React.createElement(
         ThemedText,
         { colorTheme: 'foreground' },
-        `Test Suite: ${model.testSuite.totalTests} tests across ${model.testSuite.totalFiles} files`,
+        `Test Inventory: ${model.testSuite.totalTests} tests across ${model.testSuite.totalFiles} files`,
       ),
     ),
     React.createElement(Divider, { length: 40 }),

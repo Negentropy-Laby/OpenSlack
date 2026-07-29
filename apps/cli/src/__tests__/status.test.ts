@@ -272,12 +272,20 @@ describe('status command', () => {
   it('explains raw and module-attributed test counts separately', async () => {
     const logs = await runStatus();
     const output = logs.join('\n');
-    expect(output).toContain('Raw passing Vitest count from .openslack/modules.yaml');
+    expect(output).toContain(
+      'Repository inventory from .openslack/modules.yaml, not a current execution result',
+    );
     expect(output).toContain('Module-attributed counts (72 tests, 12 files)');
 
     const generated = generateStatusDoc('/repo');
     expect(generated).toContain('`test:packages/runtime/src/__tests__`');
     expect(generated).not.toContain('**tests**');
+    expect(generated).toContain('## Test Inventory');
+    expect(generated).not.toContain('## Test Suite');
+    expect(generated).toContain(
+      '72 Vitest tests across 12 test files are recorded in `.openslack/modules.yaml`.',
+    );
+    expect(generated).not.toContain('No failures recorded.');
     expect(await formatMarkdown(generated, { parser: 'markdown' })).toBe(generated);
     expect(inlineCodeCell('test:packages/runtime/src/__tests__')).toBe(
       '`test:packages/runtime/src/__tests__`',
