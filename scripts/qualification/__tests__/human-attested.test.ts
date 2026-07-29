@@ -121,6 +121,8 @@ describe('human-attested qualification harness', () => {
     );
     const cli = readFileSync(resolve(import.meta.dirname, '..', 'human-attested-cli.ts'), 'utf8');
 
+    expect(source).toMatch(/from ['"]@openslack\/mcp['"]/);
+    expect(source).not.toMatch(/apps\/mcp\/src/);
     expect(source).toContain('createOpenSlackHumanAttestedMcpComposition');
     expect(source).toContain('createOpenSlackMcpServer');
     expect(source).not.toMatch(/ForTest|issueHumanDecisionBinding|process\.stdin|readline/i);

@@ -3,7 +3,7 @@ import {
   createOpenSlackMcpContext,
   createOpenSlackMcpServer,
   type OpenSlackMcpServer,
-} from '../../apps/mcp/src/index.js';
+} from '@openslack/mcp';
 import { createOpenSlackCliContext } from '../../apps/cli/src/boot/context.js';
 import { createOpenSlackHumanAttestedMcpComposition } from '../../apps/cli/src/mcp-human-attested-composition.js';
 
