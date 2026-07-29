@@ -115,47 +115,49 @@ describe('LocalWorkflowEffectApprovalStore', () => {
   });
 
   it('uses one atomic CAS winner under concurrent opposite decisions', async () => {
-    const now = Date.now();
-    const storeRoot = await root();
-    const decisionAuthority = authority();
-    const store = new LocalWorkflowEffectApprovalStore(storeRoot, decisionAuthority, () =>
-      new Date(now + 1_000).toISOString(),
-    );
-    await store.createPending(pending(now));
-    const approvedBinding = binding(decisionAuthority, now, 'approved', approvedReasonHash);
-    const rejectedBinding = binding(decisionAuthority, now, 'rejected', rejectedReasonHash);
+    for (let iteration = 0; iteration < 8; iteration += 1) {
+      const now = Date.now();
+      const storeRoot = await root();
+      const decisionAuthority = authority();
+      const store = new LocalWorkflowEffectApprovalStore(storeRoot, decisionAuthority, () =>
+        new Date(now + 1_000).toISOString(),
+      );
+      await store.createPending(pending(now));
+      const approvedBinding = binding(decisionAuthority, now, 'approved', approvedReasonHash);
+      const rejectedBinding = binding(decisionAuthority, now, 'rejected', rejectedReasonHash);
 
-    const results = await Promise.allSettled([
-      store.decide({
-        runId: 'run-001',
-        approvalId: 'approval-001',
-        expectedRevision: 0,
-        decision: 'approved',
-        reasonHash: approvedReasonHash,
-        binding: approvedBinding,
-      }),
-      store.decide({
-        runId: 'run-001',
-        approvalId: 'approval-001',
-        expectedRevision: 0,
-        decision: 'rejected',
-        reasonHash: rejectedReasonHash,
-        binding: rejectedBinding,
-      }),
-    ]);
-    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-    const rejected = results.find((result) => result.status === 'rejected');
-    expect(rejected).toMatchObject({
-      reason: { code: 'WORKFLOW_EFFECT_APPROVAL_STORE_CAS_MISMATCH' },
-    });
-    const final = await store.read('run-001', 'approval-001');
-    expect(final?.correlationId).toBe('business-correlation-001');
-    expect(final?.revision).toBe(1);
-    expect(['approved', 'rejected']).toContain(final?.status);
-    expect(final && workflowEffectApprovalBytes(final)).toEqual(
-      final && workflowEffectApprovalBytes({ ...final, correlationId: final.correlationId }),
-    );
-  });
+      const results = await Promise.allSettled([
+        store.decide({
+          runId: 'run-001',
+          approvalId: 'approval-001',
+          expectedRevision: 0,
+          decision: 'approved',
+          reasonHash: approvedReasonHash,
+          binding: approvedBinding,
+        }),
+        store.decide({
+          runId: 'run-001',
+          approvalId: 'approval-001',
+          expectedRevision: 0,
+          decision: 'rejected',
+          reasonHash: rejectedReasonHash,
+          binding: rejectedBinding,
+        }),
+      ]);
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      const rejected = results.find((result) => result.status === 'rejected');
+      expect(rejected).toMatchObject({
+        reason: { code: 'WORKFLOW_EFFECT_APPROVAL_STORE_CAS_MISMATCH' },
+      });
+      const final = await store.read('run-001', 'approval-001');
+      expect(final?.correlationId).toBe('business-correlation-001');
+      expect(final?.revision).toBe(1);
+      expect(['approved', 'rejected']).toContain(final?.status);
+      expect(final && workflowEffectApprovalBytes(final)).toEqual(
+        final && workflowEffectApprovalBytes({ ...final, correlationId: final.correlationId }),
+      );
+    }
+  }, 30_000);
 
   it('persists a deterministic pending audit projection and marks only that event recorded', async () => {
     const now = Date.now();
@@ -377,6 +379,14 @@ describe('LocalWorkflowEffectApprovalStore', () => {
     await fourth.createPending(pending(now));
     await writeFile(join(fourthRoot, 'unexpected.txt'), 'unexpected');
     await expect(fourth.read('run-001', 'approval-001')).rejects.toMatchObject({
+      code: 'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_UNSAFE',
+    });
+
+    const fifthRoot = await root();
+    const fifth = new LocalWorkflowEffectApprovalStore(fifthRoot, authority());
+    await fifth.createPending(pending(now));
+    await writeFile(join(fifthRoot, 'locks', 'decision.lock'), '');
+    await expect(fifth.read('run-001', 'approval-001')).rejects.toMatchObject({
       code: 'WORKFLOW_EFFECT_APPROVAL_STORE_FILE_UNSAFE',
     });
   });
