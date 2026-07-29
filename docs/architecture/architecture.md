@@ -7,11 +7,13 @@ audience:
   - contributors
   - reviewers
 owner: architecture
-updated: 2026-07-28
+updated: 2026-07-30
 sources:
   - design/cdd/product-concept.md
   - design/cdd/module-index.md
   - .openslack/modules.yaml
+  - memory_bank/control-plane.json
+  - memory_bank/t1_axioms/tech_context.md
 ---
 
 # OpenSlack Master Architecture
@@ -30,8 +32,10 @@ than one module and do not define the project hierarchy.
 ## Workstreams and Services
 
 Workstreams coordinate cross-module implementation. Notification Delivery is a
-process-isolated Go service with its own CDD and Memory Bank; root governance
-indexes that state without rewriting it.
+process-isolated Go service with service-owned CDD and implementation
+documentation. The single root Memory Bank owns project governance and indexes
+the service boundary without rewriting its stage, batch, review archive, or
+implementation history.
 
 ## Authority Flow
 

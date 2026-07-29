@@ -181,6 +181,11 @@
       "status": "active"
     },
     {
+      "id": "architecture-adr-multi-go-service-workspace",
+      "path": "docs/architecture/adr/adr-0002-multi-go-service-workspace.md",
+      "status": "active"
+    },
+    {
       "id": "architecture-adr-index",
       "path": "docs/architecture/adr/README.md",
       "status": "index"
@@ -188,6 +193,11 @@
     {
       "id": "architecture-master",
       "path": "docs/architecture/architecture.md",
+      "status": "active"
+    },
+    {
+      "id": "architecture-ts-to-go-migration-roadmap",
+      "path": "docs/architecture/ts-to-go-migration-roadmap.md",
       "status": "active"
     },
     {
@@ -858,6 +868,11 @@
     {
       "id": "standard-documentation",
       "path": "memory_bank/t2_execution/documentation-standard.md",
+      "status": "active"
+    },
+    {
+      "id": "standard-go-service",
+      "path": "memory_bank/t2_execution/go-service-standard.md",
       "status": "active"
     },
     {
