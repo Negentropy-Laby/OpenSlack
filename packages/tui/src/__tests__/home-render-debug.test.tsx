@@ -37,7 +37,7 @@ describe('HomeView render debug', () => {
     expect(output).toContain('Ask OpenSlack:');
     expect(output).toContain('What do you want OpenSlack to do?');
     expect(output).toContain('Suggested shortcuts');
-    expect(output).toContain('Quick Navigation');
+    expect(output).not.toContain('Quick Navigation');
     // Verify no old sections remain
     expect(output).not.toContain('Needs Attention');
     expect(output).not.toContain('Workflow Quick Actions');
