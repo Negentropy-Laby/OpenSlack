@@ -35,6 +35,11 @@ but it cannot own a separate portfolio control plane. The previous root design
 also split closely related structured facts across five YAML files, increasing
 the chance of partial updates and ambiguous authority.
 
+This decision supersedes only PR #328's explicit migration boundary that left
+`services/notification-delivery/memory_bank/` untouched. It does not
+reclassify the service CDD corpus or immutable historical receipts; those
+remain service-owned or history-bound under their existing authority rules.
+
 The consolidation must preserve these boundaries:
 
 - OpenSlack project laws and Notification Delivery scoped laws have different

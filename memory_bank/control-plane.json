@@ -1041,7 +1041,7 @@
           "github:pr-329:merged:de0d202e84b34c4def7d684c68372ebca7bb35fa",
           "memory_bank/t3_archive/reviews/documentation-migration-v1.md"
         ],
-        "notes": "The three-PR documentation migration is merged; this gate does not imply release or live verification."
+        "notes": "Documentation migration and repository enforcement are complete; no release or live gate is promoted."
       },
       {
         "id": "signed_release",
@@ -1370,19 +1370,22 @@
       {
         "id": "issue-331",
         "title": "collaboration: deliver Contract-to-Delivery Lite composite graph",
-        "status": "ready",
+        "status": "done",
         "planned_owner": "unassigned",
         "module_or_workstream": "collaboration",
         "execution": {
-          "agent_id": null,
-          "claim_ref": null,
-          "started_at": null
+          "agent_id": "codex",
+          "claim_ref": "refs/heads/agent/operator/ISSUE-331/codex-pr7-20260729",
+          "started_at": "2026-07-29T11:34:18+08:00"
         },
         "github_issue": {
           "number": 331,
           "url": "https://github.com/Negentropy-Laby/OpenSlack/issues/331"
         },
-        "pull_request": null,
+        "pull_request": {
+          "number": 333,
+          "url": "https://github.com/Negentropy-Laby/OpenSlack/pull/333"
+        },
         "acceptance_criteria": [
           "The composite graph preserves Software Delivery authority semantics and connects Customer through Outcome with explicit evidence bridges.",
           "Fresh discovery accepts exactly software-delivery and contract-to-delivery-lite in deterministic order.",
@@ -1391,8 +1394,13 @@
         ],
         "dependencies": [],
         "blockers": [],
-        "evidence": ["github:issue-331:open"],
-        "last_verified_at": "2026-07-28T18:11:09Z"
+        "evidence": [
+          "commit:b124bc4bb2c4af5ea85fa1a25facb18bf84e1b14",
+          "github:pr-333:approval:4803814829:a782ca2de701545e7d5c394f821fe74e96144f3c",
+          "github:pr-333:merged:7adc29b6369f9b9f4089586a85f1502df9a2dda8",
+          "github:issue-331:closed"
+        ],
+        "last_verified_at": "2026-07-29T03:57:34Z"
       },
       {
         "id": "documentation-governance-v1",
@@ -1425,13 +1433,15 @@
           "commit:b5a7248a91aab659448422d6f6131abb3ee31485",
           "github:pr-328:merged:067f4566cd06855f65d2b2a53257227c0db69067",
           "commit:31845d508bea4171b94a795abb1a0357c6fec80c",
+          "commit:c61118c4f18ac7326b0b3b7ce392b9a56797b838",
+          "github:pr-329:approval:4800139148:c61118c4f18ac7326b0b3b7ce392b9a56797b838",
+          "github:pr-329:merged:de0d202e84b34c4def7d684c68372ebca7bb35fa",
           "repo:.github/workflows/openslack-reusable-validate.yml",
           "repo:.github/workflows/notification-delivery-service.yml",
           "repo:memory_bank/t3_archive/reviews/documentation-migration-v1.md",
-          "github:pr-329:merged:de0d202e84b34c4def7d684c68372ebca7bb35fa",
           "commit:de0d202e84b34c4def7d684c68372ebca7bb35fa"
         ],
-        "last_verified_at": "2026-07-28T18:04:56Z"
+        "last_verified_at": "2026-07-29T01:28:42+08:00"
       },
       {
         "id": "single-root-memory-bank",
@@ -1463,10 +1473,10 @@
         ],
         "evidence": [
           "commit:de0d202e84b34c4def7d684c68372ebca7bb35fa",
-          "commit:c1aa0b39b4fcdee0bd2393175dd6e5887be689a7",
+          "commit:236c1073f61e0eeb997e34b8c4538b0d7b514379",
           "github:pr-332:created:c1aa0b39b4fcdee0bd2393175dd6e5887be689a7"
         ],
-        "last_verified_at": "2026-07-28T18:44:02Z"
+        "last_verified_at": "2026-07-29T04:23:08Z"
       }
     ]
   },

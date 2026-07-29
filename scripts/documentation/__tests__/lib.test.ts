@@ -421,6 +421,37 @@ function writeCanonicalState(
 }
 
 describe('documentation governance validation', () => {
+  test('preserves the exact documentation-governance human approval binding', () => {
+    const repositoryControlPlane = JSON.parse(
+      readFileSync(join(process.cwd(), 'memory_bank/control-plane.json'), 'utf8'),
+    ) as {
+      assignments: {
+        assignments: Array<{ id: string; evidence: string[]; last_verified_at: string }>;
+      };
+    };
+    const assignment = repositoryControlPlane.assignments.assignments.find(
+      (candidate) => candidate.id === 'documentation-governance-v1',
+    );
+
+    expect(assignment?.evidence).toEqual(
+      expect.arrayContaining([
+        'commit:c61118c4f18ac7326b0b3b7ce392b9a56797b838',
+        'github:pr-329:approval:4800139148:c61118c4f18ac7326b0b3b7ce392b9a56797b838',
+      ]),
+    );
+    expect(assignment?.last_verified_at).toBe('2026-07-29T01:28:42+08:00');
+  });
+
+  test('records the superseded PR 328 service Memory Bank boundary in the ADR', () => {
+    const adr = readFileSync(
+      join(process.cwd(), 'docs/architecture/adr/adr-0001-single-root-memory-bank.md'),
+      'utf8',
+    );
+
+    expect(adr).toContain("supersedes only PR #328's explicit migration boundary that left");
+    expect(adr).toMatch(/It does not\s+reclassify the service CDD corpus/u);
+  });
+
   test('rejects missing document owner', () => {
     expect(() =>
       validateDocumentMetadata({
