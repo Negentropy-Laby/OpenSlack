@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	requiredSchemaVersion = int64(1)
+	requiredSchemaVersion = int64(2)
 	maxScenarioList       = 10_000
 )
 
@@ -229,7 +229,7 @@ func (adapter *storeAdapter) resolveExpectedRevision(
 	idempotencyKey string,
 	expectedCursor *string,
 ) (int64, error) {
-	receipt, err := adapter.store.ReadReceipt(ctx, scenarioInstanceID, idempotencyKey)
+	receipt, err := adapter.store.ReadReceiptByKey(ctx, idempotencyKey)
 	if err == nil {
 		if receipt.Revision < 1 {
 			return 0, &app.StoreError{Code: app.StoreInternal}

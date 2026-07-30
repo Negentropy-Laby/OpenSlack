@@ -869,6 +869,7 @@ export class LocalGraphStore {
   readonly root: string;
   readonly limits: GraphStoreLimits;
   private readonly shadowPublisher: GraphShadowPublishPort | undefined;
+  private readonly shadowTails = new Map<string, Promise<void>>();
 
   constructor(
     configuredRoot: string,
@@ -1047,20 +1048,33 @@ export class LocalGraphStore {
       hooks,
     );
     if (this.shadowPublisher) {
+      this.enqueueShadowPublish({
+        expectedCursor: options.expectedCursor,
+        snapshot,
+        ...(delta === undefined ? {} : { delta }),
+      });
+    }
+    return published;
+  }
+
+  private enqueueShadowPublish(input: Parameters<GraphShadowPublishPort['publish']>[0]): void {
+    const scenarioInstanceId = input.snapshot.scenarioInstanceId;
+    const previous = this.shadowTails.get(scenarioInstanceId);
+    const dispatch = async (): Promise<void> => {
       try {
-        void this.shadowPublisher
-          .publish({
-            expectedCursor: options.expectedCursor,
-            snapshot,
-            ...(delta === undefined ? {} : { delta }),
-          })
-          .catch(() => undefined);
+        await this.shadowPublisher!.publish(input);
       } catch {
         // The local TypeScript commit is authoritative throughout GS1. A broken
         // shadow adapter can neither roll it back nor turn it into a failure.
       }
-    }
-    return published;
+    };
+    const current = previous ? previous.then(dispatch, dispatch) : dispatch();
+    this.shadowTails.set(scenarioInstanceId, current);
+    void current.finally(() => {
+      if (this.shadowTails.get(scenarioInstanceId) === current) {
+        this.shadowTails.delete(scenarioInstanceId);
+      }
+    });
   }
 
   private async publishSnapshotInternal(

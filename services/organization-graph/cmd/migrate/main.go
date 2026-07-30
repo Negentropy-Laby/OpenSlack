@@ -1,5 +1,5 @@
 // migrate applies the Organization Graph PostgreSQL schema and verifies exact
-// version 1 with dirty=false.
+// version 2 with dirty=false.
 package main
 
 import (
@@ -16,7 +16,7 @@ import (
 	"github.com/Negentropy-Laby/OpenSlack/services/organization-graph/internal/config"
 )
 
-const requiredSchemaVersion = 1
+const requiredSchemaVersion = 2
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))

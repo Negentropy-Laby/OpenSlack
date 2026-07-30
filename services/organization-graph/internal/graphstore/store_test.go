@@ -68,3 +68,41 @@ func TestPreparePublishStrictlyValidatesFrozenExternalFingerprint(t *testing.T) 
 		t.Fatalf("non-canonical fingerprint got %v", err)
 	}
 }
+
+func TestContractIdentifiersUseUTF16UnitsWhileIdempotencyKeysRemainByteBounded(t *testing.T) {
+	bmpIdentifier := strings.Repeat("界", graphcontract.MaxIdentifierCharacters)
+	if err := graphstore.ValidateScenarioInstanceID(bmpIdentifier); err != nil {
+		t.Fatalf("512 UTF-16-unit scenario identifier was rejected: %v", err)
+	}
+	if err := graphstore.ValidateCursor(bmpIdentifier); err != nil {
+		t.Fatalf("512 UTF-16-unit cursor was rejected: %v", err)
+	}
+	if err := graphstore.ValidateCursor(bmpIdentifier + "a"); !graphstore.IsCode(
+		err,
+		graphstore.ErrorInvalidInput,
+	) {
+		t.Fatalf("513 UTF-16-unit cursor got %v", err)
+	}
+
+	astralIdentifier := strings.Repeat("😀", graphcontract.MaxIdentifierCharacters/2)
+	if err := graphstore.ValidateScenarioInstanceID(astralIdentifier); err != nil {
+		t.Fatalf("512 UTF-16-unit astral identifier was rejected: %v", err)
+	}
+	if err := graphstore.ValidateScenarioInstanceID(astralIdentifier + "a"); !graphstore.IsCode(
+		err,
+		graphstore.ErrorInvalidInput,
+	) {
+		t.Fatalf("513 UTF-16-unit astral identifier got %v", err)
+	}
+
+	byteBoundedKey := strings.Repeat("é", graphstore.MaxIdempotencyKeyBytes/2)
+	if err := graphstore.ValidateIdempotencyKey(byteBoundedKey); err != nil {
+		t.Fatalf("512-byte idempotency key was rejected: %v", err)
+	}
+	if err := graphstore.ValidateIdempotencyKey(byteBoundedKey + "a"); !graphstore.IsCode(
+		err,
+		graphstore.ErrorInvalidInput,
+	) {
+		t.Fatalf("513-byte idempotency key got %v", err)
+	}
+}

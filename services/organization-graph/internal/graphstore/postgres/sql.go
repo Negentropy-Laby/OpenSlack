@@ -1,7 +1,15 @@
 package postgres
 
 const (
-	receiptSelectSQL = `
+	receiptSelectByKeySQL = `
+SELECT receipt_id, operation, status, scenario_instance_id, idempotency_key,
+       request_fingerprint, previous_cursor, cursor, revision,
+       snapshot_integrity_hash, delta_integrity_hash, committed_at,
+       reconciliation_token, recorded_at
+FROM graph_ingest_receipts
+WHERE idempotency_key = $1`
+
+	receiptSelectScopedSQL = `
 SELECT receipt_id, operation, status, scenario_instance_id, idempotency_key,
        request_fingerprint, previous_cursor, cursor, revision,
        snapshot_integrity_hash, delta_integrity_hash, committed_at,
@@ -62,7 +70,7 @@ INSERT INTO graph_ingest_receipts (
     $1, $2, 'reconciliation_required', $3, $4, $5, $6, $7, $8,
     $9, $10, NULL, $11
 )
-ON CONFLICT (scenario_instance_id, idempotency_key) DO NOTHING`
+ON CONFLICT (idempotency_key) DO NOTHING`
 
 	snapshotSelectSQL = `
 SELECT scenario_instance_id, cursor, revision, canonical_bytes, integrity_hash,

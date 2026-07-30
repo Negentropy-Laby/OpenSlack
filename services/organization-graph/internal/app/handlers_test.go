@@ -417,8 +417,8 @@ func TestAmbiguousCommitReturnsDurableReconciliationReceipt(t *testing.T) {
 		ReconciliationToken:   &token,
 	}
 	store := &fakeStore{
-		snapshot:    snapshot,
-		snapshotErr: &StoreError{Code: StoreAmbiguous, Receipt: &receipt},
+		snapshot:        snapshot,
+		snapshotReceipt: &receipt,
 	}
 	service := testService(t, store)
 	response := performJSON(service, http.MethodPost, RouteSnapshotIngest, snapshotRequestBody(t, snapshot, nil), "snapshot-ambiguous")

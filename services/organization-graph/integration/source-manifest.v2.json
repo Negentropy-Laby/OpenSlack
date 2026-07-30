@@ -36,7 +36,7 @@
     },
     "openapi": {
       "path": "services/organization-graph/docs/api/openapi.yaml",
-      "sha256": "53bf45ff8d3baf64be90f5ae4f378881fcd9a6afe396d3de72fe10c3bac4bcf8"
+      "sha256": "c1a150aae7a742ce057be80d62089255725fe34c5db35ff405af16a2ac617550"
     }
   },
   "legalInputs": {
@@ -56,7 +56,7 @@
     "repositorySbomInput": {
       "path": "services/organization-graph/SBOM.cdx.json",
       "sha256": "ab64b2bf1c20b5c838329dbc5added250c543f1f5f8bfd9ce33e1d54a487045d",
-      "scope": "REPOSITORY_SOURCE_AND_BUILD_INPUTS",
+      "scope": "SELECTED_REPOSITORY_SOURCE_AND_BUILD_INPUTS",
       "attestation": "UNSIGNED"
     }
   },

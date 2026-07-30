@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -47,14 +48,22 @@ func TestHealthURLUsesOnlyValidatedConfiguredPort(t *testing.T) {
 	}{
 		{bind: "", want: "http://127.0.0.1:8080/health/ready"},
 		{bind: "127.0.0.1:9090", want: "http://127.0.0.1:9090/health/ready"},
-		{bind: ":8081", want: "http://127.0.0.1:8081/health/ready"},
-		{bind: "[::]:8082", want: "http://127.0.0.1:8082/health/ready"},
+		{bind: "10.0.0.4:8081", want: "http://10.0.0.4:8081/health/ready"},
+		{bind: ":8082", want: "http://10.0.0.4:8082/health/ready"},
+		{bind: "[::]:8083", wantErr: true},
+		{bind: "8.8.8.8:8084", wantErr: true},
 		{bind: "127.0.0.1:http", wantErr: true},
 		{bind: "https://attacker.invalid", wantErr: true},
 		{bind: "127.0.0.1:0", wantErr: true},
 	}
 	for _, test := range tests {
-		got, err := healthURLFromBind(test.bind)
+		got, err := healthURLFromBindWithResolver(test.bind, func(bind string) (string, error) {
+			_, port, splitErr := net.SplitHostPort(bind)
+			if splitErr != nil {
+				return "", splitErr
+			}
+			return net.JoinHostPort("10.0.0.4", port), nil
+		})
 		if (err != nil) != test.wantErr {
 			t.Fatalf("healthURLFromBind(%q) error = %v, wantErr %v", test.bind, err, test.wantErr)
 		}

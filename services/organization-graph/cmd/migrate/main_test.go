@@ -21,8 +21,8 @@ func TestMigrationDatabaseURLUsesRegisteredPGXV5Scheme(t *testing.T) {
 	}
 }
 
-func TestRequiredSchemaVersionIsOne(t *testing.T) {
-	if requiredSchemaVersion != 1 {
+func TestRequiredSchemaVersionIsTwo(t *testing.T) {
+	if requiredSchemaVersion != 2 {
 		t.Fatalf("requiredSchemaVersion = %d", requiredSchemaVersion)
 	}
 }

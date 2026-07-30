@@ -229,7 +229,7 @@ paths:
       tags: [operations]
       responses:
         '200':
-          description: Exact candidate build identity
+          description: Operator-configured diagnostic build label; not image provenance or signed release identity
           content:
             application/json:
               schema:

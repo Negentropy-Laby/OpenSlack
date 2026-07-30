@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"sort"
 	"time"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/organization-graph/internal/graphcontract"
@@ -115,6 +116,7 @@ type Store interface {
 	ListDeltas(context.Context, string, int64, int) ([]StoredDelta, error)
 	ListHeads(context.Context, int) ([]Head, error)
 	ReadReceipt(context.Context, string, string) (Receipt, error)
+	ReadReceiptByKey(context.Context, string) (Receipt, error)
 	Statistics(context.Context) (Statistics, error)
 }
 
@@ -387,7 +389,7 @@ func ValidateCursor(value string) error {
 }
 
 func ValidateIdempotencyKey(value string) error {
-	return validateIdentifier(value, "idempotency key", MaxIdempotencyKeyBytes)
+	return validateByteIdentifier(value, "idempotency key", MaxIdempotencyKeyBytes)
 }
 
 func DecodeStoredSnapshot(
@@ -462,6 +464,23 @@ func DecodeStoredDelta(
 }
 
 func validateIdentifier(value, name string, maximum int) error {
+	if value == "" || !utf8.ValidString(value) {
+		return Failure(ErrorInvalidInput, name+" is empty, oversized, or invalid UTF-8", nil)
+	}
+	units := 0
+	for _, character := range value {
+		if character <= 0x1f || character == 0x7f {
+			return Failure(ErrorInvalidInput, name+" contains a control character", nil)
+		}
+		units += utf16.RuneLen(character)
+		if units > maximum {
+			return Failure(ErrorInvalidInput, name+" is empty, oversized, or invalid UTF-8", nil)
+		}
+	}
+	return nil
+}
+
+func validateByteIdentifier(value, name string, maximum int) error {
 	if value == "" || len(value) > maximum || !utf8.ValidString(value) {
 		return Failure(ErrorInvalidInput, name+" is empty, oversized, or invalid UTF-8", nil)
 	}

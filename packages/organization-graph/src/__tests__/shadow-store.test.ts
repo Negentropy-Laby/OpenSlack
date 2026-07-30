@@ -154,4 +154,34 @@ describe('LocalGraphStore shadow observation boundary', () => {
     expect(publish).toHaveBeenCalledTimes(1);
     expect(await store.currentCursor(snapshot.scenarioInstanceId)).toBe(snapshot.cursor);
   });
+
+  it('serializes shadow publication per scenario without delaying local commits', async () => {
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const started: string[] = [];
+    const publish = vi.fn(async (input: GraphShadowPublishInput) => {
+      started.push(input.snapshot.cursor);
+      if (input.snapshot.cursor === 'cursor-001') {
+        await firstGate;
+      }
+      return observation(input);
+    });
+    const store = new LocalGraphStore(await root(), {}, { publish });
+    const first = graphSnapshot('cursor-001');
+    const target = graphTransitionSnapshot('cursor-002');
+    const delta = graphDelta('cursor-001', 'cursor-002');
+
+    await store.publishSnapshot(first, { expectedCursor: null });
+    const secondLocalReceipt = await store.publishSnapshot(target, {
+      expectedCursor: first.cursor,
+      delta,
+    });
+
+    expect(secondLocalReceipt.cursor).toBe(target.cursor);
+    expect(started).toEqual(['cursor-001']);
+    releaseFirst();
+    await vi.waitFor(() => expect(started).toEqual(['cursor-001', 'cursor-002']));
+  });
 });

@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Negentropy-Laby/OpenSlack/services/organization-graph/internal/netbind"
 )
 
 const defaultBind = "127.0.0.1:8080"
@@ -43,11 +45,18 @@ func main() {
 }
 
 func healthURLFromBind(bind string) (string, error) {
+	return healthURLFromBindWithResolver(bind, netbind.ResolvePrivateWildcard)
+}
+
+func healthURLFromBindWithResolver(
+	bind string,
+	resolveWildcard func(string) (string, error),
+) (string, error) {
 	bind = strings.TrimSpace(bind)
 	if bind == "" {
 		bind = defaultBind
 	}
-	_, port, err := net.SplitHostPort(bind)
+	host, port, err := net.SplitHostPort(bind)
 	if err != nil || port == "" {
 		return "", fmt.Errorf("bind is not host:port")
 	}
@@ -55,7 +64,25 @@ func healthURLFromBind(bind string) (string, error) {
 	if err != nil || value < 1 || value > 65535 {
 		return "", fmt.Errorf("bind port is not a numeric TCP port")
 	}
-	return "http://" + net.JoinHostPort("127.0.0.1", strconv.Itoa(value)) + "/health/ready", nil
+	if host == "" {
+		resolved, resolveErr := resolveWildcard(bind)
+		if resolveErr != nil {
+			return "", fmt.Errorf("resolve private healthcheck target: %w", resolveErr)
+		}
+		resolvedHost, resolvedPort, splitErr := net.SplitHostPort(resolved)
+		if splitErr != nil || resolvedHost == "" || resolvedPort != strconv.Itoa(value) {
+			return "", fmt.Errorf("private healthcheck resolver returned an invalid target")
+		}
+		host = resolvedHost
+	}
+	if host != "localhost" {
+		address := net.ParseIP(host)
+		if address == nil || address.IsUnspecified() ||
+			!(address.IsLoopback() || address.IsPrivate() || address.IsLinkLocalUnicast()) {
+			return "", fmt.Errorf("healthcheck target must be loopback or a private IP literal")
+		}
+	}
+	return "http://" + net.JoinHostPort(host, strconv.Itoa(value)) + "/health/ready", nil
 }
 
 func check(request *http.Request, client *http.Client) error {

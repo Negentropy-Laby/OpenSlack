@@ -19,6 +19,11 @@ import (
 
 const reconciliationTimeout = 5 * time.Second
 
+const (
+	idempotencyLockSalt int64 = 7277797366262101
+	scenarioLockSalt    int64 = 7277797366262102
+)
+
 type Repository struct {
 	pool *pgxpool.Pool
 }
@@ -41,19 +46,19 @@ func (repository *Repository) Publish(
 	}
 	defer func() { _ = transaction.Rollback(context.Background()) }()
 
-	if _, err := transaction.Exec(
+	if err := lockPublishScope(
 		ctx,
-		`SELECT pg_advisory_xact_lock(hashtextextended($1, 7277797366262102))`,
+		transaction,
+		prepared.Input.IdempotencyKey,
 		prepared.Snapshot.ScenarioInstanceID,
 	); err != nil {
-		return graphstore.Receipt{}, databaseFailure("lock graph scenario", err)
+		return graphstore.Receipt{}, err
 	}
 
 	existing, rawFingerprint, err := readReceiptRow(
 		transaction.QueryRow(
 			ctx,
-			receiptSelectSQL,
-			prepared.Snapshot.ScenarioInstanceID,
+			receiptSelectByKeySQL,
 			prepared.Input.IdempotencyKey,
 		),
 	)
@@ -128,7 +133,7 @@ func (repository *Repository) Publish(
 					readErr,
 				)
 			}
-			return graphstore.Receipt{}, readErr
+			return graphstore.Receipt{}, mapRowReadFailure("read current parent snapshot", readErr)
 		}
 		if parent.Snapshot.IntegrityHash != actualIntegrity {
 			return graphstore.Receipt{}, graphstore.Failure(
@@ -147,14 +152,6 @@ func (repository *Repository) Publish(
 	}
 
 	nextRevision := actualRevision + 1
-	generatedAt, err := time.Parse(time.RFC3339Nano, prepared.Snapshot.GeneratedAt)
-	if err != nil {
-		return graphstore.Receipt{}, graphstore.Failure(
-			graphstore.ErrorContentInvalid,
-			"parse canonical snapshot generatedAt",
-			err,
-		)
-	}
 	if _, err := transaction.Exec(
 		ctx,
 		snapshotInsertSQL,
@@ -164,21 +161,13 @@ func (repository *Repository) Publish(
 		prepared.SnapshotBytes,
 		prepared.Snapshot.IntegrityHash,
 		prepared.Snapshot.ProjectorVersion,
-		generatedAt,
+		prepared.Snapshot.GeneratedAt,
 	); err != nil {
 		return graphstore.Receipt{}, mapWriteFailure("insert immutable snapshot", err)
 	}
 
 	var deltaIntegrityHash *string
 	if prepared.Delta != nil {
-		deltaGeneratedAt, parseErr := time.Parse(time.RFC3339Nano, prepared.Delta.GeneratedAt)
-		if parseErr != nil {
-			return graphstore.Receipt{}, graphstore.Failure(
-				graphstore.ErrorContentInvalid,
-				"parse canonical delta generatedAt",
-				parseErr,
-			)
-		}
 		if _, err := transaction.Exec(
 			ctx,
 			deltaInsertSQL,
@@ -188,7 +177,7 @@ func (repository *Repository) Publish(
 			nextRevision,
 			prepared.DeltaBytes,
 			prepared.Delta.IntegrityHash,
-			deltaGeneratedAt,
+			prepared.Delta.GeneratedAt,
 		); err != nil {
 			return graphstore.Receipt{}, mapWriteFailure("insert immutable delta", err)
 		}
@@ -385,7 +374,10 @@ func (repository *Repository) ReadSnapshot(
 			err,
 		)
 	}
-	return value, err
+	if err != nil {
+		return graphstore.StoredSnapshot{}, mapRowReadFailure("read graph snapshot", err)
+	}
+	return value, nil
 }
 
 func (repository *Repository) ReadDelta(
@@ -419,7 +411,10 @@ func (repository *Repository) ReadDelta(
 			err,
 		)
 	}
-	return value, err
+	if err != nil {
+		return graphstore.StoredDelta{}, mapRowReadFailure("read graph delta", err)
+	}
+	return value, nil
 }
 
 func (repository *Repository) ListSnapshots(
@@ -446,7 +441,7 @@ func (repository *Repository) ListSnapshots(
 	for rows.Next() {
 		value, scanErr := readSnapshotRow(rows)
 		if scanErr != nil {
-			return nil, scanErr
+			return nil, mapRowReadFailure("scan graph snapshot", scanErr)
 		}
 		result = append(result, value)
 	}
@@ -480,7 +475,7 @@ func (repository *Repository) ListDeltas(
 	for rows.Next() {
 		value, scanErr := readDeltaRow(rows)
 		if scanErr != nil {
-			return nil, scanErr
+			return nil, mapRowReadFailure("scan graph delta", scanErr)
 		}
 		result = append(result, value)
 	}
@@ -502,7 +497,7 @@ func (repository *Repository) ReadReceipt(
 		return graphstore.Receipt{}, err
 	}
 	receipt, _, err := readReceiptRow(
-		repository.pool.QueryRow(ctx, receiptSelectSQL, scenarioInstanceID, idempotencyKey),
+		repository.pool.QueryRow(ctx, receiptSelectScopedSQL, scenarioInstanceID, idempotencyKey),
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return graphstore.Receipt{}, graphstore.Failure(
@@ -512,7 +507,30 @@ func (repository *Repository) ReadReceipt(
 		)
 	}
 	if err != nil {
-		return graphstore.Receipt{}, databaseFailure("read graph ingest receipt", err)
+		return graphstore.Receipt{}, mapRowReadFailure("read graph ingest receipt", err)
+	}
+	return receipt, nil
+}
+
+func (repository *Repository) ReadReceiptByKey(
+	ctx context.Context,
+	idempotencyKey string,
+) (graphstore.Receipt, error) {
+	if err := graphstore.ValidateIdempotencyKey(idempotencyKey); err != nil {
+		return graphstore.Receipt{}, err
+	}
+	receipt, _, err := readReceiptRow(
+		repository.pool.QueryRow(ctx, receiptSelectByKeySQL, idempotencyKey),
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return graphstore.Receipt{}, graphstore.Failure(
+			graphstore.ErrorNotFound,
+			"graph ingest receipt not found",
+			err,
+		)
+	}
+	if err != nil {
+		return graphstore.Receipt{}, mapRowReadFailure("read graph ingest receipt by key", err)
 	}
 	return receipt, nil
 }
@@ -536,11 +554,7 @@ func (repository *Repository) resolveCommitOutcome(
 	reconcileCtx, cancel := context.WithTimeout(context.Background(), reconciliationTimeout)
 	defer cancel()
 
-	existing, err := repository.ReadReceipt(
-		reconcileCtx,
-		prepared.Snapshot.ScenarioInstanceID,
-		prepared.Input.IdempotencyKey,
-	)
+	existing, err := repository.ReadReceiptByKey(reconcileCtx, prepared.Input.IdempotencyKey)
 	if err == nil {
 		raw, decodeErr := decodeFingerprint(existing.RequestFingerprint)
 		if decodeErr == nil &&
@@ -587,9 +601,10 @@ func (repository *Repository) resolveCommitOutcome(
 		)
 	}
 	defer func() { _ = transaction.Rollback(context.Background()) }()
-	if _, lockErr := transaction.Exec(
+	if lockErr := lockPublishScope(
 		reconcileCtx,
-		`SELECT pg_advisory_xact_lock(hashtextextended($1, 7277797366262102))`,
+		transaction,
+		prepared.Input.IdempotencyKey,
 		prepared.Snapshot.ScenarioInstanceID,
 	); lockErr != nil {
 		return graphstore.Receipt{}, graphstore.Failure(
@@ -623,8 +638,7 @@ func (repository *Repository) resolveCommitOutcome(
 	persisted, rawFingerprint, readErr := readReceiptRow(
 		transaction.QueryRow(
 			reconcileCtx,
-			receiptSelectSQL,
-			prepared.Snapshot.ScenarioInstanceID,
+			receiptSelectByKeySQL,
 			prepared.Input.IdempotencyKey,
 		),
 	)
@@ -672,6 +686,32 @@ func readHeadForUpdate(
 		return nil, 0, "", databaseFailure("lock current graph head", err)
 	}
 	return &cursor, revision, integrity, nil
+}
+
+func lockPublishScope(
+	ctx context.Context,
+	transaction pgx.Tx,
+	idempotencyKey string,
+	scenarioInstanceID string,
+) error {
+	for _, lock := range []struct {
+		value     string
+		salt      int64
+		operation string
+	}{
+		{value: idempotencyKey, salt: idempotencyLockSalt, operation: "lock graph idempotency key"},
+		{value: scenarioInstanceID, salt: scenarioLockSalt, operation: "lock graph scenario"},
+	} {
+		if _, err := transaction.Exec(
+			ctx,
+			`SELECT pg_advisory_xact_lock(hashtextextended($1, $2))`,
+			lock.value,
+			lock.salt,
+		); err != nil {
+			return databaseFailure(lock.operation, err)
+		}
+	}
+	return nil
 }
 
 func moveHead(
@@ -722,7 +762,7 @@ func readSnapshotRow(row pgx.Row) (graphstore.StoredSnapshot, error) {
 	var canonicalBytes []byte
 	var integrityHash string
 	var projectorVersion string
-	var generatedAt time.Time
+	var generatedAt string
 	var revision int64
 	var storedAt time.Time
 	if err := row.Scan(
@@ -747,7 +787,7 @@ func readSnapshotRow(row pgx.Row) (graphstore.StoredSnapshot, error) {
 	}
 	if snapshot.IntegrityHash != integrityHash ||
 		snapshot.ProjectorVersion != projectorVersion ||
-		!sameInstant(snapshot.GeneratedAt, generatedAt) {
+		snapshot.GeneratedAt != generatedAt {
 		return graphstore.StoredSnapshot{}, graphstore.Failure(
 			graphstore.ErrorContentInvalid,
 			"stored snapshot metadata differs from canonical bytes",
@@ -768,7 +808,7 @@ func readDeltaRow(row pgx.Row) (graphstore.StoredDelta, error) {
 	var toCursor string
 	var canonicalBytes []byte
 	var integrityHash string
-	var generatedAt time.Time
+	var generatedAt string
 	var revision int64
 	var storedAt time.Time
 	if err := row.Scan(
@@ -792,7 +832,7 @@ func readDeltaRow(row pgx.Row) (graphstore.StoredDelta, error) {
 	if err != nil {
 		return graphstore.StoredDelta{}, err
 	}
-	if delta.IntegrityHash != integrityHash || !sameInstant(delta.GeneratedAt, generatedAt) {
+	if delta.IntegrityHash != integrityHash || delta.GeneratedAt != generatedAt {
 		return graphstore.StoredDelta{}, graphstore.Failure(
 			graphstore.ErrorContentInvalid,
 			"stored delta metadata differs from canonical bytes",
@@ -903,6 +943,14 @@ func databaseFailure(operation string, err error) error {
 	return graphstore.Failure(graphstore.ErrorDatabase, operation, err)
 }
 
+func mapRowReadFailure(operation string, err error) error {
+	var storeFailure *graphstore.Error
+	if errors.As(err, &storeFailure) {
+		return err
+	}
+	return databaseFailure(operation, err)
+}
+
 func mapWriteFailure(operation string, err error) error {
 	if isUniqueViolation(err) {
 		return graphstore.Failure(graphstore.ErrorCursorConflict, operation, err)
@@ -972,11 +1020,6 @@ func timePointer(value pgtype.Timestamptz) *time.Time {
 	}
 	result := value.Time
 	return &result
-}
-
-func sameInstant(raw string, value time.Time) bool {
-	parsed, err := time.Parse(time.RFC3339Nano, raw)
-	return err == nil && parsed.Equal(value)
 }
 
 func decodeFingerprint(value string) ([]byte, error) {

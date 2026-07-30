@@ -156,7 +156,7 @@ func TestSourceManifestBindsRepositoryInputsWithoutReleaseClaims(t *testing.T) {
 	assertManifestReference(t, root, manifest.LegalInputs.ThirdPartyNotices.manifestReference)
 	assertManifestReference(t, root, manifest.LegalInputs.RepositorySBOMInput.manifestReference)
 	if manifest.LegalInputs.ThirdPartyNotices.ProductionModuleCount != 12 ||
-		manifest.LegalInputs.RepositorySBOMInput.Scope != "REPOSITORY_SOURCE_AND_BUILD_INPUTS" ||
+		manifest.LegalInputs.RepositorySBOMInput.Scope != "SELECTED_REPOSITORY_SOURCE_AND_BUILD_INPUTS" ||
 		manifest.LegalInputs.RepositorySBOMInput.Attestation != "UNSIGNED" {
 		t.Fatalf("source manifest distribution scope drifted")
 	}

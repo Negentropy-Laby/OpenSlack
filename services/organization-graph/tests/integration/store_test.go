@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -177,6 +178,160 @@ func TestDeltaUsesDatabaseCurrentParentAndReconstructsTargetExactly(t *testing.T
 	}
 }
 
+func TestGeneratedAtMetadataPreservesNanosecondPrecisionExactly(t *testing.T) {
+	pool := testsupport.OpenPostgres(t)
+	store := graphpostgres.New(pool)
+	parent := emptySnapshot(t, "cursor-nanosecond-1", "2026-07-30T01:00:00.123456789Z")
+	if _, err := store.Publish(
+		context.Background(),
+		snapshotPublishInput(t, "nanosecond-parent", nil, 0, parent),
+	); err != nil {
+		t.Fatalf("publish nanosecond parent: %v", err)
+	}
+	_, persistedParent, err := store.Current(context.Background(), testScenario)
+	if err != nil {
+		t.Fatalf("read nanosecond parent: %v", err)
+	}
+	if persistedParent.Snapshot.GeneratedAt != parent.GeneratedAt {
+		t.Fatalf(
+			"parent generatedAt = %q, want %q",
+			persistedParent.Snapshot.GeneratedAt,
+			parent.GeneratedAt,
+		)
+	}
+
+	target := snapshotWithNodes(
+		t,
+		"cursor-nanosecond-2",
+		"2026-07-30T01:01:00.987654321Z",
+		"work-nanosecond",
+	)
+	delta := deltaToTarget(t, parent, target, target.Nodes)
+	if _, err := store.Publish(
+		context.Background(),
+		deltaPublishInput(t, "nanosecond-target", parent.Cursor, 1, target, delta),
+	); err != nil {
+		t.Fatalf("publish nanosecond delta: %v", err)
+	}
+	persistedDelta, err := store.ReadDelta(
+		context.Background(),
+		testScenario,
+		parent.Cursor,
+		target.Cursor,
+	)
+	if err != nil {
+		t.Fatalf("read nanosecond delta: %v", err)
+	}
+	if persistedDelta.Delta.GeneratedAt != target.GeneratedAt {
+		t.Fatalf(
+			"delta generatedAt = %q, want %q",
+			persistedDelta.Delta.GeneratedAt,
+			target.GeneratedAt,
+		)
+	}
+}
+
+func TestNonASCIIContractIdentifiersAdvanceTheDurableHead(t *testing.T) {
+	pool := testsupport.OpenPostgres(t)
+	store := graphpostgres.New(pool)
+	scenarioInstanceID := strings.Repeat("界", graphcontract.MaxIdentifierCharacters)
+	parentCursor := strings.Repeat("😀", graphcontract.MaxIdentifierCharacters/2)
+	parent := emptySnapshotForScenario(
+		t,
+		scenarioInstanceID,
+		parentCursor,
+		generatedOne,
+	)
+	if _, err := store.Publish(
+		context.Background(),
+		snapshotPublishInput(t, "unicode-parent", nil, 0, parent),
+	); err != nil {
+		t.Fatalf("publish Unicode parent: %v", err)
+	}
+
+	targetCursor := strings.Repeat("界", graphcontract.MaxIdentifierCharacters-1) + "a"
+	target := emptySnapshotForScenario(
+		t,
+		scenarioInstanceID,
+		targetCursor,
+		generatedTwo,
+	)
+	if _, err := store.Publish(
+		context.Background(),
+		snapshotPublishInput(t, "unicode-target", &parentCursor, 1, target),
+	); err != nil {
+		t.Fatalf("advance Unicode cursor: %v", err)
+	}
+	head, _, err := store.Current(context.Background(), scenarioInstanceID)
+	if err != nil {
+		t.Fatalf("read Unicode head: %v", err)
+	}
+	if head.Cursor != targetCursor || head.Revision != 2 {
+		t.Fatalf("Unicode head = %+v", head)
+	}
+}
+
+func TestIdempotencyKeyIsGlobalAcrossScenarios(t *testing.T) {
+	pool := testsupport.OpenPostgres(t)
+	store := graphpostgres.New(pool)
+	inputs := []graphstore.PublishInput{
+		snapshotPublishInput(
+			t,
+			"global-idempotency-key",
+			nil,
+			0,
+			emptySnapshotForScenario(t, "scenario-global-a", "cursor-a", generatedOne),
+		),
+		snapshotPublishInput(
+			t,
+			"global-idempotency-key",
+			nil,
+			0,
+			emptySnapshotForScenario(t, "scenario-global-b", "cursor-b", generatedOne),
+		),
+	}
+	var wait sync.WaitGroup
+	wait.Add(len(inputs))
+	results := make(chan error, len(inputs))
+	for _, input := range inputs {
+		input := input
+		go func() {
+			defer wait.Done()
+			_, err := store.Publish(context.Background(), input)
+			results <- err
+		}()
+	}
+	wait.Wait()
+	close(results)
+
+	accepted := 0
+	idempotencyConflicts := 0
+	for err := range results {
+		switch {
+		case err == nil:
+			accepted++
+		case graphstore.IsCode(err, graphstore.ErrorIdempotencyConflict):
+			idempotencyConflicts++
+		default:
+			t.Fatalf("unexpected global idempotency result: %v", err)
+		}
+	}
+	if accepted != 1 || idempotencyConflicts != 1 {
+		t.Fatalf(
+			"accepted=%d idempotency_conflicts=%d, want 1/1",
+			accepted,
+			idempotencyConflicts,
+		)
+	}
+	heads, err := store.ListHeads(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(heads) != 1 {
+		t.Fatalf("global idempotency conflict left %d heads, want 1", len(heads))
+	}
+}
+
 func TestExpectedCursorAndRevisionCASAllowsOneConcurrentWriter(t *testing.T) {
 	pool := testsupport.OpenPostgres(t)
 	store := graphpostgres.New(pool)
@@ -341,6 +496,58 @@ func TestMissingReadsReturnStableNotFound(t *testing.T) {
 		10,
 	); err != nil {
 		t.Fatalf("empty list failed: %v", err)
+	}
+}
+
+func TestClosedPoolReadFailuresRemainDatabaseFailures(t *testing.T) {
+	pool := testsupport.OpenPostgres(t)
+	store := graphpostgres.New(pool)
+	pool.Close()
+
+	checks := []struct {
+		name string
+		run  func() error
+	}{
+		{
+			name: "snapshot",
+			run: func() error {
+				_, err := store.ReadSnapshot(context.Background(), testScenario, "cursor")
+				return err
+			},
+		},
+		{
+			name: "delta",
+			run: func() error {
+				_, err := store.ReadDelta(
+					context.Background(),
+					testScenario,
+					"from",
+					"to",
+				)
+				return err
+			},
+		},
+		{
+			name: "snapshot list",
+			run: func() error {
+				_, err := store.ListSnapshots(context.Background(), testScenario, 0, 10)
+				return err
+			},
+		},
+		{
+			name: "delta list",
+			run: func() error {
+				_, err := store.ListDeltas(context.Background(), testScenario, 0, 10)
+				return err
+			},
+		},
+	}
+	for _, check := range checks {
+		t.Run(check.name, func(t *testing.T) {
+			if err := check.run(); !graphstore.IsCode(err, graphstore.ErrorDatabase) {
+				t.Fatalf("closed-pool read got %v", err)
+			}
+		})
 	}
 }
 

@@ -510,6 +510,7 @@ validate_dockerignore() {
         '!.dockerignore' | \
         '!go.mod' | \
         '!go.sum' | \
+        '!organizationgraph.go' | \
         '!LICENSE' | \
         '!NOTICE' | \
         '!THIRD_PARTY_NOTICES.md' | \

@@ -35,15 +35,32 @@ func TestLoadEnvironmentUsesFailClosedLoopbackDefaults(t *testing.T) {
 func TestLoadEnvironmentAllowsExplicitInternalContainerBind(t *testing.T) {
 	environment := append(validEnvironment(),
 		"GRAPH_NETWORK_MODE=internal",
-		"GRAPH_HTTP_BIND=:8080",
+		"GRAPH_HTTP_BIND=10.0.0.4:8080",
 		"MIGRATION_SOURCE=/opt/openslack/migrations",
 	)
 	cfg, err := LoadEnvironment(environment)
 	if err != nil {
 		t.Fatalf("LoadEnvironment() error = %v", err)
 	}
-	if cfg.NetworkMode != NetworkInternal || cfg.HTTPBind != ":8080" {
+	if cfg.NetworkMode != NetworkInternal || cfg.HTTPBind != "10.0.0.4:8080" {
 		t.Fatalf("unexpected internal bind: %#v", cfg)
+	}
+}
+
+func TestResolveHTTPBindReplacesInternalWildcardBeforeListen(t *testing.T) {
+	resolverCalls := 0
+	resolved, err := resolveHTTPBind(":8080", NetworkInternal, func(bind string) (string, error) {
+		resolverCalls++
+		if bind != ":8080" {
+			t.Fatalf("resolver bind = %q", bind)
+		}
+		return "10.0.0.4:8080", nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != "10.0.0.4:8080" || resolverCalls != 1 {
+		t.Fatalf("resolved/calls = %q/%d", resolved, resolverCalls)
 	}
 }
 

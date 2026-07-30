@@ -61,6 +61,10 @@ func (store *fakeGraphStore) ReadReceipt(context.Context, string, string) (graph
 	return store.receipt, store.receiptErr
 }
 
+func (store *fakeGraphStore) ReadReceiptByKey(context.Context, string) (graphstore.Receipt, error) {
+	return store.receipt, store.receiptErr
+}
+
 func (store *fakeGraphStore) Statistics(context.Context) (graphstore.Statistics, error) {
 	return store.statistics, nil
 }
@@ -128,6 +132,46 @@ func TestResolveExpectedRevisionReadsCurrentOnlyWhenReceiptIsMissing(t *testing.
 	}
 	if revision != 7 || store.currentCalls != 1 {
 		t.Fatalf("revision/currentCalls = %d/%d", revision, store.currentCalls)
+	}
+}
+
+func TestIngestDeltaLetsGlobalIdempotencyConflictPrecedeMissingScenarioHead(t *testing.T) {
+	store := &fakeGraphStore{
+		receipt: graphstore.Receipt{
+			ScenarioInstanceID: "scenario-a",
+			Revision:           1,
+		},
+		publishErr: graphstore.Failure(
+			graphstore.ErrorIdempotencyConflict,
+			"idempotency key is bound to another request",
+			nil,
+		),
+		currentErr: graphstore.Failure(graphstore.ErrorNotFound, "scenario-b missing", nil),
+	}
+	adapter := &storeAdapter{store: store}
+
+	_, err := adapter.IngestDelta(context.Background(), app.DeltaCommand{
+		IdempotencyKey: "global-key",
+		Fingerprint:    "sha256:" + strings.Repeat("0", 64),
+		ExpectedCursor: "cursor-b-1",
+		TargetSnapshot: graphstore.Snapshot{
+			ScenarioInstanceID: "scenario-b",
+		},
+		Delta: graphstore.Delta{
+			ScenarioInstanceID: "scenario-b",
+		},
+	})
+
+	var storeFailure *app.StoreError
+	if !errors.As(err, &storeFailure) ||
+		storeFailure.Code != app.StoreIdempotencyConflict {
+		t.Fatalf("IngestDelta() error = %v, want StoreIdempotencyConflict", err)
+	}
+	if store.currentCalls != 0 {
+		t.Fatalf("Current called %d times before global idempotency check", store.currentCalls)
+	}
+	if len(store.publishInput) != 1 {
+		t.Fatalf("Publish called %d times, want 1", len(store.publishInput))
 	}
 }
 

@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Negentropy-Laby/OpenSlack/services/organization-graph/internal/netbind"
 )
 
 const (
@@ -78,7 +80,8 @@ func LoadEnvironment(environment []string) (Config, error) {
 	if httpBind == "" {
 		httpBind = defaultHTTPBind
 	}
-	if err := validateHTTPBind(httpBind, networkMode); err != nil {
+	httpBind, err = resolveHTTPBind(httpBind, networkMode, netbind.ResolvePrivateWildcard)
+	if err != nil {
 		return Config{}, err
 	}
 
@@ -172,42 +175,50 @@ func validateDatabaseURL(raw string) error {
 	return nil
 }
 
-func validateHTTPBind(bind, mode string) error {
+func resolveHTTPBind(
+	bind string,
+	mode string,
+	resolveWildcard func(string) (string, error),
+) (string, error) {
 	host, port, err := net.SplitHostPort(bind)
 	if err != nil || port == "" {
-		return fmt.Errorf("GRAPH_HTTP_BIND must be a valid host:port")
+		return "", fmt.Errorf("GRAPH_HTTP_BIND must be a valid host:port")
 	}
 	parsedPort, err := strconv.Atoi(port)
 	if err != nil || parsedPort < 1 || parsedPort > 65535 {
-		return fmt.Errorf("GRAPH_HTTP_BIND must use a numeric TCP port from 1 to 65535")
+		return "", fmt.Errorf("GRAPH_HTTP_BIND must use a numeric TCP port from 1 to 65535")
 	}
 
 	if mode == NetworkLoopback {
 		if host == "localhost" {
-			return nil
+			return bind, nil
 		}
 		address := net.ParseIP(host)
 		if address == nil || !address.IsLoopback() {
-			return fmt.Errorf("GRAPH_HTTP_BIND must be loopback when GRAPH_NETWORK_MODE=loopback")
+			return "", fmt.Errorf("GRAPH_HTTP_BIND must be loopback when GRAPH_NETWORK_MODE=loopback")
 		}
-		return nil
+		return bind, nil
 	}
 
-	// Internal mode is an explicit opt-in to a container/network bind. Public,
-	// multicast, and hostname binds remain forbidden until authentication, TLS,
-	// tenant scope, and rate limiting exist.
+	// Internal mode is an explicit opt-in to one private container/network
+	// interface. An empty host is resolved before listen, so the unauthenticated
+	// service never opens an actual all-interface wildcard socket.
 	if host == "" {
-		return nil
+		resolved, resolveErr := resolveWildcard(bind)
+		if resolveErr != nil {
+			return "", fmt.Errorf("resolve GRAPH_HTTP_BIND private interface: %w", resolveErr)
+		}
+		return resolved, nil
 	}
 	if host == "localhost" {
-		return nil
+		return bind, nil
 	}
 	address := net.ParseIP(host)
 	if address == nil {
-		return fmt.Errorf("GRAPH_HTTP_BIND internal host must be an IP literal or empty")
+		return "", fmt.Errorf("GRAPH_HTTP_BIND internal host must be an IP literal or empty")
 	}
 	if !(address.IsPrivate() || address.IsLoopback() || address.IsLinkLocalUnicast()) {
-		return fmt.Errorf("GRAPH_HTTP_BIND must not expose the unauthenticated service on a public address")
+		return "", fmt.Errorf("GRAPH_HTTP_BIND must not expose the unauthenticated service on a public address")
 	}
-	return nil
+	return bind, nil
 }
