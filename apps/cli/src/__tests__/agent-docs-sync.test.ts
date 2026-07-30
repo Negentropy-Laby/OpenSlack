@@ -45,12 +45,25 @@ function extractSectionBody(content: string, headingText: string): string {
 describe('cross-document sync', () => {
   const agentsMd = readFile('AGENTS.md');
   const claudeMd = readFile('CLAUDE.md');
+  const releaseRunbook = readFile('docs/operations/release-0.2.0.md');
 
-  it('AGENTS.md and CLAUDE.md are byte-identical', () => {
+  it('keeps agent docs byte-identical with the default unbound-merge rule', () => {
     // Normalize CRLF to LF for cross-platform comparison
     const agentsNormalized = agentsMd.replace(/\r\n/g, '\n');
     const claudeNormalized = claudeMd.replace(/\r\n/g, '\n');
     expect(agentsNormalized).toBe(claudeNormalized);
+    const mergeGate = extractSectionBody(agentsNormalized, 'Review Thread Resolution Gate').replace(
+      /\s+/g,
+      ' ',
+    );
+    expect(mergeGate).toContain('By default, do not bind the merge to a head SHA');
+    expect(mergeGate).toContain('only when the user explicitly requests');
+    expect(mergeGate).toContain('its absence must never block an otherwise governed merge');
+    const normalizedRunbook = releaseRunbook.replace(/\s+/g, ' ');
+    expect(normalizedRunbook).toContain('The default route must not pass `--match-head-commit`');
+    expect(normalizedRunbook).toContain(
+      'Head binding is allowed only when the user explicitly requests it for the current merge',
+    );
   });
 
   it('merged document contains Bot-Authenticated PR Creation section', () => {

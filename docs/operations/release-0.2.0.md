@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - operators
 owner: operations
-updated: 2026-07-28
+updated: 2026-07-30
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -1273,7 +1273,8 @@ powershell -ExecutionPolicy Bypass `
   --repo <OWNER/REPOSITORY>
 ```
 
-Before approval, bind the branch, PR, and checks to one head:
+Before approval, verify that the branch, PR, and checks refer to the same live
+head:
 
 ```bash
 git ls-remote origin \
@@ -1286,15 +1287,9 @@ gh pr checks <PR_NUMBER> --repo <OWNER/REPOSITORY>
 ```
 
 Require branch SHA, pull ref, `headRefOid`, and all check-run SHAs to be the
-same. Record the full PR SHA:
-
-```bash
-export EXPECTED_PR_HEAD="$(gh pr view <PR_NUMBER> \
-  --repo <OWNER/REPOSITORY> \
-  --json headRefOid \
-  --jq .headRefOid)"
-test "$EXPECTED_PR_HEAD" = "$(git ls-remote origin "refs/heads/<PR-BRANCH>" | cut -f1)"
-```
+same. Record the observed full PR SHA as evidence, but do not turn it into an
+expected-head merge precondition by default. Only an explicit user request may
+enable head binding for the current merge.
 
 Inspect unresolved review threads with the existing GraphQL gate.
 
@@ -1352,10 +1347,10 @@ mergeable.
 Record `pr_doctor` after both platforms have observed live diagnosis on the
 same current PR head.
 
-**GO to approval only when:** all technical checks pass on
-`EXPECTED_PR_HEAD`, the branch/PR/check SHAs match, active blockers are fixed,
-required conversations are resolved, and PRMS reports only missing human
-approval as the remaining gate.
+**GO to approval only when:** all technical checks pass on the current live
+head, the branch/PR/check SHAs match, active blockers are fixed, required
+conversations are resolved, and PRMS reports only missing human approval as the
+remaining gate.
 
 **STOP:** stale head/checks, failing/pending checks, conflicts, unresolved active
 threads, wrong PR author, or any non-approval blocker.
@@ -1387,9 +1382,9 @@ openslack pr doctor \
   --repo <OWNER/REPOSITORY>
 ```
 
-Require the unchanged `EXPECTED_PR_HEAD`, a valid current-head non-author human
-approval, green checks, resolved required conversations, mergeable GitHub state,
-and PRMS `READY_TO_MERGE`.
+Require a valid current-head non-author human approval, green checks, resolved
+required conversations, mergeable GitHub state, and PRMS `READY_TO_MERGE` on
+the re-fetched live head.
 
 Record `independent_human_approval` for both platform observations. The approval
 decision itself exists once on GitHub; the two capstone records prove that both
@@ -1400,14 +1395,12 @@ head, dismissed approval, or vague chat consent.
 
 ### D4. Governed merge and Issue completion
 
-Apply a final expected-head guard immediately before the mutating OpenSlack
-merge route:
+Re-read the live head immediately before the mutating OpenSlack merge route:
 
 ```bash
-test "$(gh pr view <PR_NUMBER> \
+gh pr view <PR_NUMBER> \
   --repo <OWNER/REPOSITORY> \
-  --json headRefOid \
-  --jq .headRefOid)" = "$EXPECTED_PR_HEAD"
+  --json headRefOid,statusCheckRollup,mergeable,mergeStateStatus,reviewDecision,latestReviews
 openslack pr doctor \
   <PR_NUMBER> \
   --repo <OWNER/REPOSITORY>
@@ -1415,9 +1408,12 @@ openslack pr merge <PR_NUMBER> --method merge
 ```
 
 `openslack pr merge` re-fetches live evidence and re-runs PRMS before invoking
-the merge. Do not replace it with `gh pr merge --admin` or bypass rulesets. If
-the expected head changes between the guard and merge, GitHub/PRMS must block or
-the operator must stop and investigate; never treat the old approval as current.
+the merge. The default route must not pass `--match-head-commit`,
+`expected_head_sha`, or any equivalent expected-head constraint. Head binding
+is allowed only when the user explicitly requests it for the current merge;
+lack of binding is never a merge blocker. Do not replace the governed route
+with `gh pr merge --admin` or bypass rulesets. A changed head still invalidates
+stale approval/check evidence and requires a fresh live diagnosis.
 
 Complete and verify the claim lifecycle:
 
