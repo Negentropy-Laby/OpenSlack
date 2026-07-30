@@ -47,7 +47,14 @@ describeOnBashHosts('reviewed Go module verifier', () => {
         join(repositoryRoot, 'scripts/go-check/services/organization-graph.conf'),
         'utf8',
       ),
-    ).toBe(['capabilities=pure', 'docker_target=none', 'runtime_profile=none', ''].join('\n'));
+    ).toBe(
+      [
+        'capabilities=database,distribution,http-openapi,prometheus',
+        'docker_target=app',
+        'runtime_profile=organization-graph-v1',
+        '',
+      ].join('\n'),
+    );
     expect(goCheckSource).toContain(
       'golang:1.26.5@sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647',
     );
@@ -239,6 +246,34 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(log).toContain('network rm');
     expect(log).toContain('volume rm');
     expect(log).toContain('image rm');
+  });
+
+  it('runs the organization graph HTTP profile without notification credentials', () => {
+    const fixture = createFixture();
+    addFullServiceCapabilities(join(fixture.root, 'services/pure'));
+    writeServiceConfig(fixture.root, 'pure', {
+      capabilities: 'database,distribution,http-openapi,prometheus',
+      dockerTarget: 'app',
+      runtimeProfile: 'organization-graph-v1',
+    });
+    commitFixture(fixture.root);
+
+    const result = runGoCheck(fixture, ['services/pure']);
+
+    expect(result.status).toBe(0);
+    const log = readFileSync(fixture.dockerLog, 'utf8');
+    expect(log).toContain(
+      'GRAPH_QUERY_CURSOR_SECRET=organization-graph-go-check-cursor-secret-v1',
+    );
+    expect(log).toContain(
+      'GRAPH_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    );
+    expect(log).toContain('GRAPH_HTTP_BIND=:8080');
+    expect(log).toContain('GRAPH_NETWORK_MODE=internal');
+    expect(log).toContain('MIGRATION_SOURCE=/migrations');
+    expect(log).not.toContain('IDEMPOTENCY_KEY_PEPPER=');
+    expect(log).not.toContain('CREDENTIAL_REF_SCHEME_ALLOWLIST=');
+    expect(log).not.toContain('CREDENTIAL_PROFILE_VALIDATOR=');
   });
 
   it('preserves failures and cleans exact resources without running later gates', () => {

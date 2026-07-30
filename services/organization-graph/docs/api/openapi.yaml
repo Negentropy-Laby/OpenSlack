@@ -1,0 +1,731 @@
+openapi: 3.1.0
+info:
+  title: OpenSlack Organization Graph Shadow Service
+  version: 1.0.0
+  description: |
+    Internal-only GS1-B HTTP contract. The service stores an isolated PostgreSQL
+    shadow projection; it is not the user-visible graph authority during GS1.
+    Requests are accepted only over a loopback bind or an explicitly selected
+    internal network bind. This contract provides no public-network
+    authentication, tenant scope, rate limiting, TLS termination, or mutation
+    authority over source systems.
+servers:
+  - url: http://127.0.0.1:8080
+    description: Default loopback binding
+x-openslack-max-request-body-bytes: 67108864
+x-openslack-max-response-body-bytes: 8388608
+tags:
+  - name: ingest
+  - name: graph
+  - name: operations
+paths:
+  /v1/graph/snapshots:ingest:
+    post:
+      operationId: ingestGraphSnapshot
+      tags: [ingest]
+      summary: Verify and CAS-publish a sealed snapshot to the shadow store
+      description: |
+        Idempotency-Key is mandatory. The service strictly parses the request,
+        rejects duplicate or unknown JSON fields, canonicalizes the exact
+        envelope, and calculates:
+
+        `sha256("POST\n/v1/graph/snapshots:ingest\n" + canonicalBody)`
+
+        A duplicate key with the same fingerprint returns the original durable
+        receipt. The same key with a different fingerprint returns 409.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SnapshotIngestRequest'
+      responses:
+        '201':
+          description: A new durable accepted receipt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphIngestReceipt'
+        '200':
+          description: The original durable duplicate receipt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphIngestReceipt'
+        '202':
+          description: A durable reconciliation receipt because commit outcome is ambiguous
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphIngestReceipt'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /v1/graph/deltas:ingest:
+    post:
+      operationId: ingestGraphDelta
+      tags: [ingest]
+      summary: Verify a delta transition and CAS-publish its sealed target snapshot
+      description: |
+        The service loads the current parent by expectedCursor. Caller-provided
+        parent snapshots are not accepted. It verifies scenario, from/to cursor,
+        generatedAt, exact delta reconstruction, integrity, and unchanged
+        head/revision before publication. The fingerprint is:
+
+        `sha256("POST\n/v1/graph/deltas:ingest\n" + canonicalBody)`
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeltaIngestRequest'
+      responses:
+        '201':
+          description: A new durable accepted receipt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphIngestReceipt'
+        '200':
+          description: The original durable duplicate receipt
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphIngestReceipt'
+        '202':
+          description: A durable reconciliation receipt because commit outcome is ambiguous
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphIngestReceipt'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /v1/graph:query:
+    post:
+      operationId: queryCurrentGraph
+      tags: [graph]
+      summary: Query the verified current snapshot with deterministic bounds
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQueryInput'
+      responses:
+        '200':
+          description: Bounded canonical graph query result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphQueryResult'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /v1/graph:explain:
+    post:
+      operationId: explainCurrentGraphObject
+      tags: [graph]
+      summary: Explain one node or edge from the verified current snapshot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphExplainInput'
+      responses:
+        '200':
+          description: Bounded canonical explanation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphExplanation'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /v1/graph/scenarios:
+    get:
+      operationId: listPublishedGraphScenarios
+      tags: [graph]
+      summary: List only scenarios with a published head
+      responses:
+        '200':
+          description: Canonically sorted scenario head list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScenarioList'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /health/live:
+    get:
+      operationId: graphServiceLiveness
+      tags: [operations]
+      responses:
+        '200':
+          description: Process is serving HTTP
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveHealth'
+  /health/ready:
+    get:
+      operationId: graphServiceReadiness
+      tags: [operations]
+      responses:
+        '200':
+          description: Database and required schema are ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyHealth'
+        '503':
+          description: Database or required schema is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotReadyHealth'
+  /health/version:
+    get:
+      operationId: graphServiceVersion
+      tags: [operations]
+      responses:
+        '200':
+          description: Exact candidate build identity
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionHealth'
+  /metrics:
+    get:
+      operationId: graphServiceMetrics
+      tags: [operations]
+      description: |
+        Emits closed HTTP, ingest, CAS, idempotency-conflict, reconciliation,
+        published-scenario, maximum-head-revision, and pending-reconciliation
+        series. Shadow backlog, lag, and parity series are emitted only when a
+        real cross-process observation source exists; absence means unknown,
+        never a fabricated zero.
+      responses:
+        '200':
+          description: Low-cardinality Prometheus text exposition
+          content:
+            text/plain:
+              schema:
+                type: string
+        '503':
+          description: Database-backed metrics unavailable
+          content:
+            text/plain:
+              schema:
+                type: string
+components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        Caller-generated stable key. The GS1-B TypeScript shadow adapter uses
+        `openslack.graph-shadow.v1.` followed by a lowercase hexadecimal digest.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+        pattern: '^[A-Za-z0-9._:-]+$'
+  responses:
+    NotFound:
+      description: Scenario, head, query target, or relationship path not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/GraphError'
+    Conflict:
+      description: Expected cursor/revision CAS or idempotency fingerprint conflict
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/GraphError'
+    TooLarge:
+      description: Request body, strict JSON, graph record, or response bound exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/GraphError'
+    Unprocessable:
+      description: Closed schema, integrity, query, or graph transition validation failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/GraphError'
+    Unavailable:
+      description: PostgreSQL shadow store unavailable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/GraphError'
+    Internal:
+      description: |
+        Unexpected invariant failure. A mutation caller must not infer that no
+        commit occurred and must retain its Idempotency-Key for operator-led
+        reconciliation; this response is not a retry-safe commit result.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/GraphError'
+  schemas:
+    Identifier:
+      type: string
+      minLength: 1
+      maxLength: 512
+      pattern: '^[^\x00-\x1f\x7f]+$'
+    IntegrityHash:
+      type: string
+      pattern: '^sha256:[0-9a-f]{64}$'
+    SnapshotIngestRequest:
+      $id: https://schemas.openslack.dev/organization-graph/snapshot-ingest-request.v1.schema.json
+      type: object
+      additionalProperties: false
+      required: [expectedCursor, snapshot]
+      properties:
+        expectedCursor:
+          oneOf:
+            - $ref: '#/components/schemas/Identifier'
+            - type: 'null'
+        snapshot:
+          $ref: '../../../../packages/organization-graph/contracts/v1/schemas/graph-snapshot.v1.schema.json'
+    DeltaIngestRequest:
+      $id: https://schemas.openslack.dev/organization-graph/delta-ingest-request.v1.schema.json
+      type: object
+      additionalProperties: false
+      required: [expectedCursor, targetSnapshot, delta]
+      properties:
+        expectedCursor:
+          $ref: '#/components/schemas/Identifier'
+        targetSnapshot:
+          $ref: '../../../../packages/organization-graph/contracts/v1/schemas/graph-snapshot.v1.schema.json'
+        delta:
+          $ref: '../../../../packages/organization-graph/contracts/v1/schemas/graph-delta.v1.schema.json'
+    GraphIngestReceipt:
+      $id: https://schemas.openslack.dev/organization-graph/graph-ingest-receipt.v1.schema.json
+      type: object
+      additionalProperties: false
+      required:
+        - schema
+        - operation
+        - status
+        - idempotencyKey
+        - requestFingerprint
+        - scenarioInstanceId
+        - cursor
+        - revision
+        - snapshotIntegrityHash
+      properties:
+        schema:
+          const: openslack.graph_ingest_receipt.v1
+        operation:
+          enum: [snapshot_ingest, delta_ingest]
+        status:
+          enum: [accepted, duplicate, reconciliation_required]
+        idempotencyKey:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: '^[A-Za-z0-9._:-]+$'
+        requestFingerprint:
+          $ref: '#/components/schemas/IntegrityHash'
+        scenarioInstanceId:
+          $ref: '#/components/schemas/Identifier'
+        cursor:
+          $ref: '#/components/schemas/Identifier'
+        revision:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+          description: Candidate target revision for reconciliation_required; not proof of commit.
+        snapshotIntegrityHash:
+          $ref: '#/components/schemas/IntegrityHash'
+        deltaIntegrityHash:
+          $ref: '#/components/schemas/IntegrityHash'
+        committedAt:
+          type: string
+          format: date-time
+        reconciliationToken:
+          $ref: '#/components/schemas/Identifier'
+      allOf:
+        - if:
+            properties:
+              operation:
+                const: delta_ingest
+          then:
+            required: [deltaIntegrityHash]
+        - if:
+            properties:
+              operation:
+                const: snapshot_ingest
+          then:
+            not:
+              required: [deltaIntegrityHash]
+        - if:
+            properties:
+              status:
+                enum: [accepted, duplicate]
+          then:
+            required: [committedAt]
+            not:
+              required: [reconciliationToken]
+        - if:
+            properties:
+              status:
+                const: reconciliation_required
+          then:
+            required: [reconciliationToken]
+            not:
+              required: [committedAt]
+    GraphQueryInput:
+      $id: https://schemas.openslack.dev/organization-graph/graph-query-input.v1.schema.json
+      type: object
+      additionalProperties: false
+      required: [scenarioInstanceId]
+      properties:
+        scenarioInstanceId:
+          $ref: '#/components/schemas/Identifier'
+        rootNodeIds:
+          type: array
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/Identifier'
+        nodeTypes:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/Identifier'
+        edgeTypes:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/Identifier'
+        statuses:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/Identifier'
+        direction:
+          enum: [outgoing, incoming, both]
+          default: outgoing
+        depth:
+          type: integer
+          minimum: 0
+          maximum: 3
+          default: 1
+        maxNodes:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 200
+        maxEdges:
+          type: integer
+          minimum: 1
+          maximum: 500
+          default: 500
+        maxResponseBytes:
+          type: integer
+          minimum: 1024
+          maximum: 524288
+          default: 524288
+        includeEvidence:
+          type: boolean
+          default: false
+        cursor:
+          type: string
+          minLength: 1
+          maxLength: 512
+    GraphExplainInput:
+      $id: https://schemas.openslack.dev/organization-graph/graph-explain-input.v1.schema.json
+      type: object
+      additionalProperties: false
+      required: [scenarioInstanceId, targetId]
+      properties:
+        scenarioInstanceId:
+          $ref: '#/components/schemas/Identifier'
+        targetId:
+          $ref: '#/components/schemas/Identifier'
+        rootNodeId:
+          $ref: '#/components/schemas/Identifier'
+        direction:
+          enum: [outgoing, incoming, both]
+          default: outgoing
+        depth:
+          type: integer
+          minimum: 0
+          maximum: 3
+          default: 3
+    GraphQueryResult:
+      type: object
+      additionalProperties: false
+      required:
+        - scenarioInstanceId
+        - snapshotCursor
+        - queryHash
+        - nodes
+        - edges
+        - paths
+        - completeness
+        - truncation
+      properties:
+        scenarioInstanceId:
+          $ref: '#/components/schemas/Identifier'
+        snapshotCursor:
+          $ref: '#/components/schemas/Identifier'
+        queryHash:
+          $ref: '#/components/schemas/IntegrityHash'
+        nodes:
+          type: array
+          maxItems: 200
+          items:
+            $ref: '../../../../packages/organization-graph/contracts/v1/schemas/graph-snapshot.v1.schema.json#/$defs/graphNode'
+        edges:
+          type: array
+          maxItems: 500
+          items:
+            $ref: '../../../../packages/organization-graph/contracts/v1/schemas/graph-snapshot.v1.schema.json#/$defs/graphEdge'
+        paths:
+          type: array
+          maxItems: 200
+          items:
+            $ref: '#/components/schemas/RelationshipPath'
+        completeness:
+          $ref: '#/components/schemas/Completeness'
+        truncation:
+          type: object
+          additionalProperties: false
+          required:
+            - truncated
+            - nodeLimit
+            - edgeLimit
+            - byteLimit
+            - paginated
+            - responseBytes
+          properties:
+            truncated:
+              type: boolean
+            nodeLimit:
+              type: boolean
+            edgeLimit:
+              type: boolean
+            byteLimit:
+              type: boolean
+            paginated:
+              type: boolean
+            responseBytes:
+              type: integer
+              minimum: 0
+              maximum: 524288
+        nextCursor:
+          type: string
+          maxLength: 512
+    RelationshipPath:
+      type: object
+      additionalProperties: false
+      required: [nodeId, nodeIds, edgeIds]
+      properties:
+        nodeId:
+          $ref: '#/components/schemas/Identifier'
+        nodeIds:
+          type: array
+          maxItems: 4
+          items:
+            $ref: '#/components/schemas/Identifier'
+        edgeIds:
+          type: array
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/Identifier'
+    GraphExplanation:
+      type: object
+      additionalProperties: false
+      required:
+        - scenarioInstanceId
+        - targetKind
+        - targetId
+        - sourceEventIds
+        - evidenceRefs
+        - projectorVersion
+        - validFrom
+        - completeness
+        - path
+        - truncation
+      properties:
+        scenarioInstanceId:
+          $ref: '#/components/schemas/Identifier'
+        targetKind:
+          enum: [node, edge]
+        targetId:
+          $ref: '#/components/schemas/Identifier'
+        authorityRef:
+          $ref: '../../../../packages/organization-graph/contracts/v1/schemas/graph-snapshot.v1.schema.json#/$defs/authorityRef'
+        sourceEventIds:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            minLength: 1
+            maxLength: 2048
+        evidenceRefs:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+            minLength: 1
+            maxLength: 2048
+        projectorVersion:
+          type: string
+          minLength: 1
+          maxLength: 2048
+        validFrom:
+          type: string
+          format: date-time
+        validTo:
+          type: string
+          format: date-time
+        completeness:
+          $ref: '#/components/schemas/Completeness'
+        path:
+          $ref: '#/components/schemas/RelationshipPath'
+        truncation:
+          type: object
+          additionalProperties: false
+          required: [sourceEventIds, evidenceRefs, path]
+          properties:
+            sourceEventIds:
+              type: boolean
+            evidenceRefs:
+              type: boolean
+            path:
+              type: boolean
+    Completeness:
+      $ref: '../../../../packages/organization-graph/contracts/v1/schemas/graph-snapshot.v1.schema.json#/$defs/completeness'
+    ScenarioList:
+      type: object
+      additionalProperties: false
+      required: [schema, scenarios]
+      properties:
+        schema:
+          const: openslack.graph_scenario_list.v1
+        scenarios:
+          type: array
+          maxItems: 10000
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - scenarioInstanceId
+              - cursor
+              - snapshotIntegrityHash
+              - revision
+              - generatedAt
+            properties:
+              scenarioInstanceId:
+                $ref: '#/components/schemas/Identifier'
+              cursor:
+                $ref: '#/components/schemas/Identifier'
+              snapshotIntegrityHash:
+                $ref: '#/components/schemas/IntegrityHash'
+              revision:
+                type: integer
+                minimum: 1
+                maximum: 9007199254740991
+              generatedAt:
+                type: string
+                format: date-time
+    GraphError:
+      $id: https://schemas.openslack.dev/organization-graph/graph-error.v1.schema.json
+      type: object
+      additionalProperties: false
+      required: [schema, code, message]
+      properties:
+        schema:
+          const: openslack.graph_error.v1
+        code:
+          enum:
+            - GRAPH_NOT_FOUND
+            - GRAPH_CONFLICT
+            - GRAPH_REQUEST_TOO_LARGE
+            - GRAPH_UNPROCESSABLE
+            - GRAPH_UNAVAILABLE
+            - GRAPH_INTERNAL
+        message:
+          type: string
+          minLength: 1
+          maxLength: 512
+    LiveHealth:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          const: live
+    ReadyHealth:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          const: ready
+    NotReadyHealth:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          const: not_ready
+    VersionHealth:
+      type: object
+      additionalProperties: false
+      required: [schema, buildSha, contractVersion]
+      properties:
+        schema:
+          const: openslack.graph_service_version.v1
+        buildSha:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        contractVersion:
+          const: v1

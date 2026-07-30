@@ -76,6 +76,24 @@ export type {
   PublishedGraphSnapshot,
 } from './store.js';
 export {
+  GRAPH_SHADOW_POLICY,
+  GRAPH_SHADOW_RECEIPT_SCHEMA,
+  GraphShadowHttpPublisher,
+  parseGraphShadowReceipt,
+  prepareGraphShadowRequest,
+} from './shadow.js';
+export type {
+  GraphShadowAuditSink,
+  GraphShadowHttpPublisherOptions,
+  GraphShadowObservation,
+  GraphShadowObservationOutcome,
+  GraphShadowOperation,
+  GraphShadowPublishInput,
+  GraphShadowPublishPort,
+  GraphShadowReceipt,
+  GraphShadowReceiptStatus,
+} from './shadow.js';
+export {
   STRICT_GRAPH_JSON_ERROR_CODES,
   STRICT_GRAPH_JSON_DEFAULT_LIMITS,
   StrictGraphJsonError,

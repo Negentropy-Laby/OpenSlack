@@ -12,6 +12,7 @@ import {
   serializeGraphDelta,
   serializeGraphSnapshot,
 } from './integrity.js';
+import type { GraphShadowPublishPort } from './shadow.js';
 import { parseStrictGraphJson } from './strict-json.js';
 import type { GraphDelta, GraphEdge, GraphNode, GraphSnapshot } from './types.js';
 
@@ -867,13 +868,20 @@ function assertDeltaTransition(
 export class LocalGraphStore {
   readonly root: string;
   readonly limits: GraphStoreLimits;
+  private readonly shadowPublisher: GraphShadowPublishPort | undefined;
 
-  constructor(configuredRoot: string, limits: Partial<GraphStoreLimits> = {}) {
+  constructor(
+    configuredRoot: string,
+    limits: Partial<GraphStoreLimits> = {},
+    /** Explicit only: the store never discovers or enables network shadowing from environment. */
+    shadowPublisher?: GraphShadowPublishPort,
+  ) {
     if (typeof configuredRoot !== 'string' || configuredRoot.length === 0) {
       storeFail('GRAPH_STORE_PATH_UNSAFE', 'Graph store root must be a non-empty path.');
     }
     this.root = resolve(configuredRoot);
     this.limits = resolveLimits(limits);
+    this.shadowPublisher = shadowPublisher;
   }
 
   paths(scenarioInstanceId: string, cursor?: string, fromCursor?: string): GraphStorePathSet {
@@ -1013,7 +1021,7 @@ export class LocalGraphStore {
     snapshotValue: GraphSnapshot,
     options: PublishGraphSnapshotOptions,
   ): Promise<PublishedGraphSnapshot> {
-    return this.publishSnapshotInternal(snapshotValue, options, NO_TEST_HOOKS);
+    return this.publishSnapshotAndObserve(snapshotValue, options, NO_TEST_HOOKS);
   }
 
   /** @internal */
@@ -1022,7 +1030,37 @@ export class LocalGraphStore {
     options: PublishGraphSnapshotOptions,
     hooks: GraphStoreIoTestHooks,
   ): Promise<PublishedGraphSnapshot> {
-    return this.publishSnapshotInternal(snapshotValue, options, hooks);
+    return this.publishSnapshotAndObserve(snapshotValue, options, hooks);
+  }
+
+  private async publishSnapshotAndObserve(
+    snapshotValue: GraphSnapshot,
+    options: PublishGraphSnapshotOptions,
+    hooks: GraphStoreIoTestHooks,
+  ): Promise<PublishedGraphSnapshot> {
+    const snapshot = assertGraphSnapshotIntegrity(snapshotValue);
+    const delta =
+      options.delta === undefined ? undefined : assertGraphDeltaIntegrity(options.delta);
+    const published = await this.publishSnapshotInternal(
+      snapshot,
+      { expectedCursor: options.expectedCursor, ...(delta === undefined ? {} : { delta }) },
+      hooks,
+    );
+    if (this.shadowPublisher) {
+      try {
+        void this.shadowPublisher
+          .publish({
+            expectedCursor: options.expectedCursor,
+            snapshot,
+            ...(delta === undefined ? {} : { delta }),
+          })
+          .catch(() => undefined);
+      } catch {
+        // The local TypeScript commit is authoritative throughout GS1. A broken
+        // shadow adapter can neither roll it back nor turn it into a failure.
+      }
+    }
+    return published;
   }
 
   private async publishSnapshotInternal(

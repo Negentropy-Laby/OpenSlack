@@ -1,0 +1,21 @@
+groups:
+  - name: openslack_organization_graph_reliability
+    interval: 15s
+    rules:
+      - alert: OrganizationGraphReconciliationRequired
+        expr: openslack_graph_reconciliation_pending > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Organization Graph has an ambiguous ingest result
+          description: Inspect the durable reconciliation receipt before attempting another mutation.
+
+      - alert: OrganizationGraphUnavailable
+        expr: up{job="openslack_organization_graph"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Organization Graph metrics endpoint is unavailable
+          description: Check PostgreSQL readiness, migration state, and the service health endpoints.

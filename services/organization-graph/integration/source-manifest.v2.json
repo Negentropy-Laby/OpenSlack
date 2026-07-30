@@ -1,0 +1,76 @@
+{
+  "schema": "openslack.organization_graph_source.v2",
+  "status": "REPOSITORY_SOURCE_INPUT_UNRELEASED",
+  "service": {
+    "goModule": "github.com/Negentropy-Laby/OpenSlack/services/organization-graph",
+    "targetPath": "services/organization-graph",
+    "migrationPhase": "GS1-B",
+    "authority": "GO_SHADOW_TS_LOCAL_WRITER"
+  },
+  "containerInputs": {
+    "dockerfileFrontend": "docker/dockerfile:1.24.0@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89",
+    "builderImage": "golang:1.26.5@sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647",
+    "runtimeImage": "debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818",
+    "postgresImage": "postgres:18.4@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a",
+    "prometheusImage": "prom/prometheus:v3.13.1@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893",
+    "goVersion": "1.26.5"
+  },
+  "sourceInputs": {
+    "dockerfile": {
+      "path": "services/organization-graph/Dockerfile",
+      "sha256": "5c5fdfd65078fee19553ac6d1a459f053c1c5ce4245c9e915fa3fac4016c0606"
+    },
+    "goMod": {
+      "path": "services/organization-graph/go.mod",
+      "sha256": "2b0ae16cc50bb12527834cbe4132f782067a30a20d0aec57ecd1e316510a77c2"
+    },
+    "goSum": {
+      "path": "services/organization-graph/go.sum",
+      "sha256": "22333a78ac63aee1cc7c82d63ba91f5f00e4a461c6d5bc4be336e6bdec71f12c"
+    }
+  },
+  "contractInputs": {
+    "graphContractManifest": {
+      "path": "packages/organization-graph/contracts/v1/manifest.json",
+      "sha256": "b39bd1753b3731c32068a28e413c5312cfd80bcb16efe19f1e56b26206ddeb5e"
+    },
+    "openapi": {
+      "path": "services/organization-graph/docs/api/openapi.yaml",
+      "sha256": "53bf45ff8d3baf64be90f5ae4f378881fcd9a6afe396d3de72fe10c3bac4bcf8"
+    }
+  },
+  "legalInputs": {
+    "license": {
+      "path": "services/organization-graph/LICENSE",
+      "sha256": "04f9674553a402c48856e9cc3f813a70bb59eb6033f33344980c8fd3a710c8f2"
+    },
+    "notice": {
+      "path": "services/organization-graph/NOTICE",
+      "sha256": "1150624732d7e65fed6c819a32bafd214b59e400fa5528f2b248d17a9e7d1184"
+    },
+    "thirdPartyNotices": {
+      "path": "services/organization-graph/THIRD_PARTY_NOTICES.md",
+      "sha256": "192536469dc7a4093dc5e2a88ad1711c41c74f76fc08d9003ece6ee3ca97cbf4",
+      "productionModuleCount": 12
+    },
+    "repositorySbomInput": {
+      "path": "services/organization-graph/SBOM.cdx.json",
+      "sha256": "ab64b2bf1c20b5c838329dbc5added250c543f1f5f8bfd9ce33e1d54a487045d",
+      "scope": "REPOSITORY_SOURCE_AND_BUILD_INPUTS",
+      "attestation": "UNSIGNED"
+    }
+  },
+  "scope": {
+    "authorizes": [],
+    "nonClaims": [
+      "RELEASE",
+      "REGISTRY_INCLUSION",
+      "SIGNED_PROVENANCE",
+      "READ_CUTOVER",
+      "GO_WRITE_AUTHORITY",
+      "LIVE_VERIFIED",
+      "QODER_VERIFIED",
+      "PRODUCTION"
+    ]
+  }
+}
