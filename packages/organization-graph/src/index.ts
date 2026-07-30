@@ -3,6 +3,7 @@ export {
   GRAPH_DELTA_SCHEMA,
   GRAPH_HARD_LIMITS,
   GRAPH_SNAPSHOT_SCHEMA,
+  GRAPH_VALUE_LIMITS,
 } from './types.js';
 export type {
   ActorRef,
@@ -26,12 +27,26 @@ export type {
   UnsealedGraphSnapshot,
 } from './types.js';
 
-export { GraphContractError, GraphQueryError, GraphStoreError } from './errors.js';
+export {
+  GRAPH_CONTRACT_ERROR_CODES,
+  GRAPH_QUERY_ERROR_CODES,
+  GRAPH_STORE_ERROR_CODES,
+  GraphContractError,
+  GraphQueryError,
+  GraphStoreError,
+} from './errors.js';
 export type { GraphContractErrorCode, GraphQueryErrorCode, GraphStoreErrorCode } from './errors.js';
 
 export { graphDeltaJsonSchema, graphSnapshotJsonSchema } from './schemas.js';
 export { validateGraphDelta, validateGraphSnapshot } from './validation.js';
-export { canonicalJson, canonicalizeGraphDelta, canonicalizeGraphSnapshot } from './canonical.js';
+export {
+  CanonicalJsonError,
+  CANONICAL_JSON_ERROR_CODES,
+  canonicalJson,
+  canonicalizeGraphDelta,
+  canonicalizeGraphSnapshot,
+} from './canonical.js';
+export type { CanonicalJsonErrorCode } from './canonical.js';
 export { deriveGraphEdgeId, deriveGraphNodeId } from './identity.js';
 export {
   assertGraphDeltaIntegrity,
@@ -45,7 +60,13 @@ export {
   verifyGraphDeltaIntegrity,
   verifyGraphSnapshotIntegrity,
 } from './integrity.js';
-export { canonicalGraphCompleteness, explainGraph, graphQueryHash, queryGraph } from './query.js';
+export {
+  GRAPH_QUERY_PROTOCOL_LIMITS,
+  canonicalGraphCompleteness,
+  explainGraph,
+  graphQueryHash,
+  queryGraph,
+} from './query.js';
 export { DEFAULT_GRAPH_STORE_LIMITS, LocalGraphStore, graphStorePaths } from './store.js';
 export type {
   GraphStoreIoTestHooks,
@@ -54,7 +75,12 @@ export type {
   PublishGraphSnapshotOptions,
   PublishedGraphSnapshot,
 } from './store.js';
-export { StrictGraphJsonError, parseStrictGraphJson } from './strict-json.js';
+export {
+  STRICT_GRAPH_JSON_ERROR_CODES,
+  STRICT_GRAPH_JSON_DEFAULT_LIMITS,
+  StrictGraphJsonError,
+  parseStrictGraphJson,
+} from './strict-json.js';
 export type {
   StrictGraphJsonErrorCode,
   StrictGraphJsonLimits,

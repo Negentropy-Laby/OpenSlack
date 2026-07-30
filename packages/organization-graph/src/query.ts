@@ -3,7 +3,7 @@ import { canonicalJson } from './canonical.js';
 import { GraphQueryError } from './errors.js';
 import { assertGraphSnapshotIntegrity } from './integrity.js';
 import { parseStrictGraphJson } from './strict-json.js';
-import { GRAPH_HARD_LIMITS } from './types.js';
+import { GRAPH_HARD_LIMITS, GRAPH_VALUE_LIMITS } from './types.js';
 import type {
   GraphCompleteness,
   GraphDirection,
@@ -18,9 +18,18 @@ import type {
   GraphSnapshot,
 } from './types.js';
 
-const DEFAULT_CURSOR_TTL_MS = 5 * 60 * 1_000;
-const MAX_CURSOR_TTL_MS = 60 * 60 * 1_000;
-const MIN_RESPONSE_BYTES = 1_024;
+export const GRAPH_QUERY_PROTOCOL_LIMITS = Object.freeze({
+  defaultCursorTtlMs: 5 * 60 * 1_000,
+  minCursorTtlMs: 1,
+  maxCursorTtlMs: 60 * 60 * 1_000,
+  minResponseBytes: 1_024,
+  cursorCharacters: 512,
+  cursorSecretMinBytes: 32,
+  cursorSecretMaxBytes: 1_024,
+  cursorPayloadDepth: 4,
+  cursorPayloadNodes: 16,
+  cursorPayloadStringCharacters: 256,
+} as const);
 
 interface NormalizedQuery {
   scenarioInstanceId: string;
@@ -63,6 +72,20 @@ function invalid(message: string): never {
   throw new GraphQueryError('GRAPH_QUERY_INVALID', message);
 }
 
+function hasUnpairedSurrogate(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (!Number.isFinite(next) || next < 0xdc00 || next > 0xdfff) return true;
+      index += 1;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function assertClosedInput(value: unknown, name: string, allowedKeys: readonly string[]): void {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     invalid(`${name} must be an object.`);
@@ -77,8 +100,9 @@ function boundedString(value: unknown, name: string): string {
   if (
     typeof value !== 'string' ||
     value.length === 0 ||
-    value.length > 512 ||
-    /[\u0000-\u001f\u007f]/.test(value)
+    value.length > GRAPH_VALUE_LIMITS.identifierCharacters ||
+    /[\u0000-\u001f\u007f]/.test(value) ||
+    hasUnpairedSurrogate(value)
   ) {
     return invalid(`${name} must be a non-empty bounded identifier.`);
   }
@@ -137,9 +161,9 @@ function normalizeQuery(input: GraphQueryInput): NormalizedQuery {
   return {
     scenarioInstanceId: boundedString(input.scenarioInstanceId, 'scenarioInstanceId'),
     rootNodeIds: stringSet(input.rootNodeIds, 'rootNodeIds', GRAPH_HARD_LIMITS.nodes),
-    nodeTypes: stringSet(input.nodeTypes, 'nodeTypes', 50),
-    edgeTypes: stringSet(input.edgeTypes, 'edgeTypes', 50),
-    statuses: stringSet(input.statuses, 'statuses', 50),
+    nodeTypes: stringSet(input.nodeTypes, 'nodeTypes', GRAPH_VALUE_LIMITS.queryFilterItems),
+    edgeTypes: stringSet(input.edgeTypes, 'edgeTypes', GRAPH_VALUE_LIMITS.queryFilterItems),
+    statuses: stringSet(input.statuses, 'statuses', GRAPH_VALUE_LIMITS.queryFilterItems),
     direction,
     depth: integer(input.depth, 'depth', 1, 0, GRAPH_HARD_LIMITS.depth),
     maxNodes: integer(
@@ -160,7 +184,7 @@ function normalizeQuery(input: GraphQueryInput): NormalizedQuery {
       input.maxResponseBytes,
       'maxResponseBytes',
       GRAPH_HARD_LIMITS.responseBytes,
-      MIN_RESPONSE_BYTES,
+      GRAPH_QUERY_PROTOCOL_LIMITS.minResponseBytes,
       GRAPH_HARD_LIMITS.responseBytes,
     ),
     includeEvidence: input.includeEvidence ?? false,
@@ -172,8 +196,16 @@ function secretBytes(secret: string | Buffer): Buffer {
     invalid('cursorSecret must be a string or Buffer.');
   }
   const bytes = Buffer.isBuffer(secret) ? Buffer.from(secret) : Buffer.from(secret, 'utf8');
-  if (bytes.length < 32) invalid('cursorSecret must contain at least 32 bytes.');
-  if (bytes.length > 1_024) invalid('cursorSecret must contain at most 1024 bytes.');
+  if (bytes.length < GRAPH_QUERY_PROTOCOL_LIMITS.cursorSecretMinBytes) {
+    invalid(
+      `cursorSecret must contain at least ${GRAPH_QUERY_PROTOCOL_LIMITS.cursorSecretMinBytes} bytes.`,
+    );
+  }
+  if (bytes.length > GRAPH_QUERY_PROTOCOL_LIMITS.cursorSecretMaxBytes) {
+    invalid(
+      `cursorSecret must contain at most ${GRAPH_QUERY_PROTOCOL_LIMITS.cursorSecretMaxBytes} bytes.`,
+    );
+  }
   return bytes;
 }
 
@@ -194,7 +226,10 @@ function encodeCursor(payload: CursorPayload, secret: Buffer): string {
 }
 
 function decodeCursor(value: string, secret: Buffer): CursorPayload {
-  if (value.length > 512 || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/.test(value)) {
+  if (
+    value.length > GRAPH_QUERY_PROTOCOL_LIMITS.cursorCharacters ||
+    !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{43}$/.test(value)
+  ) {
     throw new GraphQueryError('GRAPH_QUERY_CURSOR_INVALID', 'Graph query cursor is malformed.');
   }
   const parts = value.split('.');
@@ -212,11 +247,18 @@ function decodeCursor(value: string, secret: Buffer): CursorPayload {
   }
   let valueFromCursor: unknown;
   try {
-    valueFromCursor = parseStrictGraphJson(Buffer.from(encoded, 'base64url'), {
-      maxDepth: 4,
-      maxNodes: 16,
-      maxStringLength: 256,
+    const decoded = Buffer.from(encoded, 'base64url');
+    if (decoded.toString('base64url') !== encoded) {
+      throw new Error('Cursor payload is not canonical base64url.');
+    }
+    valueFromCursor = parseStrictGraphJson(decoded, {
+      maxDepth: GRAPH_QUERY_PROTOCOL_LIMITS.cursorPayloadDepth,
+      maxNodes: GRAPH_QUERY_PROTOCOL_LIMITS.cursorPayloadNodes,
+      maxStringLength: GRAPH_QUERY_PROTOCOL_LIMITS.cursorPayloadStringCharacters,
     });
+    if (!Buffer.from(canonicalJson(valueFromCursor), 'utf8').equals(decoded)) {
+      throw new Error('Cursor payload JSON is not canonical.');
+    }
   } catch {
     throw new GraphQueryError(
       'GRAPH_QUERY_CURSOR_INVALID',
@@ -242,6 +284,7 @@ function decodeCursor(value: string, secret: Buffer): CursorPayload {
     typeof object.snapshotHash !== 'string' ||
     !Number.isSafeInteger(object.offset) ||
     (object.offset as number) < 0 ||
+    (object.offset as number) > GRAPH_HARD_LIMITS.snapshotNodes + GRAPH_HARD_LIMITS.snapshotEdges ||
     !Number.isSafeInteger(object.expiresAt) ||
     (object.expiresAt as number) < 0
   ) {
@@ -412,7 +455,7 @@ function buildResult(
     ...traversal.nodes.map((value) => ({ kind: 'node' as const, value })),
     ...traversal.edges.map((value) => ({ kind: 'edge' as const, value })),
   ];
-  if (offset > items.length) {
+  if (offset < 0 || offset > items.length) {
     throw new GraphQueryError(
       'GRAPH_QUERY_CURSOR_INVALID',
       'Graph query cursor is beyond the deterministic result set.',
@@ -529,10 +572,16 @@ export function queryGraph(
   const ttl = integer(
     options.cursorTtlMs,
     'cursorTtlMs',
-    DEFAULT_CURSOR_TTL_MS,
-    1,
-    MAX_CURSOR_TTL_MS,
+    GRAPH_QUERY_PROTOCOL_LIMITS.defaultCursorTtlMs,
+    GRAPH_QUERY_PROTOCOL_LIMITS.minCursorTtlMs,
+    GRAPH_QUERY_PROTOCOL_LIMITS.maxCursorTtlMs,
   );
+  if (input.cursor === undefined && now > Number.MAX_SAFE_INTEGER - ttl) {
+    throw new GraphQueryError(
+      'GRAPH_QUERY_INVALID',
+      'now plus cursorTtlMs must remain a safe integer.',
+    );
+  }
   const hash = queryHash(query);
   let offset = 0;
   let expiresAt = now + ttl;
@@ -620,11 +669,12 @@ export function explainGraph(snapshotValue: unknown, input: GraphExplainInput): 
     invalid('direction must be outgoing, incoming, or both.');
   }
   const depth = integer(input.depth, 'depth', GRAPH_HARD_LIMITS.depth, 0, GRAPH_HARD_LIMITS.depth);
-  const root = input.rootNodeId
-    ? boundedString(input.rootNodeId, 'rootNodeId')
-    : node
-      ? node.id
-      : edge!.from;
+  const root =
+    input.rootNodeId !== undefined
+      ? boundedString(input.rootNodeId, 'rootNodeId')
+      : node
+        ? node.id
+        : edge!.from;
   const targetKind = node ? 'node' : 'edge';
   const path = findPath(snapshot, root, targetId, targetKind, direction, depth);
   if (!path) {

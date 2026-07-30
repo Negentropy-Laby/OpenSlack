@@ -1,0 +1,189 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/graph-delta.v1.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "scenarioInstanceId",
+    "fromCursor",
+    "toCursor",
+    "generatedAt",
+    "upsertNodes",
+    "closeNodeIds",
+    "upsertEdges",
+    "closeEdgeIds",
+    "evidenceRefs",
+    "integrityHash"
+  ],
+  "properties": {
+    "schema": { "const": "openslack.graph_delta.v1" },
+    "scenarioInstanceId": { "$ref": "#/$defs/identifier" },
+    "fromCursor": { "$ref": "#/$defs/identifier" },
+    "toCursor": { "$ref": "#/$defs/identifier" },
+    "generatedAt": { "$ref": "#/$defs/dateTime" },
+    "upsertNodes": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/graphNode" }
+    },
+    "closeNodeIds": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": { "$ref": "#/$defs/boundedString" }
+    },
+    "upsertEdges": {
+      "type": "array",
+      "maxItems": 25000,
+      "items": { "$ref": "#/$defs/graphEdge" }
+    },
+    "closeEdgeIds": {
+      "type": "array",
+      "maxItems": 25000,
+      "items": { "$ref": "#/$defs/boundedString" }
+    },
+    "evidenceRefs": {
+      "type": "array",
+      "maxItems": 200,
+      "items": { "$ref": "#/$defs/boundedString" }
+    },
+    "integrityHash": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "$defs": {
+    "boundedString": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "dateTime": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "stringSet50": {
+      "type": "array",
+      "maxItems": 50,
+      "items": { "$ref": "#/$defs/boundedString" }
+    },
+    "authorityRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "objectType", "objectId", "version", "observedAt"],
+      "properties": {
+        "provider": {
+          "enum": ["github", "openslack", "demo_fixture", "dingtalk", "crm", "erp", "hr"]
+        },
+        "objectType": { "$ref": "#/$defs/boundedString" },
+        "objectId": { "$ref": "#/$defs/boundedString" },
+        "version": { "$ref": "#/$defs/boundedString" },
+        "observedAt": { "$ref": "#/$defs/dateTime" }
+      }
+    },
+    "actorRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "kind"],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "kind": { "enum": ["human", "agent", "system"] },
+        "displayName": { "$ref": "#/$defs/boundedString" }
+      }
+    },
+    "propertyValue": {
+      "anyOf": [
+        { "type": "null" },
+        { "type": "boolean" },
+        { "type": "number" },
+        { "type": "string", "maxLength": 32768 },
+        {
+          "type": "array",
+          "maxItems": 200,
+          "items": { "$ref": "#/$defs/propertyValue" }
+        },
+        {
+          "type": "object",
+          "maxProperties": 64,
+          "additionalProperties": { "$ref": "#/$defs/propertyValue" }
+        }
+      ]
+    },
+    "graphNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "scenarioDefinitionId",
+        "scenarioInstanceId",
+        "title",
+        "authorityRef",
+        "owners",
+        "properties",
+        "sourceEventIds",
+        "evidenceRefs",
+        "projectorVersion",
+        "validFrom"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "type": { "$ref": "#/$defs/identifier" },
+        "scenarioDefinitionId": { "$ref": "#/$defs/identifier" },
+        "scenarioInstanceId": { "$ref": "#/$defs/identifier" },
+        "title": { "$ref": "#/$defs/boundedString" },
+        "status": { "$ref": "#/$defs/boundedString" },
+        "authorityRef": { "$ref": "#/$defs/authorityRef" },
+        "owners": {
+          "type": "array",
+          "maxItems": 50,
+          "items": { "$ref": "#/$defs/actorRef" }
+        },
+        "properties": {
+          "type": "object",
+          "maxProperties": 64,
+          "additionalProperties": { "$ref": "#/$defs/propertyValue" }
+        },
+        "sourceEventIds": { "$ref": "#/$defs/stringSet50" },
+        "evidenceRefs": { "$ref": "#/$defs/stringSet50" },
+        "projectorVersion": { "$ref": "#/$defs/boundedString" },
+        "validFrom": { "$ref": "#/$defs/dateTime" },
+        "validTo": { "$ref": "#/$defs/dateTime" }
+      }
+    },
+    "graphEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "type",
+        "from",
+        "to",
+        "scenarioInstanceId",
+        "sourceEventIds",
+        "evidenceRefs",
+        "projectorVersion",
+        "validFrom"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/identifier" },
+        "type": { "$ref": "#/$defs/identifier" },
+        "from": { "$ref": "#/$defs/identifier" },
+        "to": { "$ref": "#/$defs/identifier" },
+        "scenarioInstanceId": { "$ref": "#/$defs/identifier" },
+        "authorityRef": { "$ref": "#/$defs/authorityRef" },
+        "sourceEventIds": { "$ref": "#/$defs/stringSet50" },
+        "evidenceRefs": { "$ref": "#/$defs/stringSet50" },
+        "projectorVersion": { "$ref": "#/$defs/boundedString" },
+        "validFrom": { "$ref": "#/$defs/dateTime" },
+        "validTo": { "$ref": "#/$defs/dateTime" }
+      }
+    }
+  }
+}

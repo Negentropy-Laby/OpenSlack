@@ -9,7 +9,8 @@ import type {
 } from './types.js';
 import { validateGraphDelta, validateGraphSnapshot } from './validation.js';
 import { canonicalJson } from './canonical-json.js';
-export { canonicalJson } from './canonical-json.js';
+export { CANONICAL_JSON_ERROR_CODES, CanonicalJsonError, canonicalJson } from './canonical-json.js';
+export type { CanonicalJsonErrorCode } from './canonical-json.js';
 
 function compare(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;

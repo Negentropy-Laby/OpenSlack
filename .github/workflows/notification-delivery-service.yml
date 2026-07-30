@@ -6,8 +6,10 @@ on:
       - main
     paths:
       - services/notification-delivery/**
+      - services/organization-graph/**
       - services/*/go.mod
       - services/*/go.sum
+      - packages/organization-graph/**
       - README.md
       - docs/README.md
       - design/cdd/module-index.md
@@ -31,6 +33,8 @@ on:
       - go.work.sum
       - scripts/go-check.sh
       - scripts/go-check/**
+      - scripts/organization-graph-contracts/**
+      - scripts/release/stage-schema-assets.ts
       - scripts/documentation/**
       - scripts/notification-docs/**
       - .github/workflows/notification-delivery-service.yml
@@ -42,8 +46,10 @@ on:
       - main
     paths:
       - services/notification-delivery/**
+      - services/organization-graph/**
       - services/*/go.mod
       - services/*/go.sum
+      - packages/organization-graph/**
       - README.md
       - docs/README.md
       - design/cdd/module-index.md
@@ -67,6 +73,8 @@ on:
       - go.work.sum
       - scripts/go-check.sh
       - scripts/go-check/**
+      - scripts/organization-graph-contracts/**
+      - scripts/release/stage-schema-assets.ts
       - scripts/documentation/**
       - scripts/notification-docs/**
       - .github/workflows/notification-delivery-service.yml
@@ -107,7 +115,7 @@ jobs:
         with:
           go-version: '1.26.5'
           cache: true
-          cache-dependency-path: services/notification-delivery/go.sum
+          cache-dependency-path: services/*/go.sum
       - name: Require the exact Go toolchain
         run: |
           set -euo pipefail
@@ -122,6 +130,26 @@ jobs:
       - name: Validate the notification workflows
         working-directory: .
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/notification-delivery-service.yml .github/workflows/openslack-reusable-validate.yml
+      - name: Set up the exact Node toolchain
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22.14.0
+      - name: Set up the exact Bun toolchain
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.11
+      - name: Install root dependencies
+        working-directory: .
+        run: bun install --frozen-lockfile
+      - name: Verify Organization Graph golden contracts
+        working-directory: .
+        run: bun run graph:golden -- --check
+      - name: Clean-build and smoke Organization Graph distribution
+        working-directory: .
+        run: |
+          set -euo pipefail
+          bun run graph:dist-build
+          bun run graph:dist-smoke
       - name: Pull pinned Go verification images
         working-directory: .
         run: |
@@ -132,13 +160,6 @@ jobs:
       - name: Run reviewed Go workspace verifier
         working-directory: .
         run: bash scripts/go-check.sh --all
-      - name: Set up the exact Bun toolchain
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
-        with:
-          bun-version: 1.3.11
-      - name: Install root dependencies
-        working-directory: .
-        run: bun install --frozen-lockfile
       - name: Verify root documentation governance
         working-directory: .
         run: |

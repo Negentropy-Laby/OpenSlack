@@ -6,12 +6,15 @@ export interface StrictJsonObject {
   [key: string]: StrictJsonValue;
 }
 
-export type StrictGraphJsonErrorCode =
-  | 'GRAPH_JSON_UTF8_INVALID'
-  | 'GRAPH_JSON_BOM_FORBIDDEN'
-  | 'GRAPH_JSON_SYNTAX_INVALID'
-  | 'GRAPH_JSON_DUPLICATE_KEY'
-  | 'GRAPH_JSON_LIMIT_EXCEEDED';
+export const STRICT_GRAPH_JSON_ERROR_CODES = Object.freeze([
+  'GRAPH_JSON_UTF8_INVALID',
+  'GRAPH_JSON_BOM_FORBIDDEN',
+  'GRAPH_JSON_SYNTAX_INVALID',
+  'GRAPH_JSON_DUPLICATE_KEY',
+  'GRAPH_JSON_LIMIT_EXCEEDED',
+] as const);
+
+export type StrictGraphJsonErrorCode = (typeof STRICT_GRAPH_JSON_ERROR_CODES)[number];
 
 export class StrictGraphJsonError extends Error {
   readonly code: StrictGraphJsonErrorCode;
@@ -31,11 +34,25 @@ export interface StrictGraphJsonLimits {
   maxStringLength: number;
 }
 
-const DEFAULT_LIMITS: StrictGraphJsonLimits = Object.freeze({
+export const STRICT_GRAPH_JSON_DEFAULT_LIMITS: Readonly<StrictGraphJsonLimits> = Object.freeze({
   maxDepth: 64,
   maxNodes: 250_000,
   maxStringLength: 32_768,
 });
+
+function hasUnpairedSurrogate(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (!Number.isFinite(next) || next < 0xdc00 || next > 0xdfff) return true;
+      index += 1;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return true;
+    }
+  }
+  return false;
+}
 
 class Parser {
   private cursor = 0;
@@ -148,6 +165,13 @@ class Parser {
         offset,
       );
     }
+    if (hasUnpairedSurrogate(value)) {
+      throw new StrictGraphJsonError(
+        'GRAPH_JSON_SYNTAX_INVALID',
+        'JSON string contains an unpaired Unicode surrogate.',
+        offset,
+      );
+    }
     return value;
   }
 
@@ -229,5 +253,5 @@ export function parseStrictGraphJson(
       'Graph JSON bytes are not valid UTF-8.',
     );
   }
-  return new Parser(text, { ...DEFAULT_LIMITS, ...limits }).parse();
+  return new Parser(text, { ...STRICT_GRAPH_JSON_DEFAULT_LIMITS, ...limits }).parse();
 }
