@@ -207,5 +207,24 @@ describe('Organization Graph generated contract freeze', () => {
     expect(`${linkedWrite.stdout}\n${linkedWrite.stderr}`).toContain(
       'Refusing to write unsafe Organization Graph generated trees',
     );
+    await rm(symlinkPath);
+
+    expect(runGenerator('generate', outputRoot).status).toBe(0);
+    const authoritativeManifestPath = resolve(
+      outputRoot,
+      'packages/organization-graph/contracts/v1/manifest.json',
+    );
+    await rm(authoritativeManifestPath);
+    await symlink('golden-vectors.json', authoritativeManifestPath, 'file');
+    const authoritativeLinked = runGenerator('--check', outputRoot);
+    expect(authoritativeLinked.status).toBe(1);
+    expect(`${authoritativeLinked.stdout}\n${authoritativeLinked.stderr}`).toContain(
+      'packages/organization-graph/contracts/v1/manifest.json (symlink forbidden)',
+    );
+    const authoritativeLinkedWrite = runGenerator('generate', outputRoot);
+    expect(authoritativeLinkedWrite.status).toBe(1);
+    expect(`${authoritativeLinkedWrite.stdout}\n${authoritativeLinkedWrite.stderr}`).toContain(
+      'Refusing to write unsafe Organization Graph generated trees',
+    );
   });
 });

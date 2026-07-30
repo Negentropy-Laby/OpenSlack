@@ -1560,6 +1560,12 @@ async function checkOutputs(outputs: ReadonlyMap<string, Buffer>): Promise<void>
 
 async function generatedTreeIssues(): Promise<string[]> {
   return [
+    ...(await exactGeneratedTreeIssues(contractOutputRoot, [
+      'schemas/graph-snapshot.v1.schema.json',
+      'schemas/graph-delta.v1.schema.json',
+      'golden-vectors.json',
+      'manifest.json',
+    ])),
     ...(await exactGeneratedTreeIssues(sourceMirrorRoot, [
       'schemas/graph-snapshot.v1.schema.json',
       'schemas/graph-delta.v1.schema.json',
