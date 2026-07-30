@@ -12,6 +12,7 @@ func TestParserAcceptsAndSortsReviewedModules(t *testing.T) {
 	output, status := runParserProcess(t, `{
 		"Go":"1.26.5",
 		"Use":[
+			{"DiskPath":"./services/a-"},
 			{"DiskPath":"./services/zulu"},
 			{"DiskPath":"./services/alpha"}
 		],
@@ -20,7 +21,7 @@ func TestParserAcceptsAndSortsReviewedModules(t *testing.T) {
 	if status != 0 {
 		t.Fatalf("parser exited %d: %s", status, output)
 	}
-	if output != "./services/alpha\n./services/zulu\n" {
+	if output != "./services/a-\n./services/alpha\n./services/zulu\n" {
 		t.Fatalf("unexpected output: %q", output)
 	}
 }
@@ -32,6 +33,7 @@ func TestParserRejectsUnreviewedWorkspaceAuthority(t *testing.T) {
 		"godebug":          `{"Go":"1.26.5","Godebug":[{"Key":"x","Value":"1"}],"Use":[{"DiskPath":"./services/a"}]}`,
 		"replace":          `{"Go":"1.26.5","Use":[{"DiskPath":"./services/a"}],"Replace":[{"Old":{"Path":"x"},"New":{"Path":"y"}}]}`,
 		"path escape":      `{"Go":"1.26.5","Use":[{"DiskPath":"../services/a"}]}`,
+		"long path":        `{"Go":"1.26.5","Use":[{"DiskPath":"./services/` + strings.Repeat("a", 49) + `"}]}`,
 		"duplicate":        `{"Go":"1.26.5","Use":[{"DiskPath":"./services/a"},{"DiskPath":"./services/a"}]}`,
 		"trailing value":   `{"Go":"1.26.5","Use":[{"DiskPath":"./services/a"}]} {}`,
 		"malformed":        `{"Go":"1.26.5","Use":[`,

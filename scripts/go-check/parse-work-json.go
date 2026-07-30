@@ -10,7 +10,7 @@ import (
 	"sort"
 )
 
-var modulePathPattern = regexp.MustCompile(`^\./services/[a-z0-9][a-z0-9-]*$`)
+var modulePathPattern = regexp.MustCompile(`^\./services/[a-z0-9][a-z0-9-]{0,47}$`)
 
 const (
 	maxWorkspaceJSONBytes = 1 << 20

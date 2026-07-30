@@ -193,14 +193,19 @@ Each module also has a root-owned, three-line verification descriptor under
 `scripts/go-check/services/`. The descriptor declares a closed capability set,
 Docker target, and runtime profile; missing, unknown, non-canonical, or
 artifact-inconsistent declarations fail closed. Verification archives the
-exact committed module tree once, rejects credential-like tracked material,
-and uses that immutable snapshot for common checks, image build, Prometheus
-validation, and container smoke. Live working-tree bytes are never mixed with
-the qualified image. Distribution contexts use a deny-all `.dockerignore` and
-only the wrapper's ASCII-only closed set of reviewed allow rules after
-whitespace normalization. Ephemeral Docker resources carry a per-run ownership
-label; cleanup removes only resources whose label still matches. Signals are
-forwarded to the active Docker child before owned-resource cleanup.
+exact committed repository tree once per wrapper invocation, rejects
+credential-like tracked material outside the reviewed
+`packages/credentials` source package, and executes common checks from the
+selected module inside a writable copy of that immutable repository snapshot.
+This preserves reviewed
+repository-relative legal, provenance, and documentation contracts without
+reading live working-tree bytes. Image build, Prometheus validation, and
+container smoke still receive only the selected immutable module subtree.
+Distribution contexts use a deny-all `.dockerignore` and only the wrapper's
+ASCII-only closed set of reviewed allow rules after whitespace normalization.
+Ephemeral Docker resources carry a per-run ownership label; cleanup removes
+only resources whose label still matches. Signals are forwarded to the active
+Docker child before owned-resource cleanup.
 
 Add capability checks:
 

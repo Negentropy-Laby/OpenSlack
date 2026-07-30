@@ -21,6 +21,7 @@ readonly service_config_root="${repo_root}/scripts/go-check/services"
 
 host_runtime=""
 docker_client_os=""
+staged_repository_dir=""
 staged_module_dir=""
 active_child_pid=""
 declare -a workspace_modules=()
@@ -62,12 +63,16 @@ docker_cmd() {
 }
 
 docker_cmd_interruptible() {
-  local status
   if [[ "${host_runtime}" == "git-bash" ]]; then
-    MSYS_NO_PATHCONV=1 docker "$@" &
+    run_interruptible env MSYS_NO_PATHCONV=1 docker "$@"
   else
-    docker "$@" &
+    run_interruptible docker "$@"
   fi
+}
+
+run_interruptible() {
+  local status
+  "$@" &
   active_child_pid=$!
   if wait "${active_child_pid}"; then
     status=0
@@ -674,35 +679,39 @@ detect_capabilities() {
   fi
 }
 
-stage_module_snapshot() {
-  local module="$1"
-  local stage_root archive_path forbidden
+stage_repository_snapshot() {
+  local stage_root archive_path forbidden module
   stage_root="$(mktemp -d -t openslack-go-check-stage.XXXXXX)"
   cleanup_directories+=("${stage_root}")
-  archive_path="${stage_root}/module.tar"
-  mkdir -p "${stage_root}/module"
+  archive_path="${stage_root}/repository.tar"
+  mkdir -p "${stage_root}/repository"
 
-  git -C "${repo_root}" archive \
+  run_interruptible git -C "${repo_root}" archive \
     --format=tar \
     --output="${archive_path}" \
-    "HEAD:${module}"
-  tar -xf "${archive_path}" -C "${stage_root}/module"
+    HEAD
+  run_interruptible tar -xf "${archive_path}" -C "${stage_root}/repository"
   rm -f -- "${archive_path}"
 
-  [[ -f "${stage_root}/module/go.mod" && -f "${stage_root}/module/go.sum" ]] ||
-    fail "committed module snapshot is incomplete: ${module}"
+  for module in "${workspace_modules[@]}"; do
+    module="${module#./}"
+    [[ -f "${stage_root}/repository/${module}/go.mod" &&
+      -f "${stage_root}/repository/${module}/go.sum" ]] ||
+      fail "committed module snapshot is incomplete: ${module}"
+  done
 
   forbidden="$(
-    find "${stage_root}/module" \
-      \( -type d \( -name .git -o -name .openslack.local -o -name secrets -o -name credentials \) \
+    find "${stage_root}/repository" \
+      \( -type d \( -name .git -o -name .openslack.local -o -name secrets \
+      -o \( -name credentials ! -path "${stage_root}/repository/packages/credentials" \) \) \
       -o -type f \( -name .env -o -name '.env.*' -o -name '*.pem' -o -name '*.key' \
       -o -name '*.p12' -o -name '*.pfx' -o -name credentials.json \) \) \
       -print -quit
   )"
   [[ -z "${forbidden}" ]] ||
-    fail "committed module snapshot contains forbidden credential material: ${module}"
+    fail "committed repository snapshot contains forbidden credential material"
 
-  staged_module_dir="${stage_root}/module"
+  staged_repository_dir="${stage_root}/repository"
 }
 
 wait_for_healthy_container() {
@@ -781,8 +790,10 @@ start_database() {
 run_module_gate() {
   local module="$1"
   local module_slug="${module#services/}"
-  stage_module_snapshot "${module}"
-  local stage_root="${staged_module_dir%/module}"
+  [[ -n "${staged_repository_dir}" ]] ||
+    fail "committed repository snapshot was not initialized"
+  staged_module_dir="${staged_repository_dir}/${module}"
+  local stage_root="${staged_repository_dir%/repository}"
   local stage_nonce="${stage_root##*.}"
   local run_token
   run_token="$(date -u +%Y%m%d%H%M%S)-$$-${stage_nonce}"
@@ -813,8 +824,8 @@ run_module_gate() {
       database_container
   fi
 
-  local module_mount container_gate_mount
-  module_mount="$(docker_path "${staged_module_dir}")"
+  local repository_mount container_gate_mount
+  repository_mount="$(docker_path "${staged_repository_dir}")"
   container_gate_mount="$(docker_path "${container_gate}")"
   local test_container="${resource_prefix}-test"
   local -a run_args=(
@@ -826,7 +837,8 @@ run_module_gate() {
     --env GOMODCACHE=/go/pkg/mod
     --env GOCACHE=/root/.cache/go-build
     --env "GO_CHECK_EXPECTED_MODULE=github.com/Negentropy-Laby/OpenSlack/${module}"
-    --mount "type=bind,source=${module_mount},target=/source,readonly"
+    --env "GO_CHECK_MODULE_RELATIVE_PATH=${module}"
+    --mount "type=bind,source=${repository_mount},target=/source,readonly"
     --mount "type=bind,source=${container_gate_mount},target=/input/container-gate.sh,readonly"
     --mount "type=tmpfs,target=/work"
     --mount "type=volume,source=${MOD_CACHE_VOLUME},target=/go/pkg/mod"
@@ -986,6 +998,7 @@ main() {
   load_workspace_modules
 
   if [[ "${requested}" == "--all" ]]; then
+    stage_repository_snapshot
     local module
     for module in "${workspace_modules[@]}"; do
       run_module_gate "${module#./}"
@@ -994,6 +1007,7 @@ main() {
     validate_module_path "${requested}"
     module_in_workspace "${requested}" ||
       fail "requested module is not registered in go.work: ${requested}"
+    stage_repository_snapshot
     run_module_gate "${requested}"
   fi
 }

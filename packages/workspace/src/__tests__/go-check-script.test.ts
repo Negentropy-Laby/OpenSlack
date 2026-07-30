@@ -22,8 +22,11 @@ const containerGateSource = readFileSync(
 const temporaryRoots: string[] = [];
 const describeOnBashHosts = process.platform === 'win32' ? describe.skip : describe;
 
-afterEach(() => {
+afterEach(async () => {
   for (const root of temporaryRoots.splice(0)) rmSync(root, { recursive: true, force: true });
+  // The fixtures intentionally use synchronous child processes. Yield once so
+  // Vitest can flush worker RPC updates between otherwise back-to-back cases.
+  await new Promise<void>((resolveYield) => setImmediate(resolveYield));
 });
 
 describeOnBashHosts('reviewed Go module verifier', () => {
@@ -105,6 +108,8 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(log).toContain('openslack-go-check-stage.');
     expect(log).not.toContain(`${fixture.root}/services/pure`);
     expect(log).toContain('/input/container-gate.sh');
+    expect(log).toContain('GO_CHECK_MODULE_RELATIVE_PATH=services/pure');
+    expect(log).toContain('/repository\\,target=/source\\,readonly');
     expect(log).not.toContain('network create');
     expect(log).not.toContain('postgres:18.4');
     expect(readFileSync(join(fixture.root, 'services/pure/go.mod'), 'utf8')).toBe(originalMod);
@@ -121,6 +126,14 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     );
     expect(output.match(/services\/alpha passed/gu)).toHaveLength(1);
     expect(output.match(/services\/zulu passed/gu)).toHaveLength(1);
+    const repositoryMounts = readFileSync(fixture.dockerLog, 'utf8').match(
+      /source=.+?\/repository\\,target=\/source\\,readonly/gu,
+    );
+    expect(repositoryMounts).toHaveLength(2);
+    expect(new Set(repositoryMounts).size).toBe(1);
+
+    const trailingHyphen = createFixture(['a-']);
+    expect(runGoCheck(trailingHyphen, ['services/a-']).status).toBe(0);
   });
 
   it('rejects malformed, duplicate, and incomplete workspace module sets', () => {
@@ -294,7 +307,38 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(runGoCheck(credential, ['services/pure']).stderr).toContain(
       'forbidden credential material',
     );
-  });
+
+    const repositoryCredential = createFixture();
+    mkdirSync(join(repositoryCredential.root, 'packages/unrelated'), { recursive: true });
+    writeFileSync(
+      join(repositoryCredential.root, 'packages/unrelated/client.p12'),
+      'not-a-secret\n',
+      'utf8',
+    );
+    commitFixture(repositoryCredential.root);
+    const repositoryCredentialResult = runGoCheck(repositoryCredential, ['services/pure']);
+    expect(repositoryCredentialResult.status).toBe(1);
+    expect(repositoryCredentialResult.stderr).toContain(
+      'committed repository snapshot contains forbidden credential material',
+    );
+    expect(readFileSync(repositoryCredential.dockerLog, 'utf8')).not.toContain(
+      '/input/container-gate.sh',
+    );
+
+    const repositoryCredentialDirectory = createFixture();
+    mkdirSync(join(repositoryCredentialDirectory.root, 'packages/unrelated/credentials'), {
+      recursive: true,
+    });
+    writeFileSync(
+      join(repositoryCredentialDirectory.root, 'packages/unrelated/credentials/token.txt'),
+      'not-a-secret\n',
+      'utf8',
+    );
+    commitFixture(repositoryCredentialDirectory.root);
+    expect(runGoCheck(repositoryCredentialDirectory, ['services/pure']).stderr).toContain(
+      'committed repository snapshot contains forbidden credential material',
+    );
+  }, 15_000);
 
   it('requires a closed reviewed capability declaration and all of its artifacts', () => {
     const cases = [
@@ -432,6 +476,12 @@ describeOnBashHosts('Go module container gate', () => {
     const result = runContainerGate(fixture);
 
     expect(result.status).toBe(0);
+    expect(readFileSync(join(fixture.work, 'repository/LICENSE'), 'utf8')).toBe(
+      'repository context\n',
+    );
+    expect(readFileSync(join(fixture.work, 'repository/services/pure/go.mod'), 'utf8')).toContain(
+      'github.com/Negentropy-Laby/OpenSlack/services/pure',
+    );
     expect(readFileSync(fixture.commandLog, 'utf8').trim().split('\n')).toEqual([
       'go env GOWORK',
       'go env GOVERSION',
@@ -500,11 +550,25 @@ describeOnBashHosts('Go module container gate', () => {
       { FAKE_GO_VERSION: 'go1.26.4' },
       { FAKE_MODULE_PATH: 'example.com/forged' },
       { FAKE_MODULE_GO_VERSION: '1.26.4' },
+      { GO_CHECK_MODULE_RELATIVE_PATH: '../services/pure' },
+      { GO_CHECK_MODULE_RELATIVE_PATH: 'services/pure/child' },
     ];
     for (const env of cases) {
       const fixture = createContainerGateFixture();
       expect(runContainerGate(fixture, env).status).toBe(1);
     }
+
+    const trailingHyphen = createContainerGateFixture();
+    const trailingModule = join(trailingHyphen.source, 'services/pure-');
+    mkdirSync(trailingModule, { recursive: true });
+    for (const file of ['go.mod', 'go.sum', 'main.go']) {
+      copyFileSync(join(trailingHyphen.source, 'services/pure', file), join(trailingModule, file));
+    }
+    expect(
+      runContainerGate(trailingHyphen, {
+        GO_CHECK_MODULE_RELATIVE_PATH: 'services/pure-',
+      }).status,
+    ).toBe(0);
   });
 });
 
@@ -528,8 +592,14 @@ function createFixture(modules: string[] = ['pure']): Fixture {
   mkdirSync(bin, { recursive: true });
   mkdirSync(serviceConfigDirectory, { recursive: true });
   mkdirSync(join(root, 'services'), { recursive: true });
+  mkdirSync(join(root, 'packages/credentials'), { recursive: true });
   writeFileSync(dockerLog, '', 'utf8');
   writeFileSync(ownerFile, '', 'utf8');
+  writeFileSync(
+    join(root, 'packages/credentials/package.json'),
+    '{"name":"@openslack/credentials","private":true}\n',
+    'utf8',
+  );
 
   copyFileSync(join(repositoryRoot, 'scripts/go-check.sh'), join(scripts, 'go-check.sh'));
   copyFileSync(
@@ -571,7 +641,7 @@ function writeModule(path: string, name: string): void {
     'utf8',
   );
   writeFileSync(join(path, 'go.sum'), '', 'utf8');
-  writeFileSync(join(path, 'main.go'), `package ${name}\n`, 'utf8');
+  writeFileSync(join(path, 'main.go'), `package ${name.replaceAll('-', '_')}\n`, 'utf8');
 }
 
 function writeServiceConfig(
@@ -864,16 +934,18 @@ function createContainerGateFixture(): ContainerGateFixture {
   const source = join(root, 'source');
   const work = join(root, 'work');
   const commandLog = join(root, 'commands.log');
+  const moduleSource = join(source, 'services/pure');
   mkdirSync(bin, { recursive: true });
-  mkdirSync(source, { recursive: true });
+  mkdirSync(moduleSource, { recursive: true });
   mkdirSync(work, { recursive: true });
+  writeFileSync(join(source, 'LICENSE'), 'repository context\n', 'utf8');
   writeFileSync(
-    join(source, 'go.mod'),
+    join(moduleSource, 'go.mod'),
     'module github.com/Negentropy-Laby/OpenSlack/services/pure\n\ngo 1.26.5\n',
     'utf8',
   );
-  writeFileSync(join(source, 'go.sum'), '', 'utf8');
-  writeFileSync(join(source, 'main.go'), 'package pure\n', 'utf8');
+  writeFileSync(join(moduleSource, 'go.sum'), '', 'utf8');
+  writeFileSync(join(moduleSource, 'main.go'), 'package pure\n', 'utf8');
   writeFileSync(commandLog, '', 'utf8');
 
   for (const command of ['cp', 'mkdir', 'cmp']) {
@@ -932,7 +1004,7 @@ function createContainerGateFixture(): ContainerGateFixture {
 function runContainerGate(fixture: ContainerGateFixture, env: Record<string, string> = {}) {
   const driftTarget =
     env.FAKE_TIDY_DRIFT === 'go.mod' || env.FAKE_TIDY_DRIFT === 'go.sum'
-      ? join(fixture.work, 'module', env.FAKE_TIDY_DRIFT)
+      ? join(fixture.work, 'repository/services/pure', env.FAKE_TIDY_DRIFT)
       : env.FAKE_TIDY_DRIFT;
   return spawnSync(
     '/bin/sh',
@@ -943,6 +1015,7 @@ function runContainerGate(fixture: ContainerGateFixture, env: Record<string, str
         PATH: fixture.bin,
         FAKE_COMMAND_LOG: fixture.commandLog,
         GO_CHECK_EXPECTED_MODULE: 'github.com/Negentropy-Laby/OpenSlack/services/pure',
+        GO_CHECK_MODULE_RELATIVE_PATH: 'services/pure',
         ...env,
         ...(driftTarget ? { FAKE_TIDY_DRIFT: driftTarget } : {}),
       },
