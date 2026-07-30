@@ -44,6 +44,12 @@ import {
   renderEvidenceUnavailableMessage,
 } from './pr-doctor-evidence.js';
 
+interface MergeCommandOptions {
+  method: string;
+  matchHeadCommit?: string;
+  agentId?: string;
+}
+
 export function prCommands(): Command {
   const cmd = new Command('pr').description('PR Review & Merge Steward');
 
@@ -652,8 +658,12 @@ export function prCommands(): Command {
     .command('merge <number>')
     .description('Merge a PR after passing all governance gates')
     .option('--method <method>', 'Merge method: merge, squash, or rebase', 'merge')
+    .option(
+      '--match-head-commit <sha>',
+      'Bind this merge to a head SHA only when explicitly requested',
+    )
     .option('--agent-id <id>', 'Agent ID for authorization')
-    .action(async (number: string, options: { method: string; agentId?: string }) => {
+    .action(async (number: string, options: MergeCommandOptions) => {
       const prNumber = parseInt(number, 10);
       const { mergeIfReady, loadPRReviewPolicy } = await import('@openslack/pr');
       const policy = loadPRReviewPolicy();
@@ -688,6 +698,7 @@ export function prCommands(): Command {
 
       const result = await mergeIfReady(prNumber, policy, {
         method: options.method as 'merge' | 'squash' | 'rebase',
+        ...(options.matchHeadCommit ? { expectedHeadSha: options.matchHeadCommit } : {}),
         ...authOptions,
       });
 

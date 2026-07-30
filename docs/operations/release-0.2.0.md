@@ -1413,7 +1413,19 @@ the merge. The default route must not pass `--match-head-commit`,
 is allowed only when the user explicitly requests it for the current merge;
 lack of binding is never a merge blocker. Do not replace the governed route
 with `gh pr merge --admin` or bypass rulesets. A changed head still invalidates
-stale approval/check evidence and requires a fresh live diagnosis.
+stale approval/check evidence and requires a fresh live diagnosis: PRMS counts
+an approval only when its review commit matches the live PR head.
+
+Only for an explicit user request to bind this current merge, keep the same
+governed route and add the one-shot constraint:
+
+```bash
+openslack pr merge <PR_NUMBER> \
+  --method merge \
+  --match-head-commit <CURRENT_HEAD_SHA>
+```
+
+Without that explicit request, omit `--match-head-commit`.
 
 Complete and verify the claim lifecycle:
 

@@ -46,6 +46,8 @@ describe('cross-document sync', () => {
   const agentsMd = readFile('AGENTS.md');
   const claudeMd = readFile('CLAUDE.md');
   const releaseRunbook = readFile('docs/operations/release-0.2.0.md');
+  const cliReference = readFile('docs/user/cli-reference.md');
+  const prCommand = readFile('apps/cli/src/commands/pr.ts');
 
   it('keeps agent docs byte-identical with the default unbound-merge rule', () => {
     // Normalize CRLF to LF for cross-platform comparison
@@ -59,11 +61,22 @@ describe('cross-document sync', () => {
     expect(mergeGate).toContain('By default, do not bind the merge to a head SHA');
     expect(mergeGate).toContain('only when the user explicitly requests');
     expect(mergeGate).toContain('its absence must never block an otherwise governed merge');
+    expect(mergeGate).toContain(
+      'openslack pr merge <PR_NUMBER> --method merge --match-head-commit <sha>',
+    );
     const normalizedRunbook = releaseRunbook.replace(/\s+/g, ' ');
     expect(normalizedRunbook).toContain('The default route must not pass `--match-head-commit`');
     expect(normalizedRunbook).toContain(
       'Head binding is allowed only when the user explicitly requests it for the current merge',
     );
+    expect(normalizedRunbook).toContain(
+      'PRMS counts an approval only when its review commit matches the live PR head',
+    );
+    expect(cliReference).toContain(
+      'Use `--match-head-commit <sha>` only when the user explicitly requests head',
+    );
+    expect(prCommand).toContain(".option(\n      '--match-head-commit <sha>'");
+    expect(prCommand).toContain('{ expectedHeadSha: options.matchHeadCommit }');
   });
 
   it('merged document contains Bot-Authenticated PR Creation section', () => {

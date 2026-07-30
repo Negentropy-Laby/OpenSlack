@@ -160,13 +160,19 @@ describe('mergeIfReady', () => {
     expect(mergePR).toHaveBeenCalledWith(1, { method: undefined });
   });
 
-  it('passes merge method option to mergePR', async () => {
+  it('passes explicitly requested merge options to mergePR', async () => {
     const { fetchPRDetails } = await import('../fetch.js');
     const { mergePR } = await import('@openslack/github');
     vi.mocked(fetchPRDetails).mockResolvedValue(makeReport());
 
-    await mergeIfReady(1, DEFAULT_POLICY, { method: 'squash' });
-    expect(mergePR).toHaveBeenCalledWith(1, { method: 'squash' });
+    await mergeIfReady(1, DEFAULT_POLICY, {
+      method: 'squash',
+      expectedHeadSha: 'current-head',
+    });
+    expect(mergePR).toHaveBeenCalledWith(1, {
+      method: 'squash',
+      expectedHeadSha: 'current-head',
+    });
   });
 
   it('blocks merge when agent authorization requires confirmation', async () => {
