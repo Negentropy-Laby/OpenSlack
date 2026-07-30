@@ -7,10 +7,11 @@ audience:
   - contributors
   - reviewers
 owner: architecture
-updated: 2026-07-29
+updated: 2026-07-30
 sources:
   - docs/architecture/architecture.md
   - docs/architecture/adr/adr-0001-single-root-memory-bank.md
+  - docs/architecture/adr/adr-0002-multi-go-service-workspace.md
 ---
 
 # Architecture Decision Records
@@ -19,6 +20,7 @@ Significant new decisions receive immutable ADRs here. Existing implementation
 facts migrated from older documents remain In Review until the Full
 architecture review identifies which decisions need formal ADR extraction.
 
-| ADR                                             | Status    | Decision                                            |
-| ----------------------------------------------- | --------- | --------------------------------------------------- |
-| [ADR-0001](adr-0001-single-root-memory-bank.md) | In Review | Use one root Memory Bank and one JSON control plane |
+| ADR                                                | Status    | Decision                                                    |
+| -------------------------------------------------- | --------- | ----------------------------------------------------------- |
+| [ADR-0001](adr-0001-single-root-memory-bank.md)    | In Review | Use one root Memory Bank and one JSON control plane         |
+| [ADR-0002](adr-0002-multi-go-service-workspace.md) | In Review | Aggregate independent Go modules in a development workspace |
