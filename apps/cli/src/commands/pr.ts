@@ -517,7 +517,11 @@ export function prCommands(): Command {
             });
           }
           const failing = diagnosed.checks.filter(
-            (c) => c.conclusion && c.conclusion !== 'success' && c.conclusion !== 'neutral',
+            (c) =>
+              c.conclusion &&
+              c.conclusion !== 'success' &&
+              c.conclusion !== 'neutral' &&
+              c.conclusion !== 'skipped',
           );
           const pending = diagnosed.checks.filter((c) => c.status !== 'completed');
           if (pending.length > 0) {
