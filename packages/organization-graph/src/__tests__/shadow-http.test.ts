@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
 import {
+  GRAPH_SHADOW_POLICY,
   GRAPH_SHADOW_RECEIPT_SCHEMA,
   GraphShadowHttpPublisher,
   canonicalJson,
@@ -220,7 +221,7 @@ describe('organization graph HTTP shadow publisher', () => {
     },
   );
 
-  it('classifies conflicts and non-receipt HTTP failures without retrying', async () => {
+  it('classifies terminal conflicts and retries bounded transition ordering races', async () => {
     const input: GraphShadowPublishInput = {
       expectedCursor: null,
       snapshot: graphSnapshot('cursor-001'),
@@ -236,6 +237,43 @@ describe('organization graph HTTP shadow publisher', () => {
       httpStatus: 409,
     });
     expect(conflictFetch).toHaveBeenCalledTimes(1);
+
+    const deltaInput: GraphShadowPublishInput = {
+      expectedCursor: 'cursor-001',
+      snapshot: graphTransitionSnapshot('cursor-002'),
+      delta: graphDelta('cursor-001', 'cursor-002'),
+    };
+    let orderingAttempt = 0;
+    const orderingFetch = vi.fn(async () => {
+      orderingAttempt += 1;
+      if (orderingAttempt === 1) return new Response('parent missing', { status: 404 });
+      if (orderingAttempt === 2) return new Response('head racing', { status: 409 });
+      return responseFor(receiptFor(deltaInput, 'accepted', 2), 201);
+    });
+    const recovered = await new GraphShadowHttpPublisher({
+      origin: 'http://127.0.0.1:18181',
+      orderingRetryDelayMs: 1,
+      fetch: orderingFetch,
+    }).publish(deltaInput);
+    expect(recovered).toMatchObject({
+      outcome: 'accepted',
+      httpStatus: 201,
+      receipt: { cursor: 'cursor-002', revision: 2 },
+    });
+    expect(orderingFetch).toHaveBeenCalledTimes(3);
+
+    const exhaustedFetch = vi.fn(async () => new Response('head still racing', { status: 409 }));
+    const exhausted = await new GraphShadowHttpPublisher({
+      origin: 'http://127.0.0.1:18181',
+      orderingRetryDelayMs: 1,
+      fetch: exhaustedFetch,
+    }).publish(deltaInput);
+    expect(exhausted).toMatchObject({
+      outcome: 'conflict',
+      code: 'SHADOW_CONFLICT',
+      httpStatus: 409,
+    });
+    expect(exhaustedFetch).toHaveBeenCalledTimes(GRAPH_SHADOW_POLICY.orderingRetryAttempts);
 
     const unavailableFetch = vi.fn(async () => new Response('unavailable', { status: 503 }));
     const unavailable = await new GraphShadowHttpPublisher({

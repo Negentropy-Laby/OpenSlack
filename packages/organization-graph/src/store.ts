@@ -17,6 +17,7 @@ import { parseStrictGraphJson } from './strict-json.js';
 import type { GraphDelta, GraphEdge, GraphNode, GraphSnapshot } from './types.js';
 
 const CURSOR_SCHEMA = 'openslack.graph_cursor.v1';
+const shadowPublicationTails = new Map<string, Promise<void>>();
 /**
  * Node does not expose Windows FILE_FLAG_OPEN_REPARSE_POINT through its portable fs.open API.
  * Windows therefore retains the lstat/realpath/handle-identity/readback checks below, but lacks
@@ -869,7 +870,6 @@ export class LocalGraphStore {
   readonly root: string;
   readonly limits: GraphStoreLimits;
   private readonly shadowPublisher: GraphShadowPublishPort | undefined;
-  private readonly shadowTails = new Map<string, Promise<void>>();
 
   constructor(
     configuredRoot: string,
@@ -1059,7 +1059,8 @@ export class LocalGraphStore {
 
   private enqueueShadowPublish(input: Parameters<GraphShadowPublishPort['publish']>[0]): void {
     const scenarioInstanceId = input.snapshot.scenarioInstanceId;
-    const previous = this.shadowTails.get(scenarioInstanceId);
+    const queueKey = `${this.root}\u0000${scenarioInstanceId}`;
+    const previous = shadowPublicationTails.get(queueKey);
     const dispatch = async (): Promise<void> => {
       try {
         await this.shadowPublisher!.publish(input);
@@ -1069,10 +1070,10 @@ export class LocalGraphStore {
       }
     };
     const current = previous ? previous.then(dispatch, dispatch) : dispatch();
-    this.shadowTails.set(scenarioInstanceId, current);
+    shadowPublicationTails.set(queueKey, current);
     void current.finally(() => {
-      if (this.shadowTails.get(scenarioInstanceId) === current) {
-        this.shadowTails.delete(scenarioInstanceId);
+      if (shadowPublicationTails.get(queueKey) === current) {
+        shadowPublicationTails.delete(queueKey);
       }
     });
   }

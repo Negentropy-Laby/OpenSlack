@@ -107,7 +107,10 @@ GS1-A adds a tested pure Go parity library and generated contract mirrors.
 GS1-B adds an isolated PostgreSQL shadow store. Canonical payload bytes are
 stored as `bytea`; optional `jsonb` indexes are rebuildable and never become
 hash authority. Snapshot and Delta rows are immutable, and head movement uses
-an expected-cursor plus revision CAS.
+an expected-cursor plus revision CAS. TypeScript commits remain authoritative
+and non-blocking; same-process stores serialize publication per root/scenario,
+while the bounded HTTP adapter idempotently retries only transition-order
+`404`/`409` races within one total timeout.
 
 GS1-C qualifies duplicate, conflict, response-loss, restart, rollback,
 corruption, size-bound, and schema-version behavior. Throughout GS1 the

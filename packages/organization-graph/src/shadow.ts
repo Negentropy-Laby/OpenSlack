@@ -13,6 +13,9 @@ export const GRAPH_SHADOW_POLICY = Object.freeze({
   maxTimeoutMs: 30_000,
   defaultReceiptBytes: 16 * 1024,
   maxReceiptBytes: 64 * 1024,
+  orderingRetryAttempts: 64,
+  defaultOrderingRetryDelayMs: 50,
+  maxOrderingRetryDelayMs: 1_000,
 } as const);
 
 export type GraphShadowOperation = 'snapshot_ingest' | 'delta_ingest';
@@ -95,6 +98,8 @@ export interface GraphShadowHttpPublisherOptions {
   networkMode?: 'loopback' | 'internal';
   timeoutMs?: number;
   maxReceiptBytes?: number;
+  /** Delay between bounded transition-order recovery attempts. */
+  orderingRetryDelayMs?: number;
   fetch?: GraphShadowFetch;
   auditSink?: GraphShadowAuditSink;
   now?: () => number;
@@ -479,8 +484,8 @@ async function raceWithTimeout<T>(
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<{ kind: 'timeout' }>((resolve) => {
     timer = setTimeout(() => {
-      controller.abort();
       resolve({ kind: 'timeout' });
+      controller.abort();
     }, timeoutMs);
   });
   const settled = promise.then(
@@ -494,10 +499,27 @@ async function raceWithTimeout<T>(
   }
 }
 
+async function waitForOrderingRetry(delayMs: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return;
+  await new Promise<void>((resolve) => {
+    const finish = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', finish);
+      resolve();
+    };
+    signal.addEventListener('abort', finish, { once: true });
+    const timer = setTimeout(finish, delayMs);
+    if (signal.aborted) {
+      finish();
+    }
+  });
+}
+
 export class GraphShadowHttpPublisher implements GraphShadowPublishPort {
   private readonly origin: string;
   private readonly timeoutMs: number;
   private readonly maxReceiptBytes: number;
+  private readonly orderingRetryDelayMs: number;
   private readonly fetch: GraphShadowFetch;
   private readonly auditSink: GraphShadowAuditSink | undefined;
   private readonly now: () => number;
@@ -518,6 +540,11 @@ export class GraphShadowHttpPublisher implements GraphShadowPublishPort {
       'Graph shadow maxReceiptBytes',
       GRAPH_SHADOW_POLICY.maxReceiptBytes,
     );
+    this.orderingRetryDelayMs = positiveInteger(
+      options.orderingRetryDelayMs ?? GRAPH_SHADOW_POLICY.defaultOrderingRetryDelayMs,
+      'Graph shadow orderingRetryDelayMs',
+      GRAPH_SHADOW_POLICY.maxOrderingRetryDelayMs,
+    );
     this.fetch = options.fetch ?? fetch;
     this.auditSink = options.auditSink;
     this.now = options.now ?? Date.now;
@@ -532,19 +559,8 @@ export class GraphShadowHttpPublisher implements GraphShadowPublishPort {
     const result = await raceWithTimeout(
       Promise.resolve()
         .then(() =>
-          this.fetch(endpoint, {
-            method: 'POST',
-            redirect: 'manual',
-            headers: {
-              Accept: 'application/json',
-              'Content-Type': 'application/json',
-              'Idempotency-Key': request.idempotencyKey,
-            },
-            body: request.body,
-            signal: controller.signal,
-          }),
-        )
-        .then((response) => this.classifyResponse(input, request, response, base)),
+          this.deliverWithOrderingRetry(input, request, endpoint, base, controller.signal),
+        ),
       controller,
       this.timeoutMs,
     );
@@ -567,19 +583,51 @@ export class GraphShadowHttpPublisher implements GraphShadowPublishPort {
     return observation;
   }
 
+  private async deliverWithOrderingRetry(
+    input: GraphShadowPublishInput,
+    request: PreparedRequest,
+    endpoint: string,
+    base: Omit<GraphShadowObservation, 'outcome' | 'completedAt' | 'latencyMs'>,
+    signal: AbortSignal,
+  ): Promise<Omit<GraphShadowObservation, 'completedAt' | 'latencyMs'>> {
+    for (let attempt = 1; attempt <= GRAPH_SHADOW_POLICY.orderingRetryAttempts; attempt += 1) {
+      const response = await this.fetch(endpoint, {
+        method: 'POST',
+        redirect: 'manual',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'Idempotency-Key': request.idempotencyKey,
+        },
+        body: request.body,
+        signal,
+      });
+      const orderingRace =
+        input.expectedCursor !== null && (response.status === 404 || response.status === 409);
+      if (orderingRace && attempt < GRAPH_SHADOW_POLICY.orderingRetryAttempts) {
+        await cancelResponseBody(response);
+        await waitForOrderingRetry(this.orderingRetryDelayMs, signal);
+        if (signal.aborted) throw new Error('graph shadow ordering retry aborted');
+        continue;
+      }
+      return this.classifyResponse(input, request, response, base);
+    }
+    throw new Error('graph shadow ordering retry exhausted unexpectedly');
+  }
+
   private async classifyResponse(
     input: GraphShadowPublishInput,
     request: PreparedRequest,
     response: Response,
     base: Omit<GraphShadowObservation, 'outcome' | 'completedAt' | 'latencyMs'>,
   ): Promise<Omit<GraphShadowObservation, 'completedAt' | 'latencyMs'>> {
-    if (response.status === 409) {
+    if (response.status === 409 || (input.expectedCursor !== null && response.status === 404)) {
       await cancelResponseBody(response);
       return {
         ...base,
         outcome: 'conflict',
         httpStatus: response.status,
-        code: 'SHADOW_CONFLICT',
+        code: response.status === 409 ? 'SHADOW_CONFLICT' : 'SHADOW_PARENT_NOT_FOUND',
       };
     }
     if (![200, 201, 202].includes(response.status)) {

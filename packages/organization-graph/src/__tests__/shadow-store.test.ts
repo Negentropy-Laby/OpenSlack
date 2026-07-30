@@ -155,7 +155,7 @@ describe('LocalGraphStore shadow observation boundary', () => {
     expect(await store.currentCursor(snapshot.scenarioInstanceId)).toBe(snapshot.cursor);
   });
 
-  it('serializes shadow publication per scenario without delaying local commits', async () => {
+  it('serializes shadow publication across store instances without delaying local commits', async () => {
     let releaseFirst!: () => void;
     const firstGate = new Promise<void>((resolve) => {
       releaseFirst = resolve;
@@ -168,13 +168,15 @@ describe('LocalGraphStore shadow observation boundary', () => {
       }
       return observation(input);
     });
-    const store = new LocalGraphStore(await root(), {}, { publish });
+    const sharedRoot = await root();
+    const firstStore = new LocalGraphStore(sharedRoot, {}, { publish });
+    const secondStore = new LocalGraphStore(sharedRoot, {}, { publish });
     const first = graphSnapshot('cursor-001');
     const target = graphTransitionSnapshot('cursor-002');
     const delta = graphDelta('cursor-001', 'cursor-002');
 
-    await store.publishSnapshot(first, { expectedCursor: null });
-    const secondLocalReceipt = await store.publishSnapshot(target, {
+    await firstStore.publishSnapshot(first, { expectedCursor: null });
+    const secondLocalReceipt = await secondStore.publishSnapshot(target, {
       expectedCursor: first.cursor,
       delta,
     });
