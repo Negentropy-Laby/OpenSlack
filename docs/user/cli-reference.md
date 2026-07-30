@@ -103,6 +103,10 @@ bun run openslack pr recommend 42      # What to do next
 bun run openslack pr merge 42
 ```
 
+`pr merge` is unbound by default while still re-fetching live PRMS evidence.
+Use `--match-head-commit <sha>` only when the user explicitly requests head
+binding for that current merge; otherwise omit it.
+
 If GitHub reports that base branch policy blocks the merge, check unresolved
 review conversations first, then confirm that the latest human approval was not
 dismissed by a newer commit.

@@ -1158,6 +1158,7 @@ export async function mergePR(
     method?: 'merge' | 'squash' | 'rebase';
     commitTitle?: string;
     commitMessage?: string;
+    expectedHeadSha?: string;
   } = {},
   clientOptions?: GitHubClientOptions,
 ): Promise<MergePRResult> {
@@ -1176,6 +1177,7 @@ export async function mergePR(
       merge_method: options.method || 'merge',
       commit_title: options.commitTitle,
       commit_message: options.commitMessage,
+      ...(options.expectedHeadSha ? { sha: options.expectedHeadSha } : {}),
     });
     return {
       merged: data.merged,

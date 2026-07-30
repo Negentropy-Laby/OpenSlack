@@ -372,7 +372,27 @@ Before entering final approval or merge:
 4. Resolve only conversations whose blocking issue is fixed or explicitly waived.
 5. Confirm the latest human approval is still valid for the current head.
 6. Confirm GitHub reports the PR as mergeable.
-7. Merge with an expected-head guard such as `gh pr merge <n> --merge --match-head-commit <sha>`.
+7. Re-read the live PR head immediately before the merge.
+8. By default, do not bind the merge to a head SHA: do not pass
+   `--match-head-commit`, `expected_head_sha`, or an equivalent expected-head
+   parameter. Head binding is allowed only when the user explicitly requests
+   it for the current merge; its absence must never block an otherwise
+   governed merge.
+
+Current-head verification and merge-time head binding are separate controls.
+The verification above remains mandatory. Repository convention, agent
+preference, or a previously recorded SHA does not count as a user request to
+bind the merge.
+
+When the user explicitly requests binding for the current merge, keep the
+governed route and pass the requested SHA once:
+
+```bash
+openslack pr merge <PR_NUMBER> --method merge --match-head-commit <sha>
+```
+
+Do not switch to a raw GitHub merge command to obtain head binding. Without
+that explicit per-merge request, omit `--match-head-commit`.
 
 Unresolved review conversations are a merge gate, not an approval gate. Human
 approval can be valid while GitHub still blocks merge because review
