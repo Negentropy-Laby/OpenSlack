@@ -21,7 +21,13 @@ const CURSOR_SCHEMA = 'openslack.graph_cursor.v1';
 interface ShadowPublicationQueue {
   tail: Promise<void>;
   depth: number;
-  accepting: boolean;
+  lastQueuedCursor: string | null;
+  catchUp?: ShadowPublicationTask;
+}
+
+interface ShadowPublicationTask {
+  publisher: GraphShadowPublishPort;
+  input: Parameters<GraphShadowPublishPort['publish']>[0];
 }
 
 const shadowPublicationQueues = new Map<string, ShadowPublicationQueue>();
@@ -1072,21 +1078,46 @@ export class LocalGraphStore {
       queue = {
         tail: Promise.resolve(),
         depth: 0,
-        accepting: true,
+        lastQueuedCursor: input.expectedCursor,
       };
       shadowPublicationQueues.set(queueKey, queue);
     }
-    if (!queue.accepting || queue.depth >= GRAPH_SHADOW_POLICY.maxQueuedPublicationsPerScenario) {
-      // A shadow adapter is observational and may be broken. Once its bounded
-      // per-scenario queue saturates, drop further work until the accepted
-      // sequence drains instead of retaining an unbounded chain of snapshots.
-      queue.accepting = false;
+
+    const task: ShadowPublicationTask = {
+      publisher: this.shadowPublisher!,
+      input,
+    };
+    if (
+      queue.catchUp !== undefined ||
+      queue.depth >= GRAPH_SHADOW_POLICY.maxQueuedPublicationsPerScenario
+    ) {
+      // Preserve one latest full snapshot outside the fixed-depth queue. Once
+      // the accepted sequence drains, this can advance the shadow from its last
+      // queued cursor without replaying or retaining every skipped transition.
+      const expectedCursor = queue.catchUp?.input.expectedCursor ?? queue.lastQueuedCursor;
+      queue.catchUp = {
+        publisher: task.publisher,
+        input: {
+          expectedCursor,
+          snapshot: task.input.snapshot,
+        },
+      };
       return;
     }
+
+    this.appendShadowPublish(queueKey, queue, task);
+  }
+
+  private appendShadowPublish(
+    queueKey: string,
+    queue: ShadowPublicationQueue,
+    task: ShadowPublicationTask,
+  ): void {
     queue.depth += 1;
+    queue.lastQueuedCursor = task.input.snapshot.cursor;
     const dispatch = async (): Promise<void> => {
       try {
-        await this.shadowPublisher!.publish(input);
+        await task.publisher.publish(task.input);
       } catch {
         // The local TypeScript commit is authoritative throughout GS1. A broken
         // shadow adapter can neither roll it back nor turn it into a failure.
@@ -1095,10 +1126,17 @@ export class LocalGraphStore {
     const current = queue.tail.then(dispatch, dispatch);
     queue.tail = current;
     void current.finally(() => {
-      queue!.depth -= 1;
-      if (queue!.tail === current) {
-        shadowPublicationQueues.delete(queueKey);
+      queue.depth -= 1;
+      if (queue.tail !== current) {
+        return;
       }
+      const catchUp = queue.catchUp;
+      if (catchUp !== undefined) {
+        queue.catchUp = undefined;
+        this.appendShadowPublish(queueKey, queue, catchUp);
+        return;
+      }
+      shadowPublicationQueues.delete(queueKey);
     });
   }
 

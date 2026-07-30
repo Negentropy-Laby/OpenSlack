@@ -140,14 +140,16 @@ describe('LocalGraphStore shadow observation boundary', () => {
     expect(await store.readCurrentSnapshot(snapshot.scenarioInstanceId)).toEqual(snapshot);
   });
 
-  it('bounds a stalled shadow queue without delaying authoritative local commits', async () => {
+  it('bounds a stalled shadow queue and catches up without delaying local commits', async () => {
     let releaseFirst!: () => void;
     const firstGate = new Promise<void>((resolve) => {
       releaseFirst = resolve;
     });
     const started: string[] = [];
+    const published: GraphShadowPublishInput[] = [];
     const publish = vi.fn(async (input: GraphShadowPublishInput) => {
       started.push(input.snapshot.cursor);
+      published.push(input);
       if (input.snapshot.cursor === 'cursor-001') {
         await firstGate;
       }
@@ -169,10 +171,15 @@ describe('LocalGraphStore shadow observation boundary', () => {
 
     releaseFirst();
     await vi.waitFor(() =>
-      expect(started).toHaveLength(GRAPH_SHADOW_POLICY.maxQueuedPublicationsPerScenario),
+      expect(started).toHaveLength(GRAPH_SHADOW_POLICY.maxQueuedPublicationsPerScenario + 1),
     );
+    expect(published.at(-1)).toEqual({
+      expectedCursor: `cursor-${String(
+        GRAPH_SHADOW_POLICY.maxQueuedPublicationsPerScenario,
+      ).padStart(3, '0')}`,
+      snapshot: graphSnapshot(`cursor-${String(attempted).padStart(3, '0')}`),
+    });
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(started).toHaveLength(GRAPH_SHADOW_POLICY.maxQueuedPublicationsPerScenario);
 
     const resumedCursor = `cursor-${String(attempted + 1).padStart(3, '0')}`;
     await store.publishSnapshot(graphSnapshot(resumedCursor), { expectedCursor });
