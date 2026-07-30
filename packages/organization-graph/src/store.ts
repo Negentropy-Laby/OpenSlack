@@ -12,12 +12,19 @@ import {
   serializeGraphDelta,
   serializeGraphSnapshot,
 } from './integrity.js';
-import type { GraphShadowPublishPort } from './shadow.js';
+import { GRAPH_SHADOW_POLICY, type GraphShadowPublishPort } from './shadow.js';
 import { parseStrictGraphJson } from './strict-json.js';
 import type { GraphDelta, GraphEdge, GraphNode, GraphSnapshot } from './types.js';
 
 const CURSOR_SCHEMA = 'openslack.graph_cursor.v1';
-const shadowPublicationTails = new Map<string, Promise<void>>();
+
+interface ShadowPublicationQueue {
+  tail: Promise<void>;
+  depth: number;
+  accepting: boolean;
+}
+
+const shadowPublicationQueues = new Map<string, ShadowPublicationQueue>();
 /**
  * Node does not expose Windows FILE_FLAG_OPEN_REPARSE_POINT through its portable fs.open API.
  * Windows therefore retains the lstat/realpath/handle-identity/readback checks below, but lacks
@@ -1060,7 +1067,23 @@ export class LocalGraphStore {
   private enqueueShadowPublish(input: Parameters<GraphShadowPublishPort['publish']>[0]): void {
     const scenarioInstanceId = input.snapshot.scenarioInstanceId;
     const queueKey = `${this.root}\u0000${scenarioInstanceId}`;
-    const previous = shadowPublicationTails.get(queueKey);
+    let queue = shadowPublicationQueues.get(queueKey);
+    if (queue === undefined) {
+      queue = {
+        tail: Promise.resolve(),
+        depth: 0,
+        accepting: true,
+      };
+      shadowPublicationQueues.set(queueKey, queue);
+    }
+    if (!queue.accepting || queue.depth >= GRAPH_SHADOW_POLICY.maxQueuedPublicationsPerScenario) {
+      // A shadow adapter is observational and may be broken. Once its bounded
+      // per-scenario queue saturates, drop further work until the accepted
+      // sequence drains instead of retaining an unbounded chain of snapshots.
+      queue.accepting = false;
+      return;
+    }
+    queue.depth += 1;
     const dispatch = async (): Promise<void> => {
       try {
         await this.shadowPublisher!.publish(input);
@@ -1069,11 +1092,12 @@ export class LocalGraphStore {
         // shadow adapter can neither roll it back nor turn it into a failure.
       }
     };
-    const current = previous ? previous.then(dispatch, dispatch) : dispatch();
-    shadowPublicationTails.set(queueKey, current);
+    const current = queue.tail.then(dispatch, dispatch);
+    queue.tail = current;
     void current.finally(() => {
-      if (shadowPublicationTails.get(queueKey) === current) {
-        shadowPublicationTails.delete(queueKey);
+      queue!.depth -= 1;
+      if (queue!.tail === current) {
+        shadowPublicationQueues.delete(queueKey);
       }
     });
   }

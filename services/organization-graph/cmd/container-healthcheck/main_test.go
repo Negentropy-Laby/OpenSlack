@@ -52,6 +52,7 @@ func TestHealthURLUsesOnlyValidatedConfiguredPort(t *testing.T) {
 		{bind: ":8082", want: "http://10.0.0.4:8082/health/ready"},
 		{bind: "[::]:8083", wantErr: true},
 		{bind: "8.8.8.8:8084", wantErr: true},
+		{bind: "localhost:8085", wantErr: true},
 		{bind: "127.0.0.1:http", wantErr: true},
 		{bind: "https://attacker.invalid", wantErr: true},
 		{bind: "127.0.0.1:0", wantErr: true},

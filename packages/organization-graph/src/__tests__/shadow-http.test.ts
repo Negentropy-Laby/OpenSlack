@@ -101,6 +101,7 @@ describe('organization graph HTTP shadow publisher', () => {
 
   it.each([
     'https://127.0.0.1:8080',
+    'http://localhost:18181',
     'http://example.com:8080',
     'http://0.0.0.0:8080',
     'http://user:pass@127.0.0.1:8080',
@@ -201,7 +202,7 @@ describe('organization graph HTTP shadow publisher', () => {
       };
       const fetchMock = vi.fn(async () => responseFor(receiptFor(input, status, 2), httpStatus));
       const publisher = new GraphShadowHttpPublisher({
-        origin: 'http://localhost:18181',
+        origin: 'http://127.0.0.1:18181',
         fetch: fetchMock,
       });
 

@@ -99,7 +99,9 @@ func TestLoadEnvironmentRejectsUnsafeBindings(t *testing.T) {
 	}{
 		{name: "wildcard loopback", mode: "loopback", bind: ":8080"},
 		{name: "private loopback", mode: "loopback", bind: "10.0.0.4:8080"},
+		{name: "hostname loopback", mode: "loopback", bind: "localhost:8080"},
 		{name: "public internal", mode: "internal", bind: "8.8.8.8:8080"},
+		{name: "localhost internal", mode: "internal", bind: "localhost:8080"},
 		{name: "hostname internal", mode: "internal", bind: "graph.internal:8080"},
 		{name: "service port name", mode: "loopback", bind: "127.0.0.1:http"},
 	}

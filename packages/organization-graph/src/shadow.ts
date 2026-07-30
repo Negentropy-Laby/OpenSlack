@@ -13,6 +13,7 @@ export const GRAPH_SHADOW_POLICY = Object.freeze({
   maxTimeoutMs: 30_000,
   defaultReceiptBytes: 16 * 1024,
   maxReceiptBytes: 64 * 1024,
+  maxQueuedPublicationsPerScenario: 4,
   orderingRetryAttempts: 64,
   defaultOrderingRetryDelayMs: 50,
   maxOrderingRetryDelayMs: 1_000,
@@ -92,8 +93,9 @@ export interface GraphShadowHttpPublisherOptions {
   /** Exact HTTP origin; paths are fixed by the v1 ingest contract. */
   origin: string;
   /**
-   * `internal` is an explicit opt-in and accepts private/link-local IP literals
-   * only. It never resolves a DNS name or accepts a wildcard/public address.
+   * Both modes accept IP literals only. `internal` is an explicit opt-in for
+   * private/link-local addresses. Neither mode resolves DNS or accepts a
+   * wildcard/public address.
    */
   networkMode?: 'loopback' | 'internal';
   timeoutMs?: number;
@@ -152,11 +154,7 @@ function allowedHostname(hostname: string, networkMode: 'loopback' | 'internal')
   const unbracketed =
     hostname.startsWith('[') && hostname.endsWith(']') ? hostname.slice(1, -1) : hostname;
   if (networkMode === 'loopback') {
-    return (
-      hostname === 'localhost' ||
-      (isIP(unbracketed) === 4 && isIPv4Loopback(unbracketed)) ||
-      unbracketed === '::1'
-    );
+    return (isIP(unbracketed) === 4 && isIPv4Loopback(unbracketed)) || unbracketed === '::1';
   }
   if (isIP(unbracketed) === 4) {
     return isIPv4Loopback(unbracketed) || isIPv4PrivateOrLinkLocal(unbracketed);
@@ -557,10 +555,9 @@ export class GraphShadowHttpPublisher implements GraphShadowPublishPort {
     const base = baseObservation(input, request, endpoint, new Date(attemptedMs).toISOString());
     const controller = new AbortController();
     const result = await raceWithTimeout(
-      Promise.resolve()
-        .then(() =>
-          this.deliverWithOrderingRetry(input, request, endpoint, base, controller.signal),
-        ),
+      Promise.resolve().then(() =>
+        this.deliverWithOrderingRetry(input, request, endpoint, base, controller.signal),
+      ),
       controller,
       this.timeoutMs,
     );

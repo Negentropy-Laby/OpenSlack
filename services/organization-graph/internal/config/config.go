@@ -190,12 +190,9 @@ func resolveHTTPBind(
 	}
 
 	if mode == NetworkLoopback {
-		if host == "localhost" {
-			return bind, nil
-		}
 		address := net.ParseIP(host)
 		if address == nil || !address.IsLoopback() {
-			return "", fmt.Errorf("GRAPH_HTTP_BIND must be loopback when GRAPH_NETWORK_MODE=loopback")
+			return "", fmt.Errorf("GRAPH_HTTP_BIND must be a loopback IP literal when GRAPH_NETWORK_MODE=loopback")
 		}
 		return bind, nil
 	}
@@ -209,9 +206,6 @@ func resolveHTTPBind(
 			return "", fmt.Errorf("resolve GRAPH_HTTP_BIND private interface: %w", resolveErr)
 		}
 		return resolved, nil
-	}
-	if host == "localhost" {
-		return bind, nil
 	}
 	address := net.ParseIP(host)
 	if address == nil {

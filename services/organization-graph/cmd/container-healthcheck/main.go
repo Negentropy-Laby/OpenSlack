@@ -75,12 +75,10 @@ func healthURLFromBindWithResolver(
 		}
 		host = resolvedHost
 	}
-	if host != "localhost" {
-		address := net.ParseIP(host)
-		if address == nil || address.IsUnspecified() ||
-			!(address.IsLoopback() || address.IsPrivate() || address.IsLinkLocalUnicast()) {
-			return "", fmt.Errorf("healthcheck target must be loopback or a private IP literal")
-		}
+	address := net.ParseIP(host)
+	if address == nil || address.IsUnspecified() ||
+		!(address.IsLoopback() || address.IsPrivate() || address.IsLinkLocalUnicast()) {
+		return "", fmt.Errorf("healthcheck target must be loopback or a private IP literal")
 	}
 	return "http://" + net.JoinHostPort(host, strconv.Itoa(value)) + "/health/ready", nil
 }
