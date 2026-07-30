@@ -987,7 +987,7 @@
         "stage": "Implementation",
         "maturity": "local_ready",
         "blockers": ["live_evidence_collection_out_of_scope"],
-        "evidence": ["repo:packages/organization-graph"]
+        "evidence": ["repo:packages/organization-graph", "repo:services/organization-graph"]
       },
       {
         "id": "scenario-runtime",
