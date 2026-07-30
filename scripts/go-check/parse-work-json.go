@@ -14,7 +14,7 @@ var modulePathPattern = regexp.MustCompile(`^\./services/[a-z0-9][a-z0-9-]*$`)
 
 const (
 	maxWorkspaceJSONBytes = 1 << 20
-	requiredGoVersion      = "1.26.5"
+	requiredGoVersion     = "1.26.5"
 )
 
 type workspace struct {
