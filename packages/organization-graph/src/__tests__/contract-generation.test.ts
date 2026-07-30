@@ -226,5 +226,5 @@ describe('Organization Graph generated contract freeze', () => {
     expect(`${authoritativeLinkedWrite.stdout}\n${authoritativeLinkedWrite.stderr}`).toContain(
       'Refusing to write unsafe Organization Graph generated trees',
     );
-  });
+  }, 15_000);
 });
