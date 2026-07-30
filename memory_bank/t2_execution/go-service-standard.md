@@ -14,6 +14,10 @@ sources:
   - services/notification-delivery/go.mod
   - services/notification-delivery/Dockerfile
   - .github/workflows/notification-delivery-service.yml
+  - go.work
+  - scripts/go-check.sh
+  - scripts/go-check/container-gate.sh
+  - scripts/go-check/services/notification-delivery.conf
 ---
 
 # Go Service Standard
@@ -173,6 +177,31 @@ Repository verification runs the reviewed container wrapper with the pinned Go
 image and `GOWORK=off`. It uses Docker named caches and never writes a module
 cache into the repository.
 
+```bash
+bash scripts/go-check.sh services/<name>
+bash scripts/go-check.sh --all
+```
+
+The single-module form verifies one reviewed `go.work` entry. `--all` parses the
+workspace with the pinned Go toolchain, compares it with every repository
+service module, and applies the same per-module path in deterministic order.
+Both forms reject module symlinks, path escapes, unregistered modules, missing
+manifests, inaccessible Docker, unpinned verification images, and toolchain
+drift before executing a module gate.
+
+Each module also has a root-owned, three-line verification descriptor under
+`scripts/go-check/services/`. The descriptor declares a closed capability set,
+Docker target, and runtime profile; missing, unknown, non-canonical, or
+artifact-inconsistent declarations fail closed. Verification archives the
+exact committed module tree once, rejects credential-like tracked material,
+and uses that immutable snapshot for common checks, image build, Prometheus
+validation, and container smoke. Live working-tree bytes are never mixed with
+the qualified image. Distribution contexts use a deny-all `.dockerignore` and
+only the wrapper's ASCII-only closed set of reviewed allow rules after
+whitespace normalization. Ephemeral Docker resources carry a per-run ownership
+label; cleanup removes only resources whose label still matches. Signals are
+forwarded to the active Docker child before owned-resource cleanup.
+
 Add capability checks:
 
 | Capability        | Additional evidence                                                                        |
@@ -187,7 +216,21 @@ Add capability checks:
 Pure packages do not start PostgreSQL. Database tests use an isolated Docker
 network, container DNS, unique database/schema/volume names, and deterministic
 cleanup. Verification does not read `.env`, PEM, key, credential, or secret
-files.
+files. Git Bash and WSL path conversion branches have Linux-hosted mocked
+regression coverage; successful native Windows and real-Docker execution remain
+separate environment evidence and must not be inferred from those tests.
+
+Workers may have a standalone `cmd/worker` entry point or run inside a reviewed
+service runtime profile. Embedded workers still declare the `worker`
+capability; their profile must bind concrete worker, backoff, lease-recovery,
+reliability, delivery, notification-store lease/dead-letter, and operations
+crash/reconciliation integration test artifacts, all of which run under the
+common race gate and the database stability loop where applicable.
+
+The hosted workflow calls `go-check.sh --all` as the single mechanical Go
+service gate. It does not repeat tidy, build, vet, race, Prometheus, or image
+build steps after the wrapper; documentation and Compose rendering remain
+separate checks.
 
 ## Evidence and Claims
 

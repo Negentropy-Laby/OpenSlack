@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - services/notification-delivery/**
+      - services/*/go.mod
+      - services/*/go.sum
       - README.md
       - docs/README.md
       - design/cdd/module-index.md
@@ -25,16 +27,23 @@ on:
       - bun.lock
       - package.json
       - vitest.config.ts
+      - go.work
+      - go.work.sum
+      - scripts/go-check.sh
+      - scripts/go-check/**
       - scripts/documentation/**
       - scripts/notification-docs/**
       - .github/workflows/notification-delivery-service.yml
       - .github/workflows/openslack-reusable-validate.yml
       - packages/github/src/__tests__/notification-delivery-service-workflow.test.ts
+      - packages/workspace/src/__tests__/go-check-script.test.ts
   push:
     branches:
       - main
     paths:
       - services/notification-delivery/**
+      - services/*/go.mod
+      - services/*/go.sum
       - README.md
       - docs/README.md
       - design/cdd/module-index.md
@@ -54,11 +63,16 @@ on:
       - bun.lock
       - package.json
       - vitest.config.ts
+      - go.work
+      - go.work.sum
+      - scripts/go-check.sh
+      - scripts/go-check/**
       - scripts/documentation/**
       - scripts/notification-docs/**
       - .github/workflows/notification-delivery-service.yml
       - .github/workflows/openslack-reusable-validate.yml
       - packages/github/src/__tests__/notification-delivery-service-workflow.test.ts
+      - packages/workspace/src/__tests__/go-check-script.test.ts
   workflow_dispatch:
 
 permissions:
@@ -68,33 +82,14 @@ jobs:
   validate:
     name: Validate notification delivery service
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     defaults:
       run:
         shell: bash
         working-directory: services/notification-delivery
-    services:
-      postgres:
-        image: postgres:18.4@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a
-        env:
-          POSTGRES_USER: rc_wsman
-          POSTGRES_PASSWORD: rc_wsman
-          POSTGRES_DB: rc_wsman
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U rc_wsman -d rc_wsman"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 12
     env:
       EXPECTED_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
-      DATABASE_URL: postgres://rc_wsman:rc_wsman@localhost:5432/rc_wsman?sslmode=disable
-      MIGRATION_DATABASE_URL: pgx5://rc_wsman:rc_wsman@localhost:5432/rc_wsman?sslmode=disable
-      NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-      API_KEY_PEPPER_ACTIVE: '{"id":"v1","value":"ci-active-pepper"}'
-      API_KEY_PEPPER_PREVIOUS: '{"id":"v0","value":"ci-previous-pepper"}'
-      ENV_CREDENTIAL_ALLOWLIST: VENDOR_TEST_TOKEN
+      GOWORK: 'off'
     steps:
       - name: Check out the exact source head
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -117,9 +112,26 @@ jobs:
         run: |
           set -euo pipefail
           test "$(go env GOVERSION)" = "go1.26.5"
+          test "$(go env GOWORK)" = "off"
+          go work edit -json "$GITHUB_WORKSPACE/go.work" >/dev/null
+          test -z "$(gofmt -l "$GITHUB_WORKSPACE/scripts/go-check/"*.go)"
+          (
+            cd "$GITHUB_WORKSPACE/scripts/go-check"
+            GO111MODULE=off go test .
+          )
       - name: Validate the notification workflows
         working-directory: .
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/notification-delivery-service.yml .github/workflows/openslack-reusable-validate.yml
+      - name: Pull pinned Go verification images
+        working-directory: .
+        run: |
+          set -euo pipefail
+          docker pull golang:1.26.5@sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647
+          docker pull postgres:18.4@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a
+          docker pull prom/prometheus:v3.13.1@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893
+      - name: Run reviewed Go workspace verifier
+        working-directory: .
+        run: bash scripts/go-check.sh --all
       - name: Set up the exact Bun toolchain
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
@@ -142,37 +154,5 @@ jobs:
       - name: Verify notification delivery documentation
         working-directory: .
         run: bun run docs:notification-verify
-      - name: Verify module files
-        run: |
-          set -euo pipefail
-          go mod tidy
-          git diff --exit-code -- go.mod go.sum
-      - name: Verify Go formatting
-        run: |
-          set -euo pipefail
-          unformatted="$(gofmt -l .)"
-          if [ -n "$unformatted" ]; then
-            printf '%s\n' "$unformatted"
-            exit 1
-          fi
-      - name: Build all packages
-        run: go build ./...
-      - name: Migrate the test database
-        run: |
-          set -euo pipefail
-          go install -tags 'pgx5' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1
-          migrate -path migrations -database "$MIGRATION_DATABASE_URL" up
-      - name: Vet all packages
-        run: go vet ./...
-      - name: Run race tests
-        run: go test -race ./...
-      - name: Run race-test stability loop
-        run: go test -race ./... -count=5
       - name: Render the Compose configuration
         run: docker compose --env-file deploy/local.env.example config >/dev/null
-      - name: Validate the Prometheus configuration
-        run: docker run --rm --entrypoint promtool -v "$PWD/deploy/prometheus:/etc/prometheus:ro" prom/prometheus:v3.13.1@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893 check config /etc/prometheus/prometheus.yml
-      - name: Test the Prometheus rules
-        run: docker run --rm --entrypoint promtool -v "$PWD/deploy/prometheus:/etc/prometheus:ro" -w /etc/prometheus prom/prometheus:v3.13.1@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893 test rules rules.test.yml
-      - name: Build the production image
-        run: docker build --target app --tag openslack-notification-delivery:ci .
