@@ -34,14 +34,6 @@ type ServiceWorkflow = {
           'working-directory': string;
         };
       };
-      services: {
-        postgres: {
-          image: string;
-          env: Record<string, string>;
-          ports: string[];
-          options: string;
-        };
-      };
       env: Record<string, string>;
       permissions?: unknown;
       steps: WorkflowStep[];
@@ -77,9 +69,13 @@ const postgresImage =
   'postgres:18.4@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a';
 const prometheusImage =
   'prom/prometheus:v3.13.1@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893';
+const goImage =
+  'golang:1.26.5@sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647';
 const exactHeadExpression = '${{ github.event.pull_request.head.sha || github.sha }}';
 const triggerPaths = [
   'services/notification-delivery/**',
+  'services/*/go.mod',
+  'services/*/go.sum',
   'README.md',
   'docs/README.md',
   'design/cdd/module-index.md',
@@ -99,11 +95,16 @@ const triggerPaths = [
   'bun.lock',
   'package.json',
   'vitest.config.ts',
+  'go.work',
+  'go.work.sum',
+  'scripts/go-check.sh',
+  'scripts/go-check/**',
   'scripts/documentation/**',
   'scripts/notification-docs/**',
   '.github/workflows/notification-delivery-service.yml',
   '.github/workflows/openslack-reusable-validate.yml',
   'packages/github/src/__tests__/notification-delivery-service-workflow.test.ts',
+  'packages/workspace/src/__tests__/go-check-script.test.ts',
 ];
 
 function stepIndex(name: string): number {
@@ -140,14 +141,13 @@ describe('notification delivery service workflow', () => {
       'env',
       'name',
       'runs-on',
-      'services',
       'steps',
       'timeout-minutes',
     ]);
     expect(job).not.toHaveProperty('permissions');
     expect(job.name).toBe('Validate notification delivery service');
     expect(job['runs-on']).toBe('ubuntu-24.04');
-    expect(job['timeout-minutes']).toBe(60);
+    expect(job['timeout-minutes']).toBe(90);
     expect(job.defaults.run).toEqual({
       shell: 'bash',
       'working-directory': 'services/notification-delivery',
@@ -159,22 +159,26 @@ describe('notification delivery service workflow', () => {
     const setupGoIndex = job.steps.findIndex((step) => step.uses === setupGoAction);
     const goGuardIndex = stepIndex('Require the exact Go toolchain');
     const actionlintIndex = stepIndex('Validate the notification workflows');
+    const imagePullIndex = stepIndex('Pull pinned Go verification images');
+    const goCheckIndex = stepIndex('Run reviewed Go workspace verifier');
     const setupBunIndex = job.steps.findIndex((step) => step.uses === setupBunAction);
     const installIndex = stepIndex('Install root dependencies');
     const rootDocsIndex = stepIndex('Verify root documentation governance');
     const docsIndex = stepIndex('Verify notification delivery documentation');
-    const firstServiceCommandIndex = stepIndex('Verify module files');
+    const composeIndex = stepIndex('Render the Compose configuration');
 
     expect(checkoutIndex).toBe(0);
     expect(headGuardIndex).toBe(checkoutIndex + 1);
     expect(setupGoIndex).toBe(headGuardIndex + 1);
     expect(goGuardIndex).toBe(setupGoIndex + 1);
     expect(actionlintIndex).toBe(goGuardIndex + 1);
-    expect(setupBunIndex).toBe(actionlintIndex + 1);
+    expect(imagePullIndex).toBe(actionlintIndex + 1);
+    expect(goCheckIndex).toBe(imagePullIndex + 1);
+    expect(setupBunIndex).toBe(goCheckIndex + 1);
     expect(installIndex).toBe(setupBunIndex + 1);
     expect(rootDocsIndex).toBe(installIndex + 1);
     expect(docsIndex).toBe(rootDocsIndex + 1);
-    expect(firstServiceCommandIndex).toBe(docsIndex + 1);
+    expect(composeIndex).toBe(docsIndex + 1);
     expect(job.steps[checkoutIndex]?.with).toEqual({
       ref: exactHeadExpression,
       'persist-credentials': false,
@@ -190,6 +194,16 @@ describe('notification delivery service workflow', () => {
       'cache-dependency-path': 'services/notification-delivery/go.sum',
     });
     expect(job.steps[goGuardIndex]?.run).toContain('test "$(go env GOVERSION)" = "go1.26.5"');
+    expect(job.steps[goGuardIndex]?.run).toContain('test "$(go env GOWORK)" = "off"');
+    expect(job.steps[goGuardIndex]?.run).toContain(
+      'go work edit -json "$GITHUB_WORKSPACE/go.work" >/dev/null',
+    );
+    expect(job.steps[goGuardIndex]?.run).toContain('GO111MODULE=off go test .');
+    expect(job.steps[goCheckIndex]).toEqual({
+      name: 'Run reviewed Go workspace verifier',
+      'working-directory': '.',
+      run: 'bash scripts/go-check.sh --all',
+    });
     expect(job.steps[actionlintIndex]).toMatchObject({
       'working-directory': '.',
       run: 'go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/notification-delivery-service.yml .github/workflows/openslack-reusable-validate.yml',
@@ -230,28 +244,11 @@ describe('notification delivery service workflow', () => {
     expect(actionUses.every((action) => /@[0-9a-f]{40}$/u.test(action))).toBe(true);
   });
 
-  it('pins the database and validates every inherited service build contract', () => {
+  it('keeps the wrapper as the single mechanical service gate', () => {
     const job = workflow.jobs.validate;
-    expect(job.services.postgres).toEqual({
-      image: postgresImage,
-      env: {
-        POSTGRES_USER: 'rc_wsman',
-        POSTGRES_PASSWORD: 'rc_wsman',
-        POSTGRES_DB: 'rc_wsman',
-      },
-      ports: ['5432:5432'],
-      options:
-        '--health-cmd "pg_isready -U rc_wsman -d rc_wsman" --health-interval 5s --health-timeout 5s --health-retries 12',
-    });
     expect(job.env).toEqual({
       EXPECTED_COMMIT: exactHeadExpression,
-      DATABASE_URL: 'postgres://rc_wsman:rc_wsman@localhost:5432/rc_wsman?sslmode=disable',
-      MIGRATION_DATABASE_URL: 'pgx5://rc_wsman:rc_wsman@localhost:5432/rc_wsman?sslmode=disable',
-      NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST:
-        'sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-      API_KEY_PEPPER_ACTIVE: '{"id":"v1","value":"ci-active-pepper"}',
-      API_KEY_PEPPER_PREVIOUS: '{"id":"v0","value":"ci-previous-pepper"}',
-      ENV_CREDENTIAL_ALLOWLIST: 'VENDOR_TEST_TOKEN',
+      GOWORK: 'off',
     });
 
     const expectedStepNames = [
@@ -260,21 +257,13 @@ describe('notification delivery service workflow', () => {
       'Set up the exact Go toolchain',
       'Require the exact Go toolchain',
       'Validate the notification workflows',
+      'Pull pinned Go verification images',
+      'Run reviewed Go workspace verifier',
       'Set up the exact Bun toolchain',
       'Install root dependencies',
       'Verify root documentation governance',
       'Verify notification delivery documentation',
-      'Verify module files',
-      'Verify Go formatting',
-      'Build all packages',
-      'Migrate the test database',
-      'Vet all packages',
-      'Run race tests',
-      'Run race-test stability loop',
       'Render the Compose configuration',
-      'Validate the Prometheus configuration',
-      'Test the Prometheus rules',
-      'Build the production image',
     ];
     expect(job.steps.map((step) => step.name)).toEqual(expectedStepNames);
     expect(new Set(expectedStepNames).size).toBe(expectedStepNames.length);
@@ -288,9 +277,23 @@ describe('notification delivery service workflow', () => {
       'Require the exact Go toolchain': lines(
         'set -euo pipefail',
         'test "$(go env GOVERSION)" = "go1.26.5"',
+        'test "$(go env GOWORK)" = "off"',
+        'go work edit -json "$GITHUB_WORKSPACE/go.work" >/dev/null',
+        'test -z "$(gofmt -l "$GITHUB_WORKSPACE/scripts/go-check/"*.go)"',
+        '(',
+        '  cd "$GITHUB_WORKSPACE/scripts/go-check"',
+        '  GO111MODULE=off go test .',
+        ')',
       ),
       'Validate the notification workflows':
         'go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/notification-delivery-service.yml .github/workflows/openslack-reusable-validate.yml',
+      'Pull pinned Go verification images': lines(
+        'set -euo pipefail',
+        `docker pull ${goImage}`,
+        `docker pull ${postgresImage}`,
+        `docker pull ${prometheusImage}`,
+      ),
+      'Run reviewed Go workspace verifier': 'bash scripts/go-check.sh --all',
       'Install root dependencies': 'bun install --frozen-lockfile',
       'Verify root documentation governance': lines(
         'set -euo pipefail',
@@ -304,34 +307,8 @@ describe('notification delivery service workflow', () => {
         '  production/project-roadmap.md',
       ),
       'Verify notification delivery documentation': 'bun run docs:notification-verify',
-      'Verify module files': lines(
-        'set -euo pipefail',
-        'go mod tidy',
-        'git diff --exit-code -- go.mod go.sum',
-      ),
-      'Verify Go formatting': lines(
-        'set -euo pipefail',
-        'unformatted="$(gofmt -l .)"',
-        'if [ -n "$unformatted" ]; then',
-        `  printf '%s\\n' "$unformatted"`,
-        '  exit 1',
-        'fi',
-      ),
-      'Build all packages': 'go build ./...',
-      'Migrate the test database': lines(
-        'set -euo pipefail',
-        "go install -tags 'pgx5' github.com/golang-migrate/migrate/v4/cmd/migrate@v4.18.1",
-        'migrate -path migrations -database "$MIGRATION_DATABASE_URL" up',
-      ),
-      'Vet all packages': 'go vet ./...',
-      'Run race tests': 'go test -race ./...',
-      'Run race-test stability loop': 'go test -race ./... -count=5',
       'Render the Compose configuration':
         'docker compose --env-file deploy/local.env.example config >/dev/null',
-      'Validate the Prometheus configuration': `docker run --rm --entrypoint promtool -v "$PWD/deploy/prometheus:/etc/prometheus:ro" ${prometheusImage} check config /etc/prometheus/prometheus.yml`,
-      'Test the Prometheus rules': `docker run --rm --entrypoint promtool -v "$PWD/deploy/prometheus:/etc/prometheus:ro" -w /etc/prometheus ${prometheusImage} test rules rules.test.yml`,
-      'Build the production image':
-        'docker build --target app --tag openslack-notification-delivery:ci .',
     };
     const actualRuns = Object.fromEntries(
       job.steps.flatMap((step) =>
