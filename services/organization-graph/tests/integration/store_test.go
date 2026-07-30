@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/organization-graph/internal/graphcontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/organization-graph/internal/graphstore"
@@ -581,10 +580,6 @@ func TestListHeadsReturnsOnlyPublishedHeadsInStableOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	orphanGeneratedAt, err := time.Parse(time.RFC3339Nano, orphan.GeneratedAt)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if _, err := pool.Exec(
 		context.Background(),
 		`INSERT INTO graph_snapshots (
@@ -596,7 +591,7 @@ func TestListHeadsReturnsOnlyPublishedHeadsInStableOrder(t *testing.T) {
 		orphanBytes,
 		orphan.IntegrityHash,
 		orphan.ProjectorVersion,
-		orphanGeneratedAt,
+		orphan.GeneratedAt,
 	); err != nil {
 		t.Fatalf("insert unpublished snapshot: %v", err)
 	}
