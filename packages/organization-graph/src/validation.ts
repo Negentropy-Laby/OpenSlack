@@ -5,6 +5,7 @@ import {
   GRAPH_DELTA_SCHEMA,
   GRAPH_HARD_LIMITS,
   GRAPH_SNAPSHOT_SCHEMA,
+  GRAPH_VALUE_LIMITS,
 } from './types.js';
 import type {
   ActorRef,
@@ -50,7 +51,7 @@ function exactKeys(
   optional: readonly string[] = [],
 ): void {
   const allowed = new Set([...required, ...optional]);
-  for (const key of Object.keys(value)) {
+  for (const key of Object.keys(value).sort()) {
     if (!allowed.has(key)) {
       fail('GRAPH_SCHEMA_INVALID', `${path}.${key}`, 'is not an allowed property.');
     }
@@ -67,7 +68,7 @@ function hasUnpairedSurrogate(value: string): boolean {
     const code = value.charCodeAt(index);
     if (code >= 0xd800 && code <= 0xdbff) {
       const next = value.charCodeAt(index + 1);
-      if (next < 0xdc00 || next > 0xdfff) return true;
+      if (!Number.isFinite(next) || next < 0xdc00 || next > 0xdfff) return true;
       index += 1;
     } else if (code >= 0xdc00 && code <= 0xdfff) {
       return true;
@@ -84,7 +85,7 @@ function string(
   if (typeof value !== 'string') {
     return fail('GRAPH_SCHEMA_INVALID', path, 'must be a string.');
   }
-  const max = options.max ?? 2_048;
+  const max = options.max ?? GRAPH_VALUE_LIMITS.boundedStringCharacters;
   if ((!options.allowEmpty && value.length === 0) || value.length > max) {
     fail('GRAPH_BOUND_EXCEEDED', path, `must contain between 1 and ${max} characters.`);
   }
@@ -98,7 +99,7 @@ function string(
 }
 
 function dateTime(value: unknown, path: string): string {
-  const result = string(value, path, { max: 64 });
+  const result = string(value, path, { max: GRAPH_VALUE_LIMITS.dateTimeCharacters });
   const match = DATE_TIME.exec(result);
   const year = Number(match?.[1]);
   const month = Number(match?.[2]);
@@ -139,7 +140,10 @@ function array(value: unknown, path: string, max: number): unknown[] {
 
 function stringRefs(value: unknown, path: string, max: number): string[] {
   return array(value, path, max).map((item, index) => {
-    const reference = string(item, `${path}[${index}]`, { max: 2_048, identifier: true });
+    const reference = string(item, `${path}[${index}]`, {
+      max: GRAPH_VALUE_LIMITS.boundedStringCharacters,
+      identifier: true,
+    });
     if (SECRET_VALUE.test(reference)) {
       fail('GRAPH_PROPERTY_UNSAFE', `${path}[${index}]`, 'must not contain credential material.');
     }
@@ -161,14 +165,17 @@ function authority(value: unknown, path: string): AuthorityRef {
   const result: AuthorityRef = {
     provider: object.provider as AuthorityRef['provider'],
     objectType: string(object.objectType, `${path}.objectType`, {
-      max: 256,
+      max: GRAPH_VALUE_LIMITS.authorityObjectTypeCharacters,
       identifier: true,
     }),
     objectId: string(object.objectId, `${path}.objectId`, {
-      max: 2_048,
+      max: GRAPH_VALUE_LIMITS.boundedStringCharacters,
       identifier: true,
     }),
-    version: string(object.version, `${path}.version`, { max: 2_048, identifier: true }),
+    version: string(object.version, `${path}.version`, {
+      max: GRAPH_VALUE_LIMITS.boundedStringCharacters,
+      identifier: true,
+    }),
     observedAt: dateTime(object.observedAt, `${path}.observedAt`),
   };
   for (const [key, candidate] of Object.entries(result)) {
@@ -186,7 +193,10 @@ function actor(value: unknown, path: string): ActorRef {
     fail('GRAPH_SCHEMA_INVALID', `${path}.kind`, 'must be human, agent, or system.');
   }
   return {
-    id: string(object.id, `${path}.id`, { max: 512, identifier: true }),
+    id: string(object.id, `${path}.id`, {
+      max: GRAPH_VALUE_LIMITS.identifierCharacters,
+      identifier: true,
+    }),
     kind: object.kind,
     ...(object.displayName === undefined
       ? {}
@@ -210,7 +220,10 @@ function propertyValue(value: unknown, path: string, depth: number): void {
     return;
   }
   if (typeof value === 'string') {
-    string(value, path, { max: 32_768, allowEmpty: true });
+    string(value, path, {
+      max: GRAPH_VALUE_LIMITS.propertyStringCharacters,
+      allowEmpty: true,
+    });
     if (SECRET_VALUE.test(value) || URL_OR_ACTIVE_CONTENT.test(value)) {
       fail(
         'GRAPH_PROPERTY_UNSAFE',
@@ -233,7 +246,7 @@ function propertyValue(value: unknown, path: string, depth: number): void {
   }
   if (value !== null && typeof value === 'object') {
     const object = value as Record<string, unknown>;
-    const keys = Object.keys(object);
+    const keys = Object.keys(object).sort();
     if (keys.length > GRAPH_HARD_LIMITS.propertyKeys) {
       fail(
         'GRAPH_BOUND_EXCEEDED',
@@ -245,7 +258,9 @@ function propertyValue(value: unknown, path: string, depth: number): void {
       if (FORBIDDEN_OBJECT_KEYS.has(key) || SECRET_KEY.test(key)) {
         fail('GRAPH_PROPERTY_UNSAFE', `${path}.${key}`, 'property key is not permitted.');
       }
-      string(key, `${path}.${key}`, { max: 256 });
+      string(key, `${path}.${key}`, {
+        max: GRAPH_VALUE_LIMITS.authorityObjectTypeCharacters,
+      });
       propertyValue(object[key], `${path}.${key}`, depth + 1);
     }
     return;
@@ -275,7 +290,7 @@ function node(value: unknown, path: string, scenarioInstanceId: string): GraphNo
     ['status', 'validTo'],
   );
   const scope = string(object.scenarioInstanceId, `${path}.scenarioInstanceId`, {
-    max: 512,
+    max: GRAPH_VALUE_LIMITS.identifierCharacters,
     identifier: true,
   });
   if (scope !== scenarioInstanceId) {
@@ -292,11 +307,17 @@ function node(value: unknown, path: string, scenarioInstanceId: string): GraphNo
   );
   const properties = record(object.properties, `${path}.properties`);
   propertyValue(properties, `${path}.properties`, 1);
-  const id = string(object.id, `${path}.id`, { max: 512, identifier: true });
-  const type = string(object.type, `${path}.type`, { max: 512, identifier: true });
+  const id = string(object.id, `${path}.id`, {
+    max: GRAPH_VALUE_LIMITS.identifierCharacters,
+    identifier: true,
+  });
+  const type = string(object.type, `${path}.type`, {
+    max: GRAPH_VALUE_LIMITS.identifierCharacters,
+    identifier: true,
+  });
   const authorityRef = authority(object.authorityRef, `${path}.authorityRef`);
   const projectorVersion = string(object.projectorVersion, `${path}.projectorVersion`, {
-    max: 512,
+    max: GRAPH_VALUE_LIMITS.identifierCharacters,
     identifier: true,
   });
   if (SECRET_VALUE.test(projectorVersion)) {
@@ -318,14 +339,18 @@ function node(value: unknown, path: string, scenarioInstanceId: string): GraphNo
     id,
     type,
     scenarioDefinitionId: string(object.scenarioDefinitionId, `${path}.scenarioDefinitionId`, {
-      max: 512,
+      max: GRAPH_VALUE_LIMITS.identifierCharacters,
       identifier: true,
     }),
     scenarioInstanceId: scope,
     title: string(object.title, `${path}.title`),
     ...(object.status === undefined
       ? {}
-      : { status: string(object.status, `${path}.status`, { max: 512 }) }),
+      : {
+          status: string(object.status, `${path}.status`, {
+            max: GRAPH_VALUE_LIMITS.identifierCharacters,
+          }),
+        }),
     authorityRef,
     owners,
     properties,
@@ -364,7 +389,7 @@ function edge(value: unknown, path: string, scenarioInstanceId: string): GraphEd
     ['authorityRef', 'validTo'],
   );
   const scope = string(object.scenarioInstanceId, `${path}.scenarioInstanceId`, {
-    max: 512,
+    max: GRAPH_VALUE_LIMITS.identifierCharacters,
     identifier: true,
   });
   if (scope !== scenarioInstanceId) {
@@ -376,16 +401,28 @@ function edge(value: unknown, path: string, scenarioInstanceId: string): GraphEd
   if (validTo !== undefined && Date.parse(validTo) < Date.parse(validFrom)) {
     fail('GRAPH_SCHEMA_INVALID', `${path}.validTo`, 'must not precede validFrom.');
   }
-  const id = string(object.id, `${path}.id`, { max: 512, identifier: true });
-  const type = string(object.type, `${path}.type`, { max: 512, identifier: true });
-  const from = string(object.from, `${path}.from`, { max: 512, identifier: true });
-  const to = string(object.to, `${path}.to`, { max: 512, identifier: true });
+  const id = string(object.id, `${path}.id`, {
+    max: GRAPH_VALUE_LIMITS.identifierCharacters,
+    identifier: true,
+  });
+  const type = string(object.type, `${path}.type`, {
+    max: GRAPH_VALUE_LIMITS.identifierCharacters,
+    identifier: true,
+  });
+  const from = string(object.from, `${path}.from`, {
+    max: GRAPH_VALUE_LIMITS.identifierCharacters,
+    identifier: true,
+  });
+  const to = string(object.to, `${path}.to`, {
+    max: GRAPH_VALUE_LIMITS.identifierCharacters,
+    identifier: true,
+  });
   const authorityRef =
     object.authorityRef === undefined
       ? undefined
       : authority(object.authorityRef, `${path}.authorityRef`);
   const projectorVersion = string(object.projectorVersion, `${path}.projectorVersion`, {
-    max: 512,
+    max: GRAPH_VALUE_LIMITS.identifierCharacters,
     identifier: true,
   });
   if (SECRET_VALUE.test(projectorVersion)) {
@@ -436,10 +473,22 @@ function completeness(value: unknown, path: string): GraphCompleteness {
   const object = record(value, path);
   exactKeys(object, path, ['sourcesRequested', 'sourcesObserved', 'missingSources', 'warnings']);
   return {
-    sourcesRequested: stringRefs(object.sourcesRequested, `${path}.sourcesRequested`, 50),
-    sourcesObserved: stringRefs(object.sourcesObserved, `${path}.sourcesObserved`, 50),
-    missingSources: stringRefs(object.missingSources, `${path}.missingSources`, 50),
-    warnings: stringRefs(object.warnings, `${path}.warnings`, 50),
+    sourcesRequested: stringRefs(
+      object.sourcesRequested,
+      `${path}.sourcesRequested`,
+      GRAPH_VALUE_LIMITS.completenessItems,
+    ),
+    sourcesObserved: stringRefs(
+      object.sourcesObserved,
+      `${path}.sourcesObserved`,
+      GRAPH_VALUE_LIMITS.completenessItems,
+    ),
+    missingSources: stringRefs(
+      object.missingSources,
+      `${path}.missingSources`,
+      GRAPH_VALUE_LIMITS.completenessItems,
+    ),
+    warnings: stringRefs(object.warnings, `${path}.warnings`, GRAPH_VALUE_LIMITS.completenessItems),
   };
 }
 
@@ -475,7 +524,7 @@ export function validateGraphSnapshot(value: unknown): GraphSnapshot {
     fail('GRAPH_SCHEMA_INVALID', '$.schema', `must equal ${GRAPH_SNAPSHOT_SCHEMA}.`);
   }
   const scenarioInstanceId = string(object.scenarioInstanceId, '$.scenarioInstanceId', {
-    max: 512,
+    max: GRAPH_VALUE_LIMITS.identifierCharacters,
     identifier: true,
   });
   const nodes = array(object.nodes, '$.nodes', GRAPH_HARD_LIMITS.snapshotNodes).map((item, index) =>
@@ -503,11 +552,14 @@ export function validateGraphSnapshot(value: unknown): GraphSnapshot {
   });
   return {
     schema: GRAPH_SNAPSHOT_SCHEMA,
-    cursor: string(object.cursor, '$.cursor', { max: 512, identifier: true }),
+    cursor: string(object.cursor, '$.cursor', {
+      max: GRAPH_VALUE_LIMITS.identifierCharacters,
+      identifier: true,
+    }),
     scenarioInstanceId,
     generatedAt: dateTime(object.generatedAt, '$.generatedAt'),
     projectorVersion: string(object.projectorVersion, '$.projectorVersion', {
-      max: 512,
+      max: GRAPH_VALUE_LIMITS.identifierCharacters,
       identifier: true,
     }),
     nodes,
@@ -536,15 +588,15 @@ export function validateGraphDelta(value: unknown): GraphDelta {
     fail('GRAPH_SCHEMA_INVALID', '$.schema', `must equal ${GRAPH_DELTA_SCHEMA}.`);
   }
   const scenarioInstanceId = string(object.scenarioInstanceId, '$.scenarioInstanceId', {
-    max: 512,
+    max: GRAPH_VALUE_LIMITS.identifierCharacters,
     identifier: true,
   });
   const fromCursor = string(object.fromCursor, '$.fromCursor', {
-    max: 512,
+    max: GRAPH_VALUE_LIMITS.identifierCharacters,
     identifier: true,
   });
   const toCursor = string(object.toCursor, '$.toCursor', {
-    max: 512,
+    max: GRAPH_VALUE_LIMITS.identifierCharacters,
     identifier: true,
   });
   if (fromCursor === toCursor) {

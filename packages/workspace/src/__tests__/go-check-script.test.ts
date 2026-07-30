@@ -32,8 +32,22 @@ afterEach(async () => {
 describeOnBashHosts('reviewed Go module verifier', () => {
   it('freezes the root workspace and fail-closed verifier contract', () => {
     expect(readFileSync(join(repositoryRoot, 'go.work'), 'utf8')).toBe(
-      'go 1.26.5\n\nuse ./services/notification-delivery\n',
+      [
+        'go 1.26.5',
+        '',
+        'use (',
+        '\t./services/notification-delivery',
+        '\t./services/organization-graph',
+        ')',
+        '',
+      ].join('\n'),
     );
+    expect(
+      readFileSync(
+        join(repositoryRoot, 'scripts/go-check/services/organization-graph.conf'),
+        'utf8',
+      ),
+    ).toBe(['capabilities=pure', 'docker_target=none', 'runtime_profile=none', ''].join('\n'));
     expect(goCheckSource).toContain(
       'golang:1.26.5@sha256:3aff6657219a4d9c14e27fb1d8976c49c29fddb70ba835014f477e1c70636647',
     );

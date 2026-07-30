@@ -1,0 +1,104 @@
+{
+  "schema": "openslack.organization_graph_contract_manifest.v1",
+  "authority": "typescript",
+  "graphSchemas": {
+    "snapshot": "openslack.graph_snapshot.v1",
+    "delta": "openslack.graph_delta.v1"
+  },
+  "authorityProviders": ["github", "openslack", "demo_fixture", "dingtalk", "crm", "erp", "hr"],
+  "hardLimits": {
+    "depth": 3,
+    "nodes": 200,
+    "edges": 500,
+    "responseBytes": 524288,
+    "propertyDepth": 8,
+    "propertyKeys": 64,
+    "propertyItems": 200,
+    "evidenceRefs": 50,
+    "owners": 50,
+    "sourceEventIds": 50,
+    "snapshotNodes": 10000,
+    "snapshotEdges": 25000,
+    "deltaEvidenceRefs": 200,
+    "traversalSteps": 100000
+  },
+  "valueLimits": {
+    "boundedStringCharacters": 2048,
+    "identifierCharacters": 512,
+    "dateTimeCharacters": 64,
+    "authorityObjectTypeCharacters": 256,
+    "propertyStringCharacters": 32768,
+    "completenessItems": 50,
+    "queryFilterItems": 50
+  },
+  "strictJsonLimits": { "maxDepth": 64, "maxNodes": 250000, "maxStringLength": 32768 },
+  "queryProtocolLimits": {
+    "defaultCursorTtlMs": 300000,
+    "minCursorTtlMs": 1,
+    "maxCursorTtlMs": 3600000,
+    "minResponseBytes": 1024,
+    "cursorCharacters": 512,
+    "cursorSecretMinBytes": 32,
+    "cursorSecretMaxBytes": 1024,
+    "cursorPayloadDepth": 4,
+    "cursorPayloadNodes": 16,
+    "cursorPayloadStringCharacters": 256
+  },
+  "algorithms": {
+    "strictJson": "openslack.strict_graph_json.v1",
+    "canonicalJson": "openslack.ecmascript_canonical_json.v1",
+    "nodeIdentity": "openslack.graph_node_identity.sha256.v1",
+    "edgeIdentity": "openslack.graph_edge_identity.sha256.v1",
+    "snapshotIntegrity": "openslack.graph_snapshot_integrity.sha256.v1",
+    "deltaIntegrity": "openslack.graph_delta_integrity.sha256.v1",
+    "queryNormalization": "openslack.graph_query_normalization.v1",
+    "queryCursor": "openslack.graph_query_cursor.hmac_sha256.v1",
+    "explain": "openslack.graph_explain.v1"
+  },
+  "errorCodes": {
+    "canonicalJson": [
+      "CANONICAL_JSON_NON_FINITE_NUMBER",
+      "CANONICAL_JSON_UNSUPPORTED_TYPE",
+      "CANONICAL_JSON_FORBIDDEN_KEY",
+      "CANONICAL_JSON_UNDEFINED",
+      "CANONICAL_JSON_SPARSE_ARRAY"
+    ],
+    "graphContract": [
+      "GRAPH_SCHEMA_INVALID",
+      "GRAPH_BOUND_EXCEEDED",
+      "GRAPH_SCOPE_INVALID",
+      "GRAPH_REFERENCE_INVALID",
+      "GRAPH_PROPERTY_UNSAFE",
+      "GRAPH_INTEGRITY_INVALID"
+    ],
+    "graphQuery": [
+      "GRAPH_QUERY_INVALID",
+      "GRAPH_QUERY_CURSOR_INVALID",
+      "GRAPH_QUERY_CURSOR_EXPIRED",
+      "GRAPH_QUERY_CURSOR_MISMATCH",
+      "GRAPH_QUERY_TARGET_NOT_FOUND",
+      "GRAPH_QUERY_PATH_NOT_FOUND"
+    ],
+    "strictJson": [
+      "GRAPH_JSON_UTF8_INVALID",
+      "GRAPH_JSON_BOM_FORBIDDEN",
+      "GRAPH_JSON_SYNTAX_INVALID",
+      "GRAPH_JSON_DUPLICATE_KEY",
+      "GRAPH_JSON_LIMIT_EXCEEDED"
+    ]
+  },
+  "artifacts": {
+    "snapshotSchema": {
+      "path": "schemas/graph-snapshot.v1.schema.json",
+      "sha256": "eda3e019a86016a40e50fa36eb16102e16a68be04423d50800077d8dbdedc49b"
+    },
+    "deltaSchema": {
+      "path": "schemas/graph-delta.v1.schema.json",
+      "sha256": "4c4b1974a2f87d206192db5f39e4e19fcb97df7cab5227f8e0296ec625cff135"
+    },
+    "goldenVectors": {
+      "path": "golden-vectors.json",
+      "sha256": "f454067b269526657e9be15fb649194dc1c1a162015d2f39c0966aa766a2917a"
+    }
+  }
+}

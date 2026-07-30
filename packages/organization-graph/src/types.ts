@@ -117,6 +117,16 @@ export const GRAPH_HARD_LIMITS = Object.freeze({
   traversalSteps: 100_000,
 } as const);
 
+export const GRAPH_VALUE_LIMITS = Object.freeze({
+  boundedStringCharacters: 2_048,
+  identifierCharacters: 512,
+  dateTimeCharacters: 64,
+  authorityObjectTypeCharacters: 256,
+  propertyStringCharacters: 32_768,
+  completenessItems: 50,
+  queryFilterItems: 50,
+} as const);
+
 export type GraphDirection = 'outgoing' | 'incoming' | 'both';
 
 export interface GraphQueryInput {

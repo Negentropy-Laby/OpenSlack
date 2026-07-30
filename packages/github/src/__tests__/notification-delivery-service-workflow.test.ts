@@ -64,6 +64,7 @@ const reusableWorkflow = parse(reusableSource) as ReusableValidateWorkflow;
 
 const checkoutAction = 'actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd';
 const setupGoAction = 'actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16';
+const setupNodeAction = 'actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e';
 const setupBunAction = 'oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6';
 const postgresImage =
   'postgres:18.4@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a';
@@ -74,8 +75,10 @@ const goImage =
 const exactHeadExpression = '${{ github.event.pull_request.head.sha || github.sha }}';
 const triggerPaths = [
   'services/notification-delivery/**',
+  'services/organization-graph/**',
   'services/*/go.mod',
   'services/*/go.sum',
+  'packages/organization-graph/**',
   'README.md',
   'docs/README.md',
   'design/cdd/module-index.md',
@@ -99,6 +102,8 @@ const triggerPaths = [
   'go.work.sum',
   'scripts/go-check.sh',
   'scripts/go-check/**',
+  'scripts/organization-graph-contracts/**',
+  'scripts/release/stage-schema-assets.ts',
   'scripts/documentation/**',
   'scripts/notification-docs/**',
   '.github/workflows/notification-delivery-service.yml',
@@ -159,10 +164,13 @@ describe('notification delivery service workflow', () => {
     const setupGoIndex = job.steps.findIndex((step) => step.uses === setupGoAction);
     const goGuardIndex = stepIndex('Require the exact Go toolchain');
     const actionlintIndex = stepIndex('Validate the notification workflows');
-    const imagePullIndex = stepIndex('Pull pinned Go verification images');
-    const goCheckIndex = stepIndex('Run reviewed Go workspace verifier');
+    const setupNodeIndex = job.steps.findIndex((step) => step.uses === setupNodeAction);
     const setupBunIndex = job.steps.findIndex((step) => step.uses === setupBunAction);
     const installIndex = stepIndex('Install root dependencies');
+    const graphGoldenIndex = stepIndex('Verify Organization Graph golden contracts');
+    const graphDistIndex = stepIndex('Clean-build and smoke Organization Graph distribution');
+    const imagePullIndex = stepIndex('Pull pinned Go verification images');
+    const goCheckIndex = stepIndex('Run reviewed Go workspace verifier');
     const rootDocsIndex = stepIndex('Verify root documentation governance');
     const docsIndex = stepIndex('Verify notification delivery documentation');
     const composeIndex = stepIndex('Render the Compose configuration');
@@ -172,11 +180,14 @@ describe('notification delivery service workflow', () => {
     expect(setupGoIndex).toBe(headGuardIndex + 1);
     expect(goGuardIndex).toBe(setupGoIndex + 1);
     expect(actionlintIndex).toBe(goGuardIndex + 1);
-    expect(imagePullIndex).toBe(actionlintIndex + 1);
-    expect(goCheckIndex).toBe(imagePullIndex + 1);
-    expect(setupBunIndex).toBe(goCheckIndex + 1);
+    expect(setupNodeIndex).toBe(actionlintIndex + 1);
+    expect(setupBunIndex).toBe(setupNodeIndex + 1);
     expect(installIndex).toBe(setupBunIndex + 1);
-    expect(rootDocsIndex).toBe(installIndex + 1);
+    expect(graphGoldenIndex).toBe(installIndex + 1);
+    expect(graphDistIndex).toBe(graphGoldenIndex + 1);
+    expect(imagePullIndex).toBe(graphDistIndex + 1);
+    expect(goCheckIndex).toBe(imagePullIndex + 1);
+    expect(rootDocsIndex).toBe(goCheckIndex + 1);
     expect(docsIndex).toBe(rootDocsIndex + 1);
     expect(composeIndex).toBe(docsIndex + 1);
     expect(job.steps[checkoutIndex]?.with).toEqual({
@@ -191,7 +202,7 @@ describe('notification delivery service workflow', () => {
     expect(job.steps[setupGoIndex]?.with).toEqual({
       'go-version': '1.26.5',
       cache: true,
-      'cache-dependency-path': 'services/notification-delivery/go.sum',
+      'cache-dependency-path': 'services/*/go.sum',
     });
     expect(job.steps[goGuardIndex]?.run).toContain('test "$(go env GOVERSION)" = "go1.26.5"');
     expect(job.steps[goGuardIndex]?.run).toContain('test "$(go env GOWORK)" = "off"');
@@ -208,6 +219,11 @@ describe('notification delivery service workflow', () => {
       'working-directory': '.',
       run: 'go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/notification-delivery-service.yml .github/workflows/openslack-reusable-validate.yml',
     });
+    expect(job.steps[setupNodeIndex]).toEqual({
+      name: 'Set up the exact Node toolchain',
+      uses: setupNodeAction,
+      with: { 'node-version': '22.14.0' },
+    });
     expect(job.steps[setupBunIndex]).toEqual({
       name: 'Set up the exact Bun toolchain',
       uses: setupBunAction,
@@ -217,6 +233,16 @@ describe('notification delivery service workflow', () => {
       name: 'Install root dependencies',
       'working-directory': '.',
       run: 'bun install --frozen-lockfile',
+    });
+    expect(job.steps[graphGoldenIndex]).toEqual({
+      name: 'Verify Organization Graph golden contracts',
+      'working-directory': '.',
+      run: 'bun run graph:golden -- --check',
+    });
+    expect(job.steps[graphDistIndex]).toEqual({
+      name: 'Clean-build and smoke Organization Graph distribution',
+      'working-directory': '.',
+      run: lines('set -euo pipefail', 'bun run graph:dist-build', 'bun run graph:dist-smoke'),
     });
     expect(job.steps[rootDocsIndex]).toEqual({
       name: 'Verify root documentation governance',
@@ -240,7 +266,7 @@ describe('notification delivery service workflow', () => {
     });
 
     const actionUses = job.steps.flatMap((step) => (step.uses === undefined ? [] : [step.uses]));
-    expect(actionUses).toEqual([checkoutAction, setupGoAction, setupBunAction]);
+    expect(actionUses).toEqual([checkoutAction, setupGoAction, setupNodeAction, setupBunAction]);
     expect(actionUses.every((action) => /@[0-9a-f]{40}$/u.test(action))).toBe(true);
   });
 
@@ -257,10 +283,13 @@ describe('notification delivery service workflow', () => {
       'Set up the exact Go toolchain',
       'Require the exact Go toolchain',
       'Validate the notification workflows',
-      'Pull pinned Go verification images',
-      'Run reviewed Go workspace verifier',
+      'Set up the exact Node toolchain',
       'Set up the exact Bun toolchain',
       'Install root dependencies',
+      'Verify Organization Graph golden contracts',
+      'Clean-build and smoke Organization Graph distribution',
+      'Pull pinned Go verification images',
+      'Run reviewed Go workspace verifier',
       'Verify root documentation governance',
       'Verify notification delivery documentation',
       'Render the Compose configuration',
@@ -287,6 +316,13 @@ describe('notification delivery service workflow', () => {
       ),
       'Validate the notification workflows':
         'go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/notification-delivery-service.yml .github/workflows/openslack-reusable-validate.yml',
+      'Install root dependencies': 'bun install --frozen-lockfile',
+      'Verify Organization Graph golden contracts': 'bun run graph:golden -- --check',
+      'Clean-build and smoke Organization Graph distribution': lines(
+        'set -euo pipefail',
+        'bun run graph:dist-build',
+        'bun run graph:dist-smoke',
+      ),
       'Pull pinned Go verification images': lines(
         'set -euo pipefail',
         `docker pull ${goImage}`,
@@ -294,7 +330,6 @@ describe('notification delivery service workflow', () => {
         `docker pull ${prometheusImage}`,
       ),
       'Run reviewed Go workspace verifier': 'bash scripts/go-check.sh --all',
-      'Install root dependencies': 'bun install --frozen-lockfile',
       'Verify root documentation governance': lines(
         'set -euo pipefail',
         'bun run docs:verify',
