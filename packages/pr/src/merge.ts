@@ -21,6 +21,7 @@ export async function mergeIfReady(
     method?: 'merge' | 'squash' | 'rebase';
     commitTitle?: string;
     commitMessage?: string;
+    expectedHeadSha?: string;
     skipConfirm?: boolean;
     principal?: AgentPrincipal;
     snapshot?: AgentPermissionSnapshot;
@@ -78,6 +79,7 @@ export async function mergeIfReady(
     method: options.method,
     commitTitle: options.commitTitle,
     commitMessage: options.commitMessage,
+    ...(options.expectedHeadSha ? { expectedHeadSha: options.expectedHeadSha } : {}),
   });
 
   return {

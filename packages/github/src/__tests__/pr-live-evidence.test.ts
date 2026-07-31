@@ -15,6 +15,7 @@ import {
   getPRReviews,
   getRepositoryTree,
   listPRFiles,
+  mergePR,
 } from '../pr.js';
 
 function serverError(message = 'server error') {
@@ -36,6 +37,35 @@ function makeClient(octokit: Record<string, unknown>) {
 describe('strict PR live evidence', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('omits a merge head constraint by default and sends one only when explicitly supplied', async () => {
+    const merge = vi
+      .fn()
+      .mockResolvedValue({ data: { merged: true, sha: 'merged-sha', message: 'Merged' } });
+    makeClient({ pulls: { merge } });
+
+    await mergePR(352, { method: 'merge' });
+    expect(merge).toHaveBeenNthCalledWith(1, {
+      owner: 'Negentropy-Laby',
+      repo: 'OpenSlack',
+      pull_number: 352,
+      merge_method: 'merge',
+      commit_title: undefined,
+      commit_message: undefined,
+    });
+    expect(merge.mock.calls[0]?.[0]).not.toHaveProperty('sha');
+
+    await mergePR(352, { method: 'merge', expectedHeadSha: 'current-head' });
+    expect(merge).toHaveBeenNthCalledWith(2, {
+      owner: 'Negentropy-Laby',
+      repo: 'OpenSlack',
+      pull_number: 352,
+      merge_method: 'merge',
+      commit_title: undefined,
+      commit_message: undefined,
+      sha: 'current-head',
+    });
   });
 
   it('uses GraphQL fallback when REST PR files, reviews, and checks fail', async () => {

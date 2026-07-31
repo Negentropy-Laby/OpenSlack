@@ -215,11 +215,27 @@ describe('pr doctor command live evidence gate', () => {
       isDryRun: false,
       octokit: {},
     });
-    hoisted.mockFetchPRDetails.mockResolvedValue(makeReport());
+    hoisted.mockFetchPRDetails.mockResolvedValue(
+      makeReport({
+        checks: [
+          { name: 'validate', status: 'completed', conclusion: 'success' },
+          { name: 'publish', status: 'completed', conclusion: 'skipped' },
+        ],
+      }),
+    );
     hoisted.mockGetCODEOWNERS.mockResolvedValue(null);
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
-    await runPrCommand(['doctor', '42', '--repo', 'Negentropy-Laby/OpenSlack', '--auth', 'token']);
+    await runPrCommand([
+      'doctor',
+      '42',
+      '--repo',
+      'Negentropy-Laby/OpenSlack',
+      '--auth',
+      'token',
+      '--format',
+      'plain',
+    ]);
 
     expect(hoisted.mockGetClient).toHaveBeenCalledWith({
       repoFullName: 'Negentropy-Laby/OpenSlack',
@@ -242,7 +258,10 @@ describe('pr doctor command live evidence gate', () => {
         strictEvidence: true,
       },
     );
-    expect(logSpy.mock.calls.flat().join('\n')).toContain('GitHub evidence: LIVE');
+    const output = logSpy.mock.calls.flat().join('\n');
+    expect(output).toContain('GitHub evidence');
+    expect(output).toContain('All 2 passed');
+    expect(output).not.toContain('failing');
     logSpy.mockRestore();
   });
 
