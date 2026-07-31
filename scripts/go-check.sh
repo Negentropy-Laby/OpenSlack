@@ -477,7 +477,7 @@ read_service_config() {
     "${docker_target_ref}" =~ ^[a-z0-9][a-z0-9._-]{0,47}$ ]] ||
     fail "service verification Docker target is invalid: ${module_slug}"
   case "${runtime_profile_ref}" in
-    none | notification-delivery-v1) ;;
+    none | notification-delivery-v1 | organization-graph-v1) ;;
     *) fail "service verification runtime profile is unknown: ${module_slug}" ;;
   esac
 }
@@ -510,6 +510,7 @@ validate_dockerignore() {
         '!.dockerignore' | \
         '!go.mod' | \
         '!go.sum' | \
+        '!organizationgraph.go' | \
         '!LICENSE' | \
         '!NOTICE' | \
         '!THIRD_PARTY_NOTICES.md' | \
@@ -862,6 +863,13 @@ run_module_gate() {
       --env CREDENTIAL_REF_SCHEME_ALLOWLIST=env
       --env CREDENTIAL_PROFILE_VALIDATOR=bearer-env-v1
     )
+  elif [[ "${runtime_profile}" == "organization-graph-v1" ]]; then
+    run_args+=(
+      --env 'GRAPH_QUERY_CURSOR_SECRET=organization-graph-go-check-cursor-secret-v1'
+      --env 'GRAPH_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+      --env GRAPH_HTTP_BIND=127.0.0.1:8080
+      --env GRAPH_NETWORK_MODE=loopback
+    )
   fi
 
   log "validating ${module} with the pinned Go image"
@@ -959,17 +967,24 @@ run_http_smoke() {
     run_args+=(
       --network "${network}"
       --env "DATABASE_URL=postgres://openslack:openslack-go-check@postgres:5432/${database_name}?sslmode=disable"
-      --env 'NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST=sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
-      --env 'API_KEY_PEPPER_ACTIVE={"id":"v1","value":"ci-active-pepper"}'
-      --env 'API_KEY_PEPPER_PREVIOUS={"id":"v0","value":"ci-previous-pepper"}'
-      --env ENV_CREDENTIAL_ALLOWLIST=VENDOR_TEST_TOKEN
       --env MIGRATION_SOURCE=/migrations
     )
   fi
   if [[ "${runtime_profile}" == "notification-delivery-v1" ]]; then
     run_args+=(
+      --env 'NOTIFICATION_SERVICE_DEPLOYMENT_DIGEST=sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+      --env 'API_KEY_PEPPER_ACTIVE={"id":"v1","value":"ci-active-pepper"}'
+      --env 'API_KEY_PEPPER_PREVIOUS={"id":"v0","value":"ci-previous-pepper"}'
+      --env ENV_CREDENTIAL_ALLOWLIST=VENDOR_TEST_TOKEN
       --env CREDENTIAL_REF_SCHEME_ALLOWLIST=env
       --env CREDENTIAL_PROFILE_VALIDATOR=bearer-env-v1
+    )
+  elif [[ "${runtime_profile}" == "organization-graph-v1" ]]; then
+    run_args+=(
+      --env 'GRAPH_QUERY_CURSOR_SECRET=organization-graph-go-check-cursor-secret-v1'
+      --env 'GRAPH_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+      --env GRAPH_HTTP_BIND=:8080
+      --env GRAPH_NETWORK_MODE=internal
     )
   else
     fail "HTTP smoke has no reviewed runtime profile"

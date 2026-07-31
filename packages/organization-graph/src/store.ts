@@ -12,10 +12,25 @@ import {
   serializeGraphDelta,
   serializeGraphSnapshot,
 } from './integrity.js';
+import { GRAPH_SHADOW_POLICY, type GraphShadowPublishPort } from './shadow.js';
 import { parseStrictGraphJson } from './strict-json.js';
 import type { GraphDelta, GraphEdge, GraphNode, GraphSnapshot } from './types.js';
 
 const CURSOR_SCHEMA = 'openslack.graph_cursor.v1';
+
+interface ShadowPublicationQueue {
+  tail: Promise<void>;
+  depth: number;
+  lastQueuedCursor: string | null;
+  catchUp?: ShadowPublicationTask;
+}
+
+interface ShadowPublicationTask {
+  publisher: GraphShadowPublishPort;
+  input: Parameters<GraphShadowPublishPort['publish']>[0];
+}
+
+const shadowPublicationQueues = new Map<string, ShadowPublicationQueue>();
 /**
  * Node does not expose Windows FILE_FLAG_OPEN_REPARSE_POINT through its portable fs.open API.
  * Windows therefore retains the lstat/realpath/handle-identity/readback checks below, but lacks
@@ -867,13 +882,20 @@ function assertDeltaTransition(
 export class LocalGraphStore {
   readonly root: string;
   readonly limits: GraphStoreLimits;
+  private readonly shadowPublisher: GraphShadowPublishPort | undefined;
 
-  constructor(configuredRoot: string, limits: Partial<GraphStoreLimits> = {}) {
+  constructor(
+    configuredRoot: string,
+    limits: Partial<GraphStoreLimits> = {},
+    /** Explicit only: the store never discovers or enables network shadowing from environment. */
+    shadowPublisher?: GraphShadowPublishPort,
+  ) {
     if (typeof configuredRoot !== 'string' || configuredRoot.length === 0) {
       storeFail('GRAPH_STORE_PATH_UNSAFE', 'Graph store root must be a non-empty path.');
     }
     this.root = resolve(configuredRoot);
     this.limits = resolveLimits(limits);
+    this.shadowPublisher = shadowPublisher;
   }
 
   paths(scenarioInstanceId: string, cursor?: string, fromCursor?: string): GraphStorePathSet {
@@ -1013,7 +1035,7 @@ export class LocalGraphStore {
     snapshotValue: GraphSnapshot,
     options: PublishGraphSnapshotOptions,
   ): Promise<PublishedGraphSnapshot> {
-    return this.publishSnapshotInternal(snapshotValue, options, NO_TEST_HOOKS);
+    return this.publishSnapshotAndObserve(snapshotValue, options, NO_TEST_HOOKS);
   }
 
   /** @internal */
@@ -1022,7 +1044,100 @@ export class LocalGraphStore {
     options: PublishGraphSnapshotOptions,
     hooks: GraphStoreIoTestHooks,
   ): Promise<PublishedGraphSnapshot> {
-    return this.publishSnapshotInternal(snapshotValue, options, hooks);
+    return this.publishSnapshotAndObserve(snapshotValue, options, hooks);
+  }
+
+  private async publishSnapshotAndObserve(
+    snapshotValue: GraphSnapshot,
+    options: PublishGraphSnapshotOptions,
+    hooks: GraphStoreIoTestHooks,
+  ): Promise<PublishedGraphSnapshot> {
+    const snapshot = assertGraphSnapshotIntegrity(snapshotValue);
+    const delta =
+      options.delta === undefined ? undefined : assertGraphDeltaIntegrity(options.delta);
+    const published = await this.publishSnapshotInternal(
+      snapshot,
+      { expectedCursor: options.expectedCursor, ...(delta === undefined ? {} : { delta }) },
+      hooks,
+    );
+    if (this.shadowPublisher) {
+      this.enqueueShadowPublish({
+        expectedCursor: options.expectedCursor,
+        snapshot,
+        ...(delta === undefined ? {} : { delta }),
+      });
+    }
+    return published;
+  }
+
+  private enqueueShadowPublish(input: Parameters<GraphShadowPublishPort['publish']>[0]): void {
+    const scenarioInstanceId = input.snapshot.scenarioInstanceId;
+    const queueKey = `${this.root}\u0000${scenarioInstanceId}`;
+    let queue = shadowPublicationQueues.get(queueKey);
+    if (queue === undefined) {
+      queue = {
+        tail: Promise.resolve(),
+        depth: 0,
+        lastQueuedCursor: input.expectedCursor,
+      };
+      shadowPublicationQueues.set(queueKey, queue);
+    }
+
+    const task: ShadowPublicationTask = {
+      publisher: this.shadowPublisher!,
+      input,
+    };
+    if (
+      queue.catchUp !== undefined ||
+      queue.depth >= GRAPH_SHADOW_POLICY.maxQueuedPublicationsPerScenario
+    ) {
+      // Preserve one latest full snapshot outside the fixed-depth queue. Once
+      // the accepted sequence drains, this can advance the shadow from its last
+      // queued cursor without replaying or retaining every skipped transition.
+      const expectedCursor = queue.catchUp?.input.expectedCursor ?? queue.lastQueuedCursor;
+      queue.catchUp = {
+        publisher: task.publisher,
+        input: {
+          expectedCursor,
+          snapshot: task.input.snapshot,
+        },
+      };
+      return;
+    }
+
+    this.appendShadowPublish(queueKey, queue, task);
+  }
+
+  private appendShadowPublish(
+    queueKey: string,
+    queue: ShadowPublicationQueue,
+    task: ShadowPublicationTask,
+  ): void {
+    queue.depth += 1;
+    queue.lastQueuedCursor = task.input.snapshot.cursor;
+    const dispatch = async (): Promise<void> => {
+      try {
+        await task.publisher.publish(task.input);
+      } catch {
+        // The local TypeScript commit is authoritative throughout GS1. A broken
+        // shadow adapter can neither roll it back nor turn it into a failure.
+      }
+    };
+    const current = queue.tail.then(dispatch, dispatch);
+    queue.tail = current;
+    void current.finally(() => {
+      queue.depth -= 1;
+      if (queue.tail !== current) {
+        return;
+      }
+      const catchUp = queue.catchUp;
+      if (catchUp !== undefined) {
+        queue.catchUp = undefined;
+        this.appendShadowPublish(queueKey, queue, catchUp);
+        return;
+      }
+      shadowPublicationQueues.delete(queueKey);
+    });
   }
 
   private async publishSnapshotInternal(

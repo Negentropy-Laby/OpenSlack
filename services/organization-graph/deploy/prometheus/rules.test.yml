@@ -1,0 +1,47 @@
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 15s
+
+tests:
+  - name: reconciliation_fires_after_ten_minutes
+    interval: 15s
+    input_series:
+      - series: 'openslack_graph_reconciliation_pending{job="openslack_organization_graph",instance="app:8080"}'
+        values: '1+0x44'
+    alert_rule_test:
+      - eval_time: 9m45s
+        alertname: OrganizationGraphReconciliationRequired
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: OrganizationGraphReconciliationRequired
+        exp_alerts:
+          - exp_labels:
+              alertname: OrganizationGraphReconciliationRequired
+              instance: app:8080
+              job: openslack_organization_graph
+              severity: warning
+            exp_annotations:
+              summary: Organization Graph has an ambiguous ingest result
+              description: Inspect the durable reconciliation receipt before attempting another mutation.
+
+  - name: unavailability_fires_after_five_minutes
+    interval: 15s
+    input_series:
+      - series: 'up{job="openslack_organization_graph",instance="app:8080"}'
+        values: '0+0x24'
+    alert_rule_test:
+      - eval_time: 4m45s
+        alertname: OrganizationGraphUnavailable
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: OrganizationGraphUnavailable
+        exp_alerts:
+          - exp_labels:
+              alertname: OrganizationGraphUnavailable
+              instance: app:8080
+              job: openslack_organization_graph
+              severity: critical
+            exp_annotations:
+              summary: Organization Graph metrics endpoint is unavailable
+              description: Check PostgreSQL readiness, migration state, and the service health endpoints.
