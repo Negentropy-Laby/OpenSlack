@@ -120,3 +120,53 @@ const softwareDeliverySchemaDestination = resolve(
 );
 mkdirSync(dirname(softwareDeliverySchemaDestination), { recursive: true });
 copyFileSync(softwareDeliverySchemaSource, softwareDeliverySchemaDestination);
+
+const contractToDeliveryContractRoot = resolve(
+  root,
+  'packages',
+  'organization-graph',
+  'contracts',
+  'contract-to-delivery',
+  'v1',
+);
+const contractToDeliveryManifest = JSON.parse(
+  readFileSync(resolve(contractToDeliveryContractRoot, 'manifest.json'), 'utf8'),
+) as {
+  artifacts: Record<string, { path: string; sha256: string }>;
+};
+const contractToDeliverySourceSchemaPath =
+  'schemas/contract-to-delivery-source-snapshot.v1.schema.json';
+const contractToDeliverySourceSchema = contractToDeliveryManifest.artifacts.sourceSchema;
+if (
+  contractToDeliverySourceSchema === undefined ||
+  contractToDeliverySourceSchema.path !== contractToDeliverySourceSchemaPath ||
+  !/^[0-9a-f]{64}$/.test(contractToDeliverySourceSchema.sha256)
+) {
+  throw new Error('Refusing to stage invalid Contract-to-Delivery sourceSchema metadata.');
+}
+const contractToDeliverySchemaSource = resolve(
+  contractToDeliveryContractRoot,
+  contractToDeliverySourceSchema.path,
+);
+const contractToDeliverySchemaBytes = readFileSync(contractToDeliverySchemaSource);
+const contractToDeliverySchemaSHA256 = createHash('sha256')
+  .update(contractToDeliverySchemaBytes)
+  .digest('hex');
+if (contractToDeliverySchemaSHA256 !== contractToDeliverySourceSchema.sha256) {
+  throw new Error(
+    `Refusing to stage mismatched Contract-to-Delivery sourceSchema: ${contractToDeliverySchemaSHA256}`,
+  );
+}
+const contractToDeliverySchemaDestination = resolve(
+  outputRoot,
+  'packages',
+  'organization-graph',
+  'dist',
+  'generated',
+  'contracts',
+  'contract-to-delivery',
+  'v1',
+  contractToDeliverySourceSchema.path,
+);
+mkdirSync(dirname(contractToDeliverySchemaDestination), { recursive: true });
+copyFileSync(contractToDeliverySchemaSource, contractToDeliverySchemaDestination);

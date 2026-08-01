@@ -1331,6 +1331,13 @@ func addDecisions(builder *projectionBuilder) error {
 	return nil
 }
 
+// Validate validates one caller-supplied Software Delivery source snapshot
+// without performing projection or reading ambient process state.
+func Validate(input []byte) error {
+	_, err := parseSource(input)
+	return err
+}
+
 // Project validates and projects one caller-supplied Software Delivery source
 // snapshot. It performs no I/O and reads no ambient process state.
 func Project(input []byte) (Result, error) {

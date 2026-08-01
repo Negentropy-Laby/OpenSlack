@@ -10,6 +10,10 @@ const softwareDeliveryContractRoot = resolve(
   repositoryRoot,
   'packages/organization-graph/contracts/software-delivery/v1',
 );
+const contractToDeliveryContractRoot = resolve(
+  repositoryRoot,
+  'packages/organization-graph/contracts/contract-to-delivery/v1',
+);
 const distRoot = resolve(repositoryRoot, 'packages/organization-graph/dist');
 
 const manifest = JSON.parse(await readFile(resolve(contractRoot, 'manifest.json'), 'utf8')) as {
@@ -59,6 +63,36 @@ if (softwareDeliveryDistSHA256 !== softwareDeliverySourceSchema.sha256) {
   );
 }
 
+const contractToDeliveryManifest = JSON.parse(
+  await readFile(resolve(contractToDeliveryContractRoot, 'manifest.json'), 'utf8'),
+) as {
+  artifacts: Record<string, { path: string; sha256: string }>;
+};
+const contractToDeliverySourceSchemaPath =
+  'schemas/contract-to-delivery-source-snapshot.v1.schema.json';
+const contractToDeliverySourceSchema = contractToDeliveryManifest.artifacts.sourceSchema;
+if (
+  contractToDeliverySourceSchema === undefined ||
+  contractToDeliverySourceSchema.path !== contractToDeliverySourceSchemaPath ||
+  !/^[0-9a-f]{64}$/.test(contractToDeliverySourceSchema.sha256)
+) {
+  throw new Error('Invalid sourceSchema metadata in Contract-to-Delivery manifest.');
+}
+const contractToDeliveryDistPath = resolve(
+  distRoot,
+  'generated/contracts/contract-to-delivery/v1',
+  contractToDeliverySourceSchema.path,
+);
+const contractToDeliveryDistSHA256 = createHash('sha256')
+  .update(await readFile(contractToDeliveryDistPath))
+  .digest('hex');
+if (contractToDeliveryDistSHA256 !== contractToDeliverySourceSchema.sha256) {
+  throw new Error(
+    'Organization Graph dist Contract-to-Delivery sourceSchema hash mismatch: ' +
+      `got ${contractToDeliveryDistSHA256}, want ${contractToDeliverySourceSchema.sha256}.`,
+  );
+}
+
 function usableNode(binary: string): string | undefined {
   const probe = spawnSync(binary, ['--version'], { encoding: 'utf8' });
   if (probe.status !== 0) return undefined;
@@ -105,5 +139,5 @@ if (smoke.status !== 0) {
 }
 
 console.log(
-  'organization-graph dist schemas, Software Delivery schema, and Node 22 import verified',
+  'organization-graph dist schemas, Software Delivery and Contract-to-Delivery schemas, and Node 22 import verified',
 );

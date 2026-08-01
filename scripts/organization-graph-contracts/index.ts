@@ -55,6 +55,7 @@ import type {
   GraphSnapshot,
 } from '../../packages/organization-graph/src/types.js';
 import { buildSoftwareDeliveryContractArtifacts } from './software-delivery.js';
+import { buildContractToDeliveryContractArtifacts } from './contract-to-delivery.js';
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(scriptDirectory, '../..');
@@ -83,6 +84,18 @@ const softwareDeliverySourceMirrorRoot = resolve(
 const softwareDeliveryServiceMirrorRoot = resolve(
   generatedOutputRoot,
   'services/organization-graph/internal/contractmirror/generated/software-delivery/v1',
+);
+const contractToDeliveryContractOutputRoot = resolve(
+  generatedOutputRoot,
+  'packages/organization-graph/contracts/contract-to-delivery/v1',
+);
+const contractToDeliverySourceMirrorRoot = resolve(
+  generatedOutputRoot,
+  'packages/organization-graph/src/generated/contracts/contract-to-delivery/v1',
+);
+const contractToDeliveryServiceMirrorRoot = resolve(
+  generatedOutputRoot,
+  'services/organization-graph/internal/contractmirror/generated/contract-to-delivery/v1',
 );
 
 const snapshotSchemaPath = resolve(contractSourceRoot, 'schemas/graph-snapshot.v1.schema.json');
@@ -1520,6 +1533,9 @@ async function buildOutputs(): Promise<Map<string, Buffer>> {
   };
   const manifestBytes = await prettyJson(manifest);
   const softwareDelivery = await buildSoftwareDeliveryContractArtifacts();
+  const contractToDelivery = await buildContractToDeliveryContractArtifacts(
+    softwareDelivery.schemaBytes,
+  );
   const outputs = new Map<string, Buffer>();
   outputs.set(resolve(contractOutputRoot, 'golden-vectors.json'), vectorBytes);
   outputs.set(resolve(contractOutputRoot, 'manifest.json'), manifestBytes);
@@ -1565,6 +1581,43 @@ async function buildOutputs(): Promise<Map<string, Buffer>> {
   outputs.set(
     resolve(softwareDeliveryServiceMirrorRoot, 'manifest.json'),
     softwareDelivery.manifestBytes,
+  );
+  outputs.set(
+    resolve(
+      contractToDeliveryContractOutputRoot,
+      'schemas/contract-to-delivery-source-snapshot.v1.schema.json',
+    ),
+    contractToDelivery.schemaBytes,
+  );
+  outputs.set(
+    resolve(contractToDeliveryContractOutputRoot, 'projector-golden-vectors.json'),
+    contractToDelivery.vectorBytes,
+  );
+  outputs.set(
+    resolve(contractToDeliveryContractOutputRoot, 'manifest.json'),
+    contractToDelivery.manifestBytes,
+  );
+  outputs.set(
+    resolve(
+      contractToDeliverySourceMirrorRoot,
+      'schemas/contract-to-delivery-source-snapshot.v1.schema.json',
+    ),
+    contractToDelivery.schemaBytes,
+  );
+  outputs.set(
+    resolve(
+      contractToDeliveryServiceMirrorRoot,
+      'schemas/contract-to-delivery-source-snapshot.v1.schema.json',
+    ),
+    contractToDelivery.schemaBytes,
+  );
+  outputs.set(
+    resolve(contractToDeliveryServiceMirrorRoot, 'projector-golden-vectors.json'),
+    contractToDelivery.vectorBytes,
+  );
+  outputs.set(
+    resolve(contractToDeliveryServiceMirrorRoot, 'manifest.json'),
+    contractToDelivery.manifestBytes,
   );
   return outputs;
 }
@@ -1637,6 +1690,19 @@ async function generatedTreeIssues(): Promise<string[]> {
     ])),
     ...(await exactGeneratedTreeIssues(softwareDeliveryServiceMirrorRoot, [
       'schemas/software-delivery-source-snapshot.v1.schema.json',
+      'projector-golden-vectors.json',
+      'manifest.json',
+    ])),
+    ...(await exactGeneratedTreeIssues(contractToDeliveryContractOutputRoot, [
+      'schemas/contract-to-delivery-source-snapshot.v1.schema.json',
+      'projector-golden-vectors.json',
+      'manifest.json',
+    ])),
+    ...(await exactGeneratedTreeIssues(contractToDeliverySourceMirrorRoot, [
+      'schemas/contract-to-delivery-source-snapshot.v1.schema.json',
+    ])),
+    ...(await exactGeneratedTreeIssues(contractToDeliveryServiceMirrorRoot, [
+      'schemas/contract-to-delivery-source-snapshot.v1.schema.json',
       'projector-golden-vectors.json',
       'manifest.json',
     ])),
