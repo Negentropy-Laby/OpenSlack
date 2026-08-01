@@ -45,6 +45,7 @@ describe('Organization Graph Go read mirror', () => {
     'http://localhost:18181',
     'http://example.com:18181',
     'http://0.0.0.0:18181',
+    'http://[0:0:0:0:0:0:0:1]:18181',
     'http://user:pass@127.0.0.1:18181',
     'http://127.0.0.1:18181/v1',
   ])('rejects a non-exact loopback origin: %s', (origin) => {

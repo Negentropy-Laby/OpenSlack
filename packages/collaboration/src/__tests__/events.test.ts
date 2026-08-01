@@ -64,6 +64,24 @@ describe('events', () => {
     expect(validateEvent(event).valid).toBe(true);
   });
 
+  it('preserves existing GitHub watch projection object kinds', () => {
+    for (const [type, kind] of [
+      ['profile_sync.triggered', 'push'],
+      ['profile_sync.queued', 'job'],
+      ['notification.sent', 'notification_route'],
+    ] as const) {
+      const event = createEvent(
+        makeEvent({
+          type,
+          object: { kind, id: `${kind}-001` },
+          source: { kind: 'github', ref: 'github.watch' },
+          summary: `Recorded ${type}.`,
+        }),
+      );
+      expect(validateEvent(event).valid, `${type}:${kind}`).toBe(true);
+    }
+  });
+
   it('validates distinct governed-plan and workflow-approval audit events', () => {
     const types: CollaborationEventType[] = [
       'operator.plan.previewed',

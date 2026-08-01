@@ -39,6 +39,9 @@ export interface CollaborationEvent {
       | 'decision'
       | 'workspace'
       | 'workflow'
+      | 'push'
+      | 'job'
+      | 'notification_route'
       | 'graph';
     id: string;
     url?: string;
@@ -179,15 +182,18 @@ Subdirectories:
 
 Every event should reference its source of truth:
 
-| Object kind | Source link example                                              |
-| ----------- | ---------------------------------------------------------------- |
-| `issue`     | `https://github.com/{owner}/{repo}/issues/{n}`                   |
-| `pr`        | `https://github.com/{owner}/{repo}/pull/{n}`                     |
-| `plan`      | Internal plan ID (`PLAN-2026...`)                                |
-| `module`    | `.openslack/modules.yaml`                                        |
-| `handoff`   | `.openslack/collaboration/handoffs/{id}.yaml`                    |
-| `decision`  | `.openslack/collaboration/decisions/{id}.yaml`                   |
-| `graph`     | Scenario instance ID with digest-only local observation metadata |
+| Object kind          | Source link example                                              |
+| -------------------- | ---------------------------------------------------------------- |
+| `issue`              | `https://github.com/{owner}/{repo}/issues/{n}`                   |
+| `pr`                 | `https://github.com/{owner}/{repo}/pull/{n}`                     |
+| `plan`               | Internal plan ID (`PLAN-2026...`)                                |
+| `module`             | `.openslack/modules.yaml`                                        |
+| `handoff`            | `.openslack/collaboration/handoffs/{id}.yaml`                    |
+| `decision`           | `.openslack/collaboration/decisions/{id}.yaml`                   |
+| `push`               | Canonical repository and commit identity                         |
+| `job`                | Local profile-sync queue job ID                                  |
+| `notification_route` | Local notification route-record ID                               |
+| `graph`              | Scenario instance ID with digest-only local observation metadata |
 
 ## Redaction
 

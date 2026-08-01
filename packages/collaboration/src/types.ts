@@ -10,6 +10,9 @@ export type ObjectKind =
   | 'decision'
   | 'workspace'
   | 'workflow'
+  | 'push'
+  | 'job'
+  | 'notification_route'
   | 'graph';
 export type SourceKind = 'github' | 'openslack' | 'chat' | 'prms' | 'operator' | 'governance';
 export type RiskLevel = 'none' | 'low' | 'medium' | 'high';

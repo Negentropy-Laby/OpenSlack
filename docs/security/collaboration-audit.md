@@ -25,7 +25,8 @@ The Collaboration Layer records collaboration events that are safe to observe:
 - Event type (e.g., `pr.doctor.ready`, `plan.created`)
 - Actor ID and kind (human/agent/system/github/chat)
 - Provider (cli/slack/webhook/github)
-- Object kind and ID (issue/PR/plan/module/agent/handoff/decision/workspace/workflow/graph)
+- Object kind and ID
+  (issue/PR/plan/module/agent/handoff/decision/workspace/workflow/push/job/notification route/graph)
 - Source reference (which system emitted the event)
 - Summary (safe, non-sensitive description)
 - Owner and next action (who should act next)

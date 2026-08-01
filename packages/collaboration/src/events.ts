@@ -114,6 +114,9 @@ const ALL_OBJECT_KINDS: readonly ObjectKind[] = [
   'decision',
   'workspace',
   'workflow',
+  'push',
+  'job',
+  'notification_route',
   'graph',
 ];
 const ALL_SOURCE_KINDS: readonly SourceKind[] = [

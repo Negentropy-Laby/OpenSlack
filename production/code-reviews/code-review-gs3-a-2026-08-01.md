@@ -38,11 +38,15 @@ live evidence, or production use.
 | Architecture | CONCERNS; NO BLOCKING FINDINGS  | Dependency direction, authority ownership, profile invariants, origin validation, audit minimization, runtime validation, and deferred GS3-B work |
 | QA           | ADEQUATE / PASS; EXECUTION NOTE | Default-off behavior, failure isolation, 12/16/17 profiles, bounded audit, real-handler gate design, and exact-head hosted qualification          |
 
-The technical review found no remaining code-level blocking change. Earlier
-findings were closed by applying the deadline to both headers and body reads,
-enforcing canonical-payload size independently from the optional terminal line
-feed, hashing rather than persisting raw cursors, starting a real Go handler in
-the cross-language gate, closing runtime Collaboration object/source kinds,
+The technical review found no remaining code-level blocking change. Follow-up
+review found that the initially closed Collaboration object-kind set omitted the
+existing `push`, `job`, and `notification_route` observation handles, which
+would have silently dropped valid profile-sync and notification events. The set,
+contract, and regression coverage now preserve those emitters while unknown
+kinds still fail closed. Earlier findings were also closed by applying the
+deadline to both headers and body reads, enforcing canonical-payload size
+independently from the optional terminal line feed, hashing rather than
+persisting raw cursors, starting a real Go handler in the cross-language gate,
 and emitting a fixed stderr diagnostic when the bounded audit sink fails.
 
 This record recommends independent human review. It neither originates nor
@@ -87,6 +91,12 @@ format-check the real-handler Go test locally. Local evidence must not be
 reported as cross-language qualification. The reviewed exact PR head must pass
 the mandatory hosted Go gate before approval or merge; any repair commit
 invalidates the prior hosted result and must be qualified again.
+
+The unchanged Qoder Skill PowerShell installer test also remains locally
+blocked on its second idempotency run because that child PowerShell process does
+not resolve the system `Get-FileHash` command. The other 101 MCP tests pass, and
+the failing installer and test files are unchanged from the PR base; this is not
+reported as a GS3-A pass or repaired in this batch.
 
 ## Deferred Work
 

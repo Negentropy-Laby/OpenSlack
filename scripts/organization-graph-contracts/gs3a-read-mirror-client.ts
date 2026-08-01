@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import {
   GraphReadMirrorHttpClient,
   assertGraphSnapshotIntegrity,
+  canonicalJson,
   explainGraph,
   queryGraph,
   type GraphExplainInput,
@@ -75,7 +76,7 @@ if (
 }
 
 process.stdout.write(
-  `${JSON.stringify({
+  `${canonicalJson({
     schema: 'openslack.gs3a_cross_language_qualification.v1',
     status: 'passed',
     operations: observations.map(({ operation, outcome, parity }) => ({

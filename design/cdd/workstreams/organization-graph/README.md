@@ -285,11 +285,12 @@ current-head binding appears as incomplete evidence.
 
 ## Separation from current Collaboration views
 
-The Collaboration `ObjectKind` remains a coordination model for issues, PRs, plans, modules,
-agents, handoffs, decisions, workspaces, and workflows. GS3-A additionally permits `graph` only as
-the scenario-instance handle for digest-only read-mirror observations. Customer, Contract,
-Project, Milestone, Acceptance, and other business-domain entities still belong to scenario
-ontology and are never copied into Collaboration event metadata.
+The Collaboration `ObjectKind` remains a coordination and delivery-observation model for issues,
+PRs, plans, modules, agents, handoffs, decisions, workspaces, workflows, pushes, profile-sync jobs,
+and notification routes. GS3-A additionally permits `graph` only as the scenario-instance handle
+for digest-only read-mirror observations. Customer, Contract, Project, Milestone, Acceptance, and
+other business-domain entities still belong to scenario ontology and are never copied into
+Collaboration event metadata.
 
 The existing Team Dashboard remains task/PR-oriented:
 

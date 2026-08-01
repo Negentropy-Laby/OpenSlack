@@ -858,8 +858,13 @@ equality assertion against canonical `openslack.yaml`, never an override.
 profiles. The default accepts one exact credential-free loopback HTTP IP origin. Add
 `--graph-read-mirror-network internal` only to opt into a private or link-local IP literal; the
 network option without an origin, DNS/public/wildcard targets, URLs with credentials or paths, and
-redirects fail closed. Successful local Graph queries and explanations are mirrored to fixed Go
-routes under a 2-second default timeout and the existing 512 KiB response ceiling. A bounded
+redirects fail closed. Origins require canonical URL spelling: use `[::1]` for IPv6 loopback;
+expanded equivalents such as `[0:0:0:0:0:0:0:1]` are rejected by the exact-origin rule. Successful
+local Graph queries and explanations are mirrored to fixed Go routes under a 2-second default
+timeout and the existing 512 KiB response ceiling. MCP waits for this bounded comparison before
+returning, so enabling the mirror adds network, validation, and cloning latency to every successful
+query/explain call and reduces throughput; an unavailable mirror may consume the full configured
+timeout. A bounded
 matched, mismatched, or unavailable Collaboration audit event stores digests and difference codes,
 not the endpoint, request body, nodes, edges, target payload, or evidence. The user-visible result
 always remains the TypeScript result. Omitting the origin performs no mirror call and creates no
