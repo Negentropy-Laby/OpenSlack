@@ -213,6 +213,35 @@ describe('MCP Organization Graph read-canary audit composition', () => {
     ]);
   });
 
+  it('records stale Go evidence as blocked and never as served', async () => {
+    const root = workspace();
+    const input: GraphQueryInput = { scenarioInstanceId: 'scenario-001' };
+    const { snapshot, result } = fixture(input);
+    const canary = goCanary(
+      root,
+      vi.fn(async () =>
+        response({
+          schema: 'openslack.graph_canary_read.v1',
+          operation: 'query',
+          backend: 'go',
+          routingEpoch: 41,
+          serviceBuildSha: buildSha,
+          generatedAt: '2026-07-31T23:59:59.999Z',
+          snapshotCursor: snapshot.cursor,
+          result,
+        }),
+      ),
+    );
+
+    await expect(canary.query(input)).rejects.toMatchObject({ code: 'SOURCE_EVIDENCE_STALE' });
+    expect(readEvents(root)).toMatchObject([
+      {
+        type: 'graph.read_canary.blocked',
+        metadata: { code: 'SOURCE_EVIDENCE_STALE', backend: 'go', routingEpoch: 41 },
+      },
+    ]);
+  });
+
   it('records an explicit ts-local rollback epoch after the local read succeeds', async () => {
     const root = workspace();
     const canary = createOpenSlackGraphReadCanary({

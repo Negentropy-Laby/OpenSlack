@@ -36,6 +36,7 @@ export interface CreateOpenSlackGraphReadCanaryOptions {
   readonly networkMode?: GraphServiceNetworkMode;
   readonly expectedBuildSha?: string;
   readonly timeoutMs?: number;
+  readonly maxSnapshotAgeMs?: number;
   /** Test seam. Production composition uses the global bounded fetch implementation. */
   readonly fetch?: GraphReadCanaryRouterOptions['fetch'];
   /** Test seam. Production composition uses the system clock. */
@@ -162,6 +163,9 @@ export function createOpenSlackGraphReadCanary(
       ? {}
       : { expectedBuildSha: options.expectedBuildSha }),
     ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+    ...(options.maxSnapshotAgeMs === undefined
+      ? {}
+      : { maxSnapshotAgeMs: options.maxSnapshotAgeMs }),
     ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
     now,
   });

@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: architecture
-updated: 2026-08-01
+updated: 2026-08-02
 sources:
   - docs/architecture/architecture.md
   - docs/architecture/adr/adr-0002-multi-go-service-workspace.md
@@ -192,8 +192,10 @@ GS3 is split into three independently reviewed changes:
    canonical workspace/tenant, at most 16 exact scenario-instance IDs, one positive routing epoch,
    a maximum seven-day expiry, and exactly one backend. `go` additionally binds an exact
    credential-free loopback/private origin and 64-hex service build on every request. A selected Go
-   timeout, HTTP error, invalid response, policy expiry, build/epoch drift, or audit failure blocks
-   the read and never falls back to TypeScript. Rollback is a new explicit policy using
+   timeout, HTTP error, invalid response, stale snapshot, policy expiry, build/epoch drift, or audit
+   failure blocks the read and never falls back to TypeScript. The Go envelope's snapshot time must
+   pass the same bounded freshness gate as the TypeScript path before the result or served audit is
+   released. Rollback is a new explicit policy using
    `backend=ts-local` and a higher epoch. Go query cursors remain five-minute HMAC tokens; canary
    tokens use v2 and bind the routing epoch, while v1, expired, or cross-epoch tokens return explicit
    mismatch/expired errors without translation. Unselected scenarios remain TypeScript-authoritative.

@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-08-01
+updated: 2026-08-02
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -221,6 +221,10 @@ GS3-B adds a second, default-off route that is authoritative only for an exact p
 - selected Go requests never open the TypeScript local snapshot. Timeout, network, HTTP, strict or
   canonical JSON, schema, result-bound, build, epoch, cursor, or audit failure returns an explicit
   blocked MCP result and never invokes a per-request fallback;
+- the returned snapshot `generatedAt` must pass the same read-freshness boundary as TypeScript:
+  24 hours by default, configurable only within one minute to seven days, with at most five minutes
+  of future clock skew. Stale evidence returns `SOURCE_EVIDENCE_STALE`; an invalid future time is
+  rejected as an invalid canary response before a served audit can be committed;
 - unselected scenarios continue using the TypeScript local store. Rollback requires a new explicit
   `ts-local` policy with a higher routing epoch; it is not inferred from Go health;
 - ordinary query cursors retain the frozen v1 five-minute HMAC contract. Canary reads issue v2
@@ -316,8 +320,8 @@ Qoder Desktop, remote Connector, release, live, or production qualification.
 GS3-B keeps TypeScript as the default and unselected-scenario read authority but permits the exact
 bounded canary policy above to return Go query/explain results. A hosted cross-language gate starts
 the real Go handler and exercises query, explanation, v2 cursor continuation, v1 cursor rejection,
-build-drift rejection, and the explicit higher-epoch TypeScript rollback. GS3-C full Graph-head and
-read-authority cutover remains separate and pending.
+build-drift rejection, freshness rejection, and the explicit higher-epoch TypeScript rollback.
+GS3-C full Graph-head and read-authority cutover remains separate and pending.
 
 ## Related Documents
 

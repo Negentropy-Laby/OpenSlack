@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: product
-updated: 2026-08-01
+updated: 2026-08-02
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -320,8 +320,8 @@ The implemented local graph slice includes:
 - a strict file/stdin builder with sealed Software Delivery and Contract-to-Delivery dispatch;
 - fixture build, store readback, and official MCP SDK query/explain evidence;
 - a default-off, workspace/scenario/epoch/build-bound Go query/explain canary with explicit
-  higher-epoch TypeScript rollback, v2 epoch-bound cursors, no per-request fallback, and redacted
-  Collaboration audit;
+  higher-epoch TypeScript rollback, v2 epoch-bound cursors, the same bounded snapshot-freshness
+  gate as TypeScript, no per-request fallback, and redacted Collaboration audit;
 - a governed local rehearsal assembler that preserves `demo_fixture` business authority and calls
   the explicit sealed graph builder outside the read tools.
 

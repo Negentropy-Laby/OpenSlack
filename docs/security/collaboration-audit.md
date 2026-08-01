@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - security
 owner: security
-updated: 2026-08-01
+updated: 2026-08-02
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -61,7 +61,8 @@ expected or observed build identity, bounded latency, status or error code, and 
 fingerprint. The origin, bodies, raw cursor, graph contents, explanation payload, and evidence are
 never recorded. A selected Go read and an explicit TypeScript rollback read both require their
 corresponding audit append before the MCP result is released. If that append fails, the request is
-blocked with `GRAPH_READ_CANARY_AUDIT_FAILED`; it is never retried through another backend.
+blocked with `GRAPH_READ_CANARY_AUDIT_FAILED`; it is never retried through another backend. A stale
+Go snapshot is recorded only as blocked with `SOURCE_EVIDENCE_STALE`; no served event is committed.
 
 ## Redaction Rules
 

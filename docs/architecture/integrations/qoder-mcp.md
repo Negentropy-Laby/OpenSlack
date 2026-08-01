@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-08-01
+updated: 2026-08-02
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -113,8 +113,10 @@ The expiry must be in the future and no more than seven days from process startu
 contains at most 16 exact comma-separated scenario-instance IDs. Internal IP literals additionally
 require `--graph-read-canary-network internal`. The canonical workspace ID, epoch, scenario,
 origin, and service build are immutable for the process. Each selected request uses the fixed
-canary route; timeout, response, scope, epoch/build, cursor, or audit failure returns a blocked MCP
-result and never reads the TypeScript snapshot as a fallback.
+canary route; timeout, response, scope, epoch/build, cursor, stale snapshot, or audit failure returns
+a blocked MCP result and never reads the TypeScript snapshot as a fallback. The returned snapshot
+time is checked against the same 24-hour default freshness boundary as local TypeScript reads before
+the Go result or its served audit is released.
 
 Rollback is a new explicit policy with a higher epoch and no Go transport flags:
 

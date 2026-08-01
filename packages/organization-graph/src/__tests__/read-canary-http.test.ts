@@ -37,7 +37,7 @@ function response(value: unknown, status = 200): Response {
 }
 
 function queryEnvelope(input: GraphQueryInput) {
-  const snapshot = graphSnapshot();
+  const snapshot = { ...graphSnapshot(), generatedAt: new Date(NOW).toISOString() };
   return {
     schema: 'openslack.graph_canary_read.v1',
     operation: 'query',
@@ -51,7 +51,7 @@ function queryEnvelope(input: GraphQueryInput) {
 }
 
 function explainEnvelope(input: GraphExplainInput) {
-  const snapshot = graphSnapshot();
+  const snapshot = { ...graphSnapshot(), generatedAt: new Date(NOW).toISOString() };
   return {
     schema: 'openslack.graph_canary_read.v1',
     operation: 'explain',
@@ -84,6 +84,7 @@ describe('Organization Graph bounded read canary', () => {
       /duplicates/u,
     );
     expect(() => canary({ expiresAt: '2026-08-20T00:00:00.000Z' })).toThrow(/lifetime bound/u);
+    expect(() => canary({ maxSnapshotAgeMs: 59_999 })).toThrow(/maxSnapshotAgeMs/u);
   });
 
   it('requires an explicit higher-epoch ts-local policy for rollback', async () => {
@@ -133,7 +134,7 @@ describe('Organization Graph bounded read canary', () => {
     });
     const result = await canary({ fetch: fetchMock }).query(input);
     expect(result).toMatchObject({
-      generatedAt: graphSnapshot().generatedAt,
+      generatedAt: new Date(NOW).toISOString(),
       scenarioInstanceId: 'scenario-001',
       snapshotCursor: graphSnapshot().cursor,
       queryHash: expect.stringMatching(/^sha256:[0-9a-f]{64}$/u),
@@ -152,7 +153,7 @@ describe('Organization Graph bounded read canary', () => {
       fetch: vi.fn(async () => response(explainEnvelope(input))),
     }).explain(input);
     expect(result).toMatchObject({
-      generatedAt: graphSnapshot().generatedAt,
+      generatedAt: new Date(NOW).toISOString(),
       snapshotCursor: graphSnapshot().cursor,
       scenarioInstanceId: 'scenario-001',
       targetId: NODE_IDS.c,
@@ -184,6 +185,78 @@ describe('Organization Graph bounded read canary', () => {
         ),
       }).query(input),
     ).rejects.toMatchObject({ code: 'GRAPH_QUERY_CURSOR_MISMATCH', httpStatus: 409 });
+  });
+
+  it('preserves the TypeScript freshness gate for selected Go reads', async () => {
+    const input: GraphQueryInput = { scenarioInstanceId: 'scenario-001' };
+    await expect(
+      canary({
+        fetch: vi.fn(async () =>
+          response({
+            ...queryEnvelope(input),
+            generatedAt: new Date(NOW - 24 * 60 * 60 * 1_000 - 1).toISOString(),
+          }),
+        ),
+      }).query(input),
+    ).rejects.toMatchObject({ code: 'SOURCE_EVIDENCE_STALE' });
+    await expect(
+      canary({
+        fetch: vi.fn(async () =>
+          response({
+            ...queryEnvelope(input),
+            generatedAt: new Date(NOW + 5 * 60 * 1_000 + 1).toISOString(),
+          }),
+        ),
+      }).query(input),
+    ).rejects.toMatchObject({ code: 'GRAPH_READ_CANARY_RESPONSE_INVALID' });
+  });
+
+  it('classifies a stalled response body against the end-to-end deadline', async () => {
+    const input: GraphQueryInput = { scenarioInstanceId: 'scenario-001' };
+    const fetchMock = vi.fn(
+      async (_url: string | URL | Request, init?: RequestInit): Promise<Response> =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              init?.signal?.addEventListener(
+                'abort',
+                () => controller.error(new Error('aborted')),
+                { once: true },
+              );
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+    );
+    await expect(canary({ fetch: fetchMock, timeoutMs: 10 }).query(input)).rejects.toMatchObject({
+      code: 'GRAPH_READ_CANARY_TIMEOUT',
+    });
+  });
+
+  it('classifies noncanonical intermediary failures as bounded HTTP errors', async () => {
+    const input: GraphQueryInput = { scenarioInstanceId: 'scenario-001' };
+    await expect(
+      canary({
+        fetch: vi.fn(
+          async () =>
+            new Response('<html>bad gateway</html>', {
+              status: 502,
+              headers: { 'Content-Type': 'text/html' },
+            }),
+        ),
+      }).query(input),
+    ).rejects.toMatchObject({ code: 'GRAPH_READ_CANARY_HTTP_ERROR', httpStatus: 502 });
+    await expect(
+      canary({
+        fetch: vi.fn(
+          async () =>
+            new Response('not-json', {
+              status: 503,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+        ),
+      }).query(input),
+    ).rejects.toMatchObject({ code: 'GRAPH_READ_CANARY_HTTP_ERROR', httpStatus: 503 });
   });
 
   it('fails a selected read after policy expiry instead of silently returning to TypeScript', () => {

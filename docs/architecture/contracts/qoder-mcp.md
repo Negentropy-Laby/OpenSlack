@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-08-01
+updated: 2026-08-02
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -139,8 +139,9 @@ It requires backend, canonical workspace/tenant assertion, one to 16 scenario-in
 routing epoch, and bounded expiry. `go` also requires an exact origin and expected service build SHA;
 `ts-local` is the only rollback backend and rejects all Go transport flags. Selected Go reads use
 the fixed canary routes and return the Go projection only after strict canonical response, scope,
-epoch/build, result-bound, cursor, and durable redacted-audit validation. Any failure blocks the
-request without opening the local snapshot. Unselected scenarios remain TypeScript-authoritative.
+epoch/build, result-bound, cursor, snapshot-freshness, and durable redacted-audit validation. Stale
+Go evidence preserves the `SOURCE_EVIDENCE_STALE` blocker. Any failure blocks the request without
+opening the local snapshot. Unselected scenarios remain TypeScript-authoritative.
 Rollback is an explicit higher-epoch `ts-local` policy, never an inferred per-request fallback.
 
 The canary does not change the tool catalog, input schema, `openslack.mcp_result.v2`, Skill,

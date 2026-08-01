@@ -20,6 +20,7 @@ import {
   type WatchDeliveryQueueV2Stats,
 } from '@openslack/github';
 import {
+  GRAPH_READ_CANARY_POLICY,
   GraphStoreError,
   LocalGraphStore,
   explainGraph,
@@ -213,9 +214,9 @@ const TASK_TYPES = new Set([
   'task.released',
   'task.expired',
 ]);
-const DEFAULT_GRAPH_MAX_AGE_MS = 24 * 60 * 60 * 1_000;
-const MIN_GRAPH_MAX_AGE_MS = 60 * 1_000;
-const MAX_GRAPH_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1_000;
+const DEFAULT_GRAPH_MAX_AGE_MS = GRAPH_READ_CANARY_POLICY.defaultMaxSnapshotAgeMs;
+const MIN_GRAPH_MAX_AGE_MS = GRAPH_READ_CANARY_POLICY.minMaxSnapshotAgeMs;
+const MAX_GRAPH_MAX_AGE_MS = GRAPH_READ_CANARY_POLICY.maxMaxSnapshotAgeMs;
 const NOMINAL_LOCAL_DEMO_RESET_PORTS = new WeakMap<
   object,
   { readonly workspaceRoot: string; readonly fixtureRoot: string }
@@ -1276,7 +1277,10 @@ export function createDefaultOpenSlackReadModelPorts(
     }
     const generatedAt = Date.parse(snapshot.generatedAt);
     const now = clock().getTime();
-    if (!Number.isFinite(generatedAt) || generatedAt > now + 5 * 60 * 1_000) {
+    if (
+      !Number.isFinite(generatedAt) ||
+      generatedAt > now + GRAPH_READ_CANARY_POLICY.maxFutureSkewMs
+    ) {
       throw new Error('GRAPH_SNAPSHOT_TIME_INVALID');
     }
     if (now - generatedAt > maxGraphAgeMs) {

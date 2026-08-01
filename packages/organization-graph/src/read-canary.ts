@@ -22,6 +22,10 @@ export const GRAPH_READ_CANARY_SCHEMA = 'openslack.graph_canary_read.v1' as cons
 export const GRAPH_READ_CANARY_POLICY = Object.freeze({
   defaultTimeoutMs: 2_000,
   maxTimeoutMs: 30_000,
+  defaultMaxSnapshotAgeMs: 24 * 60 * 60 * 1_000,
+  minMaxSnapshotAgeMs: 60 * 1_000,
+  maxMaxSnapshotAgeMs: 7 * 24 * 60 * 60 * 1_000,
+  maxFutureSkewMs: 5 * 60 * 1_000,
   maxScenarioInstanceIds: 16,
   maxPolicyLifetimeMs: 7 * 24 * 60 * 60 * 1_000,
   maxEnvelopeBytes: GRAPH_HARD_LIMITS.responseBytes + 4 * 1_024,
@@ -40,6 +44,7 @@ export type GraphReadCanaryErrorCode =
   | 'GRAPH_READ_CANARY_RESPONSE_INVALID'
   | 'GRAPH_READ_CANARY_ROUTE_MISMATCH'
   | 'GRAPH_READ_CANARY_AUDIT_FAILED'
+  | 'SOURCE_EVIDENCE_STALE'
   | 'GRAPH_QUERY_CURSOR_INVALID'
   | 'GRAPH_QUERY_CURSOR_EXPIRED'
   | 'GRAPH_QUERY_CURSOR_MISMATCH';
@@ -100,6 +105,7 @@ export interface GraphReadCanaryRouterOptions {
   readonly networkMode?: GraphServiceNetworkMode;
   readonly expectedBuildSha?: string;
   readonly timeoutMs?: number;
+  readonly maxSnapshotAgeMs?: number;
   readonly fetch?: GraphReadCanaryFetch;
   readonly now?: () => number;
 }
@@ -119,6 +125,21 @@ function positiveInteger(value: number, name: string, maximum = Number.MAX_SAFE_
     fail('GRAPH_READ_CANARY_POLICY_INVALID', `${name} must be a positive safe integer.`);
   }
   return value;
+}
+
+function maxSnapshotAge(value: number | undefined): number {
+  const resolved = value ?? GRAPH_READ_CANARY_POLICY.defaultMaxSnapshotAgeMs;
+  if (
+    !Number.isSafeInteger(resolved) ||
+    resolved < GRAPH_READ_CANARY_POLICY.minMaxSnapshotAgeMs ||
+    resolved > GRAPH_READ_CANARY_POLICY.maxMaxSnapshotAgeMs
+  ) {
+    fail(
+      'GRAPH_READ_CANARY_POLICY_INVALID',
+      `maxSnapshotAgeMs must be between ${GRAPH_READ_CANARY_POLICY.minMaxSnapshotAgeMs} and ${GRAPH_READ_CANARY_POLICY.maxMaxSnapshotAgeMs}.`,
+    );
+  }
+  return resolved;
 }
 
 function boundedIdentifier(value: unknown, name: string): string {
@@ -543,6 +564,7 @@ export class GraphReadCanaryRouter implements GraphReadCanaryPort {
   private readonly origin: string | undefined;
   private readonly expectedBuildSha: string | undefined;
   private readonly timeoutMs: number;
+  private readonly maxSnapshotAgeMs: number;
   private readonly fetch: GraphReadCanaryFetch;
   private readonly now: () => number;
 
@@ -598,6 +620,7 @@ export class GraphReadCanaryRouter implements GraphReadCanaryPort {
       'timeoutMs',
       GRAPH_READ_CANARY_POLICY.maxTimeoutMs,
     );
+    this.maxSnapshotAgeMs = maxSnapshotAge(options.maxSnapshotAgeMs);
     this.fetch = options.fetch ?? fetch;
     if (options.backend === 'go') {
       if (
@@ -668,13 +691,13 @@ export class GraphReadCanaryRouter implements GraphReadCanaryPort {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => {
-        controller.abort();
         reject(
           new GraphReadCanaryError(
             'GRAPH_READ_CANARY_TIMEOUT',
             'The Go graph read authority exceeded its deadline.',
           ),
         );
+        controller.abort();
       }, this.timeoutMs);
     });
     try {
@@ -696,10 +719,42 @@ export class GraphReadCanaryRouter implements GraphReadCanaryPort {
         timeout,
       ]);
       const contentType = response.headers.get('Content-Type');
-      if (
-        contentType === null ||
-        !/^application\/json(?:\s*;\s*charset=utf-8)?$/iu.test(contentType.trim())
-      ) {
+      const hasJsonContentType =
+        contentType !== null &&
+        /^application\/json(?:\s*;\s*charset=utf-8)?$/iu.test(contentType.trim());
+      if (response.status !== 200) {
+        if (!hasJsonContentType) {
+          await cancelResponseBody(response);
+          fail(
+            'GRAPH_READ_CANARY_HTTP_ERROR',
+            'The Go graph read authority returned a bounded HTTP failure.',
+            response.status,
+          );
+        }
+        let errorBody: StrictJsonObject;
+        try {
+          errorBody = parseCanonicalObject(
+            await Promise.race([
+              readBoundedBody(response, GRAPH_READ_CANARY_POLICY.maxEnvelopeBytes),
+              timeout,
+            ]),
+          );
+        } catch (error) {
+          if (
+            controller.signal.aborted ||
+            (error instanceof GraphReadCanaryError && error.code === 'GRAPH_READ_CANARY_TIMEOUT')
+          ) {
+            fail('GRAPH_READ_CANARY_TIMEOUT', 'The Go graph read authority exceeded its deadline.');
+          }
+          fail(
+            'GRAPH_READ_CANARY_HTTP_ERROR',
+            'The Go graph read authority returned a bounded HTTP failure.',
+            response.status,
+          );
+        }
+        classifyErrorResponse(response, errorBody);
+      }
+      if (!hasJsonContentType) {
         await cancelResponseBody(response);
         fail(
           'GRAPH_READ_CANARY_RESPONSE_INVALID',
@@ -708,9 +763,11 @@ export class GraphReadCanaryRouter implements GraphReadCanaryPort {
         );
       }
       const body = parseCanonicalObject(
-        await readBoundedBody(response, GRAPH_READ_CANARY_POLICY.maxEnvelopeBytes),
+        await Promise.race([
+          readBoundedBody(response, GRAPH_READ_CANARY_POLICY.maxEnvelopeBytes),
+          timeout,
+        ]),
       );
-      if (response.status !== 200) classifyErrorResponse(response, body);
       const envelope = exactObject(body, [
         'schema',
         'operation',
@@ -734,6 +791,7 @@ export class GraphReadCanaryRouter implements GraphReadCanaryPort {
         );
       }
       const generatedAt = strictDateTime(envelope.generatedAt, 'generatedAt');
+      this.assertSnapshotFresh(generatedAt);
       const snapshotCursor = boundedIdentifier(envelope.snapshotCursor, 'snapshotCursor');
       if (operation === 'query') {
         return Object.freeze({
@@ -752,6 +810,12 @@ export class GraphReadCanaryRouter implements GraphReadCanaryPort {
         ...validateExplanation(envelope.result, input as GraphExplainInput, generatedAt),
       });
     } catch (error) {
+      if (controller.signal.aborted) {
+        throw new GraphReadCanaryError(
+          'GRAPH_READ_CANARY_TIMEOUT',
+          'The Go graph read authority exceeded its deadline.',
+        );
+      }
       if (error instanceof GraphReadCanaryError) throw error;
       throw new GraphReadCanaryError(
         'GRAPH_READ_CANARY_NETWORK_ERROR',
@@ -759,6 +823,20 @@ export class GraphReadCanaryRouter implements GraphReadCanaryPort {
       );
     } finally {
       if (timer !== undefined) clearTimeout(timer);
+    }
+  }
+
+  private assertSnapshotFresh(generatedAt: string): void {
+    const timestamp = Date.parse(generatedAt);
+    const now = this.safeNow();
+    if (timestamp > now + GRAPH_READ_CANARY_POLICY.maxFutureSkewMs) {
+      fail(
+        'GRAPH_READ_CANARY_RESPONSE_INVALID',
+        'The Go graph read authority returned an invalid future snapshot time.',
+      );
+    }
+    if (now - timestamp > this.maxSnapshotAgeMs) {
+      fail('SOURCE_EVIDENCE_STALE', 'The Go graph read authority returned stale source evidence.');
     }
   }
 

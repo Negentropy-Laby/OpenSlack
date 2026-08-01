@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - users
 owner: project-governance
-updated: 2026-08-01
+updated: 2026-08-02
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -885,8 +885,10 @@ loopback origin and one expected 64-lowercase-hex service build SHA; use
 
 Selected Go query/explain requests never open the local TypeScript snapshot. A timeout, network or
 HTTP error, redirect, non-canonical response, scope/result-bound mismatch, build/epoch drift,
-expired policy, invalid cursor, or failed durable redacted audit returns a blocked MCP result; none
-causes per-request fallback. Unselected scenarios remain TypeScript-authoritative. Canary query
+expired policy, stale snapshot, invalid cursor, or failed durable redacted audit returns a blocked
+MCP result; none causes per-request fallback. The Go snapshot time must pass the same 24-hour default
+freshness gate as TypeScript before the result or served audit is released; stale evidence reports
+`SOURCE_EVIDENCE_STALE`. Unselected scenarios remain TypeScript-authoritative. Canary query
 cursors retain the five-minute TTL and bind routing epoch in v2: v1 and cross-epoch tokens return
 `GRAPH_QUERY_CURSOR_MISMATCH`, while expired same-epoch tokens return
 `GRAPH_QUERY_CURSOR_EXPIRED`. No cursor is translated across backends. The canary does not change
