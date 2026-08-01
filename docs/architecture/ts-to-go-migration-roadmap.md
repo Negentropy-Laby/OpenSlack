@@ -151,8 +151,21 @@ generated files fails qualification. GS2-A does not add an HTTP route, a store
 write, a Qoder path, or any user-visible read cutover; TypeScript remains the
 only calculation and local read authority.
 
-GS2-B ports Contract-to-Delivery only after GS2-A parity is stable and merged.
-No GS2 shadow may independently read GitHub, Workflow, CRM, or ERP authority.
+GS2-B follows the merged GS2-A parity gate and freezes the TypeScript
+Contract-to-Delivery composite projector as the calculation authority. Its
+closed bundle embeds the frozen Software Delivery source schema and adds the
+typed `demo_fixture` business batches, 16 deterministic randomized inputs,
+promotion boundaries, unresolved-bridge degradation, ordering, exact
+per-family bounds, and fail-closed errors. The pure Go shadow first validates
+and projects the nested Software Delivery source through the already-qualified
+Go package, then recomputes the composite Snapshot and compares canonical
+bytes, integrity, node and edge identities, completeness, warnings, and error
+metadata against 43 TypeScript-generated vectors.
+
+GS2-B adds no HTTP route, store writer, Scenario catalog entry, MCP routing, or
+Qoder read path. TypeScript remains the sole calculation and user-visible read
+authority. No GS2 shadow independently reads GitHub, Workflow, CRM, ERP, the
+environment, or the wall clock; every input remains composition-injected.
 
 ### GS3 — Organization Graph Read Cutover
 

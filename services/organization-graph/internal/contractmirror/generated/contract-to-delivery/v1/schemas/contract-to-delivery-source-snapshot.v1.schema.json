@@ -1,0 +1,4310 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openslack.dev/schemas/contract-to-delivery-source-snapshot.v1.schema.json",
+  "title": "OpenSlack Contract-to-Delivery Source Snapshot v1",
+  "description": "Closed structural schema for the bounded, injected composite projector source. TypeScript semantic validation remains authoritative.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "scenarioDefinitionId",
+    "scenarioInstanceId",
+    "cursor",
+    "generatedAt",
+    "projectorVersion",
+    "softwareDelivery",
+    "business"
+  ],
+  "properties": {
+    "schema": { "const": "openslack.contract_to_delivery_source_snapshot.v1" },
+    "scenarioDefinitionId": { "const": "contract-to-delivery-lite" },
+    "scenarioInstanceId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^\\S+$"
+    },
+    "cursor": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+    "generatedAt": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+    },
+    "projectorVersion": { "const": "openslack.contract_to_delivery.v1" },
+    "softwareDelivery": { "$ref": "#/$defs/softwareDelivery" },
+    "business": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["customers", "contracts", "projects", "milestones", "acceptances", "outcomes"],
+      "properties": {
+        "customers": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+              "properties": {
+                "status": { "const": "observed" },
+                "batchVersion": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\S+$"
+                },
+                "observedAt": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                },
+                "items": {
+                  "type": "array",
+                  "maxItems": 500,
+                  "items": { "$ref": "#/$defs/customerObservation" }
+                },
+                "warningCodes": {
+                  "type": "array",
+                  "minItems": 0,
+                  "maxItems": 50,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\S+$"
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+              "properties": {
+                "status": { "const": "incomplete" },
+                "batchVersion": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\S+$"
+                },
+                "observedAt": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                },
+                "items": {
+                  "type": "array",
+                  "maxItems": 500,
+                  "items": { "$ref": "#/$defs/customerObservation" }
+                },
+                "warningCodes": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 50,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\S+$"
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status", "items", "reasonCode"],
+              "properties": {
+                "status": { "const": "missing" },
+                "items": { "type": "array", "maxItems": 0 },
+                "reasonCode": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\S+$"
+                }
+              }
+            }
+          ]
+        },
+        "contracts": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+              "properties": {
+                "status": { "const": "observed" },
+                "batchVersion": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\S+$"
+                },
+                "observedAt": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                },
+                "items": {
+                  "type": "array",
+                  "maxItems": 500,
+                  "items": { "$ref": "#/$defs/contractObservation" }
+                },
+                "warningCodes": {
+                  "type": "array",
+                  "minItems": 0,
+                  "maxItems": 50,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\S+$"
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+              "properties": {
+                "status": { "const": "incomplete" },
+                "batchVersion": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\S+$"
+                },
+                "observedAt": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                },
+                "items": {
+                  "type": "array",
+                  "maxItems": 500,
+                  "items": { "$ref": "#/$defs/contractObservation" }
+                },
+                "warningCodes": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 50,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\S+$"
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status", "items", "reasonCode"],
+              "properties": {
+                "status": { "const": "missing" },
+                "items": { "type": "array", "maxItems": 0 },
+                "reasonCode": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\S+$"
+                }
+              }
+            }
+          ]
+        },
+        "projects": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+              "properties": {
+                "status": { "const": "observed" },
+                "batchVersion": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\S+$"
+                },
+                "observedAt": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                },
+                "items": {
+                  "type": "array",
+                  "maxItems": 500,
+                  "items": { "$ref": "#/$defs/projectObservation" }
+                },
+                "warningCodes": {
+                  "type": "array",
+                  "minItems": 0,
+                  "maxItems": 50,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\S+$"
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+              "properties": {
+                "status": { "const": "incomplete" },
+                "batchVersion": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\S+$"
+                },
+                "observedAt": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                },
+                "items": {
+                  "type": "array",
+                  "maxItems": 500,
+                  "items": { "$ref": "#/$defs/projectObservation" }
+                },
+                "warningCodes": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 50,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\S+$"
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status", "items", "reasonCode"],
+              "properties": {
+                "status": { "const": "missing" },
+                "items": { "type": "array", "maxItems": 0 },
+                "reasonCode": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\S+$"
+                }
+              }
+            }
+          ]
+        },
+        "milestones": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+              "properties": {
+                "status": { "const": "observed" },
+                "batchVersion": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\S+$"
+                },
+                "observedAt": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                },
+                "items": {
+                  "type": "array",
+                  "maxItems": 500,
+                  "items": { "$ref": "#/$defs/milestoneObservation" }
+                },
+                "warningCodes": {
+                  "type": "array",
+                  "minItems": 0,
+                  "maxItems": 50,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\S+$"
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+              "properties": {
+                "status": { "const": "incomplete" },
+                "batchVersion": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\S+$"
+                },
+                "observedAt": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                },
+                "items": {
+                  "type": "array",
+                  "maxItems": 500,
+                  "items": { "$ref": "#/$defs/milestoneObservation" }
+                },
+                "warningCodes": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 50,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\S+$"
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status", "items", "reasonCode"],
+              "properties": {
+                "status": { "const": "missing" },
+                "items": { "type": "array", "maxItems": 0 },
+                "reasonCode": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\S+$"
+                }
+              }
+            }
+          ]
+        },
+        "acceptances": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+              "properties": {
+                "status": { "const": "observed" },
+                "batchVersion": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\S+$"
+                },
+                "observedAt": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                },
+                "items": {
+                  "type": "array",
+                  "maxItems": 500,
+                  "items": { "$ref": "#/$defs/acceptanceObservation" }
+                },
+                "warningCodes": {
+                  "type": "array",
+                  "minItems": 0,
+                  "maxItems": 50,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\S+$"
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+              "properties": {
+                "status": { "const": "incomplete" },
+                "batchVersion": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\S+$"
+                },
+                "observedAt": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                },
+                "items": {
+                  "type": "array",
+                  "maxItems": 500,
+                  "items": { "$ref": "#/$defs/acceptanceObservation" }
+                },
+                "warningCodes": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 50,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\S+$"
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status", "items", "reasonCode"],
+              "properties": {
+                "status": { "const": "missing" },
+                "items": { "type": "array", "maxItems": 0 },
+                "reasonCode": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\S+$"
+                }
+              }
+            }
+          ]
+        },
+        "outcomes": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+              "properties": {
+                "status": { "const": "observed" },
+                "batchVersion": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\S+$"
+                },
+                "observedAt": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                },
+                "items": {
+                  "type": "array",
+                  "maxItems": 500,
+                  "items": { "$ref": "#/$defs/outcomeObservation" }
+                },
+                "warningCodes": {
+                  "type": "array",
+                  "minItems": 0,
+                  "maxItems": 50,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\S+$"
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+              "properties": {
+                "status": { "const": "incomplete" },
+                "batchVersion": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\S+$"
+                },
+                "observedAt": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                },
+                "items": {
+                  "type": "array",
+                  "maxItems": 500,
+                  "items": { "$ref": "#/$defs/outcomeObservation" }
+                },
+                "warningCodes": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 50,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\S+$"
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["status", "items", "reasonCode"],
+              "properties": {
+                "status": { "const": "missing" },
+                "items": { "type": "array", "maxItems": 0 },
+                "reasonCode": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\S+$"
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "$defs": {
+    "softwareDelivery": {
+      "title": "OpenSlack Software Delivery Source Snapshot v1",
+      "description": "Closed structural schema for the bounded, injected Software Delivery projector source. TypeScript semantic validation remains authoritative.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "scenarioDefinitionId",
+        "scenarioInstanceId",
+        "cursor",
+        "generatedAt",
+        "projectorVersion",
+        "sources"
+      ],
+      "properties": {
+        "schema": { "const": "openslack.software_delivery_source_snapshot.v1" },
+        "scenarioDefinitionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^\\S+$"
+        },
+        "scenarioInstanceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^\\S+$"
+        },
+        "cursor": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+        "generatedAt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+        },
+        "projectorVersion": { "const": "openslack.software_delivery.v1" },
+        "sources": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "repository",
+            "actors",
+            "issues",
+            "claims",
+            "worktrees",
+            "commits",
+            "pullRequests",
+            "checks",
+            "reviews",
+            "merges",
+            "workflowRuns",
+            "agentRuns",
+            "prmsReports",
+            "handoffs",
+            "decisions"
+          ],
+          "properties": {
+            "repository": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "observed" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 1,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/repositoryObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 1,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/repositoryObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 1,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/repositoryObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "reasonCode"],
+                  "properties": {
+                    "status": { "const": "missing" },
+                    "items": { "type": "array", "maxItems": 0 },
+                    "reasonCode": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    }
+                  }
+                }
+              ]
+            },
+            "actors": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "observed" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/actorObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/actorObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/actorObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "reasonCode"],
+                  "properties": {
+                    "status": { "const": "missing" },
+                    "items": { "type": "array", "maxItems": 0 },
+                    "reasonCode": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    }
+                  }
+                }
+              ]
+            },
+            "issues": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "observed" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/issueObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/issueObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/issueObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "reasonCode"],
+                  "properties": {
+                    "status": { "const": "missing" },
+                    "items": { "type": "array", "maxItems": 0 },
+                    "reasonCode": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    }
+                  }
+                }
+              ]
+            },
+            "claims": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "observed" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/claimObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/claimObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/claimObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "reasonCode"],
+                  "properties": {
+                    "status": { "const": "missing" },
+                    "items": { "type": "array", "maxItems": 0 },
+                    "reasonCode": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    }
+                  }
+                }
+              ]
+            },
+            "worktrees": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "observed" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/worktreeObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/worktreeObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/worktreeObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "reasonCode"],
+                  "properties": {
+                    "status": { "const": "missing" },
+                    "items": { "type": "array", "maxItems": 0 },
+                    "reasonCode": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    }
+                  }
+                }
+              ]
+            },
+            "commits": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "observed" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/commitObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/commitObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/commitObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "reasonCode"],
+                  "properties": {
+                    "status": { "const": "missing" },
+                    "items": { "type": "array", "maxItems": 0 },
+                    "reasonCode": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    }
+                  }
+                }
+              ]
+            },
+            "pullRequests": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "observed" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/pullRequestObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/pullRequestObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/pullRequestObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "reasonCode"],
+                  "properties": {
+                    "status": { "const": "missing" },
+                    "items": { "type": "array", "maxItems": 0 },
+                    "reasonCode": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    }
+                  }
+                }
+              ]
+            },
+            "checks": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "observed" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/checkObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/checkObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/checkObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "reasonCode"],
+                  "properties": {
+                    "status": { "const": "missing" },
+                    "items": { "type": "array", "maxItems": 0 },
+                    "reasonCode": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    }
+                  }
+                }
+              ]
+            },
+            "reviews": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "observed" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/reviewObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/reviewObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/reviewObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "reasonCode"],
+                  "properties": {
+                    "status": { "const": "missing" },
+                    "items": { "type": "array", "maxItems": 0 },
+                    "reasonCode": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    }
+                  }
+                }
+              ]
+            },
+            "merges": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "observed" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/mergeObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/mergeObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/mergeObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "reasonCode"],
+                  "properties": {
+                    "status": { "const": "missing" },
+                    "items": { "type": "array", "maxItems": 0 },
+                    "reasonCode": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    }
+                  }
+                }
+              ]
+            },
+            "workflowRuns": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "observed" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/workflowRunObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/workflowRunObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/workflowRunObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "reasonCode"],
+                  "properties": {
+                    "status": { "const": "missing" },
+                    "items": { "type": "array", "maxItems": 0 },
+                    "reasonCode": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    }
+                  }
+                }
+              ]
+            },
+            "agentRuns": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "observed" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/agentRunObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/agentRunObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/agentRunObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "reasonCode"],
+                  "properties": {
+                    "status": { "const": "missing" },
+                    "items": { "type": "array", "maxItems": 0 },
+                    "reasonCode": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    }
+                  }
+                }
+              ]
+            },
+            "prmsReports": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "observed" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/prmsReportObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/prmsReportObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/prmsReportObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "reasonCode"],
+                  "properties": {
+                    "status": { "const": "missing" },
+                    "items": { "type": "array", "maxItems": 0 },
+                    "reasonCode": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    }
+                  }
+                }
+              ]
+            },
+            "handoffs": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "observed" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/handoffObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/handoffObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/handoffObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "reasonCode"],
+                  "properties": {
+                    "status": { "const": "missing" },
+                    "items": { "type": "array", "maxItems": 0 },
+                    "reasonCode": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    }
+                  }
+                }
+              ]
+            },
+            "decisions": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "observed" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/decisionObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      }
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "batchVersion", "observedAt", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "batchVersion": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    },
+                    "observedAt": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64,
+                      "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                    },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/decisionObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "warningCodes"],
+                  "properties": {
+                    "status": { "const": "incomplete" },
+                    "items": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": { "$ref": "#/$defs/softwareDelivery/$defs/decisionObservation" }
+                    },
+                    "warningCodes": {
+                      "type": "array",
+                      "maxItems": 50,
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\S+$"
+                      },
+                      "minItems": 1
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "items", "reasonCode"],
+                  "properties": {
+                    "status": { "const": "missing" },
+                    "items": { "type": "array", "maxItems": 0 },
+                    "reasonCode": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\S+$"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "$defs": {
+        "repositoryObservation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "authorityVersion",
+            "observationKind",
+            "observedAt",
+            "sourceEventIds",
+            "evidenceRefs",
+            "repositoryId",
+            "fullName",
+            "defaultBranch"
+          ],
+          "properties": {
+            "id": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "authorityVersion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "observationKind": { "enum": ["live", "local_store", "cache", "synthetic"] },
+            "observedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "sourceEventIds": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "evidenceRefs": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "repositoryId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "fullName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "defaultBranch": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            }
+          }
+        },
+        "actorObservation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "authorityVersion",
+            "observationKind",
+            "observedAt",
+            "sourceEventIds",
+            "evidenceRefs",
+            "authorityProvider",
+            "actor"
+          ],
+          "properties": {
+            "id": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "authorityVersion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "observationKind": { "enum": ["live", "local_store", "cache", "synthetic"] },
+            "observedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "sourceEventIds": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "evidenceRefs": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "authorityProvider": { "enum": ["github", "openslack"] },
+            "actor": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "kind"],
+              "properties": {
+                "id": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+                "kind": { "enum": ["human", "agent", "system"] },
+                "displayName": { "type": "string", "minLength": 1, "maxLength": 512 }
+              }
+            }
+          }
+        },
+        "issueObservation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "authorityVersion",
+            "observationKind",
+            "observedAt",
+            "sourceEventIds",
+            "evidenceRefs",
+            "repositoryId",
+            "number",
+            "title",
+            "state",
+            "labels",
+            "assigneeIds",
+            "assigneesComplete",
+            "closureComplete",
+            "createdAt",
+            "updatedAt"
+          ],
+          "properties": {
+            "id": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "authorityVersion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "observationKind": { "enum": ["live", "local_store", "cache", "synthetic"] },
+            "observedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "sourceEventIds": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "evidenceRefs": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "repositoryId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "number": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+            "title": { "type": "string", "minLength": 1, "maxLength": 2048 },
+            "state": { "enum": ["open", "closed"] },
+            "labels": {
+              "type": "array",
+              "maxItems": 50,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "category"],
+                "properties": {
+                  "name": { "type": "string", "minLength": 1, "maxLength": 256 },
+                  "category": { "enum": ["state", "risk", "capability", "other"] }
+                }
+              }
+            },
+            "assigneeIds": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "assigneesComplete": { "type": "boolean" },
+            "closureComplete": { "type": "boolean" },
+            "createdAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "updatedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "closedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            }
+          },
+          "allOf": [
+            {
+              "if": { "properties": { "state": { "const": "open" } }, "required": ["state"] },
+              "then": { "not": { "properties": { "closedAt": true }, "required": ["closedAt"] } }
+            },
+            {
+              "if": {
+                "properties": {
+                  "state": { "const": "closed" },
+                  "closureComplete": { "const": true }
+                },
+                "required": ["state", "closureComplete"]
+              },
+              "then": { "properties": { "closedAt": true }, "required": ["closedAt"] }
+            }
+          ]
+        },
+        "claimObservation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "authorityVersion",
+            "observationKind",
+            "observedAt",
+            "sourceEventIds",
+            "evidenceRefs",
+            "issueId",
+            "claimRef",
+            "status",
+            "agentActorId",
+            "claimedAt",
+            "expiresAt"
+          ],
+          "properties": {
+            "id": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "authorityVersion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "observationKind": { "enum": ["live", "local_store", "cache", "synthetic"] },
+            "observedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "sourceEventIds": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "evidenceRefs": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "issueId": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "claimRef": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "targetSha": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "status": { "enum": ["active", "expired", "released"] },
+            "agentActorId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "claimedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "expiresAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            }
+          }
+        },
+        "worktreeObservation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "authorityVersion",
+            "observationKind",
+            "observedAt",
+            "sourceEventIds",
+            "evidenceRefs",
+            "issueId",
+            "worktreeId",
+            "branchName",
+            "status",
+            "createdAt"
+          ],
+          "properties": {
+            "id": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "authorityVersion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "observationKind": { "enum": ["live", "local_store", "cache", "synthetic"] },
+            "observedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "sourceEventIds": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "evidenceRefs": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "issueId": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "claimId": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "agentRunId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "worktreeId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "baseSha": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "branchName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "status": { "enum": ["active", "preserved", "cleaned"] },
+            "createdAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "closedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            }
+          },
+          "allOf": [
+            {
+              "if": { "properties": { "status": { "const": "cleaned" } }, "required": ["status"] },
+              "then": { "properties": { "closedAt": true }, "required": ["closedAt"] }
+            },
+            {
+              "if": { "properties": { "status": { "const": "active" } }, "required": ["status"] },
+              "then": { "not": { "properties": { "closedAt": true }, "required": ["closedAt"] } }
+            }
+          ]
+        },
+        "commitObservation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "authorityVersion",
+            "observationKind",
+            "observedAt",
+            "sourceEventIds",
+            "evidenceRefs",
+            "repositoryId",
+            "sha",
+            "issueIds",
+            "authoredAt"
+          ],
+          "properties": {
+            "id": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "authorityVersion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "observationKind": { "enum": ["live", "local_store", "cache", "synthetic"] },
+            "observedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "sourceEventIds": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "evidenceRefs": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "repositoryId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "sha": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "issueIds": {
+              "type": "array",
+              "maxItems": 100,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "worktreeId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "authoredAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            }
+          }
+        },
+        "pullRequestObservation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "authorityVersion",
+            "observationKind",
+            "observedAt",
+            "sourceEventIds",
+            "evidenceRefs",
+            "repositoryId",
+            "number",
+            "title",
+            "authorActorId",
+            "state",
+            "draft",
+            "issueIds",
+            "commitShas",
+            "openedAt",
+            "updatedAt"
+          ],
+          "properties": {
+            "id": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "authorityVersion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "observationKind": { "enum": ["live", "local_store", "cache", "synthetic"] },
+            "observedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "sourceEventIds": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "evidenceRefs": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "repositoryId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "number": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+            "title": { "type": "string", "minLength": 1, "maxLength": 2048 },
+            "authorActorId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "state": { "enum": ["open", "closed", "merged"] },
+            "draft": { "type": "boolean" },
+            "baseSha": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "headSha": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "issueIds": {
+              "type": "array",
+              "maxItems": 100,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "commitShas": {
+              "type": "array",
+              "maxItems": 100,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "openedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "updatedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            }
+          }
+        },
+        "checkObservation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "authorityVersion",
+            "observationKind",
+            "observedAt",
+            "sourceEventIds",
+            "evidenceRefs",
+            "pullRequestId",
+            "name",
+            "status",
+            "startedAt"
+          ],
+          "properties": {
+            "id": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "authorityVersion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "observationKind": { "enum": ["live", "local_store", "cache", "synthetic"] },
+            "observedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "sourceEventIds": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "evidenceRefs": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "pullRequestId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "name": { "type": "string", "minLength": 1, "maxLength": 512 },
+            "status": { "enum": ["queued", "in_progress", "completed"] },
+            "conclusion": {
+              "enum": [
+                "success",
+                "failure",
+                "neutral",
+                "cancelled",
+                "skipped",
+                "timed_out",
+                "action_required",
+                "stale",
+                "startup_failure"
+              ]
+            },
+            "headSha": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "startedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "completedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": { "status": { "const": "completed" } },
+                "required": ["status"]
+              },
+              "then": {
+                "properties": { "conclusion": true, "completedAt": true },
+                "required": ["conclusion", "completedAt"]
+              },
+              "else": {
+                "allOf": [
+                  { "not": { "properties": { "conclusion": true }, "required": ["conclusion"] } },
+                  { "not": { "properties": { "completedAt": true }, "required": ["completedAt"] } }
+                ]
+              }
+            }
+          ]
+        },
+        "reviewObservation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "authorityVersion",
+            "observationKind",
+            "observedAt",
+            "sourceEventIds",
+            "evidenceRefs",
+            "pullRequestId",
+            "actorId",
+            "actorKind",
+            "state",
+            "submittedAt"
+          ],
+          "properties": {
+            "id": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "authorityVersion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "observationKind": { "enum": ["live", "local_store", "cache", "synthetic"] },
+            "observedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "sourceEventIds": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "evidenceRefs": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "pullRequestId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "actorId": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "actorKind": { "enum": ["human", "agent", "system"] },
+            "state": { "enum": ["APPROVED", "CHANGES_REQUESTED", "COMMENTED", "DISMISSED"] },
+            "commitOid": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "submittedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            }
+          }
+        },
+        "mergeObservation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "authorityVersion",
+            "observationKind",
+            "observedAt",
+            "sourceEventIds",
+            "evidenceRefs",
+            "pullRequestId",
+            "actorId",
+            "mergedAt"
+          ],
+          "properties": {
+            "id": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "authorityVersion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "observationKind": { "enum": ["live", "local_store", "cache", "synthetic"] },
+            "observedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "sourceEventIds": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "evidenceRefs": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "pullRequestId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "headSha": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "mergeCommitSha": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "actorId": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "mergedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            }
+          }
+        },
+        "workflowRunObservation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "authorityVersion",
+            "observationKind",
+            "observedAt",
+            "sourceEventIds",
+            "evidenceRefs",
+            "workflowId",
+            "status",
+            "issueIds",
+            "pullRequestIds",
+            "startedAt"
+          ],
+          "properties": {
+            "id": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "authorityVersion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "observationKind": { "enum": ["live", "local_store", "cache", "synthetic"] },
+            "observedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "sourceEventIds": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "evidenceRefs": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "workflowId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "status": {
+              "enum": [
+                "created",
+                "previewed",
+                "confirmed",
+                "pending",
+                "running",
+                "paused",
+                "paused_waiting_approval",
+                "resuming",
+                "completed",
+                "failed",
+                "cancelled"
+              ]
+            },
+            "issueIds": {
+              "type": "array",
+              "maxItems": 100,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "pullRequestIds": {
+              "type": "array",
+              "maxItems": 100,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "startedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "completedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": { "status": { "enum": ["completed", "failed", "cancelled"] } },
+                "required": ["status"]
+              },
+              "then": { "properties": { "completedAt": true }, "required": ["completedAt"] },
+              "else": {
+                "not": { "properties": { "completedAt": true }, "required": ["completedAt"] }
+              }
+            }
+          ]
+        },
+        "agentRunObservation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "authorityVersion",
+            "observationKind",
+            "observedAt",
+            "sourceEventIds",
+            "evidenceRefs",
+            "agentActorId",
+            "status",
+            "startedAt"
+          ],
+          "properties": {
+            "id": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "authorityVersion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "observationKind": { "enum": ["live", "local_store", "cache", "synthetic"] },
+            "observedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "sourceEventIds": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "evidenceRefs": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "workflowRunId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "agentActorId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "status": {
+              "enum": ["pending", "running", "paused", "completed", "failed", "cancelled"]
+            },
+            "worktreeId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "startedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "completedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": { "status": { "enum": ["completed", "failed", "cancelled"] } },
+                "required": ["status"]
+              },
+              "then": { "properties": { "completedAt": true }, "required": ["completedAt"] },
+              "else": {
+                "not": { "properties": { "completedAt": true }, "required": ["completedAt"] }
+              }
+            }
+          ]
+        },
+        "prmsReportObservation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "authorityVersion",
+            "observationKind",
+            "observedAt",
+            "sourceEventIds",
+            "evidenceRefs",
+            "pullRequestId",
+            "status",
+            "blockerCount"
+          ],
+          "properties": {
+            "id": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "authorityVersion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "observationKind": { "enum": ["live", "local_store", "cache", "synthetic"] },
+            "observedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "sourceEventIds": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "evidenceRefs": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "pullRequestId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "baseSha": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "headSha": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "status": { "enum": ["ready", "blocked", "needs_human_approval", "failed"] },
+            "blockerCount": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 }
+          },
+          "allOf": [
+            {
+              "if": { "properties": { "status": { "const": "ready" } }, "required": ["status"] },
+              "then": { "properties": { "blockerCount": { "const": 0 } } }
+            }
+          ]
+        },
+        "handoffObservation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "authorityVersion",
+            "observationKind",
+            "observedAt",
+            "sourceEventIds",
+            "evidenceRefs",
+            "status",
+            "fromActorId",
+            "toActorId",
+            "createdAt"
+          ],
+          "properties": {
+            "id": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "authorityVersion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "observationKind": { "enum": ["live", "local_store", "cache", "synthetic"] },
+            "observedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "sourceEventIds": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "evidenceRefs": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "status": { "enum": ["open", "accepted", "closed"] },
+            "fromActorId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "toActorId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "issueId": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "pullRequestId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "createdAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "closedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            }
+          },
+          "allOf": [
+            {
+              "if": { "properties": { "status": { "const": "closed" } }, "required": ["status"] },
+              "then": { "properties": { "closedAt": true }, "required": ["closedAt"] },
+              "else": { "not": { "properties": { "closedAt": true }, "required": ["closedAt"] } }
+            }
+          ]
+        },
+        "decisionObservation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "authorityVersion",
+            "observationKind",
+            "observedAt",
+            "sourceEventIds",
+            "evidenceRefs",
+            "topic",
+            "status",
+            "decidedByActorId",
+            "createdAt"
+          ],
+          "properties": {
+            "id": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "authorityVersion": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "observationKind": { "enum": ["live", "local_store", "cache", "synthetic"] },
+            "observedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "sourceEventIds": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "evidenceRefs": {
+              "type": "array",
+              "maxItems": 50,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+            },
+            "topic": { "type": "string", "minLength": 1, "maxLength": 2048 },
+            "status": { "enum": ["active", "superseded"] },
+            "decidedByActorId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "issueId": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+            "pullRequestId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "workflowRunId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048,
+              "pattern": "^\\S+$"
+            },
+            "createdAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            },
+            "supersededAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": { "status": { "const": "superseded" } },
+                "required": ["status"]
+              },
+              "then": { "properties": { "supersededAt": true }, "required": ["supersededAt"] },
+              "else": {
+                "not": { "properties": { "supersededAt": true }, "required": ["supersededAt"] }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "customerObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "status", "authorityRef", "sourceEventIds", "evidenceRefs"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^\\S+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "status": { "enum": ["active", "planned", "completed", "accepted", "realized", "pending"] },
+        "authorityRef": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provider", "objectType", "objectId", "version", "observedAt"],
+          "properties": {
+            "provider": {
+              "enum": ["github", "openslack", "demo_fixture", "dingtalk", "crm", "erp", "hr"]
+            },
+            "objectType": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^\\S+$"
+            },
+            "objectId": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^\\S+$" },
+            "version": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^\\S+$" },
+            "observedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            }
+          }
+        },
+        "sourceEventIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+        }
+      }
+    },
+    "contractObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "status",
+        "authorityRef",
+        "sourceEventIds",
+        "evidenceRefs",
+        "customerId",
+        "deliverable"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^\\S+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "status": { "enum": ["active", "planned", "completed", "accepted", "realized", "pending"] },
+        "authorityRef": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provider", "objectType", "objectId", "version", "observedAt"],
+          "properties": {
+            "provider": {
+              "enum": ["github", "openslack", "demo_fixture", "dingtalk", "crm", "erp", "hr"]
+            },
+            "objectType": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^\\S+$"
+            },
+            "objectId": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^\\S+$" },
+            "version": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^\\S+$" },
+            "observedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            }
+          }
+        },
+        "sourceEventIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+        },
+        "customerId": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+        "deliverable": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetType", "authorityRef"],
+          "properties": {
+            "targetType": { "const": "reviewable_deliverable" },
+            "authorityRef": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["provider", "objectType", "objectId", "version", "observedAt"],
+              "properties": {
+                "provider": {
+                  "enum": ["github", "openslack", "demo_fixture", "dingtalk", "crm", "erp", "hr"]
+                },
+                "objectType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^\\S+$"
+                },
+                "objectId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^\\S+$"
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^\\S+$"
+                },
+                "observedAt": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "projectObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "status",
+        "authorityRef",
+        "sourceEventIds",
+        "evidenceRefs",
+        "contractId",
+        "workItem"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^\\S+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "status": { "enum": ["active", "planned", "completed", "accepted", "realized", "pending"] },
+        "authorityRef": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provider", "objectType", "objectId", "version", "observedAt"],
+          "properties": {
+            "provider": {
+              "enum": ["github", "openslack", "demo_fixture", "dingtalk", "crm", "erp", "hr"]
+            },
+            "objectType": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^\\S+$"
+            },
+            "objectId": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^\\S+$" },
+            "version": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^\\S+$" },
+            "observedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            }
+          }
+        },
+        "sourceEventIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+        },
+        "contractId": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+        "workItem": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetType", "authorityRef"],
+          "properties": {
+            "targetType": { "const": "core.work_item" },
+            "authorityRef": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["provider", "objectType", "objectId", "version", "observedAt"],
+              "properties": {
+                "provider": {
+                  "enum": ["github", "openslack", "demo_fixture", "dingtalk", "crm", "erp", "hr"]
+                },
+                "objectType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^\\S+$"
+                },
+                "objectId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^\\S+$"
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^\\S+$"
+                },
+                "observedAt": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "milestoneObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "status",
+        "authorityRef",
+        "sourceEventIds",
+        "evidenceRefs",
+        "projectId",
+        "workItem"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^\\S+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "status": { "enum": ["active", "planned", "completed", "accepted", "realized", "pending"] },
+        "authorityRef": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provider", "objectType", "objectId", "version", "observedAt"],
+          "properties": {
+            "provider": {
+              "enum": ["github", "openslack", "demo_fixture", "dingtalk", "crm", "erp", "hr"]
+            },
+            "objectType": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^\\S+$"
+            },
+            "objectId": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^\\S+$" },
+            "version": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^\\S+$" },
+            "observedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            }
+          }
+        },
+        "sourceEventIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+        },
+        "projectId": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" },
+        "workItem": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetType", "authorityRef"],
+          "properties": {
+            "targetType": { "const": "core.work_item" },
+            "authorityRef": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["provider", "objectType", "objectId", "version", "observedAt"],
+              "properties": {
+                "provider": {
+                  "enum": ["github", "openslack", "demo_fixture", "dingtalk", "crm", "erp", "hr"]
+                },
+                "objectType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^\\S+$"
+                },
+                "objectId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^\\S+$"
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^\\S+$"
+                },
+                "observedAt": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "acceptanceObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "status",
+        "authorityRef",
+        "sourceEventIds",
+        "evidenceRefs",
+        "deliverable",
+        "humanDecision",
+        "acceptedTransition"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^\\S+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "status": { "enum": ["active", "planned", "completed", "accepted", "realized", "pending"] },
+        "authorityRef": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provider", "objectType", "objectId", "version", "observedAt"],
+          "properties": {
+            "provider": {
+              "enum": ["github", "openslack", "demo_fixture", "dingtalk", "crm", "erp", "hr"]
+            },
+            "objectType": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^\\S+$"
+            },
+            "objectId": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^\\S+$" },
+            "version": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^\\S+$" },
+            "observedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            }
+          }
+        },
+        "sourceEventIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+        },
+        "deliverable": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetType", "authorityRef"],
+          "properties": {
+            "targetType": { "const": "reviewable_deliverable" },
+            "authorityRef": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["provider", "objectType", "objectId", "version", "observedAt"],
+              "properties": {
+                "provider": {
+                  "enum": ["github", "openslack", "demo_fixture", "dingtalk", "crm", "erp", "hr"]
+                },
+                "objectType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^\\S+$"
+                },
+                "objectId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^\\S+$"
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^\\S+$"
+                },
+                "observedAt": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                }
+              }
+            }
+          }
+        },
+        "humanDecision": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetType", "authorityRef"],
+          "properties": {
+            "targetType": { "const": "human_decision" },
+            "authorityRef": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["provider", "objectType", "objectId", "version", "observedAt"],
+              "properties": {
+                "provider": {
+                  "enum": ["github", "openslack", "demo_fixture", "dingtalk", "crm", "erp", "hr"]
+                },
+                "objectType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^\\S+$"
+                },
+                "objectId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^\\S+$"
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^\\S+$"
+                },
+                "observedAt": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                }
+              }
+            }
+          }
+        },
+        "acceptedTransition": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetType", "authorityRef"],
+          "properties": {
+            "targetType": { "const": "accepted_transition" },
+            "authorityRef": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["provider", "objectType", "objectId", "version", "observedAt"],
+              "properties": {
+                "provider": {
+                  "enum": ["github", "openslack", "demo_fixture", "dingtalk", "crm", "erp", "hr"]
+                },
+                "objectType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^\\S+$"
+                },
+                "objectId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^\\S+$"
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^\\S+$"
+                },
+                "observedAt": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "outcomeObservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "title",
+        "status",
+        "authorityRef",
+        "sourceEventIds",
+        "evidenceRefs",
+        "acceptanceId",
+        "workItem",
+        "softwareOutcome"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^\\S+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 2048 },
+        "status": { "enum": ["active", "planned", "completed", "accepted", "realized", "pending"] },
+        "authorityRef": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["provider", "objectType", "objectId", "version", "observedAt"],
+          "properties": {
+            "provider": {
+              "enum": ["github", "openslack", "demo_fixture", "dingtalk", "crm", "erp", "hr"]
+            },
+            "objectType": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^\\S+$"
+            },
+            "objectId": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^\\S+$" },
+            "version": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^\\S+$" },
+            "observedAt": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+            }
+          }
+        },
+        "sourceEventIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 2048, "pattern": "^\\S+$" }
+        },
+        "acceptanceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048,
+          "pattern": "^\\S+$"
+        },
+        "workItem": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetType", "authorityRef"],
+          "properties": {
+            "targetType": { "const": "core.work_item" },
+            "authorityRef": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["provider", "objectType", "objectId", "version", "observedAt"],
+              "properties": {
+                "provider": {
+                  "enum": ["github", "openslack", "demo_fixture", "dingtalk", "crm", "erp", "hr"]
+                },
+                "objectType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^\\S+$"
+                },
+                "objectId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^\\S+$"
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^\\S+$"
+                },
+                "observedAt": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                }
+              }
+            }
+          }
+        },
+        "softwareOutcome": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["targetType", "authorityRef"],
+          "properties": {
+            "targetType": { "const": "outcome" },
+            "authorityRef": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["provider", "objectType", "objectId", "version", "observedAt"],
+              "properties": {
+                "provider": {
+                  "enum": ["github", "openslack", "demo_fixture", "dingtalk", "crm", "erp", "hr"]
+                },
+                "objectType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^\\S+$"
+                },
+                "objectId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^\\S+$"
+                },
+                "version": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^\\S+$"
+                },
+                "observedAt": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64,
+                  "pattern": "^(?:[0-9]{4})-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12][0-9]|3[01])T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

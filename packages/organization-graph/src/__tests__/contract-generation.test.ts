@@ -32,10 +32,29 @@ const softwareDeliveryHistoricalFixturePath = resolve(
   repositoryRoot,
   'packages/organization-graph/src/__tests__/fixtures/software-delivery-source.json',
 );
-// Full-suite CI runs hundreds of files concurrently. These contract freeze cases
-// launch generator processes and/or read large generated artifacts, and have
-// exceeded 30 seconds under that measured load; keep the larger budget scoped here.
-const CONTRACT_FREEZE_TIMEOUT_MS = 60_000;
+const contractToDeliveryContractRoot = resolve(
+  repositoryRoot,
+  'packages/organization-graph/contracts/contract-to-delivery/v1',
+);
+const contractToDeliverySourceMirrorRoot = resolve(
+  repositoryRoot,
+  'packages/organization-graph/src/generated/contracts/contract-to-delivery/v1',
+);
+const contractToDeliveryServiceMirrorRoot = resolve(
+  repositoryRoot,
+  'services/organization-graph/internal/contractmirror/generated/contract-to-delivery/v1',
+);
+const contractToDeliveryFixturePath = resolve(
+  repositoryRoot,
+  'packages/organization-graph/src/fixtures/contract-to-delivery-source.json',
+);
+// Full-suite CI runs hundreds of files concurrently. Keep the measured budgets
+// local to each workload so the generator has enough headroom without delaying
+// hung-test detection for the read-only freeze checks.
+const CONTRACT_GENERATION_TIMEOUT_MS = 120_000;
+const SOFTWARE_DELIVERY_FREEZE_TIMEOUT_MS = 60_000;
+const CONTRACT_TO_DELIVERY_FREEZE_TIMEOUT_MS = 90_000;
+const CONTRACT_CLEANUP_TIMEOUT_MS = 30_000;
 const temporaryRoots: string[] = [];
 
 interface ContractArtifact {
@@ -86,11 +105,14 @@ interface SoftwareDeliveryVectors {
   readonly cases: readonly ProjectorVector[];
 }
 
+type ContractToDeliveryManifest = SoftwareDeliveryManifest;
+type ContractToDeliveryVectors = SoftwareDeliveryVectors;
+
 afterEach(async () => {
   await Promise.all(
     temporaryRoots.splice(0).map((path) => rm(path, { recursive: true, force: true })),
   );
-});
+}, CONTRACT_CLEANUP_TIMEOUT_MS);
 
 function runGenerator(mode: 'generate' | '--check', outputRoot?: string) {
   const result = spawnSync('bun', ['run', 'graph:golden', '--', mode], {
@@ -282,104 +304,112 @@ describe('Organization Graph generated contract freeze', () => {
     }
   });
 
-  it('supports deterministic generate/check modes and rejects one stale byte', async () => {
-    const outputRoot = await mkdtemp(resolve(tmpdir(), 'openslack-graph-contracts-'));
-    temporaryRoots.push(outputRoot);
+  it(
+    'supports deterministic generate/check modes and rejects one stale byte',
+    async () => {
+      const outputRoot = await mkdtemp(resolve(tmpdir(), 'openslack-graph-contracts-'));
+      temporaryRoots.push(outputRoot);
 
-    const generated = runGenerator('generate', outputRoot);
-    expect(generated.status, generatorDiagnostic(generated)).toBe(0);
-    const checked = runGenerator('--check', outputRoot);
-    expect(checked.status, checked.stderr).toBe(0);
-    expect(checked.stdout).toContain('15 generated files');
+      const generated = runGenerator('generate', outputRoot);
+      expect(generated.status, generatorDiagnostic(generated)).toBe(0);
+      const checked = runGenerator('--check', outputRoot);
+      expect(checked.status, checked.stderr).toBe(0);
+      expect(checked.stdout).toContain('22 generated files');
 
-    const manifestPath = resolve(
-      outputRoot,
-      'services/organization-graph/internal/contractmirror/generated/software-delivery/v1/manifest.json',
-    );
-    await writeFile(manifestPath, 'stale\n', 'utf8');
-    const stale = runGenerator('--check', outputRoot);
-    expect(stale.status).toBe(1);
-    expect(`${stale.stdout}\n${stale.stderr}`).toContain('manifest.json (stale)');
-
-    expect(runGenerator('generate', outputRoot).status).toBe(0);
-    const extraPath = resolve(
-      outputRoot,
-      'services/organization-graph/internal/contractmirror/generated/v1/extra.json',
-    );
-    await writeFile(extraPath, '{}\n', 'utf8');
-    const extra = runGenerator('--check', outputRoot);
-    expect(extra.status).toBe(1);
-    expect(`${extra.stdout}\n${extra.stderr}`).toContain('extra.json (unexpected file)');
-    await rm(extraPath);
-
-    const symlinkPath = resolve(
-      outputRoot,
-      'services/organization-graph/internal/contractmirror/generated/v1/linked.json',
-    );
-    if (await tryCreateSymlink('manifest.json', symlinkPath)) {
-      const linked = runGenerator('--check', outputRoot);
-      expect(linked.status).toBe(1);
-      expect(`${linked.stdout}\n${linked.stderr}`).toContain('linked.json (symlink forbidden)');
-      const linkedWrite = runGenerator('generate', outputRoot);
-      expect(linkedWrite.status).toBe(1);
-      expect(`${linkedWrite.stdout}\n${linkedWrite.stderr}`).toContain(
-        'Refusing to write unsafe Organization Graph generated trees',
+      const manifestPath = resolve(
+        outputRoot,
+        'services/organization-graph/internal/contractmirror/generated/software-delivery/v1/manifest.json',
       );
-      await rm(symlinkPath);
-    }
+      await writeFile(manifestPath, 'stale\n', 'utf8');
+      const stale = runGenerator('--check', outputRoot);
+      expect(stale.status).toBe(1);
+      expect(`${stale.stdout}\n${stale.stderr}`).toContain('manifest.json (stale)');
 
-    expect(runGenerator('generate', outputRoot).status).toBe(0);
-    const authoritativeManifestPath = resolve(
-      outputRoot,
-      'packages/organization-graph/contracts/v1/manifest.json',
-    );
-    await rm(authoritativeManifestPath);
-    if (await tryCreateSymlink('golden-vectors.json', authoritativeManifestPath)) {
-      const authoritativeLinked = runGenerator('--check', outputRoot);
-      expect(authoritativeLinked.status).toBe(1);
-      expect(`${authoritativeLinked.stdout}\n${authoritativeLinked.stderr}`).toContain(
-        'packages/organization-graph/contracts/v1/manifest.json (symlink forbidden)',
+      expect(runGenerator('generate', outputRoot).status).toBe(0);
+      const extraPath = resolve(
+        outputRoot,
+        'services/organization-graph/internal/contractmirror/generated/v1/extra.json',
       );
-      const authoritativeLinkedWrite = runGenerator('generate', outputRoot);
-      expect(authoritativeLinkedWrite.status).toBe(1);
-      expect(`${authoritativeLinkedWrite.stdout}\n${authoritativeLinkedWrite.stderr}`).toContain(
-        'Refusing to write unsafe Organization Graph generated trees',
-      );
-    }
-  }, CONTRACT_FREEZE_TIMEOUT_MS);
+      await writeFile(extraPath, '{}\n', 'utf8');
+      const extra = runGenerator('--check', outputRoot);
+      expect(extra.status).toBe(1);
+      expect(`${extra.stdout}\n${extra.stderr}`).toContain('extra.json (unexpected file)');
+      await rm(extraPath);
 
-  it('freezes Software Delivery authority, mirrors, and manifest hashes exactly', async () => {
-    const schemaPath = 'schemas/software-delivery-source-snapshot.v1.schema.json';
-    const authoritySchema = await readFile(resolve(softwareDeliveryContractRoot, schemaPath));
-    expect(await readFile(resolve(softwareDeliverySourceMirrorRoot, schemaPath))).toEqual(
-      authoritySchema,
-    );
-    expect(await readFile(resolve(softwareDeliveryServiceMirrorRoot, schemaPath))).toEqual(
-      authoritySchema,
-    );
-
-    for (const name of ['manifest.json', 'projector-golden-vectors.json']) {
-      expect(await readFile(resolve(softwareDeliveryServiceMirrorRoot, name))).toEqual(
-        await readFile(resolve(softwareDeliveryContractRoot, name)),
+      const symlinkPath = resolve(
+        outputRoot,
+        'services/organization-graph/internal/contractmirror/generated/v1/linked.json',
       );
-    }
+      if (await tryCreateSymlink('manifest.json', symlinkPath)) {
+        const linked = runGenerator('--check', outputRoot);
+        expect(linked.status).toBe(1);
+        expect(`${linked.stdout}\n${linked.stderr}`).toContain('linked.json (symlink forbidden)');
+        const linkedWrite = runGenerator('generate', outputRoot);
+        expect(linkedWrite.status).toBe(1);
+        expect(`${linkedWrite.stdout}\n${linkedWrite.stderr}`).toContain(
+          'Refusing to write unsafe Organization Graph generated trees',
+        );
+        await rm(symlinkPath);
+      }
 
-    const manifest = JSON.parse(
-      await readFile(resolve(softwareDeliveryContractRoot, 'manifest.json'), 'utf8'),
-    ) as SoftwareDeliveryManifest;
-    expect(manifest).toMatchObject({
-      schema: 'openslack.software_delivery_projector_contract_manifest.v1',
-      authority: 'typescript',
-      sourceSchema: 'openslack.software_delivery_source_snapshot.v1',
-      projectorId: 'openslack.software_delivery.v1',
-    });
-    for (const artifact of Object.values(manifest.artifacts)) {
-      expect(artifact.sha256).toMatch(/^[0-9a-f]{64}$/);
-      expect(sha256(await readFile(resolve(softwareDeliveryContractRoot, artifact.path)))).toBe(
-        artifact.sha256,
+      expect(runGenerator('generate', outputRoot).status).toBe(0);
+      const authoritativeManifestPath = resolve(
+        outputRoot,
+        'packages/organization-graph/contracts/v1/manifest.json',
       );
-    }
-  }, CONTRACT_FREEZE_TIMEOUT_MS);
+      await rm(authoritativeManifestPath);
+      if (await tryCreateSymlink('golden-vectors.json', authoritativeManifestPath)) {
+        const authoritativeLinked = runGenerator('--check', outputRoot);
+        expect(authoritativeLinked.status).toBe(1);
+        expect(`${authoritativeLinked.stdout}\n${authoritativeLinked.stderr}`).toContain(
+          'packages/organization-graph/contracts/v1/manifest.json (symlink forbidden)',
+        );
+        const authoritativeLinkedWrite = runGenerator('generate', outputRoot);
+        expect(authoritativeLinkedWrite.status).toBe(1);
+        expect(`${authoritativeLinkedWrite.stdout}\n${authoritativeLinkedWrite.stderr}`).toContain(
+          'Refusing to write unsafe Organization Graph generated trees',
+        );
+      }
+    },
+    CONTRACT_GENERATION_TIMEOUT_MS,
+  );
+
+  it(
+    'freezes Software Delivery authority, mirrors, and manifest hashes exactly',
+    async () => {
+      const schemaPath = 'schemas/software-delivery-source-snapshot.v1.schema.json';
+      const authoritySchema = await readFile(resolve(softwareDeliveryContractRoot, schemaPath));
+      expect(await readFile(resolve(softwareDeliverySourceMirrorRoot, schemaPath))).toEqual(
+        authoritySchema,
+      );
+      expect(await readFile(resolve(softwareDeliveryServiceMirrorRoot, schemaPath))).toEqual(
+        authoritySchema,
+      );
+
+      for (const name of ['manifest.json', 'projector-golden-vectors.json']) {
+        expect(await readFile(resolve(softwareDeliveryServiceMirrorRoot, name))).toEqual(
+          await readFile(resolve(softwareDeliveryContractRoot, name)),
+        );
+      }
+
+      const manifest = JSON.parse(
+        await readFile(resolve(softwareDeliveryContractRoot, 'manifest.json'), 'utf8'),
+      ) as SoftwareDeliveryManifest;
+      expect(manifest).toMatchObject({
+        schema: 'openslack.software_delivery_projector_contract_manifest.v1',
+        authority: 'typescript',
+        sourceSchema: 'openslack.software_delivery_source_snapshot.v1',
+        projectorId: 'openslack.software_delivery.v1',
+      });
+      for (const artifact of Object.values(manifest.artifacts)) {
+        expect(artifact.sha256).toMatch(/^[0-9a-f]{64}$/);
+        expect(sha256(await readFile(resolve(softwareDeliveryContractRoot, artifact.path)))).toBe(
+          artifact.sha256,
+        );
+      }
+    },
+    SOFTWARE_DELIVERY_FREEZE_TIMEOUT_MS,
+  );
 
   it('keeps Software Delivery vector schema-validity classifications aligned with Ajv 2020', async () => {
     const schema = JSON.parse(
@@ -482,4 +512,117 @@ describe('Organization Graph generated contract freeze', () => {
       );
     }
   }, 30_000);
+
+  it(
+    'freezes Contract-to-Delivery authority, mirrors, and manifest hashes exactly',
+    async () => {
+      const schemaPath = 'schemas/contract-to-delivery-source-snapshot.v1.schema.json';
+      const authoritySchema = await readFile(resolve(contractToDeliveryContractRoot, schemaPath));
+      expect(await readFile(resolve(contractToDeliverySourceMirrorRoot, schemaPath))).toEqual(
+        authoritySchema,
+      );
+      expect(await readFile(resolve(contractToDeliveryServiceMirrorRoot, schemaPath))).toEqual(
+        authoritySchema,
+      );
+      for (const name of ['manifest.json', 'projector-golden-vectors.json']) {
+        expect(await readFile(resolve(contractToDeliveryServiceMirrorRoot, name))).toEqual(
+          await readFile(resolve(contractToDeliveryContractRoot, name)),
+        );
+      }
+      const manifest = JSON.parse(
+        await readFile(resolve(contractToDeliveryContractRoot, 'manifest.json'), 'utf8'),
+      ) as ContractToDeliveryManifest;
+      expect(manifest).toMatchObject({
+        schema: 'openslack.contract_to_delivery_projector_contract_manifest.v1',
+        authority: 'typescript',
+        sourceSchema: 'openslack.contract_to_delivery_source_snapshot.v1',
+        projectorId: 'openslack.contract_to_delivery.v1',
+      });
+      for (const artifact of Object.values(manifest.artifacts)) {
+        expect(artifact.sha256).toMatch(/^[0-9a-f]{64}$/);
+        expect(sha256(await readFile(resolve(contractToDeliveryContractRoot, artifact.path)))).toBe(
+          artifact.sha256,
+        );
+      }
+    },
+    CONTRACT_TO_DELIVERY_FREEZE_TIMEOUT_MS,
+  );
+
+  it('keeps Contract-to-Delivery vector classifications aligned with Ajv 2020', async () => {
+    const schema = JSON.parse(
+      await readFile(
+        resolve(
+          contractToDeliveryContractRoot,
+          'schemas/contract-to-delivery-source-snapshot.v1.schema.json',
+        ),
+        'utf8',
+      ),
+    ) as object;
+    const vectors = JSON.parse(
+      await readFile(
+        resolve(contractToDeliveryContractRoot, 'projector-golden-vectors.json'),
+        'utf8',
+      ),
+    ) as ContractToDeliveryVectors;
+    const manifest = JSON.parse(
+      await readFile(resolve(contractToDeliveryContractRoot, 'manifest.json'), 'utf8'),
+    ) as ContractToDeliveryManifest;
+    const ajv = new Ajv2020({ allErrors: true, strict: true });
+    const validate = ajv.compile(schema);
+    const inventory = manifest.vectorInventory;
+    const familyCounts = Object.fromEntries(
+      [...new Set(vectors.cases.map((vector) => vector.family))]
+        .sort()
+        .map((family) => [
+          family,
+          vectors.cases.filter((vector) => vector.family === family).length,
+        ]),
+    );
+    expect(vectors.cases).toHaveLength(inventory.total);
+    expect(vectors.cases.filter((vector) => vector.expected !== undefined)).toHaveLength(
+      inventory.success,
+    );
+    expect(vectors.cases.filter((vector) => vector.expectedError !== undefined)).toHaveLength(
+      inventory.error,
+    );
+    expect(vectors.cases.filter((vector) => vector.sourceSchemaValid)).toHaveLength(
+      inventory.schemaValid,
+    );
+    expect(vectors.cases.filter((vector) => !vector.sourceSchemaValid)).toHaveLength(
+      inventory.schemaInvalid,
+    );
+    expect(familyCounts).toEqual(inventory.families);
+    expect(Object.keys(familyCounts)).toEqual([
+      'acceptance_boundary',
+      'all_missing',
+      'boundary_valid',
+      'bridge_drift',
+      'complete',
+      'historical',
+      'incomplete',
+      'invalid',
+      'ordering',
+      'outcome_boundary',
+      'randomized_valid',
+    ]);
+    expect(vectors.randomized.cases).toBe(16);
+    const byId = new Map(vectors.cases.map((vector) => [vector.id, vector] as const));
+    expect(byId.get('projector-complete-business-chain')?.expected?.integrityHash).toBe(
+      byId.get('projector-business-and-software-ordering')?.expected?.integrityHash,
+    );
+    expect(byId.get('projector-invalid-nested-scope-drift')).toMatchObject({
+      sourceSchemaValid: true,
+      expectedError: { code: 'GRAPH_SCOPE_INVALID', path: '$.softwareDelivery' },
+    });
+    const historical = byId.get('projector-historical-repository-fixture');
+    expect(historical?.input.source).toEqual(
+      JSON.parse(await readFile(contractToDeliveryFixturePath, 'utf8')),
+    );
+    for (const vector of vectors.cases) {
+      const valid = validate(vector.input.source);
+      expect(valid, `${vector.id}: ${ajv.errorsText(validate.errors, { separator: '\n' })}`).toBe(
+        vector.sourceSchemaValid,
+      );
+    }
+  }, 60_000);
 });

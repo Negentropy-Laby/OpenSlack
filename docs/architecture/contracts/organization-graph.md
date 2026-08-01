@@ -239,6 +239,16 @@ identities, completeness, warnings, and fail-closed errors. The Go package has n
 HTTP route, durable writer, Scenario registration, or Qoder integration, so this shadow does not
 create a read cutover or an authority transfer.
 
+GS2-B retains that boundary for the TypeScript Contract-to-Delivery projector. A second generated
+bundle freezes the closed composite source schema, including its embedded Software Delivery schema,
+and 43 historical, missing, incomplete, promotion-boundary, bridge-drift, ordering, bounded,
+randomized, and invalid vectors. The Go `contracttodelivery` package accepts only caller-supplied
+strict JSON, delegates the nested projection to the qualified pure Go `softwaredelivery` package,
+and reproduces the full composite Snapshot bytes, integrity, identities, completeness, warnings,
+and blocking errors. It does not read GitHub, Workflow, CRM, ERP, environment state, or a clock and
+does not register an HTTP route, store writer, Scenario projector, MCP path, or Qoder cutover.
+TypeScript remains the calculation and user-visible read authority.
+
 ## Related Documents
 
 - [Organization Graph product contract](../../../design/cdd/workstreams/organization-graph/README.md)
