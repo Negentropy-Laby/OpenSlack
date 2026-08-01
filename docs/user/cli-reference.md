@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - users
 owner: project-governance
-updated: 2026-07-29
+updated: 2026-08-01
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -767,6 +767,7 @@ When an LLM provider is configured (`OPENSLACK_LLM_PROVIDER`, `OPENSLACK_LLM_MOD
 | `openslack mcp serve --stdio`                                                                                                                           | Default to the frozen 12-tool, read-only `openslack.mcp_result.v2` catalog                                           |
 | `openslack mcp serve --stdio --profile read-only`                                                                                                       | Explicitly select the same exact 12-tool read-only catalog                                                           |
 | `openslack mcp serve --stdio --profile agent-bound --principal-ref <agent-id> [--workspace-id <asserted-workspace-id>]`                                 | Select the exact 16-tool governed agent catalog from an active registry/runtime binding                              |
+| `openslack mcp serve --stdio --graph-read-mirror-origin http://127.0.0.1:18181`                                                                         | Mirror successful Graph query/explain reads to Go for bounded differential audit while returning TypeScript results  |
 | `openslack mcp attestation status`                                                                                                                      | Inspect sanitized local human-subject mapping and controlling-TTY readiness                                          |
 | `openslack mcp attestation bind-local-subject --human-principal <human-id> --confirm`                                                                   | Bind the current OS subject hash to one asserted human principal; no raw subject or credential is persisted          |
 | `openslack mcp serve --stdio --profile human-attested --principal-ref <agent-id> --human-principal <human-id> [--workspace-id <asserted-workspace-id>]` | Select the exact 17-tool profile only after both the agent binding and independent local human attestation self-test |
@@ -853,6 +854,24 @@ and expose no mutation tool. `agent-bound` requires
 entry and matching CLI runtime identity. An optional `--workspace-id` is an
 equality assertion against canonical `openslack.yaml`, never an override.
 
+`--graph-read-mirror-origin` is a GS3-A differential-qualification option available to all three
+profiles. The default accepts one exact credential-free loopback HTTP IP origin. Add
+`--graph-read-mirror-network internal` only to opt into a private or link-local IP literal; the
+network option without an origin, DNS/public/wildcard targets, URLs with credentials or paths, and
+redirects fail closed. Origins require canonical URL spelling: use `[::1]` for IPv6 loopback;
+expanded equivalents such as `[0:0:0:0:0:0:0:1]` are rejected by the exact-origin rule. Successful
+local Graph queries and explanations are mirrored to fixed Go routes under a 2-second default
+timeout and the existing 512 KiB response ceiling. MCP waits for this bounded comparison before
+returning, so enabling the mirror adds network, validation, and cloning latency to every successful
+query/explain call and reduces throughput; an unavailable mirror may consume the full configured
+timeout. A bounded
+matched, mismatched, or unavailable Collaboration audit event stores digests and difference codes,
+not the endpoint, request body, nodes, edges, target payload, or evidence. The user-visible result
+always remains the TypeScript result. Omitting the origin performs no mirror call and creates no
+mirror audit event. Audit append failure emits the fixed
+`OPENSLACK_GRAPH_READ_MIRROR_AUDIT_FAILED` diagnostic on stderr without changing that result; this
+option is not a Go read-authority cutover or per-request fallback switch.
+
 The 16-tool profile adds only Scenario/Workflow preview plus plan
 confirm/cancel. It exposes no shell, generic command, human workflow decision,
 GitHub approval/direct merge, policy, registry, or permission mutation. If
@@ -878,8 +897,9 @@ The catalog adds `openslack_list_scenarios`, `openslack_query_graph`, and
 `openslack_explain_graph` to the nine foundation reads. Missing or stale current
 graph evidence returns explicit `SOURCE_EVIDENCE_UNAVAILABLE` or
 `SOURCE_EVIDENCE_STALE` blockers; it does not produce an empty authoritative
-graph. Query and explain remain side-effect-free and never invoke the snapshot
-build command.
+graph. Query and explain never mutate Graph or business authority state and never invoke the
+snapshot build command. An explicitly enabled GS3-A mirror may append only the bounded
+observational audit event described above.
 
 Only an explicitly injected local demo composition advertises
 `openslack_demo_reset`. Default and explicit `read-only` always advertise

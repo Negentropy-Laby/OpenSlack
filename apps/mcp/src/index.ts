@@ -50,6 +50,8 @@ export { createOpenSlackMcpServer } from './server.js';
 export type { OpenSlackMcpServer } from './server.js';
 
 export { createGovernedPlanCollaborationAuditSink } from './audit.js';
+export { createOpenSlackGraphReadMirror } from './graph-read-mirror.js';
+export type { CreateOpenSlackGraphReadMirrorOptions } from './graph-read-mirror.js';
 export {
   assembleContractDeliveryLiteRehearsalSource,
   CONTRACT_DELIVERY_REHEARSAL_BUILD_SOURCE_PATH,

@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-07-30
+updated: 2026-08-01
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -121,6 +121,21 @@ persists only a one-way subject hash and human principal ID. Each decision opens
 or `CON`, displays the exact decision scope, and requires `APPROVE` or `REJECT`; MCP stdin/stdout
 never carry the human response. Missing TTY, unsafe ownership/ACL, subject or mapping drift,
 assertion mismatch, abort, or expiry fails the requested profile with no 16/12-tool fallback.
+
+All three profiles may additionally opt into GS3-A differential observation with
+`--graph-read-mirror-origin <origin>`. This option does not select a different catalog or backend:
+the local TypeScript Graph calculation remains the returned authority, and only successful query
+and explain results are mirrored to the Go service's fixed read routes. Loopback is the default;
+private/link-local IP literals require explicit `--graph-read-mirror-network internal`. A network
+mode without an origin, DNS/public/wildcard targets, credentials, non-HTTP schemes, and added URL
+components are rejected during startup. Redirects, timeouts, oversized or non-canonical responses,
+and parity differences are bounded observations. They cannot replace the TypeScript result or
+cause per-request fallback. The Collaboration audit stores digests and closed difference codes
+without the origin, raw input, result graph, target payload, or provenance contents. Omitting the
+origin creates no mirror call or mirror audit. Audit append failure emits only the fixed
+`OPENSLACK_GRAPH_READ_MIRROR_AUDIT_FAILED` stderr diagnostic and still cannot change the MCP result.
+Any canary, routing epoch, cursor issuer change, or Go read authority is a later separately reviewed
+GS3 batch.
 
 ## Result Versions
 

@@ -56,6 +56,8 @@ describe('mcp command', () => {
       '--principal-ref',
       '--human-principal',
       '--workspace-id',
+      '--graph-read-mirror-origin',
+      '--graph-read-mirror-network',
     ]);
     expect(command.commands[1].options[0].mandatory).toBe(true);
     expect(command.commands[1].options[1]).toMatchObject({
@@ -71,6 +73,7 @@ describe('mcp command', () => {
     const context = Object.freeze({}) as OpenSlackMcpContext;
     const createContext = vi.fn(() => context);
     const createAgentBoundComposition = vi.fn();
+    const createGraphReadMirror = vi.fn();
     const createdServer = server();
     const createServer = vi.fn(() => createdServer);
     const command = mcpCommands({
@@ -78,6 +81,7 @@ describe('mcp command', () => {
       operator: operatorContext(),
       createContext,
       createAgentBoundComposition,
+      createGraphReadMirror,
       createServer,
     });
 
@@ -88,6 +92,7 @@ describe('mcp command', () => {
       operator: expect.anything(),
     });
     expect(createAgentBoundComposition).not.toHaveBeenCalled();
+    expect(createGraphReadMirror).not.toHaveBeenCalled();
     expect(createServer).toHaveBeenCalledWith(context);
     expect(createdServer.serveStdio).toHaveBeenCalledOnce();
     expect(stderr).not.toHaveBeenCalled();
@@ -95,6 +100,7 @@ describe('mcp command', () => {
 
   it('binds agent-bound through the production composition before creating the server', async () => {
     const governedMutations = Object.freeze({}) as never;
+    const graphReadMirror = Object.freeze({}) as never;
     const composition = Object.freeze({
       authority: Object.freeze({
         actorId: 'agent-principal:sha256:test',
@@ -108,6 +114,7 @@ describe('mcp command', () => {
     const context = Object.freeze({}) as OpenSlackMcpContext;
     const createAgentBoundComposition = vi.fn(async () => composition);
     const createContext = vi.fn(() => context);
+    const createGraphReadMirror = vi.fn(() => graphReadMirror);
     const createdServer = server();
     const createServer = vi.fn(() => createdServer);
 
@@ -115,6 +122,7 @@ describe('mcp command', () => {
       workspaceRoot: process.cwd(),
       operator: operatorContext(),
       createAgentBoundComposition,
+      createGraphReadMirror,
       createContext,
       createServer,
     }).parseAsync([
@@ -128,6 +136,8 @@ describe('mcp command', () => {
       'agent-1',
       '--workspace-id',
       'workspace-test',
+      '--graph-read-mirror-origin',
+      'http://127.0.0.1:18181',
     ]);
 
     expect(createAgentBoundComposition).toHaveBeenCalledWith({
@@ -139,15 +149,117 @@ describe('mcp command', () => {
     expect(createContext).toHaveBeenCalledWith({
       workspaceRoot: process.cwd(),
       operator: expect.anything(),
+      graphReadMirror,
       governedMutations,
+    });
+    expect(createGraphReadMirror).toHaveBeenCalledWith({
+      workspaceRoot: process.cwd(),
+      origin: 'http://127.0.0.1:18181',
+      networkMode: 'loopback',
     });
     expect(createServer).toHaveBeenCalledWith(context);
     expect(createdServer.serveStdio).toHaveBeenCalledOnce();
   });
 
+  it('binds an explicit internal Go read mirror without changing the selected profile', async () => {
+    const graphReadMirror = Object.freeze({}) as never;
+    const createGraphReadMirror = vi.fn(() => graphReadMirror);
+    const context = Object.freeze({}) as OpenSlackMcpContext;
+    const createContext = vi.fn(() => context);
+    const createdServer = server();
+
+    await mcpCommands({
+      workspaceRoot: process.cwd(),
+      operator: operatorContext(),
+      createGraphReadMirror,
+      createContext,
+      createServer: vi.fn(() => createdServer),
+    }).parseAsync([
+      'node',
+      'test',
+      'serve',
+      '--stdio',
+      '--profile',
+      'read-only',
+      '--graph-read-mirror-origin',
+      'http://10.20.30.40:18181',
+      '--graph-read-mirror-network',
+      'internal',
+    ]);
+
+    expect(createGraphReadMirror).toHaveBeenCalledWith({
+      workspaceRoot: process.cwd(),
+      origin: 'http://10.20.30.40:18181',
+      networkMode: 'internal',
+    });
+    expect(createContext).toHaveBeenCalledWith({
+      workspaceRoot: process.cwd(),
+      operator: expect.anything(),
+      graphReadMirror,
+    });
+    expect(createdServer.serveStdio).toHaveBeenCalledOnce();
+    expect(stderr).not.toHaveBeenCalled();
+  });
+
+  it('rejects a read-mirror network mode without an explicit origin before composition', async () => {
+    const createGraphReadMirror = vi.fn();
+    const createContext = vi.fn();
+    const createServer = vi.fn();
+
+    await mcpCommands({
+      workspaceRoot: process.cwd(),
+      operator: operatorContext(),
+      createGraphReadMirror,
+      createContext,
+      createServer,
+    }).parseAsync(['node', 'test', 'serve', '--stdio', '--graph-read-mirror-network', 'internal']);
+
+    expect(stderr).toHaveBeenLastCalledWith(
+      'OPENSLACK_MCP_PROFILE_ARGUMENT_INVALID: --graph-read-mirror-network requires --graph-read-mirror-origin.',
+    );
+    expect(createGraphReadMirror).not.toHaveBeenCalled();
+    expect(createContext).not.toHaveBeenCalled();
+    expect(createServer).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('rejects an unsafe mirror origin before binding agent authority or audit state', async () => {
+    const createAgentBoundComposition = vi.fn();
+    const createGraphReadMirror = vi.fn();
+    const createContext = vi.fn();
+    const createServer = vi.fn();
+
+    await mcpCommands({
+      workspaceRoot: process.cwd(),
+      operator: operatorContext(),
+      createAgentBoundComposition,
+      createGraphReadMirror,
+      createContext,
+      createServer,
+    }).parseAsync([
+      'node',
+      'test',
+      'serve',
+      '--stdio',
+      '--profile',
+      'agent-bound',
+      '--principal-ref',
+      'agent-1',
+      '--graph-read-mirror-origin',
+      'http://8.8.8.8:18181',
+    ]);
+
+    expect(createAgentBoundComposition).not.toHaveBeenCalled();
+    expect(createGraphReadMirror).not.toHaveBeenCalled();
+    expect(createContext).not.toHaveBeenCalled();
+    expect(createServer).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
   it('binds human-attested through a separate composition and exposes exactly its approval port', async () => {
     const governedMutations = Object.freeze({}) as never;
     const workflowApprovalAuthority = Object.freeze({}) as never;
+    const graphReadMirror = Object.freeze({}) as never;
     const composition = Object.freeze({
       authority: Object.freeze({
         actorId: 'agent-principal:sha256:test',
@@ -164,6 +276,7 @@ describe('mcp command', () => {
     const context = Object.freeze({}) as OpenSlackMcpContext;
     const createHumanAttestedComposition = vi.fn(async () => composition);
     const createAgentBoundComposition = vi.fn();
+    const createGraphReadMirror = vi.fn(() => graphReadMirror);
     const createContext = vi.fn(() => context);
     const createdServer = server();
 
@@ -172,6 +285,7 @@ describe('mcp command', () => {
       operator: operatorContext(),
       createAgentBoundComposition,
       createHumanAttestedComposition,
+      createGraphReadMirror,
       createContext,
       createServer: vi.fn(() => createdServer),
     }).parseAsync([
@@ -187,6 +301,8 @@ describe('mcp command', () => {
       'human.interviewer',
       '--workspace-id',
       'workspace-test',
+      '--graph-read-mirror-origin',
+      'http://127.0.0.1:18181',
     ]);
 
     expect(createAgentBoundComposition).not.toHaveBeenCalled();
@@ -199,8 +315,14 @@ describe('mcp command', () => {
     expect(createContext).toHaveBeenCalledWith({
       workspaceRoot: process.cwd(),
       operator: expect.anything(),
+      graphReadMirror,
       governedMutations,
       workflowApprovalAuthority,
+    });
+    expect(createGraphReadMirror).toHaveBeenCalledWith({
+      workspaceRoot: process.cwd(),
+      origin: 'http://127.0.0.1:18181',
+      networkMode: 'loopback',
     });
     expect(createdServer.serveStdio).toHaveBeenCalledOnce();
   });
@@ -247,7 +369,14 @@ describe('mcp command', () => {
   it.each([
     {
       name: 'principal authority on read-only',
-      args: ['--profile', 'read-only', '--principal-ref', 'agent-1'],
+      args: [
+        '--profile',
+        'read-only',
+        '--principal-ref',
+        'agent-1',
+        '--graph-read-mirror-origin',
+        'http://127.0.0.1:18181',
+      ],
       message:
         'OPENSLACK_MCP_PROFILE_ARGUMENT_INVALID: read-only does not accept authority-binding arguments.',
     },
@@ -294,6 +423,7 @@ describe('mcp command', () => {
   ])('rejects $name before composition or server creation', async ({ args, message }) => {
     const createAgentBoundComposition = vi.fn();
     const createHumanAttestedComposition = vi.fn();
+    const createGraphReadMirror = vi.fn();
     const createContext = vi.fn();
     const createServer = vi.fn();
 
@@ -302,6 +432,7 @@ describe('mcp command', () => {
       operator: operatorContext(),
       createAgentBoundComposition,
       createHumanAttestedComposition,
+      createGraphReadMirror,
       createContext,
       createServer,
     }).parseAsync(['node', 'test', 'serve', '--stdio', ...args]);
@@ -310,6 +441,7 @@ describe('mcp command', () => {
     expect(stdout).not.toHaveBeenCalled();
     expect(createAgentBoundComposition).not.toHaveBeenCalled();
     expect(createHumanAttestedComposition).not.toHaveBeenCalled();
+    expect(createGraphReadMirror).not.toHaveBeenCalled();
     expect(createContext).not.toHaveBeenCalled();
     expect(createServer).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);

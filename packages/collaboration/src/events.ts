@@ -15,7 +15,13 @@ import {
 } from 'node:fs';
 import { resolve } from 'node:path';
 import { join } from 'node:path';
-import type { CollaborationEvent, CollaborationEventType, EventFilter } from './types.js';
+import type {
+  CollaborationEvent,
+  CollaborationEventType,
+  EventFilter,
+  ObjectKind,
+  SourceKind,
+} from './types.js';
 import { sanitizeEvent } from './redact.js';
 
 const ALLOWED_SCHEMA = 'openslack.collaboration_event.v1';
@@ -91,9 +97,35 @@ const ALL_EVENT_TYPES: CollaborationEventType[] = [
   'repair.failed',
   'notification.sent',
   'notification.failed',
+  'graph.read_mirror.matched',
+  'graph.read_mirror.mismatched',
+  'graph.read_mirror.unavailable',
   'agent.conversation.started',
   'agent.conversation.completed',
   'agent.conversation.failed',
+];
+const ALL_OBJECT_KINDS: readonly ObjectKind[] = [
+  'issue',
+  'pr',
+  'plan',
+  'module',
+  'agent',
+  'handoff',
+  'decision',
+  'workspace',
+  'workflow',
+  'push',
+  'job',
+  'notification_route',
+  'graph',
+];
+const ALL_SOURCE_KINDS: readonly SourceKind[] = [
+  'github',
+  'openslack',
+  'chat',
+  'prms',
+  'operator',
+  'governance',
 ];
 
 function getEventsDir(rootDir = process.cwd()): string {
@@ -160,6 +192,9 @@ export function validateEvent(event: unknown): { valid: boolean; reason?: string
   }
 
   const obj = e.object as Record<string, unknown>;
+  if (!obj.kind || !ALL_OBJECT_KINDS.includes(obj.kind as ObjectKind)) {
+    return { valid: false, reason: 'Object must have a valid kind' };
+  }
   if (!obj.id || typeof obj.id !== 'string') {
     return { valid: false, reason: 'Object must have a string id' };
   }
@@ -169,8 +204,8 @@ export function validateEvent(event: unknown): { valid: boolean; reason?: string
   }
 
   const source = e.source as Record<string, unknown>;
-  if (!source.kind || typeof source.kind !== 'string') {
-    return { valid: false, reason: 'Source must have a string kind' };
+  if (!source.kind || !ALL_SOURCE_KINDS.includes(source.kind as SourceKind)) {
+    return { valid: false, reason: 'Source must have a valid kind' };
   }
 
   if (!e.summary || typeof e.summary !== 'string') {

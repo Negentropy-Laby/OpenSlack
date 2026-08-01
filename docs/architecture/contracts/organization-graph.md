@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-07-29
+updated: 2026-08-01
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -17,8 +17,10 @@ Status: composite graph and governed local rehearsal implemented; live qualifica
 Organization Graph is a pure, bounded, rebuildable projection. Its v1 data, hashing, query,
 explanation, local-store behavior, software-delivery projector, and Contract-to-Delivery Lite
 composite projector are implemented. The application-layer rehearsal assembler calls the sealed
-builder explicitly after durable governed evidence; query and explain remain side-effect free.
-Live multi-system source assembly and the HTML artifact remain deferred.
+builder explicitly after durable governed evidence. Query and explain never create or change Graph
+authority state; an explicitly enabled GS3-A read mirror may append only a bounded observational
+Collaboration audit event after the TypeScript result has been computed. Live multi-system source
+assembly and the HTML artifact remain deferred.
 
 ## Authority Model
 
@@ -181,6 +183,32 @@ cannot be reused for a different scenario, filter, root, depth, or limit.
 validity, and completeness. It never returns raw transcripts, webhook payloads, vendor bodies, or
 credentials.
 
+### GS3-A mirror-read boundary
+
+GS3-A can explicitly mirror successful MCP `query` and `explain` calculations to the Go Graph
+service while returning only the TypeScript result. The mirror is disabled by default and cannot
+be inferred from environment state. Its HTTP client:
+
+- accepts only an exact credential-free IP-literal HTTP origin; loopback is the default and
+  private/link-local addressing requires the explicit `internal` mode;
+- posts the canonical input to the fixed `/v1/graph:query` or `/v1/graph:explain` route with manual
+  redirect handling, a 2-second default/30-second hard timeout, and the existing 512 KiB response
+  ceiling;
+- accepts only strict canonical JSON, rejects duplicate keys, BOMs, unexpected content types,
+  non-200 responses, and oversized bodies, and compares every result field;
+- treats pagination cursor presence and token differences as parity failures. A future issuer
+  change must use the reviewed routing-epoch and TTL-drain design, never implicit translation;
+- records only request/result SHA-256 digests, bounded difference codes, timing, scenario ID,
+  cursor/query hashes, and outcome. It does not persist the service endpoint, request body, graph
+  nodes/edges, target payload, evidence, or source event contents.
+
+A mirror mismatch, timeout, invalid response, network failure, or audit-sink failure cannot replace
+or modify the TypeScript result and does not cause a per-request fallback because no cutover has
+occurred. Audit-sink failure emits only the fixed
+`OPENSLACK_GRAPH_READ_MIRROR_AUDIT_FAILED` stderr diagnostic so operators can distinguish audit
+damage from the absence of a mismatch. The audit append is observational evidence, not Graph or
+business-state mutation.
+
 ## Local Store
 
 The MVP store is:
@@ -248,6 +276,14 @@ and reproduces the full composite Snapshot bytes, integrity, identities, complet
 and blocking errors. It does not read GitHub, Workflow, CRM, ERP, environment state, or a clock and
 does not register an HTTP route, store writer, Scenario projector, MCP path, or Qoder cutover.
 TypeScript remains the calculation and user-visible read authority.
+
+GS3-A retains that authority while adding the opt-in MCP read mirror described above. Official MCP
+SDK coverage proves that the stock 12-tool catalog and `openslack.mcp_result.v2` response remain
+unchanged while matching Go query/explain observations are audited. The same optional port is
+composed for 12-, 16-, and 17-tool profiles without changing their tool names, schemas, permission,
+plan-confirmation, workflow-effect, or independent-human-attestation boundaries. GS3-A does not
+select Go for any request, transfer Graph-head ownership, change the cursor issuer, or claim a
+Qoder Desktop, remote Connector, release, live, or production qualification.
 
 ## Related Documents
 

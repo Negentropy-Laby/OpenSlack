@@ -4,8 +4,8 @@
   "service": {
     "goModule": "github.com/Negentropy-Laby/OpenSlack/services/organization-graph",
     "targetPath": "services/organization-graph",
-    "migrationPhase": "GS2-B",
-    "authority": "GO_SHADOW_TS_LOCAL_WRITER"
+    "migrationPhase": "GS3-A",
+    "authority": "TS_LOCAL_READ_AUTHORITY_GO_MIRROR_READ"
   },
   "containerInputs": {
     "dockerfileFrontend": "docker/dockerfile:1.24.0@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89",

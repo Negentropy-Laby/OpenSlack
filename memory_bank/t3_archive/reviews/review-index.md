@@ -12,6 +12,7 @@ sources:
   - memory_bank/t3_archive/reviews/notification-delivery-implementation.md
   - production/code-reviews/code-review-gs2-a-2026-08-01.md
   - production/code-reviews/code-review-gs2-b-2026-08-01.md
+  - production/code-reviews/code-review-gs3-a-2026-08-01.md
   - services/notification-delivery/design/cdd/reviews/review-archive.md
 ---
 
@@ -46,11 +47,13 @@ admission, PX2, or live verification.
 
 ## Organization Graph Reviews
 
-| Source artifact                             | Review type                        | Latest verdict                     | Date       | Evidence                                                  |
-| ------------------------------------------- | ---------------------------------- | ---------------------------------- | ---------- | --------------------------------------------------------- |
-| GS2-A Software Delivery Projector shadow    | TypeScript, Go, and QA code review | Ready for independent human review | 2026-08-01 | `production/code-reviews/code-review-gs2-a-2026-08-01.md` |
-| GS2-B Contract-to-Delivery Projector shadow | TypeScript, Go, and QA code review | Ready for independent human review | 2026-08-01 | `production/code-reviews/code-review-gs2-b-2026-08-01.md` |
+| Source artifact                             | Review type                             | Latest verdict                     | Date       | Evidence                                                  |
+| ------------------------------------------- | --------------------------------------- | ---------------------------------- | ---------- | --------------------------------------------------------- |
+| GS2-A Software Delivery Projector shadow    | TypeScript, Go, and QA code review      | Ready for independent human review | 2026-08-01 | `production/code-reviews/code-review-gs2-a-2026-08-01.md` |
+| GS2-B Contract-to-Delivery Projector shadow | TypeScript, Go, and QA code review      | Ready for independent human review | 2026-08-01 | `production/code-reviews/code-review-gs2-b-2026-08-01.md` |
+| GS3-A MCP Organization Graph mirror-read    | TypeScript, architecture, and QA review | Ready for independent human review | 2026-08-01 | `production/code-reviews/code-review-gs3-a-2026-08-01.md` |
 
-The GS2-A and GS2-B verdicts preserve TypeScript as the sole authority. They do
-not establish independent human approval, PRMS readiness, merge, read cutover,
-runtime admission, Qoder qualification, release, or production verification.
+The GS2-A, GS2-B, and GS3-A verdicts preserve TypeScript as the sole authority.
+They do not establish independent human approval, PRMS readiness, merge, read
+cutover, runtime admission, Qoder qualification, release, live evidence, or
+production verification.

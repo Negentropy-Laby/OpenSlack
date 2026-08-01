@@ -117,8 +117,8 @@ func TestSourceManifestBindsRepositoryInputsWithoutReleaseClaims(t *testing.T) {
 		manifest.Status != "REPOSITORY_SOURCE_INPUT_UNRELEASED" ||
 		manifest.Service.GoModule != "github.com/Negentropy-Laby/OpenSlack/services/organization-graph" ||
 		manifest.Service.TargetPath != "services/organization-graph" ||
-		manifest.Service.MigrationPhase != "GS2-B" ||
-		manifest.Service.Authority != "GO_SHADOW_TS_LOCAL_WRITER" ||
+		manifest.Service.MigrationPhase != "GS3-A" ||
+		manifest.Service.Authority != "TS_LOCAL_READ_AUTHORITY_GO_MIRROR_READ" ||
 		len(manifest.Scope.Authorizes) != 0 {
 		t.Fatalf("source manifest widened authority: %#v", manifest)
 	}

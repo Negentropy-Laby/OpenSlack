@@ -1,7 +1,7 @@
 {
   "$schema": "../docs/reference/schemas/documentation/control-plane.schema.json",
   "schema": "openslack.control_plane.v1",
-  "updated": "2026-07-30",
+  "updated": "2026-08-01",
   "authorities": [
     {
       "fact": "project.portfolio-state",
@@ -838,6 +838,11 @@
     {
       "id": "production-gs2-b-code-review",
       "path": "production/code-reviews/code-review-gs2-b-2026-08-01.md",
+      "status": "active"
+    },
+    {
+      "id": "production-gs3-a-code-review",
+      "path": "production/code-reviews/code-review-gs3-a-2026-08-01.md",
       "status": "active"
     },
     {

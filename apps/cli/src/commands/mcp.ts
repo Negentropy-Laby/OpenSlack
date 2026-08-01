@@ -1,6 +1,8 @@
 import { Command, Option } from 'commander';
+import { normalizeGraphServiceOrigin } from '@openslack/organization-graph';
 import {
   createOpenSlackAgentBoundMutationComposition,
+  createOpenSlackGraphReadMirror,
   createOpenSlackMcpContext,
   createOpenSlackMcpServer,
   type OpenSlackMcpContext,
@@ -34,6 +36,7 @@ export interface McpCommandDependencies {
   readonly createHumanAttestedComposition?: (
     options: Parameters<typeof createOpenSlackHumanAttestedMcpComposition>[0],
   ) => Promise<OpenSlackHumanAttestedMcpComposition>;
+  readonly createGraphReadMirror?: typeof createOpenSlackGraphReadMirror;
   readonly getAttestationStatus?: (workspaceRoot: string) => LocalHumanAttestationStatus;
   readonly bindLocalSubject?: (
     options: BindLocalHumanSubjectOptions,
@@ -47,6 +50,8 @@ interface McpServeOptions {
   readonly principalRef?: string;
   readonly humanPrincipal?: string;
   readonly workspaceId?: string;
+  readonly graphReadMirrorOrigin?: string;
+  readonly graphReadMirrorNetwork?: 'loopback' | 'internal';
 }
 
 class McpProfileArgumentError extends Error {
@@ -56,11 +61,33 @@ class McpProfileArgumentError extends Error {
   }
 }
 
+function bindGraphReadMirror(dependencies: McpCommandDependencies, options: McpServeOptions) {
+  return options.graphReadMirrorOrigin === undefined
+    ? undefined
+    : (dependencies.createGraphReadMirror ?? createOpenSlackGraphReadMirror)({
+        workspaceRoot: dependencies.workspaceRoot,
+        origin: options.graphReadMirrorOrigin,
+        networkMode: options.graphReadMirrorNetwork ?? 'loopback',
+      });
+}
+
 async function createProfileContext(
   dependencies: McpCommandDependencies,
   options: McpServeOptions,
 ): Promise<OpenSlackMcpContext> {
   const createContext = dependencies.createContext ?? createOpenSlackMcpContext;
+  if (options.graphReadMirrorNetwork !== undefined && options.graphReadMirrorOrigin === undefined) {
+    throw new McpProfileArgumentError(
+      '--graph-read-mirror-network requires --graph-read-mirror-origin.',
+    );
+  }
+  if (options.graphReadMirrorOrigin !== undefined) {
+    normalizeGraphServiceOrigin(
+      options.graphReadMirrorOrigin,
+      options.graphReadMirrorNetwork ?? 'loopback',
+      'Graph read mirror origin',
+    );
+  }
   if (options.profile === 'read-only') {
     if (
       options.principalRef !== undefined ||
@@ -69,9 +96,11 @@ async function createProfileContext(
     ) {
       throw new McpProfileArgumentError('read-only does not accept authority-binding arguments.');
     }
+    const graphReadMirror = bindGraphReadMirror(dependencies, options);
     return createContext({
       workspaceRoot: dependencies.workspaceRoot,
       operator: dependencies.operator,
+      ...(graphReadMirror === undefined ? {} : { graphReadMirror }),
     });
   }
   if (options.profile !== 'agent-bound' && options.profile !== 'human-attested') {
@@ -92,9 +121,11 @@ async function createProfileContext(
       provider: 'cli',
       ...(options.workspaceId === undefined ? {} : { workspaceIdAssertion: options.workspaceId }),
     });
+    const graphReadMirror = bindGraphReadMirror(dependencies, options);
     return createContext({
       workspaceRoot: dependencies.workspaceRoot,
       operator: dependencies.operator,
+      ...(graphReadMirror === undefined ? {} : { graphReadMirror }),
       governedMutations: composition.governedMutations,
     });
   }
@@ -109,9 +140,11 @@ async function createProfileContext(
     humanPrincipalAssertion: options.humanPrincipal,
     ...(options.workspaceId === undefined ? {} : { workspaceIdAssertion: options.workspaceId }),
   });
+  const graphReadMirror = bindGraphReadMirror(dependencies, options);
   return createContext({
     workspaceRoot: dependencies.workspaceRoot,
     operator: dependencies.operator,
+    ...(graphReadMirror === undefined ? {} : { graphReadMirror }),
     governedMutations: composition.governedMutations,
     workflowApprovalAuthority: composition.workflowApprovalAuthority,
   });
@@ -184,6 +217,16 @@ export function mcpCommands(dependencies: McpCommandDependencies): Command {
       'Assert the separately mapped human principal for human-attested',
     )
     .option('--workspace-id <workspace-id>', 'Assert the canonical workspace ID')
+    .option(
+      '--graph-read-mirror-origin <origin>',
+      'Mirror Graph query/explain reads to one exact credential-free Go service origin',
+    )
+    .addOption(
+      new Option(
+        '--graph-read-mirror-network <mode>',
+        'Restrict the mirror origin to loopback or explicitly selected internal IPs',
+      ).choices(['loopback', 'internal']),
+    )
     .action(async (options: McpServeOptions) => {
       let server: OpenSlackMcpServer | undefined;
       try {

@@ -153,5 +153,6 @@ export type {
   GovernanceEvent,
   CollaborationObjectEvent,
   RepairEvent,
+  GraphReadEvent,
   AgentConversationEventType,
 } from './types.js';
