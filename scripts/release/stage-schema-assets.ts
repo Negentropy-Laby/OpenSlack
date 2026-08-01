@@ -71,3 +71,52 @@ for (const artifactName of ['snapshotSchema', 'deltaSchema'] as const) {
   mkdirSync(dirname(graphDestination), { recursive: true });
   copyFileSync(graphSource, graphDestination);
 }
+
+const softwareDeliveryContractRoot = resolve(
+  root,
+  'packages',
+  'organization-graph',
+  'contracts',
+  'software-delivery',
+  'v1',
+);
+const softwareDeliveryManifest = JSON.parse(
+  readFileSync(resolve(softwareDeliveryContractRoot, 'manifest.json'), 'utf8'),
+) as {
+  artifacts: Record<string, { path: string; sha256: string }>;
+};
+const softwareDeliverySourceSchemaPath = 'schemas/software-delivery-source-snapshot.v1.schema.json';
+const softwareDeliverySourceSchema = softwareDeliveryManifest.artifacts.sourceSchema;
+if (
+  softwareDeliverySourceSchema === undefined ||
+  softwareDeliverySourceSchema.path !== softwareDeliverySourceSchemaPath ||
+  !/^[0-9a-f]{64}$/.test(softwareDeliverySourceSchema.sha256)
+) {
+  throw new Error('Refusing to stage invalid Software Delivery sourceSchema metadata.');
+}
+const softwareDeliverySchemaSource = resolve(
+  softwareDeliveryContractRoot,
+  softwareDeliverySourceSchema.path,
+);
+const softwareDeliverySchemaBytes = readFileSync(softwareDeliverySchemaSource);
+const softwareDeliverySchemaSHA256 = createHash('sha256')
+  .update(softwareDeliverySchemaBytes)
+  .digest('hex');
+if (softwareDeliverySchemaSHA256 !== softwareDeliverySourceSchema.sha256) {
+  throw new Error(
+    `Refusing to stage mismatched Software Delivery sourceSchema: ${softwareDeliverySchemaSHA256}`,
+  );
+}
+const softwareDeliverySchemaDestination = resolve(
+  outputRoot,
+  'packages',
+  'organization-graph',
+  'dist',
+  'generated',
+  'contracts',
+  'software-delivery',
+  'v1',
+  softwareDeliverySourceSchema.path,
+);
+mkdirSync(dirname(softwareDeliverySchemaDestination), { recursive: true });
+copyFileSync(softwareDeliverySchemaSource, softwareDeliverySchemaDestination);

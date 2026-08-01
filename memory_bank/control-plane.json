@@ -831,6 +831,11 @@
       "status": "active"
     },
     {
+      "id": "production-gs2-a-code-review",
+      "path": "production/code-reviews/code-review-gs2-a-2026-08-01.md",
+      "status": "active"
+    },
+    {
       "id": "production-epics-index",
       "path": "production/epics/README.md",
       "status": "index"

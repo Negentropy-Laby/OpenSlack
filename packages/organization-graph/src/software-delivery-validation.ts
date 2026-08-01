@@ -67,7 +67,8 @@ function exactKeys(
   optional: readonly string[] = [],
 ): void {
   const allowed = new Set([...required, ...optional]);
-  for (const key of Object.keys(value)) {
+  const keys = Object.keys(value).sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+  for (const key of keys) {
     if (!allowed.has(key)) {
       fail('GRAPH_SCHEMA_INVALID', `${path}.${key}`, 'is not an allowed property.');
     }

@@ -29,6 +29,15 @@ describe('software delivery source contract', () => {
       /not an allowed property/,
     );
 
+    const multipleUnexpected = { ...source, zUnexpected: true, aUnexpected: true };
+    try {
+      validateSoftwareDeliverySourceSnapshot(multipleUnexpected);
+      throw new Error('Expected multiple unexpected keys to be rejected.');
+    } catch (error) {
+      expect(error).toBeInstanceOf(GraphContractError);
+      expect((error as GraphContractError).path).toBe('$.aUnexpected');
+    }
+
     const missingVersion = structuredClone(source);
     delete (missingVersion.sources.issues.items[0] as { authorityVersion?: string })
       .authorityVersion;

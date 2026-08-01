@@ -4,7 +4,7 @@
   "service": {
     "goModule": "github.com/Negentropy-Laby/OpenSlack/services/organization-graph",
     "targetPath": "services/organization-graph",
-    "migrationPhase": "GS1-C",
+    "migrationPhase": "GS2-A",
     "authority": "GO_SHADOW_TS_LOCAL_WRITER"
   },
   "containerInputs": {
@@ -33,6 +33,10 @@
     "graphContractManifest": {
       "path": "packages/organization-graph/contracts/v1/manifest.json",
       "sha256": "b39bd1753b3731c32068a28e413c5312cfd80bcb16efe19f1e56b26206ddeb5e"
+    },
+    "softwareDeliveryProjectorManifest": {
+      "path": "packages/organization-graph/contracts/software-delivery/v1/manifest.json",
+      "sha256": "d5a7294bacdbf6267f31c1df8dfe65a54448390dac9317a890d4caf1158cc379"
     },
     "openapi": {
       "path": "services/organization-graph/docs/api/openapi.yaml",

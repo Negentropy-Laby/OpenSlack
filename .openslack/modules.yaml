@@ -1,5 +1,5 @@
 schema: openslack.modules.v2
-vitest_tests: 5264
+vitest_tests: 5266
 vitest_files: 422
 modules:
   - id: self_evolution
@@ -291,6 +291,11 @@ modules:
       - repo:services/organization-graph/integration/source-manifest.v2.json
       - commit:ca1cd9b4d04f65febc461d5eca81a3fe2f359b8a
       - repo:scripts/go-check.sh
+      - test:services/organization-graph/softwaredelivery/projector_test.go
+      - test:services/organization-graph/softwaredelivery/projector_golden_test.go
+      - test:services/organization-graph/softwaredelivery/manifest_test.go
+      - repo:packages/organization-graph/contracts/software-delivery/v1/manifest.json
+      - commit:2417b3542d8d9ddaceb1fdd65944b22e5b91ea5a
     phase: '2D/2E'
     cli:
       - openslack collaboration activity
@@ -355,7 +360,7 @@ modules:
       - '@openslack/organization-graph'
       - '@openslack/scenario-runtime'
       - github.com/Negentropy-Laby/OpenSlack/services/organization-graph
-    tests: 2399
+    tests: 2401
     test_files: 193
     components:
       - id: agent_runtime
@@ -376,6 +381,7 @@ modules:
       GS1-A adds an importable pure Go Organization Graph shadow with a TypeScript-owned exact-byte contract manifest, generated schema/vector mirrors, strict JSON and ECMAScript canonicalization parity, stable identity and integrity behavior, bounded query/cursor/pagination/explain behavior, and 79 self-replaying cross-language golden cases. GS1-A itself added no HTTP server, durable store, Qoder read cutover, or runtime authority transfer.
       GS1-B adds a PostgreSQL-backed Go shadow ingest service with immutable canonical Snapshot and Delta bytes, per-scenario cursor/revision CAS, deterministic request fingerprints, durable idempotency and reconciliation receipts, bounded loopback/internal HTTP, strict OpenAPI request/response validation, health/version/metrics endpoints, migrations, container inputs, and Prometheus rules. The TypeScript local store remains the sole writer and authority: it commits locally before an explicitly injected, fail-open observational shadow call, serializes same-process publication per root/scenario, and uses only bounded idempotent HTTP retries for cross-process transition-order races. No Qoder read cutover, Go authority transfer, remote exposure, authenticated production qualification, release, or production-readiness claim is made.
       GS1-C adds actual HTTP-to-PostgreSQL composition qualification for first Snapshot, duplicate, full-Snapshot CAS, Delta, and bounded query readback; exact receipt recovery after a committed transaction loses its response; same-cursor/different-byte and concurrent-writer conflicts; rollback and corrupted canonical-byte/metadata fail-closed checks; incompatible schema-row rejection; exact 10,000-node/25,000-edge plus over-limit qualification; and a same-volume PostgreSQL restart followed by a new process/pool receipt and head replay. Query cursor rotation accepts at most one distinct bounded previous verification secret while the active secret alone signs new cursors. TypeScript shadow observations now report real queue state or unknown instead of inventing zero backlog. The Go service remains an isolated shadow, TypeScript remains the sole user-visible authority, and this batch makes no read-cutover, Qoder, authenticated external, release, live, or production claim.
+      GS2-A freezes a TypeScript-owned, exact-byte Software Delivery source-schema and projector-vector bundle, including historical, missing, incomplete, demo-fixture, boundary, deterministic randomized, and fail-closed inputs. A pure Go package accepts only the same bounded typed-source bytes and recomputes canonical Snapshot bytes, integrity, node and edge identities, completeness, warnings, and errors against the generated mirror. It performs no external reads, HTTP handling, store writes, Scenario registration, or Qoder integration. TypeScript remains the sole calculation and local read authority; this batch makes no read-cutover, Contract-to-Delivery parity, Go authority, release, live, or production claim.
       Software Delivery Projector v1 is active as a deterministic, side-effect-free projection over injected and explicitly complete/incomplete/missing source batches. Current GitHub authority requires live observations and current-head bindings; only completed current-head checks become verification evidence, while cache, synthetic, stale-review, self-review, non-terminal-check, missing-target, expired-lease, and incomplete evidence remain informational or incomplete. The projector does not alter existing GitHub task, claim, PR, review, merge, or watch behavior.
       The explicit graph snapshot build CLI accepts one bounded file or stdin source through a sealed two-profile dispatch under the same locked 4 MiB Software Delivery source ceiling. Each profile applies strict JSON plus its registered validator/projector and CAS-publishes only to the workspace-local graph store; unknown scenarios fail closed. It performs no live evidence collection, exposes no force overwrite, and remains separate from the side-effect-free MCP query/explain tools.
       Contract-to-Delivery Projector v1 is active as a deterministic composite projection. It invokes the existing Software Delivery projector, preserves its nodes and edges exactly, and adds bounded Customer, Contract, Project, Milestone, Acceptance, Deliverable, and Outcome relationships only from typed demo-fixture business evidence. Acceptance requires a current merged deliverable, an independent current-head human approval, and a current accepted transition; Outcome requires that promoted acceptance, a live closed work item, and the existing Software Delivery outcome. Missing or drifted bridges remain incomplete and never create dangling authority edges. The checked fixture and official stock 12-tool MCP SDK test prove the Customer-to-Outcome graph, bounded query/explain evidence, projection-only authority, and no query-side store mutation.

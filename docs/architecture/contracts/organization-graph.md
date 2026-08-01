@@ -231,6 +231,14 @@ typed source snapshot + scenario definition/instance + projector version
 The first projector maps existing software-delivery evidence. Existing GitHub task, claim, watch,
 PR, and merge behavior remains unchanged.
 
+During GS2-A, the TypeScript Software Delivery projector remains the calculation authority. A pure
+Go shadow receives the same bounded typed-source bytes and replays a generated exact-byte contract
+bundle covering valid, missing, incomplete, `demo_fixture`, boundary, randomized, and invalid
+inputs. Qualification compares the complete canonical Snapshot bytes, integrity hash, node and edge
+identities, completeness, warnings, and fail-closed errors. The Go package has no external readers,
+HTTP route, durable writer, Scenario registration, or Qoder integration, so this shadow does not
+create a read cutover or an authority transfer.
+
 ## Related Documents
 
 - [Organization Graph product contract](../../../design/cdd/workstreams/organization-graph/README.md)
