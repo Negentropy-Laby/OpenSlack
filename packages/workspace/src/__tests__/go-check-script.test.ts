@@ -262,8 +262,9 @@ describeOnBashHosts('reviewed Go module verifier', () => {
 
     expect(result.status).toBe(0);
     const log = readFileSync(fixture.dockerLog, 'utf8');
+    expect(log).toContain('GRAPH_QUERY_CURSOR_SECRET=organization-graph-go-check-cursor-secret-v1');
     expect(log).toContain(
-      'GRAPH_QUERY_CURSOR_SECRET=organization-graph-go-check-cursor-secret-v1',
+      'GRAPH_QUERY_CURSOR_SECRET_PREVIOUS=organization-graph-go-check-cursor-secret-v0',
     );
     expect(log).toContain(
       'GRAPH_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
@@ -271,10 +272,53 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(log).toContain('GRAPH_HTTP_BIND=:8080');
     expect(log).toContain('GRAPH_NETWORK_MODE=internal');
     expect(log).toContain('MIGRATION_SOURCE=/migrations');
+    expect(log).toContain('GRAPH_GS1C_SCHEMA_QUALIFICATION=1');
+    expect(log).toContain('GRAPH_GS1C_LARGE_QUALIFICATION=1');
+    expect(log).toContain('GRAPH_GS1C_RESTART_PHASE=seed');
+    expect(log).toContain('GRAPH_GS1C_RESTART_PHASE=verify');
+    expect(goCheckSource).toContain('local restart_token="${run_token,,}"');
+    const restartSchemas = [
+      ...log.matchAll(/GRAPH_GS1C_RESTART_SCHEMA=(organization_graph_gs1c_restart_[a-z0-9]+)/gu),
+    ].map((match) => match[1]);
+    expect(restartSchemas).toHaveLength(2);
+    expect(new Set(restartSchemas).size).toBe(1);
+    expect(log).toContain(' restart ');
+    expect(log.match(/go test -race \.\/cmd\/server -run/g)).toHaveLength(3);
     expect(log).not.toContain('IDEMPOTENCY_KEY_PEPPER=');
     expect(log).not.toContain('CREDENTIAL_REF_SCHEME_ALLOWLIST=');
     expect(log).not.toContain('CREDENTIAL_PROFILE_VALIDATOR=');
   });
+
+  it.each(['bounds', 'restart-seed', 'restart-verify'])(
+    'propagates an Organization Graph %s qualification failure before later gates',
+    (phase) => {
+      const fixture = createFixture();
+      addFullServiceCapabilities(join(fixture.root, 'services/pure'));
+      writeServiceConfig(fixture.root, 'pure', {
+        capabilities: 'database,distribution,http-openapi,prometheus',
+        dockerTarget: 'app',
+        runtimeProfile: 'organization-graph-v1',
+      });
+      commitFixture(fixture.root);
+
+      const result = runGoCheck(fixture, ['services/pure'], {
+        FAKE_GS1C_FAIL_PHASE: phase,
+        FAKE_GS1C_FAIL_STATUS: '43',
+      });
+
+      expect(result.status).toBe(43);
+      const log = readFileSync(fixture.dockerLog, 'utf8');
+      expect(log).toContain(`-qualification-${phase}`);
+      expect(log).toContain(' rm -f ');
+      expect(log.split('\n').some((line) => line.startsWith('MSYS= build '))).toBe(false);
+      if (phase === 'bounds') {
+        expect(log).not.toContain('GRAPH_GS1C_RESTART_PHASE=seed');
+      }
+      if (phase === 'restart-seed') {
+        expect(log).not.toContain(' restart ');
+      }
+    },
+  );
 
   it('preserves failures and cleans exact resources without running later gates', () => {
     const fixture = createFixture();
@@ -916,6 +960,9 @@ function writeFakeExecutables(bin: string): void {
       '        while :; do sleep 1; done',
       '      fi',
       '      exit "${FAKE_MODULE_RUN_STATUS:-0}"',
+      '    fi',
+      '    if [ -n "${FAKE_GS1C_FAIL_PHASE:-}" ] && [[ "$joined" == *"-qualification-${FAKE_GS1C_FAIL_PHASE}"* ]]; then',
+      '      exit "${FAKE_GS1C_FAIL_STATUS:-43}"',
       '    fi',
       '    if [[ "$joined" == *" -d "* ]]; then',
       '      printf "%s\\n" "fake-container"',

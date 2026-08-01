@@ -7,11 +7,13 @@ import (
 
 const testBuildSHA = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 const testCursorSecret = "0123456789abcdefFEDCBA9876543210"
+const testPreviousCursorSecret = "previous-0123456789abcdef-76543210"
 
 func validEnvironment() []string {
 	return []string{
 		"DATABASE_URL=postgres://graph:secret@127.0.0.1:5432/graph?sslmode=disable",
 		"GRAPH_QUERY_CURSOR_SECRET=" + testCursorSecret,
+		"GRAPH_QUERY_CURSOR_SECRET_PREVIOUS=" + testPreviousCursorSecret,
 		"GRAPH_SERVICE_BUILD_SHA=" + testBuildSHA,
 	}
 }
@@ -29,6 +31,25 @@ func TestLoadEnvironmentUsesFailClosedLoopbackDefaults(t *testing.T) {
 	}
 	if string(cfg.QueryCursorSecret) != testCursorSecret {
 		t.Fatal("cursor secret changed")
+	}
+	if string(cfg.PreviousQueryCursorSecret) != testPreviousCursorSecret {
+		t.Fatal("previous cursor secret changed")
+	}
+}
+
+func TestLoadEnvironmentAllowsNoPreviousCursorSecret(t *testing.T) {
+	environment := []string{}
+	for _, entry := range validEnvironment() {
+		if !strings.HasPrefix(entry, "GRAPH_QUERY_CURSOR_SECRET_PREVIOUS=") {
+			environment = append(environment, entry)
+		}
+	}
+	cfg, err := LoadEnvironment(environment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.PreviousQueryCursorSecret) != 0 {
+		t.Fatal("unexpected previous cursor secret")
 	}
 }
 
@@ -125,6 +146,8 @@ func TestLoadEnvironmentRejectsMissingOrMalformedSecretsAndIdentity(t *testing.T
 		value   string
 	}{
 		{name: "short cursor secret", replace: "GRAPH_QUERY_CURSOR_SECRET", value: "short"},
+		{name: "short previous cursor secret", replace: "GRAPH_QUERY_CURSOR_SECRET_PREVIOUS", value: "short"},
+		{name: "equal previous cursor secret", replace: "GRAPH_QUERY_CURSOR_SECRET_PREVIOUS", value: testCursorSecret},
 		{name: "uppercase build sha", replace: "GRAPH_SERVICE_BUILD_SHA", value: strings.ToUpper(testBuildSHA)},
 		{name: "relative migrations", replace: "MIGRATION_SOURCE", value: "migrations"},
 		{name: "wrong database scheme", replace: "DATABASE_URL", value: "https://example.invalid/graph"},
@@ -176,5 +199,8 @@ func TestConfigDoesNotExposeCursorSecretThroughFormatting(t *testing.T) {
 	}, " ")), "\n", " ")
 	if strings.Contains(rendered, string(cfg.QueryCursorSecret)) {
 		t.Fatal("test setup unexpectedly included cursor secret in non-secret fields")
+	}
+	if strings.Contains(rendered, string(cfg.PreviousQueryCursorSecret)) {
+		t.Fatal("test setup unexpectedly included previous cursor secret in non-secret fields")
 	}
 }

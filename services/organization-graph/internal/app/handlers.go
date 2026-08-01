@@ -18,8 +18,11 @@ import (
 const maxSafeJSONInteger = int64(9_007_199_254_740_991)
 
 const (
-	mutationDeadline = 25 * time.Second
-	readDeadline     = 10 * time.Second
+	// The frozen maximum graph is about 16 MiB before PostgreSQL TOAST work.
+	// These remain hard bounds while leaving enough budget for exact-bound
+	// validation, durable commit, and verified readback on constrained runners.
+	mutationDeadline = 2 * time.Minute
+	readDeadline     = time.Minute
 )
 
 var idempotencyKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
@@ -134,8 +137,9 @@ func (service *Service) handleQuery(w http.ResponseWriter, request *http.Request
 		return
 	}
 	result, err := graph.Query(current.Snapshot, input, graph.QueryOptions{
-		CursorSecret: append([]byte(nil), service.cursorSecret...),
-		NowMS:        service.clock.Now().UnixMilli(),
+		CursorSecret:         append([]byte(nil), service.cursorSecret...),
+		PreviousCursorSecret: append([]byte(nil), service.previousCursorSecret...),
+		NowMS:                service.clock.Now().UnixMilli(),
 	})
 	if err != nil {
 		writeMappedError(w, service.logger, err, "", service.counters)

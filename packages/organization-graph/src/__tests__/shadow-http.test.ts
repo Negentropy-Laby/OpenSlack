@@ -171,7 +171,7 @@ describe('organization graph HTTP shadow publisher', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(observation).toMatchObject({
-      schema: 'openslack.graph_shadow_observation.v1',
+      schema: 'openslack.graph_shadow_observation.v2',
       operation: 'snapshot_ingest',
       outcome: 'accepted',
       endpoint: 'http://127.0.0.1:18181/v1/graph/snapshots:ingest',
@@ -180,8 +180,8 @@ describe('organization graph HTTP shadow publisher', () => {
       latencyMs: 17,
       authority: 'ts-local',
       shadow: 'go',
-      backlog: 0,
-      inFlight: 1,
+      backlog: 'unknown',
+      inFlight: 'unknown',
       parity: 'not_compared',
       idempotencyKey: expected.idempotencyKey,
       requestFingerprint: expected.requestFingerprint,
@@ -190,6 +190,88 @@ describe('organization graph HTTP shadow publisher', () => {
     expect(observations).toEqual([observation]);
     expect(JSON.stringify(observation)).not.toContain('"nodes"');
     expect(JSON.stringify(observation)).not.toContain('"delta"');
+  });
+
+  it('records explicit queue state without inventing publisher-local backlog', async () => {
+    const input: GraphShadowPublishInput = {
+      expectedCursor: null,
+      snapshot: graphSnapshot('cursor-001'),
+    };
+    const publisher = new GraphShadowHttpPublisher({
+      origin: 'http://127.0.0.1:18181',
+      fetch: vi.fn(async () => responseFor(receiptFor(input, 'accepted'), 201)),
+    });
+
+    const observation = await publisher.publish(input, { backlog: 3, inFlight: 1 });
+
+    expect(observation).toMatchObject({ backlog: 3, inFlight: 1 });
+  });
+
+  it.each([
+    { backlog: -1, inFlight: 1 },
+    { backlog: 1.5, inFlight: 1 },
+    { backlog: Number.NaN, inFlight: 1 },
+    { backlog: Number.POSITIVE_INFINITY, inFlight: 1 },
+    { backlog: GRAPH_SHADOW_POLICY.maxQueuedPublicationsPerScenario + 1, inFlight: 1 },
+    { backlog: 0, inFlight: 0 },
+    { backlog: 0, inFlight: 2 },
+  ])('reports unknown for an invalid queue observation %#', async (queue) => {
+    const input: GraphShadowPublishInput = {
+      expectedCursor: null,
+      snapshot: graphSnapshot('cursor-001'),
+    };
+    const publisher = new GraphShadowHttpPublisher({
+      origin: 'http://127.0.0.1:18181',
+      fetch: vi.fn(async () => responseFor(receiptFor(input, 'accepted'), 201)),
+    });
+
+    const observation = await publisher.publish(input, queue);
+
+    expect(observation).toMatchObject({ backlog: 'unknown', inFlight: 'unknown' });
+  });
+
+  it.each([null, 1, 'queue', {}, { backlog: 0 }])(
+    'reports unknown for malformed queue state %#',
+    async (queue) => {
+      const input: GraphShadowPublishInput = {
+        expectedCursor: null,
+        snapshot: graphSnapshot('cursor-001'),
+      };
+      const publisher = new GraphShadowHttpPublisher({
+        origin: 'http://127.0.0.1:18181',
+        fetch: vi.fn(async () => responseFor(receiptFor(input, 'accepted'), 201)),
+      });
+
+      const observation = await publisher.publish(input, queue as never);
+
+      expect(observation).toMatchObject({ backlog: 'unknown', inFlight: 'unknown' });
+    },
+  );
+
+  it('does not invoke queue accessors or proxy traps', async () => {
+    const input: GraphShadowPublishInput = {
+      expectedCursor: null,
+      snapshot: graphSnapshot('cursor-001'),
+    };
+    const publisher = new GraphShadowHttpPublisher({
+      origin: 'http://127.0.0.1:18181',
+      fetch: vi.fn(async () => responseFor(receiptFor(input, 'accepted'), 201)),
+    });
+    const accessor = vi.fn(() => 0);
+    const accessorQueue = Object.defineProperty({ inFlight: 1 }, 'backlog', {
+      enumerable: true,
+      get: accessor,
+    });
+    const trap = vi.fn();
+    const proxyQueue = new Proxy({ backlog: 0, inFlight: 1 }, { get: trap });
+
+    const accessorObservation = await publisher.publish(input, accessorQueue as never);
+    const proxyObservation = await publisher.publish(input, proxyQueue);
+
+    expect(accessor).not.toHaveBeenCalled();
+    expect(trap).not.toHaveBeenCalled();
+    expect(accessorObservation).toMatchObject({ backlog: 'unknown', inFlight: 'unknown' });
+    expect(proxyObservation).toMatchObject({ backlog: 'unknown', inFlight: 'unknown' });
   });
 
   it.each([['duplicate', 200] as const, ['reconciliation_required', 202] as const])(

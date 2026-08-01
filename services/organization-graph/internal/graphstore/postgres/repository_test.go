@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/Negentropy-Laby/OpenSlack/services/organization-graph/internal/graphcontract"
 	"github.com/Negentropy-Laby/OpenSlack/services/organization-graph/internal/graphjson"
 	"github.com/Negentropy-Laby/OpenSlack/services/organization-graph/internal/graphstore"
@@ -121,5 +123,42 @@ func TestResolveCommitOutcomeReadsAcceptedReceiptAndPersistsUnknownOutcome(t *te
 		pendingInput.Snapshot.ScenarioInstanceID,
 	); !graphstore.IsCode(err, graphstore.ErrorNotFound) {
 		t.Fatalf("reconciliation-only outcome created a graph head: %v", err)
+	}
+}
+
+func TestPublishRecoversExactReceiptWhenCommitSucceedsButResponseIsLost(t *testing.T) {
+	pool := testsupport.OpenPostgres(t)
+	commitErr := errors.New("injected commit response loss")
+	repository := &Repository{
+		pool: pool,
+		commitTransaction: func(ctx context.Context, transaction pgx.Tx) error {
+			if err := transaction.Commit(ctx); err != nil {
+				return err
+			}
+			return commitErr
+		},
+	}
+	input := reconciliationInput(
+		t,
+		"publish-response-lost",
+		reconciliationSnapshot(t, "scenario-response-lost", "cursor-response-lost"),
+	)
+
+	recovered, err := repository.Publish(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Publish() did not reconcile committed receipt: %v", err)
+	}
+	if recovered.Status != graphstore.ReceiptAccepted || recovered.CommittedAt == nil {
+		t.Fatalf("recovered receipt = %+v", recovered)
+	}
+	if _, _, err := repository.Current(context.Background(), input.Snapshot.ScenarioInstanceID); err != nil {
+		t.Fatalf("committed head is not durable: %v", err)
+	}
+	replay, err := repository.Publish(context.Background(), input)
+	if err != nil {
+		t.Fatalf("replay committed request: %v", err)
+	}
+	if replay.Status != graphstore.ReceiptDuplicate || replay.ReceiptID != recovered.ReceiptID {
+		t.Fatalf("replay receipt = %+v; recovered = %+v", replay, recovered)
 	}
 }

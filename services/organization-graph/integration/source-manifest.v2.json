@@ -4,7 +4,7 @@
   "service": {
     "goModule": "github.com/Negentropy-Laby/OpenSlack/services/organization-graph",
     "targetPath": "services/organization-graph",
-    "migrationPhase": "GS1-B",
+    "migrationPhase": "GS1-C",
     "authority": "GO_SHADOW_TS_LOCAL_WRITER"
   },
   "containerInputs": {

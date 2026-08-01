@@ -18,14 +18,20 @@ import (
 )
 
 const (
-	MaxIdempotencyKeyBytes = 512
-	MaxListLimit           = 200
-	MaxScenarioList        = 10000
-	ReceiptSchema          = "openslack.graph_ingest_receipt.v1"
-	OperationSnapshot      = "snapshot_ingest"
-	OperationSnapshotDelta = "delta_ingest"
-	SnapshotIngestPath     = "/v1/graph/snapshots:ingest"
-	DeltaIngestPath        = "/v1/graph/deltas:ingest"
+	MaxIdempotencyKeyBytes  = 512
+	MaxListLimit            = 200
+	MaxScenarioList         = 10000
+	MaxStoredCanonicalBytes = 64 * 1024 * 1024
+	ReceiptSchema           = "openslack.graph_ingest_receipt.v1"
+	OperationSnapshot       = "snapshot_ingest"
+	OperationSnapshotDelta  = "delta_ingest"
+	SnapshotIngestPath      = "/v1/graph/snapshots:ingest"
+	DeltaIngestPath         = "/v1/graph/deltas:ingest"
+)
+
+const (
+	maxStoredJSONDepth = 32
+	maxStoredJSONNodes = 2_000_000
 )
 
 type ReceiptStatus string
@@ -170,6 +176,13 @@ func PreparePublish(input PublishInput) (PreparedPublish, error) {
 	if err != nil {
 		return PreparedPublish{}, Failure(ErrorContentInvalid, "serialize snapshot", err)
 	}
+	if _, err := parseStoredCanonicalJSON(snapshotBytes); err != nil {
+		return PreparedPublish{}, Failure(
+			ErrorContentInvalid,
+			"snapshot canonical form exceeds the durable store parsing bounds",
+			err,
+		)
+	}
 
 	var delta *Delta
 	var deltaBytes []byte
@@ -197,6 +210,13 @@ func PreparePublish(input PublishInput) (PreparedPublish, error) {
 		encoded, encodeErr := graphcontract.SerializeDelta(canonical)
 		if encodeErr != nil {
 			return PreparedPublish{}, Failure(ErrorContentInvalid, "serialize delta", encodeErr)
+		}
+		if _, parseErr := parseStoredCanonicalJSON(encoded); parseErr != nil {
+			return PreparedPublish{}, Failure(
+				ErrorContentInvalid,
+				"delta canonical form exceeds the durable store parsing bounds",
+				parseErr,
+			)
 		}
 		delta = &canonical
 		deltaBytes = encoded
@@ -397,7 +417,11 @@ func DecodeStoredSnapshot(
 	scenarioInstanceID string,
 	cursor string,
 ) (Snapshot, error) {
-	value, err := graphcontract.ParseSnapshot(canonicalBytes)
+	parsed, err := parseStoredCanonicalJSON(canonicalBytes)
+	if err != nil {
+		return Snapshot{}, Failure(ErrorContentInvalid, "parse stored snapshot", err)
+	}
+	value, err := graphcontract.SnapshotFromValue(parsed)
 	if err != nil {
 		return Snapshot{}, Failure(ErrorContentInvalid, "parse stored snapshot", err)
 	}
@@ -432,7 +456,11 @@ func DecodeStoredDelta(
 	fromCursor string,
 	toCursor string,
 ) (Delta, error) {
-	value, err := graphcontract.ParseDelta(canonicalBytes)
+	parsed, err := parseStoredCanonicalJSON(canonicalBytes)
+	if err != nil {
+		return Delta{}, Failure(ErrorContentInvalid, "parse stored delta", err)
+	}
+	value, err := graphcontract.DeltaFromValue(parsed)
 	if err != nil {
 		return Delta{}, Failure(ErrorContentInvalid, "parse stored delta", err)
 	}
@@ -461,6 +489,20 @@ func DecodeStoredDelta(
 		)
 	}
 	return value, nil
+}
+
+func parseStoredCanonicalJSON(canonicalBytes []byte) (graphjson.Value, error) {
+	if len(canonicalBytes) == 0 || len(canonicalBytes) > MaxStoredCanonicalBytes {
+		return nil, fmt.Errorf(
+			"stored canonical bytes must contain between 1 and %d bytes",
+			MaxStoredCanonicalBytes,
+		)
+	}
+	return graphjson.Parse(canonicalBytes, graphjson.Limits{
+		MaxDepth:        graphjson.Limit(maxStoredJSONDepth),
+		MaxNodes:        graphjson.Limit(maxStoredJSONNodes),
+		MaxStringLength: graphjson.Limit(graphcontract.MaxPropertyStringCharacters),
+	})
 }
 
 func validateIdentifier(value, name string, maximum int) error {

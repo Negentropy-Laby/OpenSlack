@@ -210,11 +210,7 @@ func decodeSnapshotRequest(value graph.Value) (expectedCursor *string, snapshot 
 	if !ok {
 		return nil, graph.Snapshot{}, nil, nil, invalidRequest("snapshot must be a JSON object")
 	}
-	rawSnapshot, err := graph.CanonicalJSON(snapshotValue)
-	if err != nil {
-		return nil, graph.Snapshot{}, nil, nil, invalidRequest("snapshot cannot be canonicalized")
-	}
-	snapshot, err = graph.ParseSnapshot(rawSnapshot)
+	snapshot, err = graph.SnapshotFromValue(snapshotValue)
 	if err != nil {
 		return nil, graph.Snapshot{}, nil, nil, err
 	}
@@ -226,11 +222,10 @@ func decodeSnapshotRequest(value graph.Value) (expectedCursor *string, snapshot 
 	if err != nil {
 		return nil, graph.Snapshot{}, nil, nil, err
 	}
-	canonicalValue, err := graph.ParseCanonicalJSON(canonical, graph.DefaultJSONLimits())
-	if err != nil {
-		return nil, graph.Snapshot{}, nil, nil, err
+	normalized = graph.Object{
+		"expectedCursor": expectedCursorValue(expectedCursor),
+		"snapshot":       graph.SnapshotValue(snapshot),
 	}
-	normalized = graph.Object{"expectedCursor": expectedCursorValue(expectedCursor), "snapshot": canonicalValue}
 	return expectedCursor, snapshot, canonical, normalized, nil
 }
 
@@ -247,11 +242,7 @@ func decodeDeltaRequest(value graph.Value) (expectedCursor string, target graph.
 	if !ok {
 		return "", graph.Snapshot{}, nil, graph.Delta{}, nil, nil, invalidRequest("targetSnapshot must be a JSON object")
 	}
-	rawTarget, err := graph.CanonicalJSON(targetValue)
-	if err != nil {
-		return "", graph.Snapshot{}, nil, graph.Delta{}, nil, nil, invalidRequest("targetSnapshot cannot be canonicalized")
-	}
-	target, err = graph.ParseSnapshot(rawTarget)
+	target, err = graph.SnapshotFromValue(targetValue)
 	if err != nil {
 		return "", graph.Snapshot{}, nil, graph.Delta{}, nil, nil, err
 	}
@@ -268,11 +259,7 @@ func decodeDeltaRequest(value graph.Value) (expectedCursor string, target graph.
 	if !ok {
 		return "", graph.Snapshot{}, nil, graph.Delta{}, nil, nil, invalidRequest("delta must be a JSON object")
 	}
-	rawDelta, err := graph.CanonicalJSON(deltaValue)
-	if err != nil {
-		return "", graph.Snapshot{}, nil, graph.Delta{}, nil, nil, invalidRequest("delta cannot be canonicalized")
-	}
-	delta, err = graph.ParseDelta(rawDelta)
+	delta, err = graph.DeltaFromValue(deltaValue)
 	if err != nil {
 		return "", graph.Snapshot{}, nil, graph.Delta{}, nil, nil, err
 	}
@@ -285,18 +272,10 @@ func decodeDeltaRequest(value graph.Value) (expectedCursor string, target graph.
 		return "", graph.Snapshot{}, nil, graph.Delta{}, nil, nil, err
 	}
 
-	targetCanonicalValue, err := graph.ParseCanonicalJSON(targetBytes, graph.DefaultJSONLimits())
-	if err != nil {
-		return "", graph.Snapshot{}, nil, graph.Delta{}, nil, nil, err
-	}
-	deltaCanonicalValue, err := graph.ParseCanonicalJSON(deltaBytes, graph.DefaultJSONLimits())
-	if err != nil {
-		return "", graph.Snapshot{}, nil, graph.Delta{}, nil, nil, err
-	}
 	normalized = graph.Object{
 		"expectedCursor": expectedCursor,
-		"targetSnapshot": targetCanonicalValue,
-		"delta":          deltaCanonicalValue,
+		"targetSnapshot": graph.SnapshotValue(target),
+		"delta":          graph.DeltaValue(delta),
 	}
 	return expectedCursor, target, targetBytes, delta, deltaBytes, normalized, nil
 }

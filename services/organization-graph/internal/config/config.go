@@ -2,6 +2,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"net"
 	"net/url"
@@ -29,22 +30,24 @@ const (
 var (
 	buildSHAPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	allowedGraphEnv = map[string]struct{}{
-		"GRAPH_HTTP_BIND":           {},
-		"GRAPH_NETWORK_MODE":        {},
-		"GRAPH_QUERY_CURSOR_SECRET": {},
-		"GRAPH_SERVICE_BUILD_SHA":   {},
+		"GRAPH_HTTP_BIND":                    {},
+		"GRAPH_NETWORK_MODE":                 {},
+		"GRAPH_QUERY_CURSOR_SECRET":          {},
+		"GRAPH_QUERY_CURSOR_SECRET_PREVIOUS": {},
+		"GRAPH_SERVICE_BUILD_SHA":            {},
 	}
 )
 
 // Config is immutable after successful startup validation.
 type Config struct {
-	DatabaseURL       string
-	HTTPBind          string
-	NetworkMode       string
-	QueryCursorSecret []byte
-	ServiceBuildSHA   string
-	MigrationSource   string
-	ShutdownDeadline  time.Duration
+	DatabaseURL               string
+	HTTPBind                  string
+	NetworkMode               string
+	QueryCursorSecret         []byte
+	PreviousQueryCursorSecret []byte
+	ServiceBuildSHA           string
+	MigrationSource           string
+	ShutdownDeadline          time.Duration
 }
 
 type MigrationConfig struct {
@@ -93,6 +96,18 @@ func LoadEnvironment(environment []string) (Config, error) {
 			MaxCursorSecretBytes,
 		)
 	}
+	previousCursorSecret := []byte(values["GRAPH_QUERY_CURSOR_SECRET_PREVIOUS"])
+	if len(previousCursorSecret) != 0 &&
+		(len(previousCursorSecret) < MinCursorSecretBytes || len(previousCursorSecret) > MaxCursorSecretBytes) {
+		return Config{}, fmt.Errorf(
+			"GRAPH_QUERY_CURSOR_SECRET_PREVIOUS must be empty or contain between %d and %d bytes",
+			MinCursorSecretBytes,
+			MaxCursorSecretBytes,
+		)
+	}
+	if len(previousCursorSecret) != 0 && bytes.Equal(cursorSecret, previousCursorSecret) {
+		return Config{}, fmt.Errorf("GRAPH_QUERY_CURSOR_SECRET_PREVIOUS must differ from GRAPH_QUERY_CURSOR_SECRET")
+	}
 
 	buildSHA := strings.TrimSpace(values["GRAPH_SERVICE_BUILD_SHA"])
 	if !buildSHAPattern.MatchString(buildSHA) {
@@ -100,13 +115,14 @@ func LoadEnvironment(environment []string) (Config, error) {
 	}
 
 	return Config{
-		DatabaseURL:       migration.DatabaseURL,
-		HTTPBind:          httpBind,
-		NetworkMode:       networkMode,
-		QueryCursorSecret: append([]byte(nil), cursorSecret...),
-		ServiceBuildSHA:   buildSHA,
-		MigrationSource:   migration.MigrationSource,
-		ShutdownDeadline:  30 * time.Second,
+		DatabaseURL:               migration.DatabaseURL,
+		HTTPBind:                  httpBind,
+		NetworkMode:               networkMode,
+		QueryCursorSecret:         append([]byte(nil), cursorSecret...),
+		PreviousQueryCursorSecret: append([]byte(nil), previousCursorSecret...),
+		ServiceBuildSHA:           buildSHA,
+		MigrationSource:           migration.MigrationSource,
+		ShutdownDeadline:          30 * time.Second,
 	}, nil
 }
 

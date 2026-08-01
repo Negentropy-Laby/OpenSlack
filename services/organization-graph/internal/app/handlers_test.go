@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -157,6 +158,66 @@ func testSnapshot(t *testing.T, cursor, generatedAt string) graph.Snapshot {
 	return snapshot
 }
 
+func testSnapshotAboveDefaultJSONNodeLimit(t *testing.T) graph.Snapshot {
+	t.Helper()
+	items := make(graph.Array, graph.MaxPropertyItems)
+	for itemIndex := range items {
+		item := make(graph.Object, graph.MaxPropertyKeys)
+		for keyIndex := 0; keyIndex < graph.MaxPropertyKeys; keyIndex++ {
+			item[fmt.Sprintf("k%02d", keyIndex)] = float64(itemIndex*graph.MaxPropertyKeys + keyIndex)
+		}
+		items[itemIndex] = item
+	}
+	generatedAt := "2026-07-30T09:00:00Z"
+	nodes := make([]graph.Node, 20)
+	for index := range nodes {
+		authority := graph.AuthorityRef{
+			Provider:   "github",
+			ObjectType: "issue",
+			ObjectID:   "large-json-" + strconv.Itoa(index),
+			Version:    "v1",
+			ObservedAt: generatedAt,
+		}
+		nodeID, err := graph.DeriveNodeID("scenario-large-json", "core.work_item", authority)
+		if err != nil {
+			t.Fatal(err)
+		}
+		nodes[index] = graph.Node{
+			ID:                   nodeID,
+			Type:                 "core.work_item",
+			ScenarioDefinitionID: "software-delivery",
+			ScenarioInstanceID:   "scenario-large-json",
+			Title:                "Large JSON node " + strconv.Itoa(index),
+			AuthorityRef:         authority,
+			Owners:               []graph.ActorRef{},
+			Properties:           graph.Object{"items": items},
+			SourceEventIDs:       []string{},
+			EvidenceRefs:         []string{},
+			ProjectorVersion:     "projector-v1",
+			ValidFrom:            generatedAt,
+		}
+	}
+	snapshot, err := graph.SealSnapshot(graph.Snapshot{
+		Schema:             graph.SnapshotSchema,
+		Cursor:             "cursor-large-json",
+		ScenarioInstanceID: "scenario-large-json",
+		GeneratedAt:        generatedAt,
+		ProjectorVersion:   "projector-v1",
+		Nodes:              nodes,
+		Edges:              []graph.Edge{},
+		Completeness: graph.Completeness{
+			SourcesRequested: []string{"github"},
+			SourcesObserved:  []string{"github"},
+			MissingSources:   []string{},
+			Warnings:         []string{},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return snapshot
+}
+
 func testService(t *testing.T, store *fakeStore) *Service {
 	t.Helper()
 	service, err := New(Options{
@@ -174,17 +235,9 @@ func testService(t *testing.T, store *fakeStore) *Service {
 
 func snapshotRequestBody(t *testing.T, snapshot graph.Snapshot, expected *string) []byte {
 	t.Helper()
-	raw, err := graph.SerializeSnapshot(snapshot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	value, err := graph.ParseCanonicalJSON(raw, graph.DefaultJSONLimits())
-	if err != nil {
-		t.Fatal(err)
-	}
 	body, err := graph.CanonicalJSON(graph.Object{
 		"expectedCursor": expectedCursorValue(expected),
-		"snapshot":       value,
+		"snapshot":       graph.SnapshotValue(snapshot),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -194,26 +247,10 @@ func snapshotRequestBody(t *testing.T, snapshot graph.Snapshot, expected *string
 
 func deltaRequestBody(t *testing.T, expected string, target graph.Snapshot, delta graph.Delta) []byte {
 	t.Helper()
-	targetBytes, err := graph.SerializeSnapshot(target)
-	if err != nil {
-		t.Fatal(err)
-	}
-	targetValue, err := graph.ParseCanonicalJSON(targetBytes, graph.DefaultJSONLimits())
-	if err != nil {
-		t.Fatal(err)
-	}
-	deltaBytes, err := graph.SerializeDelta(delta)
-	if err != nil {
-		t.Fatal(err)
-	}
-	deltaValue, err := graph.ParseCanonicalJSON(deltaBytes, graph.DefaultJSONLimits())
-	if err != nil {
-		t.Fatal(err)
-	}
 	body, err := graph.CanonicalJSON(graph.Object{
 		"expectedCursor": expected,
-		"targetSnapshot": targetValue,
-		"delta":          deltaValue,
+		"targetSnapshot": graph.SnapshotValue(target),
+		"delta":          graph.DeltaValue(delta),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -272,6 +309,35 @@ func TestSnapshotIngestReturnsFrozenAcceptedReceiptAndCanonicalFingerprint(t *te
 	))
 	if fingerprint != fmt.Sprintf("sha256:%x", expectedDigest) {
 		t.Fatalf("fingerprint = %s, want sha256:%x", fingerprint, expectedDigest)
+	}
+}
+
+func TestSnapshotIngestAcceptsLegalContractAboveDefaultStrictJSONNodeLimit(t *testing.T) {
+	snapshot := testSnapshotAboveDefaultJSONNodeLimit(t)
+	raw, err := graph.SerializeSnapshot(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = graph.ParseCanonicalJSON(raw, graph.DefaultJSONLimits())
+	var jsonFailure *graph.JSONError
+	if !errors.As(err, &jsonFailure) || jsonFailure.Code != graph.JSONLimitExceeded {
+		t.Fatalf("default strict JSON parse error = %v, want %s", err, graph.JSONLimitExceeded)
+	}
+
+	store := &fakeStore{snapshot: snapshot}
+	service := testService(t, store)
+	body := snapshotRequestBody(t, snapshot, nil)
+	if int64(len(body)) > MaxRequestBodyBytes {
+		t.Fatalf("legal contract body exceeds HTTP request bound: %d", len(body))
+	}
+	response := performJSON(service, http.MethodPost, RouteSnapshotIngest, body, "snapshot-large-json")
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if len(store.snapshotCommands) != 1 ||
+		len(store.snapshotCommands[0].Snapshot.Nodes) != len(snapshot.Nodes) ||
+		store.snapshotCommands[0].Fingerprint == "" {
+		t.Fatalf("large contract command drifted: %+v", store.snapshotCommands)
 	}
 }
 
@@ -673,6 +739,8 @@ func TestNewRejectsMissingDependenciesAndUnsafeCursorConfiguration(t *testing.T)
 	for _, options := range []Options{
 		{BuildSHA: testServiceBuildSHA, CursorSecret: []byte(strings.Repeat("x", 32))},
 		{Store: &fakeStore{}, BuildSHA: testServiceBuildSHA, CursorSecret: []byte("short")},
+		{Store: &fakeStore{}, BuildSHA: testServiceBuildSHA, CursorSecret: []byte(strings.Repeat("x", 32)), PreviousCursorSecret: []byte("short")},
+		{Store: &fakeStore{}, BuildSHA: testServiceBuildSHA, CursorSecret: []byte(strings.Repeat("x", 32)), PreviousCursorSecret: []byte(strings.Repeat("x", 32))},
 		{Store: &fakeStore{}, BuildSHA: "development", CursorSecret: []byte(strings.Repeat("x", 32))},
 	} {
 		if _, err := New(options); err == nil {

@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
+import { types as nodeTypes } from 'node:util';
 import { canonicalJson } from './canonical.js';
 import { assertGraphDeltaIntegrity, assertGraphSnapshotIntegrity } from './integrity.js';
 import { parseStrictGraphJson } from './strict-json.js';
 import type { GraphDelta, GraphSnapshot } from './types.js';
 
 export const GRAPH_SHADOW_RECEIPT_SCHEMA = 'openslack.graph_ingest_receipt.v1' as const;
+export const GRAPH_SHADOW_OBSERVATION_SCHEMA = 'openslack.graph_shadow_observation.v2' as const;
 
 export const GRAPH_SHADOW_POLICY = Object.freeze({
   maxRequestBytes: 64 * 1024 * 1024,
@@ -53,7 +55,7 @@ export type GraphShadowObservationOutcome =
   | 'response_invalid';
 
 export interface GraphShadowObservation {
-  schema: 'openslack.graph_shadow_observation.v1';
+  schema: typeof GRAPH_SHADOW_OBSERVATION_SCHEMA;
   operation: GraphShadowOperation;
   outcome: GraphShadowObservationOutcome;
   endpoint: string;
@@ -62,8 +64,8 @@ export interface GraphShadowObservation {
   latencyMs: number;
   authority: 'ts-local';
   shadow: 'go';
-  backlog: 0;
-  inFlight: 1;
+  backlog: number | 'unknown';
+  inFlight: number | 'unknown';
   parity: 'not_compared';
   scenarioInstanceId: string;
   cursor: string;
@@ -75,6 +77,11 @@ export interface GraphShadowObservation {
   receipt?: GraphShadowReceipt;
 }
 
+export interface GraphShadowQueueObservation {
+  backlog: number;
+  inFlight: number;
+}
+
 export type GraphShadowAuditSink = (
   observation: Readonly<GraphShadowObservation>,
 ) => void | Promise<void>;
@@ -84,7 +91,10 @@ export interface GraphShadowPublishPort {
    * Shadow publication is observational. Implementations must not grant graph
    * read or write authority, and callers must ignore failures.
    */
-  publish(input: GraphShadowPublishInput): Promise<GraphShadowObservation>;
+  publish(
+    input: GraphShadowPublishInput,
+    queue?: Readonly<GraphShadowQueueObservation>,
+  ): Promise<GraphShadowObservation>;
 }
 
 type GraphShadowFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -433,16 +443,18 @@ function baseObservation(
   request: PreparedRequest,
   endpoint: string,
   attemptedAt: string,
+  queue?: Readonly<GraphShadowQueueObservation>,
 ): Omit<GraphShadowObservation, 'outcome' | 'completedAt' | 'latencyMs'> {
+  const normalizedQueue = normalizeQueueObservation(queue);
   return {
-    schema: 'openslack.graph_shadow_observation.v1',
+    schema: GRAPH_SHADOW_OBSERVATION_SCHEMA,
     operation: request.operation,
     endpoint,
     attemptedAt,
     authority: 'ts-local',
     shadow: 'go',
-    backlog: 0,
-    inFlight: 1,
+    backlog: normalizedQueue?.backlog ?? 'unknown',
+    inFlight: normalizedQueue?.inFlight ?? 'unknown',
     parity: 'not_compared',
     scenarioInstanceId: input.snapshot.scenarioInstanceId,
     cursor: input.snapshot.cursor,
@@ -450,6 +462,38 @@ function baseObservation(
     idempotencyKey: request.idempotencyKey,
     requestFingerprint: request.requestFingerprint,
   };
+}
+
+function normalizeQueueObservation(value: unknown): GraphShadowQueueObservation | undefined {
+  try {
+    if (
+      value === null ||
+      typeof value !== 'object' ||
+      Array.isArray(value) ||
+      nodeTypes.isProxy(value) ||
+      ![Object.prototype, null].includes(Object.getPrototypeOf(value))
+    ) {
+      return undefined;
+    }
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const backlog = descriptors.backlog;
+    const inFlight = descriptors.inFlight;
+    if (
+      backlog === undefined ||
+      inFlight === undefined ||
+      !Object.hasOwn(backlog, 'value') ||
+      !Object.hasOwn(inFlight, 'value') ||
+      !Number.isSafeInteger(backlog.value) ||
+      backlog.value < 0 ||
+      backlog.value > GRAPH_SHADOW_POLICY.maxQueuedPublicationsPerScenario ||
+      inFlight.value !== 1
+    ) {
+      return undefined;
+    }
+    return { backlog: backlog.value as number, inFlight: 1 };
+  } catch {
+    return undefined;
+  }
 }
 
 function receiptMatchesRequest(
@@ -548,11 +592,20 @@ export class GraphShadowHttpPublisher implements GraphShadowPublishPort {
     this.now = options.now ?? Date.now;
   }
 
-  async publish(input: GraphShadowPublishInput): Promise<GraphShadowObservation> {
+  async publish(
+    input: GraphShadowPublishInput,
+    queue?: Readonly<GraphShadowQueueObservation>,
+  ): Promise<GraphShadowObservation> {
     const request = prepareGraphShadowRequest(input);
     const endpoint = `${this.origin}${request.path}`;
     const attemptedMs = this.safeNow();
-    const base = baseObservation(input, request, endpoint, new Date(attemptedMs).toISOString());
+    const base = baseObservation(
+      input,
+      request,
+      endpoint,
+      new Date(attemptedMs).toISOString(),
+      queue,
+    );
     const controller = new AbortController();
     const result = await raceWithTimeout(
       Promise.resolve().then(() =>
