@@ -77,13 +77,14 @@ func qualificationSnapshot(
 
 func qualificationDelta(t testing.TB, parent, target graph.Snapshot) graph.Delta {
 	t.Helper()
-	parentNodes := make(map[string]struct{}, len(parent.Nodes))
+	parentNodes := make(map[string]graph.Node, len(parent.Nodes))
 	for _, node := range parent.Nodes {
-		parentNodes[node.ID] = struct{}{}
+		parentNodes[node.ID] = node
 	}
-	upsertNodes := make([]graph.Node, 0, len(target.Nodes)-len(parent.Nodes))
+	upsertNodes := make([]graph.Node, 0, len(target.Nodes))
 	for _, node := range target.Nodes {
-		if _, exists := parentNodes[node.ID]; !exists {
+		parentNode, exists := parentNodes[node.ID]
+		if !exists || !reflect.DeepEqual(parentNode, node) {
 			upsertNodes = append(upsertNodes, node)
 		}
 	}
@@ -97,6 +98,34 @@ func qualificationDelta(t testing.TB, parent, target graph.Snapshot) graph.Delta
 		t.Fatal(err)
 	}
 	return delta
+}
+
+func TestQualificationDeltaReconstructsChangedExistingNodes(t *testing.T) {
+	parent := qualificationSnapshot(
+		t,
+		"scenario-gs1c-delta-helper",
+		"cursor-001",
+		"2026-08-01T00:00:00Z",
+		"1",
+		"2",
+	)
+	target := qualificationSnapshot(
+		t,
+		parent.ScenarioInstanceID,
+		"cursor-002",
+		"2026-08-01T00:01:00Z",
+		"1",
+		"2",
+		"3",
+	)
+	delta := qualificationDelta(t, parent, target)
+
+	if len(delta.UpsertNodes) != len(target.Nodes) {
+		t.Fatalf("upsert node count = %d, want %d", len(delta.UpsertNodes), len(target.Nodes))
+	}
+	if err := graphstore.ValidateDeltaTransition(parent, target, delta); err != nil {
+		t.Fatalf("qualification delta does not reconstruct target: %v", err)
+	}
 }
 
 func qualificationCanonicalValue(t testing.TB, raw []byte) graph.Value {
