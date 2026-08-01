@@ -291,6 +291,11 @@ modules:
       - repo:services/organization-graph/integration/source-manifest.v2.json
       - commit:ca1cd9b4d04f65febc461d5eca81a3fe2f359b8a
       - repo:scripts/go-check.sh
+      - test:services/organization-graph/softwaredelivery/projector_test.go
+      - test:services/organization-graph/softwaredelivery/projector_golden_test.go
+      - test:services/organization-graph/softwaredelivery/manifest_test.go
+      - repo:packages/organization-graph/contracts/software-delivery/v1/manifest.json
+      - commit:2417b3542d8d9ddaceb1fdd65944b22e5b91ea5a
     phase: '2D/2E'
     cli:
       - openslack collaboration activity
