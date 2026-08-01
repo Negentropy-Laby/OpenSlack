@@ -48,13 +48,12 @@ const contractToDeliveryFixturePath = resolve(
   repositoryRoot,
   'packages/organization-graph/src/fixtures/contract-to-delivery-source.json',
 );
-// Full-suite CI runs hundreds of files concurrently. These contract freeze cases
-// launch generator processes and/or read large generated artifacts, and have
-// exceeded 30 seconds under that measured load; keep the larger budget scoped here.
-// Rebuilding every exact-byte authority and both mirrors exercises multiple
-// large vector files. Keep the budget explicit so shared CI runners do not
-// mistake valid bounded work for a hung generator.
-const CONTRACT_FREEZE_TIMEOUT_MS = 120_000;
+// Full-suite CI runs hundreds of files concurrently. Keep the measured budgets
+// local to each workload so the generator has enough headroom without delaying
+// hung-test detection for the read-only freeze checks.
+const CONTRACT_GENERATION_TIMEOUT_MS = 120_000;
+const SOFTWARE_DELIVERY_FREEZE_TIMEOUT_MS = 60_000;
+const CONTRACT_TO_DELIVERY_FREEZE_TIMEOUT_MS = 90_000;
 const CONTRACT_CLEANUP_TIMEOUT_MS = 30_000;
 const temporaryRoots: string[] = [];
 
@@ -372,7 +371,7 @@ describe('Organization Graph generated contract freeze', () => {
         );
       }
     },
-    CONTRACT_FREEZE_TIMEOUT_MS,
+    CONTRACT_GENERATION_TIMEOUT_MS,
   );
 
   it(
@@ -409,7 +408,7 @@ describe('Organization Graph generated contract freeze', () => {
         );
       }
     },
-    CONTRACT_FREEZE_TIMEOUT_MS,
+    SOFTWARE_DELIVERY_FREEZE_TIMEOUT_MS,
   );
 
   it('keeps Software Delivery vector schema-validity classifications aligned with Ajv 2020', async () => {
@@ -546,7 +545,7 @@ describe('Organization Graph generated contract freeze', () => {
         );
       }
     },
-    CONTRACT_FREEZE_TIMEOUT_MS,
+    CONTRACT_TO_DELIVERY_FREEZE_TIMEOUT_MS,
   );
 
   it('keeps Contract-to-Delivery vector classifications aligned with Ajv 2020', async () => {
