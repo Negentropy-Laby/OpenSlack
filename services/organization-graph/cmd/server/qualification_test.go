@@ -139,13 +139,9 @@ func qualificationCanonicalValue(t testing.TB, raw []byte) graph.Value {
 
 func qualificationSnapshotBody(t testing.TB, expectedCursor *string, snapshot graph.Snapshot) []byte {
 	t.Helper()
-	raw, err := graph.SerializeSnapshot(snapshot)
-	if err != nil {
-		t.Fatal(err)
-	}
 	body, err := graph.CanonicalJSON(graph.Object{
 		"expectedCursor": qualificationOptionalString(expectedCursor),
-		"snapshot":       qualificationCanonicalValue(t, raw),
+		"snapshot":       graph.SnapshotValue(snapshot),
 	})
 	if err != nil {
 		t.Fatal(err)

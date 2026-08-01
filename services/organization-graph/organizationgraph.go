@@ -142,6 +142,17 @@ func AuthorityProviders() []string { return graphcontract.AuthorityProviders() }
 func ParseSnapshot(input []byte) (Snapshot, error) { return graphcontract.ParseSnapshot(input) }
 func ParseDelta(input []byte) (Delta, error)       { return graphcontract.ParseDelta(input) }
 
+func SnapshotFromValue(input Value) (Snapshot, error) {
+	return graphcontract.SnapshotFromValue(input)
+}
+
+func DeltaFromValue(input Value) (Delta, error) {
+	return graphcontract.DeltaFromValue(input)
+}
+
+func SnapshotValue(value Snapshot) Object { return graphcontract.SnapshotValue(value) }
+func DeltaValue(value Delta) Object       { return graphcontract.DeltaValue(value) }
+
 func ValidateSnapshot(value Snapshot) error { return graphcontract.ValidateSnapshot(value) }
 func ValidateDelta(value Delta) error       { return graphcontract.ValidateDelta(value) }
 
