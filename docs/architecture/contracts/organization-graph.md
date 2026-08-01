@@ -209,6 +209,34 @@ occurred. Audit-sink failure emits only the fixed
 damage from the absence of a mismatch. The audit append is observational evidence, not Graph or
 business-state mutation.
 
+### GS3-B bounded canary boundary
+
+GS3-B adds a second, default-off route that is authoritative only for an exact process-start policy:
+
+- the policy binds the canonical workspace ID, one to 16 exact scenario-instance IDs, one positive
+  safe-integer routing epoch, one backend, and an expiry no more than seven days after startup;
+- `go` requires one exact credential-free loopback or explicitly internal IP-literal origin plus a
+  64-lowercase-hex expected service build SHA. Both epoch and build are sent and checked on every
+  `/v1/canary/graph:query` or `/v1/canary/graph:explain` request and repeated in the closed response;
+- selected Go requests never open the TypeScript local snapshot. Timeout, network, HTTP, strict or
+  canonical JSON, schema, result-bound, build, epoch, cursor, or audit failure returns an explicit
+  blocked MCP result and never invokes a per-request fallback;
+- unselected scenarios continue using the TypeScript local store. Rollback requires a new explicit
+  `ts-local` policy with a higher routing epoch; it is not inferred from Go health;
+- ordinary query cursors retain the frozen v1 five-minute HMAC contract. Canary reads issue v2
+  cursors that additionally bind the routing epoch. A v1 or cross-epoch token returns
+  `GRAPH_QUERY_CURSOR_MISMATCH`; an expired same-epoch token returns
+  `GRAPH_QUERY_CURSOR_EXPIRED`. No backend translates or accepts the other issuer's token;
+- Collaboration records only operation, served/blocked/rolled-back outcome, backend, epoch, expected
+  build SHA, latency, bounded code/status, and a request fingerprint. It never stores the origin,
+  request body, raw cursor, graph objects, evidence, or source-event contents. A successful selected
+  read is not returned if this audit evidence cannot be committed.
+
+This canary does not change Graph-head or writer ownership. TypeScript projectors and the local
+publication path still feed the Go store through the existing durable ingest contract. It also does
+not change MCP tool names, input schemas, `openslack.mcp_result.v2`, the 12/16/17 profile counts,
+Qoder Skill behavior, or any confirmation, workflow-effect, or human-attestation boundary.
+
 ## Local Store
 
 The MVP store is:
@@ -284,6 +312,12 @@ composed for 12-, 16-, and 17-tool profiles without changing their tool names, s
 plan-confirmation, workflow-effect, or independent-human-attestation boundaries. GS3-A does not
 select Go for any request, transfer Graph-head ownership, change the cursor issuer, or claim a
 Qoder Desktop, remote Connector, release, live, or production qualification.
+
+GS3-B keeps TypeScript as the default and unselected-scenario read authority but permits the exact
+bounded canary policy above to return Go query/explain results. A hosted cross-language gate starts
+the real Go handler and exercises query, explanation, v2 cursor continuation, v1 cursor rejection,
+build-drift rejection, and the explicit higher-epoch TypeScript rollback. GS3-C full Graph-head and
+read-authority cutover remains separate and pending.
 
 ## Related Documents
 

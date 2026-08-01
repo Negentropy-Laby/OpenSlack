@@ -1,10 +1,13 @@
 openapi: 3.1.0
 info:
-  title: OpenSlack Organization Graph Shadow Service
-  version: 1.0.0
+  title: OpenSlack Organization Graph Service
+  version: 1.1.0
   description: |
-    Internal-only GS1-B HTTP contract. The service stores an isolated PostgreSQL
-    shadow projection; it is not the user-visible graph authority during GS1.
+    Internal-only Organization Graph HTTP contract. The service stores an
+    isolated PostgreSQL projection. Ordinary read routes remain suitable for
+    shadow qualification; only the dedicated GS3-B canary routes may become a
+    user-visible read authority, and only under an exact routing epoch and
+    service-build binding selected by the TypeScript MCP process.
     Requests are accepted only over a loopback bind or an explicitly selected
     internal network bind. This contract provides no public-network
     authentication, tenant scope, rate limiting, TLS termination, or mutation
@@ -177,6 +180,84 @@ paths:
           $ref: '#/components/responses/Unavailable'
         default:
           $ref: '#/components/responses/Internal'
+  /v1/canary/graph:query:
+    post:
+      operationId: queryCurrentGraphAsBoundCanaryAuthority
+      tags: [graph]
+      summary: Query the verified current snapshot under one exact canary epoch
+      description: |
+        This endpoint is disabled unless GRAPH_CANARY_ROUTING_EPOCH is set. It
+        requires an exact canonical epoch header and the expected 64-hex service
+        build SHA on every request. Query cursors are HMAC-authenticated and bind
+        the query, snapshot, expiry, and routing epoch; v1 or cross-epoch cursors
+        are rejected without translation or TypeScript fallback.
+      parameters:
+        - $ref: '#/components/parameters/CanaryRoutingEpoch'
+        - $ref: '#/components/parameters/ExpectedBuildSHA'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphQueryInput'
+      responses:
+        '200':
+          description: Bounded canonical query envelope from the bound Go authority
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CanaryGraphQueryRead'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '410':
+          description: The epoch-bound graph query cursor expired
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GraphError'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
+  /v1/canary/graph:explain:
+    post:
+      operationId: explainCurrentGraphObjectAsBoundCanaryAuthority
+      tags: [graph]
+      summary: Explain one graph object under one exact canary epoch
+      parameters:
+        - $ref: '#/components/parameters/CanaryRoutingEpoch'
+        - $ref: '#/components/parameters/ExpectedBuildSHA'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GraphExplainInput'
+      responses:
+        '200':
+          description: Bounded canonical explanation envelope from the bound Go authority
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CanaryGraphExplainRead'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          $ref: '#/components/responses/TooLarge'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        default:
+          $ref: '#/components/responses/Internal'
   /v1/graph/scenarios:
     get:
       operationId: listPublishedGraphScenarios
@@ -271,6 +352,23 @@ components:
         minLength: 1
         maxLength: 128
         pattern: '^[A-Za-z0-9._:-]+$'
+    CanaryRoutingEpoch:
+      name: X-OpenSlack-Graph-Routing-Epoch
+      in: header
+      required: true
+      description: Exact positive safe integer configured in the selected Go service process.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 9007199254740991
+    ExpectedBuildSHA:
+      name: X-OpenSlack-Graph-Expected-Build-SHA
+      in: header
+      required: true
+      description: Exact lowercase build identity selected by the TypeScript canary policy.
+      schema:
+        type: string
+        pattern: '^[0-9a-f]{64}$'
   responses:
     NotFound:
       description: Scenario, head, query target, or relationship path not found
@@ -641,6 +739,72 @@ components:
               type: boolean
             path:
               type: boolean
+    CanaryGraphQueryRead:
+      type: object
+      additionalProperties: false
+      required:
+        - schema
+        - operation
+        - backend
+        - routingEpoch
+        - serviceBuildSha
+        - generatedAt
+        - snapshotCursor
+        - result
+      properties:
+        schema:
+          const: openslack.graph_canary_read.v1
+        operation:
+          const: query
+        backend:
+          const: go
+        routingEpoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        serviceBuildSha:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        generatedAt:
+          type: string
+          format: date-time
+        snapshotCursor:
+          $ref: '#/components/schemas/Identifier'
+        result:
+          $ref: '#/components/schemas/GraphQueryResult'
+    CanaryGraphExplainRead:
+      type: object
+      additionalProperties: false
+      required:
+        - schema
+        - operation
+        - backend
+        - routingEpoch
+        - serviceBuildSha
+        - generatedAt
+        - snapshotCursor
+        - result
+      properties:
+        schema:
+          const: openslack.graph_canary_read.v1
+        operation:
+          const: explain
+        backend:
+          const: go
+        routingEpoch:
+          type: integer
+          minimum: 1
+          maximum: 9007199254740991
+        serviceBuildSha:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        generatedAt:
+          type: string
+          format: date-time
+        snapshotCursor:
+          $ref: '#/components/schemas/Identifier'
+        result:
+          $ref: '#/components/schemas/GraphExplanation'
     Completeness:
       $ref: '../../../../packages/organization-graph/contracts/v1/schemas/graph-snapshot.v1.schema.json#/$defs/completeness'
     ScenarioList:
@@ -692,6 +856,11 @@ components:
             - GRAPH_UNPROCESSABLE
             - GRAPH_UNAVAILABLE
             - GRAPH_INTERNAL
+            - GRAPH_CANARY_NOT_CONFIGURED
+            - GRAPH_CANARY_ROUTE_MISMATCH
+            - GRAPH_QUERY_CURSOR_INVALID
+            - GRAPH_QUERY_CURSOR_EXPIRED
+            - GRAPH_QUERY_CURSOR_MISMATCH
         message:
           type: string
           minLength: 1

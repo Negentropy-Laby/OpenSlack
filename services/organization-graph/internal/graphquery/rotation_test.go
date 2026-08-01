@@ -92,3 +92,88 @@ func TestCursorSecretRotationRejectsUnsafePreviousSecret(t *testing.T) {
 		}
 	}
 }
+
+func TestRoutingEpochIssuesV2CursorAndRejectsCrossEpochUse(t *testing.T) {
+	snapshot := rotationSnapshot(t)
+	secret := []byte("active-cursor-secret-0123456789abc")
+	maximum := 1
+	epoch := int64(41)
+	input := Input{ScenarioInstanceID: snapshot.ScenarioInstanceID, MaxNodes: &maximum}
+	first, err := Query(snapshot, input, Options{
+		CursorSecret: secret, RoutingEpoch: &epoch, NowMS: 1_000,
+	})
+	if err != nil || first.NextCursor == nil {
+		t.Fatalf("epoch cursor issuance = %#v, %v", first, err)
+	}
+	epochCursor := *first.NextCursor
+	input.Cursor = &epochCursor
+	if _, err := Query(snapshot, input, Options{
+		CursorSecret: secret, RoutingEpoch: &epoch, NowMS: 1_001,
+	}); err != nil {
+		t.Fatalf("same epoch rejected cursor: %v", err)
+	}
+
+	for name, options := range map[string]Options{
+		"legacy authority": {CursorSecret: secret, NowMS: 1_001},
+		"later epoch": func() Options {
+			later := int64(42)
+			return Options{CursorSecret: secret, RoutingEpoch: &later, NowMS: 1_001}
+		}(),
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := Query(snapshot, input, options)
+			var queryError *Error
+			if err == nil || !errors.As(err, &queryError) || queryError.Code != ErrorCursorMismatch {
+				t.Fatalf("cross-epoch error = %v", err)
+			}
+		})
+	}
+}
+
+func TestRoutingEpochRejectsLegacyCursorAndPreservesExplicitExpiry(t *testing.T) {
+	snapshot := rotationSnapshot(t)
+	secret := []byte("active-cursor-secret-0123456789abc")
+	maximum := 1
+	input := Input{ScenarioInstanceID: snapshot.ScenarioInstanceID, MaxNodes: &maximum}
+	legacy, err := Query(snapshot, input, Options{CursorSecret: secret, NowMS: 1_000})
+	if err != nil || legacy.NextCursor == nil {
+		t.Fatalf("legacy cursor issuance = %#v, %v", legacy, err)
+	}
+	input.Cursor = legacy.NextCursor
+	epoch := int64(41)
+	_, err = Query(snapshot, input, Options{CursorSecret: secret, RoutingEpoch: &epoch, NowMS: 1_001})
+	var queryError *Error
+	if err == nil || !errors.As(err, &queryError) || queryError.Code != ErrorCursorMismatch {
+		t.Fatalf("legacy cursor at canary epoch error = %v", err)
+	}
+
+	ttl := int64(10)
+	issued, err := Query(snapshot, Input{
+		ScenarioInstanceID: snapshot.ScenarioInstanceID, MaxNodes: &maximum,
+	}, Options{CursorSecret: secret, RoutingEpoch: &epoch, CursorTTLMS: &ttl, NowMS: 2_000})
+	if err != nil || issued.NextCursor == nil {
+		t.Fatalf("expiring epoch cursor issuance = %#v, %v", issued, err)
+	}
+	input.Cursor = issued.NextCursor
+	_, err = Query(snapshot, input, Options{
+		CursorSecret: secret, RoutingEpoch: &epoch, CursorTTLMS: &ttl, NowMS: 2_010,
+	})
+	queryError = nil
+	if err == nil || !errors.As(err, &queryError) || queryError.Code != ErrorCursorExpired {
+		t.Fatalf("expired epoch cursor error = %v", err)
+	}
+}
+
+func TestRoutingEpochRejectsUnsafeValues(t *testing.T) {
+	snapshot := rotationSnapshot(t)
+	secret := []byte("active-cursor-secret-0123456789abc")
+	for _, epoch := range []int64{0, -1, maxSafeInteger + 1} {
+		_, err := Query(snapshot, Input{ScenarioInstanceID: snapshot.ScenarioInstanceID}, Options{
+			CursorSecret: secret, RoutingEpoch: &epoch, NowMS: 1_000,
+		})
+		var queryError *Error
+		if err == nil || !errors.As(err, &queryError) || queryError.Code != ErrorInvalid {
+			t.Fatalf("unsafe routing epoch %d error = %v", epoch, err)
+		}
+	}
+}

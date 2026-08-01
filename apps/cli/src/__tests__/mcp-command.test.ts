@@ -58,6 +58,14 @@ describe('mcp command', () => {
       '--workspace-id',
       '--graph-read-mirror-origin',
       '--graph-read-mirror-network',
+      '--graph-read-canary-backend',
+      '--graph-read-canary-routing-epoch',
+      '--graph-read-canary-tenant',
+      '--graph-read-canary-scenarios',
+      '--graph-read-canary-expires-at',
+      '--graph-read-canary-origin',
+      '--graph-read-canary-network',
+      '--graph-read-canary-build-sha',
     ]);
     expect(command.commands[1].options[0].mandatory).toBe(true);
     expect(command.commands[1].options[1]).toMatchObject({
@@ -254,6 +262,162 @@ describe('mcp command', () => {
     expect(createContext).not.toHaveBeenCalled();
     expect(createServer).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
+  });
+
+  it('binds one exact Go canary without changing the read-only tool profile', async () => {
+    const graphReadCanary = Object.freeze({}) as never;
+    const createGraphReadCanary = vi.fn(() => graphReadCanary);
+    const context = Object.freeze({}) as OpenSlackMcpContext;
+    const createContext = vi.fn(() => context);
+    const createdServer = server();
+
+    await mcpCommands({
+      workspaceRoot: process.cwd(),
+      operator: operatorContext(),
+      createGraphReadCanary,
+      createContext,
+      createServer: vi.fn(() => createdServer),
+    }).parseAsync([
+      'node',
+      'test',
+      'serve',
+      '--stdio',
+      '--profile',
+      'read-only',
+      '--graph-read-canary-backend',
+      'go',
+      '--graph-read-canary-routing-epoch',
+      '41',
+      '--graph-read-canary-tenant',
+      'openslack-self',
+      '--graph-read-canary-scenarios',
+      'scenario-a,scenario-b',
+      '--graph-read-canary-expires-at',
+      '2026-08-03T00:00:00.000Z',
+      '--graph-read-canary-origin',
+      'http://10.20.30.40:18181',
+      '--graph-read-canary-network',
+      'internal',
+      '--graph-read-canary-build-sha',
+      '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    ]);
+
+    expect(createGraphReadCanary).toHaveBeenCalledWith({
+      workspaceRoot: process.cwd(),
+      backend: 'go',
+      tenantId: 'openslack-self',
+      scenarioInstanceIds: ['scenario-a', 'scenario-b'],
+      routingEpoch: 41,
+      expiresAt: '2026-08-03T00:00:00.000Z',
+      origin: 'http://10.20.30.40:18181',
+      networkMode: 'internal',
+      expectedBuildSha: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    });
+    expect(createContext).toHaveBeenCalledWith({
+      workspaceRoot: process.cwd(),
+      operator: expect.anything(),
+      graphReadCanary,
+    });
+    expect(createdServer.serveStdio).toHaveBeenCalledOnce();
+  });
+
+  it('binds an explicit higher-epoch ts-local rollback without Go transport state', async () => {
+    const graphReadCanary = Object.freeze({}) as never;
+    const createGraphReadCanary = vi.fn(() => graphReadCanary);
+    const context = Object.freeze({}) as OpenSlackMcpContext;
+    const createContext = vi.fn(() => context);
+
+    await mcpCommands({
+      workspaceRoot: process.cwd(),
+      operator: operatorContext(),
+      createGraphReadCanary,
+      createContext,
+      createServer: vi.fn(() => server()),
+    }).parseAsync([
+      'node',
+      'test',
+      'serve',
+      '--stdio',
+      '--graph-read-canary-backend',
+      'ts-local',
+      '--graph-read-canary-routing-epoch',
+      '42',
+      '--graph-read-canary-tenant',
+      'openslack-self',
+      '--graph-read-canary-scenarios',
+      'scenario-a',
+      '--graph-read-canary-expires-at',
+      '2026-08-03T00:00:00.000Z',
+    ]);
+
+    expect(createGraphReadCanary).toHaveBeenCalledWith({
+      workspaceRoot: process.cwd(),
+      backend: 'ts-local',
+      tenantId: 'openslack-self',
+      scenarioInstanceIds: ['scenario-a'],
+      routingEpoch: 42,
+      expiresAt: '2026-08-03T00:00:00.000Z',
+    });
+    expect(createContext).toHaveBeenCalledWith({
+      workspaceRoot: process.cwd(),
+      operator: expect.anything(),
+      graphReadCanary,
+    });
+  });
+
+  it.each([
+    {
+      name: 'partial policy',
+      args: ['--graph-read-canary-backend', 'go'],
+      message: 'Graph read canary requires backend, routing epoch, tenant, scenarios, and expiry.',
+    },
+    {
+      name: 'noncanonical epoch',
+      args: [
+        '--graph-read-canary-backend',
+        'go',
+        '--graph-read-canary-routing-epoch',
+        '041',
+        '--graph-read-canary-tenant',
+        'openslack-self',
+        '--graph-read-canary-scenarios',
+        'scenario-a',
+        '--graph-read-canary-expires-at',
+        '2026-08-03T00:00:00.000Z',
+      ],
+      message: '--graph-read-canary-routing-epoch must be canonical.',
+    },
+    {
+      name: 'Go without build and origin',
+      args: [
+        '--graph-read-canary-backend',
+        'go',
+        '--graph-read-canary-routing-epoch',
+        '41',
+        '--graph-read-canary-tenant',
+        'openslack-self',
+        '--graph-read-canary-scenarios',
+        'scenario-a',
+        '--graph-read-canary-expires-at',
+        '2026-08-03T00:00:00.000Z',
+      ],
+      message: 'Go graph read canary requires origin and build SHA.',
+    },
+  ])('rejects $name before creating authority state', async ({ args, message }) => {
+    const createGraphReadCanary = vi.fn();
+    const createContext = vi.fn();
+    const createServer = vi.fn();
+    await mcpCommands({
+      workspaceRoot: process.cwd(),
+      operator: operatorContext(),
+      createGraphReadCanary,
+      createContext,
+      createServer,
+    }).parseAsync(['node', 'test', 'serve', '--stdio', ...args]);
+    expect(stderr).toHaveBeenLastCalledWith(`OPENSLACK_MCP_PROFILE_ARGUMENT_INVALID: ${message}`);
+    expect(createGraphReadCanary).not.toHaveBeenCalled();
+    expect(createContext).not.toHaveBeenCalled();
+    expect(createServer).not.toHaveBeenCalled();
   });
 
   it('binds human-attested through a separate composition and exposes exactly its approval port', async () => {

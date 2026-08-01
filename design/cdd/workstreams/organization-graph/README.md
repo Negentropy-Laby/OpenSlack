@@ -287,8 +287,9 @@ current-head binding appears as incomplete evidence.
 
 The Collaboration `ObjectKind` remains a coordination and delivery-observation model for issues,
 PRs, plans, modules, agents, handoffs, decisions, workspaces, workflows, pushes, profile-sync jobs,
-and notification routes. GS3-A additionally permits `graph` only as the scenario-instance handle
-for digest-only read-mirror observations. Customer, Contract, Project, Milestone, Acceptance, and
+and notification routes. GS3-A/GS3-B additionally permit `graph` only as the scenario-instance
+handle for digest-only read-mirror or bounded canary-route observations. Customer, Contract,
+Project, Milestone, Acceptance, and
 other business-domain entities still belong to scenario ontology and are never copied into
 Collaboration event metadata.
 
@@ -318,6 +319,9 @@ The implemented local graph slice includes:
 - the Scenario list plus bounded graph query/explain tools;
 - a strict file/stdin builder with sealed Software Delivery and Contract-to-Delivery dispatch;
 - fixture build, store readback, and official MCP SDK query/explain evidence;
+- a default-off, workspace/scenario/epoch/build-bound Go query/explain canary with explicit
+  higher-epoch TypeScript rollback, v2 epoch-bound cursors, no per-request fallback, and redacted
+  Collaboration audit;
 - a governed local rehearsal assembler that preserves `demo_fixture` business authority and calls
   the explicit sealed graph builder outside the read tools.
 

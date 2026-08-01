@@ -1,10 +1,21 @@
 import { createBlockedMcpResult, type OpenSlackMcpResult } from '@openslack/qoder-adapter';
-import type { GraphExplainInput, GraphQueryInput } from '@openslack/organization-graph';
+import {
+  GraphReadCanaryError,
+  type GraphExplainInput,
+  type GraphQueryInput,
+} from '@openslack/organization-graph';
 import { ProjectionEvidenceUnavailableError, type OpenSlackMcpContext } from '../context.js';
 import { completedProjection, numberArg, stringArg, stringArrayArg } from './shared.js';
 
 function blocked(error: ProjectionEvidenceUnavailableError): OpenSlackMcpResult {
   return createBlockedMcpResult(error.message, error.code);
+}
+
+function blockedCanary(error: GraphReadCanaryError): OpenSlackMcpResult {
+  return createBlockedMcpResult(
+    'The explicitly selected Organization Graph read authority failed closed.',
+    error.code,
+  );
 }
 
 export async function listScenarios(context: OpenSlackMcpContext): Promise<OpenSlackMcpResult> {
@@ -54,6 +65,7 @@ export async function queryOrganizationGraph(
     );
   } catch (error) {
     if (error instanceof ProjectionEvidenceUnavailableError) return blocked(error);
+    if (error instanceof GraphReadCanaryError) return blockedCanary(error);
     throw error;
   }
 }
@@ -78,6 +90,7 @@ export async function explainOrganizationGraph(
     );
   } catch (error) {
     if (error instanceof ProjectionEvidenceUnavailableError) return blocked(error);
+    if (error instanceof GraphReadCanaryError) return blockedCanary(error);
     throw error;
   }
 }

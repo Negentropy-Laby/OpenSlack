@@ -55,6 +55,7 @@ func main() {
 		CursorSecret:         cfg.QueryCursorSecret,
 		PreviousCursorSecret: cfg.PreviousQueryCursorSecret,
 		BuildSHA:             cfg.ServiceBuildSHA,
+		CanaryRoutingEpoch:   cfg.CanaryRoutingEpoch,
 		Logger:               logger,
 	})
 	if err != nil {

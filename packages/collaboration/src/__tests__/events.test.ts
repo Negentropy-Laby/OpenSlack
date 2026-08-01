@@ -130,6 +130,24 @@ describe('events', () => {
     }
   });
 
+  it('validates the three bounded graph read-canary audit outcomes', () => {
+    for (const type of [
+      'graph.read_canary.served',
+      'graph.read_canary.blocked',
+      'graph.read_canary.rolled_back',
+    ] as const) {
+      const event = createEvent(
+        makeEvent({
+          type,
+          object: { kind: 'graph', id: 'scenario-001' },
+          source: { kind: 'openslack', ref: 'organization-graph-read-canary' },
+          summary: `Recorded ${type}.`,
+        }),
+      );
+      expect(validateEvent(event).valid, type).toBe(true);
+    }
+  });
+
   it('rejects event with wrong schema', () => {
     const result = validateEvent({ schema: 'wrong.schema' });
     expect(result.valid).toBe(false);

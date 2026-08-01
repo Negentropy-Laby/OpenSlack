@@ -122,6 +122,8 @@ func TestOpenAPI31FreezesEveryImplementedRoute(t *testing.T) {
 		app.RouteDeltaIngest,
 		app.RouteQuery,
 		app.RouteExplain,
+		app.RouteCanaryQuery,
+		app.RouteCanaryExplain,
 		app.RouteScenarios,
 		app.RouteLive,
 		app.RouteReady,
@@ -232,6 +234,11 @@ func TestOpenAPIFreezesFailureAndAmbiguousCommitMappings(t *testing.T) {
 		"GRAPH_UNPROCESSABLE",
 		"GRAPH_UNAVAILABLE",
 		"GRAPH_INTERNAL",
+		"GRAPH_CANARY_NOT_CONFIGURED",
+		"GRAPH_CANARY_ROUTE_MISMATCH",
+		"GRAPH_QUERY_CURSOR_INVALID",
+		"GRAPH_QUERY_CURSOR_EXPIRED",
+		"GRAPH_QUERY_CURSOR_MISMATCH",
 	} {
 		if !strings.Contains(document, "- "+code) {
 			t.Fatalf("OpenAPI missing stable error code %s", code)

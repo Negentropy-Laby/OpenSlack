@@ -170,6 +170,7 @@ describe('notification delivery service workflow', () => {
     const graphGoldenIndex = stepIndex('Verify Organization Graph golden contracts');
     const graphDistIndex = stepIndex('Clean-build and smoke Organization Graph distribution');
     const graphMirrorIndex = stepIndex('Qualify GS3-A real Go read mirror');
+    const graphCanaryIndex = stepIndex('Qualify GS3-B bounded Go read canary');
     const imagePullIndex = stepIndex('Pull pinned Go verification images');
     const goCheckIndex = stepIndex('Run reviewed Go workspace verifier');
     const rootDocsIndex = stepIndex('Verify root documentation governance');
@@ -187,7 +188,8 @@ describe('notification delivery service workflow', () => {
     expect(graphGoldenIndex).toBe(installIndex + 1);
     expect(graphDistIndex).toBe(graphGoldenIndex + 1);
     expect(graphMirrorIndex).toBe(graphDistIndex + 1);
-    expect(imagePullIndex).toBe(graphMirrorIndex + 1);
+    expect(graphCanaryIndex).toBe(graphMirrorIndex + 1);
+    expect(imagePullIndex).toBe(graphCanaryIndex + 1);
     expect(goCheckIndex).toBe(imagePullIndex + 1);
     expect(rootDocsIndex).toBe(goCheckIndex + 1);
     expect(docsIndex).toBe(rootDocsIndex + 1);
@@ -251,6 +253,11 @@ describe('notification delivery service workflow', () => {
       'working-directory': 'services/organization-graph',
       run: "OPENSLACK_GS3A_CROSS_LANGUAGE=1 go test ./internal/app -run '^TestGS3ARealGoReadMirror$' -count=1",
     });
+    expect(job.steps[graphCanaryIndex]).toEqual({
+      name: 'Qualify GS3-B bounded Go read canary',
+      'working-directory': 'services/organization-graph',
+      run: "OPENSLACK_GS3B_CROSS_LANGUAGE=1 go test ./internal/app -run '^TestGS3BRealGoReadCanary$' -count=1",
+    });
     expect(job.steps[rootDocsIndex]).toEqual({
       name: 'Verify root documentation governance',
       'working-directory': '.',
@@ -296,6 +303,7 @@ describe('notification delivery service workflow', () => {
       'Verify Organization Graph golden contracts',
       'Clean-build and smoke Organization Graph distribution',
       'Qualify GS3-A real Go read mirror',
+      'Qualify GS3-B bounded Go read canary',
       'Pull pinned Go verification images',
       'Run reviewed Go workspace verifier',
       'Verify root documentation governance',
@@ -333,6 +341,8 @@ describe('notification delivery service workflow', () => {
       ),
       'Qualify GS3-A real Go read mirror':
         "OPENSLACK_GS3A_CROSS_LANGUAGE=1 go test ./internal/app -run '^TestGS3ARealGoReadMirror$' -count=1",
+      'Qualify GS3-B bounded Go read canary':
+        "OPENSLACK_GS3B_CROSS_LANGUAGE=1 go test ./internal/app -run '^TestGS3BRealGoReadCanary$' -count=1",
       'Pull pinned Go verification images': lines(
         'set -euo pipefail',
         `docker pull ${goImage}`,
@@ -383,7 +393,7 @@ describe('notification delivery service workflow', () => {
     expect(source).not.toMatch(/\bdocker\s+compose\s+up\b/iu);
     expect(source).not.toMatch(/\b(?:npm|npx|pnpm|yarn)\b/iu);
     expect(source).not.toMatch(/\b(?:curl|wget|gh|kubectl|helm|terraform|aws|az|gcloud)\b/iu);
-    expect(source).not.toMatch(/\b(?:slack|webhook|canary)\b/iu);
+    expect(source).not.toMatch(/\b(?:slack|webhook)\b/iu);
     expect(source).not.toContain('services/notification-delivery/.github/workflows/tests.yml');
   });
 

@@ -153,6 +153,9 @@ jobs:
       - name: Qualify GS3-A real Go read mirror
         working-directory: services/organization-graph
         run: OPENSLACK_GS3A_CROSS_LANGUAGE=1 go test ./internal/app -run '^TestGS3ARealGoReadMirror$' -count=1
+      - name: Qualify GS3-B bounded Go read canary
+        working-directory: services/organization-graph
+        run: OPENSLACK_GS3B_CROSS_LANGUAGE=1 go test ./internal/app -run '^TestGS3BRealGoReadCanary$' -count=1
       - name: Pull pinned Go verification images
         working-directory: .
         run: |

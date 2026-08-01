@@ -53,6 +53,24 @@ func TestLoadEnvironmentAllowsNoPreviousCursorSecret(t *testing.T) {
 	}
 }
 
+func TestLoadEnvironmentBindsOptionalCanaryRoutingEpoch(t *testing.T) {
+	environment := append(validEnvironment(), "GRAPH_CANARY_ROUTING_EPOCH=41")
+	cfg, err := LoadEnvironment(environment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CanaryRoutingEpoch == nil || *cfg.CanaryRoutingEpoch != 41 {
+		t.Fatalf("CanaryRoutingEpoch = %#v", cfg.CanaryRoutingEpoch)
+	}
+	cfg, err = LoadEnvironment(validEnvironment())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CanaryRoutingEpoch != nil {
+		t.Fatalf("unexpected default CanaryRoutingEpoch = %#v", cfg.CanaryRoutingEpoch)
+	}
+}
+
 func TestLoadEnvironmentAllowsExplicitInternalContainerBind(t *testing.T) {
 	environment := append(validEnvironment(),
 		"GRAPH_NETWORK_MODE=internal",
@@ -151,6 +169,10 @@ func TestLoadEnvironmentRejectsMissingOrMalformedSecretsAndIdentity(t *testing.T
 		{name: "uppercase build sha", replace: "GRAPH_SERVICE_BUILD_SHA", value: strings.ToUpper(testBuildSHA)},
 		{name: "relative migrations", replace: "MIGRATION_SOURCE", value: "migrations"},
 		{name: "wrong database scheme", replace: "DATABASE_URL", value: "https://example.invalid/graph"},
+		{name: "zero canary routing epoch", replace: "GRAPH_CANARY_ROUTING_EPOCH", value: "0"},
+		{name: "noncanonical canary routing epoch", replace: "GRAPH_CANARY_ROUTING_EPOCH", value: "041"},
+		{name: "whitespace canary routing epoch", replace: "GRAPH_CANARY_ROUTING_EPOCH", value: " 41 "},
+		{name: "unsafe canary routing epoch", replace: "GRAPH_CANARY_ROUTING_EPOCH", value: "9007199254740992"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

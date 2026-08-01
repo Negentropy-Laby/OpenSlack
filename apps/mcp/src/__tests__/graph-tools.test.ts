@@ -10,6 +10,8 @@ import {
   deriveGraphNodeId,
   sealGraphSnapshot,
   type GraphNode,
+  GraphReadCanaryError,
+  type GraphReadCanaryPort,
   type GraphReadMirrorPort,
   type GraphSnapshot,
 } from '@openslack/organization-graph';
@@ -140,6 +142,7 @@ async function coreWithSnapshot(
   graphSnapshot: GraphSnapshot,
   graphMaxAgeMs = 24 * 60 * 60 * 1_000,
   graphReadMirror?: GraphReadMirrorPort,
+  graphReadCanary?: GraphReadCanaryPort,
 ): Promise<OpenSlackMcpCore> {
   await new LocalGraphStore(join(workspaceRoot, '.openslack.local', 'graph')).publishSnapshot(
     graphSnapshot,
@@ -156,6 +159,7 @@ async function coreWithSnapshot(
       })(),
       graphMaxAgeMs,
       ...(graphReadMirror === undefined ? {} : { graphReadMirror }),
+      ...(graphReadCanary === undefined ? {} : { graphReadCanary }),
     }),
   );
 }
@@ -497,6 +501,143 @@ describe('default graph read adapters', () => {
 
     expect(query.structuredContent.status).toBe('completed');
     expect(explain.structuredContent.status).toBe('completed');
+  });
+
+  it('uses Go only for an explicitly selected scenario and never opens the local snapshot', async () => {
+    const workspaceRoot = root();
+    const current = snapshot();
+    const graphReadCanary: GraphReadCanaryPort = {
+      route: vi.fn((scenarioInstanceId) =>
+        scenarioInstanceId === current.scenarioInstanceId
+          ? { backend: 'go' as const, routingEpoch: 41 }
+          : undefined,
+      ),
+      query: vi.fn(async (input) => ({
+        generatedAt: current.generatedAt,
+        scenarioInstanceId: input.scenarioInstanceId,
+        snapshotCursor: 'go-cursor-41',
+        queryHash: `sha256:${'1'.repeat(64)}`,
+        nodes: [],
+        edges: [],
+        paths: [],
+        completeness: current.completeness,
+        truncation: {
+          truncated: false,
+          nodeLimit: false,
+          edgeLimit: false,
+          byteLimit: false,
+          paginated: false,
+          responseBytes: 256,
+        },
+      })),
+      explain: vi.fn(),
+    };
+    const graphReadMirror: GraphReadMirrorPort = {
+      observeQuery: vi.fn(),
+      observeExplain: vi.fn(),
+    };
+    const core = new OpenSlackMcpCore(
+      createOpenSlackMcpContext({
+        workspaceRoot,
+        operator: operator(),
+        clock: () => new Date(now),
+        graphReadCanary,
+        graphReadMirror,
+      }),
+    );
+    const result = await core.callTool('openslack_query_graph', {
+      scenarioInstanceId: current.scenarioInstanceId,
+    });
+    expect(result.structuredContent).toMatchObject({
+      status: 'completed',
+      data: { scenarioInstanceId: current.scenarioInstanceId, snapshotCursor: 'go-cursor-41' },
+    });
+    expect(graphReadCanary.query).toHaveBeenCalledOnce();
+    expect(graphReadMirror.observeQuery).not.toHaveBeenCalled();
+  });
+
+  it('fails a selected Go read closed without a local or mirror fallback', async () => {
+    const current = snapshot();
+    const route = vi
+      .fn()
+      .mockReturnValueOnce({ backend: 'go', routingEpoch: 41 })
+      .mockImplementationOnce(() => {
+        throw new GraphReadCanaryError(
+          'GRAPH_READ_CANARY_POLICY_EXPIRED',
+          'selected Go authority policy expired',
+        );
+      });
+    const recordBlockedRead = vi.fn();
+    const graphReadMirror: GraphReadMirrorPort = {
+      observeQuery: vi.fn(),
+      observeExplain: vi.fn(),
+    };
+    const graphReadCanary: GraphReadCanaryPort = {
+      route,
+      query: vi.fn(async () => {
+        throw new GraphReadCanaryError(
+          'GRAPH_READ_CANARY_TIMEOUT',
+          'selected Go authority timed out',
+        );
+      }),
+      explain: vi.fn(),
+      recordBlockedRead,
+    };
+    const core = new OpenSlackMcpCore(
+      createOpenSlackMcpContext({
+        workspaceRoot: root(),
+        operator: operator(),
+        clock: () => new Date(now),
+        graphReadCanary,
+        graphReadMirror,
+      }),
+    );
+    const result = await core.callTool('openslack_query_graph', {
+      scenarioInstanceId: current.scenarioInstanceId,
+    });
+    expect(result.structuredContent).toMatchObject({
+      status: 'blocked',
+      governance: { blocker: 'GRAPH_READ_CANARY_TIMEOUT' },
+    });
+    const expired = await core.callTool('openslack_query_graph', {
+      scenarioInstanceId: current.scenarioInstanceId,
+    });
+    expect(expired.structuredContent).toMatchObject({
+      status: 'blocked',
+      governance: { blocker: 'GRAPH_READ_CANARY_POLICY_EXPIRED' },
+    });
+    expect(recordBlockedRead).toHaveBeenCalledWith(
+      'query',
+      { scenarioInstanceId: current.scenarioInstanceId },
+      expect.objectContaining({ code: 'GRAPH_READ_CANARY_POLICY_EXPIRED' }),
+    );
+    expect(graphReadCanary.query).toHaveBeenCalledOnce();
+    expect(graphReadMirror.observeQuery).not.toHaveBeenCalled();
+  });
+
+  it('honors an explicit ts-local rollback epoch without calling the Go client', async () => {
+    const workspaceRoot = root();
+    const current = snapshot();
+    const graphReadCanary: GraphReadCanaryPort = {
+      route: () => ({ backend: 'ts-local', routingEpoch: 42 }),
+      query: vi.fn(),
+      explain: vi.fn(),
+    };
+    const core = await coreWithSnapshot(
+      workspaceRoot,
+      current,
+      undefined,
+      undefined,
+      graphReadCanary,
+    );
+    const result = await core.callTool('openslack_query_graph', {
+      scenarioInstanceId: current.scenarioInstanceId,
+    });
+    expect(result.structuredContent).toMatchObject({
+      status: 'completed',
+      data: { snapshotCursor: current.cursor },
+    });
+    expect(graphReadCanary.query).not.toHaveBeenCalled();
   });
 
   it('advertises an optional exact thirteenth reset tool only for an injected local port', async () => {

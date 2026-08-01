@@ -54,6 +54,18 @@ const HUMAN_ATTESTED_TOOL_NAMES = Object.freeze([
   ...AGENT_BOUND_TOOL_NAMES,
   'openslack_decide_workflow_approval',
 ]);
+const READ_CANARY_ARGS = Object.freeze([
+  '--graph-read-canary-backend',
+  'ts-local',
+  '--graph-read-canary-routing-epoch',
+  '42',
+  '--graph-read-canary-tenant',
+  WORKSPACE_ID,
+  '--graph-read-canary-scenarios',
+  'software-delivery',
+  '--graph-read-canary-expires-at',
+  '2026-08-09T00:00:00.000Z',
+]);
 const roots: string[] = [];
 
 function operator(): OperatorApplicationContextPort {
@@ -281,6 +293,25 @@ describe('MCP CLI production profiles over the official SDK', () => {
     expect(process.exitCode).toBeUndefined();
   });
 
+  it('keeps exactly 12 read-only tools when an explicit read canary is configured', async () => {
+    const workspaceRoot = mkdtempSync(join(tmpdir(), 'openslack-mcp-read-only-canary-cli-'));
+    roots.push(workspaceRoot);
+    const createGraphReadCanary = vi.fn(() => Object.freeze({}) as never);
+    await runOverOfficialSdk(
+      workspaceRoot,
+      ['--profile', 'read-only', ...READ_CANARY_ARGS],
+      async (client) => {
+        expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(READ_TOOL_NAMES);
+      },
+      { createGraphReadCanary },
+    );
+
+    expect(createGraphReadCanary).toHaveBeenCalledOnce();
+    expect(stderr).not.toHaveBeenCalled();
+    expect(stdout).not.toHaveBeenCalled();
+    expect(process.exitCode).toBeUndefined();
+  });
+
   it('runs the agent-bound CLI profile through preview, confirm, replay, and durable readback', async () => {
     const workspaceRoot = createWorkspace();
     let composition: OpenSlackAgentBoundMutationComposition | undefined;
@@ -302,6 +333,7 @@ describe('MCP CLI production profiles over the official SDK', () => {
         PRINCIPAL_REF,
         '--workspace-id',
         WORKSPACE_ID,
+        ...READ_CANARY_ARGS,
       ],
       async (client) => {
         expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(
@@ -362,7 +394,10 @@ describe('MCP CLI production profiles over the official SDK', () => {
           governance: { blocker: 'GOVERNED_PLAN_STATE_INVALID' },
         });
       },
-      { createAgentBoundComposition },
+      {
+        createAgentBoundComposition,
+        createGraphReadCanary: vi.fn(() => Object.freeze({}) as never),
+      },
     );
 
     expect(composition).toBeDefined();
@@ -505,6 +540,7 @@ describe('MCP CLI production profiles over the official SDK', () => {
         'human.interviewer',
         '--workspace-id',
         WORKSPACE_ID,
+        ...READ_CANARY_ARGS,
       ],
       async (client) => {
         expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(
@@ -533,7 +569,10 @@ describe('MCP CLI production profiles over the official SDK', () => {
           auditProjection: { status: 'recorded' },
         });
       },
-      { createHumanAttestedComposition },
+      {
+        createHumanAttestedComposition,
+        createGraphReadCanary: vi.fn(() => Object.freeze({}) as never),
+      },
     );
 
     expect(stderr).not.toHaveBeenCalled();

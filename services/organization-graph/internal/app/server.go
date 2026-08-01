@@ -19,11 +19,16 @@ const (
 	RouteDeltaIngest    = "/v1/graph/deltas:ingest"
 	RouteQuery          = "/v1/graph:query"
 	RouteExplain        = "/v1/graph:explain"
+	RouteCanaryQuery    = "/v1/canary/graph:query"
+	RouteCanaryExplain  = "/v1/canary/graph:explain"
 	RouteScenarios      = "/v1/graph/scenarios"
 	RouteLive           = "/health/live"
 	RouteReady          = "/health/ready"
 	RouteVersion        = "/health/version"
 	RouteMetrics        = "/metrics"
+
+	HeaderCanaryRoutingEpoch = "X-OpenSlack-Graph-Routing-Epoch"
+	HeaderExpectedBuildSHA   = "X-OpenSlack-Graph-Expected-Build-SHA"
 )
 
 var serviceBuildSHAPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -41,6 +46,7 @@ type Options struct {
 	CursorSecret         []byte
 	PreviousCursorSecret []byte
 	BuildSHA             string
+	CanaryRoutingEpoch   *int64
 	Logger               *slog.Logger
 	Clock                Clock
 }
@@ -50,6 +56,7 @@ type Service struct {
 	cursorSecret         []byte
 	previousCursorSecret []byte
 	buildSHA             string
+	canaryRoutingEpoch   *int64
 	logger               *slog.Logger
 	clock                Clock
 	counters             *counters
@@ -75,17 +82,27 @@ func New(options Options) (*Service, error) {
 	if !serviceBuildSHAPattern.MatchString(options.BuildSHA) {
 		return nil, fmt.Errorf("graph service build SHA must be 64 lowercase hexadecimal characters")
 	}
+	if options.CanaryRoutingEpoch != nil &&
+		(*options.CanaryRoutingEpoch < 1 || *options.CanaryRoutingEpoch > 9007199254740991) {
+		return nil, fmt.Errorf("graph canary routing epoch must be a positive safe integer")
+	}
 	if options.Logger == nil {
 		options.Logger = slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	}
 	if options.Clock == nil {
 		options.Clock = realClock{}
 	}
+	var canaryRoutingEpoch *int64
+	if options.CanaryRoutingEpoch != nil {
+		epoch := *options.CanaryRoutingEpoch
+		canaryRoutingEpoch = &epoch
+	}
 	service := &Service{
 		store:                options.Store,
 		cursorSecret:         append([]byte(nil), options.CursorSecret...),
 		previousCursorSecret: append([]byte(nil), options.PreviousCursorSecret...),
 		buildSHA:             options.BuildSHA,
+		canaryRoutingEpoch:   canaryRoutingEpoch,
 		logger:               options.Logger,
 		clock:                options.Clock,
 		counters:             newCounters(),
@@ -109,6 +126,8 @@ func (service *Service) routes() http.Handler {
 	mux.HandleFunc("POST "+RouteDeltaIngest, service.handleDeltaIngest)
 	mux.HandleFunc("POST "+RouteQuery, service.handleQuery)
 	mux.HandleFunc("POST "+RouteExplain, service.handleExplain)
+	mux.HandleFunc("POST "+RouteCanaryQuery, service.handleCanaryQuery)
+	mux.HandleFunc("POST "+RouteCanaryExplain, service.handleCanaryExplain)
 	mux.HandleFunc("GET "+RouteScenarios, service.handleScenarios)
 	mux.HandleFunc("GET "+RouteLive, service.handleLive)
 	mux.HandleFunc("GET "+RouteReady, service.handleReady)
@@ -160,6 +179,7 @@ func metricMethod(method string) string {
 func routeLabel(path string) string {
 	switch path {
 	case RouteSnapshotIngest, RouteDeltaIngest, RouteQuery, RouteExplain,
+		RouteCanaryQuery, RouteCanaryExplain,
 		RouteScenarios, RouteLive, RouteReady, RouteVersion, RouteMetrics:
 		return path
 	default:

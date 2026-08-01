@@ -28,6 +28,7 @@ import {
   type GraphExplanation,
   type GraphQueryInput,
   type GraphQueryResult,
+  type GraphReadCanaryPort,
   type GraphReadMirrorPort,
 } from '@openslack/organization-graph';
 import type {
@@ -139,6 +140,8 @@ export interface CreateOpenSlackMcpContextOptions {
   readonly graphMaxAgeMs?: number;
   /** Optional observational Go mirror. TypeScript remains the returned read authority. */
   readonly graphReadMirror?: GraphReadMirrorPort;
+  /** Optional bounded canary router. Selected Go reads fail closed without TypeScript fallback. */
+  readonly graphReadCanary?: GraphReadCanaryPort;
   /** Optional nominal Operator mutation port. Omit to preserve the exact read-only catalog. */
   readonly governedMutations?: OpenSlackGovernedMutationPort;
   /** Optional separately human-attested workflow-effect decision port. Requires governedMutations. */
@@ -180,6 +183,24 @@ export class ProjectionEvidenceUnavailableError extends Error {
   ) {
     super(message);
     this.name = 'ProjectionEvidenceUnavailableError';
+  }
+}
+
+async function selectGraphReadCanaryRoute(
+  canary: GraphReadCanaryPort | undefined,
+  operation: 'query' | 'explain',
+  input: Readonly<GraphQueryInput | GraphExplainInput>,
+) {
+  if (!canary) return undefined;
+  try {
+    return canary.route(input.scenarioInstanceId);
+  } catch (error) {
+    try {
+      await canary.recordBlockedRead?.(operation, structuredClone(input), error);
+    } catch {
+      // A blocked-read audit is best effort and must not replace the original fail-closed reason.
+    }
+    throw error;
   }
 }
 
@@ -1195,6 +1216,7 @@ export function createDefaultOpenSlackReadModelPorts(
     readonly clock?: () => Date;
     readonly graphMaxAgeMs?: number;
     readonly graphReadMirror?: GraphReadMirrorPort;
+    readonly graphReadCanary?: GraphReadCanaryPort;
   } = {},
 ): OpenSlackReadModelPorts {
   const rootDir = resolve(workspaceRoot);
@@ -1416,6 +1438,10 @@ export function createDefaultOpenSlackReadModelPorts(
       };
     },
     graphQuery: async (input) => {
+      const route = await selectGraphReadCanaryRoute(options.graphReadCanary, 'query', input);
+      if (route?.backend === 'go') {
+        return options.graphReadCanary!.query(structuredClone(input));
+      }
       const snapshot = await currentGraph(input.scenarioInstanceId);
       const result: GraphQueryResult = queryGraph(snapshot, input, {
         cursorSecret: graphCursorSecret,
@@ -1431,12 +1457,20 @@ export function createDefaultOpenSlackReadModelPorts(
           // Mirror reads are observational and cannot alter the TypeScript authority result.
         }
       }
-      return {
+      const projection = {
         generatedAt: snapshot.generatedAt,
         ...result,
       };
+      if (route?.backend === 'ts-local') {
+        await options.graphReadCanary?.recordTsLocalRead?.('query', structuredClone(input));
+      }
+      return projection;
     },
     graphExplain: async (input) => {
+      const route = await selectGraphReadCanaryRoute(options.graphReadCanary, 'explain', input);
+      if (route?.backend === 'go') {
+        return options.graphReadCanary!.explain(structuredClone(input));
+      }
       const snapshot = await currentGraph(input.scenarioInstanceId);
       const result: GraphExplanation = explainGraph(snapshot, input);
       if (options.graphReadMirror) {
@@ -1449,11 +1483,15 @@ export function createDefaultOpenSlackReadModelPorts(
           // Mirror reads are observational and cannot alter the TypeScript authority result.
         }
       }
-      return {
+      const projection = {
         generatedAt: snapshot.generatedAt,
         snapshotCursor: snapshot.cursor,
         ...result,
       };
+      if (route?.backend === 'ts-local') {
+        await options.graphReadCanary?.recordTsLocalRead?.('explain', structuredClone(input));
+      }
+      return projection;
     },
   };
   return Object.freeze(ports);
@@ -1468,6 +1506,7 @@ export function createOpenSlackMcpContext(
     clock,
     graphMaxAgeMs: options.graphMaxAgeMs,
     graphReadMirror: options.graphReadMirror,
+    graphReadCanary: options.graphReadCanary,
   });
   const runtime = Object.freeze({
     now: clock,
