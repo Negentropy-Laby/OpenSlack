@@ -633,15 +633,7 @@ func qualificationLargeSnapshot(t testing.TB) graph.Snapshot {
 
 func qualificationOverLimitSnapshotBody(t testing.TB, snapshot graph.Snapshot) []byte {
 	t.Helper()
-	raw, err := graph.SerializeSnapshot(snapshot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	value := qualificationCanonicalValue(t, raw)
-	object, ok := value.(graph.Object)
-	if !ok {
-		t.Fatal("serialized snapshot was not an object")
-	}
+	object := graph.SnapshotValue(snapshot)
 	nodes, ok := object["nodes"].(graph.Array)
 	if !ok || len(nodes) != graph.MaxSnapshotNodes {
 		t.Fatal("serialized snapshot nodes drifted")
