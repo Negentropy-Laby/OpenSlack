@@ -579,7 +579,8 @@ func TestGS1CLargeGraphQualification(t *testing.T) {
 	}
 	overLimit := qualificationOverLimitSnapshotBody(t, snapshot)
 	rejected := qualificationRequest(t, service, http.MethodPost, app.RouteSnapshotIngest, "gs1c-large-over-limit", overLimit)
-	if rejected.Code != http.StatusUnprocessableEntity {
+	if rejected.Code != http.StatusRequestEntityTooLarge ||
+		!strings.Contains(rejected.Body.String(), `"code":"GRAPH_REQUEST_TOO_LARGE"`) {
 		t.Fatalf("over-limit graph status/body = %d %s", rejected.Code, rejected.Body.String())
 	}
 }
