@@ -45,10 +45,10 @@ admission, PX2, or live verification.
 
 ## Organization Graph Reviews
 
-| Source artifact                          | Review type                        | Latest verdict                  | Date       | Evidence                                                  |
-| ---------------------------------------- | ---------------------------------- | ------------------------------- | ---------- | --------------------------------------------------------- |
-| GS2-A Software Delivery Projector shadow | TypeScript, Go, and QA code review | Approved; local submission gate | 2026-08-01 | `production/code-reviews/code-review-gs2-a-2026-08-01.md` |
+| Source artifact                          | Review type                        | Latest verdict                     | Date       | Evidence                                                  |
+| ---------------------------------------- | ---------------------------------- | ---------------------------------- | ---------- | --------------------------------------------------------- |
+| GS2-A Software Delivery Projector shadow | TypeScript, Go, and QA code review | Ready for independent human review | 2026-08-01 | `production/code-reviews/code-review-gs2-a-2026-08-01.md` |
 
 The GS2-A verdict preserves TypeScript as the sole authority. It does not
-establish hosted CI, independent human approval, PRMS readiness, merge,
-runtime admission, Qoder qualification, or production verification.
+establish independent human approval, PRMS readiness, merge, runtime admission,
+Qoder qualification, or production verification.

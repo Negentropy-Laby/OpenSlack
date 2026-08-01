@@ -32,6 +32,9 @@ const softwareDeliveryHistoricalFixturePath = resolve(
   repositoryRoot,
   'packages/organization-graph/src/__tests__/fixtures/software-delivery-source.json',
 );
+// This case serially launches up to ten generator processes. Windows pays the
+// additional shell/process-start cost, and may also use the WSL fallback.
+const DETERMINISTIC_GENERATION_TIMEOUT_MS = process.platform === 'win32' ? 60_000 : 30_000;
 const temporaryRoots: string[] = [];
 
 interface ContractArtifact {
@@ -342,7 +345,7 @@ describe('Organization Graph generated contract freeze', () => {
         'Refusing to write unsafe Organization Graph generated trees',
       );
     }
-  }, 30_000);
+  }, DETERMINISTIC_GENERATION_TIMEOUT_MS);
 
   it('freezes Software Delivery authority, mirrors, and manifest hashes exactly', async () => {
     const schemaPath = 'schemas/software-delivery-source-snapshot.v1.schema.json';
