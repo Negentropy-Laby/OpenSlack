@@ -117,7 +117,7 @@ func TestSourceManifestBindsRepositoryInputsWithoutReleaseClaims(t *testing.T) {
 		manifest.Status != "REPOSITORY_SOURCE_INPUT_UNRELEASED" ||
 		manifest.Service.GoModule != "github.com/Negentropy-Laby/OpenSlack/services/organization-graph" ||
 		manifest.Service.TargetPath != "services/organization-graph" ||
-		manifest.Service.MigrationPhase != "GS1-C" ||
+		manifest.Service.MigrationPhase != "GS2-A" ||
 		manifest.Service.Authority != "GO_SHADOW_TS_LOCAL_WRITER" ||
 		len(manifest.Scope.Authorizes) != 0 {
 		t.Fatalf("source manifest widened authority: %#v", manifest)
@@ -125,7 +125,7 @@ func TestSourceManifestBindsRepositoryInputsWithoutReleaseClaims(t *testing.T) {
 	if len(manifest.ContainerInputs) != 6 ||
 		manifest.ContainerInputs["goVersion"] != "1.26.5" ||
 		len(manifest.SourceInputs) != 3 ||
-		len(manifest.ContractInputs) != 2 {
+		len(manifest.ContractInputs) != 3 {
 		t.Fatalf("source manifest input inventory drifted")
 	}
 	requiredNonClaims := []string{

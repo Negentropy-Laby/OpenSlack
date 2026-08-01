@@ -54,6 +54,7 @@ import type {
   GraphQueryInput,
   GraphSnapshot,
 } from '../../packages/organization-graph/src/types.js';
+import { buildSoftwareDeliveryContractArtifacts } from './software-delivery.js';
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(scriptDirectory, '../..');
@@ -70,6 +71,18 @@ const sourceMirrorRoot = resolve(
 const serviceMirrorRoot = resolve(
   generatedOutputRoot,
   'services/organization-graph/internal/contractmirror/generated/v1',
+);
+const softwareDeliveryContractOutputRoot = resolve(
+  generatedOutputRoot,
+  'packages/organization-graph/contracts/software-delivery/v1',
+);
+const softwareDeliverySourceMirrorRoot = resolve(
+  generatedOutputRoot,
+  'packages/organization-graph/src/generated/contracts/software-delivery/v1',
+);
+const softwareDeliveryServiceMirrorRoot = resolve(
+  generatedOutputRoot,
+  'services/organization-graph/internal/contractmirror/generated/software-delivery/v1',
 );
 
 const snapshotSchemaPath = resolve(contractSourceRoot, 'schemas/graph-snapshot.v1.schema.json');
@@ -1506,6 +1519,7 @@ async function buildOutputs(): Promise<Map<string, Buffer>> {
     },
   };
   const manifestBytes = await prettyJson(manifest);
+  const softwareDelivery = await buildSoftwareDeliveryContractArtifacts();
   const outputs = new Map<string, Buffer>();
   outputs.set(resolve(contractOutputRoot, 'golden-vectors.json'), vectorBytes);
   outputs.set(resolve(contractOutputRoot, 'manifest.json'), manifestBytes);
@@ -1515,6 +1529,43 @@ async function buildOutputs(): Promise<Map<string, Buffer>> {
   }
   outputs.set(resolve(serviceMirrorRoot, 'golden-vectors.json'), vectorBytes);
   outputs.set(resolve(serviceMirrorRoot, 'manifest.json'), manifestBytes);
+  outputs.set(
+    resolve(
+      softwareDeliveryContractOutputRoot,
+      'schemas/software-delivery-source-snapshot.v1.schema.json',
+    ),
+    softwareDelivery.schemaBytes,
+  );
+  outputs.set(
+    resolve(softwareDeliveryContractOutputRoot, 'projector-golden-vectors.json'),
+    softwareDelivery.vectorBytes,
+  );
+  outputs.set(
+    resolve(softwareDeliveryContractOutputRoot, 'manifest.json'),
+    softwareDelivery.manifestBytes,
+  );
+  outputs.set(
+    resolve(
+      softwareDeliverySourceMirrorRoot,
+      'schemas/software-delivery-source-snapshot.v1.schema.json',
+    ),
+    softwareDelivery.schemaBytes,
+  );
+  outputs.set(
+    resolve(
+      softwareDeliveryServiceMirrorRoot,
+      'schemas/software-delivery-source-snapshot.v1.schema.json',
+    ),
+    softwareDelivery.schemaBytes,
+  );
+  outputs.set(
+    resolve(softwareDeliveryServiceMirrorRoot, 'projector-golden-vectors.json'),
+    softwareDelivery.vectorBytes,
+  );
+  outputs.set(
+    resolve(softwareDeliveryServiceMirrorRoot, 'manifest.json'),
+    softwareDelivery.manifestBytes,
+  );
   return outputs;
 }
 
@@ -1574,6 +1625,19 @@ async function generatedTreeIssues(): Promise<string[]> {
       'schemas/graph-snapshot.v1.schema.json',
       'schemas/graph-delta.v1.schema.json',
       'golden-vectors.json',
+      'manifest.json',
+    ])),
+    ...(await exactGeneratedTreeIssues(softwareDeliveryContractOutputRoot, [
+      'schemas/software-delivery-source-snapshot.v1.schema.json',
+      'projector-golden-vectors.json',
+      'manifest.json',
+    ])),
+    ...(await exactGeneratedTreeIssues(softwareDeliverySourceMirrorRoot, [
+      'schemas/software-delivery-source-snapshot.v1.schema.json',
+    ])),
+    ...(await exactGeneratedTreeIssues(softwareDeliveryServiceMirrorRoot, [
+      'schemas/software-delivery-source-snapshot.v1.schema.json',
+      'projector-golden-vectors.json',
       'manifest.json',
     ])),
   ];

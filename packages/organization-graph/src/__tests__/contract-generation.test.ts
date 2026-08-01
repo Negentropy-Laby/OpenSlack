@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { Ajv2020 } from 'ajv/dist/2020.js';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const repositoryRoot = resolve(import.meta.dirname, '../../../..');
@@ -14,7 +16,71 @@ const serviceMirrorRoot = resolve(
   repositoryRoot,
   'services/organization-graph/internal/contractmirror/generated/v1',
 );
+const softwareDeliveryContractRoot = resolve(
+  repositoryRoot,
+  'packages/organization-graph/contracts/software-delivery/v1',
+);
+const softwareDeliverySourceMirrorRoot = resolve(
+  repositoryRoot,
+  'packages/organization-graph/src/generated/contracts/software-delivery/v1',
+);
+const softwareDeliveryServiceMirrorRoot = resolve(
+  repositoryRoot,
+  'services/organization-graph/internal/contractmirror/generated/software-delivery/v1',
+);
+const softwareDeliveryHistoricalFixturePath = resolve(
+  repositoryRoot,
+  'packages/organization-graph/src/__tests__/fixtures/software-delivery-source.json',
+);
 const temporaryRoots: string[] = [];
+
+interface ContractArtifact {
+  readonly path: string;
+  readonly sha256: string;
+}
+
+interface SoftwareDeliveryManifest {
+  readonly schema: string;
+  readonly authority: string;
+  readonly sourceSchema: string;
+  readonly projectorId: string;
+  readonly errorCodes: {
+    readonly graphContract: readonly string[];
+    readonly strictJson: readonly string[];
+  };
+  readonly vectorInventory: {
+    readonly total: number;
+    readonly success: number;
+    readonly error: number;
+    readonly schemaValid: number;
+    readonly schemaInvalid: number;
+    readonly families: Readonly<Record<string, number>>;
+    readonly random: number;
+  };
+  readonly artifacts: {
+    readonly sourceSchema: ContractArtifact;
+    readonly projectorGoldenVectors: ContractArtifact;
+  };
+}
+
+interface ProjectorVector {
+  readonly id: string;
+  readonly family: string;
+  readonly sourceSchemaValid: boolean;
+  readonly input: { readonly source: unknown };
+  readonly expected?: {
+    readonly integrityHash?: string;
+  };
+  readonly expectedError?: {
+    readonly code?: string;
+    readonly path?: string;
+  };
+}
+
+interface SoftwareDeliveryVectors {
+  readonly randomized: { readonly cases: number };
+  readonly cases: readonly ProjectorVector[];
+}
 
 afterEach(async () => {
   await Promise.all(
@@ -23,14 +89,62 @@ afterEach(async () => {
 });
 
 function runGenerator(mode: 'generate' | '--check', outputRoot?: string) {
-  return spawnSync('bun', ['run', 'graph:golden', '--', mode], {
+  const result = spawnSync('bun', ['run', 'graph:golden', '--', mode], {
     cwd: repositoryRoot,
     encoding: 'utf8',
+    shell: process.platform === 'win32',
     env: {
       ...process.env,
       ...(outputRoot === undefined ? {} : { OPENSLACK_GRAPH_CONTRACTS_OUTPUT_ROOT: outputRoot }),
     },
   });
+  const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+  if (process.platform !== 'win32' || !output.includes('EACCES reading')) return result;
+
+  const toWslPath = (path: string): string => {
+    const match = /^([A-Za-z]):\/(.*)$/.exec(path.replaceAll('\\', '/'));
+    if (match === null) throw new Error(`Cannot translate Windows path for WSL: ${path}`);
+    return `/mnt/${match[1]!.toLowerCase()}/${match[2]}`;
+  };
+  return spawnSync(
+    'wsl.exe',
+    [
+      '--cd',
+      toWslPath(repositoryRoot),
+      '--exec',
+      '/usr/bin/env',
+      ...(outputRoot === undefined
+        ? []
+        : [`OPENSLACK_GRAPH_CONTRACTS_OUTPUT_ROOT=${toWslPath(outputRoot)}`]),
+      '/root/.bun/bin/bun',
+      'run',
+      'graph:golden',
+      '--',
+      mode,
+    ],
+    { encoding: 'utf8' },
+  );
+}
+
+function generatorDiagnostic(result: ReturnType<typeof runGenerator>): string {
+  return [result.error?.message, result.signal, result.stdout, result.stderr]
+    .filter((value) => value !== undefined && value !== null && value !== '')
+    .join('\n');
+}
+
+async function tryCreateSymlink(target: string, path: string): Promise<boolean> {
+  try {
+    await symlink(target, path, 'file');
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'EPERM' || code === 'EACCES' || code === 'ENOTSUP') return false;
+    throw error;
+  }
+}
+
+function sha256(bytes: Buffer): string {
+  return createHash('sha256').update(bytes).digest('hex');
 }
 
 describe('Organization Graph generated contract freeze', () => {
@@ -169,14 +283,14 @@ describe('Organization Graph generated contract freeze', () => {
     temporaryRoots.push(outputRoot);
 
     const generated = runGenerator('generate', outputRoot);
-    expect(generated.status, generated.stderr).toBe(0);
+    expect(generated.status, generatorDiagnostic(generated)).toBe(0);
     const checked = runGenerator('--check', outputRoot);
     expect(checked.status, checked.stderr).toBe(0);
-    expect(checked.stdout).toContain('8 generated files');
+    expect(checked.stdout).toContain('15 generated files');
 
     const manifestPath = resolve(
       outputRoot,
-      'services/organization-graph/internal/contractmirror/generated/v1/manifest.json',
+      'services/organization-graph/internal/contractmirror/generated/software-delivery/v1/manifest.json',
     );
     await writeFile(manifestPath, 'stale\n', 'utf8');
     const stale = runGenerator('--check', outputRoot);
@@ -198,16 +312,17 @@ describe('Organization Graph generated contract freeze', () => {
       outputRoot,
       'services/organization-graph/internal/contractmirror/generated/v1/linked.json',
     );
-    await symlink('manifest.json', symlinkPath, 'file');
-    const linked = runGenerator('--check', outputRoot);
-    expect(linked.status).toBe(1);
-    expect(`${linked.stdout}\n${linked.stderr}`).toContain('linked.json (symlink forbidden)');
-    const linkedWrite = runGenerator('generate', outputRoot);
-    expect(linkedWrite.status).toBe(1);
-    expect(`${linkedWrite.stdout}\n${linkedWrite.stderr}`).toContain(
-      'Refusing to write unsafe Organization Graph generated trees',
-    );
-    await rm(symlinkPath);
+    if (await tryCreateSymlink('manifest.json', symlinkPath)) {
+      const linked = runGenerator('--check', outputRoot);
+      expect(linked.status).toBe(1);
+      expect(`${linked.stdout}\n${linked.stderr}`).toContain('linked.json (symlink forbidden)');
+      const linkedWrite = runGenerator('generate', outputRoot);
+      expect(linkedWrite.status).toBe(1);
+      expect(`${linkedWrite.stdout}\n${linkedWrite.stderr}`).toContain(
+        'Refusing to write unsafe Organization Graph generated trees',
+      );
+      await rm(symlinkPath);
+    }
 
     expect(runGenerator('generate', outputRoot).status).toBe(0);
     const authoritativeManifestPath = resolve(
@@ -215,16 +330,152 @@ describe('Organization Graph generated contract freeze', () => {
       'packages/organization-graph/contracts/v1/manifest.json',
     );
     await rm(authoritativeManifestPath);
-    await symlink('golden-vectors.json', authoritativeManifestPath, 'file');
-    const authoritativeLinked = runGenerator('--check', outputRoot);
-    expect(authoritativeLinked.status).toBe(1);
-    expect(`${authoritativeLinked.stdout}\n${authoritativeLinked.stderr}`).toContain(
-      'packages/organization-graph/contracts/v1/manifest.json (symlink forbidden)',
+    if (await tryCreateSymlink('golden-vectors.json', authoritativeManifestPath)) {
+      const authoritativeLinked = runGenerator('--check', outputRoot);
+      expect(authoritativeLinked.status).toBe(1);
+      expect(`${authoritativeLinked.stdout}\n${authoritativeLinked.stderr}`).toContain(
+        'packages/organization-graph/contracts/v1/manifest.json (symlink forbidden)',
+      );
+      const authoritativeLinkedWrite = runGenerator('generate', outputRoot);
+      expect(authoritativeLinkedWrite.status).toBe(1);
+      expect(`${authoritativeLinkedWrite.stdout}\n${authoritativeLinkedWrite.stderr}`).toContain(
+        'Refusing to write unsafe Organization Graph generated trees',
+      );
+    }
+  }, 30_000);
+
+  it('freezes Software Delivery authority, mirrors, and manifest hashes exactly', async () => {
+    const schemaPath = 'schemas/software-delivery-source-snapshot.v1.schema.json';
+    const authoritySchema = await readFile(resolve(softwareDeliveryContractRoot, schemaPath));
+    expect(await readFile(resolve(softwareDeliverySourceMirrorRoot, schemaPath))).toEqual(
+      authoritySchema,
     );
-    const authoritativeLinkedWrite = runGenerator('generate', outputRoot);
-    expect(authoritativeLinkedWrite.status).toBe(1);
-    expect(`${authoritativeLinkedWrite.stdout}\n${authoritativeLinkedWrite.stderr}`).toContain(
-      'Refusing to write unsafe Organization Graph generated trees',
+    expect(await readFile(resolve(softwareDeliveryServiceMirrorRoot, schemaPath))).toEqual(
+      authoritySchema,
     );
-  }, 15_000);
+
+    for (const name of ['manifest.json', 'projector-golden-vectors.json']) {
+      expect(await readFile(resolve(softwareDeliveryServiceMirrorRoot, name))).toEqual(
+        await readFile(resolve(softwareDeliveryContractRoot, name)),
+      );
+    }
+
+    const manifest = JSON.parse(
+      await readFile(resolve(softwareDeliveryContractRoot, 'manifest.json'), 'utf8'),
+    ) as SoftwareDeliveryManifest;
+    expect(manifest).toMatchObject({
+      schema: 'openslack.software_delivery_projector_contract_manifest.v1',
+      authority: 'typescript',
+      sourceSchema: 'openslack.software_delivery_source_snapshot.v1',
+      projectorId: 'openslack.software_delivery.v1',
+    });
+    for (const artifact of Object.values(manifest.artifacts)) {
+      expect(artifact.sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(sha256(await readFile(resolve(softwareDeliveryContractRoot, artifact.path)))).toBe(
+        artifact.sha256,
+      );
+    }
+  }, 30_000);
+
+  it('keeps Software Delivery vector schema-validity classifications aligned with Ajv 2020', async () => {
+    const schema = JSON.parse(
+      await readFile(
+        resolve(
+          softwareDeliveryContractRoot,
+          'schemas/software-delivery-source-snapshot.v1.schema.json',
+        ),
+        'utf8',
+      ),
+    ) as object;
+    const vectors = JSON.parse(
+      await readFile(
+        resolve(softwareDeliveryContractRoot, 'projector-golden-vectors.json'),
+        'utf8',
+      ),
+    ) as SoftwareDeliveryVectors;
+    const manifest = JSON.parse(
+      await readFile(resolve(softwareDeliveryContractRoot, 'manifest.json'), 'utf8'),
+    ) as SoftwareDeliveryManifest;
+    const ajv = new Ajv2020({ allErrors: true, strict: true });
+    const validate = ajv.compile(schema);
+
+    const inventory = manifest.vectorInventory;
+    const familyCounts = Object.fromEntries(
+      [...new Set(vectors.cases.map((vector) => vector.family))]
+        .sort()
+        .map((family) => [
+          family,
+          vectors.cases.filter((vector) => vector.family === family).length,
+        ]),
+    );
+    expect(vectors.cases).toHaveLength(inventory.total);
+    expect(vectors.cases.filter((vector) => vector.expected !== undefined)).toHaveLength(
+      inventory.success,
+    );
+    expect(vectors.cases.filter((vector) => vector.expectedError !== undefined)).toHaveLength(
+      inventory.error,
+    );
+    expect(vectors.cases.filter((vector) => vector.sourceSchemaValid)).toHaveLength(
+      inventory.schemaValid,
+    );
+    expect(vectors.cases.filter((vector) => !vector.sourceSchemaValid)).toHaveLength(
+      inventory.schemaInvalid,
+    );
+    expect(familyCounts).toEqual(inventory.families);
+    expect(Object.keys(familyCounts)).toEqual([
+      'aggregate_boundary',
+      'all_missing',
+      'authority_boundary',
+      'boundary_valid',
+      'complete',
+      'historical',
+      'incomplete_synthetic',
+      'incomplete_truncation',
+      'invalid',
+      'ordering',
+      'randomized_valid',
+      'utf16',
+    ]);
+    expect(vectors.randomized.cases).toBe(inventory.random);
+    expect(inventory.random).toBe(16);
+    expect(manifest.errorCodes.strictJson).toEqual([
+      'GRAPH_JSON_UTF8_INVALID',
+      'GRAPH_JSON_BOM_FORBIDDEN',
+      'GRAPH_JSON_SYNTAX_INVALID',
+      'GRAPH_JSON_DUPLICATE_KEY',
+      'GRAPH_JSON_LIMIT_EXCEEDED',
+    ]);
+
+    const byId = new Map(vectors.cases.map((vector) => [vector.id, vector] as const));
+    expect(byId.get('projector-invalid-unexpected-key-utf16-order')?.expectedError?.path).toBe(
+      '$.aUnexpected',
+    );
+    expect(byId.get('projector-invalid-utf16-split-surrogate-title')).toMatchObject({
+      sourceSchemaValid: true,
+      expectedError: { code: 'GRAPH_SCHEMA_INVALID' },
+    });
+    expect(byId.get('projector-multi-record-ordering')?.expected?.integrityHash).toBe(
+      byId.get('projector-multi-record-ordering-permuted')?.expected?.integrityHash,
+    );
+    expect(byId.get('projector-invalid-review-date-parse-millisecond-tie')).toMatchObject({
+      sourceSchemaValid: true,
+      expectedError: { code: 'GRAPH_REFERENCE_INVALID' },
+    });
+    expect(byId.get('projector-invalid-aggregate-relations-over-limit')?.sourceSchemaValid).toBe(
+      true,
+    );
+    const historical = vectors.cases.find(
+      (vector) => vector.id === 'projector-historical-repository-fixture',
+    );
+    expect(historical?.family).toBe('historical');
+    expect(historical?.input.source).toEqual(
+      JSON.parse(await readFile(softwareDeliveryHistoricalFixturePath, 'utf8')),
+    );
+    for (const vector of vectors.cases) {
+      const valid = validate(vector.input.source);
+      expect(valid, `${vector.id}: ${ajv.errorsText(validate.errors, { separator: '\n' })}`).toBe(
+        vector.sourceSchemaValid,
+      );
+    }
+  }, 30_000);
 });

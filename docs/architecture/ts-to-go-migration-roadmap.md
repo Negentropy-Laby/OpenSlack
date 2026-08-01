@@ -135,11 +135,24 @@ live, or production claim.
 
 ### GS2 — Projector Shadow
 
-The Go Software Delivery projector consumes the same typed source snapshot as
-the TypeScript authority and compares canonical bytes, identities, integrity,
-completeness, and warnings. Contract-to-Delivery follows only after Software
-Delivery parity is stable. The shadow cannot independently read GitHub,
-Workflow, CRM, or ERP authority.
+GS2-A freezes the TypeScript Software Delivery projector as the calculation
+authority and generates a closed, exact-byte contract bundle containing the
+typed source schema, historical and deterministically randomized inputs, valid
+results, and fail-closed error results. The pure Go shadow consumes only those
+typed source bytes, recomputes the full Snapshot, and compares canonical bytes,
+integrity, node and edge identities, completeness, and warnings. Missing,
+incomplete, and `demo_fixture` classifications remain observable rather than
+being promoted to current authority.
+
+The generated contract manifest binds the schema, vectors, limits, algorithms,
+and authority declaration by SHA-256. TypeScript and Go tests independently
+replay the same checked-in mirror, so drift in either implementation or in the
+generated files fails qualification. GS2-A does not add an HTTP route, a store
+write, a Qoder path, or any user-visible read cutover; TypeScript remains the
+only calculation and local read authority.
+
+GS2-B ports Contract-to-Delivery only after GS2-A parity is stable and merged.
+No GS2 shadow may independently read GitHub, Workflow, CRM, or ERP authority.
 
 ### GS3 — Organization Graph Read Cutover
 
