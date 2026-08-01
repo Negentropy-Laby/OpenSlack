@@ -18,8 +18,11 @@ import (
 const maxSafeJSONInteger = int64(9_007_199_254_740_991)
 
 const (
-	mutationDeadline = 25 * time.Second
-	readDeadline     = 10 * time.Second
+	// The frozen maximum graph is about 16 MiB before PostgreSQL TOAST work.
+	// These remain hard bounds while leaving enough budget for exact-bound
+	// validation, durable commit, and verified readback on constrained runners.
+	mutationDeadline = 2 * time.Minute
+	readDeadline     = time.Minute
 )
 
 var idempotencyKeyPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)

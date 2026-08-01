@@ -181,9 +181,11 @@ func (service *Service) Run(ctx context.Context, bind string, shutdownDeadline t
 		Handler:           service.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       60 * time.Second,
-		MaxHeaderBytes:    16 * 1024,
+		// Leave a bounded response margin beyond the mutation deadline for
+		// strict JSON decoding and canonical contract validation.
+		WriteTimeout:   3 * time.Minute,
+		IdleTimeout:    60 * time.Second,
+		MaxHeaderBytes: 16 * 1024,
 	}
 	done := make(chan error, 1)
 	go func() {
