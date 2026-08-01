@@ -1,5 +1,5 @@
 schema: openslack.modules.v2
-vitest_tests: 5248
+vitest_tests: 5264
 vitest_files: 422
 modules:
   - id: self_evolution
@@ -48,7 +48,7 @@ modules:
       - '@openslack/sdk'
       - '@openslack/workspace'
       - '@openslack/runtime'
-    tests: 563
+    tests: 566
     test_files: 53
     golden_evals: 7
     notes: Stable release verification is available from the installed CLI and requires an out-of-band trusted Ed25519 public key; archive, SBOM, provenance, signature, identity fields, and subjects are verified without a source checkout or Bun. The public 0.2.0 embedding surface is limited to plugin-api, plugin-host, sdk, and plugin-testkit, with Apache-2.0 metadata, exact staged dependency rewriting, canonical tarball manifests, and clean-consumer ESM/declaration/TypeScript/isolated-host verification; registry publication remains externally gated. The declarative contract, typed SDK helpers, deterministic G1-G17 testkit, and instance-scoped Red host keep strict exact-byte loading, deterministic integrity lock, independent capability/target policy, atomic per-kind registries, required audit writes, and blockers-only bundled PRMS normalization. Testkit reports are authoring diagnostics only and always require independent Host reauthorization. Workspace and installed plugins remain declarative and non-executable; dynamic product-surface registration, auto-discovered code, and sandbox claims remain out of scope. The secret-free capstone harness locks evidence to one tested commit, both supported platforms, 11 fixed steps, bounded redacted references, and 30-day freshness without receiving privileged credentials.
@@ -355,7 +355,7 @@ modules:
       - '@openslack/organization-graph'
       - '@openslack/scenario-runtime'
       - github.com/Negentropy-Laby/OpenSlack/services/organization-graph
-    tests: 2386
+    tests: 2399
     test_files: 193
     components:
       - id: agent_runtime

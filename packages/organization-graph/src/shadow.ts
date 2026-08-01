@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto';
 import { isIP } from 'node:net';
+import { types as nodeTypes } from 'node:util';
 import { canonicalJson } from './canonical.js';
 import { assertGraphDeltaIntegrity, assertGraphSnapshotIntegrity } from './integrity.js';
 import { parseStrictGraphJson } from './strict-json.js';
 import type { GraphDelta, GraphSnapshot } from './types.js';
 
 export const GRAPH_SHADOW_RECEIPT_SCHEMA = 'openslack.graph_ingest_receipt.v1' as const;
+export const GRAPH_SHADOW_OBSERVATION_SCHEMA = 'openslack.graph_shadow_observation.v2' as const;
 
 export const GRAPH_SHADOW_POLICY = Object.freeze({
   maxRequestBytes: 64 * 1024 * 1024,
@@ -53,7 +55,7 @@ export type GraphShadowObservationOutcome =
   | 'response_invalid';
 
 export interface GraphShadowObservation {
-  schema: 'openslack.graph_shadow_observation.v1';
+  schema: typeof GRAPH_SHADOW_OBSERVATION_SCHEMA;
   operation: GraphShadowOperation;
   outcome: GraphShadowObservationOutcome;
   endpoint: string;
@@ -443,15 +445,16 @@ function baseObservation(
   attemptedAt: string,
   queue?: Readonly<GraphShadowQueueObservation>,
 ): Omit<GraphShadowObservation, 'outcome' | 'completedAt' | 'latencyMs'> {
+  const normalizedQueue = normalizeQueueObservation(queue);
   return {
-    schema: 'openslack.graph_shadow_observation.v1',
+    schema: GRAPH_SHADOW_OBSERVATION_SCHEMA,
     operation: request.operation,
     endpoint,
     attemptedAt,
     authority: 'ts-local',
     shadow: 'go',
-    backlog: queue?.backlog ?? 'unknown',
-    inFlight: queue?.inFlight ?? 'unknown',
+    backlog: normalizedQueue?.backlog ?? 'unknown',
+    inFlight: normalizedQueue?.inFlight ?? 'unknown',
     parity: 'not_compared',
     scenarioInstanceId: input.snapshot.scenarioInstanceId,
     cursor: input.snapshot.cursor,
@@ -459,6 +462,38 @@ function baseObservation(
     idempotencyKey: request.idempotencyKey,
     requestFingerprint: request.requestFingerprint,
   };
+}
+
+function normalizeQueueObservation(value: unknown): GraphShadowQueueObservation | undefined {
+  try {
+    if (
+      value === null ||
+      typeof value !== 'object' ||
+      Array.isArray(value) ||
+      nodeTypes.isProxy(value) ||
+      ![Object.prototype, null].includes(Object.getPrototypeOf(value))
+    ) {
+      return undefined;
+    }
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    const backlog = descriptors.backlog;
+    const inFlight = descriptors.inFlight;
+    if (
+      backlog === undefined ||
+      inFlight === undefined ||
+      !Object.hasOwn(backlog, 'value') ||
+      !Object.hasOwn(inFlight, 'value') ||
+      !Number.isSafeInteger(backlog.value) ||
+      backlog.value < 0 ||
+      backlog.value > GRAPH_SHADOW_POLICY.maxQueuedPublicationsPerScenario ||
+      inFlight.value !== 1
+    ) {
+      return undefined;
+    }
+    return { backlog: backlog.value as number, inFlight: 1 };
+  } catch {
+    return undefined;
+  }
 }
 
 function receiptMatchesRequest(

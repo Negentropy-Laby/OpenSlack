@@ -174,6 +174,32 @@ INSERT INTO graph_heads (
 		}
 	}
 
+	bytesScenario := "scenario-corrupt-snapshot-bytes"
+	bytesSnapshot := emptySnapshotForScenario(t, bytesScenario, "cursor-corrupt-bytes", generatedOne)
+	if _, err := pool.Exec(ctx, `
+INSERT INTO graph_snapshots (
+  scenario_instance_id, cursor, revision, canonical_bytes, integrity_hash,
+  projector_version, generated_at
+) VALUES ($1, $2, 1, $3, $4, $5, $6)`, bytesScenario, bytesSnapshot.Cursor,
+		[]byte("{"), wrongHash, bytesSnapshot.ProjectorVersion, bytesSnapshot.GeneratedAt); err != nil {
+		t.Fatalf("insert byte-corrupt snapshot: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+INSERT INTO graph_heads (
+  scenario_instance_id, cursor, revision, snapshot_integrity_hash
+) VALUES ($1, $2, 1, $3)`, bytesScenario, bytesSnapshot.Cursor, wrongHash); err != nil {
+		t.Fatalf("insert byte-corrupt head: %v", err)
+	}
+	for name, read := range map[string]func() error{
+		"byte-corrupt current":       func() error { _, _, err := store.Current(ctx, bytesScenario); return err },
+		"byte-corrupt snapshot":      func() error { _, err := store.ReadSnapshot(ctx, bytesScenario, bytesSnapshot.Cursor); return err },
+		"byte-corrupt snapshot list": func() error { _, err := store.ListSnapshots(ctx, bytesScenario, 0, 10); return err },
+	} {
+		if err := read(); !graphstore.IsCode(err, graphstore.ErrorContentInvalid) {
+			t.Fatalf("%s did not fail closed: %v", name, err)
+		}
+	}
+
 	deltaScenario := "scenario-corrupt-delta-bytes"
 	parent := emptySnapshotForScenario(t, deltaScenario, "cursor-parent", generatedOne)
 	target := emptySnapshotForScenario(t, deltaScenario, "cursor-target", generatedTwo)
@@ -194,6 +220,44 @@ INSERT INTO graph_deltas (
 	for name, read := range map[string]func() error{
 		"delta":      func() error { _, err := store.ReadDelta(ctx, deltaScenario, parent.Cursor, target.Cursor); return err },
 		"delta list": func() error { _, err := store.ListDeltas(ctx, deltaScenario, 0, 10); return err },
+	} {
+		if err := read(); !graphstore.IsCode(err, graphstore.ErrorContentInvalid) {
+			t.Fatalf("%s did not fail closed: %v", name, err)
+		}
+	}
+
+	deltaMetadataScenario := "scenario-corrupt-delta-metadata"
+	deltaMetadataParent := emptySnapshotForScenario(t, deltaMetadataScenario, "cursor-parent", generatedOne)
+	deltaMetadataTarget := emptySnapshotForScenario(t, deltaMetadataScenario, "cursor-target", generatedTwo)
+	if _, err := store.Publish(ctx, snapshotPublishInput(t, "corrupt-delta-metadata-parent", nil, 0, deltaMetadataParent)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Publish(ctx, snapshotPublishInput(t, "corrupt-delta-metadata-target", &deltaMetadataParent.Cursor, 1, deltaMetadataTarget)); err != nil {
+		t.Fatal(err)
+	}
+	deltaMetadata := deltaToTarget(t, deltaMetadataParent, deltaMetadataTarget, []graphcontract.Node{})
+	canonicalDelta, err := graphcontract.SerializeDelta(deltaMetadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+INSERT INTO graph_deltas (
+  scenario_instance_id, from_cursor, to_cursor, revision, canonical_bytes,
+  integrity_hash, generated_at
+) VALUES ($1, $2, $3, 2, $4, $5, $6)`, deltaMetadataScenario,
+		deltaMetadataParent.Cursor, deltaMetadataTarget.Cursor, canonicalDelta, wrongHash,
+		deltaMetadataTarget.GeneratedAt); err != nil {
+		t.Fatalf("insert metadata-corrupt delta: %v", err)
+	}
+	for name, read := range map[string]func() error{
+		"metadata-corrupt delta": func() error {
+			_, err := store.ReadDelta(ctx, deltaMetadataScenario, deltaMetadataParent.Cursor, deltaMetadataTarget.Cursor)
+			return err
+		},
+		"metadata-corrupt delta list": func() error {
+			_, err := store.ListDeltas(ctx, deltaMetadataScenario, 0, 10)
+			return err
+		},
 	} {
 		if err := read(); !graphstore.IsCode(err, graphstore.ErrorContentInvalid) {
 			t.Fatalf("%s did not fail closed: %v", name, err)

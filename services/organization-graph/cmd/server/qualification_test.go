@@ -3,12 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -18,6 +20,7 @@ import (
 
 	graph "github.com/Negentropy-Laby/OpenSlack/services/organization-graph"
 	"github.com/Negentropy-Laby/OpenSlack/services/organization-graph/internal/app"
+	"github.com/Negentropy-Laby/OpenSlack/services/organization-graph/internal/graphstore"
 	graphpostgres "github.com/Negentropy-Laby/OpenSlack/services/organization-graph/internal/graphstore/postgres"
 	"github.com/Negentropy-Laby/OpenSlack/services/organization-graph/internal/testsupport"
 )
@@ -149,6 +152,48 @@ func qualificationOptionalString(value *string) graph.Value {
 	return *value
 }
 
+type qualificationQueryEnvelope struct {
+	ScenarioInstanceID string            `json:"scenarioInstanceId"`
+	SnapshotCursor     string            `json:"snapshotCursor"`
+	Nodes              []json.RawMessage `json:"nodes"`
+	Edges              []json.RawMessage `json:"edges"`
+	NextCursor         *string           `json:"nextCursor"`
+	Truncation         struct {
+		Truncated bool `json:"truncated"`
+		NodeLimit bool `json:"nodeLimit"`
+		EdgeLimit bool `json:"edgeLimit"`
+		ByteLimit bool `json:"byteLimit"`
+		Paginated bool `json:"paginated"`
+	} `json:"truncation"`
+}
+
+func qualificationQueryResult(t testing.TB, response *httptest.ResponseRecorder) qualificationQueryEnvelope {
+	t.Helper()
+	var result qualificationQueryEnvelope
+	if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+		t.Fatalf("decode bounded query response: %v", err)
+	}
+	return result
+}
+
+func qualificationResultIDs(t testing.TB, values []json.RawMessage) map[string]struct{} {
+	t.Helper()
+	result := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		var identified struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(value, &identified); err != nil || identified.ID == "" {
+			t.Fatalf("decode identified query item: %v", err)
+		}
+		if _, duplicate := result[identified.ID]; duplicate {
+			t.Fatalf("query page contains duplicate id %q", identified.ID)
+		}
+		result[identified.ID] = struct{}{}
+	}
+	return result
+}
+
 func qualificationRequest(
 	t testing.TB,
 	service *app.Service,
@@ -158,16 +203,34 @@ func qualificationRequest(
 	body []byte,
 ) *httptest.ResponseRecorder {
 	t.Helper()
-	request := httptest.NewRequest(method, path, bytes.NewReader(body))
+	server := httptest.NewServer(service.Handler())
+	defer server.Close()
+	request, err := http.NewRequestWithContext(context.Background(), method, server.URL+path, bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
 	if key != "" {
 		request.Header.Set("Idempotency-Key", key)
 	}
-	response := httptest.NewRecorder()
-	service.Handler().ServeHTTP(response, request)
-	return response
+	response, err := server.Client().Do(request)
+	if err != nil {
+		t.Fatalf("execute qualification HTTP request: %v", err)
+	}
+	defer response.Body.Close()
+	responseBody, err := io.ReadAll(io.LimitReader(response.Body, int64(app.MaxResponseBodyBytes)+1))
+	if err != nil {
+		t.Fatalf("read qualification HTTP response: %v", err)
+	}
+	if len(responseBody) > app.MaxResponseBodyBytes {
+		t.Fatalf("qualification HTTP response exceeded %d bytes", app.MaxResponseBodyBytes)
+	}
+	recorder := httptest.NewRecorder()
+	recorder.Code = response.StatusCode
+	_, _ = recorder.Body.Write(responseBody)
+	return recorder
 }
 
 func qualificationService(t testing.TB, pool *pgxpool.Pool) *app.Service {
@@ -228,6 +291,7 @@ func TestGS1CSchemaReadinessRejectsEveryIncompatibleState(t *testing.T) {
 	}{
 		{name: "missing table"},
 		{name: "old version", makeTable: true, rows: [][2]any{{int64(1), false}}},
+		{name: "clean version without service relations", makeTable: true, rows: [][2]any{{int64(2), false}}},
 		{name: "future version", makeTable: true, rows: [][2]any{{int64(3), false}}},
 		{name: "dirty", makeTable: true, rows: [][2]any{{int64(2), true}}},
 		{name: "multiple rows", makeTable: true, rows: [][2]any{{int64(2), false}, {int64(2), false}}},
@@ -255,6 +319,23 @@ func TestGS1CSchemaReadinessRejectsEveryIncompatibleState(t *testing.T) {
 			}
 		})
 	}
+	t.Run("altered service column", func(t *testing.T) {
+		schemaURL := testsupport.OpenMigrationSchemaURL(t)
+		if err := testsupport.MigrateUp(schemaURL); err != nil {
+			t.Fatal(err)
+		}
+		pool, err := pgxpool.New(context.Background(), schemaURL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer pool.Close()
+		if _, err := pool.Exec(context.Background(), `ALTER TABLE graph_heads ALTER COLUMN revision TYPE INTEGER`); err != nil {
+			t.Fatal(err)
+		}
+		if err := checkDatabaseReady(context.Background(), pool); err == nil {
+			t.Fatal("altered service column was reported ready")
+		}
+	})
 }
 
 func TestGS1CRestartQualificationPhase(t *testing.T) {
@@ -302,16 +383,38 @@ func TestGS1CRestartQualificationPhase(t *testing.T) {
 			pool.Close()
 			t.Fatalf("database was not ready after restart: %v", err)
 		}
+		store := graphpostgres.New(pool)
+		beforeReplay, err := store.ReadReceipt(context.Background(), restartScenario, restartIdempotencyKey)
+		if err != nil {
+			pool.Close()
+			t.Fatalf("read durable restart receipt: %v", err)
+		}
+		head, current, err := store.Current(context.Background(), restartScenario)
+		if err != nil {
+			pool.Close()
+			t.Fatalf("read durable restart head: %v", err)
+		}
+		if beforeReplay.ReceiptID == "" || beforeReplay.Status != graphstore.ReceiptAccepted ||
+			beforeReplay.Cursor != restartCursor || beforeReplay.Revision != 1 ||
+			head.Cursor != restartCursor || head.Revision != 1 ||
+			current.Snapshot.IntegrityHash != beforeReplay.SnapshotIntegrityHash {
+			pool.Close()
+			t.Fatalf("durable restart receipt/head drifted: receipt=%+v head=%+v", beforeReplay, head)
+		}
 		service := qualificationService(t, pool)
 		snapshot := qualificationSnapshot(t, restartScenario, restartCursor, "2026-08-01T01:00:00Z", "restart")
 		replay := qualificationRequest(t, service, http.MethodPost, app.RouteSnapshotIngest, restartIdempotencyKey, qualificationSnapshotBody(t, nil, snapshot))
 		query := qualificationRequest(t, service, http.MethodPost, app.RouteQuery, "", []byte(`{"scenarioInstanceId":"scenario-gs1c-restart"}`))
+		afterReplay, err := store.ReadReceipt(context.Background(), restartScenario, restartIdempotencyKey)
 		pool.Close()
 		if replay.Code != http.StatusOK || !strings.Contains(replay.Body.String(), `"status":"duplicate"`) {
 			t.Fatalf("restart replay status/body = %d %s", replay.Code, replay.Body.String())
 		}
 		if query.Code != http.StatusOK || !strings.Contains(query.Body.String(), `"snapshotCursor":"cursor-restart-001"`) {
 			t.Fatalf("restart query status/body = %d %s", query.Code, query.Body.String())
+		}
+		if err != nil || !reflect.DeepEqual(afterReplay, beforeReplay) {
+			t.Fatalf("restart replay changed durable receipt: before=%+v after=%+v err=%v", beforeReplay, afterReplay, err)
 		}
 		if _, err := admin.Exec(context.Background(), "DROP SCHEMA "+pgx.Identifier{schema}.Sanitize()+" CASCADE"); err != nil {
 			t.Fatalf("drop restart schema: %v", err)
@@ -336,11 +439,118 @@ func TestGS1CLargeGraphQualification(t *testing.T) {
 	if response.Code != http.StatusCreated {
 		t.Fatalf("exact-bound graph status/body = %d %s", response.Code, response.Body.String())
 	}
+	head, persisted, err := graphpostgres.New(pool).Current(context.Background(), snapshot.ScenarioInstanceID)
+	if err != nil {
+		t.Fatalf("read persisted exact-bound graph: %v", err)
+	}
+	wantCanonicalBytes, err := graph.SerializeSnapshot(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if head.Cursor != snapshot.Cursor || head.Revision != 1 ||
+		head.SnapshotIntegrityHash != snapshot.IntegrityHash ||
+		persisted.Snapshot.IntegrityHash != snapshot.IntegrityHash ||
+		!bytes.Equal(persisted.CanonicalBytes, wantCanonicalBytes) ||
+		len(persisted.Snapshot.Nodes) != graph.MaxSnapshotNodes ||
+		len(persisted.Snapshot.Edges) != graph.MaxSnapshotEdges {
+		t.Fatalf(
+			"persisted exact-bound graph drifted: head=%+v nodes=%d edges=%d",
+			head,
+			len(persisted.Snapshot.Nodes),
+			len(persisted.Snapshot.Edges),
+		)
+	}
 	queryBody := []byte(fmt.Sprintf(`{"scenarioInstanceId":"%s","maxNodes":%d,"maxEdges":%d,"maxResponseBytes":%d}`,
 		snapshot.ScenarioInstanceID, graph.MaxNodes, graph.MaxEdges, graph.MaxResponseBytes))
 	query := qualificationRequest(t, service, http.MethodPost, app.RouteQuery, "", queryBody)
 	if query.Code != http.StatusOK || query.Body.Len() > graph.MaxResponseBytes {
 		t.Fatalf("bounded query status/bytes = %d/%d", query.Code, query.Body.Len())
+	}
+	queryResult := qualificationQueryResult(t, query)
+	if queryResult.ScenarioInstanceID != snapshot.ScenarioInstanceID ||
+		queryResult.SnapshotCursor != snapshot.Cursor ||
+		len(queryResult.Nodes) != graph.MaxNodes ||
+		len(queryResult.Edges) != 0 ||
+		queryResult.NextCursor == nil || *queryResult.NextCursor == "" ||
+		!queryResult.Truncation.Truncated || !queryResult.Truncation.NodeLimit ||
+		queryResult.Truncation.EdgeLimit || queryResult.Truncation.ByteLimit ||
+		queryResult.Truncation.Paginated {
+		t.Fatalf("bounded query envelope drifted: %+v", queryResult)
+	}
+	firstNodeIDs := qualificationResultIDs(t, queryResult.Nodes)
+	secondQueryBody, err := json.Marshal(map[string]any{
+		"scenarioInstanceId": snapshot.ScenarioInstanceID,
+		"maxNodes":           graph.MaxNodes,
+		"maxEdges":           graph.MaxEdges,
+		"maxResponseBytes":   graph.MaxResponseBytes,
+		"cursor":             *queryResult.NextCursor,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondQuery := qualificationRequest(t, service, http.MethodPost, app.RouteQuery, "", secondQueryBody)
+	if secondQuery.Code != http.StatusOK || secondQuery.Body.Len() > graph.MaxResponseBytes {
+		t.Fatalf("second bounded query status/bytes = %d/%d", secondQuery.Code, secondQuery.Body.Len())
+	}
+	secondQueryResult := qualificationQueryResult(t, secondQuery)
+	if len(secondQueryResult.Nodes) != graph.MaxNodes || len(secondQueryResult.Edges) != 0 ||
+		secondQueryResult.NextCursor == nil || !secondQueryResult.Truncation.Truncated ||
+		!secondQueryResult.Truncation.NodeLimit || !secondQueryResult.Truncation.Paginated {
+		t.Fatalf("second bounded query envelope drifted: %+v", secondQueryResult)
+	}
+	for id := range qualificationResultIDs(t, secondQueryResult.Nodes) {
+		if _, duplicate := firstNodeIDs[id]; duplicate {
+			t.Fatalf("bounded query cursor repeated node %q", id)
+		}
+	}
+
+	edgeQueryBody, err := json.Marshal(map[string]any{
+		"scenarioInstanceId": snapshot.ScenarioInstanceID,
+		"rootNodeIds":        []string{snapshot.Nodes[0].ID},
+		"depth":              1,
+		"maxNodes":           graph.MaxNodes,
+		"maxEdges":           1,
+		"maxResponseBytes":   graph.MaxResponseBytes,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	edgeQuery := qualificationRequest(t, service, http.MethodPost, app.RouteQuery, "", edgeQueryBody)
+	if edgeQuery.Code != http.StatusOK {
+		t.Fatalf("edge query status/body = %d/%s", edgeQuery.Code, edgeQuery.Body.String())
+	}
+	edgeQueryResult := qualificationQueryResult(t, edgeQuery)
+	if len(edgeQueryResult.Nodes) < 2 || len(edgeQueryResult.Edges) != 1 ||
+		edgeQueryResult.NextCursor == nil || !edgeQueryResult.Truncation.Truncated ||
+		!edgeQueryResult.Truncation.EdgeLimit || edgeQueryResult.Truncation.Paginated {
+		t.Fatalf("edge query envelope drifted: %+v", edgeQueryResult)
+	}
+	firstEdgeIDs := qualificationResultIDs(t, edgeQueryResult.Edges)
+	edgeNextBody, err := json.Marshal(map[string]any{
+		"scenarioInstanceId": snapshot.ScenarioInstanceID,
+		"rootNodeIds":        []string{snapshot.Nodes[0].ID},
+		"depth":              1,
+		"maxNodes":           graph.MaxNodes,
+		"maxEdges":           1,
+		"maxResponseBytes":   graph.MaxResponseBytes,
+		"cursor":             *edgeQueryResult.NextCursor,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	edgeNext := qualificationRequest(t, service, http.MethodPost, app.RouteQuery, "", edgeNextBody)
+	if edgeNext.Code != http.StatusOK {
+		t.Fatalf("edge query next status/body = %d/%s", edgeNext.Code, edgeNext.Body.String())
+	}
+	edgeNextResult := qualificationQueryResult(t, edgeNext)
+	if len(edgeNextResult.Nodes) != 0 || len(edgeNextResult.Edges) != 1 ||
+		!edgeNextResult.Truncation.Paginated {
+		t.Fatalf("edge query next envelope drifted: %+v", edgeNextResult)
+	}
+	for id := range qualificationResultIDs(t, edgeNextResult.Edges) {
+		if _, duplicate := firstEdgeIDs[id]; duplicate {
+			t.Fatalf("edge query cursor repeated edge %q", id)
+		}
 	}
 	overLimit := qualificationOverLimitSnapshotBody(t, snapshot)
 	rejected := qualificationRequest(t, service, http.MethodPost, app.RouteSnapshotIngest, "gs1c-large-over-limit", overLimit)

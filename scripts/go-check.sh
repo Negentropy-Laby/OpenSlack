@@ -958,7 +958,8 @@ run_organization_graph_qualification() {
   local database_name="$4"
   local resource_owner="$5"
   local run_token="$6"
-  local restart_schema="organization_graph_gs1c_restart_${run_token//-/}"
+  local restart_token="${run_token,,}"
+  local restart_schema="organization_graph_gs1c_restart_${restart_token//-/}"
 
   log "qualifying Organization Graph schema, size, HTTP/PostgreSQL, and failure bounds"
   run_organization_graph_test_container \

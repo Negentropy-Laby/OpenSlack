@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/Negentropy-Laby/OpenSlack/services/organization-graph/internal/app"
@@ -282,6 +283,71 @@ func checkDatabaseReady(ctx context.Context, pool *pgxpool.Pool) error {
 			version,
 			dirty,
 		)
+	}
+	return checkRequiredSchema(ctx, pool)
+}
+
+type requiredSchemaField struct {
+	name string
+	oid  uint32
+}
+
+type requiredSchemaRelation struct {
+	name   string
+	query  string
+	fields []requiredSchemaField
+}
+
+var requiredSchemaRelations = []requiredSchemaRelation{
+	{
+		name:   "graph_snapshots",
+		query:  `SELECT scenario_instance_id, cursor, revision, canonical_bytes, integrity_hash, projector_version, generated_at, stored_at FROM graph_snapshots LIMIT 0`,
+		fields: []requiredSchemaField{{"scenario_instance_id", pgtype.TextOID}, {"cursor", pgtype.TextOID}, {"revision", pgtype.Int8OID}, {"canonical_bytes", pgtype.ByteaOID}, {"integrity_hash", pgtype.TextOID}, {"projector_version", pgtype.TextOID}, {"generated_at", pgtype.TextOID}, {"stored_at", pgtype.TimestamptzOID}},
+	},
+	{
+		name:   "graph_deltas",
+		query:  `SELECT scenario_instance_id, from_cursor, to_cursor, revision, canonical_bytes, integrity_hash, generated_at, stored_at FROM graph_deltas LIMIT 0`,
+		fields: []requiredSchemaField{{"scenario_instance_id", pgtype.TextOID}, {"from_cursor", pgtype.TextOID}, {"to_cursor", pgtype.TextOID}, {"revision", pgtype.Int8OID}, {"canonical_bytes", pgtype.ByteaOID}, {"integrity_hash", pgtype.TextOID}, {"generated_at", pgtype.TextOID}, {"stored_at", pgtype.TimestamptzOID}},
+	},
+	{
+		name:   "graph_heads",
+		query:  `SELECT scenario_instance_id, cursor, revision, snapshot_integrity_hash, updated_at FROM graph_heads LIMIT 0`,
+		fields: []requiredSchemaField{{"scenario_instance_id", pgtype.TextOID}, {"cursor", pgtype.TextOID}, {"revision", pgtype.Int8OID}, {"snapshot_integrity_hash", pgtype.TextOID}, {"updated_at", pgtype.TimestamptzOID}},
+	},
+	{
+		name:   "graph_ingest_receipts",
+		query:  `SELECT receipt_id, operation, status, scenario_instance_id, idempotency_key, request_fingerprint, previous_cursor, cursor, revision, snapshot_integrity_hash, delta_integrity_hash, committed_at, reconciliation_token, recorded_at FROM graph_ingest_receipts LIMIT 0`,
+		fields: []requiredSchemaField{{"receipt_id", pgtype.TextOID}, {"operation", pgtype.TextOID}, {"status", pgtype.TextOID}, {"scenario_instance_id", pgtype.TextOID}, {"idempotency_key", pgtype.TextOID}, {"request_fingerprint", pgtype.ByteaOID}, {"previous_cursor", pgtype.TextOID}, {"cursor", pgtype.TextOID}, {"revision", pgtype.Int8OID}, {"snapshot_integrity_hash", pgtype.TextOID}, {"delta_integrity_hash", pgtype.TextOID}, {"committed_at", pgtype.TimestamptzOID}, {"reconciliation_token", pgtype.TextOID}, {"recorded_at", pgtype.TimestamptzOID}},
+	},
+}
+
+func checkRequiredSchema(ctx context.Context, pool *pgxpool.Pool) error {
+	for _, relation := range requiredSchemaRelations {
+		rows, err := pool.Query(ctx, relation.query)
+		if err != nil {
+			return fmt.Errorf("probe required relation %s: %w", relation.name, err)
+		}
+		fields := rows.FieldDescriptions()
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("probe required relation %s: %w", relation.name, err)
+		}
+		if len(fields) != len(relation.fields) {
+			return fmt.Errorf("required relation %s has %d fields; expected %d", relation.name, len(fields), len(relation.fields))
+		}
+		for index, expected := range relation.fields {
+			if fields[index].Name != expected.name || fields[index].DataTypeOID != expected.oid {
+				return fmt.Errorf(
+					"required relation %s field %d is %s/%d; expected %s/%d",
+					relation.name,
+					index,
+					fields[index].Name,
+					fields[index].DataTypeOID,
+					expected.name,
+					expected.oid,
+				)
+			}
+		}
 	}
 	return nil
 }

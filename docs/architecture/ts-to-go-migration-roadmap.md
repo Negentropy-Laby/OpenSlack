@@ -126,8 +126,10 @@ survive. Negative qualification covers incompatible migration rows, corrupted
 canonical bytes and metadata, same-cursor/different-byte conflicts, transaction
 rollback, and an exact 10,000-node/25,000-edge graph plus an over-limit request.
 Query cursors support one bounded previous verification secret during rotation;
-only the active secret signs newly emitted cursors. Shadow backlog observations
-report the actual TypeScript dispatch queue or `unknown`, never an invented zero.
+only the active secret signs newly emitted cursors. Versioned
+`openslack.graph_shadow_observation.v2` backlog observations report the actual
+TypeScript dispatch queue or `unknown`, never an invented zero or unchecked
+caller-supplied number.
 These gates do not create a Go read authority, a Qoder cutover, or a release,
 live, or production claim.
 

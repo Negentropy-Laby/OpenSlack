@@ -21,7 +21,7 @@ async function root(): Promise<string> {
 
 function observation(input: GraphShadowPublishInput): GraphShadowObservation {
   return {
-    schema: 'openslack.graph_shadow_observation.v1',
+    schema: 'openslack.graph_shadow_observation.v2',
     operation: input.delta === undefined ? 'snapshot_ingest' : 'delta_ingest',
     outcome: 'accepted',
     endpoint:

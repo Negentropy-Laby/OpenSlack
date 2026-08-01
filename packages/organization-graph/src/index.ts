@@ -76,6 +76,7 @@ export type {
   PublishedGraphSnapshot,
 } from './store.js';
 export {
+  GRAPH_SHADOW_OBSERVATION_SCHEMA,
   GRAPH_SHADOW_POLICY,
   GRAPH_SHADOW_RECEIPT_SCHEMA,
   GraphShadowHttpPublisher,
