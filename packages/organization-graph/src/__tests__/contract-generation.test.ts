@@ -51,7 +51,11 @@ const contractToDeliveryFixturePath = resolve(
 // Full-suite CI runs hundreds of files concurrently. These contract freeze cases
 // launch generator processes and/or read large generated artifacts, and have
 // exceeded 30 seconds under that measured load; keep the larger budget scoped here.
-const CONTRACT_FREEZE_TIMEOUT_MS = 60_000;
+// Rebuilding every exact-byte authority and both mirrors exercises multiple
+// large vector files. Keep the budget explicit so shared CI runners do not
+// mistake valid bounded work for a hung generator.
+const CONTRACT_FREEZE_TIMEOUT_MS = 120_000;
+const CONTRACT_CLEANUP_TIMEOUT_MS = 30_000;
 const temporaryRoots: string[] = [];
 
 interface ContractArtifact {
@@ -109,7 +113,7 @@ afterEach(async () => {
   await Promise.all(
     temporaryRoots.splice(0).map((path) => rm(path, { recursive: true, force: true })),
   );
-});
+}, CONTRACT_CLEANUP_TIMEOUT_MS);
 
 function runGenerator(mode: 'generate' | '--check', outputRoot?: string) {
   const result = spawnSync('bun', ['run', 'graph:golden', '--', mode], {
