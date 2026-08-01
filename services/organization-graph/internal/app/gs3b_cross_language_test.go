@@ -101,6 +101,8 @@ func TestGS3BRealGoReadCanary(t *testing.T) {
 		testServiceBuildSHA,
 		"--routing-epoch",
 		fmt.Sprintf("%d", epoch),
+		"--now",
+		snapshot.GeneratedAt,
 	)
 	command.Dir = repositoryRoot
 	output, err := command.CombinedOutput()

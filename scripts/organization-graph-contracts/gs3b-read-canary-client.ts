@@ -16,9 +16,12 @@ const scenarioInstanceId = argument('--scenario');
 const targetId = argument('--target');
 const buildSha = argument('--build-sha');
 const epochText = argument('--routing-epoch');
+const nowText = argument('--now');
 if (!/^[1-9]\d*$/u.test(epochText)) throw new Error('routing epoch is not canonical');
 const routingEpoch = Number(epochText);
-const expiresAt = new Date(Date.now() + 5 * 60 * 1_000).toISOString();
+const now = Date.parse(nowText);
+if (!Number.isFinite(now)) throw new Error('qualification clock is invalid');
+const expiresAt = new Date(now + 5 * 60 * 1_000).toISOString();
 
 const router = new GraphReadCanaryRouter({
   backend: 'go',
@@ -29,6 +32,7 @@ const router = new GraphReadCanaryRouter({
   expiresAt,
   origin,
   expectedBuildSha: buildSha,
+  now: () => now,
 });
 
 const first = await router.query({ scenarioInstanceId, maxNodes: 1 });
@@ -75,6 +79,7 @@ const wrongBuild = new GraphReadCanaryRouter({
   expiresAt,
   origin,
   expectedBuildSha: 'f'.repeat(64),
+  now: () => now,
 });
 let buildDriftCode = '';
 try {
@@ -93,6 +98,7 @@ const rollback = new GraphReadCanaryRouter({
   scenarioInstanceIds: [scenarioInstanceId],
   routingEpoch: routingEpoch + 1,
   expiresAt,
+  now: () => now,
 });
 if (rollback.route(scenarioInstanceId)?.backend !== 'ts-local') {
   throw new Error('explicit rollback epoch did not select TypeScript');
