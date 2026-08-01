@@ -94,6 +94,24 @@ describe('events', () => {
     }
   });
 
+  it('validates the three bounded graph read-mirror audit outcomes', () => {
+    for (const type of [
+      'graph.read_mirror.matched',
+      'graph.read_mirror.mismatched',
+      'graph.read_mirror.unavailable',
+    ] as const) {
+      const event = createEvent(
+        makeEvent({
+          type,
+          object: { kind: 'graph', id: 'scenario-001' },
+          source: { kind: 'openslack', ref: 'organization-graph-read-mirror' },
+          summary: `Recorded ${type}.`,
+        }),
+      );
+      expect(validateEvent(event).valid, type).toBe(true);
+    }
+  });
+
   it('rejects event with wrong schema', () => {
     const result = validateEvent({ schema: 'wrong.schema' });
     expect(result.valid).toBe(false);
@@ -135,6 +153,25 @@ describe('events', () => {
     const result = validateEvent(base);
     expect(result.valid).toBe(false);
     expect(result.reason).toContain('object');
+
+    const unknownObject = {
+      ...base,
+      object: { kind: 'unknown', id: '42' },
+    };
+    expect(validateEvent(unknownObject)).toEqual({
+      valid: false,
+      reason: 'Object must have a valid kind',
+    });
+
+    const unknownSource = {
+      ...base,
+      object: { kind: 'pr', id: '42' },
+      source: { kind: 'unknown', ref: 'doctor' },
+    };
+    expect(validateEvent(unknownSource)).toEqual({
+      valid: false,
+      reason: 'Source must have a valid kind',
+    });
   });
 
   it('rejects event with missing summary', () => {

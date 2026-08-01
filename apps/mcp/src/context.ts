@@ -28,6 +28,7 @@ import {
   type GraphExplanation,
   type GraphQueryInput,
   type GraphQueryResult,
+  type GraphReadMirrorPort,
 } from '@openslack/organization-graph';
 import type {
   ActionRegistryPort,
@@ -136,6 +137,8 @@ export interface CreateOpenSlackMcpContextOptions {
   /** Test seam. Production callers omit this and receive server-generated UUIDs. */
   readonly correlationIdFactory?: () => string;
   readonly graphMaxAgeMs?: number;
+  /** Optional observational Go mirror. TypeScript remains the returned read authority. */
+  readonly graphReadMirror?: GraphReadMirrorPort;
   /** Optional nominal Operator mutation port. Omit to preserve the exact read-only catalog. */
   readonly governedMutations?: OpenSlackGovernedMutationPort;
   /** Optional separately human-attested workflow-effect decision port. Requires governedMutations. */
@@ -1191,6 +1194,7 @@ export function createDefaultOpenSlackReadModelPorts(
   options: {
     readonly clock?: () => Date;
     readonly graphMaxAgeMs?: number;
+    readonly graphReadMirror?: GraphReadMirrorPort;
   } = {},
 ): OpenSlackReadModelPorts {
   const rootDir = resolve(workspaceRoot);
@@ -1417,6 +1421,16 @@ export function createDefaultOpenSlackReadModelPorts(
         cursorSecret: graphCursorSecret,
         now: clock(),
       });
+      if (options.graphReadMirror) {
+        try {
+          await options.graphReadMirror.observeQuery(
+            structuredClone(input),
+            structuredClone(result),
+          );
+        } catch {
+          // Mirror reads are observational and cannot alter the TypeScript authority result.
+        }
+      }
       return {
         generatedAt: snapshot.generatedAt,
         ...result,
@@ -1425,6 +1439,16 @@ export function createDefaultOpenSlackReadModelPorts(
     graphExplain: async (input) => {
       const snapshot = await currentGraph(input.scenarioInstanceId);
       const result: GraphExplanation = explainGraph(snapshot, input);
+      if (options.graphReadMirror) {
+        try {
+          await options.graphReadMirror.observeExplain(
+            structuredClone(input),
+            structuredClone(result),
+          );
+        } catch {
+          // Mirror reads are observational and cannot alter the TypeScript authority result.
+        }
+      }
       return {
         generatedAt: snapshot.generatedAt,
         snapshotCursor: snapshot.cursor,
@@ -1443,6 +1467,7 @@ export function createOpenSlackMcpContext(
   const defaults = createDefaultOpenSlackReadModelPorts(workspaceRoot, options.businessOutcomes, {
     clock,
     graphMaxAgeMs: options.graphMaxAgeMs,
+    graphReadMirror: options.graphReadMirror,
   });
   const runtime = Object.freeze({
     now: clock,

@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: product
-updated: 2026-07-28
+updated: 2026-08-01
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -171,6 +171,10 @@ Truth boundaries are strict:
 - `notification.sent` and `notification.failed` describe direct route attempts only;
   durable `accepted` and remote `delivered` remain unknown without injected receipt or
   reconciliation evidence;
+- `graph.read_mirror.matched`, `graph.read_mirror.mismatched`, and
+  `graph.read_mirror.unavailable` are digest-only differential observations. They do not make Go
+  the Graph read authority, mutate Graph/business state, or establish a Qoder, live, release, or
+  production claim;
 - blocker time remains unknown without close or unblock evidence;
 - manual-hour and runtime-cost assumptions are always versioned
   `configured_estimate` inputs;

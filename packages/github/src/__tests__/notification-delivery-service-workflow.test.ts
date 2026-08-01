@@ -169,6 +169,7 @@ describe('notification delivery service workflow', () => {
     const installIndex = stepIndex('Install root dependencies');
     const graphGoldenIndex = stepIndex('Verify Organization Graph golden contracts');
     const graphDistIndex = stepIndex('Clean-build and smoke Organization Graph distribution');
+    const graphMirrorIndex = stepIndex('Qualify GS3-A real Go read mirror');
     const imagePullIndex = stepIndex('Pull pinned Go verification images');
     const goCheckIndex = stepIndex('Run reviewed Go workspace verifier');
     const rootDocsIndex = stepIndex('Verify root documentation governance');
@@ -185,7 +186,8 @@ describe('notification delivery service workflow', () => {
     expect(installIndex).toBe(setupBunIndex + 1);
     expect(graphGoldenIndex).toBe(installIndex + 1);
     expect(graphDistIndex).toBe(graphGoldenIndex + 1);
-    expect(imagePullIndex).toBe(graphDistIndex + 1);
+    expect(graphMirrorIndex).toBe(graphDistIndex + 1);
+    expect(imagePullIndex).toBe(graphMirrorIndex + 1);
     expect(goCheckIndex).toBe(imagePullIndex + 1);
     expect(rootDocsIndex).toBe(goCheckIndex + 1);
     expect(docsIndex).toBe(rootDocsIndex + 1);
@@ -244,6 +246,11 @@ describe('notification delivery service workflow', () => {
       'working-directory': '.',
       run: lines('set -euo pipefail', 'bun run graph:dist-build', 'bun run graph:dist-smoke'),
     });
+    expect(job.steps[graphMirrorIndex]).toEqual({
+      name: 'Qualify GS3-A real Go read mirror',
+      'working-directory': 'services/organization-graph',
+      run: "OPENSLACK_GS3A_CROSS_LANGUAGE=1 go test ./internal/app -run '^TestGS3ARealGoReadMirror$' -count=1",
+    });
     expect(job.steps[rootDocsIndex]).toEqual({
       name: 'Verify root documentation governance',
       'working-directory': '.',
@@ -288,6 +295,7 @@ describe('notification delivery service workflow', () => {
       'Install root dependencies',
       'Verify Organization Graph golden contracts',
       'Clean-build and smoke Organization Graph distribution',
+      'Qualify GS3-A real Go read mirror',
       'Pull pinned Go verification images',
       'Run reviewed Go workspace verifier',
       'Verify root documentation governance',
@@ -323,6 +331,8 @@ describe('notification delivery service workflow', () => {
         'bun run graph:dist-build',
         'bun run graph:dist-smoke',
       ),
+      'Qualify GS3-A real Go read mirror':
+        "OPENSLACK_GS3A_CROSS_LANGUAGE=1 go test ./internal/app -run '^TestGS3ARealGoReadMirror$' -count=1",
       'Pull pinned Go verification images': lines(
         'set -euo pipefail',
         `docker pull ${goImage}`,

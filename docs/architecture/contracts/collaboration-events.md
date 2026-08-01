@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-07-28
+updated: 2026-08-01
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -29,7 +29,17 @@ export interface CollaborationEvent {
     provider?: 'cli' | 'slack' | 'webhook' | 'github';
   };
   object: {
-    kind: 'issue' | 'pr' | 'plan' | 'module' | 'agent' | 'handoff' | 'decision' | 'workspace';
+    kind:
+      | 'issue'
+      | 'pr'
+      | 'plan'
+      | 'module'
+      | 'agent'
+      | 'handoff'
+      | 'decision'
+      | 'workspace'
+      | 'workflow'
+      | 'graph';
     id: string;
     url?: string;
   };
@@ -118,6 +128,21 @@ export interface CollaborationEvent {
 - `room.summarized` — A room summary was generated
 - `digest.generated` — A digest was generated
 
+### Organization Graph Mirror Events
+
+- `graph.read_mirror.matched` — The optional Go read returned the same bounded result as the
+  TypeScript authority
+- `graph.read_mirror.mismatched` — The optional Go read completed but one or more closed result
+  fields differed
+- `graph.read_mirror.unavailable` — Transport, timeout, HTTP, content-type, size, or strict-JSON
+  validation prevented comparison
+
+These GS3-A events are observational only. Metadata may contain operation, outcome, parity,
+latency, HTTP status, bounded error/difference codes, request and result SHA-256 digests, a hashed
+snapshot cursor, and the already hashed normalized query. It must not contain the mirror endpoint,
+request body, graph nodes or edges, explanation target payload, evidence contents, or source-event
+contents. An append failure cannot replace the TypeScript MCP result or grant Go read authority.
+
 ## Storage
 
 ### Local Runtime Projection
@@ -154,14 +179,15 @@ Subdirectories:
 
 Every event should reference its source of truth:
 
-| Object kind | Source link example                            |
-| ----------- | ---------------------------------------------- |
-| `issue`     | `https://github.com/{owner}/{repo}/issues/{n}` |
-| `pr`        | `https://github.com/{owner}/{repo}/pull/{n}`   |
-| `plan`      | Internal plan ID (`PLAN-2026...`)              |
-| `module`    | `.openslack/modules.yaml`                      |
-| `handoff`   | `.openslack/collaboration/handoffs/{id}.yaml`  |
-| `decision`  | `.openslack/collaboration/decisions/{id}.yaml` |
+| Object kind | Source link example                                              |
+| ----------- | ---------------------------------------------------------------- |
+| `issue`     | `https://github.com/{owner}/{repo}/issues/{n}`                   |
+| `pr`        | `https://github.com/{owner}/{repo}/pull/{n}`                     |
+| `plan`      | Internal plan ID (`PLAN-2026...`)                                |
+| `module`    | `.openslack/modules.yaml`                                        |
+| `handoff`   | `.openslack/collaboration/handoffs/{id}.yaml`                    |
+| `decision`  | `.openslack/collaboration/decisions/{id}.yaml`                   |
+| `graph`     | Scenario instance ID with digest-only local observation metadata |
 
 ## Redaction
 

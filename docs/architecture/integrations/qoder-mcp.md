@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - contributors
 owner: architecture
-updated: 2026-07-30
+updated: 2026-08-01
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -40,7 +40,8 @@ see [Qoder Work evidence](../../evidence/qoder-work-evidence.md).
 
 ## Authority boundary
 
-- STDIO is the only production transport; it opens no listening socket.
+- STDIO is the only production MCP transport; it opens no listening socket. An explicitly enabled
+  GS3-A Graph read mirror is an outbound comparison call, not a second MCP transport.
 - Every catalog is nominal and frozen after construction. Valid production counts are read-only
   12, agent-governed 16, and separately human-attested 17.
 - A separately composed local demo profile may add only `openslack_demo_reset` to one valid
@@ -50,7 +51,8 @@ see [Qoder Work evidence](../../evidence/qoder-work-evidence.md).
 - Every advertised tool returns `openslack.mcp_result.v2`.
 - Stdout is reserved for MCP JSON-RPC frames; diagnostics use stderr.
 - Structured output and JSON text content derive from the same sanitized object.
-- Reads do not create pending plans or initialize missing graph/authority state.
+- Reads do not create pending plans or initialize missing graph/authority state. An enabled Graph
+  mirror may append one digest-only observational Collaboration event.
 - No Operator `ActionRegistry` entry is exported automatically.
 
 No profile exposes arbitrary shell/command execution, workspace indexing, PR watch, repair, policy
@@ -58,6 +60,38 @@ or permission write, GitHub approval, or direct merge.
 
 Qoder MCP permission is not OpenSlack confirmation, OpenSlack workflow approval, Workflow-Trust,
 or GitHub human review.
+
+### Optional GS3-A Graph read mirror
+
+For differential qualification against a running local Go Graph service, add an explicit origin to
+any existing 12-, 16-, or 17-tool command:
+
+```bash
+bun run openslack mcp serve --stdio \
+  --graph-read-mirror-origin http://127.0.0.1:18181
+```
+
+Loopback is the default and recommended mode. A private or link-local IP literal is accepted only
+with the additional explicit selection:
+
+```bash
+bun run openslack mcp serve --stdio \
+  --graph-read-mirror-origin http://10.20.30.40:18181 \
+  --graph-read-mirror-network internal
+```
+
+The origin must be exact, credential-free, HTTP, and an IP literal; DNS names, public/wildcard
+addresses, paths, query strings, fragments, credentials, and redirects are rejected. Supplying
+`--graph-read-mirror-network` without an origin is also rejected before server construction.
+
+Only successful local `openslack_query_graph` and `openslack_explain_graph` calculations are sent
+to the fixed Go read endpoints. MCP waits for the bounded comparison, records a matched,
+mismatched, or unavailable digest-only audit event, and returns the isolated TypeScript result in
+the unchanged `openslack.mcp_result.v2` envelope. It never returns the Go payload, silently falls
+back between backends, translates a cursor, changes the 12/16/17 catalogs, or grants Go read/write
+authority. With no origin flag there is no mirror network call or mirror audit event.
+Audit append failure is excluded from stdout and the MCP result; it emits only the fixed
+`OPENSLACK_GRAPH_READ_MIRROR_AUDIT_FAILED` stderr diagnostic.
 
 ## Exact production catalog
 

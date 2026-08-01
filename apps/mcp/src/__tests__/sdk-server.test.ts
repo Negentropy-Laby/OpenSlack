@@ -7,11 +7,18 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { buildBusinessOutcomeProjection } from '@openslack/collaboration';
 import {
   CONTRACT_TO_DELIVERY_SCENARIO_ID,
+  GraphReadMirrorHttpClient,
   LocalGraphStore,
   buildAndPublishGraphSnapshot,
+  canonicalJson,
+  explainGraph,
+  queryGraph,
+  type GraphExplainInput,
+  type GraphQueryInput,
+  type GraphReadMirrorObservation,
 } from '@openslack/organization-graph';
 import { OPENSLACK_READ_TOOL_NAMES, type OpenSlackReadToolName } from '@openslack/qoder-adapter';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createOpenSlackMcpContext,
   type OpenSlackReadModelPorts,
@@ -37,6 +44,112 @@ function argsFor(name: OpenSlackReadToolName): Record<string, unknown> {
 }
 
 describe('official MCP SDK integration', () => {
+  it('keeps the stock 12-tool SDK surface while auditing matched Go HTTP mirrors', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'openslack-mcp-sdk-mirror-'));
+    roots.push(root);
+    const store = new LocalGraphStore(join(root, '.openslack.local', 'graph'));
+    const published = await buildAndPublishGraphSnapshot({
+      scenarioId: CONTRACT_TO_DELIVERY_SCENARIO_ID,
+      sourceBytes: readFileSync(
+        join(
+          repositoryRoot,
+          'packages',
+          'organization-graph',
+          'src',
+          'fixtures',
+          'contract-to-delivery-source.json',
+        ),
+      ),
+      store,
+      expectedCursor: null,
+      expectedScenarioInstanceId: 'scenario-contract-delivery-001',
+    });
+    const snapshot = await store.readCurrentSnapshot(published.scenarioInstanceId);
+    const target = snapshot.nodes.find((node) => node.type === 'business.customer')!;
+    const queryInput: GraphQueryInput = {
+      scenarioInstanceId: published.scenarioInstanceId,
+      rootNodeIds: [target.id],
+      direction: 'both',
+      depth: 3,
+      maxNodes: 200,
+      maxEdges: 500,
+    };
+    const explainInput: GraphExplainInput = {
+      scenarioInstanceId: published.scenarioInstanceId,
+      targetId: target.id,
+      depth: 3,
+    };
+    const observations: GraphReadMirrorObservation[] = [];
+    const mirror = new GraphReadMirrorHttpClient({
+      origin: 'http://127.0.0.1:18181',
+      fetch: vi.fn(async (url, init) => {
+        const queryRoute = String(url).endsWith('/v1/graph:query');
+        expect(init?.body).toBe(canonicalJson(queryRoute ? queryInput : explainInput));
+        const result = queryRoute
+          ? queryGraph(snapshot, queryInput, {
+              cursorSecret: 'go-mirror-sdk-cursor-secret-at-least-32-bytes',
+              now: new Date('2026-07-27T02:30:00.000Z'),
+            })
+          : explainGraph(snapshot, explainInput);
+        return new Response(`${canonicalJson(result)}\n`, {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }),
+      auditSink: (observation) => {
+        observations.push(observation);
+      },
+    });
+    const context = createOpenSlackMcpContext({
+      workspaceRoot: root,
+      operator: Object.freeze({}) as unknown as OperatorApplicationContextPort,
+      clock: () => new Date('2026-07-27T02:30:00.000Z'),
+      correlationIdFactory: (() => {
+        let id = 0;
+        return () => `qw2-sdk-mirror-${++id}`;
+      })(),
+      graphReadMirror: mirror,
+    });
+    const server = createOpenSlackMcpServer(context);
+    const client = new Client({ name: 'qw2-sdk-mirror', version: '1.0.0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    await server.sdkServer.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const listed = await client.listTools();
+      expect(listed.tools.map((tool) => tool.name)).toEqual(OPENSLACK_READ_TOOL_NAMES);
+      expect(listed.tools).toHaveLength(12);
+      const query = await client.callTool({
+        name: 'openslack_query_graph',
+        arguments: { ...queryInput },
+      });
+      const explanation = await client.callTool({
+        name: 'openslack_explain_graph',
+        arguments: { ...explainInput },
+      });
+
+      expect(query.structuredContent).toMatchObject({
+        status: 'completed',
+        authority: { mode: 'projection', sources: ['openslack.organization_graph_snapshot'] },
+        data: { snapshotCursor: published.cursor },
+      });
+      expect(explanation.structuredContent).toMatchObject({
+        status: 'completed',
+        authority: { mode: 'projection', sources: ['openslack.organization_graph_snapshot'] },
+        data: { snapshotCursor: published.cursor, targetId: target.id },
+      });
+      expect(observations).toHaveLength(2);
+      expect(observations.map((item) => [item.operation, item.outcome, item.parity])).toEqual([
+        ['query', 'matched', 'matched'],
+        ['explain', 'matched', 'matched'],
+      ]);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   it('reads and explains the composite story through three bounded stock-profile windows', async () => {
     const root = mkdtempSync(join(tmpdir(), 'openslack-mcp-sdk-graph-'));
     roots.push(root);

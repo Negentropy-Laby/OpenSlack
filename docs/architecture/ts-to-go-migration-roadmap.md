@@ -178,6 +178,26 @@ The `12 / 16 / 17` MCP profiles, tool names, schemas, result envelope, Skill,
 and approval boundaries remain unchanged. Cursor issuer changes use an epoch
 and TTL drain, not implicit cursor translation.
 
+GS3 is split into three independently reviewed changes:
+
+1. **GS3-A mirror-read** is implemented as an explicit CLI composition option. After a successful
+   local TypeScript query or explanation, MCP sends the same canonical input to the fixed Go HTTP
+   read route, compares all bounded result fields, appends a digest-only Collaboration observation,
+   and still returns the isolated TypeScript result. The mirror is off by default, accepts only an
+   exact loopback origin unless private/link-local `internal` mode is explicitly selected, and has
+   closed timeout, response-size, strict-JSON, content-type, redirect, and difference-code bounds.
+   Cursor presence or token drift is a mismatch, not an accepted translation. Audit, transport,
+   response, or parity failure never changes the returned result.
+2. **GS3-B canary** remains pending. It will persist one reviewed scenario/tenant routing decision
+   and routing epoch, select exactly one backend for the entire request, expose an explicit rollback
+   to the prior epoch, and forbid silent per-request fallback.
+3. **GS3-C read authority** remains pending. Only after differential qualification and the canary
+   gate may Go own Graph head/query/explain reads while TypeScript continues projector publication
+   through durable ingest receipts.
+
+GS3-A adds no Go write or read authority, routing epoch, canary, Graph-head transfer, implicit cursor
+translation, authenticated Desktop evidence, remote Connector, release, live, or production claim.
+
 ### GS4–GS6 — Governance Control
 
 Freeze the runtime governed-plan contract under

@@ -10,6 +10,7 @@ import {
   deriveGraphNodeId,
   sealGraphSnapshot,
   type GraphNode,
+  type GraphReadMirrorPort,
   type GraphSnapshot,
 } from '@openslack/organization-graph';
 import { OPENSLACK_READ_TOOL_NAMES, validateOpenSlackMcpResultV2 } from '@openslack/qoder-adapter';
@@ -138,6 +139,7 @@ async function coreWithSnapshot(
   workspaceRoot: string,
   graphSnapshot: GraphSnapshot,
   graphMaxAgeMs = 24 * 60 * 60 * 1_000,
+  graphReadMirror?: GraphReadMirrorPort,
 ): Promise<OpenSlackMcpCore> {
   await new LocalGraphStore(join(workspaceRoot, '.openslack.local', 'graph')).publishSnapshot(
     graphSnapshot,
@@ -153,6 +155,7 @@ async function coreWithSnapshot(
         return () => `mcp:graph-${++id}`;
       })(),
       graphMaxAgeMs,
+      ...(graphReadMirror === undefined ? {} : { graphReadMirror }),
     }),
   );
 }
@@ -303,12 +306,17 @@ describe('default graph read adapters', () => {
   });
 
   it('returns an explicit blocker when current graph evidence is absent', async () => {
+    const graphReadMirror: GraphReadMirrorPort = {
+      observeQuery: vi.fn(),
+      observeExplain: vi.fn(),
+    };
     const core = new OpenSlackMcpCore(
       createOpenSlackMcpContext({
         workspaceRoot: root(),
         operator: operator(),
         clock: () => new Date(now),
         correlationIdFactory: () => 'mcp:absent',
+        graphReadMirror,
       }),
     );
     const result = await core.callTool('openslack_query_graph', {
@@ -320,12 +328,18 @@ describe('default graph read adapters', () => {
       status: 'blocked',
       governance: { blocker: 'SOURCE_EVIDENCE_UNAVAILABLE' },
     });
+    expect(graphReadMirror.observeQuery).not.toHaveBeenCalled();
+    expect(graphReadMirror.observeExplain).not.toHaveBeenCalled();
   });
 
   it('blocks stale evidence without creating authority state', async () => {
     const workspaceRoot = root();
     const stale = snapshot('2026-07-25T00:00:00.000Z');
-    const core = await coreWithSnapshot(workspaceRoot, stale, 60 * 60 * 1_000);
+    const graphReadMirror: GraphReadMirrorPort = {
+      observeQuery: vi.fn(),
+      observeExplain: vi.fn(),
+    };
+    const core = await coreWithSnapshot(workspaceRoot, stale, 60 * 60 * 1_000, graphReadMirror);
     const result = await core.callTool('openslack_query_graph', {
       scenarioInstanceId: stale.scenarioInstanceId,
     });
@@ -333,6 +347,8 @@ describe('default graph read adapters', () => {
       status: 'blocked',
       governance: { blocker: 'SOURCE_EVIDENCE_STALE' },
     });
+    expect(graphReadMirror.observeQuery).not.toHaveBeenCalled();
+    expect(graphReadMirror.observeExplain).not.toHaveBeenCalled();
   });
 
   it('enforces truncation, query-bound cursors, depth, and the 512 KiB wire bound', async () => {
@@ -402,6 +418,85 @@ describe('default graph read adapters', () => {
         snapshotCursor: current.cursor,
       },
     });
+  });
+
+  it('mirror-reads query and explain while returning only the cloned TypeScript authority', async () => {
+    const workspaceRoot = root();
+    const current = snapshot();
+    const observeQuery = vi.fn(async (input, authority) => {
+      input.scenarioInstanceId = 'malicious-mirror-scope';
+      authority.nodes.splice(0);
+      return {} as never;
+    });
+    const observeExplain = vi.fn(async (input, authority) => {
+      input.targetId = 'malicious-mirror-target';
+      authority.sourceEventIds.splice(0);
+      return {} as never;
+    });
+    const core = await coreWithSnapshot(workspaceRoot, current, undefined, {
+      observeQuery,
+      observeExplain,
+    });
+    const queryInput = {
+      scenarioInstanceId: current.scenarioInstanceId,
+      rootNodeIds: [current.nodes[0]!.id],
+      depth: 1,
+    };
+    const query = await core.callTool('openslack_query_graph', queryInput);
+    const explainInput = {
+      scenarioInstanceId: current.scenarioInstanceId,
+      targetId: current.nodes[0]!.id,
+      depth: 3,
+    };
+    const explain = await core.callTool('openslack_explain_graph', explainInput);
+
+    expect(core.listTools()).toHaveLength(12);
+    expect(query.structuredContent).toMatchObject({
+      status: 'completed',
+      data: { scenarioInstanceId: current.scenarioInstanceId },
+    });
+    expect(
+      (query.structuredContent.data as { nodes: Array<{ id: string }> }).nodes.map(
+        (item) => item.id,
+      ),
+    ).toContain(current.nodes[0]!.id);
+    expect(explain.structuredContent).toMatchObject({
+      status: 'completed',
+      data: {
+        scenarioInstanceId: current.scenarioInstanceId,
+        targetId: current.nodes[0]!.id,
+        sourceEventIds: current.nodes[0]!.sourceEventIds,
+      },
+    });
+    expect(observeQuery).toHaveBeenCalledOnce();
+    expect(observeQuery.mock.calls[0]?.[0]).not.toBe(queryInput);
+    expect(observeExplain).toHaveBeenCalledOnce();
+    expect(observeExplain.mock.calls[0]?.[0]).not.toBe(explainInput);
+  });
+
+  it('keeps mirror exceptions observational for both graph read tools', async () => {
+    const workspaceRoot = root();
+    const current = snapshot();
+    const graphReadMirror: GraphReadMirrorPort = {
+      observeQuery: vi.fn(async () => {
+        throw new Error('mirror query failed');
+      }),
+      observeExplain: vi.fn(async () => {
+        throw new Error('mirror explain failed');
+      }),
+    };
+    const core = await coreWithSnapshot(workspaceRoot, current, undefined, graphReadMirror);
+
+    const query = await core.callTool('openslack_query_graph', {
+      scenarioInstanceId: current.scenarioInstanceId,
+    });
+    const explain = await core.callTool('openslack_explain_graph', {
+      scenarioInstanceId: current.scenarioInstanceId,
+      targetId: current.nodes[0]!.id,
+    });
+
+    expect(query.structuredContent.status).toBe('completed');
+    expect(explain.structuredContent.status).toBe('completed');
   });
 
   it('advertises an optional exact thirteenth reset tool only for an injected local port', async () => {

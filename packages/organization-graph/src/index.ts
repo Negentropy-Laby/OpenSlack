@@ -96,6 +96,24 @@ export type {
   GraphShadowReceiptStatus,
 } from './shadow.js';
 export {
+  GRAPH_READ_MIRROR_DIFFERENCE_CODES,
+  GRAPH_READ_MIRROR_OBSERVATION_SCHEMA,
+  GRAPH_READ_MIRROR_POLICY,
+  GraphReadMirrorHttpClient,
+} from './read-mirror.js';
+export type {
+  GraphReadMirrorAuditFailureSink,
+  GraphReadMirrorAuditSink,
+  GraphReadMirrorDifferenceCode,
+  GraphReadMirrorHttpClientOptions,
+  GraphReadMirrorObservation,
+  GraphReadMirrorOperation,
+  GraphReadMirrorOutcome,
+  GraphReadMirrorPort,
+} from './read-mirror.js';
+export { normalizeGraphServiceOrigin } from './service-origin.js';
+export type { GraphServiceNetworkMode } from './service-origin.js';
+export {
   STRICT_GRAPH_JSON_ERROR_CODES,
   STRICT_GRAPH_JSON_DEFAULT_LIMITS,
   StrictGraphJsonError,

@@ -6,7 +6,7 @@ authority: canonical
 audience:
   - security
 owner: security
-updated: 2026-07-28
+updated: 2026-08-01
 sources:
   - docs/reference/document-path-migration-v1.yaml
 ---
@@ -25,7 +25,7 @@ The Collaboration Layer records collaboration events that are safe to observe:
 - Event type (e.g., `pr.doctor.ready`, `plan.created`)
 - Actor ID and kind (human/agent/system/github/chat)
 - Provider (cli/slack/webhook/github)
-- Object kind and ID (issue/PR/plan/module)
+- Object kind and ID (issue/PR/plan/module/agent/handoff/decision/workspace/workflow/graph)
 - Source reference (which system emitted the event)
 - Summary (safe, non-sensitive description)
 - Owner and next action (who should act next)
@@ -44,6 +44,14 @@ The Collaboration Layer never records:
 - Raw webhook payloads containing secrets
 - Full chat message text (only intent kind and hash)
 - Personal identifiable information not relevant to collaboration
+- Graph mirror endpoints, canonical request bodies, nodes, edges, titles, explanation target
+  payloads, authority objects, evidence contents, or source-event contents
+
+GS3-A Graph read-mirror events store only the operation/outcome, bounded status or difference
+codes, latency, and SHA-256 fingerprints/digests (including a hashed snapshot cursor). Mirror
+events remain local runtime observations and never establish Go read authority. If the bound audit
+append fails, the MCP result remains TypeScript-authoritative and the process emits only the fixed
+`OPENSLACK_GRAPH_READ_MIRROR_AUDIT_FAILED` stderr diagnostic.
 
 ## Redaction Rules
 

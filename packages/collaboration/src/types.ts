@@ -9,7 +9,8 @@ export type ObjectKind =
   | 'handoff'
   | 'decision'
   | 'workspace'
-  | 'workflow';
+  | 'workflow'
+  | 'graph';
 export type SourceKind = 'github' | 'openslack' | 'chat' | 'prms' | 'operator' | 'governance';
 export type RiskLevel = 'none' | 'low' | 'medium' | 'high';
 export type Severity = 'info' | 'notice' | 'warning' | 'critical';
@@ -87,6 +88,11 @@ export type RepairEvent = 'repair.previewed' | 'repair.applied' | 'repair.failed
 
 export type NotificationEvent = 'notification.sent' | 'notification.failed';
 
+export type GraphReadEvent =
+  | 'graph.read_mirror.matched'
+  | 'graph.read_mirror.mismatched'
+  | 'graph.read_mirror.unavailable';
+
 export type AgentConversationEventType =
   | 'agent.conversation.started'
   | 'agent.conversation.completed'
@@ -101,6 +107,7 @@ export type CollaborationEventType =
   | CollaborationObjectEvent
   | RepairEvent
   | NotificationEvent
+  | GraphReadEvent
   | AgentConversationEventType;
 
 export interface CollaborationActor {
