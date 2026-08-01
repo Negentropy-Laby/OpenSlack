@@ -32,9 +32,10 @@ const softwareDeliveryHistoricalFixturePath = resolve(
   repositoryRoot,
   'packages/organization-graph/src/__tests__/fixtures/software-delivery-source.json',
 );
-// This case serially launches up to ten generator processes. Windows pays the
-// additional shell/process-start cost, and may also use the WSL fallback.
-const DETERMINISTIC_GENERATION_TIMEOUT_MS = process.platform === 'win32' ? 60_000 : 30_000;
+// Full-suite CI runs hundreds of files concurrently. These contract freeze cases
+// launch generator processes and/or read large generated artifacts, and have
+// exceeded 30 seconds under that measured load; keep the larger budget scoped here.
+const CONTRACT_FREEZE_TIMEOUT_MS = 60_000;
 const temporaryRoots: string[] = [];
 
 interface ContractArtifact {
@@ -345,7 +346,7 @@ describe('Organization Graph generated contract freeze', () => {
         'Refusing to write unsafe Organization Graph generated trees',
       );
     }
-  }, DETERMINISTIC_GENERATION_TIMEOUT_MS);
+  }, CONTRACT_FREEZE_TIMEOUT_MS);
 
   it('freezes Software Delivery authority, mirrors, and manifest hashes exactly', async () => {
     const schemaPath = 'schemas/software-delivery-source-snapshot.v1.schema.json';
@@ -378,7 +379,7 @@ describe('Organization Graph generated contract freeze', () => {
         artifact.sha256,
       );
     }
-  }, 30_000);
+  }, CONTRACT_FREEZE_TIMEOUT_MS);
 
   it('keeps Software Delivery vector schema-validity classifications aligned with Ajv 2020', async () => {
     const schema = JSON.parse(
