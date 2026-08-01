@@ -25,7 +25,8 @@ const (
 )
 
 type Repository struct {
-	pool *pgxpool.Pool
+	pool              *pgxpool.Pool
+	commitTransaction func(context.Context, pgx.Tx) error
 }
 
 func New(pool *pgxpool.Pool) graphstore.Store {
@@ -237,7 +238,11 @@ func (repository *Repository) Publish(
 		PreviousCursor:        cloneString(prepared.Input.ExpectedCursor),
 		RecordedAt:            recordedAt,
 	}
-	if err := transaction.Commit(ctx); err != nil {
+	commitTransaction := repository.commitTransaction
+	if commitTransaction == nil {
+		commitTransaction = func(ctx context.Context, tx pgx.Tx) error { return tx.Commit(ctx) }
+	}
+	if err := commitTransaction(ctx, transaction); err != nil {
 		return repository.resolveCommitOutcome(prepared, err)
 	}
 	return receipt, nil

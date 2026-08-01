@@ -7,6 +7,7 @@ import type {
   GraphShadowObservation,
   GraphShadowPublishInput,
   GraphShadowPublishPort,
+  GraphShadowQueueObservation,
 } from '../index.js';
 import { graphDelta, graphSnapshot, graphTransitionSnapshot } from './fixtures.js';
 
@@ -147,14 +148,18 @@ describe('LocalGraphStore shadow observation boundary', () => {
     });
     const started: string[] = [];
     const published: GraphShadowPublishInput[] = [];
-    const publish = vi.fn(async (input: GraphShadowPublishInput) => {
-      started.push(input.snapshot.cursor);
-      published.push(input);
-      if (input.snapshot.cursor === 'cursor-001') {
-        await firstGate;
-      }
-      return observation(input);
-    });
+    const queueObservations: GraphShadowQueueObservation[] = [];
+    const publish = vi.fn(
+      async (input: GraphShadowPublishInput, queue?: Readonly<GraphShadowQueueObservation>) => {
+        started.push(input.snapshot.cursor);
+        published.push(input);
+        if (queue) queueObservations.push({ ...queue });
+        if (input.snapshot.cursor === 'cursor-001') {
+          await firstGate;
+        }
+        return observation(input);
+      },
+    );
     const store = new LocalGraphStore(await root(), {}, { publish });
     const attempted = GRAPH_SHADOW_POLICY.maxQueuedPublicationsPerScenario + 2;
     let expectedCursor: string | null = null;
@@ -179,6 +184,12 @@ describe('LocalGraphStore shadow observation boundary', () => {
       ).padStart(3, '0')}`,
       snapshot: graphSnapshot(`cursor-${String(attempted).padStart(3, '0')}`),
     });
+    expect(queueObservations[0]).toEqual({ backlog: 0, inFlight: 1 });
+    expect(queueObservations[1]).toEqual({
+      backlog: GRAPH_SHADOW_POLICY.maxQueuedPublicationsPerScenario - 1,
+      inFlight: 1,
+    });
+    expect(queueObservations.at(-1)).toEqual({ backlog: 0, inFlight: 1 });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     const resumedCursor = `cursor-${String(attempted + 1).padStart(3, '0')}`;

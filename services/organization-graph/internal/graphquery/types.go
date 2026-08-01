@@ -26,9 +26,10 @@ type Input struct {
 }
 
 type Options struct {
-	CursorSecret []byte
-	CursorTTLMS  *int64
-	NowMS        int64
+	CursorSecret         []byte
+	PreviousCursorSecret []byte
+	CursorTTLMS          *int64
+	NowMS                int64
 }
 
 type RelationshipPath struct {

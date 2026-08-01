@@ -2,6 +2,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -36,21 +37,23 @@ type realClock struct{}
 func (realClock) Now() time.Time { return time.Now().UTC() }
 
 type Options struct {
-	Store        Store
-	CursorSecret []byte
-	BuildSHA     string
-	Logger       *slog.Logger
-	Clock        Clock
+	Store                Store
+	CursorSecret         []byte
+	PreviousCursorSecret []byte
+	BuildSHA             string
+	Logger               *slog.Logger
+	Clock                Clock
 }
 
 type Service struct {
-	store        Store
-	cursorSecret []byte
-	buildSHA     string
-	logger       *slog.Logger
-	clock        Clock
-	counters     *counters
-	handler      http.Handler
+	store                Store
+	cursorSecret         []byte
+	previousCursorSecret []byte
+	buildSHA             string
+	logger               *slog.Logger
+	clock                Clock
+	counters             *counters
+	handler              http.Handler
 }
 
 func New(options Options) (*Service, error) {
@@ -60,6 +63,14 @@ func New(options Options) (*Service, error) {
 	if len(options.CursorSecret) < graphCursorSecretMinBytes ||
 		len(options.CursorSecret) > graphCursorSecretMaxBytes {
 		return nil, fmt.Errorf("graph query cursor secret is outside its frozen bounds")
+	}
+	if len(options.PreviousCursorSecret) != 0 &&
+		(len(options.PreviousCursorSecret) < graphCursorSecretMinBytes ||
+			len(options.PreviousCursorSecret) > graphCursorSecretMaxBytes) {
+		return nil, fmt.Errorf("previous graph query cursor secret is outside its frozen bounds")
+	}
+	if len(options.PreviousCursorSecret) != 0 && bytes.Equal(options.CursorSecret, options.PreviousCursorSecret) {
+		return nil, fmt.Errorf("previous graph query cursor secret must differ from the active secret")
 	}
 	if !serviceBuildSHAPattern.MatchString(options.BuildSHA) {
 		return nil, fmt.Errorf("graph service build SHA must be 64 lowercase hexadecimal characters")
@@ -71,12 +82,13 @@ func New(options Options) (*Service, error) {
 		options.Clock = realClock{}
 	}
 	service := &Service{
-		store:        options.Store,
-		cursorSecret: append([]byte(nil), options.CursorSecret...),
-		buildSHA:     options.BuildSHA,
-		logger:       options.Logger,
-		clock:        options.Clock,
-		counters:     newCounters(),
+		store:                options.Store,
+		cursorSecret:         append([]byte(nil), options.CursorSecret...),
+		previousCursorSecret: append([]byte(nil), options.PreviousCursorSecret...),
+		buildSHA:             options.BuildSHA,
+		logger:               options.Logger,
+		clock:                options.Clock,
+		counters:             newCounters(),
 	}
 	service.handler = service.routes()
 	return service, nil

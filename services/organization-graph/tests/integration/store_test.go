@@ -100,6 +100,107 @@ func TestPublishPersistsCanonicalBytesAndDurableIdempotencyReceipt(t *testing.T)
 	}
 }
 
+func TestSameCursorWithDifferentCanonicalBytesFailsWithoutMutation(t *testing.T) {
+	pool := testsupport.OpenPostgres(t)
+	store := graphpostgres.New(pool)
+	first := emptySnapshot(t, "cursor-same", generatedOne)
+	accepted, err := store.Publish(
+		context.Background(),
+		snapshotPublishInput(t, "same-cursor-first", nil, 0, first),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := snapshotWithNodes(t, "cursor-same", generatedTwo, "different-bytes")
+	if _, err := store.Publish(
+		context.Background(),
+		snapshotPublishInput(t, "same-cursor-changed", &first.Cursor, 1, changed),
+	); !graphstore.IsCode(err, graphstore.ErrorCursorConflict) {
+		t.Fatalf("same cursor with changed bytes error = %v", err)
+	}
+	head, current, err := store.Current(context.Background(), testScenario)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if head.Revision != 1 || head.Cursor != first.Cursor || current.Snapshot.IntegrityHash != first.IntegrityHash {
+		t.Fatalf("conflict mutated current graph: head=%+v snapshot=%+v", head, current.Snapshot)
+	}
+	if _, err := store.ReadReceipt(context.Background(), testScenario, "same-cursor-changed"); !graphstore.IsCode(err, graphstore.ErrorNotFound) {
+		t.Fatalf("conflict persisted a receipt: %v", err)
+	}
+	persisted, err := store.ReadReceipt(context.Background(), testScenario, "same-cursor-first")
+	if err != nil || persisted.ReceiptID != accepted.ReceiptID {
+		t.Fatalf("accepted receipt changed: %+v, %v", persisted, err)
+	}
+}
+
+func TestCorruptedCanonicalBytesAndMetadataFailClosedOnEveryReadPath(t *testing.T) {
+	pool := testsupport.OpenPostgres(t)
+	store := graphpostgres.New(pool)
+	ctx := context.Background()
+
+	metadataScenario := "scenario-corrupt-snapshot-metadata"
+	metadataSnapshot := emptySnapshotForScenario(t, metadataScenario, "cursor-corrupt-metadata", generatedOne)
+	canonicalSnapshot, err := graphcontract.SerializeSnapshot(metadataSnapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongHash := "sha256:" + strings.Repeat("0", 64)
+	if wrongHash == metadataSnapshot.IntegrityHash {
+		t.Fatal("test hash unexpectedly matches snapshot")
+	}
+	if _, err := pool.Exec(ctx, `
+INSERT INTO graph_snapshots (
+  scenario_instance_id, cursor, revision, canonical_bytes, integrity_hash,
+  projector_version, generated_at
+) VALUES ($1, $2, 1, $3, $4, $5, $6)`, metadataScenario, metadataSnapshot.Cursor,
+		canonicalSnapshot, wrongHash, metadataSnapshot.ProjectorVersion, metadataSnapshot.GeneratedAt); err != nil {
+		t.Fatalf("insert metadata-corrupt snapshot: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `
+INSERT INTO graph_heads (
+  scenario_instance_id, cursor, revision, snapshot_integrity_hash
+) VALUES ($1, $2, 1, $3)`, metadataScenario, metadataSnapshot.Cursor, wrongHash); err != nil {
+		t.Fatalf("insert metadata-corrupt head: %v", err)
+	}
+	for name, read := range map[string]func() error{
+		"current":       func() error { _, _, err := store.Current(ctx, metadataScenario); return err },
+		"snapshot":      func() error { _, err := store.ReadSnapshot(ctx, metadataScenario, metadataSnapshot.Cursor); return err },
+		"snapshot list": func() error { _, err := store.ListSnapshots(ctx, metadataScenario, 0, 10); return err },
+		"head list":     func() error { _, err := store.ListHeads(ctx, 10); return err },
+	} {
+		if err := read(); !graphstore.IsCode(err, graphstore.ErrorContentInvalid) {
+			t.Fatalf("%s did not fail closed: %v", name, err)
+		}
+	}
+
+	deltaScenario := "scenario-corrupt-delta-bytes"
+	parent := emptySnapshotForScenario(t, deltaScenario, "cursor-parent", generatedOne)
+	target := emptySnapshotForScenario(t, deltaScenario, "cursor-target", generatedTwo)
+	if _, err := store.Publish(ctx, snapshotPublishInput(t, "corrupt-delta-parent", nil, 0, parent)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Publish(ctx, snapshotPublishInput(t, "corrupt-delta-target", &parent.Cursor, 1, target)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+INSERT INTO graph_deltas (
+  scenario_instance_id, from_cursor, to_cursor, revision, canonical_bytes,
+  integrity_hash, generated_at
+) VALUES ($1, $2, $3, 2, $4, $5, $6)`, deltaScenario, parent.Cursor, target.Cursor,
+		[]byte("{"), wrongHash, target.GeneratedAt); err != nil {
+		t.Fatalf("insert byte-corrupt delta: %v", err)
+	}
+	for name, read := range map[string]func() error{
+		"delta":      func() error { _, err := store.ReadDelta(ctx, deltaScenario, parent.Cursor, target.Cursor); return err },
+		"delta list": func() error { _, err := store.ListDeltas(ctx, deltaScenario, 0, 10); return err },
+	} {
+		if err := read(); !graphstore.IsCode(err, graphstore.ErrorContentInvalid) {
+			t.Fatalf("%s did not fail closed: %v", name, err)
+		}
+	}
+}
+
 func TestDeltaUsesDatabaseCurrentParentAndReconstructsTargetExactly(t *testing.T) {
 	pool := testsupport.OpenPostgres(t)
 	store := graphpostgres.New(pool)

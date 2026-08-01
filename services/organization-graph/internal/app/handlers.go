@@ -134,8 +134,9 @@ func (service *Service) handleQuery(w http.ResponseWriter, request *http.Request
 		return
 	}
 	result, err := graph.Query(current.Snapshot, input, graph.QueryOptions{
-		CursorSecret: append([]byte(nil), service.cursorSecret...),
-		NowMS:        service.clock.Now().UnixMilli(),
+		CursorSecret:         append([]byte(nil), service.cursorSecret...),
+		PreviousCursorSecret: append([]byte(nil), service.previousCursorSecret...),
+		NowMS:                service.clock.Now().UnixMilli(),
 	})
 	if err != nil {
 		writeMappedError(w, service.logger, err, "", service.counters)

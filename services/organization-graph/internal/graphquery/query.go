@@ -565,6 +565,13 @@ func Query(snapshotValue graphcontract.Snapshot, input Input, options Options) (
 	if len(options.CursorSecret) < CursorSecretMinBytes || len(options.CursorSecret) > CursorSecretMaxBytes {
 		return Result{}, failure(ErrorInvalid, "cursorSecret must contain between 32 and 1024 bytes.")
 	}
+	if len(options.PreviousCursorSecret) != 0 &&
+		(len(options.PreviousCursorSecret) < CursorSecretMinBytes || len(options.PreviousCursorSecret) > CursorSecretMaxBytes) {
+		return Result{}, failure(ErrorInvalid, "previousCursorSecret must be empty or contain between 32 and 1024 bytes.")
+	}
+	if len(options.PreviousCursorSecret) != 0 && bytes.Equal(options.CursorSecret, options.PreviousCursorSecret) {
+		return Result{}, failure(ErrorInvalid, "previousCursorSecret must differ from cursorSecret.")
+	}
 	if options.NowMS < 0 || options.NowMS > maxSafeInteger {
 		return Result{}, failure(ErrorInvalid, "now must be a valid timestamp.")
 	}
@@ -585,6 +592,11 @@ func Query(snapshotValue graphcontract.Snapshot, input Input, options Options) (
 	offset, expiresAt := 0, options.NowMS+ttl
 	if input.Cursor != nil {
 		cursor, decodeErr := decodeCursor(*input.Cursor, options.CursorSecret)
+		if decodeErr != nil && len(options.PreviousCursorSecret) != 0 {
+			if previousCursor, previousErr := decodeCursor(*input.Cursor, options.PreviousCursorSecret); previousErr == nil {
+				cursor, decodeErr = previousCursor, nil
+			}
+		}
 		if decodeErr != nil {
 			return Result{}, decodeErr
 		}

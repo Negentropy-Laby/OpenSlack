@@ -1117,7 +1117,10 @@ export class LocalGraphStore {
     queue.lastQueuedCursor = task.input.snapshot.cursor;
     const dispatch = async (): Promise<void> => {
       try {
-        await task.publisher.publish(task.input);
+        await task.publisher.publish(task.input, {
+          backlog: Math.max(0, queue.depth - 1) + (queue.catchUp === undefined ? 0 : 1),
+          inFlight: 1,
+        });
       } catch {
         // The local TypeScript commit is authoritative throughout GS1. A broken
         // shadow adapter can neither roll it back nor turn it into a failure.

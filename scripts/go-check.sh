@@ -866,6 +866,7 @@ run_module_gate() {
   elif [[ "${runtime_profile}" == "organization-graph-v1" ]]; then
     run_args+=(
       --env 'GRAPH_QUERY_CURSOR_SECRET=organization-graph-go-check-cursor-secret-v1'
+      --env 'GRAPH_QUERY_CURSOR_SECRET_PREVIOUS=organization-graph-go-check-cursor-secret-v0'
       --env 'GRAPH_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
       --env GRAPH_HTTP_BIND=127.0.0.1:8080
       --env GRAPH_NETWORK_MODE=loopback
@@ -875,6 +876,17 @@ run_module_gate() {
   log "validating ${module} with the pinned Go image"
   docker_cmd_interruptible "${run_args[@]}" "${GO_IMAGE}" \
     sh /input/container-gate.sh /source /work
+
+  if [[ "${runtime_profile}" == "organization-graph-v1" ]]; then
+    ((has_database)) || fail "Organization Graph qualification requires PostgreSQL"
+    run_organization_graph_qualification \
+      "${resource_prefix}" \
+      "${network}" \
+      "${database_container}" \
+      "${database_name}" \
+      "${resource_owner}" \
+      "${run_token}"
+  fi
 
   if ((has_prometheus)); then
     run_prometheus_gate "${staged_module_dir}"
@@ -903,6 +915,72 @@ run_module_gate() {
   fi
 
   log "${module} passed"
+}
+
+run_organization_graph_test_container() {
+  local resource_prefix="$1"
+  local label="$2"
+  local network="$3"
+  local database_name="$4"
+  local resource_owner="$5"
+  shift 5
+  local container="${resource_prefix}-qualification-${label}"
+  local repository_mount
+  repository_mount="$(docker_path "${staged_repository_dir}")"
+  local -a run_args=(
+    run --rm --pull=never
+    --name "${container}"
+    --label "com.openslack.go-check.run=${resource_owner}"
+    --network "${network}"
+    --env GOTOOLCHAIN=local
+    --env GOWORK=off
+    --env GOMODCACHE=/go/pkg/mod
+    --env GOCACHE=/root/.cache/go-build
+    --env "DATABASE_URL=postgres://openslack:openslack-go-check@postgres:5432/${database_name}?sslmode=disable"
+    --mount "type=bind,source=${repository_mount},target=/source,readonly"
+    --mount "type=volume,source=${MOD_CACHE_VOLUME},target=/go/pkg/mod"
+    --mount "type=volume,source=${BUILD_CACHE_VOLUME},target=/root/.cache/go-build"
+    --workdir /source/services/organization-graph
+  )
+  cleanup_containers+=("${resource_owner}|${container}")
+  while (($#)); do
+    run_args+=(--env "$1")
+    shift
+  done
+  docker_cmd_interruptible "${run_args[@]}" "${GO_IMAGE}" \
+    go test -race ./cmd/server -run '^TestGS1C' -count=1
+}
+
+run_organization_graph_qualification() {
+  local resource_prefix="$1"
+  local network="$2"
+  local database_container="$3"
+  local database_name="$4"
+  local resource_owner="$5"
+  local run_token="$6"
+  local restart_schema="organization_graph_gs1c_restart_${run_token//-/}"
+
+  log "qualifying Organization Graph schema, size, HTTP/PostgreSQL, and failure bounds"
+  run_organization_graph_test_container \
+    "${resource_prefix}" bounds "${network}" "${database_name}" "${resource_owner}" \
+    GRAPH_GS1C_SCHEMA_QUALIFICATION=1 \
+    GRAPH_GS1C_LARGE_QUALIFICATION=1
+
+  log "seeding Organization Graph restart qualification"
+  run_organization_graph_test_container \
+    "${resource_prefix}" restart-seed "${network}" "${database_name}" "${resource_owner}" \
+    GRAPH_GS1C_RESTART_PHASE=seed \
+    "GRAPH_GS1C_RESTART_SCHEMA=${restart_schema}"
+
+  require_resource_owned container "${database_container}" "${resource_owner}"
+  docker_cmd_interruptible restart "${database_container}" >/dev/null
+  wait_for_healthy_container "${database_container}" "PostgreSQL after restart"
+
+  log "verifying Organization Graph durable state after PostgreSQL restart"
+  run_organization_graph_test_container \
+    "${resource_prefix}" restart-verify "${network}" "${database_name}" "${resource_owner}" \
+    GRAPH_GS1C_RESTART_PHASE=verify \
+    "GRAPH_GS1C_RESTART_SCHEMA=${restart_schema}"
 }
 
 run_prometheus_gate() {
@@ -982,6 +1060,7 @@ run_http_smoke() {
   elif [[ "${runtime_profile}" == "organization-graph-v1" ]]; then
     run_args+=(
       --env 'GRAPH_QUERY_CURSOR_SECRET=organization-graph-go-check-cursor-secret-v1'
+      --env 'GRAPH_QUERY_CURSOR_SECRET_PREVIOUS=organization-graph-go-check-cursor-secret-v0'
       --env 'GRAPH_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
       --env GRAPH_HTTP_BIND=:8080
       --env GRAPH_NETWORK_MODE=internal

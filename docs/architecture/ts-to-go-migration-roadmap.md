@@ -7,7 +7,7 @@ audience:
   - contributors
   - reviewers
 owner: architecture
-updated: 2026-07-30
+updated: 2026-08-01
 sources:
   - docs/architecture/architecture.md
   - docs/architecture/adr/adr-0002-multi-go-service-workspace.md
@@ -116,6 +116,20 @@ GS1-C qualifies duplicate, conflict, response-loss, restart, rollback,
 corruption, size-bound, and schema-version behavior. Throughout GS1 the
 TypeScript projector and `LocalGraphStore` remain the only user-visible
 authorities.
+
+The GS1-C gate drives the production HTTP composition against PostgreSQL for
+initial Snapshot, duplicate replay, full-Snapshot CAS, Delta, and bounded query
+readback. It also injects a successful commit whose response is lost, verifies
+durable receipt recovery, restarts the PostgreSQL container while retaining its
+volume, reconnects through a new pool, and proves the same receipt and head
+survive. Negative qualification covers incompatible migration rows, corrupted
+canonical bytes and metadata, same-cursor/different-byte conflicts, transaction
+rollback, and an exact 10,000-node/25,000-edge graph plus an over-limit request.
+Query cursors support one bounded previous verification secret during rotation;
+only the active secret signs newly emitted cursors. Shadow backlog observations
+report the actual TypeScript dispatch queue or `unknown`, never an invented zero.
+These gates do not create a Go read authority, a Qoder cutover, or a release,
+live, or production claim.
 
 ### GS2 — Projector Shadow
 

@@ -62,8 +62,8 @@ export interface GraphShadowObservation {
   latencyMs: number;
   authority: 'ts-local';
   shadow: 'go';
-  backlog: 0;
-  inFlight: 1;
+  backlog: number | 'unknown';
+  inFlight: number | 'unknown';
   parity: 'not_compared';
   scenarioInstanceId: string;
   cursor: string;
@@ -75,6 +75,11 @@ export interface GraphShadowObservation {
   receipt?: GraphShadowReceipt;
 }
 
+export interface GraphShadowQueueObservation {
+  backlog: number;
+  inFlight: number;
+}
+
 export type GraphShadowAuditSink = (
   observation: Readonly<GraphShadowObservation>,
 ) => void | Promise<void>;
@@ -84,7 +89,10 @@ export interface GraphShadowPublishPort {
    * Shadow publication is observational. Implementations must not grant graph
    * read or write authority, and callers must ignore failures.
    */
-  publish(input: GraphShadowPublishInput): Promise<GraphShadowObservation>;
+  publish(
+    input: GraphShadowPublishInput,
+    queue?: Readonly<GraphShadowQueueObservation>,
+  ): Promise<GraphShadowObservation>;
 }
 
 type GraphShadowFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -433,6 +441,7 @@ function baseObservation(
   request: PreparedRequest,
   endpoint: string,
   attemptedAt: string,
+  queue?: Readonly<GraphShadowQueueObservation>,
 ): Omit<GraphShadowObservation, 'outcome' | 'completedAt' | 'latencyMs'> {
   return {
     schema: 'openslack.graph_shadow_observation.v1',
@@ -441,8 +450,8 @@ function baseObservation(
     attemptedAt,
     authority: 'ts-local',
     shadow: 'go',
-    backlog: 0,
-    inFlight: 1,
+    backlog: queue?.backlog ?? 'unknown',
+    inFlight: queue?.inFlight ?? 'unknown',
     parity: 'not_compared',
     scenarioInstanceId: input.snapshot.scenarioInstanceId,
     cursor: input.snapshot.cursor,
@@ -548,11 +557,20 @@ export class GraphShadowHttpPublisher implements GraphShadowPublishPort {
     this.now = options.now ?? Date.now;
   }
 
-  async publish(input: GraphShadowPublishInput): Promise<GraphShadowObservation> {
+  async publish(
+    input: GraphShadowPublishInput,
+    queue?: Readonly<GraphShadowQueueObservation>,
+  ): Promise<GraphShadowObservation> {
     const request = prepareGraphShadowRequest(input);
     const endpoint = `${this.origin}${request.path}`;
     const attemptedMs = this.safeNow();
-    const base = baseObservation(input, request, endpoint, new Date(attemptedMs).toISOString());
+    const base = baseObservation(
+      input,
+      request,
+      endpoint,
+      new Date(attemptedMs).toISOString(),
+      queue,
+    );
     const controller = new AbortController();
     const result = await raceWithTimeout(
       Promise.resolve().then(() =>

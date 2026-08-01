@@ -673,6 +673,8 @@ func TestNewRejectsMissingDependenciesAndUnsafeCursorConfiguration(t *testing.T)
 	for _, options := range []Options{
 		{BuildSHA: testServiceBuildSHA, CursorSecret: []byte(strings.Repeat("x", 32))},
 		{Store: &fakeStore{}, BuildSHA: testServiceBuildSHA, CursorSecret: []byte("short")},
+		{Store: &fakeStore{}, BuildSHA: testServiceBuildSHA, CursorSecret: []byte(strings.Repeat("x", 32)), PreviousCursorSecret: []byte("short")},
+		{Store: &fakeStore{}, BuildSHA: testServiceBuildSHA, CursorSecret: []byte(strings.Repeat("x", 32)), PreviousCursorSecret: []byte(strings.Repeat("x", 32))},
 		{Store: &fakeStore{}, BuildSHA: "development", CursorSecret: []byte(strings.Repeat("x", 32))},
 	} {
 		if _, err := New(options); err == nil {

@@ -180,8 +180,8 @@ describe('organization graph HTTP shadow publisher', () => {
       latencyMs: 17,
       authority: 'ts-local',
       shadow: 'go',
-      backlog: 0,
-      inFlight: 1,
+      backlog: 'unknown',
+      inFlight: 'unknown',
       parity: 'not_compared',
       idempotencyKey: expected.idempotencyKey,
       requestFingerprint: expected.requestFingerprint,
@@ -190,6 +190,21 @@ describe('organization graph HTTP shadow publisher', () => {
     expect(observations).toEqual([observation]);
     expect(JSON.stringify(observation)).not.toContain('"nodes"');
     expect(JSON.stringify(observation)).not.toContain('"delta"');
+  });
+
+  it('records explicit queue state without inventing publisher-local backlog', async () => {
+    const input: GraphShadowPublishInput = {
+      expectedCursor: null,
+      snapshot: graphSnapshot('cursor-001'),
+    };
+    const publisher = new GraphShadowHttpPublisher({
+      origin: 'http://127.0.0.1:18181',
+      fetch: vi.fn(async () => responseFor(receiptFor(input, 'accepted'), 201)),
+    });
+
+    const observation = await publisher.publish(input, { backlog: 3, inFlight: 1 });
+
+    expect(observation).toMatchObject({ backlog: 3, inFlight: 1 });
   });
 
   it.each([['duplicate', 200] as const, ['reconciliation_required', 202] as const])(

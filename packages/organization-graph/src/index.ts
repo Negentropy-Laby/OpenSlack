@@ -87,6 +87,7 @@ export type {
   GraphShadowHttpPublisherOptions,
   GraphShadowObservation,
   GraphShadowObservationOutcome,
+  GraphShadowQueueObservation,
   GraphShadowOperation,
   GraphShadowPublishInput,
   GraphShadowPublishPort,

@@ -262,8 +262,9 @@ describeOnBashHosts('reviewed Go module verifier', () => {
 
     expect(result.status).toBe(0);
     const log = readFileSync(fixture.dockerLog, 'utf8');
+    expect(log).toContain('GRAPH_QUERY_CURSOR_SECRET=organization-graph-go-check-cursor-secret-v1');
     expect(log).toContain(
-      'GRAPH_QUERY_CURSOR_SECRET=organization-graph-go-check-cursor-secret-v1',
+      'GRAPH_QUERY_CURSOR_SECRET_PREVIOUS=organization-graph-go-check-cursor-secret-v0',
     );
     expect(log).toContain(
       'GRAPH_SERVICE_BUILD_SHA=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
@@ -271,6 +272,12 @@ describeOnBashHosts('reviewed Go module verifier', () => {
     expect(log).toContain('GRAPH_HTTP_BIND=:8080');
     expect(log).toContain('GRAPH_NETWORK_MODE=internal');
     expect(log).toContain('MIGRATION_SOURCE=/migrations');
+    expect(log).toContain('GRAPH_GS1C_SCHEMA_QUALIFICATION=1');
+    expect(log).toContain('GRAPH_GS1C_LARGE_QUALIFICATION=1');
+    expect(log).toContain('GRAPH_GS1C_RESTART_PHASE=seed');
+    expect(log).toContain('GRAPH_GS1C_RESTART_PHASE=verify');
+    expect(log).toContain(' restart ');
+    expect(log.match(/go test -race \.\/cmd\/server -run/g)).toHaveLength(3);
     expect(log).not.toContain('IDEMPOTENCY_KEY_PEPPER=');
     expect(log).not.toContain('CREDENTIAL_REF_SCHEME_ALLOWLIST=');
     expect(log).not.toContain('CREDENTIAL_PROFILE_VALIDATOR=');
